@@ -27,7 +27,7 @@ pub async fn sync_permissions(pool: &PgPool) -> Result<(), sqlx::Error> {
 
         let result = query.execute(pool).await?;
         if result.rows_affected() > 0 {
-            println!(
+            tracing::info!(
                 "🗑️  Deleted {} old permissions not in registry",
                 result.rows_affected()
             );

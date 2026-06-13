@@ -69,7 +69,7 @@ pub async fn get_user_roles(
     .fetch_all(pool)
     .await
     .map_err(|e| {
-        eprintln!("Database error: {}", e);
+        tracing::error!("Database error: {}", e);
         AppError::InternalServerError("เกิดข้อผิดพลาดในการดึงข้อมูล".to_string())
     })?;
 
@@ -120,7 +120,7 @@ pub async fn assign_user_role(
         .fetch_optional(pool)
         .await
         .map_err(|e| {
-            eprintln!("Failed to fetch user: {}", e);
+            tracing::error!("Failed to fetch user: {}", e);
             AppError::InternalServerError("ไม่สามารถตรวจสอบข้อมูลผู้ใช้ได้".to_string())
         })?;
 
@@ -130,7 +130,7 @@ pub async fn assign_user_role(
             .fetch_optional(pool)
             .await
             .map_err(|e| {
-                eprintln!("Failed to fetch role: {}", e);
+                tracing::error!("Failed to fetch role: {}", e);
                 AppError::InternalServerError("ไม่สามารถตรวจสอบข้อมูลบทบาทได้".to_string())
             })?;
 
@@ -154,7 +154,7 @@ pub async fn assign_user_role(
     .fetch_one(pool)
     .await
     .map_err(|e| {
-        eprintln!("Failed to assign role: {}", e);
+        tracing::error!("Failed to assign role: {}", e);
         AppError::InternalServerError("ไม่สามารถมอบหมายบทบาทได้".to_string())
     })?;
 
@@ -175,7 +175,7 @@ pub async fn remove_user_role(
     .execute(pool)
     .await
     .map_err(|e| {
-        eprintln!("Database error: {}", e);
+        tracing::error!("Database error: {}", e);
         AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
     })?;
 
@@ -215,7 +215,7 @@ pub async fn get_user_permissions(pool: &PgPool, user_id: Uuid) -> Result<Vec<St
     .fetch_all(pool)
     .await
     .map_err(|e| {
-        eprintln!("Database error: {}", e);
+        tracing::error!("Database error: {}", e);
         AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
     })
 }

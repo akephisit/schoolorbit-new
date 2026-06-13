@@ -20,7 +20,7 @@ pub async fn get_user(pool: &PgPool, user_id: Uuid) -> Result<User, AppError> {
     .fetch_one(pool)
     .await
     .map_err(|e| {
-        eprintln!("Failed to get user: {}", e);
+        tracing::error!("Failed to get user: {}", e);
         AppError::InternalServerError(format!("Database error: {}", e))
     })?;
 
@@ -56,7 +56,7 @@ pub async fn fetch_menu_items(pool: &PgPool, user_type: &str) -> Result<Vec<Menu
     .fetch_all(pool)
     .await
     .map_err(|e| {
-        eprintln!("Failed to fetch menu items: {}", e);
+        tracing::error!("Failed to fetch menu items: {}", e);
         AppError::InternalServerError("ไม่สามารถดึงข้อมูลเมนูได้".to_string())
     })
 }

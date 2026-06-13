@@ -319,7 +319,7 @@ impl WebSocketManager {
                         self.room_seq.remove(&key);
                         self.room_buffer.remove(&key);
                         self.room_empty_since.remove(&key);
-                        eprintln!("[WS cleanup] dropped idle room: {}", key);
+                        tracing::error!("[WS cleanup] dropped idle room: {}", key);
                     } else {
                         // มีคน subscribe ระหว่างนั้น → clear empty_since, เก็บ room ไว้
                         self.room_empty_since.remove(&key);
@@ -720,7 +720,7 @@ async fn handle_socket(socket: WebSocket, state: AppState, params: WsParams, sch
                 }
                 Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
                     // Client ตามไม่ทัน → miss n events — ส่ง TableRefresh ให้ full-refetch
-                    eprintln!(
+                    tracing::error!(
                         "[WS] client lagged, missed {} events — forcing full refresh",
                         n
                     );

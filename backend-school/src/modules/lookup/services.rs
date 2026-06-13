@@ -91,7 +91,7 @@ pub async fn verify_active_user(pool: &PgPool, user_id: Uuid) -> Result<(), AppE
     .fetch_one(pool)
     .await
     .map_err(|e| {
-        eprintln!("Database error: {}", e);
+        tracing::error!("Database error: {}", e);
         AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
     })?;
 
@@ -132,7 +132,7 @@ pub async fn lookup_staff(
     }
 
     let rows = query_builder.fetch_all(pool).await.map_err(|e| {
-        eprintln!("Database error: {}", e);
+        tracing::error!("Database error: {}", e);
         AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
     })?;
 
@@ -172,7 +172,7 @@ pub async fn lookup_roles(
     }
 
     let rows = query_builder.fetch_all(pool).await.map_err(|e| {
-        eprintln!("Database error: {}", e);
+        tracing::error!("Database error: {}", e);
         AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
     })?;
 
@@ -238,7 +238,7 @@ pub async fn lookup_organization_units(
     }
 
     let rows = query_builder.fetch_all(pool).await.map_err(|e| {
-        eprintln!("Database error: {}", e);
+        tracing::error!("Database error: {}", e);
         AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
     })?;
 
@@ -262,7 +262,7 @@ pub async fn lookup_organization_unit_by_id(
     .fetch_optional(pool)
     .await
     .map_err(|e| {
-        eprintln!("Database error: {}", e);
+        tracing::error!("Database error: {}", e);
         AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
     })?
     .map(organization_unit_lookup_item)
@@ -283,7 +283,7 @@ pub async fn lookup_grade_levels(
                 .fetch_optional(pool)
                 .await
                 .map_err(|e| {
-                    eprintln!("Database error: {}", e);
+                    tracing::error!("Database error: {}", e);
                     AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
                 })?;
     }
@@ -329,7 +329,7 @@ pub async fn lookup_grade_levels(
     }
 
     let rows = query_builder.fetch_all(pool).await.map_err(|e| {
-        eprintln!("Database error: {}", e);
+        tracing::error!("Database error: {}", e);
         AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
     })?;
 
@@ -377,7 +377,7 @@ pub async fn lookup_classrooms(
     }
 
     let rows = query_builder.fetch_all(pool).await.map_err(|e| {
-        eprintln!("Database error: {}", e);
+        tracing::error!("Database error: {}", e);
         AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
     })?;
 
@@ -421,7 +421,7 @@ pub async fn lookup_academic_years(
     }
 
     let rows = query_builder.fetch_all(pool).await.map_err(|e| {
-        eprintln!("Database error: {}", e);
+        tracing::error!("Database error: {}", e);
         AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
     })?;
 
@@ -476,7 +476,7 @@ pub async fn lookup_students(
     }
 
     let rows = query_builder.fetch_all(pool).await.map_err(|e| {
-        eprintln!("Database error: {}", e);
+        tracing::error!("Database error: {}", e);
         AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
     })?;
 
@@ -507,7 +507,7 @@ pub async fn lookup_rooms(pool: &PgPool) -> Result<Vec<Room>, AppError> {
     .fetch_all(pool)
     .await
     .map_err(|e| {
-        eprintln!("Lookup Rooms Error: {}", e);
+        tracing::error!("Lookup Rooms Error: {}", e);
         AppError::InternalServerError("Failed to fetch rooms".to_string())
     })
 }
@@ -559,7 +559,7 @@ pub async fn lookup_subjects(
     }
 
     let rows = query_builder.fetch_all(pool).await.map_err(|e| {
-        eprintln!("Database error: {}", e);
+        tracing::error!("Database error: {}", e);
         AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
     })?;
 

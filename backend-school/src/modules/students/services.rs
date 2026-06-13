@@ -55,7 +55,7 @@ pub async fn get_own_profile(
     .fetch_optional(pool)
     .await
     .map_err(|e| {
-        eprintln!("Failed to get own student profile: {}", e);
+        tracing::error!("Failed to get own student profile: {}", e);
         AppError::InternalServerError("ไม่สามารถดึงข้อมูลนักเรียนได้".to_string())
     })?
     .ok_or(AppError::NotFound("Student not found".to_string()))?;
@@ -94,7 +94,7 @@ pub async fn update_own_profile(
     .execute(pool)
     .await
     .map_err(|e| {
-        eprintln!("Failed to update own student profile: {}", e);
+        tracing::error!("Failed to update own student profile: {}", e);
         AppError::InternalServerError("ไม่สามารถอัพเดตข้อมูลได้".to_string())
     })?;
 
@@ -170,7 +170,7 @@ pub async fn list_students(
     q = q.bind(offset);
 
     let items = q.fetch_all(pool).await.map_err(|e| {
-        eprintln!("Failed to list students: {}", e);
+        tracing::error!("Failed to list students: {}", e);
         AppError::InternalServerError("เกิดข้อผิดพลาดในการดึงข้อมูล".to_string())
     })?;
 
@@ -244,26 +244,26 @@ pub async fn create_student(
     payload: CreateStudentRequest,
 ) -> Result<CreateStudentResponse, AppError> {
     let password_hash = hash(&payload.password, DEFAULT_COST).map_err(|e| {
-        eprintln!("Student password hashing failed: {}", e);
+        tracing::error!("Student password hashing failed: {}", e);
         AppError::InternalServerError("เกิดข้อผิดพลาดในการสร้างรหัสผ่าน".to_string())
     })?;
     let date_of_birth = parse_optional_date(payload.date_of_birth.as_deref())?;
     let encrypted_national_id = field_encryption::encrypt_optional(payload.national_id.as_deref())
         .map_err(|e| {
-            eprintln!("Student national_id encryption failed: {}", e);
+            tracing::error!("Student national_id encryption failed: {}", e);
             AppError::InternalServerError("เกิดข้อผิดพลาดในการประมวลผลข้อมูล".to_string())
         })?;
     let national_id_hash = field_encryption::hash_optional_for_search(
         payload.national_id.as_deref(),
     )
     .map_err(|e| {
-        eprintln!("Student national_id blind index failed: {}", e);
+        tracing::error!("Student national_id blind index failed: {}", e);
         AppError::InternalServerError("เกิดข้อผิดพลาดในการประมวลผลข้อมูล".to_string())
     })?;
     let username = student_username_or_default(payload.username.clone(), &payload.student_id);
 
     let mut tx = pool.begin().await.map_err(|e| {
-        eprintln!("Failed to start create student transaction: {}", e);
+        tracing::error!("Failed to start create student transaction: {}", e);
         AppError::InternalServerError("เกิดข้อผิดพลาดในการเริ่ม Transaction".to_string())
     })?;
 
@@ -290,7 +290,7 @@ pub async fn create_student(
     .await?;
 
     tx.commit().await.map_err(|e| {
-        eprintln!("Failed to commit create student transaction: {}", e);
+        tracing::error!("Failed to commit create student transaction: {}", e);
         AppError::InternalServerError("ไม่สามารถบันทึกข้อมูลได้".to_string())
     })?;
 
@@ -333,7 +333,7 @@ pub async fn get_student(
     .fetch_optional(pool)
     .await
     .map_err(|e| {
-        eprintln!("Failed to get student: {}", e);
+        tracing::error!("Failed to get student: {}", e);
         AppError::InternalServerError("เกิดข้อผิดพลาดในการดึงข้อมูล".to_string())
     })?
     .ok_or(AppError::NotFound("Student not found".to_string()))?;
@@ -353,7 +353,7 @@ pub async fn update_student(
     payload: UpdateStudentRequest,
 ) -> Result<(), AppError> {
     let mut tx = pool.begin().await.map_err(|e| {
-        eprintln!("Failed to start update student transaction: {}", e);
+        tracing::error!("Failed to start update student transaction: {}", e);
         AppError::InternalServerError("เกิดข้อผิดพลาดในการเริ่ม Transaction".to_string())
     })?;
 
@@ -379,7 +379,7 @@ pub async fn update_student(
     .execute(&mut *tx)
     .await
     .map_err(|e| {
-        eprintln!("Failed to update student user: {}", e);
+        tracing::error!("Failed to update student user: {}", e);
         AppError::InternalServerError("ไม่สามารถอัพเดตข้อมูลได้".to_string())
     })?;
 
@@ -397,12 +397,12 @@ pub async fn update_student(
     .execute(&mut *tx)
     .await
     .map_err(|e| {
-        eprintln!("Failed to update student_info: {}", e);
+        tracing::error!("Failed to update student_info: {}", e);
         AppError::InternalServerError("ไม่สามารถอัพเดตข้อมูลได้".to_string())
     })?;
 
     tx.commit().await.map_err(|e| {
-        eprintln!("Failed to commit update student transaction: {}", e);
+        tracing::error!("Failed to commit update student transaction: {}", e);
         AppError::InternalServerError("ไม่สามารถบันทึกข้อมูลได้".to_string())
     })?;
 
@@ -411,7 +411,7 @@ pub async fn update_student(
 
 pub async fn delete_student(pool: &PgPool, student_id: Uuid) -> Result<(), AppError> {
     let mut tx = pool.begin().await.map_err(|e| {
-        eprintln!("Failed to begin delete student transaction: {}", e);
+        tracing::error!("Failed to begin delete student transaction: {}", e);
         AppError::InternalServerError("ไม่สามารถลบนักเรียนได้".to_string())
     })?;
 
@@ -428,7 +428,7 @@ pub async fn delete_student(pool: &PgPool, student_id: Uuid) -> Result<(), AppEr
     .execute(&mut *tx)
     .await
     .map_err(|e| {
-        eprintln!("Failed to delete student: {}", e);
+        tracing::error!("Failed to delete student: {}", e);
         AppError::InternalServerError("ไม่สามารถลบนักเรียนได้".to_string())
     })?;
 
@@ -443,12 +443,12 @@ pub async fn delete_student(pool: &PgPool, student_id: Uuid) -> Result<(), AppEr
     .execute(&mut *tx)
     .await
     .map_err(|e| {
-        eprintln!("Failed to drop student enrollments: {}", e);
+        tracing::error!("Failed to drop student enrollments: {}", e);
         AppError::InternalServerError("ไม่สามารถลบนักเรียนได้".to_string())
     })?;
 
     tx.commit().await.map_err(|e| {
-        eprintln!("Failed to commit delete student transaction: {}", e);
+        tracing::error!("Failed to commit delete student transaction: {}", e);
         AppError::InternalServerError("ไม่สามารถลบนักเรียนได้".to_string())
     })?;
 
@@ -461,7 +461,7 @@ pub async fn add_parent_to_student(
     payload: CreateParentRequest,
 ) -> Result<(), AppError> {
     let mut tx = pool.begin().await.map_err(|e| {
-        eprintln!("Failed to begin add parent transaction: {}", e);
+        tracing::error!("Failed to begin add parent transaction: {}", e);
         AppError::InternalServerError("เกิดข้อผิดพลาดในการเริ่มต้น transaction".to_string())
     })?;
 
@@ -469,7 +469,7 @@ pub async fn add_parent_to_student(
     link_parent_to_student(&mut tx, student_id, parent_id, &payload.relationship).await?;
 
     tx.commit().await.map_err(|e| {
-        eprintln!("Failed to commit add parent transaction: {}", e);
+        tracing::error!("Failed to commit add parent transaction: {}", e);
         AppError::InternalServerError("ไม่สามารถบันทึกข้อมูลได้".to_string())
     })?;
 
@@ -489,7 +489,7 @@ pub async fn remove_parent_from_student(
     .execute(pool)
     .await
     .map_err(|e| {
-        eprintln!("Failed to remove parent link: {}", e);
+        tracing::error!("Failed to remove parent link: {}", e);
         AppError::InternalServerError("ไม่สามารถลบผู้ปกครองได้".to_string())
     })?;
 
@@ -506,7 +506,7 @@ async fn ensure_student_user(pool: &PgPool, user_id: Uuid) -> Result<(), AppErro
         .fetch_optional(pool)
         .await
         .map_err(|e| {
-            eprintln!("Failed to load current user type: {}", e);
+            tracing::error!("Failed to load current user type: {}", e);
             AppError::InternalServerError("ไม่สามารถดึงข้อมูลผู้ใช้ได้".to_string())
         })?;
 
@@ -533,7 +533,7 @@ async fn list_student_parents(pool: &PgPool, student_id: Uuid) -> Result<Vec<Par
     .fetch_all(pool)
     .await
     .map_err(|e| {
-        eprintln!("Failed to list student parents: {}", e);
+        tracing::error!("Failed to list student parents: {}", e);
         AppError::InternalServerError("ไม่สามารถดึงข้อมูลผู้ปกครองได้".to_string())
     })
 }
@@ -547,14 +547,16 @@ fn apply_student_pii_visibility(row: &mut StudentDbRow, include_pii: bool) {
     if let Some(national_id) = row.national_id.clone() {
         match field_encryption::decrypt(&national_id) {
             Ok(decrypted) => row.national_id = Some(decrypted),
-            Err(error) => eprintln!("Failed to decrypt student national_id: {}", error),
+            Err(error) => tracing::error!("Failed to decrypt student national_id: {}", error),
         }
     }
 
     if let Some(medical_conditions) = row.medical_conditions.clone() {
         match field_encryption::decrypt(&medical_conditions) {
             Ok(decrypted) => row.medical_conditions = Some(decrypted),
-            Err(error) => eprintln!("Failed to decrypt student medical_conditions: {}", error),
+            Err(error) => {
+                tracing::error!("Failed to decrypt student medical_conditions: {}", error)
+            }
         }
     }
 }
@@ -571,7 +573,7 @@ fn parse_optional_date(value: Option<&str>) -> Result<Option<NaiveDate>, AppErro
         Some(date) if !date.is_empty() => NaiveDate::parse_from_str(date, "%Y-%m-%d")
             .map(Some)
             .map_err(|e| {
-                eprintln!("Invalid student date_of_birth format: {}", e);
+                tracing::error!("Invalid student date_of_birth format: {}", e);
                 AppError::BadRequest("รูปแบบวันเกิดไม่ถูกต้อง (ต้องเป็น YYYY-MM-DD)".to_string())
             }),
         _ => Ok(None),
@@ -616,7 +618,7 @@ async fn insert_student_user(
     .fetch_one(&mut **tx)
     .await
     .map_err(|e| {
-        eprintln!("Failed to create student user: {}", e);
+        tracing::error!("Failed to create student user: {}", e);
         map_duplicate_student_error(e, "ไม่สามารถสร้างผู้ใช้งานได้")
     })
 }
@@ -639,7 +641,7 @@ async fn insert_student_info(
     .execute(&mut **tx)
     .await
     .map_err(|e| {
-        eprintln!("Failed to create student_info: {}", e);
+        tracing::error!("Failed to create student_info: {}", e);
         AppError::InternalServerError("ไม่สามารถสร้างข้อมูลนักเรียนได้".to_string())
     })?;
 
@@ -679,7 +681,7 @@ async fn get_or_create_parent_user(
         .fetch_optional(&mut **tx)
         .await
         .map_err(|e| {
-            eprintln!("Failed to check for existing parent: {}", e);
+            tracing::error!("Failed to check for existing parent: {}", e);
             AppError::InternalServerError("เกิดข้อผิดพลาดในการตรวจสอบผู้ปกครอง".to_string())
         })?;
 
@@ -694,20 +696,20 @@ async fn create_parent_user(
     payload: &CreateParentRequest,
 ) -> Result<Uuid, AppError> {
     let password_hash = hash(&payload.phone, DEFAULT_COST).map_err(|e| {
-        eprintln!("Parent password hashing failed: {}", e);
+        tracing::error!("Parent password hashing failed: {}", e);
         AppError::InternalServerError("เกิดข้อผิดพลาดในการสร้างรหัสผ่านผู้ปกครอง".to_string())
     })?;
 
     let encrypted_national_id = field_encryption::encrypt_optional(payload.national_id.as_deref())
         .map_err(|e| {
-            eprintln!("Parent national_id encryption failed: {}", e);
+            tracing::error!("Parent national_id encryption failed: {}", e);
             AppError::InternalServerError("เกิดข้อผิดพลาดในการประมวลผลข้อมูลผู้ปกครอง".to_string())
         })?;
     let national_id_hash = field_encryption::hash_optional_for_search(
         payload.national_id.as_deref(),
     )
     .map_err(|e| {
-        eprintln!("Parent national_id blind index failed: {}", e);
+        tracing::error!("Parent national_id blind index failed: {}", e);
         AppError::InternalServerError("เกิดข้อผิดพลาดในการประมวลผลข้อมูลผู้ปกครอง".to_string())
     })?;
 
@@ -733,7 +735,7 @@ async fn create_parent_user(
     .fetch_one(&mut **tx)
     .await
     .map_err(|e| {
-        eprintln!("Failed to create parent: {}", e);
+        tracing::error!("Failed to create parent: {}", e);
         AppError::InternalServerError("ไม่สามารถสร้างบัญชีผู้ปกครองได้".to_string())
     })?;
 
@@ -755,7 +757,7 @@ async fn assign_active_role_if_available(
             .fetch_optional(&mut **tx)
             .await
             .map_err(|e| {
-                eprintln!("Failed to load {role_code} role: {}", e);
+                tracing::error!("Failed to load {role_code} role: {}", e);
                 AppError::InternalServerError(load_error_message.to_string())
             })?;
 
@@ -771,7 +773,7 @@ async fn assign_active_role_if_available(
         .execute(&mut **tx)
         .await
         .map_err(|e| {
-            eprintln!("Failed to assign {role_code} role: {}", e);
+            tracing::error!("Failed to assign {role_code} role: {}", e);
             AppError::InternalServerError(assign_error_message.to_string())
         })?;
     }
@@ -813,7 +815,7 @@ async fn link_parent_to_student(
     .execute(&mut **tx)
     .await
     .map_err(|e| {
-        eprintln!("Failed to link parent: {}", e);
+        tracing::error!("Failed to link parent: {}", e);
         AppError::InternalServerError("ไม่สามารถเชื่อมโยงผู้ปกครองได้".to_string())
     })?;
 
@@ -841,7 +843,7 @@ async fn link_parent_to_student_if_absent(
     .execute(&mut **tx)
     .await
     .map_err(|e| {
-        eprintln!("Failed to link parent: {}", e);
+        tracing::error!("Failed to link parent: {}", e);
         AppError::InternalServerError("ไม่สามารถเชื่อมโยงผู้ปกครองได้".to_string())
     })?;
 

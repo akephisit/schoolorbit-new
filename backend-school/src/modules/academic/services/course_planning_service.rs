@@ -76,7 +76,7 @@ pub async fn list_classroom_courses(
     }
 
     q.fetch_all(pool).await.map_err(|e| {
-        eprintln!("Failed to fetch courses: {}", e);
+        tracing::error!("Failed to fetch courses: {}", e);
         AppError::InternalServerError("Failed to fetch courses".to_string())
     })
 }
@@ -118,7 +118,7 @@ pub async fn assign_courses(pool: &PgPool, payload: AssignCoursesRequest) -> Res
     )
     .bind(payload.classroom_id).bind(payload.academic_semester_id).bind(&payload.subject_ids)
     .fetch_one(pool).await
-    .map_err(|e| { eprintln!("assign_courses failed: {}", e); AppError::InternalServerError("Failed to assign courses".to_string()) })
+    .map_err(|e| { tracing::error!("assign_courses failed: {}", e); AppError::InternalServerError("Failed to assign courses".to_string()) })
 }
 
 pub async fn remove_course(pool: &PgPool, id: Uuid) -> Result<(), AppError> {
@@ -148,7 +148,7 @@ pub async fn update_course(
     .execute(pool)
     .await
     .map_err(|e| {
-        eprintln!("Update error: {}", e);
+        tracing::error!("Update error: {}", e);
         AppError::InternalServerError("Failed to update course".to_string())
     })?;
     Ok(())
@@ -346,7 +346,7 @@ pub async fn list_classroom_activities(
     .fetch_all(pool)
     .await
     .map_err(|e| {
-        eprintln!("list_classroom_activities error: {e}");
+        tracing::error!("list_classroom_activities error: {e}");
         AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
     })
 }

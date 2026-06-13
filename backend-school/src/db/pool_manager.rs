@@ -44,7 +44,7 @@ impl PoolManager {
             if let Some(entry) = pools.get(&key) {
                 // Check if pool is still valid
                 if entry.last_used.elapsed() < self.pool_ttl {
-                    println!("📦 Using cached pool for school: {}", subdomain);
+                    tracing::info!("📦 Using cached pool for school: {}", subdomain);
                     Some(entry.pool.clone())
                 } else {
                     None
@@ -58,7 +58,7 @@ impl PoolManager {
             Some(p) => p,
             None => {
                 // Create new connection pool
-                println!("🔄 Creating new connection pool for: {}", subdomain);
+                tracing::info!("🔄 Creating new connection pool for: {}", subdomain);
                 let connect_opts = PgConnectOptions::from_str(database_url)
                     .map_err(|e| format!("Invalid database URL for {}: {}", subdomain, e))?
                     .statement_cache_capacity(0); // ปิด prepared statement cache ป้องกัน "cached plan must not change result type" หลัง migration
@@ -90,7 +90,7 @@ impl PoolManager {
                     );
                 }
 
-                println!("✅ New pool created for: {}", subdomain);
+                tracing::info!("✅ New pool created for: {}", subdomain);
                 pool
             }
         };
@@ -120,7 +120,7 @@ impl PoolManager {
         pools.retain(|_, entry| {
             let expired = entry.last_used.elapsed() >= self.pool_ttl;
             if expired {
-                println!("🧹 Removing expired pool");
+                tracing::info!("🧹 Removing expired pool");
             }
             !expired
         });

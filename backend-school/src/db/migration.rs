@@ -95,13 +95,13 @@ impl MigrationTracker {
         pool: &PgPool,
     ) -> Result<bool, String> {
         self.run_once(subdomain, &self.migrated, &self.migration_locks, || async {
-            println!("🔄 Running migrations for school: {}", subdomain);
+            tracing::info!("🔄 Running migrations for school: {}", subdomain);
 
             run_tenant_migrations(pool)
                 .await
                 .map_err(|e| format!("Migration failed for {}: {}", subdomain, e))?;
 
-            println!("✅ Migrations completed for: {}", subdomain);
+            tracing::info!("✅ Migrations completed for: {}", subdomain);
             Ok(())
         })
         .await
@@ -118,13 +118,13 @@ impl MigrationTracker {
             &self.permissions_synced,
             &self.permission_locks,
             || async {
-                println!("🔄 Syncing permissions for school: {}", subdomain);
+                tracing::info!("🔄 Syncing permissions for school: {}", subdomain);
 
                 crate::utils::permission_sync::sync_permissions(pool)
                     .await
                     .map_err(|e| format!("Permission sync failed for {}: {}", subdomain, e))?;
 
-                println!("✅ Permissions synced for: {}", subdomain);
+                tracing::info!("✅ Permissions synced for: {}", subdomain);
                 Ok(())
             },
         )

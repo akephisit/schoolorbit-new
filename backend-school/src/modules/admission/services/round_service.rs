@@ -64,7 +64,7 @@ pub async fn list_public_rounds(pool: &PgPool) -> Result<Vec<AdmissionRound>, Ap
     .fetch_all(pool)
     .await
     .map_err(|e| {
-        eprintln!("Failed to fetch public rounds: {}", e);
+        tracing::error!("Failed to fetch public rounds: {}", e);
         AppError::InternalServerError("Database error".to_string())
     })
 }
@@ -87,7 +87,7 @@ pub async fn get_public_round_info(
     .fetch_optional(pool)
     .await
     .map_err(|e| {
-        eprintln!("Failed to fetch public round: {}", e);
+        tracing::error!("Failed to fetch public round: {}", e);
         AppError::InternalServerError("Database error".to_string())
     })?
     .ok_or_else(|| AppError::NotFound("ไม่พบรอบรับสมัคร หรือไม่ได้เปิดรับสมัครในขณะนี้".to_string()))?;
@@ -104,7 +104,7 @@ pub async fn get_public_round_info(
     .fetch_all(pool)
     .await
     .map_err(|e| {
-        eprintln!("Failed to fetch public tracks: {}", e);
+        tracing::error!("Failed to fetch public tracks: {}", e);
         AppError::InternalServerError("Database error".to_string())
     })?;
 
@@ -127,7 +127,7 @@ pub async fn list_rounds(pool: &PgPool) -> Result<Vec<AdmissionRound>, AppError>
     ))
     .fetch_all(pool).await
     .map_err(|e| {
-        eprintln!("Failed to fetch admission rounds: {}", e);
+        tracing::error!("Failed to fetch admission rounds: {}", e);
         AppError::InternalServerError("Failed to fetch rounds".to_string())
     })
 }
@@ -145,7 +145,7 @@ pub async fn get_round(pool: &PgPool, id: Uuid) -> Result<AdmissionRound, AppErr
     ))
     .bind(id).fetch_optional(pool).await
     .map_err(|e| {
-        eprintln!("Failed to fetch round {}: {}", id, e);
+        tracing::error!("Failed to fetch round {}: {}", id, e);
         AppError::InternalServerError("Failed to fetch round".to_string())
     })?
     .ok_or_else(|| AppError::NotFound("ไม่พบรอบรับสมัคร".to_string()))
@@ -185,7 +185,7 @@ pub async fn create_round(
     .fetch_one(pool)
     .await
     .map_err(|e| {
-        eprintln!("Failed to create round: {}", e);
+        tracing::error!("Failed to create round: {}", e);
         AppError::InternalServerError("Failed to create round".to_string())
     })
 }
@@ -224,7 +224,7 @@ pub async fn update_round(
     .bind(payload.report_config.map(sqlx::types::Json))
     .bind(id).fetch_one(pool).await
     .map_err(|e| {
-        eprintln!("Failed to update round {}: {}", id, e);
+        tracing::error!("Failed to update round {}: {}", id, e);
         AppError::InternalServerError("Failed to update round".to_string())
     })
 }
@@ -248,7 +248,7 @@ pub async fn update_round_status(pool: &PgPool, id: Uuid, status: &str) -> Resul
         .execute(pool)
         .await
         .map_err(|e| {
-            eprintln!("Failed to update round status: {}", e);
+            tracing::error!("Failed to update round status: {}", e);
             AppError::InternalServerError("Failed to update status".to_string())
         })?;
     Ok(())
@@ -286,7 +286,7 @@ pub async fn delete_round(pool: &PgPool, id: Uuid) -> Result<(), AppError> {
         .execute(pool)
         .await
         .map_err(|e| {
-            eprintln!("Failed to delete applications: {}", e);
+            tracing::error!("Failed to delete applications: {}", e);
             AppError::InternalServerError("Failed to delete applications".to_string())
         })?;
 
@@ -295,7 +295,7 @@ pub async fn delete_round(pool: &PgPool, id: Uuid) -> Result<(), AppError> {
         .execute(pool)
         .await
         .map_err(|e| {
-            eprintln!("Failed to delete round: {}", e);
+            tracing::error!("Failed to delete round: {}", e);
             AppError::InternalServerError("Failed to delete round".to_string())
         })?;
     Ok(())
@@ -311,7 +311,7 @@ pub async fn toggle_round_visibility(
     )
     .bind(is_visible).bind(id).fetch_optional(pool).await
     .map_err(|e| {
-        eprintln!("Failed to update round visibility: {}", e);
+        tracing::error!("Failed to update round visibility: {}", e);
         AppError::InternalServerError("Failed to update visibility".to_string())
     })?
     .ok_or_else(|| AppError::NotFound("ไม่พบรอบรับสมัคร".to_string()))
@@ -328,7 +328,7 @@ pub async fn list_exam_subjects(
     )
     .bind(round_id).fetch_all(pool).await
     .map_err(|e| {
-        eprintln!("Failed to fetch subjects: {}", e);
+        tracing::error!("Failed to fetch subjects: {}", e);
         AppError::InternalServerError("Failed to fetch subjects".to_string())
     })
 }
@@ -348,7 +348,7 @@ pub async fn create_exam_subject(
     .bind(display_order_or_default(payload.display_order))
     .fetch_one(pool).await
     .map_err(|e| {
-        eprintln!("Failed to create subject: {}", e);
+        tracing::error!("Failed to create subject: {}", e);
         AppError::InternalServerError("Failed to create subject".to_string())
     })
 }
@@ -369,7 +369,7 @@ pub async fn update_exam_subject(
     .bind(payload.max_score).bind(payload.display_order)
     .bind(id).fetch_one(pool).await
     .map_err(|e| {
-        eprintln!("Failed to update subject: {}", e);
+        tracing::error!("Failed to update subject: {}", e);
         AppError::InternalServerError("Failed to update subject".to_string())
     })
 }
@@ -413,7 +413,7 @@ pub async fn list_tracks(pool: &PgPool, round_id: Uuid) -> Result<Vec<AdmissionT
     )
     .bind(round_id).fetch_all(pool).await
     .map_err(|e| {
-        eprintln!("Failed to fetch tracks: {}", e);
+        tracing::error!("Failed to fetch tracks: {}", e);
         AppError::InternalServerError("Failed to fetch tracks".to_string())
     })?;
 
@@ -449,7 +449,7 @@ pub async fn create_track(
     .fetch_one(pool)
     .await
     .map_err(|e| {
-        eprintln!("Failed to create track: {}", e);
+        tracing::error!("Failed to create track: {}", e);
         AppError::InternalServerError("Failed to create track".to_string())
     })
     .map(AdmissionTrack::from)
@@ -482,7 +482,7 @@ pub async fn update_track(
     .bind(&payload.tiebreak_method).bind(payload.display_order)
     .bind(id).fetch_one(pool).await
     .map_err(|e| {
-        eprintln!("Failed to update track: {}", e);
+        tracing::error!("Failed to update track: {}", e);
         AppError::InternalServerError("Failed to update track".to_string())
     })
     .map(AdmissionTrack::from)
@@ -536,7 +536,7 @@ pub async fn get_track_capacity(pool: &PgPool, id: Uuid) -> Result<Vec<RoomCapac
     .fetch_all(pool)
     .await
     .map_err(|e| {
-        eprintln!("Failed to fetch track capacity: {}", e);
+        tracing::error!("Failed to fetch track capacity: {}", e);
         AppError::InternalServerError("Failed to fetch capacity".to_string())
     })
 }

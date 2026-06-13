@@ -19,7 +19,7 @@ pub async fn list_subject_groups(pool: &PgPool) -> Result<Vec<SubjectGroup>, App
     .fetch_all(pool)
     .await
     .map_err(|e| {
-        eprintln!("Failed to fetch subject groups: {}", e);
+        tracing::error!("Failed to fetch subject groups: {}", e);
         AppError::InternalServerError("Failed to fetch subject groups".to_string())
     })
 }
@@ -117,7 +117,7 @@ pub async fn list_subjects(
     }
 
     q.fetch_all(pool).await.map_err(|e| {
-        eprintln!("Failed to fetch subjects: {}", e);
+        tracing::error!("Failed to fetch subjects: {}", e);
         AppError::InternalServerError("Failed to fetch subjects".to_string())
     })
 }
@@ -166,7 +166,7 @@ pub async fn create_subject(
     .bind(payload.start_academic_year_id).bind(&payload.term).bind(payload.default_instructor_id)
     .fetch_one(&mut *tx).await
     .map_err(|e| {
-        eprintln!("Failed to create subject: {}", e);
+        tracing::error!("Failed to create subject: {}", e);
         AppError::InternalServerError("Failed to create subject".to_string())
     })?;
 
@@ -180,7 +180,7 @@ pub async fn create_subject(
             .execute(&mut *tx)
             .await
             .map_err(|e| {
-                eprintln!("Failed to link grade level: {}", e);
+                tracing::error!("Failed to link grade level: {}", e);
                 AppError::InternalServerError("Failed to save grade level links".to_string())
             })?;
         }
@@ -242,7 +242,7 @@ pub async fn update_subject(
     .bind(&payload.term).bind(payload.default_instructor_id)
     .fetch_one(&mut *tx).await
     .map_err(|e| {
-        eprintln!("Failed to update subject {}: {}", id, e);
+        tracing::error!("Failed to update subject {}: {}", id, e);
         AppError::InternalServerError("Failed to update subject".to_string())
     })?;
 
@@ -301,7 +301,7 @@ pub async fn delete_subject(pool: &PgPool, id: Uuid) -> Result<(), AppError> {
         .execute(pool)
         .await
         .map_err(|e| {
-            eprintln!("Failed to delete subject {}: {}", id, e);
+            tracing::error!("Failed to delete subject {}: {}", id, e);
             AppError::BadRequest("ไม่สามารถลบรายวิชาได้ (อาจมีการใช้งานอยู่)".to_string())
         })?;
     Ok(())

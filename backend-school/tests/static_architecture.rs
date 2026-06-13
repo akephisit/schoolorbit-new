@@ -801,6 +801,30 @@ fn module_service_logic_has_focused_unit_tests() {
 }
 
 #[test]
+fn backend_runtime_uses_structured_logging_instead_of_plain_stdout_stderr() {
+    let mut violations = Vec::new();
+
+    for file in backend_rs_files() {
+        let file_name = relative(&file);
+        if file_name.starts_with("src/bin/") {
+            continue;
+        }
+
+        let source = strip_comments(&read_source(&file));
+        for pattern in ["println!", "eprintln!"] {
+            if source.contains(pattern) {
+                violations.push(format!(
+                    "{}: use tracing macros instead of {pattern} in runtime code",
+                    file_name
+                ));
+            }
+        }
+    }
+
+    assert_eq!(violations, Vec::<String>::new());
+}
+
+#[test]
 fn module_services_do_not_return_raw_json_values_for_api_contracts() {
     let raw_json_result_patterns = [
         Regex::new(r"Result\s*<\s*serde_json::Value\s*,\s*AppError\s*>").expect("valid regex"),
@@ -979,6 +1003,103 @@ fn known_shape_jsonb_api_arrays_use_typed_boundaries() {
             violations.push(format!(
                 "{}: known-shape JSONB helper should return sqlx::types::Json<Vec<T>>, not serde_json::Value",
                 relative(&file)
+            ));
+        }
+    }
+
+    assert_eq!(violations, Vec::<String>::new());
+}
+
+#[test]
+fn remaining_raw_json_values_are_explicit_dynamic_payloads() {
+    let allowed_dynamic_value_patterns = [
+        (
+            "src/modules/academic/models.rs",
+            "pub metadata: Option<serde_json::Value>",
+        ),
+        (
+            "src/modules/academic/models/course_planning.rs",
+            "pub settings: serde_json::Value",
+        ),
+        (
+            "src/modules/academic/models/course_planning.rs",
+            "pub settings: Option<serde_json::Value>",
+        ),
+        (
+            "src/modules/academic/models/study_plans.rs",
+            "pub metadata: serde_json::Value",
+        ),
+        (
+            "src/modules/academic/websockets.rs",
+            "entry: serde_json::Value",
+        ),
+        (
+            "src/modules/academic/websockets.rs",
+            "entry_a: serde_json::Value",
+        ),
+        (
+            "src/modules/academic/websockets.rs",
+            "entry_b: serde_json::Value",
+        ),
+        (
+            "src/modules/academic/websockets.rs",
+            "target: Option<serde_json::Value>",
+        ),
+        (
+            "src/modules/admission/models/applications.rs",
+            "pub metadata: serde_json::Value",
+        ),
+        (
+            "src/modules/admission/models/applications.rs",
+            "pub form_data: serde_json::Value",
+        ),
+        (
+            "src/modules/admission/models/applications.rs",
+            "pub form_data: Option<serde_json::Value>",
+        ),
+        (
+            "src/modules/admission/models/rounds.rs",
+            "pub report_config: Option<serde_json::Value>",
+        ),
+        (
+            "src/modules/admission/services/application_service.rs",
+            "pub form_data: Option<serde_json::Value>",
+        ),
+        (
+            "src/modules/admission/services/application_service.rs",
+            "let form_data: Option<serde_json::Value>",
+        ),
+        (
+            "src/modules/auth/models.rs",
+            "pub metadata: serde_json::Value",
+        ),
+        (
+            "src/modules/consent/models.rs",
+            "pub metadata: serde_json::Value",
+        ),
+        (
+            "src/modules/consent/services.rs",
+            "metadata: serde_json::Value",
+        ),
+    ];
+    let mut violations = Vec::new();
+
+    for file in module_rs_files() {
+        let file_name = relative(&file);
+        let mut source = strip_comments(&read_source(&file));
+        if !source.contains("serde_json::Value") {
+            continue;
+        }
+
+        for (allowed_file, allowed_pattern) in allowed_dynamic_value_patterns {
+            if file_name == allowed_file {
+                source = source.replace(allowed_pattern, "");
+            }
+        }
+
+        if source.contains("serde_json::Value") {
+            violations.push(format!(
+                "{file_name}: raw serde_json::Value must be typed or explicitly allowlisted as dynamic metadata/form/config/WebSocket payload"
             ));
         }
     }

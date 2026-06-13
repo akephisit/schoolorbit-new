@@ -99,7 +99,7 @@ pub async fn get_current_user(headers: &HeaderMap, pool: &sqlx::PgPool) -> Resul
         .fetch_optional(pool)
         .await
         .map_err(|e| {
-            eprintln!("Database error fetching user: {}", e);
+            tracing::error!("Database error fetching user: {}", e);
             AppError::InternalServerError("Database error".to_string())
         })?
         .ok_or(AppError::NotFound("User not found".to_string()))?;

@@ -440,7 +440,7 @@ pub async fn reorder_menu_groups(
             .await
         {
             if let Err(rb_err) = tx.rollback().await {
-                eprintln!("⚠️ Transaction rollback failed: {}", rb_err);
+                tracing::error!("⚠️ Transaction rollback failed: {}", rb_err);
             }
             return Err(AppError::InternalServerError(format!(
                 "Failed to reorder: {}",

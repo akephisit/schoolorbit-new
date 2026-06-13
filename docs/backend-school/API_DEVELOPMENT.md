@@ -40,41 +40,48 @@ Add the new handler to the router configuration.
 ### System Overview
 The system uses a **Permission-Based Access Control (PBAC)** model. Users are assigned Roles, and Roles have Permissions.
 *   **Authentication:** Handled by `auth_middleware` (validates JWT/Cookie).
-*   **Authorization:** Handled explicitly within each handler using `load_actor_context(...)` and `ActorContext` helpers.
+*   **Authorization:** Handled explicitly within each handler using `utils::request_context` helpers and `ActorContext` methods.
 
 ### Implementing Permission Checks
 To enforce that a user must have a specific permission (e.g., `staff.create.all`) to use an endpoint, follow this pattern inside your handler function:
 
 ```rust
-use crate::middleware::permission::load_actor_context;
+use axum::{extract::State, http::HeaderMap, Json};
+use crate::api_response::ApiResponse;
+use crate::error::AppError;
 use crate::permissions::registry::codes;
+use crate::utils::request_context::actor_tenant_context;
+use crate::AppState;
 
 pub async fn my_protected_handler(
     State(state): State<AppState>,
     headers: HeaderMap,
-) -> Response {
-    // 1. Resolve the tenant pool through backend-school/src/utils/tenant.rs
-    let pool = match resolve_tenant_pool(&state, &headers).await { ... };
+) -> Result<Json<ApiResponse<MyResponse>>, AppError> {
+    // 1. Resolve tenant + actor through the central request context helper.
+    let context = actor_tenant_context(&state, &headers).await?;
 
-    // 2. Enforce Permission
-    let actor = match load_actor_context(&headers, &pool, &state.permission_cache).await {
-        Ok(actor) => actor,
-        Err(response) => return response,
-    };
-    if let Err(response) = actor.require_permission(codes::MY_FEATURE_READ) {
-        return response;
-    };
+    // 2. Enforce permission through ActorContext.
+    context.actor.require_permission(codes::MY_FEATURE_READ_ALL)?;
 
     // 3. Proceed with business logic
-    // You now have actor.user_id and actor.permissions.
+    // Use context.tenant.pool for service calls and context.actor.user_id when needed.
+    let result = my_service::load(&context.tenant.pool).await?;
+    Ok(Json(ApiResponse::ok(result)))
 }
 ```
 
+Use `tenant_context(&state, &headers).await?` or `tenant_pool(&state, &headers).await?` for public tenant routes that do not need an actor. Do not call `resolve_tenant_pool`, `load_actor_context`, `pool_manager.get_pool`, or local `get_pool` helpers from feature handlers; those lower-level APIs are wrapped by `utils::request_context`.
+
 ### Defining New Permissions
-1.  **Database:** Permissions are stored in the `permissions` table. Use a migration or a seed script to add new rows if you are creating a new system module.
-2.  **Code Registry:** Add the permission constant to `src/permissions/registry.rs` (recommended) to avoid magic strings.
+1.  **Code Registry:** Add the permission constant and `PermissionDef` to `src/permissions/registry.rs` using the canonical `module.action.scope` shape.
     ```rust
     // src/permissions/registry.rs
-    pub const MY_FEATURE_READ: &str = "my.feature.read";
+    pub const MY_FEATURE_READ_ALL: &str = "my_feature.read.all";
     ```
-3.  **Usage:** load `ActorContext` once, then call `actor.require_permission(codes::MY_FEATURE_READ)` or `actor.require_any_permission(&[...])`.
+2.  **Frontend Registry:** Add the matching constant to `frontend-school/src/lib/permissions/registry.ts`.
+3.  **Database Baseline / Migration:** For active clean-baseline work, add new permissions through a new sequential migration after `001_baseline.sql`; do not edit an already-applied migration.
+4.  **Usage:** load `ActorContext` once through `actor_tenant_context(...)`, then call `actor.require_permission(codes::MY_FEATURE_READ_ALL)` or `actor.require_any_permission(&[...])`.
+
+## Logging
+
+Runtime code should use `tracing::debug!`, `tracing::info!`, `tracing::warn!`, or `tracing::error!`. Avoid `println!` and `eprintln!` outside intentional CLI/bin output. Do not log plaintext PII, national IDs, credentials, tokens, database URLs, or raw request bodies.

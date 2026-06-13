@@ -302,7 +302,7 @@ pub async fn list_entries(
     }
 
     q.fetch_all(pool).await.map_err(|e| {
-        eprintln!("Failed to fetch timetable entries: {}", e);
+        tracing::error!("Failed to fetch timetable entries: {}", e);
         AppError::InternalServerError("Failed to fetch timetable".to_string())
     })
 }
@@ -626,7 +626,7 @@ pub async fn create_entry(
     .fetch_one(&mut *tx)
     .await
     .map_err(|e| {
-        eprintln!("Failed to create timetable entry: {}", e);
+        tracing::error!("Failed to create timetable entry: {}", e);
         if e.to_string().contains("unique_entry_per_slot") {
             AppError::BadRequest("This slot is already occupied".to_string())
         } else {
@@ -932,7 +932,7 @@ pub async fn get_my_activity_for_entry(
     .fetch_optional(pool)
     .await
     .map_err(|e| {
-        eprintln!("Failed to fetch activity for entry: {}", e);
+        tracing::error!("Failed to fetch activity for entry: {}", e);
         AppError::InternalServerError("Query failed".to_string())
     })?;
 
@@ -1529,7 +1529,7 @@ pub async fn delete_entries_by_slot(
     .execute(pool)
     .await
     .map_err(|e| {
-        eprintln!("Failed to batch delete entries: {}", e);
+        tracing::error!("Failed to batch delete entries: {}", e);
         AppError::InternalServerError("Failed to batch delete entries".to_string())
     })?;
     Ok(result.rows_affected())
@@ -1564,7 +1564,7 @@ pub async fn delete_batch_group(
         .execute(pool)
         .await
         .map_err(|e| {
-            eprintln!("Failed to delete batch group {}: {}", batch_id, e);
+            tracing::error!("Failed to delete batch group {}: {}", batch_id, e);
             AppError::InternalServerError("Failed to delete batch group".to_string())
         })?;
 
@@ -1745,7 +1745,7 @@ pub async fn update_entry(
     .fetch_one(pool)
     .await
     .map_err(|e| {
-        eprintln!("Failed to update entry: {}", e);
+        tracing::error!("Failed to update entry: {}", e);
         let msg = e.to_string();
         if msg.contains("unique_entry_per_slot") {
             AppError::BadRequest("This slot is already occupied".to_string())
@@ -2374,7 +2374,7 @@ pub async fn create_batch_entries(
         .fetch_one(&mut *tx)
         .await
         .map_err(|e| {
-            eprintln!("Failed bulk classroom batch INSERT: {}", e);
+            tracing::error!("Failed bulk classroom batch INSERT: {}", e);
             AppError::InternalServerError("Failed to batch create entries".to_string())
         })?;
         inserted_count = sqlx::Row::try_get::<i64, _>(&result, 0).unwrap_or(0);

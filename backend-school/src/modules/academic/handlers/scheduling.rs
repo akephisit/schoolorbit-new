@@ -88,7 +88,7 @@ pub async fn auto_schedule_timetable(
         )
         .await
         {
-            eprintln!("Scheduling job {} failed: {}", job_id, e);
+            tracing::error!("Scheduling job {} failed: {}", job_id, e);
             scheduling_service::mark_job_failed(&pool_clone, job_id, e.to_string()).await;
         }
     });

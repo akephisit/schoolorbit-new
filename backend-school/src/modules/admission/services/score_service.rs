@@ -44,7 +44,7 @@ pub async fn get_all_scores(pool: &PgPool, round_id: Uuid) -> Result<Vec<ScoreRo
     )
     .bind(round_id).fetch_all(pool).await
     .map_err(|e| {
-        eprintln!("Failed to fetch scores: {}", e);
+        tracing::error!("Failed to fetch scores: {}", e);
         AppError::InternalServerError("Failed to fetch scores".to_string())
     })
 }
@@ -64,7 +64,7 @@ pub async fn get_application_scores(pool: &PgPool, id: Uuid) -> Result<Vec<ExamS
     )
     .bind(id).fetch_all(pool).await
     .map_err(|e| {
-        eprintln!("Failed to fetch application scores: {}", e);
+        tracing::error!("Failed to fetch application scores: {}", e);
         AppError::InternalServerError("Failed to fetch scores".to_string())
     })
 }
@@ -90,7 +90,7 @@ pub async fn update_application_scores(
         .bind(application_id).bind(entry.exam_subject_id).bind(entry.score).bind(user_id)
         .execute(&mut *tx).await
         .map_err(|e| {
-            eprintln!("Failed to upsert score: {}", e);
+            tracing::error!("Failed to upsert score: {}", e);
             AppError::InternalServerError("Failed to update score".to_string())
         })?;
     }
@@ -149,7 +149,7 @@ pub async fn bulk_update_scores(
         .bind(&app_ids).bind(&sub_ids).bind(&score_vals).bind(user_id)
         .execute(pool).await
         .map_err(|e| {
-            eprintln!("Bulk score error: {}", e);
+            tracing::error!("Bulk score error: {}", e);
             AppError::InternalServerError("Failed to bulk update scores".to_string())
         })?;
     }

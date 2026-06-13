@@ -8,7 +8,7 @@ use sqlx::{types::Json, PgPool};
 use uuid::Uuid;
 
 fn pii_error(context: &str, error: String) -> AppError {
-    eprintln!("Admission portal PII {} failed: {}", context, error);
+    tracing::error!("Admission portal PII {} failed: {}", context, error);
     AppError::InternalServerError("ไม่สามารถประมวลผลข้อมูลส่วนบุคคลได้".to_string())
 }
 
@@ -322,7 +322,7 @@ pub async fn submit_enrollment_form(
     .execute(pool)
     .await
     .map_err(|e| {
-        eprintln!("Failed to submit enrollment form: {}", e);
+        tracing::error!("Failed to submit enrollment form: {}", e);
         AppError::InternalServerError("ไม่สามารถบันทึกแบบฟอร์มได้".to_string())
     })?;
     Ok(())
@@ -429,7 +429,7 @@ pub async fn update_application(
     .bind(application_id)
     .execute(pool).await
     .map_err(|e| {
-        eprintln!("Failed to update application: {}", e);
+        tracing::error!("Failed to update application: {}", e);
         AppError::InternalServerError("ไม่สามารถแก้ไขใบสมัครได้".to_string())
     })?;
     Ok(())
@@ -520,7 +520,7 @@ pub async fn save_portal_upload(
         .execute(pool)
         .await
         .map_err(|e| {
-            eprintln!("Failed to save file metadata: {}", e);
+            tracing::error!("Failed to save file metadata: {}", e);
             AppError::InternalServerError("Failed to save file metadata".to_string())
         })?;
 
@@ -573,7 +573,7 @@ pub async fn save_portal_upload(
         .execute(pool)
         .await
         .map_err(|e| {
-            eprintln!("Failed to save file metadata: {}", e);
+            tracing::error!("Failed to save file metadata: {}", e);
             AppError::InternalServerError("Failed to save file metadata".to_string())
         })?;
 

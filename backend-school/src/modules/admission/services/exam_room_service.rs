@@ -78,7 +78,7 @@ pub async fn list_exam_rooms(
     .fetch_all(pool)
     .await
     .map_err(|e| {
-        eprintln!("Failed to list exam rooms: {}", e);
+        tracing::error!("Failed to list exam rooms: {}", e);
         AppError::InternalServerError("ไม่สามารถดึงข้อมูลห้องสอบได้".to_string())
     })?;
 
@@ -126,7 +126,7 @@ pub async fn add_exam_room(
     .execute(pool)
     .await
     .map_err(|e| {
-        eprintln!("Failed to add exam room: {}", e);
+        tracing::error!("Failed to add exam room: {}", e);
         AppError::InternalServerError("ไม่สามารถเพิ่มห้องสอบได้".to_string())
     })?;
     Ok(())
@@ -155,7 +155,7 @@ pub async fn update_exam_room(
     .execute(pool)
     .await
     .map_err(|e| {
-        eprintln!("Failed to update exam room: {}", e);
+        tracing::error!("Failed to update exam room: {}", e);
         AppError::InternalServerError("ไม่สามารถอัปเดตห้องสอบได้".to_string())
     })?;
     if result.rows_affected() == 0 {
@@ -176,7 +176,7 @@ pub async fn remove_exam_room(
             .execute(pool)
             .await
             .map_err(|e| {
-                eprintln!("Failed to remove exam room: {}", e);
+                tracing::error!("Failed to remove exam room: {}", e);
                 AppError::InternalServerError("ไม่สามารถลบห้องสอบได้".to_string())
             })?;
     if result.rows_affected() == 0 {
@@ -208,7 +208,7 @@ pub async fn copy_exam_rooms_from_round(
     .execute(pool)
     .await
     .map_err(|e| {
-        eprintln!("Failed to copy exam rooms: {}", e);
+        tracing::error!("Failed to copy exam rooms: {}", e);
         AppError::InternalServerError("ไม่สามารถ copy ห้องสอบได้".to_string())
     })?;
     Ok(result.rows_affected())
@@ -225,7 +225,7 @@ async fn load_exam_config_storage(
     .fetch_optional(pool)
     .await
     .map_err(|e| {
-        eprintln!("Failed to load exam config: {}", e);
+        tracing::error!("Failed to load exam config: {}", e);
         AppError::InternalServerError("ไม่สามารถดึง config ได้".to_string())
     })?;
 
@@ -260,7 +260,7 @@ pub async fn update_exam_config(
         .execute(pool)
         .await
         .map_err(|e| {
-            eprintln!("Failed to update exam config: {}", e);
+            tracing::error!("Failed to update exam config: {}", e);
             AppError::InternalServerError("ไม่สามารถอัปเดต config ได้".to_string())
         })?;
     Ok(())
@@ -328,7 +328,7 @@ pub async fn assign_exam_seats(
         .fetch_all(pool)
         .await
         .map_err(|e| {
-            eprintln!("Failed to fetch applicants: {}", e);
+            tracing::error!("Failed to fetch applicants: {}", e);
             AppError::InternalServerError("ไม่สามารถดึงข้อมูลผู้สมัครได้".to_string())
         })?;
 
@@ -356,7 +356,7 @@ pub async fn assign_exam_seats(
     .fetch_all(pool)
     .await
     .map_err(|e| {
-        eprintln!("Failed to fetch exam rooms: {}", e);
+        tracing::error!("Failed to fetch exam rooms: {}", e);
         AppError::InternalServerError("ไม่สามารถดึงข้อมูลห้องสอบได้".to_string())
     })?;
 
@@ -477,7 +477,7 @@ pub async fn assign_exam_seats(
             .execute(&mut *tx)
             .await
             .map_err(|e| {
-                eprintln!("Failed to insert seat assignment (append): {}", e);
+                tracing::error!("Failed to insert seat assignment (append): {}", e);
                 AppError::InternalServerError("ไม่สามารถบันทึกที่นั่งสอบได้".to_string())
             })?;
         }
@@ -585,7 +585,7 @@ pub async fn assign_exam_seats(
         .execute(&mut *tx)
         .await
         .map_err(|e| {
-            eprintln!("Failed to insert seat assignment: {}", e);
+            tracing::error!("Failed to insert seat assignment: {}", e);
             AppError::InternalServerError("ไม่สามารถบันทึกที่นั่งสอบได้".to_string())
         })?;
     }
@@ -649,7 +649,7 @@ pub struct RoomGroup {
 }
 
 fn pii_error(context: &str, error: String) -> AppError {
-    eprintln!("Admission exam room PII {} failed: {}", context, error);
+    tracing::error!("Admission exam room PII {} failed: {}", context, error);
     AppError::InternalServerError("ไม่สามารถประมวลผลข้อมูลส่วนบุคคลได้".to_string())
 }
 
@@ -677,7 +677,7 @@ pub async fn get_exam_seats(pool: &PgPool, round_id: Uuid) -> Result<Vec<RoomGro
     .fetch_all(pool)
     .await
     .map_err(|e| {
-        eprintln!("Failed to fetch exam seats: {}", e);
+        tracing::error!("Failed to fetch exam seats: {}", e);
         AppError::InternalServerError("ไม่สามารถดึงข้อมูลที่นั่งสอบได้".to_string())
     })?;
 

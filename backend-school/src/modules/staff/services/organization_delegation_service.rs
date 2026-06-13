@@ -33,7 +33,7 @@ pub async fn list_delegatable_permissions(
     .fetch_all(pool)
     .await
     .map_err(|e| {
-        eprintln!("Failed to list delegatable permissions: {}", e);
+        tracing::error!("Failed to list delegatable permissions: {}", e);
         AppError::InternalServerError("ไม่สามารถดึงสิทธิ์ที่มอบหมายได้".to_string())
     })
 }

@@ -12,7 +12,7 @@ pub async fn list_organization_units(pool: &PgPool) -> Result<Vec<OrganizationUn
     .fetch_all(pool)
     .await
     .map_err(|e| {
-        eprintln!("❌ Database error: {}", e);
+        tracing::error!("❌ Database error: {}", e);
         AppError::InternalServerError("เกิดข้อผิดพลาดในการดึงข้อมูล".to_string())
     })
 }
@@ -26,7 +26,7 @@ pub async fn get_organization_unit(
         .fetch_optional(pool)
         .await
         .map_err(|e| {
-            eprintln!("❌ Database error: {}", e);
+            tracing::error!("❌ Database error: {}", e);
             AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
         })?
         .ok_or_else(|| AppError::NotFound("ไม่พบหน่วยงาน".to_string()))
@@ -58,7 +58,7 @@ pub async fn create_organization_unit(
     .fetch_one(pool)
     .await
     .map_err(|e| {
-        eprintln!("❌ Failed to create organization unit: {}", e);
+        tracing::error!("❌ Failed to create organization unit: {}", e);
         let err_msg = e.to_string();
         if err_msg.contains("duplicate key value") && err_msg.contains("code") {
             AppError::BadRequest("รหัสหน่วยงานนี้มีอยู่ในระบบแล้ว".to_string())
@@ -105,7 +105,7 @@ pub async fn update_organization_unit(
     .execute(pool)
     .await
     .map_err(|e| {
-        eprintln!("❌ Database error: {}", e);
+        tracing::error!("❌ Database error: {}", e);
         let err_msg = e.to_string();
         if err_msg.contains("duplicate key value") && err_msg.contains("code") {
             AppError::BadRequest("รหัสหน่วยงานนี้มีอยู่ในระบบแล้ว".to_string())

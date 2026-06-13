@@ -559,7 +559,7 @@ pub async fn generate_courses_from_plan(
     .fetch_one(&mut *tx)
     .await
     .map_err(|e| {
-        eprintln!("generate_courses_from_plan failed: {}", e);
+        tracing::error!("generate_courses_from_plan failed: {}", e);
         AppError::InternalServerError("Failed to generate courses".to_string())
     })?;
 

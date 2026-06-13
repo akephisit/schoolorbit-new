@@ -90,7 +90,7 @@ pub async fn list_consent_types(
     .fetch_all(pool)
     .await
     .map_err(|e| {
-        eprintln!("Database error: {}", e);
+        tracing::error!("Database error: {}", e);
         AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
     })?;
 
@@ -116,7 +116,7 @@ pub async fn get_user_consent_status(
     .fetch_all(pool)
     .await
     .map_err(|e| {
-        eprintln!("Database error: {}", e);
+        tracing::error!("Database error: {}", e);
         AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
     })?;
 
@@ -129,7 +129,7 @@ pub async fn get_user_consent_status(
     .fetch_all(pool)
     .await
     .map_err(|e| {
-        eprintln!("Database error: {}", e);
+        tracing::error!("Database error: {}", e);
         AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
     })?;
 
@@ -167,7 +167,7 @@ pub async fn create_consent(
     .fetch_optional(pool)
     .await
     .map_err(|e| {
-        eprintln!("Database error: {}", e);
+        tracing::error!("Database error: {}", e);
         AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
     })?
     .ok_or(AppError::NotFound("ไม่พบประเภทความยินยอมนี้".to_string()))?;
@@ -209,7 +209,7 @@ pub async fn create_consent(
     .fetch_one(pool)
     .await
     .map_err(|e| {
-        eprintln!("Failed to create consent: {}", e);
+        tracing::error!("Failed to create consent: {}", e);
         AppError::InternalServerError("ไม่สามารถบันทึกความยินยอมได้".to_string())
     })
 }
@@ -227,7 +227,7 @@ pub async fn withdraw_consent(
     .fetch_optional(pool)
     .await
     .map_err(|e| {
-        eprintln!("Database error: {}", e);
+        tracing::error!("Database error: {}", e);
         AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
     })?
     .ok_or(AppError::NotFound("ไม่พบความยินยอมนี้".to_string()))?;
@@ -238,7 +238,7 @@ pub async fn withdraw_consent(
             .fetch_optional(pool)
             .await
             .map_err(|e| {
-                eprintln!("Database error: {}", e);
+                tracing::error!("Database error: {}", e);
                 AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
             })?
             .unwrap_or(false);
@@ -258,7 +258,7 @@ pub async fn withdraw_consent(
     .execute(pool)
     .await
     .map_err(|e| {
-        eprintln!("Failed to withdraw consent: {}", e);
+        tracing::error!("Failed to withdraw consent: {}", e);
         AppError::InternalServerError("ไม่สามารถถอนความยินยอมได้".to_string())
     })?;
 
@@ -309,7 +309,7 @@ async fn get_user_type(pool: &PgPool, user_id: Uuid) -> Result<String, AppError>
         .fetch_one(pool)
         .await
         .map_err(|e| {
-            eprintln!("Failed to get user type: {}", e);
+            tracing::error!("Failed to get user type: {}", e);
             AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
         })
 }
@@ -319,7 +319,7 @@ async fn count_scalar(pool: &PgPool, query: &str) -> Result<i64, AppError> {
         .fetch_one(pool)
         .await
         .map_err(|e| {
-            eprintln!("Database error: {}", e);
+            tracing::error!("Database error: {}", e);
             AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
         })
 }

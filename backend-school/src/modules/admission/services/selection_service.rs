@@ -193,7 +193,7 @@ pub struct GlobalRankingResult {
 }
 
 fn pii_error(context: &str, error: String) -> AppError {
-    eprintln!("Admission selection PII {} failed: {}", context, error);
+    tracing::error!("Admission selection PII {} failed: {}", context, error);
     AppError::InternalServerError("ไม่สามารถประมวลผลข้อมูลส่วนบุคคลได้".to_string())
 }
 
@@ -693,7 +693,7 @@ pub async fn assign_rooms(
         .execute(&mut *tx)
         .await
         .map_err(|e| {
-            eprintln!("Failed to bulk assign rooms: {}", e);
+            tracing::error!("Failed to bulk assign rooms: {}", e);
             AppError::InternalServerError("Failed to assign rooms".to_string())
         })?;
 
@@ -915,7 +915,7 @@ pub async fn assign_rooms_global(
         .execute(&mut *tx)
         .await
         .map_err(|e| {
-            eprintln!("Failed to bulk assign rooms (global): {}", e);
+            tracing::error!("Failed to bulk assign rooms (global): {}", e);
             AppError::InternalServerError("Failed to assign rooms".to_string())
         })?;
 

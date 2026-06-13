@@ -27,7 +27,7 @@ pub async fn get_own_parent_profile(
     .fetch_optional(pool)
     .await
     .map_err(|e| {
-        eprintln!("Failed to get parent profile: {}", e);
+        tracing::error!("Failed to get parent profile: {}", e);
         AppError::InternalServerError("เกิดข้อผิดพลาดในการดึงข้อมูล".to_string())
     })?
     .ok_or(AppError::NotFound("Parent not found".to_string()))?;
@@ -83,7 +83,7 @@ pub async fn get_child_profile(
     .fetch_optional(pool)
     .await
     .map_err(|e| {
-        eprintln!("Failed to get child profile: {}", e);
+        tracing::error!("Failed to get child profile: {}", e);
         AppError::InternalServerError("เกิดข้อผิดพลาดในการดึงข้อมูลนักเรียน".to_string())
     })?
     .ok_or(AppError::NotFound("Student not found".to_string()))?;
@@ -123,7 +123,7 @@ async fn ensure_parent_user(pool: &PgPool, parent_id: Uuid) -> Result<(), AppErr
         .fetch_optional(pool)
         .await
         .map_err(|e| {
-            eprintln!("Failed to load parent user type: {}", e);
+            tracing::error!("Failed to load parent user type: {}", e);
             AppError::InternalServerError("ไม่สามารถดึงข้อมูลผู้ใช้ได้".to_string())
         })?;
 
@@ -148,7 +148,7 @@ async fn ensure_parent_student_link(
     .fetch_one(pool)
     .await
     .map_err(|e| {
-        eprintln!("Parent-child link check failed: {}", e);
+        tracing::error!("Parent-child link check failed: {}", e);
         AppError::InternalServerError("ตรวจสอบสิทธิ์ผิดพลาด".to_string())
     })?;
 
@@ -189,7 +189,7 @@ async fn list_children(pool: &PgPool, parent_id: Uuid) -> Result<Vec<ChildDto>, 
     .fetch_all(pool)
     .await
     .map_err(|e| {
-        eprintln!("Failed to list parent children: {}", e);
+        tracing::error!("Failed to list parent children: {}", e);
         AppError::InternalServerError("ไม่สามารถดึงข้อมูลบุตรหลานได้".to_string())
     })
 }
@@ -209,7 +209,7 @@ async fn list_student_parents(pool: &PgPool, student_id: Uuid) -> Result<Vec<Par
     .fetch_all(pool)
     .await
     .map_err(|e| {
-        eprintln!("Failed to list child parents: {}", e);
+        tracing::error!("Failed to list child parents: {}", e);
         AppError::InternalServerError("ไม่สามารถดึงข้อมูลผู้ปกครองได้".to_string())
     })
 }
@@ -218,7 +218,7 @@ fn decrypt_parent_fields(parent: &mut ParentDbRow) {
     if let Some(national_id) = parent.national_id.clone() {
         match field_encryption::decrypt(&national_id) {
             Ok(decrypted) => parent.national_id = Some(decrypted),
-            Err(error) => eprintln!("Failed to decrypt parent national_id: {}", error),
+            Err(error) => tracing::error!("Failed to decrypt parent national_id: {}", error),
         }
     }
 }
@@ -227,7 +227,7 @@ fn decrypt_child_student_fields(student: &mut StudentDbRow) {
     if let Some(national_id) = student.national_id.clone() {
         match field_encryption::decrypt(&national_id) {
             Ok(decrypted) => student.national_id = Some(decrypted),
-            Err(error) => eprintln!("Failed to decrypt child national_id: {}", error),
+            Err(error) => tracing::error!("Failed to decrypt child national_id: {}", error),
         }
     }
 }

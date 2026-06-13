@@ -147,7 +147,7 @@ pub async fn list_staff(
         .fetch_all(pool)
         .await
         .map_err(|e| {
-            eprintln!("❌ Database error: {}", e);
+            tracing::error!("❌ Database error: {}", e);
             AppError::InternalServerError("เกิดข้อผิดพลาดในการดึงข้อมูล".to_string())
         })?;
 
@@ -160,7 +160,7 @@ pub async fn list_staff(
         .fetch_one(pool)
         .await
         .map_err(|e| {
-            eprintln!("❌ Database error: {}", e);
+            tracing::error!("❌ Database error: {}", e);
             AppError::InternalServerError("เกิดข้อผิดพลาดในการนับข้อมูล".to_string())
         })?;
 
@@ -294,7 +294,7 @@ pub async fn get_staff_profile(
     .fetch_optional(pool)
     .await
     .map_err(|e| {
-        eprintln!("❌ Database error: {}", e);
+        tracing::error!("❌ Database error: {}", e);
         AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
     })?
     .ok_or(AppError::NotFound("ไม่พบบุคลากร".to_string()))?;
@@ -494,18 +494,18 @@ pub async fn get_staff_profile(
 /// Create staff — encrypt national_id, insert user + staff_info + roles + organization memberships in transaction
 pub async fn create_staff(pool: &PgPool, payload: CreateStaffRequest) -> Result<Uuid, AppError> {
     let password_hash = bcrypt::hash(&payload.password, bcrypt::DEFAULT_COST).map_err(|e| {
-        eprintln!("❌ Password hashing failed: {}", e);
+        tracing::error!("❌ Password hashing failed: {}", e);
         AppError::InternalServerError("เกิดข้อผิดพลาดในการสร้างรหัสผ่าน".to_string())
     })?;
 
     let mut tx = pool.begin().await.map_err(|e| {
-        eprintln!("❌ Failed to start transaction: {}", e);
+        tracing::error!("❌ Failed to start transaction: {}", e);
         AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
     })?;
 
     let encrypted_national_id = field_encryption::encrypt_optional(payload.national_id.as_deref())
         .map_err(|e| {
-            eprintln!("Encryption failed: {}", e);
+            tracing::error!("Encryption failed: {}", e);
             AppError::InternalServerError("Encryption error".to_string())
         })?;
 
@@ -513,7 +513,7 @@ pub async fn create_staff(pool: &PgPool, payload: CreateStaffRequest) -> Result<
         payload.national_id.as_deref(),
     )
     .map_err(|e| {
-        eprintln!("Blind index failed: {}", e);
+        tracing::error!("Blind index failed: {}", e);
         AppError::InternalServerError("Encryption error".to_string())
     })?;
 
@@ -532,7 +532,7 @@ pub async fn create_staff(pool: &PgPool, payload: CreateStaffRequest) -> Result<
             .unwrap_or(Some(1))
             .unwrap_or(1);
             let generated = format!("T{:04}", next_num);
-            println!("🔑 Generated staff username: {}", generated);
+            tracing::info!("🔑 Generated staff username: {}", generated);
             generated
         }
     };
@@ -565,7 +565,7 @@ pub async fn create_staff(pool: &PgPool, payload: CreateStaffRequest) -> Result<
     .fetch_one(&mut *tx)
     .await
     .map_err(|e| {
-        eprintln!("❌ Failed to create user: {}", e);
+        tracing::error!("❌ Failed to create user: {}", e);
         let msg = e.to_string();
         if msg.contains("duplicate key value violates unique constraint") {
             if msg.contains("users_username_key") {
@@ -598,7 +598,7 @@ pub async fn create_staff(pool: &PgPool, payload: CreateStaffRequest) -> Result<
         .execute(&mut *tx)
         .await
         .map_err(|e| {
-            eprintln!("❌ Failed to create staff info: {}", e);
+            tracing::error!("❌ Failed to create staff info: {}", e);
             AppError::InternalServerError("ไม่สามารถสร้างข้อมูลบุคลากรได้".to_string())
         })?;
     }
@@ -619,7 +619,7 @@ pub async fn create_staff(pool: &PgPool, payload: CreateStaffRequest) -> Result<
         .collect();
 
         if !invalid_roles.is_empty() {
-            eprintln!(
+            tracing::error!(
                 "❌ Role validation failed for staff: invalid roles = {:?}",
                 invalid_roles
             );
@@ -642,7 +642,7 @@ pub async fn create_staff(pool: &PgPool, payload: CreateStaffRequest) -> Result<
         .execute(&mut *tx)
         .await
         .map_err(|e| {
-            eprintln!("❌ Failed to assign role: {}", e);
+            tracing::error!("❌ Failed to assign role: {}", e);
             AppError::InternalServerError("ไม่สามารถบันทึกบทบาทได้".to_string())
         })?;
     }
@@ -664,18 +664,18 @@ pub async fn create_staff(pool: &PgPool, payload: CreateStaffRequest) -> Result<
             .execute(&mut *tx)
             .await
             .map_err(|e| {
-                eprintln!("❌ Failed to assign organization unit: {}", e);
+                tracing::error!("❌ Failed to assign organization unit: {}", e);
                 AppError::InternalServerError("ไม่สามารถบันทึกหน่วยงานได้".to_string())
             })?;
         }
     }
 
     tx.commit().await.map_err(|e| {
-        eprintln!("❌ Failed to commit transaction: {}", e);
+        tracing::error!("❌ Failed to commit transaction: {}", e);
         AppError::InternalServerError("เกิดข้อผิดพลาดในการบันทึกข้อมูล".to_string())
     })?;
 
-    println!("✅ Staff created successfully: {}", user_id);
+    tracing::info!("✅ Staff created successfully: {}", user_id);
     Ok(user_id)
 }
 
@@ -686,7 +686,7 @@ pub async fn update_staff(
     payload: UpdateStaffRequest,
 ) -> Result<(), AppError> {
     let mut tx = pool.begin().await.map_err(|e| {
-        eprintln!("❌ Failed to start transaction: {}", e);
+        tracing::error!("❌ Failed to start transaction: {}", e);
         AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
     })?;
 
@@ -728,13 +728,13 @@ pub async fn update_staff(
     .execute(&mut *tx)
     .await
     .map_err(|e| {
-        eprintln!("❌ Database error: {}", e);
+        tracing::error!("❌ Database error: {}", e);
         AppError::InternalServerError("เกิดข้อผิดพลาดในการอัปเดตข้อมูล".to_string())
     })?;
 
     if result.rows_affected() == 0 {
         if let Err(rb_err) = tx.rollback().await {
-            eprintln!("⚠️ Transaction rollback failed: {}", rb_err);
+            tracing::error!("⚠️ Transaction rollback failed: {}", rb_err);
         }
         return Err(AppError::NotFound("ไม่พบบุคลากร".to_string()));
     }
@@ -764,7 +764,7 @@ pub async fn update_staff(
             .execute(&mut *tx)
             .await
             .map_err(|e| {
-                eprintln!("❌ Failed to update staff_info: {}", e);
+                tracing::error!("❌ Failed to update staff_info: {}", e);
                 AppError::InternalServerError("ไม่สามารถอัพเดตข้อมูลบุคลากรได้".to_string())
             })?;
         } else {
@@ -779,7 +779,7 @@ pub async fn update_staff(
             .execute(&mut *tx)
             .await
             .map_err(|e| {
-                eprintln!("❌ Failed to create staff_info: {}", e);
+                tracing::error!("❌ Failed to create staff_info: {}", e);
                 AppError::InternalServerError("ไม่สามารถสร้างข้อมูลบุคลากรได้".to_string())
             })?;
         }
@@ -791,7 +791,7 @@ pub async fn update_staff(
             .execute(&mut *tx)
             .await
             .map_err(|e| {
-                eprintln!("❌ Failed to delete roles: {}", e);
+                tracing::error!("❌ Failed to delete roles: {}", e);
                 AppError::InternalServerError("ไม่สามารถอัพเดตบทบาทได้".to_string())
             })?;
 
@@ -807,7 +807,7 @@ pub async fn update_staff(
             .execute(&mut *tx)
             .await
             .map_err(|e| {
-                eprintln!("❌ Failed to insert role: {}", e);
+                tracing::error!("❌ Failed to insert role: {}", e);
                 AppError::InternalServerError("ไม่สามารถเพิ่มบทบาทได้".to_string())
             })?;
         }
@@ -819,7 +819,7 @@ pub async fn update_staff(
             .execute(&mut *tx)
             .await
             .map_err(|e| {
-                eprintln!("❌ Failed to delete organization members: {}", e);
+                tracing::error!("❌ Failed to delete organization members: {}", e);
                 AppError::InternalServerError("ไม่สามารถอัพเดตหน่วยงานได้".to_string())
             })?;
 
@@ -839,14 +839,14 @@ pub async fn update_staff(
             .execute(&mut *tx)
             .await
             .map_err(|e| {
-                eprintln!("❌ Failed to insert organization member: {}", e);
+                tracing::error!("❌ Failed to insert organization member: {}", e);
                 AppError::InternalServerError("ไม่สามารถเพิ่มหน่วยงานได้".to_string())
             })?;
         }
     }
 
     tx.commit().await.map_err(|e| {
-        eprintln!("❌ Failed to commit transaction: {}", e);
+        tracing::error!("❌ Failed to commit transaction: {}", e);
         AppError::InternalServerError("เกิดข้อผิดพลาดในการบันทึกข้อมูล".to_string())
     })?;
 
@@ -864,7 +864,7 @@ pub async fn soft_delete_staff(pool: &PgPool, staff_id: Uuid) -> Result<(), AppE
     .execute(pool)
     .await
     .map_err(|e| {
-        eprintln!("❌ Database error: {}", e);
+        tracing::error!("❌ Database error: {}", e);
         AppError::InternalServerError("เกิดข้อผิดพลาดในการลบบุคลากร".to_string())
     })?;
 
@@ -904,7 +904,7 @@ pub async fn get_public_staff_profile(
     .fetch_optional(pool)
     .await
     .map_err(|e| {
-        eprintln!("❌ Database error (user): {}", e);
+        tracing::error!("❌ Database error (user): {}", e);
         AppError::InternalServerError("เกิดข้อผิดพลาดในการดึงข้อมูล".to_string())
     })?
     .ok_or(AppError::NotFound("ไม่พบบุคลากร".to_string()))?;

@@ -9,7 +9,7 @@ use std::collections::HashSet;
 use uuid::Uuid;
 
 fn pii_error(context: &str, error: String) -> AppError {
-    eprintln!("Admission PII {} failed: {}", context, error);
+    tracing::error!("Admission PII {} failed: {}", context, error);
     AppError::InternalServerError("ไม่สามารถประมวลผลข้อมูลส่วนบุคคลได้".to_string())
 }
 
@@ -281,7 +281,7 @@ pub async fn submit_application(
     .fetch_one(&mut *tx)
     .await
     .map_err(|e| {
-        eprintln!("Failed to submit application: {}", e);
+        tracing::error!("Failed to submit application: {}", e);
         AppError::InternalServerError("ไม่สามารถยื่นใบสมัครได้".to_string())
     })?;
 
@@ -370,7 +370,7 @@ pub async fn list_applications(
         .fetch_all(pool)
         .await
         .map_err(|e| {
-            eprintln!("Failed to list applications: {}", e);
+            tracing::error!("Failed to list applications: {}", e);
             AppError::InternalServerError("Failed to fetch applications".to_string())
         })?;
 
@@ -401,7 +401,7 @@ pub async fn get_application_with_documents(
     .fetch_optional(pool)
     .await
     .map_err(|e| {
-        eprintln!("Failed to fetch application {}: {}", id, e);
+        tracing::error!("Failed to fetch application {}: {}", id, e);
         AppError::InternalServerError("Failed to fetch application".to_string())
     })?
     .ok_or_else(|| AppError::NotFound("ไม่พบใบสมัคร".to_string()))?;
@@ -459,7 +459,7 @@ pub async fn verify_application(
     .execute(pool)
     .await
     .map_err(|e| {
-        eprintln!("Failed to verify application: {}", e);
+        tracing::error!("Failed to verify application: {}", e);
         AppError::InternalServerError("ไม่สามารถยืนยันใบสมัครได้".to_string())
     })?;
 
@@ -484,7 +484,7 @@ pub async fn reject_application(pool: &PgPool, id: Uuid, reason: &str) -> Result
     .execute(pool)
     .await
     .map_err(|e| {
-        eprintln!("Failed to reject application: {}", e);
+        tracing::error!("Failed to reject application: {}", e);
         AppError::InternalServerError("ไม่สามารถปฏิเสธใบสมัครได้".to_string())
     })?;
     Ok(())
@@ -575,7 +575,7 @@ pub async fn update_application(
     .execute(pool)
     .await
     .map_err(|e| {
-        eprintln!("Failed to update application {}: {}", id, e);
+        tracing::error!("Failed to update application {}: {}", id, e);
         AppError::InternalServerError("ไม่สามารถแก้ไขใบสมัครได้".to_string())
     })?;
 
@@ -599,7 +599,7 @@ pub async fn unverify_application(pool: &PgPool, id: Uuid) -> Result<(), AppErro
     .execute(pool)
     .await
     .map_err(|e| {
-        eprintln!("Failed to unverify application {}: {}", id, e);
+        tracing::error!("Failed to unverify application {}: {}", id, e);
         AppError::InternalServerError("ไม่สามารถยกเลิกการอนุมัติได้".to_string())
     })?;
 
@@ -622,7 +622,7 @@ pub async fn fetch_application_files_then_delete(
             .fetch_optional(pool)
             .await
             .map_err(|e| {
-                eprintln!("Failed to fetch application {}: {}", id, e);
+                tracing::error!("Failed to fetch application {}: {}", id, e);
                 AppError::InternalServerError("ไม่สามารถลบใบสมัครได้".to_string())
             })?;
 
@@ -655,7 +655,7 @@ pub async fn fetch_application_files_then_delete(
         .execute(pool)
         .await
         .map_err(|e| {
-            eprintln!("Failed to delete application {}: {}", id, e);
+            tracing::error!("Failed to delete application {}: {}", id, e);
             AppError::InternalServerError("ไม่สามารถลบใบสมัครได้".to_string())
         })?;
 
@@ -823,7 +823,7 @@ pub async fn complete_enrollment(
     .fetch_one(&mut *tx)
     .await
     .map_err(|e| {
-        eprintln!("Failed to create user: {}", e);
+        tracing::error!("Failed to create user: {}", e);
         if e.to_string().contains("unique") {
             AppError::BadRequest("มี account นี้อยู่แล้วในระบบ".to_string())
         } else {
@@ -843,7 +843,7 @@ pub async fn complete_enrollment(
     .execute(&mut *tx)
     .await
     .map_err(|e| {
-        eprintln!("Failed to create student_info: {}", e);
+        tracing::error!("Failed to create student_info: {}", e);
         AppError::InternalServerError("ไม่สามารถสร้างข้อมูลนักเรียนได้".to_string())
     })?;
 
@@ -859,7 +859,7 @@ pub async fn complete_enrollment(
     .execute(&mut *tx)
     .await
     .map_err(|e| {
-        eprintln!("Failed to enroll student: {}", e);
+        tracing::error!("Failed to enroll student: {}", e);
         AppError::InternalServerError("ไม่สามารถลงทะเบียนเข้าห้องเรียนได้".to_string())
     })?;
 
@@ -1027,7 +1027,7 @@ pub async fn complete_enrollment(
                     .fetch_one(&mut *tx)
                     .await
                     .map_err(|e| {
-                        eprintln!("Failed to create parent user: {}", e);
+                        tracing::error!("Failed to create parent user: {}", e);
                         AppError::InternalServerError("ไม่สามารถสร้าง account ผู้ปกครองได้".to_string())
                     })?;
 
@@ -1066,7 +1066,7 @@ pub async fn complete_enrollment(
                 .execute(&mut *tx)
                 .await
                 .map_err(|e| {
-                    eprintln!("Failed to link parent to student: {}", e);
+                    tracing::error!("Failed to link parent to student: {}", e);
                     AppError::InternalServerError("ไม่สามารถเชื่อมโยงผู้ปกครองได้".to_string())
                 })?;
             }
@@ -1086,7 +1086,7 @@ pub async fn complete_enrollment(
     .execute(&mut *tx)
     .await
     .map_err(|e| {
-        eprintln!("Failed to update application status: {}", e);
+        tracing::error!("Failed to update application status: {}", e);
         AppError::InternalServerError("ไม่สามารถอัปเดตสถานะได้".to_string())
     })?;
 
@@ -1246,7 +1246,7 @@ pub async fn save_document_record(
     .execute(pool)
     .await
     .map_err(|e| {
-        eprintln!("Failed to save file metadata: {}", e);
+        tracing::error!("Failed to save file metadata: {}", e);
         AppError::InternalServerError("Failed to save file metadata".to_string())
     })?;
 
@@ -1273,7 +1273,7 @@ pub async fn save_document_record(
     .execute(pool)
     .await
     .map_err(|e| {
-        eprintln!("Failed to link document: {}", e);
+        tracing::error!("Failed to link document: {}", e);
         AppError::InternalServerError("Failed to link document".to_string())
     })?;
 
@@ -1405,7 +1405,7 @@ pub async fn auto_assign_student_ids(
     .fetch_all(pool)
     .await
     .map_err(|e| {
-        eprintln!("auto_assign_student_ids fetch error: {}", e);
+        tracing::error!("auto_assign_student_ids fetch error: {}", e);
         AppError::InternalServerError("Database error".to_string())
     })?;
 
@@ -1473,7 +1473,7 @@ pub async fn list_student_ids(
     .fetch_all(pool)
     .await
     .map_err(|e| {
-        eprintln!("list_student_ids error: {}", e);
+        tracing::error!("list_student_ids error: {}", e);
         AppError::InternalServerError("Database error".to_string())
     })?;
 
@@ -1512,7 +1512,7 @@ pub async fn move_application_room(pool: &PgPool, id: Uuid, room_id: Uuid) -> Re
     .execute(&mut *tx)
     .await
     .map_err(|e| {
-        eprintln!("move_application_room error: {}", e);
+        tracing::error!("move_application_room error: {}", e);
         AppError::InternalServerError("Database error".to_string())
     })?;
 
@@ -1614,7 +1614,7 @@ pub async fn batch_update_student_ids(
     .fetch_one(pool)
     .await
     .map_err(|e| {
-        eprintln!("batch_update_student_ids error: {}", e);
+        tracing::error!("batch_update_student_ids error: {}", e);
         AppError::InternalServerError("Database error".to_string())
     })
 }

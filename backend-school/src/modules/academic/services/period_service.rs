@@ -29,7 +29,7 @@ pub async fn list_periods(
         q = q.bind(year_id);
     }
     q.fetch_all(pool).await.map_err(|e| {
-        eprintln!("Failed to fetch periods: {}", e);
+        tracing::error!("Failed to fetch periods: {}", e);
         AppError::InternalServerError("Failed to fetch periods".to_string())
     })
 }
@@ -75,7 +75,7 @@ pub async fn create_period(
     .fetch_one(pool)
     .await
     .map_err(|e| {
-        eprintln!("Failed to create period: {}", e);
+        tracing::error!("Failed to create period: {}", e);
         let msg = if e.to_string().contains("valid_time_range") {
             "เวลาจบต้องมากกว่าเวลาเริ่ม"
         } else if e.to_string().contains("unique_period_per_year") {

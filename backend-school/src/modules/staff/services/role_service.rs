@@ -23,7 +23,7 @@ pub async fn list_roles(pool: &PgPool) -> Result<Vec<Role>, AppError> {
         .fetch_all(pool)
         .await
         .map_err(|e| {
-            eprintln!("❌ Database error (list_roles): {}", e);
+            tracing::error!("❌ Database error (list_roles): {}", e);
             AppError::InternalServerError("เกิดข้อผิดพลาดในการดึงข้อมูล".to_string())
         })
 }
@@ -38,7 +38,7 @@ pub async fn get_role(pool: &PgPool, role_id: Uuid) -> Result<Role, AppError> {
         .fetch_optional(pool)
         .await
         .map_err(|e| {
-            eprintln!("❌ Database error: {}", e);
+            tracing::error!("❌ Database error: {}", e);
             AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
         })?
         .ok_or_else(|| AppError::NotFound("ไม่พบบทบาท".to_string()))
@@ -47,7 +47,7 @@ pub async fn get_role(pool: &PgPool, role_id: Uuid) -> Result<Role, AppError> {
 /// สร้าง role ใหม่ + assign permissions ใน transaction
 pub async fn create_role(pool: &PgPool, payload: CreateRoleRequest) -> Result<Uuid, AppError> {
     let mut tx = pool.begin().await.map_err(|e| {
-        eprintln!("❌ Failed to start transaction: {}", e);
+        tracing::error!("❌ Failed to start transaction: {}", e);
         AppError::InternalServerError("ไม่สามารถเริ่มต้น Transaction ได้".to_string())
     })?;
 
@@ -65,7 +65,7 @@ pub async fn create_role(pool: &PgPool, payload: CreateRoleRequest) -> Result<Uu
     .fetch_one(&mut *tx)
     .await
     .map_err(|e| {
-        eprintln!("❌ Failed to create role: {}", e);
+        tracing::error!("❌ Failed to create role: {}", e);
         let err_msg = e.to_string();
         if err_msg.contains("duplicate key value") && err_msg.contains("code") {
             AppError::BadRequest("รหัสบทบาทนี้มีอยู่ในระบบแล้ว".to_string())
@@ -83,7 +83,7 @@ pub async fn create_role(pool: &PgPool, payload: CreateRoleRequest) -> Result<Uu
                     .fetch_all(&mut *tx)
                     .await
                     .map_err(|e| {
-                        eprintln!("❌ Failed to find permissions: {}", e);
+                        tracing::error!("❌ Failed to find permissions: {}", e);
                         AppError::InternalServerError("ไม่พบสิทธิ์การใช้งานที่ระบุ".to_string())
                     })?;
 
@@ -96,7 +96,7 @@ pub async fn create_role(pool: &PgPool, payload: CreateRoleRequest) -> Result<Uu
                 .execute(&mut *tx)
                 .await
                 .map_err(|e| {
-                    eprintln!("❌ Failed to assign permission: {}", e);
+                    tracing::error!("❌ Failed to assign permission: {}", e);
                     AppError::InternalServerError("ไม่สามารถกำหนดสิทธิ์ได้".to_string())
                 })?;
             }
@@ -104,7 +104,7 @@ pub async fn create_role(pool: &PgPool, payload: CreateRoleRequest) -> Result<Uu
     }
 
     tx.commit().await.map_err(|e| {
-        eprintln!("❌ Failed to commit transaction: {}", e);
+        tracing::error!("❌ Failed to commit transaction: {}", e);
         AppError::InternalServerError("ไม่สามารถบันทึกข้อมูลได้".to_string())
     })?;
 
@@ -119,7 +119,7 @@ pub async fn update_role(
     payload: UpdateRoleRequest,
 ) -> Result<(), AppError> {
     let mut tx = pool.begin().await.map_err(|e| {
-        eprintln!("❌ Failed to start transaction: {}", e);
+        tracing::error!("❌ Failed to start transaction: {}", e);
         AppError::InternalServerError("ไม่สามารถเริ่มต้น Transaction ได้".to_string())
     })?;
 
@@ -145,7 +145,7 @@ pub async fn update_role(
     .execute(&mut *tx)
     .await
     .map_err(|e| {
-        eprintln!("❌ Failed to update role: {}", e);
+        tracing::error!("❌ Failed to update role: {}", e);
         let err_msg = e.to_string();
         if err_msg.contains("duplicate key value") && err_msg.contains("code") {
             AppError::BadRequest("รหัสบทบาทนี้มีอยู่ในระบบแล้ว".to_string())
@@ -156,7 +156,7 @@ pub async fn update_role(
 
     if query_result.rows_affected() == 0 {
         if let Err(rb_err) = tx.rollback().await {
-            eprintln!("⚠️ Transaction rollback failed: {}", rb_err);
+            tracing::error!("⚠️ Transaction rollback failed: {}", rb_err);
         }
         return Err(AppError::NotFound("ไม่พบบทบาท".to_string()));
     }
@@ -168,7 +168,7 @@ pub async fn update_role(
             .execute(&mut *tx)
             .await
             .map_err(|e| {
-                eprintln!("❌ Failed to clear old permissions: {}", e);
+                tracing::error!("❌ Failed to clear old permissions: {}", e);
                 AppError::InternalServerError("เกิดข้อผิดพลาดในการลบสิทธิ์เดิม".to_string())
             })?;
 
@@ -179,7 +179,7 @@ pub async fn update_role(
                     .fetch_all(&mut *tx)
                     .await
                     .map_err(|e| {
-                        eprintln!("❌ Failed to find permissions: {}", e);
+                        tracing::error!("❌ Failed to find permissions: {}", e);
                         AppError::InternalServerError("ไม่พบสิทธิ์การใช้งานที่ระบุ".to_string())
                     })?;
 
@@ -192,7 +192,7 @@ pub async fn update_role(
                 .execute(&mut *tx)
                 .await
                 .map_err(|e| {
-                    eprintln!("❌ Failed to assign new permission: {}", e);
+                    tracing::error!("❌ Failed to assign new permission: {}", e);
                     AppError::InternalServerError("ไม่สามารถกำหนดสิทธิ์ใหม่ได้".to_string())
                 })?;
             }
@@ -200,7 +200,7 @@ pub async fn update_role(
     }
 
     tx.commit().await.map_err(|e| {
-        eprintln!("❌ Failed to commit transaction: {}", e);
+        tracing::error!("❌ Failed to commit transaction: {}", e);
         AppError::InternalServerError("ไม่สามารถบันทึกข้อมูลได้".to_string())
     })?;
 
