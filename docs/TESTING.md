@@ -124,18 +124,32 @@ has old `_sqlx_migrations` rows from the legacy 1-127 timeline. For production
 cutover, provision a clean database, apply `001_baseline.sql`, copy required
 tenant data, validate, then switch the tenant database URL.
 
-To verify the runtime baseline path without creating a real school, create a
-temporary schema in `schoolorbit_test` and run:
+Prepare a brand-new clean tenant database with the guarded script:
 
 ```bash
-MIGRATION_SCHEMA_DATABASE_URL='postgresql://.../schoolorbit_test?...' \
-MIGRATION_SCHEMA_NAME='schoolorbit_runtime_baseline_check' \
-  cargo run --bin migrate_tenant_schema
+PREPARE_CLEAN_TENANT_DATABASE_URL='postgresql://.../schoolorbit_snwsb_v2?...' \
+PREPARE_CLEAN_TENANT_CONFIRM=public \
+PREPARE_CLEAN_TENANT_ALLOW_NON_TEST=1 \
+  ./scripts/prepare_clean_tenant_db.sh
 ```
 
-Drop the temporary schema after checking `_sqlx_migrations`, permissions, and
-organization template rows. A clean schema should have exactly one applied
-SQLx migration row with version `1`.
+The script refuses legacy `_sqlx_migrations` histories and non-empty schemas
+without clean migration history. The target should validate with users `0`,
+permissions `81`, organization units `30`, and exactly one successful SQLx
+migration row at version `1`.
+
+To verify the same path without touching a real database `public` schema, use a
+temporary schema in `schoolorbit_test`:
+
+```bash
+schema="schoolorbit_prepare_$(date +%s)_$$"
+PREPARE_CLEAN_TENANT_DATABASE_URL='postgresql://.../schoolorbit_test?...' \
+PREPARE_CLEAN_TENANT_SCHEMA="$schema" \
+PREPARE_CLEAN_TENANT_CONFIRM="$schema" \
+PREPARE_CLEAN_TENANT_RESET_SCHEMA=1 \
+PREPARE_CLEAN_TENANT_DROP_SCHEMA_ON_EXIT=1 \
+  ./scripts/prepare_clean_tenant_db.sh
+```
 
 ## Tenant Data Cutover Dry Run
 

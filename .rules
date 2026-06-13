@@ -92,6 +92,7 @@ If adding "User Profile Edit" feature:
   * If a checksum mismatch happens after a migration edit, restore the old migration file content. Do not patch the database checksum table to hide the mismatch.
   * **Clean Tenant Baseline:** Active tenant migrations start from `backend-school/migrations/001_baseline.sql`. Historical migrations are archived under `backend-school/migrations_legacy/` for audit/reference only and must not be used by the runtime migrator.
   * Do not deploy a clean-baseline branch against an existing tenant database that still has historical `_sqlx_migrations` rows from the legacy 1-127 timeline. Use a controlled cutover to a clean database, copy required tenant data, then point the tenant to the new database.
+  * Prepare brand-new clean tenant databases with `scripts/prepare_clean_tenant_db.sh`. The script must keep target `_sqlx_migrations` at exactly one successful row with version `1`, refuse legacy migration histories, and require explicit confirmation before touching non-test databases.
   * Existing-tenant clean cutover data copies must use `scripts/cutover_tenant_data.sh` or an equivalent reviewed process: apply the clean baseline to the target, keep target `_sqlx_migrations` at version 1, exclude source `_sqlx_migrations`, restore tenant data only, run permission sync, and compare table row counts.
   * After the clean cutover, treat `001_baseline.sql` like any other applied migration: do not edit it once any live tenant has applied it. Add new schema/index/data/comment changes as `002_*.sql`, `003_*.sql`, and so on.
 

@@ -392,6 +392,39 @@ fn tenant_data_cutover_script_has_safety_guards() {
 }
 
 #[test]
+fn clean_tenant_prepare_script_has_safety_guards() {
+    let script = read_source(repo_root().join("scripts/prepare_clean_tenant_db.sh"));
+    let migration_bin = read_source(manifest_dir().join("src/bin/migrate_tenant_schema.rs"));
+
+    for required_fragment in [
+        "PREPARE_CLEAN_TENANT_DATABASE_URL",
+        "PREPARE_CLEAN_TENANT_SCHEMA",
+        "PREPARE_CLEAN_TENANT_CONFIRM",
+        "PREPARE_CLEAN_TENANT_ALLOW_NON_TEST",
+        "PREPARE_CLEAN_TENANT_RESET_SCHEMA",
+        "PREPARE_CLEAN_TENANT_DROP_SCHEMA_ON_EXIT",
+        "MIGRATION_SCHEMA_ALLOW_PUBLIC",
+        "migrate_tenant_schema",
+        "_sqlx_migrations",
+        "migration_max_version",
+        "application_table_count",
+        "permissions",
+        "organization_units",
+        "users",
+    ] {
+        assert!(
+            script.contains(required_fragment),
+            "clean tenant prepare script must contain safety/validation fragment `{required_fragment}`"
+        );
+    }
+
+    assert!(
+        migration_bin.contains("MIGRATION_SCHEMA_ALLOW_PUBLIC"),
+        "migrate_tenant_schema must allow public schema only through an explicit env guard"
+    );
+}
+
+#[test]
 fn lookup_models_expose_reference_data_only() {
     let lookup_models = strip_comments(&read_source(
         manifest_dir().join("src/modules/lookup/models.rs"),

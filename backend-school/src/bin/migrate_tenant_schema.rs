@@ -30,7 +30,7 @@ async fn main() -> MigrationResult<()> {
     let schema = env::var("MIGRATION_SCHEMA_NAME")
         .map_err(|_| "Set MIGRATION_SCHEMA_NAME before running schema migration")?;
 
-    validate_schema_name(&schema)?;
+    validate_schema_name(&schema, allow_public_schema())?;
 
     let search_path_sql = format!(r#"SET search_path TO "{schema}", public"#);
     let pool = PgPoolOptions::new()
@@ -52,13 +52,17 @@ async fn main() -> MigrationResult<()> {
     Ok(())
 }
 
-fn validate_schema_name(schema: &str) -> MigrationResult<()> {
+fn allow_public_schema() -> bool {
+    env::var("MIGRATION_SCHEMA_ALLOW_PUBLIC").is_ok_and(|value| value == "1")
+}
+
+fn validate_schema_name(schema: &str, allow_public: bool) -> MigrationResult<()> {
     if schema.is_empty() {
         return Err("MIGRATION_SCHEMA_NAME must not be empty".into());
     }
 
-    if schema == "public" {
-        return Err("Refusing to run schema migration against public".into());
+    if schema == "public" && !allow_public {
+        return Err("Refusing to run schema migration against public without MIGRATION_SCHEMA_ALLOW_PUBLIC=1".into());
     }
 
     if !schema
@@ -72,4 +76,26 @@ fn validate_schema_name(schema: &str) -> MigrationResult<()> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::validate_schema_name;
+
+    #[test]
+    fn rejects_public_schema_without_explicit_guard() {
+        assert!(validate_schema_name("public", false).is_err());
+    }
+
+    #[test]
+    fn allows_public_schema_with_explicit_guard() {
+        assert!(validate_schema_name("public", true).is_ok());
+    }
+
+    #[test]
+    fn rejects_unsafe_schema_names() {
+        assert!(validate_schema_name("", true).is_err());
+        assert!(validate_schema_name("tenant-name", true).is_err());
+        assert!(validate_schema_name("tenant;drop", true).is_err());
+    }
 }
