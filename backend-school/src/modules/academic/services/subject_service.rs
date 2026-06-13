@@ -562,6 +562,25 @@ mod tests {
     }
 
     #[test]
+    fn effective_subject_group_filter_preserves_empty_limited_scope() {
+        let requested_group_id = Uuid::new_v4();
+
+        assert_eq!(
+            effective_subject_group_filter(None, &SubjectGroupAccess::Groups(Vec::new()))
+                .expect("empty limited scope should stay empty"),
+            Some(Vec::new())
+        );
+        assert_eq!(
+            effective_subject_group_filter(
+                Some(requested_group_id),
+                &SubjectGroupAccess::Groups(Vec::new())
+            )
+            .expect("requested group outside empty scope should stay empty"),
+            Some(Vec::new())
+        );
+    }
+
+    #[test]
     fn subject_group_access_requires_target_group_for_limited_access() {
         let allowed_group_id = Uuid::new_v4();
         let other_group_id = Uuid::new_v4();
@@ -607,6 +626,10 @@ mod tests {
         assert_eq!(
             subject_search_pattern(Some("math".to_string())),
             Some("%math%".to_string())
+        );
+        assert_eq!(
+            subject_search_pattern(Some(" คณิต ".to_string())),
+            Some("% คณิต %".to_string())
         );
     }
 

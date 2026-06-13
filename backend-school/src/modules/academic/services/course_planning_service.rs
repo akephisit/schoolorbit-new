@@ -415,6 +415,24 @@ mod tests {
             academic_semester_id: None,
             subject_id: None,
         }));
+        assert!(plan_query_has_course_filter(&PlanQuery {
+            classroom_id: None,
+            instructor_id: Some(Uuid::new_v4()),
+            academic_semester_id: None,
+            subject_id: None,
+        }));
+        assert!(plan_query_has_course_filter(&PlanQuery {
+            classroom_id: None,
+            instructor_id: None,
+            academic_semester_id: Some(Uuid::new_v4()),
+            subject_id: None,
+        }));
+        assert!(plan_query_has_course_filter(&PlanQuery {
+            classroom_id: None,
+            instructor_id: None,
+            academic_semester_id: None,
+            subject_id: Some(Uuid::new_v4()),
+        }));
     }
 
     #[test]
@@ -429,5 +447,21 @@ mod tests {
 
         assert_eq!(grouped[&course_a].len(), 2);
         assert_eq!(grouped[&course_b].len(), 1);
+    }
+
+    #[test]
+    fn group_course_instructors_preserves_row_order_inside_each_course() {
+        let course_id = Uuid::new_v4();
+        let grouped = group_course_instructors(vec![
+            course_instructor(course_id, "primary"),
+            course_instructor(course_id, "secondary"),
+            course_instructor(course_id, "assistant"),
+        ]);
+
+        let roles: Vec<_> = grouped[&course_id]
+            .iter()
+            .map(|instructor| instructor.role.as_str())
+            .collect();
+        assert_eq!(roles, vec!["primary", "secondary", "assistant"]);
     }
 }

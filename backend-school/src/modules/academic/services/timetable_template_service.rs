@@ -404,4 +404,37 @@ mod tests {
             (Some("Assembly".to_string()), Some(slot_id))
         );
     }
+
+    #[test]
+    fn template_group_key_allows_empty_title_and_activity_slot() {
+        assert_eq!(template_group_key(&None, None), (None, None));
+    }
+
+    #[test]
+    fn template_entry_from_row_maps_typed_json_arrays() {
+        let grade_level_id = Uuid::new_v4();
+        let classroom_id = Uuid::new_v4();
+        let instructor_id = Uuid::new_v4();
+        let room_id = Uuid::new_v4();
+        let row = TimetableTemplateEntryRow {
+            id: Uuid::new_v4(),
+            template_id: Uuid::new_v4(),
+            day_of_week: "MON".to_string(),
+            period_id: Uuid::new_v4(),
+            entry_type: "activity".to_string(),
+            title: Some("ชุมนุม".to_string()),
+            activity_slot_id: Some(Uuid::new_v4()),
+            grade_level_ids: Json(vec![grade_level_id]),
+            classroom_ids: Json(vec![classroom_id]),
+            instructor_ids: Json(vec![instructor_id]),
+            room_id: Some(room_id),
+        };
+
+        let entry = template_entry_from_row(row).expect("template entry row should map");
+
+        assert_eq!(entry.grade_level_ids, vec![grade_level_id]);
+        assert_eq!(entry.classroom_ids, vec![classroom_id]);
+        assert_eq!(entry.instructor_ids, vec![instructor_id]);
+        assert_eq!(entry.room_id, Some(room_id));
+    }
 }

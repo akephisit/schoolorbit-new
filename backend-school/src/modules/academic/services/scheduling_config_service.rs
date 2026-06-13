@@ -655,6 +655,35 @@ mod tests {
     }
 
     #[test]
+    fn instructor_constraint_view_from_row_maps_optional_typed_slots() {
+        let period_id = Uuid::new_v4();
+        let slot = TimeSlot {
+            day: "WED".to_string(),
+            period_id,
+        };
+        let room_id = Uuid::new_v4();
+        let row = InstructorConstraintRow {
+            id: Uuid::new_v4(),
+            first_name: "สมชาย".to_string(),
+            last_name: "ใจดี".to_string(),
+            hard_unavailable_slots: Some(Json(vec![slot.clone()])),
+            max_periods_per_day: Some(6),
+            min_periods_per_day: Some(2),
+            assigned_room_id: Some(room_id),
+            assigned_room_name: Some("ห้องวิทย์".to_string()),
+            priority: 10,
+            primary_course_count: 4,
+        };
+
+        let view = instructor_constraint_view_from_row(row).expect("instructor row should map");
+
+        assert_eq!(view.hard_unavailable_slots, Some(vec![slot]));
+        assert_eq!(view.assigned_room_id, Some(room_id));
+        assert_eq!(view.priority, 10);
+        assert_eq!(view.primary_course_count, 4);
+    }
+
+    #[test]
     fn subject_constraint_view_from_row_preserves_typed_optional_arrays() {
         let allowed_period_id = Uuid::new_v4();
         let row = SubjectConstraintRow {
@@ -676,6 +705,67 @@ mod tests {
             view.allowed_days,
             Some(vec!["MON".to_string(), "TUE".to_string()])
         );
+    }
+
+    #[test]
+    fn classroom_course_constraint_view_from_row_defaults_missing_slot_arrays() {
+        let row = ClassroomCourseConstraintRow {
+            id: Uuid::new_v4(),
+            classroom_id: Uuid::new_v4(),
+            classroom_name: "ม.1/1".to_string(),
+            subject_id: Uuid::new_v4(),
+            subject_code: "MATH101".to_string(),
+            subject_name: "คณิตศาสตร์".to_string(),
+            periods_per_week: Some(5),
+            primary_instructor_id: None,
+            primary_instructor_name: None,
+            consecutive_pattern: Some(Json(vec![2, 1, 2])),
+            same_day_unique: true,
+            hard_unavailable_slots: None,
+            team_unavailable_slots: None,
+        };
+
+        let view = classroom_course_constraint_view_from_row(row)
+            .expect("classroom course row should map");
+
+        assert_eq!(view.consecutive_pattern, Some(vec![2, 1, 2]));
+        assert!(view.hard_unavailable_slots.is_empty());
+        assert!(view.team_unavailable_slots.is_empty());
+        assert!(view.same_day_unique);
+    }
+
+    #[test]
+    fn classroom_course_constraint_view_from_row_preserves_typed_team_slots() {
+        let hard_slot = TimeSlot {
+            day: "MON".to_string(),
+            period_id: Uuid::new_v4(),
+        };
+        let team_slot = TimeSlot {
+            day: "FRI".to_string(),
+            period_id: Uuid::new_v4(),
+        };
+        let row = ClassroomCourseConstraintRow {
+            id: Uuid::new_v4(),
+            classroom_id: Uuid::new_v4(),
+            classroom_name: "ม.2/1".to_string(),
+            subject_id: Uuid::new_v4(),
+            subject_code: "SCI201".to_string(),
+            subject_name: "วิทยาศาสตร์".to_string(),
+            periods_per_week: Some(4),
+            primary_instructor_id: Some(Uuid::new_v4()),
+            primary_instructor_name: Some("ครูสมหญิง ใจดี".to_string()),
+            consecutive_pattern: None,
+            same_day_unique: false,
+            hard_unavailable_slots: Some(Json(vec![hard_slot.clone()])),
+            team_unavailable_slots: Some(Json(vec![team_slot.clone()])),
+        };
+
+        let view = classroom_course_constraint_view_from_row(row)
+            .expect("classroom course row should map");
+
+        assert_eq!(view.hard_unavailable_slots, vec![hard_slot]);
+        assert_eq!(view.team_unavailable_slots, vec![team_slot]);
+        assert_eq!(view.primary_instructor_name.as_deref(), Some("ครูสมหญิง ใจดี"));
     }
 
     #[test]

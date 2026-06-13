@@ -1184,6 +1184,87 @@ mod tests {
     }
 
     #[test]
+    fn study_plan_from_row_maps_typed_grade_level_ids() {
+        let grade_level_id = Uuid::new_v4();
+        let now = Utc::now();
+        let row = StudyPlanRow {
+            id: Uuid::new_v4(),
+            code: "SCI-MATH".to_string(),
+            name_th: "วิทย์-คณิต".to_string(),
+            name_en: Some("Science Math".to_string()),
+            description: Some("แผนการเรียนวิทยาศาสตร์คณิตศาสตร์".to_string()),
+            grade_level_ids: Some(Json(vec![grade_level_id])),
+            is_active: true,
+            created_at: now,
+            updated_at: now,
+        };
+
+        let plan = study_plan_from_row(row).expect("study plan row should map");
+
+        assert_eq!(plan.code, "SCI-MATH");
+        assert_eq!(plan.grade_level_ids, Some(vec![grade_level_id]));
+        assert!(plan.is_active);
+    }
+
+    #[test]
+    fn plan_activity_from_row_maps_catalog_grade_levels_from_typed_json() {
+        let grade_level_id = Uuid::new_v4();
+        let catalog_grade_level_id = Uuid::new_v4();
+        let now = Utc::now();
+        let row = StudyPlanVersionActivityRow {
+            id: Uuid::new_v4(),
+            study_plan_version_id: Uuid::new_v4(),
+            activity_catalog_id: Uuid::new_v4(),
+            grade_level_id,
+            term: Some("1".to_string()),
+            display_order: 3,
+            created_at: now,
+            updated_at: now,
+            catalog_name: Some("ลูกเสือ".to_string()),
+            catalog_activity_type: Some("scout".to_string()),
+            catalog_description: None,
+            catalog_periods_per_week: Some(1),
+            catalog_scheduling_mode: Some("fixed".to_string()),
+            catalog_term: Some("1".to_string()),
+            catalog_grade_level_ids: Some(Json(vec![catalog_grade_level_id])),
+        };
+
+        let activity = plan_activity_from_row(row).expect("activity row should map");
+
+        assert_eq!(activity.grade_level_id, grade_level_id);
+        assert_eq!(activity.catalog_name.as_deref(), Some("ลูกเสือ"));
+        assert_eq!(
+            activity.catalog_grade_level_ids,
+            Some(vec![catalog_grade_level_id])
+        );
+    }
+
+    #[test]
+    fn activity_catalog_from_row_maps_optional_grade_levels() {
+        let now = Utc::now();
+        let row = ActivityCatalogRow {
+            id: Uuid::new_v4(),
+            name: "ชุมนุม".to_string(),
+            start_academic_year_id: Uuid::new_v4(),
+            activity_type: "club".to_string(),
+            description: None,
+            periods_per_week: 2,
+            scheduling_mode: "flexible".to_string(),
+            is_active: true,
+            term: None,
+            grade_level_ids: None,
+            created_at: now,
+            updated_at: now,
+        };
+
+        let catalog = activity_catalog_from_row(row).expect("catalog row should map");
+
+        assert_eq!(catalog.name, "ชุมนุม");
+        assert_eq!(catalog.grade_level_ids, None);
+        assert_eq!(catalog.periods_per_week, 2);
+    }
+
+    #[test]
     fn study_plan_subject_display_order_defaults_to_zero() {
         assert_eq!(study_plan_subject_display_order(None), 0);
         assert_eq!(study_plan_subject_display_order(Some(7)), 7);

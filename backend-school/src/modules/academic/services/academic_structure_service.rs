@@ -914,6 +914,32 @@ mod tests {
     }
 
     #[test]
+    fn classroom_identity_uses_grade_level_display_for_primary_and_kindergarten() {
+        let primary = GradeLevel {
+            id: Uuid::new_v4(),
+            level_type: "primary".to_string(),
+            year: 4,
+            next_grade_level_id: None,
+            is_active: true,
+        };
+        let kindergarten = GradeLevel {
+            id: Uuid::new_v4(),
+            level_type: "kindergarten".to_string(),
+            year: 2,
+            next_grade_level_id: None,
+            is_active: true,
+        };
+
+        let primary_identity = classroom_identity(2568, &primary, "1");
+        let kindergarten_identity = classroom_identity(2568, &kindergarten, "2");
+
+        assert_eq!(primary_identity.name, "ป.4/1");
+        assert_eq!(primary_identity.code, "68-P4-1");
+        assert_eq!(kindergarten_identity.name, "อ.2/2");
+        assert_eq!(kindergarten_identity.code, "68-K2-2");
+    }
+
+    #[test]
     fn sort_students_for_numbering_orders_by_student_code() {
         let students = vec![
             student("S003", "Gamma", None),
