@@ -24,3 +24,35 @@ impl PermissionChangeEvent {
             .unwrap_or(true)
     }
 }
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum WorkChangeKind {
+    WorkItemsChanged,
+    WorkflowWindowChanged,
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub struct WorkChangeEvent {
+    pub kind: WorkChangeKind,
+}
+
+impl WorkChangeEvent {
+    pub fn work_items_changed() -> Self {
+        Self {
+            kind: WorkChangeKind::WorkItemsChanged,
+        }
+    }
+
+    pub fn workflow_window_changed() -> Self {
+        Self {
+            kind: WorkChangeKind::WorkflowWindowChanged,
+        }
+    }
+
+    pub fn event_name(self) -> &'static str {
+        match self.kind {
+            WorkChangeKind::WorkItemsChanged => "work_items_changed",
+            WorkChangeKind::WorkflowWindowChanged => "workflow_window_changed",
+        }
+    }
+}

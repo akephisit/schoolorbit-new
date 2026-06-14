@@ -1505,6 +1505,46 @@ fn permission_change_sse_supports_user_targeted_and_broadcast_invalidation() {
 }
 
 #[test]
+fn work_change_sse_supports_work_item_and_window_refresh_signals() {
+    let event_source = read_source(manifest_dir().join("src/modules/notification/events.rs"));
+    let notification_handler =
+        read_source(manifest_dir().join("src/modules/notification/handlers.rs"));
+    let app_state = read_source(manifest_dir().join("src/main.rs"));
+    let work_handler = read_source(manifest_dir().join("src/modules/work/handlers.rs"));
+    let workflow_handler = read_source(manifest_dir().join("src/modules/workflow/handlers.rs"));
+
+    for expected in [
+        "pub enum WorkChangeKind",
+        "WorkItemsChanged",
+        "WorkflowWindowChanged",
+        "pub struct WorkChangeEvent",
+    ] {
+        assert!(event_source.contains(expected), "missing {expected}");
+    }
+
+    for expected in [
+        "work_event_channel.subscribe()",
+        "event.event_name()",
+        ".event(event.event_name())",
+    ] {
+        assert!(
+            notification_handler.contains(expected),
+            "missing {expected}"
+        );
+    }
+
+    for expected in [
+        "notify_work_items_changed(&self)",
+        "notify_workflow_window_changed(&self)",
+    ] {
+        assert!(app_state.contains(expected), "missing {expected}");
+    }
+
+    assert!(work_handler.contains("state.notify_work_items_changed()"));
+    assert!(workflow_handler.contains("state.notify_workflow_window_changed()"));
+}
+
+#[test]
 fn internal_api_secrets_use_constant_time_comparison_and_caller_headers() {
     let checked_files = [
         repo_root().join("backend-school/src/middleware/internal_auth.rs"),

@@ -71,6 +71,7 @@ pub async fn stream_notifications(
 
     let mut notification_rx = state.notification_channel.subscribe();
     let mut permission_rx = state.permission_event_channel.subscribe();
+    let mut work_rx = state.work_event_channel.subscribe();
 
     let stream = async_stream::stream! {
         loop {
@@ -99,6 +100,19 @@ pub async fn stream_notifications(
                         }
                         Err(broadcast::error::RecvError::Lagged(_)) => {
                             yield Ok(Event::default().event("permission_changed").data("{}"));
+                        }
+                        Err(broadcast::error::RecvError::Closed) => {
+                            break;
+                        }
+                    }
+                }
+                work_result = work_rx.recv() => {
+                    match work_result {
+                        Ok(event) => {
+                            yield Ok(Event::default().event(event.event_name()).data("{}"));
+                        }
+                        Err(broadcast::error::RecvError::Lagged(_)) => {
+                            yield Ok(Event::default().event("work_items_changed").data("{}"));
                         }
                         Err(broadcast::error::RecvError::Closed) => {
                             break;

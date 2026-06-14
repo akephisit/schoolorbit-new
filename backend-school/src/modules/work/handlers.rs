@@ -114,6 +114,7 @@ pub async fn create_work_item(
         },
     )
     .await?;
+    state.notify_work_items_changed();
 
     Ok((
         StatusCode::CREATED,

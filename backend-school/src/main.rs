@@ -11,7 +11,10 @@ mod utils;
 #[cfg(test)]
 mod test_helpers;
 
-use crate::modules::notification::{events::PermissionChangeEvent, models::Notification};
+use crate::modules::notification::{
+    events::{PermissionChangeEvent, WorkChangeEvent},
+    models::Notification,
+};
 use axum::{
     middleware as axum_middleware,
     routing::{delete, get, post},
@@ -37,6 +40,7 @@ pub struct AppState {
     pub websocket_manager: Arc<modules::academic::websockets::WebSocketManager>,
     pub notification_channel: broadcast::Sender<(Uuid, Notification)>, // (User ID, Notification)
     pub permission_event_channel: broadcast::Sender<PermissionChangeEvent>,
+    pub work_event_channel: broadcast::Sender<WorkChangeEvent>,
     pub permission_cache: Arc<PermissionCache>,
 }
 
@@ -51,6 +55,18 @@ impl AppState {
         let _ = self
             .permission_event_channel
             .send(PermissionChangeEvent::for_all_users());
+    }
+
+    pub fn notify_work_items_changed(&self) {
+        let _ = self
+            .work_event_channel
+            .send(WorkChangeEvent::work_items_changed());
+    }
+
+    pub fn notify_workflow_window_changed(&self) {
+        let _ = self
+            .work_event_channel
+            .send(WorkChangeEvent::workflow_window_changed());
     }
 }
 
@@ -91,6 +107,7 @@ async fn main() {
     // Realtime broadcast channels (capacity 100)
     let (notification_tx, _) = broadcast::channel(100);
     let (permission_event_tx, _) = broadcast::channel(100);
+    let (work_event_tx, _) = broadcast::channel(100);
 
     // Start cleanup task
     let pool_manager_cleanup = Arc::clone(&pool_manager);
@@ -112,6 +129,7 @@ async fn main() {
         websocket_manager,
         notification_channel: notification_tx,
         permission_event_channel: permission_event_tx,
+        work_event_channel: work_event_tx,
         permission_cache: Arc::new(PermissionCache::new()),
     };
 

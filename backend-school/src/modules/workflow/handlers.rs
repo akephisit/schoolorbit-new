@@ -167,6 +167,7 @@ pub async fn create_workflow_window(
     )
     .await?;
     let window = WorkflowWindowResponse::from_window(window, Utc::now())?;
+    state.notify_workflow_window_changed();
 
     Ok((StatusCode::CREATED, Json(ApiResponse::ok(window))).into_response())
 }
@@ -196,6 +197,7 @@ pub async fn update_workflow_window(
         }
     };
     let window = WorkflowWindowResponse::from_window(window, Utc::now())?;
+    state.notify_workflow_window_changed();
 
     Ok(Json(ApiResponse::ok(window)).into_response())
 }
