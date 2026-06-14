@@ -341,7 +341,7 @@ git commit -m "feat: add teaching supervision workspace"
 
 ## Task 6: Final Verification
 
-- [ ] **Step 1: Run backend checks**
+- [x] **Step 1: Run backend checks**
 
 Run:
 
@@ -352,7 +352,7 @@ cargo test --test static_architecture
 cargo check
 ```
 
-- [ ] **Step 2: Run frontend checks**
+- [x] **Step 2: Run frontend checks**
 
 Run:
 
@@ -363,7 +363,7 @@ npm run check
 npm run lint
 ```
 
-- [ ] **Step 3: Repository checks**
+- [x] **Step 3: Repository checks**
 
 Run from repo root:
 
@@ -372,7 +372,7 @@ git diff --check
 git status -sb
 ```
 
-- [ ] **Step 4: Push if all checks pass**
+- [x] **Step 4: Push if all checks pass**
 
 Run:
 
