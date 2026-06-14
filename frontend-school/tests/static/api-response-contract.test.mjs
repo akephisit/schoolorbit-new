@@ -375,6 +375,11 @@ test('teaching supervision frontend contract uses typed API and permission metad
 	assert.doesNotMatch(supervisionApi, /res\.data as/);
 	assert.match(supervisionRoute, /PERMISSION_MODULES\.SUPERVISION/);
 	assert.match(supervisionPage, /listSupervisionCycles/);
+	assert.match(supervisionPage, /requestSupervisionObservation/);
+	assert.match(supervisionPage, /approveSupervisionObservationRequest/);
+	assert.match(supervisionPage, /saveMySupervisionEvaluation/);
+	assert.match(supervisionPage, /acknowledgeSupervisionObservation/);
+	assert.match(supervisionPage, /getMyTimetable/);
 	assert.doesNotMatch(supervisionPage, /\bfetch\s*\(/);
 });
 

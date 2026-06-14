@@ -285,7 +285,7 @@ git commit -m "feat: add teaching supervision frontend contract"
 
 ## Task 5: Frontend Supervision UI
 
-- [ ] **Step 1: Write failing static checks for UI flows**
+- [x] **Step 1: Write failing static checks for UI flows**
 
 Extend the supervision static test to expect the page uses:
 
@@ -298,13 +298,13 @@ assert.match(supervisionPage, /getMyTimetable/);
 assert.doesNotMatch(supervisionPage, /\bfetch\s*\(/);
 ```
 
-- [ ] **Step 2: Verify RED**
+- [x] **Step 2: Verify RED**
 
 Run: `cd frontend-school && npm run test:static`
 
 Expected: FAIL until the Svelte page implements the flows.
 
-- [ ] **Step 3: Implement Svelte page**
+- [x] **Step 3: Implement Svelte page**
 
 Build one route page with tabs:
 
@@ -317,7 +317,7 @@ Build one route page with tabs:
 
 The page must use typed API functions, shadcn-svelte primitives, and `can` store gating. Do not use raw `fetch`.
 
-- [ ] **Step 4: Verify frontend**
+- [x] **Step 4: Verify frontend**
 
 Run:
 
@@ -330,7 +330,7 @@ npm run lint
 
 Expected: all pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 Run:
 
