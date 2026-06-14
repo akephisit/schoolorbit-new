@@ -1,5 +1,6 @@
 import { PUBLIC_VAPID_KEY } from '$env/static/public';
 import { apiClient, BACKEND_URL } from '$lib/api/client';
+import { workStore } from '$lib/stores/work';
 import { toast } from 'svelte-sonner';
 import { writable } from 'svelte/store';
 
@@ -124,6 +125,14 @@ function createNotificationStore() {
 				} catch (error) {
 					console.error('Failed to refresh auth context after permission change', error);
 				}
+			});
+
+			eventSource.addEventListener('work_items_changed', () => {
+				void workStore.refreshSilently();
+			});
+
+			eventSource.addEventListener('workflow_window_changed', () => {
+				void workStore.refreshSilently();
 			});
 
 			eventSource.onerror = () => {

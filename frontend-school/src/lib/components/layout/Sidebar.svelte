@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { ChevronLeft, GraduationCap } from 'lucide-svelte';
+	import { ChevronLeft, GraduationCap, Inbox } from 'lucide-svelte';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import { authStore } from '$lib/stores/auth';
@@ -7,6 +7,7 @@
 	import { getIconComponent } from '$lib/utils/icon-mapper';
 	import * as Tooltip from '$lib/components/ui/tooltip';
 	import { uiPreferences } from '$lib/stores/ui-preferences';
+	import { workStore } from '$lib/stores/work';
 
 	let { isCollapsed = $bindable($uiPreferences.sidebarCollapsed) }: { isCollapsed?: boolean } =
 		$props();
@@ -15,6 +16,16 @@
 	// Dynamic menu state
 	let menuGroups = $state<MenuGroup[]>([]);
 	let menuLoading = $state(true);
+
+	const workspaceLabels: Record<string, string> = {
+		home: 'งานประจำ',
+		academic: 'งานวิชาการ',
+		personnel: 'บุคลากร',
+		operations: 'งานบริหารทั่วไป',
+		settings: 'ตั้งค่าระบบ'
+	};
+
+	const workspaceOrder = ['home', 'academic', 'personnel', 'operations', 'settings'];
 
 	// Load menu from API
 	async function loadMenu() {
@@ -37,6 +48,10 @@
 		const user = $authStore.user;
 		if (user?.id) {
 			loadMenu();
+			void workStore.fetchCounts({ silent: true });
+		} else {
+			menuGroups = [];
+			workStore.reset();
 		}
 	});
 
@@ -47,7 +62,7 @@
 
 	// Get all menu paths for finding best match
 	let allMenuPaths = $derived.by(() => {
-		const paths: string[] = [];
+		const paths: string[] = ['/staff/work'];
 		for (const group of menuGroups) {
 			for (const item of group.items) {
 				paths.push(item.path);
@@ -55,6 +70,32 @@
 		}
 		return paths;
 	});
+
+	let workspaceSections = $derived.by(() => {
+		const workspaceMap: Record<string, MenuGroup[]> = {};
+
+		for (const group of menuGroups) {
+			const workspaceCode = group.workspaceCode || 'operations';
+			workspaceMap[workspaceCode] = [...(workspaceMap[workspaceCode] ?? []), group];
+		}
+
+		return Object.entries(workspaceMap)
+			.sort(([a], [b]) => {
+				const aIndex = workspaceOrder.indexOf(a);
+				const bIndex = workspaceOrder.indexOf(b);
+				return (aIndex === -1 ? 999 : aIndex) - (bIndex === -1 ? 999 : bIndex);
+			})
+			.map(([code, groups]) => ({
+				code,
+				name: workspaceLabels[code] ?? code,
+				groups
+			}));
+	});
+
+	let activeWorkCount = $derived(
+		$workStore.counts.open + $workStore.counts.dueSoon + $workStore.counts.overdue
+	);
+	let urgentWorkCount = $derived($workStore.counts.dueSoon + $workStore.counts.overdue);
 
 	// Check if a route is active
 	// Only highlights the BEST matching menu item (longest matching path)
@@ -163,61 +204,107 @@
 					</div>
 				{/if}
 			{:else}
-				<!-- Dynamic Menu Groups -->
-				{#each menuGroups as group, groupIndex (group.code)}
-					<!-- Group Header (except first group) -->
-					{#if groupIndex > 0}
-						<div class="relative my-3 h-5 flex items-center px-3">
-							<!-- Divider line (visible when collapsed) -->
-							<div
-								class="flex-1 border-t border-border transition-opacity duration-300
-								{isCollapsed ? 'opacity-100' : 'opacity-0'}"
-							></div>
-							<!-- Group name (visible when expanded) -->
-							<p
-								class="absolute text-xs font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap transition-opacity duration-300
-								{isCollapsed ? 'opacity-0' : 'opacity-100'}"
+				<Tooltip.Root delayDuration={0} disabled={!isCollapsed}>
+					<Tooltip.Trigger class="w-full">
+						<a
+							href={resolve('/staff/work' as any)}
+							onclick={handleNavClick}
+							class="relative flex items-center h-[44px] rounded-lg transition-all duration-300 group px-0 mb-3 {isCollapsed
+								? 'w-[40px]'
+								: 'w-full'} {isActive('/staff/work')
+								? 'bg-primary text-primary-foreground'
+								: 'text-foreground bg-accent/60 hover:bg-accent'}"
+						>
+							<div class="w-[40px] h-[40px] flex items-center justify-center flex-shrink-0">
+								<Inbox
+									class="w-5 h-5 transition-colors {isActive('/staff/work')
+										? 'text-primary-foreground'
+										: 'text-muted-foreground group-hover:text-accent-foreground'}"
+								/>
+							</div>
+							<span
+								class="font-semibold whitespace-nowrap overflow-hidden transition-all duration-300 {isCollapsed
+									? 'w-0 opacity-0 hidden'
+									: 'w-auto opacity-100 ml-1'}"
 							>
+								งานของฉัน
+							</span>
+							{#if activeWorkCount > 0}
+								<span
+									class="absolute flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[11px] font-semibold leading-none {isCollapsed
+										? '-right-1 -top-1'
+										: 'right-2'} {urgentWorkCount > 0
+										? 'bg-destructive text-destructive-foreground'
+										: 'bg-primary text-primary-foreground'}"
+								>
+									{activeWorkCount > 99 ? '99+' : activeWorkCount}
+								</span>
+							{/if}
+						</a>
+					</Tooltip.Trigger>
+					{#if isCollapsed}
+						<Tooltip.Content side="right" class="font-medium">งานของฉัน</Tooltip.Content>
+					{/if}
+				</Tooltip.Root>
+
+				<!-- Workspace Menu Sections -->
+				{#each workspaceSections as section (section.code)}
+					<div class="relative my-3 h-5 flex items-center px-3">
+						<div
+							class="flex-1 border-t border-border transition-opacity duration-300
+							{isCollapsed ? 'opacity-100' : 'opacity-0'}"
+						></div>
+						<p
+							class="absolute text-xs font-semibold text-muted-foreground uppercase whitespace-nowrap transition-opacity duration-300
+							{isCollapsed ? 'opacity-0' : 'opacity-100'}"
+						>
+							{section.name}
+						</p>
+					</div>
+
+					{#each section.groups as group (group.code)}
+						{#if !isCollapsed && section.groups.length > 1}
+							<p class="px-3 pb-1 pt-2 text-[11px] font-medium text-muted-foreground">
 								{group.name}
 							</p>
-						</div>
-					{/if}
+						{/if}
 
-					{#each group.items as item (item.id)}
-						{@const Icon = getIconComponent(item.icon)}
-						<Tooltip.Root delayDuration={0} disabled={!isCollapsed}>
-							<Tooltip.Trigger class="w-full">
-								<a
-									href={resolve(item.path as any)}
-									onclick={handleNavClick}
-									class="relative flex items-center h-[40px] rounded-lg transition-all duration-300 group px-0 {isCollapsed
-										? 'w-[40px]'
-										: 'w-full'} {isActive(item.path)
-										? 'bg-primary text-primary-foreground'
-										: 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'}"
-								>
-									<div class="w-[40px] h-[40px] flex items-center justify-center flex-shrink-0">
-										<Icon
-											class="w-5 h-5 transition-colors {isActive(item.path)
-												? 'text-primary-foreground'
-												: 'text-muted-foreground group-hover:text-accent-foreground'}"
-										/>
-									</div>
-									<span
-										class="font-medium whitespace-nowrap overflow-hidden transition-all duration-300 {isCollapsed
-											? 'w-0 opacity-0 hidden'
-											: 'w-auto opacity-100 ml-1'}"
+						{#each group.items as item (item.id)}
+							{@const Icon = getIconComponent(item.icon)}
+							<Tooltip.Root delayDuration={0} disabled={!isCollapsed}>
+								<Tooltip.Trigger class="w-full">
+									<a
+										href={resolve(item.path as any)}
+										onclick={handleNavClick}
+										class="relative flex items-center h-[40px] rounded-lg transition-all duration-300 group px-0 {isCollapsed
+											? 'w-[40px]'
+											: 'w-full'} {isActive(item.path)
+											? 'bg-primary text-primary-foreground'
+											: 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'}"
 									>
+										<div class="w-[40px] h-[40px] flex items-center justify-center flex-shrink-0">
+											<Icon
+												class="w-5 h-5 transition-colors {isActive(item.path)
+													? 'text-primary-foreground'
+													: 'text-muted-foreground group-hover:text-accent-foreground'}"
+											/>
+										</div>
+										<span
+											class="font-medium whitespace-nowrap overflow-hidden transition-all duration-300 {isCollapsed
+												? 'w-0 opacity-0 hidden'
+												: 'w-auto opacity-100 ml-1'}"
+										>
+											{item.name}
+										</span>
+									</a>
+								</Tooltip.Trigger>
+								{#if isCollapsed}
+									<Tooltip.Content side="right" class="font-medium">
 										{item.name}
-									</span>
-								</a>
-							</Tooltip.Trigger>
-							{#if isCollapsed}
-								<Tooltip.Content side="right" class="font-medium">
-									{item.name}
-								</Tooltip.Content>
-							{/if}
-						</Tooltip.Root>
+									</Tooltip.Content>
+								{/if}
+							</Tooltip.Root>
+						{/each}
 					{/each}
 				{/each}
 			{/if}

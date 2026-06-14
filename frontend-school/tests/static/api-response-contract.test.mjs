@@ -300,6 +300,43 @@ test('school settings API consumes typed envelope data without casts', async () 
 	assert.doesNotMatch(schoolApi, /res\.data as/);
 });
 
+test('work inbox API uses typed envelope data and SSE only signals refresh', async () => {
+	const workApi = await readRepoFile('frontend-school/src/lib/api/work.ts');
+	const workStore = await readRepoFile('frontend-school/src/lib/stores/work.ts');
+	const notificationStore = await readRepoFile('frontend-school/src/lib/stores/notification.ts');
+	const sidebar = await readRepoFile('frontend-school/src/lib/components/layout/Sidebar.svelte');
+
+	assert.match(workApi, /export\s+type\s+WorkItemState/);
+	assert.match(workApi, /export\s+interface\s+WorkItem\s*\{/);
+	assert.match(workApi, /export\s+interface\s+WorkItemCounts\s*\{/);
+	assert.match(workApi, /apiClient\.get<\{\s*items:\s*WorkItem\[\]\s*\}>/);
+	assert.match(workApi, /apiClient\.get<WorkItemCounts>/);
+	assert.match(workApi, /apiClient\.post<\{\s*id:\s*string\s*\}>/);
+	assert.doesNotMatch(workApi, /ApiResponse<unknown>/);
+	assert.doesNotMatch(workApi, /Record<string,\s*unknown>/);
+	assert.doesNotMatch(workApi, /res\.data as/);
+
+	assert.match(workStore, /getMyWorkCounts/);
+	assert.match(workStore, /getMyWorkItems/);
+	assert.match(workStore, /refreshSilently/);
+	assert.doesNotMatch(workStore, /\bfetch\s*\(/);
+
+	assert.match(notificationStore, /addEventListener\(['"]work_items_changed['"]/);
+	assert.match(notificationStore, /addEventListener\(['"]workflow_window_changed['"]/);
+	assert.match(notificationStore, /workStore\.refreshSilently\(\)/);
+	assert.doesNotMatch(
+		notificationStore,
+		/addEventListener\(['"]work_items_changed['"],\s*\([^)]*event/
+	);
+	assert.doesNotMatch(
+		notificationStore,
+		/addEventListener\(['"]workflow_window_changed['"],\s*\([^)]*event/
+	);
+
+	assert.match(sidebar, /workStore/);
+	assert.match(sidebar, /\/staff\/work/);
+});
+
 test('scheduling API uses backend envelope data types without response casts', async () => {
 	const schedulingApi = await readRepoFile('frontend-school/src/lib/api/scheduling.ts');
 
