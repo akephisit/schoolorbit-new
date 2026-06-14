@@ -1545,6 +1545,33 @@ fn work_change_sse_supports_work_item_and_window_refresh_signals() {
 }
 
 #[test]
+fn teaching_supervision_registry_and_module_are_registered() {
+    let registry = read_source(manifest_dir().join("src/permissions/registry.rs"));
+    let modules = read_source(manifest_dir().join("src/modules.rs"));
+
+    for expected in [
+        "SUPERVISION_READ_OWN",
+        "SUPERVISION_READ_ASSIGNED",
+        "SUPERVISION_READ_ORGANIZATION_UNIT",
+        "SUPERVISION_READ_ORGANIZATION_TREE",
+        "SUPERVISION_READ_SCHOOL",
+        "SUPERVISION_REQUEST_OWN",
+        "SUPERVISION_MANAGE_SCHOOL",
+        "SUPERVISION_EVALUATE_ASSIGNED",
+        "SUPERVISION_APPROVE_SCHOOL",
+        "supervision.read.own",
+        "supervision.approve.school",
+    ] {
+        assert!(
+            registry.contains(expected),
+            "missing supervision registry entry {expected}"
+        );
+    }
+
+    assert!(modules.contains("pub mod supervision;"));
+}
+
+#[test]
 fn internal_api_secrets_use_constant_time_comparison_and_caller_headers() {
     let checked_files = [
         repo_root().join("backend-school/src/middleware/internal_auth.rs"),

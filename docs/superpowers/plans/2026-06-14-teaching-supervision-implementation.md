@@ -31,7 +31,7 @@
 
 ## Task 1: Schema And Permission Registry
 
-- [ ] **Step 1: Write failing backend static test**
+- [x] **Step 1: Write failing backend static test**
 
 Add assertions in `backend-school/tests/static_architecture.rs` that expect:
 
@@ -45,13 +45,13 @@ let modules = read_source(manifest_dir().join("src/modules.rs"));
 assert!(modules.contains("pub mod supervision;"));
 ```
 
-- [ ] **Step 2: Verify RED**
+- [x] **Step 2: Verify RED**
 
 Run: `cd backend-school && cargo test --test static_architecture supervision`
 
 Expected: FAIL because supervision registry/module does not exist.
 
-- [ ] **Step 3: Add schema and permission registry**
+- [x] **Step 3: Add schema and permission registry**
 
 Create migration `backend-school/migrations/005_teaching_supervision.sql` with the supervision tables from the design. Add permission constants and `PermissionDef` entries for:
 
@@ -67,7 +67,7 @@ SUPERVISION_EVALUATE_ASSIGNED
 SUPERVISION_APPROVE_SCHOOL
 ```
 
-- [ ] **Step 4: Add module root placeholders**
+- [x] **Step 4: Add module root placeholders**
 
 Create module root files with exports so compile can discover the module:
 
@@ -85,13 +85,13 @@ pub fn supervision_routes() -> Router<AppState> {
 }
 ```
 
-- [ ] **Step 5: Verify GREEN**
+- [x] **Step 5: Verify GREEN**
 
 Run: `cd backend-school && cargo test --test static_architecture supervision`
 
 Expected: PASS for the new static checks.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 Run:
 
@@ -379,4 +379,3 @@ Run:
 ```bash
 git push origin main
 ```
-

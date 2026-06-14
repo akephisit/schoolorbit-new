@@ -139,6 +139,17 @@ pub mod codes {
     pub const ADMISSION_VERIFY_ALL: &str = "admission.verify.all";
     pub const ADMISSION_SCORES_ALL: &str = "admission.scores.all";
     pub const ADMISSION_ENROLL_ALL: &str = "admission.enroll.all";
+
+    // Teaching Supervision permissions
+    pub const SUPERVISION_READ_OWN: &str = "supervision.read.own";
+    pub const SUPERVISION_READ_ASSIGNED: &str = "supervision.read.assigned";
+    pub const SUPERVISION_READ_ORGANIZATION_UNIT: &str = "supervision.read.organization_unit";
+    pub const SUPERVISION_READ_ORGANIZATION_TREE: &str = "supervision.read.organization_tree";
+    pub const SUPERVISION_READ_SCHOOL: &str = "supervision.read.school";
+    pub const SUPERVISION_REQUEST_OWN: &str = "supervision.request.own";
+    pub const SUPERVISION_MANAGE_SCHOOL: &str = "supervision.manage.school";
+    pub const SUPERVISION_EVALUATE_ASSIGNED: &str = "supervision.evaluate.assigned";
+    pub const SUPERVISION_APPROVE_SCHOOL: &str = "supervision.approve.school";
 }
 
 /// Complete list of all permissions in the system
@@ -809,5 +820,78 @@ pub const ALL_PERMISSIONS: &[PermissionDef] = &[
         action: "enroll",
         scope: "all",
         description: "รับมอบตัวและสร้าง account นักเรียนในระบบ",
+    },
+    // Teaching Supervision Permissions
+    PermissionDef {
+        code: codes::SUPERVISION_READ_OWN,
+        name: "ดูผลนิเทศของตนเอง",
+        module: "supervision",
+        action: "read",
+        scope: "own",
+        description: "ดูรายการและผลนิเทศการสอนของตนเอง",
+    },
+    PermissionDef {
+        code: codes::SUPERVISION_READ_ASSIGNED,
+        name: "ดูรายการนิเทศที่ได้รับมอบหมาย",
+        module: "supervision",
+        action: "read",
+        scope: "assigned",
+        description: "ดูรายการนิเทศการสอนที่ได้รับมอบหมายให้ประเมิน",
+    },
+    PermissionDef {
+        code: codes::SUPERVISION_READ_ORGANIZATION_UNIT,
+        name: "ดูนิเทศในหน่วยงาน",
+        module: "supervision",
+        action: "read",
+        scope: "organization_unit",
+        description: "ดูรายการนิเทศการสอนของบุคลากรในหน่วยงานเดียวกัน",
+    },
+    PermissionDef {
+        code: codes::SUPERVISION_READ_ORGANIZATION_TREE,
+        name: "ดูนิเทศในสายงาน",
+        module: "supervision",
+        action: "read",
+        scope: "organization_tree",
+        description: "ดูรายการนิเทศการสอนในหน่วยงานของตนเองและหน่วยงานย่อย",
+    },
+    PermissionDef {
+        code: codes::SUPERVISION_READ_SCHOOL,
+        name: "ดูนิเทศทั้งโรงเรียน",
+        module: "supervision",
+        action: "read",
+        scope: "school",
+        description: "ดูรายการนิเทศการสอนและรายงานทั้งโรงเรียน",
+    },
+    PermissionDef {
+        code: codes::SUPERVISION_REQUEST_OWN,
+        name: "จองคาบนิเทศของตนเอง",
+        module: "supervision",
+        action: "request",
+        scope: "own",
+        description: "ส่งคำขอจองคาบเพื่อรับการนิเทศการสอนของตนเอง",
+    },
+    PermissionDef {
+        code: codes::SUPERVISION_MANAGE_SCHOOL,
+        name: "จัดการระบบนิเทศทั้งโรงเรียน",
+        module: "supervision",
+        action: "manage",
+        scope: "school",
+        description: "จัดการรอบนิเทศ แบบประเมิน เป้าหมาย คำขอ และผู้ประเมินทั้งโรงเรียน",
+    },
+    PermissionDef {
+        code: codes::SUPERVISION_EVALUATE_ASSIGNED,
+        name: "ประเมินรายการนิเทศที่ได้รับมอบหมาย",
+        module: "supervision",
+        action: "evaluate",
+        scope: "assigned",
+        description: "กรอกและส่งผลประเมินรายการนิเทศที่ตนเองได้รับมอบหมาย",
+    },
+    PermissionDef {
+        code: codes::SUPERVISION_APPROVE_SCHOOL,
+        name: "อนุมัติผลนิเทศทั้งโรงเรียน",
+        module: "supervision",
+        action: "approve",
+        scope: "school",
+        description: "ตรวจสอบ อนุมัติ เผยแพร่ หรือส่งกลับผลนิเทศการสอนทั้งโรงเรียน",
     },
 ];

@@ -496,6 +496,12 @@ async fn main() {
             modules::academic::academic_routes()
                 .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
         )
+        // Teaching Supervision routes (Protected)
+        .nest(
+            "/api/supervision",
+            modules::supervision::supervision_routes()
+                .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
+        )
         // Facility Management routes (Protected)
         .nest(
             "/api/facilities",

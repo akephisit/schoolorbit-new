@@ -12,6 +12,7 @@ pub mod parents;
 pub mod school;
 pub mod staff;
 pub mod students;
+pub mod supervision;
 pub mod system;
 pub mod work;
 pub mod workflow;
