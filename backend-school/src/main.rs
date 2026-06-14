@@ -490,6 +490,12 @@ async fn main() {
             modules::workflow::workflow_routes()
                 .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
         )
+        // Work item routes (Protected)
+        .nest(
+            "/api",
+            modules::work::work_routes()
+                .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
+        )
         // Admission Management routes (บาง endpoints Public — submit, portal)
         // Staff endpoints: Protected
         // Public endpoints: /apply/:round_id, /portal/*
