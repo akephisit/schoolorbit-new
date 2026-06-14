@@ -102,7 +102,7 @@ git commit -m "feat: add teaching supervision schema"
 
 ## Task 2: Backend Supervision Logic, Policy, And Services
 
-- [ ] **Step 1: Write failing service tests**
+- [x] **Step 1: Write failing service tests**
 
 Add tests in `backend-school/src/modules/supervision/services.rs` for pure helpers:
 
@@ -112,17 +112,17 @@ Add tests in `backend-school/src/modules/supervision/services.rs` for pure helpe
 - all required evaluators must submit before review
 - invalid status transitions are rejected
 
-- [ ] **Step 2: Verify RED**
+- [x] **Step 2: Verify RED**
 
 Run: `cd backend-school && cargo test modules::supervision::services::tests --bin backend-school`
 
 Expected: FAIL because helper functions/types are missing.
 
-- [ ] **Step 3: Implement typed models and pure helpers**
+- [x] **Step 3: Implement typed models and pure helpers**
 
 Implement enums and structs in `models.rs` and pure helper functions in `services.rs`.
 
-- [ ] **Step 4: Implement DB service functions**
+- [x] **Step 4: Implement DB service functions**
 
 Implement first-release service functions:
 
@@ -151,7 +151,7 @@ acknowledge_observation
 cycle_progress
 ```
 
-- [ ] **Step 5: Implement resource policy**
+- [x] **Step 5: Implement resource policy**
 
 Create `backend-school/src/policies/supervision_access_policy.rs` with helpers for:
 
@@ -163,13 +163,13 @@ can_approve_school
 resolve_observation_read_access
 ```
 
-- [ ] **Step 6: Verify GREEN**
+- [x] **Step 6: Verify GREEN**
 
 Run: `cd backend-school && cargo test modules::supervision::services::tests --bin backend-school`
 
 Expected: PASS.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 Run:
 
@@ -180,7 +180,7 @@ git commit -m "feat: add teaching supervision services"
 
 ## Task 3: Backend Handlers And Routes
 
-- [ ] **Step 1: Write failing static architecture checks**
+- [x] **Step 1: Write failing static architecture checks**
 
 Extend `backend-school/tests/static_architecture.rs` to assert the new handler:
 
@@ -191,17 +191,17 @@ assert!(handler.contains("ApiResponse::ok"));
 assert!(!handler.contains("sqlx::query"));
 ```
 
-- [ ] **Step 2: Verify RED**
+- [x] **Step 2: Verify RED**
 
 Run: `cd backend-school && cargo test --test static_architecture supervision`
 
 Expected: FAIL until handlers exist and match the architecture.
 
-- [ ] **Step 3: Implement handlers**
+- [x] **Step 3: Implement handlers**
 
 Implement typed request/response handlers using `actor_tenant_context`, policy checks, service calls, and `ApiResponse`.
 
-- [ ] **Step 4: Mount routes**
+- [x] **Step 4: Mount routes**
 
 Modify `backend-school/src/main.rs`:
 
@@ -213,7 +213,7 @@ Modify `backend-school/src/main.rs`:
 )
 ```
 
-- [ ] **Step 5: Verify GREEN**
+- [x] **Step 5: Verify GREEN**
 
 Run:
 
@@ -225,7 +225,7 @@ cargo check
 
 Expected: both commands pass.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 Run:
 

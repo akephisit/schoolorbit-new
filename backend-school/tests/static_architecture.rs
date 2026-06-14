@@ -1572,6 +1572,21 @@ fn teaching_supervision_registry_and_module_are_registered() {
 }
 
 #[test]
+fn teaching_supervision_handlers_use_request_context_and_services() {
+    let handler = strip_comments(&read_source(
+        manifest_dir().join("src/modules/supervision/handlers.rs"),
+    ));
+
+    assert!(handler.contains("actor_tenant_context"));
+    assert!(handler.contains("ApiResponse::ok"));
+    assert!(handler.contains("supervision_access_policy"));
+    assert!(handler.contains("services::"));
+    assert!(!handler.contains("sqlx::query"));
+    assert!(!handler.contains(".fetch_"));
+    assert!(!handler.contains(".execute("));
+}
+
+#[test]
 fn internal_api_secrets_use_constant_time_comparison_and_caller_headers() {
     let checked_files = [
         repo_root().join("backend-school/src/middleware/internal_auth.rs"),
