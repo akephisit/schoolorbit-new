@@ -399,7 +399,7 @@ test('frontend app pages have route guard metadata or guarded ancestor fallback'
 
 	for (const file of pageTsFiles) {
 		const source = stripComments(await readFile(file, 'utf8'));
-		if (/\b_meta\s*=/.test(source) && /\bmenu\s*:/.test(source)) {
+		if (/\b_meta\s*=/.test(source) && /\b(?:menu|access)\s*:/.test(source)) {
 			guardedRouteIds.add(appRouteIdFromFile(file, '/+page.ts'));
 		}
 	}
@@ -413,6 +413,27 @@ test('frontend app pages have route guard metadata or guarded ancestor fallback'
 	}
 
 	assert.deepEqual(violations, []);
+});
+
+test('frontend route access supports guard-only metadata without creating menu items', async () => {
+	const routeAccess = await readFile(
+		path.join(repoRoot, 'frontend-school/src/lib/auth/route-access.ts'),
+		'utf8'
+	);
+	const workManageRoute = await readFile(
+		path.join(repoRoot, 'frontend-school/src/routes/(app)/staff/work/manage/+page.ts'),
+		'utf8'
+	);
+
+	assert.match(routeAccess, /\baccess\?:/);
+	assert.match(routeAccess, /\bworkflowManage\?:\s*boolean/);
+	assert.match(routeAccess, /module\._meta\?\.access\s*\?\?/);
+	assert.match(routeAccess, /hasWorkflowManagePermission\(permissions\)/);
+
+	assert.match(workManageRoute, /\baccess:\s*\{/);
+	assert.match(workManageRoute, /\buser_type:\s*'staff'/);
+	assert.match(workManageRoute, /\bworkflowManage:\s*true/);
+	assert.doesNotMatch(workManageRoute, /\bmenu:\s*\{/);
 });
 
 test('frontend menu route metadata is complete for deployment sync', async () => {

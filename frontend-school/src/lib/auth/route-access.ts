@@ -1,19 +1,28 @@
 import type { User } from '$lib/stores/auth';
 import type { RoutePermission } from '$lib/permissions/registry';
-import { hasModulePermission, hasPermission } from '$lib/stores/permissions';
+import {
+	hasModulePermission,
+	hasPermission,
+	hasWorkflowManagePermission
+} from '$lib/stores/permissions';
+
+type RouteAccessMeta = {
+	user_type?: string;
+	permission?: RoutePermission;
+	workflowManage?: boolean;
+};
 
 type RouteMetaModule = {
 	_meta?: {
-		menu?: {
-			user_type?: string;
-			permission?: RoutePermission;
-		};
+		menu?: RouteAccessMeta;
+		access?: RouteAccessMeta;
 	};
 };
 
 export type RouteAccess = {
 	userType?: string;
 	permission?: RoutePermission;
+	workflowManage?: boolean;
 };
 
 export type DashboardPath = '/staff' | '/student' | '/parent';
@@ -25,13 +34,14 @@ const routeModules = import.meta.glob('/src/routes/(app)/**/+page.ts', {
 const routeAccessById = new Map<string, RouteAccess>();
 
 for (const [filePath, module] of Object.entries(routeModules)) {
-	const menu = module._meta?.menu;
-	if (!menu?.user_type && !menu?.permission) continue;
+	const access = module._meta?.access ?? module._meta?.menu;
+	if (!access?.user_type && !access?.permission && !access?.workflowManage) continue;
 
 	const routeId = filePath.replace('/src/routes', '').replace('/+page.ts', '');
 	routeAccessById.set(routeId, {
-		userType: menu.user_type,
-		permission: menu.permission
+		userType: access.user_type,
+		permission: access.permission,
+		workflowManage: access.workflowManage
 	});
 }
 
@@ -53,8 +63,10 @@ export function getRouteAccess(routeId: string | null): RouteAccess | undefined 
 
 export function routePermissionMatches(
 	permissions: string[],
-	requiredPermission?: string
+	requiredPermission?: string,
+	workflowManage = false
 ): boolean {
+	if (workflowManage && !hasWorkflowManagePermission(permissions)) return false;
 	if (!requiredPermission) return true;
 
 	return requiredPermission.includes('.')
@@ -75,7 +87,7 @@ export function userCanAccessRoute(
 		return false;
 	}
 
-	return routePermissionMatches(permissions, access.permission);
+	return routePermissionMatches(permissions, access.permission, access.workflowManage);
 }
 
 export function dashboardPathForUser(user: User | null): DashboardPath {
