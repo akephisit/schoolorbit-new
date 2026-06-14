@@ -9,6 +9,7 @@ export const _meta = {
 		title: 'คลังรายวิชา',
 		icon: 'BookOpen',
 		group: 'academic',
+		workspace: 'academic',
 		order: 2,
 		user_type: 'staff',
 		permission: PERMISSION_MODULES.ACADEMIC_CURRICULUM

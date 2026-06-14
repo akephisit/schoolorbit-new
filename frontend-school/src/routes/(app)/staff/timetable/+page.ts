@@ -3,6 +3,7 @@ export const _meta = {
 		title: 'ตารางสอน',
 		icon: 'CalendarDays',
 		group: 'main',
+		workspace: 'home',
 		order: 2,
 		user_type: 'staff'
 	}

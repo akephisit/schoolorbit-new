@@ -421,15 +421,29 @@ test('frontend menu route metadata is complete for deployment sync', async () =>
 		(file) => file.endsWith('+page.ts')
 	);
 	const violations = [];
+	const allowedWorkspaces = new Set([
+		'home',
+		'teaching',
+		'academic',
+		'student_affairs',
+		'personnel',
+		'operations',
+		'settings'
+	]);
 
 	for (const file of routeFiles) {
 		const source = stripComments(await readFile(file, 'utf8'));
 		if (!/\b_meta\s*=/.test(source) || !/\bmenu\s*:/.test(source)) continue;
 
-		for (const requiredField of ['title', 'icon', 'group', 'order', 'user_type']) {
+		for (const requiredField of ['title', 'icon', 'group', 'workspace', 'order', 'user_type']) {
 			if (!new RegExp(`\\b${requiredField}:`).test(source)) {
 				violations.push(`${relative(file)}: _meta.menu is missing ${requiredField}`);
 			}
+		}
+
+		const workspaceMatch = /\bworkspace:\s*['"]([^'"]+)['"]/.exec(source);
+		if (workspaceMatch && !allowedWorkspaces.has(workspaceMatch[1])) {
+			violations.push(`${relative(file)}: unknown _meta.menu.workspace ${workspaceMatch[1]}`);
 		}
 	}
 

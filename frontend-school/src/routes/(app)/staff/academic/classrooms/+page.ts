@@ -9,6 +9,7 @@ export const _meta = {
 		title: 'จัดการห้องเรียน',
 		icon: 'LayoutGrid',
 		group: 'academic',
+		workspace: 'academic',
 		order: 20,
 		user_type: 'staff',
 		permission: PERMISSIONS.ACADEMIC_CLASSROOM_READ_ALL

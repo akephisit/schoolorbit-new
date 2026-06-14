@@ -14,6 +14,7 @@ export interface RouteMetadata {
 	title: string;
 	icon?: string;
 	group: string;
+	workspace: string;
 	order: number;
 	permission?: string;
 	user_type?: string;
@@ -39,6 +40,7 @@ export async function scanRoutes(): Promise<RouteMetadata[]> {
 				title: string;
 				icon?: string;
 				group: string;
+				workspace?: string;
 				order?: number;
 				permission?: string;
 				user_type?: string;
@@ -48,6 +50,7 @@ export async function scanRoutes(): Promise<RouteMetadata[]> {
 				title: menu.title,
 				icon: menu.icon,
 				group: menu.group,
+				workspace: menu.workspace ?? workspaceForGroup(menu.group),
 				order: menu.order ?? 999,
 				permission: menu.permission,
 				user_type: menu.user_type
@@ -137,6 +140,24 @@ export function fileToPath(filePath: string): string {
 			.replace(/\/\(.*?\)/g, '') || // Remove route groups
 		'/'
 	);
+}
+
+export function workspaceForGroup(group: string): string {
+	switch (group) {
+		case 'main':
+			return 'home';
+		case 'academic':
+			return 'academic';
+		case 'personnel':
+			return 'personnel';
+		case 'settings':
+			return 'settings';
+		case 'general_admin':
+		case 'budget':
+			return 'operations';
+		default:
+			return 'operations';
+	}
 }
 
 /**

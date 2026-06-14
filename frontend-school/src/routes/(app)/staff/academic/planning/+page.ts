@@ -9,6 +9,7 @@ export const _meta = {
 		title: 'จัดแผนการเรียน',
 		icon: 'BookOpen',
 		group: 'academic',
+		workspace: 'academic',
 		order: 30, // ถัดจาก ห้องเรียน (20)
 		user_type: 'staff',
 		permission: PERMISSIONS.ACADEMIC_COURSE_PLAN_READ_ALL

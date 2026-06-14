@@ -5,6 +5,7 @@ export const _meta = {
 		title: 'กลุ่มสาระการเรียนรู้',
 		icon: 'GraduationCap',
 		group: 'academic',
+		workspace: 'academic',
 		order: 1,
 		user_type: 'staff',
 		permission: PERMISSION_MODULES.ACADEMIC_CURRICULUM

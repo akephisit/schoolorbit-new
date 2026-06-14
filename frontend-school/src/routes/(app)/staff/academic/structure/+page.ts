@@ -9,6 +9,7 @@ export const _meta = {
 		title: 'โครงสร้างวิชาการ',
 		icon: 'Framer',
 		group: 'academic',
+		workspace: 'academic',
 		order: 10,
 		user_type: 'staff',
 		permission: PERMISSIONS.ACADEMIC_STRUCTURE_READ_ALL

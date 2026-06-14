@@ -9,6 +9,7 @@ export const _meta = {
 		title: 'จัดการบทบาท',
 		icon: 'Shield',
 		group: 'settings',
+		workspace: 'settings',
 		order: 1000,
 		user_type: 'staff',
 		permission: PERMISSION_MODULES.ROLES

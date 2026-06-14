@@ -3,6 +3,7 @@ export const _meta = {
 		title: 'ลงทะเบียนกิจกรรม',
 		icon: 'Users',
 		group: 'main',
+		workspace: 'home',
 		order: 5,
 		user_type: 'student'
 	}

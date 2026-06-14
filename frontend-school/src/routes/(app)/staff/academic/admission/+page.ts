@@ -9,6 +9,7 @@ export const _meta = {
 		title: 'รับสมัครนักเรียน',
 		icon: 'ClipboardList',
 		group: 'academic',
+		workspace: 'academic',
 		order: 40,
 		user_type: 'staff',
 		permission: PERMISSIONS.ADMISSION_READ_ALL

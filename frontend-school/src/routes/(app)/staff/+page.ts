@@ -8,6 +8,7 @@ export const _meta = {
 		title: 'แดชบอร์ด',
 		icon: 'LayoutDashboard',
 		group: 'main',
+		workspace: 'home',
 		order: 1,
 		user_type: 'staff'
 		// No permission required - all authenticated staff can access

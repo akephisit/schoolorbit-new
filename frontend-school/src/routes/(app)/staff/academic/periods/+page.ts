@@ -5,6 +5,7 @@ export const _meta = {
 		title: 'ตั้งค่าคาบเวลา',
 		icon: 'Clock',
 		group: 'academic',
+		workspace: 'academic',
 		permission: PERMISSIONS.ACADEMIC_STRUCTURE_MANAGE_ALL,
 		order: 50,
 		user_type: 'staff'

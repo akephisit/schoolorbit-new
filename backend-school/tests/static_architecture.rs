@@ -213,7 +213,7 @@ fn backend_permission_contracts_use_organization_units_not_department_names() {
 }
 
 #[test]
-fn active_migrations_are_clean_single_baseline() {
+fn active_migrations_are_clean_sequential_timeline() {
     let migrations_dir = manifest_dir().join("migrations");
     let mut active_migrations = list_files(&migrations_dir, |path| {
         path.extension().and_then(|extension| extension.to_str()) == Some("sql")
@@ -223,7 +223,26 @@ fn active_migrations_are_clean_single_baseline() {
     .collect::<Vec<_>>();
     active_migrations.sort();
 
-    assert_eq!(active_migrations, vec!["001_baseline.sql"]);
+    assert_eq!(
+        active_migrations.first().map(String::as_str),
+        Some("001_baseline.sql")
+    );
+
+    let migration_name_pattern =
+        Regex::new(r"^(\d{3})_[a-z0-9_]+\.sql$").expect("valid migration name regex");
+    for (index, migration) in active_migrations.iter().enumerate() {
+        let captures = migration_name_pattern
+            .captures(migration)
+            .unwrap_or_else(|| panic!("invalid active migration name: {migration}"));
+        let version = captures[1]
+            .parse::<usize>()
+            .unwrap_or_else(|_| panic!("invalid migration version: {migration}"));
+        assert_eq!(
+            version,
+            index + 1,
+            "active migrations must stay sequential after the clean baseline"
+        );
+    }
 
     let legacy_dir = manifest_dir().join("migrations_legacy");
     assert!(
@@ -1387,6 +1406,30 @@ fn menu_and_feature_handlers_do_not_parse_auth_or_query_permissions_directly() {
     }
 
     assert_eq!(violations, Vec::<String>::new());
+}
+
+#[test]
+fn menu_workspace_contract_is_explicit_and_permission_based() {
+    let menu_models = read_source(manifest_dir().join("src/modules/menu/models.rs"));
+    let public_menu_service =
+        read_source(manifest_dir().join("src/modules/menu/services/public_menu_service.rs"));
+    let public_menu_handler =
+        read_source(manifest_dir().join("src/modules/menu/handlers/public.rs"));
+    let route_registration_service = read_source(
+        manifest_dir().join("src/modules/system/services/route_registration_service.rs"),
+    );
+    let route_migration =
+        read_source(manifest_dir().join("migrations/002_menu_workspace_code.sql"));
+
+    assert!(menu_models.contains("pub workspace: Option<String>"));
+    assert!(menu_models.contains("pub workspace_code: String"));
+    assert!(menu_models.contains("#[serde(rename_all = \"camelCase\")]"));
+    assert!(public_menu_service.contains("mg.workspace_code"));
+    assert!(public_menu_handler.contains("workspace_code: group_workspace_code"));
+    assert!(route_registration_service.contains("route_workspace_code("));
+    assert!(route_migration.contains("workspace_code"));
+    assert!(!public_menu_service.contains("feature_toggles"));
+    assert!(!public_menu_handler.contains("feature_toggles"));
 }
 
 #[test]

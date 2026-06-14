@@ -15,6 +15,7 @@ export interface MenuGroup {
 	code: string;
 	name: string;
 	icon?: string;
+	workspaceCode: string;
 	items: MenuItem[];
 }
 

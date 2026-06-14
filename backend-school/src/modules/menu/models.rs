@@ -54,10 +54,12 @@ pub struct MenuItemResponse {
 
 /// Menu Group Response (for user menu API)
 #[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct MenuGroupResponse {
     pub code: String,
     pub name: String,
     pub icon: Option<String>,
+    pub workspace_code: String,
     pub items: Vec<MenuItemResponse>,
 }
 
@@ -76,7 +78,8 @@ pub struct RouteItem {
     pub path: String,
     pub title: String,
     pub icon: Option<String>,
-    pub group: String, // group code
+    pub group: String,             // group code
+    pub workspace: Option<String>, // stable sidebar workspace code
     pub order: i32,
     pub permission: Option<String>, // module name
     pub user_type: Option<String>,  // 'staff', 'student', or 'parent' - defaults to 'staff'

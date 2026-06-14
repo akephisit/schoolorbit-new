@@ -39,6 +39,7 @@ pub type MenuRow = (
     String,
     Option<String>,
     i32,
+    String,
     i32,
 );
 
@@ -46,7 +47,8 @@ pub async fn fetch_menu_items(pool: &PgPool, user_type: &str) -> Result<Vec<Menu
     sqlx::query_as(
         r#"SELECT mi.id, mi.code, mi.name, mi.path, mi.icon, mi.required_permission,
                   mg.code as group_code, mg.name as group_name, mg.icon as group_icon,
-                  mg.display_order as group_order, mi.display_order
+                  mg.display_order as group_order, mg.workspace_code as group_workspace_code,
+                  mi.display_order
            FROM menu_items mi
            JOIN menu_groups mg ON mi.group_id = mg.id
            WHERE mi.is_active = true AND mg.is_active = true AND mi.user_type = $1

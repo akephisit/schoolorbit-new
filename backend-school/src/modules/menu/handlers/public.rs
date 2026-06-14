@@ -45,6 +45,7 @@ fn group_and_filter_menu(rows: Vec<MenuRow>, actor: &ActorContext) -> Vec<MenuGr
         code: String,
         name: String,
         icon: Option<String>,
+        workspace_code: String,
         items: Vec<(i32, MenuItemResponse)>,
     }
 
@@ -61,6 +62,7 @@ fn group_and_filter_menu(rows: Vec<MenuRow>, actor: &ActorContext) -> Vec<MenuGr
         group_name,
         group_icon,
         group_order,
+        group_workspace_code,
         item_order,
     ) in rows
     {
@@ -77,6 +79,7 @@ fn group_and_filter_menu(rows: Vec<MenuRow>, actor: &ActorContext) -> Vec<MenuGr
                 code: group_code.clone(),
                 name: group_name.clone(),
                 icon: group_icon.clone(),
+                workspace_code: group_workspace_code.clone(),
                 items: vec![],
             });
 
@@ -106,6 +109,7 @@ fn group_and_filter_menu(rows: Vec<MenuRow>, actor: &ActorContext) -> Vec<MenuGr
                 code: g.code,
                 name: g.name,
                 icon: g.icon,
+                workspace_code: g.workspace_code,
                 items: g.items.into_iter().map(|(_, item)| item).collect(),
             }
         })

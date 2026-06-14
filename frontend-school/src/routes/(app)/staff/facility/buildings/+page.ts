@@ -5,6 +5,7 @@ export const _meta = {
 		title: 'อาคารสถานที่',
 		icon: 'School', // Changed to School icon which is more meaningful than Building (generic)
 		group: 'general_admin',
+		workspace: 'operations',
 		permission: PERMISSIONS.FACILITY_READ_ALL,
 		order: 10,
 		user_type: 'staff'

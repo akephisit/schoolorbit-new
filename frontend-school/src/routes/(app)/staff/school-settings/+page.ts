@@ -5,6 +5,7 @@ export const _meta = {
 		title: 'ตั้งค่าโรงเรียน',
 		icon: 'School',
 		group: 'settings',
+		workspace: 'settings',
 		order: 900,
 		user_type: 'staff',
 		permission: PERMISSIONS.SETTINGS_UPDATE_ALL

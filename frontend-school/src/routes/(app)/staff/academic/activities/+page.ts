@@ -9,6 +9,7 @@ export const _meta = {
 		title: 'กิจกรรมพัฒนาผู้เรียน',
 		icon: 'Users',
 		group: 'academic',
+		workspace: 'academic',
 		order: 7,
 		user_type: 'staff',
 		permission: PERMISSION_MODULES.ACTIVITY

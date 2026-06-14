@@ -24,6 +24,22 @@ pub async fn sync_routes(
         active_codes.push(code.clone());
 
         let user_type = route_user_type(route.user_type.as_deref());
+        let workspace_code = route_workspace_code(route.workspace.as_deref(), &route.group);
+
+        if let Err(error) =
+            sqlx::query("UPDATE menu_groups SET workspace_code = $1 WHERE code = $2")
+                .bind(workspace_code)
+                .bind(&route.group)
+                .execute(pool)
+                .await
+        {
+            tracing::warn!(
+                group = %route.group,
+                workspace_code,
+                "Failed to sync route workspace: {}",
+                error
+            );
+        }
 
         let result = sqlx::query(
             r#"
@@ -126,6 +142,17 @@ fn route_user_type(user_type: Option<&str>) -> &str {
     user_type.unwrap_or("staff")
 }
 
+fn route_workspace_code<'a>(workspace: Option<&'a str>, group: &'a str) -> &'a str {
+    workspace.unwrap_or_else(|| match group {
+        "main" => "home",
+        "academic" => "academic",
+        "personnel" => "personnel",
+        "settings" => "settings",
+        "general_admin" | "budget" => "operations",
+        _ => "operations",
+    })
+}
+
 fn cleanup_placeholder_clause(count: usize) -> String {
     (1..=count)
         .map(|index| format!("${index}"))
@@ -147,6 +174,14 @@ mod tests {
     fn route_user_type_defaults_to_staff() {
         assert_eq!(route_user_type(None), "staff");
         assert_eq!(route_user_type(Some("student")), "student");
+    }
+
+    #[test]
+    fn route_workspace_code_uses_explicit_value_or_group_default() {
+        assert_eq!(route_workspace_code(Some("teaching"), "main"), "teaching");
+        assert_eq!(route_workspace_code(None, "main"), "home");
+        assert_eq!(route_workspace_code(None, "academic"), "academic");
+        assert_eq!(route_workspace_code(None, "general_admin"), "operations");
     }
 
     #[test]

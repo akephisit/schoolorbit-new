@@ -9,6 +9,7 @@ export const _meta = {
 		title: 'จัดห้องเรียน',
 		icon: 'Users',
 		group: 'academic',
+		workspace: 'academic',
 		order: 30,
 		user_type: 'staff',
 		permission: PERMISSIONS.ACADEMIC_ENROLLMENT_READ_ALL

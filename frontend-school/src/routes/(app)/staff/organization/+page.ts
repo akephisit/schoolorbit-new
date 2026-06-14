@@ -9,6 +9,7 @@ export const _meta = {
 		title: 'โครงสร้างโรงเรียน',
 		icon: 'Building2',
 		group: 'personnel',
+		workspace: 'personnel',
 		order: 20,
 		user_type: 'staff',
 		permission: PERMISSION_MODULES.ROLES

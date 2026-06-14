@@ -10,6 +10,7 @@ export const _meta = {
 		title: 'หลักสูตรสถานศึกษา',
 		icon: 'GraduationCap',
 		group: 'academic',
+		workspace: 'academic',
 		order: 3,
 		user_type: 'staff',
 		permission: PERMISSIONS.ACADEMIC_CURRICULUM_READ_ALL

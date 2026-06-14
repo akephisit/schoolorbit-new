@@ -11,6 +11,7 @@ export const _meta = {
 		title: 'บันทึกเกียรติบัตร',
 		icon: 'Award',
 		group: 'personnel',
+		workspace: 'personnel',
 		order: 30, // After "Manage Staff" (10)
 		user_type: 'staff',
 		permission: PERMISSION_MODULES.ACHIEVEMENT

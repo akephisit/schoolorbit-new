@@ -9,6 +9,7 @@ export const _meta = {
 		title: 'บุคลากร',
 		icon: 'Users',
 		group: 'personnel',
+		workspace: 'personnel',
 		order: 10,
 		user_type: 'staff',
 		permission: PERMISSIONS.STAFF_PROFILE_READ_SCHOOL

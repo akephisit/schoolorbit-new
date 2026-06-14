@@ -9,6 +9,7 @@ export const _meta = {
 		title: 'จัดการเมนู',
 		icon: 'Menu',
 		group: 'settings',
+		workspace: 'settings',
 		order: 1001,
 		user_type: 'staff',
 		permission: PERMISSION_MODULES.SETTINGS

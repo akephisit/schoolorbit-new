@@ -3,6 +3,7 @@ export const _meta = {
 		title: 'แดชบอร์ดผู้ปกครอง',
 		icon: 'Users',
 		group: 'main',
+		workspace: 'home',
 		order: 1,
 		user_type: 'parent'
 	}

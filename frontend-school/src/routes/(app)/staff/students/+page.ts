@@ -9,6 +9,7 @@ export const _meta = {
 		title: 'รายชื่อนักเรียน',
 		icon: 'GraduationCap',
 		group: 'academic',
+		workspace: 'academic',
 		order: 5, // Top priority in academic
 		user_type: 'staff',
 		permission: PERMISSION_MODULES.STUDENT
