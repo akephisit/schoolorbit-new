@@ -5,6 +5,7 @@
 	import { Badge, type BadgeVariant } from '$lib/components/ui/badge';
 	import { Separator } from '$lib/components/ui/separator';
 	import { workStore } from '$lib/stores/work';
+	import { can } from '$lib/stores/permissions';
 	import type { WorkItem, WorkItemState } from '$lib/api/work';
 	import {
 		AlertTriangle,
@@ -132,6 +133,11 @@
 			<p class="text-sm text-muted-foreground">
 				งานที่ได้รับมอบหมายจากหน่วยงาน กลุ่มสาระ หรือรอบงานที่เปิดให้ดำเนินการ
 			</p>
+			{#if $can.hasWorkflowManage()}
+				<Button href="/staff/work/manage" variant="outline" size="sm" class="mt-2">
+					จัดการรอบงาน
+				</Button>
+			{/if}
 		</div>
 
 		<div class="grid grid-cols-3 gap-2 sm:grid-cols-5">

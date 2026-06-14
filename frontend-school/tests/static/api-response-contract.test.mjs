@@ -305,6 +305,12 @@ test('work inbox API uses typed envelope data and SSE only signals refresh', asy
 	const workStore = await readRepoFile('frontend-school/src/lib/stores/work.ts');
 	const notificationStore = await readRepoFile('frontend-school/src/lib/stores/notification.ts');
 	const sidebar = await readRepoFile('frontend-school/src/lib/components/layout/Sidebar.svelte');
+	const workInboxPage = await readRepoFile(
+		'frontend-school/src/routes/(app)/staff/work/+page.svelte'
+	);
+	const workManagePage = await readRepoFile(
+		'frontend-school/src/routes/(app)/staff/work/manage/+page.svelte'
+	);
 
 	assert.match(workApi, /export\s+type\s+WorkItemState/);
 	assert.match(workApi, /export\s+interface\s+WorkItem\s*\{/);
@@ -312,6 +318,12 @@ test('work inbox API uses typed envelope data and SSE only signals refresh', asy
 	assert.match(workApi, /apiClient\.get<\{\s*items:\s*WorkItem\[\]\s*\}>/);
 	assert.match(workApi, /apiClient\.get<WorkItemCounts>/);
 	assert.match(workApi, /apiClient\.post<\{\s*id:\s*string\s*\}>/);
+	assert.match(workApi, /listManageableWorkflowWindows/);
+	assert.match(workApi, /createWorkflowWindow/);
+	assert.match(workApi, /updateWorkflowWindowStatus/);
+	assert.match(workApi, /apiClient\.get<\{\s*items:\s*WorkflowWindow\[\]\s*\}>/);
+	assert.match(workApi, /apiClient\.post<WorkflowWindow>/);
+	assert.match(workApi, /apiClient\.patch<WorkflowWindow>/);
 	assert.doesNotMatch(workApi, /ApiResponse<unknown>/);
 	assert.doesNotMatch(workApi, /Record<string,\s*unknown>/);
 	assert.doesNotMatch(workApi, /res\.data as/);
@@ -335,6 +347,15 @@ test('work inbox API uses typed envelope data and SSE only signals refresh', asy
 
 	assert.match(sidebar, /workStore/);
 	assert.match(sidebar, /\/staff\/work/);
+	assert.match(workInboxPage, /from '\$lib\/stores\/permissions'/);
+	assert.match(workInboxPage, /\$can\.hasWorkflowManage\(\)/);
+	assert.match(workInboxPage, /\/staff\/work\/manage/);
+	assert.match(workManagePage, /listManageableWorkflowWindows/);
+	assert.match(workManagePage, /createWorkflowWindow/);
+	assert.match(workManagePage, /createWorkItem/);
+	assert.match(workManagePage, /lookupStaff/);
+	assert.match(workManagePage, /lookupOrganizationUnits/);
+	assert.doesNotMatch(workManagePage, /\bfetch\s*\(/);
 });
 
 test('scheduling API uses backend envelope data types without response casts', async () => {

@@ -1,5 +1,6 @@
 import { writable, derived } from 'svelte/store';
 import type { Writable, Readable } from 'svelte/store';
+import { PERMISSIONS, WILDCARD_PERMISSION } from '$lib/permissions/registry';
 
 export const userPermissions: Writable<string[]> = writable([]);
 
@@ -28,6 +29,18 @@ export function hasModulePermission(permissions: string[], module: string): bool
 	);
 }
 
+export function workflowManagePermissions(permissions: string[]): string[] {
+	if (permissions.includes(WILDCARD_PERMISSION)) {
+		return Object.values(PERMISSIONS).filter((permission) => permission.includes('.manage.'));
+	}
+
+	return permissions.filter((permission) => permission.includes('.manage.'));
+}
+
+export function hasWorkflowManagePermission(permissions: string[]): boolean {
+	return workflowManagePermissions(permissions).length > 0;
+}
+
 /**
  * Permission checker for UI gating only. Backend remains the source of truth.
  */
@@ -36,6 +49,7 @@ export const can: Readable<{
 	hasModule: (module: string) => boolean;
 	hasAny: (...permissions: string[]) => boolean;
 	hasAll: (...permissions: string[]) => boolean;
+	hasWorkflowManage: () => boolean;
 }> = derived(userPermissions, ($permissions) => ({
 	has: (permission: string): boolean => {
 		return hasPermission($permissions, permission);
@@ -51,6 +65,10 @@ export const can: Readable<{
 
 	hasAll: (...permissions: string[]): boolean => {
 		return hasAllPermissions($permissions, permissions);
+	},
+
+	hasWorkflowManage: (): boolean => {
+		return hasWorkflowManagePermission($permissions);
 	}
 }));
 
