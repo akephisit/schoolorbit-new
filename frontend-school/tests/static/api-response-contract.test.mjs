@@ -358,6 +358,26 @@ test('work inbox API uses typed envelope data and SSE only signals refresh', asy
 	assert.doesNotMatch(workManagePage, /\bfetch\s*\(/);
 });
 
+test('teaching supervision frontend contract uses typed API and permission metadata', async () => {
+	const supervisionApi = await readRepoFile('frontend-school/src/lib/api/supervision.ts');
+	const supervisionRoute = await readRepoFile(
+		'frontend-school/src/routes/(app)/staff/academic/supervision/+page.ts'
+	);
+	const supervisionPage = await readRepoFile(
+		'frontend-school/src/routes/(app)/staff/academic/supervision/+page.svelte'
+	);
+
+	assert.match(supervisionApi, /export\s+type\s+SupervisionObservationStatus/);
+	assert.match(supervisionApi, /apiClient\.get<\{\s*items:\s*SupervisionCycle\[\]\s*\}>/);
+	assert.match(supervisionApi, /apiClient\.post<SupervisionObservation>/);
+	assert.doesNotMatch(supervisionApi, /ApiResponse<unknown>/);
+	assert.doesNotMatch(supervisionApi, /Record<string,\s*unknown>/);
+	assert.doesNotMatch(supervisionApi, /res\.data as/);
+	assert.match(supervisionRoute, /PERMISSION_MODULES\.SUPERVISION/);
+	assert.match(supervisionPage, /listSupervisionCycles/);
+	assert.doesNotMatch(supervisionPage, /\bfetch\s*\(/);
+});
+
 test('scheduling API uses backend envelope data types without response casts', async () => {
 	const schedulingApi = await readRepoFile('frontend-school/src/lib/api/scheduling.ts');
 

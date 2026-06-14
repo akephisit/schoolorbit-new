@@ -236,7 +236,7 @@ git commit -m "feat: add teaching supervision API"
 
 ## Task 4: Frontend API Contract And Route Shell
 
-- [ ] **Step 1: Write failing frontend static test**
+- [x] **Step 1: Write failing frontend static test**
 
 Add static checks in `frontend-school/tests/static/api-response-contract.test.mjs` expecting:
 
@@ -254,27 +254,27 @@ assert.match(supervisionRoute, /PERMISSION_MODULES\.SUPERVISION/);
 assert.match(supervisionPage, /listSupervisionCycles/);
 ```
 
-- [ ] **Step 2: Verify RED**
+- [x] **Step 2: Verify RED**
 
 Run: `cd frontend-school && npm run test:static`
 
 Expected: FAIL because frontend supervision files do not exist.
 
-- [ ] **Step 3: Add frontend registry and typed API**
+- [x] **Step 3: Add frontend registry and typed API**
 
 Add `SUPERVISION` to `PERMISSION_MODULES`, add the supervision permission constants, and create `src/lib/api/supervision.ts` with typed DTOs and API calls.
 
-- [ ] **Step 4: Add route metadata**
+- [x] **Step 4: Add route metadata**
 
 Create `frontend-school/src/routes/(app)/staff/academic/supervision/+page.ts` with `_meta.menu` using `PERMISSION_MODULES.SUPERVISION`.
 
-- [ ] **Step 5: Verify GREEN**
+- [x] **Step 5: Verify GREEN**
 
 Run: `cd frontend-school && npm run test:static`
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 Run:
 

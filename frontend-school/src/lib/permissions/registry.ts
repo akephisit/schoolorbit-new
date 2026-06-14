@@ -9,6 +9,7 @@ export const PERMISSION_MODULES = {
 	STAFF: 'staff',
 	STAFF_PII: 'staff_pii',
 	STAFF_PROFILE: 'staff_profile',
+	SUPERVISION: 'supervision',
 	STUDENT: 'student',
 	STUDENT_PII: 'student_pii'
 } as const;
@@ -53,6 +54,15 @@ export const PERMISSIONS = {
 	STAFF_PROFILE_READ_ORGANIZATION_TREE: 'staff_profile.read.organization_tree',
 	STAFF_PROFILE_READ_ORGANIZATION_UNIT: 'staff_profile.read.organization_unit',
 	STAFF_PROFILE_READ_SCHOOL: 'staff_profile.read.school',
+	SUPERVISION_APPROVE_SCHOOL: 'supervision.approve.school',
+	SUPERVISION_EVALUATE_ASSIGNED: 'supervision.evaluate.assigned',
+	SUPERVISION_MANAGE_SCHOOL: 'supervision.manage.school',
+	SUPERVISION_READ_ASSIGNED: 'supervision.read.assigned',
+	SUPERVISION_READ_ORGANIZATION_TREE: 'supervision.read.organization_tree',
+	SUPERVISION_READ_ORGANIZATION_UNIT: 'supervision.read.organization_unit',
+	SUPERVISION_READ_OWN: 'supervision.read.own',
+	SUPERVISION_READ_SCHOOL: 'supervision.read.school',
+	SUPERVISION_REQUEST_OWN: 'supervision.request.own',
 	STUDENT_PII_READ_ASSIGNED: 'student_pii.read.assigned',
 	STUDENT_PII_READ_OWN: 'student_pii.read.own',
 	STUDENT_PII_READ_SCHOOL: 'student_pii.read.school',
@@ -123,8 +133,10 @@ const ACTION_LABELS: Record<string, string> = {
 	manage_members: 'จัดการสมาชิก',
 	read: 'ดู',
 	remove: 'ถอดออก',
+	request: 'ส่งคำขอ',
 	scores: 'คะแนน',
 	update: 'แก้ไข',
+	evaluate: 'ประเมิน',
 	verify: 'ตรวจสอบ'
 };
 
