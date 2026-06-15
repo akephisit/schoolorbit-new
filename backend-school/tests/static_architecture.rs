@@ -1574,6 +1574,28 @@ fn teaching_supervision_registry_and_module_are_registered() {
 }
 
 #[test]
+fn teaching_supervision_default_staff_permissions_are_seeded() {
+    let migration = read_source(
+        manifest_dir().join("migrations/006_teaching_supervision_default_permissions.sql"),
+    );
+
+    for expected in [
+        "supervision.read.own",
+        "supervision.request.own",
+        "supervision.read.assigned",
+        "supervision.evaluate.assigned",
+        "role_permissions",
+        "organization_permission_grants",
+        "ON CONFLICT DO NOTHING",
+    ] {
+        assert!(
+            migration.contains(expected),
+            "missing supervision default permission seed {expected}"
+        );
+    }
+}
+
+#[test]
 fn teaching_supervision_handlers_use_request_context_and_services() {
     let handler = strip_comments(&read_source(
         manifest_dir().join("src/modules/supervision/handlers.rs"),
