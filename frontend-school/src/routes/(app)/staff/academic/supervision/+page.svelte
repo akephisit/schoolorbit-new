@@ -69,9 +69,28 @@
 		textResponse: string;
 	};
 
+	const timetableGridDays = [
+		{ code: 'MON', label: 'จันทร์' },
+		{ code: 'TUE', label: 'อังคาร' },
+		{ code: 'WED', label: 'พุธ' },
+		{ code: 'THU', label: 'พฤหัส' },
+		{ code: 'FRI', label: 'ศุกร์' },
+		{ code: 'SAT', label: 'เสาร์' },
+		{ code: 'SUN', label: 'อาทิตย์' }
+	] as const;
+
+	type TimetableGridDayCode = (typeof timetableGridDays)[number]['code'];
+	type TimetablePeriodRow = {
+		key: string;
+		label: string;
+		timeLabel: string;
+		sort: number;
+	};
+
 	let { data } = $props();
 
 	let loading = $state(true);
+	let loadingTimetable = $state(false);
 	let saving = $state(false);
 	let activeTab = $state('mine');
 	let cycles = $state<SupervisionCycle[]>([]);
@@ -105,6 +124,7 @@
 	let createCycleDialogOpen = $state(false);
 	let createTemplateDialogOpen = $state(false);
 	let cycleAcademicYearId = $state('');
+	let loadedTimetableCycleId = $state('');
 	let cycleForm = $state({
 		academicYear: 0,
 		semester: '',
@@ -152,6 +172,12 @@
 	const openCycles = $derived(cycles.filter((cycle) => cycle.status === 'open'));
 	const requestedObservations = $derived(
 		observations.filter((observation) => observation.status === 'requested')
+	);
+	const selectedCycleDetail = $derived(
+		cycles.find((cycle) => cycle.id === selectedCycleId) ?? null
+	);
+	const selectedTimetableEntry = $derived(
+		timetableEntries.find((entry) => entry.id === selectedTimetableEntryId) ?? null
 	);
 	const myObservations = $derived(
 		observations.filter((observation) => observation.observedUserId === currentUserId)
@@ -221,6 +247,20 @@
 		if (!semester || !year) return;
 		if (cycleForm.academicYear !== year.year || cycleForm.semester !== semester.term) {
 			setCycleSemester(semester.id);
+		}
+	});
+
+	$effect(() => {
+		if (!selectedCycleId) return;
+		void refreshTimetableForCycle(selectedCycleId);
+	});
+
+	$effect(() => {
+		if (!selectedTimetableEntryId) return;
+		if (
+			!timetableEntriesForSelectedCycle().some((entry) => entry.id === selectedTimetableEntryId)
+		) {
+			selectedTimetableEntryId = '';
 		}
 	});
 
@@ -296,6 +336,94 @@
 		return `${entry.day_of_week}${period} - ${title}${classroom}${room}`;
 	}
 
+	function timetableEntryTitle(entry: TimetableEntry): string {
+		return entry.subject_name_th || entry.title || entry.subject_code || 'คาบสอน';
+	}
+
+	function timetablePeriodKey(entry: TimetableEntry): string {
+		return (
+			entry.period_id ||
+			`${entry.start_time ?? ''}-${entry.end_time ?? ''}-${entry.period_name ?? ''}`
+		);
+	}
+
+	function timetablePeriodLabel(entry: TimetableEntry): string {
+		return entry.period_name || entry.title || 'ไม่ระบุคาบ';
+	}
+
+	function timetableTimeLabel(entry: TimetableEntry): string {
+		if (!entry.start_time && !entry.end_time) return '';
+		return `${entry.start_time?.slice(0, 5) ?? ''}-${entry.end_time?.slice(0, 5) ?? ''}`;
+	}
+
+	function timetablePeriodSort(entry: TimetableEntry): number {
+		const periodNumber = entry.period_name?.match(/\d+/)?.[0];
+		if (periodNumber) return Number(periodNumber);
+		if (entry.start_time) {
+			const [hour = '0', minute = '0'] = entry.start_time.split(':');
+			return Number(hour) * 60 + Number(minute);
+		}
+		return 9999;
+	}
+
+	function timetableEntriesForSelectedCycle(): TimetableEntry[] {
+		if (!selectedCycleDetail?.academicSemesterId) return timetableEntries;
+		return timetableEntries.filter(
+			(entry) => entry.academic_semester_id === selectedCycleDetail.academicSemesterId
+		);
+	}
+
+	function timetablePeriodRows(): TimetablePeriodRow[] {
+		const rows: TimetablePeriodRow[] = [];
+		for (const entry of timetableEntriesForSelectedCycle()) {
+			const key = timetablePeriodKey(entry);
+			if (!rows.some((row) => row.key === key)) {
+				rows.push({
+					key,
+					label: timetablePeriodLabel(entry),
+					timeLabel: timetableTimeLabel(entry),
+					sort: timetablePeriodSort(entry)
+				});
+			}
+		}
+		return rows.sort(
+			(left, right) => left.sort - right.sort || left.label.localeCompare(right.label)
+		);
+	}
+
+	function timetableEntryFor(
+		day: TimetableGridDayCode,
+		row: TimetablePeriodRow
+	): TimetableEntry | null {
+		return (
+			timetableEntriesForSelectedCycle().find(
+				(entry) => entry.day_of_week === day && timetablePeriodKey(entry) === row.key
+			) ?? null
+		);
+	}
+
+	function selectTimetableEntry(entry: TimetableEntry) {
+		selectedTimetableEntryId = entry.id;
+	}
+
+	async function refreshTimetableForCycle(cycleId: string) {
+		if (!cycleId || loadedTimetableCycleId === cycleId) return;
+		loadingTimetable = true;
+		try {
+			const cycle = cycles.find((item) => item.id === cycleId);
+			const timetable = await getMyTimetable({
+				academic_semester_id: cycle?.academicSemesterId ?? undefined,
+				include_team_ghosts: true
+			});
+			timetableEntries = timetable.data;
+			loadedTimetableCycleId = cycleId;
+		} catch (error) {
+			toast.error(error instanceof Error ? error.message : 'ไม่สามารถโหลดตารางสอนได้');
+		} finally {
+			loadingTimetable = false;
+		}
+	}
+
 	function observationLessonTitle(observation: SupervisionObservation): string {
 		return (
 			observation.lessonSnapshot.subjectName ?? observation.manualLesson?.subjectName ?? 'คาบนิเทศ'
@@ -313,22 +441,22 @@
 	async function refreshAll() {
 		loading = true;
 		try {
-			const [cycleItems, templateItems, observationItems, timetable, staffItems, structure] =
+			const [cycleItems, templateItems, observationItems, staffItems, structure] =
 				await Promise.all([
 					listSupervisionCycles(),
 					listSupervisionTemplates(),
 					listSupervisionObservations(),
-					getMyTimetable({ include_team_ghosts: true }),
 					lookupStaff({ activeOnly: true, limit: 1000 }),
 					getAcademicStructure()
 				]);
 			cycles = cycleItems;
 			templates = templateItems;
 			observations = observationItems;
-			timetableEntries = timetable.data;
 			staffList = staffItems;
 			academicStructure = structure.data;
-			selectedCycleId ||= openCycles[0]?.id ?? cycles[0]?.id ?? '';
+			selectedCycleId ||=
+				cycleItems.find((cycle) => cycle.status === 'open')?.id ?? cycleItems[0]?.id ?? '';
+			loadedTimetableCycleId = '';
 			progressCycleId ||= cycles[0]?.id ?? '';
 			cycleForm.templateId ||= templates[0]?.id ?? '';
 		} catch (error) {
@@ -838,20 +966,112 @@
 						{#if !manualMode}
 							<div class="space-y-2">
 								<Label>คาบจากตารางสอน</Label>
-								<Select.Root type="single" bind:value={selectedTimetableEntryId}>
-									<Select.Trigger class="w-full">
-										{timetableEntries.find((entry) => entry.id === selectedTimetableEntryId)
-											? timetableLabel(
-													timetableEntries.find((entry) => entry.id === selectedTimetableEntryId)!
-												)
-											: 'เลือกคาบสอน'}
-									</Select.Trigger>
-									<Select.Content>
-										{#each timetableEntries as entry (entry.id)}
-											<Select.Item value={entry.id}>{timetableLabel(entry)}</Select.Item>
+								{#if selectedCycleDetail?.academicSemesterId}
+									<p class="text-xs text-muted-foreground">
+										แสดงคาบสอนจาก {semesterLabel(selectedCycleDetail.academicSemesterId)}
+									</p>
+								{/if}
+								{#if loadingTimetable}
+									<Alert.Root>
+										<Loader2 class="h-4 w-4 animate-spin" />
+										<Alert.Title>กำลังโหลดตารางสอน</Alert.Title>
+										<Alert.Description>ระบบกำลังโหลดคาบสอนตามภาคเรียนของรอบนิเทศ</Alert.Description>
+									</Alert.Root>
+								{:else if timetableEntriesForSelectedCycle().length === 0}
+									<Alert.Root>
+										<Alert.Title>ไม่พบคาบสอนในภาคเรียนนี้</Alert.Title>
+										<Alert.Description>
+											ตรวจสอบตารางสอนของครู หรือใช้คาบกำหนดเองเมื่อจำเป็น
+										</Alert.Description>
+									</Alert.Root>
+								{:else}
+									<div class="grid gap-2 md:hidden">
+										{#each timetableEntriesForSelectedCycle() as entry (entry.id)}
+											<button
+												type="button"
+												class={cn(
+													'rounded-md border p-3 text-left transition hover:bg-muted/60',
+													selectedTimetableEntryId === entry.id && 'border-primary bg-primary/10'
+												)}
+												onclick={() => selectTimetableEntry(entry)}
+											>
+												<div class="flex items-center justify-between gap-2">
+													<span class="font-medium">{timetableEntryTitle(entry)}</span>
+													<Badge variant="secondary">{entry.day_of_week}</Badge>
+												</div>
+												<p class="text-sm text-muted-foreground">
+													{entry.period_name ?? 'คาบสอน'}
+													{timetableTimeLabel(entry)}
+												</p>
+												<p class="text-xs text-muted-foreground">
+													{entry.classroom_name ?? '-'}
+													{entry.room_code ? `ห้อง ${entry.room_code}` : ''}
+												</p>
+											</button>
 										{/each}
-									</Select.Content>
-								</Select.Root>
+									</div>
+									<div class="hidden rounded-md border md:block">
+										<Table.Root>
+											<Table.Header>
+												<Table.Row>
+													<Table.Head class="w-[120px]">คาบ</Table.Head>
+													{#each timetableGridDays as day (day.code)}
+														<Table.Head class="min-w-[150px] text-center">{day.label}</Table.Head>
+													{/each}
+												</Table.Row>
+											</Table.Header>
+											<Table.Body>
+												{#each timetablePeriodRows() as row (row.key)}
+													<Table.Row>
+														<Table.Cell class="bg-muted/30 align-top">
+															<div class="font-medium">{row.label}</div>
+															{#if row.timeLabel}
+																<div class="text-xs text-muted-foreground">{row.timeLabel}</div>
+															{/if}
+														</Table.Cell>
+														{#each timetableGridDays as day (day.code)}
+															{@const entry = timetableEntryFor(day.code, row)}
+															<Table.Cell class="min-w-[150px] p-1 align-top">
+																{#if entry}
+																	<button
+																		type="button"
+																		class={cn(
+																			'min-h-20 w-full rounded-md border p-2 text-left transition hover:border-primary hover:bg-primary/5',
+																			selectedTimetableEntryId === entry.id &&
+																				'border-primary bg-primary/10 shadow-sm'
+																		)}
+																		onclick={() => selectTimetableEntry(entry)}
+																	>
+																		<div class="text-sm font-medium leading-snug">
+																			{timetableEntryTitle(entry)}
+																		</div>
+																		<p class="mt-1 text-xs text-muted-foreground">
+																			{entry.classroom_name ?? '-'}
+																		</p>
+																		{#if entry.room_code}
+																			<p class="text-xs text-muted-foreground">
+																				ห้อง {entry.room_code}
+																			</p>
+																		{/if}
+																	</button>
+																{:else}
+																	<div
+																		class="min-h-20 rounded-md border border-dashed bg-muted/20"
+																	></div>
+																{/if}
+															</Table.Cell>
+														{/each}
+													</Table.Row>
+												{/each}
+											</Table.Body>
+										</Table.Root>
+									</div>
+								{/if}
+								{#if selectedTimetableEntry}
+									<p class="text-xs text-muted-foreground">
+										เลือกแล้ว: {timetableLabel(selectedTimetableEntry)}
+									</p>
+								{/if}
 							</div>
 						{:else}
 							<div class="grid gap-3 lg:grid-cols-2">
