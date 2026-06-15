@@ -3,21 +3,19 @@
 	import {
 		BarChart3,
 		BookOpenCheck,
+		Check,
+		ChevronsUpDown,
 		ClipboardCheck,
 		FileSignature,
+		Loader2,
+		Plus,
 		RefreshCw,
 		Send,
 		Settings2,
 		UserCheck
 	} from 'lucide-svelte';
 	import { toast } from 'svelte-sonner';
-	import { Badge } from '$lib/components/ui/badge';
-	import { Button } from '$lib/components/ui/button';
-	import * as Card from '$lib/components/ui/card';
-	import { Input } from '$lib/components/ui/input';
-	import { Label } from '$lib/components/ui/label';
-	import * as Tabs from '$lib/components/ui/tabs';
-	import { Textarea } from '$lib/components/ui/textarea';
+	import { getAcademicStructure, type AcademicStructureData } from '$lib/api/academic';
 	import { lookupStaff, type StaffLookupItem } from '$lib/api/lookup';
 	import { getMyTimetable, type TimetableEntry } from '$lib/api/timetable';
 	import {
@@ -49,6 +47,22 @@
 	import { PERMISSIONS } from '$lib/permissions/registry';
 	import { authStore } from '$lib/stores/auth';
 	import { can } from '$lib/stores/permissions';
+	import { cn } from '$lib/utils';
+	import * as Alert from '$lib/components/ui/alert';
+	import { Badge } from '$lib/components/ui/badge';
+	import { Button } from '$lib/components/ui/button';
+	import * as Card from '$lib/components/ui/card';
+	import * as Command from '$lib/components/ui/command';
+	import DatePicker from '$lib/components/ui/date-picker/DatePicker.svelte';
+	import * as Dialog from '$lib/components/ui/dialog';
+	import { Input } from '$lib/components/ui/input';
+	import { Label } from '$lib/components/ui/label';
+	import * as Popover from '$lib/components/ui/popover';
+	import { Progress } from '$lib/components/ui/progress';
+	import * as Select from '$lib/components/ui/select';
+	import * as Table from '$lib/components/ui/table';
+	import * as Tabs from '$lib/components/ui/tabs';
+	import { Textarea } from '$lib/components/ui/textarea';
 
 	type ResponseDraft = {
 		ratingScore: string;
@@ -65,36 +79,47 @@
 	let observations = $state<SupervisionObservation[]>([]);
 	let timetableEntries = $state<TimetableEntry[]>([]);
 	let staffList = $state<StaffLookupItem[]>([]);
+	let academicStructure = $state<AcademicStructureData>({ years: [], semesters: [], levels: [] });
 	let selectedCycleId = $state('');
 	let selectedTimetableEntryId = $state('');
 	let manualMode = $state(false);
+	let manualLessonDate = $state('');
+	let manualLessonTime = $state('08:30');
 	let manualLesson = $state({
 		subjectName: '',
 		classroomLabel: '',
 		roomLabel: '',
-		observedAt: '',
 		periodLabel: '',
 		reason: ''
 	});
 	let requestReturnComment = $state('');
 	let approvalObservationId = $state('');
 	let approvalEvaluatorId = $state('');
+	let evaluatorPickerOpen = $state(false);
 	let evaluationObservationId = $state('');
 	let responseDrafts = $state<{ [itemId: string]: ResponseDraft }>({});
 	let acknowledgeComment = $state('');
 	let reviewComment = $state('');
 	let progressCycleId = $state('');
 	let progress = $state<SupervisionCycleProgress | null>(null);
+	let createCycleDialogOpen = $state(false);
+	let createTemplateDialogOpen = $state(false);
+	let cycleAcademicYearId = $state('');
 	let cycleForm = $state({
-		academicYear: new Date().getFullYear() + 543,
-		semester: '1',
+		academicYear: 0,
+		semester: '',
+		academicSemesterId: '',
 		title: '',
 		description: '',
 		templateId: '',
-		bookingOpensAt: '',
-		bookingClosesAt: '',
-		startsAt: '',
-		endsAt: ''
+		bookingOpensDate: '',
+		bookingOpensTime: '08:00',
+		bookingClosesDate: '',
+		bookingClosesTime: '16:30',
+		startsDate: '',
+		startsTime: '08:00',
+		endsDate: '',
+		endsTime: '16:30'
 	});
 	let templateForm = $state({
 		title: '',
@@ -113,6 +138,17 @@
 	const canReport = $derived(
 		$can.has(PERMISSIONS.SUPERVISION_READ_SCHOOL) || canManage || canApprove
 	);
+	const activeAcademicYear = $derived(
+		academicStructure.years.find((year) => year.is_active) ?? academicStructure.years[0] ?? null
+	);
+	const cycleYear = $derived(
+		academicStructure.years.find((year) => year.id === cycleAcademicYearId) ?? activeAcademicYear
+	);
+	const cycleSemesters = $derived(
+		academicStructure.semesters.filter(
+			(semester) => semester.academic_year_id === (cycleYear?.id ?? '')
+		)
+	);
 	const openCycles = $derived(cycles.filter((cycle) => cycle.status === 'open'));
 	const requestedObservations = $derived(
 		observations.filter((observation) => observation.status === 'requested')
@@ -125,6 +161,12 @@
 			observation.evaluators.some((evaluator) => evaluator.evaluatorUserId === currentUserId)
 		)
 	);
+	const selectedApprovalObservation = $derived(
+		observations.find((observation) => observation.id === approvalObservationId) ?? null
+	);
+	const selectedEvaluator = $derived(
+		staffList.find((staff) => staff.id === approvalEvaluatorId) ?? null
+	);
 	const selectedEvaluation = $derived(
 		observations.find((observation) => observation.id === evaluationObservationId) ?? null
 	);
@@ -133,6 +175,70 @@
 			? (templates.find((template) => template.id === selectedEvaluation.templateId) ?? null)
 			: null
 	);
+	const reviewableObservations = $derived(
+		observations.filter(
+			(item) =>
+				item.status === 'evaluators_submitted' ||
+				item.status === 'under_review' ||
+				item.status === 'approved'
+		)
+	);
+	const progressPercent = $derived(
+		progress && progress.totalObservations > 0
+			? Math.round((progress.completedCount / progress.totalObservations) * 100)
+			: 0
+	);
+
+	$effect(() => {
+		if (!cycleAcademicYearId && activeAcademicYear) {
+			cycleAcademicYearId = activeAcademicYear.id;
+		}
+	});
+
+	$effect(() => {
+		if (!cycleYear) return;
+		const semesters = academicStructure.semesters.filter(
+			(semester) => semester.academic_year_id === cycleYear.id
+		);
+		if (semesters.length === 0) return;
+		if (
+			!cycleForm.academicSemesterId ||
+			!semesters.some((s) => s.id === cycleForm.academicSemesterId)
+		) {
+			const selectedSemester = semesters.find((semester) => semester.is_active) ?? semesters[0];
+			setCycleSemester(selectedSemester.id);
+		}
+	});
+
+	$effect(() => {
+		if (!cycleForm.academicSemesterId) return;
+		const semester = academicStructure.semesters.find(
+			(item) => item.id === cycleForm.academicSemesterId
+		);
+		const year = semester
+			? academicStructure.years.find((item) => item.id === semester.academic_year_id)
+			: null;
+		if (!semester || !year) return;
+		if (cycleForm.academicYear !== year.year || cycleForm.semester !== semester.term) {
+			setCycleSemester(semester.id);
+		}
+	});
+
+	function setCycleSemester(semesterId: string) {
+		const semester = academicStructure.semesters.find((item) => item.id === semesterId);
+		if (!semester) return;
+		const year = academicStructure.years.find((item) => item.id === semester.academic_year_id);
+		if (!year) return;
+
+		cycleAcademicYearId = year.id;
+		cycleForm.academicYear = year.year;
+		cycleForm.semester = semester.term;
+		cycleForm.academicSemesterId = semester.id;
+		cycleForm.startsDate ||= semester.start_date;
+		cycleForm.endsDate ||= semester.end_date;
+		cycleForm.bookingOpensDate ||= semester.start_date;
+		cycleForm.bookingClosesDate ||= semester.end_date;
+	}
 
 	function formatDate(value?: string | null): string {
 		if (!value) return '-';
@@ -140,6 +246,23 @@
 			dateStyle: 'medium',
 			timeStyle: 'short'
 		}).format(new Date(value));
+	}
+
+	function semesterLabel(semesterId?: string | null): string {
+		if (!semesterId) return 'ไม่ผูกภาคเรียน';
+		const semester = academicStructure.semesters.find((item) => item.id === semesterId);
+		const year = semester
+			? academicStructure.years.find((item) => item.id === semester.academic_year_id)
+			: null;
+		if (!semester) return 'ไม่พบภาคเรียน';
+		return `${semester.name || `ภาคเรียนที่ ${semester.term}`} ${year?.name ?? ''}`.trim();
+	}
+
+	function cycleLabel(cycle: SupervisionCycle): string {
+		const period = cycle.academicSemesterId
+			? semesterLabel(cycle.academicSemesterId)
+			: `ปี ${cycle.academicYear} / ภาคเรียน ${cycle.semester}`;
+		return `${cycle.title} - ${period}`;
 	}
 
 	function statusLabel(status: SupervisionObservationStatus | SupervisionCycle['status']): string {
@@ -169,29 +292,42 @@
 		const title = entry.subject_name_th || entry.title || entry.subject_code || 'คาบสอน';
 		const period = entry.period_name ? ` ${entry.period_name}` : '';
 		const room = entry.room_code ? ` ห้อง ${entry.room_code}` : '';
-		return `${entry.day_of_week}${period} - ${title}${room}`;
+		const classroom = entry.classroom_name ? ` ${entry.classroom_name}` : '';
+		return `${entry.day_of_week}${period} - ${title}${classroom}${room}`;
 	}
 
-	function toIsoDateTime(value: string): string {
-		return new Date(value).toISOString();
+	function observationLessonTitle(observation: SupervisionObservation): string {
+		return (
+			observation.lessonSnapshot.subjectName ?? observation.manualLesson?.subjectName ?? 'คาบนิเทศ'
+		);
+	}
+
+	function combineLocalDateTime(date: string, time: string): string {
+		return new Date(`${date}T${time || '00:00'}`).toISOString();
+	}
+
+	function optionalLocalDateTime(date: string, time: string): string | null {
+		return date ? combineLocalDateTime(date, time) : null;
 	}
 
 	async function refreshAll() {
 		loading = true;
 		try {
-			const [cycleItems, templateItems, observationItems, timetable, staffItems] =
+			const [cycleItems, templateItems, observationItems, timetable, staffItems, structure] =
 				await Promise.all([
 					listSupervisionCycles(),
 					listSupervisionTemplates(),
 					listSupervisionObservations(),
 					getMyTimetable({ include_team_ghosts: true }),
-					lookupStaff({ activeOnly: true, limit: 1000 })
+					lookupStaff({ activeOnly: true, limit: 1000 }),
+					getAcademicStructure()
 				]);
 			cycles = cycleItems;
 			templates = templateItems;
 			observations = observationItems;
 			timetableEntries = timetable.data;
 			staffList = staffItems;
+			academicStructure = structure.data;
 			selectedCycleId ||= openCycles[0]?.id ?? cycles[0]?.id ?? '';
 			progressCycleId ||= cycles[0]?.id ?? '';
 			cycleForm.templateId ||= templates[0]?.id ?? '';
@@ -215,7 +351,10 @@
 
 		if (
 			manualMode &&
-			(!manualLesson.subjectName || !manualLesson.classroomLabel || !manualLesson.observedAt)
+			(!manualLesson.subjectName ||
+				!manualLesson.classroomLabel ||
+				!manualLessonDate ||
+				!manualLessonTime)
 		) {
 			toast.error('กรอกข้อมูลคาบแบบกำหนดเองให้ครบ');
 			return;
@@ -231,7 +370,7 @@
 							subjectName: manualLesson.subjectName,
 							classroomLabel: manualLesson.classroomLabel,
 							roomLabel: manualLesson.roomLabel || null,
-							observedAt: toIsoDateTime(manualLesson.observedAt),
+							observedAt: combineLocalDateTime(manualLessonDate, manualLessonTime),
 							periodLabel: manualLesson.periodLabel,
 							reason: manualLesson.reason
 						}
@@ -245,6 +384,11 @@
 		} finally {
 			saving = false;
 		}
+	}
+
+	function selectEvaluator(staff: StaffLookupItem) {
+		approvalEvaluatorId = staff.id;
+		evaluatorPickerOpen = false;
 	}
 
 	async function approveRequest() {
@@ -429,21 +573,31 @@
 	}
 
 	async function createCycle() {
-		if (!cycleForm.title || !cycleForm.templateId || !cycleForm.startsAt || !cycleForm.endsAt) {
-			toast.error('กรอกชื่อรอบ แบบประเมิน และช่วงวันที่ให้ครบ');
+		if (
+			!cycleForm.title ||
+			!cycleForm.templateId ||
+			!cycleForm.academicSemesterId ||
+			!cycleForm.startsDate ||
+			!cycleForm.endsDate
+		) {
+			toast.error('กรอกชื่อรอบ ภาคเรียน แบบประเมิน และช่วงวันที่ให้ครบ');
 			return;
 		}
 
 		const payload: CreateSupervisionCycleRequest = {
 			academicYear: Number(cycleForm.academicYear),
 			semester: cycleForm.semester,
+			academicSemesterId: cycleForm.academicSemesterId,
 			title: cycleForm.title,
 			description: cycleForm.description || null,
 			templateId: cycleForm.templateId,
-			bookingOpensAt: cycleForm.bookingOpensAt ? toIsoDateTime(cycleForm.bookingOpensAt) : null,
-			bookingClosesAt: cycleForm.bookingClosesAt ? toIsoDateTime(cycleForm.bookingClosesAt) : null,
-			startsAt: toIsoDateTime(cycleForm.startsAt),
-			endsAt: toIsoDateTime(cycleForm.endsAt),
+			bookingOpensAt: optionalLocalDateTime(cycleForm.bookingOpensDate, cycleForm.bookingOpensTime),
+			bookingClosesAt: optionalLocalDateTime(
+				cycleForm.bookingClosesDate,
+				cycleForm.bookingClosesTime
+			),
+			startsAt: combineLocalDateTime(cycleForm.startsDate, cycleForm.startsTime),
+			endsAt: combineLocalDateTime(cycleForm.endsDate, cycleForm.endsTime),
 			status: 'draft',
 			targets: [{ targetType: 'school', requiredObservations: 1, priority: 100 }]
 		};
@@ -455,6 +609,7 @@
 			toast.success('สร้างรอบนิเทศแล้ว');
 			cycleForm.title = '';
 			cycleForm.description = '';
+			createCycleDialogOpen = false;
 			await refreshAll();
 		} catch (error) {
 			toast.error(error instanceof Error ? error.message : 'สร้างรอบนิเทศไม่สำเร็จ');
@@ -523,6 +678,7 @@
 			toast.success('สร้างแบบประเมินนิเทศแล้ว');
 			templateForm.title = '';
 			templateForm.description = '';
+			createTemplateDialogOpen = false;
 			await refreshAll();
 		} catch (error) {
 			toast.error(error instanceof Error ? error.message : 'สร้างแบบประเมินไม่สำเร็จ');
@@ -590,10 +746,28 @@
 
 	<div class="flex flex-wrap gap-2">
 		<Button variant="outline" size="sm" onclick={refreshAll} disabled={loading || saving}>
-			<RefreshCw class="mr-2 h-4 w-4" />
+			<RefreshCw class={cn('mr-2 h-4 w-4', loading && 'animate-spin')} />
 			รีเฟรช
 		</Button>
+		{#if canManage}
+			<Button size="sm" onclick={() => (createCycleDialogOpen = true)}>
+				<Plus class="mr-2 h-4 w-4" />
+				สร้างรอบนิเทศ
+			</Button>
+			<Button size="sm" variant="outline" onclick={() => (createTemplateDialogOpen = true)}>
+				<Settings2 class="mr-2 h-4 w-4" />
+				สร้างแบบประเมิน
+			</Button>
+		{/if}
 	</div>
+
+	{#if loading}
+		<Alert.Root>
+			<Loader2 class="h-4 w-4 animate-spin" />
+			<Alert.Title>กำลังโหลดข้อมูลนิเทศ</Alert.Title>
+			<Alert.Description>ระบบกำลังดึงรอบนิเทศ แบบประเมิน ตารางสอน และปีการศึกษา</Alert.Description>
+		</Alert.Root>
+	{/if}
 
 	<Tabs.Root bind:value={activeTab} class="space-y-4">
 		<Tabs.List class="grid w-full grid-cols-2 md:grid-cols-6">
@@ -616,20 +790,27 @@
 				</Card.Header>
 				<Card.Content class="space-y-4">
 					{#if !canRequest}
-						<p class="text-sm text-muted-foreground">บัญชีนี้ยังไม่มีสิทธิ์จองคาบนิเทศของตนเอง</p>
+						<Alert.Root>
+							<Alert.Title>ยังไม่มีสิทธิ์จองคาบนิเทศ</Alert.Title>
+							<Alert.Description
+								>ต้องมีสิทธิ์จองคาบนิเทศของตนเองก่อนจึงจะส่งคำขอได้</Alert.Description
+							>
+						</Alert.Root>
 					{:else}
 						<div class="grid gap-4 lg:grid-cols-2">
 							<div class="space-y-2">
 								<Label>รอบนิเทศ</Label>
-								<select
-									class="h-9 rounded-md border bg-background px-3 text-sm"
-									bind:value={selectedCycleId}
-								>
-									<option value="">เลือกรอบนิเทศ</option>
-									{#each openCycles as cycle (cycle.id)}
-										<option value={cycle.id}>{cycle.title}</option>
-									{/each}
-								</select>
+								<Select.Root type="single" bind:value={selectedCycleId}>
+									<Select.Trigger class="w-full">
+										{openCycles.find((cycle) => cycle.id === selectedCycleId)?.title ??
+											'เลือกรอบนิเทศ'}
+									</Select.Trigger>
+									<Select.Content>
+										{#each openCycles as cycle (cycle.id)}
+											<Select.Item value={cycle.id}>{cycleLabel(cycle)}</Select.Item>
+										{/each}
+									</Select.Content>
+								</Select.Root>
 							</div>
 							<div class="space-y-2">
 								<Label>รูปแบบคาบ</Label>
@@ -657,15 +838,20 @@
 						{#if !manualMode}
 							<div class="space-y-2">
 								<Label>คาบจากตารางสอน</Label>
-								<select
-									class="h-9 w-full rounded-md border bg-background px-3 text-sm"
-									bind:value={selectedTimetableEntryId}
-								>
-									<option value="">เลือกคาบสอน</option>
-									{#each timetableEntries as entry (entry.id)}
-										<option value={entry.id}>{timetableLabel(entry)}</option>
-									{/each}
-								</select>
+								<Select.Root type="single" bind:value={selectedTimetableEntryId}>
+									<Select.Trigger class="w-full">
+										{timetableEntries.find((entry) => entry.id === selectedTimetableEntryId)
+											? timetableLabel(
+													timetableEntries.find((entry) => entry.id === selectedTimetableEntryId)!
+												)
+											: 'เลือกคาบสอน'}
+									</Select.Trigger>
+									<Select.Content>
+										{#each timetableEntries as entry (entry.id)}
+											<Select.Item value={entry.id}>{timetableLabel(entry)}</Select.Item>
+										{/each}
+									</Select.Content>
+								</Select.Root>
 							</div>
 						{:else}
 							<div class="grid gap-3 lg:grid-cols-2">
@@ -678,8 +864,12 @@
 									<Input bind:value={manualLesson.classroomLabel} placeholder="เช่น ม.3/1" />
 								</div>
 								<div class="space-y-2">
-									<Label>วันและเวลา</Label>
-									<Input type="datetime-local" bind:value={manualLesson.observedAt} />
+									<Label>วันที่นิเทศ</Label>
+									<DatePicker bind:value={manualLessonDate} placeholder="เลือกวันที่" />
+								</div>
+								<div class="space-y-2">
+									<Label>เวลา</Label>
+									<Input type="time" bind:value={manualLessonTime} />
 								</div>
 								<div class="space-y-2">
 									<Label>คาบ/ห้อง</Label>
@@ -707,47 +897,79 @@
 				<Card.Header>
 					<Card.Title>รายการของฉัน</Card.Title>
 				</Card.Header>
-				<Card.Content class="space-y-3">
+				<Card.Content>
 					{#if myObservations.length === 0}
-						<p class="text-sm text-muted-foreground">ยังไม่มีรายการนิเทศของฉัน</p>
+						<Alert.Root>
+							<Alert.Title>ยังไม่มีรายการนิเทศของฉัน</Alert.Title>
+							<Alert.Description>เมื่อส่งคำขอหรือได้รับผลนิเทศ รายการจะแสดงที่นี่</Alert.Description
+							>
+						</Alert.Root>
 					{:else}
-						{#each myObservations as observation (observation.id)}
-							<div class="rounded-md border p-3">
-								<div class="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-									<div>
-										<p class="font-medium">
-											{observation.lessonSnapshot.subjectName ??
-												observation.manualLesson?.subjectName ??
-												'คาบนิเทศ'}
-										</p>
-										<p class="text-sm text-muted-foreground">
+						<Table.Root>
+							<Table.Header>
+								<Table.Row>
+									<Table.Head>คาบ</Table.Head>
+									<Table.Head>วันที่</Table.Head>
+									<Table.Head>สถานะ</Table.Head>
+									<Table.Head class="text-right">การรับทราบ</Table.Head>
+								</Table.Row>
+							</Table.Header>
+							<Table.Body>
+								{#each myObservations as observation (observation.id)}
+									<Table.Row>
+										<Table.Cell class="font-medium"
+											>{observationLessonTitle(observation)}</Table.Cell
+										>
+										<Table.Cell>
 											{formatDate(
 												observation.lessonSnapshot.observedAt ??
 													observation.manualLesson?.observedAt
 											)}
-										</p>
-									</div>
-									<Badge variant="secondary">{statusLabel(observation.status)}</Badge>
-								</div>
-								{#if observation.status === 'published'}
-									<div class="mt-3 space-y-2">
-										<Textarea
-											bind:value={acknowledgeComment}
-											rows={2}
-											placeholder="ความคิดเห็นเพิ่มเติม (ถ้ามี)"
-										/>
-										<Button
-											size="sm"
-											onclick={() => acknowledgeResult(observation.id)}
-											disabled={saving}
-										>
-											<FileSignature class="mr-2 h-4 w-4" />
-											รับทราบผล
-										</Button>
-									</div>
-								{/if}
-							</div>
-						{/each}
+										</Table.Cell>
+										<Table.Cell>
+											<Badge variant="secondary">{statusLabel(observation.status)}</Badge>
+										</Table.Cell>
+										<Table.Cell class="text-right">
+											{#if observation.status === 'published'}
+												<Dialog.Root>
+													<Dialog.Trigger>
+														{#snippet child({ props })}
+															<Button size="sm" {...props}>
+																<FileSignature class="mr-2 h-4 w-4" />
+																รับทราบผล
+															</Button>
+														{/snippet}
+													</Dialog.Trigger>
+													<Dialog.Content>
+														<Dialog.Header>
+															<Dialog.Title>รับทราบผลนิเทศ</Dialog.Title>
+															<Dialog.Description>
+																เพิ่มความคิดเห็นได้ถ้าต้องการ แล้วกดยืนยันรับทราบผลนิเทศ
+															</Dialog.Description>
+														</Dialog.Header>
+														<Textarea
+															bind:value={acknowledgeComment}
+															rows={3}
+															placeholder="ความคิดเห็นเพิ่มเติม (ถ้ามี)"
+														/>
+														<Dialog.Footer>
+															<Button
+																onclick={() => acknowledgeResult(observation.id)}
+																disabled={saving}
+															>
+																ยืนยันรับทราบ
+															</Button>
+														</Dialog.Footer>
+													</Dialog.Content>
+												</Dialog.Root>
+											{:else}
+												<span class="text-sm text-muted-foreground">-</span>
+											{/if}
+										</Table.Cell>
+									</Table.Row>
+								{/each}
+							</Table.Body>
+						</Table.Root>
 					{/if}
 				</Card.Content>
 			</Card.Root>
@@ -760,38 +982,86 @@
 						<UserCheck class="h-5 w-5" />
 						คำขอจองที่รออนุมัติ
 					</Card.Title>
+					<Card.Description>เลือกคำขอและมอบหมายผู้ประเมินก่อนอนุมัติ</Card.Description>
 				</Card.Header>
-				<Card.Content class="space-y-3">
+				<Card.Content class="space-y-4">
 					{#if requestedObservations.length === 0}
-						<p class="text-sm text-muted-foreground">ไม่มีคำขอจองที่รออนุมัติ</p>
+						<Alert.Root>
+							<Alert.Title>ไม่มีคำขอจองที่รออนุมัติ</Alert.Title>
+							<Alert.Description>เมื่อครูส่งคำขอจอง รายการจะปรากฏในส่วนนี้</Alert.Description>
+						</Alert.Root>
 					{:else}
-						<div class="grid gap-3 lg:grid-cols-[1fr_260px_180px]">
-							<select
-								class="h-9 rounded-md border bg-background px-3 text-sm"
-								bind:value={approvalObservationId}
-							>
-								<option value="">เลือกรายการคำขอ</option>
-								{#each requestedObservations as observation (observation.id)}
-									<option value={observation.id}>
-										{observation.observedDisplayName ?? 'ครู'} - {observation.lessonSnapshot
-											.subjectName ?? 'คาบนิเทศ'}
-									</option>
-								{/each}
-							</select>
-							<select
-								class="h-9 rounded-md border bg-background px-3 text-sm"
-								bind:value={approvalEvaluatorId}
-							>
-								<option value="">เลือกผู้ประเมิน</option>
-								{#each staffList as staff (staff.id)}
-									<option value={staff.id}>{staff.name}</option>
-								{/each}
-							</select>
+						<div class="grid gap-3 lg:grid-cols-[1fr_280px_auto]">
+							<Select.Root type="single" bind:value={approvalObservationId}>
+								<Select.Trigger class="w-full">
+									{selectedApprovalObservation
+										? `${selectedApprovalObservation.observedDisplayName ?? 'ครู'} - ${observationLessonTitle(selectedApprovalObservation)}`
+										: 'เลือกรายการคำขอ'}
+								</Select.Trigger>
+								<Select.Content>
+									{#each requestedObservations as observation (observation.id)}
+										<Select.Item value={observation.id}>
+											{observation.observedDisplayName ?? 'ครู'} - {observationLessonTitle(
+												observation
+											)}
+										</Select.Item>
+									{/each}
+								</Select.Content>
+							</Select.Root>
+
+							<Popover.Root bind:open={evaluatorPickerOpen}>
+								<Popover.Trigger>
+									{#snippet child({ props })}
+										<Button
+											variant="outline"
+											role="combobox"
+											aria-expanded={evaluatorPickerOpen}
+											class="w-full justify-between font-normal"
+											{...props}
+										>
+											<span class={cn('truncate', !selectedEvaluator && 'text-muted-foreground')}>
+												{selectedEvaluator?.name ?? 'เลือกผู้ประเมิน'}
+											</span>
+											<ChevronsUpDown class="ml-2 h-4 w-4 shrink-0 opacity-50" />
+										</Button>
+									{/snippet}
+								</Popover.Trigger>
+								<Popover.Content class="w-[--bits-popover-trigger-width] p-0">
+									<Command.Root>
+										<Command.Input placeholder="ค้นหาครูผู้ประเมิน..." />
+										<Command.Empty>ไม่พบครู</Command.Empty>
+										<Command.List class="max-h-72">
+											<Command.Group>
+												{#each staffList as staff (staff.id)}
+													<Command.Item value={staff.name} onSelect={() => selectEvaluator(staff)}>
+														<Check
+															class={cn(
+																'mr-2 h-4 w-4',
+																approvalEvaluatorId === staff.id ? 'opacity-100' : 'opacity-0'
+															)}
+														/>
+														<span>{staff.name}</span>
+														{#if staff.title}
+															<span class="ml-1 text-xs text-muted-foreground">({staff.title})</span
+															>
+														{/if}
+													</Command.Item>
+												{/each}
+											</Command.Group>
+										</Command.List>
+									</Command.Root>
+								</Popover.Content>
+							</Popover.Root>
+
 							<Button onclick={approveRequest} disabled={saving}>อนุมัติและมอบหมาย</Button>
 						</div>
-						<div class="space-y-2">
-							<Label>เหตุผลส่งกลับ</Label>
-							<Textarea bind:value={requestReturnComment} rows={2} />
+						<div class="space-y-2 rounded-md border p-3">
+							<Label>ส่งกลับคำขอ</Label>
+							<Textarea
+								bind:value={requestReturnComment}
+								rows={2}
+								placeholder="ระบุเหตุผลส่งกลับ"
+							/>
 							<Button
 								variant="outline"
 								size="sm"
@@ -813,22 +1083,28 @@
 				</Card.Header>
 				<Card.Content class="space-y-4">
 					{#if assignedObservations.length === 0}
-						<p class="text-sm text-muted-foreground">ยังไม่มีรายการที่ได้รับมอบหมาย</p>
+						<Alert.Root>
+							<Alert.Title>ยังไม่มีรายการที่ได้รับมอบหมาย</Alert.Title>
+							<Alert.Description
+								>รายการจะปรากฏเมื่อผู้ดูแลอนุมัติคำขอและมอบหมายให้ประเมิน</Alert.Description
+							>
+						</Alert.Root>
 					{:else}
 						<div class="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
 							{#each assignedObservations as observation (observation.id)}
 								<button
 									type="button"
-									class="rounded-md border p-3 text-left transition hover:bg-muted/40"
+									class={cn(
+										'rounded-md border p-3 text-left transition hover:bg-muted/40',
+										evaluationObservationId === observation.id && 'border-primary bg-primary/5'
+									)}
 									onclick={() => prepareEvaluationDraft(observation)}
 								>
 									<div class="font-medium">
 										{observation.observedDisplayName ?? 'ครูผู้ถูกนิเทศ'}
 									</div>
 									<div class="text-sm text-muted-foreground">
-										{observation.lessonSnapshot.subjectName ??
-											observation.manualLesson?.subjectName ??
-											'คาบนิเทศ'}
+										{observationLessonTitle(observation)}
 									</div>
 									<Badge class="mt-2" variant="secondary">{statusLabel(observation.status)}</Badge>
 								</button>
@@ -889,100 +1165,101 @@
 
 		<Tabs.Content value="cycles" class="space-y-4">
 			<Card.Root>
-				<Card.Header>
-					<Card.Title class="flex items-center gap-2">
-						<Settings2 class="h-5 w-5" />
-						สร้างรอบนิเทศ
-					</Card.Title>
-				</Card.Header>
-				<Card.Content class="grid gap-3 lg:grid-cols-2">
-					<Input bind:value={cycleForm.title} placeholder="ชื่อรอบนิเทศ" />
-					<Input bind:value={cycleForm.academicYear} type="number" placeholder="ปีการศึกษา" />
-					<Input bind:value={cycleForm.semester} placeholder="ภาคเรียน" />
-					<select
-						class="h-9 rounded-md border bg-background px-3 text-sm"
-						bind:value={cycleForm.templateId}
-					>
-						<option value="">เลือกแบบประเมิน</option>
-						{#each templates as template (template.id)}
-							<option value={template.id}>{template.title}</option>
-						{/each}
-					</select>
-					<Input type="datetime-local" bind:value={cycleForm.bookingOpensAt} />
-					<Input type="datetime-local" bind:value={cycleForm.bookingClosesAt} />
-					<Input type="datetime-local" bind:value={cycleForm.startsAt} />
-					<Input type="datetime-local" bind:value={cycleForm.endsAt} />
-					<Textarea
-						class="lg:col-span-2"
-						bind:value={cycleForm.description}
-						rows={2}
-						placeholder="รายละเอียด"
-					/>
-					<div class="lg:col-span-2">
-						<Button onclick={createCycle} disabled={saving}>สร้างรอบนิเทศ</Button>
+				<Card.Header class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+					<div>
+						<Card.Title>รอบนิเทศ</Card.Title>
+						<Card.Description>รอบนิเทศเชื่อมกับปีการศึกษาและภาคเรียนของระบบวิชาการ</Card.Description
+						>
 					</div>
+					<Button onclick={() => (createCycleDialogOpen = true)}>
+						<Plus class="mr-2 h-4 w-4" />
+						สร้างรอบนิเทศ
+					</Button>
+				</Card.Header>
+				<Card.Content>
+					<Table.Root>
+						<Table.Header>
+							<Table.Row>
+								<Table.Head>รอบนิเทศ</Table.Head>
+								<Table.Head>ภาคเรียน</Table.Head>
+								<Table.Head>ช่วงเวลา</Table.Head>
+								<Table.Head>สถานะ</Table.Head>
+							</Table.Row>
+						</Table.Header>
+						<Table.Body>
+							{#if cycles.length === 0}
+								<Table.Row>
+									<Table.Cell colspan={4} class="h-24 text-center text-muted-foreground">
+										ยังไม่มีรอบนิเทศ
+									</Table.Cell>
+								</Table.Row>
+							{:else}
+								{#each cycles as cycle (cycle.id)}
+									<Table.Row>
+										<Table.Cell class="font-medium">{cycle.title}</Table.Cell>
+										<Table.Cell>
+											{cycle.academicSemesterId
+												? semesterLabel(cycle.academicSemesterId)
+												: `ปี ${cycle.academicYear} / ภาคเรียน ${cycle.semester}`}
+										</Table.Cell>
+										<Table.Cell
+											>{formatDate(cycle.startsAt)} - {formatDate(cycle.endsAt)}</Table.Cell
+										>
+										<Table.Cell
+											><Badge variant="secondary">{statusLabel(cycle.status)}</Badge></Table.Cell
+										>
+									</Table.Row>
+								{/each}
+							{/if}
+						</Table.Body>
+					</Table.Root>
 				</Card.Content>
 			</Card.Root>
-
-			<div class="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-				{#each cycles as cycle (cycle.id)}
-					<div class="rounded-md border p-3">
-						<div class="flex items-start justify-between gap-3">
-							<div>
-								<p class="font-medium">{cycle.title}</p>
-								<p class="text-sm text-muted-foreground">
-									ปี {cycle.academicYear} / {cycle.semester}
-								</p>
-							</div>
-							<Badge variant="secondary">{statusLabel(cycle.status)}</Badge>
-						</div>
-						<p class="mt-2 text-xs text-muted-foreground">
-							{formatDate(cycle.startsAt)} - {formatDate(cycle.endsAt)}
-						</p>
-					</div>
-				{/each}
-			</div>
 		</Tabs.Content>
 
 		<Tabs.Content value="templates" class="space-y-4">
 			<Card.Root>
-				<Card.Header>
-					<Card.Title>สร้างแบบประเมินพื้นฐาน</Card.Title>
-				</Card.Header>
-				<Card.Content class="grid gap-3 lg:grid-cols-2">
-					<Input bind:value={templateForm.title} placeholder="ชื่อแบบประเมิน" />
-					<Input bind:value={templateForm.description} placeholder="รายละเอียด" />
-					<Input type="number" bind:value={templateForm.ratingMin} placeholder="คะแนนต่ำสุด" />
-					<Input type="number" bind:value={templateForm.ratingMax} placeholder="คะแนนสูงสุด" />
-					<Input
-						class="lg:col-span-2"
-						bind:value={templateForm.ratingLabel}
-						placeholder="หัวข้อแบบคะแนน"
-					/>
-					<Input
-						class="lg:col-span-2"
-						bind:value={templateForm.textLabel}
-						placeholder="หัวข้อแบบข้อความ"
-					/>
-					<div class="lg:col-span-2">
-						<Button onclick={createTemplate} disabled={saving}>สร้างแบบประเมิน</Button>
+				<Card.Header class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+					<div>
+						<Card.Title>แบบประเมิน</Card.Title>
+						<Card.Description>แบบประเมินใช้กับรอบนิเทศและขั้นตอนอนุมัติผล</Card.Description>
 					</div>
+					<Button onclick={() => (createTemplateDialogOpen = true)}>
+						<Plus class="mr-2 h-4 w-4" />
+						สร้างแบบประเมิน
+					</Button>
+				</Card.Header>
+				<Card.Content>
+					<Table.Root>
+						<Table.Header>
+							<Table.Row>
+								<Table.Head>ชื่อแบบประเมิน</Table.Head>
+								<Table.Head>หมวด</Table.Head>
+								<Table.Head>ช่วงคะแนน</Table.Head>
+								<Table.Head>สถานะ</Table.Head>
+							</Table.Row>
+						</Table.Header>
+						<Table.Body>
+							{#if templates.length === 0}
+								<Table.Row>
+									<Table.Cell colspan={4} class="h-24 text-center text-muted-foreground">
+										ยังไม่มีแบบประเมินนิเทศ
+									</Table.Cell>
+								</Table.Row>
+							{:else}
+								{#each templates as template (template.id)}
+									<Table.Row>
+										<Table.Cell class="font-medium">{template.title}</Table.Cell>
+										<Table.Cell>{template.sections.length}</Table.Cell>
+										<Table.Cell>{template.ratingMin} - {template.ratingMax}</Table.Cell>
+										<Table.Cell><Badge variant="secondary">{template.status}</Badge></Table.Cell>
+									</Table.Row>
+								{/each}
+							{/if}
+						</Table.Body>
+					</Table.Root>
 				</Card.Content>
 			</Card.Root>
-
-			<div class="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-				{#each templates as template (template.id)}
-					<div class="rounded-md border p-3">
-						<div class="flex items-start justify-between gap-3">
-							<div>
-								<p class="font-medium">{template.title}</p>
-								<p class="text-sm text-muted-foreground">{template.sections.length} หมวด</p>
-							</div>
-							<Badge variant="secondary">{template.status}</Badge>
-						</div>
-					</div>
-				{/each}
-			</div>
 		</Tabs.Content>
 
 		<Tabs.Content value="reports" class="space-y-4">
@@ -995,15 +1272,16 @@
 				</Card.Header>
 				<Card.Content class="space-y-4">
 					<div class="flex flex-col gap-2 md:flex-row">
-						<select
-							class="h-9 rounded-md border bg-background px-3 text-sm"
-							bind:value={progressCycleId}
-						>
-							<option value="">เลือกรอบนิเทศ</option>
-							{#each cycles as cycle (cycle.id)}
-								<option value={cycle.id}>{cycle.title}</option>
-							{/each}
-						</select>
+						<Select.Root type="single" bind:value={progressCycleId}>
+							<Select.Trigger class="w-full md:w-[360px]">
+								{cycles.find((cycle) => cycle.id === progressCycleId)?.title ?? 'เลือกรอบนิเทศ'}
+							</Select.Trigger>
+							<Select.Content>
+								{#each cycles as cycle (cycle.id)}
+									<Select.Item value={cycle.id}>{cycleLabel(cycle)}</Select.Item>
+								{/each}
+							</Select.Content>
+						</Select.Root>
 						<Button onclick={loadProgress} disabled={saving}>โหลดรายงาน</Button>
 					</div>
 
@@ -1026,53 +1304,227 @@
 								<p class="text-xs text-muted-foreground">คะแนนเฉลี่ย</p>
 							</div>
 						</div>
+						<div class="space-y-2">
+							<div class="flex items-center justify-between text-sm">
+								<span>ความคืบหน้ารวม</span>
+								<span>{progressPercent}%</span>
+							</div>
+							<Progress value={progressPercent} />
+						</div>
 					{/if}
 
 					<div class="space-y-2">
 						<Textarea bind:value={reviewComment} rows={2} placeholder="เหตุผลส่งกลับผลนิเทศ" />
-						<div class="flex flex-wrap gap-2">
-							{#each observations.filter((item) => item.status === 'evaluators_submitted' || item.status === 'under_review' || item.status === 'approved') as observation (observation.id)}
-								<div class="flex flex-wrap items-center gap-2 rounded-md border p-2">
-									<span class="text-sm">{observation.observedDisplayName ?? 'ครู'}</span>
-									<Badge variant="secondary">{statusLabel(observation.status)}</Badge>
-									<Button
-										size="sm"
-										variant="outline"
-										onclick={() => submitForReview(observation.id)}
-										disabled={saving}
-									>
-										ส่งตรวจทาน
-									</Button>
-									<Button
-										size="sm"
-										variant="outline"
-										onclick={() => approveResult(observation.id)}
-										disabled={saving}
-									>
-										อนุมัติ
-									</Button>
-									<Button
-										size="sm"
-										variant="outline"
-										onclick={() => publishResult(observation.id)}
-										disabled={saving}
-									>
-										เผยแพร่
-									</Button>
-									<Button
-										size="sm"
-										variant="outline"
-										onclick={() => returnResult(observation.id)}
-										disabled={saving}
-									>
-										ส่งกลับ
-									</Button>
-								</div>
-							{/each}
-						</div>
+						<Table.Root>
+							<Table.Header>
+								<Table.Row>
+									<Table.Head>ครูผู้ถูกนิเทศ</Table.Head>
+									<Table.Head>คาบ</Table.Head>
+									<Table.Head>สถานะ</Table.Head>
+									<Table.Head class="text-right">คำสั่ง</Table.Head>
+								</Table.Row>
+							</Table.Header>
+							<Table.Body>
+								{#if reviewableObservations.length === 0}
+									<Table.Row>
+										<Table.Cell colspan={4} class="h-24 text-center text-muted-foreground">
+											ยังไม่มีรายการที่ต้องตรวจทาน
+										</Table.Cell>
+									</Table.Row>
+								{:else}
+									{#each reviewableObservations as observation (observation.id)}
+										<Table.Row>
+											<Table.Cell>{observation.observedDisplayName ?? 'ครู'}</Table.Cell>
+											<Table.Cell>{observationLessonTitle(observation)}</Table.Cell>
+											<Table.Cell>
+												<Badge variant="secondary">{statusLabel(observation.status)}</Badge>
+											</Table.Cell>
+											<Table.Cell class="space-x-2 text-right">
+												<Button
+													size="sm"
+													variant="outline"
+													onclick={() => submitForReview(observation.id)}
+													disabled={saving}
+												>
+													ส่งตรวจทาน
+												</Button>
+												<Button
+													size="sm"
+													variant="outline"
+													onclick={() => approveResult(observation.id)}
+													disabled={saving}
+												>
+													อนุมัติ
+												</Button>
+												<Button
+													size="sm"
+													variant="outline"
+													onclick={() => publishResult(observation.id)}
+													disabled={saving}
+												>
+													เผยแพร่
+												</Button>
+												<Button
+													size="sm"
+													variant="outline"
+													onclick={() => returnResult(observation.id)}
+													disabled={saving}
+												>
+													ส่งกลับ
+												</Button>
+											</Table.Cell>
+										</Table.Row>
+									{/each}
+								{/if}
+							</Table.Body>
+						</Table.Root>
 					</div>
 				</Card.Content>
 			</Card.Root>
 		</Tabs.Content>
 	</Tabs.Root>
 </section>
+
+<Dialog.Root bind:open={createCycleDialogOpen}>
+	<Dialog.Content class="max-w-3xl">
+		<Dialog.Header>
+			<Dialog.Title>สร้างรอบนิเทศ</Dialog.Title>
+			<Dialog.Description>
+				ผูกรอบนิเทศกับปีการศึกษาและภาคเรียนเดิม เพื่อใช้ร่วมกับตารางสอนและรายงาน
+			</Dialog.Description>
+		</Dialog.Header>
+		<div class="grid gap-4 py-2 lg:grid-cols-2">
+			<div class="space-y-2">
+				<Label>ปีการศึกษา</Label>
+				<Select.Root type="single" bind:value={cycleAcademicYearId}>
+					<Select.Trigger class="w-full">{cycleYear?.name ?? 'เลือกปีการศึกษา'}</Select.Trigger>
+					<Select.Content>
+						{#each academicStructure.years as year (year.id)}
+							<Select.Item value={year.id}>{year.name}</Select.Item>
+						{/each}
+					</Select.Content>
+				</Select.Root>
+			</div>
+			<div class="space-y-2">
+				<Label>ภาคเรียน</Label>
+				<Select.Root type="single" bind:value={cycleForm.academicSemesterId}>
+					<Select.Trigger class="w-full">
+						{cycleForm.academicSemesterId
+							? semesterLabel(cycleForm.academicSemesterId)
+							: 'เลือกภาคเรียน'}
+					</Select.Trigger>
+					<Select.Content>
+						{#each cycleSemesters as semester (semester.id)}
+							<Select.Item value={semester.id}>
+								{semester.name || `ภาคเรียนที่ ${semester.term}`}
+							</Select.Item>
+						{/each}
+					</Select.Content>
+				</Select.Root>
+			</div>
+			<div class="space-y-2 lg:col-span-2">
+				<Label>ชื่อรอบนิเทศ</Label>
+				<Input bind:value={cycleForm.title} placeholder="เช่น นิเทศการสอน ภาคเรียนที่ 1" />
+			</div>
+			<div class="space-y-2 lg:col-span-2">
+				<Label>แบบประเมิน</Label>
+				<Select.Root type="single" bind:value={cycleForm.templateId}>
+					<Select.Trigger class="w-full">
+						{templates.find((template) => template.id === cycleForm.templateId)?.title ??
+							'เลือกแบบประเมิน'}
+					</Select.Trigger>
+					<Select.Content>
+						{#each templates as template (template.id)}
+							<Select.Item value={template.id}>{template.title}</Select.Item>
+						{/each}
+					</Select.Content>
+				</Select.Root>
+			</div>
+			<div class="space-y-2">
+				<Label>เปิดจองวันที่</Label>
+				<DatePicker bind:value={cycleForm.bookingOpensDate} placeholder="วันเปิดจอง" />
+			</div>
+			<div class="space-y-2">
+				<Label>เวลาเปิดจอง</Label>
+				<Input type="time" bind:value={cycleForm.bookingOpensTime} />
+			</div>
+			<div class="space-y-2">
+				<Label>ปิดจองวันที่</Label>
+				<DatePicker bind:value={cycleForm.bookingClosesDate} placeholder="วันปิดจอง" />
+			</div>
+			<div class="space-y-2">
+				<Label>เวลาปิดจอง</Label>
+				<Input type="time" bind:value={cycleForm.bookingClosesTime} />
+			</div>
+			<div class="space-y-2">
+				<Label>เริ่มรอบวันที่</Label>
+				<DatePicker bind:value={cycleForm.startsDate} placeholder="วันเริ่มรอบ" />
+			</div>
+			<div class="space-y-2">
+				<Label>เวลาเริ่ม</Label>
+				<Input type="time" bind:value={cycleForm.startsTime} />
+			</div>
+			<div class="space-y-2">
+				<Label>สิ้นสุดรอบวันที่</Label>
+				<DatePicker bind:value={cycleForm.endsDate} placeholder="วันสิ้นสุดรอบ" />
+			</div>
+			<div class="space-y-2">
+				<Label>เวลาสิ้นสุด</Label>
+				<Input type="time" bind:value={cycleForm.endsTime} />
+			</div>
+			<div class="space-y-2 lg:col-span-2">
+				<Label>รายละเอียด</Label>
+				<Textarea bind:value={cycleForm.description} rows={2} placeholder="รายละเอียดเพิ่มเติม" />
+			</div>
+		</div>
+		<Dialog.Footer>
+			<Button variant="outline" onclick={() => (createCycleDialogOpen = false)}>ยกเลิก</Button>
+			<Button onclick={createCycle} disabled={saving}>
+				{#if saving}<Loader2 class="mr-2 h-4 w-4 animate-spin" />{/if}
+				สร้างรอบนิเทศ
+			</Button>
+		</Dialog.Footer>
+	</Dialog.Content>
+</Dialog.Root>
+
+<Dialog.Root bind:open={createTemplateDialogOpen}>
+	<Dialog.Content class="max-w-2xl">
+		<Dialog.Header>
+			<Dialog.Title>สร้างแบบประเมินพื้นฐาน</Dialog.Title>
+			<Dialog.Description>สร้างแบบประเมินเริ่มต้นที่มีหัวข้อคะแนนและข้อเสนอแนะ</Dialog.Description>
+		</Dialog.Header>
+		<div class="grid gap-4 py-2 lg:grid-cols-2">
+			<div class="space-y-2 lg:col-span-2">
+				<Label>ชื่อแบบประเมิน</Label>
+				<Input bind:value={templateForm.title} placeholder="ชื่อแบบประเมิน" />
+			</div>
+			<div class="space-y-2 lg:col-span-2">
+				<Label>รายละเอียด</Label>
+				<Input bind:value={templateForm.description} placeholder="รายละเอียด" />
+			</div>
+			<div class="space-y-2">
+				<Label>คะแนนต่ำสุด</Label>
+				<Input type="number" bind:value={templateForm.ratingMin} />
+			</div>
+			<div class="space-y-2">
+				<Label>คะแนนสูงสุด</Label>
+				<Input type="number" bind:value={templateForm.ratingMax} />
+			</div>
+			<div class="space-y-2 lg:col-span-2">
+				<Label>หัวข้อแบบคะแนน</Label>
+				<Input bind:value={templateForm.ratingLabel} placeholder="หัวข้อแบบคะแนน" />
+			</div>
+			<div class="space-y-2 lg:col-span-2">
+				<Label>หัวข้อแบบข้อความ</Label>
+				<Input bind:value={templateForm.textLabel} placeholder="หัวข้อแบบข้อความ" />
+			</div>
+		</div>
+		<Dialog.Footer>
+			<Button variant="outline" onclick={() => (createTemplateDialogOpen = false)}>ยกเลิก</Button>
+			<Button onclick={createTemplate} disabled={saving}>
+				{#if saving}<Loader2 class="mr-2 h-4 w-4 animate-spin" />{/if}
+				สร้างแบบประเมิน
+			</Button>
+		</Dialog.Footer>
+	</Dialog.Content>
+</Dialog.Root>

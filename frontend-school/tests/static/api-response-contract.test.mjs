@@ -380,6 +380,14 @@ test('teaching supervision frontend contract uses typed API and permission metad
 	assert.match(supervisionPage, /saveMySupervisionEvaluation/);
 	assert.match(supervisionPage, /acknowledgeSupervisionObservation/);
 	assert.match(supervisionPage, /getMyTimetable/);
+	assert.match(supervisionPage, /getAcademicStructure/);
+	assert.match(supervisionPage, /\* as Select/);
+	assert.match(supervisionPage, /\* as Dialog/);
+	assert.match(supervisionPage, /\* as Table/);
+	assert.match(supervisionPage, /\* as Alert/);
+	assert.match(supervisionPage, /Progress/);
+	assert.doesNotMatch(supervisionPage, /<select\b/);
+	assert.doesNotMatch(supervisionPage, /type="datetime-local"/);
 	assert.doesNotMatch(supervisionPage, /\bfetch\s*\(/);
 });
 
