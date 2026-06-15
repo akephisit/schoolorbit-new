@@ -49,7 +49,23 @@
 	import { Textarea } from '$lib/components/ui/textarea';
 	import * as Select from '$lib/components/ui/select';
 	import * as Tabs from '$lib/components/ui/tabs';
-	import { GraduationCap, Plus, Pencil, Trash2, BookOpen, ListTodo } from 'lucide-svelte';
+	import {
+		GraduationCap,
+		Plus,
+		Pencil,
+		Trash2,
+		BookOpen,
+		ListTodo,
+		FileSpreadsheet,
+		Loader2
+	} from 'lucide-svelte';
+	import {
+		buildEffectiveStudyPlanRows,
+		buildPlannedCurriculumSummaryRows,
+		filterEffectiveStudyPlanVersions,
+		plannedRowsForWorksheet,
+		plannedSummaryForWorksheet
+	} from '$lib/utils/curriculum-export';
 
 	let { data } = $props();
 
@@ -68,7 +84,10 @@
 	let showPlanDialog = $state(false);
 	let showVersionDialog = $state(false);
 	let showDeleteDialog = $state(false);
+	let showCurriculumExportDialog = $state(false);
 	let submitting = $state(false);
+	let exportingCurriculum = $state(false);
+	let exportYearId = $state('');
 	let deleteTarget: { type: 'plan' | 'version' | 'subject'; id: string; name: string } | null =
 		$state(null);
 
@@ -132,10 +151,93 @@
 			gradeLevels = levelsRes.data;
 			subjects = subjectsRes.data;
 			subjectGroups = groupsRes.data ?? [];
+			exportYearId =
+				academicYears.find((year) => year.is_current)?.id ?? academicYears[0]?.id ?? '';
 		} catch (e) {
 			alert('เกิดข้อผิดพลาด: ' + (e instanceof Error ? e.message : ''));
 		} finally {
 			loading = false;
+		}
+	}
+
+	function openCurriculumExportDialog() {
+		exportYearId =
+			exportYearId ||
+			academicYears.find((year) => year.is_current)?.id ||
+			academicYears[0]?.id ||
+			'';
+		showCurriculumExportDialog = true;
+	}
+
+	async function handleExportCurriculum() {
+		if (!exportYearId) {
+			toast.error('กรุณาเลือกปีการศึกษา');
+			return;
+		}
+
+		exportingCurriculum = true;
+		try {
+			const selectedYearName =
+				academicYears.find((year) => year.id === exportYearId)?.name ?? 'ปีการศึกษา';
+			const versionsRes = await listStudyPlanVersions({ active_only: true });
+			const effectiveVersions = filterEffectiveStudyPlanVersions(
+				versionsRes.data ?? [],
+				academicYears,
+				exportYearId
+			);
+
+			const versionExports = await Promise.all(
+				effectiveVersions.map(async (version) => {
+					const [subjectsRes, activitiesRes] = await Promise.all([
+						listStudyPlanSubjects({ study_plan_version_id: version.id }),
+						listPlanActivities(version.id)
+					]);
+					return {
+						version,
+						subjects: subjectsRes.data ?? [],
+						activities: activitiesRes.data ?? []
+					};
+				})
+			);
+
+			const detailRows = versionExports.flatMap((item) =>
+				buildEffectiveStudyPlanRows({
+					version: item.version,
+					academicYears,
+					gradeLevels,
+					subjects: item.subjects,
+					activities: item.activities
+				})
+			);
+			const summaryRows = buildPlannedCurriculumSummaryRows({
+				rowsByVersion: versionExports.map((item) => ({
+					version: item.version,
+					academicYears,
+					subjectCount: item.subjects.length,
+					activityCount: item.activities.length
+				}))
+			});
+
+			const XLSX = await import('xlsx');
+			const workbook = XLSX.utils.book_new();
+			XLSX.utils.book_append_sheet(
+				workbook,
+				XLSX.utils.json_to_sheet(plannedRowsForWorksheet(detailRows)),
+				'หลักสูตร'
+			);
+			XLSX.utils.book_append_sheet(
+				workbook,
+				XLSX.utils.json_to_sheet(plannedSummaryForWorksheet(summaryRows)),
+				'สรุป'
+			);
+			XLSX.writeFile(workbook, `หลักสูตรตามแผน-${selectedYearName}.xlsx`);
+			toast.success(`ส่งออกหลักสูตร ${effectiveVersions.length} เวอร์ชันแล้ว`);
+			showCurriculumExportDialog = false;
+		} catch (e) {
+			console.error(e);
+			toast.error('ส่งออกหลักสูตรไม่สำเร็จ');
+		} finally {
+			exportingCurriculum = false;
 		}
 	}
 
@@ -626,6 +728,15 @@
 			</h1>
 			<p class="text-muted-foreground mt-1">จัดการหลักสูตรและเวอร์ชันของหลักสูตร</p>
 		</div>
+		<Button
+			variant="outline"
+			size="sm"
+			class="self-start sm:self-auto"
+			onclick={openCurriculumExportDialog}
+		>
+			<FileSpreadsheet class="w-4 h-4 mr-2" />
+			ส่งออกหลักสูตร
+		</Button>
 	</div>
 
 	<!-- Tabs -->
@@ -1001,6 +1112,51 @@
 		</Tabs.Content>
 	</Tabs.Root>
 </div>
+
+<!-- Curriculum Export Dialog -->
+<Dialog bind:open={showCurriculumExportDialog}>
+	<DialogContent class="sm:max-w-[440px]">
+		<DialogHeader>
+			<DialogTitle>ส่งออกหลักสูตรตามแผน</DialogTitle>
+			<DialogDescription>
+				ดาวน์โหลดทุกเวอร์ชันหลักสูตรที่มีผลใช้ในปีการศึกษาที่เลือก
+			</DialogDescription>
+		</DialogHeader>
+
+		<div class="space-y-2 py-2">
+			<Label>ปีการศึกษา</Label>
+			<Select.Root type="single" bind:value={exportYearId}>
+				<Select.Trigger class="w-full">
+					{academicYears.find((year) => year.id === exportYearId)?.name ?? 'เลือกปีการศึกษา'}
+				</Select.Trigger>
+				<Select.Content>
+					{#each academicYears as year (year.id)}
+						<Select.Item value={year.id}>{year.name}</Select.Item>
+					{/each}
+				</Select.Content>
+			</Select.Root>
+		</div>
+
+		<DialogFooter>
+			<Button
+				variant="outline"
+				onclick={() => (showCurriculumExportDialog = false)}
+				disabled={exportingCurriculum}
+			>
+				ยกเลิก
+			</Button>
+			<Button onclick={handleExportCurriculum} disabled={exportingCurriculum || !exportYearId}>
+				{#if exportingCurriculum}
+					<Loader2 class="w-4 h-4 mr-2 animate-spin" />
+					กำลังส่งออก...
+				{:else}
+					<FileSpreadsheet class="w-4 h-4 mr-2" />
+					ดาวน์โหลด XLSX
+				{/if}
+			</Button>
+		</DialogFooter>
+	</DialogContent>
+</Dialog>
 
 <!-- Plan Dialog -->
 <Dialog bind:open={showPlanDialog}>

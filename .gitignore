@@ -5,6 +5,7 @@ target/
 *.pdb
 
 .claude
+.superpowers/
 
 # Node
 node_modules/
