@@ -376,6 +376,7 @@ test('teaching supervision frontend contract uses typed API and permission metad
 	assert.match(supervisionRoute, /PERMISSION_MODULES\.SUPERVISION/);
 	assert.match(supervisionPage, /listSupervisionCycles/);
 	assert.match(supervisionPage, /requestSupervisionObservation/);
+	assert.match(supervisionPage, /updateSupervisionCycle/);
 	assert.match(supervisionPage, /approveSupervisionObservationRequest/);
 	assert.match(supervisionPage, /saveMySupervisionEvaluation/);
 	assert.match(supervisionPage, /acknowledgeSupervisionObservation/);
@@ -384,6 +385,9 @@ test('teaching supervision frontend contract uses typed API and permission metad
 	assert.match(supervisionPage, /timetableGridDays/);
 	assert.match(supervisionPage, /timetablePeriodRows/);
 	assert.match(supervisionPage, /selectTimetableEntry/);
+	assert.match(supervisionPage, /cycleStatusCreateOptions/);
+	assert.match(supervisionPage, /status:\s*cycleForm\.status/);
+	assert.match(supervisionPage, /setCycleStatus/);
 	assert.match(supervisionPage, /getAcademicStructure/);
 	assert.match(supervisionPage, /\* as Select/);
 	assert.match(supervisionPage, /\* as Dialog/);
@@ -392,6 +396,7 @@ test('teaching supervision frontend contract uses typed API and permission metad
 	assert.match(supervisionPage, /Progress/);
 	assert.doesNotMatch(supervisionPage, /<select\b/);
 	assert.doesNotMatch(supervisionPage, /type="datetime-local"/);
+	assert.doesNotMatch(supervisionPage, /status:\s*'draft',\s*\n\s*targets:/);
 	assert.doesNotMatch(supervisionPage, /Select\.Root[^>]*bind:value=\{selectedTimetableEntryId\}/);
 	assert.doesNotMatch(supervisionPage, /\bfetch\s*\(/);
 });

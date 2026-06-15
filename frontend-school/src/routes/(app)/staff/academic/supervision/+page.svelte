@@ -35,10 +35,12 @@
 		saveMySupervisionEvaluation,
 		submitMySupervisionEvaluation,
 		submitSupervisionObservationForReview,
+		updateSupervisionCycle,
 		type CreateSupervisionCycleRequest,
 		type CreateSupervisionTemplateRequest,
 		type SaveEvaluationRequest,
 		type SupervisionCycle,
+		type SupervisionCycleStatus,
 		type SupervisionCycleProgress,
 		type SupervisionObservation,
 		type SupervisionObservationStatus,
@@ -86,6 +88,45 @@
 		timeLabel: string;
 		sort: number;
 	};
+	type CycleFormState = {
+		academicYear: number;
+		semester: string;
+		academicSemesterId: string;
+		title: string;
+		description: string;
+		templateId: string;
+		status: SupervisionCycleStatus;
+		bookingOpensDate: string;
+		bookingOpensTime: string;
+		bookingClosesDate: string;
+		bookingClosesTime: string;
+		startsDate: string;
+		startsTime: string;
+		endsDate: string;
+		endsTime: string;
+	};
+
+	const cycleStatusCreateOptions: {
+		value: SupervisionCycleStatus;
+		label: string;
+		description: string;
+	}[] = [
+		{
+			value: 'open',
+			label: 'เปิดให้จองทันที',
+			description: 'ครูที่มีสิทธิ์จองจะเห็นรอบนี้ในหน้าขอรับนิเทศ'
+		},
+		{
+			value: 'draft',
+			label: 'บันทึกเป็นร่าง',
+			description: 'เตรียมข้อมูลไว้ก่อน ยังไม่แสดงในหน้าจองของครู'
+		},
+		{
+			value: 'closed',
+			label: 'ปิดการจอง',
+			description: 'ใช้เมื่อต้องการสร้างรอบไว้แต่ยังไม่รับคำขอ'
+		}
+	];
 
 	let { data } = $props();
 
@@ -125,13 +166,14 @@
 	let createTemplateDialogOpen = $state(false);
 	let cycleAcademicYearId = $state('');
 	let loadedTimetableCycleId = $state('');
-	let cycleForm = $state({
+	let cycleForm = $state<CycleFormState>({
 		academicYear: 0,
 		semester: '',
 		academicSemesterId: '',
 		title: '',
 		description: '',
 		templateId: '',
+		status: 'open',
 		bookingOpensDate: '',
 		bookingOpensTime: '08:00',
 		bookingClosesDate: '',
@@ -726,7 +768,7 @@
 			),
 			startsAt: combineLocalDateTime(cycleForm.startsDate, cycleForm.startsTime),
 			endsAt: combineLocalDateTime(cycleForm.endsDate, cycleForm.endsTime),
-			status: 'draft',
+			status: cycleForm.status,
 			targets: [{ targetType: 'school', requiredObservations: 1, priority: 100 }]
 		};
 
@@ -741,6 +783,22 @@
 			await refreshAll();
 		} catch (error) {
 			toast.error(error instanceof Error ? error.message : 'สร้างรอบนิเทศไม่สำเร็จ');
+		} finally {
+			saving = false;
+		}
+	}
+
+	async function setCycleStatus(cycle: SupervisionCycle, status: SupervisionCycleStatus) {
+		if (cycle.status === status) return;
+
+		saving = true;
+		try {
+			const response = await updateSupervisionCycle(cycle.id, { status });
+			if (!response.success) throw new Error(response.error || 'เปลี่ยนสถานะรอบนิเทศไม่สำเร็จ');
+			toast.success(`เปลี่ยนสถานะรอบนิเทศเป็น${statusLabel(status)}แล้ว`);
+			await refreshAll();
+		} catch (error) {
+			toast.error(error instanceof Error ? error.message : 'เปลี่ยนสถานะรอบนิเทศไม่สำเร็จ');
 		} finally {
 			saving = false;
 		}
@@ -1404,12 +1462,13 @@
 								<Table.Head>ภาคเรียน</Table.Head>
 								<Table.Head>ช่วงเวลา</Table.Head>
 								<Table.Head>สถานะ</Table.Head>
+								<Table.Head class="text-right">คำสั่ง</Table.Head>
 							</Table.Row>
 						</Table.Header>
 						<Table.Body>
 							{#if cycles.length === 0}
 								<Table.Row>
-									<Table.Cell colspan={4} class="h-24 text-center text-muted-foreground">
+									<Table.Cell colspan={5} class="h-24 text-center text-muted-foreground">
 										ยังไม่มีรอบนิเทศ
 									</Table.Cell>
 								</Table.Row>
@@ -1428,6 +1487,37 @@
 										<Table.Cell
 											><Badge variant="secondary">{statusLabel(cycle.status)}</Badge></Table.Cell
 										>
+										<Table.Cell class="text-right">
+											{#if cycle.status === 'draft'}
+												<Button
+													size="sm"
+													onclick={() => setCycleStatus(cycle, 'open')}
+													disabled={saving}
+												>
+													เปิดให้จอง
+												</Button>
+											{:else if cycle.status === 'open'}
+												<Button
+													size="sm"
+													variant="outline"
+													onclick={() => setCycleStatus(cycle, 'closed')}
+													disabled={saving}
+												>
+													ปิดรอบ
+												</Button>
+											{:else if cycle.status === 'closed'}
+												<Button
+													size="sm"
+													variant="outline"
+													onclick={() => setCycleStatus(cycle, 'open')}
+													disabled={saving}
+												>
+													เปิดอีกครั้ง
+												</Button>
+											{:else}
+												<span class="text-sm text-muted-foreground">-</span>
+											{/if}
+										</Table.Cell>
 									</Table.Row>
 								{/each}
 							{/if}
@@ -1659,6 +1749,28 @@
 						{/each}
 					</Select.Content>
 				</Select.Root>
+			</div>
+			<div class="space-y-2 lg:col-span-2">
+				<Label>สถานะรอบ</Label>
+				<Select.Root type="single" bind:value={cycleForm.status}>
+					<Select.Trigger class="w-full">
+						{cycleStatusCreateOptions.find((option) => option.value === cycleForm.status)?.label ??
+							'เลือกสถานะรอบ'}
+					</Select.Trigger>
+					<Select.Content>
+						{#each cycleStatusCreateOptions as option (option.value)}
+							<Select.Item value={option.value}>
+								<span class="flex flex-col items-start">
+									<span>{option.label}</span>
+									<span class="text-xs text-muted-foreground">{option.description}</span>
+								</span>
+							</Select.Item>
+						{/each}
+					</Select.Content>
+				</Select.Root>
+				<p class="text-xs text-muted-foreground">
+					ค่าเริ่มต้นคือเปิดให้จอง ครูจะเห็นรอบนี้เมื่ออยู่ในช่วงเปิดจองและมีสิทธิ์จอง
+				</p>
 			</div>
 			<div class="space-y-2">
 				<Label>เปิดจองวันที่</Label>
