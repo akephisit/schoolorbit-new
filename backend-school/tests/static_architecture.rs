@@ -1558,10 +1558,14 @@ fn teaching_supervision_registry_and_module_are_registered() {
         "SUPERVISION_READ_ORGANIZATION_TREE",
         "SUPERVISION_READ_SCHOOL",
         "SUPERVISION_REQUEST_OWN",
+        "SUPERVISION_MANAGE_ORGANIZATION_UNIT",
+        "SUPERVISION_MANAGE_ORGANIZATION_TREE",
         "SUPERVISION_MANAGE_SCHOOL",
         "SUPERVISION_EVALUATE_ASSIGNED",
         "SUPERVISION_APPROVE_SCHOOL",
         "supervision.read.own",
+        "supervision.manage.organization_unit",
+        "supervision.manage.organization_tree",
         "supervision.approve.school",
     ] {
         assert!(
@@ -1571,6 +1575,30 @@ fn teaching_supervision_registry_and_module_are_registered() {
     }
 
     assert!(modules.contains("pub mod supervision;"));
+}
+
+#[test]
+fn teaching_supervision_subject_group_management_permissions_are_seeded() {
+    let migration = read_source(
+        manifest_dir()
+            .join("migrations/007_teaching_supervision_scoped_management_permissions.sql"),
+    );
+
+    for expected in [
+        "supervision.manage.organization_unit",
+        "supervision.manage.organization_tree",
+        "organization_permission_grants",
+        "unit_type = 'subject_group'",
+        "position_code",
+        "'head'",
+        "'deputy_head'",
+        "ON CONFLICT DO NOTHING",
+    ] {
+        assert!(
+            migration.contains(expected),
+            "missing supervision scoped management seed {expected}"
+        );
+    }
 }
 
 #[test]
@@ -1604,6 +1632,7 @@ fn teaching_supervision_handlers_use_request_context_and_services() {
     assert!(handler.contains("actor_tenant_context"));
     assert!(handler.contains("ApiResponse::ok"));
     assert!(handler.contains("supervision_access_policy"));
+    assert!(handler.contains("require_observation_management_access"));
     assert!(handler.contains("services::"));
     assert!(!handler.contains("sqlx::query"));
     assert!(!handler.contains(".fetch_"));

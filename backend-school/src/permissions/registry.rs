@@ -147,6 +147,8 @@ pub mod codes {
     pub const SUPERVISION_READ_ORGANIZATION_TREE: &str = "supervision.read.organization_tree";
     pub const SUPERVISION_READ_SCHOOL: &str = "supervision.read.school";
     pub const SUPERVISION_REQUEST_OWN: &str = "supervision.request.own";
+    pub const SUPERVISION_MANAGE_ORGANIZATION_UNIT: &str = "supervision.manage.organization_unit";
+    pub const SUPERVISION_MANAGE_ORGANIZATION_TREE: &str = "supervision.manage.organization_tree";
     pub const SUPERVISION_MANAGE_SCHOOL: &str = "supervision.manage.school";
     pub const SUPERVISION_EVALUATE_ASSIGNED: &str = "supervision.evaluate.assigned";
     pub const SUPERVISION_APPROVE_SCHOOL: &str = "supervision.approve.school";
@@ -869,6 +871,22 @@ pub const ALL_PERMISSIONS: &[PermissionDef] = &[
         action: "request",
         scope: "own",
         description: "ส่งคำขอจองคาบเพื่อรับการนิเทศการสอนของตนเอง",
+    },
+    PermissionDef {
+        code: codes::SUPERVISION_MANAGE_ORGANIZATION_UNIT,
+        name: "จัดการนิเทศในหน่วยงาน",
+        module: "supervision",
+        action: "manage",
+        scope: "organization_unit",
+        description: "อนุมัติคำขอและจัดการรายการนิเทศของบุคลากรในหน่วยงานเดียวกัน",
+    },
+    PermissionDef {
+        code: codes::SUPERVISION_MANAGE_ORGANIZATION_TREE,
+        name: "จัดการนิเทศในสายงาน",
+        module: "supervision",
+        action: "manage",
+        scope: "organization_tree",
+        description: "อนุมัติคำขอและจัดการรายการนิเทศในหน่วยงานของตนเองและหน่วยงานย่อย",
     },
     PermissionDef {
         code: codes::SUPERVISION_MANAGE_SCHOOL,

@@ -194,11 +194,18 @@
 
 	const currentUserId = $derived($authStore.user?.id ?? '');
 	const canRequest = $derived($can.has(PERMISSIONS.SUPERVISION_REQUEST_OWN));
-	const canManage = $derived($can.has(PERMISSIONS.SUPERVISION_MANAGE_SCHOOL));
+	const canManageSchool = $derived($can.has(PERMISSIONS.SUPERVISION_MANAGE_SCHOOL));
+	const canManageRequests = $derived(
+		$can.hasAny(
+			PERMISSIONS.SUPERVISION_MANAGE_SCHOOL,
+			PERMISSIONS.SUPERVISION_MANAGE_ORGANIZATION_UNIT,
+			PERMISSIONS.SUPERVISION_MANAGE_ORGANIZATION_TREE
+		)
+	);
 	const canEvaluate = $derived($can.has(PERMISSIONS.SUPERVISION_EVALUATE_ASSIGNED));
 	const canApprove = $derived($can.has(PERMISSIONS.SUPERVISION_APPROVE_SCHOOL));
 	const canReport = $derived(
-		$can.has(PERMISSIONS.SUPERVISION_READ_SCHOOL) || canManage || canApprove
+		$can.has(PERMISSIONS.SUPERVISION_READ_SCHOOL) || canManageSchool || canApprove
 	);
 	const activeAcademicYear = $derived(
 		academicStructure.years.find((year) => year.is_active) ?? academicStructure.years[0] ?? null
@@ -935,7 +942,7 @@
 			<RefreshCw class={cn('mr-2 h-4 w-4', loading && 'animate-spin')} />
 			รีเฟรช
 		</Button>
-		{#if canManage}
+		{#if canManageSchool}
 			<Button size="sm" onclick={() => (createCycleDialogOpen = true)}>
 				<Plus class="mr-2 h-4 w-4" />
 				สร้างรอบนิเทศ
@@ -958,10 +965,10 @@
 	<Tabs.Root bind:value={activeTab} class="space-y-4">
 		<Tabs.List class="grid w-full grid-cols-2 md:grid-cols-6">
 			<Tabs.Trigger value="mine">ของฉัน</Tabs.Trigger>
-			<Tabs.Trigger value="requests" disabled={!canManage}>คำขอจอง</Tabs.Trigger>
+			<Tabs.Trigger value="requests" disabled={!canManageRequests}>คำขอจอง</Tabs.Trigger>
 			<Tabs.Trigger value="evaluate" disabled={!canEvaluate}>ประเมิน</Tabs.Trigger>
-			<Tabs.Trigger value="cycles" disabled={!canManage}>รอบนิเทศ</Tabs.Trigger>
-			<Tabs.Trigger value="templates" disabled={!canManage}>แบบประเมิน</Tabs.Trigger>
+			<Tabs.Trigger value="cycles" disabled={!canManageSchool}>รอบนิเทศ</Tabs.Trigger>
+			<Tabs.Trigger value="templates" disabled={!canManageSchool}>แบบประเมิน</Tabs.Trigger>
 			<Tabs.Trigger value="reports" disabled={!canReport}>รายงาน</Tabs.Trigger>
 		</Tabs.List>
 
@@ -1449,10 +1456,12 @@
 						<Card.Description>รอบนิเทศเชื่อมกับปีการศึกษาและภาคเรียนของระบบวิชาการ</Card.Description
 						>
 					</div>
-					<Button onclick={() => (createCycleDialogOpen = true)}>
-						<Plus class="mr-2 h-4 w-4" />
-						สร้างรอบนิเทศ
-					</Button>
+					{#if canManageSchool}
+						<Button onclick={() => (createCycleDialogOpen = true)}>
+							<Plus class="mr-2 h-4 w-4" />
+							สร้างรอบนิเทศ
+						</Button>
+					{/if}
 				</Card.Header>
 				<Card.Content>
 					<Table.Root>
@@ -1534,10 +1543,12 @@
 						<Card.Title>แบบประเมิน</Card.Title>
 						<Card.Description>แบบประเมินใช้กับรอบนิเทศและขั้นตอนอนุมัติผล</Card.Description>
 					</div>
-					<Button onclick={() => (createTemplateDialogOpen = true)}>
-						<Plus class="mr-2 h-4 w-4" />
-						สร้างแบบประเมิน
-					</Button>
+					{#if canManageSchool}
+						<Button onclick={() => (createTemplateDialogOpen = true)}>
+							<Plus class="mr-2 h-4 w-4" />
+							สร้างแบบประเมิน
+						</Button>
+					{/if}
 				</Card.Header>
 				<Card.Content>
 					<Table.Root>

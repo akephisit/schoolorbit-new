@@ -14,6 +14,14 @@ pub fn can_manage_school(actor: &ActorContext) -> bool {
     actor.has_permission(codes::SUPERVISION_MANAGE_SCHOOL)
 }
 
+pub fn can_manage_organization_unit(actor: &ActorContext) -> bool {
+    actor.has_permission(codes::SUPERVISION_MANAGE_ORGANIZATION_UNIT)
+}
+
+pub fn can_manage_organization_tree(actor: &ActorContext) -> bool {
+    actor.has_permission(codes::SUPERVISION_MANAGE_ORGANIZATION_TREE)
+}
+
 pub fn can_request_own(actor: &ActorContext) -> bool {
     actor.has_permission(codes::SUPERVISION_REQUEST_OWN)
 }
@@ -89,6 +97,22 @@ pub async fn resolve_observation_list_access(
         return Ok(SupervisionObservationListAccess::School);
     }
 
+    if can_manage_organization_tree(actor) {
+        return organization_list_access(
+            pool,
+            UserResourceListAccess::OrganizationTree(actor.user_id),
+        )
+        .await;
+    }
+
+    if can_manage_organization_unit(actor) {
+        return organization_list_access(
+            pool,
+            UserResourceListAccess::OrganizationUnit(actor.user_id),
+        )
+        .await;
+    }
+
     let access = resolve_user_resource_list_access(actor, supervision_read_permissions())
         .ok_or_else(|| AppError::Forbidden("ไม่มีสิทธิ์ดูรายการนิเทศ".to_string()))?;
 
@@ -106,6 +130,22 @@ pub async fn resolve_observation_list_access(
             ))
         }
     }
+}
+
+pub async fn require_observation_management_access(
+    pool: &PgPool,
+    actor: &ActorContext,
+    observed_user_id: Uuid,
+) -> Result<(), AppError> {
+    require_user_resource_access(
+        pool,
+        actor,
+        supervision_manage_permissions(),
+        observed_user_id,
+        "ไม่มีสิทธิ์จัดการคำขอนิเทศนี้",
+    )
+    .await
+    .map(|_| ())
 }
 
 pub async fn require_observation_read_access(
@@ -135,6 +175,16 @@ pub async fn require_observation_read_access(
     .map(|_| ())
 }
 
+async fn organization_list_access(
+    pool: &PgPool,
+    access: UserResourceListAccess,
+) -> Result<SupervisionObservationListAccess, AppError> {
+    let unit_ids = accessible_organization_unit_ids(pool, access).await?;
+    Ok(SupervisionObservationListAccess::OrganizationUnits(
+        unit_ids.unwrap_or_default(),
+    ))
+}
+
 fn supervision_read_permissions() -> ResourceAccessPermissions {
     ResourceAccessPermissions {
         own: Some(codes::SUPERVISION_READ_OWN),
@@ -142,6 +192,16 @@ fn supervision_read_permissions() -> ResourceAccessPermissions {
         organization_unit: Some(codes::SUPERVISION_READ_ORGANIZATION_UNIT),
         organization_tree: Some(codes::SUPERVISION_READ_ORGANIZATION_TREE),
         school: Some(codes::SUPERVISION_READ_SCHOOL),
+    }
+}
+
+fn supervision_manage_permissions() -> ResourceAccessPermissions {
+    ResourceAccessPermissions {
+        own: None,
+        assigned: None,
+        organization_unit: Some(codes::SUPERVISION_MANAGE_ORGANIZATION_UNIT),
+        organization_tree: Some(codes::SUPERVISION_MANAGE_ORGANIZATION_TREE),
+        school: Some(codes::SUPERVISION_MANAGE_SCHOOL),
     }
 }
 
@@ -164,9 +224,33 @@ mod tests {
         let actor = actor(&[codes::SUPERVISION_MANAGE_SCHOOL]);
 
         assert!(can_manage_school(&actor));
+        assert!(!can_manage_organization_unit(&actor));
+        assert!(!can_manage_organization_tree(&actor));
         assert!(require_supervision_access(&actor).is_ok());
         assert!(require_school_report_access(&actor).is_ok());
         assert!(require_manage_school(&actor).is_ok());
+    }
+
+    #[test]
+    fn organization_unit_management_is_scoped_management_not_school_management() {
+        let actor = actor(&[codes::SUPERVISION_MANAGE_ORGANIZATION_UNIT]);
+
+        assert!(can_manage_organization_unit(&actor));
+        assert!(!can_manage_school(&actor));
+        assert!(require_supervision_access(&actor).is_ok());
+        assert!(require_school_report_access(&actor).is_err());
+        assert!(require_manage_school(&actor).is_err());
+    }
+
+    #[test]
+    fn organization_tree_management_is_scoped_management_not_school_management() {
+        let actor = actor(&[codes::SUPERVISION_MANAGE_ORGANIZATION_TREE]);
+
+        assert!(can_manage_organization_tree(&actor));
+        assert!(!can_manage_school(&actor));
+        assert!(require_supervision_access(&actor).is_ok());
+        assert!(require_school_report_access(&actor).is_err());
+        assert!(require_manage_school(&actor).is_err());
     }
 
     #[test]

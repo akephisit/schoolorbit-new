@@ -56,6 +56,8 @@ export const PERMISSIONS = {
 	STAFF_PROFILE_READ_SCHOOL: 'staff_profile.read.school',
 	SUPERVISION_APPROVE_SCHOOL: 'supervision.approve.school',
 	SUPERVISION_EVALUATE_ASSIGNED: 'supervision.evaluate.assigned',
+	SUPERVISION_MANAGE_ORGANIZATION_TREE: 'supervision.manage.organization_tree',
+	SUPERVISION_MANAGE_ORGANIZATION_UNIT: 'supervision.manage.organization_unit',
 	SUPERVISION_MANAGE_SCHOOL: 'supervision.manage.school',
 	SUPERVISION_READ_ASSIGNED: 'supervision.read.assigned',
 	SUPERVISION_READ_ORGANIZATION_TREE: 'supervision.read.organization_tree',

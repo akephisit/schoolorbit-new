@@ -327,7 +327,7 @@ Validation:
 
 ### Booking Approval and Evaluator Assignment
 
-1. An actor with `supervision.manage.school` opens requested observations.
+1. An actor with scoped supervision management opens requested observations.
 2. The actor checks the lesson detail.
 3. The actor assigns multiple evaluators.
 4. The actor approves the request.
@@ -337,7 +337,9 @@ Validation:
 
 - At least one required evaluator must be assigned.
 - The observed teacher cannot be assigned as evaluator for their own observation.
-- Actors with `supervision.manage.school` may return or cancel invalid requests.
+- Actors with `supervision.manage.organization_unit` may approve or return requests for teachers in their own organization unit, such as a subject group.
+- Actors with `supervision.manage.organization_tree` may approve or return requests for teachers in their own organization unit and child units.
+- Actors with `supervision.manage.school` may approve or return requests school-wide.
 
 ### Evaluation
 
@@ -379,6 +381,8 @@ Proposed permissions:
 - `supervision.read.organization_tree`: scoped read for future organization-tree access.
 - `supervision.read.school`: school-wide read/report access.
 - `supervision.request.own`: teacher requests their own supervision booking.
+- `supervision.manage.organization_unit`: manage booking requests and evaluator assignment for teachers in the same organization unit.
+- `supervision.manage.organization_tree`: manage booking requests and evaluator assignment for teachers in the actor's organization unit tree.
 - `supervision.manage.school`: manage templates, cycles, targets, and booking approvals school-wide.
 - `supervision.evaluate.assigned`: evaluator submits assigned evaluations.
 - `supervision.approve.school`: approve/publish supervision results school-wide.
@@ -387,6 +391,8 @@ Access rules:
 
 - Menu visibility can use a broad supervision permission such as module-level access or `supervision.request.own`.
 - Backend policies must enforce resource access for every observation.
+- Subject-group heads should receive `supervision.manage.organization_unit` through organization permission grants on subject-group units for `head` or `deputy_head`.
+- Academic office certification remains separate: final approve/publish uses `supervision.approve.school`, not scoped management.
 - Frontend route guards are UX only. Backend remains the source of truth.
 
 ## Frontend UX

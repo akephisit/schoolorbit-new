@@ -236,7 +236,13 @@ pub async fn approve_observation_request(
     Json(payload): Json<ApproveObservationRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let context = actor_tenant_context(&state, &headers).await?;
-    supervision_access_policy::require_manage_school(&context.actor)?;
+    let current = services::get_observation(&context.tenant.pool, id).await?;
+    supervision_access_policy::require_observation_management_access(
+        &context.tenant.pool,
+        &context.actor,
+        current.observed_user_id,
+    )
+    .await?;
 
     let observation = services::approve_observation_request(
         &context.tenant.pool,
@@ -256,7 +262,13 @@ pub async fn return_observation_request(
     Json(payload): Json<ReturnObservationRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let context = actor_tenant_context(&state, &headers).await?;
-    supervision_access_policy::require_manage_school(&context.actor)?;
+    let current = services::get_observation(&context.tenant.pool, id).await?;
+    supervision_access_policy::require_observation_management_access(
+        &context.tenant.pool,
+        &context.actor,
+        current.observed_user_id,
+    )
+    .await?;
 
     let observation = services::return_observation_request(
         &context.tenant.pool,
@@ -307,7 +319,13 @@ pub async fn submit_observation_for_review(
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
     let context = actor_tenant_context(&state, &headers).await?;
-    supervision_access_policy::require_manage_school(&context.actor)?;
+    let current = services::get_observation(&context.tenant.pool, id).await?;
+    supervision_access_policy::require_observation_management_access(
+        &context.tenant.pool,
+        &context.actor,
+        current.observed_user_id,
+    )
+    .await?;
 
     let observation =
         services::submit_observation_for_review(&context.tenant.pool, context.actor.user_id, id)
