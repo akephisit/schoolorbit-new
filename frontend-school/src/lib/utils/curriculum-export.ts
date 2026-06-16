@@ -86,6 +86,11 @@ type CourseInstructorLike = {
 type WorksheetReportCell = string | number;
 type WorksheetReportRow = WorksheetReportCell[];
 
+const thaiNaturalCollator = new Intl.Collator('th', {
+	numeric: true,
+	sensitivity: 'base'
+});
+
 export type PlannedCurriculumExportRow = {
 	studyPlan: string;
 	version: string;
@@ -170,8 +175,12 @@ function gradeLevelName(levels: GradeLevelLike[], id: string | null | undefined)
 	return level?.short_name ?? level?.name ?? '';
 }
 
+function compareThaiNatural(a: string, b: string) {
+	return thaiNaturalCollator.compare(a, b);
+}
+
 function uniqueSorted(values: string[]) {
-	return [...new Set(values.filter(Boolean))].sort((a, b) => a.localeCompare(b, 'th'));
+	return [...new Set(values.filter(Boolean))].sort(compareThaiNatural);
 }
 
 function uniqueInOrder(values: string[]) {
@@ -364,11 +373,11 @@ export function buildActualCurriculumRows(input: {
 	});
 
 	return [...courseRows, ...activityRows].sort((a, b) => {
-		const classroomCompare = a.classroom.localeCompare(b.classroom, 'th');
+		const classroomCompare = compareThaiNatural(a.classroom, b.classroom);
 		if (classroomCompare !== 0) return classroomCompare;
-		const termCompare = a.term.localeCompare(b.term, 'th');
+		const termCompare = compareThaiNatural(a.term, b.term);
 		if (termCompare !== 0) return termCompare;
-		return a.name.localeCompare(b.name, 'th');
+		return compareThaiNatural(a.name, b.name);
 	});
 }
 
@@ -394,9 +403,9 @@ export function summarizeActualCurriculum(
 	}
 
 	return [...summary.values()].sort((a, b) => {
-		const classroomCompare = a.classroom.localeCompare(b.classroom, 'th');
+		const classroomCompare = compareThaiNatural(a.classroom, b.classroom);
 		if (classroomCompare !== 0) return classroomCompare;
-		return a.term.localeCompare(b.term, 'th');
+		return compareThaiNatural(a.term, b.term);
 	});
 }
 
@@ -496,12 +505,12 @@ export function buildActualSubjectActivityRows(input: {
 			};
 		})
 		.sort((a, b) => {
-			const termCompare = a.term.localeCompare(b.term, 'th');
+			const termCompare = compareThaiNatural(a.term, b.term);
 			if (termCompare !== 0) return termCompare;
 			const kindOrder = { รายวิชา: 0, กิจกรรม: 1 };
 			const kindCompare = kindOrder[a.itemKind] - kindOrder[b.itemKind];
 			if (kindCompare !== 0) return kindCompare;
-			return a.name.localeCompare(b.name, 'th');
+			return compareThaiNatural(a.name, b.name);
 		});
 }
 

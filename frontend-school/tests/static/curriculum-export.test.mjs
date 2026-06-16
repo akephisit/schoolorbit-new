@@ -306,4 +306,69 @@ describe('curriculum export helpers', () => {
 			['ม.1/2']
 		]);
 	});
+
+	it('sorts classroom names by grade and room number in actual subject activity rows', () => {
+		const rows = buildActualSubjectActivityRows({
+			yearName: 'ปีการศึกษา 2569',
+			semesters: [{ id: 'sem-1', term: '1', name: 'ภาคเรียนที่ 1' }],
+			classrooms: [
+				{ id: 'room-m2-1', name: 'ม.2/1', grade_level_name: 'ม.2' },
+				{ id: 'room-m1-10', name: 'ม.1/10', grade_level_name: 'ม.1' },
+				{ id: 'room-m1-2', name: 'ม.1/2', grade_level_name: 'ม.1' }
+			],
+			courses: [
+				{
+					id: 'course-m2-1',
+					classroom_id: 'room-m2-1',
+					academic_semester_id: 'sem-1',
+					subject_code: 'SC21101',
+					subject_name_th: 'วิทยาศาสตร์',
+					subject_type: 'BASIC',
+					subject_credit: 1.5,
+					subject_hours: 60,
+					instructor_name: 'ครู ม2'
+				},
+				{
+					id: 'course-m1-10',
+					classroom_id: 'room-m1-10',
+					academic_semester_id: 'sem-1',
+					subject_code: 'SC21101',
+					subject_name_th: 'วิทยาศาสตร์',
+					subject_type: 'BASIC',
+					subject_credit: 1.5,
+					subject_hours: 60,
+					instructor_name: 'ครู ม1-10'
+				},
+				{
+					id: 'course-m1-2',
+					classroom_id: 'room-m1-2',
+					academic_semester_id: 'sem-1',
+					subject_code: 'SC21101',
+					subject_name_th: 'วิทยาศาสตร์',
+					subject_type: 'BASIC',
+					subject_credit: 1.5,
+					subject_hours: 60,
+					instructor_name: 'ครู ม1-2'
+				}
+			],
+			activities: [],
+			courseInstructorsByCourseId: {
+				'course-m2-1': [
+					{ classroom_course_id: 'course-m2-1', role: 'primary', instructor_name: 'ครู ม2' }
+				],
+				'course-m1-10': [
+					{ classroom_course_id: 'course-m1-10', role: 'primary', instructor_name: 'ครู ม1-10' }
+				],
+				'course-m1-2': [
+					{ classroom_course_id: 'course-m1-2', role: 'primary', instructor_name: 'ครู ม1-2' }
+				]
+			}
+		});
+
+		assert.equal(rows[0].classrooms, 'ม.1/2, ม.1/10, ม.2/1');
+		assert.equal(
+			rows[0].classroomDetails,
+			'ม.1/2: ครู ม1-2 (หลัก)\nม.1/10: ครู ม1-10 (หลัก)\nม.2/1: ครู ม2 (หลัก)'
+		);
+	});
 });
