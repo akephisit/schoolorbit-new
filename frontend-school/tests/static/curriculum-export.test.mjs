@@ -371,4 +371,90 @@ describe('curriculum export helpers', () => {
 			'ม.1/2: ครู ม1-2 (หลัก)\nม.1/10: ครู ม1-10 (หลัก)\nม.2/1: ครู ม2 (หลัก)'
 		);
 	});
+
+	it('sorts subject blocks by the dominant classroom grade level before activities', () => {
+		const rows = buildActualSubjectActivityRows({
+			yearName: 'ปีการศึกษา 2569',
+			semesters: [{ id: 'sem-1', term: '1', name: 'ภาคเรียนที่ 1' }],
+			classrooms: [
+				{ id: 'm1-1', name: 'ม.1/1', grade_level_name: 'ม.1' },
+				{ id: 'm1-2', name: 'ม.1/2', grade_level_name: 'ม.1' },
+				{ id: 'm2-1', name: 'ม.2/1', grade_level_name: 'ม.2' },
+				{ id: 'm2-2', name: 'ม.2/2', grade_level_name: 'ม.2' }
+			],
+			courses: [
+				{
+					id: 'alpha-m2-1',
+					classroom_id: 'm2-1',
+					academic_semester_id: 'sem-1',
+					subject_code: 'A201',
+					subject_name_th: 'Alpha Science',
+					subject_type: 'BASIC',
+					subject_credit: 1,
+					subject_hours: 40,
+					instructor_name: 'ครูเอ'
+				},
+				{
+					id: 'alpha-m2-2',
+					classroom_id: 'm2-2',
+					academic_semester_id: 'sem-1',
+					subject_code: 'A201',
+					subject_name_th: 'Alpha Science',
+					subject_type: 'BASIC',
+					subject_credit: 1,
+					subject_hours: 40,
+					instructor_name: 'ครูเอ'
+				},
+				{
+					id: 'zulu-m1-1',
+					classroom_id: 'm1-1',
+					academic_semester_id: 'sem-1',
+					subject_code: 'Z101',
+					subject_name_th: 'Zulu Math',
+					subject_type: 'BASIC',
+					subject_credit: 1,
+					subject_hours: 40,
+					instructor_name: 'ครูแซด'
+				},
+				{
+					id: 'zulu-m1-2',
+					classroom_id: 'm1-2',
+					academic_semester_id: 'sem-1',
+					subject_code: 'Z101',
+					subject_name_th: 'Zulu Math',
+					subject_type: 'BASIC',
+					subject_credit: 1,
+					subject_hours: 40,
+					instructor_name: 'ครูแซด'
+				},
+				{
+					id: 'zulu-m2-1',
+					classroom_id: 'm2-1',
+					academic_semester_id: 'sem-1',
+					subject_code: 'Z101',
+					subject_name_th: 'Zulu Math',
+					subject_type: 'BASIC',
+					subject_credit: 1,
+					subject_hours: 40,
+					instructor_name: 'ครูแซด'
+				}
+			],
+			activities: [
+				{
+					slot_id: 'slot-1',
+					classroom_id: 'm1-1',
+					semester_id: 'sem-1',
+					name: 'ชุมนุม',
+					activity_type: 'club',
+					periods_per_week: 1,
+					scheduling_mode: 'independent'
+				}
+			]
+		});
+
+		assert.deepEqual(
+			rows.map((row) => row.name),
+			['Zulu Math', 'Alpha Science', 'ชุมนุม']
+		);
+	});
 });

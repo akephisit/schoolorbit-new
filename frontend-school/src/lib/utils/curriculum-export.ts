@@ -192,6 +192,28 @@ function uniqueInOrder(values: string[]) {
 	});
 }
 
+function dominantGradeLevel(gradeLevels: string[]) {
+	const counts = new Map<string, number>();
+	for (const gradeLevel of gradeLevels) {
+		if (!gradeLevel) continue;
+		counts.set(gradeLevel, (counts.get(gradeLevel) ?? 0) + 1);
+	}
+
+	return (
+		[...counts.entries()].sort((a, b) => {
+			const countCompare = b[1] - a[1];
+			if (countCompare !== 0) return countCompare;
+			return compareThaiNatural(a[0], b[0]);
+		})[0]?.[0] ?? ''
+	);
+}
+
+function compareOptionalGradeLevel(a: string, b: string) {
+	if (a && !b) return -1;
+	if (!a && b) return 1;
+	return compareThaiNatural(a, b);
+}
+
 function roleLabel(role: string) {
 	return role === 'primary' ? 'หลัก' : 'ร่วม';
 }
@@ -429,6 +451,7 @@ export function buildActualSubjectActivityRows(input: {
 			classrooms: string[];
 			instructors: string[];
 			classroomDetails: string[];
+			gradeLevels: string[];
 		}
 	>();
 
@@ -453,11 +476,14 @@ export function buildActualSubjectActivityRows(input: {
 			},
 			classrooms: [],
 			instructors: [],
-			classroomDetails: []
+			classroomDetails: [],
+			gradeLevels: []
 		};
 
 		const classroomName = classroom?.name ?? '';
 		if (classroomName) current.classrooms.push(classroomName);
+		const gradeLevelName = classroom?.grade_level_name?.trim() ?? '';
+		if (gradeLevelName) current.gradeLevels.push(gradeLevelName);
 		current.instructors.push(...instructorDetails.names);
 		current.classroomDetails.push(
 			instructorDetails.detail ? `${classroomName}: ${instructorDetails.detail}` : classroomName
@@ -484,7 +510,8 @@ export function buildActualSubjectActivityRows(input: {
 			},
 			classrooms: [],
 			instructors: [],
-			classroomDetails: []
+			classroomDetails: [],
+			gradeLevels: []
 		};
 
 		const classroomName = classroom?.name ?? '';
@@ -497,21 +524,29 @@ export function buildActualSubjectActivityRows(input: {
 		.map((item) => {
 			const classrooms = uniqueSorted(item.classrooms);
 			return {
-				...item.rowBase,
-				classroomCount: classrooms.length,
-				classrooms: classrooms.join(', '),
-				instructors: uniqueInOrder(item.instructors).join(', '),
-				classroomDetails: uniqueSorted(item.classroomDetails).join('\n')
+				row: {
+					...item.rowBase,
+					classroomCount: classrooms.length,
+					classrooms: classrooms.join(', '),
+					instructors: uniqueInOrder(item.instructors).join(', '),
+					classroomDetails: uniqueSorted(item.classroomDetails).join('\n')
+				},
+				dominantGradeLevel: dominantGradeLevel(item.gradeLevels)
 			};
 		})
 		.sort((a, b) => {
-			const termCompare = compareThaiNatural(a.term, b.term);
+			const termCompare = compareThaiNatural(a.row.term, b.row.term);
 			if (termCompare !== 0) return termCompare;
 			const kindOrder = { รายวิชา: 0, กิจกรรม: 1 };
-			const kindCompare = kindOrder[a.itemKind] - kindOrder[b.itemKind];
+			const kindCompare = kindOrder[a.row.itemKind] - kindOrder[b.row.itemKind];
 			if (kindCompare !== 0) return kindCompare;
-			return compareThaiNatural(a.name, b.name);
-		});
+			const gradeCompare = compareOptionalGradeLevel(a.dominantGradeLevel, b.dominantGradeLevel);
+			if (gradeCompare !== 0) return gradeCompare;
+			const codeCompare = compareThaiNatural(a.row.codeOrActivityType, b.row.codeOrActivityType);
+			if (codeCompare !== 0) return codeCompare;
+			return compareThaiNatural(a.row.name, b.row.name);
+		})
+		.map((item) => item.row);
 }
 
 export function plannedRowsForWorksheet(rows: PlannedCurriculumExportRow[]) {
