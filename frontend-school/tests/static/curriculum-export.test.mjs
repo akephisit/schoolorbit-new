@@ -3,6 +3,7 @@ import { describe, it } from 'node:test';
 
 import {
 	buildActualCurriculumRows,
+	buildActualSubjectActivityRows,
 	buildEffectiveStudyPlanRows,
 	filterEffectiveStudyPlanVersions,
 	summarizeActualCurriculum
@@ -148,6 +149,103 @@ describe('curriculum export helpers', () => {
 				gradeLevel: 'ม.1',
 				courseCount: 1,
 				activityCount: 1
+			}
+		]);
+	});
+
+	it('aggregates actual courses and activities by subject code or activity identity', () => {
+		const rows = buildActualSubjectActivityRows({
+			yearName: 'ปีการศึกษา 2569',
+			semesters: [{ id: 'sem-1', term: '1', name: 'ภาคเรียนที่ 1' }],
+			classrooms: [
+				{ id: 'room-1', name: 'ม.1/1', grade_level_name: 'ม.1' },
+				{ id: 'room-2', name: 'ม.1/2', grade_level_name: 'ม.1' }
+			],
+			courses: [
+				{
+					id: 'course-1',
+					classroom_id: 'room-1',
+					academic_semester_id: 'sem-1',
+					subject_code: 'MA21101',
+					subject_name_th: 'คณิตศาสตร์',
+					subject_type: 'BASIC',
+					subject_credit: 1.5,
+					subject_hours: 60,
+					instructor_name: 'ครูหนึ่ง'
+				},
+				{
+					id: 'course-2',
+					classroom_id: 'room-2',
+					academic_semester_id: 'sem-1',
+					subject_code: 'MA21101',
+					subject_name_th: 'คณิตศาสตร์',
+					subject_type: 'BASIC',
+					subject_credit: 1.5,
+					subject_hours: 60,
+					instructor_name: 'ครูสาม'
+				}
+			],
+			activities: [
+				{
+					slot_id: 'slot-1',
+					classroom_id: 'room-1',
+					semester_id: 'sem-1',
+					name: 'ชุมนุม',
+					activity_type: 'club',
+					periods_per_week: 1,
+					scheduling_mode: 'independent'
+				},
+				{
+					slot_id: 'slot-2',
+					classroom_id: 'room-2',
+					semester_id: 'sem-1',
+					name: 'ชุมนุม',
+					activity_type: 'club',
+					periods_per_week: 1,
+					scheduling_mode: 'independent'
+				}
+			],
+			courseInstructorsByCourseId: {
+				'course-1': [
+					{ classroom_course_id: 'course-1', role: 'primary', instructor_name: 'ครูหนึ่ง' },
+					{ classroom_course_id: 'course-1', role: 'secondary', instructor_name: 'ครูสอง' }
+				],
+				'course-2': [
+					{ classroom_course_id: 'course-2', role: 'primary', instructor_name: 'ครูสาม' }
+				]
+			}
+		});
+
+		assert.deepEqual(rows, [
+			{
+				academicYear: 'ปีการศึกษา 2569',
+				term: '1',
+				itemKind: 'รายวิชา',
+				codeOrActivityType: 'MA21101',
+				name: 'คณิตศาสตร์',
+				itemType: 'BASIC',
+				credits: 1.5,
+				hours: 60,
+				periodsPerWeek: '',
+				classroomCount: 2,
+				classrooms: 'ม.1/1, ม.1/2',
+				instructors: 'ครูหนึ่ง, ครูสอง, ครูสาม',
+				classroomDetails: 'ม.1/1: ครูหนึ่ง (หลัก), ครูสอง (ร่วม)\nม.1/2: ครูสาม (หลัก)'
+			},
+			{
+				academicYear: 'ปีการศึกษา 2569',
+				term: '1',
+				itemKind: 'กิจกรรม',
+				codeOrActivityType: 'club',
+				name: 'ชุมนุม',
+				itemType: 'club',
+				credits: '',
+				hours: '',
+				periodsPerWeek: 1,
+				classroomCount: 2,
+				classrooms: 'ม.1/1, ม.1/2',
+				instructors: '',
+				classroomDetails: 'ม.1/1\nม.1/2'
 			}
 		]);
 	});

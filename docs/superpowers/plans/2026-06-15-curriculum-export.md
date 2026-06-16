@@ -35,11 +35,14 @@
 
 **Files:**
 - Modify: `frontend-school/src/routes/(app)/staff/academic/planning/+page.svelte`
+- Modify: `frontend-school/src/lib/utils/curriculum-export.ts`
+- Test: `frontend-school/tests/static/curriculum-export.test.mjs`
 
 - [ ] Add top-right `ส่งออกใช้จริง` outline button.
 - [ ] Add export dialog with academic-year select.
 - [ ] Load every semester, every classroom, semester courses, and classroom activities.
-- [ ] Generate XLSX sheets `ใช้จริง` and `สรุปห้องเรียน`.
+- [ ] Load course instructor teams with `batchListCourseInstructors`.
+- [ ] Generate XLSX sheets `ใช้จริง`, `รายวิชา-กิจกรรม`, and `สรุปห้องเรียน`.
 
 ### Task 4: Verification
 

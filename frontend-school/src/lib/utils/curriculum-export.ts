@@ -77,6 +77,12 @@ type ClassroomActivityLike = {
 	scheduling_mode: string;
 };
 
+type CourseInstructorLike = {
+	classroom_course_id: string;
+	role: 'primary' | 'secondary';
+	instructor_name?: string | null;
+};
+
 export type PlannedCurriculumExportRow = {
 	studyPlan: string;
 	version: string;
@@ -129,6 +135,22 @@ export type ActualCurriculumSummaryRow = {
 	activityCount: number;
 };
 
+export type ActualSubjectActivityRow = {
+	academicYear: string;
+	term: string;
+	itemKind: 'รายวิชา' | 'กิจกรรม';
+	codeOrActivityType: string;
+	name: string;
+	itemType: string;
+	credits: number | '';
+	hours: number | '';
+	periodsPerWeek: number | '';
+	classroomCount: number;
+	classrooms: string;
+	instructors: string;
+	classroomDetails: string;
+};
+
 function academicYearNumber(years: AcademicYearLike[], id: string | null | undefined) {
 	return years.find((year) => year.id === id)?.year ?? null;
 }
@@ -143,6 +165,49 @@ function gradeLevelName(levels: GradeLevelLike[], id: string | null | undefined)
 	if (!id) return '';
 	const level = levels.find((item) => item.id === id);
 	return level?.short_name ?? level?.name ?? '';
+}
+
+function uniqueSorted(values: string[]) {
+	return [...new Set(values.filter(Boolean))].sort((a, b) => a.localeCompare(b, 'th'));
+}
+
+function uniqueInOrder(values: string[]) {
+	const seen = new Set<string>();
+	return values.filter((value) => {
+		if (!value || seen.has(value)) return false;
+		seen.add(value);
+		return true;
+	});
+}
+
+function roleLabel(role: string) {
+	return role === 'primary' ? 'หลัก' : 'ร่วม';
+}
+
+function courseInstructorDetails(
+	course: ClassroomCourseLike,
+	courseInstructorsByCourseId: Record<string, CourseInstructorLike[]> | undefined
+) {
+	const instructors = courseInstructorsByCourseId?.[course.id] ?? [];
+	if (instructors.length === 0) {
+		return {
+			names: course.instructor_name ? [course.instructor_name] : [],
+			detail: course.instructor_name ?? ''
+		};
+	}
+
+	const details = instructors
+		.map((instructor) =>
+			instructor.instructor_name
+				? `${instructor.instructor_name} (${roleLabel(instructor.role)})`
+				: ''
+		)
+		.filter(Boolean);
+
+	return {
+		names: uniqueInOrder(instructors.map((instructor) => instructor.instructor_name ?? '')),
+		detail: details.join(', ')
+	};
 }
 
 export function filterEffectiveStudyPlanVersions<T extends StudyPlanVersionLike>(
@@ -316,6 +381,111 @@ export function summarizeActualCurriculum(
 	});
 }
 
+export function buildActualSubjectActivityRows(input: {
+	yearName: string;
+	semesters: SemesterLike[];
+	classrooms: ClassroomLike[];
+	courses: ClassroomCourseLike[];
+	activities: ClassroomActivityLike[];
+	courseInstructorsByCourseId?: Record<string, CourseInstructorLike[]>;
+}): ActualSubjectActivityRow[] {
+	const semesterById = new Map(input.semesters.map((semester) => [semester.id, semester]));
+	const classroomById = new Map(input.classrooms.map((classroom) => [classroom.id, classroom]));
+	const grouped = new Map<
+		string,
+		{
+			rowBase: Omit<
+				ActualSubjectActivityRow,
+				'classroomCount' | 'classrooms' | 'instructors' | 'classroomDetails'
+			>;
+			classrooms: string[];
+			instructors: string[];
+			classroomDetails: string[];
+		}
+	>();
+
+	for (const course of input.courses) {
+		const semester = semesterById.get(course.academic_semester_id);
+		const classroom = classroomById.get(course.classroom_id);
+		const term = semester?.term ?? '';
+		const code = course.subject_code ?? '';
+		const key = `course\u0000${term}\u0000${code}`;
+		const instructorDetails = courseInstructorDetails(course, input.courseInstructorsByCourseId);
+		const current = grouped.get(key) ?? {
+			rowBase: {
+				academicYear: input.yearName,
+				term,
+				itemKind: 'รายวิชา',
+				codeOrActivityType: code,
+				name: course.subject_name_th ?? course.subject_name_en ?? '',
+				itemType: course.subject_type ?? '',
+				credits: course.subject_credit ?? '',
+				hours: course.subject_hours ?? '',
+				periodsPerWeek: ''
+			},
+			classrooms: [],
+			instructors: [],
+			classroomDetails: []
+		};
+
+		const classroomName = classroom?.name ?? '';
+		if (classroomName) current.classrooms.push(classroomName);
+		current.instructors.push(...instructorDetails.names);
+		current.classroomDetails.push(
+			instructorDetails.detail ? `${classroomName}: ${instructorDetails.detail}` : classroomName
+		);
+		grouped.set(key, current);
+	}
+
+	for (const activity of input.activities) {
+		const semester = semesterById.get(activity.semester_id);
+		const classroom = classroomById.get(activity.classroom_id);
+		const term = semester?.term ?? '';
+		const key = `activity\u0000${term}\u0000${activity.activity_type}\u0000${activity.name}`;
+		const current = grouped.get(key) ?? {
+			rowBase: {
+				academicYear: input.yearName,
+				term,
+				itemKind: 'กิจกรรม',
+				codeOrActivityType: activity.activity_type,
+				name: activity.name,
+				itemType: activity.activity_type,
+				credits: '',
+				hours: '',
+				periodsPerWeek: activity.periods_per_week
+			},
+			classrooms: [],
+			instructors: [],
+			classroomDetails: []
+		};
+
+		const classroomName = classroom?.name ?? '';
+		if (classroomName) current.classrooms.push(classroomName);
+		current.classroomDetails.push(classroomName);
+		grouped.set(key, current);
+	}
+
+	return [...grouped.values()]
+		.map((item) => {
+			const classrooms = uniqueSorted(item.classrooms);
+			return {
+				...item.rowBase,
+				classroomCount: classrooms.length,
+				classrooms: classrooms.join(', '),
+				instructors: uniqueInOrder(item.instructors).join(', '),
+				classroomDetails: uniqueSorted(item.classroomDetails).join('\n')
+			};
+		})
+		.sort((a, b) => {
+			const termCompare = a.term.localeCompare(b.term, 'th');
+			if (termCompare !== 0) return termCompare;
+			const kindOrder = { รายวิชา: 0, กิจกรรม: 1 };
+			const kindCompare = kindOrder[a.itemKind] - kindOrder[b.itemKind];
+			if (kindCompare !== 0) return kindCompare;
+			return a.name.localeCompare(b.name, 'th');
+		});
+}
+
 export function plannedRowsForWorksheet(rows: PlannedCurriculumExportRow[]) {
 	return rows.map((row) => ({
 		แผนการเรียน: row.studyPlan,
@@ -373,5 +543,23 @@ export function actualSummaryForWorksheet(rows: ActualCurriculumSummaryRow[]) {
 		ระดับชั้น: row.gradeLevel,
 		จำนวนรายวิชา: row.courseCount,
 		จำนวนกิจกรรม: row.activityCount
+	}));
+}
+
+export function actualSubjectActivityForWorksheet(rows: ActualSubjectActivityRow[]) {
+	return rows.map((row) => ({
+		ปีการศึกษา: row.academicYear,
+		ภาคเรียน: row.term,
+		ประเภทข้อมูล: row.itemKind,
+		'รหัส/ประเภทกิจกรรม': row.codeOrActivityType,
+		ชื่อ: row.name,
+		'ประเภทวิชา/กิจกรรม': row.itemType,
+		หน่วยกิต: row.credits,
+		ชั่วโมงต่อเทอม: row.hours,
+		คาบต่อสัปดาห์: row.periodsPerWeek,
+		จำนวนห้อง: row.classroomCount,
+		'ห้องที่เรียน/เข้าร่วม': row.classrooms,
+		ครูผู้สอนทั้งหมด: row.instructors,
+		'รายละเอียดห้อง/ครู': row.classroomDetails
 	}));
 }

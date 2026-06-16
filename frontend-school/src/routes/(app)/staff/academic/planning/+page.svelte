@@ -52,7 +52,9 @@
 	} from 'lucide-svelte';
 	import {
 		actualRowsForWorksheet,
+		actualSubjectActivityForWorksheet,
 		actualSummaryForWorksheet,
+		buildActualSubjectActivityRows,
 		buildActualCurriculumRows,
 		summarizeActualCurriculum
 	} from '$lib/utils/curriculum-export';
@@ -278,6 +280,10 @@
 					listClassroomCourses({ semesterId: semester.id }).then((res) => res.data ?? [])
 				)
 			);
+			const exportCourses = courseGroups.flat();
+			const courseInstructorsByCourseId = await batchListCourseInstructors(
+				exportCourses.map((course) => course.id)
+			).then((res) => res.data ?? {});
 			const activityGroups = await Promise.all(
 				exportClassrooms.flatMap((classroom) =>
 					exportSemesters.map((semester) =>
@@ -296,8 +302,16 @@
 				yearName: exportYear.name,
 				semesters: exportSemesters,
 				classrooms: exportClassrooms,
-				courses: courseGroups.flat(),
+				courses: exportCourses,
 				activities: activityGroups.flat() as ClassroomActivityExportItem[]
+			});
+			const subjectActivityRows = buildActualSubjectActivityRows({
+				yearName: exportYear.name,
+				semesters: exportSemesters,
+				classrooms: exportClassrooms,
+				courses: exportCourses,
+				activities: activityGroups.flat() as ClassroomActivityExportItem[],
+				courseInstructorsByCourseId
 			});
 			const summaryRows = summarizeActualCurriculum(rows);
 
@@ -307,6 +321,11 @@
 				workbook,
 				XLSX.utils.json_to_sheet(actualRowsForWorksheet(rows)),
 				'ใช้จริง'
+			);
+			XLSX.utils.book_append_sheet(
+				workbook,
+				XLSX.utils.json_to_sheet(actualSubjectActivityForWorksheet(subjectActivityRows)),
+				'รายวิชา-กิจกรรม'
 			);
 			XLSX.utils.book_append_sheet(
 				workbook,

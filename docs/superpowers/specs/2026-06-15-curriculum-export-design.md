@@ -44,6 +44,7 @@ Study-plan export sheets:
 Planning export sheets:
 
 - `ใช้จริง`: one row per actual course or actual classroom activity.
+- `รายวิชา-กิจกรรม`: one row per subject code per term and one row per activity name/type per term. It aggregates the classrooms that use each item and lists all instructors for classroom courses.
 - `สรุปห้องเรียน`: counts per classroom and term.
 
 ## Permissions
