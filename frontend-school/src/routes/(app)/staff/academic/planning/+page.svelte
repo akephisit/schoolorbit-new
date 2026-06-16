@@ -52,7 +52,7 @@
 	} from 'lucide-svelte';
 	import {
 		actualRowsForWorksheet,
-		actualSubjectActivityForWorksheet,
+		actualSubjectActivityReportForWorksheet,
 		actualSummaryForWorksheet,
 		buildActualSubjectActivityRows,
 		buildActualCurriculumRows,
@@ -322,11 +322,18 @@
 				XLSX.utils.json_to_sheet(actualRowsForWorksheet(rows)),
 				'ใช้จริง'
 			);
-			XLSX.utils.book_append_sheet(
-				workbook,
-				XLSX.utils.json_to_sheet(actualSubjectActivityForWorksheet(subjectActivityRows)),
-				'รายวิชา-กิจกรรม'
+			const subjectActivityWorksheet = XLSX.utils.aoa_to_sheet(
+				actualSubjectActivityReportForWorksheet(subjectActivityRows)
 			);
+			subjectActivityWorksheet['!cols'] = [
+				{ wch: 28 },
+				{ wch: 42 },
+				{ wch: 16 },
+				{ wch: 16 },
+				{ wch: 14 },
+				{ wch: 54 }
+			];
+			XLSX.utils.book_append_sheet(workbook, subjectActivityWorksheet, 'รายวิชา-กิจกรรม');
 			XLSX.utils.book_append_sheet(
 				workbook,
 				XLSX.utils.json_to_sheet(actualSummaryForWorksheet(summaryRows)),

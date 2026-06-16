@@ -83,6 +83,9 @@ type CourseInstructorLike = {
 	instructor_name?: string | null;
 };
 
+type WorksheetReportCell = string | number;
+type WorksheetReportRow = WorksheetReportCell[];
+
 export type PlannedCurriculumExportRow = {
 	studyPlan: string;
 	version: string;
@@ -182,6 +185,22 @@ function uniqueInOrder(values: string[]) {
 
 function roleLabel(role: string) {
 	return role === 'primary' ? 'หลัก' : 'ร่วม';
+}
+
+function termReportLabel(term: string) {
+	return term ? `ภาคเรียนที่ ${term}` : 'ไม่ระบุภาคเรียน';
+}
+
+function classroomDetailRows(detail: string): WorksheetReportRow[] {
+	return detail
+		.split('\n')
+		.map((line) => line.trim())
+		.filter(Boolean)
+		.map((line) => {
+			const separatorIndex = line.indexOf(':');
+			if (separatorIndex === -1) return [line];
+			return [line.slice(0, separatorIndex).trim(), line.slice(separatorIndex + 1).trim()];
+		});
 }
 
 function courseInstructorDetails(
@@ -562,4 +581,81 @@ export function actualSubjectActivityForWorksheet(rows: ActualSubjectActivityRow
 		ครูผู้สอนทั้งหมด: row.instructors,
 		'รายละเอียดห้อง/ครู': row.classroomDetails
 	}));
+}
+
+export function actualSubjectActivityReportForWorksheet(
+	rows: ActualSubjectActivityRow[]
+): WorksheetReportRow[] {
+	if (rows.length === 0) return [['ไม่มีข้อมูลรายวิชาหรือกิจกรรม']];
+
+	const report: WorksheetReportRow[] = [[rows[0].academicYear], []];
+	const terms = uniqueInOrder(rows.map((row) => row.term));
+
+	for (const term of terms) {
+		if (report.length > 2) report.push([]);
+		report.push([termReportLabel(term)]);
+
+		const courseRows = rows.filter((row) => row.term === term && row.itemKind === 'รายวิชา');
+		const activityRows = rows.filter((row) => row.term === term && row.itemKind === 'กิจกรรม');
+
+		if (courseRows.length > 0) {
+			report.push(['รายวิชา']);
+			report.push([
+				'รหัส/ชื่อวิชา',
+				'ประเภท',
+				'หน่วยกิต',
+				'ชั่วโมงต่อเทอม',
+				'จำนวนห้อง',
+				'ครูผู้สอนทั้งหมด'
+			]);
+
+			for (const [index, row] of courseRows.entries()) {
+				report.push([
+					[row.codeOrActivityType, row.name].filter(Boolean).join(' '),
+					row.itemType,
+					row.credits,
+					row.hours,
+					row.classroomCount,
+					row.instructors
+				]);
+				if (row.classrooms) report.push(['เรียนทั้งหมด', row.classrooms]);
+
+				const detailRows = classroomDetailRows(row.classroomDetails);
+				if (detailRows.length > 0) {
+					report.push(['ห้องเรียน', 'ครูผู้สอน']);
+					report.push(...detailRows);
+				}
+
+				if (index < courseRows.length - 1) report.push([]);
+			}
+		}
+
+		if (activityRows.length > 0) {
+			if (courseRows.length > 0) report.push([]);
+			report.push(['กิจกรรม']);
+			report.push(['ชื่อกิจกรรม', 'ประเภทกิจกรรม', 'คาบต่อสัปดาห์', 'จำนวนห้อง']);
+
+			for (const [index, row] of activityRows.entries()) {
+				report.push([
+					row.name,
+					row.itemType || row.codeOrActivityType,
+					row.periodsPerWeek,
+					row.classroomCount
+				]);
+				if (row.classrooms) report.push(['เข้าร่วมทั้งหมด', row.classrooms]);
+
+				const detailRows = classroomDetailRows(row.classroomDetails).map(([classroom]) => [
+					classroom
+				]);
+				if (detailRows.length > 0) {
+					report.push(['ห้องเรียน']);
+					report.push(...detailRows);
+				}
+
+				if (index < activityRows.length - 1) report.push([]);
+			}
+		}
+	}
+
+	return report;
 }

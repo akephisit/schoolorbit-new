@@ -6,6 +6,7 @@ import {
 	buildActualSubjectActivityRows,
 	buildEffectiveStudyPlanRows,
 	filterEffectiveStudyPlanVersions,
+	actualSubjectActivityReportForWorksheet,
 	summarizeActualCurriculum
 } from '../../src/lib/utils/curriculum-export.ts';
 
@@ -247,6 +248,62 @@ describe('curriculum export helpers', () => {
 				instructors: '',
 				classroomDetails: 'ม.1/1\nม.1/2'
 			}
+		]);
+	});
+
+	it('formats actual subject activity rows as readable report blocks', () => {
+		const report = actualSubjectActivityReportForWorksheet([
+			{
+				academicYear: 'ปีการศึกษา 2569',
+				term: '1',
+				itemKind: 'รายวิชา',
+				codeOrActivityType: 'MA21101',
+				name: 'คณิตศาสตร์',
+				itemType: 'BASIC',
+				credits: 1.5,
+				hours: 60,
+				periodsPerWeek: '',
+				classroomCount: 2,
+				classrooms: 'ม.1/1, ม.1/2',
+				instructors: 'ครูหนึ่ง, ครูสอง',
+				classroomDetails: 'ม.1/1: ครูหนึ่ง (หลัก)\nม.1/2: ครูสอง (หลัก)'
+			},
+			{
+				academicYear: 'ปีการศึกษา 2569',
+				term: '1',
+				itemKind: 'กิจกรรม',
+				codeOrActivityType: 'club',
+				name: 'ชุมนุม',
+				itemType: 'club',
+				credits: '',
+				hours: '',
+				periodsPerWeek: 1,
+				classroomCount: 2,
+				classrooms: 'ม.1/1, ม.1/2',
+				instructors: '',
+				classroomDetails: 'ม.1/1\nม.1/2'
+			}
+		]);
+
+		assert.deepEqual(report, [
+			['ปีการศึกษา 2569'],
+			[],
+			['ภาคเรียนที่ 1'],
+			['รายวิชา'],
+			['รหัส/ชื่อวิชา', 'ประเภท', 'หน่วยกิต', 'ชั่วโมงต่อเทอม', 'จำนวนห้อง', 'ครูผู้สอนทั้งหมด'],
+			['MA21101 คณิตศาสตร์', 'BASIC', 1.5, 60, 2, 'ครูหนึ่ง, ครูสอง'],
+			['เรียนทั้งหมด', 'ม.1/1, ม.1/2'],
+			['ห้องเรียน', 'ครูผู้สอน'],
+			['ม.1/1', 'ครูหนึ่ง (หลัก)'],
+			['ม.1/2', 'ครูสอง (หลัก)'],
+			[],
+			['กิจกรรม'],
+			['ชื่อกิจกรรม', 'ประเภทกิจกรรม', 'คาบต่อสัปดาห์', 'จำนวนห้อง'],
+			['ชุมนุม', 'club', 1, 2],
+			['เข้าร่วมทั้งหมด', 'ม.1/1, ม.1/2'],
+			['ห้องเรียน'],
+			['ม.1/1'],
+			['ม.1/2']
 		]);
 	});
 });
