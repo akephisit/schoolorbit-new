@@ -1045,9 +1045,12 @@ export const batchListCourseInstructors = async (
 	courseIds: string[]
 ): Promise<{ data: Record<string, CourseInstructor[]> }> => {
 	if (courseIds.length === 0) return { data: {} };
-	const params = new URLSearchParams({ course_ids: courseIds.join(',') });
 	return await fetchApi<Record<string, CourseInstructor[]>>(
-		`/api/academic/planning/courses/instructors?${params}`
+		'/api/academic/planning/courses/instructors/batch',
+		{
+			method: 'POST',
+			body: JSON.stringify({ course_ids: courseIds })
+		}
 	);
 };
 

@@ -9,8 +9,8 @@ use uuid::Uuid;
 use crate::api_response::ApiResponse;
 use crate::error::AppError;
 use crate::modules::academic::models::course_planning::{
-    AddCourseInstructorRequest, AssignCoursesRequest, PlanQuery, UpdateCourseInstructorRoleRequest,
-    UpdateCourseRequest,
+    AddCourseInstructorRequest, AssignCoursesRequest, BatchListCourseInstructorsRequest, PlanQuery,
+    UpdateCourseInstructorRoleRequest, UpdateCourseRequest,
 };
 use crate::modules::academic::services::course_planning_service;
 use crate::modules::academic::websockets::TimetableEvent;
@@ -104,6 +104,20 @@ pub struct BatchListCourseInstructorsQuery {
 }
 
 pub async fn batch_list_course_instructors(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<BatchListCourseInstructorsRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    actor.require_permission(codes::ACADEMIC_COURSE_PLAN_READ_ALL)?;
+    let grouped =
+        course_planning_service::batch_list_course_instructors(&pool, &payload.course_ids).await?;
+    Ok(Json(ApiResponse::ok(grouped)).into_response())
+}
+
+pub async fn batch_list_course_instructors_from_query(
     State(state): State<AppState>,
     headers: HeaderMap,
     Query(query): Query<BatchListCourseInstructorsQuery>,

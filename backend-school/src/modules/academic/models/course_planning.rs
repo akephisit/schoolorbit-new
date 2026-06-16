@@ -77,6 +77,11 @@ pub struct AddCourseInstructorRequest {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct BatchListCourseInstructorsRequest {
+    pub course_ids: Vec<Uuid>,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct UpdateCourseInstructorRoleRequest {
     pub role: String,
 }

@@ -1719,3 +1719,29 @@ fn module_handlers_resolve_tenant_pools_through_the_central_resolver() {
 
     assert_eq!(violations, Vec::<String>::new());
 }
+
+#[test]
+fn course_instructor_batch_endpoint_accepts_post_body() {
+    let routes = read_source(manifest_dir().join("src/modules/academic.rs"));
+    let handler =
+        read_source(manifest_dir().join("src/modules/academic/handlers/course_planning.rs"));
+    let models = read_source(manifest_dir().join("src/modules/academic/models/course_planning.rs"));
+
+    assert!(
+        routes.contains("\"/planning/courses/instructors/batch\""),
+        "course instructor batch endpoint should have a body-safe POST route"
+    );
+    assert!(
+        routes.contains("post(handlers::course_planning::batch_list_course_instructors)"),
+        "course instructor batch endpoint should route POST requests to the batch handler"
+    );
+    assert!(
+        handler.contains("Json(payload): Json<BatchListCourseInstructorsRequest>"),
+        "batch handler should deserialize course ids from JSON body"
+    );
+    assert!(
+        models.contains("pub struct BatchListCourseInstructorsRequest")
+            && models.contains("pub course_ids: Vec<Uuid>"),
+        "batch request DTO should carry course_ids as a typed UUID array"
+    );
+}

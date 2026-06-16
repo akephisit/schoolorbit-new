@@ -97,8 +97,12 @@ pub fn academic_routes() -> Router<AppState> {
         // Batch endpoint — MUST be registered BEFORE `/planning/courses/{id}/instructors`
         // so Axum doesn't match the literal path `/planning/courses/instructors` as `id = "instructors"`.
         .route(
+            "/planning/courses/instructors/batch",
+            post(handlers::course_planning::batch_list_course_instructors),
+        )
+        .route(
             "/planning/courses/instructors",
-            get(handlers::course_planning::batch_list_course_instructors),
+            get(handlers::course_planning::batch_list_course_instructors_from_query),
         )
         .route(
             "/planning/courses/{id}/instructors",
