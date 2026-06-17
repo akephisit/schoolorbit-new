@@ -326,12 +326,13 @@
 				actualSubjectActivityReportForWorksheet(subjectActivityRows)
 			);
 			subjectActivityWorksheet['!cols'] = [
-				{ wch: 28 },
-				{ wch: 42 },
-				{ wch: 16 },
-				{ wch: 16 },
 				{ wch: 14 },
-				{ wch: 54 }
+				{ wch: 32 },
+				{ wch: 14 },
+				{ wch: 8 },
+				{ wch: 8 },
+				{ wch: 54 },
+				{ wch: 42 }
 			];
 			XLSX.utils.book_append_sheet(workbook, subjectActivityWorksheet, 'รายวิชา-กิจกรรม');
 			XLSX.utils.book_append_sheet(

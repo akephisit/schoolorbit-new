@@ -146,6 +146,7 @@ export type ActualCurriculumSummaryRow = {
 export type ActualSubjectActivityRow = {
 	academicYear: string;
 	term: string;
+	dominantGradeLevel: string;
 	itemKind: 'รายวิชา' | 'กิจกรรม';
 	codeOrActivityType: string;
 	name: string;
@@ -157,6 +158,19 @@ export type ActualSubjectActivityRow = {
 	classrooms: string;
 	instructors: string;
 	classroomDetails: string;
+};
+
+type ActualSubjectActivityRowBase = Omit<
+	ActualSubjectActivityRow,
+	'dominantGradeLevel' | 'classroomCount' | 'classrooms' | 'instructors' | 'classroomDetails'
+>;
+
+type ActualSubjectActivityGroup = {
+	rowBase: ActualSubjectActivityRowBase;
+	classrooms: string[];
+	instructors: string[];
+	classroomDetails: string[];
+	gradeLevels: string[];
 };
 
 function academicYearNumber(years: AcademicYearLike[], id: string | null | undefined) {
@@ -212,6 +226,24 @@ function compareOptionalGradeLevel(a: string, b: string) {
 	if (a && !b) return -1;
 	if (!a && b) return 1;
 	return compareThaiNatural(a, b);
+}
+
+function compactClassroomList(classrooms: string, classroomCount: number) {
+	const classroomNames = classrooms
+		.split(',')
+		.map((classroom) => classroom.trim())
+		.filter(Boolean);
+	if (classroomNames.length === 0) return classroomCount > 0 ? `${classroomCount} ห้อง` : '';
+	if (classroomNames.length <= 12) return classroomNames.join(', ');
+	return `${classroomCount || classroomNames.length} ห้อง: ${classroomNames
+		.slice(0, 12)
+		.join(', ')}, ...`;
+}
+
+function sortedReportGradeLevels(rows: ActualSubjectActivityRow[]) {
+	return [...new Set(rows.map((row) => row.dominantGradeLevel ?? ''))].sort(
+		compareOptionalGradeLevel
+	);
 }
 
 function roleLabel(role: string) {
@@ -441,19 +473,7 @@ export function buildActualSubjectActivityRows(input: {
 }): ActualSubjectActivityRow[] {
 	const semesterById = new Map(input.semesters.map((semester) => [semester.id, semester]));
 	const classroomById = new Map(input.classrooms.map((classroom) => [classroom.id, classroom]));
-	const grouped = new Map<
-		string,
-		{
-			rowBase: Omit<
-				ActualSubjectActivityRow,
-				'classroomCount' | 'classrooms' | 'instructors' | 'classroomDetails'
-			>;
-			classrooms: string[];
-			instructors: string[];
-			classroomDetails: string[];
-			gradeLevels: string[];
-		}
-	>();
+	const grouped = new Map<string, ActualSubjectActivityGroup>();
 
 	for (const course of input.courses) {
 		const semester = semesterById.get(course.academic_semester_id);
@@ -462,7 +482,7 @@ export function buildActualSubjectActivityRows(input: {
 		const code = course.subject_code ?? '';
 		const key = `course\u0000${term}\u0000${code}`;
 		const instructorDetails = courseInstructorDetails(course, input.courseInstructorsByCourseId);
-		const current = grouped.get(key) ?? {
+		const current: ActualSubjectActivityGroup = grouped.get(key) ?? {
 			rowBase: {
 				academicYear: input.yearName,
 				term,
@@ -496,7 +516,7 @@ export function buildActualSubjectActivityRows(input: {
 		const classroom = classroomById.get(activity.classroom_id);
 		const term = semester?.term ?? '';
 		const key = `activity\u0000${term}\u0000${activity.activity_type}\u0000${activity.name}`;
-		const current = grouped.get(key) ?? {
+		const current: ActualSubjectActivityGroup = grouped.get(key) ?? {
 			rowBase: {
 				academicYear: input.yearName,
 				term,
@@ -523,15 +543,17 @@ export function buildActualSubjectActivityRows(input: {
 	return [...grouped.values()]
 		.map((item) => {
 			const classrooms = uniqueSorted(item.classrooms);
+			const itemDominantGradeLevel = dominantGradeLevel(item.gradeLevels);
 			return {
 				row: {
 					...item.rowBase,
+					dominantGradeLevel: item.rowBase.itemKind === 'รายวิชา' ? itemDominantGradeLevel : '',
 					classroomCount: classrooms.length,
 					classrooms: classrooms.join(', '),
 					instructors: uniqueInOrder(item.instructors).join(', '),
 					classroomDetails: uniqueSorted(item.classroomDetails).join('\n')
 				},
-				dominantGradeLevel: dominantGradeLevel(item.gradeLevels)
+				dominantGradeLevel: itemDominantGradeLevel
 			};
 		})
 		.sort((a, b) => {
@@ -642,61 +664,54 @@ export function actualSubjectActivityReportForWorksheet(
 		const courseRows = rows.filter((row) => row.term === term && row.itemKind === 'รายวิชา');
 		const activityRows = rows.filter((row) => row.term === term && row.itemKind === 'กิจกรรม');
 
-		if (courseRows.length > 0) {
-			report.push(['รายวิชา']);
-			report.push([
-				'รหัส/ชื่อวิชา',
-				'ประเภท',
-				'หน่วยกิต',
-				'ชั่วโมงต่อเทอม',
-				'จำนวนห้อง',
-				'ครูผู้สอนทั้งหมด'
-			]);
+		for (const gradeLevel of sortedReportGradeLevels(courseRows)) {
+			const gradeCourseRows = courseRows.filter(
+				(row) => (row.dominantGradeLevel ?? '') === gradeLevel
+			);
+			if (gradeCourseRows.length === 0) continue;
 
-			for (const [index, row] of courseRows.entries()) {
+			report.push([]);
+			report.push([gradeLevel || 'ไม่ระบุระดับ']);
+			report.push(['รายวิชา']);
+			report.push(['รหัส', 'วิชา', 'ประเภท', 'นก.', 'ชม.', 'ห้อง', 'ครูผู้สอน']);
+
+			for (const row of gradeCourseRows) {
 				report.push([
-					[row.codeOrActivityType, row.name].filter(Boolean).join(' '),
+					row.codeOrActivityType,
+					row.name,
 					row.itemType,
 					row.credits,
 					row.hours,
-					row.classroomCount,
+					compactClassroomList(row.classrooms, row.classroomCount),
 					row.instructors
 				]);
-				if (row.classrooms) report.push(['เรียนทั้งหมด', row.classrooms]);
+			}
 
+			report.push([]);
+			report.push(['รายละเอียดครูรายห้อง']);
+			for (const [index, row] of gradeCourseRows.entries()) {
 				const detailRows = classroomDetailRows(row.classroomDetails);
-				if (detailRows.length > 0) {
-					report.push(['ห้องเรียน', 'ครูผู้สอน']);
-					report.push(...detailRows);
-				}
+				if (detailRows.length === 0) continue;
 
-				if (index < courseRows.length - 1) report.push([]);
+				report.push([[row.codeOrActivityType, row.name].filter(Boolean).join(' ')]);
+				report.push(['ห้องเรียน', 'ครูผู้สอน']);
+				report.push(...detailRows);
+				if (index < gradeCourseRows.length - 1) report.push([]);
 			}
 		}
 
 		if (activityRows.length > 0) {
 			if (courseRows.length > 0) report.push([]);
 			report.push(['กิจกรรม']);
-			report.push(['ชื่อกิจกรรม', 'ประเภทกิจกรรม', 'คาบต่อสัปดาห์', 'จำนวนห้อง']);
+			report.push(['กิจกรรม', 'ประเภท', 'คาบ/สัปดาห์', 'ห้อง']);
 
-			for (const [index, row] of activityRows.entries()) {
+			for (const row of activityRows) {
 				report.push([
 					row.name,
 					row.itemType || row.codeOrActivityType,
 					row.periodsPerWeek,
-					row.classroomCount
+					compactClassroomList(row.classrooms, row.classroomCount)
 				]);
-				if (row.classrooms) report.push(['เข้าร่วมทั้งหมด', row.classrooms]);
-
-				const detailRows = classroomDetailRows(row.classroomDetails).map(([classroom]) => [
-					classroom
-				]);
-				if (detailRows.length > 0) {
-					report.push(['ห้องเรียน']);
-					report.push(...detailRows);
-				}
-
-				if (index < activityRows.length - 1) report.push([]);
 			}
 		}
 	}

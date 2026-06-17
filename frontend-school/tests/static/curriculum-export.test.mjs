@@ -231,7 +231,8 @@ describe('curriculum export helpers', () => {
 				classroomCount: 2,
 				classrooms: 'ม.1/1, ม.1/2',
 				instructors: 'ครูหนึ่ง, ครูสอง, ครูสาม',
-				classroomDetails: 'ม.1/1: ครูหนึ่ง (หลัก), ครูสอง (ร่วม)\nม.1/2: ครูสาม (หลัก)'
+				classroomDetails: 'ม.1/1: ครูหนึ่ง (หลัก), ครูสอง (ร่วม)\nม.1/2: ครูสาม (หลัก)',
+				dominantGradeLevel: 'ม.1'
 			},
 			{
 				academicYear: 'ปีการศึกษา 2569',
@@ -246,7 +247,8 @@ describe('curriculum export helpers', () => {
 				classroomCount: 2,
 				classrooms: 'ม.1/1, ม.1/2',
 				instructors: '',
-				classroomDetails: 'ม.1/1\nม.1/2'
+				classroomDetails: 'ม.1/1\nม.1/2',
+				dominantGradeLevel: ''
 			}
 		]);
 	});
@@ -266,7 +268,8 @@ describe('curriculum export helpers', () => {
 				classroomCount: 2,
 				classrooms: 'ม.1/1, ม.1/2',
 				instructors: 'ครูหนึ่ง, ครูสอง',
-				classroomDetails: 'ม.1/1: ครูหนึ่ง (หลัก)\nม.1/2: ครูสอง (หลัก)'
+				classroomDetails: 'ม.1/1: ครูหนึ่ง (หลัก)\nม.1/2: ครูสอง (หลัก)',
+				dominantGradeLevel: 'ม.1'
 			},
 			{
 				academicYear: 'ปีการศึกษา 2569',
@@ -281,7 +284,8 @@ describe('curriculum export helpers', () => {
 				classroomCount: 2,
 				classrooms: 'ม.1/1, ม.1/2',
 				instructors: '',
-				classroomDetails: 'ม.1/1\nม.1/2'
+				classroomDetails: 'ม.1/1\nม.1/2',
+				dominantGradeLevel: ''
 			}
 		]);
 
@@ -289,21 +293,21 @@ describe('curriculum export helpers', () => {
 			['ปีการศึกษา 2569'],
 			[],
 			['ภาคเรียนที่ 1'],
+			[],
+			['ม.1'],
 			['รายวิชา'],
-			['รหัส/ชื่อวิชา', 'ประเภท', 'หน่วยกิต', 'ชั่วโมงต่อเทอม', 'จำนวนห้อง', 'ครูผู้สอนทั้งหมด'],
-			['MA21101 คณิตศาสตร์', 'BASIC', 1.5, 60, 2, 'ครูหนึ่ง, ครูสอง'],
-			['เรียนทั้งหมด', 'ม.1/1, ม.1/2'],
+			['รหัส', 'วิชา', 'ประเภท', 'นก.', 'ชม.', 'ห้อง', 'ครูผู้สอน'],
+			['MA21101', 'คณิตศาสตร์', 'BASIC', 1.5, 60, 'ม.1/1, ม.1/2', 'ครูหนึ่ง, ครูสอง'],
+			[],
+			['รายละเอียดครูรายห้อง'],
+			['MA21101 คณิตศาสตร์'],
 			['ห้องเรียน', 'ครูผู้สอน'],
 			['ม.1/1', 'ครูหนึ่ง (หลัก)'],
 			['ม.1/2', 'ครูสอง (หลัก)'],
 			[],
 			['กิจกรรม'],
-			['ชื่อกิจกรรม', 'ประเภทกิจกรรม', 'คาบต่อสัปดาห์', 'จำนวนห้อง'],
-			['ชุมนุม', 'club', 1, 2],
-			['เข้าร่วมทั้งหมด', 'ม.1/1, ม.1/2'],
-			['ห้องเรียน'],
-			['ม.1/1'],
-			['ม.1/2']
+			['กิจกรรม', 'ประเภท', 'คาบ/สัปดาห์', 'ห้อง'],
+			['ชุมนุม', 'club', 1, 'ม.1/1, ม.1/2']
 		]);
 	});
 
@@ -456,5 +460,41 @@ describe('curriculum export helpers', () => {
 			rows.map((row) => row.name),
 			['Zulu Math', 'Alpha Science', 'ชุมนุม']
 		);
+	});
+
+	it('shortens long activity classroom lists in the readable report', () => {
+		const classroomList = Array.from({ length: 13 }, (_, index) => `ม.1/${index + 1}`).join(', ');
+		const report = actualSubjectActivityReportForWorksheet([
+			{
+				academicYear: 'ปีการศึกษา 2569',
+				term: '1',
+				dominantGradeLevel: '',
+				itemKind: 'กิจกรรม',
+				codeOrActivityType: 'club',
+				name: 'ชุมนุม',
+				itemType: 'club',
+				credits: '',
+				hours: '',
+				periodsPerWeek: 1,
+				classroomCount: 13,
+				classrooms: classroomList,
+				instructors: '',
+				classroomDetails: classroomList.replaceAll(', ', '\n')
+			}
+		]);
+
+		assert.deepEqual(report, [
+			['ปีการศึกษา 2569'],
+			[],
+			['ภาคเรียนที่ 1'],
+			['กิจกรรม'],
+			['กิจกรรม', 'ประเภท', 'คาบ/สัปดาห์', 'ห้อง'],
+			[
+				'ชุมนุม',
+				'club',
+				1,
+				'13 ห้อง: ม.1/1, ม.1/2, ม.1/3, ม.1/4, ม.1/5, ม.1/6, ม.1/7, ม.1/8, ม.1/9, ม.1/10, ม.1/11, ม.1/12, ...'
+			]
+		]);
 	});
 });
