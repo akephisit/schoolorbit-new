@@ -5,8 +5,9 @@
 	import { listOrganizationUnitsLookup, type OrganizationUnit } from '$lib/api/staff';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
+	import { PageShell } from '$lib/components/app-layout';
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
-	import { GraduationCap, ChevronRight, Search, Settings } from 'lucide-svelte';
+	import { ChevronRight, GraduationCap, Search, Settings } from 'lucide-svelte';
 	import OrganizationPermissionDialog from '$lib/components/staff/OrganizationPermissionDialog.svelte';
 	import { PERMISSIONS } from '$lib/permissions/registry';
 	import { can } from '$lib/stores/permissions';
@@ -73,17 +74,7 @@
 	<title>กลุ่มสาระการเรียนรู้ - SchoolOrbit</title>
 </svelte:head>
 
-<div class="space-y-6">
-	<div class="flex items-center justify-between">
-		<div>
-			<h1 class="text-2xl font-bold flex items-center gap-2">
-				<GraduationCap class="w-7 h-7 text-orange-500" />
-				กลุ่มสาระการเรียนรู้
-			</h1>
-			<p class="text-muted-foreground text-sm mt-1">จัดการกลุ่มสาระและสมาชิกในแต่ละกลุ่ม</p>
-		</div>
-	</div>
-
+<PageShell title="กลุ่มสาระการเรียนรู้" description="จัดการกลุ่มสาระและสมาชิกในแต่ละกลุ่ม">
 	<!-- Search -->
 	<div class="relative max-w-sm">
 		<Search class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
@@ -99,10 +90,7 @@
 	{:else if loading}
 		<PageSkeleton variant="cards" rows={6} />
 	{:else if subjectGroups.length === 0}
-		<PageState
-			title="ไม่พบกลุ่มสาระ"
-			description="ยังไม่มีกลุ่มสาระที่ตรงกับเงื่อนไขการค้นหา"
-		/>
+		<PageState title="ไม่พบกลุ่มสาระ" description="ยังไม่มีกลุ่มสาระที่ตรงกับเงื่อนไขการค้นหา" />
 	{:else}
 		<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
 			{#each subjectGroups as group (group.id)}
@@ -149,7 +137,7 @@
 			{/each}
 		</div>
 	{/if}
-</div>
+</PageShell>
 
 <OrganizationPermissionDialog
 	bind:open={showPermissionDialog}

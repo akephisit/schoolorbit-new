@@ -26,19 +26,11 @@
 	import * as Select from '$lib/components/ui/select';
 	import * as Popover from '$lib/components/ui/popover';
 	import * as Command from '$lib/components/ui/command';
+	import { PageShell } from '$lib/components/app-layout';
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import { PERMISSIONS } from '$lib/permissions/registry';
 	import { can } from '$lib/stores/permissions';
-	import {
-		Loader2,
-		Plus,
-		Users,
-		School,
-		Pencil,
-		Trash2,
-		ChevronsUpDown,
-		Check
-	} from 'lucide-svelte';
+	import { Loader2, Plus, Users, Pencil, Trash2, ChevronsUpDown, Check } from 'lucide-svelte';
 
 	type AdvisorRow = { user_id: string; role: 'primary' | 'secondary' };
 
@@ -392,22 +384,15 @@
 	</div>
 {/snippet}
 
-<div class="space-y-6">
-	<div class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-		<div>
-			<h2 class="text-3xl font-bold text-foreground flex items-center gap-2">
-				<School class="w-8 h-8" />
-				จัดการห้องเรียน
-			</h2>
-			<p class="text-muted-foreground mt-1">สร้างห้องเรียนและกำหนดครูที่ปรึกษา</p>
-		</div>
+<PageShell title="จัดการห้องเรียน" description="สร้างห้องเรียนและกำหนดครูที่ปรึกษา">
+	{#snippet actions()}
 		{#if canCreateClassrooms}
 			<Button onclick={handleOpenCreate} class="flex items-center gap-2">
 				<Plus class="w-4 h-4" />
 				สร้างห้องเรียนใหม่
 			</Button>
 		{/if}
-	</div>
+	{/snippet}
 
 	{#if !canReadClassrooms}
 		<PageState
@@ -659,4 +644,4 @@
 			</Dialog.Content>
 		</Dialog.Root>
 	{/if}
-</div>
+</PageShell>

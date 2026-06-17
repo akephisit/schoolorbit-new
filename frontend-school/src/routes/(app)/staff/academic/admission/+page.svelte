@@ -9,20 +9,13 @@
 		deleteRound
 	} from '$lib/api/admission';
 	import { Button } from '$lib/components/ui/button';
+	import { PageShell } from '$lib/components/app-layout';
 	import { Badge } from '$lib/components/ui/badge';
 	import { LoadingButton, PageSkeleton, PageState } from '$lib/components/app-state';
 	import * as Card from '$lib/components/ui/card';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { toast } from 'svelte-sonner';
-	import {
-		ClipboardList,
-		Plus,
-		Eye,
-		Trash2,
-		ToggleRight,
-		Users,
-		Calendar
-	} from 'lucide-svelte';
+	import { Plus, Eye, Trash2, ToggleRight, Users, Calendar } from 'lucide-svelte';
 	import { can } from '$lib/stores/permissions';
 	import { PERMISSIONS } from '$lib/permissions/registry';
 
@@ -114,23 +107,15 @@
 	<title>{data.title} - SchoolOrbit</title>
 </svelte:head>
 
-<div class="space-y-6">
-	<!-- Header -->
-	<div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-		<div>
-			<h1 class="text-3xl font-bold text-foreground flex items-center gap-2">
-				<ClipboardList class="w-8 h-8" />
-				ระบบรับสมัครนักเรียน
-			</h1>
-			<p class="text-muted-foreground mt-1">จัดการรอบรับสมัคร สายการเรียน และใบสมัคร</p>
-		</div>
+<PageShell title="ระบบรับสมัครนักเรียน" description="จัดการรอบรับสมัคร สายการเรียน และใบสมัคร">
+	{#snippet actions()}
 		{#if canManageAdmission}
 			<Button href="/staff/academic/admission/new" class="flex items-center gap-2">
 				<Plus class="w-4 h-4" />
 				สร้างรอบรับสมัครใหม่
 			</Button>
 		{/if}
-	</div>
+	{/snippet}
 
 	<!-- Rounds List -->
 	{#if !canReadAdmission}
@@ -220,7 +205,7 @@
 			{/each}
 		</div>
 	{/if}
-</div>
+</PageShell>
 
 <!-- Delete Confirm Dialog -->
 {#if canManageAdmission}

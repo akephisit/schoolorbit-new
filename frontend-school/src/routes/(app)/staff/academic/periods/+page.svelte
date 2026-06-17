@@ -21,12 +21,12 @@
 	import { Badge } from '$lib/components/ui/badge';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import * as Select from '$lib/components/ui/select';
+	import { PageShell } from '$lib/components/app-layout';
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import { PERMISSIONS } from '$lib/permissions/registry';
 	import { can } from '$lib/stores/permissions';
 
 	import {
-		Clock,
 		Plus,
 		Settings,
 		Trash2,
@@ -251,17 +251,10 @@
 	<title>{data.title} - SchoolOrbit</title>
 </svelte:head>
 
-<div class="space-y-6">
-	<div class="flex flex-col gap-2">
-		<h2 class="flex items-center gap-2 text-3xl font-bold">
-			<Clock class="h-8 w-8" />
-			ตั้งค่าคาบเวลา
-		</h2>
-		<p class="text-muted-foreground">
-			กำหนดคาบเรียนมาตรฐานของโรงเรียนในแต่ละปีการศึกษา (ใช้สำหรับจัดตารางสอน)
-		</p>
-	</div>
-
+<PageShell
+	title="ตั้งค่าคาบเวลา"
+	description="กำหนดคาบเรียนมาตรฐานของโรงเรียนในแต่ละปีการศึกษา (ใช้สำหรับจัดตารางสอน)"
+>
 	<div class="flex flex-wrap items-center gap-4">
 		<div class="w-[250px]">
 			<Select.Root type="single" bind:value={selectedYearId}>
@@ -317,66 +310,66 @@
 			/>
 		{:else}
 			<Card.Root>
-			<div class="divide-border divide-y" role="list">
-				{#each periods as p, i (p.id)}
-					<div
-						role="listitem"
-						draggable={canManageAcademicPeriods}
-						ondragstart={(e) => handleDragStart(e, p)}
-						ondragover={handleDragOver}
-						ondragenter={(e) => handleDragEnter(e, p)}
-						ondragend={handleDragEnd}
-						class="hover:bg-muted/30 flex items-center gap-3 px-4 py-3 transition-colors {draggedPeriod?.id ===
-						p.id
-							? 'opacity-40'
-							: ''}"
-						style="touch-action: none;"
-					>
-						{#if canManageAcademicPeriods}
-							<div
-								class="text-muted-foreground hover:text-foreground cursor-grab active:cursor-grabbing"
-							>
-								<GripVertical class="h-5 w-5" />
+				<div class="divide-border divide-y" role="list">
+					{#each periods as p, i (p.id)}
+						<div
+							role="listitem"
+							draggable={canManageAcademicPeriods}
+							ondragstart={(e) => handleDragStart(e, p)}
+							ondragover={handleDragOver}
+							ondragenter={(e) => handleDragEnter(e, p)}
+							ondragend={handleDragEnd}
+							class="hover:bg-muted/30 flex items-center gap-3 px-4 py-3 transition-colors {draggedPeriod?.id ===
+							p.id
+								? 'opacity-40'
+								: ''}"
+							style="touch-action: none;"
+						>
+							{#if canManageAcademicPeriods}
+								<div
+									class="text-muted-foreground hover:text-foreground cursor-grab active:cursor-grabbing"
+								>
+									<GripVertical class="h-5 w-5" />
+								</div>
+							{/if}
+
+							<Badge variant="outline" class="font-mono">#{i + 1}</Badge>
+
+							<div class="min-w-0 flex-1">
+								{#if p.name}
+									<p class="text-foreground truncate font-medium">{p.name}</p>
+									<p class="text-muted-foreground text-sm">
+										{formatTime(p.start_time)} – {formatTime(p.end_time)}
+									</p>
+								{:else}
+									<p class="text-foreground font-medium">
+										{formatTime(p.start_time)} – {formatTime(p.end_time)}
+									</p>
+								{/if}
 							</div>
-						{/if}
 
-						<Badge variant="outline" class="font-mono">#{i + 1}</Badge>
+							<Badge variant={p.is_active ? 'default' : 'outline'}>
+								{p.is_active ? 'ใช้งาน' : 'ไม่ใช้งาน'}
+							</Badge>
 
-						<div class="min-w-0 flex-1">
-							{#if p.name}
-								<p class="text-foreground truncate font-medium">{p.name}</p>
-								<p class="text-muted-foreground text-sm">
-									{formatTime(p.start_time)} – {formatTime(p.end_time)}
-								</p>
-							{:else}
-								<p class="text-foreground font-medium">
-									{formatTime(p.start_time)} – {formatTime(p.end_time)}
-								</p>
+							{#if canManageAcademicPeriods}
+								<div class="flex items-center gap-1">
+									<Button variant="ghost" size="icon" onclick={() => openEditPeriod(p)}>
+										<Settings class="h-4 w-4" />
+									</Button>
+									<Button
+										variant="ghost"
+										size="icon"
+										class="text-destructive"
+										onclick={() => confirmDelete(p)}
+									>
+										<Trash2 class="h-4 w-4" />
+									</Button>
+								</div>
 							{/if}
 						</div>
-
-						<Badge variant={p.is_active ? 'default' : 'outline'}>
-							{p.is_active ? 'ใช้งาน' : 'ไม่ใช้งาน'}
-						</Badge>
-
-						{#if canManageAcademicPeriods}
-							<div class="flex items-center gap-1">
-								<Button variant="ghost" size="icon" onclick={() => openEditPeriod(p)}>
-									<Settings class="h-4 w-4" />
-								</Button>
-								<Button
-									variant="ghost"
-									size="icon"
-									class="text-destructive"
-									onclick={() => confirmDelete(p)}
-								>
-									<Trash2 class="h-4 w-4" />
-								</Button>
-							</div>
-						{/if}
-					</div>
-				{/each}
-			</div>
+					{/each}
+				</div>
 			</Card.Root>
 		{/if}
 	{/if}
@@ -458,4 +451,4 @@
 			</Dialog.Content>
 		</Dialog.Root>
 	{/if}
-</div>
+</PageShell>

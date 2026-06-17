@@ -29,6 +29,7 @@
 	import * as Select from '$lib/components/ui/select';
 	import DatePicker from '$lib/components/ui/date-picker/DatePicker.svelte';
 	import { Checkbox } from '$lib/components/ui/checkbox';
+	import { PageShell } from '$lib/components/app-layout';
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import { PERMISSIONS } from '$lib/permissions/registry';
 	import { can } from '$lib/stores/permissions';
@@ -39,7 +40,6 @@
 		Layers,
 		Plus,
 		Trash2,
-		BookOpen,
 		Settings,
 		CalendarClock
 	} from 'lucide-svelte';
@@ -434,15 +434,8 @@
 	<title>{data.title} - SchoolOrbit</title>
 </svelte:head>
 
-<div class="space-y-6">
-	<div class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-		<div>
-			<h2 class="text-3xl font-bold text-foreground flex items-center gap-2">
-				<BookOpen class="w-8 h-8" />
-				โครงสร้างวิชาการ
-			</h2>
-			<p class="text-muted-foreground mt-1">จัดการปีการศึกษา ภาคเรียน และระดับชั้น</p>
-		</div>
+<PageShell title="โครงสร้างวิชาการ" description="จัดการปีการศึกษา ภาคเรียน และระดับชั้น">
+	{#snippet actions()}
 		{#if canManageAcademicStructure}
 			<div class="flex flex-wrap gap-2">
 				<Button variant="outline" onclick={() => (showCreateLevelDialog = true)}>
@@ -455,7 +448,7 @@
 				</Button>
 			</div>
 		{/if}
-	</div>
+	{/snippet}
 
 	{#if !canReadAcademicStructure}
 		<PageState
@@ -986,4 +979,4 @@
 			</Dialog.Content>
 		</Dialog.Root>
 	{/if}
-</div>
+</PageShell>
