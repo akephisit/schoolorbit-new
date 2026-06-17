@@ -3,11 +3,11 @@
 	import { toast } from 'svelte-sonner';
 	import {
 		type TimetableEntry,
-		type AcademicPeriod,
 		type MyActivityForEntry,
+		type TimetablePeriodSummary,
 		getMyTimetable,
-		listPeriods,
-		getMyActivityForEntry
+		getMyActivityForEntry,
+		periodsFromTimetableEntries
 	} from '$lib/api/timetable';
 	import {
 		getAcademicStructure,
@@ -25,7 +25,7 @@
 	let loading = $state(true);
 	let student = $state<Student | null>(null);
 	let entries = $state<TimetableEntry[]>([]);
-	let periods = $state<AcademicPeriod[]>([]);
+	let periods = $state<TimetablePeriodSummary[]>([]);
 	let years = $state<AcademicYear[]>([]);
 	let semesters = $state<Semester[]>([]);
 	let selectedSemesterId = $state('');
@@ -70,12 +70,6 @@
 				);
 				if (activeSem) {
 					selectedSemesterId = activeSem.id;
-					// Load periods
-					const periodsRes = await listPeriods({
-						academic_year_id: activeYear.id,
-						active_only: true
-					});
-					periods = periodsRes.data;
 					await loadTimetable();
 				}
 			}
@@ -94,6 +88,7 @@
 				academic_semester_id: selectedSemesterId
 			});
 			entries = res.data;
+			periods = periodsFromTimetableEntries(entries);
 		} catch (e: unknown) {
 			console.error(e);
 			toast.error('โหลดตารางเรียนไม่สำเร็จ');
@@ -149,10 +144,15 @@
 		<div class="flex items-center justify-center py-20">
 			<Loader2 class="w-8 h-8 animate-spin text-muted-foreground" />
 		</div>
-	{:else if periods.length === 0}
+	{:else if entries.length === 0}
 		<Card class="p-8 text-center text-muted-foreground">
 			<CalendarDays class="w-12 h-12 mx-auto mb-3 opacity-30" />
 			<p>ยังไม่มีตารางเรียนในภาคเรียนนี้</p>
+		</Card>
+	{:else if periods.length === 0}
+		<Card class="p-8 text-center text-muted-foreground">
+			<CalendarDays class="w-12 h-12 mx-auto mb-3 opacity-30" />
+			<p>ยังไม่มีข้อมูลคาบเรียนในตารางเรียนนี้</p>
 		</Card>
 	{:else}
 		<!-- Timetable Grid (วัน=แถว, คาบ=คอลัมน์) -->

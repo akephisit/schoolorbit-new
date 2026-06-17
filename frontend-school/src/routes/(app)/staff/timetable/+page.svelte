@@ -3,9 +3,9 @@
 	import { toast } from 'svelte-sonner';
 	import {
 		type TimetableEntry,
-		type AcademicPeriod,
+		type TimetablePeriodSummary,
 		getMyTimetable,
-		listPeriods
+		periodsFromTimetableEntries
 	} from '$lib/api/timetable';
 	import {
 		getAcademicStructure,
@@ -15,7 +15,6 @@
 	} from '$lib/api/academic';
 	import { authStore } from '$lib/stores/auth';
 	import { Card } from '$lib/components/ui/card';
-	import { Button } from '$lib/components/ui/button';
 	import * as Select from '$lib/components/ui/select';
 	import { CalendarDays, LoaderCircle, School, MapPin } from 'lucide-svelte';
 
@@ -23,7 +22,7 @@
 
 	let loading = $state(true);
 	let entries = $state<TimetableEntry[]>([]);
-	let periods = $state<AcademicPeriod[]>([]);
+	let periods = $state<TimetablePeriodSummary[]>([]);
 	let years = $state<AcademicYear[]>([]);
 	let semesters = $state<Semester[]>([]);
 	let selectedYearId = $state('');
@@ -87,15 +86,12 @@
 		}
 		try {
 			loading = true;
-			const [periodsRes, entriesRes] = await Promise.all([
-				listPeriods({ academic_year_id: selectedYearId, active_only: true }),
-				getMyTimetable({
-					academic_semester_id: selectedSemesterId,
-					include_team_ghosts: true
-				})
-			]);
-			periods = periodsRes.data.sort((a, b) => a.order_index - b.order_index);
+			const entriesRes = await getMyTimetable({
+				academic_semester_id: selectedSemesterId,
+				include_team_ghosts: true
+			});
 			entries = entriesRes.data;
+			periods = periodsFromTimetableEntries(entries);
 			// อัปเดต schoolDays ตาม year ที่เลือก
 			const year = years.find((y) => y.id === selectedYearId);
 			if (year) schoolDays = getSchoolDays(year.school_days);
@@ -168,18 +164,15 @@
 		<div class="flex items-center justify-center py-20">
 			<LoaderCircle class="text-muted-foreground h-8 w-8 animate-spin" />
 		</div>
-	{:else if periods.length === 0}
-		<Card class="text-muted-foreground p-8 text-center">
-			<CalendarDays class="mx-auto mb-3 h-12 w-12 opacity-30" />
-			<p>ยังไม่มีคาบเรียนที่ตั้งค่าในปีการศึกษานี้</p>
-			<Button variant="outline" size="sm" class="mt-3" href="/staff/academic/periods">
-				ไปตั้งค่าคาบเรียน
-			</Button>
-		</Card>
 	{:else if entries.length === 0}
 		<Card class="text-muted-foreground p-8 text-center">
 			<CalendarDays class="mx-auto mb-3 h-12 w-12 opacity-30" />
 			<p>ยังไม่มีตารางสอนของคุณในภาคเรียนนี้</p>
+		</Card>
+	{:else if periods.length === 0}
+		<Card class="text-muted-foreground p-8 text-center">
+			<CalendarDays class="mx-auto mb-3 h-12 w-12 opacity-30" />
+			<p>ยังไม่มีข้อมูลคาบเรียนในตารางสอนของคุณ</p>
 		</Card>
 	{:else}
 		<!-- Timetable Grid (วัน=แถว, คาบ=คอลัมน์) -->

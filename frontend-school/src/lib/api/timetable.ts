@@ -84,6 +84,36 @@ export interface TimetableEntry {
 	batch_id?: string;
 }
 
+export interface TimetablePeriodSummary {
+	id: string;
+	name: string | null;
+	start_time?: string;
+	end_time?: string;
+}
+
+export function periodsFromTimetableEntries(entries: TimetableEntry[]): TimetablePeriodSummary[] {
+	const periods = new Map<string, TimetablePeriodSummary>();
+
+	for (const entry of entries) {
+		if (!periods.has(entry.period_id)) {
+			periods.set(entry.period_id, {
+				id: entry.period_id,
+				name: entry.period_name ?? null,
+				start_time: entry.start_time,
+				end_time: entry.end_time
+			});
+		}
+	}
+
+	return Array.from(periods.values()).sort((a, b) => {
+		const timeCompare =
+			(a.start_time ?? '').localeCompare(b.start_time ?? '') ||
+			(a.end_time ?? '').localeCompare(b.end_time ?? '');
+		if (timeCompare !== 0) return timeCompare;
+		return (a.name ?? '').localeCompare(b.name ?? '', 'th') || a.id.localeCompare(b.id);
+	});
+}
+
 export interface CreatePeriodRequest {
 	academic_year_id: string;
 	/** ตั้งได้ตามต้องการ (เช่น "พักเที่ยง", "โฮมรูม"); ปล่อยว่างก็ได้ */

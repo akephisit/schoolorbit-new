@@ -1260,11 +1260,20 @@ test('dashboard and self-view routes stay user-scoped with module-aware staff sh
 	assert.match(staffDashboard, /\/staff\/settings/);
 
 	assert.match(staffTimetable, /getMyTimetable/);
-	assert.doesNotMatch(staffTimetable, /PERMISSION_MODULES|PERMISSIONS|getTimetableEntries/);
+	assert.match(staffTimetable, /periodsFromTimetableEntries/);
+	assert.doesNotMatch(
+		staffTimetable,
+		/PERMISSION_MODULES|PERMISSIONS|getTimetableEntries|listPeriods/
+	);
 	assert.match(studentTimetable, /getMyTimetable/);
-	assert.doesNotMatch(studentTimetable, /PERMISSION_MODULES|PERMISSIONS|getTimetableEntries/);
+	assert.match(studentTimetable, /periodsFromTimetableEntries/);
+	assert.doesNotMatch(
+		studentTimetable,
+		/PERMISSION_MODULES|PERMISSIONS|getTimetableEntries|listPeriods/
+	);
 	assert.match(parentTimetable, /getChildTimetable/);
-	assert.doesNotMatch(parentTimetable, /getMyTimetable|getTimetableEntries/);
+	assert.match(parentTimetable, /periodsFromTimetableEntries/);
+	assert.doesNotMatch(parentTimetable, /getMyTimetable|getTimetableEntries|listPeriods/);
 	assert.match(parentApi, /\/api\/parent\/students\/\$\{studentId\}\/timetable/);
 	assert.doesNotMatch(parentApi, /\/api\/academic\/timetable/);
 });

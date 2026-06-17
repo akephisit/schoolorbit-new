@@ -2,7 +2,11 @@
 	import type { PageProps } from './$types';
 	import { onMount } from 'svelte';
 	import { toast } from 'svelte-sonner';
-	import { type TimetableEntry, type AcademicPeriod, listPeriods } from '$lib/api/timetable';
+	import {
+		type TimetableEntry,
+		type TimetablePeriodSummary,
+		periodsFromTimetableEntries
+	} from '$lib/api/timetable';
 	import { getChildProfile, getChildTimetable } from '$lib/api/parents';
 	import {
 		getAcademicStructure,
@@ -29,7 +33,7 @@
 
 	let loading = $state(true);
 	let entries = $state<TimetableEntry[]>([]);
-	let periods = $state<AcademicPeriod[]>([]);
+	let periods = $state<TimetablePeriodSummary[]>([]);
 	let years = $state<AcademicYear[]>([]);
 	let semesters = $state<Semester[]>([]);
 	let selectedYearId = $state('');
@@ -87,12 +91,9 @@
 		if (!selectedYearId || !selectedSemesterId) return;
 		try {
 			loading = true;
-			const [periodsRes, entriesRes] = await Promise.all([
-				listPeriods({ academic_year_id: selectedYearId, active_only: true }),
-				getChildTimetable(studentId, selectedSemesterId)
-			]);
-			periods = periodsRes.data.sort((a, b) => a.order_index - b.order_index);
+			const entriesRes = await getChildTimetable(studentId, selectedSemesterId);
 			entries = entriesRes.data;
+			periods = periodsFromTimetableEntries(entries);
 			const year = years.find((y) => y.id === selectedYearId);
 			if (year) schoolDays = getSchoolDays(year.school_days);
 		} catch (e: unknown) {
@@ -179,15 +180,15 @@
 		<div class="flex items-center justify-center py-20">
 			<LoaderCircle class="text-muted-foreground h-8 w-8 animate-spin" />
 		</div>
-	{:else if periods.length === 0}
-		<Card class="text-muted-foreground p-8 text-center">
-			<CalendarDays class="mx-auto mb-3 h-12 w-12 opacity-30" />
-			<p>ยังไม่มีคาบเรียนที่ตั้งค่าในปีการศึกษานี้</p>
-		</Card>
 	{:else if entries.length === 0}
 		<Card class="text-muted-foreground p-8 text-center">
 			<CalendarDays class="mx-auto mb-3 h-12 w-12 opacity-30" />
 			<p>ยังไม่มีตารางเรียนในภาคเรียนนี้</p>
+		</Card>
+	{:else if periods.length === 0}
+		<Card class="text-muted-foreground p-8 text-center">
+			<CalendarDays class="mx-auto mb-3 h-12 w-12 opacity-30" />
+			<p>ยังไม่มีข้อมูลคาบเรียนในตารางเรียนนี้</p>
 		</Card>
 	{:else}
 		<!-- Timetable Grid (วัน=แถว, คาบ=คอลัมน์) -->
