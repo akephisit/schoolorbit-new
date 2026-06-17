@@ -1196,6 +1196,79 @@ test('facility workspace gates read and mutation actions', async () => {
 	}
 });
 
+test('dashboard and self-view routes stay user-scoped with module-aware staff shortcuts', async () => {
+	const routeExpectations = new Map([
+		['frontend-school/src/routes/(app)/staff/+page.ts', 'staff'],
+		['frontend-school/src/routes/(app)/staff/timetable/+page.ts', 'staff'],
+		['frontend-school/src/routes/(app)/student/+page.ts', 'student'],
+		['frontend-school/src/routes/(app)/student/timetable/+page.ts', 'student'],
+		['frontend-school/src/routes/(app)/parent/+page.ts', 'parent']
+	]);
+	const routeViolations = [];
+
+	for (const [routeFile, userType] of routeExpectations) {
+		const source = stripComments(await readFile(path.join(repoRoot, routeFile), 'utf8'));
+		if (!new RegExp(`user_type:\\s*'${userType}'`).test(source)) {
+			routeViolations.push(`${routeFile}: missing user_type ${userType}`);
+		}
+		if (/\bpermission\s*:/.test(source) || /\bPERMISSION_MODULES\b/.test(source)) {
+			routeViolations.push(`${routeFile}: self-view route should not require module permission`);
+		}
+	}
+
+	const staffDashboard = stripComments(
+		await readFile(
+			path.join(repoRoot, 'frontend-school/src/routes/(app)/staff/+page.svelte'),
+			'utf8'
+		)
+	);
+	const staffTimetable = stripComments(
+		await readFile(
+			path.join(repoRoot, 'frontend-school/src/routes/(app)/staff/timetable/+page.svelte'),
+			'utf8'
+		)
+	);
+	const studentTimetable = stripComments(
+		await readFile(
+			path.join(repoRoot, 'frontend-school/src/routes/(app)/student/timetable/+page.svelte'),
+			'utf8'
+		)
+	);
+	const parentTimetable = stripComments(
+		await readFile(
+			path.join(
+				repoRoot,
+				'frontend-school/src/routes/(app)/parent/student/[id]/timetable/+page.svelte'
+			),
+			'utf8'
+		)
+	);
+	const parentApi = stripComments(
+		await readFile(path.join(repoRoot, 'frontend-school/src/lib/api/parents.ts'), 'utf8')
+	);
+
+	assert.deepEqual(routeViolations, []);
+	assert.match(staffDashboard, /from '\$lib\/stores\/permissions'/);
+	assert.match(staffDashboard, /from '\$lib\/permissions\/registry'/);
+	for (const moduleName of ['STAFF_PROFILE', 'STUDENT', 'ROLES', 'SETTINGS']) {
+		assert.match(
+			staffDashboard,
+			new RegExp(`\\$can\\.hasModule\\(PERMISSION_MODULES\\.${moduleName}\\)`)
+		);
+	}
+	assert.match(staffDashboard, /\/staff\/school-settings/);
+	assert.match(staffDashboard, /\/staff\/settings/);
+
+	assert.match(staffTimetable, /getMyTimetable/);
+	assert.doesNotMatch(staffTimetable, /PERMISSION_MODULES|PERMISSIONS|getTimetableEntries/);
+	assert.match(studentTimetable, /getMyTimetable/);
+	assert.doesNotMatch(studentTimetable, /PERMISSION_MODULES|PERMISSIONS|getTimetableEntries/);
+	assert.match(parentTimetable, /getChildTimetable/);
+	assert.doesNotMatch(parentTimetable, /getMyTimetable|getTimetableEntries/);
+	assert.match(parentApi, /\/api\/parent\/students\/\$\{studentId\}\/timetable/);
+	assert.doesNotMatch(parentApi, /\/api\/academic\/timetable/);
+});
+
 test('frontend app pages have route guard metadata or guarded ancestor fallback', async () => {
 	const appRoutesDir = path.join(repoRoot, 'frontend-school/src/routes/(app)');
 	const pageSvelteFiles = await listFiles(appRoutesDir, (file) => file.endsWith('+page.svelte'));

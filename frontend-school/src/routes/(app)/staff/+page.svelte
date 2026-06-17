@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { Card } from '$lib/components/ui/card';
 	import { Button } from '$lib/components/ui/button';
+	import { PERMISSION_MODULES } from '$lib/permissions/registry';
+	import { can } from '$lib/stores/permissions';
 	import { Users, GraduationCap, Calendar, FileText, Settings } from 'lucide-svelte';
 
 	// Quick stats (placeholder - should fetch from API)
@@ -9,6 +11,11 @@
 		totalStudents: 0,
 		activeClasses: 0
 	});
+
+	let canOpenStaffModule = $derived($can.hasModule(PERMISSION_MODULES.STAFF_PROFILE));
+	let canOpenStudentModule = $derived($can.hasModule(PERMISSION_MODULES.STUDENT));
+	let canOpenRolesModule = $derived($can.hasModule(PERMISSION_MODULES.ROLES));
+	let canOpenSettingsModule = $derived($can.hasModule(PERMISSION_MODULES.SETTINGS));
 </script>
 
 <svelte:head>
@@ -65,24 +72,42 @@
 	<Card class="p-6">
 		<h2 class="text-xl font-semibold mb-4">เมนูด่วน</h2>
 		<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-			<Button variant="outline" class="h-auto py-4 flex-col gap-2" href="/staff/manage">
-				<Users class="w-6 h-6" />
-				<span>จัดการบุคลากร</span>
+			<Button variant="outline" class="h-auto py-4 flex-col gap-2" href="/staff/timetable">
+				<Calendar class="w-6 h-6" />
+				<span>ตารางสอนของฉัน</span>
 			</Button>
 
-			<Button variant="outline" class="h-auto py-4 flex-col gap-2" href="/staff/students">
-				<GraduationCap class="w-6 h-6" />
-				<span>จัดการนักเรียน</span>
-			</Button>
+			{#if canOpenStaffModule}
+				<Button variant="outline" class="h-auto py-4 flex-col gap-2" href="/staff/manage">
+					<Users class="w-6 h-6" />
+					<span>จัดการบุคลากร</span>
+				</Button>
+			{/if}
 
-			<Button variant="outline" class="h-auto py-4 flex-col gap-2" href="/staff/organization">
-				<FileText class="w-6 h-6" />
-				<span>ฝ่าย/แผนก</span>
-			</Button>
+			{#if canOpenStudentModule}
+				<Button variant="outline" class="h-auto py-4 flex-col gap-2" href="/staff/students">
+					<GraduationCap class="w-6 h-6" />
+					<span>จัดการนักเรียน</span>
+				</Button>
+			{/if}
+
+			{#if canOpenRolesModule}
+				<Button variant="outline" class="h-auto py-4 flex-col gap-2" href="/staff/organization">
+					<FileText class="w-6 h-6" />
+					<span>โครงสร้างโรงเรียน</span>
+				</Button>
+			{/if}
+
+			{#if canOpenSettingsModule}
+				<Button variant="outline" class="h-auto py-4 flex-col gap-2" href="/staff/school-settings">
+					<Settings class="w-6 h-6" />
+					<span>ตั้งค่าโรงเรียน</span>
+				</Button>
+			{/if}
 
 			<Button variant="outline" class="h-auto py-4 flex-col gap-2" href="/staff/settings">
 				<Settings class="w-6 h-6" />
-				<span>ตั้งค่า</span>
+				<span>ตั้งค่าบัญชี</span>
 			</Button>
 		</div>
 	</Card>
