@@ -6,6 +6,7 @@
 	import { toast } from 'svelte-sonner';
 	import { Button } from '$lib/components/ui/button';
 	import { Card } from '$lib/components/ui/card';
+	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Progress } from '$lib/components/ui/progress';
 	import {
@@ -29,6 +30,7 @@
 
 	let job = $state<SchedulingJobResponse | null>(null);
 	let loading = $state(true);
+	let error = $state('');
 	let polling: ReturnType<typeof setInterval> | null = null;
 
 	onMount(async () => {
@@ -42,6 +44,7 @@
 
 	async function loadJob() {
 		try {
+			error = '';
 			const res = await getSchedulingJob(jobId);
 			job = res.data || null;
 			loading = false;
@@ -53,9 +56,10 @@
 			) {
 				stopPolling();
 			}
-		} catch (error) {
-			console.error('Failed to load job:', error);
-			toast.error('ไม่สามารถโหลดข้อมูลงานได้');
+		} catch (loadError) {
+			console.error('Failed to load job:', loadError);
+			error = loadError instanceof Error ? loadError.message : 'ไม่สามารถโหลดข้อมูลงานได้';
+			toast.error(error);
 			loading = false;
 		}
 	}
@@ -103,9 +107,15 @@
 </script>
 
 {#if loading}
-	<div class="flex justify-center py-12">
-		<Loader2 class="h-8 w-8 animate-spin text-primary" />
-	</div>
+	<PageSkeleton variant="detail" />
+{:else if error}
+	<PageState
+		variant="error"
+		title="โหลดสถานะการจัดตารางไม่สำเร็จ"
+		description={error}
+		actionLabel="ลองอีกครั้ง"
+		onaction={loadJob}
+	/>
 {:else if job}
 	<div class="space-y-6">
 		<div class="flex items-center justify-between flex-wrap gap-3">
@@ -285,12 +295,10 @@
 		</div>
 	</div>
 {:else}
-	<div class="container mx-auto p-6 max-w-4xl">
-		<Card class="p-12 text-center">
-			<AlertCircle class="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
-			<h2 class="text-xl font-semibold mb-2">ไม่พบงาน</h2>
-			<p class="text-muted-foreground mb-4">ไม่พบงานที่คุณต้องการ</p>
-			<Button onclick={() => goToSchedulingJobs()}>กลับ</Button>
-		</Card>
-	</div>
+	<PageState
+		title="ไม่พบงาน"
+		description="ไม่พบงานจัดตารางที่คุณต้องการ"
+		actionLabel="กลับ"
+		onaction={goToSchedulingJobs}
+	/>
 {/if}

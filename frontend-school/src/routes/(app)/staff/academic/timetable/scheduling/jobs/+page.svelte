@@ -4,6 +4,7 @@
 	import { resolve } from '$app/paths';
 	import { Button } from '$lib/components/ui/button';
 	import { Card } from '$lib/components/ui/card';
+	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import { Badge } from '$lib/components/ui/badge';
 	import {
 		Table,
@@ -33,6 +34,7 @@
 	// State
 	let jobs = $state<SchedulingJobResponse[]>([]);
 	let loading = $state(true);
+	let error = $state('');
 	let semesterId = $state<string>('');
 	let allSemesters = $state<SemesterWithCode[]>([]);
 
@@ -54,6 +56,8 @@
 	});
 
 	async function loadSemesters() {
+		loading = true;
+		error = '';
 		try {
 			const res = await getAcademicStructure();
 			allSemesters = res.data.semesters;
@@ -62,8 +66,11 @@
 			const active = allSemesters.find((s) => s.is_active);
 			if (active) semesterId = active.id;
 			else if (allSemesters.length > 0) semesterId = allSemesters[0].id;
-		} catch (error) {
-			console.error('Failed to load semesters:', error);
+			else loading = false;
+		} catch (loadError) {
+			console.error('Failed to load semesters:', loadError);
+			error = loadError instanceof Error ? loadError.message : 'ไม่สามารถโหลดภาคเรียนได้';
+			loading = false;
 		}
 	}
 
@@ -71,11 +78,14 @@
 		if (!semesterId) return;
 
 		loading = true;
+		error = '';
 		try {
 			const res = await listSchedulingJobs({ semester_id: semesterId });
 			jobs = res.data || [];
-		} catch (error) {
-			console.error('Failed to load jobs:', error);
+		} catch (loadError) {
+			console.error('Failed to load jobs:', loadError);
+			error =
+				loadError instanceof Error ? loadError.message : 'ไม่สามารถโหลดประวัติการจัดตารางได้';
 			jobs = [];
 		} finally {
 			loading = false;
@@ -194,18 +204,25 @@
 		</div>
 	</div>
 
-	<!-- Table -->
-	<Card class="p-0 overflow-hidden">
-		{#if loading}
-			<div class="p-12 flex justify-center">
-				<Loader2 class="h-8 w-8 animate-spin text-primary" />
-			</div>
-		{:else if jobs.length === 0}
-			<div class="p-12 text-center text-muted-foreground">
-				<History class="h-12 w-12 mx-auto mb-4 opacity-50" />
-				<p>ไม่พบประวัติการจัดตารางในภาคเรียนนี้</p>
-			</div>
-		{:else}
+	{#if loading}
+		<PageSkeleton variant="table" rows={5} columns={7} />
+	{:else if error}
+		<PageState
+			variant="error"
+			title="โหลดประวัติการจัดตารางไม่สำเร็จ"
+			description={error}
+			actionLabel="ลองอีกครั้ง"
+			onaction={semesterId ? loadJobs : loadSemesters}
+		/>
+	{:else if jobs.length === 0}
+		<PageState
+			title="ไม่พบประวัติการจัดตาราง"
+			description="ยังไม่มีประวัติการจัดตารางในภาคเรียนนี้"
+			actionLabel="สร้างรายการใหม่"
+			href="/staff/academic/timetable/scheduling-config"
+		/>
+	{:else}
+		<Card class="p-0 overflow-hidden">
 			<Table>
 				<TableHeader>
 					<TableRow>
@@ -256,6 +273,6 @@
 					{/each}
 				</TableBody>
 			</Table>
-		{/if}
-	</Card>
+		</Card>
+	{/if}
 </div>

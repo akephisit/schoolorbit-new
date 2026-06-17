@@ -4,12 +4,12 @@
 	import { getOrganizationUnitLookup, type OrganizationUnit } from '$lib/api/staff';
 	import { Button } from '$lib/components/ui/button';
 	import { Badge } from '$lib/components/ui/badge';
-	import { Alert, AlertDescription, AlertTitle } from '$lib/components/ui/alert';
+	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import OrganizationMembersSection from '$lib/components/staff/OrganizationMembersSection.svelte';
 	import OrganizationPermissionDialog from '$lib/components/staff/OrganizationPermissionDialog.svelte';
 	import { PERMISSIONS } from '$lib/permissions/registry';
 	import { can } from '$lib/stores/permissions';
-	import { GraduationCap, ArrowLeft, Building2, Settings, AlertTriangle } from 'lucide-svelte';
+	import { GraduationCap, ArrowLeft, Building2, Settings } from 'lucide-svelte';
 
 	const { params }: PageProps = $props();
 	let deptId = $derived(params.id);
@@ -39,6 +39,7 @@
 
 		try {
 			loading = true;
+			error = '';
 			const res = await getOrganizationUnitLookup(deptId);
 			if (res.success && res.data) {
 				department = res.data;
@@ -89,17 +90,21 @@
 	</div>
 
 	{#if !canReadSubjectGroupDetail}
-		<Alert>
-			<AlertTriangle class="h-4 w-4" />
-			<AlertTitle>ไม่มีสิทธิ์ดูรายละเอียดกลุ่มสาระ</AlertTitle>
-			<AlertDescription>
-				บัญชีนี้เข้า module หลักสูตรได้ แต่ยังไม่มีสิทธิ์อ่านรายละเอียดกลุ่มสาระ
-			</AlertDescription>
-		</Alert>
+		<PageState
+			variant="permission"
+			title="ไม่มีสิทธิ์ดูรายละเอียดกลุ่มสาระ"
+			description="บัญชีนี้เข้า module หลักสูตรได้ แต่ยังไม่มีสิทธิ์อ่านรายละเอียดกลุ่มสาระ"
+		/>
 	{:else if loading}
-		<div class="p-12 text-center text-muted-foreground">กำลังโหลดข้อมูล...</div>
+		<PageSkeleton variant="detail" />
 	{:else if error}
-		<div class="p-6 bg-destructive/10 text-destructive rounded-lg">{error}</div>
+		<PageState
+			variant="error"
+			title="โหลดรายละเอียดกลุ่มสาระไม่สำเร็จ"
+			description={error}
+			actionLabel="ลองอีกครั้ง"
+			onaction={loadData}
+		/>
 	{:else if department}
 		<div class="grid grid-cols-1 md:grid-cols-3 gap-6">
 			<!-- Left: Info -->
@@ -136,6 +141,13 @@
 				/>
 			</div>
 		</div>
+	{:else}
+		<PageState
+			title="ไม่พบกลุ่มสาระ"
+			description="กลุ่มสาระนี้อาจถูกลบหรือคุณอาจไม่มีสิทธิ์เข้าถึง"
+			actionLabel="กลับหน้ากลุ่มสาระ"
+			href="/staff/academic/subject-groups"
+		/>
 	{/if}
 </div>
 

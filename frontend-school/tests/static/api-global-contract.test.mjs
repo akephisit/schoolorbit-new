@@ -773,7 +773,7 @@ test('academic curriculum workspace pages gate read and mutation actions', async
 		},
 		{
 			file: 'frontend-school/src/routes/(app)/staff/academic/subject-groups/[id]/+page.svelte',
-			imports: ['$lib/components/ui/alert'],
+			imports: ['$lib/components/app-state'],
 			permissions: [
 				'PERMISSIONS.ACADEMIC_CURRICULUM_READ_ALL',
 				'PERMISSIONS.ACADEMIC_CURRICULUM_READ_ORGANIZATION_TREE',
@@ -983,7 +983,7 @@ test('activity workspace gates read, owner, admin, and member actions', async ()
 		},
 		{
 			file: 'frontend-school/src/routes/(app)/staff/academic/activities/[id]/+page.svelte',
-			imports: ['$lib/components/ui/alert'],
+			imports: ['$lib/components/app-state'],
 			permissions: [
 				'PERMISSIONS.ACTIVITY_READ_ALL',
 				'PERMISSIONS.ACTIVITY_MANAGE_ALL',

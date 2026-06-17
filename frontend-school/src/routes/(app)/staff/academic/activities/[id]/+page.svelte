@@ -25,13 +25,13 @@
 	import { Badge } from '$lib/components/ui/badge';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
-	import { Alert, AlertDescription, AlertTitle } from '$lib/components/ui/alert';
+	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import * as Table from '$lib/components/ui/table';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import * as Select from '$lib/components/ui/select';
 	import * as Tabs from '$lib/components/ui/tabs';
 	import { toast } from 'svelte-sonner';
-	import { AlertTriangle, ArrowLeft, UserPlus, Trash2, Search, UserCog } from 'lucide-svelte';
+	import { ArrowLeft, UserPlus, Trash2, Search, UserCog } from 'lucide-svelte';
 	import { PERMISSIONS } from '$lib/permissions/registry';
 	import { can } from '$lib/stores/permissions';
 	import { goto } from '$app/navigation';
@@ -48,6 +48,7 @@
 	const canManageActivityInstructors = $derived(canManageActivity || canManageOwnActivity);
 
 	let loading = $state(true);
+	let error = $state('');
 	let group = $state<ActivityGroup | null>(null);
 	let members = $state<ActivityGroupMember[]>([]);
 	let instructors = $state<ActivityInstructor[]>([]);
@@ -96,25 +97,31 @@
 		allStaff.find((s) => s.id === addInstructorId)?.name ?? 'เลือกครู...'
 	);
 
-	onMount(async () => {
+	onMount(loadAll);
+
+	async function loadAll() {
 		if (!canViewActivityGroup) {
 			loading = false;
 			return;
 		}
-		await loadAll();
-		loading = false;
-	});
-
-	async function loadAll() {
-		if (!canViewActivityGroup) return;
-		const [groupsRes, membersRes, instructorsRes] = await Promise.all([
-			listActivityGroups({}),
-			listActivityMembers(groupId),
-			listActivityInstructors(groupId)
-		]);
-		group = groupsRes.data.find((g) => g.id === groupId) ?? null;
-		members = membersRes.data ?? [];
-		instructors = instructorsRes.data ?? [];
+		loading = true;
+		error = '';
+		try {
+			const [groupsRes, membersRes, instructorsRes] = await Promise.all([
+				listActivityGroups({}),
+				listActivityMembers(groupId),
+				listActivityInstructors(groupId)
+			]);
+			group = groupsRes.data.find((g) => g.id === groupId) ?? null;
+			members = membersRes.data ?? [];
+			instructors = instructorsRes.data ?? [];
+		} catch (loadError) {
+			console.error('Failed to load activity group:', loadError);
+			error = loadError instanceof Error ? loadError.message : 'ไม่สามารถโหลดข้อมูลกลุ่มกิจกรรมได้';
+			toast.error(error);
+		} finally {
+			loading = false;
+		}
 	}
 
 	async function openAddStudentDialog() {
@@ -253,13 +260,28 @@
 	</div>
 
 	{#if !canViewActivityGroup}
-		<Alert variant="destructive">
-			<AlertTriangle class="h-4 w-4" />
-			<AlertTitle>ไม่มีสิทธิ์ดูข้อมูลกลุ่มกิจกรรม</AlertTitle>
-			<AlertDescription>
-				บัญชีนี้เข้า module กิจกรรมได้ แต่ยังไม่มีสิทธิ์อ่านหรือจัดการกลุ่มกิจกรรมนี้
-			</AlertDescription>
-		</Alert>
+		<PageState
+			variant="permission"
+			title="ไม่มีสิทธิ์ดูข้อมูลกลุ่มกิจกรรม"
+			description="บัญชีนี้เข้า module กิจกรรมได้ แต่ยังไม่มีสิทธิ์อ่านหรือจัดการกลุ่มกิจกรรมนี้"
+		/>
+	{:else if loading}
+		<PageSkeleton variant="detail" />
+	{:else if error}
+		<PageState
+			variant="error"
+			title="โหลดข้อมูลกลุ่มกิจกรรมไม่สำเร็จ"
+			description={error}
+			actionLabel="ลองอีกครั้ง"
+			onaction={loadAll}
+		/>
+	{:else if !group}
+		<PageState
+			title="ไม่พบกลุ่มกิจกรรม"
+			description="กลุ่มกิจกรรมนี้อาจถูกลบหรือคุณอาจไม่มีสิทธิ์เข้าถึง"
+			actionLabel="กลับหน้ากิจกรรม"
+			href="/staff/academic/activities"
+		/>
 	{:else}
 		<Tabs.Root bind:value={activeTab}>
 			<Tabs.List>
@@ -281,9 +303,7 @@
 							>
 						{/if}
 					</div>
-					{#if loading}
-						<p class="text-sm text-muted-foreground">กำลังโหลด...</p>
-					{:else if filteredMembers.length === 0}
+					{#if filteredMembers.length === 0}
 						<p class="text-sm text-muted-foreground">ยังไม่มีสมาชิก</p>
 					{:else}
 						<Table.Root>
