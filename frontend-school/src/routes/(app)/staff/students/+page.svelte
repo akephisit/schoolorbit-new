@@ -12,10 +12,11 @@
 		DialogTitle
 	} from '$lib/components/ui/dialog';
 	import * as Select from '$lib/components/ui/select';
+	import { PageShell } from '$lib/components/app-layout';
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import { PERMISSIONS } from '$lib/permissions/registry';
 	import { can } from '$lib/stores/permissions';
-	import { GraduationCap, Plus, Search, Pencil, Trash2, Eye } from 'lucide-svelte';
+	import { Plus, Search, Pencil, Trash2, Eye } from 'lucide-svelte';
 	import { toast } from 'svelte-sonner';
 
 	let { data } = $props();
@@ -151,23 +152,15 @@
 	<title>{data.title} - SchoolOrbit</title>
 </svelte:head>
 
-<div class="space-y-6">
-	<!-- Header -->
-	<div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-		<div>
-			<h1 class="text-3xl font-bold text-foreground flex items-center gap-2">
-				<GraduationCap class="w-8 h-8" />
-				จัดการนักเรียน
-			</h1>
-			<p class="text-muted-foreground mt-1">จัดการข้อมูลนักเรียนทั้งหมด</p>
-		</div>
+<PageShell title="จัดการนักเรียน" description="จัดการข้อมูลนักเรียนทั้งหมด">
+	{#snippet actions()}
 		{#if canCreateStudent}
 			<Button href="/staff/students/new" class="flex items-center gap-2">
 				<Plus class="w-4 h-4" />
 				เพิ่มนักเรียน
 			</Button>
 		{/if}
-	</div>
+	{/snippet}
 
 	{#if !canReadStudents}
 		<PageState
@@ -355,7 +348,7 @@
 			</div>
 		{/if}
 	{/if}
-</div>
+</PageShell>
 
 <!-- Delete Confirmation Dialog -->
 {#if canDeleteStudent}

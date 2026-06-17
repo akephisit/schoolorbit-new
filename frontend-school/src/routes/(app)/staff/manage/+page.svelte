@@ -29,17 +29,9 @@
 		CardTitle
 	} from '$lib/components/ui/card';
 	import { Badge } from '$lib/components/ui/badge';
+	import { PageShell } from '$lib/components/app-layout';
 	import { LoadingButton, PageSkeleton, PageState } from '$lib/components/app-state';
-	import {
-		ChevronLeft,
-		ChevronRight,
-		Eye,
-		Pencil,
-		Plus,
-		Search,
-		Trash2,
-		Users
-	} from 'lucide-svelte';
+	import { ChevronLeft, ChevronRight, Eye, Pencil, Plus, Search, Trash2 } from 'lucide-svelte';
 
 	let { data } = $props();
 
@@ -145,22 +137,15 @@
 	<title>{data.title} - SchoolOrbit</title>
 </svelte:head>
 
-<div class="space-y-6">
-	<div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-		<div>
-			<h1 class="flex items-center gap-2 text-3xl font-bold text-foreground">
-				<Users class="h-8 w-8" />
-				จัดการบุคลากร
-			</h1>
-			<p class="mt-1 text-muted-foreground">จัดการข้อมูลครูและบุคลากรทั้งหมด</p>
-		</div>
+<PageShell title="จัดการบุคลากร" description="จัดการข้อมูลครูและบุคลากรทั้งหมด">
+	{#snippet actions()}
 		{#if canCreateStaff}
 			<Button href="/staff/manage/new" class="gap-2">
 				<Plus class="h-4 w-4" />
 				เพิ่มบุคลากร
 			</Button>
 		{/if}
-	</div>
+	{/snippet}
 
 	{#if !canReadStaff}
 		<PageState
@@ -322,7 +307,7 @@
 			</Card>
 		{/if}
 	{/if}
-</div>
+</PageShell>
 
 <Dialog bind:open={showDeleteDialog}>
 	<DialogContent>
