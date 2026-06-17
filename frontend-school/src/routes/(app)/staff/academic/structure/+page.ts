@@ -2,7 +2,7 @@
  * Academic Structure Management Page
  */
 
-import { PERMISSIONS } from '$lib/permissions/registry';
+import { PERMISSION_MODULES } from '$lib/permissions/registry';
 
 export const _meta = {
 	menu: {
@@ -12,7 +12,7 @@ export const _meta = {
 		workspace: 'academic',
 		order: 10,
 		user_type: 'staff',
-		permission: PERMISSIONS.ACADEMIC_STRUCTURE_READ_ALL
+		permission: PERMISSION_MODULES.ACADEMIC_STRUCTURE
 	}
 };
 

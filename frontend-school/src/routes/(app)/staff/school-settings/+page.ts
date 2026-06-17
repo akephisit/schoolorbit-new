@@ -1,4 +1,4 @@
-import { PERMISSIONS } from '$lib/permissions/registry';
+import { PERMISSION_MODULES } from '$lib/permissions/registry';
 
 export const _meta = {
 	menu: {
@@ -8,7 +8,7 @@ export const _meta = {
 		workspace: 'settings',
 		order: 900,
 		user_type: 'staff',
-		permission: PERMISSIONS.SETTINGS_UPDATE_ALL
+		permission: PERMISSION_MODULES.SETTINGS
 	}
 };
 

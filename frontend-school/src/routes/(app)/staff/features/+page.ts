@@ -12,7 +12,7 @@ export const _meta = {
 		workspace: 'settings',
 		order: 1000,
 		user_type: 'staff',
-		permission: PERMISSION_MODULES.SETTINGS
+		permission: PERMISSION_MODULES.FEATURES
 	}
 };
 

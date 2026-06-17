@@ -1,4 +1,4 @@
-import { PERMISSIONS } from '$lib/permissions/registry';
+import { PERMISSION_MODULES } from '$lib/permissions/registry';
 
 export const _meta = {
 	menu: {
@@ -6,7 +6,7 @@ export const _meta = {
 		icon: 'CalendarDays',
 		group: 'academic',
 		workspace: 'academic',
-		permission: PERMISSIONS.ACADEMIC_COURSE_PLAN_MANAGE_ALL,
+		permission: PERMISSION_MODULES.ACADEMIC_COURSE_PLAN,
 		order: 51,
 		user_type: 'staff'
 	}

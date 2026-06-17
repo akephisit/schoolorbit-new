@@ -2,7 +2,7 @@
  * Staff Management Page
  */
 
-import { PERMISSIONS } from '$lib/permissions/registry';
+import { PERMISSION_MODULES } from '$lib/permissions/registry';
 
 export const _meta = {
 	menu: {
@@ -12,7 +12,7 @@ export const _meta = {
 		workspace: 'personnel',
 		order: 10,
 		user_type: 'staff',
-		permission: PERMISSIONS.STAFF_PROFILE_READ_SCHOOL
+		permission: PERMISSION_MODULES.STAFF_PROFILE
 	}
 };
 

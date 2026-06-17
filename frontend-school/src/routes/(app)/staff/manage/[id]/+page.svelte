@@ -2,6 +2,9 @@
 	import { onMount } from 'svelte';
 	import type { PageProps } from './$types';
 	import { getStaffProfile, type StaffProfileResponse } from '$lib/api/staff';
+	import { PERMISSIONS } from '$lib/permissions/registry';
+	import { authStore } from '$lib/stores/auth';
+	import { can } from '$lib/stores/permissions';
 	import { Button } from '$lib/components/ui/button';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import {
@@ -43,6 +46,28 @@
 
 	const { params }: PageProps = $props();
 	const staffId = $derived(params.id);
+	const currentUserId = $derived($authStore.user?.id ?? '');
+	const canUpdateStaff = $derived($can.has(PERMISSIONS.STAFF_UPDATE_ALL));
+	const canReadStaffPii = $derived(
+		$can.has(PERMISSIONS.STAFF_PII_READ_SCHOOL) ||
+			($can.has(PERMISSIONS.STAFF_PII_READ_OWN) && staffId === currentUserId)
+	);
+	const canReadAchievements = $derived(
+		$can.has(PERMISSIONS.ACHIEVEMENT_READ_ALL) ||
+			($can.has(PERMISSIONS.ACHIEVEMENT_READ_OWN) && staffId === currentUserId)
+	);
+	const canCreateAchievementForStaff = $derived(
+		$can.has(PERMISSIONS.ACHIEVEMENT_CREATE_ALL) ||
+			($can.has(PERMISSIONS.ACHIEVEMENT_CREATE_OWN) && staffId === currentUserId)
+	);
+	const canUpdateAchievementForStaff = $derived(
+		$can.has(PERMISSIONS.ACHIEVEMENT_UPDATE_ALL) ||
+			($can.has(PERMISSIONS.ACHIEVEMENT_UPDATE_OWN) && staffId === currentUserId)
+	);
+	const canDeleteAchievementForStaff = $derived(
+		$can.has(PERMISSIONS.ACHIEVEMENT_DELETE_ALL) ||
+			($can.has(PERMISSIONS.ACHIEVEMENT_DELETE_OWN) && staffId === currentUserId)
+	);
 
 	async function loadStaffProfile() {
 		if (!staffId) return;
@@ -67,7 +92,7 @@
 	}
 
 	async function loadAchievements() {
-		if (!staffId) return;
+		if (!staffId || !canReadAchievements) return;
 		loadingAchievements = true;
 		const res = await getAchievements({ user_id: staffId });
 		if (res.success && res.data) {
@@ -79,6 +104,7 @@
 	async function handleSaveAchievement(payload: Partial<Achievement>) {
 		let res;
 		if (payload.id) {
+			if (!canUpdateAchievementForStaff) return;
 			res = await updateAchievement(payload.id, {
 				title: payload.title ?? '',
 				description: payload.description,
@@ -86,6 +112,7 @@
 				image_path: payload.image_path
 			});
 		} else {
+			if (!canCreateAchievementForStaff) return;
 			res = await createAchievement({
 				user_id: payload.user_id ?? '',
 				title: payload.title ?? '',
@@ -105,6 +132,7 @@
 	}
 
 	function confirmDelete(achievement: Achievement) {
+		if (!canDeleteAchievementForStaff) return;
 		deleteId = achievement.id;
 		showDeleteDialog = true;
 	}
@@ -153,7 +181,7 @@
 				<p class="text-muted-foreground mt-1">รายละเอียดบุคลากร</p>
 			</div>
 		</div>
-		{#if staff}
+		{#if staff && canUpdateStaff}
 			<Button href="/staff/manage/{staff.id}/edit" class="flex items-center gap-2">
 				<Pencil class="w-4 h-4" />
 				แก้ไข
@@ -243,7 +271,7 @@
 								<span class="text-foreground">{staff.phone}</span>
 							</div>
 						{/if}
-						{#if staff.national_id}
+						{#if staff.national_id && canReadStaffPii}
 							<div class="flex items-center gap-3 text-sm">
 								<User class="w-4 h-4 text-muted-foreground" />
 								<span class="text-foreground">บัตรปชช.: {staff.national_id}</span>
@@ -463,32 +491,45 @@
 					<Award class="w-5 h-5" />
 					ผลงานและรางวัล
 				</h3>
-				<Button
-					variant="outline"
-					size="sm"
-					class="h-8"
-					onclick={() => {
-						selectedAchievement = null;
-						showAchievementDialog = true;
-					}}
-				>
-					<Plus class="w-4 h-4 mr-2" />
-					เพิ่มผลงาน
-				</Button>
+				{#if canCreateAchievementForStaff}
+					<Button
+						variant="outline"
+						size="sm"
+						class="h-8"
+						onclick={() => {
+							selectedAchievement = null;
+							showAchievementDialog = true;
+						}}
+					>
+						<Plus class="w-4 h-4 mr-2" />
+						เพิ่มผลงาน
+					</Button>
+				{/if}
 			</div>
 
-			{#if loadingAchievements}
+			{#if !canReadAchievements}
+				<div class="py-8 text-center bg-muted/20 rounded-lg border border-dashed">
+					<Award class="w-10 h-10 text-muted-foreground/30 mx-auto mb-2" />
+					<p class="text-sm text-muted-foreground">ไม่มีสิทธิ์ดูผลงานและรางวัล</p>
+				</div>
+			{:else if loadingAchievements}
 				<div class="py-8 text-center text-muted-foreground">กำลังโหลดข้อมูล...</div>
 			{:else if achievements.length > 0}
 				<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
 					{#each achievements as achievement (achievement.id)}
 						<AchievementCard
 							{achievement}
+							canEdit={canUpdateAchievementForStaff}
+							canDelete={canDeleteAchievementForStaff}
 							onedit={(a) => {
+								if (!canUpdateAchievementForStaff) return;
 								selectedAchievement = a;
 								showAchievementDialog = true;
 							}}
-							ondelete={(a) => confirmDelete(a)}
+							ondelete={(a) => {
+								if (!canDeleteAchievementForStaff) return;
+								confirmDelete(a);
+							}}
 						/>
 					{/each}
 				</div>

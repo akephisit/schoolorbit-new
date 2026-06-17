@@ -2,7 +2,7 @@
  * Enrollment Management Page
  */
 
-import { PERMISSIONS } from '$lib/permissions/registry';
+import { PERMISSION_MODULES } from '$lib/permissions/registry';
 
 export const _meta = {
 	menu: {
@@ -12,7 +12,7 @@ export const _meta = {
 		workspace: 'academic',
 		order: 30,
 		user_type: 'staff',
-		permission: PERMISSIONS.ACADEMIC_ENROLLMENT_READ_ALL
+		permission: PERMISSION_MODULES.ACADEMIC_ENROLLMENT
 	}
 };
 

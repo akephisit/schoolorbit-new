@@ -14,11 +14,20 @@
 	interface Props {
 		achievement: Achievement;
 		readonly?: boolean;
+		canEdit?: boolean;
+		canDelete?: boolean;
 		onedit?: (achievement: Achievement) => void;
 		ondelete?: (achievement: Achievement) => void;
 	}
 
-	let { achievement, readonly = false, onedit, ondelete }: Props = $props();
+	let {
+		achievement,
+		readonly = false,
+		canEdit = true,
+		canDelete = true,
+		onedit,
+		ondelete
+	}: Props = $props();
 
 	function formatDate(dateStr: string) {
 		const date = new Date(dateStr);
@@ -59,24 +68,28 @@
 			<p class="text-sm text-muted-foreground/50 italic">ไม่มีรายละเอียด</p>
 		{/if}
 	</CardContent>
-	{#if !readonly}
+	{#if !readonly && (canEdit || canDelete)}
 		<CardFooter class="p-4 bg-muted/20 border-t flex justify-end gap-2">
-			<Button
-				variant="ghost"
-				size="icon"
-				class="h-8 w-8 hover:text-primary"
-				onclick={() => onedit?.(achievement)}
-			>
-				<Pencil class="w-4 h-4" />
-			</Button>
-			<Button
-				variant="ghost"
-				size="icon"
-				class="h-8 w-8 hover:text-destructive text-muted-foreground"
-				onclick={() => ondelete?.(achievement)}
-			>
-				<Trash2 class="w-4 h-4" />
-			</Button>
+			{#if canEdit}
+				<Button
+					variant="ghost"
+					size="icon"
+					class="h-8 w-8 hover:text-primary"
+					onclick={() => onedit?.(achievement)}
+				>
+					<Pencil class="w-4 h-4" />
+				</Button>
+			{/if}
+			{#if canDelete}
+				<Button
+					variant="ghost"
+					size="icon"
+					class="h-8 w-8 hover:text-destructive text-muted-foreground"
+					onclick={() => ondelete?.(achievement)}
+				>
+					<Trash2 class="w-4 h-4" />
+				</Button>
+			{/if}
 		</CardFooter>
 	{/if}
 </Card>

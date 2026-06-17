@@ -1,4 +1,4 @@
-import { PERMISSIONS } from '$lib/permissions/registry';
+import { PERMISSION_MODULES } from '$lib/permissions/registry';
 
 export const _meta = {
 	menu: {
@@ -6,7 +6,7 @@ export const _meta = {
 		icon: 'Clock',
 		group: 'academic',
 		workspace: 'academic',
-		permission: PERMISSIONS.ACADEMIC_STRUCTURE_MANAGE_ALL,
+		permission: PERMISSION_MODULES.ACADEMIC_STRUCTURE,
 		order: 50,
 		user_type: 'staff'
 	}

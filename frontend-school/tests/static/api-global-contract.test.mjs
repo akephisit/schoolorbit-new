@@ -389,6 +389,155 @@ test('frontend app route metadata uses permission registry constants', async () 
 	assert.deepEqual(violations, []);
 });
 
+test('frontend permission registry exposes module rollout constants', async () => {
+	const frontendRegistrySource = await readFile(
+		path.join(repoRoot, 'frontend-school/src/lib/permissions/registry.ts'),
+		'utf8'
+	);
+	const frontendPermissions = extractConstObjectValues(frontendRegistrySource, 'PERMISSIONS');
+	const frontendModules = extractConstObjectValues(frontendRegistrySource, 'PERMISSION_MODULES');
+	const violations = [];
+
+	const requiredModules = [
+		'ACADEMIC_CLASSROOM',
+		'ACADEMIC_COURSE_PLAN',
+		'ACADEMIC_CURRICULUM',
+		'ACADEMIC_ENROLLMENT',
+		'ACADEMIC_PROMOTION',
+		'ACADEMIC_STRUCTURE',
+		'ACTIVITY',
+		'ACHIEVEMENT',
+		'ADMISSION',
+		'DASHBOARD',
+		'FACILITY',
+		'FEATURES',
+		'MENU',
+		'ORGANIZATION_WORK',
+		'ROLES',
+		'SETTINGS',
+		'STAFF',
+		'STAFF_PII',
+		'STAFF_PROFILE',
+		'STUDENT',
+		'STUDENT_PII',
+		'SUPERVISION',
+		'SYSTEM'
+	];
+
+	const requiredPermissions = [
+		'STAFF_READ_ALL',
+		'STAFF_CREATE_ALL',
+		'STAFF_UPDATE_ALL',
+		'STAFF_DELETE_ALL',
+		'ROLES_READ_ALL',
+		'ROLES_CREATE_ALL',
+		'ROLES_DELETE_ALL',
+		'ROLES_REMOVE_ALL',
+		'MENU_READ_ALL',
+		'MENU_CREATE_ALL',
+		'MENU_UPDATE_ALL',
+		'MENU_DELETE_ALL',
+		'FEATURES_READ_ALL',
+		'FEATURES_UPDATE_ALL',
+		'STUDENT_UPDATE_OWN',
+		'STUDENT_UPDATE_ALL',
+		'ACADEMIC_CLASSROOM_CREATE_ALL',
+		'ACADEMIC_CLASSROOM_UPDATE_ALL',
+		'ACADEMIC_CLASSROOM_DELETE_ALL',
+		'ACADEMIC_ENROLLMENT_UPDATE_ALL',
+		'ACADEMIC_PROMOTION_READ_ALL',
+		'ACADEMIC_PROMOTION_EXECUTE_ALL',
+		'ACADEMIC_CURRICULUM_CREATE_ALL',
+		'ACADEMIC_CURRICULUM_UPDATE_ALL',
+		'ACADEMIC_CURRICULUM_DELETE_ALL',
+		'FACILITY_CREATE_ALL',
+		'FACILITY_UPDATE_ALL',
+		'FACILITY_DELETE_ALL',
+		'ORGANIZATION_WORK_READ_OWN',
+		'ORGANIZATION_WORK_READ_ORGANIZATION_UNIT',
+		'ORGANIZATION_WORK_UPDATE_OWN',
+		'ACTIVITY_READ_ALL',
+		'ADMISSION_MANAGE_ALL'
+	];
+
+	for (const moduleName of requiredModules) {
+		if (!frontendModules.has(moduleName)) {
+			violations.push(`PERMISSION_MODULES.${moduleName} is missing`);
+		}
+	}
+
+	for (const permissionName of requiredPermissions) {
+		if (!frontendPermissions.has(permissionName)) {
+			violations.push(`PERMISSIONS.${permissionName} is missing`);
+		}
+	}
+
+	assert.deepEqual(violations, []);
+});
+
+test('staff module workspace routes use module-level menu permission gates', async () => {
+	const expectations = new Map([
+		['frontend-school/src/routes/(app)/staff/manage/+page.ts', 'STAFF_PROFILE'],
+		['frontend-school/src/routes/(app)/staff/menu/+page.ts', 'MENU'],
+		['frontend-school/src/routes/(app)/staff/features/+page.ts', 'FEATURES'],
+		['frontend-school/src/routes/(app)/staff/school-settings/+page.ts', 'SETTINGS'],
+		['frontend-school/src/routes/(app)/staff/facility/buildings/+page.ts', 'FACILITY'],
+		['frontend-school/src/routes/(app)/staff/academic/periods/+page.ts', 'ACADEMIC_STRUCTURE'],
+		['frontend-school/src/routes/(app)/staff/academic/enrollments/+page.ts', 'ACADEMIC_ENROLLMENT'],
+		['frontend-school/src/routes/(app)/staff/academic/admission/+page.ts', 'ADMISSION'],
+		['frontend-school/src/routes/(app)/staff/academic/timetable/+page.ts', 'ACADEMIC_COURSE_PLAN'],
+		['frontend-school/src/routes/(app)/staff/academic/structure/+page.ts', 'ACADEMIC_STRUCTURE'],
+		['frontend-school/src/routes/(app)/staff/academic/classrooms/+page.ts', 'ACADEMIC_CLASSROOM'],
+		['frontend-school/src/routes/(app)/staff/academic/study-plans/+page.ts', 'ACADEMIC_CURRICULUM'],
+		['frontend-school/src/routes/(app)/staff/academic/planning/+page.ts', 'ACADEMIC_COURSE_PLAN']
+	]);
+	const violations = [];
+
+	for (const [routeFile, moduleName] of expectations) {
+		const source = stripComments(await readFile(path.join(repoRoot, routeFile), 'utf8'));
+		const pattern = new RegExp(`permission:\\s*PERMISSION_MODULES\\.${moduleName}\\b`);
+		if (!pattern.test(source)) {
+			violations.push(`${routeFile}: expected PERMISSION_MODULES.${moduleName}`);
+		}
+	}
+
+	assert.deepEqual(violations, []);
+});
+
+test('staff manage pilot uses shadcn-svelte surfaces and permission gates', async () => {
+	const source = stripComments(
+		await readFile(
+			path.join(repoRoot, 'frontend-school/src/routes/(app)/staff/manage/+page.svelte'),
+			'utf8'
+		)
+	);
+	const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+	for (const requiredImport of [
+		'$lib/components/ui/button',
+		'$lib/components/ui/input',
+		'$lib/components/ui/dialog',
+		'$lib/components/ui/table',
+		'$lib/components/ui/card',
+		'$lib/components/ui/badge',
+		'$lib/components/ui/alert'
+	]) {
+		assert.match(source, new RegExp(escapeRegex(requiredImport)));
+	}
+
+	for (const requiredPermission of [
+		'PERMISSIONS.STAFF_PROFILE_READ_OWN',
+		'PERMISSIONS.STAFF_PROFILE_READ_ORGANIZATION_UNIT',
+		'PERMISSIONS.STAFF_PROFILE_READ_ORGANIZATION_TREE',
+		'PERMISSIONS.STAFF_PROFILE_READ_SCHOOL',
+		'PERMISSIONS.STAFF_CREATE_ALL',
+		'PERMISSIONS.STAFF_UPDATE_ALL',
+		'PERMISSIONS.STAFF_DELETE_ALL'
+	]) {
+		assert.match(source, new RegExp(escapeRegex(requiredPermission)));
+	}
+});
+
 test('frontend app pages have route guard metadata or guarded ancestor fallback', async () => {
 	const appRoutesDir = path.join(repoRoot, 'frontend-school/src/routes/(app)');
 	const pageSvelteFiles = await listFiles(appRoutesDir, (file) => file.endsWith('+page.svelte'));

@@ -2,7 +2,7 @@
  * Admission Management — รายการรอบรับสมัครทั้งหมด
  */
 
-import { PERMISSIONS } from '$lib/permissions/registry';
+import { PERMISSION_MODULES } from '$lib/permissions/registry';
 
 export const _meta = {
 	menu: {
@@ -12,7 +12,7 @@ export const _meta = {
 		workspace: 'academic',
 		order: 40,
 		user_type: 'staff',
-		permission: PERMISSIONS.ADMISSION_READ_ALL
+		permission: PERMISSION_MODULES.ADMISSION
 	}
 };
 

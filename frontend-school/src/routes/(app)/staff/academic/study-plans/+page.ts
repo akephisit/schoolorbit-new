@@ -3,7 +3,7 @@
  * จัดการหลักสูตรสถานศึกษา (ฉบับปรับปรุง พ.ศ. ...)
  */
 
-import { PERMISSIONS } from '$lib/permissions/registry';
+import { PERMISSION_MODULES } from '$lib/permissions/registry';
 
 export const _meta = {
 	menu: {
@@ -13,7 +13,7 @@ export const _meta = {
 		workspace: 'academic',
 		order: 3,
 		user_type: 'staff',
-		permission: PERMISSIONS.ACADEMIC_CURRICULUM_READ_ALL
+		permission: PERMISSION_MODULES.ACADEMIC_CURRICULUM
 	}
 };
 

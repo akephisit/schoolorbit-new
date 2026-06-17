@@ -1,4 +1,4 @@
-import { PERMISSIONS } from '$lib/permissions/registry';
+import { PERMISSION_MODULES } from '$lib/permissions/registry';
 
 export const _meta = {
 	menu: {
@@ -6,7 +6,7 @@ export const _meta = {
 		icon: 'School', // Changed to School icon which is more meaningful than Building (generic)
 		group: 'general_admin',
 		workspace: 'operations',
-		permission: PERMISSIONS.FACILITY_READ_ALL,
+		permission: PERMISSION_MODULES.FACILITY,
 		order: 10,
 		user_type: 'staff'
 	}
