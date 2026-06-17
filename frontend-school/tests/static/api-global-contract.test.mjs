@@ -684,7 +684,7 @@ test('academic structure workspace pages gate read and mutation actions', async 
 	const routeExpectations = [
 		{
 			file: 'frontend-school/src/routes/(app)/staff/academic/structure/+page.svelte',
-			imports: ['$lib/components/ui/alert'],
+			imports: ['$lib/components/app-state'],
 			permissions: [
 				'PERMISSIONS.ACADEMIC_STRUCTURE_READ_ALL',
 				'PERMISSIONS.ACADEMIC_STRUCTURE_MANAGE_ALL'
@@ -693,7 +693,7 @@ test('academic structure workspace pages gate read and mutation actions', async 
 		},
 		{
 			file: 'frontend-school/src/routes/(app)/staff/academic/periods/+page.svelte',
-			imports: ['$lib/components/ui/alert'],
+			imports: ['$lib/components/app-state'],
 			permissions: [
 				'PERMISSIONS.ACADEMIC_STRUCTURE_READ_ALL',
 				'PERMISSIONS.ACADEMIC_STRUCTURE_MANAGE_ALL'
@@ -702,7 +702,7 @@ test('academic structure workspace pages gate read and mutation actions', async 
 		},
 		{
 			file: 'frontend-school/src/routes/(app)/staff/academic/classrooms/+page.svelte',
-			imports: ['$lib/components/ui/alert'],
+			imports: ['$lib/components/app-state'],
 			permissions: [
 				'PERMISSIONS.ACADEMIC_CLASSROOM_READ_ALL',
 				'PERMISSIONS.ACADEMIC_CLASSROOM_CREATE_ALL',
@@ -762,7 +762,7 @@ test('academic curriculum workspace pages gate read and mutation actions', async
 		},
 		{
 			file: 'frontend-school/src/routes/(app)/staff/academic/subject-groups/+page.svelte',
-			imports: ['$lib/components/ui/alert'],
+			imports: ['$lib/components/app-state'],
 			permissions: [
 				'PERMISSIONS.ACADEMIC_CURRICULUM_READ_ALL',
 				'PERMISSIONS.ACADEMIC_CURRICULUM_READ_ORGANIZATION_TREE',
@@ -1019,7 +1019,7 @@ test('admission workspace pages gate read and specialized actions', async () => 
 	const routeExpectations = [
 		{
 			file: 'frontend-school/src/routes/(app)/staff/academic/admission/+page.svelte',
-			imports: ['$lib/components/ui/alert'],
+			imports: ['$lib/components/app-state'],
 			permissions: ['PERMISSIONS.ADMISSION_READ_ALL', 'PERMISSIONS.ADMISSION_MANAGE_ALL'],
 			identifiers: ['canReadAdmission', 'canManageAdmission']
 		},

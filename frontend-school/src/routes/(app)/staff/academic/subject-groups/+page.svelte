@@ -5,8 +5,8 @@
 	import { listOrganizationUnitsLookup, type OrganizationUnit } from '$lib/api/staff';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
-	import { Alert, AlertDescription, AlertTitle } from '$lib/components/ui/alert';
-	import { GraduationCap, ChevronRight, Search, Settings, AlertTriangle } from 'lucide-svelte';
+	import { PageSkeleton, PageState } from '$lib/components/app-state';
+	import { GraduationCap, ChevronRight, Search, Settings } from 'lucide-svelte';
 	import OrganizationPermissionDialog from '$lib/components/staff/OrganizationPermissionDialog.svelte';
 	import { PERMISSIONS } from '$lib/permissions/registry';
 	import { can } from '$lib/stores/permissions';
@@ -91,17 +91,18 @@
 	</div>
 
 	{#if !canReadSubjectGroups}
-		<Alert>
-			<AlertTriangle class="h-4 w-4" />
-			<AlertTitle>ไม่มีสิทธิ์ดูกลุ่มสาระ</AlertTitle>
-			<AlertDescription>
-				บัญชีนี้เข้า module หลักสูตรได้ แต่ยังไม่มีสิทธิ์อ่านกลุ่มสาระการเรียนรู้
-			</AlertDescription>
-		</Alert>
+		<PageState
+			variant="permission"
+			title="ไม่มีสิทธิ์ดูกลุ่มสาระ"
+			description="บัญชีนี้เข้า module หลักสูตรได้ แต่ยังไม่มีสิทธิ์อ่านกลุ่มสาระการเรียนรู้"
+		/>
 	{:else if loading}
-		<div class="p-12 text-center text-muted-foreground">กำลังโหลดข้อมูล...</div>
+		<PageSkeleton variant="cards" rows={6} />
 	{:else if subjectGroups.length === 0}
-		<div class="p-12 text-center text-muted-foreground">ไม่พบกลุ่มสาระ</div>
+		<PageState
+			title="ไม่พบกลุ่มสาระ"
+			description="ยังไม่มีกลุ่มสาระที่ตรงกับเงื่อนไขการค้นหา"
+		/>
 	{:else}
 		<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
 			{#each subjectGroups as group (group.id)}

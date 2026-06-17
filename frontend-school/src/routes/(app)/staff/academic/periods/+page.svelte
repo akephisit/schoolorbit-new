@@ -21,7 +21,7 @@
 	import { Badge } from '$lib/components/ui/badge';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import * as Select from '$lib/components/ui/select';
-	import { Alert, AlertDescription, AlertTitle } from '$lib/components/ui/alert';
+	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import { PERMISSIONS } from '$lib/permissions/registry';
 	import { can } from '$lib/stores/permissions';
 
@@ -33,8 +33,7 @@
 		LoaderCircle,
 		Calendar,
 		GripVertical,
-		Info,
-		AlertTriangle
+		Info
 	} from 'lucide-svelte';
 
 	let loading = $state(true);
@@ -287,13 +286,11 @@
 	</div>
 
 	{#if !canReadAcademicPeriods}
-		<Alert>
-			<AlertTriangle class="h-4 w-4" />
-			<AlertTitle>ไม่มีสิทธิ์ดูคาบเวลา</AlertTitle>
-			<AlertDescription>
-				บัญชีนี้เข้า module โครงสร้างวิชาการได้ แต่ยังไม่มีสิทธิ์อ่านข้อมูลคาบเวลา
-			</AlertDescription>
-		</Alert>
+		<PageState
+			variant="permission"
+			title="ไม่มีสิทธิ์ดูคาบเวลา"
+			description="บัญชีนี้เข้า module โครงสร้างวิชาการได้ แต่ยังไม่มีสิทธิ์อ่านข้อมูลคาบเวลา"
+		/>
 	{:else if canManageAcademicPeriods}
 		<div
 			class="bg-muted/40 text-muted-foreground flex items-start gap-2 rounded-md border p-3 text-sm"
@@ -306,22 +303,20 @@
 		</div>
 	{/if}
 
-	<Card.Root>
-		{#if !canReadAcademicPeriods}
-			<div class="text-muted-foreground flex h-32 items-center justify-center text-sm">
-				ไม่มีข้อมูลให้แสดง
-			</div>
-		{:else if loading}
-			<div class="flex h-32 items-center justify-center">
-				<LoaderCircle class="text-muted-foreground h-6 w-6 animate-spin" />
-			</div>
+	{#if canReadAcademicPeriods}
+		{#if loading}
+			<PageSkeleton variant="cards" rows={3} />
 		{:else if periods.length === 0}
-			<div class="text-muted-foreground flex h-32 items-center justify-center text-sm">
-				{selectedYearId
-					? 'ยังไม่มีคาบเวลา กดปุ่ม "เพิ่มคาบเวลา" เพื่อเริ่มต้น'
-					: 'กรุณาเลือกปีการศึกษา'}
-			</div>
+			<PageState
+				title={selectedYearId ? 'ยังไม่มีคาบเวลา' : 'ยังไม่ได้เลือกปีการศึกษา'}
+				description={selectedYearId
+					? 'กดปุ่มเพิ่มคาบเวลาเพื่อเริ่มต้นกำหนดคาบเรียน'
+					: 'กรุณาเลือกปีการศึกษาเพื่อดูคาบเวลา'}
+				actionLabel={selectedYearId && canManageAcademicPeriods ? 'เพิ่มคาบเวลา' : undefined}
+				onaction={selectedYearId && canManageAcademicPeriods ? openAddPeriod : undefined}
+			/>
 		{:else}
+			<Card.Root>
 			<div class="divide-border divide-y" role="list">
 				{#each periods as p, i (p.id)}
 					<div
@@ -382,8 +377,9 @@
 					</div>
 				{/each}
 			</div>
+			</Card.Root>
 		{/if}
-	</Card.Root>
+	{/if}
 
 	<!-- Period Dialog -->
 	{#if canManageAcademicPeriods}

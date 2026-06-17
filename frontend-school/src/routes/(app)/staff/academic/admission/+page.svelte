@@ -10,20 +10,18 @@
 	} from '$lib/api/admission';
 	import { Button } from '$lib/components/ui/button';
 	import { Badge } from '$lib/components/ui/badge';
-	import { Alert, AlertDescription, AlertTitle } from '$lib/components/ui/alert';
+	import { LoadingButton, PageSkeleton, PageState } from '$lib/components/app-state';
 	import * as Card from '$lib/components/ui/card';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { toast } from 'svelte-sonner';
 	import {
-		AlertTriangle,
 		ClipboardList,
 		Plus,
 		Eye,
 		Trash2,
 		ToggleRight,
 		Users,
-		Calendar,
-		Loader2
+		Calendar
 	} from 'lucide-svelte';
 	import { can } from '$lib/stores/permissions';
 	import { PERMISSIONS } from '$lib/permissions/registry';
@@ -136,36 +134,20 @@
 
 	<!-- Rounds List -->
 	{#if !canReadAdmission}
-		<Alert variant="destructive">
-			<AlertTriangle class="h-4 w-4" />
-			<AlertTitle>ไม่มีสิทธิ์ดูรอบรับสมัคร</AlertTitle>
-			<AlertDescription>
-				บัญชีนี้เข้า module รับสมัครได้ แต่ยังไม่มีสิทธิ์อ่านข้อมูลรอบรับสมัคร
-			</AlertDescription>
-		</Alert>
+		<PageState
+			variant="permission"
+			title="ไม่มีสิทธิ์ดูรอบรับสมัคร"
+			description="บัญชีนี้เข้า module รับสมัครได้ แต่ยังไม่มีสิทธิ์อ่านข้อมูลรอบรับสมัคร"
+		/>
 	{:else if loading}
-		<Card.Root>
-			<Card.Content class="flex items-center justify-center py-16">
-				<div class="flex flex-col items-center gap-3 text-muted-foreground">
-					<Loader2 class="w-8 h-8 animate-spin" />
-					<p>กำลังโหลด...</p>
-				</div>
-			</Card.Content>
-		</Card.Root>
+		<PageSkeleton variant="cards" rows={3} />
 	{:else if rounds.length === 0}
-		<Card.Root>
-			<Card.Content class="flex flex-col items-center py-16 gap-3">
-				<ClipboardList class="w-16 h-16 text-muted-foreground" />
-				<p class="text-lg font-medium text-foreground">ยังไม่มีรอบรับสมัคร</p>
-				<p class="text-muted-foreground text-sm">เริ่มต้นด้วยการสร้างรอบรับสมัครแรก</p>
-				{#if canManageAdmission}
-					<Button href="/staff/academic/admission/new" class="mt-2">
-						<Plus class="w-4 h-4 mr-2" />
-						สร้างรอบรับสมัคร
-					</Button>
-				{/if}
-			</Card.Content>
-		</Card.Root>
+		<PageState
+			title="ยังไม่มีรอบรับสมัคร"
+			description="เริ่มต้นด้วยการสร้างรอบรับสมัครแรก"
+			actionLabel={canManageAdmission ? 'สร้างรอบรับสมัคร' : undefined}
+			href={canManageAdmission ? '/staff/academic/admission/new' : undefined}
+		/>
 	{:else}
 		<div class="grid gap-4">
 			{#each rounds as round (round.id)}
@@ -254,10 +236,14 @@
 				<Button variant="outline" onclick={() => (showDeleteDialog = false)} disabled={deleting}>
 					ยกเลิก
 				</Button>
-				<Button variant="destructive" onclick={confirmDelete} disabled={deleting}>
-					{#if deleting}<Loader2 class="w-4 h-4 mr-2 animate-spin" />{/if}
-					{deleting ? 'กำลังลบ...' : 'ลบรอบ'}
-				</Button>
+				<LoadingButton
+					variant="destructive"
+					onclick={confirmDelete}
+					loading={deleting}
+					loadingLabel="กำลังลบ..."
+				>
+					ลบรอบ
+				</LoadingButton>
 			</Dialog.Footer>
 		</Dialog.Content>
 	</Dialog.Root>

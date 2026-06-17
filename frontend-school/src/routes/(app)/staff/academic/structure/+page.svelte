@@ -29,7 +29,7 @@
 	import * as Select from '$lib/components/ui/select';
 	import DatePicker from '$lib/components/ui/date-picker/DatePicker.svelte';
 	import { Checkbox } from '$lib/components/ui/checkbox';
-	import { Alert, AlertDescription, AlertTitle } from '$lib/components/ui/alert';
+	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import { PERMISSIONS } from '$lib/permissions/registry';
 	import { can } from '$lib/stores/permissions';
 	import {
@@ -41,8 +41,7 @@
 		Trash2,
 		BookOpen,
 		Settings,
-		CalendarClock,
-		AlertTriangle
+		CalendarClock
 	} from 'lucide-svelte';
 
 	let loading = $state(true);
@@ -459,17 +458,13 @@
 	</div>
 
 	{#if !canReadAcademicStructure}
-		<Alert>
-			<AlertTriangle class="h-4 w-4" />
-			<AlertTitle>ไม่มีสิทธิ์ดูโครงสร้างวิชาการ</AlertTitle>
-			<AlertDescription>
-				บัญชีนี้เข้า module โครงสร้างวิชาการได้ แต่ยังไม่มีสิทธิ์อ่านข้อมูลปีการศึกษาและระดับชั้น
-			</AlertDescription>
-		</Alert>
+		<PageState
+			variant="permission"
+			title="ไม่มีสิทธิ์ดูโครงสร้างวิชาการ"
+			description="บัญชีนี้เข้า module โครงสร้างวิชาการได้ แต่ยังไม่มีสิทธิ์อ่านข้อมูลปีการศึกษาและระดับชั้น"
+		/>
 	{:else if loading}
-		<div class="flex h-40 items-center justify-center">
-			<Loader2 class="h-8 w-8 animate-spin text-primary" />
-		</div>
+		<PageSkeleton variant="cards" rows={3} />
 	{:else}
 		<div class="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
 			<!-- Academic Years Card -->

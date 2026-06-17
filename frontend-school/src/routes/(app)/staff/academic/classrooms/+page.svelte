@@ -26,7 +26,7 @@
 	import * as Select from '$lib/components/ui/select';
 	import * as Popover from '$lib/components/ui/popover';
 	import * as Command from '$lib/components/ui/command';
-	import { Alert, AlertDescription, AlertTitle } from '$lib/components/ui/alert';
+	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import { PERMISSIONS } from '$lib/permissions/registry';
 	import { can } from '$lib/stores/permissions';
 	import {
@@ -37,8 +37,7 @@
 		Pencil,
 		Trash2,
 		ChevronsUpDown,
-		Check,
-		AlertTriangle
+		Check
 	} from 'lucide-svelte';
 
 	type AdvisorRow = { user_id: string; role: 'primary' | 'secondary' };
@@ -411,13 +410,11 @@
 	</div>
 
 	{#if !canReadClassrooms}
-		<Alert>
-			<AlertTriangle class="h-4 w-4" />
-			<AlertTitle>ไม่มีสิทธิ์ดูห้องเรียน</AlertTitle>
-			<AlertDescription>
-				บัญชีนี้เข้า module ห้องเรียนได้ แต่ยังไม่มีสิทธิ์อ่านรายการห้องเรียน
-			</AlertDescription>
-		</Alert>
+		<PageState
+			variant="permission"
+			title="ไม่มีสิทธิ์ดูห้องเรียน"
+			description="บัญชีนี้เข้า module ห้องเรียนได้ แต่ยังไม่มีสิทธิ์อ่านรายการห้องเรียน"
+		/>
 	{:else}
 		<Card.Root>
 			<Card.Content class="pt-6">
@@ -445,9 +442,14 @@
 		</Card.Root>
 
 		{#if loading}
-			<div class="flex h-40 items-center justify-center">
-				<Loader2 class="h-8 w-8 animate-spin text-primary" />
-			</div>
+			<PageSkeleton variant="table" rows={6} columns={canUpdateClassrooms ? 6 : 5} />
+		{:else if classrooms.length === 0}
+			<PageState
+				title="ไม่พบห้องเรียน"
+				description="ไม่พบห้องเรียนในปีการศึกษานี้"
+				actionLabel={canCreateClassrooms ? 'สร้างห้องเรียนใหม่' : undefined}
+				onaction={canCreateClassrooms ? handleOpenCreate : undefined}
+			/>
 		{:else}
 			<div class="rounded-md border bg-card">
 				<Table.Root>
@@ -509,16 +511,6 @@
 								{/if}
 							</Table.Row>
 						{/each}
-						{#if classrooms.length === 0}
-							<Table.Row>
-								<Table.Cell
-									colspan={canUpdateClassrooms ? 6 : 5}
-									class="h-32 text-center text-muted-foreground"
-								>
-									ไม่พบห้องเรียนในปีการศึกษานี้
-								</Table.Cell>
-							</Table.Row>
-						{/if}
 					</Table.Body>
 				</Table.Root>
 			</div>
