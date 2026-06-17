@@ -26,6 +26,19 @@ test('protected app layout redirects unauthenticated users before rendering chil
 	assert.match(source, /authStatus\s*===\s*['"]authenticated['"]/);
 });
 
+test('protected app layout sends logged-out sessions to login instead of forbidden', async () => {
+	const source = await readProjectFile('src/routes/(app)/+layout.svelte');
+
+	assert.match(source, /async function redirectToLogin/);
+	assert.match(source, /if\s*\(!user\)\s*\{[\s\S]*redirectToLogin\(\)[\s\S]*return;[\s\S]*\}/);
+	assert.match(source, /if\s*\(userCanAccessRoute\(user,\s*permissions,\s*routeId\)\)\s*return;/);
+	assert.match(source, /void redirectToForbidden\(\)/);
+	assert.match(
+		source,
+		/if\s*\(!user\)\s*\{[\s\S]*redirectToLogin\(\)[\s\S]*return;[\s\S]*if\s*\(userCanAccessRoute/
+	);
+});
+
 test('api client parses non-json responses and centralizes unauthorized handling', async () => {
 	const source = await readProjectFile('src/lib/api/client.ts');
 

@@ -30,6 +30,17 @@
 		return `${window.location.pathname}${window.location.search}${window.location.hash}`;
 	}
 
+	async function redirectToLogin(rememberCurrentPath = false) {
+		if (rememberCurrentPath) {
+			sessionStorage.setItem('redirectAfterLogin', currentPath());
+		} else {
+			sessionStorage.removeItem('redirectAfterLogin');
+		}
+
+		authStatus = 'redirecting';
+		await goto(resolve('/login'), { replaceState: true });
+	}
+
 	async function redirectToForbidden() {
 		authStatus = 'redirecting';
 		await goto(resolve(`/403?from=${encodeURIComponent(currentPath())}`), {
@@ -58,9 +69,7 @@
 		const isAuthenticated = await authAPI.checkAuth();
 
 		if (!isAuthenticated) {
-			sessionStorage.setItem('redirectAfterLogin', currentPath());
-			authStatus = 'redirecting';
-			await goto(resolve('/login'), { replaceState: true });
+			await redirectToLogin(true);
 			return;
 		}
 
@@ -80,6 +89,10 @@
 		const user = $authStore.user;
 
 		if (authStatus !== 'authenticated') return;
+		if (!user) {
+			void redirectToLogin();
+			return;
+		}
 		if (userCanAccessRoute(user, permissions, routeId)) return;
 
 		void redirectToForbidden();
