@@ -13,14 +13,19 @@
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import { Textarea } from '$lib/components/ui/textarea';
+	import { Alert, AlertDescription, AlertTitle } from '$lib/components/ui/alert';
 	import * as Card from '$lib/components/ui/card';
 	import * as Select from '$lib/components/ui/select';
 	import { Separator } from '$lib/components/ui/separator';
 	import DatePicker from '$lib/components/ui/date-picker/DatePicker.svelte';
 	import { toast } from 'svelte-sonner';
-	import { ArrowLeft, Plus, Loader2 } from 'lucide-svelte';
+	import { AlertTriangle, ArrowLeft, Plus, Loader2 } from 'lucide-svelte';
+	import { can } from '$lib/stores/permissions';
+	import { PERMISSIONS } from '$lib/permissions/registry';
 
 	let { data } = $props();
+
+	const canManageAdmission = $derived($can.has(PERMISSIONS.ADMISSION_MANAGE_ALL));
 
 	function goToAdmissionRound(id: string) {
 		goto(resolve(`/staff/academic/admission/${id}`));
@@ -45,6 +50,7 @@
 	});
 
 	async function loadGradeLevels(yearId: string) {
+		if (!canManageAdmission) return;
 		if (!yearId) {
 			gradeLevels = [];
 			return;
@@ -61,6 +67,7 @@
 	}
 
 	async function load() {
+		if (!canManageAdmission) return;
 		try {
 			years = await lookupAcademicYears({ activeOnly: false });
 			const activeYear = years.find((y) => y.is_current) ?? years[0];
@@ -75,6 +82,10 @@
 
 	async function handleSubmit(e: Event) {
 		e.preventDefault();
+		if (!canManageAdmission) {
+			toast.error('ไม่มีสิทธิ์สร้างรอบรับสมัคร');
+			return;
+		}
 		if (
 			!form.academicYearId ||
 			!form.gradeLevelId ||
@@ -120,140 +131,150 @@
 		<h1 class="text-2xl font-bold text-foreground">สร้างรอบรับสมัครใหม่</h1>
 	</div>
 
-	<form onsubmit={handleSubmit}>
-		<Card.Root>
-			<Card.Header>
-				<Card.Title>ข้อมูลรอบรับสมัคร</Card.Title>
-				<Card.Description>กรอกข้อมูลสำหรับเปิดรอบรับสมัครนักเรียนใหม่</Card.Description>
-			</Card.Header>
-			<Card.Content class="space-y-5">
-				<!-- ปีการศึกษา + ระดับชั้น -->
-				<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-					<div class="space-y-2">
-						<Label for="year-select">ปีการศึกษา <span class="text-destructive">*</span></Label>
-						<Select.Root
-							type="single"
-							bind:value={form.academicYearId}
-							onValueChange={(v) => {
-								form.gradeLevelId = '';
-								loadGradeLevels(v ?? '');
-							}}
-						>
-							<Select.Trigger id="year-select" class="w-full">
-								{years.find((y) => y.id === form.academicYearId)?.name ?? '-- เลือกปีการศึกษา --'}
-							</Select.Trigger>
-							<Select.Content>
-								{#each years as y (y.id)}
-									<Select.Item value={y.id}>
-										{y.name}{y.is_current ? ' (ปัจจุบัน)' : ''}
-									</Select.Item>
-								{/each}
-							</Select.Content>
-						</Select.Root>
+	{#if !canManageAdmission}
+		<Alert variant="destructive">
+			<AlertTriangle class="h-4 w-4" />
+			<AlertTitle>ไม่มีสิทธิ์สร้างรอบรับสมัคร</AlertTitle>
+			<AlertDescription
+				>บัญชีนี้เข้า module รับสมัครได้ แต่ยังไม่มีสิทธิ์จัดการรอบรับสมัคร</AlertDescription
+			>
+		</Alert>
+	{:else}
+		<form onsubmit={handleSubmit}>
+			<Card.Root>
+				<Card.Header>
+					<Card.Title>ข้อมูลรอบรับสมัคร</Card.Title>
+					<Card.Description>กรอกข้อมูลสำหรับเปิดรอบรับสมัครนักเรียนใหม่</Card.Description>
+				</Card.Header>
+				<Card.Content class="space-y-5">
+					<!-- ปีการศึกษา + ระดับชั้น -->
+					<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+						<div class="space-y-2">
+							<Label for="year-select">ปีการศึกษา <span class="text-destructive">*</span></Label>
+							<Select.Root
+								type="single"
+								bind:value={form.academicYearId}
+								onValueChange={(v) => {
+									form.gradeLevelId = '';
+									loadGradeLevels(v ?? '');
+								}}
+							>
+								<Select.Trigger id="year-select" class="w-full">
+									{years.find((y) => y.id === form.academicYearId)?.name ?? '-- เลือกปีการศึกษา --'}
+								</Select.Trigger>
+								<Select.Content>
+									{#each years as y (y.id)}
+										<Select.Item value={y.id}>
+											{y.name}{y.is_current ? ' (ปัจจุบัน)' : ''}
+										</Select.Item>
+									{/each}
+								</Select.Content>
+							</Select.Root>
+						</div>
+						<div class="space-y-2">
+							<Label for="grade-select">ระดับชั้น <span class="text-destructive">*</span></Label>
+							<Select.Root
+								type="single"
+								bind:value={form.gradeLevelId}
+								disabled={loadingGrades || !form.academicYearId}
+							>
+								<Select.Trigger id="grade-select" class="w-full">
+									{loadingGrades
+										? 'กำลังโหลด...'
+										: (gradeLevels.find((g) => g.id === form.gradeLevelId)?.short_name ??
+											(gradeLevels.length === 0 && form.academicYearId
+												? 'ไม่มีระดับชั้นที่เปิด'
+												: '-- เลือกระดับชั้น --'))}
+								</Select.Trigger>
+								<Select.Content>
+									{#each gradeLevels as g (g.id)}
+										<Select.Item value={g.id}>{g.short_name} — {g.name}</Select.Item>
+									{/each}
+								</Select.Content>
+							</Select.Root>
+						</div>
 					</div>
+
+					<!-- ชื่อรอบ -->
 					<div class="space-y-2">
-						<Label for="grade-select">ระดับชั้น <span class="text-destructive">*</span></Label>
-						<Select.Root
-							type="single"
-							bind:value={form.gradeLevelId}
-							disabled={loadingGrades || !form.academicYearId}
-						>
-							<Select.Trigger id="grade-select" class="w-full">
-								{loadingGrades
-									? 'กำลังโหลด...'
-									: (gradeLevels.find((g) => g.id === form.gradeLevelId)?.short_name ??
-										(gradeLevels.length === 0 && form.academicYearId
-											? 'ไม่มีระดับชั้นที่เปิด'
-											: '-- เลือกระดับชั้น --'))}
-							</Select.Trigger>
-							<Select.Content>
-								{#each gradeLevels as g (g.id)}
-									<Select.Item value={g.id}>{g.short_name} — {g.name}</Select.Item>
-								{/each}
-							</Select.Content>
-						</Select.Root>
+						<Label for="round-name">ชื่อรอบรับสมัคร <span class="text-destructive">*</span></Label>
+						<Input
+							id="round-name"
+							bind:value={form.name}
+							placeholder="เช่น รับสมัครนักเรียน ม.1 ปีการศึกษา 2569"
+						/>
 					</div>
-				</div>
 
-				<!-- ชื่อรอบ -->
-				<div class="space-y-2">
-					<Label for="round-name">ชื่อรอบรับสมัคร <span class="text-destructive">*</span></Label>
-					<Input
-						id="round-name"
-						bind:value={form.name}
-						placeholder="เช่น รับสมัครนักเรียน ม.1 ปีการศึกษา 2569"
-					/>
-				</div>
+					<!-- คำอธิบาย -->
+					<div class="space-y-2">
+						<Label for="round-desc">คำอธิบาย</Label>
+						<Textarea
+							id="round-desc"
+							bind:value={form.description}
+							placeholder="รายละเอียดเพิ่มเติม..."
+							rows={2}
+						/>
+					</div>
 
-				<!-- คำอธิบาย -->
-				<div class="space-y-2">
-					<Label for="round-desc">คำอธิบาย</Label>
-					<Textarea
-						id="round-desc"
-						bind:value={form.description}
-						placeholder="รายละเอียดเพิ่มเติม..."
-						rows={2}
-					/>
-				</div>
+					<Separator />
 
-				<Separator />
+					<!-- ช่วงรับสมัคร -->
+					<div class="space-y-3">
+						<p class="text-sm font-medium">ช่วงรับสมัคร <span class="text-destructive">*</span></p>
+						<div class="grid grid-cols-2 gap-4">
+							<div class="space-y-2 flex flex-col">
+								<Label for="apply-start">วันเริ่มรับสมัคร</Label>
+								<DatePicker bind:value={form.applyStartDate} />
+							</div>
+							<div class="space-y-2 flex flex-col">
+								<Label for="apply-end">วันสิ้นสุดรับสมัคร</Label>
+								<DatePicker bind:value={form.applyEndDate} />
+							</div>
+						</div>
+					</div>
 
-				<!-- ช่วงรับสมัคร -->
-				<div class="space-y-3">
-					<p class="text-sm font-medium">ช่วงรับสมัคร <span class="text-destructive">*</span></p>
+					<!-- วันสอบ + ประกาศผล -->
 					<div class="grid grid-cols-2 gap-4">
 						<div class="space-y-2 flex flex-col">
-							<Label for="apply-start">วันเริ่มรับสมัคร</Label>
-							<DatePicker bind:value={form.applyStartDate} />
+							<Label for="exam-date">วันสอบ</Label>
+							<DatePicker bind:value={form.examDate} />
 						</div>
 						<div class="space-y-2 flex flex-col">
-							<Label for="apply-end">วันสิ้นสุดรับสมัคร</Label>
-							<DatePicker bind:value={form.applyEndDate} />
+							<Label for="result-date">วันประกาศผล</Label>
+							<DatePicker bind:value={form.resultAnnounceDate} />
 						</div>
 					</div>
-				</div>
 
-				<!-- วันสอบ + ประกาศผล -->
-				<div class="grid grid-cols-2 gap-4">
-					<div class="space-y-2 flex flex-col">
-						<Label for="exam-date">วันสอบ</Label>
-						<DatePicker bind:value={form.examDate} />
-					</div>
-					<div class="space-y-2 flex flex-col">
-						<Label for="result-date">วันประกาศผล</Label>
-						<DatePicker bind:value={form.resultAnnounceDate} />
-					</div>
-				</div>
+					<Separator />
 
-				<Separator />
-
-				<!-- ช่วงมอบตัว -->
-				<div class="space-y-3">
-					<p class="text-sm font-medium">ช่วงมอบตัว</p>
-					<div class="grid grid-cols-2 gap-4">
-						<div class="space-y-2 flex flex-col">
-							<Label for="enroll-start">วันเริ่มมอบตัว</Label>
-							<DatePicker bind:value={form.enrollmentStartDate} />
-						</div>
-						<div class="space-y-2 flex flex-col">
-							<Label for="enroll-end">วันสิ้นสุดมอบตัว</Label>
-							<DatePicker bind:value={form.enrollmentEndDate} />
+					<!-- ช่วงมอบตัว -->
+					<div class="space-y-3">
+						<p class="text-sm font-medium">ช่วงมอบตัว</p>
+						<div class="grid grid-cols-2 gap-4">
+							<div class="space-y-2 flex flex-col">
+								<Label for="enroll-start">วันเริ่มมอบตัว</Label>
+								<DatePicker bind:value={form.enrollmentStartDate} />
+							</div>
+							<div class="space-y-2 flex flex-col">
+								<Label for="enroll-end">วันสิ้นสุดมอบตัว</Label>
+								<DatePicker bind:value={form.enrollmentEndDate} />
+							</div>
 						</div>
 					</div>
-				</div>
-			</Card.Content>
+				</Card.Content>
 
-			<Card.Footer class="flex gap-3">
-				<Button type="submit" disabled={saving} class="flex items-center gap-2">
-					{#if saving}
-						<Loader2 class="w-4 h-4 animate-spin" />
-					{:else}
-						<Plus class="w-4 h-4" />
-					{/if}
-					{saving ? 'กำลังสร้าง...' : 'สร้างรอบรับสมัคร'}
-				</Button>
-				<Button type="button" variant="outline" href="/staff/academic/admission">ยกเลิก</Button>
-			</Card.Footer>
-		</Card.Root>
-	</form>
+				<Card.Footer class="flex gap-3">
+					<Button type="submit" disabled={saving} class="flex items-center gap-2">
+						{#if saving}
+							<Loader2 class="w-4 h-4 animate-spin" />
+						{:else}
+							<Plus class="w-4 h-4" />
+						{/if}
+						{saving ? 'กำลังสร้าง...' : 'สร้างรอบรับสมัคร'}
+					</Button>
+					<Button type="button" variant="outline" href="/staff/academic/admission">ยกเลิก</Button>
+				</Card.Footer>
+			</Card.Root>
+		</form>
+	{/if}
 </div>

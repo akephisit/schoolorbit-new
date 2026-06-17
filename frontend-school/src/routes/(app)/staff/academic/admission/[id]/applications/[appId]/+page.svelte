@@ -23,6 +23,7 @@
 	import { Badge } from '$lib/components/ui/badge';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
+	import { Alert, AlertDescription, AlertTitle } from '$lib/components/ui/alert';
 	import * as Select from '$lib/components/ui/select';
 	import DatePicker from '$lib/components/ui/date-picker/DatePicker.svelte';
 	import * as Card from '$lib/components/ui/card';
@@ -31,6 +32,7 @@
 	import { Textarea } from '$lib/components/ui/textarea';
 	import { toast } from 'svelte-sonner';
 	import {
+		AlertTriangle,
 		ArrowLeft,
 		ChevronLeft,
 		ChevronRight,
@@ -50,12 +52,16 @@
 		Save,
 		Copy
 	} from 'lucide-svelte';
+	import { can } from '$lib/stores/permissions';
+	import { PERMISSIONS } from '$lib/permissions/registry';
 
 	import type { PageProps } from './$types';
 	let { data, params }: PageProps = $props();
 
 	let roundId = $derived(params.id);
 	let appId = $derived(params.appId);
+	const canReadAdmission = $derived($can.has(PERMISSIONS.ADMISSION_READ_ALL));
+	const canVerifyAdmission = $derived($can.has(PERMISSIONS.ADMISSION_VERIFY_ALL));
 
 	function goToApp(rId: string, aId: string) {
 		goto(resolve(`/staff/academic/admission/${rId}/applications/${aId}`));
@@ -129,6 +135,10 @@
 	};
 
 	async function loadApp() {
+		if (!canReadAdmission) {
+			loading = false;
+			return;
+		}
 		if (!appId) return;
 		loading = true;
 		try {
@@ -147,6 +157,10 @@
 	}
 
 	async function handleSaveTrack() {
+		if (!canVerifyAdmission) {
+			toast.error('ไม่มีสิทธิ์แก้ไขสายการเรียนของใบสมัคร');
+			return;
+		}
 		if (!selectedNewTrackId || !appId) return;
 		savingTrack = true;
 		try {
@@ -163,6 +177,10 @@
 	}
 
 	async function handleVerify() {
+		if (!canVerifyAdmission) {
+			toast.error('ไม่มีสิทธิ์ตรวจใบสมัคร');
+			return;
+		}
 		if (!application) return;
 		try {
 			await verifyApplication(application.id);
@@ -174,6 +192,10 @@
 	}
 
 	async function handleRejectConfirm() {
+		if (!canVerifyAdmission) {
+			toast.error('ไม่มีสิทธิ์ปฏิเสธใบสมัคร');
+			return;
+		}
 		if (!application || !rejectReason.trim()) return;
 		rejecting = true;
 		try {
@@ -190,6 +212,10 @@
 	}
 
 	async function handleUnverifyConfirm() {
+		if (!canVerifyAdmission) {
+			toast.error('ไม่มีสิทธิ์ยกเลิกการอนุมัติใบสมัคร');
+			return;
+		}
 		if (!application) return;
 		unverifying = true;
 		try {
@@ -205,6 +231,7 @@
 	}
 
 	function startEdit() {
+		if (!canVerifyAdmission) return;
 		if (!application) return;
 		editData = { ...application };
 		editMode = true;
@@ -217,6 +244,10 @@
 	}
 
 	async function handleSave() {
+		if (!canVerifyAdmission) {
+			toast.error('ไม่มีสิทธิ์แก้ไขใบสมัคร');
+			return;
+		}
 		if (!application) return;
 		saving = true;
 		try {
@@ -277,6 +308,7 @@
 	}
 
 	function handleDocFileSelected(docType: string, e: Event) {
+		if (!canVerifyAdmission) return;
 		const input = e.target as HTMLInputElement;
 		const file = input.files?.[0];
 		if (!file) return;
@@ -315,6 +347,7 @@
 	}
 
 	function handleDeleteDoc(docType: string) {
+		if (!canVerifyAdmission) return;
 		const existingDoc = documents.find((d) => d.docType === docType);
 		const slot = docSlots[docType];
 
@@ -535,7 +568,7 @@
 		<h1 class="text-xl sm:text-2xl font-bold flex items-center gap-2">
 			<FileText class="w-6 h-6" /> รายละเอียดใบสมัคร
 		</h1>
-		{#if application && !['enrolled', 'withdrawn'].includes(application.status)}
+		{#if canVerifyAdmission && application && !['enrolled', 'withdrawn'].includes(application.status)}
 			{#if editMode}
 				<div class="ml-auto flex gap-2">
 					<Button variant="outline" size="sm" onclick={cancelEdit} disabled={saving}>
@@ -556,7 +589,15 @@
 		{/if}
 	</div>
 
-	{#if loading}
+	{#if !canReadAdmission}
+		<Alert variant="destructive">
+			<AlertTriangle class="h-4 w-4" />
+			<AlertTitle>ไม่มีสิทธิ์ดูใบสมัคร</AlertTitle>
+			<AlertDescription
+				>บัญชีนี้เข้า module รับสมัครได้ แต่ยังไม่มีสิทธิ์อ่านรายละเอียดใบสมัคร</AlertDescription
+			>
+		</Alert>
+	{:else if loading}
 		<Card.Root>
 			<Card.Content class="flex justify-center py-20">
 				<LoaderCircle class="w-8 h-8 animate-spin text-primary" />
@@ -1279,7 +1320,7 @@
 							{#if !editingTrack}
 								<div class="flex items-center gap-2">
 									<span class="font-medium">{application.trackName || '-'}</span>
-									{#if tracks.length > 1}
+									{#if canVerifyAdmission && tracks.length > 1}
 										<button
 											class="text-muted-foreground hover:text-foreground"
 											onclick={() => {
@@ -1364,7 +1405,7 @@
 							</div>
 						{/if}
 
-						{#if application.status === 'submitted'}
+						{#if canVerifyAdmission && application.status === 'submitted'}
 							<Separator />
 							<div class="grid grid-cols-2 gap-2">
 								<Button
@@ -1382,7 +1423,7 @@
 							</div>
 						{/if}
 
-						{#if application.status === 'verified'}
+						{#if canVerifyAdmission && application.status === 'verified'}
 							<Separator />
 							<Button
 								variant="outline"
@@ -1399,60 +1440,64 @@
 			</div>
 		</div>
 
-		<!-- Reject Dialog -->
-		<Dialog.Root bind:open={showRejectDialog}>
-			<Dialog.Content>
-				<Dialog.Header>
-					<Dialog.Title>ปฏิเสธใบสมัคร</Dialog.Title>
-					<Dialog.Description>
-						กรุณาระบุเหตุผลที่ปฏิเสธใบสมัครของ <strong
-							>{application.firstName} {application.lastName}</strong
+		{#if canVerifyAdmission}
+			<!-- Reject Dialog -->
+			<Dialog.Root bind:open={showRejectDialog}>
+				<Dialog.Content>
+					<Dialog.Header>
+						<Dialog.Title>ปฏิเสธใบสมัคร</Dialog.Title>
+						<Dialog.Description>
+							กรุณาระบุเหตุผลที่ปฏิเสธใบสมัครของ <strong
+								>{application.firstName} {application.lastName}</strong
+							>
+						</Dialog.Description>
+					</Dialog.Header>
+					<div class="space-y-2 py-2">
+						<Label for="reject-reason">เหตุผล <span class="text-destructive">*</span></Label>
+						<Textarea
+							id="reject-reason"
+							bind:value={rejectReason}
+							placeholder="เช่น เอกสารไม่ครบถ้วน..."
+							rows={3}
+						/>
+					</div>
+					<Dialog.Footer>
+						<Button variant="outline" onclick={() => (showRejectDialog = false)}>ยกเลิก</Button>
+						<Button
+							variant="destructive"
+							onclick={handleRejectConfirm}
+							disabled={rejecting || !rejectReason.trim()}
 						>
-					</Dialog.Description>
-				</Dialog.Header>
-				<div class="space-y-2 py-2">
-					<Label for="reject-reason">เหตุผล <span class="text-destructive">*</span></Label>
-					<Textarea
-						id="reject-reason"
-						bind:value={rejectReason}
-						placeholder="เช่น เอกสารไม่ครบถ้วน..."
-						rows={3}
-					/>
-				</div>
-				<Dialog.Footer>
-					<Button variant="outline" onclick={() => (showRejectDialog = false)}>ยกเลิก</Button>
-					<Button
-						variant="destructive"
-						onclick={handleRejectConfirm}
-						disabled={rejecting || !rejectReason.trim()}
-					>
-						{#if rejecting}<LoaderCircle class="w-4 h-4 mr-2 animate-spin" />{/if}
-						{rejecting ? 'กำลังดำเนินการ...' : 'ยืนยันการปฏิเสธ'}
-					</Button>
-				</Dialog.Footer>
-			</Dialog.Content>
-		</Dialog.Root>
+							{#if rejecting}<LoaderCircle class="w-4 h-4 mr-2 animate-spin" />{/if}
+							{rejecting ? 'กำลังดำเนินการ...' : 'ยืนยันการปฏิเสธ'}
+						</Button>
+					</Dialog.Footer>
+				</Dialog.Content>
+			</Dialog.Root>
+		{/if}
 
-		<!-- Unverify Dialog -->
-		<Dialog.Root bind:open={showUnverifyDialog}>
-			<Dialog.Content>
-				<Dialog.Header>
-					<Dialog.Title>ยกเลิกการอนุมัติ</Dialog.Title>
-					<Dialog.Description>
-						ยืนยันการยกเลิกการอนุมัติใบสมัครของ <strong
-							>{application.firstName} {application.lastName}</strong
-						>? ใบสมัครจะกลับสู่สถานะ "รอตรวจสอบ"
-					</Dialog.Description>
-				</Dialog.Header>
-				<Dialog.Footer>
-					<Button variant="outline" onclick={() => (showUnverifyDialog = false)}>ยกเลิก</Button>
-					<Button variant="destructive" onclick={handleUnverifyConfirm} disabled={unverifying}>
-						{#if unverifying}<LoaderCircle class="w-4 h-4 mr-2 animate-spin" />{/if}
-						{unverifying ? 'กำลังดำเนินการ...' : 'ยืนยัน'}
-					</Button>
-				</Dialog.Footer>
-			</Dialog.Content>
-		</Dialog.Root>
+		{#if canVerifyAdmission}
+			<!-- Unverify Dialog -->
+			<Dialog.Root bind:open={showUnverifyDialog}>
+				<Dialog.Content>
+					<Dialog.Header>
+						<Dialog.Title>ยกเลิกการอนุมัติ</Dialog.Title>
+						<Dialog.Description>
+							ยืนยันการยกเลิกการอนุมัติใบสมัครของ <strong
+								>{application.firstName} {application.lastName}</strong
+							>? ใบสมัครจะกลับสู่สถานะ "รอตรวจสอบ"
+						</Dialog.Description>
+					</Dialog.Header>
+					<Dialog.Footer>
+						<Button variant="outline" onclick={() => (showUnverifyDialog = false)}>ยกเลิก</Button>
+						<Button variant="destructive" onclick={handleUnverifyConfirm} disabled={unverifying}>
+							{#if unverifying}<LoaderCircle class="w-4 h-4 mr-2 animate-spin" />{/if}
+							{unverifying ? 'กำลังดำเนินการ...' : 'ยืนยัน'}
+						</Button>
+					</Dialog.Footer>
+				</Dialog.Content>
+			</Dialog.Root>
+		{/if}
 	{:else}
 		<Card.Root>
 			<Card.Content
@@ -1466,14 +1511,16 @@
 </div>
 
 <!-- Document Crop Modal -->
-<DocumentCropperModal
-	bind:open={cropperOpen}
-	imageSrc={cropTarget?.imageUrl ?? null}
-	docLabel={cropTarget ? (DOC_TYPE_LABELS[cropTarget.docType]?.label ?? 'เอกสาร') : ''}
-	initialCorners={cropTarget?.initialCorners}
-	onComplete={handleCropComplete}
-	onCancel={handleCropCancel}
-/>
+{#if canVerifyAdmission}
+	<DocumentCropperModal
+		bind:open={cropperOpen}
+		imageSrc={cropTarget?.imageUrl ?? null}
+		docLabel={cropTarget ? (DOC_TYPE_LABELS[cropTarget.docType]?.label ?? 'เอกสาร') : ''}
+		initialCorners={cropTarget?.initialCorners}
+		onComplete={handleCropComplete}
+		onCancel={handleCropCancel}
+	/>
+{/if}
 
 <!-- Lightbox -->
 {#if lightboxDoc}

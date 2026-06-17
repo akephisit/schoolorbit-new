@@ -8,9 +8,12 @@
 		applicationStatusLabel
 	} from '$lib/api/admission';
 	import { Button } from '$lib/components/ui/button';
+	import { Alert, AlertDescription, AlertTitle } from '$lib/components/ui/alert';
 	import * as Card from '$lib/components/ui/card';
 	import * as Select from '$lib/components/ui/select';
-	import { LoaderCircle, ArrowLeft, Settings, ChevronDown } from 'lucide-svelte';
+	import { PERMISSIONS } from '$lib/permissions/registry';
+	import { can } from '$lib/stores/permissions';
+	import { AlertTriangle, LoaderCircle, ArrowLeft, Settings, ChevronDown } from 'lucide-svelte';
 	import { toast } from 'svelte-sonner';
 	import { SvelteMap } from 'svelte/reactivity';
 
@@ -18,6 +21,7 @@
 	let { data, params }: PageProps = $props();
 
 	let id = $derived(params.id);
+	const canReadAdmission = $derived($can.has(PERMISSIONS.ADMISSION_READ_ALL));
 	let round = $state<AdmissionRound | null>(null);
 	let applications: ApplicationListItem[] = $state([]);
 	let loading = $state(true);
@@ -117,6 +121,10 @@
 	// ---- Data loading ----
 	async function load() {
 		if (!id) return;
+		if (!canReadAdmission) {
+			loading = false;
+			return;
+		}
 		loading = true;
 		try {
 			const [r, apps] = await Promise.all([getRound(id), listApplications(id, {})]);
@@ -474,7 +482,15 @@
 	{/if}
 {/snippet}
 
-{#if loading}
+{#if !canReadAdmission}
+	<Alert>
+		<AlertTriangle class="h-4 w-4" />
+		<AlertTitle>ไม่มีสิทธิ์ดูรายงานรับสมัคร</AlertTitle>
+		<AlertDescription>
+			หน้านี้ต้องใช้สิทธิ์อ่านข้อมูลงานรับสมัครก่อนจึงจะแสดงรายงานได้
+		</AlertDescription>
+	</Alert>
+{:else if loading}
 	<div class="flex justify-center items-center py-20">
 		<LoaderCircle class="w-8 h-8 animate-spin text-primary" />
 	</div>

@@ -19,15 +19,27 @@
 	} from '$lib/api/admission';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
+	import { Alert, AlertDescription, AlertTitle } from '$lib/components/ui/alert';
 	import * as Card from '$lib/components/ui/card';
 	import * as Table from '$lib/components/ui/table';
 	import { Switch } from '$lib/components/ui/switch';
+	import { PERMISSIONS } from '$lib/permissions/registry';
+	import { can } from '$lib/stores/permissions';
 	import { toast } from 'svelte-sonner';
-	import { ArrowLeft, ClipboardList, Save, Loader2, DoorOpen, UserX } from 'lucide-svelte';
+	import {
+		AlertTriangle,
+		ArrowLeft,
+		ClipboardList,
+		Save,
+		Loader2,
+		DoorOpen,
+		UserX
+	} from 'lucide-svelte';
 	import { SvelteSet } from 'svelte/reactivity';
 
 	let { data, params }: PageProps = $props();
 	let id = $derived(params.id);
+	const canScoreAdmission = $derived($can.has(PERMISSIONS.ADMISSION_SCORES_ALL));
 
 	let round: AdmissionRound | null = $state(null);
 	let tracks: AdmissionTrack[] = $state([]);
@@ -58,6 +70,10 @@
 
 	async function loadAll() {
 		if (!id) return;
+		if (!canScoreAdmission) {
+			loading = false;
+			return;
+		}
 		loading = true;
 		try {
 			const [r, t, s, allS, seatData] = await Promise.all([
@@ -105,7 +121,7 @@
 	}
 
 	async function loadApps() {
-		if (!id || !selectedTrack) return;
+		if (!id || !selectedTrack || !canScoreAdmission) return;
 		const allApps = await listApplications(id, { trackId: selectedTrack });
 		// Only show applications that are verified, scored, accepted, or absent
 		applications = allApps.filter((a) =>
@@ -126,7 +142,7 @@
 	}
 
 	async function saveScores() {
-		if (!id) return;
+		if (!id || !canScoreAdmission) return;
 		saving = true;
 		try {
 			const entries = Object.entries(scores)
@@ -147,6 +163,7 @@
 	}
 
 	async function toggleAbsent(appId: string) {
+		if (!canScoreAdmission) return;
 		const isAbsent = absentIds.has(appId);
 		togglingAbsent = { ...togglingAbsent, [appId]: true };
 		try {
@@ -199,7 +216,7 @@
 	}
 
 	$effect(() => {
-		if (selectedTrack) loadApps();
+		if (selectedTrack && canScoreAdmission) loadApps();
 	});
 	onMount(loadAll);
 </script>
@@ -222,141 +239,210 @@
 		<p class="text-muted-foreground text-sm">{round.name} — {subjects.length} วิชา</p>
 	{/if}
 
-	<!-- View mode + Track selector -->
-	<Card.Root>
-		<Card.Content class="pt-4 pb-4 flex flex-wrap items-center gap-3">
-			{#if seatGroups.length > 0}
-				<div class="flex gap-1.5 shrink-0">
-					<Button
-						variant={viewMode === 'room' ? 'default' : 'outline'}
-						size="sm"
-						onclick={() => (viewMode = 'room')}
-					>
-						<DoorOpen class="w-3.5 h-3.5 mr-1.5" />
-						ตามห้องสอบ
-					</Button>
-					<Button
-						variant={viewMode === 'track' ? 'default' : 'outline'}
-						size="sm"
-						onclick={() => (viewMode = 'track')}
-					>
-						ตามสาย
-					</Button>
-				</div>
-				<div class="w-px h-5 bg-border shrink-0"></div>
-			{/if}
-			{#if viewMode === 'track'}
-				<p class="text-sm font-medium whitespace-nowrap">สายการเรียน:</p>
-				<div class="flex gap-2 flex-wrap">
-					{#each tracks as track (track.id)}
-						<Button
-							variant={selectedTrack === track.id ? 'default' : 'outline'}
-							size="sm"
-							onclick={() => {
-								selectedTrack = track.id;
-							}}
-						>
-							{track.name}
-							<span class="ml-1 opacity-70">({track.applicationCount ?? 0})</span>
-						</Button>
-					{/each}
-				</div>
-			{:else}
-				<p class="text-sm text-muted-foreground">
-					{seatGroups.length} ห้องสอบ · {appsInRoomOrder.length} คน
-				</p>
-			{/if}
-		</Card.Content>
-	</Card.Root>
-
-	{#if loading}
-		<Card.Root>
-			<Card.Content class="flex justify-center py-16">
-				<Loader2 class="w-8 h-8 animate-spin text-primary" />
-			</Card.Content>
-		</Card.Root>
-	{:else if viewMode === 'room' && seatGroups.length === 0}
-		<Card.Root>
-			<Card.Content class="py-12 text-center text-muted-foreground">
-				<p>ยังไม่มีการจัดห้องสอบ</p>
-				<p class="text-xs mt-1">กรุณาจัดห้องสอบก่อนใช้มุมมองนี้</p>
-			</Card.Content>
-		</Card.Root>
-	{:else if viewMode === 'track' && applications.length === 0}
-		<Card.Root>
-			<Card.Content class="py-12 text-center text-muted-foreground">
-				<p>ไม่มีผู้สมัครที่ผ่านการตรวจสอบในสายนี้</p>
-				<p class="text-xs mt-1">ต้องยืนยันใบสมัคร (status: verified) ก่อนกรอกคะแนน</p>
-			</Card.Content>
-		</Card.Root>
+	{#if !canScoreAdmission}
+		<Alert>
+			<AlertTriangle class="h-4 w-4" />
+			<AlertTitle>ไม่มีสิทธิ์กรอกคะแนนสอบ</AlertTitle>
+			<AlertDescription>
+				หน้านี้ต้องใช้สิทธิ์จัดการคะแนนรับสมัครก่อนจึงจะแสดงรายชื่อและบันทึกคะแนนได้
+			</AlertDescription>
+		</Alert>
 	{:else}
-		<Card.Root class="overflow-x-auto">
-			<Table.Root>
-				<Table.Header>
-					<Table.Row>
-						<Table.Head class="w-10">ที่</Table.Head>
-						<Table.Head>{viewMode === 'room' ? 'เลขที่สอบ' : 'เลขที่ใบสมัคร'}</Table.Head>
-						<Table.Head>ชื่อ-สกุล</Table.Head>
-						<Table.Head class="text-center w-20">ขาดสอบ</Table.Head>
-						{#each subjects as sub (sub.id)}
-							{@const isActive = activeSubjectIds.includes(sub.id)}
-							<Table.Head
-								class="text-center min-w-[120px] pb-4 transition-all duration-300 {isActive
-									? ''
-									: 'bg-muted/40 shadow-inner'}"
+		<!-- View mode + Track selector -->
+		<Card.Root>
+			<Card.Content class="pt-4 pb-4 flex flex-wrap items-center gap-3">
+				{#if seatGroups.length > 0}
+					<div class="flex gap-1.5 shrink-0">
+						<Button
+							variant={viewMode === 'room' ? 'default' : 'outline'}
+							size="sm"
+							onclick={() => (viewMode = 'room')}
+						>
+							<DoorOpen class="w-3.5 h-3.5 mr-1.5" />
+							ตามห้องสอบ
+						</Button>
+						<Button
+							variant={viewMode === 'track' ? 'default' : 'outline'}
+							size="sm"
+							onclick={() => (viewMode = 'track')}
+						>
+							ตามสาย
+						</Button>
+					</div>
+					<div class="w-px h-5 bg-border shrink-0"></div>
+				{/if}
+				{#if viewMode === 'track'}
+					<p class="text-sm font-medium whitespace-nowrap">สายการเรียน:</p>
+					<div class="flex gap-2 flex-wrap">
+						{#each tracks as track (track.id)}
+							<Button
+								variant={selectedTrack === track.id ? 'default' : 'outline'}
+								size="sm"
+								onclick={() => {
+									selectedTrack = track.id;
+								}}
 							>
-								<div class="flex flex-col items-center gap-2">
-									<Switch
-										checked={isActive}
-										onCheckedChange={(v) => {
-											if (v) activeSubjectIds = [...activeSubjectIds, sub.id];
-											else activeSubjectIds = activeSubjectIds.filter((id) => id !== sub.id);
-										}}
-									/>
-									<div class={isActive ? '' : 'opacity-50'}>
-										{sub.name}
-										<span class="block text-xs font-normal text-muted-foreground"
-											>/{sub.maxScore}</span
-										>
-									</div>
-								</div>
-							</Table.Head>
+								{track.name}
+								<span class="ml-1 opacity-70">({track.applicationCount ?? 0})</span>
+							</Button>
 						{/each}
-					</Table.Row>
-				</Table.Header>
-				<Table.Body>
-					{#if viewMode === 'room'}
-						{#each seatGroups as group (group.examRoomId)}
-							<!-- Room header row -->
-							<Table.Row class="bg-muted/50 hover:bg-muted/50">
-								<Table.Cell colspan={4 + subjects.length} class="font-semibold py-2 px-4 text-sm">
-									<span class="flex items-center gap-2">
-										<DoorOpen class="w-4 h-4" />
-										{group.roomName}
-										{#if group.buildingName}
-											<span class="text-muted-foreground font-normal">· {group.buildingName}</span>
-										{/if}
-										<span class="text-muted-foreground font-normal ml-auto"
-											>{group.seats.length} คน</span
+					</div>
+				{:else}
+					<p class="text-sm text-muted-foreground">
+						{seatGroups.length} ห้องสอบ · {appsInRoomOrder.length} คน
+					</p>
+				{/if}
+			</Card.Content>
+		</Card.Root>
+
+		{#if loading}
+			<Card.Root>
+				<Card.Content class="flex justify-center py-16">
+					<Loader2 class="w-8 h-8 animate-spin text-primary" />
+				</Card.Content>
+			</Card.Root>
+		{:else if viewMode === 'room' && seatGroups.length === 0}
+			<Card.Root>
+				<Card.Content class="py-12 text-center text-muted-foreground">
+					<p>ยังไม่มีการจัดห้องสอบ</p>
+					<p class="text-xs mt-1">กรุณาจัดห้องสอบก่อนใช้มุมมองนี้</p>
+				</Card.Content>
+			</Card.Root>
+		{:else if viewMode === 'track' && applications.length === 0}
+			<Card.Root>
+				<Card.Content class="py-12 text-center text-muted-foreground">
+					<p>ไม่มีผู้สมัครที่ผ่านการตรวจสอบในสายนี้</p>
+					<p class="text-xs mt-1">ต้องยืนยันใบสมัคร (status: verified) ก่อนกรอกคะแนน</p>
+				</Card.Content>
+			</Card.Root>
+		{:else}
+			<Card.Root class="overflow-x-auto">
+				<Table.Root>
+					<Table.Header>
+						<Table.Row>
+							<Table.Head class="w-10">ที่</Table.Head>
+							<Table.Head>{viewMode === 'room' ? 'เลขที่สอบ' : 'เลขที่ใบสมัคร'}</Table.Head>
+							<Table.Head>ชื่อ-สกุล</Table.Head>
+							<Table.Head class="text-center w-20">ขาดสอบ</Table.Head>
+							{#each subjects as sub (sub.id)}
+								{@const isActive = activeSubjectIds.includes(sub.id)}
+								<Table.Head
+									class="text-center min-w-[120px] pb-4 transition-all duration-300 {isActive
+										? ''
+										: 'bg-muted/40 shadow-inner'}"
+								>
+									<div class="flex flex-col items-center gap-2">
+										<Switch
+											checked={isActive}
+											onCheckedChange={(v) => {
+												if (v) activeSubjectIds = [...activeSubjectIds, sub.id];
+												else activeSubjectIds = activeSubjectIds.filter((id) => id !== sub.id);
+											}}
+										/>
+										<div class={isActive ? '' : 'opacity-50'}>
+											{sub.name}
+											<span class="block text-xs font-normal text-muted-foreground"
+												>/{sub.maxScore}</span
+											>
+										</div>
+									</div>
+								</Table.Head>
+							{/each}
+						</Table.Row>
+					</Table.Header>
+					<Table.Body>
+						{#if viewMode === 'room'}
+							{#each seatGroups as group (group.examRoomId)}
+								<!-- Room header row -->
+								<Table.Row class="bg-muted/50 hover:bg-muted/50">
+									<Table.Cell colspan={4 + subjects.length} class="font-semibold py-2 px-4 text-sm">
+										<span class="flex items-center gap-2">
+											<DoorOpen class="w-4 h-4" />
+											{group.roomName}
+											{#if group.buildingName}
+												<span class="text-muted-foreground font-normal">· {group.buildingName}</span
+												>
+											{/if}
+											<span class="text-muted-foreground font-normal ml-auto"
+												>{group.seats.length} คน</span
+											>
+										</span>
+									</Table.Cell>
+								</Table.Row>
+								{#each group.seats as seat, seatIdx (seat.applicationId)}
+									{@const globalIdx =
+										seatGroups
+											.slice(0, seatGroups.indexOf(group))
+											.reduce((acc, g) => acc + g.seats.length, 0) + seatIdx}
+									{@const isAbsent = absentIds.has(seat.applicationId)}
+									<Table.Row class={isAbsent ? 'opacity-50' : ''}>
+										<Table.Cell class="text-center text-muted-foreground"
+											>{seat.seatNumber}</Table.Cell
 										>
-									</span>
-								</Table.Cell>
-							</Table.Row>
-							{#each group.seats as seat, seatIdx (seat.applicationId)}
-								{@const globalIdx =
-									seatGroups
-										.slice(0, seatGroups.indexOf(group))
-										.reduce((acc, g) => acc + g.seats.length, 0) + seatIdx}
-								{@const isAbsent = absentIds.has(seat.applicationId)}
+										<Table.Cell class="font-mono text-xs"
+											>{seat.examId ?? seat.applicationNumber ?? '-'}</Table.Cell
+										>
+										<Table.Cell class="font-medium {isAbsent ? 'line-through' : ''}"
+											>{seat.fullName}</Table.Cell
+										>
+										<Table.Cell class="text-center">
+											<Button
+												size="sm"
+												variant={isAbsent ? 'default' : 'ghost'}
+												class="h-7 text-xs gap-1 {isAbsent
+													? 'bg-red-600 hover:bg-red-700'
+													: 'text-muted-foreground hover:text-red-600'}"
+												disabled={togglingAbsent[seat.applicationId]}
+												onclick={() => toggleAbsent(seat.applicationId)}
+											>
+												<UserX class="w-3 h-3" />
+												{isAbsent ? 'ขาด' : ''}
+											</Button>
+										</Table.Cell>
+										{#each subjects as sub, subIdx (sub.id)}
+											{@const isActive = activeSubjectIds.includes(sub.id)}
+											<Table.Cell
+												class="px-2 py-1.5 transition-all duration-300 {isActive
+													? ''
+													: 'bg-muted/40'}"
+											>
+												{#if !scores[seat.applicationId]}
+													<!-- init on first render -->
+													{(scores[seat.applicationId] = {})}
+												{/if}
+												<Input
+													id="score-{seat.applicationId}-{sub.id}"
+													type="number"
+													min="0"
+													max={sub.maxScore}
+													step="0.5"
+													disabled={!isActive || isAbsent}
+													bind:value={scores[seat.applicationId][sub.id]}
+													oninput={(e) => {
+														const val = parseFloat(e.currentTarget.value);
+														if (!isNaN(val) && val > sub.maxScore) {
+															scores[seat.applicationId][sub.id] = sub.maxScore.toString();
+														}
+													}}
+													onkeydown={(e) => handleKeydown(e, globalIdx, subIdx)}
+													class="h-7 text-center text-sm w-20 mx-auto {isActive
+														? ''
+														: 'opacity-50 cursor-not-allowed'}"
+													placeholder="-"
+												/>
+											</Table.Cell>
+										{/each}
+									</Table.Row>
+								{/each}
+							{/each}
+						{:else}
+							{#each applications as app, i (app.id)}
+								{@const isAbsent = absentIds.has(app.id)}
 								<Table.Row class={isAbsent ? 'opacity-50' : ''}>
-									<Table.Cell class="text-center text-muted-foreground"
-										>{seat.seatNumber}</Table.Cell
-									>
-									<Table.Cell class="font-mono text-xs"
-										>{seat.examId ?? seat.applicationNumber ?? '-'}</Table.Cell
-									>
+									<Table.Cell class="text-center text-muted-foreground">{i + 1}</Table.Cell>
+									<Table.Cell class="font-mono text-xs">{app.applicationNumber ?? '-'}</Table.Cell>
 									<Table.Cell class="font-medium {isAbsent ? 'line-through' : ''}"
-										>{seat.fullName}</Table.Cell
+										>{app.fullName}</Table.Cell
 									>
 									<Table.Cell class="text-center">
 										<Button
@@ -365,8 +451,8 @@
 											class="h-7 text-xs gap-1 {isAbsent
 												? 'bg-red-600 hover:bg-red-700'
 												: 'text-muted-foreground hover:text-red-600'}"
-											disabled={togglingAbsent[seat.applicationId]}
-											onclick={() => toggleAbsent(seat.applicationId)}
+											disabled={togglingAbsent[app.id]}
+											onclick={() => toggleAbsent(app.id)}
 										>
 											<UserX class="w-3 h-3" />
 											{isAbsent ? 'ขาด' : ''}
@@ -379,25 +465,21 @@
 												? ''
 												: 'bg-muted/40'}"
 										>
-											{#if !scores[seat.applicationId]}
-												<!-- init on first render -->
-												{(scores[seat.applicationId] = {})}
-											{/if}
 											<Input
-												id="score-{seat.applicationId}-{sub.id}"
+												id="score-{app.id}-{sub.id}"
 												type="number"
 												min="0"
 												max={sub.maxScore}
 												step="0.5"
 												disabled={!isActive || isAbsent}
-												bind:value={scores[seat.applicationId][sub.id]}
+												bind:value={scores[app.id][sub.id]}
 												oninput={(e) => {
 													const val = parseFloat(e.currentTarget.value);
 													if (!isNaN(val) && val > sub.maxScore) {
-														scores[seat.applicationId][sub.id] = sub.maxScore.toString();
+														scores[app.id][sub.id] = sub.maxScore.toString();
 													}
 												}}
-												onkeydown={(e) => handleKeydown(e, globalIdx, subIdx)}
+												onkeydown={(e) => handleKeydown(e, i, subIdx)}
 												class="h-7 text-center text-sm w-20 mx-auto {isActive
 													? ''
 													: 'opacity-50 cursor-not-allowed'}"
@@ -407,70 +489,18 @@
 									{/each}
 								</Table.Row>
 							{/each}
-						{/each}
-					{:else}
-						{#each applications as app, i (app.id)}
-							{@const isAbsent = absentIds.has(app.id)}
-							<Table.Row class={isAbsent ? 'opacity-50' : ''}>
-								<Table.Cell class="text-center text-muted-foreground">{i + 1}</Table.Cell>
-								<Table.Cell class="font-mono text-xs">{app.applicationNumber ?? '-'}</Table.Cell>
-								<Table.Cell class="font-medium {isAbsent ? 'line-through' : ''}"
-									>{app.fullName}</Table.Cell
-								>
-								<Table.Cell class="text-center">
-									<Button
-										size="sm"
-										variant={isAbsent ? 'default' : 'ghost'}
-										class="h-7 text-xs gap-1 {isAbsent
-											? 'bg-red-600 hover:bg-red-700'
-											: 'text-muted-foreground hover:text-red-600'}"
-										disabled={togglingAbsent[app.id]}
-										onclick={() => toggleAbsent(app.id)}
-									>
-										<UserX class="w-3 h-3" />
-										{isAbsent ? 'ขาด' : ''}
-									</Button>
-								</Table.Cell>
-								{#each subjects as sub, subIdx (sub.id)}
-									{@const isActive = activeSubjectIds.includes(sub.id)}
-									<Table.Cell
-										class="px-2 py-1.5 transition-all duration-300 {isActive ? '' : 'bg-muted/40'}"
-									>
-										<Input
-											id="score-{app.id}-{sub.id}"
-											type="number"
-											min="0"
-											max={sub.maxScore}
-											step="0.5"
-											disabled={!isActive || isAbsent}
-											bind:value={scores[app.id][sub.id]}
-											oninput={(e) => {
-												const val = parseFloat(e.currentTarget.value);
-												if (!isNaN(val) && val > sub.maxScore) {
-													scores[app.id][sub.id] = sub.maxScore.toString();
-												}
-											}}
-											onkeydown={(e) => handleKeydown(e, i, subIdx)}
-											class="h-7 text-center text-sm w-20 mx-auto {isActive
-												? ''
-												: 'opacity-50 cursor-not-allowed'}"
-											placeholder="-"
-										/>
-									</Table.Cell>
-								{/each}
-							</Table.Row>
-						{/each}
-					{/if}
-				</Table.Body>
-			</Table.Root>
-		</Card.Root>
+						{/if}
+					</Table.Body>
+				</Table.Root>
+			</Card.Root>
 
-		<div class="flex justify-end">
-			<Button onclick={saveScores} disabled={saving} class="gap-2">
-				{#if saving}<Loader2 class="w-4 h-4 animate-spin" />{:else}<Save class="w-4 h-4" />{/if}
-				{saving ? 'กำลังบันทึก...' : 'บันทึกคะแนนทั้งหมด'}
-			</Button>
-		</div>
+			<div class="flex justify-end">
+				<Button onclick={saveScores} disabled={saving} class="gap-2">
+					{#if saving}<Loader2 class="w-4 h-4 animate-spin" />{:else}<Save class="w-4 h-4" />{/if}
+					{saving ? 'กำลังบันทึก...' : 'บันทึกคะแนนทั้งหมด'}
+				</Button>
+			</div>
+		{/if}
 	{/if}
 </div>
 

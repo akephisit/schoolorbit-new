@@ -10,10 +10,12 @@
 	} from '$lib/api/admission';
 	import { Button } from '$lib/components/ui/button';
 	import { Badge } from '$lib/components/ui/badge';
+	import { Alert, AlertDescription, AlertTitle } from '$lib/components/ui/alert';
 	import * as Card from '$lib/components/ui/card';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { toast } from 'svelte-sonner';
 	import {
+		AlertTriangle,
 		ClipboardList,
 		Plus,
 		Eye,
@@ -23,8 +25,13 @@
 		Calendar,
 		Loader2
 	} from 'lucide-svelte';
+	import { can } from '$lib/stores/permissions';
+	import { PERMISSIONS } from '$lib/permissions/registry';
 
 	let { data } = $props();
+
+	const canReadAdmission = $derived($can.has(PERMISSIONS.ADMISSION_READ_ALL));
+	const canManageAdmission = $derived($can.has(PERMISSIONS.ADMISSION_MANAGE_ALL));
 
 	let rounds: AdmissionRound[] = $state([]);
 	let loading = $state(true);
@@ -33,6 +40,10 @@
 	let deleting = $state(false);
 
 	async function load() {
+		if (!canReadAdmission) {
+			loading = false;
+			return;
+		}
 		try {
 			loading = true;
 			rounds = await listRounds();
@@ -44,6 +55,10 @@
 	}
 
 	async function toggleOpen(round: AdmissionRound) {
+		if (!canManageAdmission) {
+			toast.error('ไม่มีสิทธิ์จัดการรอบรับสมัคร');
+			return;
+		}
 		const next = round.status === 'open' ? 'draft' : 'open';
 		try {
 			await updateRoundStatus(round.id, next);
@@ -55,6 +70,10 @@
 	}
 
 	async function confirmDelete() {
+		if (!canManageAdmission) {
+			toast.error('ไม่มีสิทธิ์ลบรอบรับสมัคร');
+			return;
+		}
 		if (!roundToDelete) return;
 		deleting = true;
 		try {
@@ -107,14 +126,24 @@
 			</h1>
 			<p class="text-muted-foreground mt-1">จัดการรอบรับสมัคร สายการเรียน และใบสมัคร</p>
 		</div>
-		<Button href="/staff/academic/admission/new" class="flex items-center gap-2">
-			<Plus class="w-4 h-4" />
-			สร้างรอบรับสมัครใหม่
-		</Button>
+		{#if canManageAdmission}
+			<Button href="/staff/academic/admission/new" class="flex items-center gap-2">
+				<Plus class="w-4 h-4" />
+				สร้างรอบรับสมัครใหม่
+			</Button>
+		{/if}
 	</div>
 
 	<!-- Rounds List -->
-	{#if loading}
+	{#if !canReadAdmission}
+		<Alert variant="destructive">
+			<AlertTriangle class="h-4 w-4" />
+			<AlertTitle>ไม่มีสิทธิ์ดูรอบรับสมัคร</AlertTitle>
+			<AlertDescription>
+				บัญชีนี้เข้า module รับสมัครได้ แต่ยังไม่มีสิทธิ์อ่านข้อมูลรอบรับสมัคร
+			</AlertDescription>
+		</Alert>
+	{:else if loading}
 		<Card.Root>
 			<Card.Content class="flex items-center justify-center py-16">
 				<div class="flex flex-col items-center gap-3 text-muted-foreground">
@@ -129,10 +158,12 @@
 				<ClipboardList class="w-16 h-16 text-muted-foreground" />
 				<p class="text-lg font-medium text-foreground">ยังไม่มีรอบรับสมัคร</p>
 				<p class="text-muted-foreground text-sm">เริ่มต้นด้วยการสร้างรอบรับสมัครแรก</p>
-				<Button href="/staff/academic/admission/new" class="mt-2">
-					<Plus class="w-4 h-4 mr-2" />
-					สร้างรอบรับสมัคร
-				</Button>
+				{#if canManageAdmission}
+					<Button href="/staff/academic/admission/new" class="mt-2">
+						<Plus class="w-4 h-4 mr-2" />
+						สร้างรอบรับสมัคร
+					</Button>
+				{/if}
 			</Card.Content>
 		</Card.Root>
 	{:else}
@@ -172,30 +203,34 @@
 							</div>
 
 							<div class="flex items-center gap-2 flex-wrap">
-								<Button
-									variant="outline"
-									size="sm"
-									onclick={() => toggleOpen(round)}
-									class="text-xs"
-								>
-									<ToggleRight class="w-3.5 h-3.5 mr-1" />
-									{round.status === 'open' ? 'ปิดรับสมัคร' : 'เปิดรับสมัคร'}
-								</Button>
+								{#if canManageAdmission}
+									<Button
+										variant="outline"
+										size="sm"
+										onclick={() => toggleOpen(round)}
+										class="text-xs"
+									>
+										<ToggleRight class="w-3.5 h-3.5 mr-1" />
+										{round.status === 'open' ? 'ปิดรับสมัคร' : 'เปิดรับสมัคร'}
+									</Button>
+								{/if}
 								<Button href="/staff/academic/admission/{round.id}" variant="outline" size="sm">
 									<Eye class="w-4 h-4 mr-1" />
 									จัดการ
 								</Button>
-								<Button
-									variant="ghost"
-									size="sm"
-									onclick={() => {
-										roundToDelete = round;
-										showDeleteDialog = true;
-									}}
-									class="text-destructive hover:text-destructive"
-								>
-									<Trash2 class="w-4 h-4" />
-								</Button>
+								{#if canManageAdmission}
+									<Button
+										variant="ghost"
+										size="sm"
+										onclick={() => {
+											roundToDelete = round;
+											showDeleteDialog = true;
+										}}
+										class="text-destructive hover:text-destructive"
+									>
+										<Trash2 class="w-4 h-4" />
+									</Button>
+								{/if}
 							</div>
 						</div>
 					</Card.Content>
@@ -206,22 +241,24 @@
 </div>
 
 <!-- Delete Confirm Dialog -->
-<Dialog.Root bind:open={showDeleteDialog}>
-	<Dialog.Content>
-		<Dialog.Header>
-			<Dialog.Title>ยืนยันการลบรอบรับสมัคร</Dialog.Title>
-			<Dialog.Description>
-				ลบ <strong>{roundToDelete?.name}</strong>? รอบที่มีใบสมัครอยู่จะไม่สามารถลบได้
-			</Dialog.Description>
-		</Dialog.Header>
-		<Dialog.Footer>
-			<Button variant="outline" onclick={() => (showDeleteDialog = false)} disabled={deleting}>
-				ยกเลิก
-			</Button>
-			<Button variant="destructive" onclick={confirmDelete} disabled={deleting}>
-				{#if deleting}<Loader2 class="w-4 h-4 mr-2 animate-spin" />{/if}
-				{deleting ? 'กำลังลบ...' : 'ลบรอบ'}
-			</Button>
-		</Dialog.Footer>
-	</Dialog.Content>
-</Dialog.Root>
+{#if canManageAdmission}
+	<Dialog.Root bind:open={showDeleteDialog}>
+		<Dialog.Content>
+			<Dialog.Header>
+				<Dialog.Title>ยืนยันการลบรอบรับสมัคร</Dialog.Title>
+				<Dialog.Description>
+					ลบ <strong>{roundToDelete?.name}</strong>? รอบที่มีใบสมัครอยู่จะไม่สามารถลบได้
+				</Dialog.Description>
+			</Dialog.Header>
+			<Dialog.Footer>
+				<Button variant="outline" onclick={() => (showDeleteDialog = false)} disabled={deleting}>
+					ยกเลิก
+				</Button>
+				<Button variant="destructive" onclick={confirmDelete} disabled={deleting}>
+					{#if deleting}<Loader2 class="w-4 h-4 mr-2 animate-spin" />{/if}
+					{deleting ? 'กำลังลบ...' : 'ลบรอบ'}
+				</Button>
+			</Dialog.Footer>
+		</Dialog.Content>
+	</Dialog.Root>
+{/if}

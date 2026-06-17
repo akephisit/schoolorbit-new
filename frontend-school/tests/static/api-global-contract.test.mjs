@@ -1015,6 +1015,154 @@ test('activity workspace gates read, owner, admin, and member actions', async ()
 	}
 });
 
+test('admission workspace pages gate read and specialized actions', async () => {
+	const routeExpectations = [
+		{
+			file: 'frontend-school/src/routes/(app)/staff/academic/admission/+page.svelte',
+			imports: ['$lib/components/ui/alert'],
+			permissions: ['PERMISSIONS.ADMISSION_READ_ALL', 'PERMISSIONS.ADMISSION_MANAGE_ALL'],
+			identifiers: ['canReadAdmission', 'canManageAdmission']
+		},
+		{
+			file: 'frontend-school/src/routes/(app)/staff/academic/admission/new/+page.svelte',
+			imports: ['$lib/components/ui/alert'],
+			permissions: ['PERMISSIONS.ADMISSION_MANAGE_ALL'],
+			identifiers: ['canManageAdmission']
+		},
+		{
+			file: 'frontend-school/src/routes/(app)/staff/academic/admission/[id]/+page.svelte',
+			imports: ['$lib/components/ui/alert'],
+			permissions: [
+				'PERMISSIONS.ADMISSION_READ_ALL',
+				'PERMISSIONS.ADMISSION_MANAGE_ALL',
+				'PERMISSIONS.ADMISSION_VERIFY_ALL',
+				'PERMISSIONS.ADMISSION_SCORES_ALL',
+				'PERMISSIONS.ADMISSION_ENROLL_ALL'
+			],
+			identifiers: [
+				'canReadAdmission',
+				'canManageAdmission',
+				'canVerifyAdmission',
+				'canScoreAdmission',
+				'canEnrollAdmission'
+			]
+		},
+		{
+			file: 'frontend-school/src/routes/(app)/staff/academic/admission/[id]/applications/+page.svelte',
+			imports: ['$lib/components/ui/alert'],
+			permissions: ['PERMISSIONS.ADMISSION_READ_ALL', 'PERMISSIONS.ADMISSION_VERIFY_ALL'],
+			identifiers: ['canReadAdmission', 'canVerifyAdmission']
+		},
+		{
+			file: 'frontend-school/src/routes/(app)/staff/academic/admission/[id]/applications/[appId]/+page.svelte',
+			imports: ['$lib/components/ui/alert'],
+			permissions: ['PERMISSIONS.ADMISSION_READ_ALL', 'PERMISSIONS.ADMISSION_VERIFY_ALL'],
+			identifiers: ['canReadAdmission', 'canVerifyAdmission']
+		},
+		{
+			file: 'frontend-school/src/routes/(app)/staff/academic/admission/[id]/exam-rooms/+page.svelte',
+			imports: ['$lib/components/ui/alert'],
+			permissions: ['PERMISSIONS.ADMISSION_MANAGE_ALL'],
+			identifiers: ['canManageAdmission']
+		},
+		{
+			file: 'frontend-school/src/routes/(app)/staff/academic/admission/[id]/scores/+page.svelte',
+			imports: ['$lib/components/ui/alert'],
+			permissions: ['PERMISSIONS.ADMISSION_SCORES_ALL'],
+			identifiers: ['canScoreAdmission']
+		},
+		{
+			file: 'frontend-school/src/routes/(app)/staff/academic/admission/[id]/selections/+page.svelte',
+			imports: ['$lib/components/ui/alert'],
+			permissions: ['PERMISSIONS.ADMISSION_SCORES_ALL'],
+			identifiers: ['canScoreAdmission']
+		},
+		{
+			file: 'frontend-school/src/routes/(app)/staff/academic/admission/[id]/student-ids/+page.svelte',
+			imports: ['$lib/components/ui/alert'],
+			permissions: ['PERMISSIONS.ADMISSION_MANAGE_ALL'],
+			identifiers: ['canManageAdmission']
+		},
+		{
+			file: 'frontend-school/src/routes/(app)/staff/academic/admission/[id]/enrollment/+page.svelte',
+			imports: ['$lib/components/ui/alert'],
+			permissions: ['PERMISSIONS.ADMISSION_ENROLL_ALL'],
+			identifiers: ['canEnrollAdmission']
+		},
+		{
+			file: 'frontend-school/src/routes/(app)/staff/academic/admission/[id]/report/+page.svelte',
+			imports: ['$lib/components/ui/alert'],
+			permissions: ['PERMISSIONS.ADMISSION_READ_ALL'],
+			identifiers: ['canReadAdmission']
+		}
+	];
+	const accessExpectations = [
+		[
+			'frontend-school/src/routes/(app)/staff/academic/admission/new/+page.ts',
+			'ADMISSION_MANAGE_ALL'
+		],
+		[
+			'frontend-school/src/routes/(app)/staff/academic/admission/[id]/+page.ts',
+			'ADMISSION_READ_ALL'
+		],
+		[
+			'frontend-school/src/routes/(app)/staff/academic/admission/[id]/applications/+page.ts',
+			'ADMISSION_READ_ALL'
+		],
+		[
+			'frontend-school/src/routes/(app)/staff/academic/admission/[id]/applications/[appId]/+page.ts',
+			'ADMISSION_READ_ALL'
+		],
+		[
+			'frontend-school/src/routes/(app)/staff/academic/admission/[id]/exam-rooms/+page.ts',
+			'ADMISSION_MANAGE_ALL'
+		],
+		[
+			'frontend-school/src/routes/(app)/staff/academic/admission/[id]/scores/+page.ts',
+			'ADMISSION_SCORES_ALL'
+		],
+		[
+			'frontend-school/src/routes/(app)/staff/academic/admission/[id]/selections/+page.ts',
+			'ADMISSION_SCORES_ALL'
+		],
+		[
+			'frontend-school/src/routes/(app)/staff/academic/admission/[id]/student-ids/+page.ts',
+			'ADMISSION_MANAGE_ALL'
+		],
+		[
+			'frontend-school/src/routes/(app)/staff/academic/admission/[id]/enrollment/+page.ts',
+			'ADMISSION_ENROLL_ALL'
+		],
+		[
+			'frontend-school/src/routes/(app)/staff/academic/admission/[id]/report/+page.ts',
+			'ADMISSION_READ_ALL'
+		]
+	];
+	const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+	for (const expectation of routeExpectations) {
+		const source = stripComments(await readFile(path.join(repoRoot, expectation.file), 'utf8'));
+
+		for (const requiredImport of expectation.imports) {
+			assert.match(source, new RegExp(escapeRegex(requiredImport)));
+		}
+		for (const requiredPermission of expectation.permissions) {
+			assert.match(source, new RegExp(escapeRegex(requiredPermission)));
+		}
+		for (const identifier of expectation.identifiers) {
+			assert.match(source, new RegExp(`\\b${identifier}\\b`));
+		}
+	}
+
+	for (const [file, permissionName] of accessExpectations) {
+		const source = stripComments(await readFile(path.join(repoRoot, file), 'utf8'));
+		assert.match(source, /\b_meta\s*=/);
+		assert.match(source, /\baccess:\s*\{/);
+		assert.match(source, /\buser_type:\s*'staff'/);
+		assert.match(source, new RegExp(`PERMISSIONS\\.${permissionName}\\b`));
+	}
+});
+
 test('frontend app pages have route guard metadata or guarded ancestor fallback', async () => {
 	const appRoutesDir = path.join(repoRoot, 'frontend-school/src/routes/(app)');
 	const pageSvelteFiles = await listFiles(appRoutesDir, (file) => file.endsWith('+page.svelte'));

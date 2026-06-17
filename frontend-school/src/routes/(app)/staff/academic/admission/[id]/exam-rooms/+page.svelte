@@ -22,12 +22,16 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { Badge } from '$lib/components/ui/badge';
+	import { Alert, AlertDescription, AlertTitle } from '$lib/components/ui/alert';
 	import * as Card from '$lib/components/ui/card';
 	import * as Table from '$lib/components/ui/table';
 	import * as Select from '$lib/components/ui/select';
 	import * as Dialog from '$lib/components/ui/dialog';
+	import { PERMISSIONS } from '$lib/permissions/registry';
+	import { can } from '$lib/stores/permissions';
 	import { toast } from 'svelte-sonner';
 	import {
+		AlertTriangle,
 		ArrowLeft,
 		Building2,
 		Plus,
@@ -44,6 +48,7 @@
 
 	let { data, params }: PageProps = $props();
 	let id = $derived(params.id);
+	const canManageAdmission = $derived($can.has(PERMISSIONS.ADMISSION_MANAGE_ALL));
 
 	let round: AdmissionRound | null = $state(null);
 	let allRounds: AdmissionRound[] = $state([]);
@@ -84,6 +89,10 @@
 
 	async function loadAll() {
 		if (!id) return;
+		if (!canManageAdmission) {
+			loading = false;
+			return;
+		}
 		loading = true;
 		try {
 			const [roundData, examRoomsData, configData, facilityData, allRoundsData] = await Promise.all(
@@ -108,7 +117,7 @@
 	}
 
 	async function loadSeats() {
-		if (!id) return;
+		if (!id || !canManageAdmission) return;
 		try {
 			const result = await getExamSeats(id);
 			seatGroups = Array.isArray(result) ? result : [];
@@ -119,7 +128,7 @@
 	}
 
 	async function refreshRooms() {
-		if (!id) return;
+		if (!id || !canManageAdmission) return;
 		const res = await listExamRooms(id);
 		examRooms = res.rooms;
 		totalCapacity = res.totalCapacity;
@@ -127,7 +136,7 @@
 	}
 
 	async function handleAddRoom() {
-		if (!id) return;
+		if (!id || !canManageAdmission) return;
 		addingRoom = true;
 		try {
 			if (addRoomMode === 'facility') {
@@ -160,7 +169,7 @@
 	}
 
 	async function handleRemoveRoom(roomId: string) {
-		if (!id || !confirm('ลบห้องสอบนี้?')) return;
+		if (!id || !canManageAdmission || !confirm('ลบห้องสอบนี้?')) return;
 		try {
 			await removeExamRoom(id, roomId);
 			toast.success('ลบห้องสอบแล้ว');
@@ -171,12 +180,13 @@
 	}
 
 	function startEditCapacity(room: ExamRoom) {
+		if (!canManageAdmission) return;
 		editingCapacityId = room.id;
 		editingCapacityValue = room.capacity;
 	}
 
 	async function saveCapacity(roomId: string) {
-		if (!id || editingCapacityValue < 1) return;
+		if (!id || !canManageAdmission || editingCapacityValue < 1) return;
 		try {
 			await updateExamRoom(id, roomId, { capacityOverride: editingCapacityValue });
 			toast.success('อัปเดตความจุแล้ว');
@@ -188,6 +198,7 @@
 	}
 
 	async function handleCopyFromRound() {
+		if (!canManageAdmission) return;
 		if (!id || !copyFromRoundId) {
 			toast.error('กรุณาเลือกรอบที่ต้องการ copy');
 			return;
@@ -206,7 +217,7 @@
 	}
 
 	async function handleSaveConfig() {
-		if (!id) return;
+		if (!id || !canManageAdmission) return;
 		savingConfig = true;
 		try {
 			await updateExamConfig(id, examConfig);
@@ -219,7 +230,7 @@
 	}
 
 	async function handleAssignSeats() {
-		if (!id) return;
+		if (!id || !canManageAdmission) return;
 		assigning = true;
 		try {
 			const result = await assignExamSeats(id, {
@@ -394,6 +405,14 @@
 		<div class="flex items-center justify-center py-20">
 			<Loader2 class="text-muted-foreground h-7 w-7 animate-spin" />
 		</div>
+	{:else if !canManageAdmission}
+		<Alert>
+			<AlertTriangle class="h-4 w-4" />
+			<AlertTitle>ไม่มีสิทธิ์จัดการห้องสอบ</AlertTitle>
+			<AlertDescription>
+				หน้านี้ใช้สำหรับตั้งค่าห้องสอบและจัดเลขที่นั่ง ซึ่งต้องมีสิทธิ์จัดการงานรับสมัคร
+			</AlertDescription>
+		</Alert>
 	{:else}
 		<!-- Tabs -->
 		<div class="border-b">
