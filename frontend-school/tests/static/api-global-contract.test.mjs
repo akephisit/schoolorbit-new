@@ -834,7 +834,7 @@ test('academic course planning pages gate read and manage actions', async () => 
 		},
 		{
 			file: 'frontend-school/src/routes/(app)/staff/academic/timetable/+page.svelte',
-			imports: ['$lib/components/ui/alert'],
+			imports: ['$lib/components/app-state'],
 			permissions: [
 				'PERMISSIONS.ACADEMIC_COURSE_PLAN_READ_ALL',
 				'PERMISSIONS.ACADEMIC_COURSE_PLAN_MANAGE_ALL'

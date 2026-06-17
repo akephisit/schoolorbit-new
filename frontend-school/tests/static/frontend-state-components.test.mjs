@@ -125,3 +125,16 @@ test('academic large workspaces use shared frontend state components', async () 
 		assert.match(source, /<PageState\b/, `${page} should use PageState for empty/blocked states`);
 	}
 });
+
+test('academic timetable workspace uses shared frontend state components', async () => {
+	const page = 'src/routes/(app)/staff/academic/timetable/+page.svelte';
+	const source = await readProjectFile(page);
+
+	assert.match(
+		source,
+		/from '\$lib\/components\/app-state'/,
+		`${page} should import shared app-state components`
+	);
+	assert.match(source, /<PageSkeleton\b/, `${page} should use PageSkeleton for loading`);
+	assert.match(source, /<PageState\b/, `${page} should use PageState for empty/blocked states`);
+});

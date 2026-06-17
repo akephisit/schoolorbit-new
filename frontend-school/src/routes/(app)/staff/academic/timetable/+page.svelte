@@ -62,7 +62,7 @@
 	import * as Command from '$lib/components/ui/command';
 	import { Badge } from '$lib/components/ui/badge';
 	import * as Tooltip from '$lib/components/ui/tooltip';
-	import { Alert, AlertDescription, AlertTitle } from '$lib/components/ui/alert';
+	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import { PERMISSIONS } from '$lib/permissions/registry';
 	import { can } from '$lib/stores/permissions';
 
@@ -80,8 +80,7 @@
 		Lock,
 		FileStack,
 		ChevronsUpDown,
-		Check,
-		AlertTriangle
+		Check
 	} from 'lucide-svelte';
 	import { generateTimetablePDF } from '$lib/utils/pdf';
 	import { SvelteSet, SvelteMap } from 'svelte/reactivity';
@@ -201,6 +200,7 @@
 	let allSemesters = $state<Semester[]>([]);
 	let rooms = $state<RoomLookupItem[]>([]);
 	let instructors = $state<StaffLookupItem[]>([]);
+	let initialLoading = $state(true);
 
 	// Activity slots for sidebar
 	let sidebarActivitySlots = $state<ActivitySlot[]>([]);
@@ -298,8 +298,10 @@
 			instructors = [];
 			timetableEntries = [];
 			rawTeamEntries = [];
+			initialLoading = false;
 			return;
 		}
+		initialLoading = true;
 		try {
 			const structureRes = await getAcademicStructure();
 			academicYears = structureRes.data.years;
@@ -321,6 +323,8 @@
 		} catch (e) {
 			console.error(e);
 			toast.error('โหลดข้อมูลไม่สำเร็จ');
+		} finally {
+			initialLoading = false;
 		}
 	}
 
@@ -3419,13 +3423,18 @@
 	</div>
 
 	{#if !canReadTimetable}
-		<Alert>
-			<AlertTriangle class="h-4 w-4" />
-			<AlertTitle>ไม่มีสิทธิ์ดูตารางสอน</AlertTitle>
-			<AlertDescription>
-				ต้องมีสิทธิ์อ่านแผนการจัดตารางสอนจึงจะเข้าถึงข้อมูลในหน้านี้ได้
-			</AlertDescription>
-		</Alert>
+		<PageState
+			variant="permission"
+			title="ไม่มีสิทธิ์ดูตารางสอน"
+			description="ต้องมีสิทธิ์อ่านแผนการจัดตารางสอนจึงจะเข้าถึงข้อมูลในหน้านี้ได้"
+		/>
+	{:else if initialLoading}
+		<PageSkeleton variant="detail" />
+	{:else if academicYears.length === 0}
+		<PageState
+			title="ยังไม่มีปีการศึกษา"
+			description="สร้างปีการศึกษาและภาคเรียนก่อน จึงจะเริ่มจัดตารางสอนได้"
+		/>
 	{:else}
 		<!-- Row 2: Filters -->
 		<div class="flex items-center gap-2 flex-wrap">
