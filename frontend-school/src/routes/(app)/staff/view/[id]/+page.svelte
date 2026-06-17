@@ -1,9 +1,9 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import type { PageProps } from './$types';
-	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { Button } from '$lib/components/ui/button';
+	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import {
 		Card,
 		CardContent,
@@ -39,6 +39,7 @@
 	let achievements = $state<Achievement[]>([]);
 	let loading = $state(true);
 	let loadingAchievements = $state(true);
+	let error = $state('');
 
 	// File Preview State
 	let showFileDialog = $state(false);
@@ -65,16 +66,18 @@
 
 	async function loadStaffProfile() {
 		try {
+			error = '';
 			const res = await getPublicStaffProfile(staffId);
 			if (res.success && res.data) {
 				staff = res.data;
 			} else {
-				toast.error('ไม่พบข้อมูลบุคลากร');
-				goto(resolve('/staff/achievements'));
+				error = res.error || 'ไม่พบข้อมูลบุคลากร';
+				toast.error(error);
 			}
-		} catch (error) {
-			console.error('Error loading staff:', error);
-			toast.error('เกิดข้อผิดพลาดในการโหลดข้อมูล');
+		} catch (loadError) {
+			console.error('Error loading staff:', loadError);
+			error = loadError instanceof Error ? loadError.message : 'เกิดข้อผิดพลาดในการโหลดข้อมูล';
+			toast.error(error);
 		} finally {
 			loading = false;
 		}
@@ -120,9 +123,15 @@
 	</Button>
 
 	{#if loading}
-		<div class="flex justify-center items-center h-64">
-			<LoaderCircle class="w-8 h-8 animate-spin text-primary" />
-		</div>
+		<PageSkeleton variant="detail" />
+	{:else if error}
+		<PageState
+			variant="error"
+			title="โหลดข้อมูลบุคลากรไม่สำเร็จ"
+			description={error}
+			actionLabel="กลับหน้าผลงาน"
+			href={resolve('/staff/achievements')}
+		/>
 	{:else if staff}
 		<!-- Header Profile Card -->
 		<Card
@@ -303,6 +312,13 @@
 				</Card>
 			</div>
 		</div>
+	{:else}
+		<PageState
+			title="ไม่พบข้อมูลบุคลากร"
+			description="ข้อมูลบุคลากรนี้อาจถูกลบหรือคุณอาจไม่มีสิทธิ์เข้าถึง"
+			actionLabel="กลับหน้าผลงาน"
+			href={resolve('/staff/achievements')}
+		/>
 	{/if}
 	<!-- File Preview Dialog -->
 	<Dialog.Root bind:open={showFileDialog}>

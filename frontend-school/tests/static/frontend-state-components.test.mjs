@@ -183,3 +183,25 @@ test('staff self-service workspaces use shared frontend state components', async
 		assert.match(source, /<PageState\b/, `${page} should use PageState for empty/blocked states`);
 	}
 });
+
+test('staff detail workspaces use shared frontend state components', async () => {
+	const pages = [
+		'src/routes/(app)/staff/manage/[id]/+page.svelte',
+		'src/routes/(app)/staff/organization/[id]/+page.svelte',
+		'src/routes/(app)/staff/roles/[id]/+page.svelte',
+		'src/routes/(app)/staff/students/[id]/+page.svelte',
+		'src/routes/(app)/staff/view/[id]/+page.svelte'
+	];
+
+	for (const page of pages) {
+		const source = await readProjectFile(page);
+
+		assert.match(
+			source,
+			/from '\$lib\/components\/app-state'/,
+			`${page} should import shared app-state components`
+		);
+		assert.match(source, /<PageSkeleton\b/, `${page} should use PageSkeleton for loading`);
+		assert.match(source, /<PageState\b/, `${page} should use PageState for empty/blocked states`);
+	}
+});

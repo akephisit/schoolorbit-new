@@ -877,7 +877,7 @@ test('student workspace pages gate read, mutation, and PII actions', async () =>
 		},
 		{
 			file: 'frontend-school/src/routes/(app)/staff/students/[id]/+page.svelte',
-			imports: ['$lib/components/ui/alert'],
+			imports: ['$lib/components/app-state'],
 			permissions: [
 				'PERMISSIONS.STUDENT_READ_SCHOOL',
 				'PERMISSIONS.STUDENT_READ_ASSIGNED',

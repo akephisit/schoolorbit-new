@@ -6,6 +6,7 @@
 	import { authStore } from '$lib/stores/auth';
 	import { can } from '$lib/stores/permissions';
 	import { Button } from '$lib/components/ui/button';
+	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import {
 		User,
@@ -190,17 +191,15 @@
 	</div>
 
 	{#if loading}
-		<div class="bg-card border border-border rounded-lg p-12 text-center">
-			<div
-				class="inline-block w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin"
-			></div>
-			<p class="mt-4 text-muted-foreground">กำลังโหลด...</p>
-		</div>
+		<PageSkeleton variant="detail" />
 	{:else if error}
-		<div class="bg-destructive/10 border border-destructive/20 rounded-lg p-6 text-center">
-			<p class="text-destructive">{error}</p>
-			<Button onclick={loadStaffProfile} variant="outline" class="mt-4">ลองอีกครั้ง</Button>
-		</div>
+		<PageState
+			variant="error"
+			title="โหลดข้อมูลบุคลากรไม่สำเร็จ"
+			description={error}
+			actionLabel="ลองอีกครั้ง"
+			onaction={loadStaffProfile}
+		/>
 	{:else if staff}
 		<!-- Profile Card -->
 		<div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -540,6 +539,13 @@
 				</div>
 			{/if}
 		</div>
+	{:else}
+		<PageState
+			title="ไม่พบข้อมูลบุคลากร"
+			description="ข้อมูลบุคลากรนี้อาจถูกลบหรือคุณอาจไม่มีสิทธิ์เข้าถึง"
+			actionLabel="กลับหน้าบุคลากร"
+			href="/staff"
+		/>
 	{/if}
 
 	<AchievementDialog

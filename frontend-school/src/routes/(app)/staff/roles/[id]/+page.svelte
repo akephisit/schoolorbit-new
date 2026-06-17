@@ -13,6 +13,7 @@
 	} from '$lib/permissions/registry';
 	import { can } from '$lib/stores/permissions';
 	import { Button } from '$lib/components/ui/button';
+	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import { Textarea } from '$lib/components/ui/textarea';
@@ -279,24 +280,13 @@
 	</div>
 
 	{#if !canUsePage}
-		<Alert>
-			<AlertTriangle class="h-4 w-4" />
-			<AlertTitle>{isNew ? 'ไม่มีสิทธิ์สร้างบทบาท' : 'ไม่มีสิทธิ์ดูบทบาท'}</AlertTitle>
-			<AlertDescription>
-				บัญชีนี้เข้า module บทบาทได้ แต่ยังไม่มีสิทธิ์สำหรับการทำงานในหน้านี้
-			</AlertDescription>
-		</Alert>
+		<PageState
+			variant="permission"
+			title={isNew ? 'ไม่มีสิทธิ์สร้างบทบาท' : 'ไม่มีสิทธิ์ดูบทบาท'}
+			description="บัญชีนี้เข้า module บทบาทได้ แต่ยังไม่มีสิทธิ์สำหรับการทำงานในหน้านี้"
+		/>
 	{:else if loading}
-		<div class="space-y-4">
-			<Card>
-				<CardContent class="py-8">
-					<div class="animate-pulse space-y-4">
-						<div class="h-4 bg-gray-200 rounded w-3/4"></div>
-						<div class="h-4 bg-gray-200 rounded w-1/2"></div>
-					</div>
-				</CardContent>
-			</Card>
-		</div>
+		<PageSkeleton variant="form" rows={4} />
 	{:else}
 		<div class="space-y-6">
 			<Card>

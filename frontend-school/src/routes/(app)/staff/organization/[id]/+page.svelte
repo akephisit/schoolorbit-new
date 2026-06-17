@@ -20,6 +20,7 @@
 	import { PERMISSIONS } from '$lib/permissions/registry';
 	import { can } from '$lib/stores/permissions';
 	import { Button } from '$lib/components/ui/button';
+	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import { Badge } from '$lib/components/ui/badge';
 	import { DatePicker } from '$lib/components/ui/date-picker';
 	import * as Dialog from '$lib/components/ui/dialog';
@@ -324,11 +325,15 @@
 	</div>
 
 	{#if loading}
-		<div class="rounded-lg border bg-card p-12 text-center text-sm text-muted-foreground">
-			กำลังโหลดข้อมูล...
-		</div>
+		<PageSkeleton variant="detail" />
 	{:else if error}
-		<div class="rounded-lg bg-destructive/10 p-6 text-sm text-destructive">{error}</div>
+		<PageState
+			variant="error"
+			title="โหลดข้อมูลหน่วยงานไม่สำเร็จ"
+			description={error}
+			actionLabel="ลองอีกครั้ง"
+			onaction={refreshCurrentUnit}
+		/>
 	{:else if department}
 		<div class="space-y-5">
 			<section class="rounded-lg border bg-card p-5">
@@ -680,6 +685,13 @@
 				</aside>
 			</div>
 		</div>
+	{:else}
+		<PageState
+			title="ไม่พบหน่วยงาน"
+			description="หน่วยงานนี้อาจถูกลบ หรือคุณอาจไม่มีสิทธิ์เข้าถึง"
+			actionLabel="กลับหน้าโครงสร้าง"
+			href="/staff/organization"
+		/>
 	{/if}
 </div>
 

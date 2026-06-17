@@ -5,17 +5,18 @@
 	import { Label } from '$lib/components/ui/label';
 	import { Card } from '$lib/components/ui/card';
 	import { Badge } from '$lib/components/ui/badge';
-	import { Alert, AlertDescription, AlertTitle } from '$lib/components/ui/alert';
+	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import { PERMISSIONS } from '$lib/permissions/registry';
 	import { can } from '$lib/stores/permissions';
 	import { toast } from 'svelte-sonner';
-	import { AlertTriangle, ArrowLeft, Edit } from 'lucide-svelte';
+	import { ArrowLeft, Edit } from 'lucide-svelte';
 	import { getStudent, type Student } from '$lib/api/students';
 
 	let { params }: PageProps = $props();
 	let studentId = $derived(params.id);
 	let student = $state<Student | null>(null);
 	let loading = $state(true);
+	let error = $state('');
 
 	const canReadStudent = $derived(
 		$can.hasAny(
@@ -44,12 +45,14 @@
 			return;
 		}
 		loading = true;
+		error = '';
 		try {
 			const response = await getStudent(studentId);
 			student = response.data;
-		} catch (error) {
-			console.error('Failed to load student:', error);
-			const message = error instanceof Error ? error.message : 'ไม่พบนักเรียน';
+		} catch (loadError) {
+			console.error('Failed to load student:', loadError);
+			const message = loadError instanceof Error ? loadError.message : 'ไม่พบนักเรียน';
+			error = message;
 			toast.error(message);
 		} finally {
 			loading = false;
@@ -91,24 +94,21 @@
 	</div>
 
 	{#if !canReadStudent}
-		<Alert>
-			<AlertTriangle class="h-4 w-4" />
-			<AlertTitle>ไม่มีสิทธิ์ดูข้อมูลนักเรียน</AlertTitle>
-			<AlertDescription>
-				บัญชีนี้ยังไม่มีสิทธิ์อ่านข้อมูลนักเรียนคนนี้ในขอบเขตที่ระบบอนุญาต
-			</AlertDescription>
-		</Alert>
+		<PageState
+			variant="permission"
+			title="ไม่มีสิทธิ์ดูข้อมูลนักเรียน"
+			description="บัญชีนี้ยังไม่มีสิทธิ์อ่านข้อมูลนักเรียนคนนี้ในขอบเขตที่ระบบอนุญาต"
+		/>
 	{:else if loading}
-		<Card class="p-6">
-			<div class="space-y-4">
-				{#each Array.from({ length: 6 }, (_, i) => i) as i (i)}
-					<div class="animate-pulse">
-						<div class="h-4 bg-muted rounded w-1/4 mb-2"></div>
-						<div class="h-10 bg-muted rounded"></div>
-					</div>
-				{/each}
-			</div>
-		</Card>
+		<PageSkeleton variant="detail" />
+	{:else if error}
+		<PageState
+			variant="error"
+			title="โหลดข้อมูลนักเรียนไม่สำเร็จ"
+			description={error}
+			actionLabel="ลองอีกครั้ง"
+			onaction={loadStudent}
+		/>
 	{:else if student}
 		<!-- Student ID & Status -->
 		<Card class="p-6">
@@ -256,5 +256,12 @@
 				</div>
 			</Card>
 		{/if}
+	{:else}
+		<PageState
+			title="ไม่พบนักเรียน"
+			description="ข้อมูลนักเรียนนี้อาจถูกลบหรือคุณอาจไม่มีสิทธิ์เข้าถึง"
+			actionLabel="กลับหน้ารายชื่อนักเรียน"
+			href="/staff/students"
+		/>
 	{/if}
 </div>
