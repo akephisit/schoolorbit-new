@@ -176,3 +176,30 @@ test('academic foundation workspace pages use shared app page shell', async () =
 		);
 	}
 });
+
+test('academic curriculum planning pages use shared app page shell', async () => {
+	const pages = [
+		'src/routes/(app)/staff/academic/subjects/+page.svelte',
+		'src/routes/(app)/staff/academic/subject-groups/[id]/+page.svelte',
+		'src/routes/(app)/staff/academic/study-plans/+page.svelte',
+		'src/routes/(app)/staff/academic/planning/+page.svelte',
+		'src/routes/(app)/staff/academic/enrollments/+page.svelte',
+		'src/routes/(app)/staff/academic/activities/+page.svelte'
+	];
+
+	for (const page of pages) {
+		const source = await readProjectFile(page);
+
+		assert.match(
+			source,
+			/from '\$lib\/components\/app-layout'/,
+			`${page} should import shared app-layout components`
+		);
+		assert.match(source, /<PageShell\b/, `${page} should use PageShell for page layout`);
+		assert.doesNotMatch(
+			source,
+			/<div class="space-y-6">\s*<!-- Header -->/,
+			`${page} should not hand-roll the page header wrapper`
+		);
+	}
+});

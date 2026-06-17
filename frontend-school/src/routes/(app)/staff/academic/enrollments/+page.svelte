@@ -24,6 +24,7 @@
 	import { Label } from '$lib/components/ui/label';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import * as Select from '$lib/components/ui/select';
+	import { PageShell } from '$lib/components/app-layout';
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import { PERMISSIONS } from '$lib/permissions/registry';
 	import { can } from '$lib/stores/permissions';
@@ -31,7 +32,6 @@
 	import UserPlus from 'lucide-svelte/icons/user-plus';
 	import Trash2 from 'lucide-svelte/icons/trash-2';
 	import Search from 'lucide-svelte/icons/search';
-	import GraduationCap from 'lucide-svelte/icons/graduation-cap';
 	import * as RadioGroup from '$lib/components/ui/radio-group';
 	import { Checkbox } from '$lib/components/ui/checkbox';
 	import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
@@ -279,18 +279,7 @@
 	<title>{data.title} - SchoolOrbit</title>
 </svelte:head>
 
-<div class="space-y-6">
-	<!-- Header -->
-	<div class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-		<div>
-			<h2 class="text-3xl font-bold text-foreground flex items-center gap-2">
-				<GraduationCap class="w-8 h-8" />
-				จัดห้องเรียน
-			</h2>
-			<p class="text-muted-foreground mt-1">จัดการนักเรียนเข้าห้องเรียนประจำปีการศึกษา</p>
-		</div>
-	</div>
-
+<PageShell title="จัดห้องเรียน" description="จัดการนักเรียนเข้าห้องเรียนประจำปีการศึกษา">
 	{#if !canReadEnrollments}
 		<PageState
 			variant="permission"
@@ -715,4 +704,4 @@
 			</Dialog.Content>
 		</Dialog.Root>
 	{/if}
-</div>
+</PageShell>

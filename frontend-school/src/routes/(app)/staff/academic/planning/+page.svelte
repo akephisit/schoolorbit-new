@@ -40,19 +40,11 @@
 	import * as Select from '$lib/components/ui/select';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import * as Tabs from '$lib/components/ui/tabs';
+	import { PageShell } from '$lib/components/app-layout';
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import { PERMISSIONS } from '$lib/permissions/registry';
 	import { can } from '$lib/stores/permissions';
-	import {
-		Loader2,
-		BookOpen,
-		Trash2,
-		Calendar,
-		Settings,
-		Wand2,
-		Plus,
-		FileSpreadsheet
-	} from 'lucide-svelte';
+	import { Loader2, Trash2, Calendar, Settings, Wand2, Plus, FileSpreadsheet } from 'lucide-svelte';
 	import {
 		actualRowsForWorksheet,
 		actualSubjectActivityReportForWorksheet,
@@ -718,16 +710,11 @@
 	<title>{data.title} - SchoolOrbit</title>
 </svelte:head>
 
-<div class="space-y-6">
-	<!-- Header -->
-	<div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
-		<div class="space-y-2">
-			<h2 class="text-3xl font-bold flex items-center gap-2">
-				<BookOpen class="w-8 h-8" />
-				จัดแผนการเรียน (Course Planning)
-			</h2>
-			<p class="text-muted-foreground">กำหนดรายวิชาที่เปิดสอนสำหรับแต่ละห้องเรียนในแต่ละภาคเรียน</p>
-		</div>
+<PageShell
+	title="จัดแผนการเรียน (Course Planning)"
+	description="กำหนดรายวิชาที่เปิดสอนสำหรับแต่ละห้องเรียนในแต่ละภาคเรียน"
+>
+	{#snippet actions()}
 		<Button
 			variant="outline"
 			size="sm"
@@ -737,7 +724,7 @@
 			<FileSpreadsheet class="w-4 h-4 mr-2" />
 			ส่งออกใช้จริง
 		</Button>
-	</div>
+	{/snippet}
 
 	<!-- Filters -->
 	{#if !canReadCoursePlan}
@@ -908,10 +895,7 @@
 							{:else if courses.length === 0}
 								<Table.Row>
 									<Table.Cell colspan={5} class="p-0">
-										<PageState
-											title="ยังไม่มีรายวิชา"
-											description="ยังไม่มีรายวิชาในภาคเรียนนี้"
-										/>
+										<PageState title="ยังไม่มีรายวิชา" description="ยังไม่มีรายวิชาในภาคเรียนนี้" />
 									</Table.Cell>
 								</Table.Row>
 							{:else}
@@ -1465,4 +1449,4 @@
 			</Dialog.Content>
 		</Dialog.Root>
 	{/if}
-</div>
+</PageShell>

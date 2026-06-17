@@ -35,12 +35,12 @@
 	import { Label } from '$lib/components/ui/label';
 	import { Textarea } from '$lib/components/ui/textarea';
 	import { Badge } from '$lib/components/ui/badge';
+	import { PageShell } from '$lib/components/app-layout';
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import * as Select from '$lib/components/ui/select';
 	import { toast } from 'svelte-sonner';
 	import {
-		Users,
 		Plus,
 		Pencil,
 		Trash2,
@@ -646,18 +646,10 @@
 	<title>กิจกรรมพัฒนาผู้เรียน</title>
 </svelte:head>
 
-<div class="space-y-6">
-	<!-- Header -->
-	<div class="flex flex-col gap-2">
-		<h2 class="flex items-center gap-2 text-3xl font-bold">
-			<Users class="h-8 w-8" />
-			กิจกรรมพัฒนาผู้เรียน
-		</h2>
-		<p class="text-muted-foreground">
-			จัดการช่อง/กลุ่มกิจกรรมพัฒนาผู้เรียน เช่น ลูกเสือ, ชุมนุม, แนะแนว
-		</p>
-	</div>
-
+<PageShell
+	title="กิจกรรมพัฒนาผู้เรียน"
+	description="จัดการช่อง/กลุ่มกิจกรรมพัฒนาผู้เรียน เช่น ลูกเสือ, ชุมนุม, แนะแนว"
+>
 	{#if !canListActivity}
 		<PageState
 			variant="permission"
@@ -974,7 +966,7 @@
 			</div>
 		{/if}
 	{/if}
-</div>
+</PageShell>
 
 <!-- Slot Edit Dialog — template fields มาจาก catalog (อ่านเท่านั้น) -->
 {#if canManageActivity}

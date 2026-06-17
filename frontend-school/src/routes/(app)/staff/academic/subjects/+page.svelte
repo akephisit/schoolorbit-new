@@ -27,6 +27,7 @@
 	import { lookupStaff, type StaffLookupItem } from '$lib/api/lookup';
 	import { SvelteMap } from 'svelte/reactivity';
 	import { Button } from '$lib/components/ui/button';
+	import { PageShell } from '$lib/components/app-layout';
 	import { Input } from '$lib/components/ui/input';
 	import {
 		Dialog,
@@ -47,7 +48,6 @@
 	import * as Tabs from '$lib/components/ui/tabs';
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import {
-		BookOpen,
 		Plus,
 		Search,
 		Pencil,
@@ -948,16 +948,8 @@
 	<title>{data.title} - SchoolOrbit</title>
 </svelte:head>
 
-<div class="space-y-6">
-	<!-- Header -->
-	<div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-		<div>
-			<h1 class="text-3xl font-bold text-foreground flex items-center gap-2">
-				<BookOpen class="w-8 h-8" />
-				คลังรายวิชา
-			</h1>
-			<p class="text-muted-foreground mt-1">จัดการรายชื่อวิชาและกลุ่มสาระการเรียนรู้</p>
-		</div>
+<PageShell title="คลังรายวิชา" description="จัดการรายชื่อวิชาและกลุ่มสาระการเรียนรู้">
+	{#snippet actions()}
 		{#if canCreateCurriculum}
 			<div class="flex items-center gap-2">
 				<Button onclick={openUnifiedAdd} class="flex items-center gap-2">
@@ -966,7 +958,7 @@
 				</Button>
 			</div>
 		{/if}
-	</div>
+	{/snippet}
 
 	{#if !canReadCurriculum}
 		<PageState
@@ -1113,9 +1105,7 @@
 								<Table.Row>
 									<Table.Cell colspan={8} class="h-48">
 										<PageState
-											title={hasActiveFilters
-												? 'ไม่พบวิชาที่ตรงกับตัวกรอง'
-												: 'ยังไม่มีวิชาในระบบ'}
+											title={hasActiveFilters ? 'ไม่พบวิชาที่ตรงกับตัวกรอง' : 'ยังไม่มีวิชาในระบบ'}
 											description={hasActiveFilters
 												? 'ลองปรับคำค้นหา กลุ่มสาระ หรือปีการศึกษาที่เลือก'
 												: 'เริ่มต้นเพิ่มรายวิชาได้เมื่อมีสิทธิ์สร้างหลักสูตร'}
@@ -1441,7 +1431,7 @@
 			</Tabs.Content>
 		</Tabs.Root>
 	{/if}
-</div>
+</PageShell>
 
 <!-- Create/Edit Dialog -->
 {#if canCreateCurriculum || canUpdateCurriculum}

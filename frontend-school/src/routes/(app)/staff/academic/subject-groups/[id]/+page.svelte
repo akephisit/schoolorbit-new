@@ -3,13 +3,14 @@
 	import { onMount } from 'svelte';
 	import { getOrganizationUnitLookup, type OrganizationUnit } from '$lib/api/staff';
 	import { Button } from '$lib/components/ui/button';
+	import { PageShell } from '$lib/components/app-layout';
 	import { Badge } from '$lib/components/ui/badge';
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import OrganizationMembersSection from '$lib/components/staff/OrganizationMembersSection.svelte';
 	import OrganizationPermissionDialog from '$lib/components/staff/OrganizationPermissionDialog.svelte';
 	import { PERMISSIONS } from '$lib/permissions/registry';
 	import { can } from '$lib/stores/permissions';
-	import { GraduationCap, ArrowLeft, Building2, Settings } from 'lucide-svelte';
+	import { Building2, Settings } from 'lucide-svelte';
 
 	const { params }: PageProps = $props();
 	let deptId = $derived(params.id);
@@ -60,34 +61,20 @@
 	<title>{department ? department.name : 'รายละเอียดกลุ่มสาระ'} - SchoolOrbit</title>
 </svelte:head>
 
-<div class="space-y-6">
-	<!-- Header -->
-	<div class="flex items-center gap-4">
-		<Button href="/staff/academic/subject-groups" variant="ghost" size="sm">
-			<ArrowLeft class="w-4 h-4" />
-		</Button>
-		<div class="flex-1">
-			<h1 class="text-2xl font-bold flex items-center gap-2">
-				{#if loading}
-					กำลังโหลด...
-				{:else if department}
-					<GraduationCap class="w-7 h-7 text-orange-500" />
-					{department.name}
-				{:else}
-					ไม่พบข้อมูล
-				{/if}
-			</h1>
-			{#if department}
-				<p class="text-muted-foreground text-sm">{department.code}</p>
-			{/if}
-		</div>
+<PageShell
+	title={loading ? 'กำลังโหลด...' : department ? department.name : 'ไม่พบข้อมูล'}
+	description={department?.code}
+	backHref="/staff/academic/subject-groups"
+	backLabel="กลุ่มสาระ"
+>
+	{#snippet actions()}
 		{#if department && canManageSubjectGroupPermissions}
 			<Button variant="outline" size="sm" onclick={() => (showPermissionDialog = true)}>
 				<Settings class="w-4 h-4 mr-1" />
 				ตั้งค่าสิทธิ์
 			</Button>
 		{/if}
-	</div>
+	{/snippet}
 
 	{#if !canReadSubjectGroupDetail}
 		<PageState
@@ -149,7 +136,7 @@
 			href="/staff/academic/subject-groups"
 		/>
 	{/if}
-</div>
+</PageShell>
 
 <OrganizationPermissionDialog
 	bind:open={showPermissionDialog}

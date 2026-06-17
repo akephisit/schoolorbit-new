@@ -49,6 +49,7 @@
 	import { Textarea } from '$lib/components/ui/textarea';
 	import * as Select from '$lib/components/ui/select';
 	import * as Tabs from '$lib/components/ui/tabs';
+	import { PageShell } from '$lib/components/app-layout';
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import { PERMISSIONS } from '$lib/permissions/registry';
 	import { can } from '$lib/stores/permissions';
@@ -858,16 +859,8 @@
 	<title>{data.title} - SchoolOrbit</title>
 </svelte:head>
 
-<div class="space-y-6">
-	<!-- Header -->
-	<div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-		<div>
-			<h1 class="text-3xl font-bold text-foreground flex items-center gap-2">
-				<GraduationCap class="w-8 h-8" />
-				หลักสูตรสถานศึกษา
-			</h1>
-			<p class="text-muted-foreground mt-1">จัดการหลักสูตรและเวอร์ชันของหลักสูตร</p>
-		</div>
+<PageShell title="หลักสูตรสถานศึกษา" description="จัดการหลักสูตรและเวอร์ชันของหลักสูตร">
+	{#snippet actions()}
 		{#if canReadStudyPlans}
 			<Button
 				variant="outline"
@@ -879,7 +872,7 @@
 				ส่งออกหลักสูตร
 			</Button>
 		{/if}
-	</div>
+	{/snippet}
 
 	{#if !canReadStudyPlans}
 		<PageState
@@ -1285,7 +1278,7 @@
 			</Tabs.Content>
 		</Tabs.Root>
 	{/if}
-</div>
+</PageShell>
 
 <!-- Curriculum Export Dialog -->
 {#if canReadStudyPlans}
