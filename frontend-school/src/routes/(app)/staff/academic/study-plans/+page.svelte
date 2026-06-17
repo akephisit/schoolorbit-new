@@ -49,6 +49,9 @@
 	import { Textarea } from '$lib/components/ui/textarea';
 	import * as Select from '$lib/components/ui/select';
 	import * as Tabs from '$lib/components/ui/tabs';
+	import { Alert, AlertDescription, AlertTitle } from '$lib/components/ui/alert';
+	import { PERMISSIONS } from '$lib/permissions/registry';
+	import { can } from '$lib/stores/permissions';
 	import {
 		GraduationCap,
 		Plus,
@@ -57,7 +60,8 @@
 		BookOpen,
 		ListTodo,
 		FileSpreadsheet,
-		Loader2
+		Loader2,
+		AlertTriangle
 	} from 'lucide-svelte';
 	import {
 		buildEffectiveStudyPlanRows,
@@ -68,6 +72,36 @@
 	} from '$lib/utils/curriculum-export';
 
 	let { data } = $props();
+
+	const canReadStudyPlans = $derived(
+		$can.hasAny(
+			PERMISSIONS.ACADEMIC_CURRICULUM_READ_ALL,
+			PERMISSIONS.ACADEMIC_CURRICULUM_READ_ORGANIZATION_TREE,
+			PERMISSIONS.ACADEMIC_CURRICULUM_MANAGE_ORGANIZATION_UNIT,
+			PERMISSIONS.ACADEMIC_CURRICULUM_MANAGE_ORGANIZATION_TREE
+		)
+	);
+	const canCreateStudyPlans = $derived(
+		$can.hasAny(
+			PERMISSIONS.ACADEMIC_CURRICULUM_CREATE_ALL,
+			PERMISSIONS.ACADEMIC_CURRICULUM_MANAGE_ORGANIZATION_UNIT,
+			PERMISSIONS.ACADEMIC_CURRICULUM_MANAGE_ORGANIZATION_TREE
+		)
+	);
+	const canUpdateStudyPlans = $derived(
+		$can.hasAny(
+			PERMISSIONS.ACADEMIC_CURRICULUM_UPDATE_ALL,
+			PERMISSIONS.ACADEMIC_CURRICULUM_MANAGE_ORGANIZATION_UNIT,
+			PERMISSIONS.ACADEMIC_CURRICULUM_MANAGE_ORGANIZATION_TREE
+		)
+	);
+	const canDeleteStudyPlans = $derived(
+		$can.hasAny(
+			PERMISSIONS.ACADEMIC_CURRICULUM_DELETE_ALL,
+			PERMISSIONS.ACADEMIC_CURRICULUM_MANAGE_ORGANIZATION_UNIT,
+			PERMISSIONS.ACADEMIC_CURRICULUM_MANAGE_ORGANIZATION_TREE
+		)
+	);
 
 	// Data States
 	let plans: StudyPlan[] = $state([]);
@@ -136,6 +170,18 @@
 	}
 
 	async function initData() {
+		if (!canReadStudyPlans) {
+			plans = [];
+			versions = [];
+			planSubjects = [];
+			academicYears = [];
+			gradeLevels = [];
+			subjects = [];
+			subjectGroups = [];
+			loading = false;
+			return;
+		}
+
 		try {
 			loading = true;
 			const [plansRes, yearsRes, levelsRes, subjectsRes, groupsRes] = await Promise.all([
@@ -161,6 +207,11 @@
 	}
 
 	function openCurriculumExportDialog() {
+		if (!canReadStudyPlans) {
+			toast.error('ไม่มีสิทธิ์ส่งออกหลักสูตร');
+			return;
+		}
+
 		exportYearId =
 			exportYearId ||
 			academicYears.find((year) => year.is_current)?.id ||
@@ -170,6 +221,11 @@
 	}
 
 	async function handleExportCurriculum() {
+		if (!canReadStudyPlans) {
+			toast.error('ไม่มีสิทธิ์ส่งออกหลักสูตร');
+			return;
+		}
+
 		if (!exportYearId) {
 			toast.error('กรุณาเลือกปีการศึกษา');
 			return;
@@ -242,6 +298,8 @@
 	}
 
 	async function loadVersions(planId: string) {
+		if (!canReadStudyPlans) return;
+
 		try {
 			const res = await listStudyPlanVersions({ study_plan_id: planId });
 			versions = res.data;
@@ -251,6 +309,8 @@
 	}
 
 	async function loadPlanSubjects(versionId: string, gradeId?: string, term?: string) {
+		if (!canReadStudyPlans) return;
+
 		try {
 			const res = await listStudyPlanSubjects({
 				study_plan_version_id: versionId,
@@ -265,11 +325,21 @@
 
 	// Plan Handlers
 	function handleOpenCreatePlan() {
+		if (!canCreateStudyPlans) {
+			toast.error('ไม่มีสิทธิ์สร้างแผนการเรียน');
+			return;
+		}
+
 		planForm = getEmptyPlanForm();
 		showPlanDialog = true;
 	}
 
 	function handleOpenEditPlan(plan: StudyPlan) {
+		if (!canUpdateStudyPlans) {
+			toast.error('ไม่มีสิทธิ์แก้ไขแผนการเรียน');
+			return;
+		}
+
 		planForm = {
 			...getEmptyPlanForm(),
 			...plan,
@@ -279,6 +349,11 @@
 	}
 
 	async function handleSubmitPlan() {
+		if ((planForm.id && !canUpdateStudyPlans) || (!planForm.id && !canCreateStudyPlans)) {
+			toast.error('ไม่มีสิทธิ์บันทึกแผนการเรียน');
+			return;
+		}
+
 		if (!planForm.code || !planForm.name_th) {
 			alert('กรุณากรอกข้อมูลให้ครบถ้วน');
 			return;
@@ -302,6 +377,11 @@
 
 	// Version Handlers
 	function handleOpenCreateVersion(plan: StudyPlan) {
+		if (!canCreateStudyPlans) {
+			toast.error('ไม่มีสิทธิ์สร้างเวอร์ชันหลักสูตร');
+			return;
+		}
+
 		versionForm = {
 			...getEmptyVersionForm(),
 			study_plan_id: plan.id
@@ -311,11 +391,21 @@
 	}
 
 	function handleOpenEditVersion(version: StudyPlanVersion) {
+		if (!canUpdateStudyPlans) {
+			toast.error('ไม่มีสิทธิ์แก้ไขเวอร์ชันหลักสูตร');
+			return;
+		}
+
 		versionForm = { ...version };
 		showVersionDialog = true;
 	}
 
 	async function handleSubmitVersion() {
+		if ((versionForm.id && !canUpdateStudyPlans) || (!versionForm.id && !canCreateStudyPlans)) {
+			toast.error('ไม่มีสิทธิ์บันทึกเวอร์ชันหลักสูตร');
+			return;
+		}
+
 		if (!versionForm.version_name || !versionForm.start_academic_year_id) {
 			alert('กรุณากรอกข้อมูลให้ครบถ้วน');
 			return;
@@ -341,11 +431,21 @@
 
 	// Delete Handlers
 	function handleOpenDelete(type: 'plan' | 'version' | 'subject', id: string, name: string) {
+		if (!canDeleteStudyPlans) {
+			toast.error('ไม่มีสิทธิ์ลบรายการหลักสูตร');
+			return;
+		}
+
 		deleteTarget = { type, id, name };
 		showDeleteDialog = true;
 	}
 
 	async function handleConfirmDelete() {
+		if (!canDeleteStudyPlans) {
+			toast.error('ไม่มีสิทธิ์ลบรายการหลักสูตร');
+			return;
+		}
+
 		if (!deleteTarget) return;
 
 		submitting = true;
@@ -378,6 +478,8 @@
 	let paCatalogId = $state('');
 
 	async function loadActivityCatalog() {
+		if (!canReadStudyPlans) return;
+
 		try {
 			const res = await listActivityCatalog();
 			activityCatalog = res.data ?? [];
@@ -395,6 +497,8 @@
 	};
 
 	async function loadPlanActivitiesForVersion(versionId: string) {
+		if (!canReadStudyPlans) return;
+
 		if (!versionId) {
 			planActivities = [];
 			return;
@@ -408,6 +512,11 @@
 	}
 
 	function openEditPlanActivity(pa: StudyPlanVersionActivity) {
+		if (!canUpdateStudyPlans) {
+			toast.error('ไม่มีสิทธิ์แก้ไขกิจกรรมในหลักสูตร');
+			return;
+		}
+
 		editingPlanActivity = pa;
 		paCatalogId = pa.activity_catalog_id;
 		showPlanActivityDialog = true;
@@ -415,6 +524,11 @@
 	}
 
 	async function handleSavePlanActivity() {
+		if (!canUpdateStudyPlans) {
+			toast.error('ไม่มีสิทธิ์แก้ไขกิจกรรมในหลักสูตร');
+			return;
+		}
+
 		const versionId = selectedVersion?.id;
 		if (!versionId) {
 			toast.error('กรุณาเลือก version');
@@ -438,6 +552,11 @@
 	}
 
 	async function handleDeletePlanActivity(pa: StudyPlanVersionActivity) {
+		if (!canDeleteStudyPlans) {
+			toast.error('ไม่มีสิทธิ์ลบกิจกรรมออกจากหลักสูตร');
+			return;
+		}
+
 		if (!confirm(`ลบกิจกรรม "${pa.catalog_name ?? ''}"?`)) return;
 		try {
 			await deletePlanActivity(pa.id);
@@ -552,6 +671,11 @@
 	);
 
 	function moveToQueue(type: 'subject' | 'activity', item: Subject | ActivityCatalog) {
+		if (!canUpdateStudyPlans) {
+			toast.error('ไม่มีสิทธิ์เพิ่มรายการเข้าหลักสูตร');
+			return;
+		}
+
 		if (!addTargetGradeId) {
 			toast.error('กรุณาเลือกชั้น');
 			return;
@@ -578,6 +702,8 @@
 	}
 
 	async function loadAllSubjects() {
+		if (!canReadStudyPlans) return;
+
 		try {
 			const res = await listSubjects({ active_only: true, latest_only: true });
 			subjects = res.data ?? [];
@@ -587,6 +713,11 @@
 	}
 
 	function openAddDialog() {
+		if (!canUpdateStudyPlans) {
+			toast.error('ไม่มีสิทธิ์เพิ่มรายการเข้าหลักสูตร');
+			return;
+		}
+
 		pendingQueue = [];
 		filterGradeId = '';
 		filterTerm = '';
@@ -603,6 +734,11 @@
 	}
 
 	async function handleSave() {
+		if (!canUpdateStudyPlans) {
+			toast.error('ไม่มีสิทธิ์เพิ่มรายการเข้าหลักสูตร');
+			return;
+		}
+
 		if (!selectedVersion?.id) return;
 		if (pendingQueue.length === 0) {
 			toast.error('ไม่มีรายการ');
@@ -706,6 +842,11 @@
 	}
 
 	function handleDeletePlanSubject(s: StudyPlanSubject) {
+		if (!canDeleteStudyPlans) {
+			toast.error('ไม่มีสิทธิ์ลบวิชาออกจากหลักสูตร');
+			return;
+		}
+
 		handleOpenDelete('subject', s.id, s.subject_name_th || s.subject_code);
 	}
 
@@ -728,194 +869,125 @@
 			</h1>
 			<p class="text-muted-foreground mt-1">จัดการหลักสูตรและเวอร์ชันของหลักสูตร</p>
 		</div>
-		<Button
-			variant="outline"
-			size="sm"
-			class="self-start sm:self-auto"
-			onclick={openCurriculumExportDialog}
-		>
-			<FileSpreadsheet class="w-4 h-4 mr-2" />
-			ส่งออกหลักสูตร
-		</Button>
+		{#if canReadStudyPlans}
+			<Button
+				variant="outline"
+				size="sm"
+				class="self-start sm:self-auto"
+				onclick={openCurriculumExportDialog}
+			>
+				<FileSpreadsheet class="w-4 h-4 mr-2" />
+				ส่งออกหลักสูตร
+			</Button>
+		{/if}
 	</div>
 
-	<!-- Tabs -->
-	<Tabs.Root bind:value={activeTab}>
-		<Tabs.List class="grid w-full grid-cols-3">
-			<Tabs.Trigger value="plans">แผนการเรียน</Tabs.Trigger>
-			<Tabs.Trigger value="versions">เวอร์ชัน</Tabs.Trigger>
-			<Tabs.Trigger value="detail">รายละเอียดหลักสูตร</Tabs.Trigger>
-		</Tabs.List>
+	{#if !canReadStudyPlans}
+		<Alert>
+			<AlertTriangle class="h-4 w-4" />
+			<AlertTitle>ไม่มีสิทธิ์ดูหลักสูตรสถานศึกษา</AlertTitle>
+			<AlertDescription>
+				บัญชีนี้เข้า module หลักสูตรได้ แต่ยังไม่มีสิทธิ์อ่านแผนการเรียนและเวอร์ชันหลักสูตร
+			</AlertDescription>
+		</Alert>
+	{:else}
+		<!-- Tabs -->
+		<Tabs.Root bind:value={activeTab}>
+			<Tabs.List class="grid w-full grid-cols-3">
+				<Tabs.Trigger value="plans">แผนการเรียน</Tabs.Trigger>
+				<Tabs.Trigger value="versions">เวอร์ชัน</Tabs.Trigger>
+				<Tabs.Trigger value="detail">รายละเอียดหลักสูตร</Tabs.Trigger>
+			</Tabs.List>
 
-		<!-- Plans Tab -->
-		<Tabs.Content value="plans" class="space-y-4">
-			<div class="flex justify-end">
-				<Button onclick={handleOpenCreatePlan} class="flex items-center gap-2">
-					<Plus class="w-4 h-4" />
-					สร้างแผนใหม่
-				</Button>
-			</div>
-
-			<div class="bg-card border border-border rounded-lg overflow-hidden">
-				<Table.Root>
-					<Table.Header>
-						<Table.Row>
-							<Table.Head>รหัส</Table.Head>
-							<Table.Head>ชื่อแผน</Table.Head>
-							<Table.Head>ระดับ</Table.Head>
-							<Table.Head class="w-[150px]">จัดการ</Table.Head>
-						</Table.Row>
-					</Table.Header>
-					<Table.Body>
-						{#if loading}
-							<Table.Row>
-								<Table.Cell colspan={4} class="text-center h-24">กำลังโหลด...</Table.Cell>
-							</Table.Row>
-						{:else if plans.length === 0}
-							<Table.Row>
-								<Table.Cell colspan={4} class="text-center h-24 text-muted-foreground">
-									ไม่พบข้อมูล
-								</Table.Cell>
-							</Table.Row>
-						{:else}
-							{#each plans as plan (plan.id)}
-								<Table.Row>
-									<Table.Cell class="font-medium">{plan.code}</Table.Cell>
-									<Table.Cell>
-										<div class="font-medium">{plan.name_th}</div>
-										{#if plan.name_en}
-											<div class="text-xs text-muted-foreground">{plan.name_en}</div>
-										{/if}
-									</Table.Cell>
-									<Table.Cell>
-										{#if plan.grade_level_ids && plan.grade_level_ids.length > 0}
-											<Badge variant="secondary" class="text-[10px]">
-												{plan.grade_level_ids.length} ระดับ: {plan.grade_level_ids
-													.map((id) => gradeLevels.find((g) => g.id === id)?.short_name ?? '')
-													.filter(Boolean)
-													.join(', ')}
-											</Badge>
-										{:else}
-											<Badge variant="secondary" class="text-[10px]">ทุกระดับ</Badge>
-										{/if}
-									</Table.Cell>
-									<Table.Cell>
-										<div class="flex gap-1">
-											<Button
-												onclick={() => {
-													selectedPlan = plan;
-													selectedVersion = null;
-													loadVersions(plan.id);
-													activeTab = 'versions';
-												}}
-												variant="ghost"
-												size="sm"
-											>
-												<BookOpen class="w-4 h-4 mr-1" />
-												เวอร์ชัน
-											</Button>
-											<Button
-												onclick={() => handleOpenEditPlan(plan)}
-												variant="ghost"
-												size="icon"
-												class="h-8 w-8"
-											>
-												<Pencil class="w-4 h-4" />
-											</Button>
-											<Button
-												onclick={() => handleOpenDelete('plan', plan.id, plan.name_th)}
-												variant="ghost"
-												size="icon"
-												class="h-8 w-8 text-destructive"
-											>
-												<Trash2 class="w-4 h-4" />
-											</Button>
-										</div>
-									</Table.Cell>
-								</Table.Row>
-							{/each}
-						{/if}
-					</Table.Body>
-				</Table.Root>
-			</div>
-		</Tabs.Content>
-
-		<!-- Versions Tab -->
-		<Tabs.Content value="versions" class="space-y-4">
-			{#if selectedPlan}
-				<div class="bg-muted/50 p-4 rounded-lg">
-					<div class="font-medium">แผนการเรียน: {selectedPlan.name_th}</div>
-					<Button
-						onclick={() => selectedPlan && handleOpenCreateVersion(selectedPlan)}
-						variant="outline"
-						size="sm"
-						class="mt-2"
-					>
-						<Plus class="w-4 h-4 mr-1" />
-						สร้างเวอร์ชันใหม่
-					</Button>
-				</div>
+			<!-- Plans Tab -->
+			<Tabs.Content value="plans" class="space-y-4">
+				{#if canCreateStudyPlans}
+					<div class="flex justify-end">
+						<Button onclick={handleOpenCreatePlan} class="flex items-center gap-2">
+							<Plus class="w-4 h-4" />
+							สร้างแผนใหม่
+						</Button>
+					</div>
+				{/if}
 
 				<div class="bg-card border border-border rounded-lg overflow-hidden">
 					<Table.Root>
 						<Table.Header>
 							<Table.Row>
-								<Table.Head>ชื่อเวอร์ชัน</Table.Head>
-								<Table.Head>ปีการศึกษาเริ่มต้น</Table.Head>
-								<Table.Head>สถานะ</Table.Head>
-								<Table.Head class="w-[150px]">จัดการ</Table.Head>
+								<Table.Head>รหัส</Table.Head>
+								<Table.Head>ชื่อแผน</Table.Head>
+								<Table.Head>ระดับ</Table.Head>
+								<Table.Head class="w-[150px]">ดู/จัดการ</Table.Head>
 							</Table.Row>
 						</Table.Header>
 						<Table.Body>
-							{#if versions.length === 0}
+							{#if loading}
+								<Table.Row>
+									<Table.Cell colspan={4} class="text-center h-24">กำลังโหลด...</Table.Cell>
+								</Table.Row>
+							{:else if plans.length === 0}
 								<Table.Row>
 									<Table.Cell colspan={4} class="text-center h-24 text-muted-foreground">
-										ยังไม่มีเวอร์ชัน
+										ไม่พบข้อมูล
 									</Table.Cell>
 								</Table.Row>
 							{:else}
-								{#each versions as version (version.id)}
+								{#each plans as plan (plan.id)}
 									<Table.Row>
-										<Table.Cell class="font-medium">{version.version_name}</Table.Cell>
-										<Table.Cell>{version.start_year_name || '-'}</Table.Cell>
+										<Table.Cell class="font-medium">{plan.code}</Table.Cell>
 										<Table.Cell>
-											{#if version.is_active}
-												<Badge>ใช้งาน</Badge>
+											<div class="font-medium">{plan.name_th}</div>
+											{#if plan.name_en}
+												<div class="text-xs text-muted-foreground">{plan.name_en}</div>
+											{/if}
+										</Table.Cell>
+										<Table.Cell>
+											{#if plan.grade_level_ids && plan.grade_level_ids.length > 0}
+												<Badge variant="secondary" class="text-[10px]">
+													{plan.grade_level_ids.length} ระดับ: {plan.grade_level_ids
+														.map((id) => gradeLevels.find((g) => g.id === id)?.short_name ?? '')
+														.filter(Boolean)
+														.join(', ')}
+												</Badge>
 											{:else}
-												<Badge variant="secondary">ปิดใช้งาน</Badge>
+												<Badge variant="secondary" class="text-[10px]">ทุกระดับ</Badge>
 											{/if}
 										</Table.Cell>
 										<Table.Cell>
 											<div class="flex gap-1">
 												<Button
 													onclick={() => {
-														selectedVersion = version;
-														loadPlanSubjects(version.id);
-														activeTab = 'detail';
+														selectedPlan = plan;
+														selectedVersion = null;
+														loadVersions(plan.id);
+														activeTab = 'versions';
 													}}
 													variant="ghost"
 													size="sm"
 												>
-													<ListTodo class="w-4 h-4 mr-1" />
-													รายละเอียด
+													<BookOpen class="w-4 h-4 mr-1" />
+													เวอร์ชัน
 												</Button>
-												<Button
-													onclick={() => handleOpenEditVersion(version)}
-													variant="ghost"
-													size="icon"
-													class="h-8 w-8"
-												>
-													<Pencil class="w-4 h-4" />
-												</Button>
-												<Button
-													onclick={() =>
-														handleOpenDelete('version', version.id, version.version_name)}
-													variant="ghost"
-													size="icon"
-													class="h-8 w-8 text-destructive"
-												>
-													<Trash2 class="w-4 h-4" />
-												</Button>
+												{#if canUpdateStudyPlans}
+													<Button
+														onclick={() => handleOpenEditPlan(plan)}
+														variant="ghost"
+														size="icon"
+														class="h-8 w-8"
+													>
+														<Pencil class="w-4 h-4" />
+													</Button>
+												{/if}
+												{#if canDeleteStudyPlans}
+													<Button
+														onclick={() => handleOpenDelete('plan', plan.id, plan.name_th)}
+														variant="ghost"
+														size="icon"
+														class="h-8 w-8 text-destructive"
+													>
+														<Trash2 class="w-4 h-4" />
+													</Button>
+												{/if}
 											</div>
 										</Table.Cell>
 									</Table.Row>
@@ -924,768 +996,883 @@
 						</Table.Body>
 					</Table.Root>
 				</div>
-			{:else}
-				<div class="text-center text-muted-foreground p-8">
-					กรุณาเลือกแผนการเรียนจากแท็บ "แผนการเรียน"
-				</div>
-			{/if}
-		</Tabs.Content>
+			</Tabs.Content>
 
-		<!-- Detail Tab: integrated 2-column view by term -->
-		<Tabs.Content value="detail" class="space-y-4">
-			{#if selectedVersion}
-				<div class="bg-muted/50 p-4 rounded-lg flex items-center justify-between flex-wrap gap-2">
-					<div class="font-medium">
-						เวอร์ชัน: {selectedVersion.version_name}
-						{#if selectedVersion.study_plan_name_th}
-							({selectedVersion.study_plan_name_th})
+			<!-- Versions Tab -->
+			<Tabs.Content value="versions" class="space-y-4">
+				{#if selectedPlan}
+					<div class="bg-muted/50 p-4 rounded-lg">
+						<div class="font-medium">แผนการเรียน: {selectedPlan.name_th}</div>
+						{#if canCreateStudyPlans}
+							<Button
+								onclick={() => selectedPlan && handleOpenCreateVersion(selectedPlan)}
+								variant="outline"
+								size="sm"
+								class="mt-2"
+							>
+								<Plus class="w-4 h-4 mr-1" />
+								สร้างเวอร์ชันใหม่
+							</Button>
 						{/if}
 					</div>
-					<Button onclick={openAddDialog} size="sm">
-						<Plus class="w-4 h-4 mr-1" />
-						เพิ่มเข้าหลักสูตร
-					</Button>
-				</div>
 
-				<div class="space-y-6">
-					{#each planGradeLevels as grade (grade.id)}
-						<div class="border-2 rounded-lg p-4 bg-card">
-							<h2 class="text-xl font-bold mb-3 text-center">
-								{grade.short_name ?? grade.name}
-							</h2>
-
-							<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-								{#each ['1', '2'] as term (term)}
-									{@const tterm = term as '1' | '2'}
-									{@const basicList = subjectsByGradeTermType[grade.id]?.[tterm]?.BASIC ?? []}
-									{@const additionalList =
-										subjectsByGradeTermType[grade.id]?.[tterm]?.ADDITIONAL ?? []}
-									{@const actList = activitiesByGradeTerm[grade.id]?.[tterm] ?? []}
-									{@const tb = sectionTotals(basicList)}
-									{@const ta = sectionTotals(additionalList)}
-									{@const tact = activityTotals(actList)}
-									<div class="border rounded-lg p-3 space-y-3">
-										<h3 class="font-semibold text-lg border-b pb-2">ภาคเรียนที่ {term}</h3>
-
-										<!-- วิชาพื้นฐาน -->
-										<section>
-											<h4 class="font-semibold flex items-center gap-1 mb-2 text-sm">
-												<BookOpen class="w-4 h-4" /> วิชาพื้นฐาน
-											</h4>
-											{#if basicList.length === 0}
-												<p class="text-xs text-muted-foreground italic">—</p>
-											{:else}
-												<div class="divide-y border rounded">
-													{#each basicList as s (s.id)}
-														<div class="px-3 py-2 flex items-center gap-2">
-															<div class="flex-1 min-w-0">
-																<div class="font-medium text-sm">
-																	{s.subject_code}
-																	{s.subject_name_th ?? ''}
-																</div>
-																<div class="text-xs text-muted-foreground">
-																	{(s.subject_credit ?? 0).toFixed(1)} นก · {s.subject_hours ?? 0} ชม
-																</div>
-															</div>
-															<Button
-																variant="ghost"
-																size="icon"
-																class="h-7 w-7 text-destructive"
-																onclick={() => handleDeletePlanSubject(s)}
-															>
-																<Trash2 class="w-4 h-4" />
-															</Button>
-														</div>
-													{/each}
+					<div class="bg-card border border-border rounded-lg overflow-hidden">
+						<Table.Root>
+							<Table.Header>
+								<Table.Row>
+									<Table.Head>ชื่อเวอร์ชัน</Table.Head>
+									<Table.Head>ปีการศึกษาเริ่มต้น</Table.Head>
+									<Table.Head>สถานะ</Table.Head>
+									<Table.Head class="w-[150px]">จัดการ</Table.Head>
+								</Table.Row>
+							</Table.Header>
+							<Table.Body>
+								{#if versions.length === 0}
+									<Table.Row>
+										<Table.Cell colspan={4} class="text-center h-24 text-muted-foreground">
+											ยังไม่มีเวอร์ชัน
+										</Table.Cell>
+									</Table.Row>
+								{:else}
+									{#each versions as version (version.id)}
+										<Table.Row>
+											<Table.Cell class="font-medium">{version.version_name}</Table.Cell>
+											<Table.Cell>{version.start_year_name || '-'}</Table.Cell>
+											<Table.Cell>
+												{#if version.is_active}
+													<Badge>ใช้งาน</Badge>
+												{:else}
+													<Badge variant="secondary">ปิดใช้งาน</Badge>
+												{/if}
+											</Table.Cell>
+											<Table.Cell>
+												<div class="flex gap-1">
+													<Button
+														onclick={() => {
+															selectedVersion = version;
+															loadPlanSubjects(version.id);
+															activeTab = 'detail';
+														}}
+														variant="ghost"
+														size="sm"
+													>
+														<ListTodo class="w-4 h-4 mr-1" />
+														รายละเอียด
+													</Button>
+													{#if canUpdateStudyPlans}
+														<Button
+															onclick={() => handleOpenEditVersion(version)}
+															variant="ghost"
+															size="icon"
+															class="h-8 w-8"
+														>
+															<Pencil class="w-4 h-4" />
+														</Button>
+													{/if}
+													{#if canDeleteStudyPlans}
+														<Button
+															onclick={() =>
+																handleOpenDelete('version', version.id, version.version_name)}
+															variant="ghost"
+															size="icon"
+															class="h-8 w-8 text-destructive"
+														>
+															<Trash2 class="w-4 h-4" />
+														</Button>
+													{/if}
 												</div>
-												<p class="text-xs font-medium text-right mt-1">
-													รวม: {tb.credits.toFixed(1)} นก · {tb.hours} ชม
-												</p>
-											{/if}
-										</section>
+											</Table.Cell>
+										</Table.Row>
+									{/each}
+								{/if}
+							</Table.Body>
+						</Table.Root>
+					</div>
+				{:else}
+					<div class="text-center text-muted-foreground p-8">
+						กรุณาเลือกแผนการเรียนจากแท็บ "แผนการเรียน"
+					</div>
+				{/if}
+			</Tabs.Content>
 
-										<!-- วิชาเพิ่มเติม -->
-										<section>
-											<h4 class="font-semibold flex items-center gap-1 mb-2 text-sm">
-												<ListTodo class="w-4 h-4" /> วิชาเพิ่มเติม
-											</h4>
-											{#if additionalList.length === 0}
-												<p class="text-xs text-muted-foreground italic">—</p>
-											{:else}
-												<div class="divide-y border rounded">
-													{#each additionalList as s (s.id)}
-														<div class="px-3 py-2 flex items-center gap-2">
-															<div class="flex-1 min-w-0">
-																<div class="font-medium text-sm">
-																	{s.subject_code}
-																	{s.subject_name_th ?? ''}
-																</div>
-																<div class="text-xs text-muted-foreground">
-																	{(s.subject_credit ?? 0).toFixed(1)} นก · {s.subject_hours ?? 0} ชม
-																</div>
-															</div>
-															<Button
-																variant="ghost"
-																size="icon"
-																class="h-7 w-7 text-destructive"
-																onclick={() => handleDeletePlanSubject(s)}
-															>
-																<Trash2 class="w-4 h-4" />
-															</Button>
-														</div>
-													{/each}
-												</div>
-												<p class="text-xs font-medium text-right mt-1">
-													รวม: {ta.credits.toFixed(1)} นก · {ta.hours} ชม
-												</p>
-											{/if}
-										</section>
-
-										<!-- กิจกรรมพัฒนาผู้เรียน -->
-										<section>
-											<h4 class="font-semibold flex items-center gap-1 mb-2 text-sm">
-												<GraduationCap class="w-4 h-4" /> กิจกรรมพัฒนาผู้เรียน
-											</h4>
-											{#if actList.length === 0}
-												<p class="text-xs text-muted-foreground italic">—</p>
-											{:else}
-												<div class="divide-y border rounded">
-													{#each actList as a (a.id)}
-														<div class="px-3 py-2 flex items-center gap-2">
-															<div class="flex-1 min-w-0">
-																<div class="flex items-center gap-2 flex-wrap">
-																	<Badge variant="secondary" class="text-[10px]">
-																		{PA_TYPE_LABELS[a.catalog_activity_type ?? 'other']}
-																	</Badge>
-																	<span class="font-medium text-sm">{a.catalog_name}</span>
-																</div>
-																<div class="text-xs text-muted-foreground mt-1">
-																	{a.catalog_periods_per_week ?? 1} คาบ ·
-																	{a.catalog_scheduling_mode === 'independent'
-																		? 'แต่ละห้องจัดเอง'
-																		: 'จัดพร้อมกัน'}
-																</div>
-															</div>
-															<Button
-																variant="ghost"
-																size="icon"
-																class="h-7 w-7"
-																onclick={() => openEditPlanActivity(a)}
-															>
-																<Pencil class="w-4 h-4" />
-															</Button>
-															<Button
-																variant="ghost"
-																size="icon"
-																class="h-7 w-7 text-destructive"
-																onclick={() => handleDeletePlanActivity(a)}
-															>
-																<Trash2 class="w-4 h-4" />
-															</Button>
-														</div>
-													{/each}
-												</div>
-												<p class="text-xs font-medium text-right mt-1">
-													รวม: {tact.periods} คาบ/สัปดาห์
-												</p>
-											{/if}
-										</section>
-
-										<!-- Grand total per term -->
-										<div class="border-t pt-2 text-sm font-semibold text-right">
-											รวมทั้งหมด: {(tb.credits + ta.credits).toFixed(1)} นก · {tb.hours + ta.hours} ชม
-											· {tact.periods} คาบกิจกรรม
-										</div>
-									</div>
-								{/each}
-							</div>
+			<!-- Detail Tab: integrated 2-column view by term -->
+			<Tabs.Content value="detail" class="space-y-4">
+				{#if selectedVersion}
+					<div class="bg-muted/50 p-4 rounded-lg flex items-center justify-between flex-wrap gap-2">
+						<div class="font-medium">
+							เวอร์ชัน: {selectedVersion.version_name}
+							{#if selectedVersion.study_plan_name_th}
+								({selectedVersion.study_plan_name_th})
+							{/if}
 						</div>
-					{:else}
-						<p class="text-center text-muted-foreground py-10">ไม่มีระดับชั้นในแผนการเรียนนี้</p>
-					{/each}
-				</div>
-			{:else}
-				<div class="text-center text-muted-foreground p-8">
-					กรุณาเลือกเวอร์ชันจากแท็บ "เวอร์ชัน"
-				</div>
-			{/if}
-		</Tabs.Content>
-	</Tabs.Root>
+						{#if canUpdateStudyPlans}
+							<Button onclick={openAddDialog} size="sm">
+								<Plus class="w-4 h-4 mr-1" />
+								เพิ่มเข้าหลักสูตร
+							</Button>
+						{/if}
+					</div>
+
+					<div class="space-y-6">
+						{#each planGradeLevels as grade (grade.id)}
+							<div class="border-2 rounded-lg p-4 bg-card">
+								<h2 class="text-xl font-bold mb-3 text-center">
+									{grade.short_name ?? grade.name}
+								</h2>
+
+								<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+									{#each ['1', '2'] as term (term)}
+										{@const tterm = term as '1' | '2'}
+										{@const basicList = subjectsByGradeTermType[grade.id]?.[tterm]?.BASIC ?? []}
+										{@const additionalList =
+											subjectsByGradeTermType[grade.id]?.[tterm]?.ADDITIONAL ?? []}
+										{@const actList = activitiesByGradeTerm[grade.id]?.[tterm] ?? []}
+										{@const tb = sectionTotals(basicList)}
+										{@const ta = sectionTotals(additionalList)}
+										{@const tact = activityTotals(actList)}
+										<div class="border rounded-lg p-3 space-y-3">
+											<h3 class="font-semibold text-lg border-b pb-2">ภาคเรียนที่ {term}</h3>
+
+											<!-- วิชาพื้นฐาน -->
+											<section>
+												<h4 class="font-semibold flex items-center gap-1 mb-2 text-sm">
+													<BookOpen class="w-4 h-4" /> วิชาพื้นฐาน
+												</h4>
+												{#if basicList.length === 0}
+													<p class="text-xs text-muted-foreground italic">—</p>
+												{:else}
+													<div class="divide-y border rounded">
+														{#each basicList as s (s.id)}
+															<div class="px-3 py-2 flex items-center gap-2">
+																<div class="flex-1 min-w-0">
+																	<div class="font-medium text-sm">
+																		{s.subject_code}
+																		{s.subject_name_th ?? ''}
+																	</div>
+																	<div class="text-xs text-muted-foreground">
+																		{(s.subject_credit ?? 0).toFixed(1)} นก · {s.subject_hours ?? 0} ชม
+																	</div>
+																</div>
+																{#if canDeleteStudyPlans}
+																	<Button
+																		variant="ghost"
+																		size="icon"
+																		class="h-7 w-7 text-destructive"
+																		onclick={() => handleDeletePlanSubject(s)}
+																	>
+																		<Trash2 class="w-4 h-4" />
+																	</Button>
+																{/if}
+															</div>
+														{/each}
+													</div>
+													<p class="text-xs font-medium text-right mt-1">
+														รวม: {tb.credits.toFixed(1)} นก · {tb.hours} ชม
+													</p>
+												{/if}
+											</section>
+
+											<!-- วิชาเพิ่มเติม -->
+											<section>
+												<h4 class="font-semibold flex items-center gap-1 mb-2 text-sm">
+													<ListTodo class="w-4 h-4" /> วิชาเพิ่มเติม
+												</h4>
+												{#if additionalList.length === 0}
+													<p class="text-xs text-muted-foreground italic">—</p>
+												{:else}
+													<div class="divide-y border rounded">
+														{#each additionalList as s (s.id)}
+															<div class="px-3 py-2 flex items-center gap-2">
+																<div class="flex-1 min-w-0">
+																	<div class="font-medium text-sm">
+																		{s.subject_code}
+																		{s.subject_name_th ?? ''}
+																	</div>
+																	<div class="text-xs text-muted-foreground">
+																		{(s.subject_credit ?? 0).toFixed(1)} นก · {s.subject_hours ?? 0} ชม
+																	</div>
+																</div>
+																{#if canDeleteStudyPlans}
+																	<Button
+																		variant="ghost"
+																		size="icon"
+																		class="h-7 w-7 text-destructive"
+																		onclick={() => handleDeletePlanSubject(s)}
+																	>
+																		<Trash2 class="w-4 h-4" />
+																	</Button>
+																{/if}
+															</div>
+														{/each}
+													</div>
+													<p class="text-xs font-medium text-right mt-1">
+														รวม: {ta.credits.toFixed(1)} นก · {ta.hours} ชม
+													</p>
+												{/if}
+											</section>
+
+											<!-- กิจกรรมพัฒนาผู้เรียน -->
+											<section>
+												<h4 class="font-semibold flex items-center gap-1 mb-2 text-sm">
+													<GraduationCap class="w-4 h-4" /> กิจกรรมพัฒนาผู้เรียน
+												</h4>
+												{#if actList.length === 0}
+													<p class="text-xs text-muted-foreground italic">—</p>
+												{:else}
+													<div class="divide-y border rounded">
+														{#each actList as a (a.id)}
+															<div class="px-3 py-2 flex items-center gap-2">
+																<div class="flex-1 min-w-0">
+																	<div class="flex items-center gap-2 flex-wrap">
+																		<Badge variant="secondary" class="text-[10px]">
+																			{PA_TYPE_LABELS[a.catalog_activity_type ?? 'other']}
+																		</Badge>
+																		<span class="font-medium text-sm">{a.catalog_name}</span>
+																	</div>
+																	<div class="text-xs text-muted-foreground mt-1">
+																		{a.catalog_periods_per_week ?? 1} คาบ ·
+																		{a.catalog_scheduling_mode === 'independent'
+																			? 'แต่ละห้องจัดเอง'
+																			: 'จัดพร้อมกัน'}
+																	</div>
+																</div>
+																{#if canUpdateStudyPlans}
+																	<Button
+																		variant="ghost"
+																		size="icon"
+																		class="h-7 w-7"
+																		onclick={() => openEditPlanActivity(a)}
+																	>
+																		<Pencil class="w-4 h-4" />
+																	</Button>
+																{/if}
+																{#if canDeleteStudyPlans}
+																	<Button
+																		variant="ghost"
+																		size="icon"
+																		class="h-7 w-7 text-destructive"
+																		onclick={() => handleDeletePlanActivity(a)}
+																	>
+																		<Trash2 class="w-4 h-4" />
+																	</Button>
+																{/if}
+															</div>
+														{/each}
+													</div>
+													<p class="text-xs font-medium text-right mt-1">
+														รวม: {tact.periods} คาบ/สัปดาห์
+													</p>
+												{/if}
+											</section>
+
+											<!-- Grand total per term -->
+											<div class="border-t pt-2 text-sm font-semibold text-right">
+												รวมทั้งหมด: {(tb.credits + ta.credits).toFixed(1)} นก · {tb.hours +
+													ta.hours} ชม · {tact.periods} คาบกิจกรรม
+											</div>
+										</div>
+									{/each}
+								</div>
+							</div>
+						{:else}
+							<p class="text-center text-muted-foreground py-10">ไม่มีระดับชั้นในแผนการเรียนนี้</p>
+						{/each}
+					</div>
+				{:else}
+					<div class="text-center text-muted-foreground p-8">
+						กรุณาเลือกเวอร์ชันจากแท็บ "เวอร์ชัน"
+					</div>
+				{/if}
+			</Tabs.Content>
+		</Tabs.Root>
+	{/if}
 </div>
 
 <!-- Curriculum Export Dialog -->
-<Dialog bind:open={showCurriculumExportDialog}>
-	<DialogContent class="sm:max-w-[440px]">
-		<DialogHeader>
-			<DialogTitle>ส่งออกหลักสูตรตามแผน</DialogTitle>
-			<DialogDescription>
-				ดาวน์โหลดทุกเวอร์ชันหลักสูตรที่มีผลใช้ในปีการศึกษาที่เลือก
-			</DialogDescription>
-		</DialogHeader>
+{#if canReadStudyPlans}
+	<Dialog bind:open={showCurriculumExportDialog}>
+		<DialogContent class="sm:max-w-[440px]">
+			<DialogHeader>
+				<DialogTitle>ส่งออกหลักสูตรตามแผน</DialogTitle>
+				<DialogDescription>
+					ดาวน์โหลดทุกเวอร์ชันหลักสูตรที่มีผลใช้ในปีการศึกษาที่เลือก
+				</DialogDescription>
+			</DialogHeader>
 
-		<div class="space-y-2 py-2">
-			<Label>ปีการศึกษา</Label>
-			<Select.Root type="single" bind:value={exportYearId}>
-				<Select.Trigger class="w-full">
-					{academicYears.find((year) => year.id === exportYearId)?.name ?? 'เลือกปีการศึกษา'}
-				</Select.Trigger>
-				<Select.Content>
-					{#each academicYears as year (year.id)}
-						<Select.Item value={year.id}>{year.name}</Select.Item>
-					{/each}
-				</Select.Content>
-			</Select.Root>
-		</div>
+			<div class="space-y-2 py-2">
+				<Label>ปีการศึกษา</Label>
+				<Select.Root type="single" bind:value={exportYearId}>
+					<Select.Trigger class="w-full">
+						{academicYears.find((year) => year.id === exportYearId)?.name ?? 'เลือกปีการศึกษา'}
+					</Select.Trigger>
+					<Select.Content>
+						{#each academicYears as year (year.id)}
+							<Select.Item value={year.id}>{year.name}</Select.Item>
+						{/each}
+					</Select.Content>
+				</Select.Root>
+			</div>
 
-		<DialogFooter>
-			<Button
-				variant="outline"
-				onclick={() => (showCurriculumExportDialog = false)}
-				disabled={exportingCurriculum}
-			>
-				ยกเลิก
-			</Button>
-			<Button onclick={handleExportCurriculum} disabled={exportingCurriculum || !exportYearId}>
-				{#if exportingCurriculum}
-					<Loader2 class="w-4 h-4 mr-2 animate-spin" />
-					กำลังส่งออก...
-				{:else}
-					<FileSpreadsheet class="w-4 h-4 mr-2" />
-					ดาวน์โหลด XLSX
-				{/if}
-			</Button>
-		</DialogFooter>
-	</DialogContent>
-</Dialog>
+			<DialogFooter>
+				<Button
+					variant="outline"
+					onclick={() => (showCurriculumExportDialog = false)}
+					disabled={exportingCurriculum}
+				>
+					ยกเลิก
+				</Button>
+				<Button onclick={handleExportCurriculum} disabled={exportingCurriculum || !exportYearId}>
+					{#if exportingCurriculum}
+						<Loader2 class="w-4 h-4 mr-2 animate-spin" />
+						กำลังส่งออก...
+					{:else}
+						<FileSpreadsheet class="w-4 h-4 mr-2" />
+						ดาวน์โหลด XLSX
+					{/if}
+				</Button>
+			</DialogFooter>
+		</DialogContent>
+	</Dialog>
+{/if}
 
 <!-- Plan Dialog -->
-<Dialog bind:open={showPlanDialog}>
-	<DialogContent class="sm:max-w-[500px]">
-		<DialogHeader>
-			<DialogTitle>{planForm.id ? 'แก้ไข' : 'สร้าง'}แผนการเรียน</DialogTitle>
-			<DialogDescription>กรอกข้อมูลแผนการเรียน</DialogDescription>
-		</DialogHeader>
+{#if canCreateStudyPlans || canUpdateStudyPlans}
+	<Dialog bind:open={showPlanDialog}>
+		<DialogContent class="sm:max-w-[500px]">
+			<DialogHeader>
+				<DialogTitle>{planForm.id ? 'แก้ไข' : 'สร้าง'}แผนการเรียน</DialogTitle>
+				<DialogDescription>กรอกข้อมูลแผนการเรียน</DialogDescription>
+			</DialogHeader>
 
-		<div class="grid gap-4 py-4">
-			<div class="space-y-2">
-				<Label>รหัส <span class="text-destructive">*</span></Label>
-				<Input bind:value={planForm.code} placeholder="PLAN001" />
-			</div>
-
-			<div class="space-y-2">
-				<Label>ชื่อแผน (ภาษาไทย) <span class="text-destructive">*</span></Label>
-				<Input bind:value={planForm.name_th} placeholder="แผนการเรียนวิทย์-คณิต" />
-			</div>
-
-			<div class="space-y-2">
-				<Label>ชื่อแผน (English)</Label>
-				<Input bind:value={planForm.name_en} placeholder="Science-Mathematics Program" />
-			</div>
-
-			<div class="space-y-2">
-				<Label>
-					ระดับชั้น
-					<span class="text-xs text-muted-foreground">(เลือกหลายชั้นได้)</span>
-				</Label>
-				<div class="flex flex-wrap gap-2 p-2 border rounded min-h-[48px]">
-					{#each gradeLevels as gl (gl.id)}
-						{@const checked = (planForm.grade_level_ids ?? []).includes(gl.id)}
-						<label
-							class="flex items-center gap-1 text-xs border rounded px-2 py-1 cursor-pointer hover:bg-muted {checked
-								? 'bg-muted font-medium'
-								: ''}"
-						>
-							<input
-								type="checkbox"
-								{checked}
-								onchange={(e) => {
-									const ids = new SvelteSet(planForm.grade_level_ids ?? []);
-									if ((e.target as HTMLInputElement).checked) ids.add(gl.id);
-									else ids.delete(gl.id);
-									planForm.grade_level_ids = [...ids];
-								}}
-							/>
-							{gl.short_name ?? gl.code ?? gl.name}
-						</label>
-					{/each}
+			<div class="grid gap-4 py-4">
+				<div class="space-y-2">
+					<Label>รหัส <span class="text-destructive">*</span></Label>
+					<Input bind:value={planForm.code} placeholder="PLAN001" />
 				</div>
-				<p class="text-xs text-muted-foreground">ถ้าไม่เลือก = ทุกระดับ</p>
+
+				<div class="space-y-2">
+					<Label>ชื่อแผน (ภาษาไทย) <span class="text-destructive">*</span></Label>
+					<Input bind:value={planForm.name_th} placeholder="แผนการเรียนวิทย์-คณิต" />
+				</div>
+
+				<div class="space-y-2">
+					<Label>ชื่อแผน (English)</Label>
+					<Input bind:value={planForm.name_en} placeholder="Science-Mathematics Program" />
+				</div>
+
+				<div class="space-y-2">
+					<Label>
+						ระดับชั้น
+						<span class="text-xs text-muted-foreground">(เลือกหลายชั้นได้)</span>
+					</Label>
+					<div class="flex flex-wrap gap-2 p-2 border rounded min-h-[48px]">
+						{#each gradeLevels as gl (gl.id)}
+							{@const checked = (planForm.grade_level_ids ?? []).includes(gl.id)}
+							<label
+								class="flex items-center gap-1 text-xs border rounded px-2 py-1 cursor-pointer hover:bg-muted {checked
+									? 'bg-muted font-medium'
+									: ''}"
+							>
+								<input
+									type="checkbox"
+									{checked}
+									onchange={(e) => {
+										const ids = new SvelteSet(planForm.grade_level_ids ?? []);
+										if ((e.target as HTMLInputElement).checked) ids.add(gl.id);
+										else ids.delete(gl.id);
+										planForm.grade_level_ids = [...ids];
+									}}
+								/>
+								{gl.short_name ?? gl.code ?? gl.name}
+							</label>
+						{/each}
+					</div>
+					<p class="text-xs text-muted-foreground">ถ้าไม่เลือก = ทุกระดับ</p>
+				</div>
+
+				<div class="space-y-2">
+					<Label>คำอธิบาย</Label>
+					<Textarea bind:value={planForm.description} placeholder="คำอธิบายแผนการเรียน" />
+				</div>
 			</div>
 
-			<div class="space-y-2">
-				<Label>คำอธิบาย</Label>
-				<Textarea bind:value={planForm.description} placeholder="คำอธิบายแผนการเรียน" />
-			</div>
-		</div>
-
-		<DialogFooter>
-			<Button variant="outline" onclick={() => (showPlanDialog = false)}>ยกเลิก</Button>
-			<Button onclick={handleSubmitPlan} disabled={submitting}>
-				{submitting ? 'กำลังบันทึก...' : 'บันทึก'}
-			</Button>
-		</DialogFooter>
-	</DialogContent>
-</Dialog>
+			<DialogFooter>
+				<Button variant="outline" onclick={() => (showPlanDialog = false)}>ยกเลิก</Button>
+				<Button onclick={handleSubmitPlan} disabled={submitting}>
+					{submitting ? 'กำลังบันทึก...' : 'บันทึก'}
+				</Button>
+			</DialogFooter>
+		</DialogContent>
+	</Dialog>
+{/if}
 
 <!-- Version Dialog -->
-<Dialog bind:open={showVersionDialog}>
-	<DialogContent class="sm:max-w-[500px]">
-		<DialogHeader>
-			<DialogTitle>{versionForm.id ? 'แก้ไข' : 'สร้าง'}เวอร์ชันหลักสูตร</DialogTitle>
-			<DialogDescription>กรอกข้อมูลเวอร์ชัน</DialogDescription>
-		</DialogHeader>
+{#if canCreateStudyPlans || canUpdateStudyPlans}
+	<Dialog bind:open={showVersionDialog}>
+		<DialogContent class="sm:max-w-[500px]">
+			<DialogHeader>
+				<DialogTitle>{versionForm.id ? 'แก้ไข' : 'สร้าง'}เวอร์ชันหลักสูตร</DialogTitle>
+				<DialogDescription>กรอกข้อมูลเวอร์ชัน</DialogDescription>
+			</DialogHeader>
 
-		<div class="grid gap-4 py-4">
-			<div class="space-y-2">
-				<Label>ชื่อเวอร์ชัน <span class="text-destructive">*</span></Label>
-				<Input bind:value={versionForm.version_name} placeholder="เช่น v2568" />
+			<div class="grid gap-4 py-4">
+				<div class="space-y-2">
+					<Label>ชื่อเวอร์ชัน <span class="text-destructive">*</span></Label>
+					<Input bind:value={versionForm.version_name} placeholder="เช่น v2568" />
+				</div>
+
+				<div class="space-y-2">
+					<Label>ปีการศึกษาเริ่มต้น <span class="text-destructive">*</span></Label>
+					<Select.Root type="single" bind:value={versionForm.start_academic_year_id}>
+						<Select.Trigger>
+							{academicYears.find((y) => y.id === versionForm.start_academic_year_id)?.name ||
+								'เลือกปีการศึกษา'}
+						</Select.Trigger>
+						<Select.Content>
+							{#each academicYears as year (year.id)}
+								<Select.Item value={year.id}>{year.name}</Select.Item>
+							{/each}
+						</Select.Content>
+					</Select.Root>
+				</div>
+
+				<div class="space-y-2">
+					<Label>ปีการศึกษาสิ้นสุด (ถ้ามี)</Label>
+					<Select.Root type="single" bind:value={versionForm.end_academic_year_id}>
+						<Select.Trigger>
+							{academicYears.find((y) => y.id === versionForm.end_academic_year_id)?.name ||
+								'ไม่ระบุ'}
+						</Select.Trigger>
+						<Select.Content>
+							<Select.Item value="">ไม่ระบุ</Select.Item>
+							{#each academicYears as year (year.id)}
+								<Select.Item value={year.id}>{year.name}</Select.Item>
+							{/each}
+						</Select.Content>
+					</Select.Root>
+				</div>
+
+				<div class="space-y-2">
+					<Label>คำอธิบาย</Label>
+					<Textarea bind:value={versionForm.description} placeholder="คำอธิบายเวอร์ชัน" />
+				</div>
 			</div>
 
-			<div class="space-y-2">
-				<Label>ปีการศึกษาเริ่มต้น <span class="text-destructive">*</span></Label>
-				<Select.Root type="single" bind:value={versionForm.start_academic_year_id}>
-					<Select.Trigger>
-						{academicYears.find((y) => y.id === versionForm.start_academic_year_id)?.name ||
-							'เลือกปีการศึกษา'}
-					</Select.Trigger>
-					<Select.Content>
-						{#each academicYears as year (year.id)}
-							<Select.Item value={year.id}>{year.name}</Select.Item>
-						{/each}
-					</Select.Content>
-				</Select.Root>
-			</div>
-
-			<div class="space-y-2">
-				<Label>ปีการศึกษาสิ้นสุด (ถ้ามี)</Label>
-				<Select.Root type="single" bind:value={versionForm.end_academic_year_id}>
-					<Select.Trigger>
-						{academicYears.find((y) => y.id === versionForm.end_academic_year_id)?.name ||
-							'ไม่ระบุ'}
-					</Select.Trigger>
-					<Select.Content>
-						<Select.Item value="">ไม่ระบุ</Select.Item>
-						{#each academicYears as year (year.id)}
-							<Select.Item value={year.id}>{year.name}</Select.Item>
-						{/each}
-					</Select.Content>
-				</Select.Root>
-			</div>
-
-			<div class="space-y-2">
-				<Label>คำอธิบาย</Label>
-				<Textarea bind:value={versionForm.description} placeholder="คำอธิบายเวอร์ชัน" />
-			</div>
-		</div>
-
-		<DialogFooter>
-			<Button variant="outline" onclick={() => (showVersionDialog = false)}>ยกเลิก</Button>
-			<Button onclick={handleSubmitVersion} disabled={submitting}>
-				{submitting ? 'กำลังบันทึก...' : 'บันทึก'}
-			</Button>
-		</DialogFooter>
-	</DialogContent>
-</Dialog>
+			<DialogFooter>
+				<Button variant="outline" onclick={() => (showVersionDialog = false)}>ยกเลิก</Button>
+				<Button onclick={handleSubmitVersion} disabled={submitting}>
+					{submitting ? 'กำลังบันทึก...' : 'บันทึก'}
+				</Button>
+			</DialogFooter>
+		</DialogContent>
+	</Dialog>
+{/if}
 
 <!-- Plan Activity Dialog -->
-<Dialog bind:open={showPlanActivityDialog}>
-	<DialogContent class="sm:max-w-[500px]">
-		<DialogHeader>
-			<DialogTitle>{editingPlanActivity ? 'แก้ไขกิจกรรม' : 'เพิ่มกิจกรรม (แม่แบบ)'}</DialogTitle>
-			<DialogDescription>เลือกกิจกรรมจากคลังมาใช้ในหลักสูตรนี้</DialogDescription>
-		</DialogHeader>
+{#if canUpdateStudyPlans}
+	<Dialog bind:open={showPlanActivityDialog}>
+		<DialogContent class="sm:max-w-[500px]">
+			<DialogHeader>
+				<DialogTitle>{editingPlanActivity ? 'แก้ไขกิจกรรม' : 'เพิ่มกิจกรรม (แม่แบบ)'}</DialogTitle>
+				<DialogDescription>เลือกกิจกรรมจากคลังมาใช้ในหลักสูตรนี้</DialogDescription>
+			</DialogHeader>
 
-		<div class="space-y-3 py-2">
-			<div class="space-y-1">
-				<Label>เลือกกิจกรรมจากคลัง *</Label>
-				<Select.Root type="single" bind:value={paCatalogId}>
-					<Select.Trigger class="w-full">
-						{activityCatalog.find((c) => c.id === paCatalogId)?.name ?? 'เลือกกิจกรรม'}
-					</Select.Trigger>
-					<Select.Content class="max-h-[280px] overflow-y-auto">
-						{#each activityCatalog as c (c.id)}
-							<Select.Item value={c.id}>
-								{c.name} · {c.activity_type} · {c.periods_per_week} คาบ
-							</Select.Item>
-						{/each}
-					</Select.Content>
-				</Select.Root>
-				<p class="text-xs text-muted-foreground">
-					ถ้าไม่มีกิจกรรมที่ต้องการ ไปเพิ่มที่หน้า
-					<a href={resolve('/staff/academic/subjects')} class="underline"
-						>คลังรายวิชา tab "กิจกรรม"</a
-					>
-				</p>
+			<div class="space-y-3 py-2">
+				<div class="space-y-1">
+					<Label>เลือกกิจกรรมจากคลัง *</Label>
+					<Select.Root type="single" bind:value={paCatalogId}>
+						<Select.Trigger class="w-full">
+							{activityCatalog.find((c) => c.id === paCatalogId)?.name ?? 'เลือกกิจกรรม'}
+						</Select.Trigger>
+						<Select.Content class="max-h-[280px] overflow-y-auto">
+							{#each activityCatalog as c (c.id)}
+								<Select.Item value={c.id}>
+									{c.name} · {c.activity_type} · {c.periods_per_week} คาบ
+								</Select.Item>
+							{/each}
+						</Select.Content>
+					</Select.Root>
+					<p class="text-xs text-muted-foreground">
+						ถ้าไม่มีกิจกรรมที่ต้องการ ไปเพิ่มที่หน้า
+						<a href={resolve('/staff/academic/subjects')} class="underline"
+							>คลังรายวิชา tab "กิจกรรม"</a
+						>
+					</p>
+				</div>
 			</div>
-		</div>
 
-		<DialogFooter>
-			<Button variant="outline" onclick={() => (showPlanActivityDialog = false)}>ยกเลิก</Button>
-			<Button onclick={handleSavePlanActivity}>บันทึก</Button>
-		</DialogFooter>
-	</DialogContent>
-</Dialog>
+			<DialogFooter>
+				<Button variant="outline" onclick={() => (showPlanActivityDialog = false)}>ยกเลิก</Button>
+				<Button onclick={handleSavePlanActivity}>บันทึก</Button>
+			</DialogFooter>
+		</DialogContent>
+	</Dialog>
+{/if}
 
 <!-- Add to Plan Dialog (2-panel transfer list) -->
-<Dialog bind:open={showAddDialog}>
-	<DialogContent
-		class="max-w-[95vw] sm:max-w-[90vw] lg:max-w-[1400px] max-h-[95vh] overflow-y-auto"
-	>
-		<DialogHeader>
-			<DialogTitle>เพิ่มเข้าหลักสูตร</DialogTitle>
-		</DialogHeader>
+{#if canUpdateStudyPlans}
+	<Dialog bind:open={showAddDialog}>
+		<DialogContent
+			class="max-w-[95vw] sm:max-w-[90vw] lg:max-w-[1400px] max-h-[95vh] overflow-y-auto"
+		>
+			<DialogHeader>
+				<DialogTitle>เพิ่มเข้าหลักสูตร</DialogTitle>
+			</DialogHeader>
 
-		<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-			<!-- LEFT: Catalog (source) -->
-			<div class="space-y-3 border rounded-lg p-3">
-				<h3 class="font-semibold flex items-center gap-2">
-					<BookOpen class="w-4 h-4" /> คลังวิชา
-				</h3>
+			<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+				<!-- LEFT: Catalog (source) -->
+				<div class="space-y-3 border rounded-lg p-3">
+					<h3 class="font-semibold flex items-center gap-2">
+						<BookOpen class="w-4 h-4" /> คลังวิชา
+					</h3>
 
-				<!-- Filters -->
-				<div class="space-y-2 p-2 bg-muted/50 rounded">
-					<div class="space-y-1">
-						<Label class="text-xs">ชั้นที่เปิดสอน (filter)</Label>
-						<Select.Root type="single" bind:value={filterGradeId}>
-							<Select.Trigger class="w-full h-8 text-xs">
-								{planGradeLevels.find((g) => g.id === filterGradeId)?.short_name ?? 'ทั้งหมด'}
-							</Select.Trigger>
-							<Select.Content>
-								<Select.Item value="">ทั้งหมด</Select.Item>
-								{#each planGradeLevels as g (g.id)}
-									<Select.Item value={g.id}>{g.short_name ?? g.name}</Select.Item>
-								{/each}
-							</Select.Content>
-						</Select.Root>
-					</div>
-					<div class="grid grid-cols-2 gap-2">
+					<!-- Filters -->
+					<div class="space-y-2 p-2 bg-muted/50 rounded">
 						<div class="space-y-1">
-							<Label class="text-xs">ภาคเรียน</Label>
-							<Select.Root type="single" bind:value={filterTerm}>
+							<Label class="text-xs">ชั้นที่เปิดสอน (filter)</Label>
+							<Select.Root type="single" bind:value={filterGradeId}>
 								<Select.Trigger class="w-full h-8 text-xs">
-									{filterTerm === '1'
-										? 'เทอม 1'
-										: filterTerm === '2'
-											? 'เทอม 2'
-											: filterTerm === 'SUMMER'
-												? 'ฤดูร้อน'
-												: 'ทั้งหมด'}
+									{planGradeLevels.find((g) => g.id === filterGradeId)?.short_name ?? 'ทั้งหมด'}
 								</Select.Trigger>
 								<Select.Content>
 									<Select.Item value="">ทั้งหมด</Select.Item>
-									<Select.Item value="1">เทอม 1</Select.Item>
-									<Select.Item value="2">เทอม 2</Select.Item>
-									<Select.Item value="SUMMER">ฤดูร้อน</Select.Item>
-								</Select.Content>
-							</Select.Root>
-						</div>
-						<div class="space-y-1">
-							<Label class="text-xs">กลุ่มสาระ</Label>
-							<Select.Root type="single" bind:value={filterGroupId}>
-								<Select.Trigger class="w-full h-8 text-xs">
-									{subjectGroups.find((g) => g.id === filterGroupId)?.name_th ?? 'ทุกกลุ่ม'}
-								</Select.Trigger>
-								<Select.Content>
-									<Select.Item value="">ทุกกลุ่ม</Select.Item>
-									{#each subjectGroups as g (g.id)}
-										<Select.Item value={g.id}>{g.name_th}</Select.Item>
-									{/each}
-								</Select.Content>
-							</Select.Root>
-						</div>
-					</div>
-				</div>
-
-				<!-- Tabs: พื้นฐาน / เพิ่มเติม / กิจกรรม -->
-				<Tabs.Root value="basic" class="w-full">
-					<Tabs.List class="grid w-full grid-cols-3 h-9">
-						<Tabs.Trigger value="basic" class="text-xs">
-							พื้นฐาน ({filteredBasicSubjects.length})
-						</Tabs.Trigger>
-						<Tabs.Trigger value="additional" class="text-xs">
-							เพิ่มเติม ({filteredAdditionalSubjects.length})
-						</Tabs.Trigger>
-						<Tabs.Trigger value="activity" class="text-xs">
-							กิจกรรม ({filteredActivitiesForDialog.length})
-						</Tabs.Trigger>
-					</Tabs.List>
-
-					<Tabs.Content value="basic" class="mt-2">
-						<div class="max-h-[480px] overflow-y-auto divide-y rounded border">
-							{#each filteredBasicSubjects as s (s.id)}
-								{@const inPlan = isInPlan('subject', s.id)}
-								{@const inQueue = isInQueue('subject', s.id)}
-								<div class="flex items-center gap-2 px-2 py-1.5 text-xs">
-									<span class="flex-1 truncate">
-										<span class="font-medium">{s.code}</span>
-										<span class="text-muted-foreground ml-1">{s.name_th}</span>
-									</span>
-									{#if inPlan}
-										<Badge variant="secondary" class="text-[10px] opacity-60">✓ มีแล้ว</Badge>
-									{:else if inQueue}
-										<Badge variant="default" class="text-[10px]">✓ เพิ่มแล้ว</Badge>
-									{:else}
-										<Button
-											variant="outline"
-											size="icon"
-											class="h-6 w-6"
-											onclick={() => moveToQueue('subject', s)}
-											title="เพิ่มเข้ารายการ"
-										>
-											→
-										</Button>
-									{/if}
-								</div>
-							{:else}
-								<p class="text-xs text-muted-foreground italic text-center py-3">
-									ไม่มีวิชาพื้นฐานตามตัวกรอง
-								</p>
-							{/each}
-						</div>
-					</Tabs.Content>
-
-					<Tabs.Content value="additional" class="mt-2">
-						<div class="max-h-[480px] overflow-y-auto divide-y rounded border">
-							{#each filteredAdditionalSubjects as s (s.id)}
-								{@const inPlan = isInPlan('subject', s.id)}
-								{@const inQueue = isInQueue('subject', s.id)}
-								<div class="flex items-center gap-2 px-2 py-1.5 text-xs">
-									<span class="flex-1 truncate">
-										<span class="font-medium">{s.code}</span>
-										<span class="text-muted-foreground ml-1">{s.name_th}</span>
-									</span>
-									{#if inPlan}
-										<Badge variant="secondary" class="text-[10px] opacity-60">✓ มีแล้ว</Badge>
-									{:else if inQueue}
-										<Badge variant="default" class="text-[10px]">✓ เพิ่มแล้ว</Badge>
-									{:else}
-										<Button
-											variant="outline"
-											size="icon"
-											class="h-6 w-6"
-											onclick={() => moveToQueue('subject', s)}
-											title="เพิ่มเข้ารายการ"
-										>
-											→
-										</Button>
-									{/if}
-								</div>
-							{:else}
-								<p class="text-xs text-muted-foreground italic text-center py-3">
-									ไม่มีวิชาเพิ่มเติมตามตัวกรอง
-								</p>
-							{/each}
-						</div>
-					</Tabs.Content>
-
-					<Tabs.Content value="activity" class="mt-2">
-						<div class="max-h-[480px] overflow-y-auto divide-y rounded border">
-							{#each filteredActivitiesForDialog as c (c.id)}
-								{@const inPlan = isInPlan('activity', c.id)}
-								{@const inQueue = isInQueue('activity', c.id)}
-								<div class="flex items-center gap-2 px-2 py-1.5 text-xs">
-									<span class="flex-1 truncate">{c.name}</span>
-									{#if inPlan}
-										<Badge variant="secondary" class="text-[10px] opacity-60">✓ มีแล้ว</Badge>
-									{:else if inQueue}
-										<Badge variant="default" class="text-[10px]">✓ เพิ่มแล้ว</Badge>
-									{:else}
-										<Button
-											variant="outline"
-											size="icon"
-											class="h-6 w-6"
-											onclick={() => moveToQueue('activity', c)}
-											title="เพิ่มเข้ารายการ"
-										>
-											→
-										</Button>
-									{/if}
-								</div>
-							{:else}
-								<p class="text-xs text-muted-foreground italic text-center py-3">
-									ไม่มีกิจกรรมตามตัวกรอง
-								</p>
-							{/each}
-						</div>
-					</Tabs.Content>
-				</Tabs.Root>
-			</div>
-
-			<!-- RIGHT: Target + Queue -->
-			<div class="space-y-3 border rounded-lg p-3 bg-blue-50/30">
-				<h3 class="font-semibold flex items-center gap-2">
-					<Plus class="w-4 h-4" /> เพิ่มเข้า
-				</h3>
-
-				<!-- Target selectors -->
-				<div class="space-y-2 p-2 bg-background rounded border">
-					<div class="grid grid-cols-2 gap-2">
-						<div class="space-y-1">
-							<Label class="text-xs">ชั้น *</Label>
-							<Select.Root type="single" bind:value={addTargetGradeId}>
-								<Select.Trigger class="w-full h-8 text-xs">
-									{planGradeLevels.find((g) => g.id === addTargetGradeId)?.short_name ??
-										'เลือกชั้น'}
-								</Select.Trigger>
-								<Select.Content>
 									{#each planGradeLevels as g (g.id)}
 										<Select.Item value={g.id}>{g.short_name ?? g.name}</Select.Item>
 									{/each}
 								</Select.Content>
 							</Select.Root>
 						</div>
-						<div class="space-y-1">
-							<Label class="text-xs">ภาคเรียน</Label>
-							<Select.Root type="single" bind:value={addTerm}>
-								<Select.Trigger class="w-full h-8 text-xs">
-									{addTerm === '1' ? 'เทอม 1' : addTerm === '2' ? 'เทอม 2' : 'ฤดูร้อน'}
-								</Select.Trigger>
-								<Select.Content>
-									<Select.Item value="1">เทอม 1</Select.Item>
-									<Select.Item value="2">เทอม 2</Select.Item>
-									<Select.Item value="SUMMER">ฤดูร้อน</Select.Item>
-								</Select.Content>
-							</Select.Root>
+						<div class="grid grid-cols-2 gap-2">
+							<div class="space-y-1">
+								<Label class="text-xs">ภาคเรียน</Label>
+								<Select.Root type="single" bind:value={filterTerm}>
+									<Select.Trigger class="w-full h-8 text-xs">
+										{filterTerm === '1'
+											? 'เทอม 1'
+											: filterTerm === '2'
+												? 'เทอม 2'
+												: filterTerm === 'SUMMER'
+													? 'ฤดูร้อน'
+													: 'ทั้งหมด'}
+									</Select.Trigger>
+									<Select.Content>
+										<Select.Item value="">ทั้งหมด</Select.Item>
+										<Select.Item value="1">เทอม 1</Select.Item>
+										<Select.Item value="2">เทอม 2</Select.Item>
+										<Select.Item value="SUMMER">ฤดูร้อน</Select.Item>
+									</Select.Content>
+								</Select.Root>
+							</div>
+							<div class="space-y-1">
+								<Label class="text-xs">กลุ่มสาระ</Label>
+								<Select.Root type="single" bind:value={filterGroupId}>
+									<Select.Trigger class="w-full h-8 text-xs">
+										{subjectGroups.find((g) => g.id === filterGroupId)?.name_th ?? 'ทุกกลุ่ม'}
+									</Select.Trigger>
+									<Select.Content>
+										<Select.Item value="">ทุกกลุ่ม</Select.Item>
+										{#each subjectGroups as g (g.id)}
+											<Select.Item value={g.id}>{g.name_th}</Select.Item>
+										{/each}
+									</Select.Content>
+								</Select.Root>
+							</div>
+						</div>
+					</div>
+
+					<!-- Tabs: พื้นฐาน / เพิ่มเติม / กิจกรรม -->
+					<Tabs.Root value="basic" class="w-full">
+						<Tabs.List class="grid w-full grid-cols-3 h-9">
+							<Tabs.Trigger value="basic" class="text-xs">
+								พื้นฐาน ({filteredBasicSubjects.length})
+							</Tabs.Trigger>
+							<Tabs.Trigger value="additional" class="text-xs">
+								เพิ่มเติม ({filteredAdditionalSubjects.length})
+							</Tabs.Trigger>
+							<Tabs.Trigger value="activity" class="text-xs">
+								กิจกรรม ({filteredActivitiesForDialog.length})
+							</Tabs.Trigger>
+						</Tabs.List>
+
+						<Tabs.Content value="basic" class="mt-2">
+							<div class="max-h-[480px] overflow-y-auto divide-y rounded border">
+								{#each filteredBasicSubjects as s (s.id)}
+									{@const inPlan = isInPlan('subject', s.id)}
+									{@const inQueue = isInQueue('subject', s.id)}
+									<div class="flex items-center gap-2 px-2 py-1.5 text-xs">
+										<span class="flex-1 truncate">
+											<span class="font-medium">{s.code}</span>
+											<span class="text-muted-foreground ml-1">{s.name_th}</span>
+										</span>
+										{#if inPlan}
+											<Badge variant="secondary" class="text-[10px] opacity-60">✓ มีแล้ว</Badge>
+										{:else if inQueue}
+											<Badge variant="default" class="text-[10px]">✓ เพิ่มแล้ว</Badge>
+										{:else}
+											<Button
+												variant="outline"
+												size="icon"
+												class="h-6 w-6"
+												onclick={() => moveToQueue('subject', s)}
+												title="เพิ่มเข้ารายการ"
+											>
+												→
+											</Button>
+										{/if}
+									</div>
+								{:else}
+									<p class="text-xs text-muted-foreground italic text-center py-3">
+										ไม่มีวิชาพื้นฐานตามตัวกรอง
+									</p>
+								{/each}
+							</div>
+						</Tabs.Content>
+
+						<Tabs.Content value="additional" class="mt-2">
+							<div class="max-h-[480px] overflow-y-auto divide-y rounded border">
+								{#each filteredAdditionalSubjects as s (s.id)}
+									{@const inPlan = isInPlan('subject', s.id)}
+									{@const inQueue = isInQueue('subject', s.id)}
+									<div class="flex items-center gap-2 px-2 py-1.5 text-xs">
+										<span class="flex-1 truncate">
+											<span class="font-medium">{s.code}</span>
+											<span class="text-muted-foreground ml-1">{s.name_th}</span>
+										</span>
+										{#if inPlan}
+											<Badge variant="secondary" class="text-[10px] opacity-60">✓ มีแล้ว</Badge>
+										{:else if inQueue}
+											<Badge variant="default" class="text-[10px]">✓ เพิ่มแล้ว</Badge>
+										{:else}
+											<Button
+												variant="outline"
+												size="icon"
+												class="h-6 w-6"
+												onclick={() => moveToQueue('subject', s)}
+												title="เพิ่มเข้ารายการ"
+											>
+												→
+											</Button>
+										{/if}
+									</div>
+								{:else}
+									<p class="text-xs text-muted-foreground italic text-center py-3">
+										ไม่มีวิชาเพิ่มเติมตามตัวกรอง
+									</p>
+								{/each}
+							</div>
+						</Tabs.Content>
+
+						<Tabs.Content value="activity" class="mt-2">
+							<div class="max-h-[480px] overflow-y-auto divide-y rounded border">
+								{#each filteredActivitiesForDialog as c (c.id)}
+									{@const inPlan = isInPlan('activity', c.id)}
+									{@const inQueue = isInQueue('activity', c.id)}
+									<div class="flex items-center gap-2 px-2 py-1.5 text-xs">
+										<span class="flex-1 truncate">{c.name}</span>
+										{#if inPlan}
+											<Badge variant="secondary" class="text-[10px] opacity-60">✓ มีแล้ว</Badge>
+										{:else if inQueue}
+											<Badge variant="default" class="text-[10px]">✓ เพิ่มแล้ว</Badge>
+										{:else}
+											<Button
+												variant="outline"
+												size="icon"
+												class="h-6 w-6"
+												onclick={() => moveToQueue('activity', c)}
+												title="เพิ่มเข้ารายการ"
+											>
+												→
+											</Button>
+										{/if}
+									</div>
+								{:else}
+									<p class="text-xs text-muted-foreground italic text-center py-3">
+										ไม่มีกิจกรรมตามตัวกรอง
+									</p>
+								{/each}
+							</div>
+						</Tabs.Content>
+					</Tabs.Root>
+				</div>
+
+				<!-- RIGHT: Target + Queue -->
+				<div class="space-y-3 border rounded-lg p-3 bg-blue-50/30">
+					<h3 class="font-semibold flex items-center gap-2">
+						<Plus class="w-4 h-4" /> เพิ่มเข้า
+					</h3>
+
+					<!-- Target selectors -->
+					<div class="space-y-2 p-2 bg-background rounded border">
+						<div class="grid grid-cols-2 gap-2">
+							<div class="space-y-1">
+								<Label class="text-xs">ชั้น *</Label>
+								<Select.Root type="single" bind:value={addTargetGradeId}>
+									<Select.Trigger class="w-full h-8 text-xs">
+										{planGradeLevels.find((g) => g.id === addTargetGradeId)?.short_name ??
+											'เลือกชั้น'}
+									</Select.Trigger>
+									<Select.Content>
+										{#each planGradeLevels as g (g.id)}
+											<Select.Item value={g.id}>{g.short_name ?? g.name}</Select.Item>
+										{/each}
+									</Select.Content>
+								</Select.Root>
+							</div>
+							<div class="space-y-1">
+								<Label class="text-xs">ภาคเรียน</Label>
+								<Select.Root type="single" bind:value={addTerm}>
+									<Select.Trigger class="w-full h-8 text-xs">
+										{addTerm === '1' ? 'เทอม 1' : addTerm === '2' ? 'เทอม 2' : 'ฤดูร้อน'}
+									</Select.Trigger>
+									<Select.Content>
+										<Select.Item value="1">เทอม 1</Select.Item>
+										<Select.Item value="2">เทอม 2</Select.Item>
+										<Select.Item value="SUMMER">ฤดูร้อน</Select.Item>
+									</Select.Content>
+								</Select.Root>
+							</div>
+						</div>
+					</div>
+
+					<!-- Existing subjects in plan (read-only) -->
+					<div>
+						<h4 class="text-xs font-semibold mb-1 text-muted-foreground">
+							ในหลักสูตรแล้ว ({existingSubjectsForTarget.length})
+						</h4>
+						<div class="max-h-[150px] overflow-y-auto divide-y rounded border bg-muted/30">
+							{#each existingSubjectsForTarget as s (s.id)}
+								<div class="flex items-center gap-2 px-2 py-1.5 text-xs opacity-70">
+									<span class="flex-1 truncate">
+										<span class="font-medium">{s.subject_code}</span>
+										<span class="text-muted-foreground ml-1">{s.subject_name_th}</span>
+									</span>
+									<Badge variant="secondary" class="text-[10px]">✓ มีแล้ว</Badge>
+								</div>
+							{:else}
+								<p class="text-xs text-muted-foreground italic text-center py-2">—</p>
+							{/each}
+						</div>
+					</div>
+
+					<!-- Queue: subjects -->
+					<div>
+						<h4 class="text-xs font-semibold mb-1">
+							วิชาที่จะเพิ่ม ({pendingQueue.filter((q) => q.type === 'subject').length})
+						</h4>
+						<div class="max-h-[400px] overflow-y-auto divide-y rounded border bg-background">
+							{#each pendingQueue as q, idx (idx)}
+								{#if q.type === 'subject'}
+									<div class="flex items-center gap-2 px-2 py-1.5 text-xs">
+										<span class="flex-1 truncate">
+											<span class="font-medium">{q.code}</span>
+											<span class="text-muted-foreground ml-1">{q.name}</span>
+											<span class="text-[10px] text-blue-600 ml-2">
+												{gradeLevels.find((g) => g.id === q.target_grade_id)?.short_name} · เทอม
+												{q.target_term}
+											</span>
+										</span>
+										<Button
+											variant="outline"
+											size="icon"
+											class="h-6 w-6 text-destructive"
+											onclick={() => removeFromQueue(idx)}
+											title="เอาออก"
+										>
+											←
+										</Button>
+									</div>
+								{/if}
+							{:else}
+								<p class="text-xs text-muted-foreground italic text-center py-3">—</p>
+							{/each}
+						</div>
+					</div>
+
+					<!-- Existing activities in plan (read-only) -->
+					<div>
+						<h4 class="text-xs font-semibold mb-1 text-muted-foreground">
+							ในหลักสูตรแล้ว ({existingActivitiesForTarget.length})
+						</h4>
+						<div class="max-h-[150px] overflow-y-auto divide-y rounded border bg-muted/30">
+							{#each existingActivitiesForTarget as a (a.id)}
+								<div class="flex items-center gap-2 px-2 py-1.5 text-xs opacity-70">
+									<span class="flex-1 truncate">
+										<span class="font-medium">{a.catalog_name}</span>
+									</span>
+									<Badge variant="secondary" class="text-[10px]">✓ มีแล้ว</Badge>
+								</div>
+							{:else}
+								<p class="text-xs text-muted-foreground italic text-center py-2">—</p>
+							{/each}
+						</div>
+					</div>
+
+					<!-- Queue: activities -->
+					<div>
+						<h4 class="text-xs font-semibold mb-1">
+							กิจกรรมที่จะเพิ่ม ({pendingQueue.filter((q) => q.type === 'activity').length})
+						</h4>
+						<div class="max-h-[220px] overflow-y-auto divide-y rounded border bg-background">
+							{#each pendingQueue as q, idx (idx)}
+								{#if q.type === 'activity'}
+									<div class="flex items-center gap-2 px-2 py-1.5 text-xs">
+										<span class="flex-1 truncate">
+											{q.name}
+											<span class="text-[10px] text-blue-600 ml-2">
+												{gradeLevels.find((g) => g.id === q.target_grade_id)?.short_name}
+											</span>
+										</span>
+										<Button
+											variant="outline"
+											size="icon"
+											class="h-6 w-6 text-destructive"
+											onclick={() => removeFromQueue(idx)}
+											title="เอาออก"
+										>
+											←
+										</Button>
+									</div>
+								{/if}
+							{:else}
+								<p class="text-xs text-muted-foreground italic text-center py-3">—</p>
+							{/each}
 						</div>
 					</div>
 				</div>
-
-				<!-- Existing subjects in plan (read-only) -->
-				<div>
-					<h4 class="text-xs font-semibold mb-1 text-muted-foreground">
-						ในหลักสูตรแล้ว ({existingSubjectsForTarget.length})
-					</h4>
-					<div class="max-h-[150px] overflow-y-auto divide-y rounded border bg-muted/30">
-						{#each existingSubjectsForTarget as s (s.id)}
-							<div class="flex items-center gap-2 px-2 py-1.5 text-xs opacity-70">
-								<span class="flex-1 truncate">
-									<span class="font-medium">{s.subject_code}</span>
-									<span class="text-muted-foreground ml-1">{s.subject_name_th}</span>
-								</span>
-								<Badge variant="secondary" class="text-[10px]">✓ มีแล้ว</Badge>
-							</div>
-						{:else}
-							<p class="text-xs text-muted-foreground italic text-center py-2">—</p>
-						{/each}
-					</div>
-				</div>
-
-				<!-- Queue: subjects -->
-				<div>
-					<h4 class="text-xs font-semibold mb-1">
-						วิชาที่จะเพิ่ม ({pendingQueue.filter((q) => q.type === 'subject').length})
-					</h4>
-					<div class="max-h-[400px] overflow-y-auto divide-y rounded border bg-background">
-						{#each pendingQueue as q, idx (idx)}
-							{#if q.type === 'subject'}
-								<div class="flex items-center gap-2 px-2 py-1.5 text-xs">
-									<span class="flex-1 truncate">
-										<span class="font-medium">{q.code}</span>
-										<span class="text-muted-foreground ml-1">{q.name}</span>
-										<span class="text-[10px] text-blue-600 ml-2">
-											{gradeLevels.find((g) => g.id === q.target_grade_id)?.short_name} · เทอม
-											{q.target_term}
-										</span>
-									</span>
-									<Button
-										variant="outline"
-										size="icon"
-										class="h-6 w-6 text-destructive"
-										onclick={() => removeFromQueue(idx)}
-										title="เอาออก"
-									>
-										←
-									</Button>
-								</div>
-							{/if}
-						{:else}
-							<p class="text-xs text-muted-foreground italic text-center py-3">—</p>
-						{/each}
-					</div>
-				</div>
-
-				<!-- Existing activities in plan (read-only) -->
-				<div>
-					<h4 class="text-xs font-semibold mb-1 text-muted-foreground">
-						ในหลักสูตรแล้ว ({existingActivitiesForTarget.length})
-					</h4>
-					<div class="max-h-[150px] overflow-y-auto divide-y rounded border bg-muted/30">
-						{#each existingActivitiesForTarget as a (a.id)}
-							<div class="flex items-center gap-2 px-2 py-1.5 text-xs opacity-70">
-								<span class="flex-1 truncate">
-									<span class="font-medium">{a.catalog_name}</span>
-								</span>
-								<Badge variant="secondary" class="text-[10px]">✓ มีแล้ว</Badge>
-							</div>
-						{:else}
-							<p class="text-xs text-muted-foreground italic text-center py-2">—</p>
-						{/each}
-					</div>
-				</div>
-
-				<!-- Queue: activities -->
-				<div>
-					<h4 class="text-xs font-semibold mb-1">
-						กิจกรรมที่จะเพิ่ม ({pendingQueue.filter((q) => q.type === 'activity').length})
-					</h4>
-					<div class="max-h-[220px] overflow-y-auto divide-y rounded border bg-background">
-						{#each pendingQueue as q, idx (idx)}
-							{#if q.type === 'activity'}
-								<div class="flex items-center gap-2 px-2 py-1.5 text-xs">
-									<span class="flex-1 truncate">
-										{q.name}
-										<span class="text-[10px] text-blue-600 ml-2">
-											{gradeLevels.find((g) => g.id === q.target_grade_id)?.short_name}
-										</span>
-									</span>
-									<Button
-										variant="outline"
-										size="icon"
-										class="h-6 w-6 text-destructive"
-										onclick={() => removeFromQueue(idx)}
-										title="เอาออก"
-									>
-										←
-									</Button>
-								</div>
-							{/if}
-						{:else}
-							<p class="text-xs text-muted-foreground italic text-center py-3">—</p>
-						{/each}
-					</div>
-				</div>
 			</div>
-		</div>
 
-		<DialogFooter>
-			<Button
-				variant="outline"
-				onclick={() => {
-					showAddDialog = false;
-				}}>ยกเลิก</Button
-			>
-			<Button onclick={handleSave} disabled={pendingQueue.length === 0}>
-				💾 บันทึก {pendingQueue.length} รายการ
-			</Button>
-		</DialogFooter>
-	</DialogContent>
-</Dialog>
+			<DialogFooter>
+				<Button
+					variant="outline"
+					onclick={() => {
+						showAddDialog = false;
+					}}>ยกเลิก</Button
+				>
+				<Button onclick={handleSave} disabled={pendingQueue.length === 0}>
+					💾 บันทึก {pendingQueue.length} รายการ
+				</Button>
+			</DialogFooter>
+		</DialogContent>
+	</Dialog>
+{/if}
 
 <!-- Delete Confirmation Dialog -->
-<Dialog bind:open={showDeleteDialog}>
-	<DialogContent>
-		<DialogHeader>
-			<DialogTitle>ยืนยันการลบ</DialogTitle>
-			<DialogDescription>
-				คุณแน่ใจหรือไม่ที่จะลบ <strong>{deleteTarget?.name}</strong>?
-				การกระทำนี้ไม่สามารถย้อนกลับได้
-			</DialogDescription>
-		</DialogHeader>
-		<DialogFooter>
-			<Button variant="outline" onclick={() => (showDeleteDialog = false)}>ยกเลิก</Button>
-			<Button variant="destructive" onclick={handleConfirmDelete} disabled={submitting}>
-				{submitting ? 'กำลังลบ...' : 'ลบ'}
-			</Button>
-		</DialogFooter>
-	</DialogContent>
-</Dialog>
+{#if canDeleteStudyPlans}
+	<Dialog bind:open={showDeleteDialog}>
+		<DialogContent>
+			<DialogHeader>
+				<DialogTitle>ยืนยันการลบ</DialogTitle>
+				<DialogDescription>
+					คุณแน่ใจหรือไม่ที่จะลบ <strong>{deleteTarget?.name}</strong>?
+					การกระทำนี้ไม่สามารถย้อนกลับได้
+				</DialogDescription>
+			</DialogHeader>
+			<DialogFooter>
+				<Button variant="outline" onclick={() => (showDeleteDialog = false)}>ยกเลิก</Button>
+				<Button variant="destructive" onclick={handleConfirmDelete} disabled={submitting}>
+					{submitting ? 'กำลังลบ...' : 'ลบ'}
+				</Button>
+			</DialogFooter>
+		</DialogContent>
+	</Dialog>
+{/if}

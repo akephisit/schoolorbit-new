@@ -739,6 +739,88 @@ test('academic structure workspace pages gate read and mutation actions', async 
 	}
 });
 
+test('academic curriculum workspace pages gate read and mutation actions', async () => {
+	const routeExpectations = [
+		{
+			file: 'frontend-school/src/routes/(app)/staff/academic/subjects/+page.svelte',
+			imports: ['$lib/components/ui/alert'],
+			permissions: [
+				'PERMISSIONS.ACADEMIC_CURRICULUM_READ_ALL',
+				'PERMISSIONS.ACADEMIC_CURRICULUM_READ_ORGANIZATION_TREE',
+				'PERMISSIONS.ACADEMIC_CURRICULUM_MANAGE_ORGANIZATION_UNIT',
+				'PERMISSIONS.ACADEMIC_CURRICULUM_MANAGE_ORGANIZATION_TREE',
+				'PERMISSIONS.ACADEMIC_CURRICULUM_CREATE_ALL',
+				'PERMISSIONS.ACADEMIC_CURRICULUM_UPDATE_ALL',
+				'PERMISSIONS.ACADEMIC_CURRICULUM_DELETE_ALL'
+			],
+			identifiers: [
+				'canReadCurriculum',
+				'canCreateCurriculum',
+				'canUpdateCurriculum',
+				'canDeleteCurriculum'
+			]
+		},
+		{
+			file: 'frontend-school/src/routes/(app)/staff/academic/subject-groups/+page.svelte',
+			imports: ['$lib/components/ui/alert'],
+			permissions: [
+				'PERMISSIONS.ACADEMIC_CURRICULUM_READ_ALL',
+				'PERMISSIONS.ACADEMIC_CURRICULUM_READ_ORGANIZATION_TREE',
+				'PERMISSIONS.ACADEMIC_CURRICULUM_MANAGE_ORGANIZATION_UNIT',
+				'PERMISSIONS.ACADEMIC_CURRICULUM_MANAGE_ORGANIZATION_TREE'
+			],
+			identifiers: ['canReadSubjectGroups', 'canManageSubjectGroupPermissions']
+		},
+		{
+			file: 'frontend-school/src/routes/(app)/staff/academic/subject-groups/[id]/+page.svelte',
+			imports: ['$lib/components/ui/alert'],
+			permissions: [
+				'PERMISSIONS.ACADEMIC_CURRICULUM_READ_ALL',
+				'PERMISSIONS.ACADEMIC_CURRICULUM_READ_ORGANIZATION_TREE',
+				'PERMISSIONS.ACADEMIC_CURRICULUM_MANAGE_ORGANIZATION_UNIT',
+				'PERMISSIONS.ACADEMIC_CURRICULUM_MANAGE_ORGANIZATION_TREE'
+			],
+			identifiers: ['canReadSubjectGroupDetail', 'canManageSubjectGroupPermissions']
+		},
+		{
+			file: 'frontend-school/src/routes/(app)/staff/academic/study-plans/+page.svelte',
+			imports: ['$lib/components/ui/alert'],
+			permissions: [
+				'PERMISSIONS.ACADEMIC_CURRICULUM_READ_ALL',
+				'PERMISSIONS.ACADEMIC_CURRICULUM_READ_ORGANIZATION_TREE',
+				'PERMISSIONS.ACADEMIC_CURRICULUM_MANAGE_ORGANIZATION_UNIT',
+				'PERMISSIONS.ACADEMIC_CURRICULUM_MANAGE_ORGANIZATION_TREE',
+				'PERMISSIONS.ACADEMIC_CURRICULUM_CREATE_ALL',
+				'PERMISSIONS.ACADEMIC_CURRICULUM_UPDATE_ALL',
+				'PERMISSIONS.ACADEMIC_CURRICULUM_DELETE_ALL'
+			],
+			identifiers: [
+				'canReadStudyPlans',
+				'canCreateStudyPlans',
+				'canUpdateStudyPlans',
+				'canDeleteStudyPlans'
+			]
+		}
+	];
+	const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+	for (const expectation of routeExpectations) {
+		const source = stripComments(await readFile(path.join(repoRoot, expectation.file), 'utf8'));
+
+		for (const requiredImport of expectation.imports) {
+			assert.match(source, new RegExp(escapeRegex(requiredImport)));
+		}
+
+		for (const requiredPermission of expectation.permissions) {
+			assert.match(source, new RegExp(escapeRegex(requiredPermission)));
+		}
+
+		for (const identifier of expectation.identifiers) {
+			assert.match(source, new RegExp(`\\b${identifier}\\b`));
+		}
+	}
+});
+
 test('frontend app pages have route guard metadata or guarded ancestor fallback', async () => {
 	const appRoutesDir = path.join(repoRoot, 'frontend-school/src/routes/(app)');
 	const pageSvelteFiles = await listFiles(appRoutesDir, (file) => file.endsWith('+page.svelte'));

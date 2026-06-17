@@ -4,11 +4,12 @@
 	import { getOrganizationUnitLookup, type OrganizationUnit } from '$lib/api/staff';
 	import { Button } from '$lib/components/ui/button';
 	import { Badge } from '$lib/components/ui/badge';
+	import { Alert, AlertDescription, AlertTitle } from '$lib/components/ui/alert';
 	import OrganizationMembersSection from '$lib/components/staff/OrganizationMembersSection.svelte';
 	import OrganizationPermissionDialog from '$lib/components/staff/OrganizationPermissionDialog.svelte';
 	import { PERMISSIONS } from '$lib/permissions/registry';
 	import { can } from '$lib/stores/permissions';
-	import { GraduationCap, ArrowLeft, Building2, Settings } from 'lucide-svelte';
+	import { GraduationCap, ArrowLeft, Building2, Settings, AlertTriangle } from 'lucide-svelte';
 
 	const { params }: PageProps = $props();
 	let deptId = $derived(params.id);
@@ -18,8 +19,24 @@
 
 	let showPermissionDialog = $state(false);
 
+	const canReadSubjectGroupDetail = $derived(
+		$can.hasAny(
+			PERMISSIONS.ACADEMIC_CURRICULUM_READ_ALL,
+			PERMISSIONS.ACADEMIC_CURRICULUM_READ_ORGANIZATION_TREE,
+			PERMISSIONS.ACADEMIC_CURRICULUM_MANAGE_ORGANIZATION_UNIT,
+			PERMISSIONS.ACADEMIC_CURRICULUM_MANAGE_ORGANIZATION_TREE
+		)
+	);
+	const canManageSubjectGroupPermissions = $derived($can.has(PERMISSIONS.ROLES_ASSIGN_ALL));
+
 	async function loadData() {
 		if (!deptId) return;
+		if (!canReadSubjectGroupDetail) {
+			department = null;
+			loading = false;
+			return;
+		}
+
 		try {
 			loading = true;
 			const res = await getOrganizationUnitLookup(deptId);
@@ -63,7 +80,7 @@
 				<p class="text-muted-foreground text-sm">{department.code}</p>
 			{/if}
 		</div>
-		{#if department && $can.has(PERMISSIONS.ROLES_ASSIGN_ALL)}
+		{#if department && canManageSubjectGroupPermissions}
 			<Button variant="outline" size="sm" onclick={() => (showPermissionDialog = true)}>
 				<Settings class="w-4 h-4 mr-1" />
 				ตั้งค่าสิทธิ์
@@ -71,7 +88,15 @@
 		{/if}
 	</div>
 
-	{#if loading}
+	{#if !canReadSubjectGroupDetail}
+		<Alert>
+			<AlertTriangle class="h-4 w-4" />
+			<AlertTitle>ไม่มีสิทธิ์ดูรายละเอียดกลุ่มสาระ</AlertTitle>
+			<AlertDescription>
+				บัญชีนี้เข้า module หลักสูตรได้ แต่ยังไม่มีสิทธิ์อ่านรายละเอียดกลุ่มสาระ
+			</AlertDescription>
+		</Alert>
+	{:else if loading}
 		<div class="p-12 text-center text-muted-foreground">กำลังโหลดข้อมูล...</div>
 	{:else if error}
 		<div class="p-6 bg-destructive/10 text-destructive rounded-lg">{error}</div>
@@ -105,10 +130,17 @@
 
 			<!-- Right: Members -->
 			<div>
-				<OrganizationMembersSection organizationUnitId={deptId} />
+				<OrganizationMembersSection
+					organizationUnitId={deptId}
+					canAssignMembers={canManageSubjectGroupPermissions}
+				/>
 			</div>
 		</div>
 	{/if}
 </div>
 
-<OrganizationPermissionDialog bind:open={showPermissionDialog} organizationUnit={department} />
+<OrganizationPermissionDialog
+	bind:open={showPermissionDialog}
+	organizationUnit={department}
+	readOnly={!canManageSubjectGroupPermissions}
+/>

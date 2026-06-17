@@ -4,7 +4,9 @@
 	import { resolve } from '$app/paths';
 	import { listOrganizationUnitsLookup, type OrganizationUnit } from '$lib/api/staff';
 	import { Button } from '$lib/components/ui/button';
-	import { GraduationCap, ChevronRight, Search, Settings } from 'lucide-svelte';
+	import { Input } from '$lib/components/ui/input';
+	import { Alert, AlertDescription, AlertTitle } from '$lib/components/ui/alert';
+	import { GraduationCap, ChevronRight, Search, Settings, AlertTriangle } from 'lucide-svelte';
 	import OrganizationPermissionDialog from '$lib/components/staff/OrganizationPermissionDialog.svelte';
 	import { PERMISSIONS } from '$lib/permissions/registry';
 	import { can } from '$lib/stores/permissions';
@@ -27,20 +29,38 @@
 	let showPermissionDialog = $state(false);
 	let permissionDepartment = $state<OrganizationUnit | null>(null);
 
+	const canReadSubjectGroups = $derived(
+		$can.hasAny(
+			PERMISSIONS.ACADEMIC_CURRICULUM_READ_ALL,
+			PERMISSIONS.ACADEMIC_CURRICULUM_READ_ORGANIZATION_TREE,
+			PERMISSIONS.ACADEMIC_CURRICULUM_MANAGE_ORGANIZATION_UNIT,
+			PERMISSIONS.ACADEMIC_CURRICULUM_MANAGE_ORGANIZATION_TREE
+		)
+	);
+	const canManageSubjectGroupPermissions = $derived($can.has(PERMISSIONS.ROLES_ASSIGN_ALL));
+
 	function goToSubjectGroup(id: string) {
+		if (!canReadSubjectGroups) return;
 		goto(resolve(`/staff/academic/subject-groups/${id}`));
 	}
 
 	function handlePermission(dept: OrganizationUnit, e: MouseEvent) {
 		e.preventDefault();
+		if (!canManageSubjectGroupPermissions) return;
 		permissionDepartment = dept;
 		showPermissionDialog = true;
 	}
 
 	async function loadData() {
+		if (!canReadSubjectGroups) {
+			departments = [];
+			loading = false;
+			return;
+		}
+
 		loading = true;
 		// admin เห็นทุกกลุ่ม, user ทั่วไปเห็นเฉพาะกลุ่มที่ตัวเองสังกัด
-		const isAdmin = $can.has(PERMISSIONS.ROLES_ASSIGN_ALL);
+		const isAdmin = canManageSubjectGroupPermissions;
 		const res = await listOrganizationUnitsLookup(isAdmin ? undefined : { member_only: true });
 		if (res.success && res.data) departments = res.data;
 		loading = false;
@@ -67,15 +87,18 @@
 	<!-- Search -->
 	<div class="relative max-w-sm">
 		<Search class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-		<input
-			type="text"
-			bind:value={searchQuery}
-			placeholder="ค้นหากลุ่มสาระ..."
-			class="w-full pl-9 pr-4 py-2 rounded-md border border-input bg-background text-sm"
-		/>
+		<Input type="text" bind:value={searchQuery} placeholder="ค้นหากลุ่มสาระ..." class="pl-9" />
 	</div>
 
-	{#if loading}
+	{#if !canReadSubjectGroups}
+		<Alert>
+			<AlertTriangle class="h-4 w-4" />
+			<AlertTitle>ไม่มีสิทธิ์ดูกลุ่มสาระ</AlertTitle>
+			<AlertDescription>
+				บัญชีนี้เข้า module หลักสูตรได้ แต่ยังไม่มีสิทธิ์อ่านกลุ่มสาระการเรียนรู้
+			</AlertDescription>
+		</Alert>
+	{:else if loading}
 		<div class="p-12 text-center text-muted-foreground">กำลังโหลดข้อมูล...</div>
 	{:else if subjectGroups.length === 0}
 		<div class="p-12 text-center text-muted-foreground">ไม่พบกลุ่มสาระ</div>
@@ -102,7 +125,7 @@
 							</div>
 						</div>
 						<div class="flex items-center gap-1">
-							{#if $can.has(PERMISSIONS.ROLES_ASSIGN_ALL)}
+							{#if canManageSubjectGroupPermissions}
 								<Button
 									variant="ghost"
 									size="icon"
@@ -130,4 +153,5 @@
 <OrganizationPermissionDialog
 	bind:open={showPermissionDialog}
 	organizationUnit={permissionDepartment}
+	readOnly={!canManageSubjectGroupPermissions}
 />
