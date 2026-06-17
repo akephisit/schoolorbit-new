@@ -204,6 +204,17 @@
 	);
 	const canEvaluate = $derived($can.has(PERMISSIONS.SUPERVISION_EVALUATE_ASSIGNED));
 	const canApprove = $derived($can.has(PERMISSIONS.SUPERVISION_APPROVE_SCHOOL));
+	const canReadObservations = $derived(
+		$can.hasAny(
+			PERMISSIONS.SUPERVISION_READ_OWN,
+			PERMISSIONS.SUPERVISION_READ_ASSIGNED,
+			PERMISSIONS.SUPERVISION_READ_ORGANIZATION_UNIT,
+			PERMISSIONS.SUPERVISION_READ_ORGANIZATION_TREE,
+			PERMISSIONS.SUPERVISION_READ_SCHOOL
+		) ||
+			canManageRequests ||
+			canApprove
+	);
 	const canReport = $derived(
 		$can.has(PERMISSIONS.SUPERVISION_READ_SCHOOL) || canManageSchool || canApprove
 	);
@@ -452,11 +463,12 @@
 	}
 
 	function selectTimetableEntry(entry: TimetableEntry) {
+		if (!canRequest) return;
 		selectedTimetableEntryId = entry.id;
 	}
 
 	async function refreshTimetableForCycle(cycleId: string) {
-		if (!cycleId || loadedTimetableCycleId === cycleId) return;
+		if (!cycleId || !canRequest || loadedTimetableCycleId === cycleId) return;
 		loadingTimetable = true;
 		try {
 			const cycle = cycles.find((item) => item.id === cycleId);
@@ -490,14 +502,15 @@
 	async function refreshAll() {
 		loading = true;
 		try {
-			const [cycleItems, templateItems, observationItems, staffItems, structure] =
-				await Promise.all([
-					listSupervisionCycles(),
-					listSupervisionTemplates(),
-					listSupervisionObservations(),
-					lookupStaff({ activeOnly: true, limit: 1000 }),
-					getAcademicStructure()
-				]);
+			const [cycleItems, templateItems, structure] = await Promise.all([
+				listSupervisionCycles(),
+				listSupervisionTemplates(),
+				getAcademicStructure()
+			]);
+			const observationItems = canReadObservations ? await listSupervisionObservations() : [];
+			const staffItems = canManageRequests
+				? await lookupStaff({ activeOnly: true, limit: 1000 })
+				: [];
 			cycles = cycleItems;
 			templates = templateItems;
 			observations = observationItems;
@@ -516,6 +529,7 @@
 	}
 
 	async function createBookingRequest() {
+		if (!canRequest) return;
 		if (!selectedCycleId) {
 			toast.error('เลือกรอบนิเทศก่อน');
 			return;
@@ -564,11 +578,13 @@
 	}
 
 	function selectEvaluator(staff: StaffLookupItem) {
+		if (!canManageRequests) return;
 		approvalEvaluatorId = staff.id;
 		evaluatorPickerOpen = false;
 	}
 
 	async function approveRequest() {
+		if (!canManageRequests) return;
 		if (!approvalObservationId || !approvalEvaluatorId) {
 			toast.error('เลือกรายการและผู้ประเมินก่อน');
 			return;
@@ -592,6 +608,7 @@
 	}
 
 	async function returnRequest(id: string) {
+		if (!canManageRequests) return;
 		saving = true;
 		try {
 			const response = await returnSupervisionObservationRequest(id, {
@@ -609,6 +626,7 @@
 	}
 
 	function prepareEvaluationDraft(observation: SupervisionObservation) {
+		if (!canEvaluate) return;
 		evaluationObservationId = observation.id;
 		const template = templates.find((item) => item.id === observation.templateId);
 		const nextDrafts: { [itemId: string]: ResponseDraft } = {};
@@ -621,6 +639,7 @@
 	}
 
 	function updateDraft(itemId: string, patch: Partial<ResponseDraft>) {
+		if (!canEvaluate) return;
 		responseDrafts = {
 			...responseDrafts,
 			[itemId]: {
@@ -654,6 +673,7 @@
 	}
 
 	async function saveEvaluation(submit = false) {
+		if (!canEvaluate) return;
 		if (!evaluationObservationId) {
 			toast.error('เลือกรายการประเมินก่อน');
 			return;
@@ -676,6 +696,7 @@
 	}
 
 	async function submitForReview(id: string) {
+		if (!canManageRequests) return;
 		saving = true;
 		try {
 			const response = await submitSupervisionObservationForReview(id);
@@ -690,6 +711,7 @@
 	}
 
 	async function approveResult(id: string) {
+		if (!canApprove) return;
 		saving = true;
 		try {
 			const response = await approveSupervisionObservation(id);
@@ -704,6 +726,7 @@
 	}
 
 	async function publishResult(id: string) {
+		if (!canApprove) return;
 		saving = true;
 		try {
 			const response = await publishSupervisionObservation(id);
@@ -718,6 +741,7 @@
 	}
 
 	async function returnResult(id: string) {
+		if (!canApprove) return;
 		saving = true;
 		try {
 			const response = await returnSupervisionObservation(id, { comment: reviewComment || null });
@@ -750,6 +774,7 @@
 	}
 
 	async function createCycle() {
+		if (!canManageSchool) return;
 		if (
 			!cycleForm.title ||
 			!cycleForm.templateId ||
@@ -796,6 +821,7 @@
 	}
 
 	async function setCycleStatus(cycle: SupervisionCycle, status: SupervisionCycleStatus) {
+		if (!canManageSchool) return;
 		if (cycle.status === status) return;
 
 		saving = true;
@@ -812,6 +838,7 @@
 	}
 
 	async function createTemplate() {
+		if (!canManageSchool) return;
 		if (!templateForm.title || !templateForm.ratingLabel || !templateForm.textLabel) {
 			toast.error('กรอกชื่อแบบประเมินและหัวข้อประเมินให้ครบ');
 			return;
@@ -881,6 +908,7 @@
 	}
 
 	async function loadProgress() {
+		if (!canReport) return;
 		if (!progressCycleId) {
 			toast.error('เลือกรอบนิเทศก่อน');
 			return;
@@ -1635,7 +1663,9 @@
 					{/if}
 
 					<div class="space-y-2">
-						<Textarea bind:value={reviewComment} rows={2} placeholder="เหตุผลส่งกลับผลนิเทศ" />
+						{#if canApprove}
+							<Textarea bind:value={reviewComment} rows={2} placeholder="เหตุผลส่งกลับผลนิเทศ" />
+						{/if}
 						<Table.Root>
 							<Table.Header>
 								<Table.Row>
@@ -1661,38 +1691,45 @@
 												<Badge variant="secondary">{statusLabel(observation.status)}</Badge>
 											</Table.Cell>
 											<Table.Cell class="space-x-2 text-right">
-												<Button
-													size="sm"
-													variant="outline"
-													onclick={() => submitForReview(observation.id)}
-													disabled={saving}
-												>
-													ส่งตรวจทาน
-												</Button>
-												<Button
-													size="sm"
-													variant="outline"
-													onclick={() => approveResult(observation.id)}
-													disabled={saving}
-												>
-													อนุมัติ
-												</Button>
-												<Button
-													size="sm"
-													variant="outline"
-													onclick={() => publishResult(observation.id)}
-													disabled={saving}
-												>
-													เผยแพร่
-												</Button>
-												<Button
-													size="sm"
-													variant="outline"
-													onclick={() => returnResult(observation.id)}
-													disabled={saving}
-												>
-													ส่งกลับ
-												</Button>
+												{#if canManageRequests}
+													<Button
+														size="sm"
+														variant="outline"
+														onclick={() => submitForReview(observation.id)}
+														disabled={saving}
+													>
+														ส่งตรวจทาน
+													</Button>
+												{/if}
+												{#if canApprove}
+													<Button
+														size="sm"
+														variant="outline"
+														onclick={() => approveResult(observation.id)}
+														disabled={saving}
+													>
+														อนุมัติ
+													</Button>
+													<Button
+														size="sm"
+														variant="outline"
+														onclick={() => publishResult(observation.id)}
+														disabled={saving}
+													>
+														เผยแพร่
+													</Button>
+													<Button
+														size="sm"
+														variant="outline"
+														onclick={() => returnResult(observation.id)}
+														disabled={saving}
+													>
+														ส่งกลับ
+													</Button>
+												{/if}
+												{#if !canManageRequests && !canApprove}
+													<span class="text-sm text-muted-foreground">-</span>
+												{/if}
 											</Table.Cell>
 										</Table.Row>
 									{/each}
