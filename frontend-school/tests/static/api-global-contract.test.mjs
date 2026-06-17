@@ -926,6 +926,43 @@ test('student workspace pages gate read, mutation, and PII actions', async () =>
 	}
 });
 
+test('achievement workspace gates read and owner/all mutation actions', async () => {
+	const source = stripComments(
+		await readFile(
+			path.join(repoRoot, 'frontend-school/src/routes/(app)/staff/achievements/+page.svelte'),
+			'utf8'
+		)
+	);
+	const requiredImports = ['$lib/components/ui/alert'];
+	const requiredPermissions = [
+		'PERMISSIONS.ACHIEVEMENT_READ_OWN',
+		'PERMISSIONS.ACHIEVEMENT_READ_ALL',
+		'PERMISSIONS.ACHIEVEMENT_CREATE_OWN',
+		'PERMISSIONS.ACHIEVEMENT_CREATE_ALL',
+		'PERMISSIONS.ACHIEVEMENT_UPDATE_OWN',
+		'PERMISSIONS.ACHIEVEMENT_UPDATE_ALL',
+		'PERMISSIONS.ACHIEVEMENT_DELETE_OWN',
+		'PERMISSIONS.ACHIEVEMENT_DELETE_ALL'
+	];
+	const requiredIdentifiers = [
+		'canReadAchievements',
+		'canCreateAchievement',
+		'canUpdateAchievement',
+		'canDeleteAchievement'
+	];
+	const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+	for (const requiredImport of requiredImports) {
+		assert.match(source, new RegExp(escapeRegex(requiredImport)));
+	}
+	for (const requiredPermission of requiredPermissions) {
+		assert.match(source, new RegExp(escapeRegex(requiredPermission)));
+	}
+	for (const identifier of requiredIdentifiers) {
+		assert.match(source, new RegExp(`\\b${identifier}\\b`));
+	}
+});
+
 test('frontend app pages have route guard metadata or guarded ancestor fallback', async () => {
 	const appRoutesDir = path.join(repoRoot, 'frontend-school/src/routes/(app)');
 	const pageSvelteFiles = await listFiles(appRoutesDir, (file) => file.endsWith('+page.svelte'));
