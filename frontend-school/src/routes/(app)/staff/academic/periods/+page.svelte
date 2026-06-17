@@ -21,6 +21,9 @@
 	import { Badge } from '$lib/components/ui/badge';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import * as Select from '$lib/components/ui/select';
+	import { Alert, AlertDescription, AlertTitle } from '$lib/components/ui/alert';
+	import { PERMISSIONS } from '$lib/permissions/registry';
+	import { can } from '$lib/stores/permissions';
 
 	import {
 		Clock,
@@ -30,7 +33,8 @@
 		LoaderCircle,
 		Calendar,
 		GripVertical,
-		Info
+		Info,
+		AlertTriangle
 	} from 'lucide-svelte';
 
 	let loading = $state(true);
@@ -51,7 +55,17 @@
 	let draggedPeriod = $state<AcademicPeriod | null>(null);
 	let isDirty = $state(false);
 
+	const canReadAcademicPeriods = $derived($can.has(PERMISSIONS.ACADEMIC_STRUCTURE_READ_ALL));
+	const canManageAcademicPeriods = $derived($can.has(PERMISSIONS.ACADEMIC_STRUCTURE_MANAGE_ALL));
+
 	async function loadData() {
+		if (!canReadAcademicPeriods) {
+			academicYears = [];
+			periods = [];
+			loading = false;
+			return;
+		}
+
 		try {
 			loading = true;
 			const yearsRes = await lookupAcademicYears(false);
@@ -73,7 +87,7 @@
 	}
 
 	async function loadPeriods() {
-		if (!selectedYearId) return;
+		if (!canReadAcademicPeriods || !selectedYearId) return;
 		try {
 			const res = await listPeriods({ academic_year_id: selectedYearId });
 			periods = res.data.sort((a, b) => a.order_index - b.order_index);
@@ -85,6 +99,12 @@
 
 	async function handleSavePeriod(e: SubmitEvent) {
 		e.preventDefault();
+
+		if (!canManageAcademicPeriods) {
+			toast.error('ไม่มีสิทธิ์จัดการคาบเวลา');
+			return;
+		}
+
 		const form = e.target as HTMLFormElement;
 		const formData = new FormData(form);
 
@@ -116,6 +136,10 @@
 	}
 
 	async function handleDelete() {
+		if (!canManageAcademicPeriods) {
+			toast.error('ไม่มีสิทธิ์ลบคาบเวลา');
+			return;
+		}
 		if (!deleteTarget) return;
 		submitting = true;
 		try {
@@ -131,18 +155,33 @@
 	}
 
 	function openAddPeriod() {
+		if (!canManageAcademicPeriods) {
+			toast.error('ไม่มีสิทธิ์เพิ่มคาบเวลา');
+			return;
+		}
+
 		editingPeriod = null;
 		formYearId = selectedYearId;
 		showPeriodDialog = true;
 	}
 
 	function openEditPeriod(p: AcademicPeriod) {
+		if (!canManageAcademicPeriods) {
+			toast.error('ไม่มีสิทธิ์แก้ไขคาบเวลา');
+			return;
+		}
+
 		editingPeriod = p;
 		formYearId = p.academic_year_id;
 		showPeriodDialog = true;
 	}
 
 	function confirmDelete(p: AcademicPeriod) {
+		if (!canManageAcademicPeriods) {
+			toast.error('ไม่มีสิทธิ์ลบคาบเวลา');
+			return;
+		}
+
 		const label = p.name || `${formatTime(p.start_time)} – ${formatTime(p.end_time)}`;
 		deleteTarget = { id: p.id, name: label };
 		showDeleteDialog = true;
@@ -157,16 +196,19 @@
 	// =========================================
 
 	function handleDragStart(e: DragEvent, p: AcademicPeriod) {
+		if (!canManageAcademicPeriods) return;
 		e.dataTransfer!.effectAllowed = 'move';
 		draggedPeriod = p;
 	}
 
 	function handleDragOver(e: DragEvent) {
+		if (!canManageAcademicPeriods) return;
 		e.preventDefault();
 		e.dataTransfer!.dropEffect = 'move';
 	}
 
 	function handleDragEnter(_e: DragEvent, target: AcademicPeriod) {
+		if (!canManageAcademicPeriods) return;
 		if (!draggedPeriod || draggedPeriod.id === target.id) return;
 
 		const oldIndex = periods.findIndex((p) => p.id === draggedPeriod!.id);
@@ -183,7 +225,7 @@
 	async function handleDragEnd() {
 		const dragged = draggedPeriod;
 		draggedPeriod = null;
-		if (!isDirty || !dragged || !selectedYearId) return;
+		if (!canManageAcademicPeriods || !isDirty || !dragged || !selectedYearId) return;
 
 		const items = periods.map((p, i) => ({ id: p.id, order_index: i + 1 }));
 		try {
@@ -235,25 +277,41 @@
 				</Select.Content>
 			</Select.Root>
 		</div>
-		<div class="ml-auto">
-			<Button onclick={openAddPeriod} disabled={!selectedYearId}>
-				<Plus class="mr-2 h-4 w-4" /> เพิ่มคาบเวลา
-			</Button>
-		</div>
+		{#if canManageAcademicPeriods}
+			<div class="ml-auto">
+				<Button onclick={openAddPeriod} disabled={!selectedYearId}>
+					<Plus class="mr-2 h-4 w-4" /> เพิ่มคาบเวลา
+				</Button>
+			</div>
+		{/if}
 	</div>
 
-	<div
-		class="bg-muted/40 text-muted-foreground flex items-start gap-2 rounded-md border p-3 text-sm"
-	>
-		<Info class="mt-0.5 h-4 w-4 shrink-0" />
-		<span>
-			ลากที่ <GripVertical class="inline h-3.5 w-3.5" /> เพื่อจัดลำดับคาบ — ตารางสอนที่จัดไปแล้วจะไม่ได้รับผลกระทบ
-			(เปลี่ยนแค่ลำดับการแสดงผล)
-		</span>
-	</div>
+	{#if !canReadAcademicPeriods}
+		<Alert>
+			<AlertTriangle class="h-4 w-4" />
+			<AlertTitle>ไม่มีสิทธิ์ดูคาบเวลา</AlertTitle>
+			<AlertDescription>
+				บัญชีนี้เข้า module โครงสร้างวิชาการได้ แต่ยังไม่มีสิทธิ์อ่านข้อมูลคาบเวลา
+			</AlertDescription>
+		</Alert>
+	{:else if canManageAcademicPeriods}
+		<div
+			class="bg-muted/40 text-muted-foreground flex items-start gap-2 rounded-md border p-3 text-sm"
+		>
+			<Info class="mt-0.5 h-4 w-4 shrink-0" />
+			<span>
+				ลากที่ <GripVertical class="inline h-3.5 w-3.5" /> เพื่อจัดลำดับคาบ — ตารางสอนที่จัดไปแล้วจะไม่ได้รับผลกระทบ
+				(เปลี่ยนแค่ลำดับการแสดงผล)
+			</span>
+		</div>
+	{/if}
 
 	<Card.Root>
-		{#if loading}
+		{#if !canReadAcademicPeriods}
+			<div class="text-muted-foreground flex h-32 items-center justify-center text-sm">
+				ไม่มีข้อมูลให้แสดง
+			</div>
+		{:else if loading}
 			<div class="flex h-32 items-center justify-center">
 				<LoaderCircle class="text-muted-foreground h-6 w-6 animate-spin" />
 			</div>
@@ -268,7 +326,7 @@
 				{#each periods as p, i (p.id)}
 					<div
 						role="listitem"
-						draggable={true}
+						draggable={canManageAcademicPeriods}
 						ondragstart={(e) => handleDragStart(e, p)}
 						ondragover={handleDragOver}
 						ondragenter={(e) => handleDragEnter(e, p)}
@@ -279,11 +337,13 @@
 							: ''}"
 						style="touch-action: none;"
 					>
-						<div
-							class="text-muted-foreground hover:text-foreground cursor-grab active:cursor-grabbing"
-						>
-							<GripVertical class="h-5 w-5" />
-						</div>
+						{#if canManageAcademicPeriods}
+							<div
+								class="text-muted-foreground hover:text-foreground cursor-grab active:cursor-grabbing"
+							>
+								<GripVertical class="h-5 w-5" />
+							</div>
+						{/if}
 
 						<Badge variant="outline" class="font-mono">#{i + 1}</Badge>
 
@@ -304,19 +364,21 @@
 							{p.is_active ? 'ใช้งาน' : 'ไม่ใช้งาน'}
 						</Badge>
 
-						<div class="flex items-center gap-1">
-							<Button variant="ghost" size="icon" onclick={() => openEditPeriod(p)}>
-								<Settings class="h-4 w-4" />
-							</Button>
-							<Button
-								variant="ghost"
-								size="icon"
-								class="text-destructive"
-								onclick={() => confirmDelete(p)}
-							>
-								<Trash2 class="h-4 w-4" />
-							</Button>
-						</div>
+						{#if canManageAcademicPeriods}
+							<div class="flex items-center gap-1">
+								<Button variant="ghost" size="icon" onclick={() => openEditPeriod(p)}>
+									<Settings class="h-4 w-4" />
+								</Button>
+								<Button
+									variant="ghost"
+									size="icon"
+									class="text-destructive"
+									onclick={() => confirmDelete(p)}
+								>
+									<Trash2 class="h-4 w-4" />
+								</Button>
+							</div>
+						{/if}
 					</div>
 				{/each}
 			</div>
@@ -324,74 +386,80 @@
 	</Card.Root>
 
 	<!-- Period Dialog -->
-	<Dialog.Root bind:open={showPeriodDialog}>
-		<Dialog.Content>
-			<Dialog.Header>
-				<Dialog.Title>{editingPeriod ? 'แก้ไขคาบเวลา' : 'เพิ่มคาบเวลาใหม่'}</Dialog.Title>
-			</Dialog.Header>
-			<form onsubmit={handleSavePeriod} class="space-y-4 py-4">
-				<input type="hidden" name="academic_year_id" value={formYearId} />
+	{#if canManageAcademicPeriods}
+		<Dialog.Root bind:open={showPeriodDialog}>
+			<Dialog.Content>
+				<Dialog.Header>
+					<Dialog.Title>{editingPeriod ? 'แก้ไขคาบเวลา' : 'เพิ่มคาบเวลาใหม่'}</Dialog.Title>
+				</Dialog.Header>
+				<form onsubmit={handleSavePeriod} class="space-y-4 py-4">
+					<input type="hidden" name="academic_year_id" value={formYearId} />
 
-				<div class="space-y-2">
-					<Label>ชื่อคาบ <span class="text-muted-foreground text-xs">(ไม่บังคับ)</span></Label>
-					<Input
-						name="name"
-						value={editingPeriod?.name || ''}
-						placeholder="เช่น พักเที่ยง, โฮมรูม (เว้นว่างถ้าเป็นคาบเรียนปกติ)"
-					/>
-				</div>
-
-				<div class="grid grid-cols-2 gap-4">
 					<div class="space-y-2">
-						<Label>เวลาเริ่ม <span class="text-red-500">*</span></Label>
+						<Label>ชื่อคาบ <span class="text-muted-foreground text-xs">(ไม่บังคับ)</span></Label>
 						<Input
-							type="time"
-							name="start_time"
-							value={editingPeriod?.start_time ? formatTime(editingPeriod.start_time) : ''}
-							required
+							name="name"
+							value={editingPeriod?.name || ''}
+							placeholder="เช่น พักเที่ยง, โฮมรูม (เว้นว่างถ้าเป็นคาบเรียนปกติ)"
 						/>
 					</div>
-					<div class="space-y-2">
-						<Label>เวลาจบ <span class="text-red-500">*</span></Label>
-						<Input
-							type="time"
-							name="end_time"
-							value={editingPeriod?.end_time ? formatTime(editingPeriod.end_time) : ''}
-							required
-						/>
+
+					<div class="grid grid-cols-2 gap-4">
+						<div class="space-y-2">
+							<Label>เวลาเริ่ม <span class="text-red-500">*</span></Label>
+							<Input
+								type="time"
+								name="start_time"
+								value={editingPeriod?.start_time ? formatTime(editingPeriod.start_time) : ''}
+								required
+							/>
+						</div>
+						<div class="space-y-2">
+							<Label>เวลาจบ <span class="text-red-500">*</span></Label>
+							<Input
+								type="time"
+								name="end_time"
+								value={editingPeriod?.end_time ? formatTime(editingPeriod.end_time) : ''}
+								required
+							/>
+						</div>
 					</div>
-				</div>
 
-				{#if !editingPeriod}
-					<p class="text-muted-foreground text-xs">
-						ลำดับคาบจะถูกกำหนดเป็นตัวสุดท้ายอัตโนมัติ — ลากเพื่อจัดลำดับใหม่หลังเพิ่ม
-					</p>
-				{/if}
+					{#if !editingPeriod}
+						<p class="text-muted-foreground text-xs">
+							ลำดับคาบจะถูกกำหนดเป็นตัวสุดท้ายอัตโนมัติ — ลากเพื่อจัดลำดับใหม่หลังเพิ่ม
+						</p>
+					{/if}
 
-				<Dialog.Footer>
-					<Button variant="outline" type="button" onclick={() => (showPeriodDialog = false)}
-						>ยกเลิก</Button
-					>
-					<Button type="submit" disabled={submitting}>บันทึก</Button>
-				</Dialog.Footer>
-			</form>
-		</Dialog.Content>
-	</Dialog.Root>
+					<Dialog.Footer>
+						<Button variant="outline" type="button" onclick={() => (showPeriodDialog = false)}
+							>ยกเลิก</Button
+						>
+						<Button type="submit" disabled={submitting}>บันทึก</Button>
+					</Dialog.Footer>
+				</form>
+			</Dialog.Content>
+		</Dialog.Root>
+	{/if}
 
 	<!-- Delete Confirm -->
-	<Dialog.Root bind:open={showDeleteDialog}>
-		<Dialog.Content>
-			<Dialog.Header>
-				<Dialog.Title>ยืนยันการลบ</Dialog.Title>
-				<Dialog.Description>
-					คุณต้องการลบคาบ "{deleteTarget?.name}" ใช่หรือไม่?
-					หากมีตารางสอนที่ใช้คาบนี้จะไม่สามารถลบได้
-				</Dialog.Description>
-			</Dialog.Header>
-			<Dialog.Footer>
-				<Button variant="outline" onclick={() => (showDeleteDialog = false)}>ยกเลิก</Button>
-				<Button variant="destructive" onclick={handleDelete} disabled={submitting}>ยืนยันลบ</Button>
-			</Dialog.Footer>
-		</Dialog.Content>
-	</Dialog.Root>
+	{#if canManageAcademicPeriods}
+		<Dialog.Root bind:open={showDeleteDialog}>
+			<Dialog.Content>
+				<Dialog.Header>
+					<Dialog.Title>ยืนยันการลบ</Dialog.Title>
+					<Dialog.Description>
+						คุณต้องการลบคาบ "{deleteTarget?.name}" ใช่หรือไม่?
+						หากมีตารางสอนที่ใช้คาบนี้จะไม่สามารถลบได้
+					</Dialog.Description>
+				</Dialog.Header>
+				<Dialog.Footer>
+					<Button variant="outline" onclick={() => (showDeleteDialog = false)}>ยกเลิก</Button>
+					<Button variant="destructive" onclick={handleDelete} disabled={submitting}
+						>ยืนยันลบ</Button
+					>
+				</Dialog.Footer>
+			</Dialog.Content>
+		</Dialog.Root>
+	{/if}
 </div>

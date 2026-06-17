@@ -29,6 +29,9 @@
 	import * as Select from '$lib/components/ui/select';
 	import DatePicker from '$lib/components/ui/date-picker/DatePicker.svelte';
 	import { Checkbox } from '$lib/components/ui/checkbox';
+	import { Alert, AlertDescription, AlertTitle } from '$lib/components/ui/alert';
+	import { PERMISSIONS } from '$lib/permissions/registry';
+	import { can } from '$lib/stores/permissions';
 	import {
 		Loader2,
 		CalendarDays,
@@ -38,12 +41,16 @@
 		Trash2,
 		BookOpen,
 		Settings,
-		CalendarClock
+		CalendarClock,
+		AlertTriangle
 	} from 'lucide-svelte';
 
 	let loading = $state(true);
 	let structure = $state<AcademicStructureData>({ years: [], semesters: [], levels: [] });
 	let activeYearLevelIds = $state<string[]>([]);
+
+	const canReadAcademicStructure = $derived($can.has(PERMISSIONS.ACADEMIC_STRUCTURE_READ_ALL));
+	const canManageAcademicStructure = $derived($can.has(PERMISSIONS.ACADEMIC_STRUCTURE_MANAGE_ALL));
 
 	// Year state
 	let showCreateYearDialog = $state(false);
@@ -64,6 +71,11 @@
 	let isSavingConfig = $state(false);
 
 	async function openConfigDialog(year: AcademicStructureData['years'][0]) {
+		if (!canManageAcademicStructure) {
+			toast.error('ไม่มีสิทธิ์จัดการโครงสร้างวิชาการ');
+			return;
+		}
+
 		configYear = year;
 		isSavingConfig = false;
 		configLevelIds = [];
@@ -80,12 +92,18 @@
 	}
 
 	function toggleConfigDay(day: string) {
+		if (!canManageAcademicStructure) return;
+
 		configSchoolDays = configSchoolDays.includes(day)
 			? configSchoolDays.filter((d) => d !== day)
 			: [...configSchoolDays, day];
 	}
 
 	async function saveConfig() {
+		if (!canManageAcademicStructure) {
+			toast.error('ไม่มีสิทธิ์จัดการโครงสร้างวิชาการ');
+			return;
+		}
 		if (!configYear) return;
 		isSavingConfig = true;
 		try {
@@ -105,6 +123,8 @@
 	}
 
 	function toggleConfigLevel(levelId: string, checked: boolean) {
+		if (!canManageAcademicStructure) return;
+
 		if (checked) {
 			configLevelIds = [...configLevelIds, levelId];
 		} else {
@@ -135,6 +155,11 @@
 	}
 
 	function openCreateSemester() {
+		if (!canManageAcademicStructure) {
+			toast.error('ไม่มีสิทธิ์จัดการภาคเรียน');
+			return;
+		}
+
 		semesterToEdit = null;
 		newSemester = {
 			term: '1',
@@ -147,6 +172,11 @@
 	}
 
 	function openEditSemester(semester: Semester) {
+		if (!canManageAcademicStructure) {
+			toast.error('ไม่มีสิทธิ์จัดการภาคเรียน');
+			return;
+		}
+
 		semesterToEdit = semester;
 		newSemester = {
 			term: semester.term,
@@ -159,6 +189,10 @@
 	}
 
 	async function handleSaveSemester() {
+		if (!canManageAcademicStructure) {
+			toast.error('ไม่มีสิทธิ์จัดการภาคเรียน');
+			return;
+		}
 		if (!selectedYearForSemesters) return;
 		if (
 			!newSemester.term ||
@@ -193,6 +227,11 @@
 	}
 
 	async function handleDeleteSemester(id: string) {
+		if (!canManageAcademicStructure) {
+			toast.error('ไม่มีสิทธิ์จัดการภาคเรียน');
+			return;
+		}
+
 		if (!confirm('ยืนยันลบภาคเรียนนี้? หากมีการใช้งานอยู่จะไม่สามารถลบได้')) return;
 		try {
 			await deleteSemester(id);
@@ -247,6 +286,13 @@
 	);
 
 	async function loadData() {
+		if (!canReadAcademicStructure) {
+			structure = { years: [], semesters: [], levels: [] };
+			activeYearLevelIds = [];
+			loading = false;
+			return;
+		}
+
 		try {
 			const res = await getAcademicStructure();
 			structure = res.data;
@@ -268,6 +314,11 @@
 	}
 
 	async function handleCreateYear() {
+		if (!canManageAcademicStructure) {
+			toast.error('ไม่มีสิทธิ์สร้างปีการศึกษา');
+			return;
+		}
+
 		if (!newYear.year || !newYear.start_date || !newYear.end_date) {
 			toast.error('กรุณากรอกข้อมูลให้ครบถ้วน');
 			return;
@@ -296,6 +347,11 @@
 	}
 
 	async function handleToggleActive(id: string) {
+		if (!canManageAcademicStructure) {
+			toast.error('ไม่มีสิทธิ์เปลี่ยนปีการศึกษาปัจจุบัน');
+			return;
+		}
+
 		try {
 			await toggleActiveYear(id);
 			toast.success('อัปเดตสถานะปีการศึกษาเรียบร้อย');
@@ -307,6 +363,11 @@
 	}
 
 	async function handleCreateLevel() {
+		if (!canManageAcademicStructure) {
+			toast.error('ไม่มีสิทธิ์เพิ่มระดับชั้น');
+			return;
+		}
+
 		if (!newLevel.level_type || !newLevel.year) {
 			toast.error('กรุณาเลือกประเภทและปีที่');
 			return;
@@ -336,11 +397,20 @@
 	}
 
 	function openDeleteLevelDialog(level: GradeLevel) {
+		if (!canManageAcademicStructure) {
+			toast.error('ไม่มีสิทธิ์ลบระดับชั้น');
+			return;
+		}
+
 		levelToDelete = level;
 		showDeleteLevelDialog = true;
 	}
 
 	async function confirmDeleteLevel() {
+		if (!canManageAcademicStructure) {
+			toast.error('ไม่มีสิทธิ์ลบระดับชั้น');
+			return;
+		}
 		if (!levelToDelete) return;
 
 		isDeletingLevel = true;
@@ -374,19 +444,29 @@
 			</h2>
 			<p class="text-muted-foreground mt-1">จัดการปีการศึกษา ภาคเรียน และระดับชั้น</p>
 		</div>
-		<div class="flex flex-wrap gap-2">
-			<Button variant="outline" onclick={() => (showCreateLevelDialog = true)}>
-				<Layers class="mr-2 h-4 w-4" />
-				เพิ่มระดับชั้น
-			</Button>
-			<Button onclick={() => (showCreateYearDialog = true)}>
-				<CalendarDays class="mr-2 h-4 w-4" />
-				เพิ่มปีการศึกษา
-			</Button>
-		</div>
+		{#if canManageAcademicStructure}
+			<div class="flex flex-wrap gap-2">
+				<Button variant="outline" onclick={() => (showCreateLevelDialog = true)}>
+					<Layers class="mr-2 h-4 w-4" />
+					เพิ่มระดับชั้น
+				</Button>
+				<Button onclick={() => (showCreateYearDialog = true)}>
+					<CalendarDays class="mr-2 h-4 w-4" />
+					เพิ่มปีการศึกษา
+				</Button>
+			</div>
+		{/if}
 	</div>
 
-	{#if loading}
+	{#if !canReadAcademicStructure}
+		<Alert>
+			<AlertTriangle class="h-4 w-4" />
+			<AlertTitle>ไม่มีสิทธิ์ดูโครงสร้างวิชาการ</AlertTitle>
+			<AlertDescription>
+				บัญชีนี้เข้า module โครงสร้างวิชาการได้ แต่ยังไม่มีสิทธิ์อ่านข้อมูลปีการศึกษาและระดับชั้น
+			</AlertDescription>
+		</Alert>
+	{:else if loading}
 		<div class="flex h-40 items-center justify-center">
 			<Loader2 class="h-8 w-8 animate-spin text-primary" />
 		</div>
@@ -443,23 +523,25 @@
 										</Table.Cell>
 										<Table.Cell class="text-right">
 											<div class="flex items-center justify-end gap-2">
-												<Button
-													variant="ghost"
-													size="icon"
-													onclick={() => openConfigDialog(year)}
-													title="ตั้งค่าวันเรียนและชั้นเรียน"
-												>
-													<Settings class="h-4 w-4" />
-												</Button>
+												{#if canManageAcademicStructure}
+													<Button
+														variant="ghost"
+														size="icon"
+														onclick={() => openConfigDialog(year)}
+														title="ตั้งค่าวันเรียนและชั้นเรียน"
+													>
+														<Settings class="h-4 w-4" />
+													</Button>
+												{/if}
 												<Button
 													variant="ghost"
 													size="icon"
 													onclick={() => openSemestersDialog(year)}
-													title="จัดการภาคเรียน"
+													title={canManageAcademicStructure ? 'จัดการภาคเรียน' : 'ดูภาคเรียน'}
 												>
 													<CalendarClock class="h-4 w-4" />
 												</Button>
-												{#if !year.is_active}
+												{#if canManageAcademicStructure && !year.is_active}
 													<Button
 														variant="outline"
 														size="sm"
@@ -521,14 +603,16 @@
 										<p class="text-xs text-muted-foreground">{level.code} • {level.short_name}</p>
 									</div>
 								</div>
-								<Button
-									variant="ghost"
-									size="icon"
-									class="h-8 w-8 text-muted-foreground hover:text-red-500"
-									onclick={() => openDeleteLevelDialog(level)}
-								>
-									<Trash2 class="h-4 w-4" />
-								</Button>
+								{#if canManageAcademicStructure}
+									<Button
+										variant="ghost"
+										size="icon"
+										class="h-8 w-8 text-muted-foreground hover:text-red-500"
+										onclick={() => openDeleteLevelDialog(level)}
+									>
+										<Trash2 class="h-4 w-4" />
+									</Button>
+								{/if}
 							</div>
 						{/each}
 
@@ -536,14 +620,16 @@
 							<div class="text-center py-6 text-muted-foreground text-sm">ยังไม่กำหนดระดับชั้น</div>
 						{/if}
 
-						<Button
-							variant="outline"
-							class="w-full mt-4"
-							onclick={() => (showCreateLevelDialog = true)}
-						>
-							<Plus class="mr-2 h-4 w-4" />
-							เพิ่มระดับชั้นใหม่
-						</Button>
+						{#if canManageAcademicStructure}
+							<Button
+								variant="outline"
+								class="w-full mt-4"
+								onclick={() => (showCreateLevelDialog = true)}
+							>
+								<Plus class="mr-2 h-4 w-4" />
+								เพิ่มระดับชั้นใหม่
+							</Button>
+						{/if}
 					</div>
 				</Card.Content>
 			</Card.Root>
@@ -551,228 +637,236 @@
 	{/if}
 
 	<!-- Create Year Dialog -->
-	<Dialog.Root bind:open={showCreateYearDialog}>
-		<Dialog.Content class="sm:max-w-[425px]">
-			<Dialog.Header>
-				<Dialog.Title>เพิ่มปีการศึกษาใหม่</Dialog.Title>
-				<Dialog.Description>สร้างปีการศึกษาใหม่เพื่อกำหนดโครงสร้างห้องเรียน</Dialog.Description>
-			</Dialog.Header>
-			<div class="grid gap-4 py-4">
-				<div class="grid gap-2">
-					<Label for="year">ปีพ.ศ.</Label>
-					<Input id="year" type="number" bind:value={newYear.year} />
-				</div>
-				<div class="grid gap-2">
-					<Label for="name">ชื่อเรียก</Label>
-					<Input id="name" bind:value={newYear.name} />
-				</div>
-				<div class="grid grid-cols-2 gap-4">
+	{#if canManageAcademicStructure}
+		<Dialog.Root bind:open={showCreateYearDialog}>
+			<Dialog.Content class="sm:max-w-[425px]">
+				<Dialog.Header>
+					<Dialog.Title>เพิ่มปีการศึกษาใหม่</Dialog.Title>
+					<Dialog.Description>สร้างปีการศึกษาใหม่เพื่อกำหนดโครงสร้างห้องเรียน</Dialog.Description>
+				</Dialog.Header>
+				<div class="grid gap-4 py-4">
 					<div class="grid gap-2">
-						<Label>วันเริ่มต้น</Label>
-						<DatePicker bind:value={newYear.start_date} placeholder="วันเริ่มต้น" />
+						<Label for="year">ปีพ.ศ.</Label>
+						<Input id="year" type="number" bind:value={newYear.year} />
 					</div>
 					<div class="grid gap-2">
-						<Label>วันสิ้นสุด</Label>
-						<DatePicker bind:value={newYear.end_date} placeholder="วันสิ้นสุด" />
+						<Label for="name">ชื่อเรียก</Label>
+						<Input id="name" bind:value={newYear.name} />
+					</div>
+					<div class="grid grid-cols-2 gap-4">
+						<div class="grid gap-2">
+							<Label>วันเริ่มต้น</Label>
+							<DatePicker bind:value={newYear.start_date} placeholder="วันเริ่มต้น" />
+						</div>
+						<div class="grid gap-2">
+							<Label>วันสิ้นสุด</Label>
+							<DatePicker bind:value={newYear.end_date} placeholder="วันสิ้นสุด" />
+						</div>
+					</div>
+					<div class="flex items-center space-x-2">
+						<Checkbox
+							id="active"
+							checked={newYear.is_active}
+							onCheckedChange={(checked) => (newYear.is_active = checked === true)}
+						/>
+						<Label for="active">ตั้งเป็นปีการศึกษาปัจจุบันทันที</Label>
 					</div>
 				</div>
-				<div class="flex items-center space-x-2">
-					<Checkbox
-						id="active"
-						checked={newYear.is_active}
-						onCheckedChange={(checked) => (newYear.is_active = checked === true)}
-					/>
-					<Label for="active">ตั้งเป็นปีการศึกษาปัจจุบันทันที</Label>
-				</div>
-			</div>
-			<Dialog.Footer>
-				<Button variant="outline" onclick={() => (showCreateYearDialog = false)}>ยกเลิก</Button>
-				<Button onclick={handleCreateYear} disabled={isSubmitting}>
-					{#if isSubmitting}
-						<Loader2 class="mr-2 h-4 w-4 animate-spin" />
-					{/if}
-					บันทึก
-				</Button>
-			</Dialog.Footer>
-		</Dialog.Content>
-	</Dialog.Root>
+				<Dialog.Footer>
+					<Button variant="outline" onclick={() => (showCreateYearDialog = false)}>ยกเลิก</Button>
+					<Button onclick={handleCreateYear} disabled={isSubmitting}>
+						{#if isSubmitting}
+							<Loader2 class="mr-2 h-4 w-4 animate-spin" />
+						{/if}
+						บันทึก
+					</Button>
+				</Dialog.Footer>
+			</Dialog.Content>
+		</Dialog.Root>
+	{/if}
 
 	<!-- Create Level Dialog -->
-	<Dialog.Root bind:open={showCreateLevelDialog}>
-		<Dialog.Content class="sm:max-w-[425px]">
-			<Dialog.Header>
-				<Dialog.Title>เพิ่มระดับชั้นใหม่</Dialog.Title>
-				<Dialog.Description>เลือกประเภทและปีที่ของระดับชั้นที่ต้องการ</Dialog.Description>
-			</Dialog.Header>
-			<div class="grid gap-4 py-4">
-				<div class="grid gap-2">
-					<Label>ประเภทการศึกษา <span class="text-red-500">*</span></Label>
-					<Select.Root type="single" bind:value={newLevel.level_type}>
-						<Select.Trigger class="w-full">
-							{levelTypeOptions.find((o) => o.value === newLevel.level_type)?.label ||
-								'เลือกประเภท'}
-						</Select.Trigger>
-						<Select.Content>
-							{#each levelTypeOptions as opt (opt.value)}
-								<Select.Item value={opt.value}>{opt.label}</Select.Item>
-							{/each}
-						</Select.Content>
-					</Select.Root>
-				</div>
-				<div class="grid gap-2">
-					<Label>ปีที่ <span class="text-red-500">*</span></Label>
-					<Select.Root type="single" bind:value={newLevel.year}>
-						<Select.Trigger class="w-full">
-							{`ปีที่ ${newLevel.year}`}
-						</Select.Trigger>
-						<Select.Content>
-							{#each Array.from( { length: getMaxYears(newLevel.level_type) }, (_, i) => String(i + 1) ) as yr (yr)}
-								<Select.Item value={yr}>ปีที่ {yr}</Select.Item>
-							{/each}
-						</Select.Content>
-					</Select.Root>
-				</div>
-
-				{#if previewName}
-					<div class="bg-muted/50 p-3 rounded-md text-sm">
-						<p class="text-muted-foreground">ตัวอย่างชื่อที่จะสร้าง:</p>
-						<p class="font-bold text-lg">{previewName}</p>
+	{#if canManageAcademicStructure}
+		<Dialog.Root bind:open={showCreateLevelDialog}>
+			<Dialog.Content class="sm:max-w-[425px]">
+				<Dialog.Header>
+					<Dialog.Title>เพิ่มระดับชั้นใหม่</Dialog.Title>
+					<Dialog.Description>เลือกประเภทและปีที่ของระดับชั้นที่ต้องการ</Dialog.Description>
+				</Dialog.Header>
+				<div class="grid gap-4 py-4">
+					<div class="grid gap-2">
+						<Label>ประเภทการศึกษา <span class="text-red-500">*</span></Label>
+						<Select.Root type="single" bind:value={newLevel.level_type}>
+							<Select.Trigger class="w-full">
+								{levelTypeOptions.find((o) => o.value === newLevel.level_type)?.label ||
+									'เลือกประเภท'}
+							</Select.Trigger>
+							<Select.Content>
+								{#each levelTypeOptions as opt (opt.value)}
+									<Select.Item value={opt.value}>{opt.label}</Select.Item>
+								{/each}
+							</Select.Content>
+						</Select.Root>
 					</div>
-				{/if}
-			</div>
-			<Dialog.Footer>
-				<Button variant="outline" onclick={() => (showCreateLevelDialog = false)}>ยกเลิก</Button>
-				<Button onclick={handleCreateLevel} disabled={isSubmittingLevel || !newLevel.level_type}>
-					{#if isSubmittingLevel}
-						<Loader2 class="mr-2 h-4 w-4 animate-spin" />
+					<div class="grid gap-2">
+						<Label>ปีที่ <span class="text-red-500">*</span></Label>
+						<Select.Root type="single" bind:value={newLevel.year}>
+							<Select.Trigger class="w-full">
+								{`ปีที่ ${newLevel.year}`}
+							</Select.Trigger>
+							<Select.Content>
+								{#each Array.from( { length: getMaxYears(newLevel.level_type) }, (_, i) => String(i + 1) ) as yr (yr)}
+									<Select.Item value={yr}>ปีที่ {yr}</Select.Item>
+								{/each}
+							</Select.Content>
+						</Select.Root>
+					</div>
+
+					{#if previewName}
+						<div class="bg-muted/50 p-3 rounded-md text-sm">
+							<p class="text-muted-foreground">ตัวอย่างชื่อที่จะสร้าง:</p>
+							<p class="font-bold text-lg">{previewName}</p>
+						</div>
 					{/if}
-					บันทึก
-				</Button>
-			</Dialog.Footer>
-		</Dialog.Content>
-	</Dialog.Root>
+				</div>
+				<Dialog.Footer>
+					<Button variant="outline" onclick={() => (showCreateLevelDialog = false)}>ยกเลิก</Button>
+					<Button onclick={handleCreateLevel} disabled={isSubmittingLevel || !newLevel.level_type}>
+						{#if isSubmittingLevel}
+							<Loader2 class="mr-2 h-4 w-4 animate-spin" />
+						{/if}
+						บันทึก
+					</Button>
+				</Dialog.Footer>
+			</Dialog.Content>
+		</Dialog.Root>
+	{/if}
 
 	<!-- Delete Level Confirmation Dialog -->
-	<Dialog.Root bind:open={showDeleteLevelDialog}>
-		<Dialog.Content class="sm:max-w-[400px]">
-			<Dialog.Header>
-				<Dialog.Title class="flex items-center gap-2 text-red-600">
-					<Trash2 class="h-5 w-5" />
-					ยืนยันการลบระดับชั้น
-				</Dialog.Title>
-				<Dialog.Description>
-					การลบระดับชั้นจะไม่สามารถย้อนกลับได้
-					หากมีห้องเรียนหรือนักเรียนเชื่อมโยงอยู่จะไม่สามารถลบได้
-				</Dialog.Description>
-			</Dialog.Header>
+	{#if canManageAcademicStructure}
+		<Dialog.Root bind:open={showDeleteLevelDialog}>
+			<Dialog.Content class="sm:max-w-[400px]">
+				<Dialog.Header>
+					<Dialog.Title class="flex items-center gap-2 text-red-600">
+						<Trash2 class="h-5 w-5" />
+						ยืนยันการลบระดับชั้น
+					</Dialog.Title>
+					<Dialog.Description>
+						การลบระดับชั้นจะไม่สามารถย้อนกลับได้
+						หากมีห้องเรียนหรือนักเรียนเชื่อมโยงอยู่จะไม่สามารถลบได้
+					</Dialog.Description>
+				</Dialog.Header>
 
-			{#if levelToDelete}
-				<div class="py-4">
-					<div
-						class="flex items-center gap-3 p-4 bg-red-50 border border-red-200 rounded-lg dark:bg-red-950/20 dark:border-red-900"
-					>
+				{#if levelToDelete}
+					<div class="py-4">
 						<div
-							class="flex h-10 w-10 items-center justify-center rounded-full bg-red-500 text-white text-sm font-bold"
+							class="flex items-center gap-3 p-4 bg-red-50 border border-red-200 rounded-lg dark:bg-red-950/20 dark:border-red-900"
 						>
-							{levelToDelete.year}
-						</div>
-						<div>
-							<p class="font-semibold text-red-800 dark:text-red-200">{levelToDelete.name}</p>
-							<p class="text-sm text-red-600 dark:text-red-400">
-								{levelToDelete.code} • {levelToDelete.short_name}
-							</p>
-						</div>
-					</div>
-				</div>
-			{/if}
-
-			<Dialog.Footer>
-				<Button
-					variant="outline"
-					onclick={() => {
-						showDeleteLevelDialog = false;
-						levelToDelete = null;
-					}}
-				>
-					ยกเลิก
-				</Button>
-				<Button variant="destructive" onclick={confirmDeleteLevel} disabled={isDeletingLevel}>
-					{#if isDeletingLevel}
-						<Loader2 class="mr-2 h-4 w-4 animate-spin" />
-					{/if}
-					ยืนยันลบ
-				</Button>
-			</Dialog.Footer>
-		</Dialog.Content>
-	</Dialog.Root>
-	<!-- Year Config Dialog -->
-	<Dialog.Root bind:open={showConfigDialog}>
-		<Dialog.Content class="sm:max-w-[500px]">
-			<Dialog.Header>
-				<Dialog.Title>ตั้งค่าปีการศึกษา</Dialog.Title>
-				<Dialog.Description>
-					ตั้งค่าวันเรียนและชั้นเรียนสำหรับ <strong>{configYear?.name}</strong>
-				</Dialog.Description>
-			</Dialog.Header>
-
-			<div class="py-4 space-y-5">
-				<!-- วันที่เรียน -->
-				<div class="space-y-2">
-					<Label class="text-sm font-semibold">วันที่เรียน</Label>
-					<div class="flex flex-wrap gap-2">
-						{#each ALL_DAYS as d (d.value)}
-							{@const selected = configSchoolDays.includes(d.value)}
-							<button
-								type="button"
-								class="rounded-md border px-3 py-1.5 text-sm transition-colors {selected
-									? 'bg-primary text-primary-foreground border-primary'
-									: 'bg-background hover:bg-accent border-input'}"
-								onclick={() => toggleConfigDay(d.value)}
+							<div
+								class="flex h-10 w-10 items-center justify-center rounded-full bg-red-500 text-white text-sm font-bold"
 							>
-								{d.label}
-							</button>
-						{/each}
+								{levelToDelete.year}
+							</div>
+							<div>
+								<p class="font-semibold text-red-800 dark:text-red-200">{levelToDelete.name}</p>
+								<p class="text-sm text-red-600 dark:text-red-400">
+									{levelToDelete.code} • {levelToDelete.short_name}
+								</p>
+							</div>
+						</div>
 					</div>
-				</div>
+				{/if}
 
-				<!-- ชั้นเรียน -->
-				<div class="space-y-2">
-					<Label class="text-sm font-semibold">ชั้นเรียนที่เปิดสอน</Label>
-					{#if !configYear}
-						<div class="flex justify-center p-4"><Loader2 class="animate-spin" /></div>
-					{:else}
-						<div class="grid grid-cols-2 gap-4 max-h-[40vh] overflow-y-auto pr-2">
-							{#each structure.levels as level (level.id)}
-								<div
-									class="flex items-center space-x-2 border p-2 rounded-md hover:bg-muted/50 transition-colors"
+				<Dialog.Footer>
+					<Button
+						variant="outline"
+						onclick={() => {
+							showDeleteLevelDialog = false;
+							levelToDelete = null;
+						}}
+					>
+						ยกเลิก
+					</Button>
+					<Button variant="destructive" onclick={confirmDeleteLevel} disabled={isDeletingLevel}>
+						{#if isDeletingLevel}
+							<Loader2 class="mr-2 h-4 w-4 animate-spin" />
+						{/if}
+						ยืนยันลบ
+					</Button>
+				</Dialog.Footer>
+			</Dialog.Content>
+		</Dialog.Root>
+	{/if}
+	<!-- Year Config Dialog -->
+	{#if canManageAcademicStructure}
+		<Dialog.Root bind:open={showConfigDialog}>
+			<Dialog.Content class="sm:max-w-[500px]">
+				<Dialog.Header>
+					<Dialog.Title>ตั้งค่าปีการศึกษา</Dialog.Title>
+					<Dialog.Description>
+						ตั้งค่าวันเรียนและชั้นเรียนสำหรับ <strong>{configYear?.name}</strong>
+					</Dialog.Description>
+				</Dialog.Header>
+
+				<div class="py-4 space-y-5">
+					<!-- วันที่เรียน -->
+					<div class="space-y-2">
+						<Label class="text-sm font-semibold">วันที่เรียน</Label>
+						<div class="flex flex-wrap gap-2">
+							{#each ALL_DAYS as d (d.value)}
+								{@const selected = configSchoolDays.includes(d.value)}
+								<button
+									type="button"
+									class="rounded-md border px-3 py-1.5 text-sm transition-colors {selected
+										? 'bg-primary text-primary-foreground border-primary'
+										: 'bg-background hover:bg-accent border-input'}"
+									onclick={() => toggleConfigDay(d.value)}
 								>
-									<Checkbox
-										id={`level-${level.id}`}
-										checked={configLevelIds.includes(level.id)}
-										onCheckedChange={(c) => toggleConfigLevel(level.id, c === true)}
-									/>
-									<Label for={`level-${level.id}`} class="cursor-pointer flex-1 user-select-none">
-										<span class="font-bold">{level.short_name}</span>
-										<span class="text-muted-foreground text-xs ml-1">({level.name})</span>
-									</Label>
-								</div>
+									{d.label}
+								</button>
 							{/each}
 						</div>
-					{/if}
-				</div>
-			</div>
+					</div>
 
-			<Dialog.Footer>
-				<Button variant="outline" onclick={() => (showConfigDialog = false)}>ยกเลิก</Button>
-				<Button onclick={saveConfig} disabled={isSavingConfig}>
-					{#if isSavingConfig}
-						<Loader2 class="mr-2 h-4 w-4 animate-spin" />
-					{/if}
-					บันทึกการเปลี่ยนแปลง
-				</Button>
-			</Dialog.Footer>
-		</Dialog.Content>
-	</Dialog.Root>
+					<!-- ชั้นเรียน -->
+					<div class="space-y-2">
+						<Label class="text-sm font-semibold">ชั้นเรียนที่เปิดสอน</Label>
+						{#if !configYear}
+							<div class="flex justify-center p-4"><Loader2 class="animate-spin" /></div>
+						{:else}
+							<div class="grid grid-cols-2 gap-4 max-h-[40vh] overflow-y-auto pr-2">
+								{#each structure.levels as level (level.id)}
+									<div
+										class="flex items-center space-x-2 border p-2 rounded-md hover:bg-muted/50 transition-colors"
+									>
+										<Checkbox
+											id={`level-${level.id}`}
+											checked={configLevelIds.includes(level.id)}
+											onCheckedChange={(c) => toggleConfigLevel(level.id, c === true)}
+										/>
+										<Label for={`level-${level.id}`} class="cursor-pointer flex-1 user-select-none">
+											<span class="font-bold">{level.short_name}</span>
+											<span class="text-muted-foreground text-xs ml-1">({level.name})</span>
+										</Label>
+									</div>
+								{/each}
+							</div>
+						{/if}
+					</div>
+				</div>
+
+				<Dialog.Footer>
+					<Button variant="outline" onclick={() => (showConfigDialog = false)}>ยกเลิก</Button>
+					<Button onclick={saveConfig} disabled={isSavingConfig}>
+						{#if isSavingConfig}
+							<Loader2 class="mr-2 h-4 w-4 animate-spin" />
+						{/if}
+						บันทึกการเปลี่ยนแปลง
+					</Button>
+				</Dialog.Footer>
+			</Dialog.Content>
+		</Dialog.Root>
+	{/if}
 	<Dialog.Root bind:open={showSemestersDialog}>
 		<Dialog.Content class="sm:max-w-[700px] max-h-[85vh] flex flex-col">
 			<Dialog.Header>
@@ -782,11 +876,13 @@
 				</Dialog.Description>
 			</Dialog.Header>
 
-			<div class="flex justify-end mb-2">
-				<Button size="sm" onclick={openCreateSemester}>
-					<Plus class="mr-2 h-4 w-4" /> เพิ่มภาคเรียน
-				</Button>
-			</div>
+			{#if canManageAcademicStructure}
+				<div class="flex justify-end mb-2">
+					<Button size="sm" onclick={openCreateSemester}>
+						<Plus class="mr-2 h-4 w-4" /> เพิ่มภาคเรียน
+					</Button>
+				</div>
+			{/if}
 
 			<div class="border rounded-md overflow-hidden flex-1 overflow-y-auto min-h-[300px]">
 				<Table.Root>
@@ -814,17 +910,21 @@
 									{/if}
 								</Table.Cell>
 								<Table.Cell class="text-right">
-									<Button variant="ghost" size="icon" onclick={() => openEditSemester(sem)}>
-										<Settings class="h-3 w-3" />
-									</Button>
-									<Button
-										variant="ghost"
-										size="icon"
-										class="text-destructive"
-										onclick={() => handleDeleteSemester(sem.id)}
-									>
-										<Trash2 class="h-3 w-3" />
-									</Button>
+									{#if canManageAcademicStructure}
+										<Button variant="ghost" size="icon" onclick={() => openEditSemester(sem)}>
+											<Settings class="h-3 w-3" />
+										</Button>
+										<Button
+											variant="ghost"
+											size="icon"
+											class="text-destructive"
+											onclick={() => handleDeleteSemester(sem.id)}
+										>
+											<Trash2 class="h-3 w-3" />
+										</Button>
+									{:else}
+										<span class="text-sm text-muted-foreground">อ่านอย่างเดียว</span>
+									{/if}
 								</Table.Cell>
 							</Table.Row>
 						{:else}
@@ -845,48 +945,50 @@
 	</Dialog.Root>
 
 	<!-- Create/Edit Semester Form Dialog -->
-	<Dialog.Root bind:open={showSemesterForm}>
-		<Dialog.Content class="sm:max-w-[425px]">
-			<Dialog.Header>
-				<Dialog.Title>{semesterToEdit ? 'แก้ไขภาคเรียน' : 'เพิ่มภาคเรียนใหม่'}</Dialog.Title>
-			</Dialog.Header>
-			<div class="grid gap-4 py-4">
-				<div class="grid gap-2">
-					<Label>เทอมที่ <span class="text-red-500">*</span></Label>
-					<Input bind:value={newSemester.term} placeholder="1, 2, Summer" />
-				</div>
-				<div class="grid gap-2">
-					<Label>ชื่อเรียก <span class="text-red-500">*</span></Label>
-					<Input bind:value={newSemester.name} placeholder="ภาคเรียนที่ 1" />
-				</div>
-				<div class="grid grid-cols-2 gap-4">
+	{#if canManageAcademicStructure}
+		<Dialog.Root bind:open={showSemesterForm}>
+			<Dialog.Content class="sm:max-w-[425px]">
+				<Dialog.Header>
+					<Dialog.Title>{semesterToEdit ? 'แก้ไขภาคเรียน' : 'เพิ่มภาคเรียนใหม่'}</Dialog.Title>
+				</Dialog.Header>
+				<div class="grid gap-4 py-4">
 					<div class="grid gap-2">
-						<Label>วันเปิดเทอม <span class="text-red-500">*</span></Label>
-						<DatePicker bind:value={newSemester.start_date} />
+						<Label>เทอมที่ <span class="text-red-500">*</span></Label>
+						<Input bind:value={newSemester.term} placeholder="1, 2, Summer" />
 					</div>
 					<div class="grid gap-2">
-						<Label>วันปิดเทอม <span class="text-red-500">*</span></Label>
-						<DatePicker bind:value={newSemester.end_date} />
+						<Label>ชื่อเรียก <span class="text-red-500">*</span></Label>
+						<Input bind:value={newSemester.name} placeholder="ภาคเรียนที่ 1" />
+					</div>
+					<div class="grid grid-cols-2 gap-4">
+						<div class="grid gap-2">
+							<Label>วันเปิดเทอม <span class="text-red-500">*</span></Label>
+							<DatePicker bind:value={newSemester.start_date} />
+						</div>
+						<div class="grid gap-2">
+							<Label>วันปิดเทอม <span class="text-red-500">*</span></Label>
+							<DatePicker bind:value={newSemester.end_date} />
+						</div>
+					</div>
+					<div class="flex items-center space-x-2">
+						<Checkbox
+							id="sem-active"
+							checked={newSemester.is_active}
+							onCheckedChange={(c) => (newSemester.is_active = c === true)}
+						/>
+						<Label for="sem-active">ตั้งเป็นภาคเรียนปัจจุบัน</Label>
 					</div>
 				</div>
-				<div class="flex items-center space-x-2">
-					<Checkbox
-						id="sem-active"
-						checked={newSemester.is_active}
-						onCheckedChange={(c) => (newSemester.is_active = c === true)}
-					/>
-					<Label for="sem-active">ตั้งเป็นภาคเรียนปัจจุบัน</Label>
-				</div>
-			</div>
-			<Dialog.Footer>
-				<Button variant="outline" onclick={() => (showSemesterForm = false)}>ยกเลิก</Button>
-				<Button onclick={handleSaveSemester} disabled={isSubmittingSemester}>
-					{#if isSubmittingSemester}
-						<Loader2 class="mr-2 h-4 w-4 animate-spin" />
-					{/if}
-					บันทึก
-				</Button>
-			</Dialog.Footer>
-		</Dialog.Content>
-	</Dialog.Root>
+				<Dialog.Footer>
+					<Button variant="outline" onclick={() => (showSemesterForm = false)}>ยกเลิก</Button>
+					<Button onclick={handleSaveSemester} disabled={isSubmittingSemester}>
+						{#if isSubmittingSemester}
+							<Loader2 class="mr-2 h-4 w-4 animate-spin" />
+						{/if}
+						บันทึก
+					</Button>
+				</Dialog.Footer>
+			</Dialog.Content>
+		</Dialog.Root>
+	{/if}
 </div>

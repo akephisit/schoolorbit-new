@@ -26,6 +26,9 @@
 	import * as Select from '$lib/components/ui/select';
 	import * as Popover from '$lib/components/ui/popover';
 	import * as Command from '$lib/components/ui/command';
+	import { Alert, AlertDescription, AlertTitle } from '$lib/components/ui/alert';
+	import { PERMISSIONS } from '$lib/permissions/registry';
+	import { can } from '$lib/stores/permissions';
 	import {
 		Loader2,
 		Plus,
@@ -34,7 +37,8 @@
 		Pencil,
 		Trash2,
 		ChevronsUpDown,
-		Check
+		Check,
+		AlertTriangle
 	} from 'lucide-svelte';
 
 	type AdvisorRow = { user_id: string; role: 'primary' | 'secondary' };
@@ -61,6 +65,10 @@
 	let showCreateDialog = $state(false);
 	let showEditDialog = $state(false);
 	let isSubmitting = $state(false);
+
+	const canReadClassrooms = $derived($can.has(PERMISSIONS.ACADEMIC_CLASSROOM_READ_ALL));
+	const canCreateClassrooms = $derived($can.has(PERMISSIONS.ACADEMIC_CLASSROOM_CREATE_ALL));
+	const canUpdateClassrooms = $derived($can.has(PERMISSIONS.ACADEMIC_CLASSROOM_UPDATE_ALL));
 
 	// Create form
 	let newClassroom = $state({
@@ -134,16 +142,32 @@
 	}
 
 	async function loadInitData() {
+		if (!canReadClassrooms) {
+			structure = { years: [], semesters: [], levels: [] };
+			classrooms = [];
+			activeLevelIds = [];
+			loading = false;
+			return;
+		}
+
 		try {
 			loading = true;
-			const [structureRes, staffData, versionsRes] = await Promise.all([
-				getAcademicStructure(),
-				lookupStaff(),
-				listStudyPlanVersions({ active_only: true })
-			]);
+			const structureRes = await getAcademicStructure();
 			structure = structureRes.data;
-			staffList = staffData;
-			studyPlanVersions = versionsRes.data;
+
+			if (canCreateClassrooms || canUpdateClassrooms) {
+				try {
+					const [staffData, versionsRes] = await Promise.all([
+						lookupStaff(),
+						listStudyPlanVersions({ active_only: true })
+					]);
+					staffList = staffData;
+					studyPlanVersions = versionsRes.data;
+				} catch (error) {
+					console.error(error);
+					toast.error('โหลดข้อมูลสำหรับฟอร์มห้องเรียนไม่สำเร็จ');
+				}
+			}
 
 			const activeYear = structure.years.find((y) => y.is_active) || structure.years[0];
 			if (activeYear) selectedYearId = activeYear.id;
@@ -158,7 +182,7 @@
 	}
 
 	async function fetchClassrooms() {
-		if (!selectedYearId) return;
+		if (!canReadClassrooms || !selectedYearId) return;
 		try {
 			const [classroomRes, configRes] = await Promise.all([
 				listClassrooms({ year_id: selectedYearId }),
@@ -173,6 +197,11 @@
 	}
 
 	function handleOpenCreate() {
+		if (!canCreateClassrooms) {
+			toast.error('ไม่มีสิทธิ์สร้างห้องเรียน');
+			return;
+		}
+
 		newClassroom = {
 			academic_year_id: selectedYearId,
 			grade_level_id: '',
@@ -186,6 +215,11 @@
 	}
 
 	async function handleCreateClassroom() {
+		if (!canCreateClassrooms) {
+			toast.error('ไม่มีสิทธิ์สร้างห้องเรียน');
+			return;
+		}
+
 		if (
 			!newClassroom.academic_year_id ||
 			!newClassroom.grade_level_id ||
@@ -214,6 +248,11 @@
 	}
 
 	function handleOpenEdit(room: Classroom) {
+		if (!canUpdateClassrooms) {
+			toast.error('ไม่มีสิทธิ์แก้ไขห้องเรียน');
+			return;
+		}
+
 		editingClassroom = {
 			id: room.id,
 			room_number: room.room_number || '',
@@ -226,6 +265,11 @@
 	}
 
 	async function handleUpdateClassroom() {
+		if (!canUpdateClassrooms) {
+			toast.error('ไม่มีสิทธิ์แก้ไขห้องเรียน');
+			return;
+		}
+
 		if (!editingClassroom.room_number) {
 			toast.error('กรุณาระบุเลขห้อง');
 			return;
@@ -358,246 +402,269 @@
 			</h2>
 			<p class="text-muted-foreground mt-1">สร้างห้องเรียนและกำหนดครูที่ปรึกษา</p>
 		</div>
-		<Button onclick={handleOpenCreate} class="flex items-center gap-2">
-			<Plus class="w-4 h-4" />
-			สร้างห้องเรียนใหม่
-		</Button>
+		{#if canCreateClassrooms}
+			<Button onclick={handleOpenCreate} class="flex items-center gap-2">
+				<Plus class="w-4 h-4" />
+				สร้างห้องเรียนใหม่
+			</Button>
+		{/if}
 	</div>
 
-	<Card.Root>
-		<Card.Content class="pt-6">
-			<div class="flex flex-col gap-4 md:flex-row md:items-end">
-				<div class="grid w-full max-w-sm gap-1.5">
-					<Label>ปีการศึกษา</Label>
-					<Select.Root type="single" bind:value={selectedYearId} onValueChange={fetchClassrooms}>
-						<Select.Trigger class="w-full">
-							{structure.years.find((y) => y.id === selectedYearId)?.name || 'เลือกปีการศึกษา'}
-							{#if structure.years.find((y) => y.id === selectedYearId)?.is_active}
-								(ปัจจุบัน)
-							{/if}
-						</Select.Trigger>
-						<Select.Content>
-							{#each structure.years as year (year.id)}
-								<Select.Item value={year.id}
-									>{year.name} {year.is_active ? '(ปัจจุบัน)' : ''}</Select.Item
-								>
-							{/each}
-						</Select.Content>
-					</Select.Root>
-				</div>
-			</div>
-		</Card.Content>
-	</Card.Root>
-
-	{#if loading}
-		<div class="flex h-40 items-center justify-center">
-			<Loader2 class="h-8 w-8 animate-spin text-primary" />
-		</div>
+	{#if !canReadClassrooms}
+		<Alert>
+			<AlertTriangle class="h-4 w-4" />
+			<AlertTitle>ไม่มีสิทธิ์ดูห้องเรียน</AlertTitle>
+			<AlertDescription>
+				บัญชีนี้เข้า module ห้องเรียนได้ แต่ยังไม่มีสิทธิ์อ่านรายการห้องเรียน
+			</AlertDescription>
+		</Alert>
 	{:else}
-		<div class="rounded-md border bg-card">
-			<Table.Root>
-				<Table.Header>
-					<Table.Row>
-						<Table.Head>ระดับชั้น</Table.Head>
-						<Table.Head>ชื่อห้อง</Table.Head>
-						<Table.Head>จำนวนนักเรียน</Table.Head>
-						<Table.Head>รับได้</Table.Head>
-						<Table.Head>ครูที่ปรึกษา</Table.Head>
-						<Table.Head class="text-right">จัดการ</Table.Head>
-					</Table.Row>
-				</Table.Header>
-				<Table.Body>
-					{#each classrooms as room (room.id)}
-						<Table.Row>
-							<Table.Cell class="font-medium">
-								<Badge variant="outline">{room.grade_level_name}</Badge>
-							</Table.Cell>
-							<Table.Cell>
-								<div class="flex flex-col">
-									<span class="font-bold">{room.name}</span>
-									<span class="text-xs text-muted-foreground">Code: {room.code}</span>
-								</div>
-							</Table.Cell>
-							<Table.Cell>
-								<div class="flex items-center gap-2">
-									<Users class="h-4 w-4 text-muted-foreground" />
-									<span>{room.student_count || 0} คน</span>
-								</div>
-							</Table.Cell>
-							<Table.Cell>
-								<span class="text-sm">{room.capacity ?? 40} คน</span>
-							</Table.Cell>
-							<Table.Cell>
-								{#if room.advisors && room.advisors.length > 0}
-									<div class="flex flex-wrap gap-1">
-										{#each room.advisors as a (a.user_id)}
-											<Badge
-												variant={a.role === 'primary' ? 'default' : 'secondary'}
-												class="font-normal"
-											>
-												{a.role === 'primary' ? '⭐ ' : ''}{a.name}
-											</Badge>
-										{/each}
-									</div>
-								{:else}
-									<span class="text-muted-foreground text-sm">- ไม่ระบุ -</span>
-								{/if}
-							</Table.Cell>
-							<Table.Cell class="text-right">
-								<Button variant="ghost" size="sm" onclick={() => handleOpenEdit(room)}>
-									<Pencil class="h-4 w-4" />
-								</Button>
-							</Table.Cell>
-						</Table.Row>
-					{/each}
-					{#if classrooms.length === 0}
-						<Table.Row>
-							<Table.Cell colspan={6} class="h-32 text-center text-muted-foreground">
-								ไม่พบห้องเรียนในปีการศึกษานี้
-							</Table.Cell>
-						</Table.Row>
-					{/if}
-				</Table.Body>
-			</Table.Root>
-		</div>
-	{/if}
-
-	<!-- Create Dialog -->
-	<Dialog.Root bind:open={showCreateDialog}>
-		<Dialog.Content class="sm:max-w-[560px]">
-			<Dialog.Header>
-				<Dialog.Title>สร้างห้องเรียนใหม่</Dialog.Title>
-				<Dialog.Description>
-					เพิ่มห้องเรียนในปีการศึกษา {structure.years.find((y) => y.id === selectedYearId)?.name}
-				</Dialog.Description>
-			</Dialog.Header>
-
-			<div class="grid gap-4 py-4">
-				<div class="grid grid-cols-2 gap-4">
-					<div class="grid gap-2">
-						<Label>ระดับชั้น <span class="text-red-500">*</span></Label>
-						<Select.Root type="single" bind:value={newClassroom.grade_level_id}>
+		<Card.Root>
+			<Card.Content class="pt-6">
+				<div class="flex flex-col gap-4 md:flex-row md:items-end">
+					<div class="grid w-full max-w-sm gap-1.5">
+						<Label>ปีการศึกษา</Label>
+						<Select.Root type="single" bind:value={selectedYearId} onValueChange={fetchClassrooms}>
 							<Select.Trigger class="w-full">
-								{structure.levels.find((l) => l.id === newClassroom.grade_level_id)?.name ||
-									'เลือกชั้น'}
+								{structure.years.find((y) => y.id === selectedYearId)?.name || 'เลือกปีการศึกษา'}
+								{#if structure.years.find((y) => y.id === selectedYearId)?.is_active}
+									(ปัจจุบัน)
+								{/if}
 							</Select.Trigger>
 							<Select.Content>
-								{#each structure.levels.filter( (l) => activeLevelIds.includes(l.id) ) as level (level.id)}
-									<Select.Item value={level.id}>{level.name} ({level.short_name})</Select.Item>
+								{#each structure.years as year (year.id)}
+									<Select.Item value={year.id}
+										>{year.name} {year.is_active ? '(ปัจจุบัน)' : ''}</Select.Item
+									>
 								{/each}
 							</Select.Content>
 						</Select.Root>
 					</div>
+				</div>
+			</Card.Content>
+		</Card.Root>
+
+		{#if loading}
+			<div class="flex h-40 items-center justify-center">
+				<Loader2 class="h-8 w-8 animate-spin text-primary" />
+			</div>
+		{:else}
+			<div class="rounded-md border bg-card">
+				<Table.Root>
+					<Table.Header>
+						<Table.Row>
+							<Table.Head>ระดับชั้น</Table.Head>
+							<Table.Head>ชื่อห้อง</Table.Head>
+							<Table.Head>จำนวนนักเรียน</Table.Head>
+							<Table.Head>รับได้</Table.Head>
+							<Table.Head>ครูที่ปรึกษา</Table.Head>
+							{#if canUpdateClassrooms}
+								<Table.Head class="text-right">จัดการ</Table.Head>
+							{/if}
+						</Table.Row>
+					</Table.Header>
+					<Table.Body>
+						{#each classrooms as room (room.id)}
+							<Table.Row>
+								<Table.Cell class="font-medium">
+									<Badge variant="outline">{room.grade_level_name}</Badge>
+								</Table.Cell>
+								<Table.Cell>
+									<div class="flex flex-col">
+										<span class="font-bold">{room.name}</span>
+										<span class="text-xs text-muted-foreground">Code: {room.code}</span>
+									</div>
+								</Table.Cell>
+								<Table.Cell>
+									<div class="flex items-center gap-2">
+										<Users class="h-4 w-4 text-muted-foreground" />
+										<span>{room.student_count || 0} คน</span>
+									</div>
+								</Table.Cell>
+								<Table.Cell>
+									<span class="text-sm">{room.capacity ?? 40} คน</span>
+								</Table.Cell>
+								<Table.Cell>
+									{#if room.advisors && room.advisors.length > 0}
+										<div class="flex flex-wrap gap-1">
+											{#each room.advisors as a (a.user_id)}
+												<Badge
+													variant={a.role === 'primary' ? 'default' : 'secondary'}
+													class="font-normal"
+												>
+													{a.role === 'primary' ? '⭐ ' : ''}{a.name}
+												</Badge>
+											{/each}
+										</div>
+									{:else}
+										<span class="text-muted-foreground text-sm">- ไม่ระบุ -</span>
+									{/if}
+								</Table.Cell>
+								{#if canUpdateClassrooms}
+									<Table.Cell class="text-right">
+										<Button variant="ghost" size="sm" onclick={() => handleOpenEdit(room)}>
+											<Pencil class="h-4 w-4" />
+										</Button>
+									</Table.Cell>
+								{/if}
+							</Table.Row>
+						{/each}
+						{#if classrooms.length === 0}
+							<Table.Row>
+								<Table.Cell
+									colspan={canUpdateClassrooms ? 6 : 5}
+									class="h-32 text-center text-muted-foreground"
+								>
+									ไม่พบห้องเรียนในปีการศึกษานี้
+								</Table.Cell>
+							</Table.Row>
+						{/if}
+					</Table.Body>
+				</Table.Root>
+			</div>
+		{/if}
+	{/if}
+
+	<!-- Create Dialog -->
+	{#if canCreateClassrooms}
+		<Dialog.Root bind:open={showCreateDialog}>
+			<Dialog.Content class="sm:max-w-[560px]">
+				<Dialog.Header>
+					<Dialog.Title>สร้างห้องเรียนใหม่</Dialog.Title>
+					<Dialog.Description>
+						เพิ่มห้องเรียนในปีการศึกษา {structure.years.find((y) => y.id === selectedYearId)?.name}
+					</Dialog.Description>
+				</Dialog.Header>
+
+				<div class="grid gap-4 py-4">
+					<div class="grid grid-cols-2 gap-4">
+						<div class="grid gap-2">
+							<Label>ระดับชั้น <span class="text-red-500">*</span></Label>
+							<Select.Root type="single" bind:value={newClassroom.grade_level_id}>
+								<Select.Trigger class="w-full">
+									{structure.levels.find((l) => l.id === newClassroom.grade_level_id)?.name ||
+										'เลือกชั้น'}
+								</Select.Trigger>
+								<Select.Content>
+									{#each structure.levels.filter( (l) => activeLevelIds.includes(l.id) ) as level (level.id)}
+										<Select.Item value={level.id}>{level.name} ({level.short_name})</Select.Item>
+									{/each}
+								</Select.Content>
+							</Select.Root>
+						</div>
+						<div class="grid gap-2">
+							<Label>ชื่อห้อง/เลขห้อง <span class="text-red-500">*</span></Label>
+							<Input placeholder="เช่น 1, 2, EP, Gifted" bind:value={newClassroom.room_number} />
+						</div>
+					</div>
+
 					<div class="grid gap-2">
-						<Label>ชื่อห้อง/เลขห้อง <span class="text-red-500">*</span></Label>
-						<Input placeholder="เช่น 1, 2, EP, Gifted" bind:value={newClassroom.room_number} />
+						<Label>จำนวนที่รับ (คน)</Label>
+						<Input type="number" min="1" placeholder="40" bind:value={newClassroom.capacity} />
+					</div>
+
+					{@render advisorEditor(newAdvisors, (next) => (newAdvisors = next))}
+
+					<div class="grid gap-2">
+						<Label>หลักสูตรสถานศึกษา (เวอร์ชัน) <span class="text-red-500">*</span></Label>
+						<Select.Root type="single" bind:value={newClassroom.study_plan_version_id}>
+							<Select.Trigger class="w-full">
+								{(() => {
+									const v = filteredStudyPlanVersions.find(
+										(v) => v.id === newClassroom.study_plan_version_id
+									);
+									return v ? `${v.study_plan_name_th || ''} - ${v.version_name}` : 'เลือกหลักสูตร';
+								})()}
+							</Select.Trigger>
+							<Select.Content>
+								{#each filteredStudyPlanVersions as version (version.id)}
+									<Select.Item value={version.id}>
+										{version.study_plan_name_th || 'หลักสูตร'} - {version.version_name}
+									</Select.Item>
+								{/each}
+							</Select.Content>
+						</Select.Root>
+						<p class="text-xs text-muted-foreground">
+							💡 หลักสูตรจะใช้สำหรับสร้างรายวิชาอัตโนมัติในภายหลัง
+						</p>
+					</div>
+
+					<div class="bg-muted/50 p-3 rounded-md text-sm text-muted-foreground">
+						<p>
+							ระบบจะสร้างชื่อห้องอัตโนมัติ เช่น <strong>ม.1/1</strong> หรือ <strong>ม.1/EP</strong>
+						</p>
 					</div>
 				</div>
 
-				<div class="grid gap-2">
-					<Label>จำนวนที่รับ (คน)</Label>
-					<Input type="number" min="1" placeholder="40" bind:value={newClassroom.capacity} />
-				</div>
-
-				{@render advisorEditor(newAdvisors, (next) => (newAdvisors = next))}
-
-				<div class="grid gap-2">
-					<Label>หลักสูตรสถานศึกษา (เวอร์ชัน) <span class="text-red-500">*</span></Label>
-					<Select.Root type="single" bind:value={newClassroom.study_plan_version_id}>
-						<Select.Trigger class="w-full">
-							{(() => {
-								const v = filteredStudyPlanVersions.find(
-									(v) => v.id === newClassroom.study_plan_version_id
-								);
-								return v ? `${v.study_plan_name_th || ''} - ${v.version_name}` : 'เลือกหลักสูตร';
-							})()}
-						</Select.Trigger>
-						<Select.Content>
-							{#each filteredStudyPlanVersions as version (version.id)}
-								<Select.Item value={version.id}>
-									{version.study_plan_name_th || 'หลักสูตร'} - {version.version_name}
-								</Select.Item>
-							{/each}
-						</Select.Content>
-					</Select.Root>
-					<p class="text-xs text-muted-foreground">
-						💡 หลักสูตรจะใช้สำหรับสร้างรายวิชาอัตโนมัติในภายหลัง
-					</p>
-				</div>
-
-				<div class="bg-muted/50 p-3 rounded-md text-sm text-muted-foreground">
-					<p>
-						ระบบจะสร้างชื่อห้องอัตโนมัติ เช่น <strong>ม.1/1</strong> หรือ <strong>ม.1/EP</strong>
-					</p>
-				</div>
-			</div>
-
-			<Dialog.Footer>
-				<Button variant="outline" onclick={() => (showCreateDialog = false)}>ยกเลิก</Button>
-				<Button onclick={handleCreateClassroom} disabled={isSubmitting}>
-					{#if isSubmitting}<Loader2 class="mr-2 h-4 w-4 animate-spin" />{/if}
-					บันทึก
-				</Button>
-			</Dialog.Footer>
-		</Dialog.Content>
-	</Dialog.Root>
+				<Dialog.Footer>
+					<Button variant="outline" onclick={() => (showCreateDialog = false)}>ยกเลิก</Button>
+					<Button onclick={handleCreateClassroom} disabled={isSubmitting}>
+						{#if isSubmitting}<Loader2 class="mr-2 h-4 w-4 animate-spin" />{/if}
+						บันทึก
+					</Button>
+				</Dialog.Footer>
+			</Dialog.Content>
+		</Dialog.Root>
+	{/if}
 
 	<!-- Edit Dialog -->
-	<Dialog.Root bind:open={showEditDialog}>
-		<Dialog.Content class="sm:max-w-[560px]">
-			<Dialog.Header>
-				<Dialog.Title>แก้ไขข้อมูลห้องเรียน</Dialog.Title>
-				<Dialog.Description>แก้ไขหมายเลขห้อง ครูที่ปรึกษา หรือหลักสูตร</Dialog.Description>
-			</Dialog.Header>
+	{#if canUpdateClassrooms}
+		<Dialog.Root bind:open={showEditDialog}>
+			<Dialog.Content class="sm:max-w-[560px]">
+				<Dialog.Header>
+					<Dialog.Title>แก้ไขข้อมูลห้องเรียน</Dialog.Title>
+					<Dialog.Description>แก้ไขหมายเลขห้อง ครูที่ปรึกษา หรือหลักสูตร</Dialog.Description>
+				</Dialog.Header>
 
-			<div class="grid gap-4 py-4">
-				<div class="grid gap-2">
-					<Label>ชื่อห้อง/เลขห้อง <span class="text-red-500">*</span></Label>
-					<Input placeholder="เช่น 1, 2, EP, Gifted" bind:value={editingClassroom.room_number} />
-					<p class="text-xs text-muted-foreground">
-						⚠️ การเปลี่ยนเลขห้องจะทำให้ รหัสห้องและชื่อห้องเปลี่ยนไปด้วย
-					</p>
+				<div class="grid gap-4 py-4">
+					<div class="grid gap-2">
+						<Label>ชื่อห้อง/เลขห้อง <span class="text-red-500">*</span></Label>
+						<Input placeholder="เช่น 1, 2, EP, Gifted" bind:value={editingClassroom.room_number} />
+						<p class="text-xs text-muted-foreground">
+							⚠️ การเปลี่ยนเลขห้องจะทำให้ รหัสห้องและชื่อห้องเปลี่ยนไปด้วย
+						</p>
+					</div>
+
+					<div class="grid gap-2">
+						<Label>จำนวนที่รับ (คน)</Label>
+						<Input type="number" min="1" placeholder="40" bind:value={editingClassroom.capacity} />
+					</div>
+
+					{@render advisorEditor(editingAdvisors, (next) => (editingAdvisors = next))}
+
+					<div class="grid gap-2">
+						<Label>หลักสูตรสถานศึกษา (เวอร์ชัน) <span class="text-red-500">*</span></Label>
+						<Select.Root type="single" bind:value={editingClassroom.study_plan_version_id}>
+							<Select.Trigger class="w-full">
+								{(() => {
+									const v = filteredStudyPlanVersions.find(
+										(v) => v.id === editingClassroom.study_plan_version_id
+									);
+									return v ? `${v.study_plan_name_th || ''} - ${v.version_name}` : 'เลือกหลักสูตร';
+								})()}
+							</Select.Trigger>
+							<Select.Content>
+								{#each filteredStudyPlanVersions as version (version.id)}
+									<Select.Item value={version.id}>
+										{version.study_plan_name_th || 'หลักสูตร'} - {version.version_name}
+									</Select.Item>
+								{/each}
+							</Select.Content>
+						</Select.Root>
+						<p class="text-xs text-muted-foreground">
+							💡 หลักสูตรจะใช้สำหรับสร้างรายวิชาอัตโนมัติในภายหลัง
+						</p>
+					</div>
 				</div>
 
-				<div class="grid gap-2">
-					<Label>จำนวนที่รับ (คน)</Label>
-					<Input type="number" min="1" placeholder="40" bind:value={editingClassroom.capacity} />
-				</div>
-
-				{@render advisorEditor(editingAdvisors, (next) => (editingAdvisors = next))}
-
-				<div class="grid gap-2">
-					<Label>หลักสูตรสถานศึกษา (เวอร์ชัน) <span class="text-red-500">*</span></Label>
-					<Select.Root type="single" bind:value={editingClassroom.study_plan_version_id}>
-						<Select.Trigger class="w-full">
-							{(() => {
-								const v = filteredStudyPlanVersions.find(
-									(v) => v.id === editingClassroom.study_plan_version_id
-								);
-								return v ? `${v.study_plan_name_th || ''} - ${v.version_name}` : 'เลือกหลักสูตร';
-							})()}
-						</Select.Trigger>
-						<Select.Content>
-							{#each filteredStudyPlanVersions as version (version.id)}
-								<Select.Item value={version.id}>
-									{version.study_plan_name_th || 'หลักสูตร'} - {version.version_name}
-								</Select.Item>
-							{/each}
-						</Select.Content>
-					</Select.Root>
-					<p class="text-xs text-muted-foreground">
-						💡 หลักสูตรจะใช้สำหรับสร้างรายวิชาอัตโนมัติในภายหลัง
-					</p>
-				</div>
-			</div>
-
-			<Dialog.Footer>
-				<Button variant="outline" onclick={() => (showEditDialog = false)}>ยกเลิก</Button>
-				<Button onclick={handleUpdateClassroom} disabled={isSubmitting}>
-					{#if isSubmitting}<Loader2 class="mr-2 h-4 w-4 animate-spin" />{/if}
-					บันทึกการแก้ไข
-				</Button>
-			</Dialog.Footer>
-		</Dialog.Content>
-	</Dialog.Root>
+				<Dialog.Footer>
+					<Button variant="outline" onclick={() => (showEditDialog = false)}>ยกเลิก</Button>
+					<Button onclick={handleUpdateClassroom} disabled={isSubmitting}>
+						{#if isSubmitting}<Loader2 class="mr-2 h-4 w-4 animate-spin" />{/if}
+						บันทึกการแก้ไข
+					</Button>
+				</Dialog.Footer>
+			</Dialog.Content>
+		</Dialog.Root>
+	{/if}
 </div>
