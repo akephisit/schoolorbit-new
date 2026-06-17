@@ -4,6 +4,7 @@
 	import { resolve } from '$app/paths';
 	import { Button } from '$lib/components/ui/button';
 	import { Card } from '$lib/components/ui/card';
+	import { PageShell } from '$lib/components/app-layout';
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import { Badge } from '$lib/components/ui/badge';
 	import {
@@ -21,9 +22,7 @@
 		XCircle,
 		Loader2,
 		AlertCircle,
-		ArrowLeft,
-		Plus,
-		History
+		Plus
 	} from 'lucide-svelte';
 	import * as Select from '$lib/components/ui/select';
 	import { listSchedulingJobs, type SchedulingJobResponse } from '$lib/api/scheduling';
@@ -84,8 +83,7 @@
 			jobs = res.data || [];
 		} catch (loadError) {
 			console.error('Failed to load jobs:', loadError);
-			error =
-				loadError instanceof Error ? loadError.message : 'ไม่สามารถโหลดประวัติการจัดตารางได้';
+			error = loadError instanceof Error ? loadError.message : 'ไม่สามารถโหลดประวัติการจัดตารางได้';
 			jobs = [];
 		} finally {
 			loading = false;
@@ -149,30 +147,17 @@
 	});
 </script>
 
-<div class="space-y-6">
-	<div class="flex items-center justify-between flex-wrap gap-3">
-		<div class="flex items-center gap-2">
-			<Button
-				variant="ghost"
-				size="icon"
-				onclick={() => goto(resolve('/staff/academic/timetable/scheduling-config'))}
-				aria-label="กลับ"
-			>
-				<ArrowLeft class="h-5 w-5" />
-			</Button>
-			<div class="flex flex-col gap-1">
-				<h2 class="text-3xl font-bold flex items-center gap-2">
-					<History class="h-8 w-8" />
-					ประวัติการจัดตาราง
-				</h2>
-				<p class="text-muted-foreground">รายการจัดตารางทั้งหมดในระบบ</p>
-			</div>
-		</div>
-		<Button onclick={() => goto(resolve('/staff/academic/timetable/scheduling-config'))}>
+<PageShell
+	title="ประวัติการจัดตาราง"
+	description="รายการจัดตารางทั้งหมดในระบบ"
+	backHref="/staff/academic/timetable/scheduling-config"
+>
+	{#snippet actions()}
+		<Button href="/staff/academic/timetable/scheduling-config">
 			<Plus class="mr-2 h-4 w-4" />
 			สร้างรายการใหม่
 		</Button>
-	</div>
+	{/snippet}
 
 	<!-- Filters -->
 	<div class="flex gap-4">
@@ -275,4 +260,4 @@
 			</Table>
 		</Card>
 	{/if}
-</div>
+</PageShell>

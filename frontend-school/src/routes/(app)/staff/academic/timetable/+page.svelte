@@ -62,6 +62,7 @@
 	import * as Command from '$lib/components/ui/command';
 	import { Badge } from '$lib/components/ui/badge';
 	import * as Tooltip from '$lib/components/ui/tooltip';
+	import { PageShell } from '$lib/components/app-layout';
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import { PERMISSIONS } from '$lib/permissions/registry';
 	import { can } from '$lib/stores/permissions';
@@ -3267,1043 +3268,1056 @@
 	<title>{data.title} - SchoolOrbit</title>
 </svelte:head>
 
-<div class="h-full flex flex-col space-y-2" role="application">
-	<!-- Row 1: Title + View Mode + Status + Avatars + Actions -->
-	<div class="flex items-center justify-between gap-3 flex-wrap">
-		<div class="flex items-center gap-3">
-			<h2 class="text-3xl font-bold flex items-center gap-2">
-				<CalendarDays class="h-8 w-8" />
-				จัดตารางสอน
-			</h2>
-
-			<div class="flex bg-muted p-1 rounded-lg transition-colors">
-				<button
-					class="px-3 py-1 text-sm font-medium rounded transition-all flex items-center gap-2 {viewMode ===
-					'CLASSROOM'
-						? 'bg-background shadow-sm text-foreground'
-						: 'text-muted-foreground hover:text-foreground'}"
-					onclick={() => {
-						viewMode = 'CLASSROOM';
-						courses = [];
-						timetableEntries = [];
-					}}
-				>
-					<School class="w-4 h-4" /> ห้องเรียน
-				</button>
-				<button
-					class="px-3 py-1 text-sm font-medium rounded transition-all flex items-center gap-2 {viewMode ===
-					'INSTRUCTOR'
-						? 'bg-background shadow-sm text-foreground'
-						: 'text-muted-foreground hover:text-foreground'}"
-					onclick={() => {
-						viewMode = 'INSTRUCTOR';
-						courses = [];
-						timetableEntries = [];
-					}}
-				>
-					<Users class="w-4 h-4" /> ครูผู้สอน
-				</button>
-			</div>
-		</div>
-
-		<div class="flex items-center gap-2 flex-wrap">
-			<Tooltip.Provider>
-				<Tooltip.Root>
-					<Tooltip.Trigger>
-						<div
-							class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full border bg-white/50 backdrop-blur shadow-sm"
-						>
-							<div
-								class="w-2 h-2 rounded-full {$isConnected
-									? 'bg-green-500 shadow-[0_0_6px_rgba(34,197,94,0.6)]'
-									: 'bg-red-500'}"
-							></div>
-							<span class="text-xs font-semibold text-muted-foreground">
-								{$isConnected ? `Online (${$activeUsers.length})` : 'Offline'}
-							</span>
-						</div>
-					</Tooltip.Trigger>
-					<Tooltip.Content>
-						{$isConnected ? `ออนไลน์ ${$activeUsers.length} คน` : 'ไม่ได้เชื่อมต่อ'}
-					</Tooltip.Content>
-				</Tooltip.Root>
-			</Tooltip.Provider>
-
-			{#if $isConnected && $activeUsers.length > 0}
-				<Tooltip.Provider>
-					<div class="flex -space-x-1.5">
-						{#each $activeUsers.slice(0, 4) as user (user.user_id + (user.context?.view_id || ''))}
-							<Tooltip.Root>
-								<Tooltip.Trigger>
-									<button
-										class="w-6 h-6 rounded-full border-2 border-white flex items-center justify-center text-[9px] text-white font-bold ring-1 ring-border/10 shadow-sm transition-transform hover:scale-110 hover:z-10 cursor-pointer"
-										style="background-color: {user.color}"
-										onclick={() => {
-											if (
-												user.context?.view_mode &&
-												(user.context.view_mode === 'CLASSROOM' ||
-													user.context.view_mode === 'INSTRUCTOR')
-											) {
-												viewMode = user.context.view_mode;
-												if (user.context.view_id) {
-													if (viewMode === 'CLASSROOM') selectedClassroomId = user.context.view_id;
-													else selectedInstructorId = user.context.view_id;
-													toast.info(`ย้ายไปดูหน้าจอของ ${user.name}`);
-												}
-											}
-										}}
-									>
-										{user.name.charAt(0).toUpperCase()}
-									</button>
-								</Tooltip.Trigger>
-								<Tooltip.Content>
-									<p class="font-semibold">{user.name}</p>
-									{#if user.context?.view_id}
-										{#if user.context.view_mode === 'CLASSROOM'}
-											<p class="text-xs text-muted-foreground">
-												กำลังดูห้อง {classrooms.find((c) => c.id === user.context?.view_id)?.name ||
-													'(ไม่พบข้อมูลห้อง)'}
-											</p>
-										{:else if user.context.view_mode === 'INSTRUCTOR'}
-											<p class="text-xs text-muted-foreground">
-												กำลังดูตารางสอน {instructors.find((i) => i.id === user.context?.view_id)
-													?.name || '(ไม่พบข้อมูลครู)'}
-											</p>
-										{/if}
-									{/if}
-								</Tooltip.Content>
-							</Tooltip.Root>
-						{/each}
-						{#if $activeUsers.length > 4}
-							<div
-								class="w-6 h-6 rounded-full bg-muted border-2 border-white flex items-center justify-center text-[8px] font-bold shadow-sm"
-							>
-								+{$activeUsers.length - 4}
-							</div>
-						{/if}
-					</div>
-				</Tooltip.Provider>
-			{/if}
-
-			<div class="w-px h-5 bg-border mx-1"></div>
-
-			{#if canManageTimetable}
-				<Button
-					variant="outline"
-					onclick={() => goto(resolve('/staff/academic/timetable/scheduling-config'))}
-				>
-					<Zap class="w-4 h-4 mr-2 text-orange-500" />
-					จัดอัตโนมัติ
-				</Button>
-
-				<Button
-					variant="outline"
-					onclick={() => goto(resolve('/staff/academic/timetable/templates'))}
-				>
-					<FileStack class="w-4 h-4 mr-2" />
-					Templates
-				</Button>
-
-				<Button variant="outline" onclick={() => (showBatchModal = true)}>
-					<PlusCircle class="w-4 h-4 mr-2" /> กิจกรรมพิเศษ
-				</Button>
-			{/if}
-
-			{#if canReadTimetable}
-				<Button variant="outline" onclick={handleExportPDF} disabled={isExporting}>
-					{#if isExporting}
-						<Loader2 class="w-4 h-4 mr-2 animate-spin" />
-					{:else}
-						<Download class="w-4 h-4 mr-2" />
-					{/if}
-					ดาวน์โหลด PDF
-				</Button>
-			{/if}
-		</div>
-	</div>
-
-	{#if !canReadTimetable}
-		<PageState
-			variant="permission"
-			title="ไม่มีสิทธิ์ดูตารางสอน"
-			description="ต้องมีสิทธิ์อ่านแผนการจัดตารางสอนจึงจะเข้าถึงข้อมูลในหน้านี้ได้"
-		/>
-	{:else if initialLoading}
-		<PageSkeleton variant="detail" />
-	{:else if academicYears.length === 0}
-		<PageState
-			title="ยังไม่มีปีการศึกษา"
-			description="สร้างปีการศึกษาและภาคเรียนก่อน จึงจะเริ่มจัดตารางสอนได้"
-		/>
-	{:else}
-		<!-- Row 2: Filters -->
-		<div class="flex items-center gap-2 flex-wrap">
-			<div class="w-[180px]">
-				<Select.Root type="single" bind:value={selectedYearId}>
-					<Select.Trigger class="w-full h-9">
-						{academicYears.find((y) => y.id === selectedYearId)?.name || 'เลือกปีการศึกษา'}
-					</Select.Trigger>
-					<Select.Content>
-						{#each academicYears as year (year.id)}
-							<Select.Item value={year.id}>{year.name}</Select.Item>
-						{/each}
-					</Select.Content>
-				</Select.Root>
-			</div>
-
-			<div class="w-[180px]">
-				<Select.Root type="single" bind:value={selectedSemesterId}>
-					<Select.Trigger class="w-full h-9">
-						{#if selectedSemesterId && semesters.find((s) => s.id === selectedSemesterId)}
-							ภาคเรียนที่ {semesters.find((s) => s.id === selectedSemesterId)?.term}
-						{:else}
-							เลือกภาคเรียน
-						{/if}
-					</Select.Trigger>
-					<Select.Content>
-						{#each semesters as term (term.id)}
-							<Select.Item value={term.id}>ภาคเรียนที่ {term.term}</Select.Item>
-						{/each}
-					</Select.Content>
-				</Select.Root>
-			</div>
-
-			{#if viewMode === 'CLASSROOM'}
-				<div class="w-[220px]">
-					<Popover.Root bind:open={classroomPickerOpen}>
-						<Popover.Trigger class="w-full">
-							<Button
-								variant="outline"
-								role="combobox"
-								aria-expanded={classroomPickerOpen}
-								class="w-full justify-between font-normal h-9"
-							>
-								<span class="truncate">
-									{classrooms.find((c) => c.id === selectedClassroomId)?.name || 'เลือกห้องเรียน'}
-								</span>
-								<ChevronsUpDown class="ml-2 h-4 w-4 shrink-0 opacity-50" />
-							</Button>
-						</Popover.Trigger>
-						<Popover.Content class="w-[--bits-popover-trigger-width] p-0">
-							<Command.Root>
-								<Command.Input placeholder="ค้นหาห้อง..." />
-								<Command.Empty>ไม่พบห้องเรียน</Command.Empty>
-								<Command.Group class="max-h-[280px] overflow-y-auto">
-									{#each classrooms as classroom (classroom.id)}
-										<Command.Item
-											value={classroom.name}
-											onSelect={() => {
-												selectedClassroomId = classroom.id;
-												classroomPickerOpen = false;
-											}}
-										>
-											<Check
-												class="mr-2 h-4 w-4 {selectedClassroomId === classroom.id
-													? 'opacity-100'
-													: 'opacity-0'}"
-											/>
-											{classroom.name}
-										</Command.Item>
-									{/each}
-								</Command.Group>
-							</Command.Root>
-						</Popover.Content>
-					</Popover.Root>
-				</div>
-			{:else}
-				<div class="w-[220px]">
-					<Popover.Root bind:open={instructorPickerOpen}>
-						<Popover.Trigger class="w-full">
-							<Button
-								variant="outline"
-								role="combobox"
-								aria-expanded={instructorPickerOpen}
-								class="w-full justify-between font-normal h-9"
-							>
-								<span class="truncate">
-									{instructors.find((i) => i.id === selectedInstructorId)?.name || 'เลือกครูผู้สอน'}
-								</span>
-								<ChevronsUpDown class="ml-2 h-4 w-4 shrink-0 opacity-50" />
-							</Button>
-						</Popover.Trigger>
-						<Popover.Content class="w-[--bits-popover-trigger-width] p-0">
-							<Command.Root>
-								<Command.Input placeholder="ค้นหาครู..." />
-								<Command.Empty>ไม่พบครู</Command.Empty>
-								<Command.Group class="max-h-[280px] overflow-y-auto">
-									{#each instructors as instructor (instructor.id)}
-										<Command.Item
-											value={instructor.name}
-											onSelect={() => {
-												selectedInstructorId = instructor.id;
-												instructorPickerOpen = false;
-											}}
-										>
-											<Check
-												class="mr-2 h-4 w-4 {selectedInstructorId === instructor.id
-													? 'opacity-100'
-													: 'opacity-0'}"
-											/>
-											{instructor.name}
-										</Command.Item>
-									{/each}
-								</Command.Group>
-							</Command.Root>
-						</Popover.Content>
-					</Popover.Root>
-				</div>
-				{#if selectedInstructorId}
-					<label
-						class="flex items-center gap-2 text-xs cursor-pointer select-none px-2 py-1 rounded border bg-muted/30 hover:bg-muted transition-colors"
-					>
-						<input type="checkbox" bind:checked={showTeamGhosts} class="cursor-pointer" />
-						<span>แสดงคาบในทีม (ghost cells)</span>
-					</label>
-				{/if}
-			{/if}
-		</div>
-
-		<!-- Main Content Grid (Workspace = cursor canvas) -->
-		<div
-			class="grid grid-cols-12 gap-3 flex-1 min-h-0 relative"
-			bind:this={workspaceRef}
-			onmousemove={handleMouseMove}
-			ondrag={handleDragMoveOnGrid}
-			role="application"
-		>
-			<!-- Left Sidebar: Courses -->
-			<Card.Root class="col-span-2 flex flex-col h-full overflow-hidden gap-0 py-0">
-				<div class="py-2 px-3 border-b shrink-0">
-					<div class="text-sm font-semibold flex items-center gap-2">
-						<BookOpen class="w-4 h-4" /> รายวิชา
-						{#if canManageTimetable}
-							<span class="text-[10px] font-normal text-muted-foreground ml-auto"> ลากไปวาง </span>
-						{/if}
-					</div>
-				</div>
-				<div class="flex-1 overflow-y-auto p-2 space-y-2 bg-muted/20">
-					{#each unscheduledCourses as course (course.id)}
-						{@const lockedBy = getDragOwner(undefined, course.id)}
-						<div
-							class="border rounded-md p-2 shadow-sm hover:shadow-md hover:brightness-95 transition-all group relative {canManageTimetable
-								? 'cursor-grab active:cursor-grabbing'
-								: 'cursor-default'} {lockedBy ? 'opacity-50 pointer-events-none' : ''}"
-							style="background-color: {getSubjectColor(
-								viewMode === 'INSTRUCTOR'
-									? course.classroom_name || course.subject_code
-									: course.subject_code
-							)}; border-color: {getSubjectBorderColor(
-								viewMode === 'INSTRUCTOR'
-									? course.classroom_name || course.subject_code
-									: course.subject_code
-							)};"
-							draggable={canManageTimetable && !lockedBy}
-							ondragstart={(e) => handleDragStart(e, course, 'NEW')}
-							ondragend={handleDragEnd}
-							role="button"
-							tabindex="0"
-						>
-							{#if lockedBy}
-								<div
-									class="absolute inset-0 flex items-center justify-center z-10 bg-white/50 backdrop-blur-[1px] rounded-lg"
-								>
-									<span
-										class="text-[10px] font-bold px-2 py-1 rounded text-white shadow-sm"
-										style="background-color: {lockedBy.color};"
-									>
-										{lockedBy.name} กำลังใช้
-									</span>
-								</div>
-							{/if}
-
-							<div class="flex justify-between items-start mb-0.5 gap-1">
-								<Badge variant="outline" class="text-[10px] px-1 py-0 leading-tight"
-									>{course.subject_code}</Badge
-								>
-								<Badge
-									variant={course.is_completed ? 'secondary' : 'default'}
-									class="text-[10px] px-1 py-0 leading-tight"
-								>
-									{course.scheduled_count}/{course.max_periods}
-								</Badge>
-							</div>
-							<h4 class="font-medium text-xs line-clamp-2 leading-snug mb-1">
-								{course.subject_name_th || 'ไม่มีชื่อวิชา'}
-							</h4>
-							<div class="flex flex-col gap-0.5 text-[10px] text-muted-foreground">
-								{#if viewMode === 'CLASSROOM'}
-									<div class="flex items-center gap-1 truncate">
-										<Users class="w-3 h-3 shrink-0" />
-										<span class="truncate">{course.instructor_name || 'ไม่ระบุครู'}</span>
-									</div>
-								{:else}
-									<div class="flex items-center gap-1 truncate">
-										<School class="w-3 h-3 shrink-0" />
-										<span class="truncate">{course.classroom_name || 'ไม่ระบุห้อง'}</span>
-									</div>
-								{/if}
-								<div>{course.subject_credit} นก.</div>
-							</div>
-
-							<!-- Progress Bar -->
-							<div class="mt-1.5 h-1 w-full bg-secondary rounded-full overflow-hidden">
-								<div
-									class="h-full bg-primary transition-all"
-									style="width: {(course.scheduled_count / course.max_periods) * 100}%"
-								></div>
-							</div>
-						</div>
-					{:else}
-						<div class="text-center text-muted-foreground py-8 text-sm">
-							{#if !selectedClassroomId && !selectedInstructorId}
-								กรุณาเลือก{viewMode === 'CLASSROOM' ? 'ห้องเรียน' : 'ครูผู้สอน'}
-							{:else if courses.length === 0}
-								ไม่พบรายวิชา
-							{:else}
-								จัดตารางครบแล้ว
-							{/if}
-						</div>
-					{/each}
-				</div>
-
-				<!-- Activity Slots Section -->
-				{#if unscheduledActivities.length > 0}
-					<div class="border-t">
-						<div class="py-2 px-4 bg-emerald-50 border-b">
-							<span class="text-xs font-medium text-emerald-700 flex items-center gap-1">
-								<CalendarDays class="w-3 h-3" /> กิจกรรมพัฒนาผู้เรียน
-							</span>
-						</div>
-						<div class="overflow-y-auto p-3 space-y-2 max-h-[200px]">
-							{#each unscheduledActivities as activity (activity.id + ':' + (activity._classroom_id ?? ''))}
-								{#if activity.is_draggable}
-									<!-- Independent: draggable -->
-									<div
-										class="border rounded-lg p-2.5 shadow-sm hover:shadow-md transition-all bg-emerald-50 border-emerald-200 {canManageTimetable
-											? 'cursor-grab active:cursor-grabbing'
-											: 'cursor-default'}"
-										draggable={canManageTimetable}
-										ondragstart={(e) => handleActivityDragStart(e, activity)}
-										ondragend={handleDragEnd}
-										role="button"
-										tabindex="0"
-									>
-										<div class="flex justify-between items-start mb-1">
-											<Badge
-												variant="outline"
-												class="text-[10px] border-emerald-300 text-emerald-700"
-											>
-												{ACTIVITY_TYPE_LABELS[activity.activity_type] ?? activity.activity_type}
-											</Badge>
-											<Badge variant="default" class="text-[10px] bg-emerald-600">
-												{activity.scheduled_count}/{activity.max_periods} คาบ
-											</Badge>
-										</div>
-										<h4 class="font-medium text-sm line-clamp-1 leading-tight">{activity.name}</h4>
-										{#if activity._classroom_name}
-											<div class="text-[10px] text-muted-foreground mt-0.5 flex items-center gap-1">
-												<School class="w-3 h-3" />
-												{activity._classroom_name}
-											</div>
-										{/if}
-										<div class="text-[10px] text-emerald-600 mt-1">
-											{canManageTimetable ? 'อิสระ — ลากวางได้' : 'อิสระ — ดูได้อย่างเดียว'}
-										</div>
-										<div class="mt-1.5 h-1 w-full bg-emerald-100 rounded-full overflow-hidden">
-											<div
-												class="h-full bg-emerald-500 transition-all"
-												style="width: {(activity.scheduled_count / activity.max_periods) * 100}%"
-											></div>
-										</div>
-									</div>
-								{:else}
-									<!-- Synchronized: read-only -->
-									<div
-										class="border border-dashed rounded-lg p-2.5 opacity-60 bg-gray-50 border-gray-300"
-									>
-										<div class="flex justify-between items-start mb-1">
-											<Badge variant="outline" class="text-[10px]">
-												{ACTIVITY_TYPE_LABELS[activity.activity_type] ?? activity.activity_type}
-											</Badge>
-											<Badge variant="secondary" class="text-[10px]">
-												{activity.scheduled_count}/{activity.max_periods} คาบ
-											</Badge>
-										</div>
-										<h4
-											class="font-medium text-sm line-clamp-1 leading-tight flex items-center gap-1"
-										>
-											<Lock class="w-3 h-3 shrink-0" />
-											{activity.name}
-										</h4>
-										{#if canManageTimetable && viewMode === 'INSTRUCTOR' && selectedInstructorId}
-											<Button
-												variant="outline"
-												size="sm"
-												class="mt-1 h-6 text-xs w-full"
-												onclick={async () => {
-													try {
-														await restoreInstructorToSlot(activity.id, selectedInstructorId);
-														toast.success('แสดงในตารางแล้ว');
-														loadTimetable();
-														loadSidebarActivitySlots();
-													} catch (e: unknown) {
-														toast.error(
-															(e instanceof Error ? e.message : String(e)) || 'ไม่สำเร็จ'
-														);
-													}
-												}}
-											>
-												แสดงในตาราง
-											</Button>
-										{:else}
-											<div class="text-[10px] text-muted-foreground mt-1">
-												{canManageTimetable ? 'จัดพร้อมกัน — ใช้ Batch' : 'จัดพร้อมกัน'}
-											</div>
-										{/if}
-									</div>
-								{/if}
-							{/each}
-						</div>
-					</div>
-				{/if}
-			</Card.Root>
-
-			<!-- Right Content: Timetable Grid -->
-			<Card.Root
-				class="col-span-10 flex flex-col h-full overflow-hidden border-2 shadow-none gap-0 py-0"
+<PageShell
+	title="จัดตารางสอน"
+	description="จัดและตรวจสอบตารางเรียนตามห้องเรียนหรือครูผู้สอน"
+	class="flex h-full flex-col"
+	contentClass="min-h-0 flex-1"
+>
+	{#snippet actions()}
+		<div class="flex bg-muted p-1 rounded-lg transition-colors">
+			<button
+				class="px-3 py-1 text-sm font-medium rounded transition-all flex items-center gap-2 {viewMode ===
+				'CLASSROOM'
+					? 'bg-background shadow-sm text-foreground'
+					: 'text-muted-foreground hover:text-foreground'}"
+				onclick={() => {
+					viewMode = 'CLASSROOM';
+					courses = [];
+					timetableEntries = [];
+				}}
 			>
-				<div class="overflow-auto flex-1">
-					<div class="min-w-[800px] h-full flex flex-col">
-						<!-- Header Row (Periods) -->
-						<div class="flex sticky top-0 bg-background z-20">
-							<div
-								class="w-20 shrink-0 p-3 border-r border-b font-medium text-sm text-muted-foreground flex items-center justify-center bg-background sticky left-0 z-30"
-							>
-								วัน/คาบ
-							</div>
-							{#each periods as period (period.id)}
-								<div class="flex-1 min-w-[100px] p-2 border-r border-b text-center relative group">
-									<div class="text-sm font-bold">{period.name || ' '}</div>
-									<div class="text-xs text-muted-foreground">
-										{formatTime(period.start_time)}-{formatTime(period.end_time)}
-									</div>
-								</div>
-							{/each}
-						</div>
+				<School class="w-4 h-4" /> ห้องเรียน
+			</button>
+			<button
+				class="px-3 py-1 text-sm font-medium rounded transition-all flex items-center gap-2 {viewMode ===
+				'INSTRUCTOR'
+					? 'bg-background shadow-sm text-foreground'
+					: 'text-muted-foreground hover:text-foreground'}"
+				onclick={() => {
+					viewMode = 'INSTRUCTOR';
+					courses = [];
+					timetableEntries = [];
+				}}
+			>
+				<Users class="w-4 h-4" /> ครูผู้สอน
+			</button>
+		</div>
 
-						<!-- Days Rows -->
-						{#each DAYS as day (day.value)}
-							<div class="flex flex-1 min-h-[70px]">
-								<!-- Day Header -->
-								<div
-									class="w-20 shrink-0 border-r border-b bg-background font-medium flex items-center justify-center relative sticky left-0 z-10"
+		<Tooltip.Provider>
+			<Tooltip.Root>
+				<Tooltip.Trigger>
+					<div
+						class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full border bg-white/50 backdrop-blur shadow-sm"
+					>
+						<div
+							class="w-2 h-2 rounded-full {$isConnected
+								? 'bg-green-500 shadow-[0_0_6px_rgba(34,197,94,0.6)]'
+								: 'bg-red-500'}"
+						></div>
+						<span class="text-xs font-semibold text-muted-foreground">
+							{$isConnected ? `Online (${$activeUsers.length})` : 'Offline'}
+						</span>
+					</div>
+				</Tooltip.Trigger>
+				<Tooltip.Content>
+					{$isConnected ? `ออนไลน์ ${$activeUsers.length} คน` : 'ไม่ได้เชื่อมต่อ'}
+				</Tooltip.Content>
+			</Tooltip.Root>
+		</Tooltip.Provider>
+
+		{#if $isConnected && $activeUsers.length > 0}
+			<Tooltip.Provider>
+				<div class="flex -space-x-1.5">
+					{#each $activeUsers.slice(0, 4) as user (user.user_id + (user.context?.view_id || ''))}
+						<Tooltip.Root>
+							<Tooltip.Trigger>
+								<button
+									class="w-6 h-6 rounded-full border-2 border-white flex items-center justify-center text-[9px] text-white font-bold ring-1 ring-border/10 shadow-sm transition-transform hover:scale-110 hover:z-10 cursor-pointer"
+									style="background-color: {user.color}"
+									onclick={() => {
+										if (
+											user.context?.view_mode &&
+											(user.context.view_mode === 'CLASSROOM' ||
+												user.context.view_mode === 'INSTRUCTOR')
+										) {
+											viewMode = user.context.view_mode;
+											if (user.context.view_id) {
+												if (viewMode === 'CLASSROOM') selectedClassroomId = user.context.view_id;
+												else selectedInstructorId = user.context.view_id;
+												toast.info(`ย้ายไปดูหน้าจอของ ${user.name}`);
+											}
+										}
+									}}
 								>
-									<!-- Day Indicator Line -->
-									{#if day.value === 'MON'}<div
-											class="absolute left-0 inset-y-0 w-1 bg-yellow-400"
-										></div>{/if}
-									{#if day.value === 'TUE'}<div
-											class="absolute left-0 inset-y-0 w-1 bg-pink-400"
-										></div>{/if}
-									{#if day.value === 'WED'}<div
-											class="absolute left-0 inset-y-0 w-1 bg-green-400"
-										></div>{/if}
-									{#if day.value === 'THU'}<div
-											class="absolute left-0 inset-y-0 w-1 bg-orange-400"
-										></div>{/if}
-									{#if day.value === 'FRI'}<div
-											class="absolute left-0 inset-y-0 w-1 bg-blue-400"
-										></div>{/if}
+									{user.name.charAt(0).toUpperCase()}
+								</button>
+							</Tooltip.Trigger>
+							<Tooltip.Content>
+								<p class="font-semibold">{user.name}</p>
+								{#if user.context?.view_id}
+									{#if user.context.view_mode === 'CLASSROOM'}
+										<p class="text-xs text-muted-foreground">
+											กำลังดูห้อง {classrooms.find((c) => c.id === user.context?.view_id)?.name ||
+												'(ไม่พบข้อมูลห้อง)'}
+										</p>
+									{:else if user.context.view_mode === 'INSTRUCTOR'}
+										<p class="text-xs text-muted-foreground">
+											กำลังดูตารางสอน {instructors.find((i) => i.id === user.context?.view_id)
+												?.name || '(ไม่พบข้อมูลครู)'}
+										</p>
+									{/if}
+								{/if}
+							</Tooltip.Content>
+						</Tooltip.Root>
+					{/each}
+					{#if $activeUsers.length > 4}
+						<div
+							class="w-6 h-6 rounded-full bg-muted border-2 border-white flex items-center justify-center text-[8px] font-bold shadow-sm"
+						>
+							+{$activeUsers.length - 4}
+						</div>
+					{/if}
+				</div>
+			</Tooltip.Provider>
+		{/if}
 
-									<div class="text-center">
-										<div class="text-base font-bold">{day.label}</div>
+		{#if canManageTimetable}
+			<Button
+				variant="outline"
+				onclick={() => goto(resolve('/staff/academic/timetable/scheduling-config'))}
+			>
+				<Zap class="w-4 h-4 mr-2 text-orange-500" />
+				จัดอัตโนมัติ
+			</Button>
+
+			<Button
+				variant="outline"
+				onclick={() => goto(resolve('/staff/academic/timetable/templates'))}
+			>
+				<FileStack class="w-4 h-4 mr-2" />
+				Templates
+			</Button>
+
+			<Button variant="outline" onclick={() => (showBatchModal = true)}>
+				<PlusCircle class="w-4 h-4 mr-2" /> กิจกรรมพิเศษ
+			</Button>
+		{/if}
+
+		{#if canReadTimetable}
+			<Button variant="outline" onclick={handleExportPDF} disabled={isExporting}>
+				{#if isExporting}
+					<Loader2 class="w-4 h-4 mr-2 animate-spin" />
+				{:else}
+					<Download class="w-4 h-4 mr-2" />
+				{/if}
+				ดาวน์โหลด PDF
+			</Button>
+		{/if}
+	{/snippet}
+
+	<div class="flex h-full min-h-0 flex-col space-y-2" role="application">
+		{#if !canReadTimetable}
+			<PageState
+				variant="permission"
+				title="ไม่มีสิทธิ์ดูตารางสอน"
+				description="ต้องมีสิทธิ์อ่านแผนการจัดตารางสอนจึงจะเข้าถึงข้อมูลในหน้านี้ได้"
+			/>
+		{:else if initialLoading}
+			<PageSkeleton variant="detail" />
+		{:else if academicYears.length === 0}
+			<PageState
+				title="ยังไม่มีปีการศึกษา"
+				description="สร้างปีการศึกษาและภาคเรียนก่อน จึงจะเริ่มจัดตารางสอนได้"
+			/>
+		{:else}
+			<!-- Row 2: Filters -->
+			<div class="flex items-center gap-2 flex-wrap">
+				<div class="w-[180px]">
+					<Select.Root type="single" bind:value={selectedYearId}>
+						<Select.Trigger class="w-full h-9">
+							{academicYears.find((y) => y.id === selectedYearId)?.name || 'เลือกปีการศึกษา'}
+						</Select.Trigger>
+						<Select.Content>
+							{#each academicYears as year (year.id)}
+								<Select.Item value={year.id}>{year.name}</Select.Item>
+							{/each}
+						</Select.Content>
+					</Select.Root>
+				</div>
+
+				<div class="w-[180px]">
+					<Select.Root type="single" bind:value={selectedSemesterId}>
+						<Select.Trigger class="w-full h-9">
+							{#if selectedSemesterId && semesters.find((s) => s.id === selectedSemesterId)}
+								ภาคเรียนที่ {semesters.find((s) => s.id === selectedSemesterId)?.term}
+							{:else}
+								เลือกภาคเรียน
+							{/if}
+						</Select.Trigger>
+						<Select.Content>
+							{#each semesters as term (term.id)}
+								<Select.Item value={term.id}>ภาคเรียนที่ {term.term}</Select.Item>
+							{/each}
+						</Select.Content>
+					</Select.Root>
+				</div>
+
+				{#if viewMode === 'CLASSROOM'}
+					<div class="w-[220px]">
+						<Popover.Root bind:open={classroomPickerOpen}>
+							<Popover.Trigger class="w-full">
+								<Button
+									variant="outline"
+									role="combobox"
+									aria-expanded={classroomPickerOpen}
+									class="w-full justify-between font-normal h-9"
+								>
+									<span class="truncate">
+										{classrooms.find((c) => c.id === selectedClassroomId)?.name || 'เลือกห้องเรียน'}
+									</span>
+									<ChevronsUpDown class="ml-2 h-4 w-4 shrink-0 opacity-50" />
+								</Button>
+							</Popover.Trigger>
+							<Popover.Content class="w-[--bits-popover-trigger-width] p-0">
+								<Command.Root>
+									<Command.Input placeholder="ค้นหาห้อง..." />
+									<Command.Empty>ไม่พบห้องเรียน</Command.Empty>
+									<Command.Group class="max-h-[280px] overflow-y-auto">
+										{#each classrooms as classroom (classroom.id)}
+											<Command.Item
+												value={classroom.name}
+												onSelect={() => {
+													selectedClassroomId = classroom.id;
+													classroomPickerOpen = false;
+												}}
+											>
+												<Check
+													class="mr-2 h-4 w-4 {selectedClassroomId === classroom.id
+														? 'opacity-100'
+														: 'opacity-0'}"
+												/>
+												{classroom.name}
+											</Command.Item>
+										{/each}
+									</Command.Group>
+								</Command.Root>
+							</Popover.Content>
+						</Popover.Root>
+					</div>
+				{:else}
+					<div class="w-[220px]">
+						<Popover.Root bind:open={instructorPickerOpen}>
+							<Popover.Trigger class="w-full">
+								<Button
+									variant="outline"
+									role="combobox"
+									aria-expanded={instructorPickerOpen}
+									class="w-full justify-between font-normal h-9"
+								>
+									<span class="truncate">
+										{instructors.find((i) => i.id === selectedInstructorId)?.name ||
+											'เลือกครูผู้สอน'}
+									</span>
+									<ChevronsUpDown class="ml-2 h-4 w-4 shrink-0 opacity-50" />
+								</Button>
+							</Popover.Trigger>
+							<Popover.Content class="w-[--bits-popover-trigger-width] p-0">
+								<Command.Root>
+									<Command.Input placeholder="ค้นหาครู..." />
+									<Command.Empty>ไม่พบครู</Command.Empty>
+									<Command.Group class="max-h-[280px] overflow-y-auto">
+										{#each instructors as instructor (instructor.id)}
+											<Command.Item
+												value={instructor.name}
+												onSelect={() => {
+													selectedInstructorId = instructor.id;
+													instructorPickerOpen = false;
+												}}
+											>
+												<Check
+													class="mr-2 h-4 w-4 {selectedInstructorId === instructor.id
+														? 'opacity-100'
+														: 'opacity-0'}"
+												/>
+												{instructor.name}
+											</Command.Item>
+										{/each}
+									</Command.Group>
+								</Command.Root>
+							</Popover.Content>
+						</Popover.Root>
+					</div>
+					{#if selectedInstructorId}
+						<label
+							class="flex items-center gap-2 text-xs cursor-pointer select-none px-2 py-1 rounded border bg-muted/30 hover:bg-muted transition-colors"
+						>
+							<input type="checkbox" bind:checked={showTeamGhosts} class="cursor-pointer" />
+							<span>แสดงคาบในทีม (ghost cells)</span>
+						</label>
+					{/if}
+				{/if}
+			</div>
+
+			<!-- Main Content Grid (Workspace = cursor canvas) -->
+			<div
+				class="grid grid-cols-12 gap-3 flex-1 min-h-0 relative"
+				bind:this={workspaceRef}
+				onmousemove={handleMouseMove}
+				ondrag={handleDragMoveOnGrid}
+				role="application"
+			>
+				<!-- Left Sidebar: Courses -->
+				<Card.Root class="col-span-2 flex flex-col h-full overflow-hidden gap-0 py-0">
+					<div class="py-2 px-3 border-b shrink-0">
+						<div class="text-sm font-semibold flex items-center gap-2">
+							<BookOpen class="w-4 h-4" /> รายวิชา
+							{#if canManageTimetable}
+								<span class="text-[10px] font-normal text-muted-foreground ml-auto">
+									ลากไปวาง
+								</span>
+							{/if}
+						</div>
+					</div>
+					<div class="flex-1 overflow-y-auto p-2 space-y-2 bg-muted/20">
+						{#each unscheduledCourses as course (course.id)}
+							{@const lockedBy = getDragOwner(undefined, course.id)}
+							<div
+								class="border rounded-md p-2 shadow-sm hover:shadow-md hover:brightness-95 transition-all group relative {canManageTimetable
+									? 'cursor-grab active:cursor-grabbing'
+									: 'cursor-default'} {lockedBy ? 'opacity-50 pointer-events-none' : ''}"
+								style="background-color: {getSubjectColor(
+									viewMode === 'INSTRUCTOR'
+										? course.classroom_name || course.subject_code
+										: course.subject_code
+								)}; border-color: {getSubjectBorderColor(
+									viewMode === 'INSTRUCTOR'
+										? course.classroom_name || course.subject_code
+										: course.subject_code
+								)};"
+								draggable={canManageTimetable && !lockedBy}
+								ondragstart={(e) => handleDragStart(e, course, 'NEW')}
+								ondragend={handleDragEnd}
+								role="button"
+								tabindex="0"
+							>
+								{#if lockedBy}
+									<div
+										class="absolute inset-0 flex items-center justify-center z-10 bg-white/50 backdrop-blur-[1px] rounded-lg"
+									>
+										<span
+											class="text-[10px] font-bold px-2 py-1 rounded text-white shadow-sm"
+											style="background-color: {lockedBy.color};"
+										>
+											{lockedBy.name} กำลังใช้
+										</span>
 									</div>
+								{/if}
+
+								<div class="flex justify-between items-start mb-0.5 gap-1">
+									<Badge variant="outline" class="text-[10px] px-1 py-0 leading-tight"
+										>{course.subject_code}</Badge
+									>
+									<Badge
+										variant={course.is_completed ? 'secondary' : 'default'}
+										class="text-[10px] px-1 py-0 leading-tight"
+									>
+										{course.scheduled_count}/{course.max_periods}
+									</Badge>
+								</div>
+								<h4 class="font-medium text-xs line-clamp-2 leading-snug mb-1">
+									{course.subject_name_th || 'ไม่มีชื่อวิชา'}
+								</h4>
+								<div class="flex flex-col gap-0.5 text-[10px] text-muted-foreground">
+									{#if viewMode === 'CLASSROOM'}
+										<div class="flex items-center gap-1 truncate">
+											<Users class="w-3 h-3 shrink-0" />
+											<span class="truncate">{course.instructor_name || 'ไม่ระบุครู'}</span>
+										</div>
+									{:else}
+										<div class="flex items-center gap-1 truncate">
+											<School class="w-3 h-3 shrink-0" />
+											<span class="truncate">{course.classroom_name || 'ไม่ระบุห้อง'}</span>
+										</div>
+									{/if}
+									<div>{course.subject_credit} นก.</div>
 								</div>
 
-								<!-- Slots -->
-								{#each periods as period (period.id)}
-									{@const entry = getEntryForSlot(day.value, period.id)}
-									{@const isOccupied = isSlotOccupiedByInstructor(day.value, period.id)}
-									{@const lockedBy = entry ? getDragOwner(entry.id) : null}
-									{@const remoteDrag = !entry ? getRemoteDragHover(day.value, period.id) : null}
-									{@const remoteActivitySlot = getRemoteActivityForSlot(day.value, period.id)}
-									{@const remoteActivityEntry = entry ? getRemoteActivityForEntry(entry.id) : null}
-									{@const remoteActivity = remoteActivitySlot || remoteActivityEntry}
-
-									<!-- Drop Zone -->
-									{@const validity =
-										draggedCourse && dragType === 'MOVE'
-											? moveValidityMap.get(`${day.value}|${period.id}`)
-											: null}
-									{@const validityClass = !validity
-										? ''
-										: validity.state === 'source'
-											? 'opacity-60'
-											: validity.state === 'empty' && validity.valid
-												? 'bg-green-50/40 ring-1 ring-inset ring-green-400/60'
-												: validity.state === 'occupied' && validity.valid
-													? 'ring-1 ring-inset ring-blue-400/70 bg-blue-50/30'
-													: 'bg-red-50/40 ring-1 ring-inset ring-red-300/60 cursor-not-allowed'}
+								<!-- Progress Bar -->
+								<div class="mt-1.5 h-1 w-full bg-secondary rounded-full overflow-hidden">
 									<div
-										class="flex-1 border-r border-b min-w-[100px] relative transition-colors {isOccupied
-											? 'bg-red-50/50 from-red-100/20 bg-gradient-to-br'
-											: 'hover:bg-accent/50'} {draggedCourse && !entry && !isOccupied && !validity
-											? 'bg-green-50/50 ring-1 ring-inset ring-green-400/60'
-											: ''} {validityClass} {draggedCourse &&
-										entry &&
-										isOccupied &&
-										dragType === 'NEW'
-											? 'ring-2 ring-inset ring-red-500/70'
-											: ''} {remoteDrag ? 'ring-2 ring-inset ring-opacity-50' : ''}"
-										style={remoteDrag
-											? `--tw-ring-color: ${remoteDrag.user.color}40; background-color: ${remoteDrag.user.color}10;`
-											: ''}
-										data-day={day.value}
-										data-period={period.id}
-										title={validity && !validity.valid ? validity.reason : ''}
-										ondragover={(e) => {
-											if (canManageTimetable) handleDragOver(e, day.value, period.id);
-										}}
-										ondrop={(e) => {
-											if (canManageTimetable) handleDrop(e, day.value, period.id);
-										}}
-										role="application"
+										class="h-full bg-primary transition-all"
+										style="width: {(course.scheduled_count / course.max_periods) * 100}%"
+									></div>
+								</div>
+							</div>
+						{:else}
+							<div class="text-center text-muted-foreground py-8 text-sm">
+								{#if !selectedClassroomId && !selectedInstructorId}
+									กรุณาเลือก{viewMode === 'CLASSROOM' ? 'ห้องเรียน' : 'ครูผู้สอน'}
+								{:else if courses.length === 0}
+									ไม่พบรายวิชา
+								{:else}
+									จัดตารางครบแล้ว
+								{/if}
+							</div>
+						{/each}
+					</div>
+
+					<!-- Activity Slots Section -->
+					{#if unscheduledActivities.length > 0}
+						<div class="border-t">
+							<div class="py-2 px-4 bg-emerald-50 border-b">
+								<span class="text-xs font-medium text-emerald-700 flex items-center gap-1">
+									<CalendarDays class="w-3 h-3" /> กิจกรรมพัฒนาผู้เรียน
+								</span>
+							</div>
+							<div class="overflow-y-auto p-3 space-y-2 max-h-[200px]">
+								{#each unscheduledActivities as activity (activity.id + ':' + (activity._classroom_id ?? ''))}
+									{#if activity.is_draggable}
+										<!-- Independent: draggable -->
+										<div
+											class="border rounded-lg p-2.5 shadow-sm hover:shadow-md transition-all bg-emerald-50 border-emerald-200 {canManageTimetable
+												? 'cursor-grab active:cursor-grabbing'
+												: 'cursor-default'}"
+											draggable={canManageTimetable}
+											ondragstart={(e) => handleActivityDragStart(e, activity)}
+											ondragend={handleDragEnd}
+											role="button"
+											tabindex="0"
+										>
+											<div class="flex justify-between items-start mb-1">
+												<Badge
+													variant="outline"
+													class="text-[10px] border-emerald-300 text-emerald-700"
+												>
+													{ACTIVITY_TYPE_LABELS[activity.activity_type] ?? activity.activity_type}
+												</Badge>
+												<Badge variant="default" class="text-[10px] bg-emerald-600">
+													{activity.scheduled_count}/{activity.max_periods} คาบ
+												</Badge>
+											</div>
+											<h4 class="font-medium text-sm line-clamp-1 leading-tight">
+												{activity.name}
+											</h4>
+											{#if activity._classroom_name}
+												<div
+													class="text-[10px] text-muted-foreground mt-0.5 flex items-center gap-1"
+												>
+													<School class="w-3 h-3" />
+													{activity._classroom_name}
+												</div>
+											{/if}
+											<div class="text-[10px] text-emerald-600 mt-1">
+												{canManageTimetable ? 'อิสระ — ลากวางได้' : 'อิสระ — ดูได้อย่างเดียว'}
+											</div>
+											<div class="mt-1.5 h-1 w-full bg-emerald-100 rounded-full overflow-hidden">
+												<div
+													class="h-full bg-emerald-500 transition-all"
+													style="width: {(activity.scheduled_count / activity.max_periods) * 100}%"
+												></div>
+											</div>
+										</div>
+									{:else}
+										<!-- Synchronized: read-only -->
+										<div
+											class="border border-dashed rounded-lg p-2.5 opacity-60 bg-gray-50 border-gray-300"
+										>
+											<div class="flex justify-between items-start mb-1">
+												<Badge variant="outline" class="text-[10px]">
+													{ACTIVITY_TYPE_LABELS[activity.activity_type] ?? activity.activity_type}
+												</Badge>
+												<Badge variant="secondary" class="text-[10px]">
+													{activity.scheduled_count}/{activity.max_periods} คาบ
+												</Badge>
+											</div>
+											<h4
+												class="font-medium text-sm line-clamp-1 leading-tight flex items-center gap-1"
+											>
+												<Lock class="w-3 h-3 shrink-0" />
+												{activity.name}
+											</h4>
+											{#if canManageTimetable && viewMode === 'INSTRUCTOR' && selectedInstructorId}
+												<Button
+													variant="outline"
+													size="sm"
+													class="mt-1 h-6 text-xs w-full"
+													onclick={async () => {
+														try {
+															await restoreInstructorToSlot(activity.id, selectedInstructorId);
+															toast.success('แสดงในตารางแล้ว');
+															loadTimetable();
+															loadSidebarActivitySlots();
+														} catch (e: unknown) {
+															toast.error(
+																(e instanceof Error ? e.message : String(e)) || 'ไม่สำเร็จ'
+															);
+														}
+													}}
+												>
+													แสดงในตาราง
+												</Button>
+											{:else}
+												<div class="text-[10px] text-muted-foreground mt-1">
+													{canManageTimetable ? 'จัดพร้อมกัน — ใช้ Batch' : 'จัดพร้อมกัน'}
+												</div>
+											{/if}
+										</div>
+									{/if}
+								{/each}
+							</div>
+						</div>
+					{/if}
+				</Card.Root>
+
+				<!-- Right Content: Timetable Grid -->
+				<Card.Root
+					class="col-span-10 flex flex-col h-full overflow-hidden border-2 shadow-none gap-0 py-0"
+				>
+					<div class="overflow-auto flex-1">
+						<div class="min-w-[800px] h-full flex flex-col">
+							<!-- Header Row (Periods) -->
+							<div class="flex sticky top-0 bg-background z-20">
+								<div
+									class="w-20 shrink-0 p-3 border-r border-b font-medium text-sm text-muted-foreground flex items-center justify-center bg-background sticky left-0 z-30"
+								>
+									วัน/คาบ
+								</div>
+								{#each periods as period (period.id)}
+									<div
+										class="flex-1 min-w-[100px] p-2 border-r border-b text-center relative group"
 									>
-										{#if remoteDrag}
-											<!-- Remote user drag ghost preview -->
-											<div
-												class="absolute inset-1 rounded border-2 border-dashed p-1.5 flex flex-col justify-center items-center gap-0.5 animate-in fade-in duration-200 pointer-events-none"
-												style="border-color: {remoteDrag.user
-													.color}80; background-color: {remoteDrag.user.color}15;"
-											>
-												<span
-													class="text-[10px] font-bold truncate max-w-full"
-													style="color: {remoteDrag.user.color}"
-												>
-													{remoteDrag.drag.info?.code || 'วิชา'}
-												</span>
-												<span class="text-[9px] text-muted-foreground truncate max-w-full">
-													{remoteDrag.drag.info?.title || ''}
-												</span>
-												<span
-													class="text-[8px] font-medium px-1.5 py-0.5 rounded-full text-white mt-0.5"
-													style="background-color: {remoteDrag.user.color};"
-												>
-													{remoteDrag.user.name}
-												</span>
-											</div>
-										{/if}
-										{#if entry && validity && validity.state === 'occupied' && validity.valid}
-											<!-- Swap indicator overlay -->
-											<div
-												class="absolute top-0.5 right-0.5 z-10 bg-blue-500 text-white text-[9px] px-1 py-0.5 rounded font-bold pointer-events-none"
-											>
-												⇄ สลับ
-											</div>
-										{/if}
-										{#if remoteActivity}
-											<!-- Remote user dialog activity — ring lock + badge (ช่วยเห็นเมื่อ cursor ไม่อยู่ใน view) -->
-											<div
-												class="absolute inset-0 ring-2 ring-inset pointer-events-none z-[5] rounded"
-												style="--tw-ring-color: {remoteActivity.user
-													.color}; background-color: {remoteActivity.user.color}1a;"
-											></div>
-											<div
-												class="absolute top-0.5 left-0.5 right-0.5 z-20 flex items-center gap-1 px-1 py-0.5 rounded text-[9px] font-medium shadow-sm pointer-events-none"
-												style="background-color: {remoteActivity.user.color}; color: white;"
-											>
-												<span>⚡</span>
-												<span class="truncate"
-													>{remoteActivity.user.name}: {activityLabel(
-														remoteActivity.activity
-													)}</span
-												>
-											</div>
-										{/if}
-										{#if entry}
-											{@const isGhost =
-												viewMode === 'INSTRUCTOR' &&
-												selectedInstructorId !== '' &&
-												!(entry.instructor_ids ?? []).includes(selectedInstructorId)}
-											{@const coTeacherCount =
-												viewMode === 'INSTRUCTOR'
-													? Math.max(0, (entry.instructor_ids?.length ?? 0) - 1)
-													: 0}
-											{@const isRemoteLocked = !!remoteActivityEntry}
-											{@const teacherText =
-												entry.instructor_names && entry.instructor_names.length > 0
-													? entry.instructor_names.join(', ')
-													: entry.instructor_name && entry.instructor_name !== '-'
-														? entry.instructor_name
-														: ''}
-											{@const hasMetaRow =
-												viewMode === 'CLASSROOM'
-													? !!teacherText || !!entry.room_id
-													: !!entry.classroom_name ||
-														!!entry.activity_slot_id ||
-														isGhost ||
-														coTeacherCount > 0 ||
-														!!entry.room_id}
-											<!-- Timetable Entry Card -->
-											<div
-												class="absolute inset-0.5 border rounded px-1.5 py-1 text-xs flex flex-col justify-between shadow-sm hover:shadow-md hover:brightness-95 transition-all group {!canManageTimetable
-													? 'cursor-default'
-													: (entry.entry_type !== 'COURSE' &&
-																!(
-																	entry.entry_type === 'ACTIVITY' &&
-																	entry.activity_scheduling_mode === 'independent'
-																)) ||
-														  isGhost ||
-														  isRemoteLocked
-														? 'cursor-pointer'
-														: 'cursor-grab active:cursor-grabbing'} {lockedBy
-													? 'opacity-50 pointer-events-none ring-2 ring-offset-1 ring-' +
-														lockedBy.color
-													: ''} {isGhost ? 'opacity-50 border-dashed' : ''}"
-												style="background-color: {getSubjectColor(
-													viewMode === 'INSTRUCTOR'
-														? entry.classroom_name || entry.subject_code || ''
-														: entry.subject_code || entry.title || '',
-													entry.entry_type
-												)}; border-color: {getSubjectBorderColor(
-													viewMode === 'INSTRUCTOR'
-														? entry.classroom_name || entry.subject_code || ''
-														: entry.subject_code || entry.title || '',
-													entry.entry_type
-												)};"
-												draggable={canManageTimetable &&
-													!lockedBy &&
-													!isRemoteLocked &&
-													!isGhost &&
-													!pendingEntryIds.has(entry.id) &&
-													!entry.id.startsWith('temp-') &&
-													(entry.entry_type === 'COURSE' ||
-														(entry.entry_type === 'ACTIVITY' &&
-															entry.activity_scheduling_mode === 'independent' &&
-															!entry.batch_id))}
-												ondragstart={(e) => handleDragStart(e, entry, 'MOVE')}
-												ondragend={handleDragEnd}
-												onclick={(e) => {
-													if ((e.target as HTMLElement).closest('button')) return;
-													if (canManageTimetable) openEntryPopover(entry);
-												}}
-												onkeydown={(e) => {
-													if (e.key === 'Enter' || e.key === ' ') {
-														e.preventDefault();
-														if (canManageTimetable) openEntryPopover(entry);
-													}
-												}}
-												role="button"
-												tabindex="0"
-											>
-												{#if lockedBy}
-													<div class="absolute -top-2 -right-2 z-20">
-														<span
-															class="text-[9px] font-bold px-1.5 py-0.5 rounded text-white shadow-sm"
-															style="background-color: {lockedBy.color};"
-														>
-															{lockedBy.name}
-														</span>
-													</div>
-												{/if}
-
-												{#if entry.subject_code}
-													<div class="font-bold text-foreground/90 truncate text-sm leading-tight">
-														{entry.subject_code}
-													</div>
-													<div
-														class="line-clamp-1 text-foreground/70 text-[11px] leading-tight mb-auto"
-														title={entry.subject_name_th || undefined}
-													>
-														{entry.subject_name_th || ''}
-													</div>
-												{:else}
-													<!-- TEXT-batch / activity: full title (รองรับหลายบรรทัดจาก textarea) -->
-													<div
-														class="font-bold text-foreground/90 text-sm leading-tight whitespace-pre-line line-clamp-3 mb-auto"
-														title={entry.title || undefined}
-													>
-														{entry.title || getEntryTypeFallbackLabel(entry.entry_type)}
-													</div>
-												{/if}
-												{#if hasMetaRow}
-													<div
-														class="mt-1 pt-1 border-t border-foreground/15 gap-0.5 flex flex-col text-[10px] text-muted-foreground"
-													>
-														{#if viewMode === 'CLASSROOM'}
-															{#if teacherText}
-																<div class="flex items-center gap-1 truncate">
-																	<Users class="w-3 h-3 shrink-0" />
-																	{teacherText}
-																</div>
-															{/if}
-														{:else if entry.entry_type === 'ACTIVITY' && entry.activity_slot_id && entry.activity_scheduling_mode === 'independent'}
-															<!-- Independent: แสดงชื่อห้อง -->
-															<div class="flex items-center gap-1 truncate">
-																<School class="w-3 h-3 shrink-0" />
-																{entry.classroom_name || '-'}
-															</div>
-														{:else if entry.entry_type === 'ACTIVITY' && entry.activity_slot_id}
-															<!-- Synchronized: แสดงชื่อกิจกรรมถ้ามี -->
-															{@const groupName = instructorGroupsMap[entry.activity_slot_id]}
-															<div class="flex items-center gap-1 truncate">
-																<BookOpen class="w-3 h-3 shrink-0" />
-																{#if groupName}
-																	{groupName}
-																{:else}
-																	{entry.activity_slot_name || '-'}
-																{/if}
-															</div>
-														{:else if entry.classroom_name}
-															<div class="flex items-center gap-1 truncate">
-																<School class="w-3 h-3 shrink-0" />
-																{entry.classroom_name}
-															</div>
-														{/if}
-
-														{#if viewMode === 'INSTRUCTOR' && isGhost}
-															<div class="flex items-center gap-1 text-amber-700 text-[10px]">
-																<span>👻</span>
-																<span>อยู่ในทีม (ยังไม่ได้สอนคาบนี้)</span>
-															</div>
-														{:else if viewMode === 'INSTRUCTOR' && coTeacherCount > 0}
-															<div
-																class="flex items-center gap-1 text-foreground/60 text-[10px]"
-																title={entry.instructor_names?.join(', ')}
-															>
-																<Users class="w-3 h-3 shrink-0" />
-																<span>+{coTeacherCount} ครูร่วม</span>
-															</div>
-														{/if}
-
-														{#if entry.room_id}
-															<div
-																class="flex items-center gap-1 truncate text-foreground/60"
-																title={rooms.find((r) => r.id === entry.room_id)?.name_th}
-															>
-																<MapPin class="w-3 h-3 shrink-0" />
-																{rooms.find((r) => r.id === entry.room_id)?.name_th || '?'}
-															</div>
-														{/if}
-													</div>
-												{/if}
-
-												<!-- มุมขวาบน: pending spinner (กันลบระหว่างบันทึก) | delete button (hover) -->
-												{#if canManageTimetable && !isGhost && !isRemoteLocked}
-													{#if pendingEntryIds.has(entry.id)}
-														<div
-															class="absolute top-0.5 right-0.5 z-30 p-0.5 rounded bg-amber-50/90"
-															title="กำลังบันทึก..."
-														>
-															<Loader2 class="w-3 h-3 animate-spin text-amber-600" />
-														</div>
-													{:else}
-														<button
-															class="absolute top-0.5 right-0.5 opacity-0 group-hover:opacity-100 p-0.5 hover:bg-red-100 hover:text-red-500 rounded transition-all z-30"
-															onclick={(e) => {
-																e.stopPropagation();
-																handleDeleteEntry(entry);
-															}}
-														>
-															<Trash2 class="w-3 h-3" />
-														</button>
-													{/if}
-												{/if}
-											</div>
-										{:else if isOccupied}
-											{@const conflicts = slotConflicts.get(getSlotKey(day.value, period.id)) ?? []}
-											{@const primary = conflicts[0]}
-											<div
-												class="absolute inset-0 flex flex-col items-center justify-center px-1 py-0.5 text-center select-none gap-0.5"
-												title={conflicts
-													.map((c) => {
-														const subj = [c.subject_code, c.subject_name]
-															.filter(Boolean)
-															.join(' · ');
-														const loc = [c.classroom_name, c.room_code ? `ห้อง ${c.room_code}` : '']
-															.filter(Boolean)
-															.join(' ');
-														return c.kind === 'classroom'
-															? `ห้องติด: ${subj}${loc ? ' (' + loc + ')' : ''}`
-															: `${c.teacher_name} ติด: ${subj}${loc ? ' (' + loc + ')' : ''}`;
-													})
-													.join('\n')}
-											>
-												{#if primary}
-													<div
-														class="flex items-center gap-1 text-[11px] text-red-600 font-semibold truncate max-w-full leading-tight"
-													>
-														{#if primary.kind === 'classroom'}
-															<BookOpen class="w-3 h-3 shrink-0" />
-															<span class="truncate">{primary.subject_code || 'ไม่ว่าง'}</span>
-														{:else}
-															<Users class="w-3 h-3 shrink-0" />
-															<span class="truncate">{primary.teacher_name}</span>
-														{/if}
-													</div>
-													{#if primary.subject_name}
-														<div
-															class="text-[10px] text-red-500/80 truncate max-w-full leading-tight"
-														>
-															{primary.subject_name}
-														</div>
-													{/if}
-													{#if primary.kind === 'teacher' || primary.room_code}
-														<div
-															class="text-[9px] text-red-500/70 truncate max-w-full leading-tight"
-														>
-															{#if primary.kind === 'teacher'}
-																{primary.classroom_name}{#if primary.room_code}
-																	· ห้อง {primary.room_code}{/if}
-															{:else}
-																ห้อง {primary.room_code}
-															{/if}
-														</div>
-													{/if}
-													{#if conflicts.length > 1}
-														<div class="text-[9px] text-red-400 leading-none">
-															+{conflicts.length - 1} ติดเพิ่ม
-														</div>
-													{/if}
-												{:else}
-													<div class="text-xs text-red-500 font-medium">
-														{viewMode === 'INSTRUCTOR' ? 'ห้องนี้ไม่ว่าง' : 'ครูติดสอน'}
-													</div>
-												{/if}
-											</div>
-										{:else if canManageTimetable && draggedCourse}
-											<div
-												class="absolute inset-0 flex items-center justify-center opacity-0 hover:opacity-100 pointer-events-none"
-											>
-												<div class="text-xs text-blue-500 font-medium">+ วางที่นี่</div>
-											</div>
-										{/if}
+										<div class="text-sm font-bold">{period.name || ' '}</div>
+										<div class="text-xs text-muted-foreground">
+											{formatTime(period.start_time)}-{formatTime(period.end_time)}
+										</div>
 									</div>
 								{/each}
 							</div>
+
+							<!-- Days Rows -->
+							{#each DAYS as day (day.value)}
+								<div class="flex flex-1 min-h-[70px]">
+									<!-- Day Header -->
+									<div
+										class="w-20 shrink-0 border-r border-b bg-background font-medium flex items-center justify-center relative sticky left-0 z-10"
+									>
+										<!-- Day Indicator Line -->
+										{#if day.value === 'MON'}<div
+												class="absolute left-0 inset-y-0 w-1 bg-yellow-400"
+											></div>{/if}
+										{#if day.value === 'TUE'}<div
+												class="absolute left-0 inset-y-0 w-1 bg-pink-400"
+											></div>{/if}
+										{#if day.value === 'WED'}<div
+												class="absolute left-0 inset-y-0 w-1 bg-green-400"
+											></div>{/if}
+										{#if day.value === 'THU'}<div
+												class="absolute left-0 inset-y-0 w-1 bg-orange-400"
+											></div>{/if}
+										{#if day.value === 'FRI'}<div
+												class="absolute left-0 inset-y-0 w-1 bg-blue-400"
+											></div>{/if}
+
+										<div class="text-center">
+											<div class="text-base font-bold">{day.label}</div>
+										</div>
+									</div>
+
+									<!-- Slots -->
+									{#each periods as period (period.id)}
+										{@const entry = getEntryForSlot(day.value, period.id)}
+										{@const isOccupied = isSlotOccupiedByInstructor(day.value, period.id)}
+										{@const lockedBy = entry ? getDragOwner(entry.id) : null}
+										{@const remoteDrag = !entry ? getRemoteDragHover(day.value, period.id) : null}
+										{@const remoteActivitySlot = getRemoteActivityForSlot(day.value, period.id)}
+										{@const remoteActivityEntry = entry
+											? getRemoteActivityForEntry(entry.id)
+											: null}
+										{@const remoteActivity = remoteActivitySlot || remoteActivityEntry}
+
+										<!-- Drop Zone -->
+										{@const validity =
+											draggedCourse && dragType === 'MOVE'
+												? moveValidityMap.get(`${day.value}|${period.id}`)
+												: null}
+										{@const validityClass = !validity
+											? ''
+											: validity.state === 'source'
+												? 'opacity-60'
+												: validity.state === 'empty' && validity.valid
+													? 'bg-green-50/40 ring-1 ring-inset ring-green-400/60'
+													: validity.state === 'occupied' && validity.valid
+														? 'ring-1 ring-inset ring-blue-400/70 bg-blue-50/30'
+														: 'bg-red-50/40 ring-1 ring-inset ring-red-300/60 cursor-not-allowed'}
+										<div
+											class="flex-1 border-r border-b min-w-[100px] relative transition-colors {isOccupied
+												? 'bg-red-50/50 from-red-100/20 bg-gradient-to-br'
+												: 'hover:bg-accent/50'} {draggedCourse && !entry && !isOccupied && !validity
+												? 'bg-green-50/50 ring-1 ring-inset ring-green-400/60'
+												: ''} {validityClass} {draggedCourse &&
+											entry &&
+											isOccupied &&
+											dragType === 'NEW'
+												? 'ring-2 ring-inset ring-red-500/70'
+												: ''} {remoteDrag ? 'ring-2 ring-inset ring-opacity-50' : ''}"
+											style={remoteDrag
+												? `--tw-ring-color: ${remoteDrag.user.color}40; background-color: ${remoteDrag.user.color}10;`
+												: ''}
+											data-day={day.value}
+											data-period={period.id}
+											title={validity && !validity.valid ? validity.reason : ''}
+											ondragover={(e) => {
+												if (canManageTimetable) handleDragOver(e, day.value, period.id);
+											}}
+											ondrop={(e) => {
+												if (canManageTimetable) handleDrop(e, day.value, period.id);
+											}}
+											role="application"
+										>
+											{#if remoteDrag}
+												<!-- Remote user drag ghost preview -->
+												<div
+													class="absolute inset-1 rounded border-2 border-dashed p-1.5 flex flex-col justify-center items-center gap-0.5 animate-in fade-in duration-200 pointer-events-none"
+													style="border-color: {remoteDrag.user
+														.color}80; background-color: {remoteDrag.user.color}15;"
+												>
+													<span
+														class="text-[10px] font-bold truncate max-w-full"
+														style="color: {remoteDrag.user.color}"
+													>
+														{remoteDrag.drag.info?.code || 'วิชา'}
+													</span>
+													<span class="text-[9px] text-muted-foreground truncate max-w-full">
+														{remoteDrag.drag.info?.title || ''}
+													</span>
+													<span
+														class="text-[8px] font-medium px-1.5 py-0.5 rounded-full text-white mt-0.5"
+														style="background-color: {remoteDrag.user.color};"
+													>
+														{remoteDrag.user.name}
+													</span>
+												</div>
+											{/if}
+											{#if entry && validity && validity.state === 'occupied' && validity.valid}
+												<!-- Swap indicator overlay -->
+												<div
+													class="absolute top-0.5 right-0.5 z-10 bg-blue-500 text-white text-[9px] px-1 py-0.5 rounded font-bold pointer-events-none"
+												>
+													⇄ สลับ
+												</div>
+											{/if}
+											{#if remoteActivity}
+												<!-- Remote user dialog activity — ring lock + badge (ช่วยเห็นเมื่อ cursor ไม่อยู่ใน view) -->
+												<div
+													class="absolute inset-0 ring-2 ring-inset pointer-events-none z-[5] rounded"
+													style="--tw-ring-color: {remoteActivity.user
+														.color}; background-color: {remoteActivity.user.color}1a;"
+												></div>
+												<div
+													class="absolute top-0.5 left-0.5 right-0.5 z-20 flex items-center gap-1 px-1 py-0.5 rounded text-[9px] font-medium shadow-sm pointer-events-none"
+													style="background-color: {remoteActivity.user.color}; color: white;"
+												>
+													<span>⚡</span>
+													<span class="truncate"
+														>{remoteActivity.user.name}: {activityLabel(
+															remoteActivity.activity
+														)}</span
+													>
+												</div>
+											{/if}
+											{#if entry}
+												{@const isGhost =
+													viewMode === 'INSTRUCTOR' &&
+													selectedInstructorId !== '' &&
+													!(entry.instructor_ids ?? []).includes(selectedInstructorId)}
+												{@const coTeacherCount =
+													viewMode === 'INSTRUCTOR'
+														? Math.max(0, (entry.instructor_ids?.length ?? 0) - 1)
+														: 0}
+												{@const isRemoteLocked = !!remoteActivityEntry}
+												{@const teacherText =
+													entry.instructor_names && entry.instructor_names.length > 0
+														? entry.instructor_names.join(', ')
+														: entry.instructor_name && entry.instructor_name !== '-'
+															? entry.instructor_name
+															: ''}
+												{@const hasMetaRow =
+													viewMode === 'CLASSROOM'
+														? !!teacherText || !!entry.room_id
+														: !!entry.classroom_name ||
+															!!entry.activity_slot_id ||
+															isGhost ||
+															coTeacherCount > 0 ||
+															!!entry.room_id}
+												<!-- Timetable Entry Card -->
+												<div
+													class="absolute inset-0.5 border rounded px-1.5 py-1 text-xs flex flex-col justify-between shadow-sm hover:shadow-md hover:brightness-95 transition-all group {!canManageTimetable
+														? 'cursor-default'
+														: (entry.entry_type !== 'COURSE' &&
+																	!(
+																		entry.entry_type === 'ACTIVITY' &&
+																		entry.activity_scheduling_mode === 'independent'
+																	)) ||
+															  isGhost ||
+															  isRemoteLocked
+															? 'cursor-pointer'
+															: 'cursor-grab active:cursor-grabbing'} {lockedBy
+														? 'opacity-50 pointer-events-none ring-2 ring-offset-1 ring-' +
+															lockedBy.color
+														: ''} {isGhost ? 'opacity-50 border-dashed' : ''}"
+													style="background-color: {getSubjectColor(
+														viewMode === 'INSTRUCTOR'
+															? entry.classroom_name || entry.subject_code || ''
+															: entry.subject_code || entry.title || '',
+														entry.entry_type
+													)}; border-color: {getSubjectBorderColor(
+														viewMode === 'INSTRUCTOR'
+															? entry.classroom_name || entry.subject_code || ''
+															: entry.subject_code || entry.title || '',
+														entry.entry_type
+													)};"
+													draggable={canManageTimetable &&
+														!lockedBy &&
+														!isRemoteLocked &&
+														!isGhost &&
+														!pendingEntryIds.has(entry.id) &&
+														!entry.id.startsWith('temp-') &&
+														(entry.entry_type === 'COURSE' ||
+															(entry.entry_type === 'ACTIVITY' &&
+																entry.activity_scheduling_mode === 'independent' &&
+																!entry.batch_id))}
+													ondragstart={(e) => handleDragStart(e, entry, 'MOVE')}
+													ondragend={handleDragEnd}
+													onclick={(e) => {
+														if ((e.target as HTMLElement).closest('button')) return;
+														if (canManageTimetable) openEntryPopover(entry);
+													}}
+													onkeydown={(e) => {
+														if (e.key === 'Enter' || e.key === ' ') {
+															e.preventDefault();
+															if (canManageTimetable) openEntryPopover(entry);
+														}
+													}}
+													role="button"
+													tabindex="0"
+												>
+													{#if lockedBy}
+														<div class="absolute -top-2 -right-2 z-20">
+															<span
+																class="text-[9px] font-bold px-1.5 py-0.5 rounded text-white shadow-sm"
+																style="background-color: {lockedBy.color};"
+															>
+																{lockedBy.name}
+															</span>
+														</div>
+													{/if}
+
+													{#if entry.subject_code}
+														<div
+															class="font-bold text-foreground/90 truncate text-sm leading-tight"
+														>
+															{entry.subject_code}
+														</div>
+														<div
+															class="line-clamp-1 text-foreground/70 text-[11px] leading-tight mb-auto"
+															title={entry.subject_name_th || undefined}
+														>
+															{entry.subject_name_th || ''}
+														</div>
+													{:else}
+														<!-- TEXT-batch / activity: full title (รองรับหลายบรรทัดจาก textarea) -->
+														<div
+															class="font-bold text-foreground/90 text-sm leading-tight whitespace-pre-line line-clamp-3 mb-auto"
+															title={entry.title || undefined}
+														>
+															{entry.title || getEntryTypeFallbackLabel(entry.entry_type)}
+														</div>
+													{/if}
+													{#if hasMetaRow}
+														<div
+															class="mt-1 pt-1 border-t border-foreground/15 gap-0.5 flex flex-col text-[10px] text-muted-foreground"
+														>
+															{#if viewMode === 'CLASSROOM'}
+																{#if teacherText}
+																	<div class="flex items-center gap-1 truncate">
+																		<Users class="w-3 h-3 shrink-0" />
+																		{teacherText}
+																	</div>
+																{/if}
+															{:else if entry.entry_type === 'ACTIVITY' && entry.activity_slot_id && entry.activity_scheduling_mode === 'independent'}
+																<!-- Independent: แสดงชื่อห้อง -->
+																<div class="flex items-center gap-1 truncate">
+																	<School class="w-3 h-3 shrink-0" />
+																	{entry.classroom_name || '-'}
+																</div>
+															{:else if entry.entry_type === 'ACTIVITY' && entry.activity_slot_id}
+																<!-- Synchronized: แสดงชื่อกิจกรรมถ้ามี -->
+																{@const groupName = instructorGroupsMap[entry.activity_slot_id]}
+																<div class="flex items-center gap-1 truncate">
+																	<BookOpen class="w-3 h-3 shrink-0" />
+																	{#if groupName}
+																		{groupName}
+																	{:else}
+																		{entry.activity_slot_name || '-'}
+																	{/if}
+																</div>
+															{:else if entry.classroom_name}
+																<div class="flex items-center gap-1 truncate">
+																	<School class="w-3 h-3 shrink-0" />
+																	{entry.classroom_name}
+																</div>
+															{/if}
+
+															{#if viewMode === 'INSTRUCTOR' && isGhost}
+																<div class="flex items-center gap-1 text-amber-700 text-[10px]">
+																	<span>👻</span>
+																	<span>อยู่ในทีม (ยังไม่ได้สอนคาบนี้)</span>
+																</div>
+															{:else if viewMode === 'INSTRUCTOR' && coTeacherCount > 0}
+																<div
+																	class="flex items-center gap-1 text-foreground/60 text-[10px]"
+																	title={entry.instructor_names?.join(', ')}
+																>
+																	<Users class="w-3 h-3 shrink-0" />
+																	<span>+{coTeacherCount} ครูร่วม</span>
+																</div>
+															{/if}
+
+															{#if entry.room_id}
+																<div
+																	class="flex items-center gap-1 truncate text-foreground/60"
+																	title={rooms.find((r) => r.id === entry.room_id)?.name_th}
+																>
+																	<MapPin class="w-3 h-3 shrink-0" />
+																	{rooms.find((r) => r.id === entry.room_id)?.name_th || '?'}
+																</div>
+															{/if}
+														</div>
+													{/if}
+
+													<!-- มุมขวาบน: pending spinner (กันลบระหว่างบันทึก) | delete button (hover) -->
+													{#if canManageTimetable && !isGhost && !isRemoteLocked}
+														{#if pendingEntryIds.has(entry.id)}
+															<div
+																class="absolute top-0.5 right-0.5 z-30 p-0.5 rounded bg-amber-50/90"
+																title="กำลังบันทึก..."
+															>
+																<Loader2 class="w-3 h-3 animate-spin text-amber-600" />
+															</div>
+														{:else}
+															<button
+																class="absolute top-0.5 right-0.5 opacity-0 group-hover:opacity-100 p-0.5 hover:bg-red-100 hover:text-red-500 rounded transition-all z-30"
+																onclick={(e) => {
+																	e.stopPropagation();
+																	handleDeleteEntry(entry);
+																}}
+															>
+																<Trash2 class="w-3 h-3" />
+															</button>
+														{/if}
+													{/if}
+												</div>
+											{:else if isOccupied}
+												{@const conflicts =
+													slotConflicts.get(getSlotKey(day.value, period.id)) ?? []}
+												{@const primary = conflicts[0]}
+												<div
+													class="absolute inset-0 flex flex-col items-center justify-center px-1 py-0.5 text-center select-none gap-0.5"
+													title={conflicts
+														.map((c) => {
+															const subj = [c.subject_code, c.subject_name]
+																.filter(Boolean)
+																.join(' · ');
+															const loc = [
+																c.classroom_name,
+																c.room_code ? `ห้อง ${c.room_code}` : ''
+															]
+																.filter(Boolean)
+																.join(' ');
+															return c.kind === 'classroom'
+																? `ห้องติด: ${subj}${loc ? ' (' + loc + ')' : ''}`
+																: `${c.teacher_name} ติด: ${subj}${loc ? ' (' + loc + ')' : ''}`;
+														})
+														.join('\n')}
+												>
+													{#if primary}
+														<div
+															class="flex items-center gap-1 text-[11px] text-red-600 font-semibold truncate max-w-full leading-tight"
+														>
+															{#if primary.kind === 'classroom'}
+																<BookOpen class="w-3 h-3 shrink-0" />
+																<span class="truncate">{primary.subject_code || 'ไม่ว่าง'}</span>
+															{:else}
+																<Users class="w-3 h-3 shrink-0" />
+																<span class="truncate">{primary.teacher_name}</span>
+															{/if}
+														</div>
+														{#if primary.subject_name}
+															<div
+																class="text-[10px] text-red-500/80 truncate max-w-full leading-tight"
+															>
+																{primary.subject_name}
+															</div>
+														{/if}
+														{#if primary.kind === 'teacher' || primary.room_code}
+															<div
+																class="text-[9px] text-red-500/70 truncate max-w-full leading-tight"
+															>
+																{#if primary.kind === 'teacher'}
+																	{primary.classroom_name}{#if primary.room_code}
+																		· ห้อง {primary.room_code}{/if}
+																{:else}
+																	ห้อง {primary.room_code}
+																{/if}
+															</div>
+														{/if}
+														{#if conflicts.length > 1}
+															<div class="text-[9px] text-red-400 leading-none">
+																+{conflicts.length - 1} ติดเพิ่ม
+															</div>
+														{/if}
+													{:else}
+														<div class="text-xs text-red-500 font-medium">
+															{viewMode === 'INSTRUCTOR' ? 'ห้องนี้ไม่ว่าง' : 'ครูติดสอน'}
+														</div>
+													{/if}
+												</div>
+											{:else if canManageTimetable && draggedCourse}
+												<div
+													class="absolute inset-0 flex items-center justify-center opacity-0 hover:opacity-100 pointer-events-none"
+												>
+													<div class="text-xs text-blue-500 font-medium">+ วางที่นี่</div>
+												</div>
+											{/if}
+										</div>
+									{/each}
+								</div>
+							{/each}
+						</div>
+					</div>
+				</Card.Root>
+			</div>
+
+			<!-- Floating Conflict Popup (ระหว่าง drag — native title ใช้ไม่ได้ใน drag state) -->
+			{#if hoverDragCell && draggedCourse}
+				{@const hoverConflicts =
+					slotConflicts.get(getSlotKey(hoverDragCell.day, hoverDragCell.periodId)) ?? []}
+				{#if hoverConflicts.length > 0}
+					<div
+						class="fixed z-[10000] pointer-events-none bg-white border border-red-300 rounded-md shadow-lg p-2 text-xs max-w-xs space-y-1"
+						style="top: {hoverDragCell.y + 45}px; left: {hoverDragCell.x + 68}px;"
+					>
+						{#each hoverConflicts as c, i (i)}
+							<div class="flex items-start gap-1.5 text-red-700">
+								{#if c.kind === 'classroom'}
+									<BookOpen class="w-3.5 h-3.5 shrink-0 mt-0.5" />
+									<div class="flex-1 leading-tight">
+										<div class="font-semibold">ห้องติด: {c.subject_code}</div>
+										{#if c.subject_name}
+											<div class="text-red-600/80">{c.subject_name}</div>
+										{/if}
+										{#if c.classroom_name || c.room_code}
+											<div class="text-red-500/70 text-[10px]">
+												{c.classroom_name}{#if c.room_code}
+													· ห้อง {c.room_code}{/if}
+											</div>
+										{/if}
+									</div>
+								{:else}
+									<Users class="w-3.5 h-3.5 shrink-0 mt-0.5" />
+									<div class="flex-1 leading-tight">
+										<div class="font-semibold">{c.teacher_name} ติด: {c.subject_code}</div>
+										{#if c.subject_name}
+											<div class="text-red-600/80">{c.subject_name}</div>
+										{/if}
+										{#if c.classroom_name || c.room_code}
+											<div class="text-red-500/70 text-[10px]">
+												{c.classroom_name}{#if c.room_code}
+													· ห้อง {c.room_code}{/if}
+											</div>
+										{/if}
+									</div>
+								{/if}
+							</div>
 						{/each}
 					</div>
-				</div>
-			</Card.Root>
-		</div>
-
-		<!-- Floating Conflict Popup (ระหว่าง drag — native title ใช้ไม่ได้ใน drag state) -->
-		{#if hoverDragCell && draggedCourse}
-			{@const hoverConflicts =
-				slotConflicts.get(getSlotKey(hoverDragCell.day, hoverDragCell.periodId)) ?? []}
-			{#if hoverConflicts.length > 0}
-				<div
-					class="fixed z-[10000] pointer-events-none bg-white border border-red-300 rounded-md shadow-lg p-2 text-xs max-w-xs space-y-1"
-					style="top: {hoverDragCell.y + 45}px; left: {hoverDragCell.x + 68}px;"
-				>
-					{#each hoverConflicts as c, i (i)}
-						<div class="flex items-start gap-1.5 text-red-700">
-							{#if c.kind === 'classroom'}
-								<BookOpen class="w-3.5 h-3.5 shrink-0 mt-0.5" />
-								<div class="flex-1 leading-tight">
-									<div class="font-semibold">ห้องติด: {c.subject_code}</div>
-									{#if c.subject_name}
-										<div class="text-red-600/80">{c.subject_name}</div>
-									{/if}
-									{#if c.classroom_name || c.room_code}
-										<div class="text-red-500/70 text-[10px]">
-											{c.classroom_name}{#if c.room_code}
-												· ห้อง {c.room_code}{/if}
-										</div>
-									{/if}
-								</div>
-							{:else}
-								<Users class="w-3.5 h-3.5 shrink-0 mt-0.5" />
-								<div class="flex-1 leading-tight">
-									<div class="font-semibold">{c.teacher_name} ติด: {c.subject_code}</div>
-									{#if c.subject_name}
-										<div class="text-red-600/80">{c.subject_name}</div>
-									{/if}
-									{#if c.classroom_name || c.room_code}
-										<div class="text-red-500/70 text-[10px]">
-											{c.classroom_name}{#if c.room_code}
-												· ห้อง {c.room_code}{/if}
-										</div>
-									{/if}
-								</div>
-							{/if}
-						</div>
-					{/each}
-				</div>
-			{/if}
-		{/if}
-
-		<!-- GHOST UI OVERLAY (fixed, clipped to workspace via clip-path) -->
-		<div
-			class="pointer-events-none fixed inset-0 z-[9999]"
-			style={wsRect
-				? `clip-path: inset(${wsRect.top}px ${typeof window !== 'undefined' ? window.innerWidth - wsRect.right : 0}px ${typeof window !== 'undefined' ? window.innerHeight - wsRect.bottom : 0}px ${wsRect.left}px)`
-				: 'display:none'}
-		>
-			{#each $activeUsers as user (user.user_id)}
-				{@const cursor = $remoteCursors[user.user_id]}
-
-				{#if cursor && user.user_id !== $authStore.user?.id}
-					{#if cursor.context?.view_mode === viewMode && cursor.context?.view_id === (viewMode === 'CLASSROOM' ? selectedClassroomId : selectedInstructorId)}
-						<div
-							class="absolute transition-transform duration-100 ease-linear flex flex-col items-start gap-1"
-							style="transform: translate({cursor.x * (wsRect?.width ?? 0) +
-								(wsRect?.left ?? 0)}px, {cursor.y * (wsRect?.height ?? 0) + (wsRect?.top ?? 0)}px);"
-						>
-							<svg
-								xmlns="http://www.w3.org/2000/svg"
-								class="h-5 w-5 drop-shadow-md"
-								fill={user.color}
-								viewBox="0 0 24 24"
-								stroke="white"
-								stroke-width="2"
-							>
-								<path d="M3 3l7.07 16.97 2.51-7.39 7.39-2.51L3 3z" />
-							</svg>
-
-							<div
-								class="px-2 py-0.5 rounded text-[10px] text-white font-bold whitespace-nowrap shadow-sm"
-								style="background-color: {user.color}"
-							>
-								{user.name}
-							</div>
-
-							{#if $remoteActivities[user.user_id]}
-								{@const act = $remoteActivities[user.user_id]}
-								<div
-									class="px-2 py-0.5 rounded text-[10px] text-white whitespace-nowrap shadow-sm flex items-center gap-1 mt-0.5"
-									style="background-color: {user.color}dd"
-								>
-									<span>⚡</span>
-									<span>{activityLabel(act)}</span>
-								</div>
-							{/if}
-
-							{#if $userDrags[user.user_id]}
-								{@const drag = $userDrags[user.user_id]}
-								<div
-									class="bg-background border rounded shadow-lg p-2.5 flex items-center gap-3 mt-2 opacity-95 scale-90 origin-top-left animate-in fade-in zoom-in duration-200 min-w-[150px]"
-								>
-									<div class="p-1.5 rounded bg-muted">
-										<BookOpen class="w-4 h-4 text-primary" />
-									</div>
-									<div class="flex flex-col">
-										<span class="text-xs font-bold leading-tight line-clamp-1"
-											>{drag.info?.code || 'วิชา'}</span
-										>
-										<span class="text-[10px] text-muted-foreground line-clamp-1"
-											>{drag.info?.title || 'กำลังลาก...'}</span
-										>
-									</div>
-								</div>
-							{/if}
-						</div>
-					{/if}
 				{/if}
-			{/each}
-		</div>
-	{/if}
-</div>
+			{/if}
+
+			<!-- GHOST UI OVERLAY (fixed, clipped to workspace via clip-path) -->
+			<div
+				class="pointer-events-none fixed inset-0 z-[9999]"
+				style={wsRect
+					? `clip-path: inset(${wsRect.top}px ${typeof window !== 'undefined' ? window.innerWidth - wsRect.right : 0}px ${typeof window !== 'undefined' ? window.innerHeight - wsRect.bottom : 0}px ${wsRect.left}px)`
+					: 'display:none'}
+			>
+				{#each $activeUsers as user (user.user_id)}
+					{@const cursor = $remoteCursors[user.user_id]}
+
+					{#if cursor && user.user_id !== $authStore.user?.id}
+						{#if cursor.context?.view_mode === viewMode && cursor.context?.view_id === (viewMode === 'CLASSROOM' ? selectedClassroomId : selectedInstructorId)}
+							<div
+								class="absolute transition-transform duration-100 ease-linear flex flex-col items-start gap-1"
+								style="transform: translate({cursor.x * (wsRect?.width ?? 0) +
+									(wsRect?.left ?? 0)}px, {cursor.y * (wsRect?.height ?? 0) +
+									(wsRect?.top ?? 0)}px);"
+							>
+								<svg
+									xmlns="http://www.w3.org/2000/svg"
+									class="h-5 w-5 drop-shadow-md"
+									fill={user.color}
+									viewBox="0 0 24 24"
+									stroke="white"
+									stroke-width="2"
+								>
+									<path d="M3 3l7.07 16.97 2.51-7.39 7.39-2.51L3 3z" />
+								</svg>
+
+								<div
+									class="px-2 py-0.5 rounded text-[10px] text-white font-bold whitespace-nowrap shadow-sm"
+									style="background-color: {user.color}"
+								>
+									{user.name}
+								</div>
+
+								{#if $remoteActivities[user.user_id]}
+									{@const act = $remoteActivities[user.user_id]}
+									<div
+										class="px-2 py-0.5 rounded text-[10px] text-white whitespace-nowrap shadow-sm flex items-center gap-1 mt-0.5"
+										style="background-color: {user.color}dd"
+									>
+										<span>⚡</span>
+										<span>{activityLabel(act)}</span>
+									</div>
+								{/if}
+
+								{#if $userDrags[user.user_id]}
+									{@const drag = $userDrags[user.user_id]}
+									<div
+										class="bg-background border rounded shadow-lg p-2.5 flex items-center gap-3 mt-2 opacity-95 scale-90 origin-top-left animate-in fade-in zoom-in duration-200 min-w-[150px]"
+									>
+										<div class="p-1.5 rounded bg-muted">
+											<BookOpen class="w-4 h-4 text-primary" />
+										</div>
+										<div class="flex flex-col">
+											<span class="text-xs font-bold leading-tight line-clamp-1"
+												>{drag.info?.code || 'วิชา'}</span
+											>
+											<span class="text-[10px] text-muted-foreground line-clamp-1"
+												>{drag.info?.title || 'กำลังลาก...'}</span
+											>
+										</div>
+									</div>
+								{/if}
+							</div>
+						{/if}
+					{/if}
+				{/each}
+			</div>
+		{/if}
+	</div>
+</PageShell>
 
 <!-- Per-cell Instructor Editor Popover -->
 {#if canManageTimetable}

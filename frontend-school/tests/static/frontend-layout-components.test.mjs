@@ -203,3 +203,29 @@ test('academic curriculum planning pages use shared app page shell', async () =>
 		);
 	}
 });
+
+test('academic timetable scheduling pages use shared app page shell', async () => {
+	const pages = [
+		'src/routes/(app)/staff/academic/timetable/+page.svelte',
+		'src/routes/(app)/staff/academic/timetable/templates/+page.svelte',
+		'src/routes/(app)/staff/academic/timetable/scheduling-config/+page.svelte',
+		'src/routes/(app)/staff/academic/timetable/scheduling/jobs/+page.svelte',
+		'src/routes/(app)/staff/academic/timetable/scheduling/jobs/[jobId]/+page.svelte'
+	];
+
+	for (const page of pages) {
+		const source = await readProjectFile(page);
+
+		assert.match(
+			source,
+			/from '\$lib\/components\/app-layout'/,
+			`${page} should import shared app-layout components`
+		);
+		assert.match(source, /<PageShell\b/, `${page} should use PageShell for page layout`);
+		assert.doesNotMatch(
+			source,
+			/<div class="space-y-6">\s*<!-- Header -->/,
+			`${page} should not hand-roll the page header wrapper`
+		);
+	}
+});

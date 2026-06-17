@@ -16,10 +16,9 @@
 	import { Label } from '$lib/components/ui/label';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import * as Select from '$lib/components/ui/select';
+	import { PageShell } from '$lib/components/app-layout';
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
-	import { FileStack, Plus, Trash2, Play, Eraser, LoaderCircle, ArrowLeft } from 'lucide-svelte';
-	import { goto } from '$app/navigation';
-	import { resolve } from '$app/paths';
+	import { Plus, Trash2, Play, Eraser, LoaderCircle } from 'lucide-svelte';
 
 	let { data } = $props();
 
@@ -166,22 +165,12 @@
 	<title>{data.title}</title>
 </svelte:head>
 
-<div class="space-y-6">
-	<div class="flex items-center justify-between flex-wrap gap-3">
-		<div class="flex items-center gap-2">
-			<Button
-				variant="ghost"
-				size="icon"
-				onclick={() => goto(resolve('/staff/academic/timetable'))}
-				aria-label="กลับ"
-			>
-				<ArrowLeft class="h-5 w-5" />
-			</Button>
-			<h2 class="text-3xl font-bold flex items-center gap-2">
-				<FileStack class="h-8 w-8" />
-				Templates ตาราง
-			</h2>
-		</div>
+<PageShell
+	title="Templates ตาราง"
+	description="บันทึกและนำชุดตารางที่ใช้ซ้ำกลับมาใช้กับภาคเรียนอื่น"
+	backHref="/staff/academic/timetable"
+>
+	{#snippet actions()}
 		<div class="flex items-center gap-2">
 			<Select.Root type="single" bind:value={selectedSemesterId}>
 				<Select.Trigger class="w-[200px]">
@@ -206,7 +195,7 @@
 				สร้างจากตารางปัจจุบัน
 			</Button>
 		</div>
-	</div>
+	{/snippet}
 
 	<Card.Root class="p-3 bg-muted/30 space-y-1">
 		<p class="text-sm text-muted-foreground">
@@ -266,7 +255,7 @@
 			{/each}
 		</div>
 	{/if}
-</div>
+</PageShell>
 
 <!-- Create-from-current dialog -->
 <Dialog.Root bind:open={showCreateDialog}>

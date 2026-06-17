@@ -36,22 +36,19 @@
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import { Badge } from '$lib/components/ui/badge';
+	import { PageShell } from '$lib/components/app-layout';
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import {
 		GripVertical,
 		ChevronDown,
 		ChevronRight,
-		Sparkles,
 		Save,
 		LoaderCircle,
 		Zap,
 		TriangleAlert,
 		Undo2,
-		History,
-		ArrowLeft
+		History
 	} from 'lucide-svelte';
-	import { goto } from '$app/navigation';
-	import { resolve } from '$app/paths';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import * as Select from '$lib/components/ui/select';
 	import { SvelteMap, SvelteSet } from 'svelte/reactivity';
@@ -599,52 +596,36 @@
 	<title>{data.title}</title>
 </svelte:head>
 
-<div class="space-y-6">
-	<div class="flex items-center justify-between flex-wrap gap-3">
-		<div class="flex items-center gap-2">
-			<Button
-				variant="ghost"
-				size="icon"
-				onclick={() => goto(resolve('/staff/academic/timetable'))}
-				aria-label="กลับ"
-			>
-				<ArrowLeft class="h-5 w-5" />
-			</Button>
-			<h2 class="text-3xl font-bold flex items-center gap-2">
-				<Sparkles class="h-8 w-8" />
-				ตั้งค่าจัดตารางอัตโนมัติ
-			</h2>
-		</div>
-		<div class="flex items-center gap-2">
-			<Button
-				variant="ghost"
-				size="sm"
-				onclick={() => goto(resolve('/staff/academic/timetable/scheduling/jobs'))}
-			>
-				<History class="w-4 h-4 mr-2" />
-				ประวัติ
-			</Button>
-			<Button variant="outline" onclick={saveAll} disabled={saving || loading || autoScheduling}>
-				{#if saving}
-					<LoaderCircle class="w-4 h-4 animate-spin mr-2" />
-				{:else}
-					<Save class="w-4 h-4 mr-2" />
-				{/if}
-				บันทึก
-			</Button>
-			<Button
-				onclick={runAutoSchedule}
-				disabled={saving || loading || autoScheduling || !selectedSemesterId}
-			>
-				{#if autoScheduling}
-					<LoaderCircle class="w-4 h-4 animate-spin mr-2" />
-				{:else}
-					<Zap class="w-4 h-4 mr-2" />
-				{/if}
-				บันทึกและจัดอัตโนมัติ
-			</Button>
-		</div>
-	</div>
+<PageShell
+	title="ตั้งค่าจัดตารางอัตโนมัติ"
+	description="กำหนดข้อจำกัดของครู วิชา ห้องเรียน และเริ่มจัดตารางด้วยระบบอัตโนมัติ"
+	backHref="/staff/academic/timetable"
+>
+	{#snippet actions()}
+		<Button variant="ghost" size="sm" href="/staff/academic/timetable/scheduling/jobs">
+			<History class="w-4 h-4 mr-2" />
+			ประวัติ
+		</Button>
+		<Button variant="outline" onclick={saveAll} disabled={saving || loading || autoScheduling}>
+			{#if saving}
+				<LoaderCircle class="w-4 h-4 animate-spin mr-2" />
+			{:else}
+				<Save class="w-4 h-4 mr-2" />
+			{/if}
+			บันทึก
+		</Button>
+		<Button
+			onclick={runAutoSchedule}
+			disabled={saving || loading || autoScheduling || !selectedSemesterId}
+		>
+			{#if autoScheduling}
+				<LoaderCircle class="w-4 h-4 animate-spin mr-2" />
+			{:else}
+				<Zap class="w-4 h-4 mr-2" />
+			{/if}
+			บันทึกและจัดอัตโนมัติ
+		</Button>
+	{/snippet}
 
 	{#if loading}
 		<PageSkeleton variant="detail" />
@@ -1067,7 +1048,7 @@
 			{/if}
 		</Card.Root>
 	{/if}
-</div>
+</PageShell>
 
 <!-- Phase E: Auto-schedule result dialog -->
 <Dialog.Root bind:open={showResultDialog}>

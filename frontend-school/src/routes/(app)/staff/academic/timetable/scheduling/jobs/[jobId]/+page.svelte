@@ -6,18 +6,11 @@
 	import { toast } from 'svelte-sonner';
 	import { Button } from '$lib/components/ui/button';
 	import { Card } from '$lib/components/ui/card';
+	import { PageShell } from '$lib/components/app-layout';
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Progress } from '$lib/components/ui/progress';
-	import {
-		Loader2,
-		CheckCircle2,
-		XCircle,
-		Clock,
-		AlertCircle,
-		ArrowLeft,
-		Eye
-	} from 'lucide-svelte';
+	import { Loader2, CheckCircle2, XCircle, Clock, AlertCircle, Eye } from 'lucide-svelte';
 	import type { SchedulingJobResponse } from '$lib/api/scheduling';
 	import { getSchedulingJob } from '$lib/api/scheduling';
 
@@ -106,36 +99,31 @@
 	let isRunning = $derived(job?.status === 'RUNNING' || job?.status === 'PENDING');
 </script>
 
-{#if loading}
-	<PageSkeleton variant="detail" />
-{:else if error}
-	<PageState
-		variant="error"
-		title="โหลดสถานะการจัดตารางไม่สำเร็จ"
-		description={error}
-		actionLabel="ลองอีกครั้ง"
-		onaction={loadJob}
-	/>
-{:else if job}
-	<div class="space-y-6">
-		<div class="flex items-center justify-between flex-wrap gap-3">
-			<div class="flex items-center gap-2">
-				<Button variant="ghost" size="icon" onclick={() => goToSchedulingJobs()} aria-label="กลับ">
-					<ArrowLeft class="h-5 w-5" />
-				</Button>
-				<div class="flex flex-col gap-1">
-					<h2 class="text-3xl font-bold">สถานะการจัดตาราง</h2>
-					<p class="text-muted-foreground text-xs">Job ID: {job.id}</p>
-				</div>
-			</div>
-			{#if statusBadge}
-				<Badge variant={statusBadge.variant} class="px-3 py-1">
-					<statusBadge.icon class="mr-1 h-4 w-4" />
-					{statusBadge.text}
-				</Badge>
-			{/if}
-		</div>
+<PageShell
+	title="สถานะการจัดตาราง"
+	description={job ? `Job ID: ${job.id}` : 'ติดตามผลการจัดตารางอัตโนมัติ'}
+	backHref="/staff/academic/timetable/scheduling/jobs"
+>
+	{#snippet actions()}
+		{#if statusBadge}
+			<Badge variant={statusBadge.variant} class="px-3 py-1">
+				<statusBadge.icon class="mr-1 h-4 w-4" />
+				{statusBadge.text}
+			</Badge>
+		{/if}
+	{/snippet}
 
+	{#if loading}
+		<PageSkeleton variant="detail" />
+	{:else if error}
+		<PageState
+			variant="error"
+			title="โหลดสถานะการจัดตารางไม่สำเร็จ"
+			description={error}
+			actionLabel="ลองอีกครั้ง"
+			onaction={loadJob}
+		/>
+	{:else if job}
 		<div class="space-y-6">
 			<!-- Progress -->
 			{#if isRunning}
@@ -293,12 +281,12 @@
 				</div>
 			{/if}
 		</div>
-	</div>
-{:else}
-	<PageState
-		title="ไม่พบงาน"
-		description="ไม่พบงานจัดตารางที่คุณต้องการ"
-		actionLabel="กลับ"
-		onaction={goToSchedulingJobs}
-	/>
-{/if}
+	{:else}
+		<PageState
+			title="ไม่พบงาน"
+			description="ไม่พบงานจัดตารางที่คุณต้องการ"
+			actionLabel="กลับ"
+			onaction={goToSchedulingJobs}
+		/>
+	{/if}
+</PageShell>
