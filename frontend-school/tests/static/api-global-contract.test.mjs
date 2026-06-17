@@ -623,6 +623,63 @@ test('roles and organization pages gate module actions with permission booleans'
 	}
 });
 
+test('settings workspace pages gate module actions with permission booleans', async () => {
+	const routeExpectations = [
+		{
+			file: 'frontend-school/src/routes/(app)/staff/menu/+page.svelte',
+			imports: ['$lib/components/ui/alert'],
+			permissions: [
+				'PERMISSIONS.MENU_READ_ALL',
+				'PERMISSIONS.MENU_CREATE_ALL',
+				'PERMISSIONS.MENU_UPDATE_ALL',
+				'PERMISSIONS.MENU_DELETE_ALL'
+			],
+			identifiers: ['canReadMenu', 'canCreateMenu', 'canUpdateMenu', 'canDeleteMenu']
+		},
+		{
+			file: 'frontend-school/src/lib/components/menu/SortableItem.svelte',
+			imports: [],
+			permissions: [],
+			identifiers: ['canUpdate', 'canDelete', 'canReorder']
+		},
+		{
+			file: 'frontend-school/src/lib/components/menu/GroupManagementDialog.svelte',
+			imports: [],
+			permissions: [],
+			identifiers: ['canCreate', 'canUpdate', 'canDelete', 'canEditGroup']
+		},
+		{
+			file: 'frontend-school/src/routes/(app)/staff/features/+page.svelte',
+			imports: ['$lib/components/ui/alert'],
+			permissions: ['PERMISSIONS.FEATURES_READ_ALL', 'PERMISSIONS.FEATURES_UPDATE_ALL'],
+			identifiers: ['canReadFeatures', 'canUpdateFeatures']
+		},
+		{
+			file: 'frontend-school/src/routes/(app)/staff/school-settings/+page.svelte',
+			imports: ['$lib/components/ui/alert'],
+			permissions: ['PERMISSIONS.SETTINGS_READ_ALL', 'PERMISSIONS.SETTINGS_UPDATE_ALL'],
+			identifiers: ['canReadSettings', 'canUpdateSettings']
+		}
+	];
+	const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+	for (const expectation of routeExpectations) {
+		const source = stripComments(await readFile(path.join(repoRoot, expectation.file), 'utf8'));
+
+		for (const requiredImport of expectation.imports) {
+			assert.match(source, new RegExp(escapeRegex(requiredImport)));
+		}
+
+		for (const requiredPermission of expectation.permissions) {
+			assert.match(source, new RegExp(escapeRegex(requiredPermission)));
+		}
+
+		for (const identifier of expectation.identifiers) {
+			assert.match(source, new RegExp(`\\b${identifier}\\b`));
+		}
+	}
+});
+
 test('frontend app pages have route guard metadata or guarded ancestor fallback', async () => {
 	const appRoutesDir = path.join(repoRoot, 'frontend-school/src/routes/(app)');
 	const pageSvelteFiles = await listFiles(appRoutesDir, (file) => file.endsWith('+page.svelte'));

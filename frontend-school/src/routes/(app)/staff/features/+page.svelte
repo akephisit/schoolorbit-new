@@ -1,15 +1,21 @@
 <script lang="ts">
 	import { listFeatures, toggleFeature, type FeatureToggle } from '$lib/api/feature-toggles';
+	import { PERMISSIONS } from '$lib/permissions/registry';
+	import { can } from '$lib/stores/permissions';
 	import { Button } from '$lib/components/ui/button';
 	import { Card } from '$lib/components/ui/card';
 	import { Switch } from '$lib/components/ui/switch';
 	import { Badge } from '$lib/components/ui/badge';
-	import { LoaderCircle, Power, Shield } from 'lucide-svelte';
+	import { Alert, AlertDescription, AlertTitle } from '$lib/components/ui/alert';
+	import { AlertTriangle, LoaderCircle, Power, Shield } from 'lucide-svelte';
 	import { toast } from 'svelte-sonner';
 
 	let features = $state<FeatureToggle[]>([]);
 	let loading = $state(true);
 	let toggleLoading = $state<Record<string, boolean>>({});
+
+	const canReadFeatures = $derived($can.has(PERMISSIONS.FEATURES_READ_ALL));
+	const canUpdateFeatures = $derived($can.has(PERMISSIONS.FEATURES_UPDATE_ALL));
 
 	// Load features on mount
 	$effect(() => {
@@ -17,6 +23,12 @@
 	});
 
 	async function loadFeatures() {
+		if (!canReadFeatures) {
+			features = [];
+			loading = false;
+			return;
+		}
+
 		try {
 			loading = true;
 			features = await listFeatures();
@@ -29,6 +41,11 @@
 	}
 
 	async function handleToggle(feature: FeatureToggle) {
+		if (!canUpdateFeatures) {
+			toast.error('ไม่มีสิทธิ์เปลี่ยนสถานะระบบงาน');
+			return;
+		}
+
 		try {
 			toggleLoading[feature.id] = true;
 			const updated = await toggleFeature(feature.id);
@@ -73,16 +90,26 @@
 			<h1 class="text-3xl font-bold">จัดการระบบงาน</h1>
 			<p class="text-muted-foreground mt-1">เปิด/ปิดการทำงานของระบบย่อยต่างๆ</p>
 		</div>
-		<Button onclick={loadFeatures} variant="outline" disabled={loading}>
-			{#if loading}
-				<LoaderCircle class="mr-2 h-4 w-4 animate-spin" />
-			{/if}
-			รีเฟรช
-		</Button>
+		{#if canReadFeatures}
+			<Button onclick={loadFeatures} variant="outline" disabled={loading}>
+				{#if loading}
+					<LoaderCircle class="mr-2 h-4 w-4 animate-spin" />
+				{/if}
+				รีเฟรช
+			</Button>
+		{/if}
 	</div>
 
 	<!-- Loading State -->
-	{#if loading}
+	{#if !canReadFeatures}
+		<Alert>
+			<AlertTriangle class="h-4 w-4" />
+			<AlertTitle>ไม่มีสิทธิ์ดูระบบงาน</AlertTitle>
+			<AlertDescription>
+				บัญชีนี้เข้า module ระบบงานได้ แต่ยังไม่มีสิทธิ์อ่านรายการ feature toggles
+			</AlertDescription>
+		</Alert>
+	{:else if loading}
 		<div class="flex justify-center items-center py-20">
 			<LoaderCircle class="h-8 w-8 animate-spin text-primary" />
 		</div>
@@ -138,7 +165,7 @@
 										<Switch
 											checked={feature.is_enabled}
 											onCheckedChange={() => handleToggle(feature)}
-											disabled={toggleLoading[feature.id]}
+											disabled={!canUpdateFeatures || toggleLoading[feature.id]}
 										/>
 									</div>
 								</div>

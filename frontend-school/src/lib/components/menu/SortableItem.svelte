@@ -9,13 +9,26 @@
 		item: MenuItem;
 		onEdit: (item: MenuItem) => void;
 		onDelete: (item: MenuItem) => void;
+		canUpdate?: boolean;
+		canDelete?: boolean;
+		canReorder?: boolean;
 		// Drag Events
 		onDragStart?: (e: DragEvent, item: MenuItem) => void;
 		onDragEnter?: (e: DragEvent, item: MenuItem) => void;
 		onDragEnd?: (e: DragEvent) => void;
 	}
 
-	let { item, onEdit, onDelete, onDragStart, onDragEnter, onDragEnd }: Props = $props();
+	let {
+		item,
+		onEdit,
+		onDelete,
+		canUpdate = false,
+		canDelete = false,
+		canReorder = false,
+		onDragStart,
+		onDragEnter,
+		onDragEnd
+	}: Props = $props();
 
 	// Visual state for generic dragging feedback if needed,
 	// but usually parent handles ordering visually.
@@ -23,21 +36,23 @@
 
 <div
 	role="listitem"
-	draggable={true}
-	ondragstart={(e) => onDragStart?.(e, item)}
-	ondragenter={(e) => onDragEnter?.(e, item)}
-	ondragend={(e) => onDragEnd?.(e)}
+	draggable={canReorder}
+	ondragstart={(e) => canReorder && onDragStart?.(e, item)}
+	ondragenter={(e) => canReorder && onDragEnter?.(e, item)}
+	ondragend={(e) => canReorder && onDragEnd?.(e)}
 	class="touch-none group relative bg-background rounded-lg transition-all"
 	style="touch-action: none;"
 >
 	<Card class="p-4 hover:shadow-md transition-all active:cursor-grabbing">
 		<div class="flex items-center gap-3">
 			<!-- Drag Handle -->
-			<div
-				class="cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground touch-none"
-			>
-				<GripVertical class="h-5 w-5" />
-			</div>
+			{#if canReorder}
+				<div
+					class="cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground touch-none"
+				>
+					<GripVertical class="h-5 w-5" />
+				</div>
+			{/if}
 
 			<!-- Menu Info -->
 			<div class="flex-1 min-w-0">
@@ -85,12 +100,16 @@
 					</Badge>
 				{/if}
 
-				<Button size="sm" variant="outline" onclick={() => onEdit(item)}>
-					<Pencil class="h-4 w-4" />
-				</Button>
-				<Button size="sm" variant="destructive" onclick={() => onDelete(item)}>
-					<Trash2 class="h-4 w-4" />
-				</Button>
+				{#if canUpdate}
+					<Button size="sm" variant="outline" onclick={() => onEdit(item)}>
+						<Pencil class="h-4 w-4" />
+					</Button>
+				{/if}
+				{#if canDelete}
+					<Button size="sm" variant="destructive" onclick={() => onDelete(item)}>
+						<Trash2 class="h-4 w-4" />
+					</Button>
+				{/if}
 			</div>
 		</div>
 	</Card>

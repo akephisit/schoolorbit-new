@@ -8,10 +8,13 @@
 		type MenuGroup,
 		type MenuItem
 	} from '$lib/api/menu-admin';
+	import { PERMISSIONS } from '$lib/permissions/registry';
+	import { can } from '$lib/stores/permissions';
 	import { Button } from '$lib/components/ui/button';
 	import { Card } from '$lib/components/ui/card';
+	import { Alert, AlertDescription, AlertTitle } from '$lib/components/ui/alert';
 	import * as Tabs from '$lib/components/ui/tabs';
-	import { LoaderCircle, FolderOpen, GripVertical } from 'lucide-svelte';
+	import { AlertTriangle, LoaderCircle, FolderOpen, GripVertical } from 'lucide-svelte';
 	import * as Select from '$lib/components/ui/select';
 	import { toast } from 'svelte-sonner';
 
@@ -38,6 +41,11 @@
 	// Filter state
 	let userTypeFilter = $state<'all' | 'staff' | 'student' | 'parent'>('all');
 
+	const canReadMenu = $derived($can.has(PERMISSIONS.MENU_READ_ALL));
+	const canCreateMenu = $derived($can.has(PERMISSIONS.MENU_CREATE_ALL));
+	const canUpdateMenu = $derived($can.has(PERMISSIONS.MENU_UPDATE_ALL));
+	const canDeleteMenu = $derived($can.has(PERMISSIONS.MENU_DELETE_ALL));
+
 	// Local State for Drag & Drop
 	// ----------------------------------------------------
 	let containers = $state<GroupContainer[]>([]);
@@ -53,6 +61,14 @@
 	});
 
 	async function loadData() {
+		if (!canReadMenu) {
+			groups = [];
+			items = [];
+			containers = [];
+			loading = false;
+			return;
+		}
+
 		try {
 			loading = true;
 			[groups, items] = await Promise.all([listMenuGroups(), listMenuItems()]);
@@ -99,6 +115,7 @@
 	// --- 1. MENU ITEMS REORDERING ---
 
 	function handleItemDragStart(e: DragEvent, item: MenuItem) {
+		if (!canUpdateMenu) return;
 		if (activeTab !== 'items') return;
 
 		e.dataTransfer!.effectAllowed = 'move';
@@ -109,6 +126,7 @@
 	}
 
 	function handleItemDragEnter(e: DragEvent, targetItem: MenuItem) {
+		if (!canUpdateMenu) return;
 		if (dragType !== 'item' || !draggedItem) return;
 		if (draggedItem.id === targetItem.id) return;
 
@@ -154,6 +172,7 @@
 
 	// Handle dropping on an empty group or specific group area
 	function handleGroupDragOver(e: DragEvent) {
+		if (!canUpdateMenu) return;
 		// Allow dropping items into group
 		if (dragType === 'item') {
 			e.preventDefault(); // Necessary to allow drop
@@ -162,6 +181,7 @@
 	}
 
 	function handleGroupDrop(e: DragEvent, targetGroup: MenuGroup) {
+		if (!canUpdateMenu) return;
 		if (dragType === 'item' && draggedItem) {
 			e.preventDefault();
 			// Check if item is already in this group (handled by dragEnter on items usually)
@@ -196,6 +216,8 @@
 	}
 
 	async function commitItemReorder() {
+		if (!canUpdateMenu) return;
+
 		// Save current state to backend
 		try {
 			// Flatten all items with updated display_order AND group_id
@@ -224,6 +246,12 @@
 
 	async function handleDragEnd(e: DragEvent) {
 		e.preventDefault();
+		if (!canUpdateMenu) {
+			draggedItem = null;
+			draggedGroup = null;
+			dragType = null;
+			return;
+		}
 
 		if (dragType === 'item') {
 			await commitItemReorder();
@@ -239,6 +267,7 @@
 	// --- 2. MENU GROUPS REORDERING ---
 
 	function handleGroupDragStart(e: DragEvent, group: MenuGroup) {
+		if (!canUpdateMenu) return;
 		if (activeTab !== 'groups') return;
 
 		e.dataTransfer!.effectAllowed = 'move';
@@ -247,6 +276,7 @@
 	}
 
 	function handleGroupDragEnter(e: DragEvent, targetGroup: MenuGroup) {
+		if (!canUpdateMenu) return;
 		if (dragType !== 'group' || !draggedGroup) return;
 		if (draggedGroup.id === targetGroup.id) return;
 
@@ -267,6 +297,8 @@
 	}
 
 	async function commitGroupReorder() {
+		if (!canUpdateMenu) return;
+
 		try {
 			const payload = groups.map((g, i) => ({
 				id: g.id,
@@ -281,11 +313,13 @@
 	}
 
 	function openEditDialog(item: MenuItem) {
+		if (!canUpdateMenu) return;
 		// Placeholder
 		console.log('Edit:', item);
 	}
 
 	async function handleDelete(item: MenuItem) {
+		if (!canDeleteMenu) return;
 		if (!confirm(`ต้องการลบเมนู "${item.name}" ใช่หรือไม่?`)) return;
 		try {
 			await deleteMenuItem(item.id);
@@ -310,149 +344,173 @@
 		</div>
 	</div>
 
-	<!-- Filter -->
-	<div class="flex items-center gap-3">
-		<div class="flex items-center gap-2">
-			<span class="text-sm font-medium">กรองตาม User Type:</span>
-			<Select.Root type="single" bind:value={userTypeFilter}>
-				<Select.Trigger class="w-[180px]">
-					{userTypeFilter === 'all'
-						? 'ทั้งหมด'
-						: userTypeFilter === 'staff'
-							? '👔 บุคคลากร'
-							: userTypeFilter === 'student'
-								? '🎓 นักเรียน'
-								: userTypeFilter === 'parent'
-									? '👨‍👩‍👧 ผู้ปกครอง'
-									: 'เลือกประเภทผู้ใช้'}
-				</Select.Trigger>
-				<Select.Content>
-					<Select.Item value="all">ทั้งหมด</Select.Item>
-					<Select.Item value="staff">👔 บุคคลากร</Select.Item>
-					<Select.Item value="student">🎓 นักเรียน</Select.Item>
-					<Select.Item value="parent">👨‍👩‍👧 ผู้ปกครอง</Select.Item>
-				</Select.Content>
-			</Select.Root>
-		</div>
-	</div>
-
-	<!-- Tabs -->
-	<Tabs.Root bind:value={activeTab}>
-		<Tabs.List class="grid w-full grid-cols-2 max-w-md">
-			<Tabs.Trigger value="items">รายการเมนู</Tabs.Trigger>
-			<Tabs.Trigger value="groups">กลุ่มเมนู</Tabs.Trigger>
-		</Tabs.List>
-
-		<!-- ITEMS TAB -->
-		<Tabs.Content value="items" class="space-y-4">
-			{#if loading}
-				<div class="flex justify-center items-center py-20">
-					<LoaderCircle class="h-8 w-8 animate-spin text-primary" />
-				</div>
-			{:else if displayContainers.length === 0}
-				<Card class="p-12 text-center">
-					<FolderOpen class="h-16 w-16 mx-auto mb-4 opacity-20" />
-					<p class="text-lg">ไม่พบกลุ่มเมนู</p>
-				</Card>
-			{:else}
-				<div class="space-y-6 pb-20">
-					{#each displayContainers as { data, nesteds } (data.id)}
-						<MenuGroupContainer
-							{data}
-							itemCount={nesteds.length}
-							draggable={false}
-							onDragOver={handleGroupDragOver}
-							onDrop={handleGroupDrop}
-						>
-							{#each nesteds as item (item.id)}
-								<SortableItem
-									{item}
-									onEdit={openEditDialog}
-									onDelete={handleDelete}
-									onDragStart={handleItemDragStart}
-									onDragEnter={handleItemDragEnter}
-									onDragEnd={handleDragEnd}
-								/>
-							{:else}
-								<div
-									class="text-center py-8 text-muted-foreground bg-muted/20 border-2 border-dashed rounded-lg"
-								>
-									<p class="text-sm">ไม่มีรายการในกลุ่มนี้</p>
-									<p class="text-xs mt-1">ลากเมนูมาวางที่นี่</p>
-								</div>
-							{/each}
-						</MenuGroupContainer>
-					{/each}
-				</div>
-			{/if}
-		</Tabs.Content>
-
-		<!-- GROUPS TAB -->
-		<Tabs.Content value="groups" class="space-y-4">
-			<div class="flex justify-end">
-				<Button
-					onclick={() => {
-						editingGroup = null;
-						groupDialogOpen = true;
-					}}
-				>
-					สร้างกลุ่มใหม่
-				</Button>
+	{#if !canReadMenu}
+		<Alert>
+			<AlertTriangle class="h-4 w-4" />
+			<AlertTitle>ไม่มีสิทธิ์ดูโครงสร้างเมนู</AlertTitle>
+			<AlertDescription>
+				บัญชีนี้เข้า module เมนูได้ แต่ยังไม่มีสิทธิ์อ่านรายการเมนูของระบบ
+			</AlertDescription>
+		</Alert>
+	{:else}
+		<!-- Filter -->
+		<div class="flex items-center gap-3">
+			<div class="flex items-center gap-2">
+				<span class="text-sm font-medium">กรองตาม User Type:</span>
+				<Select.Root type="single" bind:value={userTypeFilter}>
+					<Select.Trigger class="w-[180px]">
+						{userTypeFilter === 'all'
+							? 'ทั้งหมด'
+							: userTypeFilter === 'staff'
+								? '👔 บุคคลากร'
+								: userTypeFilter === 'student'
+									? '🎓 นักเรียน'
+									: userTypeFilter === 'parent'
+										? '👨‍👩‍👧 ผู้ปกครอง'
+										: 'เลือกประเภทผู้ใช้'}
+					</Select.Trigger>
+					<Select.Content>
+						<Select.Item value="all">ทั้งหมด</Select.Item>
+						<Select.Item value="staff">👔 บุคคลากร</Select.Item>
+						<Select.Item value="student">🎓 นักเรียน</Select.Item>
+						<Select.Item value="parent">👨‍👩‍👧 ผู้ปกครอง</Select.Item>
+					</Select.Content>
+				</Select.Root>
 			</div>
+		</div>
 
-			{#if loading}
-				<div class="flex justify-center py-12">
-					<LoaderCircle class="h-8 w-8 animate-spin" />
-				</div>
-			{:else}
-				<div class="grid gap-3">
-					{#each groups as group (group.id)}
-						<div
-							draggable={true}
-							ondragstart={(e) => handleGroupDragStart(e, group)}
-							ondragenter={(e) => handleGroupDragEnter(e, group)}
-							ondragend={handleDragEnd}
-							role="listitem"
-							class="cursor-grab active:cursor-grabbing"
-						>
-							<Card class="p-4 hover:shadow-md transition-all">
-								<div class="flex items-center gap-3">
-									<GripVertical class="h-5 w-5 text-muted-foreground" />
-									<div class="flex-1">
-										<div class="flex items-center gap-2">
-											<h3 class="font-semibold">{group.name}</h3>
-											{#if group.name_en}
-												<span class="text-sm text-muted-foreground">({group.name_en})</span>
-											{/if}
-										</div>
-										<div class="flex items-center gap-2 mt-1">
-											<code class="text-xs bg-muted px-2 py-0.5 rounded">{group.code}</code>
-										</div>
-									</div>
-									<Button
-										size="sm"
-										variant="outline"
-										onclick={() => {
-											editingGroup = group;
-											groupDialogOpen = true;
-										}}
+		<!-- Tabs -->
+		<Tabs.Root bind:value={activeTab}>
+			<Tabs.List class="grid w-full grid-cols-2 max-w-md">
+				<Tabs.Trigger value="items">รายการเมนู</Tabs.Trigger>
+				<Tabs.Trigger value="groups">กลุ่มเมนู</Tabs.Trigger>
+			</Tabs.List>
+
+			<!-- ITEMS TAB -->
+			<Tabs.Content value="items" class="space-y-4">
+				{#if loading}
+					<div class="flex justify-center items-center py-20">
+						<LoaderCircle class="h-8 w-8 animate-spin text-primary" />
+					</div>
+				{:else if displayContainers.length === 0}
+					<Card class="p-12 text-center">
+						<FolderOpen class="h-16 w-16 mx-auto mb-4 opacity-20" />
+						<p class="text-lg">ไม่พบกลุ่มเมนู</p>
+					</Card>
+				{:else}
+					<div class="space-y-6 pb-20">
+						{#each displayContainers as { data, nesteds } (data.id)}
+							<MenuGroupContainer
+								{data}
+								itemCount={nesteds.length}
+								draggable={false}
+								onDragOver={handleGroupDragOver}
+								onDrop={handleGroupDrop}
+							>
+								{#each nesteds as item (item.id)}
+									<SortableItem
+										{item}
+										onEdit={openEditDialog}
+										onDelete={handleDelete}
+										canUpdate={canUpdateMenu}
+										canDelete={canDeleteMenu}
+										canReorder={canUpdateMenu}
+										onDragStart={handleItemDragStart}
+										onDragEnter={handleItemDragEnter}
+										onDragEnd={handleDragEnd}
+									/>
+								{:else}
+									<div
+										class="text-center py-8 text-muted-foreground bg-muted/20 border-2 border-dashed rounded-lg"
 									>
-										แก้ไข
-									</Button>
-								</div>
-							</Card>
-						</div>
-					{/each}
-				</div>
-			{/if}
-		</Tabs.Content>
-	</Tabs.Root>
+										<p class="text-sm">ไม่มีรายการในกลุ่มนี้</p>
+										{#if canUpdateMenu}
+											<p class="text-xs mt-1">ลากเมนูมาวางที่นี่</p>
+										{/if}
+									</div>
+								{/each}
+							</MenuGroupContainer>
+						{/each}
+					</div>
+				{/if}
+			</Tabs.Content>
+
+			<!-- GROUPS TAB -->
+			<Tabs.Content value="groups" class="space-y-4">
+				{#if canCreateMenu}
+					<div class="flex justify-end">
+						<Button
+							onclick={() => {
+								editingGroup = null;
+								groupDialogOpen = true;
+							}}
+						>
+							สร้างกลุ่มใหม่
+						</Button>
+					</div>
+				{/if}
+
+				{#if loading}
+					<div class="flex justify-center py-12">
+						<LoaderCircle class="h-8 w-8 animate-spin" />
+					</div>
+				{:else}
+					<div class="grid gap-3">
+						{#each groups as group (group.id)}
+							<div
+								draggable={canUpdateMenu}
+								ondragstart={(e) => handleGroupDragStart(e, group)}
+								ondragenter={(e) => handleGroupDragEnter(e, group)}
+								ondragend={handleDragEnd}
+								role="listitem"
+								class={canUpdateMenu ? 'cursor-grab active:cursor-grabbing' : ''}
+							>
+								<Card class="p-4 hover:shadow-md transition-all">
+									<div class="flex items-center gap-3">
+										{#if canUpdateMenu}
+											<GripVertical class="h-5 w-5 text-muted-foreground" />
+										{/if}
+										<div class="flex-1">
+											<div class="flex items-center gap-2">
+												<h3 class="font-semibold">{group.name}</h3>
+												{#if group.name_en}
+													<span class="text-sm text-muted-foreground">({group.name_en})</span>
+												{/if}
+											</div>
+											<div class="flex items-center gap-2 mt-1">
+												<code class="text-xs bg-muted px-2 py-0.5 rounded">{group.code}</code>
+											</div>
+										</div>
+										{#if canUpdateMenu}
+											<Button
+												size="sm"
+												variant="outline"
+												onclick={() => {
+													editingGroup = group;
+													groupDialogOpen = true;
+												}}
+											>
+												แก้ไข
+											</Button>
+										{/if}
+									</div>
+								</Card>
+							</div>
+						{/each}
+					</div>
+				{/if}
+			</Tabs.Content>
+		</Tabs.Root>
+	{/if}
 </div>
 
 <!-- Group Management Dialog -->
 <GroupManagementDialog
 	bind:open={groupDialogOpen}
 	group={editingGroup}
+	canCreate={canCreateMenu}
+	canUpdate={canUpdateMenu}
+	canDelete={canDeleteMenu}
 	onSuccess={loadData}
 	onOpenChange={(open) => (groupDialogOpen = open)}
 />

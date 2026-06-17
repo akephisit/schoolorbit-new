@@ -11,11 +11,22 @@
 	interface Props {
 		open: boolean;
 		group: MenuGroup | null; // null = create mode
+		canCreate?: boolean;
+		canUpdate?: boolean;
+		canDelete?: boolean;
 		onSuccess: () => void;
 		onOpenChange: (open: boolean) => void;
 	}
 
-	let { open = $bindable(), group, onSuccess, onOpenChange }: Props = $props();
+	let {
+		open = $bindable(),
+		group,
+		canCreate = false,
+		canUpdate = false,
+		canDelete = false,
+		onSuccess,
+		onOpenChange
+	}: Props = $props();
 
 	let saving = $state(false);
 	let formData = $state({
@@ -24,6 +35,8 @@
 		name_en: '',
 		icon: ''
 	});
+
+	const canEditGroup = $derived(group ? canUpdate : canCreate);
 
 	// Reset form when dialog opens/closes or group changes
 	$effect(() => {
@@ -47,6 +60,11 @@
 	});
 
 	async function handleSubmit() {
+		if (!canEditGroup) {
+			toast.error('ไม่มีสิทธิ์บันทึกกลุ่มเมนู');
+			return;
+		}
+
 		if (!formData.name || (!group && !formData.code)) {
 			toast.error('กรุณากรอกข้อมูลที่จำเป็น');
 			return;
@@ -84,6 +102,10 @@
 
 	async function handleDelete() {
 		if (!group) return;
+		if (!canDelete) {
+			toast.error('ไม่มีสิทธิ์ลบกลุ่มเมนู');
+			return;
+		}
 
 		if (group.code === 'other') {
 			toast.error('ไม่สามารถลบกลุ่ม "อื่นๆ" ได้');
@@ -138,7 +160,7 @@
 						bind:value={formData.code}
 						placeholder="เช่น reports, finance"
 						required
-						disabled={saving}
+						disabled={saving || !canEditGroup}
 					/>
 					<p class="text-xs text-muted-foreground">ใช้ตัวอักษรภาษาอังกฤษและ - เท่านั้น</p>
 				</div>
@@ -152,7 +174,7 @@
 					bind:value={formData.name}
 					placeholder="เช่น รายงาน, การเงิน"
 					required
-					disabled={saving}
+					disabled={saving || !canEditGroup}
 				/>
 			</div>
 
@@ -163,7 +185,7 @@
 					id="name_en"
 					bind:value={formData.name_en}
 					placeholder="e.g. Reports, Finance"
-					disabled={saving}
+					disabled={saving || !canEditGroup}
 				/>
 			</div>
 
@@ -174,14 +196,14 @@
 					id="icon"
 					bind:value={formData.icon}
 					placeholder="เช่น chart-bar, wallet"
-					disabled={saving}
+					disabled={saving || !canEditGroup}
 				/>
 				<p class="text-xs text-muted-foreground">ใช้ชื่อ icon จาก Lucide Icons</p>
 			</div>
 
 			<Dialog.Footer class="flex-col sm:flex-row gap-2">
 				<div class="flex-1">
-					{#if group && group.code !== 'other'}
+					{#if group && group.code !== 'other' && canDelete}
 						<Button
 							type="button"
 							variant="destructive"
@@ -200,12 +222,14 @@
 					<Button type="button" variant="outline" onclick={() => (open = false)} disabled={saving}>
 						ยกเลิก
 					</Button>
-					<Button type="submit" disabled={saving}>
-						{#if saving}
-							<LoaderCircle class="h-4 w-4 animate-spin mr-2" />
-						{/if}
-						{group ? 'บันทึก' : 'สร้าง'}
-					</Button>
+					{#if canEditGroup}
+						<Button type="submit" disabled={saving}>
+							{#if saving}
+								<LoaderCircle class="h-4 w-4 animate-spin mr-2" />
+							{/if}
+							{group ? 'บันทึก' : 'สร้าง'}
+						</Button>
+					{/if}
 				</div>
 			</Dialog.Footer>
 		</form>

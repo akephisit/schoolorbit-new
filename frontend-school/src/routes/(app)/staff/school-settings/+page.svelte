@@ -1,7 +1,10 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { PERMISSIONS } from '$lib/permissions/registry';
+	import { can } from '$lib/stores/permissions';
 	import { Button } from '$lib/components/ui/button';
 	import { Label } from '$lib/components/ui/label';
+	import { Alert, AlertDescription, AlertTitle } from '$lib/components/ui/alert';
 	import {
 		Card,
 		CardContent,
@@ -9,7 +12,7 @@
 		CardHeader,
 		CardTitle
 	} from '$lib/components/ui/card';
-	import { ArrowLeft, Save, Upload, ImageOff, X } from 'lucide-svelte';
+	import { AlertTriangle, ArrowLeft, Save, Upload, ImageOff, X } from 'lucide-svelte';
 	import { toast } from 'svelte-sonner';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
@@ -24,7 +27,15 @@
 	let pendingFile = $state<File | undefined>(undefined);
 	let previewUrl = $state<string | undefined>(undefined);
 
+	const canReadSettings = $derived($can.has(PERMISSIONS.SETTINGS_READ_ALL));
+	const canUpdateSettings = $derived($can.has(PERMISSIONS.SETTINGS_UPDATE_ALL));
+
 	onMount(async () => {
+		if (!canReadSettings) {
+			loading = false;
+			return;
+		}
+
 		try {
 			const s = await getSchoolSettings();
 			logoUrl = s.logoUrl;
@@ -37,6 +48,7 @@
 	});
 
 	function handleLogoSelect(e: Event) {
+		if (!canUpdateSettings) return;
 		const file = (e.target as HTMLInputElement).files?.[0];
 		if (!file) return;
 		if (previewUrl) URL.revokeObjectURL(previewUrl);
@@ -45,6 +57,11 @@
 	}
 
 	async function handleSave() {
+		if (!canUpdateSettings) {
+			toast.error('ไม่มีสิทธิ์บันทึกการตั้งค่าโรงเรียน');
+			return;
+		}
+
 		saving = true;
 		try {
 			let pathToSave = logoPath;
@@ -62,6 +79,26 @@
 			toast.success('บันทึกการตั้งค่าสำเร็จ');
 		} catch (err) {
 			toast.error(err instanceof Error ? err.message : 'บันทึกไม่สำเร็จ');
+		} finally {
+			saving = false;
+		}
+	}
+
+	async function handleDeleteLogo() {
+		if (!canUpdateSettings) {
+			toast.error('ไม่มีสิทธิ์ลบ logo โรงเรียน');
+			return;
+		}
+
+		saving = true;
+		try {
+			await deleteSchoolLogo();
+			logoUrl = undefined;
+			logoPath = undefined;
+			logoFileId = undefined;
+			toast.success('ลบ logo สำเร็จ');
+		} catch (err) {
+			toast.error(err instanceof Error ? err.message : 'ลบไม่สำเร็จ');
 		} finally {
 			saving = false;
 		}
@@ -84,105 +121,106 @@
 		</div>
 	</div>
 
-	<!-- Logo Card -->
-	<Card class="max-w-lg">
-		<CardHeader>
-			<CardTitle>Logo โรงเรียน</CardTitle>
-			<CardDescription>แสดงบนหน้ารับสมัครนักเรียนและหน้าอื่นๆ ของระบบ</CardDescription>
-		</CardHeader>
-		<CardContent class="space-y-6">
-			{#if loading}
-				<div class="flex justify-center py-4">
-					<div class="animate-pulse w-24 h-24 rounded-2xl bg-muted"></div>
-				</div>
-			{:else}
-				<!-- Preview -->
-				<div class="flex flex-col items-center gap-3">
-					<div
-						class="w-24 h-24 rounded-2xl border-2 border-dashed border-border flex items-center justify-center bg-muted overflow-hidden"
-					>
-						{#if previewUrl ?? logoUrl}
-							<img
-								src={previewUrl ?? logoUrl}
-								alt="school logo"
-								class="w-full h-full object-contain p-1"
-							/>
-						{:else}
-							<ImageOff class="w-8 h-8 text-muted-foreground" />
-						{/if}
+	{#if !canReadSettings}
+		<Alert>
+			<AlertTriangle class="h-4 w-4" />
+			<AlertTitle>ไม่มีสิทธิ์ดูการตั้งค่าโรงเรียน</AlertTitle>
+			<AlertDescription>
+				บัญชีนี้เข้า module ตั้งค่าได้ แต่ยังไม่มีสิทธิ์อ่านข้อมูลการตั้งค่าโรงเรียน
+			</AlertDescription>
+		</Alert>
+	{:else}
+		<!-- Logo Card -->
+		<Card class="max-w-lg">
+			<CardHeader>
+				<CardTitle>Logo โรงเรียน</CardTitle>
+				<CardDescription>แสดงบนหน้ารับสมัครนักเรียนและหน้าอื่นๆ ของระบบ</CardDescription>
+			</CardHeader>
+			<CardContent class="space-y-6">
+				{#if loading}
+					<div class="flex justify-center py-4">
+						<div class="animate-pulse w-24 h-24 rounded-2xl bg-muted"></div>
 					</div>
-					<p class="text-xs text-muted-foreground">
-						{#if pendingFile}
-							<span class="text-amber-600">ยังไม่ได้บันทึก — กด "บันทึก" เพื่อยืนยัน</span>
-						{:else}
-							ตัวอย่าง logo
-						{/if}
-					</p>
-				</div>
-
-				<!-- Upload -->
-				<div class="space-y-2">
-					<Label>เลือกไฟล์ logo</Label>
-					<p class="text-xs text-muted-foreground">รองรับ JPG, PNG, WEBP ขนาดไม่เกิน 2 MB</p>
-					<label class="cursor-pointer">
-						<input
-							type="file"
-							accept="image/jpeg,image/png,image/webp"
-							class="hidden"
-							onchange={handleLogoSelect}
-							disabled={saving}
-						/>
-						<Button variant="outline" class="gap-2 pointer-events-none" disabled={saving}>
-							<Upload class="w-4 h-4" />
-							เลือกไฟล์
-						</Button>
-					</label>
-				</div>
-
-				<!-- Actions -->
-				<div class="flex items-center gap-3 pt-2">
-					<Button onclick={handleSave} disabled={saving} class="gap-2">
-						<Save class="w-4 h-4" />
-						{saving ? 'กำลังบันทึก...' : 'บันทึก'}
-					</Button>
-					{#if pendingFile}
-						<Button
-							variant="ghost"
-							class="gap-1.5 text-muted-foreground"
-							onclick={() => {
-								if (previewUrl) URL.revokeObjectURL(previewUrl);
-								pendingFile = undefined;
-								previewUrl = undefined;
-							}}
-							disabled={saving}
+				{:else}
+					<!-- Preview -->
+					<div class="flex flex-col items-center gap-3">
+						<div
+							class="w-24 h-24 rounded-2xl border-2 border-dashed border-border flex items-center justify-center bg-muted overflow-hidden"
 						>
-							<X class="w-4 h-4" /> ยกเลิก
-						</Button>
-					{:else if logoUrl}
-						<Button
-							variant="ghost"
-							class="text-destructive hover:text-destructive"
-							onclick={async () => {
-								saving = true;
-								try {
-									await deleteSchoolLogo();
-									logoUrl = undefined;
-									logoPath = undefined;
-									logoFileId = undefined;
-									toast.success('ลบ logo สำเร็จ');
-								} catch (err) {
-									toast.error(err instanceof Error ? err.message : 'ลบไม่สำเร็จ');
-								} finally {
-									saving = false;
-								}
-							}}
-							disabled={saving}
-						>
-							ลบ logo
-						</Button>
+							{#if previewUrl ?? logoUrl}
+								<img
+									src={previewUrl ?? logoUrl}
+									alt="school logo"
+									class="w-full h-full object-contain p-1"
+								/>
+							{:else}
+								<ImageOff class="w-8 h-8 text-muted-foreground" />
+							{/if}
+						</div>
+						<p class="text-xs text-muted-foreground">
+							{#if pendingFile}
+								<span class="text-amber-600">ยังไม่ได้บันทึก — กด "บันทึก" เพื่อยืนยัน</span>
+							{:else}
+								ตัวอย่าง logo
+							{/if}
+						</p>
+					</div>
+
+					{#if canUpdateSettings}
+						<!-- Upload -->
+						<div class="space-y-2">
+							<Label>เลือกไฟล์ logo</Label>
+							<p class="text-xs text-muted-foreground">รองรับ JPG, PNG, WEBP ขนาดไม่เกิน 2 MB</p>
+							<label class="cursor-pointer">
+								<input
+									type="file"
+									accept="image/jpeg,image/png,image/webp"
+									class="hidden"
+									onchange={handleLogoSelect}
+									disabled={saving}
+								/>
+								<Button variant="outline" class="gap-2 pointer-events-none" disabled={saving}>
+									<Upload class="w-4 h-4" />
+									เลือกไฟล์
+								</Button>
+							</label>
+						</div>
 					{/if}
-				</div>
-			{/if}
-		</CardContent>
-	</Card>
+
+					{#if canUpdateSettings}
+						<!-- Actions -->
+						<div class="flex items-center gap-3 pt-2">
+							<Button onclick={handleSave} disabled={saving} class="gap-2">
+								<Save class="w-4 h-4" />
+								{saving ? 'กำลังบันทึก...' : 'บันทึก'}
+							</Button>
+							{#if pendingFile}
+								<Button
+									variant="ghost"
+									class="gap-1.5 text-muted-foreground"
+									onclick={() => {
+										if (previewUrl) URL.revokeObjectURL(previewUrl);
+										pendingFile = undefined;
+										previewUrl = undefined;
+									}}
+									disabled={saving}
+								>
+									<X class="w-4 h-4" /> ยกเลิก
+								</Button>
+							{:else if logoUrl}
+								<Button
+									variant="ghost"
+									class="text-destructive hover:text-destructive"
+									onclick={handleDeleteLogo}
+									disabled={saving}
+								>
+									ลบ logo
+								</Button>
+							{/if}
+						</div>
+					{/if}
+				{/if}
+			</CardContent>
+		</Card>
+	{/if}
 </div>
