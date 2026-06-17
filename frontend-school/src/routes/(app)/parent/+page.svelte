@@ -3,8 +3,9 @@
 	import { getOwnParentProfile, type ParentProfile } from '$lib/api/parents';
 	import { Card } from '$lib/components/ui/card';
 	import { Button } from '$lib/components/ui/button';
+	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import { Badge } from '$lib/components/ui/badge';
-	import { Loader2, User, ChevronRight } from 'lucide-svelte';
+	import { User, ChevronRight } from 'lucide-svelte';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 
@@ -16,7 +17,9 @@
 		goto(resolve(`/parent/student/${id}`));
 	}
 
-	onMount(async () => {
+	async function loadProfile() {
+		loading = true;
+		error = null;
 		try {
 			const response = await getOwnParentProfile();
 			profile = response.data;
@@ -26,6 +29,10 @@
 		} finally {
 			loading = false;
 		}
+	}
+
+	onMount(() => {
+		loadProfile();
 	});
 </script>
 
@@ -46,27 +53,25 @@
 	</div>
 
 	{#if loading}
-		<div class="flex justify-center py-12">
-			<Loader2 class="w-8 h-8 animate-spin text-primary" />
-		</div>
+		<PageSkeleton variant="cards" rows={3} />
 	{:else if error}
-		<div class="p-8 text-center text-destructive bg-destructive/10 rounded-lg">
-			<p>{error}</p>
-			<Button variant="outline" class="mt-4" onclick={() => window.location.reload()}
-				>ลองอีกครั้ง</Button
-			>
-		</div>
+		<PageState
+			variant="error"
+			title="โหลดข้อมูลผู้ปกครองไม่สำเร็จ"
+			description={error}
+			actionLabel="ลองอีกครั้ง"
+			onaction={loadProfile}
+		/>
 	{:else if profile}
 		<!-- Children List -->
 		<div>
 			<h2 class="text-xl font-semibold mb-4">บุตรหลานของคุณ</h2>
 
 			{#if profile.children.length === 0}
-				<Card class="p-8 text-center text-muted-foreground bg-muted/20 border-dashed">
-					<User class="w-12 h-12 mx-auto mb-4 opacity-50" />
-					<p>ไม่พบข้อมูลบุตรหลานที่เชื่อมโยงกับบัญชีของคุณ</p>
-					<p class="text-sm mt-2">กรุณาติดต่อทางโรงเรียนหากข้อมูลไม่ถูกต้อง</p>
-				</Card>
+				<PageState
+					title="ไม่พบข้อมูลบุตรหลาน"
+					description="ยังไม่มีข้อมูลนักเรียนที่เชื่อมโยงกับบัญชีนี้ กรุณาติดต่อทางโรงเรียนหากข้อมูลไม่ถูกต้อง"
+				/>
 			{:else}
 				<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
 					{#each profile.children as child (child.id)}
@@ -124,5 +129,10 @@
 				</div>
 			{/if}
 		</div>
+	{:else}
+		<PageState
+			title="ไม่พบข้อมูลผู้ปกครอง"
+			description="ไม่พบโปรไฟล์ผู้ปกครองของบัญชีนี้ กรุณาติดต่อผู้ดูแลระบบ"
+		/>
 	{/if}
 </div>

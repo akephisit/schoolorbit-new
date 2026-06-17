@@ -12,6 +12,7 @@
 		type ActivityGroup
 	} from '$lib/api/academic';
 	import { Button } from '$lib/components/ui/button';
+	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import { Badge } from '$lib/components/ui/badge';
 	import { toast } from 'svelte-sonner';
 	import { Users, Check, X } from 'lucide-svelte';
@@ -21,8 +22,11 @@
 	let groups = $state<ActivityGroup[]>([]);
 	let myEnrollments = new SvelteSet<string>();
 	let enrolling = $state('');
+	let error = $state('');
 
-	onMount(async () => {
+	async function loadActivities() {
+		loading = true;
+		error = '';
 		try {
 			const [slotsRes, groupsRes, enrollRes] = await Promise.all([
 				listActivitySlots({ student_reg_open: true }),
@@ -35,10 +39,15 @@
 			for (const id of enrollRes.data ?? []) myEnrollments.add(id);
 		} catch (e) {
 			console.error(e);
-			toast.error('ไม่สามารถโหลดข้อมูลได้');
+			error = 'ไม่สามารถโหลดข้อมูลได้';
+			toast.error(error);
 		} finally {
 			loading = false;
 		}
+	}
+
+	onMount(() => {
+		loadActivities();
 	});
 
 	function groupsForSlot(slotId: string) {
@@ -96,11 +105,20 @@
 	</div>
 
 	{#if loading}
-		<p class="text-muted-foreground text-sm">กำลังโหลด...</p>
+		<PageSkeleton variant="cards" rows={3} />
+	{:else if error}
+		<PageState
+			variant="error"
+			title="โหลดกิจกรรมไม่สำเร็จ"
+			description={error}
+			actionLabel="ลองอีกครั้ง"
+			onaction={loadActivities}
+		/>
 	{:else if slots.length === 0}
-		<div class="rounded-lg border p-8 text-center">
-			<p class="text-muted-foreground">ไม่มีกิจกรรมที่เปิดลงทะเบียนในขณะนี้</p>
-		</div>
+		<PageState
+			title="ไม่มีกิจกรรมที่เปิดลงทะเบียน"
+			description="ยังไม่มีกิจกรรมที่เปิดให้ลงทะเบียนในขณะนี้"
+		/>
 	{:else}
 		{#each slots as slot (slot.id)}
 			{@const slotGroups = groupsForSlot(slot.id)}

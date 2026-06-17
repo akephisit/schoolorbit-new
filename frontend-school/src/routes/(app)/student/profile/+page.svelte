@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import { Card } from '$lib/components/ui/card';
 	import { Button } from '$lib/components/ui/button';
+	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import { Textarea } from '$lib/components/ui/textarea';
@@ -13,6 +14,7 @@
 	let loading = $state(true);
 	let editing = $state(false);
 	let saving = $state(false);
+	let error = $state('');
 
 	// Editable fields
 	let phone = $state('');
@@ -25,6 +27,7 @@
 
 	async function loadProfile() {
 		loading = true;
+		error = '';
 		try {
 			const response = await getOwnProfile();
 			student = response.data;
@@ -33,9 +36,10 @@
 			phone = student.phone || '';
 			address = student.address || '';
 			nickname = student.nickname || '';
-		} catch (error) {
-			console.error('Failed to load profile:', error);
-			const message = error instanceof Error ? error.message : 'เกิดข้อผิดพลาด';
+		} catch (loadError) {
+			console.error('Failed to load profile:', loadError);
+			const message = loadError instanceof Error ? loadError.message : 'เกิดข้อผิดพลาด';
+			error = message;
 			toast.error(message);
 		} finally {
 			loading = false;
@@ -92,16 +96,15 @@
 	</div>
 
 	{#if loading}
-		<Card class="p-6">
-			<div class="space-y-4">
-				{#each [0, 1, 2, 3, 4, 5] as i (i)}
-					<div class="animate-pulse">
-						<div class="h-4 bg-muted rounded w-1/4 mb-2"></div>
-						<div class="h-10 bg-muted rounded"></div>
-					</div>
-				{/each}
-			</div>
-		</Card>
+		<PageSkeleton variant="form" rows={6} />
+	{:else if error}
+		<PageState
+			variant="error"
+			title="โหลดข้อมูลส่วนตัวไม่สำเร็จ"
+			description={error}
+			actionLabel="ลองอีกครั้ง"
+			onaction={loadProfile}
+		/>
 	{:else if student}
 		<!-- Basic Information (Read-only) -->
 		<Card class="p-6">
@@ -292,5 +295,10 @@
 				</p>
 			</Card>
 		{/if}
+	{:else}
+		<PageState
+			title="ไม่พบข้อมูลนักเรียน"
+			description="ไม่พบโปรไฟล์นักเรียนของบัญชีนี้ กรุณาติดต่อผู้ดูแลระบบ"
+		/>
 	{/if}
 </div>

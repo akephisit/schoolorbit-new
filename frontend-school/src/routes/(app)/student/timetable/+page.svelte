@@ -17,9 +17,9 @@
 	} from '$lib/api/academic';
 	import { getOwnProfile, type Student } from '$lib/api/students';
 	import * as Dialog from '$lib/components/ui/dialog';
-	import { Card } from '$lib/components/ui/card';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
+	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import { CalendarDays, Loader2, Users, BookOpen } from 'lucide-svelte';
 
 	let loading = $state(true);
@@ -30,6 +30,7 @@
 	let semesters = $state<Semester[]>([]);
 	let selectedSemesterId = $state('');
 	let schoolDays = $state<{ value: string; label: string; shortLabel: string }[]>([]);
+	let error = $state('');
 
 	// คอลัมน์วัน 80px + คาบละ 110px → mobile บีบไม่ได้ ต้องเลื่อน
 	const tableMinWidth = $derived(80 + periods.length * 110);
@@ -54,6 +55,8 @@
 	}
 
 	async function loadData() {
+		loading = true;
+		error = '';
 		try {
 			const [profileRes, structRes] = await Promise.all([getOwnProfile(), getAcademicStructure()]);
 
@@ -73,9 +76,11 @@
 					await loadTimetable();
 				}
 			}
-		} catch (e: unknown) {
-			console.error(e);
-			toast.error((e instanceof Error ? e.message : String(e)) || 'โหลดข้อมูลไม่สำเร็จ');
+		} catch (loadError: unknown) {
+			console.error(loadError);
+			error =
+				(loadError instanceof Error ? loadError.message : String(loadError)) || 'โหลดข้อมูลไม่สำเร็จ';
+			toast.error(error);
 		} finally {
 			loading = false;
 		}
@@ -84,6 +89,7 @@
 	async function loadTimetable() {
 		if (!student || !selectedSemesterId) return;
 		try {
+			error = '';
 			const res = await getMyTimetable({
 				academic_semester_id: selectedSemesterId
 			});
@@ -91,7 +97,8 @@
 			periods = periodsFromTimetableEntries(entries);
 		} catch (e: unknown) {
 			console.error(e);
-			toast.error('โหลดตารางเรียนไม่สำเร็จ');
+			error = 'โหลดตารางเรียนไม่สำเร็จ';
+			toast.error(error);
 		}
 	}
 
@@ -141,19 +148,25 @@
 	</div>
 
 	{#if loading}
-		<div class="flex items-center justify-center py-20">
-			<Loader2 class="w-8 h-8 animate-spin text-muted-foreground" />
-		</div>
+		<PageSkeleton variant="detail" />
+	{:else if error}
+		<PageState
+			variant="error"
+			title="โหลดตารางเรียนไม่สำเร็จ"
+			description={error}
+			actionLabel="ลองอีกครั้ง"
+			onaction={loadData}
+		/>
 	{:else if entries.length === 0}
-		<Card class="p-8 text-center text-muted-foreground">
-			<CalendarDays class="w-12 h-12 mx-auto mb-3 opacity-30" />
-			<p>ยังไม่มีตารางเรียนในภาคเรียนนี้</p>
-		</Card>
+		<PageState
+			title="ยังไม่มีตารางเรียน"
+			description="ยังไม่มีตารางเรียนในภาคเรียนนี้"
+		/>
 	{:else if periods.length === 0}
-		<Card class="p-8 text-center text-muted-foreground">
-			<CalendarDays class="w-12 h-12 mx-auto mb-3 opacity-30" />
-			<p>ยังไม่มีข้อมูลคาบเรียนในตารางเรียนนี้</p>
-		</Card>
+		<PageState
+			title="ยังไม่มีข้อมูลคาบเรียน"
+			description="ตารางเรียนนี้ยังไม่มีข้อมูลคาบเรียนให้แสดง"
+		/>
 	{:else}
 		<!-- Timetable Grid (วัน=แถว, คาบ=คอลัมน์) -->
 		<div class="overflow-x-auto">

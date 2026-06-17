@@ -14,10 +14,10 @@
 		type AcademicYear,
 		type Semester
 	} from '$lib/api/academic';
-	import { Card } from '$lib/components/ui/card';
 	import { Button } from '$lib/components/ui/button';
+	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import * as Select from '$lib/components/ui/select';
-	import { ArrowLeft, CalendarDays, LoaderCircle } from 'lucide-svelte';
+	import { ArrowLeft, CalendarDays } from 'lucide-svelte';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 
@@ -40,6 +40,7 @@
 	let selectedSemesterId = $state('');
 	let schoolDays = $state<{ value: string; label: string; shortLabel: string }[]>([]);
 	let child = $state<ChildSummary | null>(null);
+	let error = $state('');
 
 	const semestersOfYear = $derived(semesters.filter((s) => s.academic_year_id === selectedYearId));
 
@@ -61,6 +62,8 @@
 	}
 
 	async function loadStructureAndChild() {
+		loading = true;
+		error = '';
 		try {
 			const [structRes, childRes] = await Promise.all([
 				getAcademicStructure(),
@@ -79,11 +82,17 @@
 					semesters.find((s) => s.academic_year_id === activeYear.id);
 				if (activeSem) {
 					selectedSemesterId = activeSem.id;
+				} else {
+					loading = false;
 				}
+			} else {
+				loading = false;
 			}
 		} catch (e: unknown) {
 			console.error(e);
-			toast.error((e instanceof Error ? e.message : String(e)) || 'โหลดข้อมูลไม่สำเร็จ');
+			error = (e instanceof Error ? e.message : String(e)) || 'โหลดข้อมูลไม่สำเร็จ';
+			toast.error(error);
+			loading = false;
 		}
 	}
 
@@ -91,6 +100,7 @@
 		if (!selectedYearId || !selectedSemesterId) return;
 		try {
 			loading = true;
+			error = '';
 			const entriesRes = await getChildTimetable(studentId, selectedSemesterId);
 			entries = entriesRes.data;
 			periods = periodsFromTimetableEntries(entries);
@@ -98,10 +108,19 @@
 			if (year) schoolDays = getSchoolDays(year.school_days);
 		} catch (e: unknown) {
 			console.error(e);
-			toast.error('โหลดตารางเรียนไม่สำเร็จ');
+			error = 'โหลดตารางเรียนไม่สำเร็จ';
+			toast.error(error);
 		} finally {
 			loading = false;
 		}
+	}
+
+	function retryLoad() {
+		if (selectedYearId && selectedSemesterId) {
+			loadPeriodsAndEntries();
+			return;
+		}
+		loadStructureAndChild();
 	}
 
 	function getEntry(day: string, periodId: string): TimetableEntry | undefined {
@@ -177,19 +196,25 @@
 	</div>
 
 	{#if loading}
-		<div class="flex items-center justify-center py-20">
-			<LoaderCircle class="text-muted-foreground h-8 w-8 animate-spin" />
-		</div>
+		<PageSkeleton variant="detail" />
+	{:else if error}
+		<PageState
+			variant="error"
+			title="โหลดตารางเรียนไม่สำเร็จ"
+			description={error}
+			actionLabel="ลองอีกครั้ง"
+			onaction={retryLoad}
+		/>
 	{:else if entries.length === 0}
-		<Card class="text-muted-foreground p-8 text-center">
-			<CalendarDays class="mx-auto mb-3 h-12 w-12 opacity-30" />
-			<p>ยังไม่มีตารางเรียนในภาคเรียนนี้</p>
-		</Card>
+		<PageState
+			title="ยังไม่มีตารางเรียน"
+			description="ยังไม่มีตารางเรียนในภาคเรียนนี้"
+		/>
 	{:else if periods.length === 0}
-		<Card class="text-muted-foreground p-8 text-center">
-			<CalendarDays class="mx-auto mb-3 h-12 w-12 opacity-30" />
-			<p>ยังไม่มีข้อมูลคาบเรียนในตารางเรียนนี้</p>
-		</Card>
+		<PageState
+			title="ยังไม่มีข้อมูลคาบเรียน"
+			description="ตารางเรียนนี้ยังไม่มีข้อมูลคาบเรียนให้แสดง"
+		/>
 	{:else}
 		<!-- Timetable Grid (วัน=แถว, คาบ=คอลัมน์) -->
 		<div class="overflow-x-auto">

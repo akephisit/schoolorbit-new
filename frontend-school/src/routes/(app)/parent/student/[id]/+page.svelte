@@ -5,6 +5,7 @@
 	import type { Student } from '$lib/api/students';
 	import { Card } from '$lib/components/ui/card';
 	import { Button } from '$lib/components/ui/button';
+	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import { Badge } from '$lib/components/ui/badge';
 	import { ArrowLeft, User, Calendar, BookOpen, Clock } from 'lucide-svelte';
 	import { goto } from '$app/navigation';
@@ -17,7 +18,9 @@
 	let loading = $state(true);
 	let error = $state<string | null>(null);
 
-	onMount(async () => {
+	async function loadStudent() {
+		loading = true;
+		error = null;
 		try {
 			const response = await getChildProfile(studentId);
 			student = response.data;
@@ -27,6 +30,10 @@
 		} finally {
 			loading = false;
 		}
+	}
+
+	onMount(() => {
+		loadStudent();
 	});
 </script>
 
@@ -40,11 +47,15 @@
 	</Button>
 
 	{#if loading}
-		<div class="p-8 text-center text-muted-foreground">กำลังโหลดข้อมูล...</div>
+		<PageSkeleton variant="detail" />
 	{:else if error}
-		<div class="p-8 text-center text-destructive bg-destructive/10 rounded-lg">
-			<p>{error}</p>
-		</div>
+		<PageState
+			variant="error"
+			title="โหลดข้อมูลนักเรียนไม่สำเร็จ"
+			description={error}
+			actionLabel="ลองอีกครั้ง"
+			onaction={loadStudent}
+		/>
 	{:else if student}
 		<!-- Header -->
 		<div class="flex flex-col md:flex-row gap-6 items-start">
@@ -138,5 +149,12 @@
 				</Button>
 			</Card>
 		</div>
+	{:else}
+		<PageState
+			title="ไม่พบข้อมูลนักเรียน"
+			description="ไม่พบข้อมูลนักเรียนที่เชื่อมโยงกับบัญชีผู้ปกครองนี้"
+			actionLabel="กลับหน้าผู้ปกครอง"
+			href="/parent"
+		/>
 	{/if}
 </div>

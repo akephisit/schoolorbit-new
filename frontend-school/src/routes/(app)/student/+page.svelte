@@ -2,24 +2,33 @@
 	import { onMount } from 'svelte';
 	import { Card } from '$lib/components/ui/card';
 	import { Button } from '$lib/components/ui/button';
+	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import { User, Calendar, BookOpen, Award } from 'lucide-svelte';
 	import { getOwnProfile, type Student } from '$lib/api/students';
 	import { toast } from 'svelte-sonner';
 
 	let student = $state<Student | null>(null);
 	let loading = $state(true);
+	let error = $state('');
 
-	onMount(async () => {
+	async function loadProfile() {
+		loading = true;
+		error = '';
 		try {
 			const response = await getOwnProfile();
 			student = response.data;
-		} catch (error) {
-			console.error('Failed to load profile:', error);
-			const message = error instanceof Error ? error.message : 'เกิดข้อผิดพลาด';
+		} catch (loadError) {
+			console.error('Failed to load profile:', loadError);
+			const message = loadError instanceof Error ? loadError.message : 'เกิดข้อผิดพลาด';
+			error = message;
 			toast.error(message);
 		} finally {
 			loading = false;
 		}
+	}
+
+	onMount(() => {
+		loadProfile();
 	});
 </script>
 
@@ -41,14 +50,15 @@
 	</div>
 
 	{#if loading}
-		<div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-			{#each [0, 1, 2] as i (i)}
-				<Card class="p-6 animate-pulse">
-					<div class="h-4 bg-muted rounded w-1/2 mb-4"></div>
-					<div class="h-8 bg-muted rounded w-3/4"></div>
-				</Card>
-			{/each}
-		</div>
+		<PageSkeleton variant="cards" rows={3} />
+	{:else if error}
+		<PageState
+			variant="error"
+			title="โหลดแดชบอร์ดไม่สำเร็จ"
+			description={error}
+			actionLabel="ลองอีกครั้ง"
+			onaction={loadProfile}
+		/>
 	{:else if student}
 		<!-- Student Info Cards -->
 		<div class="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -137,5 +147,10 @@
 				<p>ไม่มีประกาศในขณะนี้</p>
 			</div>
 		</Card>
+	{:else}
+		<PageState
+			title="ไม่พบข้อมูลนักเรียน"
+			description="ไม่พบโปรไฟล์นักเรียนของบัญชีนี้ กรุณาติดต่อผู้ดูแลระบบ"
+		/>
 	{/if}
 </div>
