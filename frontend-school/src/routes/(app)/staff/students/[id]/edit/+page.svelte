@@ -8,8 +8,11 @@
 	import { Label } from '$lib/components/ui/label';
 	import { Card } from '$lib/components/ui/card';
 	import { Badge } from '$lib/components/ui/badge';
+	import { Alert, AlertDescription, AlertTitle } from '$lib/components/ui/alert';
+	import { PERMISSIONS } from '$lib/permissions/registry';
+	import { can } from '$lib/stores/permissions';
 	import { toast } from 'svelte-sonner';
-	import { ArrowLeft, Edit, Save, X, Trash2 } from 'lucide-svelte';
+	import { AlertTriangle, ArrowLeft, Edit, Save, X, Trash2 } from 'lucide-svelte';
 	import * as Select from '$lib/components/ui/select';
 	import {
 		getStudent,
@@ -28,6 +31,23 @@
 	let editing = $state(false);
 	let saving = $state(false);
 	let deleting = $state(false);
+
+	const canReadStudent = $derived(
+		$can.hasAny(
+			PERMISSIONS.STUDENT_READ_SCHOOL,
+			PERMISSIONS.STUDENT_READ_ASSIGNED,
+			PERMISSIONS.STUDENT_READ_OWN
+		)
+	);
+	const canUpdateStudent = $derived($can.has(PERMISSIONS.STUDENT_UPDATE_ALL));
+	const canDeleteStudent = $derived($can.has(PERMISSIONS.STUDENT_DELETE_ALL));
+	const canReadStudentPii = $derived(
+		$can.hasAny(
+			PERMISSIONS.STUDENT_PII_READ_SCHOOL,
+			PERMISSIONS.STUDENT_PII_READ_ASSIGNED,
+			PERMISSIONS.STUDENT_PII_READ_OWN
+		)
+	);
 
 	// Form data
 	let formData = $state({
@@ -61,6 +81,11 @@
 	});
 
 	async function loadStudent() {
+		if (!canReadStudent) {
+			student = null;
+			loading = false;
+			return;
+		}
 		loading = true;
 		try {
 			const response = await getStudent(studentId);
@@ -88,6 +113,7 @@
 	}
 
 	async function handleSave() {
+		if (!canUpdateStudent) return;
 		saving = true;
 		try {
 			const { grade_level: _gradeLevel, class_room: _classRoom, ...updateData } = formData;
@@ -126,6 +152,7 @@
 	}
 
 	async function handleDelete() {
+		if (!canDeleteStudent) return;
 		if (!confirm('คุณแน่ใจหรือไม่ที่จะลบนักเรียนคนนี้?')) {
 			return;
 		}
@@ -145,6 +172,7 @@
 	}
 
 	async function handleAddParent() {
+		if (!canUpdateStudent) return;
 		// Validate
 		parentErrors = {};
 		if (!parentForm.first_name) parentErrors.first_name = 'กรุณากรอกชื่อ';
@@ -185,6 +213,7 @@
 	}
 
 	async function handleDeleteParent(parentId: string) {
+		if (!canUpdateStudent) return;
 		if (!confirm('ยืนยันลบผู้ปกครองท่านนี้ออกจากนักเรียน?')) return;
 
 		try {
@@ -224,23 +253,43 @@
 			</div>
 		</div>
 
-		{#if !editing && !loading}
+		{#if !editing && !loading && (canUpdateStudent || canDeleteStudent)}
 			<div class="flex gap-2">
-				<Button onclick={() => (editing = true)}>
-					<Edit class="w-4 h-4 mr-2" />
-					แก้ไข
-				</Button>
-				<Button variant="destructive" onclick={handleDelete} disabled={deleting}>
-					{#if deleting}
-						กำลังลบ...
-					{:else}
-						<Trash2 class="w-4 h-4 mr-2" />
-						ลบ
-					{/if}
-				</Button>
+				{#if canUpdateStudent}
+					<Button onclick={() => (editing = true)}>
+						<Edit class="w-4 h-4 mr-2" />
+						แก้ไข
+					</Button>
+				{/if}
+				{#if canDeleteStudent}
+					<Button variant="destructive" onclick={handleDelete} disabled={deleting}>
+						{#if deleting}
+							กำลังลบ...
+						{:else}
+							<Trash2 class="w-4 h-4 mr-2" />
+							ลบ
+						{/if}
+					</Button>
+				{/if}
 			</div>
 		{/if}
 	</div>
+
+	{#if !canReadStudent}
+		<Alert>
+			<AlertTriangle class="h-4 w-4" />
+			<AlertTitle>ไม่มีสิทธิ์ดูข้อมูลนักเรียน</AlertTitle>
+			<AlertDescription>
+				บัญชีนี้ยังไม่มีสิทธิ์อ่านข้อมูลนักเรียนคนนี้ในขอบเขตที่ระบบอนุญาต
+			</AlertDescription>
+		</Alert>
+	{:else if canReadStudent && !canUpdateStudent}
+		<Alert>
+			<AlertTriangle class="h-4 w-4" />
+			<AlertTitle>อ่านได้อย่างเดียว</AlertTitle>
+			<AlertDescription>บัญชีนี้ยังไม่มีสิทธิ์แก้ไขข้อมูลนักเรียน</AlertDescription>
+		</Alert>
+	{/if}
 
 	{#if loading}
 		<Card class="p-6">
@@ -274,7 +323,7 @@
 		<Card class="p-6">
 			<h2 class="text-xl font-semibold mb-6">ข้อมูลพื้นฐาน</h2>
 
-			{#if editing}
+			{#if editing && canUpdateStudent}
 				<div class="space-y-4">
 					<div class="grid grid-cols-2 gap-4">
 						<div>
@@ -335,12 +384,21 @@
 						</div>
 					</div>
 
-					<div>
-						<Label>เลขบัตรประชาชน</Label>
-						<div class="px-3 py-2 bg-muted/50 rounded-md">
-							{student.national_id || '-'}
+					{#if canReadStudentPii}
+						<div>
+							<Label>เลขบัตรประชาชน</Label>
+							<div class="px-3 py-2 bg-muted/50 rounded-md">
+								{student.national_id || '-'}
+							</div>
 						</div>
-					</div>
+					{:else}
+						<div>
+							<Label>เลขบัตรประชาชน</Label>
+							<div class="px-3 py-2 bg-muted/50 rounded-md text-muted-foreground">
+								ไม่มีสิทธิ์ดูข้อมูลส่วนบุคคล
+							</div>
+						</div>
+					{/if}
 
 					<div>
 						<Label>อีเมล</Label>
@@ -370,7 +428,7 @@
 		<Card class="p-6">
 			<h2 class="text-xl font-semibold mb-6">ข้อมูลนักเรียน</h2>
 
-			{#if editing}
+			{#if editing && canUpdateStudent}
 				<div class="space-y-4">
 					<div class="grid grid-cols-3 gap-4">
 						<div>
@@ -488,7 +546,7 @@
 		<Card class="p-6">
 			<div class="flex items-center justify-between mb-6">
 				<h2 class="text-xl font-semibold">ข้อมูลผู้ปกครอง</h2>
-				{#if editing}
+				{#if editing && canUpdateStudent}
 					<Button variant="outline" size="sm" onclick={() => (isAddParentOpen = true)}>
 						+ เพิ่มผู้ปกครอง
 					</Button>
@@ -499,7 +557,7 @@
 				<div class="space-y-4">
 					{#each student.parents as parent (parent.id)}
 						<div class="p-4 border rounded-lg bg-muted/10 relative">
-							{#if editing}
+							{#if editing && canUpdateStudent}
 								<Button
 									variant="ghost"
 									size="icon"
@@ -543,109 +601,113 @@
 	{/if}
 </div>
 
-<Dialog.Root bind:open={isAddParentOpen}>
-	<Dialog.Content class="sm:max-w-[425px]">
-		<Dialog.Header>
-			<Dialog.Title>เพิ่มผู้ปกครอง</Dialog.Title>
-			<Dialog.Description>
-				กรอกข้อมูลผู้ปกครองเพื่อเชื่อมโยงกับนักเรียน (ถ้าเบอร์โทรซ้ำระบบจะใช้บัญชีเดิม)
-			</Dialog.Description>
-		</Dialog.Header>
-		<div class="grid gap-4 py-4">
-			<div class="grid grid-cols-4 gap-4">
-				<div class="col-span-1">
-					<Label for="p_title">คำนำหน้า</Label>
-					<Select.Root type="single" bind:value={parentForm.title}>
-						<Select.Trigger>{parentForm.title || 'เลือก'}</Select.Trigger>
-						<Select.Content>
-							<Select.Item value="นาย">นาย</Select.Item>
-							<Select.Item value="นาง">นาง</Select.Item>
-							<Select.Item value="นางสาว">นางสาว</Select.Item>
-						</Select.Content>
-					</Select.Root>
+{#if canUpdateStudent}
+	<Dialog.Root bind:open={isAddParentOpen}>
+		<Dialog.Content class="sm:max-w-[425px]">
+			<Dialog.Header>
+				<Dialog.Title>เพิ่มผู้ปกครอง</Dialog.Title>
+				<Dialog.Description>
+					กรอกข้อมูลผู้ปกครองเพื่อเชื่อมโยงกับนักเรียน (ถ้าเบอร์โทรซ้ำระบบจะใช้บัญชีเดิม)
+				</Dialog.Description>
+			</Dialog.Header>
+			<div class="grid gap-4 py-4">
+				<div class="grid grid-cols-4 gap-4">
+					<div class="col-span-1">
+						<Label for="p_title">คำนำหน้า</Label>
+						<Select.Root type="single" bind:value={parentForm.title}>
+							<Select.Trigger>{parentForm.title || 'เลือก'}</Select.Trigger>
+							<Select.Content>
+								<Select.Item value="นาย">นาย</Select.Item>
+								<Select.Item value="นาง">นาง</Select.Item>
+								<Select.Item value="นางสาว">นางสาว</Select.Item>
+							</Select.Content>
+						</Select.Root>
+					</div>
+					<div class="col-span-3">
+						<Label for="p_first_name">ชื่อ <span class="text-destructive">*</span></Label>
+						<Input
+							id="p_first_name"
+							bind:value={parentForm.first_name}
+							class={parentErrors.first_name ? 'border-destructive' : ''}
+						/>
+						{#if parentErrors.first_name}<p class="text-[10px] text-destructive">
+								{parentErrors.first_name}
+							</p>{/if}
+					</div>
+					<div>
+						<Label for="p_last_name">นามสกุล <span class="text-destructive">*</span></Label>
+						<Input
+							id="p_last_name"
+							bind:value={parentForm.last_name}
+							class={parentErrors.last_name ? 'border-destructive' : ''}
+						/>
+						{#if parentErrors.last_name}<p class="text-[10px] text-destructive">
+								{parentErrors.last_name}
+							</p>{/if}
+					</div>
 				</div>
-				<div class="col-span-3">
-					<Label for="p_first_name">ชื่อ <span class="text-destructive">*</span></Label>
-					<Input
-						id="p_first_name"
-						bind:value={parentForm.first_name}
-						class={parentErrors.first_name ? 'border-destructive' : ''}
-					/>
-					{#if parentErrors.first_name}<p class="text-[10px] text-destructive">
-							{parentErrors.first_name}
-						</p>{/if}
-				</div>
-				<div>
-					<Label for="p_last_name">นามสกุล <span class="text-destructive">*</span></Label>
-					<Input
-						id="p_last_name"
-						bind:value={parentForm.last_name}
-						class={parentErrors.last_name ? 'border-destructive' : ''}
-					/>
-					{#if parentErrors.last_name}<p class="text-[10px] text-destructive">
-							{parentErrors.last_name}
-						</p>{/if}
-				</div>
-			</div>
 
-			<div class="grid grid-cols-2 gap-4">
-				<div>
-					<Label for="p_last_name">นามสกุล <span class="text-destructive">*</span></Label>
-					<Input
-						id="p_last_name"
-						bind:value={parentForm.last_name}
-						class={parentErrors.last_name ? 'border-destructive' : ''}
-					/>
-					{#if parentErrors.last_name}<p class="text-[10px] text-destructive">
-							{parentErrors.last_name}
-						</p>{/if}
+				<div class="grid grid-cols-2 gap-4">
+					<div>
+						<Label for="p_last_name">นามสกุล <span class="text-destructive">*</span></Label>
+						<Input
+							id="p_last_name"
+							bind:value={parentForm.last_name}
+							class={parentErrors.last_name ? 'border-destructive' : ''}
+						/>
+						{#if parentErrors.last_name}<p class="text-[10px] text-destructive">
+								{parentErrors.last_name}
+							</p>{/if}
+					</div>
+					<div>
+						<Label for="p_relationship">ความสัมพันธ์</Label>
+						<Select.Root type="single" bind:value={parentForm.relationship}>
+							<Select.Trigger>{parentForm.relationship}</Select.Trigger>
+							<Select.Content>
+								<Select.Item value="บิดา">บิดา</Select.Item>
+								<Select.Item value="มารดา">มารดา</Select.Item>
+								<Select.Item value="ผู้ปกครอง">ผู้ปกครอง</Select.Item>
+								<Select.Item value="ญาติ">ญาติ</Select.Item>
+							</Select.Content>
+						</Select.Root>
+					</div>
 				</div>
-				<div>
-					<Label for="p_relationship">ความสัมพันธ์</Label>
-					<Select.Root type="single" bind:value={parentForm.relationship}>
-						<Select.Trigger>{parentForm.relationship}</Select.Trigger>
-						<Select.Content>
-							<Select.Item value="บิดา">บิดา</Select.Item>
-							<Select.Item value="มารดา">มารดา</Select.Item>
-							<Select.Item value="ผู้ปกครอง">ผู้ปกครอง</Select.Item>
-							<Select.Item value="ญาติ">ญาติ</Select.Item>
-						</Select.Content>
-					</Select.Root>
-				</div>
-			</div>
 
-			<div class="grid grid-cols-2 gap-4">
-				<div>
-					<Label for="p_phone">เบอร์โทรศัพท์ <span class="text-destructive">*</span></Label>
-					<Input
-						id="p_phone"
-						bind:value={parentForm.phone}
-						maxlength={10}
-						placeholder="08xxxxxxxx"
-						class={parentErrors.phone ? 'border-destructive' : ''}
-					/>
-					{#if parentErrors.phone}<p class="text-[10px] text-destructive">
-							{parentErrors.phone}
-						</p>{/if}
+				<div class="grid grid-cols-2 gap-4">
+					<div>
+						<Label for="p_phone">เบอร์โทรศัพท์ <span class="text-destructive">*</span></Label>
+						<Input
+							id="p_phone"
+							bind:value={parentForm.phone}
+							maxlength={10}
+							placeholder="08xxxxxxxx"
+							class={parentErrors.phone ? 'border-destructive' : ''}
+						/>
+						{#if parentErrors.phone}<p class="text-[10px] text-destructive">
+								{parentErrors.phone}
+							</p>{/if}
+					</div>
 				</div>
-			</div>
 
-			<div class="grid grid-cols-2 gap-4">
-				<div>
-					<Label for="p_email">อีเมล</Label>
-					<Input id="p_email" type="email" bind:value={parentForm.email} />
-				</div>
-				<div>
-					<Label for="p_nid">เลขบัตรประชาชน</Label>
-					<Input id="p_nid" bind:value={parentForm.national_id} maxlength={13} />
+				<div class="grid grid-cols-2 gap-4">
+					<div>
+						<Label for="p_email">อีเมล</Label>
+						<Input id="p_email" type="email" bind:value={parentForm.email} />
+					</div>
+					{#if canReadStudentPii}
+						<div>
+							<Label for="p_nid">เลขบัตรประชาชน</Label>
+							<Input id="p_nid" bind:value={parentForm.national_id} maxlength={13} />
+						</div>
+					{/if}
 				</div>
 			</div>
-		</div>
-		<Dialog.Footer>
-			<Button variant="outline" onclick={() => (isAddParentOpen = false)}>ยกเลิก</Button>
-			<Button type="submit" onclick={handleAddParent} disabled={parentLoading}>
-				{#if parentLoading}กำลังบันทึก...{:else}บันทึก{/if}
-			</Button>
-		</Dialog.Footer>
-	</Dialog.Content>
-</Dialog.Root>
+			<Dialog.Footer>
+				<Button variant="outline" onclick={() => (isAddParentOpen = false)}>ยกเลิก</Button>
+				<Button type="submit" onclick={handleAddParent} disabled={parentLoading}>
+					{#if parentLoading}กำลังบันทึก...{:else}บันทึก{/if}
+				</Button>
+			</Dialog.Footer>
+		</Dialog.Content>
+	</Dialog.Root>
+{/if}

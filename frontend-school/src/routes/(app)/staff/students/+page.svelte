@@ -12,10 +12,24 @@
 		DialogTitle
 	} from '$lib/components/ui/dialog';
 	import * as Select from '$lib/components/ui/select';
-	import { GraduationCap, Plus, Search, Pencil, Trash2, Eye } from 'lucide-svelte';
+	import { Alert, AlertDescription, AlertTitle } from '$lib/components/ui/alert';
+	import { PERMISSIONS } from '$lib/permissions/registry';
+	import { can } from '$lib/stores/permissions';
+	import { GraduationCap, Plus, Search, Pencil, Trash2, Eye, AlertTriangle } from 'lucide-svelte';
 	import { toast } from 'svelte-sonner';
 
 	let { data } = $props();
+
+	const canReadStudents = $derived(
+		$can.hasAny(
+			PERMISSIONS.STUDENT_READ_SCHOOL,
+			PERMISSIONS.STUDENT_READ_ASSIGNED,
+			PERMISSIONS.STUDENT_READ_OWN
+		)
+	);
+	const canCreateStudent = $derived($can.has(PERMISSIONS.STUDENT_CREATE_ALL));
+	const canUpdateStudent = $derived($can.has(PERMISSIONS.STUDENT_UPDATE_ALL));
+	const canDeleteStudent = $derived($can.has(PERMISSIONS.STUDENT_DELETE_ALL));
 
 	let students: StudentListItem[] = $state([]);
 	let loading = $state(true);
@@ -61,6 +75,13 @@
 	}
 
 	async function loadStudents() {
+		if (!canReadStudents) {
+			students = [];
+			total = 0;
+			totalPages = 1;
+			loading = false;
+			return;
+		}
 		try {
 			loading = true;
 			const response = await listStudents({
@@ -83,11 +104,13 @@
 	}
 
 	function openDeleteDialog(student: StudentListItem) {
+		if (!canDeleteStudent) return;
 		studentToDelete = student;
 		showDeleteDialog = true;
 	}
 
 	async function confirmDelete() {
+		if (!canDeleteStudent) return;
 		if (!studentToDelete) return;
 
 		deleting = true;
@@ -106,11 +129,13 @@
 	}
 
 	function handleSearch() {
+		if (!canReadStudents) return;
 		currentPage = 1;
 		loadStudents();
 	}
 
 	function handleReset() {
+		if (!canReadStudents) return;
 		searchQuery = '';
 		statusFilter = 'active';
 		currentPage = 1;
@@ -136,223 +161,241 @@
 			</h1>
 			<p class="text-muted-foreground mt-1">จัดการข้อมูลนักเรียนทั้งหมด</p>
 		</div>
-		<Button href="/staff/students/new" class="flex items-center gap-2">
-			<Plus class="w-4 h-4" />
-			เพิ่มนักเรียน
-		</Button>
+		{#if canCreateStudent}
+			<Button href="/staff/students/new" class="flex items-center gap-2">
+				<Plus class="w-4 h-4" />
+				เพิ่มนักเรียน
+			</Button>
+		{/if}
 	</div>
 
-	<!-- Search and Filter -->
-	<div class="bg-card border border-border rounded-lg p-4">
-		<div class="grid grid-cols-1 md:grid-cols-12 gap-4">
-			<div class="md:col-span-8 relative">
-				<Search class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-				<Input
-					type="text"
-					bind:value={searchQuery}
-					onkeypress={(e) => e.key === 'Enter' && handleSearch()}
-					placeholder="ค้นหาชื่อ หรือรหัสนักเรียน..."
-					class="pl-10"
-				/>
-			</div>
-
-			<div class="md:col-span-4">
-				<Select.Root type="single" bind:value={statusFilter} onValueChange={handleSearch}>
-					<Select.Trigger>
-						{statusFilter === 'active'
-							? 'ใช้งาน (Active)'
-							: statusFilter === 'inactive'
-								? 'ไม่ใช้งาน (Inactive)'
-								: 'ทั้งหมด'}
-					</Select.Trigger>
-					<Select.Content>
-						<Select.Item value="active">ใช้งาน (Active)</Select.Item>
-						<Select.Item value="inactive">ไม่ใช้งาน (Inactive)</Select.Item>
-						<Select.Item value="all">ทั้งหมด</Select.Item>
-					</Select.Content>
-				</Select.Root>
-			</div>
-		</div>
-
-		<div class="flex gap-2 mt-4">
-			<Button onclick={handleSearch}>ค้นหา</Button>
-			<Button onclick={handleReset} variant="outline">ล้างตัวกรอง</Button>
-		</div>
-	</div>
-
-	<!-- Student List -->
-	{#if loading}
-		<div class="bg-card border border-border rounded-lg p-12 text-center">
-			<div
-				class="inline-block w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin"
-			></div>
-			<p class="mt-4 text-muted-foreground">กำลังโหลด...</p>
-		</div>
-	{:else if students.length === 0}
-		<div class="bg-card border border-border rounded-lg p-12 text-center">
-			<GraduationCap class="w-16 h-16 mx-auto text-muted-foreground mb-4" />
-			<p class="text-lg font-medium text-foreground">ไม่พบนักเรียน</p>
-			<p class="text-muted-foreground mt-2">
-				{searchQuery
-					? 'ไม่พบนักเรียนที่ตรงกับเงื่อนไขที่ค้นหา'
-					: 'เริ่มต้นด้วยการเพิ่มนักเรียนคนแรก'}
-			</p>
-			{#if !searchQuery}
-				<Button href="/staff/students/new" class="mt-4">
-					<Plus class="w-4 h-4 mr-2" />
-					เพิ่มนักเรียน
-				</Button>
-			{/if}
-		</div>
+	{#if !canReadStudents}
+		<Alert>
+			<AlertTriangle class="h-4 w-4" />
+			<AlertTitle>ไม่มีสิทธิ์ดูรายชื่อนักเรียน</AlertTitle>
+			<AlertDescription>
+				บัญชีนี้เข้า module นักเรียนได้ แต่ยังไม่มีสิทธิ์อ่านข้อมูลนักเรียนในขอบเขตที่ระบบอนุญาต
+			</AlertDescription>
+		</Alert>
 	{:else}
-		<div class="bg-card border border-border rounded-lg overflow-hidden">
-			<!-- Table Header -->
-			<div class="bg-muted/50 px-6 py-3 border-b border-border">
-				<div class="grid grid-cols-12 gap-4 text-sm font-medium text-muted-foreground">
-					<div class="col-span-2">รหัสนักเรียน</div>
-					<div class="col-span-4">ชื่อ-นามสกุล</div>
-					<div class="col-span-2">ชั้น</div>
-					<div class="col-span-2">สถานะ</div>
-					<div class="col-span-2 text-right">จัดการ</div>
+		<!-- Search and Filter -->
+		<div class="bg-card border border-border rounded-lg p-4">
+			<div class="grid grid-cols-1 md:grid-cols-12 gap-4">
+				<div class="md:col-span-8 relative">
+					<Search class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+					<Input
+						type="text"
+						bind:value={searchQuery}
+						onkeypress={(e) => e.key === 'Enter' && handleSearch()}
+						placeholder="ค้นหาชื่อ หรือรหัสนักเรียน..."
+						class="pl-10"
+					/>
+				</div>
+
+				<div class="md:col-span-4">
+					<Select.Root type="single" bind:value={statusFilter} onValueChange={handleSearch}>
+						<Select.Trigger>
+							{statusFilter === 'active'
+								? 'ใช้งาน (Active)'
+								: statusFilter === 'inactive'
+									? 'ไม่ใช้งาน (Inactive)'
+									: 'ทั้งหมด'}
+						</Select.Trigger>
+						<Select.Content>
+							<Select.Item value="active">ใช้งาน (Active)</Select.Item>
+							<Select.Item value="inactive">ไม่ใช้งาน (Inactive)</Select.Item>
+							<Select.Item value="all">ทั้งหมด</Select.Item>
+						</Select.Content>
+					</Select.Root>
 				</div>
 			</div>
 
-			<!-- Table Body -->
-			<div class="divide-y divide-border">
-				{#each students as student (student.id)}
-					<div class="px-6 py-4 hover:bg-accent/50 transition-colors">
-						<div class="grid grid-cols-12 gap-4 items-center">
-							<!-- Student ID -->
-							<div class="col-span-2">
-								<p class="font-mono text-sm">{student.student_id || '-'}</p>
-							</div>
-
-							<!-- Name -->
-							<div class="col-span-4">
-								<p class="font-medium text-foreground">
-									{student.title || ''}{student.first_name}
-									{student.last_name}
-								</p>
-							</div>
-
-							<!-- Grade/Class -->
-							<div class="col-span-2">
-								{#if student.class_room}
-									<span class="text-sm md:hidden">
-										{#if student.class_room.includes('/') || student.class_room.startsWith('อ.') || student.class_room.startsWith('ป.') || student.class_room.startsWith('ม.')}
-											{student.class_room}
-										{:else}
-											{student.grade_level}/{student.class_room}
-										{/if}
-									</span>
-									<span class="hidden md:inline text-sm"
-										>{formatFullClassRoom(student.class_room, student.grade_level)}</span
-									>
-								{:else}
-									<span class="text-sm text-muted-foreground">-</span>
-								{/if}
-							</div>
-
-							<!-- Status -->
-							<div class="col-span-2">
-								{#if student.status === 'active'}
-									<span
-										class="inline-flex items-center text-xs px-2 py-1 bg-green-100 text-green-800 rounded-full"
-									>
-										<span class="w-1.5 h-1.5 rounded-full bg-green-500 mr-1.5"></span>
-										ใช้งาน
-									</span>
-								{:else}
-									<span
-										class="inline-flex items-center text-xs px-2 py-1 bg-gray-100 text-gray-800 rounded-full"
-									>
-										<span class="w-1.5 h-1.5 rounded-full bg-gray-500 mr-1.5"></span>
-										ไม่ใช้งาน
-									</span>
-								{/if}
-							</div>
-
-							<!-- Actions -->
-							<div class="col-span-2 flex justify-end gap-2">
-								<Button href="/staff/students/{student.id}" variant="ghost" size="sm">
-									<Eye class="w-4 h-4" />
-								</Button>
-								<Button href="/staff/students/{student.id}/edit" variant="ghost" size="sm">
-									<Pencil class="w-4 h-4" />
-								</Button>
-								<Button onclick={() => openDeleteDialog(student)} variant="ghost" size="sm">
-									<Trash2 class="h-4 w-4" />
-								</Button>
-							</div>
-						</div>
-					</div>
-				{/each}
+			<div class="flex gap-2 mt-4">
+				<Button onclick={handleSearch}>ค้นหา</Button>
+				<Button onclick={handleReset} variant="outline">ล้างตัวกรอง</Button>
 			</div>
-
-			<!-- Pagination -->
-			{#if totalPages > 1}
-				<div class="bg-muted/30 px-6 py-4 border-t border-border">
-					<div class="flex items-center justify-between">
-						<p class="text-sm text-muted-foreground">
-							แสดง {students.length} จาก {total} รายการ
-						</p>
-						<div class="flex gap-2">
-							<Button
-								onclick={() => {
-									currentPage--;
-									loadStudents();
-								}}
-								disabled={currentPage === 1}
-								variant="outline"
-								size="sm"
-							>
-								← ก่อนหน้า
-							</Button>
-							<span class="px-4 py-2 text-sm">
-								หน้า {currentPage} / {totalPages}
-							</span>
-							<Button
-								onclick={() => {
-									currentPage++;
-									loadStudents();
-								}}
-								disabled={currentPage >= totalPages}
-								variant="outline"
-								size="sm"
-							>
-								ถัดไป →
-							</Button>
-						</div>
-					</div>
-				</div>
-			{/if}
 		</div>
+
+		<!-- Student List -->
+		{#if loading}
+			<div class="bg-card border border-border rounded-lg p-12 text-center">
+				<div
+					class="inline-block w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin"
+				></div>
+				<p class="mt-4 text-muted-foreground">กำลังโหลด...</p>
+			</div>
+		{:else if students.length === 0}
+			<div class="bg-card border border-border rounded-lg p-12 text-center">
+				<GraduationCap class="w-16 h-16 mx-auto text-muted-foreground mb-4" />
+				<p class="text-lg font-medium text-foreground">ไม่พบนักเรียน</p>
+				<p class="text-muted-foreground mt-2">
+					{searchQuery
+						? 'ไม่พบนักเรียนที่ตรงกับเงื่อนไขที่ค้นหา'
+						: 'เริ่มต้นด้วยการเพิ่มนักเรียนคนแรก'}
+				</p>
+				{#if !searchQuery && canCreateStudent}
+					<Button href="/staff/students/new" class="mt-4">
+						<Plus class="w-4 h-4 mr-2" />
+						เพิ่มนักเรียน
+					</Button>
+				{/if}
+			</div>
+		{:else}
+			<div class="bg-card border border-border rounded-lg overflow-hidden">
+				<!-- Table Header -->
+				<div class="bg-muted/50 px-6 py-3 border-b border-border">
+					<div class="grid grid-cols-12 gap-4 text-sm font-medium text-muted-foreground">
+						<div class="col-span-2">รหัสนักเรียน</div>
+						<div class="col-span-4">ชื่อ-นามสกุล</div>
+						<div class="col-span-2">ชั้น</div>
+						<div class="col-span-2">สถานะ</div>
+						<div class="col-span-2 text-right">จัดการ</div>
+					</div>
+				</div>
+
+				<!-- Table Body -->
+				<div class="divide-y divide-border">
+					{#each students as student (student.id)}
+						<div class="px-6 py-4 hover:bg-accent/50 transition-colors">
+							<div class="grid grid-cols-12 gap-4 items-center">
+								<!-- Student ID -->
+								<div class="col-span-2">
+									<p class="font-mono text-sm">{student.student_id || '-'}</p>
+								</div>
+
+								<!-- Name -->
+								<div class="col-span-4">
+									<p class="font-medium text-foreground">
+										{student.title || ''}{student.first_name}
+										{student.last_name}
+									</p>
+								</div>
+
+								<!-- Grade/Class -->
+								<div class="col-span-2">
+									{#if student.class_room}
+										<span class="text-sm md:hidden">
+											{#if student.class_room.includes('/') || student.class_room.startsWith('อ.') || student.class_room.startsWith('ป.') || student.class_room.startsWith('ม.')}
+												{student.class_room}
+											{:else}
+												{student.grade_level}/{student.class_room}
+											{/if}
+										</span>
+										<span class="hidden md:inline text-sm"
+											>{formatFullClassRoom(student.class_room, student.grade_level)}</span
+										>
+									{:else}
+										<span class="text-sm text-muted-foreground">-</span>
+									{/if}
+								</div>
+
+								<!-- Status -->
+								<div class="col-span-2">
+									{#if student.status === 'active'}
+										<span
+											class="inline-flex items-center text-xs px-2 py-1 bg-green-100 text-green-800 rounded-full"
+										>
+											<span class="w-1.5 h-1.5 rounded-full bg-green-500 mr-1.5"></span>
+											ใช้งาน
+										</span>
+									{:else}
+										<span
+											class="inline-flex items-center text-xs px-2 py-1 bg-gray-100 text-gray-800 rounded-full"
+										>
+											<span class="w-1.5 h-1.5 rounded-full bg-gray-500 mr-1.5"></span>
+											ไม่ใช้งาน
+										</span>
+									{/if}
+								</div>
+
+								<!-- Actions -->
+								<div class="col-span-2 flex justify-end gap-2">
+									<Button href="/staff/students/{student.id}" variant="ghost" size="sm">
+										<Eye class="w-4 h-4" />
+									</Button>
+									{#if canUpdateStudent}
+										<Button href="/staff/students/{student.id}/edit" variant="ghost" size="sm">
+											<Pencil class="w-4 h-4" />
+										</Button>
+									{/if}
+									{#if canDeleteStudent}
+										<Button onclick={() => openDeleteDialog(student)} variant="ghost" size="sm">
+											<Trash2 class="h-4 w-4" />
+										</Button>
+									{/if}
+								</div>
+							</div>
+						</div>
+					{/each}
+				</div>
+
+				<!-- Pagination -->
+				{#if totalPages > 1}
+					<div class="bg-muted/30 px-6 py-4 border-t border-border">
+						<div class="flex items-center justify-between">
+							<p class="text-sm text-muted-foreground">
+								แสดง {students.length} จาก {total} รายการ
+							</p>
+							<div class="flex gap-2">
+								<Button
+									onclick={() => {
+										currentPage--;
+										loadStudents();
+									}}
+									disabled={currentPage === 1}
+									variant="outline"
+									size="sm"
+								>
+									← ก่อนหน้า
+								</Button>
+								<span class="px-4 py-2 text-sm">
+									หน้า {currentPage} / {totalPages}
+								</span>
+								<Button
+									onclick={() => {
+										currentPage++;
+										loadStudents();
+									}}
+									disabled={currentPage >= totalPages}
+									variant="outline"
+									size="sm"
+								>
+									ถัดไป →
+								</Button>
+							</div>
+						</div>
+					</div>
+				{/if}
+			</div>
+		{/if}
 	{/if}
 </div>
 
 <!-- Delete Confirmation Dialog -->
-<Dialog bind:open={showDeleteDialog}>
-	<DialogContent>
-		<DialogHeader>
-			<DialogTitle>ยืนยันการลบนักเรียน</DialogTitle>
-			<DialogDescription>
-				คุณแน่ใจหรือไม่ว่าต้องการลบนักเรียน
-				{#if studentToDelete}
-					<strong>
-						{studentToDelete.title || ''}{studentToDelete.first_name}
-						{studentToDelete.last_name}
-					</strong>
-				{/if}? การกระทำนี้จะทำให้นักเรียนถูกปิดการใช้งาน
-			</DialogDescription>
-		</DialogHeader>
-		<DialogFooter>
-			<Button variant="outline" onclick={() => (showDeleteDialog = false)} disabled={deleting}>
-				ยกเลิก
-			</Button>
-			<Button variant="destructive" onclick={confirmDelete} disabled={deleting} class="gap-2">
-				<Trash2 class="h-4 w-4" />
-				{deleting ? 'กำลังลบ...' : 'ลบนักเรียน'}
-			</Button>
-		</DialogFooter>
-	</DialogContent>
-</Dialog>
+{#if canDeleteStudent}
+	<Dialog bind:open={showDeleteDialog}>
+		<DialogContent>
+			<DialogHeader>
+				<DialogTitle>ยืนยันการลบนักเรียน</DialogTitle>
+				<DialogDescription>
+					คุณแน่ใจหรือไม่ว่าต้องการลบนักเรียน
+					{#if studentToDelete}
+						<strong>
+							{studentToDelete.title || ''}{studentToDelete.first_name}
+							{studentToDelete.last_name}
+						</strong>
+					{/if}? การกระทำนี้จะทำให้นักเรียนถูกปิดการใช้งาน
+				</DialogDescription>
+			</DialogHeader>
+			<DialogFooter>
+				<Button variant="outline" onclick={() => (showDeleteDialog = false)} disabled={deleting}>
+					ยกเลิก
+				</Button>
+				<Button variant="destructive" onclick={confirmDelete} disabled={deleting} class="gap-2">
+					<Trash2 class="h-4 w-4" />
+					{deleting ? 'กำลังลบ...' : 'ลบนักเรียน'}
+				</Button>
+			</DialogFooter>
+		</DialogContent>
+	</Dialog>
+{/if}

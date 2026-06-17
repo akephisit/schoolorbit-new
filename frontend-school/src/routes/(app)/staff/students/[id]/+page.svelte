@@ -5,8 +5,11 @@
 	import { Label } from '$lib/components/ui/label';
 	import { Card } from '$lib/components/ui/card';
 	import { Badge } from '$lib/components/ui/badge';
+	import { Alert, AlertDescription, AlertTitle } from '$lib/components/ui/alert';
+	import { PERMISSIONS } from '$lib/permissions/registry';
+	import { can } from '$lib/stores/permissions';
 	import { toast } from 'svelte-sonner';
-	import { ArrowLeft, Edit } from 'lucide-svelte';
+	import { AlertTriangle, ArrowLeft, Edit } from 'lucide-svelte';
 	import { getStudent, type Student } from '$lib/api/students';
 
 	let { params }: PageProps = $props();
@@ -14,11 +17,32 @@
 	let student = $state<Student | null>(null);
 	let loading = $state(true);
 
+	const canReadStudent = $derived(
+		$can.hasAny(
+			PERMISSIONS.STUDENT_READ_SCHOOL,
+			PERMISSIONS.STUDENT_READ_ASSIGNED,
+			PERMISSIONS.STUDENT_READ_OWN
+		)
+	);
+	const canUpdateStudent = $derived($can.has(PERMISSIONS.STUDENT_UPDATE_ALL));
+	const canReadStudentPii = $derived(
+		$can.hasAny(
+			PERMISSIONS.STUDENT_PII_READ_SCHOOL,
+			PERMISSIONS.STUDENT_PII_READ_ASSIGNED,
+			PERMISSIONS.STUDENT_PII_READ_OWN
+		)
+	);
+
 	onMount(async () => {
 		await loadStudent();
 	});
 
 	async function loadStudent() {
+		if (!canReadStudent) {
+			student = null;
+			loading = false;
+			return;
+		}
 		loading = true;
 		try {
 			const response = await getStudent(studentId);
@@ -58,7 +82,7 @@
 			</div>
 		</div>
 
-		{#if student}
+		{#if student && canUpdateStudent}
 			<Button href="/staff/students/{studentId}/edit">
 				<Edit class="w-4 h-4 mr-2" />
 				แก้ไข
@@ -66,7 +90,15 @@
 		{/if}
 	</div>
 
-	{#if loading}
+	{#if !canReadStudent}
+		<Alert>
+			<AlertTriangle class="h-4 w-4" />
+			<AlertTitle>ไม่มีสิทธิ์ดูข้อมูลนักเรียน</AlertTitle>
+			<AlertDescription>
+				บัญชีนี้ยังไม่มีสิทธิ์อ่านข้อมูลนักเรียนคนนี้ในขอบเขตที่ระบบอนุญาต
+			</AlertDescription>
+		</Alert>
+	{:else if loading}
 		<Card class="p-6">
 			<div class="space-y-4">
 				{#each Array.from({ length: 6 }, (_, i) => i) as i (i)}
@@ -122,12 +154,21 @@
 					</div>
 				</div>
 
-				<div>
-					<Label>เลขบัตรประชาชน</Label>
-					<div class="px-3 py-2 bg-muted/50 rounded-md">
-						{student.national_id || '-'}
+				{#if canReadStudentPii}
+					<div>
+						<Label>เลขบัตรประชาชน</Label>
+						<div class="px-3 py-2 bg-muted/50 rounded-md">
+							{student.national_id || '-'}
+						</div>
 					</div>
-				</div>
+				{:else}
+					<div>
+						<Label>เลขบัตรประชาชน</Label>
+						<div class="px-3 py-2 bg-muted/50 rounded-md text-muted-foreground">
+							ไม่มีสิทธิ์ดูข้อมูลส่วนบุคคล
+						</div>
+					</div>
+				{/if}
 
 				<div>
 					<Label>อีเมล</Label>

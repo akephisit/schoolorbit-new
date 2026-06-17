@@ -861,6 +861,71 @@ test('academic course planning pages gate read and manage actions', async () => 
 	}
 });
 
+test('student workspace pages gate read, mutation, and PII actions', async () => {
+	const routeExpectations = [
+		{
+			file: 'frontend-school/src/routes/(app)/staff/students/+page.svelte',
+			imports: ['$lib/components/ui/alert'],
+			permissions: [
+				'PERMISSIONS.STUDENT_READ_SCHOOL',
+				'PERMISSIONS.STUDENT_READ_ASSIGNED',
+				'PERMISSIONS.STUDENT_CREATE_ALL',
+				'PERMISSIONS.STUDENT_UPDATE_ALL',
+				'PERMISSIONS.STUDENT_DELETE_ALL'
+			],
+			identifiers: ['canReadStudents', 'canCreateStudent', 'canUpdateStudent', 'canDeleteStudent']
+		},
+		{
+			file: 'frontend-school/src/routes/(app)/staff/students/[id]/+page.svelte',
+			imports: ['$lib/components/ui/alert'],
+			permissions: [
+				'PERMISSIONS.STUDENT_READ_SCHOOL',
+				'PERMISSIONS.STUDENT_READ_ASSIGNED',
+				'PERMISSIONS.STUDENT_UPDATE_ALL',
+				'PERMISSIONS.STUDENT_PII_READ_SCHOOL',
+				'PERMISSIONS.STUDENT_PII_READ_ASSIGNED'
+			],
+			identifiers: ['canReadStudent', 'canUpdateStudent', 'canReadStudentPii']
+		},
+		{
+			file: 'frontend-school/src/routes/(app)/staff/students/[id]/edit/+page.svelte',
+			imports: ['$lib/components/ui/alert'],
+			permissions: [
+				'PERMISSIONS.STUDENT_READ_SCHOOL',
+				'PERMISSIONS.STUDENT_READ_ASSIGNED',
+				'PERMISSIONS.STUDENT_UPDATE_ALL',
+				'PERMISSIONS.STUDENT_DELETE_ALL',
+				'PERMISSIONS.STUDENT_PII_READ_SCHOOL',
+				'PERMISSIONS.STUDENT_PII_READ_ASSIGNED'
+			],
+			identifiers: ['canReadStudent', 'canUpdateStudent', 'canDeleteStudent', 'canReadStudentPii']
+		},
+		{
+			file: 'frontend-school/src/routes/(app)/staff/students/new/+page.svelte',
+			imports: ['$lib/components/ui/alert'],
+			permissions: ['PERMISSIONS.STUDENT_CREATE_ALL', 'PERMISSIONS.STUDENT_PII_READ_SCHOOL'],
+			identifiers: ['canCreateStudent', 'canHandleStudentPii']
+		}
+	];
+	const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+	for (const expectation of routeExpectations) {
+		const source = stripComments(await readFile(path.join(repoRoot, expectation.file), 'utf8'));
+
+		for (const requiredImport of expectation.imports) {
+			assert.match(source, new RegExp(escapeRegex(requiredImport)));
+		}
+
+		for (const requiredPermission of expectation.permissions) {
+			assert.match(source, new RegExp(escapeRegex(requiredPermission)));
+		}
+
+		for (const identifier of expectation.identifiers) {
+			assert.match(source, new RegExp(`\\b${identifier}\\b`));
+		}
+	}
+});
+
 test('frontend app pages have route guard metadata or guarded ancestor fallback', async () => {
 	const appRoutesDir = path.join(repoRoot, 'frontend-school/src/routes/(app)');
 	const pageSvelteFiles = await listFiles(appRoutesDir, (file) => file.endsWith('+page.svelte'));
