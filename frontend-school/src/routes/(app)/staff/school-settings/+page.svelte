@@ -4,6 +4,7 @@
 	import { can } from '$lib/stores/permissions';
 	import { Button } from '$lib/components/ui/button';
 	import { Label } from '$lib/components/ui/label';
+	import { PageShell } from '$lib/components/app-layout';
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import {
 		Card,
@@ -12,10 +13,8 @@
 		CardHeader,
 		CardTitle
 	} from '$lib/components/ui/card';
-	import { ArrowLeft, Save, Upload, ImageOff, X } from 'lucide-svelte';
+	import { Save, Upload, ImageOff, X } from 'lucide-svelte';
 	import { toast } from 'svelte-sonner';
-	import { goto } from '$app/navigation';
-	import { resolve } from '$app/paths';
 	import { getSchoolSettings, updateSchoolSettings, deleteSchoolLogo } from '$lib/api/school';
 	import { uploadFile } from '$lib/api/files';
 
@@ -109,18 +108,11 @@
 	<title>ตั้งค่าโรงเรียน - SchoolOrbit</title>
 </svelte:head>
 
-<div class="space-y-6">
-	<!-- Header -->
-	<div class="flex items-center gap-4">
-		<Button variant="ghost" size="icon" onclick={() => goto(resolve('/staff'))}>
-			<ArrowLeft class="h-5 w-5" />
-		</Button>
-		<div>
-			<h1 class="text-3xl font-bold text-foreground">ตั้งค่าโรงเรียน</h1>
-			<p class="text-muted-foreground mt-1">จัดการข้อมูลและการแสดงผลของโรงเรียน</p>
-		</div>
-	</div>
-
+<PageShell
+	title="ตั้งค่าโรงเรียน"
+	description="จัดการข้อมูลและการแสดงผลของโรงเรียน"
+	backHref="/staff"
+>
 	{#if !canReadSettings}
 		<PageState
 			variant="permission"
@@ -217,4 +209,4 @@
 			</CardContent>
 		</Card>
 	{/if}
-</div>
+</PageShell>

@@ -1,11 +1,9 @@
 <script lang="ts">
 	import type { PageProps } from './$types';
-	import { goto } from '$app/navigation';
-	import { resolve } from '$app/paths';
-	import { Button } from '$lib/components/ui/button';
+	import { PageShell } from '$lib/components/app-layout';
 	import { Card, CardContent, CardHeader, CardTitle } from '$lib/components/ui/card';
 	import { Tabs, TabsContent, TabsList, TabsTrigger } from '$lib/components/ui/tabs';
-	import { ArrowLeft, User, Shield } from 'lucide-svelte';
+	import { User, Shield } from 'lucide-svelte';
 	import UserRoleManager from '$lib/components/UserRoleManager.svelte';
 
 	let { params }: PageProps = $props();
@@ -17,17 +15,7 @@
 	<title>จัดการสิทธิ์ - SchoolOrbit</title>
 </svelte:head>
 
-<div class="space-y-6">
-	<div class="flex items-center gap-4">
-		<Button variant="ghost" size="icon" onclick={() => goto(resolve('/staff'))}>
-			<ArrowLeft class="h-5 w-5" />
-		</Button>
-		<div class="flex-1">
-			<h1 class="text-3xl font-bold text-foreground">จัดการสิทธิ์ผู้ใช้งาน</h1>
-			<p class="text-muted-foreground mt-1">บทบาทและสิทธิ์การเข้าถึง</p>
-		</div>
-	</div>
-
+<PageShell title="จัดการสิทธิ์ผู้ใช้งาน" description="บทบาทและสิทธิ์การเข้าถึง" backHref="/staff">
 	<Tabs bind:value={activeTab}>
 		<TabsList>
 			<TabsTrigger value="roles" class="gap-2">
@@ -55,7 +43,7 @@
 			</Card>
 		</TabsContent>
 	</Tabs>
-</div>
+</PageShell>
 
 <style>
 	:global(body) {

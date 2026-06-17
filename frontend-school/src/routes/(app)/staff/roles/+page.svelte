@@ -6,6 +6,7 @@
 	import { PERMISSIONS } from '$lib/permissions/registry';
 	import { can } from '$lib/stores/permissions';
 	import { Button } from '$lib/components/ui/button';
+	import { PageShell } from '$lib/components/app-layout';
 	import { Badge } from '$lib/components/ui/badge';
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import {
@@ -78,20 +79,15 @@
 	<title>จัดการบทบาท - SchoolOrbit</title>
 </svelte:head>
 
-<div class="space-y-6">
-	<!-- Header -->
-	<div class="flex items-center justify-between">
-		<div>
-			<h1 class="text-3xl font-bold text-foreground">จัดการบทบาท</h1>
-			<p class="text-muted-foreground mt-1">กำหนดบทบาทและสิทธิ์การเข้าถึงของผู้ใช้งาน</p>
-		</div>
+<PageShell title="จัดการบทบาท" description="กำหนดบทบาทและสิทธิ์การเข้าถึงของผู้ใช้งาน">
+	{#snippet actions()}
 		{#if canCreateRoles}
 			<Button onclick={() => goto(resolve('/staff/roles/new'))} class="gap-2">
 				<Plus class="h-4 w-4" />
 				สร้างบทบาทใหม่
 			</Button>
 		{/if}
-	</div>
+	{/snippet}
 
 	{#if !canReadRoles}
 		<PageState
@@ -180,7 +176,7 @@
 			{/each}
 		</div>
 	{/if}
-</div>
+</PageShell>
 
 <style>
 	:global(body) {

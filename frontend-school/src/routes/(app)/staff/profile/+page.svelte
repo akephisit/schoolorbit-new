@@ -8,6 +8,7 @@
 	import { Textarea } from '$lib/components/ui/textarea';
 	import { DatePicker } from '$lib/components/ui/date-picker';
 	import * as Select from '$lib/components/ui/select';
+	import { PageShell } from '$lib/components/app-layout';
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import {
 		Card,
@@ -17,20 +18,8 @@
 		CardTitle
 	} from '$lib/components/ui/card';
 	import ProfileImageUpload from '$lib/components/forms/ProfileImageUpload.svelte';
-	import {
-		ArrowLeft,
-		Save,
-		User,
-		Calendar,
-		Mail,
-		Phone,
-		MapPin,
-		Shield,
-		Lock
-	} from 'lucide-svelte';
+	import { Save, User, Calendar, Mail, Phone, MapPin, Shield, Lock } from 'lucide-svelte';
 	import { toast } from 'svelte-sonner';
-	import { goto } from '$app/navigation';
-	import { resolve } from '$app/paths';
 
 	const user = $derived($authStore.user);
 
@@ -183,23 +172,13 @@
 	<title>โปรไฟล์ของฉัน - SchoolOrbit</title>
 </svelte:head>
 
-<div class="space-y-6">
-	<!-- Header -->
-	<div class="flex items-center justify-between">
-		<div class="flex items-center gap-4">
-			<Button variant="ghost" size="icon" onclick={() => goto(resolve('/staff'))}>
-				<ArrowLeft class="h-5 w-5" />
-			</Button>
-			<div>
-				<h1 class="text-3xl font-bold text-foreground">โปรไฟล์ของฉัน</h1>
-				<p class="text-muted-foreground mt-1">จัดการข้อมูลส่วนตัวของคุณ</p>
-			</div>
-		</div>
+<PageShell title="โปรไฟล์ของฉัน" description="จัดการข้อมูลส่วนตัวของคุณ" backHref="/staff">
+	{#snippet actions()}
 		<Button onclick={handleSubmit} disabled={saving || loading} class="gap-2">
 			<Save class="h-4 w-4" />
 			{saving ? 'กำลังบันทึก...' : 'บันทึกการเปลี่ยนแปลง'}
 		</Button>
-	</div>
+	{/snippet}
 
 	{#if loading}
 		<PageSkeleton variant="form" rows={6} />
@@ -476,4 +455,4 @@
 			</Card>
 		</form>
 	{/if}
-</div>
+</PageShell>

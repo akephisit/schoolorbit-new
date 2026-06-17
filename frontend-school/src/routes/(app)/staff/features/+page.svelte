@@ -3,6 +3,7 @@
 	import { PERMISSIONS } from '$lib/permissions/registry';
 	import { can } from '$lib/stores/permissions';
 	import { Button } from '$lib/components/ui/button';
+	import { PageShell } from '$lib/components/app-layout';
 	import { Card } from '$lib/components/ui/card';
 	import { Switch } from '$lib/components/ui/switch';
 	import { Badge } from '$lib/components/ui/badge';
@@ -83,13 +84,8 @@
 	<title>จัดการระบบงาน - Feature Toggles</title>
 </svelte:head>
 
-<div class="space-y-6">
-	<!-- Header -->
-	<div class="flex items-center justify-between">
-		<div>
-			<h1 class="text-3xl font-bold">จัดการระบบงาน</h1>
-			<p class="text-muted-foreground mt-1">เปิด/ปิดการทำงานของระบบย่อยต่างๆ</p>
-		</div>
+<PageShell title="จัดการระบบงาน" description="เปิด/ปิดการทำงานของระบบย่อยต่างๆ">
+	{#snippet actions()}
 		{#if canReadFeatures}
 			<Button onclick={loadFeatures} variant="outline" disabled={loading}>
 				{#if loading}
@@ -98,7 +94,7 @@
 				รีเฟรช
 			</Button>
 		{/if}
-	</div>
+	{/snippet}
 
 	<!-- Loading State -->
 	{#if !canReadFeatures}
@@ -168,7 +164,7 @@
 			{/each}
 		</div>
 	{/if}
-</div>
+</PageShell>
 
 <style>
 	:global(body) {

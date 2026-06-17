@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { Card } from '$lib/components/ui/card';
 	import { Button } from '$lib/components/ui/button';
+	import { PageShell } from '$lib/components/app-layout';
 	import { PERMISSION_MODULES } from '$lib/permissions/registry';
 	import { can } from '$lib/stores/permissions';
 	import { Users, GraduationCap, Calendar, FileText, Settings } from 'lucide-svelte';
@@ -22,13 +23,7 @@
 	<title>Staff Dashboard - SchoolOrbit</title>
 </svelte:head>
 
-<div class="space-y-6">
-	<!-- Header -->
-	<div>
-		<h1 class="text-3xl font-bold text-foreground">Staff Dashboard</h1>
-		<p class="text-muted-foreground mt-1">ภาพรวมและการจัดการระบบ</p>
-	</div>
-
+<PageShell title="Staff Dashboard" description="ภาพรวมและการจัดการระบบ">
 	<!-- Quick Stats -->
 	<div class="grid grid-cols-1 md:grid-cols-3 gap-6">
 		<Card class="p-6 hover:shadow-md transition-shadow">
@@ -119,4 +114,4 @@
 			<p>ยังไม่มีกิจกรรม</p>
 		</div>
 	</Card>
-</div>
+</PageShell>

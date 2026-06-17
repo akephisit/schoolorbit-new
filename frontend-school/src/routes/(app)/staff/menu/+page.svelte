@@ -11,6 +11,7 @@
 	import { PERMISSIONS } from '$lib/permissions/registry';
 	import { can } from '$lib/stores/permissions';
 	import { Button } from '$lib/components/ui/button';
+	import { PageShell } from '$lib/components/app-layout';
 	import { Card } from '$lib/components/ui/card';
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import * as Tabs from '$lib/components/ui/tabs';
@@ -335,15 +336,7 @@
 	<title>จัดการเมนู - Menu Management</title>
 </svelte:head>
 
-<div class="space-y-6">
-	<!-- Header -->
-	<div class="flex items-center justify-between">
-		<div>
-			<h1 class="text-3xl font-bold">จัดการเมนู</h1>
-			<p class="text-muted-foreground mt-1">จัดการโครงสร้างเมนูและกลุ่มเมนู (Native Drag & Drop)</p>
-		</div>
-	</div>
-
+<PageShell title="จัดการเมนู" description="จัดการโครงสร้างเมนูและกลุ่มเมนู (Native Drag & Drop)">
 	{#if !canReadMenu}
 		<PageState
 			variant="permission"
@@ -511,7 +504,7 @@
 			</Tabs.Content>
 		</Tabs.Root>
 	{/if}
-</div>
+</PageShell>
 
 <!-- Group Management Dialog -->
 <GroupManagementDialog
