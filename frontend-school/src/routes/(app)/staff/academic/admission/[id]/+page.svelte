@@ -33,6 +33,7 @@
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import { Badge } from '$lib/components/ui/badge';
+	import { PageShell } from '$lib/components/app-layout';
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import * as Card from '$lib/components/ui/card';
 	import * as Dialog from '$lib/components/ui/dialog';
@@ -40,7 +41,6 @@
 	import { Separator } from '$lib/components/ui/separator';
 	import { toast } from 'svelte-sonner';
 	import {
-		ArrowLeft,
 		Settings,
 		BookOpen,
 		GraduationCap,
@@ -481,750 +481,756 @@
 	<title>{data.title} - SchoolOrbit</title>
 </svelte:head>
 
-{#if loading}
-	<PageSkeleton variant="detail" />
-{:else if !canReadAdmission}
-	<PageState
-		variant="permission"
-		title="ไม่มีสิทธิ์ดูรอบรับสมัคร"
-		description="บัญชีนี้เข้า module รับสมัครได้ แต่ยังไม่มีสิทธิ์อ่านรายละเอียดรอบรับสมัคร"
-	/>
-{:else if error}
-	<PageState
-		variant="error"
-		title="โหลดรายละเอียดรอบรับสมัครไม่สำเร็จ"
-		description={error}
-		actionLabel="ลองอีกครั้ง"
-		onaction={load}
-	/>
-{:else if round}
-	<div class="space-y-6">
-		<!-- Header Actions -->
-		<div class="flex items-center justify-between">
-			<Button href="/staff/academic/admission" variant="ghost" size="sm" class="gap-1">
-				<ArrowLeft class="w-4 h-4" /> ย้อนกลับ
+<PageShell
+	title={round?.name ?? 'รายละเอียดรอบรับสมัคร'}
+	description={round
+		? `ปีการศึกษา ${round.academicYearName} | ชั้น ${round.gradeLevelName}`
+		: 'ตรวจสอบและจัดการรอบรับสมัคร'}
+	backHref="/staff/academic/admission"
+>
+	{#snippet actions()}
+		{#if canManageAdmission && round}
+			<Button
+				variant="destructive"
+				size="sm"
+				class="gap-1"
+				onclick={() => {
+					showDeleteDialog = true;
+				}}
+			>
+				<Trash2 class="w-4 h-4" /> ลบรอบ
 			</Button>
+		{/if}
+	{/snippet}
+
+	{#if loading}
+		<PageSkeleton variant="detail" />
+	{:else if !canReadAdmission}
+		<PageState
+			variant="permission"
+			title="ไม่มีสิทธิ์ดูรอบรับสมัคร"
+			description="บัญชีนี้เข้า module รับสมัครได้ แต่ยังไม่มีสิทธิ์อ่านรายละเอียดรอบรับสมัคร"
+		/>
+	{:else if error}
+		<PageState
+			variant="error"
+			title="โหลดรายละเอียดรอบรับสมัครไม่สำเร็จ"
+			description={error}
+			actionLabel="ลองอีกครั้ง"
+			onaction={load}
+		/>
+	{:else if round}
+		<div class="space-y-6">
+			<!-- Round Info Card -->
+			<Card.Root>
+				<Card.Content class="p-5">
+					<div class="flex flex-col md:flex-row md:items-start justify-between gap-4">
+						<div class="space-y-1">
+							<div class="flex items-center gap-2 flex-wrap">
+								<Badge variant={statusVariant[round.status] ?? 'secondary'}>
+									{roundStatusLabel[round.status]}
+								</Badge>
+							</div>
+							<div class="text-sm text-muted-foreground space-y-0.5">
+								<p>ปีการศึกษา: {round.academicYearName} | ชั้น: {round.gradeLevelName}</p>
+								<p>
+									รับสมัคร: {formatDate(round.applyStartDate)} – {formatDate(round.applyEndDate)}
+								</p>
+								{#if round.examDate}<p>วันสอบ: {formatDate(round.examDate)}</p>{/if}
+								{#if round.resultAnnounceDate}<p>
+										ประกาศผล: {formatDate(round.resultAnnounceDate)}
+									</p>{/if}
+							</div>
+						</div>
+						{#if canManageAdmission}
+							<!-- Status Stepper -->
+							<div class="flex flex-col gap-1.5">
+								<p class="text-xs text-muted-foreground font-medium">เปลี่ยนสถานะ:</p>
+								<div class="flex flex-wrap gap-1">
+									{#each statusFlow as s (s)}
+										<button
+											onclick={() => {
+												if (round?.status !== s) pendingStatus = s;
+											}}
+											class="text-xs px-2 py-1 rounded border transition-colors {round.status === s
+												? 'border-primary bg-primary text-primary-foreground'
+												: 'border-border hover:bg-accent'}"
+										>
+											{roundStatusLabel[s]}
+										</button>
+									{/each}
+								</div>
+							</div>
+						{/if}
+					</div>
+
+					<Separator class="my-4" />
+
+					<!-- Visibility Toggle -->
+					{#if canManageAdmission}
+						<div class="flex items-center justify-between py-1">
+							<div>
+								<p class="text-sm font-medium">แสดงรอบบน portal นักเรียน</p>
+								<p class="text-xs text-muted-foreground">
+									{round.isVisible
+										? 'รอบนี้ปรากฏบน portal — นักเรียนเห็นและสามารถตรวจสอบสถานะได้'
+										: 'ซ่อนอยู่ — นักเรียนไม่เห็นรอบนี้บน portal'}
+								</p>
+							</div>
+							<Button
+								variant={round.isVisible ? 'default' : 'outline'}
+								size="sm"
+								disabled={togglingVisibility}
+								onclick={handleVisibilityToggle}
+								class="shrink-0 gap-1.5"
+							>
+								{#if togglingVisibility}
+									<Loader2 class="w-3 h-3 animate-spin" />
+								{:else if round.isVisible}
+									<Check class="w-3 h-3" />
+								{/if}
+								{round.isVisible ? 'แสดงอยู่' : 'ซ่อนอยู่'}
+							</Button>
+						</div>
+					{/if}
+
+					<!-- Show Scores Toggle -->
+					{#if canScoreAdmission}
+						{@const showScores = round.selectionSettings?.showScores ?? false}
+						<div class="flex items-center justify-between py-1">
+							<div>
+								<p class="text-sm font-medium">แสดงคะแนนบน portal นักเรียน</p>
+								<p class="text-xs text-muted-foreground">
+									{showScores
+										? 'นักเรียนเห็นคะแนนสอบของตัวเองบน portal'
+										: 'ซ่อนคะแนน — นักเรียนไม่เห็นคะแนน'}
+								</p>
+							</div>
+							<Button
+								variant={showScores ? 'default' : 'outline'}
+								size="sm"
+								disabled={togglingShowScores}
+								onclick={handleShowScoresToggle}
+								class="shrink-0 gap-1.5"
+							>
+								{#if togglingShowScores}
+									<Loader2 class="w-3 h-3 animate-spin" />
+								{:else if showScores}
+									<Check class="w-3 h-3" />
+								{/if}
+								{showScores ? 'แสดงอยู่' : 'ซ่อนอยู่'}
+							</Button>
+						</div>
+					{/if}
+
+					<Separator class="my-4" />
+
+					<!-- Share Links Section -->
+					<div class="space-y-3">
+						<h3 class="text-sm font-semibold flex items-center gap-1.5">
+							<LinkIcon class="w-4 h-4 text-primary" /> ลิงก์สำหรับนักเรียน
+						</h3>
+						<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+							<div class="space-y-1.5">
+								<Label class="text-xs text-muted-foreground"
+									>ลิงก์กรอกใบสมัคร (เปิดเมื่อสถานะ "เปิดรับสมัคร")</Label
+								>
+								<div class="flex items-center gap-2">
+									<Input
+										value={`${page.url.origin}/apply/${id}`}
+										readonly
+										class="h-9 bg-muted/50 font-mono text-xs"
+									/>
+									<Button
+										variant="secondary"
+										size="icon"
+										class="h-9 w-9 shrink-0"
+										onclick={() => copyLink(`/apply/${id}`)}
+									>
+										<Copy class="w-4 h-4" />
+									</Button>
+								</div>
+							</div>
+							<div class="space-y-1.5">
+								<Label class="text-xs text-muted-foreground">ลิงก์รวมรอบรับสมัคร / ระบบมอบตัว</Label
+								>
+								<div class="flex items-center gap-2">
+									<Input
+										value={`${page.url.origin}/apply`}
+										readonly
+										class="h-9 bg-muted/50 font-mono text-xs"
+									/>
+									<Button
+										variant="secondary"
+										size="icon"
+										class="h-9 w-9 shrink-0"
+										onclick={() => copyLink(`/apply`)}
+									>
+										<Copy class="w-4 h-4" />
+									</Button>
+								</div>
+							</div>
+						</div>
+					</div>
+
+					<Separator class="my-4" />
+
+					<!-- Quick Links -->
+					<div class="flex flex-wrap gap-2">
+						<Button
+							href="/staff/academic/admission/{id}/applications"
+							variant="outline"
+							size="sm"
+							class="gap-1.5"
+							title={canVerifyAdmission ? 'ดูและตรวจใบสมัคร' : 'ดูใบสมัคร'}
+						>
+							<Users class="w-3.5 h-3.5" /> ใบสมัคร ({round.applicationCount ?? 0})
+						</Button>
+						{#if canManageAdmission}
+							<Button
+								href="/staff/academic/admission/{id}/exam-rooms"
+								variant="outline"
+								size="sm"
+								class="gap-1.5"
+							>
+								<DoorOpen class="w-3.5 h-3.5" /> ห้องสอบ
+							</Button>
+						{/if}
+						{#if canScoreAdmission}
+							<Button
+								href="/staff/academic/admission/{id}/scores"
+								variant="outline"
+								size="sm"
+								class="gap-1.5"
+							>
+								<ClipboardList class="w-3.5 h-3.5" /> กรอกคะแนน
+							</Button>
+							<Button
+								href="/staff/academic/admission/{id}/selections"
+								variant="outline"
+								size="sm"
+								class="gap-1.5"
+							>
+								<GraduationCap class="w-3.5 h-3.5" /> จัดห้อง
+							</Button>
+						{/if}
+						{#if canManageAdmission}
+							<Button
+								href="/staff/academic/admission/{id}/student-ids"
+								variant="outline"
+								size="sm"
+								class="gap-1.5"
+							>
+								<Hash class="w-3.5 h-3.5" /> กำหนดเลขประจำตัว
+							</Button>
+						{/if}
+						{#if canEnrollAdmission}
+							<Button
+								href="/staff/academic/admission/{id}/enrollment"
+								variant="outline"
+								size="sm"
+								class="gap-1.5"
+							>
+								<Check class="w-3.5 h-3.5" /> รับมอบตัว
+							</Button>
+						{/if}
+						{#if reportConfig.reportMode !== null}
+							<Button
+								href="/staff/academic/admission/{id}/report"
+								variant="outline"
+								size="sm"
+								class="gap-1.5"
+							>
+								<BarChart2 class="w-3.5 h-3.5" /> ดูรายงาน
+							</Button>
+						{/if}
+					</div>
+				</Card.Content>
+			</Card.Root>
 
 			{#if canManageAdmission}
-				<Button
-					variant="destructive"
-					size="sm"
-					class="gap-1"
-					onclick={() => {
-						showDeleteDialog = true;
-					}}
-				>
-					<Trash2 class="w-4 h-4" /> ลบรอบ
-				</Button>
+				<div class="grid md:grid-cols-2 gap-6">
+					<!-- Tracks -->
+					<Card.Root>
+						<Card.Header class="flex flex-row items-center justify-between pb-3">
+							<Card.Title class="flex items-center gap-2 text-base">
+								<BookOpen class="w-4 h-4" /> สายการเรียน ({tracks.length})
+							</Card.Title>
+							<Button size="sm" onclick={openNewTrack} class="gap-1 h-8">
+								<Plus class="w-3.5 h-3.5" /> เพิ่ม
+							</Button>
+						</Card.Header>
+
+						{#if showTrackForm}
+							<div class="px-4 pb-4 space-y-3 border-b border-border">
+								{#if !editingTrack}
+									<div class="space-y-1.5">
+										<Label for="track-plan"
+											>แผนการเรียน <span class="text-destructive">*</span></Label
+										>
+										<Select.Root type="single" bind:value={trackForm.studyPlanId}>
+											<Select.Trigger id="track-plan" class="w-full">
+												{studyPlans.find((s) => s.id === trackForm.studyPlanId)?.nameTh ??
+													'-- เลือก --'}
+											</Select.Trigger>
+											<Select.Content>
+												{#each studyPlans as sp (sp.id)}
+													<Select.Item value={sp.id}>{sp.nameTh}</Select.Item>
+												{/each}
+											</Select.Content>
+										</Select.Root>
+									</div>
+								{/if}
+								<div class="space-y-1.5">
+									<Label for="track-name">ชื่อสาย <span class="text-destructive">*</span></Label>
+									<Input
+										id="track-name"
+										bind:value={trackForm.name}
+										placeholder="เช่น สายวิทย์-คณิต"
+										class="h-8 text-sm"
+									/>
+								</div>
+								<div class="grid grid-cols-2 gap-2">
+									<div class="space-y-1.5">
+										<Label for="track-cap">จำนวนรับ (override)</Label>
+										<Input
+											id="track-cap"
+											bind:value={trackForm.capacityOverride}
+											type="number"
+											placeholder="อัตโนมัติ"
+											class="h-8 text-sm"
+										/>
+									</div>
+									<div class="space-y-1.5">
+										<Label for="track-tie">Tie-breaking</Label>
+										<Select.Root type="single" bind:value={trackForm.tiebreakMethod}>
+											<Select.Trigger id="track-tie" class="w-full h-8 text-sm">
+												{trackForm.tiebreakMethod === 'gpa'
+													? 'GPA สูงกว่าได้ก่อน'
+													: 'สมัครก่อนได้ก่อน'}
+											</Select.Trigger>
+											<Select.Content>
+												<Select.Item value="applied_at">สมัครก่อนได้ก่อน</Select.Item>
+												<Select.Item value="gpa">GPA สูงกว่าได้ก่อน</Select.Item>
+											</Select.Content>
+										</Select.Root>
+									</div>
+								</div>
+								<div class="flex gap-2">
+									<Button size="sm" onclick={saveTrack} disabled={savingTrack} class="h-7 text-xs">
+										{#if savingTrack}<Loader2 class="w-3 h-3 mr-1 animate-spin" />{/if}
+										บันทึก
+									</Button>
+									<Button
+										size="sm"
+										variant="ghost"
+										onclick={() => (showTrackForm = false)}
+										class="h-7 text-xs">ยกเลิก</Button
+									>
+								</div>
+							</div>
+						{/if}
+
+						<Card.Content class="p-0">
+							<div class="divide-y divide-border">
+								{#each tracks as t (t.id)}
+									<div class="px-4 py-3 flex items-center justify-between">
+										<div>
+											<p class="font-medium text-sm">{t.name}</p>
+											<p class="text-xs text-muted-foreground">
+												{t.studyPlanName ?? '-'} • รับ {t.computedCapacity ?? '-'} คน ({t.roomCount ??
+													0} ห้อง) • สมัคร {t.applicationCount ?? 0}
+											</p>
+										</div>
+										<div class="flex gap-1">
+											<Button
+												variant="ghost"
+												size="icon"
+												class="h-7 w-7"
+												onclick={() => openEditTrack(t)}
+											>
+												<Pencil class="w-3.5 h-3.5" />
+											</Button>
+											<Button
+												variant="ghost"
+												size="icon"
+												class="h-7 w-7 text-destructive hover:text-destructive"
+												onclick={() => removeTrack(t)}
+											>
+												<Trash2 class="w-3.5 h-3.5" />
+											</Button>
+										</div>
+									</div>
+								{:else}
+									<p class="px-4 py-8 text-center text-sm text-muted-foreground">
+										ยังไม่มีสายการเรียน
+									</p>
+								{/each}
+							</div>
+						</Card.Content>
+					</Card.Root>
+
+					<!-- Exam Subjects -->
+					<Card.Root>
+						<Card.Header class="flex flex-row items-center justify-between pb-3">
+							<Card.Title class="flex items-center gap-2 text-base">
+								<Settings class="w-4 h-4" /> วิชาที่สอบ ({subjects.length})
+							</Card.Title>
+							<Button size="sm" onclick={openNewSubject} class="gap-1 h-8">
+								<Plus class="w-3.5 h-3.5" /> เพิ่ม
+							</Button>
+						</Card.Header>
+
+						{#if showSubjectForm}
+							<div class="px-4 pb-4 space-y-3 border-b border-border">
+								<div class="grid grid-cols-2 gap-2">
+									<div class="space-y-1.5">
+										<Label for="sub-name">ชื่อวิชา <span class="text-destructive">*</span></Label>
+										<Input
+											id="sub-name"
+											bind:value={subjectForm.name}
+											placeholder="วิชาคณิตศาสตร์"
+											class="h-8 text-sm"
+										/>
+									</div>
+									<div class="space-y-1.5">
+										<Label for="sub-code">รหัส</Label>
+										<Input
+											id="sub-code"
+											bind:value={subjectForm.code}
+											placeholder="MATH"
+											class="h-8 text-sm"
+										/>
+									</div>
+								</div>
+								<div class="grid grid-cols-2 gap-2">
+									<div class="space-y-1.5">
+										<Label for="sub-max">คะแนนเต็ม</Label>
+										<Input
+											id="sub-max"
+											bind:value={subjectForm.maxScore}
+											type="number"
+											class="h-8 text-sm"
+										/>
+									</div>
+									<div class="space-y-1.5">
+										<Label for="sub-order">ลำดับ</Label>
+										<Input
+											id="sub-order"
+											bind:value={subjectForm.displayOrder}
+											type="number"
+											class="h-8 text-sm"
+										/>
+									</div>
+								</div>
+								<div class="flex gap-2">
+									<Button
+										size="sm"
+										onclick={saveSubject}
+										disabled={savingSubject}
+										class="h-7 text-xs"
+									>
+										{#if savingSubject}<Loader2 class="w-3 h-3 mr-1 animate-spin" />{/if}
+										บันทึก
+									</Button>
+									<Button
+										size="sm"
+										variant="ghost"
+										onclick={() => (showSubjectForm = false)}
+										class="h-7 text-xs">ยกเลิก</Button
+									>
+								</div>
+							</div>
+						{/if}
+
+						<Card.Content class="p-0">
+							<div class="divide-y divide-border">
+								{#each subjects as s (s.id)}
+									<div class="px-4 py-3 flex items-center justify-between">
+										<div>
+											<p class="font-medium text-sm">{s.name}</p>
+											<p class="text-xs text-muted-foreground">
+												{s.code ? `[${s.code}]` : ''} คะแนนเต็ม {s.maxScore}
+											</p>
+										</div>
+										<div class="flex gap-1">
+											<Button
+												variant="ghost"
+												size="icon"
+												class="h-7 w-7"
+												onclick={() => openEditSubject(s)}
+											>
+												<Pencil class="w-3.5 h-3.5" />
+											</Button>
+											<Button
+												variant="ghost"
+												size="icon"
+												class="h-7 w-7 text-destructive hover:text-destructive"
+												onclick={() => removeSubject(s)}
+											>
+												<Trash2 class="w-3.5 h-3.5" />
+											</Button>
+										</div>
+									</div>
+								{:else}
+									<p class="px-4 py-8 text-center text-sm text-muted-foreground">ยังไม่มีวิชา</p>
+								{/each}
+							</div>
+						</Card.Content>
+					</Card.Root>
+				</div>
+
+				<!-- Report Config Card -->
+				<Card.Root>
+					<Card.Header class="pb-3">
+						<div class="flex items-start justify-between gap-2">
+							<div>
+								<Card.Title class="flex items-center gap-2 text-base">
+									<BarChart2 class="w-4 h-4" /> การรายงาน
+								</Card.Title>
+								<Card.Description>ตั้งค่าการแบ่งกลุ่มผู้สมัครสำหรับรายงานสถิติ</Card.Description>
+							</div>
+							{#if copyableRounds.length > 0}
+								<Select.Root
+									type="single"
+									onValueChange={(roundId) => {
+										const src = copyableRounds.find((r) => r.id === roundId);
+										if (src) copyConfigFromRound(src);
+									}}
+								>
+									<Select.Trigger class="h-8 text-xs gap-1.5 w-auto shrink-0">
+										<Copy class="w-3.5 h-3.5" /> คัดลอกจากรอบอื่น
+									</Select.Trigger>
+									<Select.Content>
+										{#each copyableRounds as r (r.id)}
+											<Select.Item value={r.id}>
+												<span>{r.name}</span>
+												<span class="ml-2 text-xs text-muted-foreground">
+													({reportModeLabel[
+														r.reportConfig!.reportMode!
+													]}{#if r.reportConfig?.zone?.schools?.length}
+														· {r.reportConfig.zone.schools.length} โรงเรียน{/if})
+												</span>
+											</Select.Item>
+										{/each}
+									</Select.Content>
+								</Select.Root>
+							{/if}
+						</div>
+					</Card.Header>
+					<Card.Content class="space-y-4">
+						<!-- Mode selector -->
+						<div class="space-y-1.5">
+							<Label>ประเภทรายงาน</Label>
+							<Select.Root
+								type="single"
+								value={reportConfig.reportMode ?? 'none'}
+								onValueChange={(v) => {
+									const mode = v === 'none' ? null : (v as ReportConfig['reportMode']);
+									reportConfig = {
+										...reportConfig,
+										reportMode: mode,
+										zone: reportConfig.zone ?? { schools: [] },
+										institution: reportConfig.institution ?? { ownSchool: '' }
+									};
+								}}
+							>
+								<Select.Trigger class="w-full max-w-xs">
+									{#if reportConfig.reportMode === null}ปิด (ไม่ใช้)
+									{:else if reportConfig.reportMode === 'zone'}เขตพื้นที่บริการ
+									{:else if reportConfig.reportMode === 'institution'}สถานศึกษาเดิม
+									{:else}ทั้งสองประเภท{/if}
+								</Select.Trigger>
+								<Select.Content>
+									<Select.Item value="none">ปิด (ไม่ใช้)</Select.Item>
+									<Select.Item value="zone">เขตพื้นที่บริการ</Select.Item>
+									<Select.Item value="institution">สถานศึกษาเดิม</Select.Item>
+									<Select.Item value="both">ทั้งสองประเภท</Select.Item>
+								</Select.Content>
+							</Select.Root>
+						</div>
+
+						{#if reportConfig.reportMode === 'zone' || reportConfig.reportMode === 'both'}
+							<!-- Zone schools -->
+							<div class="space-y-2">
+								<Label>โรงเรียนในเขตพื้นที่บริการ</Label>
+								<div class="max-w-sm">
+									<SchoolCombobox
+										value=""
+										onProvinceSelect={() => {}}
+										onSelect={(name) => addZoneSchool(name)}
+									/>
+								</div>
+								{#if (reportConfig.zone?.schools ?? []).length > 0}
+									<div class="flex flex-wrap gap-1.5 mt-1">
+										{#each reportConfig.zone?.schools ?? [] as school (school)}
+											<span
+												class="inline-flex items-center gap-1 text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full"
+											>
+												{school}
+												<button
+													onclick={() => removeZoneSchool(school)}
+													class="hover:text-destructive"
+												>
+													<X class="w-3 h-3" />
+												</button>
+											</span>
+										{/each}
+									</div>
+								{/if}
+							</div>
+						{/if}
+
+						{#if reportConfig.reportMode === 'institution' || reportConfig.reportMode === 'both'}
+							<!-- Own school -->
+							<div class="space-y-1.5">
+								<Label>ชื่อโรงเรียนตนเอง</Label>
+								<div class="max-w-sm">
+									<SchoolCombobox
+										bind:value={reportConfig.institution!.ownSchool}
+										onProvinceSelect={() => {}}
+									/>
+								</div>
+							</div>
+						{/if}
+
+						<Button
+							onclick={saveReportConfig}
+							disabled={savingReportConfig}
+							size="sm"
+							class="gap-1.5"
+						>
+							{#if savingReportConfig}<Loader2 class="w-3.5 h-3.5 animate-spin" />{/if}
+							บันทึกการตั้งค่า
+						</Button>
+					</Card.Content>
+				</Card.Root>
 			{/if}
 		</div>
 
-		<!-- Round Info Card -->
-		<Card.Root>
-			<Card.Content class="p-5">
-				<div class="flex flex-col md:flex-row md:items-start justify-between gap-4">
-					<div class="space-y-1">
-						<div class="flex items-center gap-2 flex-wrap">
-							<h1 class="text-2xl font-bold">{round.name}</h1>
-							<Badge variant={statusVariant[round.status] ?? 'secondary'}>
-								{roundStatusLabel[round.status]}
-							</Badge>
-						</div>
-						<div class="text-sm text-muted-foreground space-y-0.5">
-							<p>ปีการศึกษา: {round.academicYearName} | ชั้น: {round.gradeLevelName}</p>
-							<p>รับสมัคร: {formatDate(round.applyStartDate)} – {formatDate(round.applyEndDate)}</p>
-							{#if round.examDate}<p>วันสอบ: {formatDate(round.examDate)}</p>{/if}
-							{#if round.resultAnnounceDate}<p>
-									ประกาศผล: {formatDate(round.resultAnnounceDate)}
-								</p>{/if}
-						</div>
-					</div>
-					{#if canManageAdmission}
-						<!-- Status Stepper -->
-						<div class="flex flex-col gap-1.5">
-							<p class="text-xs text-muted-foreground font-medium">เปลี่ยนสถานะ:</p>
-							<div class="flex flex-wrap gap-1">
-								{#each statusFlow as s (s)}
-									<button
-										onclick={() => {
-											if (round?.status !== s) pendingStatus = s;
-										}}
-										class="text-xs px-2 py-1 rounded border transition-colors {round.status === s
-											? 'border-primary bg-primary text-primary-foreground'
-											: 'border-border hover:bg-accent'}"
-									>
-										{roundStatusLabel[s]}
-									</button>
-								{/each}
-							</div>
-						</div>
-					{/if}
-				</div>
-
-				<Separator class="my-4" />
-
-				<!-- Visibility Toggle -->
-				{#if canManageAdmission}
-					<div class="flex items-center justify-between py-1">
-						<div>
-							<p class="text-sm font-medium">แสดงรอบบน portal นักเรียน</p>
-							<p class="text-xs text-muted-foreground">
-								{round.isVisible
-									? 'รอบนี้ปรากฏบน portal — นักเรียนเห็นและสามารถตรวจสอบสถานะได้'
-									: 'ซ่อนอยู่ — นักเรียนไม่เห็นรอบนี้บน portal'}
-							</p>
-						</div>
+		{#if canManageAdmission}
+			<!-- Delete Track Dialog -->
+			<Dialog.Root
+				open={deletingTrackTarget !== null}
+				onOpenChange={(o) => {
+					if (!o) deletingTrackTarget = null;
+				}}
+			>
+				<Dialog.Content>
+					<Dialog.Header>
+						<Dialog.Title>ยืนยันการลบสายการเรียน</Dialog.Title>
+						<Dialog.Description>
+							ลบสาย <strong>{deletingTrackTarget?.name}</strong>?
+							ข้อมูลใบสมัครและคะแนนที่เกี่ยวข้องกับสายนี้อาจถูกลบด้วย
+						</Dialog.Description>
+					</Dialog.Header>
+					<Dialog.Footer>
 						<Button
-							variant={round.isVisible ? 'default' : 'outline'}
-							size="sm"
-							disabled={togglingVisibility}
-							onclick={handleVisibilityToggle}
-							class="shrink-0 gap-1.5"
-						>
-							{#if togglingVisibility}
-								<Loader2 class="w-3 h-3 animate-spin" />
-							{:else if round.isVisible}
-								<Check class="w-3 h-3" />
-							{/if}
-							{round.isVisible ? 'แสดงอยู่' : 'ซ่อนอยู่'}
-						</Button>
-					</div>
-				{/if}
-
-				<!-- Show Scores Toggle -->
-				{#if canScoreAdmission}
-					{@const showScores = round.selectionSettings?.showScores ?? false}
-					<div class="flex items-center justify-between py-1">
-						<div>
-							<p class="text-sm font-medium">แสดงคะแนนบน portal นักเรียน</p>
-							<p class="text-xs text-muted-foreground">
-								{showScores
-									? 'นักเรียนเห็นคะแนนสอบของตัวเองบน portal'
-									: 'ซ่อนคะแนน — นักเรียนไม่เห็นคะแนน'}
-							</p>
-						</div>
-						<Button
-							variant={showScores ? 'default' : 'outline'}
-							size="sm"
-							disabled={togglingShowScores}
-							onclick={handleShowScoresToggle}
-							class="shrink-0 gap-1.5"
-						>
-							{#if togglingShowScores}
-								<Loader2 class="w-3 h-3 animate-spin" />
-							{:else if showScores}
-								<Check class="w-3 h-3" />
-							{/if}
-							{showScores ? 'แสดงอยู่' : 'ซ่อนอยู่'}
-						</Button>
-					</div>
-				{/if}
-
-				<Separator class="my-4" />
-
-				<!-- Share Links Section -->
-				<div class="space-y-3">
-					<h3 class="text-sm font-semibold flex items-center gap-1.5">
-						<LinkIcon class="w-4 h-4 text-primary" /> ลิงก์สำหรับนักเรียน
-					</h3>
-					<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-						<div class="space-y-1.5">
-							<Label class="text-xs text-muted-foreground"
-								>ลิงก์กรอกใบสมัคร (เปิดเมื่อสถานะ "เปิดรับสมัคร")</Label
-							>
-							<div class="flex items-center gap-2">
-								<Input
-									value={`${page.url.origin}/apply/${id}`}
-									readonly
-									class="h-9 bg-muted/50 font-mono text-xs"
-								/>
-								<Button
-									variant="secondary"
-									size="icon"
-									class="h-9 w-9 shrink-0"
-									onclick={() => copyLink(`/apply/${id}`)}
-								>
-									<Copy class="w-4 h-4" />
-								</Button>
-							</div>
-						</div>
-						<div class="space-y-1.5">
-							<Label class="text-xs text-muted-foreground">ลิงก์รวมรอบรับสมัคร / ระบบมอบตัว</Label>
-							<div class="flex items-center gap-2">
-								<Input
-									value={`${page.url.origin}/apply`}
-									readonly
-									class="h-9 bg-muted/50 font-mono text-xs"
-								/>
-								<Button
-									variant="secondary"
-									size="icon"
-									class="h-9 w-9 shrink-0"
-									onclick={() => copyLink(`/apply`)}
-								>
-									<Copy class="w-4 h-4" />
-								</Button>
-							</div>
-						</div>
-					</div>
-				</div>
-
-				<Separator class="my-4" />
-
-				<!-- Quick Links -->
-				<div class="flex flex-wrap gap-2">
-					<Button
-						href="/staff/academic/admission/{id}/applications"
-						variant="outline"
-						size="sm"
-						class="gap-1.5"
-						title={canVerifyAdmission ? 'ดูและตรวจใบสมัคร' : 'ดูใบสมัคร'}
-					>
-						<Users class="w-3.5 h-3.5" /> ใบสมัคร ({round.applicationCount ?? 0})
-					</Button>
-					{#if canManageAdmission}
-						<Button
-							href="/staff/academic/admission/{id}/exam-rooms"
 							variant="outline"
-							size="sm"
-							class="gap-1.5"
+							onclick={() => (deletingTrackTarget = null)}
+							disabled={deletingTrack}
 						>
-							<DoorOpen class="w-3.5 h-3.5" /> ห้องสอบ
+							ยกเลิก
 						</Button>
-					{/if}
-					{#if canScoreAdmission}
-						<Button
-							href="/staff/academic/admission/{id}/scores"
-							variant="outline"
-							size="sm"
-							class="gap-1.5"
-						>
-							<ClipboardList class="w-3.5 h-3.5" /> กรอกคะแนน
+						<Button variant="destructive" onclick={confirmDeleteTrack} disabled={deletingTrack}>
+							{#if deletingTrack}<Loader2 class="w-4 h-4 mr-2 animate-spin" />{/if}
+							{deletingTrack ? 'กำลังลบ...' : 'ลบสาย'}
 						</Button>
-						<Button
-							href="/staff/academic/admission/{id}/selections"
-							variant="outline"
-							size="sm"
-							class="gap-1.5"
-						>
-							<GraduationCap class="w-3.5 h-3.5" /> จัดห้อง
-						</Button>
-					{/if}
-					{#if canManageAdmission}
-						<Button
-							href="/staff/academic/admission/{id}/student-ids"
-							variant="outline"
-							size="sm"
-							class="gap-1.5"
-						>
-							<Hash class="w-3.5 h-3.5" /> กำหนดเลขประจำตัว
-						</Button>
-					{/if}
-					{#if canEnrollAdmission}
-						<Button
-							href="/staff/academic/admission/{id}/enrollment"
-							variant="outline"
-							size="sm"
-							class="gap-1.5"
-						>
-							<Check class="w-3.5 h-3.5" /> รับมอบตัว
-						</Button>
-					{/if}
-					{#if reportConfig.reportMode !== null}
-						<Button
-							href="/staff/academic/admission/{id}/report"
-							variant="outline"
-							size="sm"
-							class="gap-1.5"
-						>
-							<BarChart2 class="w-3.5 h-3.5" /> ดูรายงาน
-						</Button>
-					{/if}
-				</div>
-			</Card.Content>
-		</Card.Root>
+					</Dialog.Footer>
+				</Dialog.Content>
+			</Dialog.Root>
+		{:else}
+			<PageState
+				title="ไม่พบรอบรับสมัคร"
+				description="รอบรับสมัครนี้อาจถูกลบหรือคุณอาจไม่มีสิทธิ์เข้าถึง"
+				actionLabel="กลับหน้ารับสมัคร"
+				href="/staff/academic/admission"
+			/>
+		{/if}
 
 		{#if canManageAdmission}
-			<div class="grid md:grid-cols-2 gap-6">
-				<!-- Tracks -->
-				<Card.Root>
-					<Card.Header class="flex flex-row items-center justify-between pb-3">
-						<Card.Title class="flex items-center gap-2 text-base">
-							<BookOpen class="w-4 h-4" /> สายการเรียน ({tracks.length})
-						</Card.Title>
-						<Button size="sm" onclick={openNewTrack} class="gap-1 h-8">
-							<Plus class="w-3.5 h-3.5" /> เพิ่ม
-						</Button>
-					</Card.Header>
-
-					{#if showTrackForm}
-						<div class="px-4 pb-4 space-y-3 border-b border-border">
-							{#if !editingTrack}
-								<div class="space-y-1.5">
-									<Label for="track-plan">แผนการเรียน <span class="text-destructive">*</span></Label
-									>
-									<Select.Root type="single" bind:value={trackForm.studyPlanId}>
-										<Select.Trigger id="track-plan" class="w-full">
-											{studyPlans.find((s) => s.id === trackForm.studyPlanId)?.nameTh ??
-												'-- เลือก --'}
-										</Select.Trigger>
-										<Select.Content>
-											{#each studyPlans as sp (sp.id)}
-												<Select.Item value={sp.id}>{sp.nameTh}</Select.Item>
-											{/each}
-										</Select.Content>
-									</Select.Root>
-								</div>
-							{/if}
-							<div class="space-y-1.5">
-								<Label for="track-name">ชื่อสาย <span class="text-destructive">*</span></Label>
-								<Input
-									id="track-name"
-									bind:value={trackForm.name}
-									placeholder="เช่น สายวิทย์-คณิต"
-									class="h-8 text-sm"
-								/>
-							</div>
-							<div class="grid grid-cols-2 gap-2">
-								<div class="space-y-1.5">
-									<Label for="track-cap">จำนวนรับ (override)</Label>
-									<Input
-										id="track-cap"
-										bind:value={trackForm.capacityOverride}
-										type="number"
-										placeholder="อัตโนมัติ"
-										class="h-8 text-sm"
-									/>
-								</div>
-								<div class="space-y-1.5">
-									<Label for="track-tie">Tie-breaking</Label>
-									<Select.Root type="single" bind:value={trackForm.tiebreakMethod}>
-										<Select.Trigger id="track-tie" class="w-full h-8 text-sm">
-											{trackForm.tiebreakMethod === 'gpa'
-												? 'GPA สูงกว่าได้ก่อน'
-												: 'สมัครก่อนได้ก่อน'}
-										</Select.Trigger>
-										<Select.Content>
-											<Select.Item value="applied_at">สมัครก่อนได้ก่อน</Select.Item>
-											<Select.Item value="gpa">GPA สูงกว่าได้ก่อน</Select.Item>
-										</Select.Content>
-									</Select.Root>
-								</div>
-							</div>
-							<div class="flex gap-2">
-								<Button size="sm" onclick={saveTrack} disabled={savingTrack} class="h-7 text-xs">
-									{#if savingTrack}<Loader2 class="w-3 h-3 mr-1 animate-spin" />{/if}
-									บันทึก
-								</Button>
-								<Button
-									size="sm"
-									variant="ghost"
-									onclick={() => (showTrackForm = false)}
-									class="h-7 text-xs">ยกเลิก</Button
-								>
-							</div>
-						</div>
-					{/if}
-
-					<Card.Content class="p-0">
-						<div class="divide-y divide-border">
-							{#each tracks as t (t.id)}
-								<div class="px-4 py-3 flex items-center justify-between">
-									<div>
-										<p class="font-medium text-sm">{t.name}</p>
-										<p class="text-xs text-muted-foreground">
-											{t.studyPlanName ?? '-'} • รับ {t.computedCapacity ?? '-'} คน ({t.roomCount ??
-												0} ห้อง) • สมัคร {t.applicationCount ?? 0}
-										</p>
-									</div>
-									<div class="flex gap-1">
-										<Button
-											variant="ghost"
-											size="icon"
-											class="h-7 w-7"
-											onclick={() => openEditTrack(t)}
-										>
-											<Pencil class="w-3.5 h-3.5" />
-										</Button>
-										<Button
-											variant="ghost"
-											size="icon"
-											class="h-7 w-7 text-destructive hover:text-destructive"
-											onclick={() => removeTrack(t)}
-										>
-											<Trash2 class="w-3.5 h-3.5" />
-										</Button>
-									</div>
-								</div>
-							{:else}
-								<p class="px-4 py-8 text-center text-sm text-muted-foreground">
-									ยังไม่มีสายการเรียน
-								</p>
-							{/each}
-						</div>
-					</Card.Content>
-				</Card.Root>
-
-				<!-- Exam Subjects -->
-				<Card.Root>
-					<Card.Header class="flex flex-row items-center justify-between pb-3">
-						<Card.Title class="flex items-center gap-2 text-base">
-							<Settings class="w-4 h-4" /> วิชาที่สอบ ({subjects.length})
-						</Card.Title>
-						<Button size="sm" onclick={openNewSubject} class="gap-1 h-8">
-							<Plus class="w-3.5 h-3.5" /> เพิ่ม
-						</Button>
-					</Card.Header>
-
-					{#if showSubjectForm}
-						<div class="px-4 pb-4 space-y-3 border-b border-border">
-							<div class="grid grid-cols-2 gap-2">
-								<div class="space-y-1.5">
-									<Label for="sub-name">ชื่อวิชา <span class="text-destructive">*</span></Label>
-									<Input
-										id="sub-name"
-										bind:value={subjectForm.name}
-										placeholder="วิชาคณิตศาสตร์"
-										class="h-8 text-sm"
-									/>
-								</div>
-								<div class="space-y-1.5">
-									<Label for="sub-code">รหัส</Label>
-									<Input
-										id="sub-code"
-										bind:value={subjectForm.code}
-										placeholder="MATH"
-										class="h-8 text-sm"
-									/>
-								</div>
-							</div>
-							<div class="grid grid-cols-2 gap-2">
-								<div class="space-y-1.5">
-									<Label for="sub-max">คะแนนเต็ม</Label>
-									<Input
-										id="sub-max"
-										bind:value={subjectForm.maxScore}
-										type="number"
-										class="h-8 text-sm"
-									/>
-								</div>
-								<div class="space-y-1.5">
-									<Label for="sub-order">ลำดับ</Label>
-									<Input
-										id="sub-order"
-										bind:value={subjectForm.displayOrder}
-										type="number"
-										class="h-8 text-sm"
-									/>
-								</div>
-							</div>
-							<div class="flex gap-2">
-								<Button
-									size="sm"
-									onclick={saveSubject}
-									disabled={savingSubject}
-									class="h-7 text-xs"
-								>
-									{#if savingSubject}<Loader2 class="w-3 h-3 mr-1 animate-spin" />{/if}
-									บันทึก
-								</Button>
-								<Button
-									size="sm"
-									variant="ghost"
-									onclick={() => (showSubjectForm = false)}
-									class="h-7 text-xs">ยกเลิก</Button
-								>
-							</div>
-						</div>
-					{/if}
-
-					<Card.Content class="p-0">
-						<div class="divide-y divide-border">
-							{#each subjects as s (s.id)}
-								<div class="px-4 py-3 flex items-center justify-between">
-									<div>
-										<p class="font-medium text-sm">{s.name}</p>
-										<p class="text-xs text-muted-foreground">
-											{s.code ? `[${s.code}]` : ''} คะแนนเต็ม {s.maxScore}
-										</p>
-									</div>
-									<div class="flex gap-1">
-										<Button
-											variant="ghost"
-											size="icon"
-											class="h-7 w-7"
-											onclick={() => openEditSubject(s)}
-										>
-											<Pencil class="w-3.5 h-3.5" />
-										</Button>
-										<Button
-											variant="ghost"
-											size="icon"
-											class="h-7 w-7 text-destructive hover:text-destructive"
-											onclick={() => removeSubject(s)}
-										>
-											<Trash2 class="w-3.5 h-3.5" />
-										</Button>
-									</div>
-								</div>
-							{:else}
-								<p class="px-4 py-8 text-center text-sm text-muted-foreground">ยังไม่มีวิชา</p>
-							{/each}
-						</div>
-					</Card.Content>
-				</Card.Root>
-			</div>
-
-			<!-- Report Config Card -->
-			<Card.Root>
-				<Card.Header class="pb-3">
-					<div class="flex items-start justify-between gap-2">
-						<div>
-							<Card.Title class="flex items-center gap-2 text-base">
-								<BarChart2 class="w-4 h-4" /> การรายงาน
-							</Card.Title>
-							<Card.Description>ตั้งค่าการแบ่งกลุ่มผู้สมัครสำหรับรายงานสถิติ</Card.Description>
-						</div>
-						{#if copyableRounds.length > 0}
-							<Select.Root
-								type="single"
-								onValueChange={(roundId) => {
-									const src = copyableRounds.find((r) => r.id === roundId);
-									if (src) copyConfigFromRound(src);
-								}}
-							>
-								<Select.Trigger class="h-8 text-xs gap-1.5 w-auto shrink-0">
-									<Copy class="w-3.5 h-3.5" /> คัดลอกจากรอบอื่น
-								</Select.Trigger>
-								<Select.Content>
-									{#each copyableRounds as r (r.id)}
-										<Select.Item value={r.id}>
-											<span>{r.name}</span>
-											<span class="ml-2 text-xs text-muted-foreground">
-												({reportModeLabel[
-													r.reportConfig!.reportMode!
-												]}{#if r.reportConfig?.zone?.schools?.length}
-													· {r.reportConfig.zone.schools.length} โรงเรียน{/if})
-											</span>
-										</Select.Item>
-									{/each}
-								</Select.Content>
-							</Select.Root>
-						{/if}
-					</div>
-				</Card.Header>
-				<Card.Content class="space-y-4">
-					<!-- Mode selector -->
-					<div class="space-y-1.5">
-						<Label>ประเภทรายงาน</Label>
-						<Select.Root
-							type="single"
-							value={reportConfig.reportMode ?? 'none'}
-							onValueChange={(v) => {
-								const mode = v === 'none' ? null : (v as ReportConfig['reportMode']);
-								reportConfig = {
-									...reportConfig,
-									reportMode: mode,
-									zone: reportConfig.zone ?? { schools: [] },
-									institution: reportConfig.institution ?? { ownSchool: '' }
-								};
-							}}
+			<!-- Delete Subject Dialog -->
+			<Dialog.Root
+				open={deletingSubjectTarget !== null}
+				onOpenChange={(o) => {
+					if (!o) deletingSubjectTarget = null;
+				}}
+			>
+				<Dialog.Content>
+					<Dialog.Header>
+						<Dialog.Title>ยืนยันการลบวิชา</Dialog.Title>
+						<Dialog.Description>
+							ลบวิชา <strong>{deletingSubjectTarget?.name}</strong>?
+							คะแนนของผู้สมัครทุกคนในวิชานี้จะถูกลบด้วย
+						</Dialog.Description>
+					</Dialog.Header>
+					<Dialog.Footer>
+						<Button
+							variant="outline"
+							onclick={() => (deletingSubjectTarget = null)}
+							disabled={deletingSubject}
 						>
-							<Select.Trigger class="w-full max-w-xs">
-								{#if reportConfig.reportMode === null}ปิด (ไม่ใช้)
-								{:else if reportConfig.reportMode === 'zone'}เขตพื้นที่บริการ
-								{:else if reportConfig.reportMode === 'institution'}สถานศึกษาเดิม
-								{:else}ทั้งสองประเภท{/if}
-							</Select.Trigger>
-							<Select.Content>
-								<Select.Item value="none">ปิด (ไม่ใช้)</Select.Item>
-								<Select.Item value="zone">เขตพื้นที่บริการ</Select.Item>
-								<Select.Item value="institution">สถานศึกษาเดิม</Select.Item>
-								<Select.Item value="both">ทั้งสองประเภท</Select.Item>
-							</Select.Content>
-						</Select.Root>
-					</div>
-
-					{#if reportConfig.reportMode === 'zone' || reportConfig.reportMode === 'both'}
-						<!-- Zone schools -->
-						<div class="space-y-2">
-							<Label>โรงเรียนในเขตพื้นที่บริการ</Label>
-							<div class="max-w-sm">
-								<SchoolCombobox
-									value=""
-									onProvinceSelect={() => {}}
-									onSelect={(name) => addZoneSchool(name)}
-								/>
-							</div>
-							{#if (reportConfig.zone?.schools ?? []).length > 0}
-								<div class="flex flex-wrap gap-1.5 mt-1">
-									{#each reportConfig.zone?.schools ?? [] as school (school)}
-										<span
-											class="inline-flex items-center gap-1 text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full"
-										>
-											{school}
-											<button
-												onclick={() => removeZoneSchool(school)}
-												class="hover:text-destructive"
-											>
-												<X class="w-3 h-3" />
-											</button>
-										</span>
-									{/each}
-								</div>
-							{/if}
-						</div>
-					{/if}
-
-					{#if reportConfig.reportMode === 'institution' || reportConfig.reportMode === 'both'}
-						<!-- Own school -->
-						<div class="space-y-1.5">
-							<Label>ชื่อโรงเรียนตนเอง</Label>
-							<div class="max-w-sm">
-								<SchoolCombobox
-									bind:value={reportConfig.institution!.ownSchool}
-									onProvinceSelect={() => {}}
-								/>
-							</div>
-						</div>
-					{/if}
-
-					<Button
-						onclick={saveReportConfig}
-						disabled={savingReportConfig}
-						size="sm"
-						class="gap-1.5"
-					>
-						{#if savingReportConfig}<Loader2 class="w-3.5 h-3.5 animate-spin" />{/if}
-						บันทึกการตั้งค่า
-					</Button>
-				</Card.Content>
-			</Card.Root>
+							ยกเลิก
+						</Button>
+						<Button variant="destructive" onclick={confirmDeleteSubject} disabled={deletingSubject}>
+							{#if deletingSubject}<Loader2 class="w-4 h-4 mr-2 animate-spin" />{/if}
+							{deletingSubject ? 'กำลังลบ...' : 'ลบวิชา'}
+						</Button>
+					</Dialog.Footer>
+				</Dialog.Content>
+			</Dialog.Root>
 		{/if}
-	</div>
 
-	{#if canManageAdmission}
-		<!-- Delete Track Dialog -->
-		<Dialog.Root
-			open={deletingTrackTarget !== null}
-			onOpenChange={(o) => {
-				if (!o) deletingTrackTarget = null;
-			}}
-		>
-			<Dialog.Content>
-				<Dialog.Header>
-					<Dialog.Title>ยืนยันการลบสายการเรียน</Dialog.Title>
-					<Dialog.Description>
-						ลบสาย <strong>{deletingTrackTarget?.name}</strong>?
-						ข้อมูลใบสมัครและคะแนนที่เกี่ยวข้องกับสายนี้อาจถูกลบด้วย
-					</Dialog.Description>
-				</Dialog.Header>
-				<Dialog.Footer>
-					<Button
-						variant="outline"
-						onclick={() => (deletingTrackTarget = null)}
-						disabled={deletingTrack}
-					>
-						ยกเลิก
-					</Button>
-					<Button variant="destructive" onclick={confirmDeleteTrack} disabled={deletingTrack}>
-						{#if deletingTrack}<Loader2 class="w-4 h-4 mr-2 animate-spin" />{/if}
-						{deletingTrack ? 'กำลังลบ...' : 'ลบสาย'}
-					</Button>
-				</Dialog.Footer>
-		</Dialog.Content>
-	</Dialog.Root>
-{:else}
-	<PageState
-		title="ไม่พบรอบรับสมัคร"
-		description="รอบรับสมัครนี้อาจถูกลบหรือคุณอาจไม่มีสิทธิ์เข้าถึง"
-		actionLabel="กลับหน้ารับสมัคร"
-		href="/staff/academic/admission"
-	/>
-{/if}
+		{#if canManageAdmission}
+			<!-- Delete Confirm Dialog -->
+			<Dialog.Root bind:open={showDeleteDialog}>
+				<Dialog.Content>
+					<Dialog.Header>
+						<Dialog.Title>ยืนยันการลบรอบรับสมัคร</Dialog.Title>
+						<Dialog.Description>
+							ลบ <strong>{round?.name}</strong>? รอบที่มีใบสมัครอยู่จะไม่สามารถลบได้
+						</Dialog.Description>
+					</Dialog.Header>
+					<Dialog.Footer>
+						<Button
+							variant="outline"
+							onclick={() => (showDeleteDialog = false)}
+							disabled={deletingRound}
+						>
+							ยกเลิก
+						</Button>
+						<Button variant="destructive" onclick={confirmDeleteRound} disabled={deletingRound}>
+							{#if deletingRound}<Loader2 class="w-4 h-4 mr-2 animate-spin" />{/if}
+							{deletingRound ? 'กำลังลบ...' : 'ลบรอบ'}
+						</Button>
+					</Dialog.Footer>
+				</Dialog.Content>
+			</Dialog.Root>
+		{/if}
 
-	{#if canManageAdmission}
-		<!-- Delete Subject Dialog -->
-		<Dialog.Root
-			open={deletingSubjectTarget !== null}
-			onOpenChange={(o) => {
-				if (!o) deletingSubjectTarget = null;
-			}}
-		>
-			<Dialog.Content>
-				<Dialog.Header>
-					<Dialog.Title>ยืนยันการลบวิชา</Dialog.Title>
-					<Dialog.Description>
-						ลบวิชา <strong>{deletingSubjectTarget?.name}</strong>?
-						คะแนนของผู้สมัครทุกคนในวิชานี้จะถูกลบด้วย
-					</Dialog.Description>
-				</Dialog.Header>
-				<Dialog.Footer>
-					<Button
-						variant="outline"
-						onclick={() => (deletingSubjectTarget = null)}
-						disabled={deletingSubject}
-					>
-						ยกเลิก
-					</Button>
-					<Button variant="destructive" onclick={confirmDeleteSubject} disabled={deletingSubject}>
-						{#if deletingSubject}<Loader2 class="w-4 h-4 mr-2 animate-spin" />{/if}
-						{deletingSubject ? 'กำลังลบ...' : 'ลบวิชา'}
-					</Button>
-				</Dialog.Footer>
-			</Dialog.Content>
-		</Dialog.Root>
+		{#if canManageAdmission}
+			<!-- Confirm Status Change Dialog -->
+			<Dialog.Root
+				open={pendingStatus !== null}
+				onOpenChange={(o) => {
+					if (!o) pendingStatus = null;
+				}}
+			>
+				<Dialog.Content>
+					<Dialog.Header>
+						<Dialog.Title>ยืนยันการเปลี่ยนสถานะ</Dialog.Title>
+						<Dialog.Description>
+							เปลี่ยนสถานะรอบเป็น <strong
+								>{pendingStatus ? roundStatusLabel[pendingStatus] : ''}</strong
+							>?
+						</Dialog.Description>
+					</Dialog.Header>
+					<Dialog.Footer>
+						<Button variant="outline" onclick={() => (pendingStatus = null)}>ยกเลิก</Button>
+						<Button onclick={confirmStatusChange}>ยืนยัน</Button>
+					</Dialog.Footer>
+				</Dialog.Content>
+			</Dialog.Root>
+		{/if}
 	{/if}
-
-	{#if canManageAdmission}
-		<!-- Delete Confirm Dialog -->
-		<Dialog.Root bind:open={showDeleteDialog}>
-			<Dialog.Content>
-				<Dialog.Header>
-					<Dialog.Title>ยืนยันการลบรอบรับสมัคร</Dialog.Title>
-					<Dialog.Description>
-						ลบ <strong>{round?.name}</strong>? รอบที่มีใบสมัครอยู่จะไม่สามารถลบได้
-					</Dialog.Description>
-				</Dialog.Header>
-				<Dialog.Footer>
-					<Button
-						variant="outline"
-						onclick={() => (showDeleteDialog = false)}
-						disabled={deletingRound}
-					>
-						ยกเลิก
-					</Button>
-					<Button variant="destructive" onclick={confirmDeleteRound} disabled={deletingRound}>
-						{#if deletingRound}<Loader2 class="w-4 h-4 mr-2 animate-spin" />{/if}
-						{deletingRound ? 'กำลังลบ...' : 'ลบรอบ'}
-					</Button>
-				</Dialog.Footer>
-			</Dialog.Content>
-		</Dialog.Root>
-	{/if}
-
-	{#if canManageAdmission}
-		<!-- Confirm Status Change Dialog -->
-		<Dialog.Root
-			open={pendingStatus !== null}
-			onOpenChange={(o) => {
-				if (!o) pendingStatus = null;
-			}}
-		>
-			<Dialog.Content>
-				<Dialog.Header>
-					<Dialog.Title>ยืนยันการเปลี่ยนสถานะ</Dialog.Title>
-					<Dialog.Description>
-						เปลี่ยนสถานะรอบเป็น <strong
-							>{pendingStatus ? roundStatusLabel[pendingStatus] : ''}</strong
-						>?
-					</Dialog.Description>
-				</Dialog.Header>
-				<Dialog.Footer>
-					<Button variant="outline" onclick={() => (pendingStatus = null)}>ยกเลิก</Button>
-					<Button onclick={confirmStatusChange}>ยืนยัน</Button>
-				</Dialog.Footer>
-			</Dialog.Content>
-		</Dialog.Root>
-	{/if}
-{/if}
+</PageShell>

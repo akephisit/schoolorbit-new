@@ -25,6 +25,7 @@
 	import { Badge } from '$lib/components/ui/badge';
 	import { Checkbox } from '$lib/components/ui/checkbox';
 	import { Label } from '$lib/components/ui/label';
+	import { PageShell } from '$lib/components/app-layout';
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import * as RadioGroup from '$lib/components/ui/radio-group';
 	import * as Card from '$lib/components/ui/card';
@@ -35,8 +36,6 @@
 	import { can } from '$lib/stores/permissions';
 	import { toast } from 'svelte-sonner';
 	import {
-		ArrowLeft,
-		GraduationCap,
 		Trophy,
 		Check,
 		CheckCircle2,
@@ -447,16 +446,11 @@
 	<title>{data.title} - SchoolOrbit</title>
 </svelte:head>
 
-<div class="space-y-5">
-	<div class="flex items-center gap-3">
-		<Button href="/staff/academic/admission/{id}" variant="ghost" size="sm">
-			<ArrowLeft class="w-4 h-4 mr-1" /> ย้อนกลับ
-		</Button>
-		<h1 class="text-2xl font-bold flex items-center gap-2">
-			<GraduationCap class="w-6 h-6" /> จัดห้องเรียน (เรียงคะแนน)
-		</h1>
-	</div>
-
+<PageShell
+	title="จัดห้องเรียน (เรียงคะแนน)"
+	description={round?.name ?? 'จัดผลคัดเลือกและกำหนดห้องเรียน'}
+	backHref="/staff/academic/admission/{id}"
+>
 	{#if !canScoreAdmission}
 		<PageState
 			variant="permission"
@@ -464,10 +458,6 @@
 			description="หน้านี้ต้องใช้สิทธิ์จัดการคะแนนและผลคัดเลือกของงานรับสมัคร"
 		/>
 	{:else}
-		{#if round}
-			<p class="text-muted-foreground text-sm">{round.name}</p>
-		{/if}
-
 		<!-- Step 1: เลือกโหมดจัดห้อง -->
 		<Card.Root>
 			<Card.Content class="pt-4 pb-4 space-y-3">
@@ -1279,7 +1269,7 @@
 			{/if}
 		{/if}
 	{/if}
-</div>
+</PageShell>
 
 <!-- Dialogs -->
 <Dialog.Root bind:open={showAssignDialog}>

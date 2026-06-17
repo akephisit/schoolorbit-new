@@ -23,6 +23,7 @@
 	import { Badge } from '$lib/components/ui/badge';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
+	import { PageShell } from '$lib/components/app-layout';
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import * as Select from '$lib/components/ui/select';
 	import DatePicker from '$lib/components/ui/date-picker/DatePicker.svelte';
@@ -32,7 +33,6 @@
 	import { Textarea } from '$lib/components/ui/textarea';
 	import { toast } from 'svelte-sonner';
 	import {
-		ArrowLeft,
 		ChevronLeft,
 		ChevronRight,
 		Check,
@@ -535,11 +535,14 @@
 
 <svelte:window onkeydown={onLbKeyDown} />
 
-<div class="space-y-6">
-	<div class="flex flex-wrap items-center gap-2">
-		<Button href="/staff/academic/admission/{roundId}/applications" variant="ghost" size="sm">
-			<ArrowLeft class="w-4 h-4 mr-1" /> ย้อนกลับ
-		</Button>
+<PageShell
+	title="รายละเอียดใบสมัคร"
+	description={application
+		? `${application.firstName} ${application.lastName} | ${application.applicationNumber ?? '-'}`
+		: 'ตรวจสอบและแก้ไขข้อมูลใบสมัคร'}
+	backHref="/staff/academic/admission/{roundId}/applications"
+>
+	{#snippet actions()}
 		{#if navIds.length > 0 && navIdx !== -1}
 			<div class="flex items-center gap-1">
 				<Button
@@ -567,12 +570,9 @@
 				</Button>
 			</div>
 		{/if}
-		<h1 class="text-xl sm:text-2xl font-bold flex items-center gap-2">
-			<FileText class="w-6 h-6" /> รายละเอียดใบสมัคร
-		</h1>
 		{#if canVerifyAdmission && application && !['enrolled', 'withdrawn'].includes(application.status)}
 			{#if editMode}
-				<div class="ml-auto flex gap-2">
+				<div class="flex gap-2">
 					<Button variant="outline" size="sm" onclick={cancelEdit} disabled={saving}>
 						<X class="w-4 h-4 mr-1" /> ยกเลิก
 					</Button>
@@ -584,12 +584,12 @@
 					</Button>
 				</div>
 			{:else}
-				<Button variant="outline" size="sm" class="ml-auto" onclick={startEdit}>
+				<Button variant="outline" size="sm" onclick={startEdit}>
 					<Pencil class="w-4 h-4 mr-1" /> แก้ไขใบสมัคร
 				</Button>
 			{/if}
 		{/if}
-	</div>
+	{/snippet}
 
 	{#if !canReadAdmission}
 		<PageState
@@ -1510,7 +1510,7 @@
 			href="/staff/academic/admission/{roundId}/applications"
 		/>
 	{/if}
-</div>
+</PageShell>
 
 <!-- Document Crop Modal -->
 {#if canVerifyAdmission}

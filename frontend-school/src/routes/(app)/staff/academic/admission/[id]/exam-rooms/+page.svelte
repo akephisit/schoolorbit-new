@@ -22,6 +22,7 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { Badge } from '$lib/components/ui/badge';
+	import { PageShell } from '$lib/components/app-layout';
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import * as Card from '$lib/components/ui/card';
 	import * as Table from '$lib/components/ui/table';
@@ -31,7 +32,6 @@
 	import { can } from '$lib/stores/permissions';
 	import { toast } from 'svelte-sonner';
 	import {
-		ArrowLeft,
 		Building2,
 		Plus,
 		Trash2,
@@ -389,20 +389,11 @@
 	<title>{data.title} - SchoolOrbit</title>
 </svelte:head>
 
-<div class="space-y-4 p-4">
-	<!-- Header -->
-	<div class="flex items-center gap-3">
-		<Button variant="ghost" size="icon" href="/staff/academic/admission/{id}">
-			<ArrowLeft class="h-4 w-4" />
-		</Button>
-		<div>
-			<h1 class="text-xl font-bold">จัดห้องสอบ</h1>
-			{#if round}
-				<p class="text-muted-foreground text-sm">{round.name}</p>
-			{/if}
-		</div>
-	</div>
-
+<PageShell
+	title="จัดห้องสอบ"
+	description={round?.name ?? 'ตั้งค่าห้องสอบและจัดเลขที่นั่งสอบ'}
+	backHref="/staff/academic/admission/{id}"
+>
 	{#if loading}
 		<PageSkeleton variant="detail" />
 	{:else if !canManageAdmission}
@@ -763,7 +754,7 @@
 			</div>
 		{/if}
 	{/if}
-</div>
+</PageShell>
 
 <!-- ===== Dialog: Add Room ===== -->
 <Dialog.Root bind:open={showAddRoomDialog}>

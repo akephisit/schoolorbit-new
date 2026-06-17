@@ -13,13 +13,14 @@
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import { Textarea } from '$lib/components/ui/textarea';
+	import { PageShell } from '$lib/components/app-layout';
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import * as Card from '$lib/components/ui/card';
 	import * as Select from '$lib/components/ui/select';
 	import { Separator } from '$lib/components/ui/separator';
 	import DatePicker from '$lib/components/ui/date-picker/DatePicker.svelte';
 	import { toast } from 'svelte-sonner';
-	import { ArrowLeft, Plus, Loader2 } from 'lucide-svelte';
+	import { Plus, Loader2 } from 'lucide-svelte';
 	import { can } from '$lib/stores/permissions';
 	import { PERMISSIONS } from '$lib/permissions/registry';
 
@@ -83,8 +84,7 @@
 				await loadGradeLevels(activeYear.id);
 			}
 		} catch (loadError) {
-			error =
-				loadError instanceof Error ? loadError.message : 'โหลดข้อมูลปีการศึกษาไม่สำเร็จ';
+			error = loadError instanceof Error ? loadError.message : 'โหลดข้อมูลปีการศึกษาไม่สำเร็จ';
 			toast.error(error);
 		} finally {
 			loading = false;
@@ -133,15 +133,12 @@
 	<title>{data.title} - SchoolOrbit</title>
 </svelte:head>
 
-<div class="max-w-2xl mx-auto space-y-6">
-	<div class="flex items-center gap-3">
-		<Button href="/staff/academic/admission" variant="ghost" size="sm">
-			<ArrowLeft class="w-4 h-4 mr-1" />
-			ย้อนกลับ
-		</Button>
-		<h1 class="text-2xl font-bold text-foreground">สร้างรอบรับสมัครใหม่</h1>
-	</div>
-
+<PageShell
+	title="สร้างรอบรับสมัครใหม่"
+	description="กรอกข้อมูลสำหรับเปิดรอบรับสมัครนักเรียนใหม่"
+	backHref="/staff/academic/admission"
+	class="max-w-2xl mx-auto"
+>
 	{#if !canManageAdmission}
 		<PageState
 			variant="permission"
@@ -296,4 +293,4 @@
 			</Card.Root>
 		</form>
 	{/if}
-</div>
+</PageShell>

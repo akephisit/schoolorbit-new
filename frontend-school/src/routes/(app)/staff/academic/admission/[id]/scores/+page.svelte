@@ -19,6 +19,7 @@
 	} from '$lib/api/admission';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
+	import { PageShell } from '$lib/components/app-layout';
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import * as Card from '$lib/components/ui/card';
 	import * as Table from '$lib/components/ui/table';
@@ -26,14 +27,7 @@
 	import { PERMISSIONS } from '$lib/permissions/registry';
 	import { can } from '$lib/stores/permissions';
 	import { toast } from 'svelte-sonner';
-	import {
-		ArrowLeft,
-		ClipboardList,
-		Save,
-		Loader2,
-		DoorOpen,
-		UserX
-	} from 'lucide-svelte';
+	import { Save, Loader2, DoorOpen, UserX } from 'lucide-svelte';
 	import { SvelteSet } from 'svelte/reactivity';
 
 	let { data, params }: PageProps = $props();
@@ -227,20 +221,13 @@
 	<title>{data.title} - SchoolOrbit</title>
 </svelte:head>
 
-<div class="space-y-5">
-	<div class="flex items-center gap-3">
-		<Button href="/staff/academic/admission/{id}" variant="ghost" size="sm">
-			<ArrowLeft class="w-4 h-4 mr-1" /> ย้อนกลับ
-		</Button>
-		<h1 class="text-2xl font-bold flex items-center gap-2">
-			<ClipboardList class="w-6 h-6" /> กรอกคะแนนสอบ
-		</h1>
-	</div>
-
-	{#if round}
-		<p class="text-muted-foreground text-sm">{round.name} — {subjects.length} วิชา</p>
-	{/if}
-
+<PageShell
+	title="กรอกคะแนนสอบ"
+	description={round
+		? `${round.name} | ${subjects.length} วิชา`
+		: 'กรอกและบันทึกคะแนนสอบของผู้สมัคร'}
+	backHref="/staff/academic/admission/{id}"
+>
 	{#if !canScoreAdmission}
 		<PageState
 			variant="permission"
@@ -504,7 +491,7 @@
 			</div>
 		{/if}
 	{/if}
-</div>
+</PageShell>
 
 <style>
 	/* ซ่อนลูกศรขึ้น/ลง ของช่องใส่ตัวเลข (number input spinners) */

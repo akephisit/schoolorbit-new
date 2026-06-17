@@ -14,6 +14,7 @@
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import { Badge } from '$lib/components/ui/badge';
+	import { PageShell } from '$lib/components/app-layout';
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import * as Card from '$lib/components/ui/card';
 	import * as Select from '$lib/components/ui/select';
@@ -21,18 +22,7 @@
 	import * as Table from '$lib/components/ui/table';
 	import { Textarea } from '$lib/components/ui/textarea';
 	import { toast } from 'svelte-sonner';
-	import {
-		ArrowLeft,
-		Search,
-		Check,
-		X,
-		Eye,
-		Users,
-		Filter,
-		LoaderCircle,
-		Trash2,
-		RotateCcw
-	} from 'lucide-svelte';
+	import { Search, Check, X, Eye, Filter, LoaderCircle, Trash2, RotateCcw } from 'lucide-svelte';
 	import DatePicker from '$lib/components/ui/date-picker/DatePicker.svelte';
 	import { can } from '$lib/stores/permissions';
 	import { PERMISSIONS } from '$lib/permissions/registry';
@@ -189,16 +179,11 @@
 	<title>{data.title} - SchoolOrbit</title>
 </svelte:head>
 
-<div class="space-y-5">
-	<div class="flex items-center gap-3">
-		<Button href="/staff/academic/admission/{id}" variant="ghost" size="sm">
-			<ArrowLeft class="w-4 h-4 mr-1" /> ย้อนกลับ
-		</Button>
-		<h1 class="text-2xl font-bold flex items-center gap-2">
-			<Users class="w-6 h-6" /> ใบสมัคร
-		</h1>
-	</div>
-
+<PageShell
+	title="ใบสมัคร"
+	description="ค้นหา ตรวจสอบ และจัดการสถานะใบสมัครของรอบนี้"
+	backHref="/staff/academic/admission/{id}"
+>
 	{#if !canReadAdmission}
 		<PageState
 			variant="permission"
@@ -271,10 +256,7 @@
 				onaction={loadApps}
 			/>
 		{:else if applications.length === 0}
-			<PageState
-				title="ไม่พบใบสมัคร"
-				description="ยังไม่มีใบสมัครที่ตรงกับเงื่อนไขการค้นหา"
-			/>
+			<PageState title="ไม่พบใบสมัคร" description="ยังไม่มีใบสมัครที่ตรงกับเงื่อนไขการค้นหา" />
 		{:else}
 			<Card.Root>
 				<div class="overflow-x-auto">
@@ -384,7 +366,7 @@
 			</Card.Root>
 		{/if}
 	{/if}
-</div>
+</PageShell>
 
 <!-- Reject Dialog -->
 {#if canVerifyAdmission}

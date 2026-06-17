@@ -11,6 +11,7 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { Badge } from '$lib/components/ui/badge';
+	import { PageShell } from '$lib/components/app-layout';
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import * as Card from '$lib/components/ui/card';
 	import * as Table from '$lib/components/ui/table';
@@ -19,7 +20,6 @@
 	import { can } from '$lib/stores/permissions';
 	import { toast } from 'svelte-sonner';
 	import {
-		ArrowLeft,
 		Save,
 		Wand2,
 		X,
@@ -375,20 +375,11 @@
 	<title>{data.title} - SchoolOrbit</title>
 </svelte:head>
 
-<div class="space-y-6">
-	<!-- Header -->
-	<div class="flex items-center gap-3">
-		<Button href="/staff/academic/admission/{id}" variant="ghost" size="sm" class="gap-1.5">
-			<ArrowLeft class="w-4 h-4" /> กลับ
-		</Button>
-		<div>
-			<h1 class="text-xl font-semibold">กำหนดเลขประจำตัวนักเรียน</h1>
-			{#if roundName}
-				<p class="text-sm text-muted-foreground">{roundName}</p>
-			{/if}
-		</div>
-	</div>
-
+<PageShell
+	title="กำหนดเลขประจำตัวนักเรียน"
+	description={roundName || 'เรียงรายชื่อ นำเข้าไฟล์ และบันทึกเลขประจำตัว'}
+	backHref="/staff/academic/admission/{id}"
+>
 	{#if !canManageAdmission}
 		<PageState
 			variant="permission"
@@ -663,7 +654,7 @@
 			</Table.Root>
 		</Card.Root>
 	{/if}
-</div>
+</PageShell>
 
 <!-- Import Confirmation Dialog -->
 {#if canManageAdmission}

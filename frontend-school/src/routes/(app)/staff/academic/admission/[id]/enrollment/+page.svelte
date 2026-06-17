@@ -14,6 +14,7 @@
 	import { Label } from '$lib/components/ui/label';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Textarea } from '$lib/components/ui/textarea';
+	import { PageShell } from '$lib/components/app-layout';
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import * as Card from '$lib/components/ui/card';
 	import * as Table from '$lib/components/ui/table';
@@ -22,15 +23,7 @@
 	import { PERMISSIONS } from '$lib/permissions/registry';
 	import { can } from '$lib/stores/permissions';
 	import { toast } from 'svelte-sonner';
-	import {
-		ArrowLeft,
-		ClipboardCheck,
-		Check,
-		Loader2,
-		Plus,
-		Trash2,
-		Copy
-	} from 'lucide-svelte';
+	import { Check, Loader2, Plus, Trash2, Copy } from 'lucide-svelte';
 
 	interface ParentEntry extends AdmissionEnrollmentParentData {
 		title: string;
@@ -214,20 +207,11 @@
 	<title>{data.title} - SchoolOrbit</title>
 </svelte:head>
 
-<div class="space-y-5">
-	<div class="flex items-center gap-3">
-		<Button href="/staff/academic/admission/{id}" variant="ghost" size="sm">
-			<ArrowLeft class="w-4 h-4 mr-1" /> ย้อนกลับ
-		</Button>
-		<h1 class="text-2xl font-bold flex items-center gap-2">
-			<ClipboardCheck class="w-6 h-6" /> รับมอบตัว
-		</h1>
-	</div>
-
-	{#if round}
-		<p class="text-sm text-muted-foreground">{round.name}</p>
-	{/if}
-
+<PageShell
+	title="รับมอบตัว"
+	description={round?.name ?? 'ตรวจสอบผู้ผ่านคัดเลือกและสร้างข้อมูลนักเรียน'}
+	backHref="/staff/academic/admission/{id}"
+>
 	{#if !canEnrollAdmission}
 		<PageState
 			variant="permission"
@@ -280,10 +264,7 @@
 				onaction={load}
 			/>
 		{:else if list.length === 0}
-			<PageState
-				title="ยังไม่มีรายชื่อที่รอมอบตัว"
-				description="ต้องผ่านขั้นตอนจัดห้องก่อน"
-			/>
+			<PageState title="ยังไม่มีรายชื่อที่รอมอบตัว" description="ต้องผ่านขั้นตอนจัดห้องก่อน" />
 		{:else}
 			<Card.Root>
 				<div class="overflow-x-auto">
@@ -348,7 +329,7 @@
 			</Card.Root>
 		{/if}
 	{/if}
-</div>
+</PageShell>
 
 <!-- Enroll Dialog -->
 {#if canEnrollAdmission}

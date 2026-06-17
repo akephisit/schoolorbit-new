@@ -229,3 +229,34 @@ test('academic timetable scheduling pages use shared app page shell', async () =
 		);
 	}
 });
+
+test('academic admission workflow pages use shared app page shell', async () => {
+	const pages = [
+		'src/routes/(app)/staff/academic/admission/new/+page.svelte',
+		'src/routes/(app)/staff/academic/admission/[id]/+page.svelte',
+		'src/routes/(app)/staff/academic/admission/[id]/applications/+page.svelte',
+		'src/routes/(app)/staff/academic/admission/[id]/applications/[appId]/+page.svelte',
+		'src/routes/(app)/staff/academic/admission/[id]/enrollment/+page.svelte',
+		'src/routes/(app)/staff/academic/admission/[id]/exam-rooms/+page.svelte',
+		'src/routes/(app)/staff/academic/admission/[id]/report/+page.svelte',
+		'src/routes/(app)/staff/academic/admission/[id]/scores/+page.svelte',
+		'src/routes/(app)/staff/academic/admission/[id]/selections/+page.svelte',
+		'src/routes/(app)/staff/academic/admission/[id]/student-ids/+page.svelte'
+	];
+
+	for (const page of pages) {
+		const source = await readProjectFile(page);
+
+		assert.match(
+			source,
+			/from '\$lib\/components\/app-layout'/,
+			`${page} should import shared app-layout components`
+		);
+		assert.match(source, /<PageShell\b/, `${page} should use PageShell for page layout`);
+		assert.doesNotMatch(
+			source,
+			/<div class="space-y-6">\s*<!-- Header -->/,
+			`${page} should not hand-roll the page header wrapper`
+		);
+	}
+});

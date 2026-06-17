@@ -8,12 +8,13 @@
 		applicationStatusLabel
 	} from '$lib/api/admission';
 	import { Button } from '$lib/components/ui/button';
+	import { PageShell } from '$lib/components/app-layout';
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import * as Card from '$lib/components/ui/card';
 	import * as Select from '$lib/components/ui/select';
 	import { PERMISSIONS } from '$lib/permissions/registry';
 	import { can } from '$lib/stores/permissions';
-	import { ArrowLeft, Settings, ChevronDown } from 'lucide-svelte';
+	import { Settings, ChevronDown } from 'lucide-svelte';
 	import { toast } from 'svelte-sonner';
 	import { SvelteMap } from 'svelte/reactivity';
 
@@ -485,137 +486,136 @@
 	{/if}
 {/snippet}
 
-{#if !canReadAdmission}
-	<PageState
-		variant="permission"
-		title="ไม่มีสิทธิ์ดูรายงานรับสมัคร"
-		description="หน้านี้ต้องใช้สิทธิ์อ่านข้อมูลงานรับสมัครก่อนจึงจะแสดงรายงานได้"
-	/>
-{:else if loading}
-	<PageSkeleton variant="detail" />
-{:else if error}
-	<PageState
-		variant="error"
-		title="โหลดรายงานรับสมัครไม่สำเร็จ"
-		description={error}
-		actionLabel="ลองอีกครั้ง"
-		onaction={load}
-	/>
-{:else if round}
-	<div class="space-y-6">
-		<!-- Header -->
-		<div class="flex items-center justify-between">
-			<Button href="/staff/academic/admission/{id}" variant="ghost" size="sm" class="gap-1">
-				<ArrowLeft class="w-4 h-4" /> ย้อนกลับ
-			</Button>
+<PageShell
+	title="รายงานการรับสมัคร"
+	description={round?.name ?? 'สรุปข้อมูลใบสมัครและสถานะของรอบนี้'}
+	backHref="/staff/academic/admission/{id}"
+>
+	{#if !canReadAdmission}
+		<PageState
+			variant="permission"
+			title="ไม่มีสิทธิ์ดูรายงานรับสมัคร"
+			description="หน้านี้ต้องใช้สิทธิ์อ่านข้อมูลงานรับสมัครก่อนจึงจะแสดงรายงานได้"
+		/>
+	{:else if loading}
+		<PageSkeleton variant="detail" />
+	{:else if error}
+		<PageState
+			variant="error"
+			title="โหลดรายงานรับสมัครไม่สำเร็จ"
+			description={error}
+			actionLabel="ลองอีกครั้ง"
+			onaction={load}
+		/>
+	{:else if round}
+		<div class="space-y-6">
+			{#if !reportConfig || reportConfig.reportMode === null}
+				<Card.Root>
+					<Card.Content class="py-12 text-center space-y-3">
+						<p class="text-muted-foreground">ยังไม่ได้ตั้งค่าการรายงานสำหรับรอบนี้</p>
+						<Button
+							href="/staff/academic/admission/{id}"
+							variant="outline"
+							size="sm"
+							class="gap-1.5"
+						>
+							<Settings class="w-3.5 h-3.5" /> ไปตั้งค่า
+						</Button>
+					</Card.Content>
+				</Card.Root>
+			{:else}
+				<!-- Summary cards -->
+				<div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+					<Card.Root>
+						<Card.Content class="p-4">
+							<p class="text-xs text-muted-foreground">ประเภทการรายงาน</p>
+							<p class="font-semibold mt-0.5">{reportModeLabel[reportConfig.reportMode]}</p>
+						</Card.Content>
+					</Card.Root>
+					<Card.Root>
+						<Card.Content class="p-4">
+							<p class="text-xs text-muted-foreground">ผู้สมัครทั้งหมด</p>
+							<p class="font-semibold mt-0.5">{applications.length} คน</p>
+						</Card.Content>
+					</Card.Root>
+					<Card.Root>
+						<Card.Content class="p-4">
+							<p class="text-xs text-muted-foreground">แสดง (ตามตัวกรอง)</p>
+							<p class="font-semibold mt-0.5">{filteredApps.length} คน</p>
+						</Card.Content>
+					</Card.Root>
+				</div>
+
+				<!-- Status filter -->
+				<div class="flex flex-col sm:flex-row items-start sm:items-center gap-2">
+					<span class="text-sm font-medium">กรอง:</span>
+					<Select.Root type="single" bind:value={statusFilter}>
+						<Select.Trigger class="w-full sm:w-48">
+							{statusFilter === 'all'
+								? 'สถานะทั้งหมด'
+								: (applicationStatusLabel[statusFilter] ?? statusFilter)}
+						</Select.Trigger>
+						<Select.Content>
+							<Select.Item value="all">สถานะทั้งหมด</Select.Item>
+							{#each allStatuses as s (s)}
+								<Select.Item value={s}>{applicationStatusLabel[s] ?? s}</Select.Item>
+							{/each}
+						</Select.Content>
+					</Select.Root>
+				</div>
+
+				<!-- รายงานรวม -->
+				<div class="space-y-3">
+					<h2 class="text-base font-semibold border-b pb-2">รายงานรวม</h2>
+					{@render statsBlock('overall', filteredApps)}
+				</div>
+
+				<!-- แยกตามวัน -->
+				<div class="space-y-3">
+					<h2 class="text-base font-semibold border-b pb-2">แยกตามวัน</h2>
+					{#if dayGroups().length === 0}
+						<p class="text-sm text-muted-foreground">ไม่มีข้อมูล</p>
+					{:else}
+						<div class="space-y-2">
+							{#each dayGroups() as group (group.date)}
+								<Card.Root>
+									<button
+										type="button"
+										class="w-full text-left px-5 py-3.5 flex items-center justify-between hover:bg-muted/40 transition-colors rounded-xl"
+										onclick={() => toggleExpand(`day-${group.date}`)}
+									>
+										<span class="font-medium text-sm">
+											{formatThaiDate(group.date)}
+											<span class="text-muted-foreground font-normal ml-1.5"
+												>({group.apps.length} คน)</span
+											>
+										</span>
+										<ChevronDown
+											class="w-4 h-4 text-muted-foreground transition-transform duration-200 shrink-0 {isExpanded(
+												`day-${group.date}`
+											)
+												? 'rotate-180'
+												: ''}"
+										/>
+									</button>
+									{#if isExpanded(`day-${group.date}`)}
+										<div class="px-5 pb-4 space-y-4 border-t border-border pt-4">
+											{@render statsBlock(group.date, group.apps)}
+										</div>
+									{/if}
+								</Card.Root>
+							{/each}
+						</div>
+					{/if}
+				</div>
+			{/if}
 		</div>
-
-		<div>
-			<h1 class="text-2xl font-bold">รายงานการรับสมัคร</h1>
-			<p class="text-muted-foreground">{round.name}</p>
-		</div>
-
-		{#if !reportConfig || reportConfig.reportMode === null}
-			<Card.Root>
-				<Card.Content class="py-12 text-center space-y-3">
-					<p class="text-muted-foreground">ยังไม่ได้ตั้งค่าการรายงานสำหรับรอบนี้</p>
-					<Button href="/staff/academic/admission/{id}" variant="outline" size="sm" class="gap-1.5">
-						<Settings class="w-3.5 h-3.5" /> ไปตั้งค่า
-					</Button>
-				</Card.Content>
-			</Card.Root>
-		{:else}
-			<!-- Summary cards -->
-			<div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
-				<Card.Root>
-					<Card.Content class="p-4">
-						<p class="text-xs text-muted-foreground">ประเภทการรายงาน</p>
-						<p class="font-semibold mt-0.5">{reportModeLabel[reportConfig.reportMode]}</p>
-					</Card.Content>
-				</Card.Root>
-				<Card.Root>
-					<Card.Content class="p-4">
-						<p class="text-xs text-muted-foreground">ผู้สมัครทั้งหมด</p>
-						<p class="font-semibold mt-0.5">{applications.length} คน</p>
-					</Card.Content>
-				</Card.Root>
-				<Card.Root>
-					<Card.Content class="p-4">
-						<p class="text-xs text-muted-foreground">แสดง (ตามตัวกรอง)</p>
-						<p class="font-semibold mt-0.5">{filteredApps.length} คน</p>
-					</Card.Content>
-				</Card.Root>
-			</div>
-
-			<!-- Status filter -->
-			<div class="flex flex-col sm:flex-row items-start sm:items-center gap-2">
-				<span class="text-sm font-medium">กรอง:</span>
-				<Select.Root type="single" bind:value={statusFilter}>
-					<Select.Trigger class="w-full sm:w-48">
-						{statusFilter === 'all'
-							? 'สถานะทั้งหมด'
-							: (applicationStatusLabel[statusFilter] ?? statusFilter)}
-					</Select.Trigger>
-					<Select.Content>
-						<Select.Item value="all">สถานะทั้งหมด</Select.Item>
-						{#each allStatuses as s (s)}
-							<Select.Item value={s}>{applicationStatusLabel[s] ?? s}</Select.Item>
-						{/each}
-					</Select.Content>
-				</Select.Root>
-			</div>
-
-			<!-- รายงานรวม -->
-			<div class="space-y-3">
-				<h2 class="text-base font-semibold border-b pb-2">รายงานรวม</h2>
-				{@render statsBlock('overall', filteredApps)}
-			</div>
-
-			<!-- แยกตามวัน -->
-			<div class="space-y-3">
-				<h2 class="text-base font-semibold border-b pb-2">แยกตามวัน</h2>
-				{#if dayGroups().length === 0}
-					<p class="text-sm text-muted-foreground">ไม่มีข้อมูล</p>
-				{:else}
-					<div class="space-y-2">
-						{#each dayGroups() as group (group.date)}
-							<Card.Root>
-								<button
-									type="button"
-									class="w-full text-left px-5 py-3.5 flex items-center justify-between hover:bg-muted/40 transition-colors rounded-xl"
-									onclick={() => toggleExpand(`day-${group.date}`)}
-								>
-									<span class="font-medium text-sm">
-										{formatThaiDate(group.date)}
-										<span class="text-muted-foreground font-normal ml-1.5"
-											>({group.apps.length} คน)</span
-										>
-									</span>
-									<ChevronDown
-										class="w-4 h-4 text-muted-foreground transition-transform duration-200 shrink-0 {isExpanded(
-											`day-${group.date}`
-										)
-											? 'rotate-180'
-											: ''}"
-									/>
-								</button>
-								{#if isExpanded(`day-${group.date}`)}
-									<div class="px-5 pb-4 space-y-4 border-t border-border pt-4">
-										{@render statsBlock(group.date, group.apps)}
-									</div>
-								{/if}
-							</Card.Root>
-						{/each}
-					</div>
-				{/if}
-			</div>
-		{/if}
-	</div>
-{:else}
-	<PageState
-		title="ไม่พบรอบรับสมัคร"
-		description="ไม่พบรอบรับสมัครสำหรับรายงานนี้"
-		actionLabel="กลับหน้ารับสมัคร"
-		href="/staff/academic/admission"
-	/>
-{/if}
+	{:else}
+		<PageState
+			title="ไม่พบรอบรับสมัคร"
+			description="ไม่พบรอบรับสมัครสำหรับรายงานนี้"
+			actionLabel="กลับหน้ารับสมัคร"
+			href="/staff/academic/admission"
+		/>
+	{/if}
+</PageShell>
