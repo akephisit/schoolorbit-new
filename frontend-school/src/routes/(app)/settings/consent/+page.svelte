@@ -5,17 +5,10 @@
 	import { Button } from '$lib/components/ui/button';
 	import * as Card from '$lib/components/ui/card';
 	import * as Alert from '$lib/components/ui/alert';
+	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import { Badge } from '$lib/components/ui/badge';
 	import StatusBadge from '$lib/components/consent/StatusBadge.svelte';
-	import {
-		LoaderCircle,
-		AlertCircle,
-		CheckCircle2,
-		XCircle,
-		Clock,
-		Shield,
-		Info
-	} from 'lucide-svelte';
+	import { LoaderCircle, CheckCircle2, XCircle, Clock, Shield, Info } from 'lucide-svelte';
 	import { formatDistanceToNow } from 'date-fns';
 	import { th } from 'date-fns/locale';
 
@@ -142,23 +135,26 @@
 		</p>
 	</div>
 
-	<!-- Error Alert -->
-	{#if error}
-		<Alert.Root variant="destructive">
-			<AlertCircle class="h-4 w-4" />
-			<Alert.Title>เกิดข้อผิดพลาด</Alert.Title>
-			<Alert.Description>{error}</Alert.Description>
-		</Alert.Root>
-	{/if}
-
 	{#if loading}
-		<!-- Loading State -->
-		<Card.Root>
-			<Card.Content class="flex items-center justify-center p-12">
-				<LoaderCircle class="h-8 w-8 animate-spin text-muted-foreground" />
-			</Card.Content>
-		</Card.Root>
+		<PageSkeleton variant="detail" />
+	{:else if error && !status}
+		<PageState
+			variant="error"
+			title="โหลดข้อมูลความยินยอมไม่สำเร็จ"
+			description={error}
+			actionLabel="ลองอีกครั้ง"
+			onaction={loadConsentStatus}
+		/>
 	{:else if status}
+		{#if error}
+			<PageState
+				variant="error"
+				title="ดำเนินการไม่สำเร็จ"
+				description={error}
+				actionLabel="ลองอีกครั้ง"
+				onaction={loadConsentStatus}
+			/>
+		{/if}
 		<!-- Compliance Status -->
 		<Card.Root class={status.is_compliant ? 'border-green-500' : 'border-yellow-500'}>
 			<Card.Header>
@@ -322,5 +318,12 @@
 				</p>
 			</Card.Content>
 		</Card.Root>
+	{:else}
+		<PageState
+			title="ไม่พบข้อมูลความยินยอม"
+			description="ยังไม่มีสถานะความยินยอมสำหรับบัญชีนี้"
+			actionLabel="โหลดอีกครั้ง"
+			onaction={loadConsentStatus}
+		/>
 	{/if}
 </div>

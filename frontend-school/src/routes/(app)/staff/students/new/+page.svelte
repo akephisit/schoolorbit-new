@@ -6,11 +6,11 @@
 	import { Label } from '$lib/components/ui/label';
 	import * as Select from '$lib/components/ui/select';
 	import { Card } from '$lib/components/ui/card';
-	import { Alert, AlertDescription, AlertTitle } from '$lib/components/ui/alert';
+	import { LoadingButton, PageState } from '$lib/components/app-state';
 	import { PERMISSIONS } from '$lib/permissions/registry';
 	import { can } from '$lib/stores/permissions';
 	import { toast } from 'svelte-sonner';
-	import { AlertTriangle, ArrowLeft, User, Save, GraduationCap } from 'lucide-svelte';
+	import { ArrowLeft, User, Save, GraduationCap } from 'lucide-svelte';
 	import { DatePicker } from '$lib/components/ui/date-picker';
 	import { Switch } from '$lib/components/ui/switch';
 	import { createStudent } from '$lib/api/students';
@@ -163,11 +163,11 @@
 	</div>
 
 	{#if !canCreateStudent}
-		<Alert>
-			<AlertTriangle class="h-4 w-4" />
-			<AlertTitle>ไม่มีสิทธิ์เพิ่มนักเรียน</AlertTitle>
-			<AlertDescription>ต้องมีสิทธิ์สร้างนักเรียนจึงจะบันทึกข้อมูลใหม่ได้</AlertDescription>
-		</Alert>
+		<PageState
+			variant="permission"
+			title="ไม่มีสิทธิ์เพิ่มนักเรียน"
+			description="ต้องมีสิทธิ์สร้างนักเรียนจึงจะบันทึกข้อมูลใหม่ได้"
+		/>
 	{:else}
 		<form
 			onsubmit={(e) => {
@@ -624,14 +624,10 @@
 
 			<!-- Actions -->
 			<div class="flex gap-3">
-				<Button type="submit" disabled={loading} class="flex-1">
-					{#if loading}
-						กำลังบันทึก...
-					{:else}
-						<Save class="w-4 h-4 mr-2" />
-						บันทึก
-					{/if}
-				</Button>
+				<LoadingButton type="submit" {loading} loadingLabel="กำลังบันทึก..." class="flex-1">
+					<Save class="w-4 h-4 mr-2" />
+					บันทึก
+				</LoadingButton>
 				<Button type="button" variant="outline" href="/staff/students" disabled={loading}
 					>ยกเลิก</Button
 				>

@@ -16,6 +16,7 @@
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import { Textarea } from '$lib/components/ui/textarea';
+	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import * as Select from '$lib/components/ui/select';
 	import { Checkbox } from '$lib/components/ui/checkbox';
 	import { DatePicker } from '$lib/components/ui/date-picker';
@@ -422,15 +423,15 @@
 
 	<div class="space-y-6">
 		{#if loadingProfile}
-			<div class="bg-card border border-border rounded-lg p-12 text-center">
-				<LoaderCircle class="w-8 h-8 animate-spin text-muted-foreground mx-auto mb-4" />
-				<p class="text-muted-foreground">กำลังโหลดข้อมูล...</p>
-			</div>
+			<PageSkeleton variant="form" rows={8} />
 		{:else if errors.load}
-			<div class="bg-destructive/10 border border-destructive/20 rounded-lg p-6 text-center">
-				<p class="text-destructive">{errors.load}</p>
-				<Button onclick={loadStaffProfile} variant="outline" class="mt-4">ลองอีกครั้ง</Button>
-			</div>
+			<PageState
+				variant="error"
+				title="โหลดข้อมูลบุคลากรไม่สำเร็จ"
+				description={errors.load}
+				actionLabel="ลองอีกครั้ง"
+				onaction={loadStaffProfile}
+			/>
 		{:else if staff}
 			<!-- Progress Steps -->
 			<div class="mb-8">
@@ -985,6 +986,13 @@
 					{/if}
 				</div>
 			</form>
+		{:else}
+			<PageState
+				title="ไม่พบข้อมูลบุคลากร"
+				description="ไม่พบข้อมูลบุคลากรสำหรับรายการนี้"
+				actionLabel="กลับหน้าจัดการบุคลากร"
+				href="/staff/manage"
+			/>
 		{/if}
 	</div>
 </div>

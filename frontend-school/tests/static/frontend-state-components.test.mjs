@@ -277,3 +277,37 @@ test('admission workflow pages use shared frontend state components', async () =
 		assert.match(source, /<PageState\b/, `${page} should use PageState for empty/error states`);
 	}
 });
+
+test('remaining action and system pages use shared frontend state components', async () => {
+	const pages = [
+		'src/routes/(app)/403/+page.svelte',
+		'src/routes/(app)/settings/consent/+page.svelte',
+		'src/routes/(app)/staff/manage/new/+page.svelte',
+		'src/routes/(app)/staff/manage/[id]/edit/+page.svelte',
+		'src/routes/(app)/staff/students/new/+page.svelte',
+		'src/routes/(app)/staff/students/[id]/edit/+page.svelte'
+	];
+	const loadingPages = [
+		'src/routes/(app)/settings/consent/+page.svelte',
+		'src/routes/(app)/staff/manage/new/+page.svelte',
+		'src/routes/(app)/staff/manage/[id]/edit/+page.svelte',
+		'src/routes/(app)/staff/students/[id]/edit/+page.svelte'
+	];
+
+	for (const page of pages) {
+		const source = await readProjectFile(page);
+
+		assert.match(
+			source,
+			/from '\$lib\/components\/app-state'/,
+			`${page} should import shared app-state components`
+		);
+		assert.match(source, /<PageState\b/, `${page} should use PageState for system states`);
+	}
+
+	for (const page of loadingPages) {
+		const source = await readProjectFile(page);
+
+		assert.match(source, /<PageSkeleton\b/, `${page} should use PageSkeleton for loading`);
+	}
+});

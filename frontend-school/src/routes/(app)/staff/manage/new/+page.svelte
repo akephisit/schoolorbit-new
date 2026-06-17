@@ -13,6 +13,7 @@
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import { Textarea } from '$lib/components/ui/textarea';
+	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import * as Select from '$lib/components/ui/select';
 	import { Checkbox } from '$lib/components/ui/checkbox';
 	import { DatePicker } from '$lib/components/ui/date-picker';
@@ -36,6 +37,8 @@
 	let loading = $state(false);
 	let loadingRoles = $state(true);
 	let loadingOrganizationUnits = $state(true);
+	let optionsError = $state('');
+	const optionsLoading = $derived(loadingRoles || loadingOrganizationUnits);
 
 	// Available options
 	let roles: Role[] = $state([]);
@@ -79,6 +82,9 @@
 
 	// Load roles and organizationUnits
 	async function loadOptions() {
+		loadingRoles = true;
+		loadingOrganizationUnits = true;
+		optionsError = '';
 		try {
 			const [rolesRes, deptsRes] = await Promise.all([listRoles(), listOrganizationUnits()]);
 
@@ -91,6 +97,8 @@
 			}
 		} catch (e) {
 			console.error('Failed to load options:', e);
+			optionsError = e instanceof Error ? e.message : 'ไม่สามารถโหลดตัวเลือกสำหรับแบบฟอร์มได้';
+			toast.error(optionsError);
 		} finally {
 			loadingRoles = false;
 			loadingOrganizationUnits = false;
@@ -353,558 +361,574 @@
 		</div>
 	</div>
 
-	<div class="space-y-6">
-		<!-- Progress Steps -->
-		<div class="mb-8">
-			<div class="flex items-center justify-between">
-				{#each Array.from({ length: totalSteps }, (_v, i) => i) as i (i)}
-					{@const step = i + 1}
-					{@const Icon = getStepIcon(step)}
-					<div class="flex flex-col items-center flex-1">
-						<!-- Circle -->
-						<div
-							class="w-12 h-12 rounded-full flex items-center justify-center transition-all
-							{step < currentStep
-								? 'bg-primary text-primary-foreground'
-								: step === currentStep
-									? 'bg-primary text-primary-foreground ring-4 ring-primary/20'
-									: 'bg-muted text-muted-foreground'}"
-						>
-							{#if step < currentStep}
-								<Check class="w-6 h-6" />
-							{:else}
-								<Icon class="w-6 h-6" />
-							{/if}
-						</div>
-
-						<!-- Line (except last) -->
-						{#if i < totalSteps - 1}
+	{#if optionsLoading}
+		<PageSkeleton variant="form" rows={8} />
+	{:else if optionsError}
+		<PageState
+			variant="error"
+			title="โหลดตัวเลือกสำหรับแบบฟอร์มไม่สำเร็จ"
+			description={optionsError}
+			actionLabel="ลองอีกครั้ง"
+			onaction={loadOptions}
+		/>
+	{:else}
+		<div class="space-y-6">
+			<!-- Progress Steps -->
+			<div class="mb-8">
+				<div class="flex items-center justify-between">
+					{#each Array.from({ length: totalSteps }, (_v, i) => i) as i (i)}
+						{@const step = i + 1}
+						{@const Icon = getStepIcon(step)}
+						<div class="flex flex-col items-center flex-1">
+							<!-- Circle -->
 							<div
-								class="absolute left-1/2 w-full h-0.5 top-6 -z-10
-								{step < currentStep ? 'bg-primary' : 'bg-border'}"
-								style="width: calc(100% / {totalSteps} - 3rem); transform: translateX(1.5rem);"
-							></div>
-						{/if}
-
-						<!-- Label -->
-						<p
-							class="text-xs mt-2 text-center
-							{step === currentStep ? 'text-foreground font-medium' : 'text-muted-foreground'}"
-						>
-							{#if step === 1}
-								ข้อมูลส่วนตัว
-							{:else if step === 2}
-								บทบาท
-							{:else}
-								สังกัดหน่วยงาน
-							{/if}
-						</p>
-					</div>
-				{/each}
-			</div>
-		</div>
-
-		<!-- Form Content -->
-		<div class="bg-card border border-border rounded-lg p-6">
-			{#if currentStep === 1}
-				<!-- Step 1: Personal Information -->
-				<h2 class="text-xl font-semibold mb-6">ข้อมูลส่วนตัว</h2>
-
-				<div class="space-y-4">
-					<!-- Login Credentials Section -->
-					<div class="bg-primary/5 border border-primary/20 rounded-lg p-4 mb-6">
-						<h3 class="text-sm font-semibold text-primary mb-3 flex items-center gap-2">
-							<svg
-								xmlns="http://www.w3.org/2000/svg"
-								width="16"
-								height="16"
-								viewBox="0 0 24 24"
-								fill="none"
-								stroke="currentColor"
-								stroke-width="2"
-								stroke-linecap="round"
-								stroke-linejoin="round"
-								><rect width="18" height="11" x="3" y="11" rx="2" ry="2"></rect><path
-									d="M7 11V7a5 5 0 0 1 10 0v4"
-								></path></svg
+								class="w-12 h-12 rounded-full flex items-center justify-center transition-all
+							{step < currentStep
+									? 'bg-primary text-primary-foreground'
+									: step === currentStep
+										? 'bg-primary text-primary-foreground ring-4 ring-primary/20'
+										: 'bg-muted text-muted-foreground'}"
 							>
-							ข้อมูลสำหรับเข้าสู่ระบบ
-						</h3>
-						<p class="text-xs text-muted-foreground mb-4">ข้อมูลนี้จะใช้สำหรับเข้าสู่ระบบ</p>
-
-						<div class="space-y-4">
-							<!-- Username Input -->
-							<div>
-								<Label class="mb-2">ชื่อผู้ใช้งาน (Username)</Label>
-								<Input
-									type="text"
-									bind:value={formData.username}
-									placeholder="ใส่ชื่อผู้ใช้งาน (หากไม่ระบุระบบจะสร้างให้อัตโนมัติ)"
-									class="w-full px-3 py-2 border border-border rounded-md
-                                {errors.username ? 'border-destructive' : ''}"
-								/>
-								{#if errors.username}
-									<p class="text-xs text-destructive mt-1">{errors.username}</p>
+								{#if step < currentStep}
+									<Check class="w-6 h-6" />
 								{:else}
-									<p class="text-xs text-muted-foreground mt-1">
-										ชื่อผู้ใช้งานสำหรับเข้าสู่ระบบ (เว้นว่างได้เพื่อให้ระบบสร้างอัตโนมัติ)
-									</p>
+									<Icon class="w-6 h-6" />
 								{/if}
 							</div>
 
-							<div>
-								<Label class="mb-2">เลขบัตรประชาชน</Label>
-								<Input
-									type="text"
-									bind:value={formData.national_id}
-									placeholder="1234567890123 (ไม่บังคับ)"
-									maxlength={13}
-									class="w-full px-3 py-2 border border-border rounded-md
-								{errors.national_id ? 'border-destructive' : ''}"
-								/>
-								{#if errors.national_id}
-									<p class="text-xs text-destructive mt-1">{errors.national_id}</p>
+							<!-- Line (except last) -->
+							{#if i < totalSteps - 1}
+								<div
+									class="absolute left-1/2 w-full h-0.5 top-6 -z-10
+								{step < currentStep ? 'bg-primary' : 'bg-border'}"
+									style="width: calc(100% / {totalSteps} - 3rem); transform: translateX(1.5rem);"
+								></div>
+							{/if}
+
+							<!-- Label -->
+							<p
+								class="text-xs mt-2 text-center
+							{step === currentStep ? 'text-foreground font-medium' : 'text-muted-foreground'}"
+							>
+								{#if step === 1}
+									ข้อมูลส่วนตัว
+								{:else if step === 2}
+									บทบาท
 								{:else}
-									<p class="text-xs text-muted-foreground mt-1">
-										เลขบัตรประชาชนสำหรับใช้ในระบบตรวจสอบสิทธิ์อื่นๆ (ถ้ามี)
-									</p>
+									สังกัดหน่วยงาน
 								{/if}
-							</div>
-
-							<div class="grid grid-cols-2 gap-4">
-								<div>
-									<Label class="mb-2">
-										รหัสผ่าน <span class="text-destructive">*</span>
-									</Label>
-									<Input
-										type="password"
-										bind:value={formData.password}
-										placeholder="••••••••"
-										class="w-full px-3 py-2 border border-border rounded-md
-									{errors.password ? 'border-destructive' : ''}"
-									/>
-									{#if errors.password}
-										<p class="text-xs text-destructive mt-1">{errors.password}</p>
-									{/if}
-								</div>
-
-								<div>
-									<Label class="mb-2">
-										ยืนยันรหัสผ่าน <span class="text-destructive">*</span>
-									</Label>
-									<Input
-										type="password"
-										bind:value={formData.confirmPassword}
-										placeholder="••••••••"
-										class="w-full px-3 py-2 border border-border rounded-md
-									{errors.confirmPassword ? 'border-destructive' : ''}"
-									/>
-									{#if errors.confirmPassword}
-										<p class="text-xs text-destructive mt-1">{errors.confirmPassword}</p>
-									{/if}
-								</div>
-							</div>
+							</p>
 						</div>
-					</div>
-
-					<!-- Personal Information Section -->
-					<div class="grid grid-cols-2 gap-4">
-						<div>
-							<Label class="mb-2">
-								คำนำหน้า <span class="text-destructive">*</span>
-							</Label>
-							<Select.Root type="single" bind:value={formData.title}>
-								<Select.Trigger>{formData.title || 'เลือกคำนำหน้า'}</Select.Trigger>
-								<Select.Content>
-									<Select.Item value="นาย">นาย</Select.Item>
-									<Select.Item value="นาง">นาง</Select.Item>
-									<Select.Item value="นางสาว">นางสาว</Select.Item>
-									<Select.Item value="ดร.">ดร.</Select.Item>
-									<Select.Item value="ศ.">ศ.</Select.Item>
-									<Select.Item value="รศ.">รศ.</Select.Item>
-									<Select.Item value="ผศ.">ผศ.</Select.Item>
-								</Select.Content>
-							</Select.Root>
-						</div>
-
-						<div>
-							<Label class="mb-2">
-								เพศ <span class="text-destructive">*</span>
-							</Label>
-							<Select.Root type="single" bind:value={formData.gender}>
-								<Select.Trigger>
-									{formData.gender === 'male'
-										? 'ชาย'
-										: formData.gender === 'female'
-											? 'หญิง'
-											: formData.gender === 'other'
-												? 'อื่นๆ'
-												: 'เลือกเพศ'}
-								</Select.Trigger>
-								<Select.Content>
-									<Select.Item value="male">ชาย</Select.Item>
-									<Select.Item value="female">หญิง</Select.Item>
-									<Select.Item value="other">อื่นๆ</Select.Item>
-								</Select.Content>
-							</Select.Root>
-						</div>
-					</div>
-
-					<div class="grid grid-cols-2 gap-4">
-						<div>
-							<Label class="mb-2">
-								ชื่อ <span class="text-destructive">*</span>
-							</Label>
-							<Input
-								type="text"
-								bind:value={formData.first_name}
-								placeholder="ชื่อ"
-								class="w-full px-3 py-2 border border-border rounded-md
-							{errors.first_name ? 'border-destructive' : ''}"
-							/>
-							{#if errors.first_name}
-								<p class="text-xs text-destructive mt-1">{errors.first_name}</p>
-							{/if}
-						</div>
-
-						<div>
-							<Label class="mb-2">
-								นามสกุล <span class="text-destructive">*</span>
-							</Label>
-							<Input
-								type="text"
-								bind:value={formData.last_name}
-								placeholder="นามสกุล"
-								class="w-full px-3 py-2 border border-border rounded-md
-							{errors.last_name ? 'border-destructive' : ''}"
-							/>
-							{#if errors.last_name}
-								<p class="text-xs text-destructive mt-1">{errors.last_name}</p>
-							{/if}
-						</div>
-					</div>
-
-					<div>
-						<Label class="mb-2">ชื่อเล่น</Label>
-						<Input type="text" bind:value={formData.nickname} placeholder="ชื่อเล่น" />
-					</div>
-
-					<div class="grid grid-cols-2 gap-4">
-						<div>
-							<Label class="mb-2">อีเมล</Label>
-							<Input
-								type="email"
-								bind:value={formData.email}
-								placeholder="email@school.ac.th (ไม่บังคับ)"
-								class="w-full px-3 py-2 border border-border rounded-md
-							{errors.email ? 'border-destructive' : ''}"
-							/>
-							{#if errors.email}
-								<p class="text-xs text-destructive mt-1">{errors.email}</p>
-							{/if}
-						</div>
-
-						<div>
-							<Label class="mb-2">หมายเลขโทรศัพท์</Label>
-							<Input
-								type="tel"
-								bind:value={formData.phone}
-								placeholder="081-234-5678"
-								class="w-full px-3 py-2 border border-border rounded-md
-							{errors.phone ? 'border-destructive' : ''}"
-							/>
-							{#if errors.phone}
-								<p class="text-xs text-destructive mt-1">{errors.phone}</p>
-							{/if}
-						</div>
-					</div>
-
-					<div class="grid grid-cols-2 gap-4">
-						<div>
-							<Label class="mb-2">วันเกิด</Label>
-							<DatePicker bind:value={formData.date_of_birth} placeholder="เลือกวันเกิด" />
-						</div>
-
-						<div>
-							<Label class="mb-2">วันที่เริ่มงาน</Label>
-							<DatePicker bind:value={formData.hired_date} placeholder="เลือกวันที่เริ่มงาน" />
-						</div>
-					</div>
-
-					<div>
-						<Label class="mb-2">Line ID</Label>
-						<Input type="text" bind:value={formData.line_id} placeholder="@lineid" />
-					</div>
-
-					<div>
-						<Label class="mb-2">เบอร์ติดต่อฉุกเฉิน</Label>
-						<Input type="tel" bind:value={formData.emergency_contact} placeholder="081-234-5678" />
-					</div>
-
-					<div>
-						<Label class="mb-2">ที่อยู่</Label>
-						<Textarea bind:value={formData.address} placeholder="ที่อยู่ปัจจุบัน" rows={3} />
-					</div>
+					{/each}
 				</div>
-			{:else if currentStep === 2}
-				<!-- Step 2: Roles -->
-				<h2 class="text-xl font-semibold mb-6">บทบาทและตำแหน่ง</h2>
+			</div>
 
-				{#if loadingRoles}
-					<div class="flex justify-center py-8">
-						<LoaderCircle class="w-8 h-8 animate-spin text-muted-foreground" />
-					</div>
-				{:else}
+			<!-- Form Content -->
+			<div class="bg-card border border-border rounded-lg p-6">
+				{#if currentStep === 1}
+					<!-- Step 1: Personal Information -->
+					<h2 class="text-xl font-semibold mb-6">ข้อมูลส่วนตัว</h2>
+
 					<div class="space-y-4">
-						<p class="text-sm text-muted-foreground">
-							เลือกบทบาทของบุคลากร (สามารถเลือกได้มากกว่า 1 บทบาท)
-						</p>
-
-						{#if errors.roles}
-							<p class="text-sm text-destructive">{errors.roles}</p>
-						{/if}
-
-						<div class="grid grid-cols-2 gap-3">
-							{#each roles as role (role.id)}
-								<Button
-									variant="outline"
-									type="button"
-									onclick={() => toggleRole(role.id)}
-									class="p-4 border-2 rounded-lg text-left transition-all
-									{formData.role_ids.includes(role.id)
-										? 'border-primary bg-primary/5'
-										: 'border-border hover:border-primary/50'}"
+						<!-- Login Credentials Section -->
+						<div class="bg-primary/5 border border-primary/20 rounded-lg p-4 mb-6">
+							<h3 class="text-sm font-semibold text-primary mb-3 flex items-center gap-2">
+								<svg
+									xmlns="http://www.w3.org/2000/svg"
+									width="16"
+									height="16"
+									viewBox="0 0 24 24"
+									fill="none"
+									stroke="currentColor"
+									stroke-width="2"
+									stroke-linecap="round"
+									stroke-linejoin="round"
+									><rect width="18" height="11" x="3" y="11" rx="2" ry="2"></rect><path
+										d="M7 11V7a5 5 0 0 1 10 0v4"
+									></path></svg
 								>
-									<div class="flex items-start justify-between mb-2">
-										<div class="flex-1">
-											<p class="font-medium">{role.name}</p>
-											{#if role.name_en}
-												<p class="text-xs text-muted-foreground">{role.name_en}</p>
-											{/if}
-										</div>
-										<div class="flex gap-1">
-											{#if formData.role_ids.includes(role.id)}
-												<Check class="w-5 h-5 text-primary" />
-											{/if}
-										</div>
+								ข้อมูลสำหรับเข้าสู่ระบบ
+							</h3>
+							<p class="text-xs text-muted-foreground mb-4">ข้อมูลนี้จะใช้สำหรับเข้าสู่ระบบ</p>
+
+							<div class="space-y-4">
+								<!-- Username Input -->
+								<div>
+									<Label class="mb-2">ชื่อผู้ใช้งาน (Username)</Label>
+									<Input
+										type="text"
+										bind:value={formData.username}
+										placeholder="ใส่ชื่อผู้ใช้งาน (หากไม่ระบุระบบจะสร้างให้อัตโนมัติ)"
+										class="w-full px-3 py-2 border border-border rounded-md
+                                {errors.username ? 'border-destructive' : ''}"
+									/>
+									{#if errors.username}
+										<p class="text-xs text-destructive mt-1">{errors.username}</p>
+									{:else}
+										<p class="text-xs text-muted-foreground mt-1">
+											ชื่อผู้ใช้งานสำหรับเข้าสู่ระบบ (เว้นว่างได้เพื่อให้ระบบสร้างอัตโนมัติ)
+										</p>
+									{/if}
+								</div>
+
+								<div>
+									<Label class="mb-2">เลขบัตรประชาชน</Label>
+									<Input
+										type="text"
+										bind:value={formData.national_id}
+										placeholder="1234567890123 (ไม่บังคับ)"
+										maxlength={13}
+										class="w-full px-3 py-2 border border-border rounded-md
+								{errors.national_id ? 'border-destructive' : ''}"
+									/>
+									{#if errors.national_id}
+										<p class="text-xs text-destructive mt-1">{errors.national_id}</p>
+									{:else}
+										<p class="text-xs text-muted-foreground mt-1">
+											เลขบัตรประชาชนสำหรับใช้ในระบบตรวจสอบสิทธิ์อื่นๆ (ถ้ามี)
+										</p>
+									{/if}
+								</div>
+
+								<div class="grid grid-cols-2 gap-4">
+									<div>
+										<Label class="mb-2">
+											รหัสผ่าน <span class="text-destructive">*</span>
+										</Label>
+										<Input
+											type="password"
+											bind:value={formData.password}
+											placeholder="••••••••"
+											class="w-full px-3 py-2 border border-border rounded-md
+									{errors.password ? 'border-destructive' : ''}"
+										/>
+										{#if errors.password}
+											<p class="text-xs text-destructive mt-1">{errors.password}</p>
+										{/if}
 									</div>
-									<div class="flex items-center gap-2 text-xs">
-										<span class="px-2 py-0.5 bg-muted rounded">{role.user_type}</span>
-										<span class="text-muted-foreground">ระดับ {role.level}</span>
+
+									<div>
+										<Label class="mb-2">
+											ยืนยันรหัสผ่าน <span class="text-destructive">*</span>
+										</Label>
+										<Input
+											type="password"
+											bind:value={formData.confirmPassword}
+											placeholder="••••••••"
+											class="w-full px-3 py-2 border border-border rounded-md
+									{errors.confirmPassword ? 'border-destructive' : ''}"
+										/>
+										{#if errors.confirmPassword}
+											<p class="text-xs text-destructive mt-1">{errors.confirmPassword}</p>
+										{/if}
 									</div>
-								</Button>
-							{/each}
+								</div>
+							</div>
 						</div>
 
-						{#if formData.role_ids.length > 0}
-							<div class="mt-6">
+						<!-- Personal Information Section -->
+						<div class="grid grid-cols-2 gap-4">
+							<div>
 								<Label class="mb-2">
-									บทบาทหลัก <span class="text-destructive">*</span>
+									คำนำหน้า <span class="text-destructive">*</span>
 								</Label>
-								{#if errors.primary_role}
-									<p class="text-sm text-destructive mb-2">{errors.primary_role}</p>
-								{/if}
-								<Select.Root type="single" bind:value={formData.primary_role_id}>
-									<Select.Trigger>
-										{#if formData.primary_role_id}
-											{roles.find((r) => r.id === formData.primary_role_id)?.name ||
-												'เลือกบทบาทหลัก'}
-										{:else}
-											เลือกบทบาทหลัก
-										{/if}
-									</Select.Trigger>
+								<Select.Root type="single" bind:value={formData.title}>
+									<Select.Trigger>{formData.title || 'เลือกคำนำหน้า'}</Select.Trigger>
 									<Select.Content>
-										<Select.Item value="">เลือกบทบาทหลัก</Select.Item>
-										{#each formData.role_ids as roleId (roleId)}
-											{@const role = roles.find((r) => r.id === roleId)}
-											{#if role}
-												<Select.Item value={role.id}>{role.name}</Select.Item>
-											{/if}
-										{/each}
+										<Select.Item value="นาย">นาย</Select.Item>
+										<Select.Item value="นาง">นาง</Select.Item>
+										<Select.Item value="นางสาว">นางสาว</Select.Item>
+										<Select.Item value="ดร.">ดร.</Select.Item>
+										<Select.Item value="ศ.">ศ.</Select.Item>
+										<Select.Item value="รศ.">รศ.</Select.Item>
+										<Select.Item value="ผศ.">ผศ.</Select.Item>
 									</Select.Content>
 								</Select.Root>
 							</div>
-						{/if}
+
+							<div>
+								<Label class="mb-2">
+									เพศ <span class="text-destructive">*</span>
+								</Label>
+								<Select.Root type="single" bind:value={formData.gender}>
+									<Select.Trigger>
+										{formData.gender === 'male'
+											? 'ชาย'
+											: formData.gender === 'female'
+												? 'หญิง'
+												: formData.gender === 'other'
+													? 'อื่นๆ'
+													: 'เลือกเพศ'}
+									</Select.Trigger>
+									<Select.Content>
+										<Select.Item value="male">ชาย</Select.Item>
+										<Select.Item value="female">หญิง</Select.Item>
+										<Select.Item value="other">อื่นๆ</Select.Item>
+									</Select.Content>
+								</Select.Root>
+							</div>
+						</div>
+
+						<div class="grid grid-cols-2 gap-4">
+							<div>
+								<Label class="mb-2">
+									ชื่อ <span class="text-destructive">*</span>
+								</Label>
+								<Input
+									type="text"
+									bind:value={formData.first_name}
+									placeholder="ชื่อ"
+									class="w-full px-3 py-2 border border-border rounded-md
+							{errors.first_name ? 'border-destructive' : ''}"
+								/>
+								{#if errors.first_name}
+									<p class="text-xs text-destructive mt-1">{errors.first_name}</p>
+								{/if}
+							</div>
+
+							<div>
+								<Label class="mb-2">
+									นามสกุล <span class="text-destructive">*</span>
+								</Label>
+								<Input
+									type="text"
+									bind:value={formData.last_name}
+									placeholder="นามสกุล"
+									class="w-full px-3 py-2 border border-border rounded-md
+							{errors.last_name ? 'border-destructive' : ''}"
+								/>
+								{#if errors.last_name}
+									<p class="text-xs text-destructive mt-1">{errors.last_name}</p>
+								{/if}
+							</div>
+						</div>
+
+						<div>
+							<Label class="mb-2">ชื่อเล่น</Label>
+							<Input type="text" bind:value={formData.nickname} placeholder="ชื่อเล่น" />
+						</div>
+
+						<div class="grid grid-cols-2 gap-4">
+							<div>
+								<Label class="mb-2">อีเมล</Label>
+								<Input
+									type="email"
+									bind:value={formData.email}
+									placeholder="email@school.ac.th (ไม่บังคับ)"
+									class="w-full px-3 py-2 border border-border rounded-md
+							{errors.email ? 'border-destructive' : ''}"
+								/>
+								{#if errors.email}
+									<p class="text-xs text-destructive mt-1">{errors.email}</p>
+								{/if}
+							</div>
+
+							<div>
+								<Label class="mb-2">หมายเลขโทรศัพท์</Label>
+								<Input
+									type="tel"
+									bind:value={formData.phone}
+									placeholder="081-234-5678"
+									class="w-full px-3 py-2 border border-border rounded-md
+							{errors.phone ? 'border-destructive' : ''}"
+								/>
+								{#if errors.phone}
+									<p class="text-xs text-destructive mt-1">{errors.phone}</p>
+								{/if}
+							</div>
+						</div>
+
+						<div class="grid grid-cols-2 gap-4">
+							<div>
+								<Label class="mb-2">วันเกิด</Label>
+								<DatePicker bind:value={formData.date_of_birth} placeholder="เลือกวันเกิด" />
+							</div>
+
+							<div>
+								<Label class="mb-2">วันที่เริ่มงาน</Label>
+								<DatePicker bind:value={formData.hired_date} placeholder="เลือกวันที่เริ่มงาน" />
+							</div>
+						</div>
+
+						<div>
+							<Label class="mb-2">Line ID</Label>
+							<Input type="text" bind:value={formData.line_id} placeholder="@lineid" />
+						</div>
+
+						<div>
+							<Label class="mb-2">เบอร์ติดต่อฉุกเฉิน</Label>
+							<Input
+								type="tel"
+								bind:value={formData.emergency_contact}
+								placeholder="081-234-5678"
+							/>
+						</div>
+
+						<div>
+							<Label class="mb-2">ที่อยู่</Label>
+							<Textarea bind:value={formData.address} placeholder="ที่อยู่ปัจจุบัน" rows={3} />
+						</div>
 					</div>
-				{/if}
-			{:else if currentStep === 3}
-				<!-- Step 3: Organization Units -->
-				<h2 class="text-xl font-semibold mb-6">สังกัดหน่วยงาน</h2>
+				{:else if currentStep === 2}
+					<!-- Step 2: Roles -->
+					<h2 class="text-xl font-semibold mb-6">บทบาทและตำแหน่ง</h2>
 
-				{#if loadingOrganizationUnits}
-					<div class="flex justify-center py-8">
-						<LoaderCircle class="w-8 h-8 animate-spin text-muted-foreground" />
-					</div>
-				{:else}
-					<div class="space-y-4">
-						<p class="text-sm text-muted-foreground">
-							ระบุหน่วยงาน/กลุ่มที่บุคลากรสังกัดและตำแหน่งในหน่วยงาน
-						</p>
+					{#if loadingRoles}
+						<div class="flex justify-center py-8">
+							<LoaderCircle class="w-8 h-8 animate-spin text-muted-foreground" />
+						</div>
+					{:else}
+						<div class="space-y-4">
+							<p class="text-sm text-muted-foreground">
+								เลือกบทบาทของบุคลากร (สามารถเลือกได้มากกว่า 1 บทบาท)
+							</p>
 
-						{#if errors.organization_units}
-							<p class="text-sm text-destructive">{errors.organization_units}</p>
-						{/if}
+							{#if errors.roles}
+								<p class="text-sm text-destructive">{errors.roles}</p>
+							{/if}
 
-						{#each formData.organization_assignments as dept, i (i)}
-							<div class="p-4 border border-border rounded-lg">
-								<div class="flex items-start justify-between mb-4">
-									<h3 class="font-medium">หน่วยงานที่ {i + 1}</h3>
-									{#if formData.organization_assignments.length > 1}
-										<Button
-											variant="ghost"
-											size="sm"
-											type="button"
-											onclick={() => removeOrganizationUnit(i)}
-											class="text-destructive hover:text-destructive/80 text-sm"
-										>
-											ลบ
-										</Button>
+							<div class="grid grid-cols-2 gap-3">
+								{#each roles as role (role.id)}
+									<Button
+										variant="outline"
+										type="button"
+										onclick={() => toggleRole(role.id)}
+										class="p-4 border-2 rounded-lg text-left transition-all
+									{formData.role_ids.includes(role.id)
+											? 'border-primary bg-primary/5'
+											: 'border-border hover:border-primary/50'}"
+									>
+										<div class="flex items-start justify-between mb-2">
+											<div class="flex-1">
+												<p class="font-medium">{role.name}</p>
+												{#if role.name_en}
+													<p class="text-xs text-muted-foreground">{role.name_en}</p>
+												{/if}
+											</div>
+											<div class="flex gap-1">
+												{#if formData.role_ids.includes(role.id)}
+													<Check class="w-5 h-5 text-primary" />
+												{/if}
+											</div>
+										</div>
+										<div class="flex items-center gap-2 text-xs">
+											<span class="px-2 py-0.5 bg-muted rounded">{role.user_type}</span>
+											<span class="text-muted-foreground">ระดับ {role.level}</span>
+										</div>
+									</Button>
+								{/each}
+							</div>
+
+							{#if formData.role_ids.length > 0}
+								<div class="mt-6">
+									<Label class="mb-2">
+										บทบาทหลัก <span class="text-destructive">*</span>
+									</Label>
+									{#if errors.primary_role}
+										<p class="text-sm text-destructive mb-2">{errors.primary_role}</p>
 									{/if}
+									<Select.Root type="single" bind:value={formData.primary_role_id}>
+										<Select.Trigger>
+											{#if formData.primary_role_id}
+												{roles.find((r) => r.id === formData.primary_role_id)?.name ||
+													'เลือกบทบาทหลัก'}
+											{:else}
+												เลือกบทบาทหลัก
+											{/if}
+										</Select.Trigger>
+										<Select.Content>
+											<Select.Item value="">เลือกบทบาทหลัก</Select.Item>
+											{#each formData.role_ids as roleId (roleId)}
+												{@const role = roles.find((r) => r.id === roleId)}
+												{#if role}
+													<Select.Item value={role.id}>{role.name}</Select.Item>
+												{/if}
+											{/each}
+										</Select.Content>
+									</Select.Root>
 								</div>
+							{/if}
+						</div>
+					{/if}
+				{:else if currentStep === 3}
+					<!-- Step 3: Organization Units -->
+					<h2 class="text-xl font-semibold mb-6">สังกัดหน่วยงาน</h2>
 
-								<div class="space-y-3">
-									<div>
-										<Label class="mb-2">ชื่อหน่วยงาน</Label>
-										<Select.Root type="single" bind:value={dept.organization_unit_id}>
-											<Select.Trigger>
-												{#if dept.organization_unit_id}
-													{organizationUnits.find((d) => d.id === dept.organization_unit_id)
-														?.name || 'เลือกหน่วยงาน'}
-												{:else}
-													เลือกหน่วยงาน
-												{/if}
-											</Select.Trigger>
-											<Select.Content class="max-h-[300px] overflow-y-auto w-full max-w-[400px]">
-												<Select.Item value="">เลือกหน่วยงาน</Select.Item>
+					{#if loadingOrganizationUnits}
+						<div class="flex justify-center py-8">
+							<LoaderCircle class="w-8 h-8 animate-spin text-muted-foreground" />
+						</div>
+					{:else}
+						<div class="space-y-4">
+							<p class="text-sm text-muted-foreground">
+								ระบุหน่วยงาน/กลุ่มที่บุคลากรสังกัดและตำแหน่งในหน่วยงาน
+							</p>
 
-												<!-- Group by Parent Organization Units (Administrative Groups) -->
-												{#each organizationUnits.filter((d) => !d.parent_unit_id) as parentDept (parentDept.id)}
-													<Select.Group>
-														<Select.Label
-															class="font-bold text-primary flex items-center gap-2 bg-muted/30 px-2 py-1"
-														>
-															<Building2 class="w-3 H-3" />
-															{parentDept.name}
-														</Select.Label>
+							{#if errors.organization_units}
+								<p class="text-sm text-destructive">{errors.organization_units}</p>
+							{/if}
 
-														<!-- Parent itself (Optional) -->
-														<Select.Item
-															value={parentDept.id}
-															class="pl-4 font-semibold text-muted-foreground/80"
-														>
-															— สังกัด {parentDept.name} (ส่วนกลาง) —
-														</Select.Item>
+							{#each formData.organization_assignments as dept, i (i)}
+								<div class="p-4 border border-border rounded-lg">
+									<div class="flex items-start justify-between mb-4">
+										<h3 class="font-medium">หน่วยงานที่ {i + 1}</h3>
+										{#if formData.organization_assignments.length > 1}
+											<Button
+												variant="ghost"
+												size="sm"
+												type="button"
+												onclick={() => removeOrganizationUnit(i)}
+												class="text-destructive hover:text-destructive/80 text-sm"
+											>
+												ลบ
+											</Button>
+										{/if}
+									</div>
 
-														<!-- Child Organization Units -->
-														{#each organizationUnits.filter((d) => d.parent_unit_id === parentDept.id) as childDept (childDept.id)}
-															<Select.Item value={childDept.id} class="pl-6">
-																<div class="flex flex-col">
-																	<span>{childDept.name}</span>
-																	{#if childDept.code}
-																		<span class="text-[10px] text-muted-foreground">
-																			{childDept.code}
-																		</span>
-																	{/if}
-																</div>
+									<div class="space-y-3">
+										<div>
+											<Label class="mb-2">ชื่อหน่วยงาน</Label>
+											<Select.Root type="single" bind:value={dept.organization_unit_id}>
+												<Select.Trigger>
+													{#if dept.organization_unit_id}
+														{organizationUnits.find((d) => d.id === dept.organization_unit_id)
+															?.name || 'เลือกหน่วยงาน'}
+													{:else}
+														เลือกหน่วยงาน
+													{/if}
+												</Select.Trigger>
+												<Select.Content class="max-h-[300px] overflow-y-auto w-full max-w-[400px]">
+													<Select.Item value="">เลือกหน่วยงาน</Select.Item>
+
+													<!-- Group by Parent Organization Units (Administrative Groups) -->
+													{#each organizationUnits.filter((d) => !d.parent_unit_id) as parentDept (parentDept.id)}
+														<Select.Group>
+															<Select.Label
+																class="font-bold text-primary flex items-center gap-2 bg-muted/30 px-2 py-1"
+															>
+																<Building2 class="w-3 H-3" />
+																{parentDept.name}
+															</Select.Label>
+
+															<!-- Parent itself (Optional) -->
+															<Select.Item
+																value={parentDept.id}
+																class="pl-4 font-semibold text-muted-foreground/80"
+															>
+																— สังกัด {parentDept.name} (ส่วนกลาง) —
 															</Select.Item>
-														{/each}
-													</Select.Group>
-													<Select.Separator />
-												{/each}
 
-												<!-- Orphan Organization Units -->
-												{#if organizationUnits.some((d) => d.parent_unit_id && !organizationUnits.find((p) => p.id === d.parent_unit_id))}
-													<Select.Group>
-														<Select.Label class="font-bold text-muted-foreground"
-															>อื่นๆ</Select.Label
-														>
-														{#each organizationUnits.filter((d) => d.parent_unit_id && !organizationUnits.find((p) => p.id === d.parent_unit_id)) as orphan (orphan.id)}
-															<Select.Item value={orphan.id} class="pl-6">
-																{orphan.name}
-															</Select.Item>
-														{/each}
-													</Select.Group>
-												{/if}
-											</Select.Content>
-										</Select.Root>
-									</div>
+															<!-- Child Organization Units -->
+															{#each organizationUnits.filter((d) => d.parent_unit_id === parentDept.id) as childDept (childDept.id)}
+																<Select.Item value={childDept.id} class="pl-6">
+																	<div class="flex flex-col">
+																		<span>{childDept.name}</span>
+																		{#if childDept.code}
+																			<span class="text-[10px] text-muted-foreground">
+																				{childDept.code}
+																			</span>
+																		{/if}
+																	</div>
+																</Select.Item>
+															{/each}
+														</Select.Group>
+														<Select.Separator />
+													{/each}
 
-									<div>
-										<Label class="mb-2">ตำแหน่งในหน่วยงาน</Label>
-										<Select.Root type="single" bind:value={dept.position_code}>
-											<Select.Trigger>
-												{dept.position_code === 'member'
-													? 'สมาชิก'
-													: dept.position_code === 'head'
-														? 'หัวหน้า'
-														: 'เลือกตำแหน่ง'}
-											</Select.Trigger>
-											<Select.Content>
-												<Select.Item value="member">สมาชิก</Select.Item>
-												<Select.Item value="head">หัวหน้า</Select.Item>
-											</Select.Content>
-										</Select.Root>
-									</div>
+													<!-- Orphan Organization Units -->
+													{#if organizationUnits.some((d) => d.parent_unit_id && !organizationUnits.find((p) => p.id === d.parent_unit_id))}
+														<Select.Group>
+															<Select.Label class="font-bold text-muted-foreground"
+																>อื่นๆ</Select.Label
+															>
+															{#each organizationUnits.filter((d) => d.parent_unit_id && !organizationUnits.find((p) => p.id === d.parent_unit_id)) as orphan (orphan.id)}
+																<Select.Item value={orphan.id} class="pl-6">
+																	{orphan.name}
+																</Select.Item>
+															{/each}
+														</Select.Group>
+													{/if}
+												</Select.Content>
+											</Select.Root>
+										</div>
 
-									<div>
-										<Label class="mb-2">หน้าที่รับผิดชอบ</Label>
-										<Textarea
-											bind:value={dept.responsibilities}
-											placeholder="ระบุหน้าที่รับผิดชอบ..."
-											rows={2}
-										/>
-									</div>
+										<div>
+											<Label class="mb-2">ตำแหน่งในหน่วยงาน</Label>
+											<Select.Root type="single" bind:value={dept.position_code}>
+												<Select.Trigger>
+													{dept.position_code === 'member'
+														? 'สมาชิก'
+														: dept.position_code === 'head'
+															? 'หัวหน้า'
+															: 'เลือกตำแหน่ง'}
+												</Select.Trigger>
+												<Select.Content>
+													<Select.Item value="member">สมาชิก</Select.Item>
+													<Select.Item value="head">หัวหน้า</Select.Item>
+												</Select.Content>
+											</Select.Root>
+										</div>
 
-									<div>
-										<div class="flex items-center gap-2 cursor-pointer">
-											<Checkbox
-												checked={dept.is_primary}
-												onCheckedChange={() => setPrimaryOrganizationUnit(i)}
+										<div>
+											<Label class="mb-2">หน้าที่รับผิดชอบ</Label>
+											<Textarea
+												bind:value={dept.responsibilities}
+												placeholder="ระบุหน้าที่รับผิดชอบ..."
+												rows={2}
 											/>
-											<span class="text-sm">สังกัดหลัก</span>
+										</div>
+
+										<div>
+											<div class="flex items-center gap-2 cursor-pointer">
+												<Checkbox
+													checked={dept.is_primary}
+													onCheckedChange={() => setPrimaryOrganizationUnit(i)}
+												/>
+												<span class="text-sm">สังกัดหลัก</span>
+											</div>
 										</div>
 									</div>
 								</div>
-							</div>
-						{/each}
+							{/each}
 
-						<Button type="button" onclick={addOrganizationUnit} variant="outline" class="w-full">
-							+ เพิ่มหน่วยงาน
-						</Button>
-					</div>
-				{/if}
-			{/if}
-		</div>
-
-		<!-- Navigation Buttons -->
-		<div class="flex justify-between mt-6">
-			<Button
-				type="button"
-				onclick={prevStep}
-				variant="outline"
-				disabled={currentStep === 1}
-				class="min-w-[120px]"
-			>
-				<ArrowLeft class="w-4 h-4 mr-2" />
-				ย้อนกลับ
-			</Button>
-
-			{#if currentStep < totalSteps}
-				<Button type="button" onclick={nextStep} class="min-w-[120px]">
-					ถัดไป
-					<ArrowRight class="w-4 h-4 ml-2" />
-				</Button>
-			{:else}
-				<Button type="button" onclick={handleSubmit} disabled={loading} class="min-w-[120px]">
-					{#if loading}
-						<LoaderCircle class="w-4 h-4 mr-2 animate-spin" />
-						กำลังบันทึก...
-					{:else}
-						<Check class="w-4 h-4 mr-2" />
-						สร้างบุคลากร
+							<Button type="button" onclick={addOrganizationUnit} variant="outline" class="w-full">
+								+ เพิ่มหน่วยงาน
+							</Button>
+						</div>
 					{/if}
+				{/if}
+			</div>
+
+			<!-- Navigation Buttons -->
+			<div class="flex justify-between mt-6">
+				<Button
+					type="button"
+					onclick={prevStep}
+					variant="outline"
+					disabled={currentStep === 1}
+					class="min-w-[120px]"
+				>
+					<ArrowLeft class="w-4 h-4 mr-2" />
+					ย้อนกลับ
 				</Button>
-			{/if}
+
+				{#if currentStep < totalSteps}
+					<Button type="button" onclick={nextStep} class="min-w-[120px]">
+						ถัดไป
+						<ArrowRight class="w-4 h-4 ml-2" />
+					</Button>
+				{:else}
+					<Button type="button" onclick={handleSubmit} disabled={loading} class="min-w-[120px]">
+						{#if loading}
+							<LoaderCircle class="w-4 h-4 mr-2 animate-spin" />
+							กำลังบันทึก...
+						{:else}
+							<Check class="w-4 h-4 mr-2" />
+							สร้างบุคลากร
+						{/if}
+					</Button>
+				{/if}
+			</div>
 		</div>
-	</div>
+	{/if}
 </div>
