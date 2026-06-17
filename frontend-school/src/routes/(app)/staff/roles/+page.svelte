@@ -3,8 +3,11 @@
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { roleAPI, type Role } from '$lib/api/roles';
+	import { PERMISSIONS } from '$lib/permissions/registry';
+	import { can } from '$lib/stores/permissions';
 	import { Button } from '$lib/components/ui/button';
 	import { Badge } from '$lib/components/ui/badge';
+	import { Alert, AlertDescription, AlertTitle } from '$lib/components/ui/alert';
 	import {
 		Card,
 		CardContent,
@@ -12,17 +15,27 @@
 		CardHeader,
 		CardTitle
 	} from '$lib/components/ui/card';
-	import { Plus, Edit, Shield } from 'lucide-svelte';
+	import { AlertTriangle, Edit, Eye, Plus, Shield } from 'lucide-svelte';
 	import { toast } from 'svelte-sonner';
 
 	let roles = $state<Role[]>([]);
 	let loading = $state(true);
+
+	const canReadRoles = $derived($can.has(PERMISSIONS.ROLES_READ_ALL));
+	const canCreateRoles = $derived($can.has(PERMISSIONS.ROLES_CREATE_ALL));
+	const canUpdateRoles = $derived($can.has(PERMISSIONS.ROLES_UPDATE_ALL));
 
 	onMount(async () => {
 		await loadRoles();
 	});
 
 	async function loadRoles() {
+		if (!canReadRoles) {
+			roles = [];
+			loading = false;
+			return;
+		}
+
 		loading = true;
 		try {
 			const response = await roleAPI.listRoles();
@@ -72,13 +85,23 @@
 			<h1 class="text-3xl font-bold text-foreground">จัดการบทบาท</h1>
 			<p class="text-muted-foreground mt-1">กำหนดบทบาทและสิทธิ์การเข้าถึงของผู้ใช้งาน</p>
 		</div>
-		<Button onclick={() => goto(resolve('/staff/roles/new'))} class="gap-2">
-			<Plus class="h-4 w-4" />
-			สร้างบทบาทใหม่
-		</Button>
+		{#if canCreateRoles}
+			<Button onclick={() => goto(resolve('/staff/roles/new'))} class="gap-2">
+				<Plus class="h-4 w-4" />
+				สร้างบทบาทใหม่
+			</Button>
+		{/if}
 	</div>
 
-	{#if loading}
+	{#if !canReadRoles}
+		<Alert>
+			<AlertTriangle class="h-4 w-4" />
+			<AlertTitle>ไม่มีสิทธิ์ดูรายการบทบาท</AlertTitle>
+			<AlertDescription>
+				บัญชีนี้เข้า module บทบาทได้ แต่ยังไม่มีสิทธิ์อ่านรายการบทบาททั้งหมด
+			</AlertDescription>
+		</Alert>
+	{:else if loading}
 		<!-- Loading State -->
 		<div class="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
 			{#each Array.from({ length: 6 }, (_, i) => i) as i (i)}
@@ -101,10 +124,12 @@
 					<Shield class="h-12 w-12 text-muted-foreground mx-auto mb-4" />
 					<h3 class="text-lg font-medium text-foreground">ยังไม่มีบทบาท</h3>
 					<p class="text-muted-foreground mt-1">เริ่มต้นสร้างบทบาทแรกของคุณ</p>
-					<Button onclick={() => goto(resolve('/staff/roles/new'))} class="mt-4 gap-2">
-						<Plus class="h-4 w-4" />
-						สร้างบทบาทใหม่
-					</Button>
+					{#if canCreateRoles}
+						<Button onclick={() => goto(resolve('/staff/roles/new'))} class="mt-4 gap-2">
+							<Plus class="h-4 w-4" />
+							สร้างบทบาทใหม่
+						</Button>
+					{/if}
 				</div>
 			</CardContent>
 		</Card>
@@ -166,8 +191,13 @@
 								}}
 								class="gap-1"
 							>
-								<Edit class="h-3 w-3" />
-								แก้ไข
+								{#if canUpdateRoles}
+									<Edit class="h-3 w-3" />
+									แก้ไข
+								{:else}
+									<Eye class="h-3 w-3" />
+									ดูรายละเอียด
+								{/if}
 							</Button>
 						</div>
 					</CardContent>

@@ -17,7 +17,7 @@
 		type CreateDelegationBody
 	} from '$lib/api/staff';
 	import OrganizationUnitDialog from '$lib/components/staff/OrganizationUnitDialog.svelte';
-	import { PERMISSION_MODULES, PERMISSIONS } from '$lib/permissions/registry';
+	import { PERMISSIONS } from '$lib/permissions/registry';
 	import { can } from '$lib/stores/permissions';
 	import { Button } from '$lib/components/ui/button';
 	import { Badge } from '$lib/components/ui/badge';
@@ -69,6 +69,13 @@
 	let delegateSubmitting = $state(false);
 	let delegateError = $state('');
 
+	let canReadOrganization = $derived.by(() => $can.has(PERMISSIONS.ROLES_READ_ALL));
+	let canCreateOrganizationUnit = $derived.by(() => $can.has(PERMISSIONS.ROLES_CREATE_ALL));
+	let canUpdateOrganizationUnit = $derived.by(() => $can.has(PERMISSIONS.ROLES_UPDATE_ALL));
+	let canReadOrganizationPermissions = $derived.by(() => $can.has(PERMISSIONS.ROLES_READ_ALL));
+	let canUpdateOrganizationPermissions = $derived.by(() => $can.has(PERMISSIONS.ROLES_UPDATE_ALL));
+	let canAssignOrganizationMembers = $derived.by(() => $can.has(PERMISSIONS.ROLES_ASSIGN_ALL));
+
 	let leaderCount = $derived(
 		deptMembers.filter((member) =>
 			['director', 'deputy_director', 'head'].includes(member.position_code)
@@ -90,7 +97,6 @@
 			PERMISSIONS.ROLES_UPDATE_ALL
 		)
 	);
-	let canUpdateOrganizationUnit = $derived.by(() => $can.has(PERMISSIONS.ROLES_UPDATE_ALL));
 
 	let parentUnit = $derived.by(() => {
 		const currentDepartment = department;
@@ -177,6 +183,16 @@
 	}
 
 	async function loadData(currentDeptId: string) {
+		if (!canReadOrganization) {
+			department = null;
+			allDepartments = [];
+			childDepts = [];
+			deptMembers = [];
+			error = 'ไม่มีสิทธิ์ดูข้อมูลหน่วยงาน';
+			loading = false;
+			return;
+		}
+
 		try {
 			loading = true;
 			error = '';
@@ -355,13 +371,13 @@
 								แก้ไขหน่วยงาน
 							</Button>
 						{/if}
-						{#if $can.hasModule(PERMISSION_MODULES.ROLES) && canUpdateOrganizationUnit}
+						{#if canReadOrganizationPermissions}
 							<Button variant="outline" class="gap-2" onclick={() => (showPermissionDialog = true)}>
 								<KeyRound class="h-4 w-4" />
-								สิทธิ์ตามตำแหน่ง
+								{canUpdateOrganizationPermissions ? 'สิทธิ์ตามตำแหน่ง' : 'ดูสิทธิ์ตามตำแหน่ง'}
 							</Button>
 						{/if}
-						{#if $can.has(PERMISSIONS.ROLES_ASSIGN_ALL)}
+						{#if canCreateOrganizationUnit}
 							<Button class="gap-2" onclick={() => (showAddChildDialog = true)}>
 								<Plus class="h-4 w-4" />
 								เพิ่มหน่วยงานย่อย
@@ -411,6 +427,7 @@
 						<OrganizationMembersSection
 							organizationUnitId={deptId}
 							childUnits={childDepts}
+							canAssignMembers={canAssignOrganizationMembers}
 							onChanged={refreshCurrentUnit}
 						/>
 					{:else if activeTab === 'permissions'}
@@ -425,10 +442,12 @@
 										กำหนดสิทธิ์ตามตำแหน่งในหน่วยงานนี้ เช่น ผู้อำนวยการ หัวหน้า รองหัวหน้า และสมาชิก
 									</p>
 								</div>
-								<Button class="gap-2" onclick={() => (showPermissionDialog = true)}>
-									<KeyRound class="h-4 w-4" />
-									เปิดตารางสิทธิ์
-								</Button>
+								{#if canReadOrganizationPermissions}
+									<Button class="gap-2" onclick={() => (showPermissionDialog = true)}>
+										<KeyRound class="h-4 w-4" />
+										{canUpdateOrganizationPermissions ? 'เปิดตารางสิทธิ์' : 'ดูตารางสิทธิ์'}
+									</Button>
+								{/if}
 							</div>
 							<div class="grid gap-3 sm:grid-cols-3">
 								<div class="rounded-lg border bg-muted/20 p-3">
@@ -457,7 +476,7 @@
 										หน่วยงานที่อยู่ภายใต้ {department.name}
 									</p>
 								</div>
-								{#if $can.has(PERMISSIONS.ROLES_ASSIGN_ALL)}
+								{#if canCreateOrganizationUnit}
 									<Button size="sm" class="gap-2" onclick={() => (showAddChildDialog = true)}>
 										<Plus class="h-4 w-4" />
 										เพิ่ม
@@ -664,26 +683,33 @@
 	{/if}
 </div>
 
-<OrganizationUnitDialog
-	bind:open={showEditDialog}
-	organizationUnitToEdit={department}
-	organizationUnits={allDepartments}
-	onSuccess={refreshCurrentUnit}
-/>
+{#if canUpdateOrganizationUnit}
+	<OrganizationUnitDialog
+		bind:open={showEditDialog}
+		organizationUnitToEdit={department}
+		organizationUnits={allDepartments}
+		onSuccess={refreshCurrentUnit}
+	/>
+{/if}
 
-<OrganizationUnitDialog
-	bind:open={showAddChildDialog}
-	organizationUnits={allDepartments}
-	forcedParentId={deptId}
-	forcedCategory={department?.category}
-	onSuccess={refreshCurrentUnit}
-/>
+{#if canCreateOrganizationUnit}
+	<OrganizationUnitDialog
+		bind:open={showAddChildDialog}
+		organizationUnits={allDepartments}
+		forcedParentId={deptId}
+		forcedCategory={department?.category}
+		onSuccess={refreshCurrentUnit}
+	/>
+{/if}
 
-<OrganizationPermissionDialog
-	bind:open={showPermissionDialog}
-	organizationUnit={department}
-	onSuccess={refreshCurrentUnit}
-/>
+{#if canReadOrganizationPermissions}
+	<OrganizationPermissionDialog
+		bind:open={showPermissionDialog}
+		organizationUnit={department}
+		onSuccess={refreshCurrentUnit}
+		readOnly={!canUpdateOrganizationPermissions}
+	/>
+{/if}
 
 <Dialog.Root bind:open={showDelegateDialog}>
 	<Dialog.Content class="sm:max-w-[520px]">

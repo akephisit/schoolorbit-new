@@ -23,6 +23,7 @@
 	interface Props {
 		organizationUnitId: string;
 		childUnits?: OrganizationUnit[];
+		canAssignMembers?: boolean;
 		onChanged?: () => void;
 	}
 
@@ -46,9 +47,15 @@
 		members: OrganizationMemberItem[];
 	};
 
-	const { organizationUnitId, childUnits = [], onChanged }: Props = $props();
+	const {
+		organizationUnitId,
+		childUnits = [],
+		canAssignMembers = undefined,
+		onChanged
+	}: Props = $props();
 
 	const includeChildren = $derived(childUnits.length > 0);
+	const canManageMembers = $derived(canAssignMembers ?? $can.has(PERMISSIONS.ROLES_ASSIGN_ALL));
 
 	let members: OrganizationMemberItem[] = $state([]);
 	let loadingMembers = $state(false);
@@ -285,7 +292,7 @@
 				{/if}
 			</div>
 		</div>
-		{#if $can.has(PERMISSIONS.ROLES_ASSIGN_ALL)}
+		{#if canManageMembers}
 			<Button size="sm" onclick={openAddDialog}>
 				<Plus class="mr-1 h-4 w-4" />
 				เพิ่มสมาชิก
@@ -346,7 +353,7 @@
 										</div>
 									</div>
 
-									{#if $can.has(PERMISSIONS.ROLES_ASSIGN_ALL)}
+									{#if canManageMembers}
 										<div class="flex shrink-0 items-center gap-1">
 											<Button variant="ghost" size="sm" onclick={() => openEdit(member)}>
 												<Pencil class="h-3.5 w-3.5" />

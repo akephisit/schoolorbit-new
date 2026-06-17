@@ -538,6 +538,91 @@ test('staff manage pilot uses shadcn-svelte surfaces and permission gates', asyn
 	}
 });
 
+test('roles and organization pages gate module actions with permission booleans', async () => {
+	const routeExpectations = [
+		{
+			file: 'frontend-school/src/routes/(app)/staff/roles/+page.svelte',
+			imports: ['$lib/components/ui/alert'],
+			permissions: [
+				'PERMISSIONS.ROLES_READ_ALL',
+				'PERMISSIONS.ROLES_CREATE_ALL',
+				'PERMISSIONS.ROLES_UPDATE_ALL'
+			],
+			identifiers: ['canReadRoles', 'canCreateRoles', 'canUpdateRoles']
+		},
+		{
+			file: 'frontend-school/src/routes/(app)/staff/roles/[id]/+page.svelte',
+			imports: ['$lib/components/ui/alert', '$lib/components/ui/select'],
+			permissions: [
+				'PERMISSIONS.ROLES_READ_ALL',
+				'PERMISSIONS.ROLES_CREATE_ALL',
+				'PERMISSIONS.ROLES_UPDATE_ALL',
+				'PERMISSIONS.ROLES_DELETE_ALL',
+				'PERMISSIONS.SETTINGS_READ_ALL'
+			],
+			identifiers: [
+				'canReadRoles',
+				'canCreateRoles',
+				'canUpdateRoles',
+				'canDeleteRoles',
+				'canReadPermissionCatalog'
+			]
+		},
+		{
+			file: 'frontend-school/src/routes/(app)/staff/organization/+page.svelte',
+			imports: ['$lib/components/ui/alert'],
+			permissions: [
+				'PERMISSIONS.ROLES_READ_ALL',
+				'PERMISSIONS.ROLES_CREATE_ALL',
+				'PERMISSIONS.ROLES_UPDATE_ALL',
+				'PERMISSIONS.ROLES_ASSIGN_ALL'
+			],
+			identifiers: [
+				'canReadOrganization',
+				'canCreateOrganizationUnit',
+				'canUpdateOrganizationUnit',
+				'canReadOrganizationPermissions',
+				'canUpdateOrganizationPermissions',
+				'canAssignOrganizationMembers'
+			]
+		},
+		{
+			file: 'frontend-school/src/routes/(app)/staff/organization/[id]/+page.svelte',
+			imports: [],
+			permissions: [
+				'PERMISSIONS.ROLES_READ_ALL',
+				'PERMISSIONS.ROLES_CREATE_ALL',
+				'PERMISSIONS.ROLES_UPDATE_ALL',
+				'PERMISSIONS.ROLES_ASSIGN_ALL'
+			],
+			identifiers: [
+				'canReadOrganizationPermissions',
+				'canUpdateOrganizationPermissions',
+				'canCreateOrganizationUnit',
+				'canAssignOrganizationMembers',
+				'canManageDelegations'
+			]
+		}
+	];
+	const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+	for (const expectation of routeExpectations) {
+		const source = stripComments(await readFile(path.join(repoRoot, expectation.file), 'utf8'));
+
+		for (const requiredImport of expectation.imports) {
+			assert.match(source, new RegExp(escapeRegex(requiredImport)));
+		}
+
+		for (const requiredPermission of expectation.permissions) {
+			assert.match(source, new RegExp(escapeRegex(requiredPermission)));
+		}
+
+		for (const identifier of expectation.identifiers) {
+			assert.match(source, new RegExp(`\\b${identifier}\\b`));
+		}
+	}
+});
+
 test('frontend app pages have route guard metadata or guarded ancestor fallback', async () => {
 	const appRoutesDir = path.join(repoRoot, 'frontend-school/src/routes/(app)');
 	const pageSvelteFiles = await listFiles(appRoutesDir, (file) => file.endsWith('+page.svelte'));

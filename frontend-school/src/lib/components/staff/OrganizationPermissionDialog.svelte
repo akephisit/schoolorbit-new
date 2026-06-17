@@ -46,11 +46,13 @@
 	let {
 		open = $bindable(false),
 		organizationUnit,
-		onSuccess
+		onSuccess,
+		readOnly = false
 	} = $props<{
 		organizationUnit: OrganizationUnit | null;
 		open: boolean;
 		onSuccess?: () => void;
+		readOnly?: boolean;
 	}>();
 
 	let permissionModules = $state<PermissionsByModule>({});
@@ -100,6 +102,7 @@
 	}
 
 	function toggleGrant(permissionId: string, position: PermissionPositionValue, checked: boolean) {
+		if (readOnly) return;
 		const key = grantKey(permissionId, position);
 		if (checked) selectedGrantKeys.add(key);
 		else selectedGrantKeys.delete(key);
@@ -139,6 +142,7 @@
 		position: PermissionPositionValue,
 		checked: boolean
 	) {
+		if (readOnly) return;
 		const permissions = permissionModules[moduleName];
 		if (!permissions) return;
 
@@ -176,6 +180,7 @@
 	}
 
 	async function handleSave() {
+		if (readOnly) return;
 		if (!organizationUnit) return;
 
 		try {
@@ -285,6 +290,7 @@
 															indeterminate={isModulePositionIndeterminate(module, column.value)}
 															onCheckedChange={(checked) =>
 																toggleModulePosition(module, column.value, !!checked)}
+															disabled={readOnly}
 														/>
 													</div>
 												</th>
@@ -332,6 +338,7 @@
 																checked={hasGrant(permission.id, column.value)}
 																onCheckedChange={(checked) =>
 																	toggleGrant(permission.id, column.value, !!checked)}
+																disabled={readOnly}
 															/>
 														</div>
 													</td>
@@ -354,13 +361,17 @@
 					<span>บันทึกตามตำแหน่งในหน่วยงาน</span>
 				</div>
 				<div class="flex justify-end gap-2">
-					<Button variant="outline" onclick={() => (open = false)}>ยกเลิก</Button>
-					<Button onclick={handleSave} disabled={saving}>
-						{#if saving}
-							<LoaderCircle class="mr-2 h-4 w-4 animate-spin" />
-						{/if}
-						บันทึกสิทธิ์
+					<Button variant="outline" onclick={() => (open = false)}>
+						{readOnly ? 'ปิด' : 'ยกเลิก'}
 					</Button>
+					{#if !readOnly}
+						<Button onclick={handleSave} disabled={saving}>
+							{#if saving}
+								<LoaderCircle class="mr-2 h-4 w-4 animate-spin" />
+							{/if}
+							บันทึกสิทธิ์
+						</Button>
+					{/if}
 				</div>
 			</div>
 		</Dialog.Footer>

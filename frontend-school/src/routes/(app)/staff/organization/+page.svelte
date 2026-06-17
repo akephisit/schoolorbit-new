@@ -8,10 +8,14 @@
 		updateOrganizationUnit
 	} from '$lib/api/staff';
 	import type { OrganizationMemberItem, OrganizationUnit } from '$lib/api/staff';
+	import { PERMISSIONS } from '$lib/permissions/registry';
+	import { can } from '$lib/stores/permissions';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { Badge } from '$lib/components/ui/badge';
+	import { Alert, AlertDescription, AlertTitle } from '$lib/components/ui/alert';
 	import {
+		AlertTriangle,
 		ArrowRight,
 		Building2,
 		Briefcase,
@@ -56,6 +60,13 @@
 	let selectedMembers = $state<OrganizationMemberItem[]>([]);
 	let selectedMembersLoading = $state(false);
 	let selectedMembersUnitId = $state('');
+
+	const canReadOrganization = $derived($can.has(PERMISSIONS.ROLES_READ_ALL));
+	const canCreateOrganizationUnit = $derived($can.has(PERMISSIONS.ROLES_CREATE_ALL));
+	const canUpdateOrganizationUnit = $derived($can.has(PERMISSIONS.ROLES_UPDATE_ALL));
+	const canReadOrganizationPermissions = $derived($can.has(PERMISSIONS.ROLES_READ_ALL));
+	const canUpdateOrganizationPermissions = $derived($can.has(PERMISSIONS.ROLES_UPDATE_ALL));
+	const canAssignOrganizationMembers = $derived($can.has(PERMISSIONS.ROLES_ASSIGN_ALL));
 
 	let organizationStats = $derived.by(() => ({
 		total: departments.length,
@@ -163,6 +174,15 @@
 	}
 
 	async function loadDepartments() {
+		if (!canReadOrganization) {
+			departments = [];
+			selectedMembers = [];
+			selectedMembersUnitId = '';
+			loading = false;
+			error = '';
+			return;
+		}
+
 		try {
 			loading = true;
 			error = '';
@@ -202,11 +222,13 @@
 	}
 
 	function handleCreate() {
+		if (!canCreateOrganizationUnit) return;
 		editingDepartment = null;
 		showDialog = true;
 	}
 
 	function handleEdit(unit: OrganizationUnit) {
+		if (!canUpdateOrganizationUnit) return;
 		editingDepartment = unit;
 		showDialog = true;
 	}
@@ -220,12 +242,14 @@
 	}
 
 	function handlePermission(unit: OrganizationUnit) {
+		if (!canReadOrganizationPermissions) return;
 		permissionDepartment = unit;
 		showPermissionDialog = true;
 	}
 
 	function handleDragStart(event: DragEvent, unitId: string) {
 		event.stopPropagation();
+		if (!canUpdateOrganizationUnit) return;
 		if (!event.dataTransfer) return;
 		draggedDeptId = unitId;
 		event.dataTransfer.effectAllowed = 'move';
@@ -238,6 +262,7 @@
 	}
 
 	function handleDragOver(event: DragEvent, unitId: string) {
+		if (!canUpdateOrganizationUnit) return;
 		event.preventDefault();
 		event.stopPropagation();
 		if (draggedDeptId === unitId) return;
@@ -248,6 +273,7 @@
 		event.preventDefault();
 		event.stopPropagation();
 		dragOverDeptId = null;
+		if (!canUpdateOrganizationUnit) return;
 		const sourceDeptId = event.dataTransfer?.getData('text/plain');
 
 		if (!sourceDeptId || sourceDeptId === targetParentId) return;
@@ -317,10 +343,12 @@
 				แผนที่หน่วยงาน กลุ่มบริหาร กลุ่มสาระ และตำแหน่งที่ใช้เป็นฐานสิทธิ์
 			</p>
 		</div>
-		<Button onclick={handleCreate} class="gap-2 self-start">
-			<Plus class="h-4 w-4" />
-			เพิ่มหน่วยงาน
-		</Button>
+		{#if canCreateOrganizationUnit}
+			<Button onclick={handleCreate} class="gap-2 self-start">
+				<Plus class="h-4 w-4" />
+				เพิ่มหน่วยงาน
+			</Button>
+		{/if}
 	</div>
 
 	<div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
@@ -389,7 +417,15 @@
 		</div>
 	</div>
 
-	{#if loading}
+	{#if !canReadOrganization}
+		<Alert>
+			<AlertTriangle class="h-4 w-4" />
+			<AlertTitle>ไม่มีสิทธิ์ดูโครงสร้างโรงเรียน</AlertTitle>
+			<AlertDescription>
+				บัญชีนี้เข้า module บทบาทได้ แต่ยังไม่มีสิทธิ์อ่านข้อมูลโครงสร้างโรงเรียน
+			</AlertDescription>
+		</Alert>
+	{:else if loading}
 		<div class="rounded-lg border bg-card p-12 text-center">
 			<div
 				class="inline-block h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent"
@@ -411,7 +447,7 @@
 							{visibleUnits.length} หน่วยงานที่ตรงเงื่อนไข
 						</p>
 					</div>
-					{#if draggedDeptId}
+					{#if draggedDeptId && canUpdateOrganizationUnit}
 						<div
 							class="rounded-md border border-dashed px-3 py-1.5 text-xs text-muted-foreground"
 							ondragover={(event) => {
@@ -445,7 +481,7 @@
 									unit.id
 										? 'ring-2 ring-primary'
 										: ''}"
-									draggable={!isSchoolRoot(unit)}
+									draggable={canUpdateOrganizationUnit && !isSchoolRoot(unit)}
 									ondragstart={(event) => handleDragStart(event, unit.id)}
 									ondragend={handleDragEnd}
 									ondragover={(event) => handleDragOver(event, unit.id)}
@@ -595,20 +631,40 @@
 								<ArrowRight class="h-4 w-4" />
 								เปิดรายละเอียด
 							</Button>
-							<div class="grid grid-cols-2 gap-2">
-								<Button variant="outline" onclick={() => handleEdit(selectedUnit)} class="gap-2">
-									<Pencil class="h-4 w-4" />
-									แก้ไข
-								</Button>
-								<Button
-									variant="outline"
-									onclick={() => handlePermission(selectedUnit)}
-									class="gap-2"
-								>
-									<KeyRound class="h-4 w-4" />
-									สิทธิ์
-								</Button>
-							</div>
+							{#if canUpdateOrganizationUnit || canReadOrganizationPermissions || canAssignOrganizationMembers}
+								<div class="grid grid-cols-2 gap-2">
+									{#if canUpdateOrganizationUnit}
+										<Button
+											variant="outline"
+											onclick={() => handleEdit(selectedUnit)}
+											class="gap-2"
+										>
+											<Pencil class="h-4 w-4" />
+											แก้ไข
+										</Button>
+									{/if}
+									{#if canReadOrganizationPermissions}
+										<Button
+											variant="outline"
+											onclick={() => handlePermission(selectedUnit)}
+											class="gap-2"
+										>
+											<KeyRound class="h-4 w-4" />
+											{canUpdateOrganizationPermissions ? 'สิทธิ์' : 'ดูสิทธิ์'}
+										</Button>
+									{/if}
+									{#if canAssignOrganizationMembers}
+										<Button
+											variant="outline"
+											onclick={() => goToDept(selectedUnit.id)}
+											class="gap-2"
+										>
+											<Users class="h-4 w-4" />
+											สมาชิก
+										</Button>
+									{/if}
+								</div>
+							{/if}
 						</div>
 					</div>
 				{:else}
@@ -620,16 +676,21 @@
 		</div>
 	{/if}
 
-	<OrganizationUnitDialog
-		bind:open={showDialog}
-		organizationUnitToEdit={editingDepartment}
-		organizationUnits={departments}
-		onSuccess={loadDepartments}
-		forcedCategory="general"
-	/>
+	{#if canCreateOrganizationUnit || canUpdateOrganizationUnit}
+		<OrganizationUnitDialog
+			bind:open={showDialog}
+			organizationUnitToEdit={editingDepartment}
+			organizationUnits={departments}
+			onSuccess={loadDepartments}
+			forcedCategory="general"
+		/>
+	{/if}
 
-	<OrganizationPermissionDialog
-		bind:open={showPermissionDialog}
-		organizationUnit={permissionDepartment}
-	/>
+	{#if canReadOrganizationPermissions}
+		<OrganizationPermissionDialog
+			bind:open={showPermissionDialog}
+			organizationUnit={permissionDepartment}
+			readOnly={!canUpdateOrganizationPermissions}
+		/>
+	{/if}
 </div>

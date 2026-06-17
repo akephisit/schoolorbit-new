@@ -6,15 +6,19 @@
 	import { SvelteSet } from 'svelte/reactivity';
 	import { roleAPI, permissionAPI, type Role, type PermissionsByModule } from '$lib/api/roles';
 	import {
+		PERMISSIONS,
 		permissionActionLabel,
 		permissionScopeMeta,
 		permissionScopeToneClass
 	} from '$lib/permissions/registry';
+	import { can } from '$lib/stores/permissions';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import { Textarea } from '$lib/components/ui/textarea';
 	import { Switch } from '$lib/components/ui/switch';
+	import { Alert, AlertDescription, AlertTitle } from '$lib/components/ui/alert';
+	import * as Select from '$lib/components/ui/select';
 	import {
 		Card,
 		CardContent,
@@ -32,7 +36,7 @@
 	} from '$lib/components/ui/dialog';
 	import { Checkbox } from '$lib/components/ui/checkbox';
 	import { Badge } from '$lib/components/ui/badge';
-	import { ArrowLeft, Save, Trash2, Shield } from 'lucide-svelte';
+	import { AlertTriangle, ArrowLeft, Save, Trash2, Shield } from 'lucide-svelte';
 	import { toast } from 'svelte-sonner';
 
 	let { params }: PageProps = $props();
@@ -61,9 +65,28 @@
 	let permissionsByModule = $state<PermissionsByModule>({});
 	let selectedPermissions = new SvelteSet<string>();
 
+	const canReadRoles = $derived($can.has(PERMISSIONS.ROLES_READ_ALL));
+	const canCreateRoles = $derived($can.has(PERMISSIONS.ROLES_CREATE_ALL));
+	const canUpdateRoles = $derived($can.has(PERMISSIONS.ROLES_UPDATE_ALL));
+	const canDeleteRoles = $derived($can.has(PERMISSIONS.ROLES_DELETE_ALL));
+	const canReadPermissionCatalog = $derived($can.has(PERMISSIONS.SETTINGS_READ_ALL));
+	const canUsePage = $derived(isNew ? canCreateRoles : canReadRoles);
+	const canEditRole = $derived(isNew ? canCreateRoles : canUpdateRoles);
+
 	onMount(async () => {
-		await loadPermissions();
-		if (!isNew) {
+		if (!canUsePage) {
+			loading = false;
+			rolePermissionListLoading = false;
+			return;
+		}
+
+		if (canReadPermissionCatalog) {
+			await loadPermissions();
+		} else {
+			rolePermissionListLoading = false;
+		}
+
+		if (!isNew && canReadRoles) {
 			await loadRole();
 		}
 		loading = false;
@@ -103,6 +126,7 @@
 	}
 
 	function togglePermission(code: string) {
+		if (!canEditRole) return;
 		if (selectedPermissions.has(code)) {
 			selectedPermissions.delete(code);
 		} else {
@@ -112,6 +136,7 @@
 	}
 
 	function toggleModule(module: string) {
+		if (!canEditRole) return;
 		const modulePermissions = permissionsByModule[module] || [];
 		const allSelected = modulePermissions.every((p) => selectedPermissions.has(p.code));
 
@@ -137,6 +162,11 @@
 	}
 
 	async function handleSave() {
+		if (!canEditRole) {
+			toast.error('ไม่มีสิทธิ์บันทึกบทบาท');
+			return;
+		}
+
 		if (!role.code || !role.name) {
 			toast.error('กรุณากรอกข้อมูลที่จำเป็น');
 			return;
@@ -181,6 +211,11 @@
 	}
 
 	async function handleDelete() {
+		if (!canDeleteRoles) {
+			toast.error('ไม่มีสิทธิ์ลบบทบาท');
+			return;
+		}
+
 		deleting = true;
 		try {
 			const response = await roleAPI.deleteRole(roleId);
@@ -200,10 +235,18 @@
 			deleting = false;
 		}
 	}
+
+	function userTypeLabel(userType: string | undefined) {
+		if (userType === 'student') return 'นักเรียน (Student)';
+		if (userType === 'parent') return 'ผู้ปกครอง (Parent)';
+		return 'บุคลากร (Staff)';
+	}
 </script>
 
 <svelte:head>
-	<title>{isNew ? 'สร้างบทบาทใหม่' : 'แก้ไขบทบาท'} - SchoolOrbit</title>
+	<title
+		>{isNew ? 'สร้างบทบาทใหม่' : canUpdateRoles ? 'แก้ไขบทบาท' : 'รายละเอียดบทบาท'} - SchoolOrbit</title
+	>
 </svelte:head>
 
 <div class="space-y-6">
@@ -213,25 +256,37 @@
 		</Button>
 		<div class="flex-1">
 			<h1 class="text-3xl font-bold text-foreground">
-				{isNew ? 'สร้างบทบาทใหม่' : 'แก้ไขบทบาท'}
+				{isNew ? 'สร้างบทบาทใหม่' : canUpdateRoles ? 'แก้ไขบทบาท' : 'รายละเอียดบทบาท'}
 			</h1>
-			<p class="text-muted-foreground mt-1">กำหนดข้อมูลและสิทธิ์การเข้าถึง</p>
+			<p class="text-muted-foreground mt-1">
+				{canEditRole ? 'กำหนดข้อมูลและสิทธิ์การเข้าถึง' : 'ดูข้อมูลและสิทธิ์ของบทบาท'}
+			</p>
 		</div>
 		<div class="flex gap-2">
-			{#if !isNew}
+			{#if !isNew && canDeleteRoles}
 				<Button variant="destructive" onclick={() => (showDeleteDialog = true)} class="gap-2">
 					<Trash2 class="h-4 w-4" />
 					ลบ
 				</Button>
 			{/if}
-			<Button onclick={handleSave} disabled={saving} class="gap-2">
-				<Save class="h-4 w-4" />
-				{saving ? 'กำลังบันทึก...' : 'บันทึก'}
-			</Button>
+			{#if canEditRole}
+				<Button onclick={handleSave} disabled={saving} class="gap-2">
+					<Save class="h-4 w-4" />
+					{saving ? 'กำลังบันทึก...' : 'บันทึก'}
+				</Button>
+			{/if}
 		</div>
 	</div>
 
-	{#if loading}
+	{#if !canUsePage}
+		<Alert>
+			<AlertTriangle class="h-4 w-4" />
+			<AlertTitle>{isNew ? 'ไม่มีสิทธิ์สร้างบทบาท' : 'ไม่มีสิทธิ์ดูบทบาท'}</AlertTitle>
+			<AlertDescription>
+				บัญชีนี้เข้า module บทบาทได้ แต่ยังไม่มีสิทธิ์สำหรับการทำงานในหน้านี้
+			</AlertDescription>
+		</Alert>
+	{:else if loading}
 		<div class="space-y-4">
 			<Card>
 				<CardContent class="py-8">
@@ -257,24 +312,41 @@
 								id="code"
 								bind:value={role.code}
 								placeholder="TEACHER"
-								disabled={!isNew}
+								disabled={!isNew || !canEditRole}
 								required
 							/>
 						</div>
 						<div class="space-y-2">
 							<Label for="level">ระดับ</Label>
-							<Input id="level" type="number" bind:value={role.level} placeholder="10" />
+							<Input
+								id="level"
+								type="number"
+								bind:value={role.level}
+								placeholder="10"
+								disabled={!canEditRole}
+							/>
 						</div>
 					</div>
 
 					<div class="grid grid-cols-2 gap-4">
 						<div class="space-y-2">
 							<Label for="name">ชื่อบทบาท (ไทย) *</Label>
-							<Input id="name" bind:value={role.name} placeholder="ครูผู้สอน" required />
+							<Input
+								id="name"
+								bind:value={role.name}
+								placeholder="ครูผู้สอน"
+								disabled={!canEditRole}
+								required
+							/>
 						</div>
 						<div class="space-y-2">
 							<Label for="name_en">ชื่อบทบาท (อังกฤษ)</Label>
-							<Input id="name_en" bind:value={role.name_en} placeholder="Teacher" />
+							<Input
+								id="name_en"
+								bind:value={role.name_en}
+								placeholder="Teacher"
+								disabled={!canEditRole}
+							/>
 						</div>
 					</div>
 
@@ -285,25 +357,26 @@
 							bind:value={role.description}
 							placeholder="อธิบายบทบาทและหน้าที่"
 							rows={3}
+							disabled={!canEditRole}
 						/>
 					</div>
 
 					<div class="space-y-2">
 						<Label for="user_type">ประเภทผู้ใช้ *</Label>
-						<select
-							id="user_type"
-							bind:value={role.user_type}
-							class="w-full px-3 py-2 border rounded-md"
-							required
-						>
-							<option value="staff">บุคลากร (Staff)</option>
-							<option value="student">นักเรียน (Student)</option>
-							<option value="parent">ผู้ปกครอง (Parent)</option>
-						</select>
+						<Select.Root type="single" bind:value={role.user_type} disabled={!canEditRole}>
+							<Select.Trigger id="user_type" class="w-full">
+								{userTypeLabel(role.user_type)}
+							</Select.Trigger>
+							<Select.Content>
+								<Select.Item value="staff">บุคลากร (Staff)</Select.Item>
+								<Select.Item value="student">นักเรียน (Student)</Select.Item>
+								<Select.Item value="parent">ผู้ปกครอง (Parent)</Select.Item>
+							</Select.Content>
+						</Select.Root>
 					</div>
 
 					<div class="flex items-center gap-2">
-						<Switch id="is_active" bind:checked={role.is_active} />
+						<Switch id="is_active" bind:checked={role.is_active} disabled={!canEditRole} />
 						<Label for="is_active">เปิดใช้งาน</Label>
 					</div>
 				</CardContent>
@@ -325,7 +398,15 @@
 					</div>
 				</CardHeader>
 				<CardContent>
-					{#if rolePermissionListLoading}
+					{#if !canReadPermissionCatalog}
+						<Alert>
+							<AlertTriangle class="h-4 w-4" />
+							<AlertTitle>ไม่มีสิทธิ์ดูรายการ permission catalog</AlertTitle>
+							<AlertDescription>
+								ต้องมีสิทธิ์อ่านการตั้งค่าระบบก่อนจึงจะเลือกสิทธิ์ให้บทบาทได้
+							</AlertDescription>
+						</Alert>
+					{:else if rolePermissionListLoading}
 						<div class="py-8 text-center">
 							<p class="text-muted-foreground">กำลังโหลดรายการสิทธิ์...</p>
 						</div>
@@ -338,9 +419,11 @@
 											checked={isModuleFullySelected(module)}
 											indeterminate={isModulePartiallySelected(module)}
 											onCheckedChange={() => toggleModule(module)}
+											disabled={!canEditRole}
 										/>
 										<button
 											onclick={() => toggleModule(module)}
+											disabled={!canEditRole}
 											class="flex-1 text-left font-medium text-foreground hover:text-foreground/80"
 										>
 											{module}
@@ -359,6 +442,7 @@
 												<Checkbox
 													checked={selectedPermissions.has(permission.code)}
 													onCheckedChange={() => togglePermission(permission.code)}
+													disabled={!canEditRole}
 												/>
 												<div class="flex-1 min-w-0">
 													<div class="flex flex-wrap items-center gap-1.5">
@@ -392,10 +476,12 @@
 
 			<div class="flex justify-end gap-2">
 				<Button variant="outline" onclick={() => goto(resolve('/staff/roles'))}>ยกเลิก</Button>
-				<Button onclick={handleSave} disabled={saving} class="gap-2">
-					<Save class="h-4 w-4" />
-					{saving ? 'กำลังบันทึก...' : 'บันทึก'}
-				</Button>
+				{#if canEditRole}
+					<Button onclick={handleSave} disabled={saving} class="gap-2">
+						<Save class="h-4 w-4" />
+						{saving ? 'กำลังบันทึก...' : 'บันทึก'}
+					</Button>
+				{/if}
 			</div>
 		</div>
 	{/if}
