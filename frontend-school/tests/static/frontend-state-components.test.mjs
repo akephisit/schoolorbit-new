@@ -311,3 +311,21 @@ test('remaining action and system pages use shared frontend state components', a
 		assert.match(source, /<PageSkeleton\b/, `${page} should use PageSkeleton for loading`);
 	}
 });
+
+test('account settings action loading uses shared loading button', async () => {
+	const pages = [
+		'src/routes/(app)/staff/settings/+page.svelte',
+		'src/routes/(app)/student/settings/+page.svelte'
+	];
+
+	for (const page of pages) {
+		const source = await readProjectFile(page);
+
+		assert.match(
+			source,
+			/from '\$lib\/components\/app-state'/,
+			`${page} should import shared app-state components`
+		);
+		assert.match(source, /<LoadingButton\b/, `${page} should use LoadingButton for actions`);
+	}
+});

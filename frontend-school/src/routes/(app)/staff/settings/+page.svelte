@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import { authAPI } from '$lib/api/auth';
 	import { Button } from '$lib/components/ui/button';
+	import { LoadingButton } from '$lib/components/app-state';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import {
@@ -264,10 +265,15 @@
 
 							<!-- Submit Button -->
 							<div class="flex justify-end">
-								<Button type="submit" disabled={saving} class="gap-2">
+								<LoadingButton
+									type="submit"
+									loading={saving}
+									loadingLabel="กำลังบันทึก..."
+									class="gap-2"
+								>
 									<Save class="h-4 w-4" />
-									{saving ? 'กำลังบันทึก...' : 'เปลี่ยนรหัสผ่าน'}
-								</Button>
+									เปลี่ยนรหัสผ่าน
+								</LoadingButton>
 							</div>
 						</form>
 					</CardContent>
@@ -361,10 +367,15 @@
 										</ul>
 									</div>
 								</div>
-								<Button onclick={handleInstallPWA} disabled={isInstalling} class="w-full gap-2">
+								<LoadingButton
+									onclick={handleInstallPWA}
+									loading={isInstalling}
+									loadingLabel="กำลังติดตั้ง..."
+									class="w-full gap-2"
+								>
 									<Download class="w-4 h-4" />
-									{isInstalling ? 'กำลังติดตั้ง...' : 'ติดตั้งแอป'}
-								</Button>
+									ติดตั้งแอป
+								</LoadingButton>
 							</div>
 						{:else}
 							<!-- Not Available (Show iOS instructions if on iOS) -->
