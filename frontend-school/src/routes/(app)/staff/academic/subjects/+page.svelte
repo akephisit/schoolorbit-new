@@ -45,7 +45,7 @@
 	import * as Popover from '$lib/components/ui/popover';
 	import * as Command from '$lib/components/ui/command';
 	import * as Tabs from '$lib/components/ui/tabs';
-	import { Alert, AlertDescription, AlertTitle } from '$lib/components/ui/alert';
+	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import {
 		BookOpen,
 		Plus,
@@ -58,9 +58,7 @@
 		ChevronsUpDown,
 		ChevronDown,
 		ChevronRight,
-		Inbox,
-		Info,
-		AlertTriangle
+		Info
 	} from 'lucide-svelte';
 	import { PERMISSIONS } from '$lib/permissions/registry';
 	import { can } from '$lib/stores/permissions';
@@ -971,13 +969,11 @@
 	</div>
 
 	{#if !canReadCurriculum}
-		<Alert>
-			<AlertTriangle class="h-4 w-4" />
-			<AlertTitle>ไม่มีสิทธิ์ดูคลังรายวิชา</AlertTitle>
-			<AlertDescription>
-				บัญชีนี้เข้า module หลักสูตรได้ แต่ยังไม่มีสิทธิ์อ่านรายวิชาหรือกิจกรรมในหลักสูตร
-			</AlertDescription>
-		</Alert>
+		<PageState
+			variant="permission"
+			title="ไม่มีสิทธิ์ดูคลังรายวิชา"
+			description="บัญชีนี้เข้า module หลักสูตรได้ แต่ยังไม่มีสิทธิ์อ่านรายวิชาหรือกิจกรรมในหลักสูตร"
+		/>
 	{:else}
 		<Tabs.Root bind:value={activeTab}>
 			<Tabs.List class="grid w-full grid-cols-2 max-w-md">
@@ -1109,34 +1105,27 @@
 						<Table.Body>
 							{#if loading}
 								<Table.Row>
-									<Table.Cell colspan={8} class="text-center h-24 text-muted-foreground">
-										กำลังโหลดข้อมูล...
+									<Table.Cell colspan={8} class="p-0">
+										<PageSkeleton variant="table" rows={5} columns={8} />
 									</Table.Cell>
 								</Table.Row>
 							{:else if subjects.length === 0}
 								<Table.Row>
 									<Table.Cell colspan={8} class="h-48">
-										<div class="flex flex-col items-center justify-center gap-3 py-6 text-center">
-											{#if hasActiveFilters}
-												<Inbox class="w-10 h-10 text-muted-foreground/60" />
-												<div class="text-muted-foreground">ไม่พบวิชาที่ตรงกับตัวกรอง</div>
-												<Button variant="outline" size="sm" onclick={clearFilters}>
-													ล้างตัวกรอง
-												</Button>
-											{:else}
-												<Inbox class="w-10 h-10 text-muted-foreground/60" />
-												<div class="font-medium">ยังไม่มีวิชาในระบบ</div>
-												<div class="text-xs text-muted-foreground">
-													เริ่มต้นโดยคลิก "+ เพิ่ม" ด้านบน
-												</div>
-												{#if canCreateCurriculum}
-													<Button size="sm" onclick={openUnifiedAdd} class="gap-2">
-														<Plus class="w-4 h-4" />
-														เพิ่มรายวิชา
-													</Button>
-												{/if}
-											{/if}
-										</div>
+										<PageState
+											title={hasActiveFilters
+												? 'ไม่พบวิชาที่ตรงกับตัวกรอง'
+												: 'ยังไม่มีวิชาในระบบ'}
+											description={hasActiveFilters
+												? 'ลองปรับคำค้นหา กลุ่มสาระ หรือปีการศึกษาที่เลือก'
+												: 'เริ่มต้นเพิ่มรายวิชาได้เมื่อมีสิทธิ์สร้างหลักสูตร'}
+											actionLabel={hasActiveFilters
+												? 'ล้างตัวกรอง'
+												: canCreateCurriculum
+													? 'เพิ่มรายวิชา'
+													: undefined}
+											onaction={hasActiveFilters ? clearFilters : openUnifiedAdd}
+										/>
 									</Table.Cell>
 								</Table.Row>
 							{:else}
@@ -1318,13 +1307,14 @@
 				</p>
 
 				{#if catalogLoading}
-					<div class="text-center py-6 text-sm text-muted-foreground">กำลังโหลด...</div>
+					<PageSkeleton variant="table" rows={5} columns={8} />
 				{:else if catalogItems.length === 0}
-					<div
-						class="text-center py-6 text-sm text-muted-foreground border rounded-lg border-dashed"
-					>
-						ยังไม่มีกิจกรรม — กดปุ่ม "เพิ่มกิจกรรม"
-					</div>
+					<PageState
+						title="ยังไม่มีกิจกรรม"
+						description="เริ่มต้นเพิ่มกิจกรรมพัฒนาผู้เรียนได้เมื่อมีสิทธิ์สร้างหลักสูตร"
+						actionLabel={canCreateCurriculum ? 'เพิ่มกิจกรรม' : undefined}
+						onaction={openUnifiedAdd}
+					/>
 				{:else}
 					<div class="bg-card border border-border rounded-lg overflow-hidden">
 						<Table.Root>

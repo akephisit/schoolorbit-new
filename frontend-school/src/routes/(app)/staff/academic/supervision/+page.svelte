@@ -50,6 +50,7 @@
 	import { authStore } from '$lib/stores/auth';
 	import { can } from '$lib/stores/permissions';
 	import { cn } from '$lib/utils';
+	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import * as Alert from '$lib/components/ui/alert';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
@@ -983,11 +984,7 @@
 	</div>
 
 	{#if loading}
-		<Alert.Root>
-			<Loader2 class="h-4 w-4 animate-spin" />
-			<Alert.Title>กำลังโหลดข้อมูลนิเทศ</Alert.Title>
-			<Alert.Description>ระบบกำลังดึงรอบนิเทศ แบบประเมิน ตารางสอน และปีการศึกษา</Alert.Description>
-		</Alert.Root>
+		<PageSkeleton variant="detail" />
 	{/if}
 
 	<Tabs.Root bind:value={activeTab} class="space-y-4">
@@ -1011,12 +1008,11 @@
 				</Card.Header>
 				<Card.Content class="space-y-4">
 					{#if !canRequest}
-						<Alert.Root>
-							<Alert.Title>ยังไม่มีสิทธิ์จองคาบนิเทศ</Alert.Title>
-							<Alert.Description
-								>ต้องมีสิทธิ์จองคาบนิเทศของตนเองก่อนจึงจะส่งคำขอได้</Alert.Description
-							>
-						</Alert.Root>
+						<PageState
+							variant="permission"
+							title="ยังไม่มีสิทธิ์จองคาบนิเทศ"
+							description="ต้องมีสิทธิ์จองคาบนิเทศของตนเองก่อนจึงจะส่งคำขอได้"
+						/>
 					{:else}
 						<div class="grid gap-4 lg:grid-cols-2">
 							<div class="space-y-2">
@@ -1212,11 +1208,10 @@
 				</Card.Header>
 				<Card.Content>
 					{#if myObservations.length === 0}
-						<Alert.Root>
-							<Alert.Title>ยังไม่มีรายการนิเทศของฉัน</Alert.Title>
-							<Alert.Description>เมื่อส่งคำขอหรือได้รับผลนิเทศ รายการจะแสดงที่นี่</Alert.Description
-							>
-						</Alert.Root>
+						<PageState
+							title="ยังไม่มีรายการนิเทศของฉัน"
+							description="เมื่อส่งคำขอหรือได้รับผลนิเทศ รายการจะแสดงที่นี่"
+						/>
 					{:else}
 						<Table.Root>
 							<Table.Header>
@@ -1299,10 +1294,10 @@
 				</Card.Header>
 				<Card.Content class="space-y-4">
 					{#if requestedObservations.length === 0}
-						<Alert.Root>
-							<Alert.Title>ไม่มีคำขอจองที่รออนุมัติ</Alert.Title>
-							<Alert.Description>เมื่อครูส่งคำขอจอง รายการจะปรากฏในส่วนนี้</Alert.Description>
-						</Alert.Root>
+						<PageState
+							title="ไม่มีคำขอจองที่รออนุมัติ"
+							description="เมื่อครูส่งคำขอจอง รายการจะปรากฏในส่วนนี้"
+						/>
 					{:else}
 						<div class="grid gap-3 lg:grid-cols-[1fr_280px_auto]">
 							<Select.Root type="single" bind:value={approvalObservationId}>
@@ -1396,12 +1391,10 @@
 				</Card.Header>
 				<Card.Content class="space-y-4">
 					{#if assignedObservations.length === 0}
-						<Alert.Root>
-							<Alert.Title>ยังไม่มีรายการที่ได้รับมอบหมาย</Alert.Title>
-							<Alert.Description
-								>รายการจะปรากฏเมื่อผู้ดูแลอนุมัติคำขอและมอบหมายให้ประเมิน</Alert.Description
-							>
-						</Alert.Root>
+						<PageState
+							title="ยังไม่มีรายการที่ได้รับมอบหมาย"
+							description="รายการจะปรากฏเมื่อผู้ดูแลอนุมัติคำขอและมอบหมายให้ประเมิน"
+						/>
 					{:else}
 						<div class="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
 							{#each assignedObservations as observation (observation.id)}

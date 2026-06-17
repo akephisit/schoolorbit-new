@@ -743,7 +743,7 @@ test('academic curriculum workspace pages gate read and mutation actions', async
 	const routeExpectations = [
 		{
 			file: 'frontend-school/src/routes/(app)/staff/academic/subjects/+page.svelte',
-			imports: ['$lib/components/ui/alert'],
+			imports: ['$lib/components/app-state'],
 			permissions: [
 				'PERMISSIONS.ACADEMIC_CURRICULUM_READ_ALL',
 				'PERMISSIONS.ACADEMIC_CURRICULUM_READ_ORGANIZATION_TREE',
