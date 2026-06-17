@@ -33,14 +33,13 @@
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import { Badge } from '$lib/components/ui/badge';
-	import { Alert, AlertDescription, AlertTitle } from '$lib/components/ui/alert';
+	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import * as Card from '$lib/components/ui/card';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import * as Select from '$lib/components/ui/select';
 	import { Separator } from '$lib/components/ui/separator';
 	import { toast } from 'svelte-sonner';
 	import {
-		AlertTriangle,
 		ArrowLeft,
 		Settings,
 		BookOpen,
@@ -75,6 +74,7 @@
 	let subjects: AdmissionExamSubject[] = $state([]);
 	let studyPlans: { id: string; nameTh: string }[] = $state([]);
 	let loading = $state(true);
+	let error = $state('');
 
 	let showDeleteDialog = $state(false);
 	let deletingRound = $state(false);
@@ -197,6 +197,7 @@
 		}
 		if (!id) return;
 		loading = true;
+		error = '';
 		try {
 			const [r, t, s, allR] = await Promise.all([
 				getRound(id),
@@ -214,7 +215,8 @@
 				institution: { ownSchool: r.reportConfig?.institution?.ownSchool ?? '' }
 			};
 		} catch (e) {
-			toast.error(e instanceof Error ? e.message : 'โหลดข้อมูลไม่สำเร็จ');
+			error = e instanceof Error ? e.message : 'โหลดข้อมูลไม่สำเร็จ';
+			toast.error(error);
 		} finally {
 			loading = false;
 		}
@@ -480,17 +482,21 @@
 </svelte:head>
 
 {#if loading}
-	<div class="flex justify-center items-center py-20">
-		<Loader2 class="w-8 h-8 animate-spin text-primary" />
-	</div>
+	<PageSkeleton variant="detail" />
 {:else if !canReadAdmission}
-	<Alert variant="destructive">
-		<AlertTriangle class="h-4 w-4" />
-		<AlertTitle>ไม่มีสิทธิ์ดูรอบรับสมัคร</AlertTitle>
-		<AlertDescription
-			>บัญชีนี้เข้า module รับสมัครได้ แต่ยังไม่มีสิทธิ์อ่านรายละเอียดรอบรับสมัคร</AlertDescription
-		>
-	</Alert>
+	<PageState
+		variant="permission"
+		title="ไม่มีสิทธิ์ดูรอบรับสมัคร"
+		description="บัญชีนี้เข้า module รับสมัครได้ แต่ยังไม่มีสิทธิ์อ่านรายละเอียดรอบรับสมัคร"
+	/>
+{:else if error}
+	<PageState
+		variant="error"
+		title="โหลดรายละเอียดรอบรับสมัครไม่สำเร็จ"
+		description={error}
+		actionLabel="ลองอีกครั้ง"
+		onaction={load}
+	/>
 {:else if round}
 	<div class="space-y-6">
 		<!-- Header Actions -->
@@ -1126,9 +1132,16 @@
 						{deletingTrack ? 'กำลังลบ...' : 'ลบสาย'}
 					</Button>
 				</Dialog.Footer>
-			</Dialog.Content>
-		</Dialog.Root>
-	{/if}
+		</Dialog.Content>
+	</Dialog.Root>
+{:else}
+	<PageState
+		title="ไม่พบรอบรับสมัคร"
+		description="รอบรับสมัครนี้อาจถูกลบหรือคุณอาจไม่มีสิทธิ์เข้าถึง"
+		actionLabel="กลับหน้ารับสมัคร"
+		href="/staff/academic/admission"
+	/>
+{/if}
 
 	{#if canManageAdmission}
 		<!-- Delete Subject Dialog -->

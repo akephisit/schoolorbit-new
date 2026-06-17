@@ -14,7 +14,7 @@
 	import { Label } from '$lib/components/ui/label';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Textarea } from '$lib/components/ui/textarea';
-	import { Alert, AlertDescription, AlertTitle } from '$lib/components/ui/alert';
+	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import * as Card from '$lib/components/ui/card';
 	import * as Table from '$lib/components/ui/table';
 	import * as Dialog from '$lib/components/ui/dialog';
@@ -23,11 +23,9 @@
 	import { can } from '$lib/stores/permissions';
 	import { toast } from 'svelte-sonner';
 	import {
-		AlertTriangle,
 		ArrowLeft,
 		ClipboardCheck,
 		Check,
-		UserCheck,
 		Loader2,
 		Plus,
 		Trash2,
@@ -57,6 +55,7 @@
 	let round: Awaited<ReturnType<typeof getRound>> | null = $state(null);
 	let list: EnrollRow[] = $state([]);
 	let loading = $state(true);
+	let error = $state('');
 
 	let showEnrollDialog = $state(false);
 	let enrollingApp = $state<EnrollRow | null>(null);
@@ -177,12 +176,14 @@
 			return;
 		}
 		loading = true;
+		error = '';
 		try {
 			const [r, l] = await Promise.all([getRound(id), listEnrollmentPending(id)]);
 			round = r;
 			list = l ?? [];
 		} catch (e) {
-			toast.error(e instanceof Error ? e.message : 'โหลดไม่สำเร็จ');
+			error = e instanceof Error ? e.message : 'โหลดไม่สำเร็จ';
+			toast.error(error);
 		} finally {
 			loading = false;
 		}
@@ -228,13 +229,11 @@
 	{/if}
 
 	{#if !canEnrollAdmission}
-		<Alert>
-			<AlertTriangle class="h-4 w-4" />
-			<AlertTitle>ไม่มีสิทธิ์รับมอบตัว</AlertTitle>
-			<AlertDescription>
-				หน้านี้ต้องใช้สิทธิ์รับมอบตัวของงานรับสมัครก่อนจึงจะแสดงรายชื่อและสร้างบัญชีนักเรียนได้
-			</AlertDescription>
-		</Alert>
+		<PageState
+			variant="permission"
+			title="ไม่มีสิทธิ์รับมอบตัว"
+			description="หน้านี้ต้องใช้สิทธิ์รับมอบตัวของงานรับสมัครก่อนจึงจะแสดงรายชื่อและสร้างบัญชีนักเรียนได้"
+		/>
 	{:else}
 		<!-- Stats -->
 		<div class="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -271,19 +270,20 @@
 		</div>
 
 		{#if loading}
-			<Card.Root>
-				<Card.Content class="flex justify-center py-16">
-					<Loader2 class="w-8 h-8 animate-spin text-primary" />
-				</Card.Content>
-			</Card.Root>
+			<PageSkeleton variant="table" rows={5} columns={7} />
+		{:else if error}
+			<PageState
+				variant="error"
+				title="โหลดรายชื่อมอบตัวไม่สำเร็จ"
+				description={error}
+				actionLabel="ลองอีกครั้ง"
+				onaction={load}
+			/>
 		{:else if list.length === 0}
-			<Card.Root>
-				<Card.Content class="flex flex-col items-center py-16 gap-3 text-muted-foreground">
-					<UserCheck class="w-12 h-12 opacity-40" />
-					<p>ยังไม่มีรายชื่อที่รอมอบตัว</p>
-					<p class="text-xs">ต้องผ่านขั้นตอนจัดห้องก่อน</p>
-				</Card.Content>
-			</Card.Root>
+			<PageState
+				title="ยังไม่มีรายชื่อที่รอมอบตัว"
+				description="ต้องผ่านขั้นตอนจัดห้องก่อน"
+			/>
 		{:else}
 			<Card.Root>
 				<div class="overflow-x-auto">

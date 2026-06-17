@@ -23,7 +23,7 @@
 	import { Badge } from '$lib/components/ui/badge';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
-	import { Alert, AlertDescription, AlertTitle } from '$lib/components/ui/alert';
+	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import * as Select from '$lib/components/ui/select';
 	import DatePicker from '$lib/components/ui/date-picker/DatePicker.svelte';
 	import * as Card from '$lib/components/ui/card';
@@ -32,7 +32,6 @@
 	import { Textarea } from '$lib/components/ui/textarea';
 	import { toast } from 'svelte-sonner';
 	import {
-		AlertTriangle,
 		ArrowLeft,
 		ChevronLeft,
 		ChevronRight,
@@ -70,6 +69,7 @@
 	let application: AdmissionApplication | null = $state(null);
 	let documents: ApplicationDocument[] = $state([]);
 	let loading = $state(true);
+	let error = $state('');
 
 	// Reject
 	let showRejectDialog = $state(false);
@@ -141,6 +141,7 @@
 		}
 		if (!appId) return;
 		loading = true;
+		error = '';
 		try {
 			const [res, trackList] = await Promise.all([
 				getApplication(appId),
@@ -150,7 +151,8 @@
 			documents = res.documents;
 			tracks = trackList;
 		} catch (e) {
-			toast.error(e instanceof Error ? e.message : 'ไม่สามารถโหลดข้อมูลผู้สมัครได้');
+			error = e instanceof Error ? e.message : 'ไม่สามารถโหลดข้อมูลผู้สมัครได้';
+			toast.error(error);
 		} finally {
 			loading = false;
 		}
@@ -590,19 +592,21 @@
 	</div>
 
 	{#if !canReadAdmission}
-		<Alert variant="destructive">
-			<AlertTriangle class="h-4 w-4" />
-			<AlertTitle>ไม่มีสิทธิ์ดูใบสมัคร</AlertTitle>
-			<AlertDescription
-				>บัญชีนี้เข้า module รับสมัครได้ แต่ยังไม่มีสิทธิ์อ่านรายละเอียดใบสมัคร</AlertDescription
-			>
-		</Alert>
+		<PageState
+			variant="permission"
+			title="ไม่มีสิทธิ์ดูใบสมัคร"
+			description="บัญชีนี้เข้า module รับสมัครได้ แต่ยังไม่มีสิทธิ์อ่านรายละเอียดใบสมัคร"
+		/>
 	{:else if loading}
-		<Card.Root>
-			<Card.Content class="flex justify-center py-20">
-				<LoaderCircle class="w-8 h-8 animate-spin text-primary" />
-			</Card.Content>
-		</Card.Root>
+		<PageSkeleton variant="detail" />
+	{:else if error}
+		<PageState
+			variant="error"
+			title="โหลดรายละเอียดใบสมัครไม่สำเร็จ"
+			description={error}
+			actionLabel="ลองอีกครั้ง"
+			onaction={loadApp}
+		/>
 	{:else if application}
 		<div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
 			<!-- ข้อมูลหลัก (ซ้าย) -->
@@ -1499,14 +1503,12 @@
 			</Dialog.Root>
 		{/if}
 	{:else}
-		<Card.Root>
-			<Card.Content
-				class="flex flex-col items-center justify-center py-20 text-muted-foreground gap-3"
-			>
-				<FileText class="w-10 h-10 opacity-30" />
-				<p>ไม่พบข้อมูลใบสมัคร</p>
-			</Card.Content>
-		</Card.Root>
+		<PageState
+			title="ไม่พบข้อมูลใบสมัคร"
+			description="ใบสมัครนี้อาจถูกลบหรือคุณอาจไม่มีสิทธิ์เข้าถึง"
+			actionLabel="กลับหน้ารายการใบสมัคร"
+			href="/staff/academic/admission/{roundId}/applications"
+		/>
 	{/if}
 </div>
 

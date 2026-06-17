@@ -14,7 +14,7 @@
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import { Badge } from '$lib/components/ui/badge';
-	import { Alert, AlertDescription, AlertTitle } from '$lib/components/ui/alert';
+	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import * as Card from '$lib/components/ui/card';
 	import * as Select from '$lib/components/ui/select';
 	import * as Dialog from '$lib/components/ui/dialog';
@@ -22,7 +22,6 @@
 	import { Textarea } from '$lib/components/ui/textarea';
 	import { toast } from 'svelte-sonner';
 	import {
-		AlertTriangle,
 		ArrowLeft,
 		Search,
 		Check,
@@ -46,6 +45,7 @@
 	const canVerifyAdmission = $derived($can.has(PERMISSIONS.ADMISSION_VERIFY_ALL));
 	let applications: ApplicationListItem[] = $state([]);
 	let loading = $state(true);
+	let error = $state('');
 	let search = $state('');
 	let statusFilter = $state('');
 	let dateFilter = $state('');
@@ -85,13 +85,15 @@
 		}
 		if (!id) return;
 		loading = true;
+		error = '';
 		try {
 			applications = await listApplications(id, {
 				status: statusFilter || undefined,
 				search: search || undefined
 			});
 		} catch (e) {
-			toast.error(e instanceof Error ? e.message : 'โหลดไม่สำเร็จ');
+			error = e instanceof Error ? e.message : 'โหลดไม่สำเร็จ';
+			toast.error(error);
 		} finally {
 			loading = false;
 		}
@@ -198,13 +200,11 @@
 	</div>
 
 	{#if !canReadAdmission}
-		<Alert variant="destructive">
-			<AlertTriangle class="h-4 w-4" />
-			<AlertTitle>ไม่มีสิทธิ์ดูใบสมัคร</AlertTitle>
-			<AlertDescription
-				>บัญชีนี้เข้า module รับสมัครได้ แต่ยังไม่มีสิทธิ์อ่านข้อมูลใบสมัคร</AlertDescription
-			>
-		</Alert>
+		<PageState
+			variant="permission"
+			title="ไม่มีสิทธิ์ดูใบสมัคร"
+			description="บัญชีนี้เข้า module รับสมัครได้ แต่ยังไม่มีสิทธิ์อ่านข้อมูลใบสมัคร"
+		/>
 	{:else}
 		<!-- Filters -->
 		<Card.Root>
@@ -261,18 +261,20 @@
 
 		<!-- Table -->
 		{#if loading}
-			<Card.Root>
-				<Card.Content class="flex justify-center py-16">
-					<LoaderCircle class="w-8 h-8 animate-spin text-primary" />
-				</Card.Content>
-			</Card.Root>
+			<PageSkeleton variant="table" rows={6} columns={8} />
+		{:else if error}
+			<PageState
+				variant="error"
+				title="โหลดใบสมัครไม่สำเร็จ"
+				description={error}
+				actionLabel="ลองอีกครั้ง"
+				onaction={loadApps}
+			/>
 		{:else if applications.length === 0}
-			<Card.Root>
-				<Card.Content class="flex flex-col items-center py-16 gap-3 text-muted-foreground">
-					<Users class="w-12 h-12 opacity-40" />
-					<p>ไม่พบใบสมัคร</p>
-				</Card.Content>
-			</Card.Root>
+			<PageState
+				title="ไม่พบใบสมัคร"
+				description="ยังไม่มีใบสมัครที่ตรงกับเงื่อนไขการค้นหา"
+			/>
 		{:else}
 			<Card.Root>
 				<div class="overflow-x-auto">

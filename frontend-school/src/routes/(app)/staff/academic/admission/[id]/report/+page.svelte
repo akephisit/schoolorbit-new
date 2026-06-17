@@ -8,12 +8,12 @@
 		applicationStatusLabel
 	} from '$lib/api/admission';
 	import { Button } from '$lib/components/ui/button';
-	import { Alert, AlertDescription, AlertTitle } from '$lib/components/ui/alert';
+	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import * as Card from '$lib/components/ui/card';
 	import * as Select from '$lib/components/ui/select';
 	import { PERMISSIONS } from '$lib/permissions/registry';
 	import { can } from '$lib/stores/permissions';
-	import { AlertTriangle, LoaderCircle, ArrowLeft, Settings, ChevronDown } from 'lucide-svelte';
+	import { ArrowLeft, Settings, ChevronDown } from 'lucide-svelte';
 	import { toast } from 'svelte-sonner';
 	import { SvelteMap } from 'svelte/reactivity';
 
@@ -25,6 +25,7 @@
 	let round = $state<AdmissionRound | null>(null);
 	let applications: ApplicationListItem[] = $state([]);
 	let loading = $state(true);
+	let error = $state('');
 	let statusFilter = $state('all');
 
 	// ---- Types ----
@@ -126,12 +127,14 @@
 			return;
 		}
 		loading = true;
+		error = '';
 		try {
 			const [r, apps] = await Promise.all([getRound(id), listApplications(id, {})]);
 			round = r;
 			applications = apps;
 		} catch (e) {
-			toast.error(e instanceof Error ? e.message : 'โหลดข้อมูลไม่สำเร็จ');
+			error = e instanceof Error ? e.message : 'โหลดข้อมูลไม่สำเร็จ';
+			toast.error(error);
 		} finally {
 			loading = false;
 		}
@@ -483,17 +486,21 @@
 {/snippet}
 
 {#if !canReadAdmission}
-	<Alert>
-		<AlertTriangle class="h-4 w-4" />
-		<AlertTitle>ไม่มีสิทธิ์ดูรายงานรับสมัคร</AlertTitle>
-		<AlertDescription>
-			หน้านี้ต้องใช้สิทธิ์อ่านข้อมูลงานรับสมัครก่อนจึงจะแสดงรายงานได้
-		</AlertDescription>
-	</Alert>
+	<PageState
+		variant="permission"
+		title="ไม่มีสิทธิ์ดูรายงานรับสมัคร"
+		description="หน้านี้ต้องใช้สิทธิ์อ่านข้อมูลงานรับสมัครก่อนจึงจะแสดงรายงานได้"
+	/>
 {:else if loading}
-	<div class="flex justify-center items-center py-20">
-		<LoaderCircle class="w-8 h-8 animate-spin text-primary" />
-	</div>
+	<PageSkeleton variant="detail" />
+{:else if error}
+	<PageState
+		variant="error"
+		title="โหลดรายงานรับสมัครไม่สำเร็จ"
+		description={error}
+		actionLabel="ลองอีกครั้ง"
+		onaction={load}
+	/>
 {:else if round}
 	<div class="space-y-6">
 		<!-- Header -->
@@ -604,4 +611,11 @@
 			</div>
 		{/if}
 	</div>
+{:else}
+	<PageState
+		title="ไม่พบรอบรับสมัคร"
+		description="ไม่พบรอบรับสมัครสำหรับรายงานนี้"
+		actionLabel="กลับหน้ารับสมัคร"
+		href="/staff/academic/admission"
+	/>
 {/if}

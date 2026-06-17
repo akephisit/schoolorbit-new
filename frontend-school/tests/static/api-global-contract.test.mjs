@@ -1025,13 +1025,13 @@ test('admission workspace pages gate read and specialized actions', async () => 
 		},
 		{
 			file: 'frontend-school/src/routes/(app)/staff/academic/admission/new/+page.svelte',
-			imports: ['$lib/components/ui/alert'],
+			imports: ['$lib/components/app-state'],
 			permissions: ['PERMISSIONS.ADMISSION_MANAGE_ALL'],
 			identifiers: ['canManageAdmission']
 		},
 		{
 			file: 'frontend-school/src/routes/(app)/staff/academic/admission/[id]/+page.svelte',
-			imports: ['$lib/components/ui/alert'],
+			imports: ['$lib/components/app-state'],
 			permissions: [
 				'PERMISSIONS.ADMISSION_READ_ALL',
 				'PERMISSIONS.ADMISSION_MANAGE_ALL',
@@ -1049,49 +1049,49 @@ test('admission workspace pages gate read and specialized actions', async () => 
 		},
 		{
 			file: 'frontend-school/src/routes/(app)/staff/academic/admission/[id]/applications/+page.svelte',
-			imports: ['$lib/components/ui/alert'],
+			imports: ['$lib/components/app-state'],
 			permissions: ['PERMISSIONS.ADMISSION_READ_ALL', 'PERMISSIONS.ADMISSION_VERIFY_ALL'],
 			identifiers: ['canReadAdmission', 'canVerifyAdmission']
 		},
 		{
 			file: 'frontend-school/src/routes/(app)/staff/academic/admission/[id]/applications/[appId]/+page.svelte',
-			imports: ['$lib/components/ui/alert'],
+			imports: ['$lib/components/app-state'],
 			permissions: ['PERMISSIONS.ADMISSION_READ_ALL', 'PERMISSIONS.ADMISSION_VERIFY_ALL'],
 			identifiers: ['canReadAdmission', 'canVerifyAdmission']
 		},
 		{
 			file: 'frontend-school/src/routes/(app)/staff/academic/admission/[id]/exam-rooms/+page.svelte',
-			imports: ['$lib/components/ui/alert'],
+			imports: ['$lib/components/app-state'],
 			permissions: ['PERMISSIONS.ADMISSION_MANAGE_ALL'],
 			identifiers: ['canManageAdmission']
 		},
 		{
 			file: 'frontend-school/src/routes/(app)/staff/academic/admission/[id]/scores/+page.svelte',
-			imports: ['$lib/components/ui/alert'],
+			imports: ['$lib/components/app-state'],
 			permissions: ['PERMISSIONS.ADMISSION_SCORES_ALL'],
 			identifiers: ['canScoreAdmission']
 		},
 		{
 			file: 'frontend-school/src/routes/(app)/staff/academic/admission/[id]/selections/+page.svelte',
-			imports: ['$lib/components/ui/alert'],
+			imports: ['$lib/components/app-state'],
 			permissions: ['PERMISSIONS.ADMISSION_SCORES_ALL'],
 			identifiers: ['canScoreAdmission']
 		},
 		{
 			file: 'frontend-school/src/routes/(app)/staff/academic/admission/[id]/student-ids/+page.svelte',
-			imports: ['$lib/components/ui/alert'],
+			imports: ['$lib/components/app-state'],
 			permissions: ['PERMISSIONS.ADMISSION_MANAGE_ALL'],
 			identifiers: ['canManageAdmission']
 		},
 		{
 			file: 'frontend-school/src/routes/(app)/staff/academic/admission/[id]/enrollment/+page.svelte',
-			imports: ['$lib/components/ui/alert'],
+			imports: ['$lib/components/app-state'],
 			permissions: ['PERMISSIONS.ADMISSION_ENROLL_ALL'],
 			identifiers: ['canEnrollAdmission']
 		},
 		{
 			file: 'frontend-school/src/routes/(app)/staff/academic/admission/[id]/report/+page.svelte',
-			imports: ['$lib/components/ui/alert'],
+			imports: ['$lib/components/app-state'],
 			permissions: ['PERMISSIONS.ADMISSION_READ_ALL'],
 			identifiers: ['canReadAdmission']
 		}

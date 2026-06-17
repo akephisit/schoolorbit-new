@@ -22,7 +22,7 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { Badge } from '$lib/components/ui/badge';
-	import { Alert, AlertDescription, AlertTitle } from '$lib/components/ui/alert';
+	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import * as Card from '$lib/components/ui/card';
 	import * as Table from '$lib/components/ui/table';
 	import * as Select from '$lib/components/ui/select';
@@ -31,7 +31,6 @@
 	import { can } from '$lib/stores/permissions';
 	import { toast } from 'svelte-sonner';
 	import {
-		AlertTriangle,
 		ArrowLeft,
 		Building2,
 		Plus,
@@ -64,6 +63,7 @@
 
 	let activeTab = $state<'setup' | 'seats'>('setup');
 	let loading = $state(true);
+	let error = $state('');
 	let assigning = $state(false);
 	let savingConfig = $state(false);
 	let copying = $state(false);
@@ -94,6 +94,7 @@
 			return;
 		}
 		loading = true;
+		error = '';
 		try {
 			const [roundData, examRoomsData, configData, facilityData, allRoundsData] = await Promise.all(
 				[getRound(id), listExamRooms(id), getExamConfig(id), listRooms({}), listRounds()]
@@ -109,8 +110,9 @@
 			};
 			facilityRooms = facilityData.data.filter((r: Room) => r.status === 'ACTIVE');
 			allRounds = allRoundsData.filter((r: AdmissionRound) => r.id !== id);
-		} catch {
-			toast.error('ไม่สามารถโหลดข้อมูลได้');
+		} catch (loadError) {
+			error = loadError instanceof Error ? loadError.message : 'ไม่สามารถโหลดข้อมูลได้';
+			toast.error(error);
 		} finally {
 			loading = false;
 		}
@@ -402,17 +404,21 @@
 	</div>
 
 	{#if loading}
-		<div class="flex items-center justify-center py-20">
-			<Loader2 class="text-muted-foreground h-7 w-7 animate-spin" />
-		</div>
+		<PageSkeleton variant="detail" />
 	{:else if !canManageAdmission}
-		<Alert>
-			<AlertTriangle class="h-4 w-4" />
-			<AlertTitle>ไม่มีสิทธิ์จัดการห้องสอบ</AlertTitle>
-			<AlertDescription>
-				หน้านี้ใช้สำหรับตั้งค่าห้องสอบและจัดเลขที่นั่ง ซึ่งต้องมีสิทธิ์จัดการงานรับสมัคร
-			</AlertDescription>
-		</Alert>
+		<PageState
+			variant="permission"
+			title="ไม่มีสิทธิ์จัดการห้องสอบ"
+			description="หน้านี้ใช้สำหรับตั้งค่าห้องสอบและจัดเลขที่นั่ง ซึ่งต้องมีสิทธิ์จัดการงานรับสมัคร"
+		/>
+	{:else if error}
+		<PageState
+			variant="error"
+			title="โหลดข้อมูลห้องสอบไม่สำเร็จ"
+			description={error}
+			actionLabel="ลองอีกครั้ง"
+			onaction={loadAll}
+		/>
 	{:else}
 		<!-- Tabs -->
 		<div class="border-b">

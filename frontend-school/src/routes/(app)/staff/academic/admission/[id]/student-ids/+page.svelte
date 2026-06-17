@@ -11,7 +11,7 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { Badge } from '$lib/components/ui/badge';
-	import { Alert, AlertDescription, AlertTitle } from '$lib/components/ui/alert';
+	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import * as Card from '$lib/components/ui/card';
 	import * as Table from '$lib/components/ui/table';
 	import * as Dialog from '$lib/components/ui/dialog';
@@ -19,7 +19,6 @@
 	import { can } from '$lib/stores/permissions';
 	import { toast } from 'svelte-sonner';
 	import {
-		AlertTriangle,
 		ArrowLeft,
 		Save,
 		Wand2,
@@ -391,13 +390,11 @@
 	</div>
 
 	{#if !canManageAdmission}
-		<Alert>
-			<AlertTriangle class="h-4 w-4" />
-			<AlertTitle>ไม่มีสิทธิ์กำหนดเลขประจำตัว</AlertTitle>
-			<AlertDescription>
-				หน้านี้ต้องใช้สิทธิ์จัดการงานรับสมัครเพื่อเรียงรายชื่อ นำเข้าไฟล์ และบันทึกเลขประจำตัว
-			</AlertDescription>
-		</Alert>
+		<PageState
+			variant="permission"
+			title="ไม่มีสิทธิ์กำหนดเลขประจำตัว"
+			description="หน้านี้ต้องใช้สิทธิ์จัดการงานรับสมัครเพื่อเรียงรายชื่อ นำเข้าไฟล์ และบันทึกเลขประจำตัว"
+		/>
 	{:else}
 		<!-- Controls -->
 		<Card.Root>
@@ -580,16 +577,19 @@
 				<Table.Body>
 					{#if loading}
 						<Table.Row>
-							<Table.Cell colspan={10} class="text-center text-muted-foreground py-8">
-								กำลังโหลด...
+							<Table.Cell colspan={10} class="p-0">
+								<PageSkeleton variant="table" rows={6} columns={6} />
 							</Table.Cell>
 						</Table.Row>
 					{:else if filteredEntries().length === 0}
 						<Table.Row>
-							<Table.Cell colspan={10} class="text-center text-muted-foreground py-8">
-								{entries.length === 0
-									? 'ไม่มีนักเรียนที่ผ่านการคัดเลือก'
-									: 'ไม่พบนักเรียนจากโรงเรียนที่ค้นหา'}
+							<Table.Cell colspan={10} class="p-6">
+								<PageState
+									title={entries.length === 0
+										? 'ไม่มีนักเรียนที่ผ่านการคัดเลือก'
+										: 'ไม่พบนักเรียนจากโรงเรียนที่ค้นหา'}
+									description="ต้องผ่านขั้นตอนจัดห้องก่อนจึงจะกำหนดเลขประจำตัวได้"
+								/>
 							</Table.Cell>
 						</Table.Row>
 					{:else}

@@ -25,7 +25,7 @@
 	import { Badge } from '$lib/components/ui/badge';
 	import { Checkbox } from '$lib/components/ui/checkbox';
 	import { Label } from '$lib/components/ui/label';
-	import { Alert, AlertDescription, AlertTitle } from '$lib/components/ui/alert';
+	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import * as RadioGroup from '$lib/components/ui/radio-group';
 	import * as Card from '$lib/components/ui/card';
 	import * as Table from '$lib/components/ui/table';
@@ -35,7 +35,6 @@
 	import { can } from '$lib/stores/permissions';
 	import { toast } from 'svelte-sonner';
 	import {
-		AlertTriangle,
 		ArrowLeft,
 		GraduationCap,
 		Trophy,
@@ -459,13 +458,11 @@
 	</div>
 
 	{#if !canScoreAdmission}
-		<Alert>
-			<AlertTriangle class="h-4 w-4" />
-			<AlertTitle>ไม่มีสิทธิ์จัดผลคัดเลือก</AlertTitle>
-			<AlertDescription>
-				หน้านี้ต้องใช้สิทธิ์จัดการคะแนนและผลคัดเลือกของงานรับสมัคร
-			</AlertDescription>
-		</Alert>
+		<PageState
+			variant="permission"
+			title="ไม่มีสิทธิ์จัดผลคัดเลือก"
+			description="หน้านี้ต้องใช้สิทธิ์จัดการคะแนนและผลคัดเลือกของงานรับสมัคร"
+		/>
 	{:else}
 		{#if round}
 			<p class="text-muted-foreground text-sm">{round.name}</p>
@@ -656,11 +653,7 @@
 
 			<!-- ผลเรียงคะแนน -->
 			{#if loading}
-				<Card.Root>
-					<Card.Content class="flex justify-center py-16">
-						<LoaderCircle class="w-8 h-8 animate-spin text-primary" />
-					</Card.Content>
-				</Card.Root>
+				<PageSkeleton variant="table" rows={6} columns={7} />
 			{:else if ranking}
 				<!-- Room Summary -->
 				{#if ranking.rooms?.length > 0}

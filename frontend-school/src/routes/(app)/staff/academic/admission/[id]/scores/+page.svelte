@@ -19,7 +19,7 @@
 	} from '$lib/api/admission';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
-	import { Alert, AlertDescription, AlertTitle } from '$lib/components/ui/alert';
+	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import * as Card from '$lib/components/ui/card';
 	import * as Table from '$lib/components/ui/table';
 	import { Switch } from '$lib/components/ui/switch';
@@ -27,7 +27,6 @@
 	import { can } from '$lib/stores/permissions';
 	import { toast } from 'svelte-sonner';
 	import {
-		AlertTriangle,
 		ArrowLeft,
 		ClipboardList,
 		Save,
@@ -48,6 +47,7 @@
 	let seatGroups: ExamRoomGroup[] = $state([]);
 	let viewMode = $state<'track' | 'room'>('track');
 	let loading = $state(true);
+	let error = $state('');
 	let saving = $state(false);
 	let selectedTrack = $state('');
 	let allRawScores: RawScore[] = [];
@@ -75,6 +75,7 @@
 			return;
 		}
 		loading = true;
+		error = '';
 		try {
 			const [r, t, s, allS, seatData] = await Promise.all([
 				getRound(id),
@@ -114,7 +115,8 @@
 			if (t.length > 0 && !selectedTrack) selectedTrack = t[0].id;
 			await loadApps();
 		} catch (e) {
-			toast.error(e instanceof Error ? e.message : 'โหลดไม่สำเร็จ');
+			error = e instanceof Error ? e.message : 'โหลดไม่สำเร็จ';
+			toast.error(error);
 		} finally {
 			loading = false;
 		}
@@ -240,13 +242,11 @@
 	{/if}
 
 	{#if !canScoreAdmission}
-		<Alert>
-			<AlertTriangle class="h-4 w-4" />
-			<AlertTitle>ไม่มีสิทธิ์กรอกคะแนนสอบ</AlertTitle>
-			<AlertDescription>
-				หน้านี้ต้องใช้สิทธิ์จัดการคะแนนรับสมัครก่อนจึงจะแสดงรายชื่อและบันทึกคะแนนได้
-			</AlertDescription>
-		</Alert>
+		<PageState
+			variant="permission"
+			title="ไม่มีสิทธิ์กรอกคะแนนสอบ"
+			description="หน้านี้ต้องใช้สิทธิ์จัดการคะแนนรับสมัครก่อนจึงจะแสดงรายชื่อและบันทึกคะแนนได้"
+		/>
 	{:else}
 		<!-- View mode + Track selector -->
 		<Card.Root>
@@ -296,25 +296,27 @@
 		</Card.Root>
 
 		{#if loading}
-			<Card.Root>
-				<Card.Content class="flex justify-center py-16">
-					<Loader2 class="w-8 h-8 animate-spin text-primary" />
-				</Card.Content>
-			</Card.Root>
+			<PageSkeleton variant="table" rows={6} columns={6} />
+		{:else if error}
+			<PageState
+				variant="error"
+				title="โหลดข้อมูลคะแนนไม่สำเร็จ"
+				description={error}
+				actionLabel="ลองอีกครั้ง"
+				onaction={loadAll}
+			/>
 		{:else if viewMode === 'room' && seatGroups.length === 0}
-			<Card.Root>
-				<Card.Content class="py-12 text-center text-muted-foreground">
-					<p>ยังไม่มีการจัดห้องสอบ</p>
-					<p class="text-xs mt-1">กรุณาจัดห้องสอบก่อนใช้มุมมองนี้</p>
-				</Card.Content>
-			</Card.Root>
+			<PageState
+				title="ยังไม่มีการจัดห้องสอบ"
+				description="กรุณาจัดห้องสอบก่อนใช้มุมมองนี้"
+				actionLabel="ไปหน้าห้องสอบ"
+				href="/staff/academic/admission/{id}/exam-rooms"
+			/>
 		{:else if viewMode === 'track' && applications.length === 0}
-			<Card.Root>
-				<Card.Content class="py-12 text-center text-muted-foreground">
-					<p>ไม่มีผู้สมัครที่ผ่านการตรวจสอบในสายนี้</p>
-					<p class="text-xs mt-1">ต้องยืนยันใบสมัคร (status: verified) ก่อนกรอกคะแนน</p>
-				</Card.Content>
-			</Card.Root>
+			<PageState
+				title="ไม่มีผู้สมัครที่พร้อมกรอกคะแนน"
+				description="ต้องยืนยันใบสมัครก่อนกรอกคะแนน"
+			/>
 		{:else}
 			<Card.Root class="overflow-x-auto">
 				<Table.Root>

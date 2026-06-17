@@ -13,13 +13,13 @@
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import { Textarea } from '$lib/components/ui/textarea';
-	import { Alert, AlertDescription, AlertTitle } from '$lib/components/ui/alert';
+	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import * as Card from '$lib/components/ui/card';
 	import * as Select from '$lib/components/ui/select';
 	import { Separator } from '$lib/components/ui/separator';
 	import DatePicker from '$lib/components/ui/date-picker/DatePicker.svelte';
 	import { toast } from 'svelte-sonner';
-	import { AlertTriangle, ArrowLeft, Plus, Loader2 } from 'lucide-svelte';
+	import { ArrowLeft, Plus, Loader2 } from 'lucide-svelte';
 	import { can } from '$lib/stores/permissions';
 	import { PERMISSIONS } from '$lib/permissions/registry';
 
@@ -33,8 +33,10 @@
 
 	let years: AcademicYearLookupItem[] = $state([]);
 	let gradeLevels: GradeLevelLookupItem[] = $state([]);
+	let loading = $state(true);
 	let loadingGrades = $state(false);
 	let saving = $state(false);
+	let error = $state('');
 
 	let form = $state({
 		academicYearId: '',
@@ -67,7 +69,12 @@
 	}
 
 	async function load() {
-		if (!canManageAdmission) return;
+		if (!canManageAdmission) {
+			loading = false;
+			return;
+		}
+		loading = true;
+		error = '';
 		try {
 			years = await lookupAcademicYears({ activeOnly: false });
 			const activeYear = years.find((y) => y.is_current) ?? years[0];
@@ -75,8 +82,12 @@
 				form.academicYearId = activeYear.id;
 				await loadGradeLevels(activeYear.id);
 			}
-		} catch {
-			toast.error('โหลดข้อมูลปีการศึกษาไม่สำเร็จ');
+		} catch (loadError) {
+			error =
+				loadError instanceof Error ? loadError.message : 'โหลดข้อมูลปีการศึกษาไม่สำเร็จ';
+			toast.error(error);
+		} finally {
+			loading = false;
 		}
 	}
 
@@ -132,13 +143,21 @@
 	</div>
 
 	{#if !canManageAdmission}
-		<Alert variant="destructive">
-			<AlertTriangle class="h-4 w-4" />
-			<AlertTitle>ไม่มีสิทธิ์สร้างรอบรับสมัคร</AlertTitle>
-			<AlertDescription
-				>บัญชีนี้เข้า module รับสมัครได้ แต่ยังไม่มีสิทธิ์จัดการรอบรับสมัคร</AlertDescription
-			>
-		</Alert>
+		<PageState
+			variant="permission"
+			title="ไม่มีสิทธิ์สร้างรอบรับสมัคร"
+			description="บัญชีนี้เข้า module รับสมัครได้ แต่ยังไม่มีสิทธิ์จัดการรอบรับสมัคร"
+		/>
+	{:else if loading}
+		<PageSkeleton variant="form" rows={7} />
+	{:else if error}
+		<PageState
+			variant="error"
+			title="โหลดข้อมูลสำหรับสร้างรอบไม่สำเร็จ"
+			description={error}
+			actionLabel="ลองอีกครั้ง"
+			onaction={load}
+		/>
 	{:else}
 		<form onsubmit={handleSubmit}>
 			<Card.Root>
