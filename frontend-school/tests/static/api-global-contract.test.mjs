@@ -963,6 +963,58 @@ test('achievement workspace gates read and owner/all mutation actions', async ()
 	}
 });
 
+test('activity workspace gates read, owner, admin, and member actions', async () => {
+	const routeExpectations = [
+		{
+			file: 'frontend-school/src/routes/(app)/staff/academic/activities/+page.svelte',
+			imports: ['$lib/components/ui/alert'],
+			permissions: [
+				'PERMISSIONS.ACTIVITY_READ_ALL',
+				'PERMISSIONS.ACTIVITY_MANAGE_ALL',
+				'PERMISSIONS.ACTIVITY_MANAGE_OWN',
+				'PERMISSIONS.ACTIVITY_MANAGE_MEMBERS_ALL'
+			],
+			identifiers: [
+				'canReadActivity',
+				'canManageActivity',
+				'canManageOwnActivity',
+				'canManageActivityMembers'
+			]
+		},
+		{
+			file: 'frontend-school/src/routes/(app)/staff/academic/activities/[id]/+page.svelte',
+			imports: ['$lib/components/ui/alert'],
+			permissions: [
+				'PERMISSIONS.ACTIVITY_READ_ALL',
+				'PERMISSIONS.ACTIVITY_MANAGE_ALL',
+				'PERMISSIONS.ACTIVITY_MANAGE_OWN',
+				'PERMISSIONS.ACTIVITY_MANAGE_MEMBERS_ALL'
+			],
+			identifiers: [
+				'canReadActivity',
+				'canManageActivity',
+				'canManageOwnActivity',
+				'canManageActivityMembers'
+			]
+		}
+	];
+	const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+	for (const expectation of routeExpectations) {
+		const source = stripComments(await readFile(path.join(repoRoot, expectation.file), 'utf8'));
+
+		for (const requiredImport of expectation.imports) {
+			assert.match(source, new RegExp(escapeRegex(requiredImport)));
+		}
+		for (const requiredPermission of expectation.permissions) {
+			assert.match(source, new RegExp(escapeRegex(requiredPermission)));
+		}
+		for (const identifier of expectation.identifiers) {
+			assert.match(source, new RegExp(`\\b${identifier}\\b`));
+		}
+	}
+});
+
 test('frontend app pages have route guard metadata or guarded ancestor fallback', async () => {
 	const appRoutesDir = path.join(repoRoot, 'frontend-school/src/routes/(app)');
 	const pageSvelteFiles = await listFiles(appRoutesDir, (file) => file.endsWith('+page.svelte'));

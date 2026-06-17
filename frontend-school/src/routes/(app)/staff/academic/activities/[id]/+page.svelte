@@ -25,17 +25,27 @@
 	import { Badge } from '$lib/components/ui/badge';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
+	import { Alert, AlertDescription, AlertTitle } from '$lib/components/ui/alert';
 	import * as Table from '$lib/components/ui/table';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import * as Select from '$lib/components/ui/select';
 	import * as Tabs from '$lib/components/ui/tabs';
 	import { toast } from 'svelte-sonner';
-	import { ArrowLeft, UserPlus, Trash2, Search, UserCog } from 'lucide-svelte';
+	import { AlertTriangle, ArrowLeft, UserPlus, Trash2, Search, UserCog } from 'lucide-svelte';
 	import { PERMISSIONS } from '$lib/permissions/registry';
 	import { can } from '$lib/stores/permissions';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	let groupId = $derived($page.params.id as string);
+
+	const canReadActivity = $derived($can.has(PERMISSIONS.ACTIVITY_READ_ALL));
+	const canManageActivity = $derived($can.has(PERMISSIONS.ACTIVITY_MANAGE_ALL));
+	const canManageOwnActivity = $derived($can.has(PERMISSIONS.ACTIVITY_MANAGE_OWN));
+	const canManageActivityMembers = $derived($can.has(PERMISSIONS.ACTIVITY_MANAGE_MEMBERS_ALL));
+	const canViewActivityGroup = $derived(
+		canReadActivity || canManageActivity || canManageOwnActivity
+	);
+	const canManageActivityInstructors = $derived(canManageActivity || canManageOwnActivity);
 
 	let loading = $state(true);
 	let group = $state<ActivityGroup | null>(null);
@@ -87,11 +97,16 @@
 	);
 
 	onMount(async () => {
+		if (!canViewActivityGroup) {
+			loading = false;
+			return;
+		}
 		await loadAll();
 		loading = false;
 	});
 
 	async function loadAll() {
+		if (!canViewActivityGroup) return;
 		const [groupsRes, membersRes, instructorsRes] = await Promise.all([
 			listActivityGroups({}),
 			listActivityMembers(groupId),
@@ -103,17 +118,26 @@
 	}
 
 	async function openAddStudentDialog() {
+		if (!canManageActivityMembers) {
+			toast.error('ไม่มีสิทธิ์จัดการสมาชิกกิจกรรม');
+			return;
+		}
 		if (allStudents.length === 0) allStudents = await lookupStudents({ limit: 5000 });
 		selectedStudentIds = [];
 		searchStudent = '';
 		showAddStudentDialog = true;
 	}
 	function toggleStudent(id: string) {
+		if (!canManageActivityMembers) return;
 		selectedStudentIds = selectedStudentIds.includes(id)
 			? selectedStudentIds.filter((x) => x !== id)
 			: [...selectedStudentIds, id];
 	}
 	async function handleAddStudents() {
+		if (!canManageActivityMembers) {
+			toast.error('ไม่มีสิทธิ์จัดการสมาชิกกิจกรรม');
+			return;
+		}
 		if (!selectedStudentIds.length) {
 			toast.error('กรุณาเลือกนักเรียน');
 			return;
@@ -133,6 +157,10 @@
 		}
 	}
 	async function handleRemoveMember(m: ActivityGroupMember) {
+		if (!canManageActivityMembers) {
+			toast.error('ไม่มีสิทธิ์จัดการสมาชิกกิจกรรม');
+			return;
+		}
 		try {
 			await removeActivityMember(groupId, m.student_id);
 			toast.success('ลบสมาชิกแล้ว');
@@ -142,6 +170,10 @@
 		}
 	}
 	async function handleResultChange(m: ActivityGroupMember, val: string) {
+		if (!canManageActivityMembers) {
+			toast.error('ไม่มีสิทธิ์บันทึกผลกิจกรรม');
+			return;
+		}
 		if (!val) return;
 		try {
 			await updateMemberResult(m.id, val as 'pass' | 'fail');
@@ -153,12 +185,20 @@
 	}
 
 	async function openAddInstructorDialog() {
+		if (!canManageActivityInstructors) {
+			toast.error('ไม่มีสิทธิ์จัดการครูที่ดูแลกิจกรรม');
+			return;
+		}
 		if (!allStaff.length) allStaff = await lookupStaff({ activeOnly: true, limit: 1000 });
 		addInstructorId = '';
 		addInstructorRole = 'assistant';
 		showAddInstructorDialog = true;
 	}
 	async function handleAddInstructor() {
+		if (!canManageActivityInstructors) {
+			toast.error('ไม่มีสิทธิ์จัดการครูที่ดูแลกิจกรรม');
+			return;
+		}
 		if (!addInstructorId) {
 			toast.error('กรุณาเลือกครู');
 			return;
@@ -177,6 +217,10 @@
 		}
 	}
 	async function handleRemoveInstructor(i: ActivityInstructor) {
+		if (!canManageActivityInstructors) {
+			toast.error('ไม่มีสิทธิ์จัดการครูที่ดูแลกิจกรรม');
+			return;
+		}
 		try {
 			await removeActivityInstructor(groupId, i.instructor_id);
 			toast.success('ลบครูแล้ว');
@@ -208,227 +252,248 @@
 		</div>
 	</div>
 
-	<Tabs.Root bind:value={activeTab}>
-		<Tabs.List>
-			<Tabs.Trigger value="members">สมาชิก ({members.length})</Tabs.Trigger>
-			<Tabs.Trigger value="instructors">ครูที่ดูแล ({instructors.length})</Tabs.Trigger>
-		</Tabs.List>
+	{#if !canViewActivityGroup}
+		<Alert variant="destructive">
+			<AlertTriangle class="h-4 w-4" />
+			<AlertTitle>ไม่มีสิทธิ์ดูข้อมูลกลุ่มกิจกรรม</AlertTitle>
+			<AlertDescription>
+				บัญชีนี้เข้า module กิจกรรมได้ แต่ยังไม่มีสิทธิ์อ่านหรือจัดการกลุ่มกิจกรรมนี้
+			</AlertDescription>
+		</Alert>
+	{:else}
+		<Tabs.Root bind:value={activeTab}>
+			<Tabs.List>
+				<Tabs.Trigger value="members">สมาชิก ({members.length})</Tabs.Trigger>
+				<Tabs.Trigger value="instructors">ครูที่ดูแล ({instructors.length})</Tabs.Trigger>
+			</Tabs.List>
 
-		<!-- Members -->
-		<Tabs.Content value="members">
-			<div class="space-y-3 pt-3">
-				<div class="flex items-center justify-between gap-3">
-					<div class="relative">
-						<Search class="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-						<Input class="pl-8 w-56" placeholder="ค้นหา..." bind:value={memberSearch} />
+			<!-- Members -->
+			<Tabs.Content value="members">
+				<div class="space-y-3 pt-3">
+					<div class="flex items-center justify-between gap-3">
+						<div class="relative">
+							<Search class="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+							<Input class="pl-8 w-56" placeholder="ค้นหา..." bind:value={memberSearch} />
+						</div>
+						{#if canManageActivityMembers}
+							<Button onclick={openAddStudentDialog}
+								><UserPlus class="mr-1 h-4 w-4" />เพิ่มสมาชิก</Button
+							>
+						{/if}
 					</div>
-					{#if $can.has(PERMISSIONS.ACTIVITY_MANAGE_MEMBERS_ALL)}
-						<Button onclick={openAddStudentDialog}
-							><UserPlus class="mr-1 h-4 w-4" />เพิ่มสมาชิก</Button
-						>
+					{#if loading}
+						<p class="text-sm text-muted-foreground">กำลังโหลด...</p>
+					{:else if filteredMembers.length === 0}
+						<p class="text-sm text-muted-foreground">ยังไม่มีสมาชิก</p>
+					{:else}
+						<Table.Root>
+							<Table.Header>
+								<Table.Row>
+									<Table.Head>ชื่อ-นามสกุล</Table.Head>
+									<Table.Head>รหัส</Table.Head>
+									<Table.Head>ห้องเรียน</Table.Head>
+									<Table.Head>ระดับชั้น</Table.Head>
+									<Table.Head class="text-center">ผล</Table.Head>
+									{#if canManageActivityMembers}
+										<Table.Head></Table.Head>
+									{/if}
+								</Table.Row>
+							</Table.Header>
+							<Table.Body>
+								{#each filteredMembers as m (m.id)}
+									<Table.Row>
+										<Table.Cell class="font-medium">{m.student_name ?? '—'}</Table.Cell>
+										<Table.Cell class="text-sm text-muted-foreground"
+											>{m.student_code ?? '—'}</Table.Cell
+										>
+										<Table.Cell class="text-sm">{m.classroom_name ?? '—'}</Table.Cell>
+										<Table.Cell class="text-sm">{m.grade_level_name ?? '—'}</Table.Cell>
+										<Table.Cell class="text-center">
+											{#if canManageActivityMembers}
+												<Select.Root
+													type="single"
+													value={m.result ?? ''}
+													onValueChange={(value) => handleResultChange(m, value)}
+												>
+													<Select.Trigger class="mx-auto h-7 w-[72px] text-xs">
+														{m.result === 'pass' ? 'ผ' : m.result === 'fail' ? 'มผ' : '—'}
+													</Select.Trigger>
+													<Select.Content>
+														<Select.Item value="">—</Select.Item>
+														<Select.Item value="pass">ผ</Select.Item>
+														<Select.Item value="fail">มผ</Select.Item>
+													</Select.Content>
+												</Select.Root>
+											{:else}
+												{m.result === 'pass' ? 'ผ' : m.result === 'fail' ? 'มผ' : '—'}
+											{/if}
+										</Table.Cell>
+										{#if canManageActivityMembers}
+											<Table.Cell>
+												<Button variant="ghost" size="icon" onclick={() => handleRemoveMember(m)}>
+													<Trash2 class="h-4 w-4 text-destructive" />
+												</Button>
+											</Table.Cell>
+										{/if}
+									</Table.Row>
+								{/each}
+							</Table.Body>
+						</Table.Root>
 					{/if}
 				</div>
-				{#if loading}
-					<p class="text-sm text-muted-foreground">กำลังโหลด...</p>
-				{:else if filteredMembers.length === 0}
-					<p class="text-sm text-muted-foreground">ยังไม่มีสมาชิก</p>
-				{:else}
-					<Table.Root>
-						<Table.Header>
-							<Table.Row>
-								<Table.Head>ชื่อ-นามสกุล</Table.Head>
-								<Table.Head>รหัส</Table.Head>
-								<Table.Head>ห้องเรียน</Table.Head>
-								<Table.Head>ระดับชั้น</Table.Head>
-								<Table.Head class="text-center">ผล</Table.Head>
-								{#if $can.has(PERMISSIONS.ACTIVITY_MANAGE_MEMBERS_ALL)}
-									<Table.Head></Table.Head>
-								{/if}
-							</Table.Row>
-						</Table.Header>
-						<Table.Body>
-							{#each filteredMembers as m (m.id)}
-								<Table.Row>
-									<Table.Cell class="font-medium">{m.student_name ?? '—'}</Table.Cell>
-									<Table.Cell class="text-sm text-muted-foreground"
-										>{m.student_code ?? '—'}</Table.Cell
-									>
-									<Table.Cell class="text-sm">{m.classroom_name ?? '—'}</Table.Cell>
-									<Table.Cell class="text-sm">{m.grade_level_name ?? '—'}</Table.Cell>
-									<Table.Cell class="text-center">
-										{#if $can.has(PERMISSIONS.ACTIVITY_MANAGE_MEMBERS_ALL)}
-											<select
-												class="h-7 rounded border px-1 text-xs bg-background"
-												value={m.result ?? ''}
-												onchange={(e) =>
-													handleResultChange(m, (e.target as HTMLSelectElement).value)}
-											>
-												<option value="">—</option>
-												<option value="pass">ผ</option>
-												<option value="fail">มผ</option>
-											</select>
-										{:else}
-											{m.result === 'pass' ? 'ผ' : m.result === 'fail' ? 'มผ' : '—'}
-										{/if}
-									</Table.Cell>
-									{#if $can.has(PERMISSIONS.ACTIVITY_MANAGE_MEMBERS_ALL)}
-										<Table.Cell>
-											<Button variant="ghost" size="icon" onclick={() => handleRemoveMember(m)}>
-												<Trash2 class="h-4 w-4 text-destructive" />
-											</Button>
-										</Table.Cell>
-									{/if}
-								</Table.Row>
-							{/each}
-						</Table.Body>
-					</Table.Root>
-				{/if}
-			</div>
-		</Tabs.Content>
+			</Tabs.Content>
 
-		<!-- Instructors -->
-		<Tabs.Content value="instructors">
-			<div class="space-y-3 pt-3">
-				{#if $can.has(PERMISSIONS.ACTIVITY_MANAGE_ALL) || $can.has(PERMISSIONS.ACTIVITY_MANAGE_OWN)}
-					<div class="flex justify-end">
-						<Button onclick={openAddInstructorDialog}
-							><UserCog class="mr-1 h-4 w-4" />เพิ่มครู</Button
-						>
-					</div>
-				{/if}
-				{#if instructors.length === 0}
-					<p class="text-sm text-muted-foreground">ยังไม่มีครูที่ดูแล</p>
-				{:else}
-					<Table.Root>
-						<Table.Header>
-							<Table.Row>
-								<Table.Head>ชื่อครู</Table.Head>
-								<Table.Head>บทบาท</Table.Head>
-								{#if $can.has(PERMISSIONS.ACTIVITY_MANAGE_ALL) || $can.has(PERMISSIONS.ACTIVITY_MANAGE_OWN)}<Table.Head
-									></Table.Head>{/if}
-							</Table.Row>
-						</Table.Header>
-						<Table.Body>
-							{#each instructors as i (i.id)}
+			<!-- Instructors -->
+			<Tabs.Content value="instructors">
+				<div class="space-y-3 pt-3">
+					{#if canManageActivityInstructors}
+						<div class="flex justify-end">
+							<Button onclick={openAddInstructorDialog}
+								><UserCog class="mr-1 h-4 w-4" />เพิ่มครู</Button
+							>
+						</div>
+					{/if}
+					{#if instructors.length === 0}
+						<p class="text-sm text-muted-foreground">ยังไม่มีครูที่ดูแล</p>
+					{:else}
+						<Table.Root>
+							<Table.Header>
 								<Table.Row>
-									<Table.Cell class="font-medium">{i.instructor_name ?? '—'}</Table.Cell>
-									<Table.Cell>
-										<Badge variant={i.role === 'primary' ? 'default' : 'outline'}>
-											{i.role === 'primary' ? 'ครูหลัก' : 'ครูผู้ช่วย'}
-										</Badge>
-									</Table.Cell>
-									{#if $can.has(PERMISSIONS.ACTIVITY_MANAGE_ALL) || $can.has(PERMISSIONS.ACTIVITY_MANAGE_OWN)}
-										<Table.Cell>
-											<Button variant="ghost" size="icon" onclick={() => handleRemoveInstructor(i)}>
-												<Trash2 class="h-4 w-4 text-destructive" />
-											</Button>
-										</Table.Cell>
-									{/if}
+									<Table.Head>ชื่อครู</Table.Head>
+									<Table.Head>บทบาท</Table.Head>
+									{#if canManageActivityInstructors}<Table.Head></Table.Head>{/if}
 								</Table.Row>
-							{/each}
-						</Table.Body>
-					</Table.Root>
-				{/if}
-			</div>
-		</Tabs.Content>
-	</Tabs.Root>
+							</Table.Header>
+							<Table.Body>
+								{#each instructors as i (i.id)}
+									<Table.Row>
+										<Table.Cell class="font-medium">{i.instructor_name ?? '—'}</Table.Cell>
+										<Table.Cell>
+											<Badge variant={i.role === 'primary' ? 'default' : 'outline'}>
+												{i.role === 'primary' ? 'ครูหลัก' : 'ครูผู้ช่วย'}
+											</Badge>
+										</Table.Cell>
+										{#if canManageActivityInstructors}
+											<Table.Cell>
+												<Button
+													variant="ghost"
+													size="icon"
+													onclick={() => handleRemoveInstructor(i)}
+												>
+													<Trash2 class="h-4 w-4 text-destructive" />
+												</Button>
+											</Table.Cell>
+										{/if}
+									</Table.Row>
+								{/each}
+							</Table.Body>
+						</Table.Root>
+					{/if}
+				</div>
+			</Tabs.Content>
+		</Tabs.Root>
+	{/if}
 </div>
 
 <!-- Add Student Dialog -->
-<Dialog.Root bind:open={showAddStudentDialog}>
-	<Dialog.Content class="max-w-lg">
-		<Dialog.Header>
-			<Dialog.Title>เพิ่มสมาชิก</Dialog.Title>
-			<Dialog.Description
-				>เลือกนักเรียน{#if selectedStudentIds.length > 0}
-					· เลือก {selectedStudentIds.length} คน{/if}</Dialog.Description
-			>
-		</Dialog.Header>
-		<div class="space-y-3">
-			<div class="relative">
-				<Search class="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-				<Input class="pl-8" placeholder="ค้นหา..." bind:value={searchStudent} />
-			</div>
-			<div class="max-h-72 overflow-y-auto divide-y rounded border">
-				{#each filteredStudents as s (s.id)}
-					{@const checked = selectedStudentIds.includes(s.id)}
-					<button
-						type="button"
-						class="flex w-full items-center gap-3 px-3 py-2 text-sm hover:bg-accent text-left"
-						onclick={() => toggleStudent(s.id)}
-					>
-						<div
-							class="flex h-4 w-4 items-center justify-center rounded border {checked
-								? 'bg-primary border-primary'
-								: 'border-input'}"
+{#if canManageActivityMembers}
+	<Dialog.Root bind:open={showAddStudentDialog}>
+		<Dialog.Content class="max-w-lg">
+			<Dialog.Header>
+				<Dialog.Title>เพิ่มสมาชิก</Dialog.Title>
+				<Dialog.Description
+					>เลือกนักเรียน{#if selectedStudentIds.length > 0}
+						· เลือก {selectedStudentIds.length} คน{/if}</Dialog.Description
+				>
+			</Dialog.Header>
+			<div class="space-y-3">
+				<div class="relative">
+					<Search class="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+					<Input class="pl-8" placeholder="ค้นหา..." bind:value={searchStudent} />
+				</div>
+				<div class="max-h-72 overflow-y-auto divide-y rounded border">
+					{#each filteredStudents as s (s.id)}
+						{@const checked = selectedStudentIds.includes(s.id)}
+						<button
+							type="button"
+							class="flex w-full items-center gap-3 px-3 py-2 text-sm hover:bg-accent text-left"
+							onclick={() => toggleStudent(s.id)}
 						>
-							{#if checked}<span class="text-primary-foreground text-xs">✓</span>{/if}
-						</div>
-						<div class="flex-1">
-							<span class="font-medium">{s.name}</span>
-							{#if s.student_id || s.class_room}
-								<span class="text-muted-foreground ml-2"
-									>{s.student_id ?? ''}{s.class_room ? ` · ${s.class_room}` : ''}</span
-								>
-							{/if}
-						</div>
-					</button>
-				{:else}
-					<p class="px-3 py-4 text-sm text-muted-foreground">ไม่พบนักเรียน</p>
-				{/each}
+							<div
+								class="flex h-4 w-4 items-center justify-center rounded border {checked
+									? 'bg-primary border-primary'
+									: 'border-input'}"
+							>
+								{#if checked}<span class="text-primary-foreground text-xs">✓</span>{/if}
+							</div>
+							<div class="flex-1">
+								<span class="font-medium">{s.name}</span>
+								{#if s.student_id || s.class_room}
+									<span class="text-muted-foreground ml-2"
+										>{s.student_id ?? ''}{s.class_room ? ` · ${s.class_room}` : ''}</span
+									>
+								{/if}
+							</div>
+						</button>
+					{:else}
+						<p class="px-3 py-4 text-sm text-muted-foreground">ไม่พบนักเรียน</p>
+					{/each}
+				</div>
 			</div>
-		</div>
-		<Dialog.Footer>
-			<Button
-				variant="outline"
-				onclick={() => {
-					showAddStudentDialog = false;
-				}}>ยกเลิก</Button
-			>
-			<Button onclick={handleAddStudents} disabled={adding || selectedStudentIds.length === 0}>
-				{adding ? 'กำลังเพิ่ม...' : `เพิ่ม ${selectedStudentIds.length} คน`}
-			</Button>
-		</Dialog.Footer>
-	</Dialog.Content>
-</Dialog.Root>
+			<Dialog.Footer>
+				<Button
+					variant="outline"
+					onclick={() => {
+						showAddStudentDialog = false;
+					}}>ยกเลิก</Button
+				>
+				<Button onclick={handleAddStudents} disabled={adding || selectedStudentIds.length === 0}>
+					{adding ? 'กำลังเพิ่ม...' : `เพิ่ม ${selectedStudentIds.length} คน`}
+				</Button>
+			</Dialog.Footer>
+		</Dialog.Content>
+	</Dialog.Root>
+{/if}
 
 <!-- Add Instructor Dialog -->
-<Dialog.Root bind:open={showAddInstructorDialog}>
-	<Dialog.Content class="max-w-sm">
-		<Dialog.Header><Dialog.Title>เพิ่มครูที่ดูแล</Dialog.Title></Dialog.Header>
-		<div class="space-y-3 py-2">
-			<div class="space-y-1">
-				<Label>ครู</Label>
-				<Select.Root type="single" bind:value={addInstructorId}>
-					<Select.Trigger class="w-full">{addInstructorName}</Select.Trigger>
-					<Select.Content class="max-h-56 overflow-y-auto">
-						{#each allStaff as s (s.id)}
-							<Select.Item value={s.id}>{s.name}</Select.Item>
-						{/each}
-					</Select.Content>
-				</Select.Root>
+{#if canManageActivityInstructors}
+	<Dialog.Root bind:open={showAddInstructorDialog}>
+		<Dialog.Content class="max-w-sm">
+			<Dialog.Header><Dialog.Title>เพิ่มครูที่ดูแล</Dialog.Title></Dialog.Header>
+			<div class="space-y-3 py-2">
+				<div class="space-y-1">
+					<Label>ครู</Label>
+					<Select.Root type="single" bind:value={addInstructorId}>
+						<Select.Trigger class="w-full">{addInstructorName}</Select.Trigger>
+						<Select.Content class="max-h-56 overflow-y-auto">
+							{#each allStaff as s (s.id)}
+								<Select.Item value={s.id}>{s.name}</Select.Item>
+							{/each}
+						</Select.Content>
+					</Select.Root>
+				</div>
+				<div class="space-y-1">
+					<Label>บทบาท</Label>
+					<Select.Root type="single" bind:value={addInstructorRole}>
+						<Select.Trigger class="w-full"
+							>{addInstructorRole === 'primary' ? 'ครูหลัก' : 'ครูผู้ช่วย'}</Select.Trigger
+						>
+						<Select.Content>
+							<Select.Item value="primary">ครูหลัก</Select.Item>
+							<Select.Item value="assistant">ครูผู้ช่วย</Select.Item>
+						</Select.Content>
+					</Select.Root>
+				</div>
 			</div>
-			<div class="space-y-1">
-				<Label>บทบาท</Label>
-				<Select.Root type="single" bind:value={addInstructorRole}>
-					<Select.Trigger class="w-full"
-						>{addInstructorRole === 'primary' ? 'ครูหลัก' : 'ครูผู้ช่วย'}</Select.Trigger
-					>
-					<Select.Content>
-						<Select.Item value="primary">ครูหลัก</Select.Item>
-						<Select.Item value="assistant">ครูผู้ช่วย</Select.Item>
-					</Select.Content>
-				</Select.Root>
-			</div>
-		</div>
-		<Dialog.Footer>
-			<Button
-				variant="outline"
-				onclick={() => {
-					showAddInstructorDialog = false;
-				}}>ยกเลิก</Button
-			>
-			<Button onclick={handleAddInstructor}>เพิ่ม</Button>
-		</Dialog.Footer>
-	</Dialog.Content>
-</Dialog.Root>
+			<Dialog.Footer>
+				<Button
+					variant="outline"
+					onclick={() => {
+						showAddInstructorDialog = false;
+					}}>ยกเลิก</Button
+				>
+				<Button onclick={handleAddInstructor}>เพิ่ม</Button>
+			</Dialog.Footer>
+		</Dialog.Content>
+	</Dialog.Root>
+{/if}

@@ -35,10 +35,12 @@
 	import { Label } from '$lib/components/ui/label';
 	import { Textarea } from '$lib/components/ui/textarea';
 	import { Badge } from '$lib/components/ui/badge';
+	import { Alert, AlertDescription, AlertTitle } from '$lib/components/ui/alert';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import * as Select from '$lib/components/ui/select';
 	import { toast } from 'svelte-sonner';
 	import {
+		AlertTriangle,
 		Users,
 		Plus,
 		Pencil,
@@ -54,8 +56,22 @@
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 
+	const canReadActivity = $derived($can.has(PERMISSIONS.ACTIVITY_READ_ALL));
+	const canManageActivity = $derived($can.has(PERMISSIONS.ACTIVITY_MANAGE_ALL));
+	const canManageOwnActivity = $derived($can.has(PERMISSIONS.ACTIVITY_MANAGE_OWN));
+	const canManageActivityMembers = $derived($can.has(PERMISSIONS.ACTIVITY_MANAGE_MEMBERS_ALL));
+	const canListActivity = $derived(canReadActivity || canManageActivity || canManageOwnActivity);
+	const canManageActivityGroups = $derived(canManageActivity || canManageOwnActivity);
+	const canCleanActivityTimetable = $derived(
+		canManageActivity && $can.has(PERMISSIONS.ACADEMIC_COURSE_PLAN_MANAGE_ALL)
+	);
+
 	function goToActivityGroup(id: string) {
 		goto(resolve(`/staff/academic/activities/${id}`));
+	}
+
+	function canCreateGroupForSlot(slot: ActivitySlot) {
+		return canManageActivity || (canManageOwnActivity && slot.teacher_reg_open);
 	}
 
 	// ── State ──────────────────────────────────────────
@@ -151,6 +167,11 @@
 
 	// ── Load ───────────────────────────────────────────
 	onMount(async () => {
+		if (!canListActivity) {
+			loading = false;
+			return;
+		}
+
 		const [structRes, staffRes] = await Promise.all([
 			getAcademicStructure(),
 			lookupStaff({ activeOnly: true, limit: 1000 })
@@ -174,11 +195,17 @@
 	});
 
 	async function loadClassrooms() {
+		if (!canListActivity) return;
 		if (!filterYearId) return;
-		classrooms = (await listClassrooms({ year_id: filterYearId })).data ?? [];
+		try {
+			classrooms = (await listClassrooms({ year_id: filterYearId })).data ?? [];
+		} catch {
+			classrooms = [];
+		}
 	}
 
 	async function loadData() {
+		if (!canListActivity) return;
 		if (!filterSemesterId) return;
 		const [slotsRes, groupsRes] = await Promise.all([
 			listActivitySlots({ semester_id: filterSemesterId }),
@@ -190,29 +217,33 @@
 		for (const s of slots) expandedSlots.add(s.id);
 		// Load slot instructors
 		const instrMap: Record<string, SlotInstructor[]> = {};
-		await Promise.all(
-			slots.map(async (s) => {
-				try {
-					instrMap[s.id] = (await listSlotInstructors(s.id)).data ?? [];
-				} catch {
-					instrMap[s.id] = [];
-				}
-			})
-		);
+		if (canReadActivity) {
+			await Promise.all(
+				slots.map(async (s) => {
+					try {
+						instrMap[s.id] = (await listSlotInstructors(s.id)).data ?? [];
+					} catch {
+						instrMap[s.id] = [];
+					}
+				})
+			);
+		}
 		slotInstructorsMap = instrMap;
 		// Load classroom assignments for independent slots
 		const assignMap: Record<string, SlotClassroomAssignment[]> = {};
-		await Promise.all(
-			slots
-				.filter((s) => s.scheduling_mode === 'independent')
-				.map(async (s) => {
-					try {
-						assignMap[s.id] = (await listSlotClassroomAssignments(s.id)).data ?? [];
-					} catch {
-						assignMap[s.id] = [];
-					}
-				})
-		);
+		if (canReadActivity) {
+			await Promise.all(
+				slots
+					.filter((s) => s.scheduling_mode === 'independent')
+					.map(async (s) => {
+						try {
+							assignMap[s.id] = (await listSlotClassroomAssignments(s.id)).data ?? [];
+						} catch {
+							assignMap[s.id] = [];
+						}
+					})
+			);
+		}
 		slotClassroomAssignmentsMap = assignMap;
 	}
 
@@ -244,6 +275,10 @@
 
 	// ── Generate from Plan ────────────────────────────
 	async function openGenerateDialog() {
+		if (!canManageActivity) {
+			toast.error('ไม่มีสิทธิ์สร้างกิจกรรมจากหลักสูตร');
+			return;
+		}
 		try {
 			const res = await listStudyPlanVersions();
 			planVersions = res.data ?? [];
@@ -255,6 +290,10 @@
 	}
 
 	async function handleGenerate() {
+		if (!canManageActivity) {
+			toast.error('ไม่มีสิทธิ์สร้างกิจกรรมจากหลักสูตร');
+			return;
+		}
 		if (!generateVersionId || !filterSemesterId) {
 			toast.error('กรุณาเลือกหลักสูตรและภาคเรียน');
 			return;
@@ -277,6 +316,7 @@
 
 	// ── Slot Dialog ───────────────────────────────────
 	function openEditSlot(s: ActivitySlot) {
+		if (!canManageActivity) return;
 		// Template fields live in catalog — read-only here. Only registration is editable.
 		slotName = s.name;
 		slotDescription = s.description ?? '';
@@ -291,22 +331,35 @@
 	}
 
 	async function handleSaveSlot() {
+		if (!canManageActivity) return;
 		doSaveSlot();
 	}
 
 	async function handleToggleTeacherReg(slot: ActivitySlot) {
+		if (!canManageActivity) {
+			toast.error('ไม่มีสิทธิ์จัดการช่องกิจกรรม');
+			return;
+		}
 		await updateActivitySlot(slot.id, { teacher_reg_open: !slot.teacher_reg_open });
 		await loadData();
 		toast.success(slot.teacher_reg_open ? 'ปิดลงทะเบียนครูแล้ว' : 'เปิดลงทะเบียนครูแล้ว');
 	}
 
 	async function handleToggleStudentReg(slot: ActivitySlot) {
+		if (!canManageActivity) {
+			toast.error('ไม่มีสิทธิ์จัดการช่องกิจกรรม');
+			return;
+		}
 		await updateActivitySlot(slot.id, { student_reg_open: !slot.student_reg_open });
 		await loadData();
 		toast.success(slot.student_reg_open ? 'ปิดลงทะเบียนนักเรียนแล้ว' : 'เปิดลงทะเบียนนักเรียนแล้ว');
 	}
 
 	async function handleDeleteSlot() {
+		if (!canCleanActivityTimetable) {
+			toast.error('ไม่มีสิทธิ์ลบกิจกรรมออกจากตารางสอน');
+			return;
+		}
 		if (!deleteSlotTarget) return;
 		try {
 			await deleteSlotTimetableEntries(deleteSlotTarget.id);
@@ -321,6 +374,8 @@
 
 	// ── Group Dialog ──────────────────────────────────
 	function openCreateGroup(slotId: string) {
+		const slot = slots.find((item) => item.id === slotId);
+		if (!slot || !canCreateGroupForSlot(slot)) return;
 		groupSlotId = slotId;
 		groupName = '';
 		groupDescription = '';
@@ -333,6 +388,7 @@
 	}
 
 	function openEditGroup(g: ActivityGroup) {
+		if (!canManageActivityGroups) return;
 		groupSlotId = g.slot_id ?? '';
 		groupName = g.name;
 		groupDescription = g.description ?? '';
@@ -367,6 +423,10 @@
 	}
 
 	async function handleSaveGroup() {
+		if (!canManageActivityGroups) {
+			toast.error('ไม่มีสิทธิ์จัดการกลุ่มกิจกรรม');
+			return;
+		}
 		if (!groupName.trim()) {
 			toast.error('กรุณาระบุชื่อ');
 			return;
@@ -398,11 +458,16 @@
 	}
 
 	function confirmDeleteGroup(g: ActivityGroup) {
+		if (!canManageActivity) return;
 		deleteGroupTarget = g;
 		showDeleteGroupDialog = true;
 	}
 
 	async function handleDeleteGroup() {
+		if (!canManageActivity) {
+			toast.error('ไม่มีสิทธิ์ลบกลุ่มกิจกรรม');
+			return;
+		}
 		if (!deleteGroupTarget) return;
 		try {
 			await deleteActivityGroup(deleteGroupTarget.id);
@@ -450,6 +515,10 @@
 		return names.join(', ');
 	}
 	async function confirmSwitchToIndependent() {
+		if (!canCleanActivityTimetable) {
+			toast.error('ไม่มีสิทธิ์ลบกิจกรรมออกจากตารางสอน');
+			return;
+		}
 		showSwitchModeDialog = false;
 		if (!editSlotTarget) return;
 		try {
@@ -463,6 +532,7 @@
 	}
 
 	async function doSaveSlot() {
+		if (!canManageActivity) return;
 		if (!isSlotEdit || !editSlotTarget) {
 			toast.error('สร้าง slot ใหม่ต้องทำผ่านหลักสูตร + generate');
 			return;
@@ -489,6 +559,10 @@
 		classroomId: string,
 		instructorId: string
 	) {
+		if (!canManageActivity) {
+			toast.error('ไม่มีสิทธิ์กำหนดครูประจำห้อง');
+			return;
+		}
 		try {
 			await batchUpsertSlotClassroomAssignments(slotId, [
 				{ classroom_id: classroomId, instructor_id: instructorId }
@@ -502,6 +576,10 @@
 	}
 
 	async function handleRemoveSlotInstructor(slotId: string, userId: string) {
+		if (!canManageActivity) {
+			toast.error('ไม่มีสิทธิ์ลบครูออกจากช่องกิจกรรม');
+			return;
+		}
 		try {
 			await removeSlotInstructor(slotId, userId);
 			toast.success('ลบครูแล้ว');
@@ -533,12 +611,17 @@
 	);
 
 	function toggleSlotInstructor(id: string) {
+		if (!canManageActivity) return;
 		slotInstructorSelectedIds = slotInstructorSelectedIds.includes(id)
 			? slotInstructorSelectedIds.filter((x) => x !== id)
 			: [...slotInstructorSelectedIds, id];
 	}
 
 	async function handleAddSlotInstructorsBatch() {
+		if (!canManageActivity) {
+			toast.error('ไม่มีสิทธิ์เพิ่มครูผู้สอน');
+			return;
+		}
 		if (!slotInstructorSelectedIds.length) {
 			toast.error('กรุณาเลือกครู');
 			return;
@@ -576,663 +659,691 @@
 		</p>
 	</div>
 
-	<!-- Filters + Action -->
-	<div class="flex flex-wrap items-center gap-3">
-		<Select.Root type="single" bind:value={filterYearId}>
-			<Select.Trigger class="w-52">{currentYearName}</Select.Trigger>
-			<Select.Content>
-				{#each structure.years as y (y.id)}
-					<Select.Item value={y.id}>{y.name}</Select.Item>
-				{/each}
-			</Select.Content>
-		</Select.Root>
-
-		<Select.Root type="single" bind:value={filterSemesterId}>
-			<Select.Trigger class="w-48">{currentSemesterName}</Select.Trigger>
-			<Select.Content>
-				{#each yearSemesters as s (s.id)}
-					<Select.Item value={s.id}>{s.name}</Select.Item>
-				{/each}
-			</Select.Content>
-		</Select.Root>
-
-		<Select.Root type="single" bind:value={filterType}>
-			<Select.Trigger class="w-48">
-				{filterType ? ACTIVITY_TYPE_LABELS[filterType] : 'ทุกประเภท'}
-			</Select.Trigger>
-			<Select.Content>
-				<Select.Item value="">ทุกประเภท</Select.Item>
-				{#each Object.entries(ACTIVITY_TYPE_LABELS) as [val, label] (val)}
-					<Select.Item value={val}>{label}</Select.Item>
-				{/each}
-			</Select.Content>
-		</Select.Root>
-
-		{#if $can.has(PERMISSIONS.ACTIVITY_MANAGE_ALL)}
-			<div class="ml-auto">
-				<Button variant="outline" onclick={openGenerateDialog} disabled={!filterSemesterId}>
-					<FolderInput class="w-4 h-4 mr-1" />
-					Generate จากหลักสูตร
-				</Button>
-			</div>
-		{/if}
-	</div>
-
-	<!-- Slots & Groups -->
-	{#if loading}
-		<p class="text-muted-foreground text-sm">กำลังโหลด...</p>
-	{:else if filteredSlots.length === 0}
-		<p class="text-muted-foreground text-sm">ไม่พบช่องกิจกรรม</p>
+	{#if !canListActivity}
+		<Alert variant="destructive">
+			<AlertTriangle class="h-4 w-4" />
+			<AlertTitle>ไม่มีสิทธิ์ดูข้อมูลกิจกรรม</AlertTitle>
+			<AlertDescription>
+				บัญชีนี้เข้า module กิจกรรมได้ แต่ยังไม่มีสิทธิ์อ่านหรือจัดการกิจกรรมในขอบเขตที่ระบบอนุญาต
+			</AlertDescription>
+		</Alert>
 	{:else}
-		<div class="space-y-3">
-			{#each filteredSlots as slot (slot.id)}
-				{@const slotGroups = groupsForSlot(slot.id)}
-				{@const expanded = expandedSlots.has(slot.id)}
-				<div class="rounded-lg border bg-card">
-					<!-- Slot Header -->
-					<button
-						type="button"
-						class="w-full flex items-center gap-3 p-4 text-left hover:bg-accent/50 transition-colors"
-						onclick={() => toggleSlot(slot.id)}
-					>
-						{#if expanded}<ChevronDown class="h-4 w-4 shrink-0" />{:else}<ChevronRight
-								class="h-4 w-4 shrink-0"
-							/>{/if}
-						<div class="flex-1 min-w-0">
-							<div class="flex items-center gap-2 flex-wrap">
-								<span class="font-semibold">{slot.name}</span>
-								<Badge variant="secondary"
-									>{ACTIVITY_TYPE_LABELS[slot.activity_type] ?? slot.activity_type}</Badge
-								>
-								{#if slot.activity_catalog_id}
-									<Badge variant="outline" class="text-[10px] border-blue-300 text-blue-700">
-										📎 จากคลังกิจกรรม
-									</Badge>
-								{/if}
-								<span
-									class="text-sm text-muted-foreground"
-									title={classroomListDisplay(slot.classroom_ids)}
-								>
-									{classroomGradesDisplay(slot.classroom_ids)}
-								</span>
-							</div>
-							<div class="text-sm text-muted-foreground mt-0.5">
-								{slotGroups.length} กิจกรรม · {(slotInstructorsMap[slot.id] ?? []).length} ครู · {slot.registration_type ===
-								'self'
-									? 'นักเรียนเลือกเอง'
-									: 'ครู/admin จัดสรร'}
-								· {slot.periods_per_week} คาบ/สัปดาห์ · {slot.scheduling_mode === 'independent'
-									? 'แต่ละห้องจัดเอง'
-									: 'จัดพร้อมกันทุกห้อง'}
-							</div>
-						</div>
-						<div class="flex items-center gap-2 shrink-0">
-							{#if slot.scheduling_mode !== 'independent'}
-								{#if slot.teacher_reg_open}
-									<Badge variant="default">ครูลงทะเบียน</Badge>
-								{/if}
-								{#if slot.student_reg_open}
-									<Badge>นร.ลงทะเบียน</Badge>
-								{/if}
-							{/if}
-						</div>
-					</button>
+		<!-- Filters + Action -->
+		<div class="flex flex-wrap items-center gap-3">
+			<Select.Root type="single" bind:value={filterYearId}>
+				<Select.Trigger class="w-52">{currentYearName}</Select.Trigger>
+				<Select.Content>
+					{#each structure.years as y (y.id)}
+						<Select.Item value={y.id}>{y.name}</Select.Item>
+					{/each}
+				</Select.Content>
+			</Select.Root>
 
-					<!-- Expanded Content -->
-					{#if expanded}
-						<div class="border-t px-4 pb-4">
-							<!-- Slot Actions -->
-							{#if $can.has(PERMISSIONS.ACTIVITY_MANAGE_ALL)}
-								<div class="flex flex-wrap gap-2 py-3">
-									{#if slot.scheduling_mode !== 'independent'}
-										<Button
-											variant="outline"
-											size="sm"
-											onclick={() => handleToggleTeacherReg(slot)}
-										>
-											{slot.teacher_reg_open ? 'ปิดลงทะเบียนครู' : 'เปิดลงทะเบียนครู'}
-										</Button>
-										{#if slot.registration_type === 'self'}
+			<Select.Root type="single" bind:value={filterSemesterId}>
+				<Select.Trigger class="w-48">{currentSemesterName}</Select.Trigger>
+				<Select.Content>
+					{#each yearSemesters as s (s.id)}
+						<Select.Item value={s.id}>{s.name}</Select.Item>
+					{/each}
+				</Select.Content>
+			</Select.Root>
+
+			<Select.Root type="single" bind:value={filterType}>
+				<Select.Trigger class="w-48">
+					{filterType ? ACTIVITY_TYPE_LABELS[filterType] : 'ทุกประเภท'}
+				</Select.Trigger>
+				<Select.Content>
+					<Select.Item value="">ทุกประเภท</Select.Item>
+					{#each Object.entries(ACTIVITY_TYPE_LABELS) as [val, label] (val)}
+						<Select.Item value={val}>{label}</Select.Item>
+					{/each}
+				</Select.Content>
+			</Select.Root>
+
+			{#if canManageActivity}
+				<div class="ml-auto">
+					<Button variant="outline" onclick={openGenerateDialog} disabled={!filterSemesterId}>
+						<FolderInput class="w-4 h-4 mr-1" />
+						Generate จากหลักสูตร
+					</Button>
+				</div>
+			{/if}
+		</div>
+
+		<!-- Slots & Groups -->
+		{#if loading}
+			<p class="text-muted-foreground text-sm">กำลังโหลด...</p>
+		{:else if filteredSlots.length === 0}
+			<p class="text-muted-foreground text-sm">ไม่พบช่องกิจกรรม</p>
+		{:else}
+			<div class="space-y-3">
+				{#each filteredSlots as slot (slot.id)}
+					{@const slotGroups = groupsForSlot(slot.id)}
+					{@const expanded = expandedSlots.has(slot.id)}
+					<div class="rounded-lg border bg-card">
+						<!-- Slot Header -->
+						<button
+							type="button"
+							class="w-full flex items-center gap-3 p-4 text-left hover:bg-accent/50 transition-colors"
+							onclick={() => toggleSlot(slot.id)}
+						>
+							{#if expanded}<ChevronDown class="h-4 w-4 shrink-0" />{:else}<ChevronRight
+									class="h-4 w-4 shrink-0"
+								/>{/if}
+							<div class="flex-1 min-w-0">
+								<div class="flex items-center gap-2 flex-wrap">
+									<span class="font-semibold">{slot.name}</span>
+									<Badge variant="secondary"
+										>{ACTIVITY_TYPE_LABELS[slot.activity_type] ?? slot.activity_type}</Badge
+									>
+									{#if slot.activity_catalog_id}
+										<Badge variant="outline" class="text-[10px] border-blue-300 text-blue-700">
+											📎 จากคลังกิจกรรม
+										</Badge>
+									{/if}
+									<span
+										class="text-sm text-muted-foreground"
+										title={classroomListDisplay(slot.classroom_ids)}
+									>
+										{classroomGradesDisplay(slot.classroom_ids)}
+									</span>
+								</div>
+								<div class="text-sm text-muted-foreground mt-0.5">
+									{slotGroups.length} กิจกรรม · {(slotInstructorsMap[slot.id] ?? []).length} ครู · {slot.registration_type ===
+									'self'
+										? 'นักเรียนเลือกเอง'
+										: 'ครู/admin จัดสรร'}
+									· {slot.periods_per_week} คาบ/สัปดาห์ · {slot.scheduling_mode === 'independent'
+										? 'แต่ละห้องจัดเอง'
+										: 'จัดพร้อมกันทุกห้อง'}
+								</div>
+							</div>
+							<div class="flex items-center gap-2 shrink-0">
+								{#if slot.scheduling_mode !== 'independent'}
+									{#if slot.teacher_reg_open}
+										<Badge variant="default">ครูลงทะเบียน</Badge>
+									{/if}
+									{#if slot.student_reg_open}
+										<Badge>นร.ลงทะเบียน</Badge>
+									{/if}
+								{/if}
+							</div>
+						</button>
+
+						<!-- Expanded Content -->
+						{#if expanded}
+							<div class="border-t px-4 pb-4">
+								<!-- Slot Actions -->
+								{#if canManageActivity}
+									<div class="flex flex-wrap gap-2 py-3">
+										{#if slot.scheduling_mode !== 'independent'}
 											<Button
 												variant="outline"
 												size="sm"
-												onclick={() => handleToggleStudentReg(slot)}
+												onclick={() => handleToggleTeacherReg(slot)}
 											>
-												{slot.student_reg_open ? 'ปิดลงทะเบียนนักเรียน' : 'เปิดลงทะเบียนนักเรียน'}
+												{slot.teacher_reg_open ? 'ปิดลงทะเบียนครู' : 'เปิดลงทะเบียนครู'}
 											</Button>
-										{/if}
-									{/if}
-									<Button variant="outline" size="sm" onclick={() => openEditSlot(slot)}>
-										<Settings class="mr-1 h-3 w-3" />ตั้งค่า
-									</Button>
-								</div>
-								<div
-									class="rounded-md border bg-muted/40 px-3 py-2 text-xs text-muted-foreground mb-2"
-								>
-									จัดการการเข้าร่วมของห้องเรียนผ่านหน้า
-									<a href={resolve('/staff/academic/planning')} class="underline hover:text-primary"
-										>Course Planning</a
-									>
-									— slot จะถูกลบอัตโนมัติเมื่อไม่มีห้องใดเข้าร่วมแล้ว
-								</div>
-							{/if}
-
-							<!-- Slot Instructors (synchronized only) -->
-							{#if $can.has(PERMISSIONS.ACTIVITY_MANAGE_ALL) && slot.scheduling_mode !== 'independent'}
-								{@const instrList = slotInstructorsMap[slot.id] ?? []}
-								<div class="space-y-1 pb-3">
-									<Label class="text-xs font-semibold text-muted-foreground"
-										>ครูผู้สอน ({instrList.length} คน)</Label
-									>
-									<div class="flex flex-wrap gap-1.5">
-										{#each instrList as instr (instr.user_id)}
-											<Badge variant="secondary" class="gap-1">
-												{instr.instructor_name ?? '—'}
-												<button
-													type="button"
-													class="ml-0.5 hover:text-destructive"
-													onclick={() => handleRemoveSlotInstructor(slot.id, instr.user_id)}
-													>×</button
+											{#if slot.registration_type === 'self'}
+												<Button
+													variant="outline"
+													size="sm"
+													onclick={() => handleToggleStudentReg(slot)}
 												>
-											</Badge>
-										{/each}
-										<Button
-											variant="outline"
-											size="sm"
-											class="h-6 text-xs"
-											onclick={() => {
-												slotInstructorSlotId = slot.id;
-												slotInstructorSelectedIds = [];
-												slotInstructorSearch = '';
-												showSlotInstructorDialog = true;
-											}}
-										>
-											<Plus class="h-3 w-3 mr-1" />เพิ่มครู
+													{slot.student_reg_open ? 'ปิดลงทะเบียนนักเรียน' : 'เปิดลงทะเบียนนักเรียน'}
+												</Button>
+											{/if}
+										{/if}
+										<Button variant="outline" size="sm" onclick={() => openEditSlot(slot)}>
+											<Settings class="mr-1 h-3 w-3" />ตั้งค่า
 										</Button>
 									</div>
-								</div>
-							{/if}
+									<div
+										class="rounded-md border bg-muted/40 px-3 py-2 text-xs text-muted-foreground mb-2"
+									>
+										จัดการการเข้าร่วมของห้องเรียนผ่านหน้า
+										<a
+											href={resolve('/staff/academic/planning')}
+											class="underline hover:text-primary">Course Planning</a
+										>
+										— slot จะถูกลบอัตโนมัติเมื่อไม่มีห้องใดเข้าร่วมแล้ว
+									</div>
+								{/if}
 
-							<!-- Classroom Instructor Assignments (independent slots) -->
-							{#if slot.scheduling_mode === 'independent' && $can.has(PERMISSIONS.ACTIVITY_MANAGE_ALL)}
-								{@const assignments = slotClassroomAssignmentsMap[slot.id] ?? []}
-								<!-- แสดงเฉพาะห้องที่เข้าร่วมจริง (junction activity_slot_classrooms),
+								<!-- Slot Instructors (synchronized only) -->
+								{#if canManageActivity && canReadActivity && slot.scheduling_mode !== 'independent'}
+									{@const instrList = slotInstructorsMap[slot.id] ?? []}
+									<div class="space-y-1 pb-3">
+										<Label class="text-xs font-semibold text-muted-foreground"
+											>ครูผู้สอน ({instrList.length} คน)</Label
+										>
+										<div class="flex flex-wrap gap-1.5">
+											{#each instrList as instr (instr.user_id)}
+												<Badge variant="secondary" class="gap-1">
+													{instr.instructor_name ?? '—'}
+													<button
+														type="button"
+														class="ml-0.5 hover:text-destructive"
+														onclick={() => handleRemoveSlotInstructor(slot.id, instr.user_id)}
+														>×</button
+													>
+												</Badge>
+											{/each}
+											<Button
+												variant="outline"
+												size="sm"
+												class="h-6 text-xs"
+												onclick={() => {
+													slotInstructorSlotId = slot.id;
+													slotInstructorSelectedIds = [];
+													slotInstructorSearch = '';
+													showSlotInstructorDialog = true;
+												}}
+											>
+												<Plus class="h-3 w-3 mr-1" />เพิ่มครู
+											</Button>
+										</div>
+									</div>
+								{/if}
+
+								<!-- Classroom Instructor Assignments (independent slots) -->
+								{#if slot.scheduling_mode === 'independent' && canManageActivity && canReadActivity}
+									{@const assignments = slotClassroomAssignmentsMap[slot.id] ?? []}
+									<!-- แสดงเฉพาะห้องที่เข้าร่วมจริง (junction activity_slot_classrooms),
 								     ไม่ใช่ทุกห้องในระดับชั้นที่ catalog รองรับ —
 								     จัดการการเข้าร่วมผ่านหน้า Course Planning -->
-								{@const slotClassrooms = classrooms.filter((c) =>
-									(slot.classroom_ids ?? []).includes(c.id)
-								)}
-								<div class="space-y-2 pb-3">
-									<Label class="text-xs font-semibold text-muted-foreground"
-										>ครูประจำห้อง ({assignments.length}/{slotClassrooms.length} ห้อง)</Label
-									>
-									<div class="border rounded-lg overflow-hidden">
-										<table class="w-full text-sm">
-											<thead>
-												<tr class="bg-muted/50 text-xs text-muted-foreground">
-													<th class="text-left px-3 py-1.5 font-medium">ห้องเรียน</th>
-													<th class="text-left px-3 py-1.5 font-medium">ครูผู้สอน</th>
-												</tr>
-											</thead>
-											<tbody>
-												{#each slotClassrooms as classroom (classroom.id)}
-													{@const existing = assignments.find(
-														(a) => a.classroom_id === classroom.id
-													)}
-													<tr class="border-t hover:bg-accent/30">
-														<td class="px-3 py-1.5 text-xs">{classroom.name}</td>
-														<td class="px-3 py-1">
-															<Select.Root
-																type="single"
-																value={existing?.instructor_id ?? ''}
-																onValueChange={(val) => {
-																	if (val)
-																		handleAssignClassroomInstructor(slot.id, classroom.id, val);
-																}}
-															>
-																<Select.Trigger class="h-7 text-xs w-full max-w-[200px]">
-																	{existing?.instructor_name ?? 'เลือกครู'}
-																</Select.Trigger>
-																<Select.Content class="max-h-[200px] overflow-y-auto">
-																	{#each staffList as staff (staff.id)}
-																		<Select.Item value={staff.id}>{staff.name}</Select.Item>
-																	{/each}
-																</Select.Content>
-															</Select.Root>
-														</td>
+									{@const slotClassrooms = classrooms.filter((c) =>
+										(slot.classroom_ids ?? []).includes(c.id)
+									)}
+									<div class="space-y-2 pb-3">
+										<Label class="text-xs font-semibold text-muted-foreground"
+											>ครูประจำห้อง ({assignments.length}/{slotClassrooms.length} ห้อง)</Label
+										>
+										<div class="border rounded-lg overflow-hidden">
+											<table class="w-full text-sm">
+												<thead>
+													<tr class="bg-muted/50 text-xs text-muted-foreground">
+														<th class="text-left px-3 py-1.5 font-medium">ห้องเรียน</th>
+														<th class="text-left px-3 py-1.5 font-medium">ครูผู้สอน</th>
 													</tr>
-												{/each}
-											</tbody>
-										</table>
+												</thead>
+												<tbody>
+													{#each slotClassrooms as classroom (classroom.id)}
+														{@const existing = assignments.find(
+															(a) => a.classroom_id === classroom.id
+														)}
+														<tr class="border-t hover:bg-accent/30">
+															<td class="px-3 py-1.5 text-xs">{classroom.name}</td>
+															<td class="px-3 py-1">
+																<Select.Root
+																	type="single"
+																	value={existing?.instructor_id ?? ''}
+																	onValueChange={(val) => {
+																		if (val)
+																			handleAssignClassroomInstructor(slot.id, classroom.id, val);
+																	}}
+																>
+																	<Select.Trigger class="h-7 text-xs w-full max-w-[200px]">
+																		{existing?.instructor_name ?? 'เลือกครู'}
+																	</Select.Trigger>
+																	<Select.Content class="max-h-[200px] overflow-y-auto">
+																		{#each staffList as staff (staff.id)}
+																			<Select.Item value={staff.id}>{staff.name}</Select.Item>
+																		{/each}
+																	</Select.Content>
+																</Select.Root>
+															</td>
+														</tr>
+													{/each}
+												</tbody>
+											</table>
+										</div>
 									</div>
-								</div>
-							{/if}
+								{/if}
 
-							{#if slot.scheduling_mode === 'independent'}
-								<!-- Independent: ไม่ต้องสร้างกลุ่ม -->
-								<p class="text-sm text-muted-foreground py-2">
-									กิจกรรมแบบอิสระ — เรียนตามห้อง ไม่ต้องสร้างกลุ่ม
-								</p>
-							{:else}
-								<!-- Groups List -->
-								{#if slotGroups.length === 0}
-									<p class="text-sm text-muted-foreground py-2">ยังไม่มีกิจกรรมในช่องนี้</p>
+								{#if slot.scheduling_mode === 'independent'}
+									<!-- Independent: ไม่ต้องสร้างกลุ่ม -->
+									<p class="text-sm text-muted-foreground py-2">
+										กิจกรรมแบบอิสระ — เรียนตามห้อง ไม่ต้องสร้างกลุ่ม
+									</p>
 								{:else}
-									<div class="divide-y rounded border">
-										{#each slotGroups as g (g.id)}
-											<div class="flex items-center gap-3 px-3 py-2">
-												<div class="flex-1 min-w-0">
-													<div class="font-medium text-sm">{g.name}</div>
-													<div class="text-xs text-muted-foreground">
-														{g.instructor_name ?? '—'}
-														· {g.member_count ?? 0}{g.max_capacity ? `/${g.max_capacity}` : ''} คน
-														{#if g.allowed_classroom_ids && g.allowed_classroom_ids.length > 0}
-															· {classroomListDisplay(g.allowed_classroom_ids)}
+									<!-- Groups List -->
+									{#if slotGroups.length === 0}
+										<p class="text-sm text-muted-foreground py-2">ยังไม่มีกิจกรรมในช่องนี้</p>
+									{:else}
+										<div class="divide-y rounded border">
+											{#each slotGroups as g (g.id)}
+												<div class="flex items-center gap-3 px-3 py-2">
+													<div class="flex-1 min-w-0">
+														<div class="font-medium text-sm">{g.name}</div>
+														<div class="text-xs text-muted-foreground">
+															{g.instructor_name ?? '—'}
+															· {g.member_count ?? 0}{g.max_capacity ? `/${g.max_capacity}` : ''} คน
+															{#if g.allowed_classroom_ids && g.allowed_classroom_ids.length > 0}
+																· {classroomListDisplay(g.allowed_classroom_ids)}
+															{/if}
+														</div>
+													</div>
+													<div class="flex gap-1 shrink-0">
+														<Button
+															variant="ghost"
+															size="icon"
+															title={canManageActivityMembers ? 'จัดการสมาชิก' : 'ดูสมาชิก'}
+															onclick={() => goToActivityGroup(String(g.id))}
+														>
+															<UserCog class="h-4 w-4" />
+														</Button>
+														{#if canManageActivityGroups}
+															<Button
+																variant="ghost"
+																size="icon"
+																title="แก้ไข"
+																onclick={() => openEditGroup(g)}
+															>
+																<Pencil class="h-3 w-3" />
+															</Button>
+														{/if}
+														{#if canManageActivity}
+															<Button
+																variant="ghost"
+																size="icon"
+																onclick={() => confirmDeleteGroup(g)}
+															>
+																<Trash2 class="h-3 w-3 text-destructive" />
+															</Button>
 														{/if}
 													</div>
 												</div>
-												<div class="flex gap-1 shrink-0">
-													<Button
-														variant="ghost"
-														size="icon"
-														title="จัดการสมาชิก"
-														onclick={() => goToActivityGroup(String(g.id))}
-													>
-														<UserCog class="h-4 w-4" />
-													</Button>
-													{#if $can.has(PERMISSIONS.ACTIVITY_MANAGE_ALL) || $can.has(PERMISSIONS.ACTIVITY_MANAGE_OWN)}
-														<Button
-															variant="ghost"
-															size="icon"
-															title="แก้ไข"
-															onclick={() => openEditGroup(g)}
-														>
-															<Pencil class="h-3 w-3" />
-														</Button>
-													{/if}
-													{#if $can.has(PERMISSIONS.ACTIVITY_MANAGE_ALL)}
-														<Button
-															variant="ghost"
-															size="icon"
-															onclick={() => confirmDeleteGroup(g)}
-														>
-															<Trash2 class="h-3 w-3 text-destructive" />
-														</Button>
-													{/if}
-												</div>
-											</div>
-										{/each}
-									</div>
-								{/if}
+											{/each}
+										</div>
+									{/if}
 
-								<!-- Add Group Button -->
-								{#if $can.has(PERMISSIONS.ACTIVITY_MANAGE_ALL) || ($can.has(PERMISSIONS.ACTIVITY_MANAGE_OWN) && slot.teacher_reg_open)}
-									<Button
-										variant="outline"
-										size="sm"
-										class="mt-3"
-										onclick={() => openCreateGroup(slot.id)}
-									>
-										<Plus class="mr-1 h-3 w-3" />สร้างกิจกรรม
-									</Button>
+									<!-- Add Group Button -->
+									{#if canCreateGroupForSlot(slot)}
+										<Button
+											variant="outline"
+											size="sm"
+											class="mt-3"
+											onclick={() => openCreateGroup(slot.id)}
+										>
+											<Plus class="mr-1 h-3 w-3" />สร้างกิจกรรม
+										</Button>
+									{/if}
 								{/if}
-							{/if}
-						</div>
-					{/if}
-				</div>
-			{/each}
-		</div>
+							</div>
+						{/if}
+					</div>
+				{/each}
+			</div>
+		{/if}
 	{/if}
 </div>
 
 <!-- Slot Edit Dialog — template fields มาจาก catalog (อ่านเท่านั้น) -->
-<Dialog.Root bind:open={showSlotDialog}>
-	<Dialog.Content class="max-w-lg">
-		<Dialog.Header>
-			<Dialog.Title>แก้ไขช่องกิจกรรม</Dialog.Title>
-		</Dialog.Header>
+{#if canManageActivity}
+	<Dialog.Root bind:open={showSlotDialog}>
+		<Dialog.Content class="max-w-lg">
+			<Dialog.Header>
+				<Dialog.Title>แก้ไขช่องกิจกรรม</Dialog.Title>
+			</Dialog.Header>
 
-		<div class="rounded-md border bg-muted/50 px-3 py-2 text-xs">
-			📎 ช่องนี้สร้างจากคลังกิจกรรม — <b>ชื่อ / ประเภท / คาบ / โหมด / ระดับชั้น</b> แก้ที่
-			<a href={resolve('/staff/academic/subjects')} class="underline hover:text-primary"
-				>คลังรายวิชา → tab กิจกรรม</a
-			>
-		</div>
-
-		<div class="space-y-3 py-2">
-			<!-- Read-only summary of template fields -->
-			<div class="rounded-md border p-3 space-y-2 bg-background">
-				<div class="flex items-center gap-2 text-sm">
-					<span class="font-semibold">{slotName}</span>
-					<Badge variant="secondary"
-						>{ACTIVITY_TYPE_LABELS[slotActivityType] ?? slotActivityType}</Badge
-					>
-				</div>
-				<div class="text-xs text-muted-foreground space-y-1">
-					<div>
-						<span class="text-foreground">ระดับชั้น:</span>
-						{gradeLevelDisplay(slotAllowedGradeLevelIds)}
-					</div>
-					<div>
-						<span class="text-foreground">คาบ/สัปดาห์:</span>
-						{slotPeriodsPerWeek}
-						· <span class="text-foreground">โหมด:</span>
-						{slotSchedulingMode === 'independent' ? 'แต่ละห้องจัดเอง' : 'จัดพร้อมกันทุกห้อง'}
-					</div>
-					{#if slotDescription}
-						<div>{slotDescription}</div>
-					{/if}
-				</div>
+			<div class="rounded-md border bg-muted/50 px-3 py-2 text-xs">
+				📎 ช่องนี้สร้างจากคลังกิจกรรม — <b>ชื่อ / ประเภท / คาบ / โหมด / ระดับชั้น</b> แก้ที่
+				<a href={resolve('/staff/academic/subjects')} class="underline hover:text-primary"
+					>คลังรายวิชา → tab กิจกรรม</a
+				>
 			</div>
 
-			<!-- Editable semester-specific fields -->
-			{#if slotSchedulingMode !== 'independent'}
-				<div class="space-y-1">
-					<Label>การรับสมาชิก</Label>
-					<Select.Root type="single" bind:value={slotRegistrationType}>
-						<Select.Trigger class="w-full"
-							>{slotRegistrationType === 'self'
-								? 'นักเรียนเลือกเอง'
-								: 'ครู/admin จัดสรร'}</Select.Trigger
+			<div class="space-y-3 py-2">
+				<!-- Read-only summary of template fields -->
+				<div class="rounded-md border p-3 space-y-2 bg-background">
+					<div class="flex items-center gap-2 text-sm">
+						<span class="font-semibold">{slotName}</span>
+						<Badge variant="secondary"
+							>{ACTIVITY_TYPE_LABELS[slotActivityType] ?? slotActivityType}</Badge
 						>
+					</div>
+					<div class="text-xs text-muted-foreground space-y-1">
+						<div>
+							<span class="text-foreground">ระดับชั้น:</span>
+							{gradeLevelDisplay(slotAllowedGradeLevelIds)}
+						</div>
+						<div>
+							<span class="text-foreground">คาบ/สัปดาห์:</span>
+							{slotPeriodsPerWeek}
+							· <span class="text-foreground">โหมด:</span>
+							{slotSchedulingMode === 'independent' ? 'แต่ละห้องจัดเอง' : 'จัดพร้อมกันทุกห้อง'}
+						</div>
+						{#if slotDescription}
+							<div>{slotDescription}</div>
+						{/if}
+					</div>
+				</div>
+
+				<!-- Editable semester-specific fields -->
+				{#if slotSchedulingMode !== 'independent'}
+					<div class="space-y-1">
+						<Label>การรับสมาชิก</Label>
+						<Select.Root type="single" bind:value={slotRegistrationType}>
+							<Select.Trigger class="w-full"
+								>{slotRegistrationType === 'self'
+									? 'นักเรียนเลือกเอง'
+									: 'ครู/admin จัดสรร'}</Select.Trigger
+							>
+							<Select.Content>
+								<Select.Item value="assigned">ครู/admin จัดสรร</Select.Item>
+								<Select.Item value="self">นักเรียนเลือกเอง</Select.Item>
+							</Select.Content>
+						</Select.Root>
+					</div>
+				{/if}
+			</div>
+			<Dialog.Footer>
+				<Button
+					variant="outline"
+					onclick={() => {
+						showSlotDialog = false;
+					}}>ยกเลิก</Button
+				>
+				<Button onclick={handleSaveSlot} disabled={saving}
+					>{saving ? 'กำลังบันทึก...' : 'บันทึก'}</Button
+				>
+			</Dialog.Footer>
+		</Dialog.Content>
+	</Dialog.Root>
+{/if}
+
+<!-- Group Create/Edit Dialog -->
+{#if canManageActivityGroups}
+	<Dialog.Root bind:open={showGroupDialog}>
+		<Dialog.Content class="max-w-md">
+			<Dialog.Header>
+				<Dialog.Title>{isGroupEdit ? 'แก้ไขกิจกรรม' : 'สร้างกิจกรรม'}</Dialog.Title>
+			</Dialog.Header>
+			<div class="space-y-3 py-2">
+				<div class="space-y-1">
+					<Label>ชื่อกิจกรรม <span class="text-destructive">*</span></Label>
+					<Input bind:value={groupName} placeholder="เช่น ชุมนุมวิทยาศาสตร์, ฟุตบอล" />
+				</div>
+				<div class="space-y-1">
+					<Label>ครูผู้ดูแล (หลัก)</Label>
+					<Select.Root type="single" bind:value={groupInstructorId}>
+						<Select.Trigger class="w-full">
+							{groupInstructorId
+								? (staffList.find((s) => s.id === groupInstructorId)?.name ?? 'เลือก...')
+								: 'ไม่ระบุ'}
+						</Select.Trigger>
+						<Select.Content class="max-h-56 overflow-y-auto">
+							<Select.Item value="">ไม่ระบุ</Select.Item>
+							{#each staffList as s (s.id)}<Select.Item value={s.id}>{s.name}</Select.Item>{/each}
+						</Select.Content>
+					</Select.Root>
+					<p class="text-xs text-muted-foreground">ครูผู้ช่วยเพิ่มได้ในหน้าจัดการสมาชิก</p>
+				</div>
+				<div class="space-y-1">
+					<Label>จำนวนรับสูงสุด</Label>
+					<Input type="number" min="1" placeholder="ไม่จำกัด" bind:value={groupMaxCapacity} />
+				</div>
+				<div class="space-y-1">
+					<Label>ห้องที่รับ (ว่าง = รับทุกห้องที่ช่องกิจกรรมรับ)</Label>
+					{#if groupSlotClassroomIds.length === 0}
+						<p class="text-xs text-muted-foreground italic">
+							ช่องกิจกรรมนี้ยังไม่มีห้องเข้าร่วม — ไปเพิ่มที่หน้า Course Planning ก่อน
+						</p>
+					{:else}
+						<div class="max-h-[240px] overflow-y-auto rounded border divide-y">
+							{#each groupGradesInSlot as gradeId (gradeId)}
+								{@const grade = structure.levels.find((g) => g.id === gradeId)}
+								{@const roomsOfGrade = classrooms
+									.filter(
+										(c) => c.grade_level_id === gradeId && groupSlotClassroomIds.includes(c.id)
+									)
+									.sort((a, b) => (a.name > b.name ? 1 : -1))}
+								{@const allSelected = roomsOfGrade.every((r) =>
+									groupAllowedClassroomIds.includes(r.id)
+								)}
+								{@const someSelected = roomsOfGrade.some((r) =>
+									groupAllowedClassroomIds.includes(r.id)
+								)}
+								<div class="p-2">
+									<button
+										type="button"
+										class="flex items-center gap-2 w-full text-left text-sm font-medium hover:bg-accent/50 rounded px-1 py-0.5"
+										onclick={() => toggleGroupGradeAll(gradeId, groupSlotClassroomIds)}
+									>
+										<div
+											class="flex h-4 w-4 items-center justify-center rounded border {allSelected
+												? 'bg-primary border-primary'
+												: someSelected
+													? 'bg-primary/40 border-primary'
+													: 'border-input'}"
+										>
+											{#if allSelected}
+												<span class="text-primary-foreground text-xs leading-none">✓</span>
+											{:else if someSelected}
+												<span class="text-primary-foreground text-xs leading-none">−</span>
+											{/if}
+										</div>
+										<span>{grade?.short_name ?? '?'}</span>
+										<span class="text-[10px] text-muted-foreground font-normal">
+											(ทั้งระดับ · {roomsOfGrade.length} ห้อง)
+										</span>
+									</button>
+									<div class="pl-6 mt-1 flex flex-wrap gap-1.5">
+										{#each roomsOfGrade as room (room.id)}
+											{@const selected = groupAllowedClassroomIds.includes(room.id)}
+											<button
+												type="button"
+												class="rounded border px-2 py-0.5 text-xs transition-colors {selected
+													? 'bg-primary text-primary-foreground border-primary'
+													: 'bg-background hover:bg-accent border-input'}"
+												onclick={() => toggleGroupClassroom(room.id)}
+											>
+												{room.name}
+											</button>
+										{/each}
+									</div>
+								</div>
+							{/each}
+						</div>
+						<p class="text-[10px] text-muted-foreground">
+							ติ๊กระดับชั้น = เลือกทุกห้องของระดับนั้น · ติ๊กห้อง = เลือกเฉพาะห้องนั้น
+						</p>
+					{/if}
+				</div>
+				<div class="space-y-1">
+					<Label>คำอธิบาย</Label>
+					<Textarea bind:value={groupDescription} placeholder="รายละเอียด..." rows={2} />
+				</div>
+			</div>
+			<Dialog.Footer>
+				<Button
+					variant="outline"
+					onclick={() => {
+						showGroupDialog = false;
+					}}>ยกเลิก</Button
+				>
+				<Button onclick={handleSaveGroup} disabled={saving}
+					>{saving ? 'กำลังบันทึก...' : isGroupEdit ? 'บันทึก' : 'สร้าง'}</Button
+				>
+			</Dialog.Footer>
+		</Dialog.Content>
+	</Dialog.Root>
+{/if}
+
+<!-- Add Slot Instructor Dialog (Multi-select) -->
+{#if canManageActivity && canReadActivity}
+	<Dialog.Root bind:open={showSlotInstructorDialog}>
+		<Dialog.Content class="max-w-md">
+			<Dialog.Header>
+				<Dialog.Title>เพิ่มครูผู้สอน</Dialog.Title>
+				<Dialog.Description
+					>เลือกครูที่จะสอนในช่องกิจกรรมนี้{#if slotInstructorSelectedIds.length > 0}
+						· เลือก {slotInstructorSelectedIds.length} คน{/if}</Dialog.Description
+				>
+			</Dialog.Header>
+			<div class="space-y-3 py-2">
+				<div class="relative">
+					<Input class="pl-8" placeholder="ค้นหาครู..." bind:value={slotInstructorSearch} />
+				</div>
+				<div class="max-h-64 overflow-y-auto divide-y rounded border">
+					{#each slotInstructorCandidates as s (s.id)}
+						{@const checked = slotInstructorSelectedIds.includes(s.id)}
+						<button
+							type="button"
+							class="flex w-full items-center gap-3 px-3 py-2 text-sm hover:bg-accent text-left"
+							onclick={() => toggleSlotInstructor(s.id)}
+						>
+							<div
+								class="flex h-4 w-4 items-center justify-center rounded border {checked
+									? 'bg-primary border-primary'
+									: 'border-input'}"
+							>
+								{#if checked}<span class="text-primary-foreground text-xs">✓</span>{/if}
+							</div>
+							<span>{s.name}</span>
+						</button>
+					{:else}
+						<div class="px-3 py-4 text-sm text-muted-foreground text-center">ไม่พบครู</div>
+					{/each}
+				</div>
+			</div>
+			<Dialog.Footer>
+				<Button
+					variant="outline"
+					onclick={() => {
+						showSlotInstructorDialog = false;
+					}}>ยกเลิก</Button
+				>
+				<Button
+					onclick={handleAddSlotInstructorsBatch}
+					disabled={addingSlotInstructors || !slotInstructorSelectedIds.length}
+				>
+					{addingSlotInstructors ? 'กำลังเพิ่ม...' : `เพิ่ม ${slotInstructorSelectedIds.length} คน`}
+				</Button>
+			</Dialog.Footer>
+		</Dialog.Content>
+	</Dialog.Root>
+{/if}
+
+<!-- Delete Slot Dialog -->
+{#if canCleanActivityTimetable}
+	<Dialog.Root bind:open={showDeleteSlotDialog}>
+		<Dialog.Content class="max-w-sm">
+			<Dialog.Header>
+				<Dialog.Title>ยืนยันการลบ</Dialog.Title>
+				<Dialog.Description>
+					ลบช่อง "<strong>{deleteSlotTarget?.name}</strong>" รวมถึงกิจกรรม สมาชิก
+					และรายการในตารางสอนทั้งหมด?
+				</Dialog.Description>
+			</Dialog.Header>
+			<div class="rounded-md border bg-amber-50 text-amber-900 px-3 py-2 text-xs">
+				⚠️ ช่องนี้มาจากคลังกิจกรรมในหลักสูตร — หากลบแล้วกด "สร้างอัตโนมัติ" ที่หน้า planning
+				ก็จะถูกสร้างกลับมา
+				<br />หากต้องการปิดแค่ภาคเรียนนี้ โปรดถอนออกจากหลักสูตรแทน
+			</div>
+			<Dialog.Footer>
+				<Button
+					variant="outline"
+					onclick={() => {
+						showDeleteSlotDialog = false;
+					}}>ยกเลิก</Button
+				>
+				<Button variant="destructive" onclick={handleDeleteSlot}>ลบต่อไป</Button>
+			</Dialog.Footer>
+		</Dialog.Content>
+	</Dialog.Root>
+{/if}
+
+<!-- Delete Group Dialog -->
+{#if canManageActivity}
+	<Dialog.Root bind:open={showDeleteGroupDialog}>
+		<Dialog.Content class="max-w-sm">
+			<Dialog.Header>
+				<Dialog.Title>ยืนยันการลบ</Dialog.Title>
+				<Dialog.Description
+					>ลบกิจกรรม "<strong>{deleteGroupTarget?.name}</strong>"?</Dialog.Description
+				>
+			</Dialog.Header>
+			<Dialog.Footer>
+				<Button
+					variant="outline"
+					onclick={() => {
+						showDeleteGroupDialog = false;
+					}}>ยกเลิก</Button
+				>
+				<Button variant="destructive" onclick={handleDeleteGroup}>ลบ</Button>
+			</Dialog.Footer>
+		</Dialog.Content>
+	</Dialog.Root>
+{/if}
+
+<!-- Generate from Plan Dialog -->
+{#if canManageActivity}
+	<Dialog.Root bind:open={showGenerateDialog}>
+		<Dialog.Content class="max-w-md">
+			<Dialog.Header>
+				<Dialog.Title>Generate กิจกรรมจากหลักสูตร</Dialog.Title>
+				<Dialog.Description>
+					สร้าง activity slots ตามแม่แบบในหลักสูตรสำหรับภาคเรียนที่เลือก (ข้ามกิจกรรมที่มีอยู่แล้ว)
+				</Dialog.Description>
+			</Dialog.Header>
+
+			<div class="space-y-3 py-2">
+				<div class="space-y-1">
+					<Label>หลักสูตร *</Label>
+					<Select.Root type="single" bind:value={generateVersionId}>
+						<Select.Trigger class="w-full">
+							{planVersions.find((v) => v.id === generateVersionId)?.version_name ??
+								'เลือกหลักสูตร'}
+						</Select.Trigger>
 						<Select.Content>
-							<Select.Item value="assigned">ครู/admin จัดสรร</Select.Item>
-							<Select.Item value="self">นักเรียนเลือกเอง</Select.Item>
+							{#each planVersions as v (v.id)}
+								<Select.Item value={v.id}>{v.version_name}</Select.Item>
+							{/each}
 						</Select.Content>
 					</Select.Root>
 				</div>
-			{/if}
-		</div>
-		<Dialog.Footer>
-			<Button
-				variant="outline"
-				onclick={() => {
-					showSlotDialog = false;
-				}}>ยกเลิก</Button
-			>
-			<Button onclick={handleSaveSlot} disabled={saving}
-				>{saving ? 'กำลังบันทึก...' : 'บันทึก'}</Button
-			>
-		</Dialog.Footer>
-	</Dialog.Content>
-</Dialog.Root>
+			</div>
 
-<!-- Group Create/Edit Dialog -->
-<Dialog.Root bind:open={showGroupDialog}>
-	<Dialog.Content class="max-w-md">
-		<Dialog.Header>
-			<Dialog.Title>{isGroupEdit ? 'แก้ไขกิจกรรม' : 'สร้างกิจกรรม'}</Dialog.Title>
-		</Dialog.Header>
-		<div class="space-y-3 py-2">
-			<div class="space-y-1">
-				<Label>ชื่อกิจกรรม <span class="text-destructive">*</span></Label>
-				<Input bind:value={groupName} placeholder="เช่น ชุมนุมวิทยาศาสตร์, ฟุตบอล" />
-			</div>
-			<div class="space-y-1">
-				<Label>ครูผู้ดูแล (หลัก)</Label>
-				<Select.Root type="single" bind:value={groupInstructorId}>
-					<Select.Trigger class="w-full">
-						{groupInstructorId
-							? (staffList.find((s) => s.id === groupInstructorId)?.name ?? 'เลือก...')
-							: 'ไม่ระบุ'}
-					</Select.Trigger>
-					<Select.Content class="max-h-56 overflow-y-auto">
-						<Select.Item value="">ไม่ระบุ</Select.Item>
-						{#each staffList as s (s.id)}<Select.Item value={s.id}>{s.name}</Select.Item>{/each}
-					</Select.Content>
-				</Select.Root>
-				<p class="text-xs text-muted-foreground">ครูผู้ช่วยเพิ่มได้ในหน้าจัดการสมาชิก</p>
-			</div>
-			<div class="space-y-1">
-				<Label>จำนวนรับสูงสุด</Label>
-				<Input type="number" min="1" placeholder="ไม่จำกัด" bind:value={groupMaxCapacity} />
-			</div>
-			<div class="space-y-1">
-				<Label>ห้องที่รับ (ว่าง = รับทุกห้องที่ช่องกิจกรรมรับ)</Label>
-				{#if groupSlotClassroomIds.length === 0}
-					<p class="text-xs text-muted-foreground italic">
-						ช่องกิจกรรมนี้ยังไม่มีห้องเข้าร่วม — ไปเพิ่มที่หน้า Course Planning ก่อน
-					</p>
-				{:else}
-					<div class="max-h-[240px] overflow-y-auto rounded border divide-y">
-						{#each groupGradesInSlot as gradeId (gradeId)}
-							{@const grade = structure.levels.find((g) => g.id === gradeId)}
-							{@const roomsOfGrade = classrooms
-								.filter((c) => c.grade_level_id === gradeId && groupSlotClassroomIds.includes(c.id))
-								.sort((a, b) => (a.name > b.name ? 1 : -1))}
-							{@const allSelected = roomsOfGrade.every((r) =>
-								groupAllowedClassroomIds.includes(r.id)
-							)}
-							{@const someSelected = roomsOfGrade.some((r) =>
-								groupAllowedClassroomIds.includes(r.id)
-							)}
-							<div class="p-2">
-								<button
-									type="button"
-									class="flex items-center gap-2 w-full text-left text-sm font-medium hover:bg-accent/50 rounded px-1 py-0.5"
-									onclick={() => toggleGroupGradeAll(gradeId, groupSlotClassroomIds)}
-								>
-									<div
-										class="flex h-4 w-4 items-center justify-center rounded border {allSelected
-											? 'bg-primary border-primary'
-											: someSelected
-												? 'bg-primary/40 border-primary'
-												: 'border-input'}"
-									>
-										{#if allSelected}
-											<span class="text-primary-foreground text-xs leading-none">✓</span>
-										{:else if someSelected}
-											<span class="text-primary-foreground text-xs leading-none">−</span>
-										{/if}
-									</div>
-									<span>{grade?.short_name ?? '?'}</span>
-									<span class="text-[10px] text-muted-foreground font-normal">
-										(ทั้งระดับ · {roomsOfGrade.length} ห้อง)
-									</span>
-								</button>
-								<div class="pl-6 mt-1 flex flex-wrap gap-1.5">
-									{#each roomsOfGrade as room (room.id)}
-										{@const selected = groupAllowedClassroomIds.includes(room.id)}
-										<button
-											type="button"
-											class="rounded border px-2 py-0.5 text-xs transition-colors {selected
-												? 'bg-primary text-primary-foreground border-primary'
-												: 'bg-background hover:bg-accent border-input'}"
-											onclick={() => toggleGroupClassroom(room.id)}
-										>
-											{room.name}
-										</button>
-									{/each}
-								</div>
-							</div>
-						{/each}
-					</div>
-					<p class="text-[10px] text-muted-foreground">
-						ติ๊กระดับชั้น = เลือกทุกห้องของระดับนั้น · ติ๊กห้อง = เลือกเฉพาะห้องนั้น
-					</p>
-				{/if}
-			</div>
-			<div class="space-y-1">
-				<Label>คำอธิบาย</Label>
-				<Textarea bind:value={groupDescription} placeholder="รายละเอียด..." rows={2} />
-			</div>
-		</div>
-		<Dialog.Footer>
-			<Button
-				variant="outline"
-				onclick={() => {
-					showGroupDialog = false;
-				}}>ยกเลิก</Button
-			>
-			<Button onclick={handleSaveGroup} disabled={saving}
-				>{saving ? 'กำลังบันทึก...' : isGroupEdit ? 'บันทึก' : 'สร้าง'}</Button
-			>
-		</Dialog.Footer>
-	</Dialog.Content>
-</Dialog.Root>
-
-<!-- Add Slot Instructor Dialog (Multi-select) -->
-<Dialog.Root bind:open={showSlotInstructorDialog}>
-	<Dialog.Content class="max-w-md">
-		<Dialog.Header>
-			<Dialog.Title>เพิ่มครูผู้สอน</Dialog.Title>
-			<Dialog.Description
-				>เลือกครูที่จะสอนในช่องกิจกรรมนี้{#if slotInstructorSelectedIds.length > 0}
-					· เลือก {slotInstructorSelectedIds.length} คน{/if}</Dialog.Description
-			>
-		</Dialog.Header>
-		<div class="space-y-3 py-2">
-			<div class="relative">
-				<Input class="pl-8" placeholder="ค้นหาครู..." bind:value={slotInstructorSearch} />
-			</div>
-			<div class="max-h-64 overflow-y-auto divide-y rounded border">
-				{#each slotInstructorCandidates as s (s.id)}
-					{@const checked = slotInstructorSelectedIds.includes(s.id)}
-					<button
-						type="button"
-						class="flex w-full items-center gap-3 px-3 py-2 text-sm hover:bg-accent text-left"
-						onclick={() => toggleSlotInstructor(s.id)}
-					>
-						<div
-							class="flex h-4 w-4 items-center justify-center rounded border {checked
-								? 'bg-primary border-primary'
-								: 'border-input'}"
-						>
-							{#if checked}<span class="text-primary-foreground text-xs">✓</span>{/if}
-						</div>
-						<span>{s.name}</span>
-					</button>
-				{:else}
-					<div class="px-3 py-4 text-sm text-muted-foreground text-center">ไม่พบครู</div>
-				{/each}
-			</div>
-		</div>
-		<Dialog.Footer>
-			<Button
-				variant="outline"
-				onclick={() => {
-					showSlotInstructorDialog = false;
-				}}>ยกเลิก</Button
-			>
-			<Button
-				onclick={handleAddSlotInstructorsBatch}
-				disabled={addingSlotInstructors || !slotInstructorSelectedIds.length}
-			>
-				{addingSlotInstructors ? 'กำลังเพิ่ม...' : `เพิ่ม ${slotInstructorSelectedIds.length} คน`}
-			</Button>
-		</Dialog.Footer>
-	</Dialog.Content>
-</Dialog.Root>
-
-<!-- Delete Slot Dialog -->
-<Dialog.Root bind:open={showDeleteSlotDialog}>
-	<Dialog.Content class="max-w-sm">
-		<Dialog.Header>
-			<Dialog.Title>ยืนยันการลบ</Dialog.Title>
-			<Dialog.Description>
-				ลบช่อง "<strong>{deleteSlotTarget?.name}</strong>" รวมถึงกิจกรรม สมาชิก
-				และรายการในตารางสอนทั้งหมด?
-			</Dialog.Description>
-		</Dialog.Header>
-		<div class="rounded-md border bg-amber-50 text-amber-900 px-3 py-2 text-xs">
-			⚠️ ช่องนี้มาจากคลังกิจกรรมในหลักสูตร — หากลบแล้วกด "สร้างอัตโนมัติ" ที่หน้า planning
-			ก็จะถูกสร้างกลับมา
-			<br />หากต้องการปิดแค่ภาคเรียนนี้ โปรดถอนออกจากหลักสูตรแทน
-		</div>
-		<Dialog.Footer>
-			<Button
-				variant="outline"
-				onclick={() => {
-					showDeleteSlotDialog = false;
-				}}>ยกเลิก</Button
-			>
-			<Button variant="destructive" onclick={handleDeleteSlot}>ลบต่อไป</Button>
-		</Dialog.Footer>
-	</Dialog.Content>
-</Dialog.Root>
-
-<!-- Delete Group Dialog -->
-<Dialog.Root bind:open={showDeleteGroupDialog}>
-	<Dialog.Content class="max-w-sm">
-		<Dialog.Header>
-			<Dialog.Title>ยืนยันการลบ</Dialog.Title>
-			<Dialog.Description
-				>ลบกิจกรรม "<strong>{deleteGroupTarget?.name}</strong>"?</Dialog.Description
-			>
-		</Dialog.Header>
-		<Dialog.Footer>
-			<Button
-				variant="outline"
-				onclick={() => {
-					showDeleteGroupDialog = false;
-				}}>ยกเลิก</Button
-			>
-			<Button variant="destructive" onclick={handleDeleteGroup}>ลบ</Button>
-		</Dialog.Footer>
-	</Dialog.Content>
-</Dialog.Root>
-
-<!-- Generate from Plan Dialog -->
-<Dialog.Root bind:open={showGenerateDialog}>
-	<Dialog.Content class="max-w-md">
-		<Dialog.Header>
-			<Dialog.Title>Generate กิจกรรมจากหลักสูตร</Dialog.Title>
-			<Dialog.Description>
-				สร้าง activity slots ตามแม่แบบในหลักสูตรสำหรับภาคเรียนที่เลือก (ข้ามกิจกรรมที่มีอยู่แล้ว)
-			</Dialog.Description>
-		</Dialog.Header>
-
-		<div class="space-y-3 py-2">
-			<div class="space-y-1">
-				<Label>หลักสูตร *</Label>
-				<Select.Root type="single" bind:value={generateVersionId}>
-					<Select.Trigger class="w-full">
-						{planVersions.find((v) => v.id === generateVersionId)?.version_name ?? 'เลือกหลักสูตร'}
-					</Select.Trigger>
-					<Select.Content>
-						{#each planVersions as v (v.id)}
-							<Select.Item value={v.id}>{v.version_name}</Select.Item>
-						{/each}
-					</Select.Content>
-				</Select.Root>
-			</div>
-		</div>
-
-		<Dialog.Footer>
-			<Button
-				variant="outline"
-				onclick={() => {
-					showGenerateDialog = false;
-				}}>ยกเลิก</Button
-			>
-			<Button onclick={handleGenerate} disabled={generating || !generateVersionId}>
-				{generating ? 'กำลังสร้าง...' : 'Generate'}
-			</Button>
-		</Dialog.Footer>
-	</Dialog.Content>
-</Dialog.Root>
+			<Dialog.Footer>
+				<Button
+					variant="outline"
+					onclick={() => {
+						showGenerateDialog = false;
+					}}>ยกเลิก</Button
+				>
+				<Button onclick={handleGenerate} disabled={generating || !generateVersionId}>
+					{generating ? 'กำลังสร้าง...' : 'Generate'}
+				</Button>
+			</Dialog.Footer>
+		</Dialog.Content>
+	</Dialog.Root>
+{/if}
 
 <!-- Switch Mode Confirmation Dialog -->
-<Dialog.Root bind:open={showSwitchModeDialog}>
-	<Dialog.Content class="max-w-sm">
-		<Dialog.Header>
-			<Dialog.Title>เปลี่ยนเป็นแบบอิสระ</Dialog.Title>
-			<Dialog.Description>
-				จะลบกิจกรรม <strong>{switchModeGroupCount} กลุ่ม</strong>
-				{#if switchModeMemberCount > 0}
-					({switchModeMemberCount} สมาชิก)
-				{/if}
-				และรายการในตารางสอนทั้งหมด ดำเนินการต่อ?
-			</Dialog.Description>
-		</Dialog.Header>
-		<Dialog.Footer>
-			<Button
-				variant="outline"
-				onclick={() => {
-					showSwitchModeDialog = false;
-				}}>ยกเลิก</Button
-			>
-			<Button variant="destructive" onclick={confirmSwitchToIndependent}>ลบและเปลี่ยน</Button>
-		</Dialog.Footer>
-	</Dialog.Content>
-</Dialog.Root>
+{#if canCleanActivityTimetable}
+	<Dialog.Root bind:open={showSwitchModeDialog}>
+		<Dialog.Content class="max-w-sm">
+			<Dialog.Header>
+				<Dialog.Title>เปลี่ยนเป็นแบบอิสระ</Dialog.Title>
+				<Dialog.Description>
+					จะลบกิจกรรม <strong>{switchModeGroupCount} กลุ่ม</strong>
+					{#if switchModeMemberCount > 0}
+						({switchModeMemberCount} สมาชิก)
+					{/if}
+					และรายการในตารางสอนทั้งหมด ดำเนินการต่อ?
+				</Dialog.Description>
+			</Dialog.Header>
+			<Dialog.Footer>
+				<Button
+					variant="outline"
+					onclick={() => {
+						showSwitchModeDialog = false;
+					}}>ยกเลิก</Button
+				>
+				<Button variant="destructive" onclick={confirmSwitchToIndependent}>ลบและเปลี่ยน</Button>
+			</Dialog.Footer>
+		</Dialog.Content>
+	</Dialog.Root>
+{/if}
