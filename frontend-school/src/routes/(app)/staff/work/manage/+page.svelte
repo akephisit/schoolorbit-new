@@ -5,6 +5,7 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
+	import * as Select from '$lib/components/ui/select';
 	import { Separator } from '$lib/components/ui/separator';
 	import { Textarea } from '$lib/components/ui/textarea';
 	import {
@@ -107,6 +108,33 @@
 			default:
 				return 'secondary';
 		}
+	}
+
+	function assigneeModeLabel(value: AssigneeMode): string {
+		switch (value) {
+			case 'organization_unit':
+				return 'ทั้งหน่วยงาน';
+			case 'organization_position':
+				return 'ตำแหน่งในหน่วยงาน';
+			default:
+				return 'รายบุคคล';
+		}
+	}
+
+	function staffOptionLabel(id: string): string {
+		return staffOptions.find((staff) => staff.id === id)?.name ?? 'เลือกบุคลากร';
+	}
+
+	function organizationUnitLabel(id: string, fallback = 'เลือกหน่วยงาน'): string {
+		return organizationUnits.find((unit) => unit.id === id)?.name ?? fallback;
+	}
+
+	function positionLabel(value: string): string {
+		return positionOptions.find((position) => position.value === value)?.label ?? 'สมาชิก';
+	}
+
+	function permissionLabel(value: string): string {
+		return value || 'เลือก permission';
 	}
 
 	function toIsoDateTime(value: string): string | null {
@@ -441,58 +469,62 @@
 					<div class="grid gap-4 md:grid-cols-3">
 						<div class="grid gap-2">
 							<Label for="assignee-mode">รูปแบบผู้รับงาน</Label>
-							<select
-								id="assignee-mode"
-								class="h-9 rounded-md border bg-background px-3 text-sm"
-								bind:value={itemForm.assigneeMode}
-							>
-								<option value="user">รายบุคคล</option>
-								<option value="organization_unit">ทั้งหน่วยงาน</option>
-								<option value="organization_position">ตำแหน่งในหน่วยงาน</option>
-							</select>
+							<Select.Root type="single" bind:value={itemForm.assigneeMode}>
+								<Select.Trigger id="assignee-mode" class="w-full">
+									{assigneeModeLabel(itemForm.assigneeMode)}
+								</Select.Trigger>
+								<Select.Content>
+									<Select.Item value="user">รายบุคคล</Select.Item>
+									<Select.Item value="organization_unit">ทั้งหน่วยงาน</Select.Item>
+									<Select.Item value="organization_position">ตำแหน่งในหน่วยงาน</Select.Item>
+								</Select.Content>
+							</Select.Root>
 						</div>
 
 						{#if itemForm.assigneeMode === 'user'}
 							<div class="grid gap-2 md:col-span-2">
 								<Label for="assignee-user">ครู/บุคลากร</Label>
-								<select
-									id="assignee-user"
-									class="h-9 rounded-md border bg-background px-3 text-sm"
-									bind:value={itemForm.userId}
-								>
-									<option value="">เลือกบุคลากร</option>
-									{#each staffOptions as staff (staff.id)}
-										<option value={staff.id}>{staff.name}</option>
-									{/each}
-								</select>
+								<Select.Root type="single" bind:value={itemForm.userId}>
+									<Select.Trigger id="assignee-user" class="w-full">
+										{staffOptionLabel(itemForm.userId)}
+									</Select.Trigger>
+									<Select.Content>
+										<Select.Item value="">เลือกบุคลากร</Select.Item>
+										{#each staffOptions as staff (staff.id)}
+											<Select.Item value={staff.id}>{staff.name}</Select.Item>
+										{/each}
+									</Select.Content>
+								</Select.Root>
 							</div>
 						{:else}
 							<div class="grid gap-2">
 								<Label for="assignee-unit">หน่วยงาน</Label>
-								<select
-									id="assignee-unit"
-									class="h-9 rounded-md border bg-background px-3 text-sm"
-									bind:value={itemForm.organizationUnitId}
-								>
-									<option value="">เลือกหน่วยงาน</option>
-									{#each organizationUnits as unit (unit.id)}
-										<option value={unit.id}>{unit.name}</option>
-									{/each}
-								</select>
+								<Select.Root type="single" bind:value={itemForm.organizationUnitId}>
+									<Select.Trigger id="assignee-unit" class="w-full">
+										{organizationUnitLabel(itemForm.organizationUnitId)}
+									</Select.Trigger>
+									<Select.Content>
+										<Select.Item value="">เลือกหน่วยงาน</Select.Item>
+										{#each organizationUnits as unit (unit.id)}
+											<Select.Item value={unit.id}>{unit.name}</Select.Item>
+										{/each}
+									</Select.Content>
+								</Select.Root>
 							</div>
 
 							{#if itemForm.assigneeMode === 'organization_position'}
 								<div class="grid gap-2">
 									<Label for="assignee-position">ตำแหน่ง</Label>
-									<select
-										id="assignee-position"
-										class="h-9 rounded-md border bg-background px-3 text-sm"
-										bind:value={itemForm.positionCode}
-									>
-										{#each positionOptions as position (position.value)}
-											<option value={position.value}>{position.label}</option>
-										{/each}
-									</select>
+									<Select.Root type="single" bind:value={itemForm.positionCode}>
+										<Select.Trigger id="assignee-position" class="w-full">
+											{positionLabel(itemForm.positionCode)}
+										</Select.Trigger>
+										<Select.Content>
+											{#each positionOptions as position (position.value)}
+												<Select.Item value={position.value}>{position.label}</Select.Item>
+											{/each}
+										</Select.Content>
+									</Select.Root>
 								</div>
 							{/if}
 						{/if}
@@ -551,31 +583,36 @@
 
 					<div class="grid gap-2">
 						<Label for="managed-permission">สิทธิ์ผู้จัดการรอบงาน</Label>
-						<select
-							id="managed-permission"
-							class="h-9 rounded-md border bg-background px-3 text-sm"
+						<Select.Root
+							type="single"
 							bind:value={windowForm.managedByPermission}
 							disabled={manageablePermissions.length === 0}
 						>
-							<option value="">เลือก permission</option>
-							{#each manageablePermissions as permission (permission)}
-								<option value={permission}>{permission}</option>
-							{/each}
-						</select>
+							<Select.Trigger id="managed-permission" class="w-full">
+								{permissionLabel(windowForm.managedByPermission)}
+							</Select.Trigger>
+							<Select.Content>
+								<Select.Item value="">เลือก permission</Select.Item>
+								{#each manageablePermissions as permission (permission)}
+									<Select.Item value={permission}>{permission}</Select.Item>
+								{/each}
+							</Select.Content>
+						</Select.Root>
 					</div>
 
 					<div class="grid gap-2">
 						<Label for="window-unit">หน่วยงานเจ้าของรอบงาน</Label>
-						<select
-							id="window-unit"
-							class="h-9 rounded-md border bg-background px-3 text-sm"
-							bind:value={windowForm.organizationUnitId}
-						>
-							<option value="">ไม่ระบุ</option>
-							{#each organizationUnits as unit (unit.id)}
-								<option value={unit.id}>{unit.name}</option>
-							{/each}
-						</select>
+						<Select.Root type="single" bind:value={windowForm.organizationUnitId}>
+							<Select.Trigger id="window-unit" class="w-full">
+								{organizationUnitLabel(windowForm.organizationUnitId, 'ไม่ระบุ')}
+							</Select.Trigger>
+							<Select.Content>
+								<Select.Item value="">ไม่ระบุ</Select.Item>
+								{#each organizationUnits as unit (unit.id)}
+									<Select.Item value={unit.id}>{unit.name}</Select.Item>
+								{/each}
+							</Select.Content>
+						</Select.Root>
 					</div>
 
 					<div class="grid gap-2">

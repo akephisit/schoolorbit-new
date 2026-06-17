@@ -350,11 +350,15 @@ test('work inbox API uses typed envelope data and SSE only signals refresh', asy
 	assert.match(workInboxPage, /from '\$lib\/stores\/permissions'/);
 	assert.match(workInboxPage, /\$can\.hasWorkflowManage\(\)/);
 	assert.match(workInboxPage, /\/staff\/work\/manage/);
+	assert.doesNotMatch(workInboxPage, /PERMISSION_MODULES\.ORGANIZATION_WORK/);
 	assert.match(workManagePage, /listManageableWorkflowWindows/);
 	assert.match(workManagePage, /createWorkflowWindow/);
 	assert.match(workManagePage, /createWorkItem/);
 	assert.match(workManagePage, /lookupStaff/);
 	assert.match(workManagePage, /lookupOrganizationUnits/);
+	assert.match(workManagePage, /from '\$lib\/components\/ui\/select'/);
+	assert.match(workManagePage, /<Select\.Root/);
+	assert.doesNotMatch(workManagePage, /<select\b/);
 	assert.doesNotMatch(workManagePage, /\bfetch\s*\(/);
 });
 
