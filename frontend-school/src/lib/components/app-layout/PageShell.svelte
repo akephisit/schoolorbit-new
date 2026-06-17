@@ -30,7 +30,7 @@
 
 <div class={cn('space-y-6', className)}>
 	<PageHeader {title} {description} {backHref} {backLabel} {icon} {meta} {actions} />
-	<div class={contentClass}>
+	<div class={cn('space-y-6', contentClass)}>
 		{@render children?.()}
 	</div>
 </div>

@@ -32,6 +32,11 @@ test('shared app layout components define consistent page header and shell', asy
 
 	assert.match(pageShell, /from '.\/PageHeader.svelte'/);
 	assert.match(pageShell, /space-y-6/);
+	assert.match(
+		pageShell,
+		/class=\{cn\('space-y-6', contentClass\)\}/,
+		'PageShell content wrapper should preserve vertical spacing between page content blocks'
+	);
 	assert.match(pageShell, /@render children/);
 
 	assert.match(appLayoutIndex, /PageHeader/);
