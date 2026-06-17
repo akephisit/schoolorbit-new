@@ -520,7 +520,7 @@ test('staff manage pilot uses shadcn-svelte surfaces and permission gates', asyn
 		'$lib/components/ui/table',
 		'$lib/components/ui/card',
 		'$lib/components/ui/badge',
-		'$lib/components/ui/alert'
+		'$lib/components/app-state'
 	]) {
 		assert.match(source, new RegExp(escapeRegex(requiredImport)));
 	}
@@ -865,7 +865,7 @@ test('student workspace pages gate read, mutation, and PII actions', async () =>
 	const routeExpectations = [
 		{
 			file: 'frontend-school/src/routes/(app)/staff/students/+page.svelte',
-			imports: ['$lib/components/ui/alert'],
+			imports: ['$lib/components/app-state'],
 			permissions: [
 				'PERMISSIONS.STUDENT_READ_SCHOOL',
 				'PERMISSIONS.STUDENT_READ_ASSIGNED',

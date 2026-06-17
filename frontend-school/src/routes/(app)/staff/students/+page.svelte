@@ -12,10 +12,10 @@
 		DialogTitle
 	} from '$lib/components/ui/dialog';
 	import * as Select from '$lib/components/ui/select';
-	import { Alert, AlertDescription, AlertTitle } from '$lib/components/ui/alert';
+	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import { PERMISSIONS } from '$lib/permissions/registry';
 	import { can } from '$lib/stores/permissions';
-	import { GraduationCap, Plus, Search, Pencil, Trash2, Eye, AlertTriangle } from 'lucide-svelte';
+	import { GraduationCap, Plus, Search, Pencil, Trash2, Eye } from 'lucide-svelte';
 	import { toast } from 'svelte-sonner';
 
 	let { data } = $props();
@@ -170,13 +170,11 @@
 	</div>
 
 	{#if !canReadStudents}
-		<Alert>
-			<AlertTriangle class="h-4 w-4" />
-			<AlertTitle>ไม่มีสิทธิ์ดูรายชื่อนักเรียน</AlertTitle>
-			<AlertDescription>
-				บัญชีนี้เข้า module นักเรียนได้ แต่ยังไม่มีสิทธิ์อ่านข้อมูลนักเรียนในขอบเขตที่ระบบอนุญาต
-			</AlertDescription>
-		</Alert>
+		<PageState
+			variant="permission"
+			title="ไม่มีสิทธิ์ดูรายชื่อนักเรียน"
+			description="บัญชีนี้เข้า module นักเรียนได้ แต่ยังไม่มีสิทธิ์อ่านข้อมูลนักเรียนในขอบเขตที่ระบบอนุญาต"
+		/>
 	{:else}
 		<!-- Search and Filter -->
 		<div class="bg-card border border-border rounded-lg p-4">
@@ -218,28 +216,16 @@
 
 		<!-- Student List -->
 		{#if loading}
-			<div class="bg-card border border-border rounded-lg p-12 text-center">
-				<div
-					class="inline-block w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin"
-				></div>
-				<p class="mt-4 text-muted-foreground">กำลังโหลด...</p>
-			</div>
+			<PageSkeleton variant="table" rows={6} columns={5} />
 		{:else if students.length === 0}
-			<div class="bg-card border border-border rounded-lg p-12 text-center">
-				<GraduationCap class="w-16 h-16 mx-auto text-muted-foreground mb-4" />
-				<p class="text-lg font-medium text-foreground">ไม่พบนักเรียน</p>
-				<p class="text-muted-foreground mt-2">
-					{searchQuery
-						? 'ไม่พบนักเรียนที่ตรงกับเงื่อนไขที่ค้นหา'
-						: 'เริ่มต้นด้วยการเพิ่มนักเรียนคนแรก'}
-				</p>
-				{#if !searchQuery && canCreateStudent}
-					<Button href="/staff/students/new" class="mt-4">
-						<Plus class="w-4 h-4 mr-2" />
-						เพิ่มนักเรียน
-					</Button>
-				{/if}
-			</div>
+			<PageState
+				title="ไม่พบนักเรียน"
+				description={searchQuery
+					? 'ไม่พบนักเรียนที่ตรงกับเงื่อนไขที่ค้นหา'
+					: 'เริ่มต้นด้วยการเพิ่มนักเรียนคนแรก'}
+				actionLabel={!searchQuery && canCreateStudent ? 'เพิ่มนักเรียน' : undefined}
+				href={!searchQuery && canCreateStudent ? '/staff/students/new' : undefined}
+			/>
 		{:else}
 			<div class="bg-card border border-border rounded-lg overflow-hidden">
 				<!-- Table Header -->

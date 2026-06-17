@@ -29,9 +29,8 @@
 		CardTitle
 	} from '$lib/components/ui/card';
 	import { Badge } from '$lib/components/ui/badge';
-	import { Alert, AlertDescription, AlertTitle } from '$lib/components/ui/alert';
+	import { LoadingButton, PageSkeleton, PageState } from '$lib/components/app-state';
 	import {
-		AlertTriangle,
 		ChevronLeft,
 		ChevronRight,
 		Eye,
@@ -164,13 +163,11 @@
 	</div>
 
 	{#if !canReadStaff}
-		<Alert>
-			<AlertTriangle class="h-4 w-4" />
-			<AlertTitle>ไม่มีสิทธิ์ดูรายชื่อบุคลากร</AlertTitle>
-			<AlertDescription>
-				บัญชีนี้ยังไม่มีสิทธิ์อ่านข้อมูลบุคลากรในขอบเขตที่ระบบอนุญาต
-			</AlertDescription>
-		</Alert>
+		<PageState
+			variant="permission"
+			title="ไม่มีสิทธิ์ดูรายชื่อบุคลากร"
+			description="บัญชีนี้ยังไม่มีสิทธิ์อ่านข้อมูลบุคลากรในขอบเขตที่ระบบอนุญาต"
+		/>
 	{:else}
 		<Card>
 			<CardContent class="p-4">
@@ -193,35 +190,22 @@
 		</Card>
 
 		{#if loading}
-			<Card>
-				<CardContent class="p-12 text-center">
-					<div
-						class="inline-block h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent"
-					></div>
-					<p class="mt-4 text-muted-foreground">กำลังโหลด...</p>
-				</CardContent>
-			</Card>
+			<PageSkeleton variant="table" rows={6} columns={4} />
 		{:else if error}
-			<Alert variant="destructive">
-				<AlertTriangle class="h-4 w-4" />
-				<AlertTitle>โหลดข้อมูลไม่สำเร็จ</AlertTitle>
-				<AlertDescription>{error}</AlertDescription>
-			</Alert>
-			<Button onclick={loadStaff} variant="outline">ลองอีกครั้ง</Button>
+			<PageState
+				variant="error"
+				title="โหลดข้อมูลไม่สำเร็จ"
+				description={error}
+				actionLabel="ลองอีกครั้ง"
+				onaction={loadStaff}
+			/>
 		{:else if staffList.length === 0}
-			<Card>
-				<CardContent class="p-12 text-center">
-					<Users class="mx-auto mb-4 h-16 w-16 text-muted-foreground" />
-					<h2 class="text-lg font-medium text-foreground">ไม่พบบุคลากร</h2>
-					<p class="mt-2 text-muted-foreground">ยังไม่มีรายการที่ตรงกับเงื่อนไขการค้นหา</p>
-					{#if canCreateStaff}
-						<Button href="/staff/manage/new" class="mt-4 gap-2">
-							<Plus class="h-4 w-4" />
-							เพิ่มบุคลากร
-						</Button>
-					{/if}
-				</CardContent>
-			</Card>
+			<PageState
+				title="ไม่พบบุคลากร"
+				description="ยังไม่มีรายการที่ตรงกับเงื่อนไขการค้นหา"
+				actionLabel={canCreateStaff ? 'เพิ่มบุคลากร' : undefined}
+				href={canCreateStaff ? '/staff/manage/new' : undefined}
+			/>
 		{:else}
 			<Card>
 				<CardHeader>
@@ -358,10 +342,16 @@
 			<Button variant="outline" onclick={() => (showDeleteDialog = false)} disabled={deleting}>
 				ยกเลิก
 			</Button>
-			<Button variant="destructive" onclick={confirmDelete} disabled={deleting} class="gap-2">
+			<LoadingButton
+				variant="destructive"
+				onclick={confirmDelete}
+				loading={deleting}
+				loadingLabel="กำลังลบ..."
+				class="gap-2"
+			>
 				<Trash2 class="h-4 w-4" />
-				{deleting ? 'กำลังลบ...' : 'ลบบุคลากร'}
-			</Button>
+				ลบบุคลากร
+			</LoadingButton>
 		</DialogFooter>
 	</DialogContent>
 </Dialog>

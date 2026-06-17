@@ -42,3 +42,22 @@ test('shared frontend state components use local shadcn-svelte primitives', asyn
 	assert.match(skeleton, /data-slot="skeleton"/);
 	assert.match(skeleton, /animate-pulse/);
 });
+
+test('staff and student list workspaces use shared frontend state components', async () => {
+	const pages = [
+		'src/routes/(app)/staff/manage/+page.svelte',
+		'src/routes/(app)/staff/students/+page.svelte'
+	];
+
+	for (const page of pages) {
+		const source = await readProjectFile(page);
+
+		assert.match(
+			source,
+			/from '\$lib\/components\/app-state'/,
+			`${page} should import shared app-state components`
+		);
+		assert.match(source, /<PageSkeleton\b/, `${page} should use PageSkeleton for initial loading`);
+		assert.match(source, /<PageState\b/, `${page} should use PageState for empty/error states`);
+	}
+});
