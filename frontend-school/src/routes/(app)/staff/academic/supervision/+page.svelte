@@ -5,7 +5,6 @@
 		BookOpenCheck,
 		Check,
 		ChevronsUpDown,
-		ClipboardCheck,
 		FileSignature,
 		Loader2,
 		Plus,
@@ -50,6 +49,7 @@
 	import { authStore } from '$lib/stores/auth';
 	import { can } from '$lib/stores/permissions';
 	import { cn } from '$lib/utils';
+	import { PageShell } from '$lib/components/app-layout';
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import * as Alert from '$lib/components/ui/alert';
 	import { Badge } from '$lib/components/ui/badge';
@@ -934,39 +934,12 @@
 	<title>{data.title} - SchoolOrbit</title>
 </svelte:head>
 
-<section class="mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 py-6 sm:px-6">
-	<header class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-		<div class="space-y-1">
-			<div class="flex items-center gap-2">
-				<ClipboardCheck class="h-7 w-7 text-primary" />
-				<h1 class="text-2xl font-bold text-foreground">นิเทศการสอน</h1>
-			</div>
-			<p class="text-sm text-muted-foreground">
-				จัดรอบนิเทศ จองคาบ ประเมิน ส่งตรวจทาน และรับทราบผลในพื้นที่เดียว
-			</p>
-		</div>
-
-		<div class="grid grid-cols-2 gap-2 sm:grid-cols-4">
-			<div class="rounded-md border bg-background px-3 py-2 text-center">
-				<p class="text-lg font-semibold">{cycles.length}</p>
-				<p class="text-xs text-muted-foreground">รอบนิเทศ</p>
-			</div>
-			<div class="rounded-md border bg-background px-3 py-2 text-center">
-				<p class="text-lg font-semibold">{requestedObservations.length}</p>
-				<p class="text-xs text-muted-foreground">คำขอรออนุมัติ</p>
-			</div>
-			<div class="rounded-md border bg-background px-3 py-2 text-center">
-				<p class="text-lg font-semibold">{assignedObservations.length}</p>
-				<p class="text-xs text-muted-foreground">รอประเมิน</p>
-			</div>
-			<div class="rounded-md border bg-background px-3 py-2 text-center">
-				<p class="text-lg font-semibold">{templates.length}</p>
-				<p class="text-xs text-muted-foreground">แบบประเมิน</p>
-			</div>
-		</div>
-	</header>
-
-	<div class="flex flex-wrap gap-2">
+<PageShell
+	title="นิเทศการสอน"
+	description="จัดรอบนิเทศ จองคาบ ประเมิน ส่งตรวจทาน และรับทราบผลในพื้นที่เดียว"
+	class="mx-auto w-full max-w-7xl"
+>
+	{#snippet actions()}
 		<Button variant="outline" size="sm" onclick={refreshAll} disabled={loading || saving}>
 			<RefreshCw class={cn('mr-2 h-4 w-4', loading && 'animate-spin')} />
 			รีเฟรช
@@ -981,6 +954,25 @@
 				สร้างแบบประเมิน
 			</Button>
 		{/if}
+	{/snippet}
+
+	<div class="grid grid-cols-2 gap-2 sm:grid-cols-4">
+		<div class="rounded-md border bg-background px-3 py-2 text-center">
+			<p class="text-lg font-semibold">{cycles.length}</p>
+			<p class="text-xs text-muted-foreground">รอบนิเทศ</p>
+		</div>
+		<div class="rounded-md border bg-background px-3 py-2 text-center">
+			<p class="text-lg font-semibold">{requestedObservations.length}</p>
+			<p class="text-xs text-muted-foreground">คำขอรออนุมัติ</p>
+		</div>
+		<div class="rounded-md border bg-background px-3 py-2 text-center">
+			<p class="text-lg font-semibold">{assignedObservations.length}</p>
+			<p class="text-xs text-muted-foreground">รอประเมิน</p>
+		</div>
+		<div class="rounded-md border bg-background px-3 py-2 text-center">
+			<p class="text-lg font-semibold">{templates.length}</p>
+			<p class="text-xs text-muted-foreground">แบบประเมิน</p>
+		</div>
 	</div>
 
 	{#if loading}
@@ -1734,7 +1726,7 @@
 			</Card.Root>
 		</Tabs.Content>
 	</Tabs.Root>
-</section>
+</PageShell>
 
 <Dialog.Root bind:open={createCycleDialogOpen}>
 	<Dialog.Content class="max-w-3xl">

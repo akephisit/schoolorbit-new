@@ -25,17 +25,16 @@
 	import { Badge } from '$lib/components/ui/badge';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
+	import { PageShell } from '$lib/components/app-layout';
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import * as Table from '$lib/components/ui/table';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import * as Select from '$lib/components/ui/select';
 	import * as Tabs from '$lib/components/ui/tabs';
 	import { toast } from 'svelte-sonner';
-	import { ArrowLeft, UserPlus, Trash2, Search, UserCog } from 'lucide-svelte';
+	import { UserPlus, Trash2, Search, UserCog } from 'lucide-svelte';
 	import { PERMISSIONS } from '$lib/permissions/registry';
 	import { can } from '$lib/stores/permissions';
-	import { goto } from '$app/navigation';
-	import { resolve } from '$app/paths';
 	let groupId = $derived($page.params.id as string);
 
 	const canReadActivity = $derived($can.has(PERMISSIONS.ACTIVITY_READ_ALL));
@@ -238,27 +237,13 @@
 	}
 </script>
 
-<div class="space-y-4 p-4">
-	<div class="flex items-center gap-3">
-		<Button variant="ghost" size="icon" onclick={() => goto(resolve('/staff/academic/activities'))}>
-			<ArrowLeft class="h-4 w-4" />
-		</Button>
-		<div>
-			{#if group}
-				<h1 class="text-xl font-semibold">{group.name}</h1>
-				<p class="text-sm text-muted-foreground flex items-center gap-2 flex-wrap">
-					{#if group.activity_type}<Badge variant="outline"
-							>{ACTIVITY_TYPE_LABELS[group.activity_type] ?? group.activity_type}</Badge
-						>{/if}
-					· {members.length} สมาชิก{#if group.max_capacity}
-						· รับสูงสุด {group.max_capacity} คน{/if}
-				</p>
-			{:else}
-				<h1 class="text-xl font-semibold">กลุ่มกิจกรรม</h1>
-			{/if}
-		</div>
-	</div>
-
+<PageShell
+	title={group?.name ?? 'กลุ่มกิจกรรม'}
+	description={group
+		? `${group.activity_type ? (ACTIVITY_TYPE_LABELS[group.activity_type] ?? group.activity_type) + ' | ' : ''}${members.length} สมาชิก${group.max_capacity ? ` | รับสูงสุด ${group.max_capacity} คน` : ''}`
+		: 'จัดการสมาชิกและครูที่ดูแลกิจกรรม'}
+	backHref="/staff/academic/activities"
+>
 	{#if !canViewActivityGroup}
 		<PageState
 			variant="permission"
@@ -413,7 +398,7 @@
 			</Tabs.Content>
 		</Tabs.Root>
 	{/if}
-</div>
+</PageShell>
 
 <!-- Add Student Dialog -->
 {#if canManageActivityMembers}
