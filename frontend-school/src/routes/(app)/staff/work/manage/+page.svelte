@@ -8,6 +8,7 @@
 	import * as Select from '$lib/components/ui/select';
 	import { Separator } from '$lib/components/ui/separator';
 	import { Textarea } from '$lib/components/ui/textarea';
+	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import {
 		createWorkItem,
 		createWorkflowWindow,
@@ -341,16 +342,15 @@
 					<h2 class="font-semibold">รอบงานที่จัดการได้</h2>
 				</div>
 
-				<div class="mt-4 grid gap-3">
-					{#if loading}
-						<div class="flex min-h-32 items-center justify-center rounded-lg border border-dashed">
-							<LoaderCircle class="h-5 w-5 animate-spin text-muted-foreground" />
-						</div>
-					{:else if windows.length === 0}
-						<div class="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">
-							ยังไม่มีรอบงานที่คุณจัดการได้ สร้างรอบงานใหม่จากแบบฟอร์มด้านขวา
-						</div>
-					{:else}
+					<div class="mt-4 grid gap-3">
+						{#if loading}
+							<PageSkeleton variant="cards" rows={3} />
+						{:else if windows.length === 0}
+							<PageState
+								title="ยังไม่มีรอบงานที่คุณจัดการได้"
+								description="สร้างรอบงานใหม่จากแบบฟอร์มด้านขวาเมื่อมี permission กลุ่มจัดการ"
+							/>
+						{:else}
 						{#each windows as window (window.id)}
 							<button
 								type="button"
@@ -549,14 +549,14 @@
 					<h2 class="font-semibold">สร้างรอบงานใหม่</h2>
 				</div>
 
-				<div class="mt-4 grid gap-4">
-					{#if manageablePermissions.length === 0}
-						<div
-							class="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"
-						>
-							บัญชีนี้ยังไม่มี permission กลุ่มจัดการ `.manage.` สำหรับเปิดรอบงาน
-						</div>
-					{/if}
+					<div class="mt-4 grid gap-4">
+						{#if manageablePermissions.length === 0}
+							<PageState
+								variant="permission"
+								title="ยังไม่มีสิทธิ์เปิดรอบงาน"
+								description="บัญชีนี้ยังไม่มี permission กลุ่มจัดการ `.manage.` สำหรับเปิดรอบงาน"
+							/>
+						{/if}
 
 					<div class="grid gap-2">
 						<Label for="window-title">ชื่อรอบงาน</Label>

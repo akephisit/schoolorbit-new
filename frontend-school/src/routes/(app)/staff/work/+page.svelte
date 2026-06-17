@@ -4,6 +4,7 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Badge, type BadgeVariant } from '$lib/components/ui/badge';
 	import { Separator } from '$lib/components/ui/separator';
+	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import { workStore } from '$lib/stores/work';
 	import { can } from '$lib/stores/permissions';
 	import type { WorkItem, WorkItemState } from '$lib/api/work';
@@ -13,7 +14,6 @@
 		Clock3,
 		ExternalLink,
 		Inbox,
-		LoaderCircle,
 		LockKeyhole,
 		TimerReset
 	} from 'lucide-svelte';
@@ -188,29 +188,20 @@
 	</div>
 
 	{#if $workStore.loadingItems}
-		<div class="flex min-h-64 items-center justify-center rounded-lg border border-dashed">
-			<div class="flex items-center gap-2 text-muted-foreground">
-				<LoaderCircle class="h-5 w-5 animate-spin" />
-				<span>กำลังโหลดงาน</span>
-			</div>
-		</div>
+		<PageSkeleton variant="cards" rows={4} />
 	{:else if $workStore.error}
-		<div
-			class="rounded-lg border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive"
-		>
-			{$workStore.error}
-		</div>
+		<PageState
+			variant="error"
+			title="โหลดงานไม่สำเร็จ"
+			description={$workStore.error}
+			actionLabel="ลองอีกครั้ง"
+			onaction={() => workStore.fetchItems()}
+		/>
 	{:else if visibleItems.length === 0}
-		<div
-			class="flex min-h-64 flex-col items-center justify-center rounded-lg border border-dashed p-8 text-center"
-		>
-			<Inbox class="mb-3 h-10 w-10 text-muted-foreground" />
-			<h2 class="text-base font-semibold">ยังไม่มีงานในสถานะนี้</h2>
-			<p class="mt-1 max-w-md text-sm text-muted-foreground">
-				เมื่องานจากฝ่ายงานหรือกลุ่มสาระเปิดให้ดำเนินการ
-				งานจะแสดงที่นี่โดยไม่ทำให้เมนูหลักเปลี่ยนไปมา
-			</p>
-		</div>
+		<PageState
+			title="ยังไม่มีงานในสถานะนี้"
+			description="เมื่องานจากฝ่ายงานหรือกลุ่มสาระเปิดให้ดำเนินการ งานจะแสดงที่นี่โดยไม่ทำให้เมนูหลักเปลี่ยนไปมา"
+		/>
 	{:else}
 		<div class="grid gap-3">
 			{#each visibleItems as item (item.id)}

@@ -14,9 +14,9 @@
 		type Semester
 	} from '$lib/api/academic';
 	import { authStore } from '$lib/stores/auth';
-	import { Card } from '$lib/components/ui/card';
+	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import * as Select from '$lib/components/ui/select';
-	import { CalendarDays, LoaderCircle, School, MapPin } from 'lucide-svelte';
+	import { CalendarDays, School, MapPin } from 'lucide-svelte';
 
 	let { data } = $props();
 
@@ -161,19 +161,17 @@
 	</div>
 
 	{#if loading}
-		<div class="flex items-center justify-center py-20">
-			<LoaderCircle class="text-muted-foreground h-8 w-8 animate-spin" />
-		</div>
+		<PageSkeleton variant="table" rows={6} columns={Math.max(periods.length + 1, 4)} />
 	{:else if entries.length === 0}
-		<Card class="text-muted-foreground p-8 text-center">
-			<CalendarDays class="mx-auto mb-3 h-12 w-12 opacity-30" />
-			<p>ยังไม่มีตารางสอนของคุณในภาคเรียนนี้</p>
-		</Card>
+		<PageState
+			title="ยังไม่มีตารางสอนของคุณในภาคเรียนนี้"
+			description="เมื่อมีการจัดตารางสอนของคุณ รายการจะแสดงในหน้านี้"
+		/>
 	{:else if periods.length === 0}
-		<Card class="text-muted-foreground p-8 text-center">
-			<CalendarDays class="mx-auto mb-3 h-12 w-12 opacity-30" />
-			<p>ยังไม่มีข้อมูลคาบเรียนในตารางสอนของคุณ</p>
-		</Card>
+		<PageState
+			title="ยังไม่มีข้อมูลคาบเรียนในตารางสอนของคุณ"
+			description="ระบบพบตารางสอนแล้ว แต่ยังไม่มีข้อมูลคาบเรียนสำหรับภาคเรียนนี้"
+		/>
 	{:else}
 		<!-- Timetable Grid (วัน=แถว, คาบ=คอลัมน์) -->
 		<div class="overflow-x-auto">

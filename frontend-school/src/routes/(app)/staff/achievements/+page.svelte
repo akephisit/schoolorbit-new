@@ -6,7 +6,7 @@
 	import { Input } from '$lib/components/ui/input';
 	import * as Tabs from '$lib/components/ui/tabs';
 	import * as Dialog from '$lib/components/ui/dialog';
-	import { Alert, AlertDescription, AlertTitle } from '$lib/components/ui/alert';
+	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import {
 		Table,
 		TableBody,
@@ -32,8 +32,7 @@
 		Trash2,
 		Pencil,
 		ExternalLink,
-		LoaderCircle,
-		AlertTriangle
+		LoaderCircle
 	} from 'lucide-svelte';
 	import {
 		getAchievements,
@@ -278,13 +277,11 @@
 	</div>
 
 	{#if !canReadAchievements}
-		<Alert>
-			<AlertTriangle class="h-4 w-4" />
-			<AlertTitle>ไม่มีสิทธิ์ดูข้อมูลเกียรติบัตร</AlertTitle>
-			<AlertDescription>
-				บัญชีนี้เข้า module เกียรติบัตรได้ แต่ยังไม่มีสิทธิ์อ่านรายการผลงานของตนเองหรือภาพรวม
-			</AlertDescription>
-		</Alert>
+		<PageState
+			variant="permission"
+			title="ไม่มีสิทธิ์ดูข้อมูลเกียรติบัตร"
+			description="บัญชีนี้เข้า module เกียรติบัตรได้ แต่ยังไม่มีสิทธิ์อ่านรายการผลงานของตนเองหรือภาพรวม"
+		/>
 	{:else}
 		{#if canReadAll}
 			<Tabs.Root value={activeTab} onValueChange={handleTabChange} class="w-full">
@@ -330,22 +327,24 @@
 								<TableHead class="text-right">จัดการ</TableHead>
 							</TableRow>
 						</TableHeader>
-						<TableBody>
-							{#if loading}
-								<TableRow>
-									<TableCell colspan={5} class="h-24 text-center">
-										<div class="flex justify-center items-center gap-2 text-muted-foreground">
-											<LoaderCircle class="w-4 h-4 animate-spin" />
-											กำลังโหลดข้อมูล...
-										</div>
-									</TableCell>
-								</TableRow>
-							{:else if filteredAchievements.length === 0}
-								<TableRow>
-									<TableCell colspan={5} class="h-24 text-center text-muted-foreground">
-										ไม่พบข้อมูล
-									</TableCell>
-								</TableRow>
+							<TableBody>
+								{#if loading}
+									<TableRow>
+										<TableCell colspan={5} class="p-0">
+											<PageSkeleton variant="table" rows={5} columns={5} />
+										</TableCell>
+									</TableRow>
+								{:else if filteredAchievements.length === 0}
+									<TableRow>
+										<TableCell colspan={5} class="h-24">
+											<PageState
+												title="ไม่พบข้อมูล"
+												description="ลองปรับคำค้นหา หรือเพิ่มรายการใหม่เมื่อมีสิทธิ์"
+												actionLabel={canCreateAchievement ? 'เพิ่มรายการใหม่' : undefined}
+												onaction={openCreateDialog}
+											/>
+										</TableCell>
+									</TableRow>
 							{:else}
 								{#each filteredAchievements as achievement (achievement.id)}
 									<TableRow>

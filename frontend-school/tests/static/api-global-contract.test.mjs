@@ -933,7 +933,7 @@ test('achievement workspace gates read and owner/all mutation actions', async ()
 			'utf8'
 		)
 	);
-	const requiredImports = ['$lib/components/ui/alert'];
+	const requiredImports = ['$lib/components/app-state'];
 	const requiredPermissions = [
 		'PERMISSIONS.ACHIEVEMENT_READ_OWN',
 		'PERMISSIONS.ACHIEVEMENT_READ_ALL',

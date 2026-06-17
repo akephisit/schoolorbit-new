@@ -8,6 +8,7 @@
 	import { Textarea } from '$lib/components/ui/textarea';
 	import { DatePicker } from '$lib/components/ui/date-picker';
 	import * as Select from '$lib/components/ui/select';
+	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import {
 		Card,
 		CardContent,
@@ -20,7 +21,6 @@
 		ArrowLeft,
 		Save,
 		User,
-		LoaderCircle,
 		Calendar,
 		Mail,
 		Phone,
@@ -68,10 +68,12 @@
 
 	let saving = $state(false);
 	let loading = $state(false);
+	let profileLoadError = $state('');
 
-	onMount(async () => {
+	async function loadProfile() {
 		// Load full user profile from API
 		loading = true;
+		profileLoadError = '';
 		try {
 			profile = await authAPI.getFullProfile();
 
@@ -89,11 +91,16 @@
 				profile_image_url: profile.profileImageUrl || ''
 			};
 		} catch (error) {
-			toast.error('ไม่สามารถโหลดข้อมูลได้');
+			profileLoadError = error instanceof Error ? error.message : 'ไม่สามารถโหลดข้อมูลได้';
+			toast.error(profileLoadError);
 			console.error('Failed to load profile:', error);
 		} finally {
 			loading = false;
 		}
+	}
+
+	onMount(async () => {
+		await loadProfile();
 	});
 
 	async function handleSubmit(e: Event) {
@@ -195,9 +202,15 @@
 	</div>
 
 	{#if loading}
-		<div class="flex justify-center items-center py-20">
-			<LoaderCircle class="w-8 h-8 animate-spin text-primary" />
-		</div>
+		<PageSkeleton variant="form" rows={6} />
+	{:else if profileLoadError}
+		<PageState
+			variant="error"
+			title="โหลดโปรไฟล์ไม่สำเร็จ"
+			description={profileLoadError}
+			actionLabel="ลองอีกครั้ง"
+			onaction={loadProfile}
+		/>
 	{:else}
 		<form onsubmit={handleSubmit} class="space-y-6">
 			<!-- Profile Avatar -->
