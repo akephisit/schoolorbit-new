@@ -52,7 +52,7 @@
 	let schoolFilter = $state('');
 
 	// Excel import
-	let fileInput: HTMLInputElement;
+	let fileInput = $state<HTMLInputElement>();
 	let importing = $state(false);
 	let importDialogOpen = $state(false);
 	type PendingMatch = { applicationId: string; studentId: string; school: string };
@@ -356,7 +356,7 @@
 		} finally {
 			importing = false;
 			// reset file input
-			fileInput.value = '';
+			if (fileInput) fileInput.value = '';
 		}
 	}
 
@@ -477,7 +477,7 @@
 					size="sm"
 					class="gap-1.5 h-8 shrink-0"
 					disabled={importing || loading || entries.length === 0}
-					onclick={() => fileInput.click()}
+					onclick={() => fileInput?.click()}
 					title="นำเข้าเลขประจำตัวจากไฟล์ Excel"
 				>
 					{#if importing}

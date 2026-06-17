@@ -2872,7 +2872,7 @@
 	});
 
 	let lastCursorSend = 0;
-	let workspaceRef: HTMLDivElement;
+	let workspaceRef = $state<HTMLDivElement>();
 	let wsRect = $state<DOMRect | null>(null);
 	function handleMouseMove(e: MouseEvent) {
 		if (!canReadTimetable) return;
