@@ -4,6 +4,7 @@
 	import { resolve } from '$app/paths';
 	import { ArrowLeft, Home } from 'lucide-svelte';
 	import { Button } from '$lib/components/ui/button';
+	import { PageShell } from '$lib/components/app-layout';
 	import { PageState } from '$lib/components/app-state';
 	import { dashboardPathForUser } from '$lib/auth/route-access';
 	import { authStore } from '$lib/stores/auth';
@@ -25,28 +26,29 @@
 	<title>{data.title} - SchoolOrbit</title>
 </svelte:head>
 
-<section class="min-h-full flex items-center justify-center px-4 py-12">
-	<div class="w-full max-w-xl space-y-4">
-		<PageState
-			variant="permission"
-			title="ไม่มีสิทธิ์เข้าถึงหน้านี้"
-			description="บัญชีของคุณยังไม่มีสิทธิ์สำหรับหน้านี้ หากคิดว่าเป็นความผิดพลาด กรุณาติดต่อผู้ดูแลระบบ"
-		/>
-		{#if data.from}
-			<p class="truncate text-center text-xs text-muted-foreground/80">
-				เส้นทางที่ร้องขอ: {data.from}
-			</p>
-		{/if}
+<PageShell
+	title="สิทธิ์การเข้าถึง"
+	description="ตรวจสอบสิทธิ์ของบัญชีก่อนเข้าใช้งานหน้านี้"
+	class="mx-auto max-w-xl"
+>
+	<PageState
+		variant="permission"
+		title="ไม่มีสิทธิ์เข้าถึงหน้านี้"
+		description="บัญชีของคุณยังไม่มีสิทธิ์สำหรับหน้านี้ หากคิดว่าเป็นความผิดพลาด กรุณาติดต่อผู้ดูแลระบบ"
+	/>
 
-		<div class="flex flex-col justify-center gap-3 sm:flex-row">
-			<Button variant="outline" onclick={goBack}>
-				<ArrowLeft class="h-4 w-4" />
-				ย้อนกลับ
-			</Button>
-			<Button href={dashboardPath}>
-				<Home class="h-4 w-4" />
-				กลับแดชบอร์ด
-			</Button>
-		</div>
+	{#if data.from}
+		<p class="truncate text-xs text-muted-foreground/80">เส้นทางที่ร้องขอ: {data.from}</p>
+	{/if}
+
+	<div class="flex flex-col gap-3 sm:flex-row">
+		<Button variant="outline" onclick={goBack}>
+			<ArrowLeft class="h-4 w-4" />
+			ย้อนกลับ
+		</Button>
+		<Button href={dashboardPath}>
+			<Home class="h-4 w-4" />
+			กลับแดชบอร์ด
+		</Button>
 	</div>
-</section>
+</PageShell>

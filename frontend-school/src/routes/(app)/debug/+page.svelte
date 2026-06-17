@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { authStore } from '$lib/stores/auth';
+	import { PageShell } from '$lib/components/app-layout';
 	import { Card, CardContent, CardHeader, CardTitle } from '$lib/components/ui/card';
 	import { Button } from '$lib/components/ui/button';
 	import { authAPI } from '$lib/api/auth';
@@ -12,11 +13,10 @@
 	}
 </script>
 
-<div class="container mx-auto p-8 space-y-6">
-	<div class="flex items-center justify-between">
-		<h1 class="text-3xl font-bold">Debug: Auth State</h1>
+<PageShell title="Debug: Auth State" description="ตรวจสอบ session และ permission ของผู้ใช้ปัจจุบัน">
+	{#snippet actions()}
 		<Button onclick={forceRefresh}>Force Refresh Auth</Button>
-	</div>
+	{/snippet}
 
 	<Card class="border-yellow-500">
 		<CardHeader>
@@ -104,4 +104,4 @@
 			</div>
 		</CardContent>
 	</Card>
-</div>
+</PageShell>

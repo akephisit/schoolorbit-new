@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import { authAPI } from '$lib/api/auth';
 	import { Button } from '$lib/components/ui/button';
+	import { PageShell } from '$lib/components/app-layout';
 	import { LoadingButton } from '$lib/components/app-state';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
@@ -12,19 +13,8 @@
 		CardHeader,
 		CardTitle
 	} from '$lib/components/ui/card';
-	import {
-		ArrowLeft,
-		Lock,
-		Save,
-		Eye,
-		EyeOff,
-		Download,
-		Smartphone,
-		CheckCircle2
-	} from 'lucide-svelte';
+	import { Lock, Save, Eye, EyeOff, Download, Smartphone, CheckCircle2 } from 'lucide-svelte';
 	import { toast } from 'svelte-sonner';
-	import { goto } from '$app/navigation';
-	import { resolve } from '$app/paths';
 	import { pwaStore } from '$lib/stores/pwa';
 
 	let currentPassword = $state('');
@@ -122,20 +112,7 @@
 	<title>การตั้งค่า - SchoolOrbit</title>
 </svelte:head>
 
-<div class="space-y-6">
-	<!-- Header -->
-	<div class="flex items-center justify-between">
-		<div class="flex items-center gap-4">
-			<Button variant="ghost" size="icon" onclick={() => goto(resolve('/student'))}>
-				<ArrowLeft class="h-5 w-5" />
-			</Button>
-			<div>
-				<h1 class="text-3xl font-bold text-foreground">การตั้งค่า</h1>
-				<p class="text-muted-foreground mt-1">จัดการการตั้งค่าบัญชีและความปลอดภัย</p>
-			</div>
-		</div>
-	</div>
-
+<PageShell title="การตั้งค่า" description="จัดการการตั้งค่าบัญชีและความปลอดภัย" backHref="/student">
 	<!-- Settings Tabs -->
 	<div class="grid gap-6 lg:grid-cols-4">
 		<!-- Sidebar Navigation -->
@@ -430,4 +407,4 @@
 			{/if}
 		</div>
 	</div>
-</div>
+</PageShell>

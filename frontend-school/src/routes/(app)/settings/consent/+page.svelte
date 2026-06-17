@@ -3,6 +3,7 @@
 	import { resolve } from '$app/paths';
 	import { consentApi, type UserConsentStatus, type ConsentRecord } from '$lib/api/consent';
 	import { Button } from '$lib/components/ui/button';
+	import { PageShell } from '$lib/components/app-layout';
 	import * as Card from '$lib/components/ui/card';
 	import * as Alert from '$lib/components/ui/alert';
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
@@ -125,16 +126,11 @@
 	<title>จัดการความยินยอม - PDPA</title>
 </svelte:head>
 
-<div class="container max-w-5xl py-8 space-y-6">
-	<!-- Header -->
-	<div class="space-y-2">
-		<h1 class="text-3xl font-bold">จัดการความยินยอม</h1>
-		<p class="text-muted-foreground">
-			จัดการความยินยอมการเก็บและใช้ข้อมูลส่วนบุคคลของคุณ ตาม พ.ร.บ. คุ้มครองข้อมูลส่วนบุคคล พ.ศ.
-			2562
-		</p>
-	</div>
-
+<PageShell
+	title="จัดการความยินยอม"
+	description="จัดการความยินยอมการเก็บและใช้ข้อมูลส่วนบุคคลของคุณ ตาม พ.ร.บ. คุ้มครองข้อมูลส่วนบุคคล พ.ศ. 2562"
+	class="max-w-5xl"
+>
 	{#if loading}
 		<PageSkeleton variant="detail" />
 	{:else if error && !status}
@@ -326,4 +322,4 @@
 			onaction={loadConsentStatus}
 		/>
 	{/if}
-</div>
+</PageShell>

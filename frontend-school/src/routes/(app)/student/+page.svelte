@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import { Card } from '$lib/components/ui/card';
 	import { Button } from '$lib/components/ui/button';
+	import { PageShell } from '$lib/components/app-layout';
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import { User, Calendar, BookOpen, Award } from 'lucide-svelte';
 	import { getOwnProfile, type Student } from '$lib/api/students';
@@ -36,19 +37,12 @@
 	<title>แดชบอร์ด - Student Portal</title>
 </svelte:head>
 
-<div class="container mx-auto p-6 space-y-6">
-	<div class="flex items-center justify-between">
-		<div>
-			<h1 class="text-3xl font-bold text-foreground">แดชบอร์ด</h1>
-			{#if student}
-				<p class="text-muted-foreground mt-1">
-					สวัสดี, {student.first_name}
-					{student.last_name}
-				</p>
-			{/if}
-		</div>
-	</div>
-
+<PageShell
+	title="แดชบอร์ด"
+	description={student
+		? `สวัสดี, ${student.first_name} ${student.last_name}`
+		: 'ภาพรวมข้อมูลนักเรียน'}
+>
 	{#if loading}
 		<PageSkeleton variant="cards" rows={3} />
 	{:else if error}
@@ -153,4 +147,4 @@
 			description="ไม่พบโปรไฟล์นักเรียนของบัญชีนี้ กรุณาติดต่อผู้ดูแลระบบ"
 		/>
 	{/if}
-</div>
+</PageShell>

@@ -12,10 +12,11 @@
 		type ActivityGroup
 	} from '$lib/api/academic';
 	import { Button } from '$lib/components/ui/button';
+	import { PageShell } from '$lib/components/app-layout';
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import { Badge } from '$lib/components/ui/badge';
 	import { toast } from 'svelte-sonner';
-	import { Users, Check, X } from 'lucide-svelte';
+	import { Check, X } from 'lucide-svelte';
 
 	let loading = $state(true);
 	let slots = $state<ActivitySlot[]>([]);
@@ -98,12 +99,11 @@
 	<title>ลงทะเบียนกิจกรรม</title>
 </svelte:head>
 
-<div class="space-y-4 p-4 max-w-2xl mx-auto">
-	<div class="flex items-center gap-2">
-		<Users class="h-5 w-5" />
-		<h1 class="text-xl font-semibold">ลงทะเบียนกิจกรรม</h1>
-	</div>
-
+<PageShell
+	title="ลงทะเบียนกิจกรรม"
+	description="เลือกและจัดการกิจกรรมที่เปิดให้นักเรียนลงทะเบียน"
+	class="max-w-2xl mx-auto"
+>
 	{#if loading}
 		<PageSkeleton variant="cards" rows={3} />
 	{:else if error}
@@ -189,4 +189,4 @@
 			</div>
 		{/each}
 	{/if}
-</div>
+</PageShell>

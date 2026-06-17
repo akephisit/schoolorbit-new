@@ -14,12 +14,9 @@
 		type AcademicYear,
 		type Semester
 	} from '$lib/api/academic';
-	import { Button } from '$lib/components/ui/button';
+	import { PageShell } from '$lib/components/app-layout';
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import * as Select from '$lib/components/ui/select';
-	import { ArrowLeft, CalendarDays } from 'lucide-svelte';
-	import { goto } from '$app/navigation';
-	import { resolve } from '$app/paths';
 
 	interface ChildSummary {
 		first_name?: string;
@@ -140,33 +137,13 @@
 	<title>{data.title}</title>
 </svelte:head>
 
-<div class="space-y-6">
-	<Button
-		variant="ghost"
-		onclick={() =>
-			// eslint-disable-next-line @typescript-eslint/no-explicit-any -- dynamic typed-route interpolation
-			goto(resolve(`/parent/student/${studentId}` as any))}
-		class="gap-2 pl-0"
-	>
-		<ArrowLeft class="h-4 w-4" /> ย้อนกลับ
-	</Button>
-
-	<div class="flex flex-col gap-2">
-		<h2 class="flex items-center gap-2 text-3xl font-bold">
-			<CalendarDays class="h-8 w-8" />
-			ตารางเรียน
-		</h2>
-		{#if child}
-			<p class="text-muted-foreground">
-				{child.first_name ?? ''}
-				{child.last_name ?? ''}
-				{#if child.grade_level && child.class_room}
-					— {child.grade_level}/{child.class_room}
-				{/if}
-			</p>
-		{/if}
-	</div>
-
+<PageShell
+	title="ตารางเรียน"
+	description={child
+		? `${child.first_name ?? ''} ${child.last_name ?? ''}${child.grade_level && child.class_room ? ` | ${child.grade_level}/${child.class_room}` : ''}`
+		: 'ตารางเรียนของนักเรียน'}
+	backHref={`/parent/student/${studentId}`}
+>
 	<!-- Year + Semester selector -->
 	<div class="flex flex-wrap gap-3">
 		<div class="w-[220px]">
@@ -206,10 +183,7 @@
 			onaction={retryLoad}
 		/>
 	{:else if entries.length === 0}
-		<PageState
-			title="ยังไม่มีตารางเรียน"
-			description="ยังไม่มีตารางเรียนในภาคเรียนนี้"
-		/>
+		<PageState title="ยังไม่มีตารางเรียน" description="ยังไม่มีตารางเรียนในภาคเรียนนี้" />
 	{:else if periods.length === 0}
 		<PageState
 			title="ยังไม่มีข้อมูลคาบเรียน"
@@ -300,4 +274,4 @@
 			</div>
 		</div>
 	{/if}
-</div>
+</PageShell>

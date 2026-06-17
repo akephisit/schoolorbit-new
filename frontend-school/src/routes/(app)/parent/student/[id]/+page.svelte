@@ -5,9 +5,10 @@
 	import type { Student } from '$lib/api/students';
 	import { Card } from '$lib/components/ui/card';
 	import { Button } from '$lib/components/ui/button';
+	import { PageShell } from '$lib/components/app-layout';
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import { Badge } from '$lib/components/ui/badge';
-	import { ArrowLeft, User, Calendar, BookOpen, Clock } from 'lucide-svelte';
+	import { User, Calendar, BookOpen, Clock } from 'lucide-svelte';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { formatDate } from '$lib/utils/date';
@@ -41,11 +42,15 @@
 	<title>ข้อมูลนักเรียน - SchoolOrbit</title>
 </svelte:head>
 
-<div class="space-y-6">
-	<Button variant="ghost" onclick={() => goto(resolve('/parent'))} class="pl-0 gap-2">
-		<ArrowLeft class="w-4 h-4" /> ย้อนกลับ
-	</Button>
-
+<PageShell
+	title={student
+		? `${student.title || ''}${student.first_name} ${student.last_name}`
+		: 'ข้อมูลนักเรียน'}
+	description={student
+		? `${student.grade_level || 'ไม่ระบุชั้น'} | ห้อง ${student.class_room || '-'} | รหัสนักเรียน: ${student.student_number || '-'}`
+		: 'ข้อมูลนักเรียนที่เชื่อมโยงกับบัญชีผู้ปกครอง'}
+	backHref="/parent"
+>
 	{#if loading}
 		<PageSkeleton variant="detail" />
 	{:else if error}
@@ -74,10 +79,6 @@
 			</div>
 
 			<div class="flex-1">
-				<h1 class="text-3xl font-bold tracking-tight mb-2">
-					{student.title || ''}{student.first_name}
-					{student.last_name}
-				</h1>
 				<div class="flex flex-wrap gap-2 mb-4">
 					<Badge variant="secondary" class="text-sm px-3 py-1">
 						{student.grade_level || 'ไม่ระบุชั้น'}
@@ -157,4 +158,4 @@
 			href="/parent"
 		/>
 	{/if}
-</div>
+</PageShell>

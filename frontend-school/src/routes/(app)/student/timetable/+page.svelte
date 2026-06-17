@@ -19,8 +19,9 @@
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
+	import { PageShell } from '$lib/components/app-layout';
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
-	import { CalendarDays, Loader2, Users, BookOpen } from 'lucide-svelte';
+	import { Loader2, Users, BookOpen } from 'lucide-svelte';
 
 	let loading = $state(true);
 	let student = $state<Student | null>(null);
@@ -79,7 +80,8 @@
 		} catch (loadError: unknown) {
 			console.error(loadError);
 			error =
-				(loadError instanceof Error ? loadError.message : String(loadError)) || 'โหลดข้อมูลไม่สำเร็จ';
+				(loadError instanceof Error ? loadError.message : String(loadError)) ||
+				'โหลดข้อมูลไม่สำเร็จ';
 			toast.error(error);
 		} finally {
 			loading = false;
@@ -130,23 +132,12 @@
 	<title>ตารางเรียน</title>
 </svelte:head>
 
-<div class="space-y-6">
-	<div class="flex flex-col gap-2">
-		<h2 class="flex items-center gap-2 text-3xl font-bold">
-			<CalendarDays class="h-8 w-8" />
-			ตารางเรียน
-		</h2>
-		{#if student}
-			<p class="text-muted-foreground">
-				{student.first_name}
-				{student.last_name}
-				{#if student.grade_level && student.class_room}
-					— {student.grade_level}/{student.class_room}
-				{/if}
-			</p>
-		{/if}
-	</div>
-
+<PageShell
+	title="ตารางเรียน"
+	description={student
+		? `${student.first_name} ${student.last_name}${student.grade_level && student.class_room ? ` | ${student.grade_level}/${student.class_room}` : ''}`
+		: 'ตารางเรียนของฉัน'}
+>
 	{#if loading}
 		<PageSkeleton variant="detail" />
 	{:else if error}
@@ -158,10 +149,7 @@
 			onaction={loadData}
 		/>
 	{:else if entries.length === 0}
-		<PageState
-			title="ยังไม่มีตารางเรียน"
-			description="ยังไม่มีตารางเรียนในภาคเรียนนี้"
-		/>
+		<PageState title="ยังไม่มีตารางเรียน" description="ยังไม่มีตารางเรียนในภาคเรียนนี้" />
 	{:else if periods.length === 0}
 		<PageState
 			title="ยังไม่มีข้อมูลคาบเรียน"
@@ -268,7 +256,7 @@
 			</div>
 		</div>
 	{/if}
-</div>
+</PageShell>
 
 <!-- Activity Detail Dialog -->
 <Dialog.Root bind:open={showActivityDetail}>

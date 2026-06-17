@@ -283,3 +283,35 @@ test('academic detail and supervision pages use shared app page shell', async ()
 		);
 	}
 });
+
+test('self-service and system pages use shared app page shell', async () => {
+	const pages = [
+		'src/routes/(app)/parent/+page.svelte',
+		'src/routes/(app)/parent/student/[id]/+page.svelte',
+		'src/routes/(app)/parent/student/[id]/timetable/+page.svelte',
+		'src/routes/(app)/student/+page.svelte',
+		'src/routes/(app)/student/activities/+page.svelte',
+		'src/routes/(app)/student/profile/+page.svelte',
+		'src/routes/(app)/student/settings/+page.svelte',
+		'src/routes/(app)/student/timetable/+page.svelte',
+		'src/routes/(app)/settings/consent/+page.svelte',
+		'src/routes/(app)/403/+page.svelte',
+		'src/routes/(app)/debug/+page.svelte'
+	];
+
+	for (const page of pages) {
+		const source = await readProjectFile(page);
+
+		assert.match(
+			source,
+			/from '\$lib\/components\/app-layout'/,
+			`${page} should import shared app-layout components`
+		);
+		assert.match(source, /<PageShell\b/, `${page} should use PageShell for page layout`);
+		assert.doesNotMatch(
+			source,
+			/<div class="space-y-6">\s*<!-- Header -->/,
+			`${page} should not hand-roll the page header wrapper`
+		);
+	}
+});

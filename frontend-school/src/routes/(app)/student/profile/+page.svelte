@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import { Card } from '$lib/components/ui/card';
 	import { Button } from '$lib/components/ui/button';
+	import { PageShell } from '$lib/components/app-layout';
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
@@ -79,21 +80,19 @@
 	<title>ข้อมูลส่วนตัว - Student Portal</title>
 </svelte:head>
 
-<div class="container mx-auto p-6 max-w-4xl space-y-6">
-	<!-- Header -->
-	<div class="flex items-center justify-between">
-		<div>
-			<h1 class="text-3xl font-bold text-foreground">ข้อมูลส่วนตัว</h1>
-			<p class="text-muted-foreground mt-1">ดูและแก้ไขข้อมูลส่วนตัวของคุณ</p>
-		</div>
-
+<PageShell
+	title="ข้อมูลส่วนตัว"
+	description="ดูและแก้ไขข้อมูลส่วนตัวของคุณ"
+	class="max-w-4xl mx-auto"
+>
+	{#snippet actions()}
 		{#if !editing && !loading}
 			<Button onclick={() => (editing = true)}>
 				<Edit class="w-4 h-4 mr-2" />
 				แก้ไขข้อมูล
 			</Button>
 		{/if}
-	</div>
+	{/snippet}
 
 	{#if loading}
 		<PageSkeleton variant="form" rows={6} />
@@ -301,4 +300,4 @@
 			description="ไม่พบโปรไฟล์นักเรียนของบัญชีนี้ กรุณาติดต่อผู้ดูแลระบบ"
 		/>
 	{/if}
-</div>
+</PageShell>

@@ -3,6 +3,7 @@
 	import { getOwnParentProfile, type ParentProfile } from '$lib/api/parents';
 	import { Card } from '$lib/components/ui/card';
 	import { Button } from '$lib/components/ui/button';
+	import { PageShell } from '$lib/components/app-layout';
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import { Badge } from '$lib/components/ui/badge';
 	import { User, ChevronRight } from 'lucide-svelte';
@@ -40,18 +41,10 @@
 	<title>ผู้ปกครอง - SchoolOrbit</title>
 </svelte:head>
 
-<div class="space-y-6">
-	<!-- Profile Header -->
-	<div class="flex items-center justify-between">
-		<div>
-			<h1 class="text-3xl font-bold tracking-tight">
-				สวัสดี, คุณ{profile?.first_name || '...'}
-				{profile?.last_name || ''}
-			</h1>
-			<p class="text-muted-foreground">ติดตามการเรียนและความเป็นอยู่ของบุตรหลาน</p>
-		</div>
-	</div>
-
+<PageShell
+	title={`สวัสดี, คุณ${profile?.first_name || '...'} ${profile?.last_name || ''}`}
+	description="ติดตามการเรียนและความเป็นอยู่ของบุตรหลาน"
+>
 	{#if loading}
 		<PageSkeleton variant="cards" rows={3} />
 	{:else if error}
@@ -135,4 +128,4 @@
 			description="ไม่พบโปรไฟล์ผู้ปกครองของบัญชีนี้ กรุณาติดต่อผู้ดูแลระบบ"
 		/>
 	{/if}
-</div>
+</PageShell>
