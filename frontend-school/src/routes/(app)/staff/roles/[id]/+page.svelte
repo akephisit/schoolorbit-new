@@ -13,6 +13,7 @@
 	} from '$lib/permissions/registry';
 	import { can } from '$lib/stores/permissions';
 	import { Button } from '$lib/components/ui/button';
+	import { PageShell } from '$lib/components/app-layout';
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
@@ -37,7 +38,7 @@
 	} from '$lib/components/ui/dialog';
 	import { Checkbox } from '$lib/components/ui/checkbox';
 	import { Badge } from '$lib/components/ui/badge';
-	import { AlertTriangle, ArrowLeft, Save, Trash2, Shield } from 'lucide-svelte';
+	import { AlertTriangle, Save, Trash2, Shield } from 'lucide-svelte';
 	import { toast } from 'svelte-sonner';
 
 	let { params }: PageProps = $props();
@@ -250,19 +251,12 @@
 	>
 </svelte:head>
 
-<div class="space-y-6">
-	<div class="flex items-center gap-4">
-		<Button variant="ghost" size="icon" onclick={() => goto(resolve('/staff/roles'))}>
-			<ArrowLeft class="h-5 w-5" />
-		</Button>
-		<div class="flex-1">
-			<h1 class="text-3xl font-bold text-foreground">
-				{isNew ? 'สร้างบทบาทใหม่' : canUpdateRoles ? 'แก้ไขบทบาท' : 'รายละเอียดบทบาท'}
-			</h1>
-			<p class="text-muted-foreground mt-1">
-				{canEditRole ? 'กำหนดข้อมูลและสิทธิ์การเข้าถึง' : 'ดูข้อมูลและสิทธิ์ของบทบาท'}
-			</p>
-		</div>
+<PageShell
+	title={isNew ? 'สร้างบทบาทใหม่' : canUpdateRoles ? 'แก้ไขบทบาท' : 'รายละเอียดบทบาท'}
+	description={canEditRole ? 'กำหนดข้อมูลและสิทธิ์การเข้าถึง' : 'ดูข้อมูลและสิทธิ์ของบทบาท'}
+	backHref="/staff/roles"
+>
+	{#snippet actions()}
 		<div class="flex gap-2">
 			{#if !isNew && canDeleteRoles}
 				<Button variant="destructive" onclick={() => (showDeleteDialog = true)} class="gap-2">
@@ -277,7 +271,7 @@
 				</Button>
 			{/if}
 		</div>
-	</div>
+	{/snippet}
 
 	{#if !canUsePage}
 		<PageState
@@ -475,7 +469,7 @@
 			</div>
 		</div>
 	{/if}
-</div>
+</PageShell>
 
 <!-- Delete Confirmation Dialog -->
 <Dialog bind:open={showDeleteDialog}>

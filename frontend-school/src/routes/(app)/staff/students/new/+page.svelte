@@ -2,6 +2,7 @@
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { Button } from '$lib/components/ui/button';
+	import { PageShell } from '$lib/components/app-layout';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import * as Select from '$lib/components/ui/select';
@@ -10,7 +11,7 @@
 	import { PERMISSIONS } from '$lib/permissions/registry';
 	import { can } from '$lib/stores/permissions';
 	import { toast } from 'svelte-sonner';
-	import { ArrowLeft, User, Save, GraduationCap } from 'lucide-svelte';
+	import { User, Save, GraduationCap } from 'lucide-svelte';
 	import { DatePicker } from '$lib/components/ui/date-picker';
 	import { Switch } from '$lib/components/ui/switch';
 	import { createStudent } from '$lib/api/students';
@@ -150,18 +151,11 @@
 	<title>เพิ่มนักเรียนใหม่ - SchoolOrbit</title>
 </svelte:head>
 
-<div class="space-y-6">
-	<!-- Header -->
-	<div class="flex items-center gap-4">
-		<Button href="/staff/students" variant="ghost" size="sm">
-			<ArrowLeft class="w-4 h-4" />
-		</Button>
-		<div>
-			<h1 class="text-2xl font-bold text-foreground">เพิ่มนักเรียนใหม่</h1>
-			<p class="text-sm text-muted-foreground">กรอกข้อมูลนักเรียนให้ครบถ้วน</p>
-		</div>
-	</div>
-
+<PageShell
+	title="เพิ่มนักเรียนใหม่"
+	description="กรอกข้อมูลนักเรียนให้ครบถ้วน"
+	backHref="/staff/students"
+>
 	{#if !canCreateStudent}
 		<PageState
 			variant="permission"
@@ -634,4 +628,4 @@
 			</div>
 		</form>
 	{/if}
-</div>
+</PageShell>

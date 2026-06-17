@@ -93,3 +93,32 @@ test('staff core pages use shared app page shell', async () => {
 		);
 	}
 });
+
+test('staff people detail and action pages use shared app page shell', async () => {
+	const pages = [
+		'src/routes/(app)/staff/manage/[id]/+page.svelte',
+		'src/routes/(app)/staff/manage/[id]/edit/+page.svelte',
+		'src/routes/(app)/staff/manage/new/+page.svelte',
+		'src/routes/(app)/staff/students/[id]/+page.svelte',
+		'src/routes/(app)/staff/students/[id]/edit/+page.svelte',
+		'src/routes/(app)/staff/students/new/+page.svelte',
+		'src/routes/(app)/staff/roles/[id]/+page.svelte',
+		'src/routes/(app)/staff/view/[id]/+page.svelte'
+	];
+
+	for (const page of pages) {
+		const source = await readProjectFile(page);
+
+		assert.match(
+			source,
+			/from '\$lib\/components\/app-layout'/,
+			`${page} should import shared app-layout components`
+		);
+		assert.match(source, /<PageShell\b/, `${page} should use PageShell for page layout`);
+		assert.doesNotMatch(
+			source,
+			/<div class="space-y-6">\s*<!-- Header -->/,
+			`${page} should not hand-roll the page header wrapper`
+		);
+	}
+});

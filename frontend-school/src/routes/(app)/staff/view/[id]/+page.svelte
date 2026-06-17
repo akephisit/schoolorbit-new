@@ -3,6 +3,7 @@
 	import type { PageProps } from './$types';
 	import { resolve } from '$app/paths';
 	import { Button } from '$lib/components/ui/button';
+	import { PageShell } from '$lib/components/app-layout';
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import {
 		Card,
@@ -15,7 +16,6 @@
 	import { Badge } from '$lib/components/ui/badge';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import {
-		ArrowLeft,
 		Building2,
 		Briefcase,
 		Mail,
@@ -111,17 +111,13 @@
 	});
 </script>
 
-<div class="max-w-7xl mx-auto space-y-6">
-	<!-- Back Button -->
-	<Button
-		variant="ghost"
-		onclick={() => history.back()}
-		class="mb-4 pl-0 hover:pl-2 transition-all"
-	>
-		<ArrowLeft class="w-4 h-4 mr-2" />
-		ย้อนกลับ
-	</Button>
-
+<PageShell
+	title="ผลงานบุคลากร"
+	description={staff
+		? `${staff.title ?? ''}${staff.first_name} ${staff.last_name}`
+		: 'ข้อมูลบุคลากรและผลงาน'}
+	backHref="/staff/achievements"
+>
 	{#if loading}
 		<PageSkeleton variant="detail" />
 	{:else if error}
@@ -358,4 +354,4 @@
 			</div>
 		</Dialog.Content>
 	</Dialog.Root>
-</div>
+</PageShell>

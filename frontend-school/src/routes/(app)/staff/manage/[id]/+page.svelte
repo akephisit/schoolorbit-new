@@ -6,6 +6,7 @@
 	import { authStore } from '$lib/stores/auth';
 	import { can } from '$lib/stores/permissions';
 	import { Button } from '$lib/components/ui/button';
+	import { PageShell } from '$lib/components/app-layout';
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import {
@@ -16,7 +17,6 @@
 		GraduationCap,
 		Building2,
 		BookOpen,
-		ArrowLeft,
 		Pencil,
 		Award,
 		Plus,
@@ -163,32 +163,19 @@
 	</title>
 </svelte:head>
 
-<div class="space-y-6">
-	<!-- Header -->
-	<div class="flex items-center justify-between">
-		<div class="flex items-center gap-4">
-			<Button href="/staff" variant="ghost" size="sm">
-				<ArrowLeft class="w-4 h-4" />
-			</Button>
-			<div>
-				<div class="flex items-baseline gap-3">
-					<h1 class="text-3xl font-bold text-foreground">ข้อมูลบุคลากร</h1>
-					{#if staff?.username}
-						<span class="text-lg font-medium text-muted-foreground bg-muted px-2 py-0.5 rounded">
-							{staff.username}
-						</span>
-					{/if}
-				</div>
-				<p class="text-muted-foreground mt-1">รายละเอียดบุคลากร</p>
-			</div>
-		</div>
+<PageShell
+	title="ข้อมูลบุคลากร"
+	description={staff?.username ? `รายละเอียดบุคลากร • ${staff.username}` : 'รายละเอียดบุคลากร'}
+	backHref="/staff"
+>
+	{#snippet actions()}
 		{#if staff && canUpdateStaff}
 			<Button href="/staff/manage/{staff.id}/edit" class="flex items-center gap-2">
 				<Pencil class="w-4 h-4" />
 				แก้ไข
 			</Button>
 		{/if}
-	</div>
+	{/snippet}
 
 	{#if loading}
 		<PageSkeleton variant="detail" />
@@ -571,4 +558,4 @@
 			</Dialog.Footer>
 		</Dialog.Content>
 	</Dialog.Root>
-</div>
+</PageShell>

@@ -13,6 +13,7 @@
 		type OrganizationUnit
 	} from '$lib/api/staff';
 	import { Button } from '$lib/components/ui/button';
+	import { PageShell } from '$lib/components/app-layout';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import { Textarea } from '$lib/components/ui/textarea';
@@ -404,23 +405,13 @@
 	</title>
 </svelte:head>
 
-<div class="space-y-6">
-	<!-- Header -->
-	<div class="flex items-center gap-4">
-		<Button href="/staff/manage/{staffId}" variant="ghost" size="sm">
-			<ArrowLeft class="w-4 h-4" />
-		</Button>
-		<div>
-			<h1 class="text-2xl font-bold text-foreground">แก้ไขข้อมูลบุคลากร</h1>
-			{#if staff}
-				<p class="text-sm text-muted-foreground">
-					{staff.first_name}
-					{staff.last_name} • ขั้นตอน {currentStep} / {totalSteps}
-				</p>
-			{/if}
-		</div>
-	</div>
-
+<PageShell
+	title="แก้ไขข้อมูลบุคลากร"
+	description={staff
+		? `${staff.first_name} ${staff.last_name} • ขั้นตอน ${currentStep} / ${totalSteps}`
+		: `ขั้นตอน ${currentStep} / ${totalSteps}`}
+	backHref={`/staff/manage/${staffId}`}
+>
 	<div class="space-y-6">
 		{#if loadingProfile}
 			<PageSkeleton variant="form" rows={8} />
@@ -995,4 +986,4 @@
 			/>
 		{/if}
 	</div>
-</div>
+</PageShell>

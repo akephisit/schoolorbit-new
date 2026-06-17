@@ -4,6 +4,7 @@
 	import type { PageProps } from './$types';
 	import { resolve } from '$app/paths';
 	import { Button } from '$lib/components/ui/button';
+	import { PageShell } from '$lib/components/app-layout';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import { Card } from '$lib/components/ui/card';
@@ -12,7 +13,7 @@
 	import { PERMISSIONS } from '$lib/permissions/registry';
 	import { can } from '$lib/stores/permissions';
 	import { toast } from 'svelte-sonner';
-	import { ArrowLeft, Edit, Save, X, Trash2 } from 'lucide-svelte';
+	import { Edit, Save, X, Trash2 } from 'lucide-svelte';
 	import * as Select from '$lib/components/ui/select';
 	import {
 		getStudent,
@@ -236,25 +237,12 @@
 	</title>
 </svelte:head>
 
-<div class="space-y-6">
-	<!-- Header -->
-	<div class="flex items-center justify-between">
-		<div class="flex items-center gap-4">
-			<Button href="/staff/students" variant="ghost" size="sm">
-				<ArrowLeft class="w-4 h-4" />
-			</Button>
-			<div>
-				<h1 class="text-2xl font-bold text-foreground">
-					{#if student}
-						{student.first_name} {student.last_name}
-					{:else}
-						นักเรียน
-					{/if}
-				</h1>
-				<p class="text-sm text-muted-foreground">รายละเอียดและจัดการข้อมูลนักเรียน</p>
-			</div>
-		</div>
-
+<PageShell
+	title={student ? `${student.first_name} ${student.last_name}` : 'นักเรียน'}
+	description="รายละเอียดและจัดการข้อมูลนักเรียน"
+	backHref="/staff/students"
+>
+	{#snippet actions()}
 		{#if !editing && !loading && (canUpdateStudent || canDeleteStudent)}
 			<div class="flex gap-2">
 				{#if canUpdateStudent}
@@ -275,7 +263,7 @@
 				{/if}
 			</div>
 		{/if}
-	</div>
+	{/snippet}
 
 	{#if !canReadStudent}
 		<PageState
@@ -605,7 +593,7 @@
 			href="/staff/students"
 		/>
 	{/if}
-</div>
+</PageShell>
 
 {#if canUpdateStudent}
 	<Dialog.Root bind:open={isAddParentOpen}>

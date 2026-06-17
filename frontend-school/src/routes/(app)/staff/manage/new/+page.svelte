@@ -10,6 +10,7 @@
 	} from '$lib/api/staff';
 	import { toast } from 'svelte-sonner';
 	import { Button } from '$lib/components/ui/button';
+	import { PageShell } from '$lib/components/app-layout';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import { Textarea } from '$lib/components/ui/textarea';
@@ -345,22 +346,11 @@
 	<title>เพิ่มบุคลากร - SchoolOrbit</title>
 </svelte:head>
 
-<div class="space-y-6">
-	<!-- Header -->
-	<div class="flex items-center justify-between">
-		<div class="flex items-center gap-4">
-			<Button href="/staff" variant="ghost" size="sm">
-				<ArrowLeft class="w-4 h-4" />
-			</Button>
-			<div>
-				<h1 class="text-2xl font-bold text-foreground">เพิ่มบุคลากรใหม่</h1>
-				<p class="text-sm text-muted-foreground">
-					กรอกข้อมูลบุคลากรให้ครบถ้วน • ขั้นตอน {currentStep} / {totalSteps}
-				</p>
-			</div>
-		</div>
-	</div>
-
+<PageShell
+	title="เพิ่มบุคลากรใหม่"
+	description={`กรอกข้อมูลบุคลากรให้ครบถ้วน • ขั้นตอน ${currentStep} / ${totalSteps}`}
+	backHref="/staff"
+>
 	{#if optionsLoading}
 		<PageSkeleton variant="form" rows={8} />
 	{:else if optionsError}
@@ -931,4 +921,4 @@
 			</div>
 		</div>
 	{/if}
-</div>
+</PageShell>
