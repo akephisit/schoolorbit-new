@@ -3,6 +3,7 @@
 	import type { PageProps } from './$types';
 	import { Badge, type BadgeVariant } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
+	import { PageShell } from '$lib/components/app-layout';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import * as Select from '$lib/components/ui/select';
@@ -27,7 +28,6 @@
 	import { userPermissions, workflowManagePermissions } from '$lib/stores/permissions';
 	import { toast } from 'svelte-sonner';
 	import {
-		BriefcaseBusiness,
 		CalendarClock,
 		CheckCircle2,
 		LoaderCircle,
@@ -312,18 +312,11 @@
 	<title>{data.title} - SchoolOrbit</title>
 </svelte:head>
 
-<section class="mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 py-6 sm:px-6">
-	<header class="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-		<div class="space-y-1">
-			<div class="flex items-center gap-2">
-				<BriefcaseBusiness class="h-7 w-7 text-primary" />
-				<h1 class="text-2xl font-bold text-foreground">จัดการรอบงาน</h1>
-			</div>
-			<p class="text-sm text-muted-foreground">
-				เปิด/ปิดรอบงานของหน่วยงาน และมอบหมายงานให้ครูหรือสมาชิกในหน่วยงาน
-			</p>
-		</div>
-
+<PageShell
+	title="จัดการรอบงาน"
+	description="เปิด/ปิดรอบงานของหน่วยงาน และมอบหมายงานให้ครูหรือสมาชิกในหน่วยงาน"
+>
+	{#snippet actions()}
 		<Button variant="outline" onclick={loadData} disabled={loading}>
 			{#if loading}
 				<LoaderCircle class="h-4 w-4 animate-spin" />
@@ -332,7 +325,7 @@
 			{/if}
 			รีเฟรช
 		</Button>
-	</header>
+	{/snippet}
 
 	<div class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(360px,420px)]">
 		<div class="space-y-4">
@@ -342,15 +335,15 @@
 					<h2 class="font-semibold">รอบงานที่จัดการได้</h2>
 				</div>
 
-					<div class="mt-4 grid gap-3">
-						{#if loading}
-							<PageSkeleton variant="cards" rows={3} />
-						{:else if windows.length === 0}
-							<PageState
-								title="ยังไม่มีรอบงานที่คุณจัดการได้"
-								description="สร้างรอบงานใหม่จากแบบฟอร์มด้านขวาเมื่อมี permission กลุ่มจัดการ"
-							/>
-						{:else}
+				<div class="mt-4 grid gap-3">
+					{#if loading}
+						<PageSkeleton variant="cards" rows={3} />
+					{:else if windows.length === 0}
+						<PageState
+							title="ยังไม่มีรอบงานที่คุณจัดการได้"
+							description="สร้างรอบงานใหม่จากแบบฟอร์มด้านขวาเมื่อมี permission กลุ่มจัดการ"
+						/>
+					{:else}
 						{#each windows as window (window.id)}
 							<button
 								type="button"
@@ -549,14 +542,14 @@
 					<h2 class="font-semibold">สร้างรอบงานใหม่</h2>
 				</div>
 
-					<div class="mt-4 grid gap-4">
-						{#if manageablePermissions.length === 0}
-							<PageState
-								variant="permission"
-								title="ยังไม่มีสิทธิ์เปิดรอบงาน"
-								description="บัญชีนี้ยังไม่มี permission กลุ่มจัดการ `.manage.` สำหรับเปิดรอบงาน"
-							/>
-						{/if}
+				<div class="mt-4 grid gap-4">
+					{#if manageablePermissions.length === 0}
+						<PageState
+							variant="permission"
+							title="ยังไม่มีสิทธิ์เปิดรอบงาน"
+							description="บัญชีนี้ยังไม่มี permission กลุ่มจัดการ `.manage.` สำหรับเปิดรอบงาน"
+						/>
+					{/if}
 
 					<div class="grid gap-2">
 						<Label for="window-title">ชื่อรอบงาน</Label>
@@ -650,4 +643,4 @@
 			</section>
 		</aside>
 	</div>
-</section>
+</PageShell>

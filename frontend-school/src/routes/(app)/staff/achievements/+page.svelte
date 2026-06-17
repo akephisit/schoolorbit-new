@@ -3,6 +3,7 @@
 	import { authStore } from '$lib/stores/auth';
 	import { can } from '$lib/stores/permissions';
 	import { Button } from '$lib/components/ui/button';
+	import { PageShell } from '$lib/components/app-layout';
 	import { Input } from '$lib/components/ui/input';
 	import * as Tabs from '$lib/components/ui/tabs';
 	import * as Dialog from '$lib/components/ui/dialog';
@@ -23,7 +24,6 @@
 		CardTitle
 	} from '$lib/components/ui/card';
 	import {
-		Award,
 		Plus,
 		Search,
 		Calendar,
@@ -257,24 +257,18 @@
 	<title>{data.title} - SchoolOrbit</title>
 </svelte:head>
 
-<div class="space-y-6">
-	<div class="flex items-center justify-between">
-		<div>
-			<h1 class="text-3xl font-bold flex items-center gap-2">
-				<Award class="w-8 h-8 text-primary" />
-				จัดการข้อมูลเกียรติบัตร
-			</h1>
-			<p class="text-muted-foreground mt-1">
-				บันทึกและจัดการข้อมูลผลงาน รางวัล และเกียรติบัตรของบุคลากร
-			</p>
-		</div>
+<PageShell
+	title="จัดการข้อมูลเกียรติบัตร"
+	description="บันทึกและจัดการข้อมูลผลงาน รางวัล และเกียรติบัตรของบุคลากร"
+>
+	{#snippet actions()}
 		{#if canCreateAchievement}
 			<Button onclick={openCreateDialog}>
 				<Plus class="w-4 h-4 mr-2" />
 				เพิ่มรายการใหม่
 			</Button>
 		{/if}
-	</div>
+	{/snippet}
 
 	{#if !canReadAchievements}
 		<PageState
@@ -327,24 +321,24 @@
 								<TableHead class="text-right">จัดการ</TableHead>
 							</TableRow>
 						</TableHeader>
-							<TableBody>
-								{#if loading}
-									<TableRow>
-										<TableCell colspan={5} class="p-0">
-											<PageSkeleton variant="table" rows={5} columns={5} />
-										</TableCell>
-									</TableRow>
-								{:else if filteredAchievements.length === 0}
-									<TableRow>
-										<TableCell colspan={5} class="h-24">
-											<PageState
-												title="ไม่พบข้อมูล"
-												description="ลองปรับคำค้นหา หรือเพิ่มรายการใหม่เมื่อมีสิทธิ์"
-												actionLabel={canCreateAchievement ? 'เพิ่มรายการใหม่' : undefined}
-												onaction={openCreateDialog}
-											/>
-										</TableCell>
-									</TableRow>
+						<TableBody>
+							{#if loading}
+								<TableRow>
+									<TableCell colspan={5} class="p-0">
+										<PageSkeleton variant="table" rows={5} columns={5} />
+									</TableCell>
+								</TableRow>
+							{:else if filteredAchievements.length === 0}
+								<TableRow>
+									<TableCell colspan={5} class="h-24">
+										<PageState
+											title="ไม่พบข้อมูล"
+											description="ลองปรับคำค้นหา หรือเพิ่มรายการใหม่เมื่อมีสิทธิ์"
+											actionLabel={canCreateAchievement ? 'เพิ่มรายการใหม่' : undefined}
+											onaction={openCreateDialog}
+										/>
+									</TableCell>
+								</TableRow>
 							{:else}
 								{#each filteredAchievements as achievement (achievement.id)}
 									<TableRow>
@@ -505,4 +499,4 @@
 			</Dialog.Root>
 		{/if}
 	{/if}
-</div>
+</PageShell>

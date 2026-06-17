@@ -11,6 +11,7 @@
 	import { PERMISSIONS } from '$lib/permissions/registry';
 	import { can } from '$lib/stores/permissions';
 	import { Button } from '$lib/components/ui/button';
+	import { PageShell } from '$lib/components/app-layout';
 	import { Input } from '$lib/components/ui/input';
 	import { Badge } from '$lib/components/ui/badge';
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
@@ -331,24 +332,18 @@
 	<title>โครงสร้างโรงเรียน - SchoolOrbit</title>
 </svelte:head>
 
-<div class="space-y-5">
-	<div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-		<div class="space-y-1">
-			<h1 class="flex items-center gap-2 text-2xl font-bold text-foreground">
-				<Building2 class="h-7 w-7" />
-				โครงสร้างโรงเรียน
-			</h1>
-			<p class="text-sm text-muted-foreground">
-				แผนที่หน่วยงาน กลุ่มบริหาร กลุ่มสาระ และตำแหน่งที่ใช้เป็นฐานสิทธิ์
-			</p>
-		</div>
+<PageShell
+	title="โครงสร้างโรงเรียน"
+	description="แผนที่หน่วยงาน กลุ่มบริหาร กลุ่มสาระ และตำแหน่งที่ใช้เป็นฐานสิทธิ์"
+>
+	{#snippet actions()}
 		{#if canCreateOrganizationUnit}
 			<Button onclick={handleCreate} class="gap-2 self-start">
 				<Plus class="h-4 w-4" />
 				เพิ่มหน่วยงาน
 			</Button>
 		{/if}
-	</div>
+	{/snippet}
 
 	<div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
 		<div class="rounded-lg border bg-card p-4">
@@ -690,4 +685,4 @@
 			readOnly={!canUpdateOrganizationPermissions}
 		/>
 	{/if}
-</div>
+</PageShell>

@@ -20,6 +20,7 @@
 	import { PERMISSIONS } from '$lib/permissions/registry';
 	import { can } from '$lib/stores/permissions';
 	import { Button } from '$lib/components/ui/button';
+	import { PageShell } from '$lib/components/app-layout';
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import { Badge } from '$lib/components/ui/badge';
 	import { DatePicker } from '$lib/components/ui/date-picker';
@@ -29,7 +30,6 @@
 	import * as Select from '$lib/components/ui/select';
 	import OrganizationMembersSection from '$lib/components/staff/OrganizationMembersSection.svelte';
 	import {
-		ArrowLeft,
 		ArrowRight,
 		Phone,
 		Mail,
@@ -316,14 +316,12 @@
 	<title>{department ? department.name : 'รายละเอียดหน่วยงาน'} - SchoolOrbit</title>
 </svelte:head>
 
-<div class="space-y-5">
-	<div class="flex items-center gap-3">
-		<Button href="/staff/organization" variant="ghost" size="sm" class="gap-2">
-			<ArrowLeft class="h-4 w-4" />
-			โครงสร้าง
-		</Button>
-	</div>
-
+<PageShell
+	title="รายละเอียดหน่วยงาน"
+	description={department?.name ?? 'ข้อมูลหน่วยงานในโครงสร้างโรงเรียน'}
+	backHref="/staff/organization"
+	backLabel="โครงสร้าง"
+>
 	{#if loading}
 		<PageSkeleton variant="detail" />
 	{:else if error}
@@ -693,7 +691,7 @@
 			href="/staff/organization"
 		/>
 	{/if}
-</div>
+</PageShell>
 
 {#if canUpdateOrganizationUnit}
 	<OrganizationUnitDialog

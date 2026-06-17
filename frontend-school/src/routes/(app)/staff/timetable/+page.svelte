@@ -14,9 +14,10 @@
 		type Semester
 	} from '$lib/api/academic';
 	import { authStore } from '$lib/stores/auth';
+	import { PageShell } from '$lib/components/app-layout';
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import * as Select from '$lib/components/ui/select';
-	import { CalendarDays, School, MapPin } from 'lucide-svelte';
+	import { School, MapPin } from 'lucide-svelte';
 
 	let { data } = $props();
 
@@ -121,17 +122,7 @@
 	<title>{data.title}</title>
 </svelte:head>
 
-<div class="space-y-6">
-	<div class="flex flex-col gap-2">
-		<h2 class="flex items-center gap-2 text-3xl font-bold">
-			<CalendarDays class="h-8 w-8" />
-			ตารางสอน
-		</h2>
-		{#if userName}
-			<p class="text-muted-foreground">ครู{userName}</p>
-		{/if}
-	</div>
-
+<PageShell title="ตารางสอน" description={userName ? `ครู${userName}` : 'ตารางสอนของฉัน'}>
 	<!-- Year + Semester selector -->
 	<div class="flex flex-wrap gap-3">
 		<div class="w-[220px]">
@@ -263,4 +254,4 @@
 			</div>
 		</div>
 	{/if}
-</div>
+</PageShell>

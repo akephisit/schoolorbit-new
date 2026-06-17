@@ -20,6 +20,7 @@
 	import * as Card from '$lib/components/ui/card';
 	import * as Table from '$lib/components/ui/table';
 	import { Button } from '$lib/components/ui/button';
+	import { PageShell } from '$lib/components/app-layout';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import { Badge } from '$lib/components/ui/badge';
@@ -36,8 +37,7 @@
 		Plus,
 		Search,
 		Settings,
-		Trash2,
-		School
+		Trash2
 	} from 'lucide-svelte';
 
 	// Constants
@@ -262,17 +262,10 @@
 	<title>{data.title} - SchoolOrbit</title>
 </svelte:head>
 
-<div class="space-y-6">
-	<div class="flex flex-col gap-2">
-		<h2 class="text-3xl font-bold flex items-center gap-2">
-			<School class="w-8 h-8" />
-			จัดการอาคารสถานที่
-		</h2>
-		<p class="text-muted-foreground">
-			ข้อมูลอาคาร (Buildings) และห้องเรียน (Rooms) สำหรับใช้งานในระบบ
-		</p>
-	</div>
-
+<PageShell
+	title="จัดการอาคารสถานที่"
+	description="ข้อมูลอาคาร (Buildings) และห้องเรียน (Rooms) สำหรับใช้งานในระบบ"
+>
 	{#if !canReadFacility}
 		<PageState
 			variant="permission"
@@ -645,4 +638,4 @@
 			</Dialog.Root>
 		{/if}
 	{/if}
-</div>
+</PageShell>

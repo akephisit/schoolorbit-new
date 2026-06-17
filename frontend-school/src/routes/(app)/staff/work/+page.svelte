@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import type { PageProps } from './$types';
 	import { Button } from '$lib/components/ui/button';
+	import { PageShell } from '$lib/components/app-layout';
 	import { Badge, type BadgeVariant } from '$lib/components/ui/badge';
 	import { Separator } from '$lib/components/ui/separator';
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
@@ -13,7 +14,6 @@
 		CheckCircle2,
 		Clock3,
 		ExternalLink,
-		Inbox,
 		LockKeyhole,
 		TimerReset
 	} from 'lucide-svelte';
@@ -123,46 +123,38 @@
 	<title>{data.title} - SchoolOrbit</title>
 </svelte:head>
 
-<section class="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-6 sm:px-6">
-	<header class="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-		<div class="space-y-1">
-			<div class="flex items-center gap-2">
-				<Inbox class="h-7 w-7 text-primary" />
-				<h1 class="text-2xl font-bold text-foreground">งานของฉัน</h1>
-			</div>
-			<p class="text-sm text-muted-foreground">
-				งานที่ได้รับมอบหมายจากหน่วยงาน กลุ่มสาระ หรือรอบงานที่เปิดให้ดำเนินการ
-			</p>
-			{#if $can.hasWorkflowManage()}
-				<Button href="/staff/work/manage" variant="outline" size="sm" class="mt-2">
-					จัดการรอบงาน
-				</Button>
-			{/if}
-		</div>
+<PageShell
+	title="งานของฉัน"
+	description="งานที่ได้รับมอบหมายจากหน่วยงาน กลุ่มสาระ หรือรอบงานที่เปิดให้ดำเนินการ"
+>
+	{#snippet actions()}
+		{#if $can.hasWorkflowManage()}
+			<Button href="/staff/work/manage" variant="outline" size="sm">จัดการรอบงาน</Button>
+		{/if}
+	{/snippet}
 
-		<div class="grid grid-cols-3 gap-2 sm:grid-cols-5">
-			<div class="rounded-md border bg-background px-3 py-2 text-center">
-				<p class="text-lg font-semibold">{$workStore.counts.open}</p>
-				<p class="text-xs text-muted-foreground">เปิดอยู่</p>
-			</div>
-			<div class="rounded-md border bg-background px-3 py-2 text-center">
-				<p class="text-lg font-semibold text-destructive">{$workStore.counts.dueSoon}</p>
-				<p class="text-xs text-muted-foreground">ใกล้ครบ</p>
-			</div>
-			<div class="rounded-md border bg-background px-3 py-2 text-center">
-				<p class="text-lg font-semibold text-destructive">{$workStore.counts.overdue}</p>
-				<p class="text-xs text-muted-foreground">เลยกำหนด</p>
-			</div>
-			<div class="rounded-md border bg-background px-3 py-2 text-center">
-				<p class="text-lg font-semibold">{$workStore.counts.submitted}</p>
-				<p class="text-xs text-muted-foreground">ส่งแล้ว</p>
-			</div>
-			<div class="rounded-md border bg-background px-3 py-2 text-center">
-				<p class="text-lg font-semibold">{$workStore.counts.closed}</p>
-				<p class="text-xs text-muted-foreground">ปิดแล้ว</p>
-			</div>
+	<div class="grid grid-cols-3 gap-2 sm:grid-cols-5">
+		<div class="rounded-md border bg-background px-3 py-2 text-center">
+			<p class="text-lg font-semibold">{$workStore.counts.open}</p>
+			<p class="text-xs text-muted-foreground">เปิดอยู่</p>
 		</div>
-	</header>
+		<div class="rounded-md border bg-background px-3 py-2 text-center">
+			<p class="text-lg font-semibold text-destructive">{$workStore.counts.dueSoon}</p>
+			<p class="text-xs text-muted-foreground">ใกล้ครบ</p>
+		</div>
+		<div class="rounded-md border bg-background px-3 py-2 text-center">
+			<p class="text-lg font-semibold text-destructive">{$workStore.counts.overdue}</p>
+			<p class="text-xs text-muted-foreground">เลยกำหนด</p>
+		</div>
+		<div class="rounded-md border bg-background px-3 py-2 text-center">
+			<p class="text-lg font-semibold">{$workStore.counts.submitted}</p>
+			<p class="text-xs text-muted-foreground">ส่งแล้ว</p>
+		</div>
+		<div class="rounded-md border bg-background px-3 py-2 text-center">
+			<p class="text-lg font-semibold">{$workStore.counts.closed}</p>
+			<p class="text-xs text-muted-foreground">ปิดแล้ว</p>
+		</div>
+	</div>
 
 	<Separator />
 
@@ -237,4 +229,4 @@
 			{/each}
 		</div>
 	{/if}
-</section>
+</PageShell>
