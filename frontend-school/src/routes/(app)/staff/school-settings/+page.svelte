@@ -4,7 +4,7 @@
 	import { can } from '$lib/stores/permissions';
 	import { Button } from '$lib/components/ui/button';
 	import { Label } from '$lib/components/ui/label';
-	import { Alert, AlertDescription, AlertTitle } from '$lib/components/ui/alert';
+	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import {
 		Card,
 		CardContent,
@@ -12,7 +12,7 @@
 		CardHeader,
 		CardTitle
 	} from '$lib/components/ui/card';
-	import { AlertTriangle, ArrowLeft, Save, Upload, ImageOff, X } from 'lucide-svelte';
+	import { ArrowLeft, Save, Upload, ImageOff, X } from 'lucide-svelte';
 	import { toast } from 'svelte-sonner';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
@@ -122,13 +122,13 @@
 	</div>
 
 	{#if !canReadSettings}
-		<Alert>
-			<AlertTriangle class="h-4 w-4" />
-			<AlertTitle>ไม่มีสิทธิ์ดูการตั้งค่าโรงเรียน</AlertTitle>
-			<AlertDescription>
-				บัญชีนี้เข้า module ตั้งค่าได้ แต่ยังไม่มีสิทธิ์อ่านข้อมูลการตั้งค่าโรงเรียน
-			</AlertDescription>
-		</Alert>
+		<PageState
+			variant="permission"
+			title="ไม่มีสิทธิ์ดูการตั้งค่าโรงเรียน"
+			description="บัญชีนี้เข้า module ตั้งค่าได้ แต่ยังไม่มีสิทธิ์อ่านข้อมูลการตั้งค่าโรงเรียน"
+		/>
+	{:else if loading}
+		<PageSkeleton variant="form" rows={3} />
 	{:else}
 		<!-- Logo Card -->
 		<Card class="max-w-lg">
@@ -137,88 +137,82 @@
 				<CardDescription>แสดงบนหน้ารับสมัครนักเรียนและหน้าอื่นๆ ของระบบ</CardDescription>
 			</CardHeader>
 			<CardContent class="space-y-6">
-				{#if loading}
-					<div class="flex justify-center py-4">
-						<div class="animate-pulse w-24 h-24 rounded-2xl bg-muted"></div>
+				<!-- Preview -->
+				<div class="flex flex-col items-center gap-3">
+					<div
+						class="w-24 h-24 rounded-2xl border-2 border-dashed border-border flex items-center justify-center bg-muted overflow-hidden"
+					>
+						{#if previewUrl ?? logoUrl}
+							<img
+								src={previewUrl ?? logoUrl}
+								alt="school logo"
+								class="w-full h-full object-contain p-1"
+							/>
+						{:else}
+							<ImageOff class="w-8 h-8 text-muted-foreground" />
+						{/if}
 					</div>
-				{:else}
-					<!-- Preview -->
-					<div class="flex flex-col items-center gap-3">
-						<div
-							class="w-24 h-24 rounded-2xl border-2 border-dashed border-border flex items-center justify-center bg-muted overflow-hidden"
-						>
-							{#if previewUrl ?? logoUrl}
-								<img
-									src={previewUrl ?? logoUrl}
-									alt="school logo"
-									class="w-full h-full object-contain p-1"
-								/>
-							{:else}
-								<ImageOff class="w-8 h-8 text-muted-foreground" />
-							{/if}
-						</div>
-						<p class="text-xs text-muted-foreground">
-							{#if pendingFile}
-								<span class="text-amber-600">ยังไม่ได้บันทึก — กด "บันทึก" เพื่อยืนยัน</span>
-							{:else}
-								ตัวอย่าง logo
-							{/if}
-						</p>
-					</div>
+					<p class="text-xs text-muted-foreground">
+						{#if pendingFile}
+							<span class="text-amber-600">ยังไม่ได้บันทึก — กด "บันทึก" เพื่อยืนยัน</span>
+						{:else}
+							ตัวอย่าง logo
+						{/if}
+					</p>
+				</div>
 
-					{#if canUpdateSettings}
-						<!-- Upload -->
-						<div class="space-y-2">
-							<Label>เลือกไฟล์ logo</Label>
-							<p class="text-xs text-muted-foreground">รองรับ JPG, PNG, WEBP ขนาดไม่เกิน 2 MB</p>
-							<label class="cursor-pointer">
-								<input
-									type="file"
-									accept="image/jpeg,image/png,image/webp"
-									class="hidden"
-									onchange={handleLogoSelect}
-									disabled={saving}
-								/>
-								<Button variant="outline" class="gap-2 pointer-events-none" disabled={saving}>
-									<Upload class="w-4 h-4" />
-									เลือกไฟล์
-								</Button>
-							</label>
-						</div>
-					{/if}
-
-					{#if canUpdateSettings}
-						<!-- Actions -->
-						<div class="flex items-center gap-3 pt-2">
-							<Button onclick={handleSave} disabled={saving} class="gap-2">
-								<Save class="w-4 h-4" />
-								{saving ? 'กำลังบันทึก...' : 'บันทึก'}
+				{#if canUpdateSettings}
+					<!-- Upload -->
+					<div class="space-y-2">
+						<Label>เลือกไฟล์ logo</Label>
+						<p class="text-xs text-muted-foreground">รองรับ JPG, PNG, WEBP ขนาดไม่เกิน 2 MB</p>
+						<label class="cursor-pointer">
+							<input
+								type="file"
+								accept="image/jpeg,image/png,image/webp"
+								class="hidden"
+								onchange={handleLogoSelect}
+								disabled={saving}
+							/>
+							<Button variant="outline" class="gap-2 pointer-events-none" disabled={saving}>
+								<Upload class="w-4 h-4" />
+								เลือกไฟล์
 							</Button>
-							{#if pendingFile}
-								<Button
-									variant="ghost"
-									class="gap-1.5 text-muted-foreground"
-									onclick={() => {
-										if (previewUrl) URL.revokeObjectURL(previewUrl);
-										pendingFile = undefined;
-										previewUrl = undefined;
-									}}
-									disabled={saving}
-								>
-									<X class="w-4 h-4" /> ยกเลิก
-								</Button>
-							{:else if logoUrl}
-								<Button
-									variant="ghost"
-									class="text-destructive hover:text-destructive"
-									onclick={handleDeleteLogo}
-									disabled={saving}
-								>
-									ลบ logo
-								</Button>
-							{/if}
-						</div>
-					{/if}
+						</label>
+					</div>
+				{/if}
+
+				{#if canUpdateSettings}
+					<!-- Actions -->
+					<div class="flex items-center gap-3 pt-2">
+						<Button onclick={handleSave} disabled={saving} class="gap-2">
+							<Save class="w-4 h-4" />
+							{saving ? 'กำลังบันทึก...' : 'บันทึก'}
+						</Button>
+						{#if pendingFile}
+							<Button
+								variant="ghost"
+								class="gap-1.5 text-muted-foreground"
+								onclick={() => {
+									if (previewUrl) URL.revokeObjectURL(previewUrl);
+									pendingFile = undefined;
+									previewUrl = undefined;
+								}}
+								disabled={saving}
+							>
+								<X class="w-4 h-4" /> ยกเลิก
+							</Button>
+						{:else if logoUrl}
+							<Button
+								variant="ghost"
+								class="text-destructive hover:text-destructive"
+								onclick={handleDeleteLogo}
+								disabled={saving}
+							>
+								ลบ logo
+							</Button>
+						{/if}
+					</div>
 				{/if}
 			</CardContent>
 		</Card>

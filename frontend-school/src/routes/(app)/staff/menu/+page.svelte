@@ -12,9 +12,9 @@
 	import { can } from '$lib/stores/permissions';
 	import { Button } from '$lib/components/ui/button';
 	import { Card } from '$lib/components/ui/card';
-	import { Alert, AlertDescription, AlertTitle } from '$lib/components/ui/alert';
+	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import * as Tabs from '$lib/components/ui/tabs';
-	import { AlertTriangle, LoaderCircle, FolderOpen, GripVertical } from 'lucide-svelte';
+	import { GripVertical } from 'lucide-svelte';
 	import * as Select from '$lib/components/ui/select';
 	import { toast } from 'svelte-sonner';
 
@@ -345,13 +345,11 @@
 	</div>
 
 	{#if !canReadMenu}
-		<Alert>
-			<AlertTriangle class="h-4 w-4" />
-			<AlertTitle>ไม่มีสิทธิ์ดูโครงสร้างเมนู</AlertTitle>
-			<AlertDescription>
-				บัญชีนี้เข้า module เมนูได้ แต่ยังไม่มีสิทธิ์อ่านรายการเมนูของระบบ
-			</AlertDescription>
-		</Alert>
+		<PageState
+			variant="permission"
+			title="ไม่มีสิทธิ์ดูโครงสร้างเมนู"
+			description="บัญชีนี้เข้า module เมนูได้ แต่ยังไม่มีสิทธิ์อ่านรายการเมนูของระบบ"
+		/>
 	{:else}
 		<!-- Filter -->
 		<div class="flex items-center gap-3">
@@ -389,14 +387,17 @@
 			<!-- ITEMS TAB -->
 			<Tabs.Content value="items" class="space-y-4">
 				{#if loading}
-					<div class="flex justify-center items-center py-20">
-						<LoaderCircle class="h-8 w-8 animate-spin text-primary" />
-					</div>
+					<PageSkeleton variant="cards" rows={4} />
 				{:else if displayContainers.length === 0}
-					<Card class="p-12 text-center">
-						<FolderOpen class="h-16 w-16 mx-auto mb-4 opacity-20" />
-						<p class="text-lg">ไม่พบกลุ่มเมนู</p>
-					</Card>
+					<PageState
+						title="ไม่พบกลุ่มเมนู"
+						description="ลองปรับตัวกรองประเภทผู้ใช้ หรือสร้างกลุ่มเมนูใหม่เมื่อมีสิทธิ์"
+						actionLabel={canCreateMenu ? 'สร้างกลุ่มใหม่' : undefined}
+						onaction={() => {
+							editingGroup = null;
+							groupDialogOpen = true;
+						}}
+					/>
 				{:else}
 					<div class="space-y-6 pb-20">
 						{#each displayContainers as { data, nesteds } (data.id)}
@@ -451,9 +452,17 @@
 				{/if}
 
 				{#if loading}
-					<div class="flex justify-center py-12">
-						<LoaderCircle class="h-8 w-8 animate-spin" />
-					</div>
+					<PageSkeleton variant="cards" rows={3} />
+				{:else if groups.length === 0}
+					<PageState
+						title="ยังไม่มีกลุ่มเมนู"
+						description="สร้างกลุ่มเมนูเพื่อจัดหมวดรายการเมนูของระบบ"
+						actionLabel={canCreateMenu ? 'สร้างกลุ่มใหม่' : undefined}
+						onaction={() => {
+							editingGroup = null;
+							groupDialogOpen = true;
+						}}
+					/>
 				{:else}
 					<div class="grid gap-3">
 						{#each groups as group (group.id)}

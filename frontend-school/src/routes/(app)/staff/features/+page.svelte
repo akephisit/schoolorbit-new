@@ -6,8 +6,8 @@
 	import { Card } from '$lib/components/ui/card';
 	import { Switch } from '$lib/components/ui/switch';
 	import { Badge } from '$lib/components/ui/badge';
-	import { Alert, AlertDescription, AlertTitle } from '$lib/components/ui/alert';
-	import { AlertTriangle, LoaderCircle, Power, Shield } from 'lucide-svelte';
+	import { PageSkeleton, PageState } from '$lib/components/app-state';
+	import { LoaderCircle, Power } from 'lucide-svelte';
 	import { toast } from 'svelte-sonner';
 
 	let features = $state<FeatureToggle[]>([]);
@@ -102,26 +102,18 @@
 
 	<!-- Loading State -->
 	{#if !canReadFeatures}
-		<Alert>
-			<AlertTriangle class="h-4 w-4" />
-			<AlertTitle>ไม่มีสิทธิ์ดูระบบงาน</AlertTitle>
-			<AlertDescription>
-				บัญชีนี้เข้า module ระบบงานได้ แต่ยังไม่มีสิทธิ์อ่านรายการ feature toggles
-			</AlertDescription>
-		</Alert>
+		<PageState
+			variant="permission"
+			title="ไม่มีสิทธิ์ดูระบบงาน"
+			description="บัญชีนี้เข้า module ระบบงานได้ แต่ยังไม่มีสิทธิ์อ่านรายการ feature toggles"
+		/>
 	{:else if loading}
-		<div class="flex justify-center items-center py-20">
-			<LoaderCircle class="h-8 w-8 animate-spin text-primary" />
-		</div>
+		<PageSkeleton variant="cards" rows={6} />
 	{:else if features.length === 0}
-		<!-- Empty State -->
-		<Card class="p-12">
-			<div class="text-center text-muted-foreground">
-				<Shield class="h-16 w-16 mx-auto mb-4 opacity-20" />
-				<p class="text-lg">ไม่พบระบบงานที่คุณสามารถจัดการได้</p>
-				<p class="text-sm mt-2">กรุณาตรวจสอบสิทธิ์การเข้าถึงของคุณ</p>
-			</div>
-		</Card>
+		<PageState
+			title="ไม่พบระบบงานที่คุณสามารถจัดการได้"
+			description="กรุณาตรวจสอบสิทธิ์การเข้าถึงของคุณ"
+		/>
 	{:else}
 		<!-- Features by Module -->
 		<div class="space-y-6">

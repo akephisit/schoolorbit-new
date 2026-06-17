@@ -542,7 +542,7 @@ test('roles and organization pages gate module actions with permission booleans'
 	const routeExpectations = [
 		{
 			file: 'frontend-school/src/routes/(app)/staff/roles/+page.svelte',
-			imports: ['$lib/components/ui/alert'],
+			imports: ['$lib/components/app-state'],
 			permissions: [
 				'PERMISSIONS.ROLES_READ_ALL',
 				'PERMISSIONS.ROLES_CREATE_ALL',
@@ -570,7 +570,7 @@ test('roles and organization pages gate module actions with permission booleans'
 		},
 		{
 			file: 'frontend-school/src/routes/(app)/staff/organization/+page.svelte',
-			imports: ['$lib/components/ui/alert'],
+			imports: ['$lib/components/app-state'],
 			permissions: [
 				'PERMISSIONS.ROLES_READ_ALL',
 				'PERMISSIONS.ROLES_CREATE_ALL',
@@ -627,7 +627,7 @@ test('settings workspace pages gate module actions with permission booleans', as
 	const routeExpectations = [
 		{
 			file: 'frontend-school/src/routes/(app)/staff/menu/+page.svelte',
-			imports: ['$lib/components/ui/alert'],
+			imports: ['$lib/components/app-state'],
 			permissions: [
 				'PERMISSIONS.MENU_READ_ALL',
 				'PERMISSIONS.MENU_CREATE_ALL',
@@ -650,13 +650,13 @@ test('settings workspace pages gate module actions with permission booleans', as
 		},
 		{
 			file: 'frontend-school/src/routes/(app)/staff/features/+page.svelte',
-			imports: ['$lib/components/ui/alert'],
+			imports: ['$lib/components/app-state'],
 			permissions: ['PERMISSIONS.FEATURES_READ_ALL', 'PERMISSIONS.FEATURES_UPDATE_ALL'],
 			identifiers: ['canReadFeatures', 'canUpdateFeatures']
 		},
 		{
 			file: 'frontend-school/src/routes/(app)/staff/school-settings/+page.svelte',
-			imports: ['$lib/components/ui/alert'],
+			imports: ['$lib/components/app-state'],
 			permissions: ['PERMISSIONS.SETTINGS_READ_ALL', 'PERMISSIONS.SETTINGS_UPDATE_ALL'],
 			identifiers: ['canReadSettings', 'canUpdateSettings']
 		}
@@ -1170,7 +1170,7 @@ test('facility workspace gates read and mutation actions', async () => {
 			'utf8'
 		)
 	);
-	const requiredImports = ['$lib/components/ui/alert'];
+	const requiredImports = ['$lib/components/app-state'];
 	const requiredPermissions = [
 		'PERMISSIONS.FACILITY_READ_ALL',
 		'PERMISSIONS.FACILITY_CREATE_ALL',

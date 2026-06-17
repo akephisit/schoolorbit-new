@@ -13,9 +13,8 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { Badge } from '$lib/components/ui/badge';
-	import { Alert, AlertDescription, AlertTitle } from '$lib/components/ui/alert';
+	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import {
-		AlertTriangle,
 		ArrowRight,
 		Building2,
 		Briefcase,
@@ -418,25 +417,21 @@
 	</div>
 
 	{#if !canReadOrganization}
-		<Alert>
-			<AlertTriangle class="h-4 w-4" />
-			<AlertTitle>ไม่มีสิทธิ์ดูโครงสร้างโรงเรียน</AlertTitle>
-			<AlertDescription>
-				บัญชีนี้เข้า module บทบาทได้ แต่ยังไม่มีสิทธิ์อ่านข้อมูลโครงสร้างโรงเรียน
-			</AlertDescription>
-		</Alert>
+		<PageState
+			variant="permission"
+			title="ไม่มีสิทธิ์ดูโครงสร้างโรงเรียน"
+			description="บัญชีนี้เข้า module บทบาทได้ แต่ยังไม่มีสิทธิ์อ่านข้อมูลโครงสร้างโรงเรียน"
+		/>
 	{:else if loading}
-		<div class="rounded-lg border bg-card p-12 text-center">
-			<div
-				class="inline-block h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent"
-			></div>
-			<p class="mt-4 text-muted-foreground">กำลังโหลด...</p>
-		</div>
+		<PageSkeleton variant="detail" />
 	{:else if error}
-		<div class="rounded-lg border border-destructive/20 bg-destructive/10 p-6 text-center">
-			<p class="text-destructive">{error}</p>
-			<Button onclick={loadDepartments} variant="outline" class="mt-4">ลองอีกครั้ง</Button>
-		</div>
+		<PageState
+			variant="error"
+			title="โหลดโครงสร้างโรงเรียนไม่สำเร็จ"
+			description={error}
+			actionLabel="ลองอีกครั้ง"
+			onaction={loadDepartments}
+		/>
 	{:else}
 		<div class="grid gap-5 xl:grid-cols-[minmax(0,1fr)_420px]">
 			<section class="min-h-[520px] rounded-lg border bg-card">
@@ -464,9 +459,11 @@
 				</div>
 
 				{#if visibleTreeRoots.length === 0}
-					<div class="p-12 text-center text-sm text-muted-foreground">
-						ไม่พบหน่วยงานที่ตรงเงื่อนไข
-					</div>
+					<PageState
+						title="ไม่พบหน่วยงานที่ตรงเงื่อนไข"
+						description="ลองปรับคำค้นหาหรือตัวกรองหมวดงาน"
+						class="border-0 shadow-none"
+					/>
 				{:else}
 					<div class="space-y-1 p-3">
 						{#snippet unitTreeNode(unit: OrganizationUnit, depth: number)}

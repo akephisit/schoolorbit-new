@@ -23,7 +23,7 @@
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import { Badge } from '$lib/components/ui/badge';
-	import * as Alert from '$lib/components/ui/alert';
+	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import * as Select from '$lib/components/ui/select';
 	import * as Tabs from '$lib/components/ui/tabs';
@@ -31,14 +31,12 @@
 	import { can } from '$lib/stores/permissions';
 
 	import {
-		AlertTriangle,
 		Building as BuildingIcon,
 		DoorOpen,
 		Plus,
 		Search,
 		Settings,
 		Trash2,
-		Loader2,
 		School
 	} from 'lucide-svelte';
 
@@ -276,13 +274,11 @@
 	</div>
 
 	{#if !canReadFacility}
-		<Alert.Root>
-			<AlertTriangle class="h-4 w-4" />
-			<Alert.Title>ไม่มีสิทธิ์ดูอาคารสถานที่</Alert.Title>
-			<Alert.Description>
-				หน้านี้ต้องใช้สิทธิ์อ่านข้อมูลอาคารสถานที่ก่อนจึงจะแสดงรายการอาคารและห้องได้
-			</Alert.Description>
-		</Alert.Root>
+		<PageState
+			variant="permission"
+			title="ไม่มีสิทธิ์ดูอาคารสถานที่"
+			description="หน้านี้ต้องใช้สิทธิ์อ่านข้อมูลอาคารสถานที่ก่อนจึงจะแสดงรายการอาคารและห้องได้"
+		/>
 	{:else}
 		<Tabs.Root value={activeTab} onValueChange={(v) => (activeTab = v)}>
 			<Tabs.List>
@@ -318,18 +314,22 @@
 						</Table.Header>
 						<Table.Body>
 							{#if loading}
-								<Table.Row
-									><Table.Cell colspan={canMutateFacility ? 4 : 3} class="h-24 text-center"
-										><Loader2 class="animate-spin mx-auto" /></Table.Cell
-									></Table.Row
-								>
+								<Table.Row>
+									<Table.Cell colspan={canMutateFacility ? 4 : 3} class="p-0">
+										<PageSkeleton variant="table" rows={4} columns={canMutateFacility ? 4 : 3} />
+									</Table.Cell>
+								</Table.Row>
 							{:else if buildings.length === 0}
-								<Table.Row
-									><Table.Cell
-										colspan={canMutateFacility ? 4 : 3}
-										class="h-24 text-center text-muted-foreground">ไม่พบข้อมูล</Table.Cell
-									></Table.Row
-								>
+								<Table.Row>
+									<Table.Cell colspan={canMutateFacility ? 4 : 3} class="h-24">
+										<PageState
+											title="ไม่พบข้อมูลอาคาร"
+											description="เพิ่มอาคารเพื่อใช้จัดกลุ่มห้องเรียนและห้องปฏิบัติการ"
+											actionLabel={canCreateFacility ? 'เพิ่มอาคาร' : undefined}
+											onaction={openAddBuilding}
+										/>
+									</Table.Cell>
+								</Table.Row>
 							{:else}
 								{#each buildings as b (b.id)}
 									<Table.Row>
@@ -426,18 +426,22 @@
 						</Table.Header>
 						<Table.Body>
 							{#if loading && rooms.length === 0}
-								<Table.Row
-									><Table.Cell colspan={canMutateFacility ? 6 : 5} class="h-24 text-center"
-										><Loader2 class="animate-spin mx-auto" /></Table.Cell
-									></Table.Row
-								>
+								<Table.Row>
+									<Table.Cell colspan={canMutateFacility ? 6 : 5} class="p-0">
+										<PageSkeleton variant="table" rows={4} columns={canMutateFacility ? 6 : 5} />
+									</Table.Cell>
+								</Table.Row>
 							{:else if rooms.length === 0}
-								<Table.Row
-									><Table.Cell
-										colspan={canMutateFacility ? 6 : 5}
-										class="h-24 text-center text-muted-foreground">ไม่พบข้อมูล</Table.Cell
-									></Table.Row
-								>
+								<Table.Row>
+									<Table.Cell colspan={canMutateFacility ? 6 : 5} class="h-24">
+										<PageState
+											title="ไม่พบข้อมูลห้อง"
+											description="เพิ่มห้องเรียนหรือห้องปฏิบัติการเพื่อใช้กับตารางสอนและงานอาคาร"
+											actionLabel={canCreateFacility ? 'เพิ่มห้อง' : undefined}
+											onaction={openAddRoom}
+										/>
+									</Table.Cell>
+								</Table.Row>
 							{:else}
 								{#each rooms as r (r.id)}
 									<Table.Row>

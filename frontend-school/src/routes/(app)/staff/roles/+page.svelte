@@ -7,7 +7,7 @@
 	import { can } from '$lib/stores/permissions';
 	import { Button } from '$lib/components/ui/button';
 	import { Badge } from '$lib/components/ui/badge';
-	import { Alert, AlertDescription, AlertTitle } from '$lib/components/ui/alert';
+	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import {
 		Card,
 		CardContent,
@@ -15,7 +15,7 @@
 		CardHeader,
 		CardTitle
 	} from '$lib/components/ui/card';
-	import { AlertTriangle, Edit, Eye, Plus, Shield } from 'lucide-svelte';
+	import { Edit, Eye, Plus, Shield } from 'lucide-svelte';
 	import { toast } from 'svelte-sonner';
 
 	let roles = $state<Role[]>([]);
@@ -94,45 +94,20 @@
 	</div>
 
 	{#if !canReadRoles}
-		<Alert>
-			<AlertTriangle class="h-4 w-4" />
-			<AlertTitle>ไม่มีสิทธิ์ดูรายการบทบาท</AlertTitle>
-			<AlertDescription>
-				บัญชีนี้เข้า module บทบาทได้ แต่ยังไม่มีสิทธิ์อ่านรายการบทบาททั้งหมด
-			</AlertDescription>
-		</Alert>
+		<PageState
+			variant="permission"
+			title="ไม่มีสิทธิ์ดูรายการบทบาท"
+			description="บัญชีนี้เข้า module บทบาทได้ แต่ยังไม่มีสิทธิ์อ่านรายการบทบาททั้งหมด"
+		/>
 	{:else if loading}
-		<!-- Loading State -->
-		<div class="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-			{#each Array.from({ length: 6 }, (_, i) => i) as i (i)}
-				<Card>
-					<CardHeader>
-						<div class="h-6 bg-gray-200 rounded animate-pulse w-3/4"></div>
-						<div class="h-4 bg-gray-200 rounded animate-pulse w-1/2 mt-2"></div>
-					</CardHeader>
-					<CardContent>
-						<div class="h-4 bg-gray-200 rounded animate-pulse"></div>
-					</CardContent>
-				</Card>
-			{/each}
-		</div>
+		<PageSkeleton variant="cards" rows={6} />
 	{:else if roles.length === 0}
-		<!-- Empty State -->
-		<Card>
-			<CardContent class="py-12">
-				<div class="text-center">
-					<Shield class="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-					<h3 class="text-lg font-medium text-foreground">ยังไม่มีบทบาท</h3>
-					<p class="text-muted-foreground mt-1">เริ่มต้นสร้างบทบาทแรกของคุณ</p>
-					{#if canCreateRoles}
-						<Button onclick={() => goto(resolve('/staff/roles/new'))} class="mt-4 gap-2">
-							<Plus class="h-4 w-4" />
-							สร้างบทบาทใหม่
-						</Button>
-					{/if}
-				</div>
-			</CardContent>
-		</Card>
+		<PageState
+			title="ยังไม่มีบทบาท"
+			description="เริ่มต้นสร้างบทบาทแรกของคุณได้เมื่อมีสิทธิ์สร้างบทบาท"
+			actionLabel={canCreateRoles ? 'สร้างบทบาทใหม่' : undefined}
+			onaction={() => goto(resolve('/staff/roles/new'))}
+		/>
 	{:else}
 		<!-- Roles Grid -->
 		<div class="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
