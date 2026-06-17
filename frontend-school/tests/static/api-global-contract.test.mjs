@@ -1163,6 +1163,39 @@ test('admission workspace pages gate read and specialized actions', async () => 
 	}
 });
 
+test('facility workspace gates read and mutation actions', async () => {
+	const source = stripComments(
+		await readFile(
+			path.join(repoRoot, 'frontend-school/src/routes/(app)/staff/facility/buildings/+page.svelte'),
+			'utf8'
+		)
+	);
+	const requiredImports = ['$lib/components/ui/alert'];
+	const requiredPermissions = [
+		'PERMISSIONS.FACILITY_READ_ALL',
+		'PERMISSIONS.FACILITY_CREATE_ALL',
+		'PERMISSIONS.FACILITY_UPDATE_ALL',
+		'PERMISSIONS.FACILITY_DELETE_ALL'
+	];
+	const requiredIdentifiers = [
+		'canReadFacility',
+		'canCreateFacility',
+		'canUpdateFacility',
+		'canDeleteFacility'
+	];
+	const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+	for (const requiredImport of requiredImports) {
+		assert.match(source, new RegExp(escapeRegex(requiredImport)));
+	}
+	for (const requiredPermission of requiredPermissions) {
+		assert.match(source, new RegExp(escapeRegex(requiredPermission)));
+	}
+	for (const identifier of requiredIdentifiers) {
+		assert.match(source, new RegExp(`\\b${identifier}\\b`));
+	}
+});
+
 test('frontend app pages have route guard metadata or guarded ancestor fallback', async () => {
 	const appRoutesDir = path.join(repoRoot, 'frontend-school/src/routes/(app)');
 	const pageSvelteFiles = await listFiles(appRoutesDir, (file) => file.endsWith('+page.svelte'));
