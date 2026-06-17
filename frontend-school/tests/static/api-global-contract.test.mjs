@@ -821,6 +821,46 @@ test('academic curriculum workspace pages gate read and mutation actions', async
 	}
 });
 
+test('academic course planning pages gate read and manage actions', async () => {
+	const routeExpectations = [
+		{
+			file: 'frontend-school/src/routes/(app)/staff/academic/planning/+page.svelte',
+			imports: ['$lib/components/ui/alert'],
+			permissions: [
+				'PERMISSIONS.ACADEMIC_COURSE_PLAN_READ_ALL',
+				'PERMISSIONS.ACADEMIC_COURSE_PLAN_MANAGE_ALL'
+			],
+			identifiers: ['canReadCoursePlan', 'canManageCoursePlan']
+		},
+		{
+			file: 'frontend-school/src/routes/(app)/staff/academic/timetable/+page.svelte',
+			imports: ['$lib/components/ui/alert'],
+			permissions: [
+				'PERMISSIONS.ACADEMIC_COURSE_PLAN_READ_ALL',
+				'PERMISSIONS.ACADEMIC_COURSE_PLAN_MANAGE_ALL'
+			],
+			identifiers: ['canReadTimetable', 'canManageTimetable']
+		}
+	];
+	const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+	for (const expectation of routeExpectations) {
+		const source = stripComments(await readFile(path.join(repoRoot, expectation.file), 'utf8'));
+
+		for (const requiredImport of expectation.imports) {
+			assert.match(source, new RegExp(escapeRegex(requiredImport)));
+		}
+
+		for (const requiredPermission of expectation.permissions) {
+			assert.match(source, new RegExp(escapeRegex(requiredPermission)));
+		}
+
+		for (const identifier of expectation.identifiers) {
+			assert.match(source, new RegExp(`\\b${identifier}\\b`));
+		}
+	}
+});
+
 test('frontend app pages have route guard metadata or guarded ancestor fallback', async () => {
 	const appRoutesDir = path.join(repoRoot, 'frontend-school/src/routes/(app)');
 	const pageSvelteFiles = await listFiles(appRoutesDir, (file) => file.endsWith('+page.svelte'));

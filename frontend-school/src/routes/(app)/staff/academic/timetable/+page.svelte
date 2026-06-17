@@ -62,6 +62,9 @@
 	import * as Command from '$lib/components/ui/command';
 	import { Badge } from '$lib/components/ui/badge';
 	import * as Tooltip from '$lib/components/ui/tooltip';
+	import { Alert, AlertDescription, AlertTitle } from '$lib/components/ui/alert';
+	import { PERMISSIONS } from '$lib/permissions/registry';
+	import { can } from '$lib/stores/permissions';
 
 	import {
 		CalendarDays,
@@ -77,7 +80,8 @@
 		Lock,
 		FileStack,
 		ChevronsUpDown,
-		Check
+		Check,
+		AlertTriangle
 	} from 'lucide-svelte';
 	import { generateTimetablePDF } from '$lib/utils/pdf';
 	import { SvelteSet, SvelteMap } from 'svelte/reactivity';
@@ -132,6 +136,9 @@
 	}
 
 	let { data } = $props();
+
+	const canReadTimetable = $derived($can.has(PERMISSIONS.ACADEMIC_COURSE_PLAN_READ_ALL));
+	const canManageTimetable = $derived($can.has(PERMISSIONS.ACADEMIC_COURSE_PLAN_MANAGE_ALL));
 
 	// Helper: Generate consistent pastel color from string
 	// แสดง label fallback เมื่อ entry ไม่มี subject_code/title
@@ -282,6 +289,17 @@
 	let draggedEntryId = $state<string | null>(null);
 
 	async function loadInitialData() {
+		if (!canReadTimetable) {
+			academicYears = [];
+			allSemesters = [];
+			classrooms = [];
+			periods = [];
+			rooms = [];
+			instructors = [];
+			timetableEntries = [];
+			rawTeamEntries = [];
+			return;
+		}
 		try {
 			const structureRes = await getAcademicStructure();
 			academicYears = structureRes.data.years;
@@ -307,6 +325,7 @@
 	}
 
 	async function loadInstructors() {
+		if (!canReadTimetable) return;
 		try {
 			const data = await lookupStaff({ limit: 500 });
 			instructors = data;
@@ -316,7 +335,7 @@
 	}
 
 	async function loadClassrooms() {
-		if (!selectedYearId) return;
+		if (!canReadTimetable || !selectedYearId) return;
 		try {
 			const res = await listClassrooms({ year_id: selectedYearId });
 			classrooms = res.data;
@@ -326,7 +345,7 @@
 	}
 
 	async function loadPeriods() {
-		if (!selectedYearId) return;
+		if (!canReadTimetable || !selectedYearId) return;
 		try {
 			const res = await listPeriods({ academic_year_id: selectedYearId, active_only: true });
 			periods = res.data;
@@ -336,6 +355,7 @@
 	}
 
 	async function loadRooms() {
+		if (!canReadTimetable) return;
 		try {
 			const res = await lookupRooms();
 			rooms = res;
@@ -345,6 +365,7 @@
 	}
 
 	async function loadCourses() {
+		if (!canReadTimetable) return;
 		// Mode: CLASSROOM
 		if (viewMode === 'CLASSROOM' && !selectedClassroomId) return;
 		// Mode: INSTRUCTOR
@@ -373,6 +394,7 @@
 	}
 
 	async function loadCourseTeams(courseIds: string[]) {
+		if (!canReadTimetable) return;
 		if (courseIds.length === 0) {
 			courseTeamsMap.clear();
 			return;
@@ -393,6 +415,7 @@
 		slotId: string,
 		classroomIdOverride?: string
 	): Promise<boolean> {
+		if (!canReadTimetable) return false;
 		try {
 			const res = await listSlotClassroomAssignments(slotId);
 			const clsId = classroomIdOverride || selectedClassroomId;
@@ -422,6 +445,7 @@
 	);
 
 	async function loadSidebarActivitySlots() {
+		if (!canReadTimetable) return;
 		if (!selectedSemesterId) {
 			sidebarActivitySlots = [];
 			instructorActivityItems = [];
@@ -520,6 +544,7 @@
 	}
 
 	async function loadInstructorGroups() {
+		if (!canReadTimetable) return;
 		if (viewMode !== 'INSTRUCTOR' || !selectedInstructorId || !selectedSemesterId) {
 			instructorGroupsMap = {};
 			return;
@@ -540,6 +565,11 @@
 	}
 
 	async function loadTimetable() {
+		if (!canReadTimetable) {
+			timetableEntries = [];
+			rawTeamEntries = [];
+			return;
+		}
 		if (viewMode === 'CLASSROOM' && !selectedClassroomId) {
 			timetableEntries = [];
 			return;
@@ -585,6 +615,7 @@
 
 	// ===== Occupancy map: client-side validation (Phase 1) =====
 	async function loadOccupancy() {
+		if (!canReadTimetable) return;
 		if (!selectedSemesterId) {
 			occupancyEntries = [];
 			return;
@@ -974,6 +1005,7 @@
 
 	// ===== Per-cell instructor popover =====
 	async function openEntryPopover(entry: TimetableEntry) {
+		if (!canManageTimetable) return;
 		// Only support COURSE entries (activity entries have different instructor logic)
 		if (entry.entry_type !== 'COURSE' || !entry.classroom_course_id) return;
 		// Lock: block ถ้ามี user อื่นเปิด dialog ที่ entry นี้อยู่
@@ -1012,6 +1044,7 @@
 	}
 
 	async function loadUnavailableRoomsForEntry(entry: TimetableEntry) {
+		if (!canManageTimetable) return;
 		try {
 			const res = await listTimetableEntries({
 				day_of_week: entry.day_of_week,
@@ -1030,6 +1063,7 @@
 	}
 
 	async function handlePopoverChangeRoom(roomId: string) {
+		if (!canManageTimetable) return;
 		if (!entryPopoverTarget) return;
 		const entry = entryPopoverTarget;
 		if (entry.room_id === roomId) {
@@ -1056,6 +1090,7 @@
 	}
 
 	async function handlePopoverRemoveInstructor(userId: string) {
+		if (!canManageTimetable) return;
 		if (!entryPopoverTarget) return;
 		const entry = entryPopoverTarget;
 		entryPopoverSaving = userId;
@@ -1086,6 +1121,7 @@
 	}
 
 	async function handlePopoverAddInstructor(userId: string, role: 'primary' | 'secondary') {
+		if (!canManageTimetable) return;
 		if (!entryPopoverTarget) return;
 		const entry = entryPopoverTarget;
 		entryPopoverSaving = userId;
@@ -1181,6 +1217,7 @@
 	}
 
 	async function handleDeleteEntry(entry: TimetableEntry) {
+		if (!canManageTimetable) return;
 		// Guard: ถ้ามี user อื่นเปิด dialog ที่ entry นี้ → block
 		const remoteLock = getRemoteActivityForEntry(entry.id);
 		if (remoteLock) {
@@ -1259,6 +1296,7 @@
 	}
 
 	async function doDeleteBatchGroup() {
+		if (!canManageTimetable) return;
 		const target = deleteBatchTarget;
 		if (!target?.batch_id) return;
 		try {
@@ -1289,6 +1327,7 @@
 	}
 
 	async function doDeleteBatchSingle() {
+		if (!canManageTimetable) return;
 		if (!deleteBatchTarget) return;
 		const target = deleteBatchTarget;
 		try {
@@ -1325,6 +1364,7 @@
 	}
 
 	async function doDeleteEntry(entryId: string, batch: boolean) {
+		if (!canManageTimetable) return;
 		try {
 			if (batch && deleteActivityTarget?.activity_slot_id) {
 				const res = await deleteBatchTimetableEntries({
@@ -1451,6 +1491,7 @@
 	}
 
 	async function fetchInstructorConflicts(course: DragCourse) {
+		if (!canManageTimetable) return;
 		// 1. Detect MOVE entry (source-of-truth สำหรับทีม via tei)
 		let moveEntry: TimetableEntry | undefined;
 		if (dragType === 'MOVE' && draggedEntryId) {
@@ -1615,6 +1656,7 @@
 		event: DragEvent,
 		activity: (typeof unscheduledActivities)[number]
 	) {
+		if (!canManageTimetable) return;
 		dragType = 'NEW';
 		// For INSTRUCTOR view independent: classroom comes from _classroom_id
 		const classroomId = activity._classroom_id || selectedClassroomId;
@@ -1666,6 +1708,7 @@
 		item: DragCourse | TimetableEntry,
 		type: 'NEW' | 'MOVE'
 	) {
+		if (!canManageTimetable) return;
 		dragType = type;
 
 		let courseToCheck: DragCourse | null = null;
@@ -1760,6 +1803,7 @@
 	}
 
 	function handleDragOver(event: DragEvent, day?: string, periodId?: string) {
+		if (!canManageTimetable) return;
 		event.preventDefault();
 		if (event.dataTransfer) {
 			event.dataTransfer.dropEffect = dragType === 'NEW' ? 'copy' : 'move';
@@ -1774,6 +1818,7 @@
 
 	async function handleDrop(event: DragEvent, day: string, periodId: string) {
 		event.preventDefault();
+		if (!canManageTimetable) return;
 
 		if (!draggedCourse) return;
 
@@ -2040,6 +2085,7 @@
 	});
 
 	async function updateUnavailableRooms(day: string, periodId: string) {
+		if (!canManageTimetable) return;
 		unavailableRooms.clear();
 		try {
 			const res = await listTimetableEntries({
@@ -2061,6 +2107,7 @@
 	}
 
 	async function confirmDropWithRoom() {
+		if (!canManageTimetable) return;
 		if (!pendingDropContext) return;
 
 		const { day, periodId, dragType, course, entryId } = pendingDropContext;
@@ -2269,6 +2316,7 @@
 	}
 
 	async function handleExportPDF() {
+		if (!canReadTimetable) return;
 		showExportModal = true;
 		// Default to current view settings
 		exportType = viewMode;
@@ -2281,6 +2329,7 @@
 	}
 
 	async function confirmExport() {
+		if (!canReadTimetable) return;
 		if (exportTargetIds.length === 0) return;
 
 		try {
@@ -2425,6 +2474,7 @@
 
 	$effect(() => {
 		if (selectedYearId) {
+			if (!canReadTimetable) return;
 			loadClassrooms();
 			loadPeriods();
 
@@ -2527,6 +2577,7 @@
 	});
 
 	$effect(() => {
+		if (!canReadTimetable) return;
 		if (viewMode === 'CLASSROOM' && selectedClassroomId) {
 			loadCourses();
 			loadTimetable();
@@ -2572,6 +2623,7 @@
 	});
 
 	$effect(() => {
+		if (!canReadTimetable) return;
 		if (selectedSemesterId) {
 			if (
 				(viewMode === 'CLASSROOM' && selectedClassroomId) ||
@@ -2585,6 +2637,10 @@
 
 	// Occupancy = semester-wide (ไม่ขึ้นกับ view) → load แยก ตอน semester เปลี่ยน
 	$effect(() => {
+		if (!canReadTimetable) {
+			occupancyEntries = [];
+			return;
+		}
 		if (selectedSemesterId) {
 			loadOccupancy();
 		} else {
@@ -2616,7 +2672,7 @@
 	// (user สามารถ uncheck ได้ถ้าอยากเอาออก)
 	$effect(() => {
 		const sid = batchSlotId;
-		if (batchMode === 'SLOT' && sid && showBatchModal) {
+		if (canManageTimetable && batchMode === 'SLOT' && sid && showBatchModal) {
 			const slot = activitySlots.find((s) => s.id === sid);
 			if (slot?.classroom_ids) {
 				batchClassrooms = [...slot.classroom_ids];
@@ -2632,6 +2688,7 @@
 	});
 
 	async function ensureActivitySlotsLoaded() {
+		if (!canManageTimetable) return;
 		if (activitySlots.length > 0 || !selectedSemesterId) return;
 		loadingSlots = true;
 		try {
@@ -2653,6 +2710,7 @@
 	let batchForce = $state(false);
 
 	async function loadBatchGradeLevels() {
+		if (!canManageTimetable) return;
 		if (batchGradeLevels.length > 0) return;
 		try {
 			// Need to pass academic_year_id if possible, or just list all
@@ -2681,6 +2739,7 @@
 	});
 
 	function toggleBatchClassroom(id: string) {
+		if (!canManageTimetable) return;
 		if (batchClassrooms.includes(id)) {
 			batchClassrooms = batchClassrooms.filter((c) => c !== id);
 		} else {
@@ -2689,6 +2748,7 @@
 	}
 
 	function selectAllBatchClassrooms() {
+		if (!canManageTimetable) return;
 		// Only select currently filtered items
 		const currentListIds = filteredBatchClassroomsList.map((c) => c.id);
 
@@ -2705,6 +2765,7 @@
 	}
 
 	async function handleBatchSubmit() {
+		if (!canManageTimetable) return;
 		// SLOT mode: ต้องมีห้อง (ครูมาอัตโนมัติจาก slot); TEXT mode: ห้องหรือครู อย่างน้อย 1
 		if (batchMode === 'SLOT') {
 			if (batchClassrooms.length === 0) {
@@ -2796,7 +2857,7 @@
 
 	// WebSocket Connection
 	$effect(() => {
-		if (selectedSemesterId && $authStore.user) {
+		if (canReadTimetable && selectedSemesterId && $authStore.user) {
 			const user = $authStore.user;
 			connectTimetableSocket({
 				semester_id: selectedSemesterId,
@@ -2814,6 +2875,7 @@
 	let workspaceRef: HTMLDivElement;
 	let wsRect = $state<DOMRect | null>(null);
 	function handleMouseMove(e: MouseEvent) {
+		if (!canReadTimetable) return;
 		const now = Date.now();
 		if (now - lastCursorSend > 50 && $authStore.user && workspaceRef) {
 			// 20fps cap
@@ -2845,6 +2907,7 @@
 	let lastDragSend = 0;
 
 	function handleDragMoveOnGrid(e: DragEvent) {
+		if (!canManageTimetable) return;
 		// HTML5 drag event fires during drag — use it to send cursor position
 		if (!draggedCourse || !$authStore.user || !workspaceRef) return;
 		// Chrome sometimes fires drag with clientX=0,clientY=0 — ignore those
@@ -2879,6 +2942,7 @@
 
 	// Auto Refresh Listener (fallback: TableRefresh หรือ gap-reconcile-refetch)
 	$effect(() => {
+		if (!canReadTimetable) return;
 		if ($refreshTrigger > 0) {
 			console.log('Auto-refreshing timetable...');
 			loadTimetable();
@@ -2888,6 +2952,7 @@
 
 	// Patch subscriber — apply realtime patches โดยไม่ต้อง fetch DB
 	$effect(() => {
+		if (!canReadTimetable) return;
 		const patch = $lastPatch;
 		if (!patch) return;
 		applyPatchToState(patch);
@@ -3318,1890 +3383,1940 @@
 
 			<div class="w-px h-5 bg-border mx-1"></div>
 
-			<Button
-				variant="outline"
-				onclick={() => goto(resolve('/staff/academic/timetable/scheduling-config'))}
-			>
-				<Zap class="w-4 h-4 mr-2 text-orange-500" />
-				จัดอัตโนมัติ
-			</Button>
-
-			<Button
-				variant="outline"
-				onclick={() => goto(resolve('/staff/academic/timetable/templates'))}
-			>
-				<FileStack class="w-4 h-4 mr-2" />
-				Templates
-			</Button>
-
-			<Button variant="outline" onclick={() => (showBatchModal = true)}>
-				<PlusCircle class="w-4 h-4 mr-2" /> กิจกรรมพิเศษ
-			</Button>
-
-			<Button variant="outline" onclick={handleExportPDF} disabled={isExporting}>
-				{#if isExporting}
-					<Loader2 class="w-4 h-4 mr-2 animate-spin" />
-				{:else}
-					<Download class="w-4 h-4 mr-2" />
-				{/if}
-				ดาวน์โหลด PDF
-			</Button>
-		</div>
-	</div>
-
-	<!-- Row 2: Filters -->
-	<div class="flex items-center gap-2 flex-wrap">
-		<div class="w-[180px]">
-			<Select.Root type="single" bind:value={selectedYearId}>
-				<Select.Trigger class="w-full h-9">
-					{academicYears.find((y) => y.id === selectedYearId)?.name || 'เลือกปีการศึกษา'}
-				</Select.Trigger>
-				<Select.Content>
-					{#each academicYears as year (year.id)}
-						<Select.Item value={year.id}>{year.name}</Select.Item>
-					{/each}
-				</Select.Content>
-			</Select.Root>
-		</div>
-
-		<div class="w-[180px]">
-			<Select.Root type="single" bind:value={selectedSemesterId}>
-				<Select.Trigger class="w-full h-9">
-					{#if selectedSemesterId && semesters.find((s) => s.id === selectedSemesterId)}
-						ภาคเรียนที่ {semesters.find((s) => s.id === selectedSemesterId)?.term}
-					{:else}
-						เลือกภาคเรียน
-					{/if}
-				</Select.Trigger>
-				<Select.Content>
-					{#each semesters as term (term.id)}
-						<Select.Item value={term.id}>ภาคเรียนที่ {term.term}</Select.Item>
-					{/each}
-				</Select.Content>
-			</Select.Root>
-		</div>
-
-		{#if viewMode === 'CLASSROOM'}
-			<div class="w-[220px]">
-				<Popover.Root bind:open={classroomPickerOpen}>
-					<Popover.Trigger class="w-full">
-						<Button
-							variant="outline"
-							role="combobox"
-							aria-expanded={classroomPickerOpen}
-							class="w-full justify-between font-normal h-9"
-						>
-							<span class="truncate">
-								{classrooms.find((c) => c.id === selectedClassroomId)?.name || 'เลือกห้องเรียน'}
-							</span>
-							<ChevronsUpDown class="ml-2 h-4 w-4 shrink-0 opacity-50" />
-						</Button>
-					</Popover.Trigger>
-					<Popover.Content class="w-[--bits-popover-trigger-width] p-0">
-						<Command.Root>
-							<Command.Input placeholder="ค้นหาห้อง..." />
-							<Command.Empty>ไม่พบห้องเรียน</Command.Empty>
-							<Command.Group class="max-h-[280px] overflow-y-auto">
-								{#each classrooms as classroom (classroom.id)}
-									<Command.Item
-										value={classroom.name}
-										onSelect={() => {
-											selectedClassroomId = classroom.id;
-											classroomPickerOpen = false;
-										}}
-									>
-										<Check
-											class="mr-2 h-4 w-4 {selectedClassroomId === classroom.id
-												? 'opacity-100'
-												: 'opacity-0'}"
-										/>
-										{classroom.name}
-									</Command.Item>
-								{/each}
-							</Command.Group>
-						</Command.Root>
-					</Popover.Content>
-				</Popover.Root>
-			</div>
-		{:else}
-			<div class="w-[220px]">
-				<Popover.Root bind:open={instructorPickerOpen}>
-					<Popover.Trigger class="w-full">
-						<Button
-							variant="outline"
-							role="combobox"
-							aria-expanded={instructorPickerOpen}
-							class="w-full justify-between font-normal h-9"
-						>
-							<span class="truncate">
-								{instructors.find((i) => i.id === selectedInstructorId)?.name || 'เลือกครูผู้สอน'}
-							</span>
-							<ChevronsUpDown class="ml-2 h-4 w-4 shrink-0 opacity-50" />
-						</Button>
-					</Popover.Trigger>
-					<Popover.Content class="w-[--bits-popover-trigger-width] p-0">
-						<Command.Root>
-							<Command.Input placeholder="ค้นหาครู..." />
-							<Command.Empty>ไม่พบครู</Command.Empty>
-							<Command.Group class="max-h-[280px] overflow-y-auto">
-								{#each instructors as instructor (instructor.id)}
-									<Command.Item
-										value={instructor.name}
-										onSelect={() => {
-											selectedInstructorId = instructor.id;
-											instructorPickerOpen = false;
-										}}
-									>
-										<Check
-											class="mr-2 h-4 w-4 {selectedInstructorId === instructor.id
-												? 'opacity-100'
-												: 'opacity-0'}"
-										/>
-										{instructor.name}
-									</Command.Item>
-								{/each}
-							</Command.Group>
-						</Command.Root>
-					</Popover.Content>
-				</Popover.Root>
-			</div>
-			{#if selectedInstructorId}
-				<label
-					class="flex items-center gap-2 text-xs cursor-pointer select-none px-2 py-1 rounded border bg-muted/30 hover:bg-muted transition-colors"
+			{#if canManageTimetable}
+				<Button
+					variant="outline"
+					onclick={() => goto(resolve('/staff/academic/timetable/scheduling-config'))}
 				>
-					<input type="checkbox" bind:checked={showTeamGhosts} class="cursor-pointer" />
-					<span>แสดงคาบในทีม (ghost cells)</span>
-				</label>
+					<Zap class="w-4 h-4 mr-2 text-orange-500" />
+					จัดอัตโนมัติ
+				</Button>
+
+				<Button
+					variant="outline"
+					onclick={() => goto(resolve('/staff/academic/timetable/templates'))}
+				>
+					<FileStack class="w-4 h-4 mr-2" />
+					Templates
+				</Button>
+
+				<Button variant="outline" onclick={() => (showBatchModal = true)}>
+					<PlusCircle class="w-4 h-4 mr-2" /> กิจกรรมพิเศษ
+				</Button>
 			{/if}
-		{/if}
-	</div>
 
-	<!-- Main Content Grid (Workspace = cursor canvas) -->
-	<div
-		class="grid grid-cols-12 gap-3 flex-1 min-h-0 relative"
-		bind:this={workspaceRef}
-		onmousemove={handleMouseMove}
-		ondrag={handleDragMoveOnGrid}
-		role="application"
-	>
-		<!-- Left Sidebar: Courses -->
-		<Card.Root class="col-span-2 flex flex-col h-full overflow-hidden gap-0 py-0">
-			<div class="py-2 px-3 border-b shrink-0">
-				<div class="text-sm font-semibold flex items-center gap-2">
-					<BookOpen class="w-4 h-4" /> รายวิชา
-					<span class="text-[10px] font-normal text-muted-foreground ml-auto"> ลากไปวาง </span>
-				</div>
-			</div>
-			<div class="flex-1 overflow-y-auto p-2 space-y-2 bg-muted/20">
-				{#each unscheduledCourses as course (course.id)}
-					{@const lockedBy = getDragOwner(undefined, course.id)}
-					<div
-						class="border rounded-md p-2 shadow-sm cursor-grab active:cursor-grabbing hover:shadow-md hover:brightness-95 transition-all group relative {lockedBy
-							? 'opacity-50 pointer-events-none'
-							: ''}"
-						style="background-color: {getSubjectColor(
-							viewMode === 'INSTRUCTOR'
-								? course.classroom_name || course.subject_code
-								: course.subject_code
-						)}; border-color: {getSubjectBorderColor(
-							viewMode === 'INSTRUCTOR'
-								? course.classroom_name || course.subject_code
-								: course.subject_code
-						)};"
-						draggable={!lockedBy}
-						ondragstart={(e) => handleDragStart(e, course, 'NEW')}
-						ondragend={handleDragEnd}
-						role="button"
-						tabindex="0"
-					>
-						{#if lockedBy}
-							<div
-								class="absolute inset-0 flex items-center justify-center z-10 bg-white/50 backdrop-blur-[1px] rounded-lg"
-							>
-								<span
-									class="text-[10px] font-bold px-2 py-1 rounded text-white shadow-sm"
-									style="background-color: {lockedBy.color};"
-								>
-									{lockedBy.name} กำลังใช้
-								</span>
-							</div>
-						{/if}
-
-						<div class="flex justify-between items-start mb-0.5 gap-1">
-							<Badge variant="outline" class="text-[10px] px-1 py-0 leading-tight"
-								>{course.subject_code}</Badge
-							>
-							<Badge
-								variant={course.is_completed ? 'secondary' : 'default'}
-								class="text-[10px] px-1 py-0 leading-tight"
-							>
-								{course.scheduled_count}/{course.max_periods}
-							</Badge>
-						</div>
-						<h4 class="font-medium text-xs line-clamp-2 leading-snug mb-1">
-							{course.subject_name_th || 'ไม่มีชื่อวิชา'}
-						</h4>
-						<div class="flex flex-col gap-0.5 text-[10px] text-muted-foreground">
-							{#if viewMode === 'CLASSROOM'}
-								<div class="flex items-center gap-1 truncate">
-									<Users class="w-3 h-3 shrink-0" />
-									<span class="truncate">{course.instructor_name || 'ไม่ระบุครู'}</span>
-								</div>
-							{:else}
-								<div class="flex items-center gap-1 truncate">
-									<School class="w-3 h-3 shrink-0" />
-									<span class="truncate">{course.classroom_name || 'ไม่ระบุห้อง'}</span>
-								</div>
-							{/if}
-							<div>{course.subject_credit} นก.</div>
-						</div>
-
-						<!-- Progress Bar -->
-						<div class="mt-1.5 h-1 w-full bg-secondary rounded-full overflow-hidden">
-							<div
-								class="h-full bg-primary transition-all"
-								style="width: {(course.scheduled_count / course.max_periods) * 100}%"
-							></div>
-						</div>
-					</div>
-				{:else}
-					<div class="text-center text-muted-foreground py-8 text-sm">
-						{#if !selectedClassroomId && !selectedInstructorId}
-							กรุณาเลือก{viewMode === 'CLASSROOM' ? 'ห้องเรียน' : 'ครูผู้สอน'}
-						{:else if courses.length === 0}
-							ไม่พบรายวิชา
-						{:else}
-							จัดตารางครบแล้ว
-						{/if}
-					</div>
-				{/each}
-			</div>
-
-			<!-- Activity Slots Section -->
-			{#if unscheduledActivities.length > 0}
-				<div class="border-t">
-					<div class="py-2 px-4 bg-emerald-50 border-b">
-						<span class="text-xs font-medium text-emerald-700 flex items-center gap-1">
-							<CalendarDays class="w-3 h-3" /> กิจกรรมพัฒนาผู้เรียน
-						</span>
-					</div>
-					<div class="overflow-y-auto p-3 space-y-2 max-h-[200px]">
-						{#each unscheduledActivities as activity (activity.id + ':' + (activity._classroom_id ?? ''))}
-							{#if activity.is_draggable}
-								<!-- Independent: draggable -->
-								<div
-									class="border rounded-lg p-2.5 shadow-sm cursor-grab active:cursor-grabbing hover:shadow-md transition-all bg-emerald-50 border-emerald-200"
-									draggable={true}
-									ondragstart={(e) => handleActivityDragStart(e, activity)}
-									ondragend={handleDragEnd}
-									role="button"
-									tabindex="0"
-								>
-									<div class="flex justify-between items-start mb-1">
-										<Badge
-											variant="outline"
-											class="text-[10px] border-emerald-300 text-emerald-700"
-										>
-											{ACTIVITY_TYPE_LABELS[activity.activity_type] ?? activity.activity_type}
-										</Badge>
-										<Badge variant="default" class="text-[10px] bg-emerald-600">
-											{activity.scheduled_count}/{activity.max_periods} คาบ
-										</Badge>
-									</div>
-									<h4 class="font-medium text-sm line-clamp-1 leading-tight">{activity.name}</h4>
-									{#if activity._classroom_name}
-										<div class="text-[10px] text-muted-foreground mt-0.5 flex items-center gap-1">
-											<School class="w-3 h-3" />
-											{activity._classroom_name}
-										</div>
-									{/if}
-									<div class="text-[10px] text-emerald-600 mt-1">อิสระ — ลากวางได้</div>
-									<div class="mt-1.5 h-1 w-full bg-emerald-100 rounded-full overflow-hidden">
-										<div
-											class="h-full bg-emerald-500 transition-all"
-											style="width: {(activity.scheduled_count / activity.max_periods) * 100}%"
-										></div>
-									</div>
-								</div>
-							{:else}
-								<!-- Synchronized: read-only -->
-								<div
-									class="border border-dashed rounded-lg p-2.5 opacity-60 bg-gray-50 border-gray-300"
-								>
-									<div class="flex justify-between items-start mb-1">
-										<Badge variant="outline" class="text-[10px]">
-											{ACTIVITY_TYPE_LABELS[activity.activity_type] ?? activity.activity_type}
-										</Badge>
-										<Badge variant="secondary" class="text-[10px]">
-											{activity.scheduled_count}/{activity.max_periods} คาบ
-										</Badge>
-									</div>
-									<h4
-										class="font-medium text-sm line-clamp-1 leading-tight flex items-center gap-1"
-									>
-										<Lock class="w-3 h-3 shrink-0" />
-										{activity.name}
-									</h4>
-									{#if viewMode === 'INSTRUCTOR' && selectedInstructorId}
-										<Button
-											variant="outline"
-											size="sm"
-											class="mt-1 h-6 text-xs w-full"
-											onclick={async () => {
-												try {
-													await restoreInstructorToSlot(activity.id, selectedInstructorId);
-													toast.success('แสดงในตารางแล้ว');
-													loadTimetable();
-													loadSidebarActivitySlots();
-												} catch (e: unknown) {
-													toast.error((e instanceof Error ? e.message : String(e)) || 'ไม่สำเร็จ');
-												}
-											}}
-										>
-											แสดงในตาราง
-										</Button>
-									{:else}
-										<div class="text-[10px] text-muted-foreground mt-1">
-											จัดพร้อมกัน — ใช้ Batch
-										</div>
-									{/if}
-								</div>
-							{/if}
-						{/each}
-					</div>
-				</div>
-			{/if}
-		</Card.Root>
-
-		<!-- Right Content: Timetable Grid -->
-		<Card.Root
-			class="col-span-10 flex flex-col h-full overflow-hidden border-2 shadow-none gap-0 py-0"
-		>
-			<div class="overflow-auto flex-1">
-				<div class="min-w-[800px] h-full flex flex-col">
-					<!-- Header Row (Periods) -->
-					<div class="flex sticky top-0 bg-background z-20">
-						<div
-							class="w-20 shrink-0 p-3 border-r border-b font-medium text-sm text-muted-foreground flex items-center justify-center bg-background sticky left-0 z-30"
-						>
-							วัน/คาบ
-						</div>
-						{#each periods as period (period.id)}
-							<div class="flex-1 min-w-[100px] p-2 border-r border-b text-center relative group">
-								<div class="text-sm font-bold">{period.name || ' '}</div>
-								<div class="text-xs text-muted-foreground">
-									{formatTime(period.start_time)}-{formatTime(period.end_time)}
-								</div>
-							</div>
-						{/each}
-					</div>
-
-					<!-- Days Rows -->
-					{#each DAYS as day (day.value)}
-						<div class="flex flex-1 min-h-[70px]">
-							<!-- Day Header -->
-							<div
-								class="w-20 shrink-0 border-r border-b bg-background font-medium flex items-center justify-center relative sticky left-0 z-10"
-							>
-								<!-- Day Indicator Line -->
-								{#if day.value === 'MON'}<div
-										class="absolute left-0 inset-y-0 w-1 bg-yellow-400"
-									></div>{/if}
-								{#if day.value === 'TUE'}<div
-										class="absolute left-0 inset-y-0 w-1 bg-pink-400"
-									></div>{/if}
-								{#if day.value === 'WED'}<div
-										class="absolute left-0 inset-y-0 w-1 bg-green-400"
-									></div>{/if}
-								{#if day.value === 'THU'}<div
-										class="absolute left-0 inset-y-0 w-1 bg-orange-400"
-									></div>{/if}
-								{#if day.value === 'FRI'}<div
-										class="absolute left-0 inset-y-0 w-1 bg-blue-400"
-									></div>{/if}
-
-								<div class="text-center">
-									<div class="text-base font-bold">{day.label}</div>
-								</div>
-							</div>
-
-							<!-- Slots -->
-							{#each periods as period (period.id)}
-								{@const entry = getEntryForSlot(day.value, period.id)}
-								{@const isOccupied = isSlotOccupiedByInstructor(day.value, period.id)}
-								{@const lockedBy = entry ? getDragOwner(entry.id) : null}
-								{@const remoteDrag = !entry ? getRemoteDragHover(day.value, period.id) : null}
-								{@const remoteActivitySlot = getRemoteActivityForSlot(day.value, period.id)}
-								{@const remoteActivityEntry = entry ? getRemoteActivityForEntry(entry.id) : null}
-								{@const remoteActivity = remoteActivitySlot || remoteActivityEntry}
-
-								<!-- Drop Zone -->
-								{@const validity =
-									draggedCourse && dragType === 'MOVE'
-										? moveValidityMap.get(`${day.value}|${period.id}`)
-										: null}
-								{@const validityClass = !validity
-									? ''
-									: validity.state === 'source'
-										? 'opacity-60'
-										: validity.state === 'empty' && validity.valid
-											? 'bg-green-50/40 ring-1 ring-inset ring-green-400/60'
-											: validity.state === 'occupied' && validity.valid
-												? 'ring-1 ring-inset ring-blue-400/70 bg-blue-50/30'
-												: 'bg-red-50/40 ring-1 ring-inset ring-red-300/60 cursor-not-allowed'}
-								<div
-									class="flex-1 border-r border-b min-w-[100px] relative transition-colors {isOccupied
-										? 'bg-red-50/50 from-red-100/20 bg-gradient-to-br'
-										: 'hover:bg-accent/50'} {draggedCourse && !entry && !isOccupied && !validity
-										? 'bg-green-50/50 ring-1 ring-inset ring-green-400/60'
-										: ''} {validityClass} {draggedCourse &&
-									entry &&
-									isOccupied &&
-									dragType === 'NEW'
-										? 'ring-2 ring-inset ring-red-500/70'
-										: ''} {remoteDrag ? 'ring-2 ring-inset ring-opacity-50' : ''}"
-									style={remoteDrag
-										? `--tw-ring-color: ${remoteDrag.user.color}40; background-color: ${remoteDrag.user.color}10;`
-										: ''}
-									data-day={day.value}
-									data-period={period.id}
-									title={validity && !validity.valid ? validity.reason : ''}
-									ondragover={(e) => handleDragOver(e, day.value, period.id)}
-									ondrop={(e) => handleDrop(e, day.value, period.id)}
-									role="application"
-								>
-									{#if remoteDrag}
-										<!-- Remote user drag ghost preview -->
-										<div
-											class="absolute inset-1 rounded border-2 border-dashed p-1.5 flex flex-col justify-center items-center gap-0.5 animate-in fade-in duration-200 pointer-events-none"
-											style="border-color: {remoteDrag.user.color}80; background-color: {remoteDrag
-												.user.color}15;"
-										>
-											<span
-												class="text-[10px] font-bold truncate max-w-full"
-												style="color: {remoteDrag.user.color}"
-											>
-												{remoteDrag.drag.info?.code || 'วิชา'}
-											</span>
-											<span class="text-[9px] text-muted-foreground truncate max-w-full">
-												{remoteDrag.drag.info?.title || ''}
-											</span>
-											<span
-												class="text-[8px] font-medium px-1.5 py-0.5 rounded-full text-white mt-0.5"
-												style="background-color: {remoteDrag.user.color};"
-											>
-												{remoteDrag.user.name}
-											</span>
-										</div>
-									{/if}
-									{#if entry && validity && validity.state === 'occupied' && validity.valid}
-										<!-- Swap indicator overlay -->
-										<div
-											class="absolute top-0.5 right-0.5 z-10 bg-blue-500 text-white text-[9px] px-1 py-0.5 rounded font-bold pointer-events-none"
-										>
-											⇄ สลับ
-										</div>
-									{/if}
-									{#if remoteActivity}
-										<!-- Remote user dialog activity — ring lock + badge (ช่วยเห็นเมื่อ cursor ไม่อยู่ใน view) -->
-										<div
-											class="absolute inset-0 ring-2 ring-inset pointer-events-none z-[5] rounded"
-											style="--tw-ring-color: {remoteActivity.user
-												.color}; background-color: {remoteActivity.user.color}1a;"
-										></div>
-										<div
-											class="absolute top-0.5 left-0.5 right-0.5 z-20 flex items-center gap-1 px-1 py-0.5 rounded text-[9px] font-medium shadow-sm pointer-events-none"
-											style="background-color: {remoteActivity.user.color}; color: white;"
-										>
-											<span>⚡</span>
-											<span class="truncate"
-												>{remoteActivity.user.name}: {activityLabel(remoteActivity.activity)}</span
-											>
-										</div>
-									{/if}
-									{#if entry}
-										{@const isGhost =
-											viewMode === 'INSTRUCTOR' &&
-											selectedInstructorId !== '' &&
-											!(entry.instructor_ids ?? []).includes(selectedInstructorId)}
-										{@const coTeacherCount =
-											viewMode === 'INSTRUCTOR'
-												? Math.max(0, (entry.instructor_ids?.length ?? 0) - 1)
-												: 0}
-										{@const isRemoteLocked = !!remoteActivityEntry}
-										{@const teacherText =
-											entry.instructor_names && entry.instructor_names.length > 0
-												? entry.instructor_names.join(', ')
-												: entry.instructor_name && entry.instructor_name !== '-'
-													? entry.instructor_name
-													: ''}
-										{@const hasMetaRow =
-											viewMode === 'CLASSROOM'
-												? !!teacherText || !!entry.room_id
-												: !!entry.classroom_name ||
-													!!entry.activity_slot_id ||
-													isGhost ||
-													coTeacherCount > 0 ||
-													!!entry.room_id}
-										<!-- Timetable Entry Card -->
-										<div
-											class="absolute inset-0.5 border rounded px-1.5 py-1 text-xs flex flex-col justify-between shadow-sm hover:shadow-md hover:brightness-95 transition-all group {(entry.entry_type !==
-												'COURSE' &&
-												!(
-													entry.entry_type === 'ACTIVITY' &&
-													entry.activity_scheduling_mode === 'independent'
-												)) ||
-											isGhost ||
-											isRemoteLocked
-												? 'cursor-pointer'
-												: 'cursor-grab active:cursor-grabbing'} {lockedBy
-												? 'opacity-50 pointer-events-none ring-2 ring-offset-1 ring-' +
-													lockedBy.color
-												: ''} {isGhost ? 'opacity-50 border-dashed' : ''}"
-											style="background-color: {getSubjectColor(
-												viewMode === 'INSTRUCTOR'
-													? entry.classroom_name || entry.subject_code || ''
-													: entry.subject_code || entry.title || '',
-												entry.entry_type
-											)}; border-color: {getSubjectBorderColor(
-												viewMode === 'INSTRUCTOR'
-													? entry.classroom_name || entry.subject_code || ''
-													: entry.subject_code || entry.title || '',
-												entry.entry_type
-											)};"
-											draggable={!lockedBy &&
-												!isRemoteLocked &&
-												!isGhost &&
-												!pendingEntryIds.has(entry.id) &&
-												!entry.id.startsWith('temp-') &&
-												(entry.entry_type === 'COURSE' ||
-													(entry.entry_type === 'ACTIVITY' &&
-														entry.activity_scheduling_mode === 'independent' &&
-														!entry.batch_id))}
-											ondragstart={(e) => handleDragStart(e, entry, 'MOVE')}
-											ondragend={handleDragEnd}
-											onclick={(e) => {
-												if ((e.target as HTMLElement).closest('button')) return;
-												openEntryPopover(entry);
-											}}
-											onkeydown={(e) => {
-												if (e.key === 'Enter' || e.key === ' ') {
-													e.preventDefault();
-													openEntryPopover(entry);
-												}
-											}}
-											role="button"
-											tabindex="0"
-										>
-											{#if lockedBy}
-												<div class="absolute -top-2 -right-2 z-20">
-													<span
-														class="text-[9px] font-bold px-1.5 py-0.5 rounded text-white shadow-sm"
-														style="background-color: {lockedBy.color};"
-													>
-														{lockedBy.name}
-													</span>
-												</div>
-											{/if}
-
-											{#if entry.subject_code}
-												<div class="font-bold text-foreground/90 truncate text-sm leading-tight">
-													{entry.subject_code}
-												</div>
-												<div
-													class="line-clamp-1 text-foreground/70 text-[11px] leading-tight mb-auto"
-													title={entry.subject_name_th || undefined}
-												>
-													{entry.subject_name_th || ''}
-												</div>
-											{:else}
-												<!-- TEXT-batch / activity: full title (รองรับหลายบรรทัดจาก textarea) -->
-												<div
-													class="font-bold text-foreground/90 text-sm leading-tight whitespace-pre-line line-clamp-3 mb-auto"
-													title={entry.title || undefined}
-												>
-													{entry.title || getEntryTypeFallbackLabel(entry.entry_type)}
-												</div>
-											{/if}
-											{#if hasMetaRow}
-												<div
-													class="mt-1 pt-1 border-t border-foreground/15 gap-0.5 flex flex-col text-[10px] text-muted-foreground"
-												>
-													{#if viewMode === 'CLASSROOM'}
-														{#if teacherText}
-															<div class="flex items-center gap-1 truncate">
-																<Users class="w-3 h-3 shrink-0" />
-																{teacherText}
-															</div>
-														{/if}
-													{:else if entry.entry_type === 'ACTIVITY' && entry.activity_slot_id && entry.activity_scheduling_mode === 'independent'}
-														<!-- Independent: แสดงชื่อห้อง -->
-														<div class="flex items-center gap-1 truncate">
-															<School class="w-3 h-3 shrink-0" />
-															{entry.classroom_name || '-'}
-														</div>
-													{:else if entry.entry_type === 'ACTIVITY' && entry.activity_slot_id}
-														<!-- Synchronized: แสดงชื่อกิจกรรมถ้ามี -->
-														{@const groupName = instructorGroupsMap[entry.activity_slot_id]}
-														<div class="flex items-center gap-1 truncate">
-															<BookOpen class="w-3 h-3 shrink-0" />
-															{#if groupName}
-																{groupName}
-															{:else}
-																{entry.activity_slot_name || '-'}
-															{/if}
-														</div>
-													{:else if entry.classroom_name}
-														<div class="flex items-center gap-1 truncate">
-															<School class="w-3 h-3 shrink-0" />
-															{entry.classroom_name}
-														</div>
-													{/if}
-
-													{#if viewMode === 'INSTRUCTOR' && isGhost}
-														<div class="flex items-center gap-1 text-amber-700 text-[10px]">
-															<span>👻</span>
-															<span>อยู่ในทีม (ยังไม่ได้สอนคาบนี้)</span>
-														</div>
-													{:else if viewMode === 'INSTRUCTOR' && coTeacherCount > 0}
-														<div
-															class="flex items-center gap-1 text-foreground/60 text-[10px]"
-															title={entry.instructor_names?.join(', ')}
-														>
-															<Users class="w-3 h-3 shrink-0" />
-															<span>+{coTeacherCount} ครูร่วม</span>
-														</div>
-													{/if}
-
-													{#if entry.room_id}
-														<div
-															class="flex items-center gap-1 truncate text-foreground/60"
-															title={rooms.find((r) => r.id === entry.room_id)?.name_th}
-														>
-															<MapPin class="w-3 h-3 shrink-0" />
-															{rooms.find((r) => r.id === entry.room_id)?.name_th || '?'}
-														</div>
-													{/if}
-												</div>
-											{/if}
-
-											<!-- มุมขวาบน: pending spinner (กันลบระหว่างบันทึก) | delete button (hover) -->
-											{#if !isGhost && !isRemoteLocked}
-												{#if pendingEntryIds.has(entry.id)}
-													<div
-														class="absolute top-0.5 right-0.5 z-30 p-0.5 rounded bg-amber-50/90"
-														title="กำลังบันทึก..."
-													>
-														<Loader2 class="w-3 h-3 animate-spin text-amber-600" />
-													</div>
-												{:else}
-													<button
-														class="absolute top-0.5 right-0.5 opacity-0 group-hover:opacity-100 p-0.5 hover:bg-red-100 hover:text-red-500 rounded transition-all z-30"
-														onclick={(e) => {
-															e.stopPropagation();
-															handleDeleteEntry(entry);
-														}}
-													>
-														<Trash2 class="w-3 h-3" />
-													</button>
-												{/if}
-											{/if}
-										</div>
-									{:else if isOccupied}
-										{@const conflicts = slotConflicts.get(getSlotKey(day.value, period.id)) ?? []}
-										{@const primary = conflicts[0]}
-										<div
-											class="absolute inset-0 flex flex-col items-center justify-center px-1 py-0.5 text-center select-none gap-0.5"
-											title={conflicts
-												.map((c) => {
-													const subj = [c.subject_code, c.subject_name].filter(Boolean).join(' · ');
-													const loc = [c.classroom_name, c.room_code ? `ห้อง ${c.room_code}` : '']
-														.filter(Boolean)
-														.join(' ');
-													return c.kind === 'classroom'
-														? `ห้องติด: ${subj}${loc ? ' (' + loc + ')' : ''}`
-														: `${c.teacher_name} ติด: ${subj}${loc ? ' (' + loc + ')' : ''}`;
-												})
-												.join('\n')}
-										>
-											{#if primary}
-												<div
-													class="flex items-center gap-1 text-[11px] text-red-600 font-semibold truncate max-w-full leading-tight"
-												>
-													{#if primary.kind === 'classroom'}
-														<BookOpen class="w-3 h-3 shrink-0" />
-														<span class="truncate">{primary.subject_code || 'ไม่ว่าง'}</span>
-													{:else}
-														<Users class="w-3 h-3 shrink-0" />
-														<span class="truncate">{primary.teacher_name}</span>
-													{/if}
-												</div>
-												{#if primary.subject_name}
-													<div
-														class="text-[10px] text-red-500/80 truncate max-w-full leading-tight"
-													>
-														{primary.subject_name}
-													</div>
-												{/if}
-												{#if primary.kind === 'teacher' || primary.room_code}
-													<div class="text-[9px] text-red-500/70 truncate max-w-full leading-tight">
-														{#if primary.kind === 'teacher'}
-															{primary.classroom_name}{#if primary.room_code}
-																· ห้อง {primary.room_code}{/if}
-														{:else}
-															ห้อง {primary.room_code}
-														{/if}
-													</div>
-												{/if}
-												{#if conflicts.length > 1}
-													<div class="text-[9px] text-red-400 leading-none">
-														+{conflicts.length - 1} ติดเพิ่ม
-													</div>
-												{/if}
-											{:else}
-												<div class="text-xs text-red-500 font-medium">
-													{viewMode === 'INSTRUCTOR' ? 'ห้องนี้ไม่ว่าง' : 'ครูติดสอน'}
-												</div>
-											{/if}
-										</div>
-									{:else if draggedCourse}
-										<div
-											class="absolute inset-0 flex items-center justify-center opacity-0 hover:opacity-100 pointer-events-none"
-										>
-											<div class="text-xs text-blue-500 font-medium">+ วางที่นี่</div>
-										</div>
-									{/if}
-								</div>
-							{/each}
-						</div>
-					{/each}
-				</div>
-			</div>
-		</Card.Root>
-	</div>
-
-	<!-- Floating Conflict Popup (ระหว่าง drag — native title ใช้ไม่ได้ใน drag state) -->
-	{#if hoverDragCell && draggedCourse}
-		{@const hoverConflicts =
-			slotConflicts.get(getSlotKey(hoverDragCell.day, hoverDragCell.periodId)) ?? []}
-		{#if hoverConflicts.length > 0}
-			<div
-				class="fixed z-[10000] pointer-events-none bg-white border border-red-300 rounded-md shadow-lg p-2 text-xs max-w-xs space-y-1"
-				style="top: {hoverDragCell.y + 45}px; left: {hoverDragCell.x + 68}px;"
-			>
-				{#each hoverConflicts as c, i (i)}
-					<div class="flex items-start gap-1.5 text-red-700">
-						{#if c.kind === 'classroom'}
-							<BookOpen class="w-3.5 h-3.5 shrink-0 mt-0.5" />
-							<div class="flex-1 leading-tight">
-								<div class="font-semibold">ห้องติด: {c.subject_code}</div>
-								{#if c.subject_name}
-									<div class="text-red-600/80">{c.subject_name}</div>
-								{/if}
-								{#if c.classroom_name || c.room_code}
-									<div class="text-red-500/70 text-[10px]">
-										{c.classroom_name}{#if c.room_code}
-											· ห้อง {c.room_code}{/if}
-									</div>
-								{/if}
-							</div>
-						{:else}
-							<Users class="w-3.5 h-3.5 shrink-0 mt-0.5" />
-							<div class="flex-1 leading-tight">
-								<div class="font-semibold">{c.teacher_name} ติด: {c.subject_code}</div>
-								{#if c.subject_name}
-									<div class="text-red-600/80">{c.subject_name}</div>
-								{/if}
-								{#if c.classroom_name || c.room_code}
-									<div class="text-red-500/70 text-[10px]">
-										{c.classroom_name}{#if c.room_code}
-											· ห้อง {c.room_code}{/if}
-									</div>
-								{/if}
-							</div>
-						{/if}
-					</div>
-				{/each}
-			</div>
-		{/if}
-	{/if}
-
-	<!-- GHOST UI OVERLAY (fixed, clipped to workspace via clip-path) -->
-	<div
-		class="pointer-events-none fixed inset-0 z-[9999]"
-		style={wsRect
-			? `clip-path: inset(${wsRect.top}px ${typeof window !== 'undefined' ? window.innerWidth - wsRect.right : 0}px ${typeof window !== 'undefined' ? window.innerHeight - wsRect.bottom : 0}px ${wsRect.left}px)`
-			: 'display:none'}
-	>
-		{#each $activeUsers as user (user.user_id)}
-			{@const cursor = $remoteCursors[user.user_id]}
-
-			{#if cursor && user.user_id !== $authStore.user?.id}
-				{#if cursor.context?.view_mode === viewMode && cursor.context?.view_id === (viewMode === 'CLASSROOM' ? selectedClassroomId : selectedInstructorId)}
-					<div
-						class="absolute transition-transform duration-100 ease-linear flex flex-col items-start gap-1"
-						style="transform: translate({cursor.x * (wsRect?.width ?? 0) +
-							(wsRect?.left ?? 0)}px, {cursor.y * (wsRect?.height ?? 0) + (wsRect?.top ?? 0)}px);"
-					>
-						<svg
-							xmlns="http://www.w3.org/2000/svg"
-							class="h-5 w-5 drop-shadow-md"
-							fill={user.color}
-							viewBox="0 0 24 24"
-							stroke="white"
-							stroke-width="2"
-						>
-							<path d="M3 3l7.07 16.97 2.51-7.39 7.39-2.51L3 3z" />
-						</svg>
-
-						<div
-							class="px-2 py-0.5 rounded text-[10px] text-white font-bold whitespace-nowrap shadow-sm"
-							style="background-color: {user.color}"
-						>
-							{user.name}
-						</div>
-
-						{#if $remoteActivities[user.user_id]}
-							{@const act = $remoteActivities[user.user_id]}
-							<div
-								class="px-2 py-0.5 rounded text-[10px] text-white whitespace-nowrap shadow-sm flex items-center gap-1 mt-0.5"
-								style="background-color: {user.color}dd"
-							>
-								<span>⚡</span>
-								<span>{activityLabel(act)}</span>
-							</div>
-						{/if}
-
-						{#if $userDrags[user.user_id]}
-							{@const drag = $userDrags[user.user_id]}
-							<div
-								class="bg-background border rounded shadow-lg p-2.5 flex items-center gap-3 mt-2 opacity-95 scale-90 origin-top-left animate-in fade-in zoom-in duration-200 min-w-[150px]"
-							>
-								<div class="p-1.5 rounded bg-muted">
-									<BookOpen class="w-4 h-4 text-primary" />
-								</div>
-								<div class="flex flex-col">
-									<span class="text-xs font-bold leading-tight line-clamp-1"
-										>{drag.info?.code || 'วิชา'}</span
-									>
-									<span class="text-[10px] text-muted-foreground line-clamp-1"
-										>{drag.info?.title || 'กำลังลาก...'}</span
-									>
-								</div>
-							</div>
-						{/if}
-					</div>
-				{/if}
-			{/if}
-		{/each}
-	</div>
-</div>
-
-<!-- Per-cell Instructor Editor Popover -->
-<Dialog.Root bind:open={entryPopoverOpen}>
-	<Dialog.Content class="sm:max-w-[480px]">
-		<Dialog.Header>
-			<Dialog.Title>
-				{#if entryPopoverTarget}
-					{entryPopoverTarget.subject_code ?? ''} {entryPopoverTarget.subject_name_th ?? ''}
-				{:else}
-					แก้ไขคาบนี้
-				{/if}
-			</Dialog.Title>
-			<Dialog.Description>
-				{#if entryPopoverTarget}
-					{entryPopoverTarget.classroom_name} · {entryPopoverTarget.day_of_week} · {entryPopoverTarget.period_name ??
-						''}
-				{/if}
-			</Dialog.Description>
-		</Dialog.Header>
-
-		<div class="py-2 space-y-3">
-			{#if entryPopoverLoading}
-				<div class="text-center py-4">
-					<Loader2 class="w-5 h-5 animate-spin mx-auto" />
-				</div>
-			{:else if entryPopoverTarget}
-				<div class="space-y-2">
-					<div class="text-sm font-medium">ครูสอนในคาบนี้</div>
-					{#if popoverInCell.length === 0}
-						<p class="text-xs text-muted-foreground italic">ไม่มีครูในคาบนี้</p>
+			{#if canReadTimetable}
+				<Button variant="outline" onclick={handleExportPDF} disabled={isExporting}>
+					{#if isExporting}
+						<Loader2 class="w-4 h-4 mr-2 animate-spin" />
 					{:else}
-						<div class="flex flex-wrap gap-1.5">
-							{#each popoverInCell as uid, idx (uid)}
-								{@const isSelf = viewMode === 'INSTRUCTOR' && uid === selectedInstructorId}
-								<Badge variant={isSelf ? 'default' : 'secondary'} class="gap-1 pr-1">
-									<span>
-										{isSelf ? '👤 ' : ''}{popoverInCellNames[idx] ?? uid}
-										{#if isSelf}<span class="text-[10px] opacity-80">(คุณ)</span>{/if}
-									</span>
-									<button
-										type="button"
-										class="ml-1 rounded hover:bg-destructive/20 p-0.5"
-										onclick={() => handlePopoverRemoveInstructor(uid)}
-										disabled={entryPopoverSaving === uid}
-										aria-label="ลบครู"
-									>
-										{#if entryPopoverSaving === uid}
-											<Loader2 class="h-3 w-3 animate-spin" />
-										{:else}
-											<Trash2 class="h-3 w-3" />
-										{/if}
-									</button>
-								</Badge>
-							{/each}
-						</div>
+						<Download class="w-4 h-4 mr-2" />
 					{/if}
-				</div>
-
-				<div class="space-y-2 border-t pt-3">
-					<div class="text-sm font-medium">เพิ่มครูจากทีมวิชา</div>
-					{#if popoverNotInCell.length === 0}
-						<p class="text-xs text-muted-foreground italic">ครูในทีมอยู่ในคาบนี้ครบแล้ว</p>
-					{:else}
-						<div class="flex flex-wrap gap-1.5">
-							{#each popoverNotInCell as t (t.instructor_id)}
-								<Button
-									variant="outline"
-									size="sm"
-									class="h-7 text-xs"
-									onclick={() => handlePopoverAddInstructor(t.instructor_id, t.role)}
-									disabled={entryPopoverSaving === t.instructor_id}
-								>
-									{#if entryPopoverSaving === t.instructor_id}
-										<Loader2 class="h-3 w-3 animate-spin mr-1" />
-									{:else}
-										+
-									{/if}
-									{t.role === 'primary' ? '⭐ ' : ''}{t.instructor_name ?? t.instructor_id}
-								</Button>
-							{/each}
-						</div>
-					{/if}
-				</div>
-
-				<!-- ห้องเรียน — เปลี่ยนเฉพาะคาบนี้ได้ (ทุก view; INSTRUCTOR ghost = ไม่ใช่ entry ของเรา → ซ่อน) -->
-				{#if !entryPopoverIsGhost}
-					<div class="space-y-2 border-t pt-3">
-						<div class="text-sm font-medium">ห้องเรียน</div>
-						<Popover.Root bind:open={entryPopoverRoomPickerOpen}>
-							<Popover.Trigger class="w-full">
-								<Button
-									variant="outline"
-									role="combobox"
-									aria-expanded={entryPopoverRoomPickerOpen}
-									class="w-full justify-between font-normal"
-									disabled={entryPopoverSavingRoom}
-								>
-									<span class="truncate flex items-center gap-1.5">
-										{#if entryPopoverSavingRoom}
-											<Loader2 class="h-3.5 w-3.5 animate-spin" />
-										{:else}
-											<MapPin class="h-3.5 w-3.5 shrink-0 opacity-70" />
-										{/if}
-										{#if entryPopoverTarget?.room_id}
-											{@const r = rooms.find((x) => x.id === entryPopoverTarget?.room_id)}
-											{r
-												? `${r.name_th}${r.building_name ? ` (${r.building_name})` : ''}`
-												: 'ห้องไม่พบ'}
-										{:else}
-											ไม่ระบุห้อง
-										{/if}
-									</span>
-									<ChevronsUpDown class="ml-2 h-4 w-4 shrink-0 opacity-50" />
-								</Button>
-							</Popover.Trigger>
-							<Popover.Content class="w-[--bits-popover-trigger-width] p-0">
-								<Command.Root>
-									<Command.Input placeholder="ค้นหาห้อง..." />
-									<Command.Empty>ไม่พบห้อง</Command.Empty>
-									<Command.Group class="max-h-[280px] overflow-y-auto">
-										{#each rooms as room (room.id)}
-											{@const isBusy = entryPopoverUnavailableRooms.has(room.id)}
-											{@const isSelected = entryPopoverTarget?.room_id === room.id}
-											{#if !isBusy || isSelected}
-												<Command.Item
-													value={`${room.name_th} ${room.building_name ?? ''}`}
-													onSelect={() => handlePopoverChangeRoom(room.id)}
-												>
-													<Check class="mr-2 h-4 w-4 {isSelected ? 'opacity-100' : 'opacity-0'}" />
-													{room.name_th}{room.building_name ? ` (${room.building_name})` : ''}
-												</Command.Item>
-											{/if}
-										{/each}
-									</Command.Group>
-								</Command.Root>
-							</Popover.Content>
-						</Popover.Root>
-					</div>
-				{/if}
+					ดาวน์โหลด PDF
+				</Button>
 			{/if}
 		</div>
+	</div>
 
-		<Dialog.Footer>
-			<Button variant="outline" onclick={() => (entryPopoverOpen = false)}>ปิด</Button>
-		</Dialog.Footer>
-	</Dialog.Content>
-</Dialog.Root>
+	{#if !canReadTimetable}
+		<Alert>
+			<AlertTriangle class="h-4 w-4" />
+			<AlertTitle>ไม่มีสิทธิ์ดูตารางสอน</AlertTitle>
+			<AlertDescription>
+				ต้องมีสิทธิ์อ่านแผนการจัดตารางสอนจึงจะเข้าถึงข้อมูลในหน้านี้ได้
+			</AlertDescription>
+		</Alert>
+	{:else}
+		<!-- Row 2: Filters -->
+		<div class="flex items-center gap-2 flex-wrap">
+			<div class="w-[180px]">
+				<Select.Root type="single" bind:value={selectedYearId}>
+					<Select.Trigger class="w-full h-9">
+						{academicYears.find((y) => y.id === selectedYearId)?.name || 'เลือกปีการศึกษา'}
+					</Select.Trigger>
+					<Select.Content>
+						{#each academicYears as year (year.id)}
+							<Select.Item value={year.id}>{year.name}</Select.Item>
+						{/each}
+					</Select.Content>
+				</Select.Root>
+			</div>
 
-<Dialog.Root bind:open={showRoomModal}>
-	<Dialog.Content class="sm:max-w-[425px]">
-		<Dialog.Header>
-			<Dialog.Title>เลือกห้องเรียน ({draggedCourse?.subject_code})</Dialog.Title>
-			<Dialog.Description>
-				<div class="flex flex-col gap-1 mt-1 text-foreground text-left">
-					<span class="font-medium text-sm text-primary"
-						>{draggedCourse?.subject_name_th ||
-							draggedCourse?.title_th ||
-							draggedCourse?.title}</span
-					>
-					<span class="text-xs text-muted-foreground flex items-center gap-2">
-						{#if viewMode === 'CLASSROOM'}
-							<span class="flex items-center gap-1"
-								><Users class="w-3 h-3" />
-								{draggedActivityInstructor?.name || draggedCourse?.instructor_name || '-'}</span
-							>
-							<span class="flex items-center gap-1"
-								><School class="w-3 h-3" />
-								{classrooms.find((c) => c.id === selectedClassroomId)?.name || ''}</span
-							>
+			<div class="w-[180px]">
+				<Select.Root type="single" bind:value={selectedSemesterId}>
+					<Select.Trigger class="w-full h-9">
+						{#if selectedSemesterId && semesters.find((s) => s.id === selectedSemesterId)}
+							ภาคเรียนที่ {semesters.find((s) => s.id === selectedSemesterId)?.term}
 						{:else}
-							<span class="flex items-center gap-1"
-								><School class="w-3 h-3" /> {draggedCourse?.classroom_name || '-'}</span
-							>
-							{#if draggedActivityInstructor}
-								<span class="flex items-center gap-1"
-									><Users class="w-3 h-3" /> {draggedActivityInstructor.name}</span
-								>
-							{/if}
+							เลือกภาคเรียน
 						{/if}
-					</span>
-				</div>
-			</Dialog.Description>
-		</Dialog.Header>
+					</Select.Trigger>
+					<Select.Content>
+						{#each semesters as term (term.id)}
+							<Select.Item value={term.id}>ภาคเรียนที่ {term.term}</Select.Item>
+						{/each}
+					</Select.Content>
+				</Select.Root>
+			</div>
 
-		<div class="py-4 space-y-4">
-			<div class="space-y-2">
-				<Label.Root>ห้องเรียน</Label.Root>
-				<Popover.Root bind:open={roomPickerOpen}>
-					<Popover.Trigger class="w-full">
-						<Button
-							variant="outline"
-							role="combobox"
-							aria-expanded={roomPickerOpen}
-							class="w-full justify-between font-normal"
-						>
-							<span class="truncate">
-								{#if selectedRoomId === 'none'}
-									ไม่ระบุห้อง
-								{:else if selectedRoomId}
-									{@const r = rooms.find((x) => x.id === selectedRoomId)}
-									{r ? `${r.name_th} (${r.building_name})` : 'เลือกห้อง'}
-								{:else}
-									เลือกห้อง
-								{/if}
-							</span>
-							<ChevronsUpDown class="ml-2 h-4 w-4 shrink-0 opacity-50" />
-						</Button>
-					</Popover.Trigger>
-					<Popover.Content class="w-[--bits-popover-trigger-width] p-0">
-						<Command.Root>
-							<Command.Input placeholder="ค้นหาห้อง..." />
-							<Command.Empty>ไม่พบห้อง</Command.Empty>
-							<Command.Group class="max-h-[280px] overflow-y-auto">
-								<Command.Item
-									value="ไม่ระบุห้อง"
-									onSelect={() => {
-										selectedRoomId = 'none';
-										roomPickerOpen = false;
-									}}
-								>
-									<Check
-										class="mr-2 h-4 w-4 {selectedRoomId === 'none' ? 'opacity-100' : 'opacity-0'}"
-									/>
-									<span class="text-muted-foreground">ไม่ระบุห้อง</span>
-								</Command.Item>
-								{#each rooms as room (room.id)}
-									{@const isBusy = unavailableRooms.has(room.id)}
-									{@const displaySelected = selectedRoomId === room.id}
-									{#if !isBusy || displaySelected}
+			{#if viewMode === 'CLASSROOM'}
+				<div class="w-[220px]">
+					<Popover.Root bind:open={classroomPickerOpen}>
+						<Popover.Trigger class="w-full">
+							<Button
+								variant="outline"
+								role="combobox"
+								aria-expanded={classroomPickerOpen}
+								class="w-full justify-between font-normal h-9"
+							>
+								<span class="truncate">
+									{classrooms.find((c) => c.id === selectedClassroomId)?.name || 'เลือกห้องเรียน'}
+								</span>
+								<ChevronsUpDown class="ml-2 h-4 w-4 shrink-0 opacity-50" />
+							</Button>
+						</Popover.Trigger>
+						<Popover.Content class="w-[--bits-popover-trigger-width] p-0">
+							<Command.Root>
+								<Command.Input placeholder="ค้นหาห้อง..." />
+								<Command.Empty>ไม่พบห้องเรียน</Command.Empty>
+								<Command.Group class="max-h-[280px] overflow-y-auto">
+									{#each classrooms as classroom (classroom.id)}
 										<Command.Item
-											value={`${room.name_th} ${room.building_name ?? ''}`}
+											value={classroom.name}
 											onSelect={() => {
-												selectedRoomId = room.id;
-												roomPickerOpen = false;
+												selectedClassroomId = classroom.id;
+												classroomPickerOpen = false;
 											}}
 										>
 											<Check
-												class="mr-2 h-4 w-4 {selectedRoomId === room.id
+												class="mr-2 h-4 w-4 {selectedClassroomId === classroom.id
 													? 'opacity-100'
 													: 'opacity-0'}"
 											/>
-											{room.name_th} ({room.building_name})
+											{classroom.name}
 										</Command.Item>
-									{/if}
-								{/each}
-							</Command.Group>
-						</Command.Root>
-					</Popover.Content>
-				</Popover.Root>
-			</div>
+									{/each}
+								</Command.Group>
+							</Command.Root>
+						</Popover.Content>
+					</Popover.Root>
+				</div>
+			{:else}
+				<div class="w-[220px]">
+					<Popover.Root bind:open={instructorPickerOpen}>
+						<Popover.Trigger class="w-full">
+							<Button
+								variant="outline"
+								role="combobox"
+								aria-expanded={instructorPickerOpen}
+								class="w-full justify-between font-normal h-9"
+							>
+								<span class="truncate">
+									{instructors.find((i) => i.id === selectedInstructorId)?.name || 'เลือกครูผู้สอน'}
+								</span>
+								<ChevronsUpDown class="ml-2 h-4 w-4 shrink-0 opacity-50" />
+							</Button>
+						</Popover.Trigger>
+						<Popover.Content class="w-[--bits-popover-trigger-width] p-0">
+							<Command.Root>
+								<Command.Input placeholder="ค้นหาครู..." />
+								<Command.Empty>ไม่พบครู</Command.Empty>
+								<Command.Group class="max-h-[280px] overflow-y-auto">
+									{#each instructors as instructor (instructor.id)}
+										<Command.Item
+											value={instructor.name}
+											onSelect={() => {
+												selectedInstructorId = instructor.id;
+												instructorPickerOpen = false;
+											}}
+										>
+											<Check
+												class="mr-2 h-4 w-4 {selectedInstructorId === instructor.id
+													? 'opacity-100'
+													: 'opacity-0'}"
+											/>
+											{instructor.name}
+										</Command.Item>
+									{/each}
+								</Command.Group>
+							</Command.Root>
+						</Popover.Content>
+					</Popover.Root>
+				</div>
+				{#if selectedInstructorId}
+					<label
+						class="flex items-center gap-2 text-xs cursor-pointer select-none px-2 py-1 rounded border bg-muted/30 hover:bg-muted transition-colors"
+					>
+						<input type="checkbox" bind:checked={showTeamGhosts} class="cursor-pointer" />
+						<span>แสดงคาบในทีม (ghost cells)</span>
+					</label>
+				{/if}
+			{/if}
 		</div>
 
-		<Dialog.Footer>
-			<Button
-				variant="outline"
-				onclick={() => {
-					showRoomModal = false;
-					isDropPending = false;
-					handleDragEnd(); // Cancel drag
-				}}>ยกเลิก</Button
-			>
-			<Button onclick={confirmDropWithRoom} disabled={submitting}>
-				{#if submitting}
-					<Loader2 class="mr-2 h-4 w-4 animate-spin" />
+		<!-- Main Content Grid (Workspace = cursor canvas) -->
+		<div
+			class="grid grid-cols-12 gap-3 flex-1 min-h-0 relative"
+			bind:this={workspaceRef}
+			onmousemove={handleMouseMove}
+			ondrag={handleDragMoveOnGrid}
+			role="application"
+		>
+			<!-- Left Sidebar: Courses -->
+			<Card.Root class="col-span-2 flex flex-col h-full overflow-hidden gap-0 py-0">
+				<div class="py-2 px-3 border-b shrink-0">
+					<div class="text-sm font-semibold flex items-center gap-2">
+						<BookOpen class="w-4 h-4" /> รายวิชา
+						{#if canManageTimetable}
+							<span class="text-[10px] font-normal text-muted-foreground ml-auto"> ลากไปวาง </span>
+						{/if}
+					</div>
+				</div>
+				<div class="flex-1 overflow-y-auto p-2 space-y-2 bg-muted/20">
+					{#each unscheduledCourses as course (course.id)}
+						{@const lockedBy = getDragOwner(undefined, course.id)}
+						<div
+							class="border rounded-md p-2 shadow-sm hover:shadow-md hover:brightness-95 transition-all group relative {canManageTimetable
+								? 'cursor-grab active:cursor-grabbing'
+								: 'cursor-default'} {lockedBy ? 'opacity-50 pointer-events-none' : ''}"
+							style="background-color: {getSubjectColor(
+								viewMode === 'INSTRUCTOR'
+									? course.classroom_name || course.subject_code
+									: course.subject_code
+							)}; border-color: {getSubjectBorderColor(
+								viewMode === 'INSTRUCTOR'
+									? course.classroom_name || course.subject_code
+									: course.subject_code
+							)};"
+							draggable={canManageTimetable && !lockedBy}
+							ondragstart={(e) => handleDragStart(e, course, 'NEW')}
+							ondragend={handleDragEnd}
+							role="button"
+							tabindex="0"
+						>
+							{#if lockedBy}
+								<div
+									class="absolute inset-0 flex items-center justify-center z-10 bg-white/50 backdrop-blur-[1px] rounded-lg"
+								>
+									<span
+										class="text-[10px] font-bold px-2 py-1 rounded text-white shadow-sm"
+										style="background-color: {lockedBy.color};"
+									>
+										{lockedBy.name} กำลังใช้
+									</span>
+								</div>
+							{/if}
+
+							<div class="flex justify-between items-start mb-0.5 gap-1">
+								<Badge variant="outline" class="text-[10px] px-1 py-0 leading-tight"
+									>{course.subject_code}</Badge
+								>
+								<Badge
+									variant={course.is_completed ? 'secondary' : 'default'}
+									class="text-[10px] px-1 py-0 leading-tight"
+								>
+									{course.scheduled_count}/{course.max_periods}
+								</Badge>
+							</div>
+							<h4 class="font-medium text-xs line-clamp-2 leading-snug mb-1">
+								{course.subject_name_th || 'ไม่มีชื่อวิชา'}
+							</h4>
+							<div class="flex flex-col gap-0.5 text-[10px] text-muted-foreground">
+								{#if viewMode === 'CLASSROOM'}
+									<div class="flex items-center gap-1 truncate">
+										<Users class="w-3 h-3 shrink-0" />
+										<span class="truncate">{course.instructor_name || 'ไม่ระบุครู'}</span>
+									</div>
+								{:else}
+									<div class="flex items-center gap-1 truncate">
+										<School class="w-3 h-3 shrink-0" />
+										<span class="truncate">{course.classroom_name || 'ไม่ระบุห้อง'}</span>
+									</div>
+								{/if}
+								<div>{course.subject_credit} นก.</div>
+							</div>
+
+							<!-- Progress Bar -->
+							<div class="mt-1.5 h-1 w-full bg-secondary rounded-full overflow-hidden">
+								<div
+									class="h-full bg-primary transition-all"
+									style="width: {(course.scheduled_count / course.max_periods) * 100}%"
+								></div>
+							</div>
+						</div>
+					{:else}
+						<div class="text-center text-muted-foreground py-8 text-sm">
+							{#if !selectedClassroomId && !selectedInstructorId}
+								กรุณาเลือก{viewMode === 'CLASSROOM' ? 'ห้องเรียน' : 'ครูผู้สอน'}
+							{:else if courses.length === 0}
+								ไม่พบรายวิชา
+							{:else}
+								จัดตารางครบแล้ว
+							{/if}
+						</div>
+					{/each}
+				</div>
+
+				<!-- Activity Slots Section -->
+				{#if unscheduledActivities.length > 0}
+					<div class="border-t">
+						<div class="py-2 px-4 bg-emerald-50 border-b">
+							<span class="text-xs font-medium text-emerald-700 flex items-center gap-1">
+								<CalendarDays class="w-3 h-3" /> กิจกรรมพัฒนาผู้เรียน
+							</span>
+						</div>
+						<div class="overflow-y-auto p-3 space-y-2 max-h-[200px]">
+							{#each unscheduledActivities as activity (activity.id + ':' + (activity._classroom_id ?? ''))}
+								{#if activity.is_draggable}
+									<!-- Independent: draggable -->
+									<div
+										class="border rounded-lg p-2.5 shadow-sm hover:shadow-md transition-all bg-emerald-50 border-emerald-200 {canManageTimetable
+											? 'cursor-grab active:cursor-grabbing'
+											: 'cursor-default'}"
+										draggable={canManageTimetable}
+										ondragstart={(e) => handleActivityDragStart(e, activity)}
+										ondragend={handleDragEnd}
+										role="button"
+										tabindex="0"
+									>
+										<div class="flex justify-between items-start mb-1">
+											<Badge
+												variant="outline"
+												class="text-[10px] border-emerald-300 text-emerald-700"
+											>
+												{ACTIVITY_TYPE_LABELS[activity.activity_type] ?? activity.activity_type}
+											</Badge>
+											<Badge variant="default" class="text-[10px] bg-emerald-600">
+												{activity.scheduled_count}/{activity.max_periods} คาบ
+											</Badge>
+										</div>
+										<h4 class="font-medium text-sm line-clamp-1 leading-tight">{activity.name}</h4>
+										{#if activity._classroom_name}
+											<div class="text-[10px] text-muted-foreground mt-0.5 flex items-center gap-1">
+												<School class="w-3 h-3" />
+												{activity._classroom_name}
+											</div>
+										{/if}
+										<div class="text-[10px] text-emerald-600 mt-1">
+											{canManageTimetable ? 'อิสระ — ลากวางได้' : 'อิสระ — ดูได้อย่างเดียว'}
+										</div>
+										<div class="mt-1.5 h-1 w-full bg-emerald-100 rounded-full overflow-hidden">
+											<div
+												class="h-full bg-emerald-500 transition-all"
+												style="width: {(activity.scheduled_count / activity.max_periods) * 100}%"
+											></div>
+										</div>
+									</div>
+								{:else}
+									<!-- Synchronized: read-only -->
+									<div
+										class="border border-dashed rounded-lg p-2.5 opacity-60 bg-gray-50 border-gray-300"
+									>
+										<div class="flex justify-between items-start mb-1">
+											<Badge variant="outline" class="text-[10px]">
+												{ACTIVITY_TYPE_LABELS[activity.activity_type] ?? activity.activity_type}
+											</Badge>
+											<Badge variant="secondary" class="text-[10px]">
+												{activity.scheduled_count}/{activity.max_periods} คาบ
+											</Badge>
+										</div>
+										<h4
+											class="font-medium text-sm line-clamp-1 leading-tight flex items-center gap-1"
+										>
+											<Lock class="w-3 h-3 shrink-0" />
+											{activity.name}
+										</h4>
+										{#if canManageTimetable && viewMode === 'INSTRUCTOR' && selectedInstructorId}
+											<Button
+												variant="outline"
+												size="sm"
+												class="mt-1 h-6 text-xs w-full"
+												onclick={async () => {
+													try {
+														await restoreInstructorToSlot(activity.id, selectedInstructorId);
+														toast.success('แสดงในตารางแล้ว');
+														loadTimetable();
+														loadSidebarActivitySlots();
+													} catch (e: unknown) {
+														toast.error(
+															(e instanceof Error ? e.message : String(e)) || 'ไม่สำเร็จ'
+														);
+													}
+												}}
+											>
+												แสดงในตาราง
+											</Button>
+										{:else}
+											<div class="text-[10px] text-muted-foreground mt-1">
+												{canManageTimetable ? 'จัดพร้อมกัน — ใช้ Batch' : 'จัดพร้อมกัน'}
+											</div>
+										{/if}
+									</div>
+								{/if}
+							{/each}
+						</div>
+					</div>
 				{/if}
-				ยืนยัน
-			</Button>
-		</Dialog.Footer>
-	</Dialog.Content>
-</Dialog.Root>
+			</Card.Root>
+
+			<!-- Right Content: Timetable Grid -->
+			<Card.Root
+				class="col-span-10 flex flex-col h-full overflow-hidden border-2 shadow-none gap-0 py-0"
+			>
+				<div class="overflow-auto flex-1">
+					<div class="min-w-[800px] h-full flex flex-col">
+						<!-- Header Row (Periods) -->
+						<div class="flex sticky top-0 bg-background z-20">
+							<div
+								class="w-20 shrink-0 p-3 border-r border-b font-medium text-sm text-muted-foreground flex items-center justify-center bg-background sticky left-0 z-30"
+							>
+								วัน/คาบ
+							</div>
+							{#each periods as period (period.id)}
+								<div class="flex-1 min-w-[100px] p-2 border-r border-b text-center relative group">
+									<div class="text-sm font-bold">{period.name || ' '}</div>
+									<div class="text-xs text-muted-foreground">
+										{formatTime(period.start_time)}-{formatTime(period.end_time)}
+									</div>
+								</div>
+							{/each}
+						</div>
+
+						<!-- Days Rows -->
+						{#each DAYS as day (day.value)}
+							<div class="flex flex-1 min-h-[70px]">
+								<!-- Day Header -->
+								<div
+									class="w-20 shrink-0 border-r border-b bg-background font-medium flex items-center justify-center relative sticky left-0 z-10"
+								>
+									<!-- Day Indicator Line -->
+									{#if day.value === 'MON'}<div
+											class="absolute left-0 inset-y-0 w-1 bg-yellow-400"
+										></div>{/if}
+									{#if day.value === 'TUE'}<div
+											class="absolute left-0 inset-y-0 w-1 bg-pink-400"
+										></div>{/if}
+									{#if day.value === 'WED'}<div
+											class="absolute left-0 inset-y-0 w-1 bg-green-400"
+										></div>{/if}
+									{#if day.value === 'THU'}<div
+											class="absolute left-0 inset-y-0 w-1 bg-orange-400"
+										></div>{/if}
+									{#if day.value === 'FRI'}<div
+											class="absolute left-0 inset-y-0 w-1 bg-blue-400"
+										></div>{/if}
+
+									<div class="text-center">
+										<div class="text-base font-bold">{day.label}</div>
+									</div>
+								</div>
+
+								<!-- Slots -->
+								{#each periods as period (period.id)}
+									{@const entry = getEntryForSlot(day.value, period.id)}
+									{@const isOccupied = isSlotOccupiedByInstructor(day.value, period.id)}
+									{@const lockedBy = entry ? getDragOwner(entry.id) : null}
+									{@const remoteDrag = !entry ? getRemoteDragHover(day.value, period.id) : null}
+									{@const remoteActivitySlot = getRemoteActivityForSlot(day.value, period.id)}
+									{@const remoteActivityEntry = entry ? getRemoteActivityForEntry(entry.id) : null}
+									{@const remoteActivity = remoteActivitySlot || remoteActivityEntry}
+
+									<!-- Drop Zone -->
+									{@const validity =
+										draggedCourse && dragType === 'MOVE'
+											? moveValidityMap.get(`${day.value}|${period.id}`)
+											: null}
+									{@const validityClass = !validity
+										? ''
+										: validity.state === 'source'
+											? 'opacity-60'
+											: validity.state === 'empty' && validity.valid
+												? 'bg-green-50/40 ring-1 ring-inset ring-green-400/60'
+												: validity.state === 'occupied' && validity.valid
+													? 'ring-1 ring-inset ring-blue-400/70 bg-blue-50/30'
+													: 'bg-red-50/40 ring-1 ring-inset ring-red-300/60 cursor-not-allowed'}
+									<div
+										class="flex-1 border-r border-b min-w-[100px] relative transition-colors {isOccupied
+											? 'bg-red-50/50 from-red-100/20 bg-gradient-to-br'
+											: 'hover:bg-accent/50'} {draggedCourse && !entry && !isOccupied && !validity
+											? 'bg-green-50/50 ring-1 ring-inset ring-green-400/60'
+											: ''} {validityClass} {draggedCourse &&
+										entry &&
+										isOccupied &&
+										dragType === 'NEW'
+											? 'ring-2 ring-inset ring-red-500/70'
+											: ''} {remoteDrag ? 'ring-2 ring-inset ring-opacity-50' : ''}"
+										style={remoteDrag
+											? `--tw-ring-color: ${remoteDrag.user.color}40; background-color: ${remoteDrag.user.color}10;`
+											: ''}
+										data-day={day.value}
+										data-period={period.id}
+										title={validity && !validity.valid ? validity.reason : ''}
+										ondragover={(e) => {
+											if (canManageTimetable) handleDragOver(e, day.value, period.id);
+										}}
+										ondrop={(e) => {
+											if (canManageTimetable) handleDrop(e, day.value, period.id);
+										}}
+										role="application"
+									>
+										{#if remoteDrag}
+											<!-- Remote user drag ghost preview -->
+											<div
+												class="absolute inset-1 rounded border-2 border-dashed p-1.5 flex flex-col justify-center items-center gap-0.5 animate-in fade-in duration-200 pointer-events-none"
+												style="border-color: {remoteDrag.user
+													.color}80; background-color: {remoteDrag.user.color}15;"
+											>
+												<span
+													class="text-[10px] font-bold truncate max-w-full"
+													style="color: {remoteDrag.user.color}"
+												>
+													{remoteDrag.drag.info?.code || 'วิชา'}
+												</span>
+												<span class="text-[9px] text-muted-foreground truncate max-w-full">
+													{remoteDrag.drag.info?.title || ''}
+												</span>
+												<span
+													class="text-[8px] font-medium px-1.5 py-0.5 rounded-full text-white mt-0.5"
+													style="background-color: {remoteDrag.user.color};"
+												>
+													{remoteDrag.user.name}
+												</span>
+											</div>
+										{/if}
+										{#if entry && validity && validity.state === 'occupied' && validity.valid}
+											<!-- Swap indicator overlay -->
+											<div
+												class="absolute top-0.5 right-0.5 z-10 bg-blue-500 text-white text-[9px] px-1 py-0.5 rounded font-bold pointer-events-none"
+											>
+												⇄ สลับ
+											</div>
+										{/if}
+										{#if remoteActivity}
+											<!-- Remote user dialog activity — ring lock + badge (ช่วยเห็นเมื่อ cursor ไม่อยู่ใน view) -->
+											<div
+												class="absolute inset-0 ring-2 ring-inset pointer-events-none z-[5] rounded"
+												style="--tw-ring-color: {remoteActivity.user
+													.color}; background-color: {remoteActivity.user.color}1a;"
+											></div>
+											<div
+												class="absolute top-0.5 left-0.5 right-0.5 z-20 flex items-center gap-1 px-1 py-0.5 rounded text-[9px] font-medium shadow-sm pointer-events-none"
+												style="background-color: {remoteActivity.user.color}; color: white;"
+											>
+												<span>⚡</span>
+												<span class="truncate"
+													>{remoteActivity.user.name}: {activityLabel(
+														remoteActivity.activity
+													)}</span
+												>
+											</div>
+										{/if}
+										{#if entry}
+											{@const isGhost =
+												viewMode === 'INSTRUCTOR' &&
+												selectedInstructorId !== '' &&
+												!(entry.instructor_ids ?? []).includes(selectedInstructorId)}
+											{@const coTeacherCount =
+												viewMode === 'INSTRUCTOR'
+													? Math.max(0, (entry.instructor_ids?.length ?? 0) - 1)
+													: 0}
+											{@const isRemoteLocked = !!remoteActivityEntry}
+											{@const teacherText =
+												entry.instructor_names && entry.instructor_names.length > 0
+													? entry.instructor_names.join(', ')
+													: entry.instructor_name && entry.instructor_name !== '-'
+														? entry.instructor_name
+														: ''}
+											{@const hasMetaRow =
+												viewMode === 'CLASSROOM'
+													? !!teacherText || !!entry.room_id
+													: !!entry.classroom_name ||
+														!!entry.activity_slot_id ||
+														isGhost ||
+														coTeacherCount > 0 ||
+														!!entry.room_id}
+											<!-- Timetable Entry Card -->
+											<div
+												class="absolute inset-0.5 border rounded px-1.5 py-1 text-xs flex flex-col justify-between shadow-sm hover:shadow-md hover:brightness-95 transition-all group {!canManageTimetable
+													? 'cursor-default'
+													: (entry.entry_type !== 'COURSE' &&
+																!(
+																	entry.entry_type === 'ACTIVITY' &&
+																	entry.activity_scheduling_mode === 'independent'
+																)) ||
+														  isGhost ||
+														  isRemoteLocked
+														? 'cursor-pointer'
+														: 'cursor-grab active:cursor-grabbing'} {lockedBy
+													? 'opacity-50 pointer-events-none ring-2 ring-offset-1 ring-' +
+														lockedBy.color
+													: ''} {isGhost ? 'opacity-50 border-dashed' : ''}"
+												style="background-color: {getSubjectColor(
+													viewMode === 'INSTRUCTOR'
+														? entry.classroom_name || entry.subject_code || ''
+														: entry.subject_code || entry.title || '',
+													entry.entry_type
+												)}; border-color: {getSubjectBorderColor(
+													viewMode === 'INSTRUCTOR'
+														? entry.classroom_name || entry.subject_code || ''
+														: entry.subject_code || entry.title || '',
+													entry.entry_type
+												)};"
+												draggable={canManageTimetable &&
+													!lockedBy &&
+													!isRemoteLocked &&
+													!isGhost &&
+													!pendingEntryIds.has(entry.id) &&
+													!entry.id.startsWith('temp-') &&
+													(entry.entry_type === 'COURSE' ||
+														(entry.entry_type === 'ACTIVITY' &&
+															entry.activity_scheduling_mode === 'independent' &&
+															!entry.batch_id))}
+												ondragstart={(e) => handleDragStart(e, entry, 'MOVE')}
+												ondragend={handleDragEnd}
+												onclick={(e) => {
+													if ((e.target as HTMLElement).closest('button')) return;
+													if (canManageTimetable) openEntryPopover(entry);
+												}}
+												onkeydown={(e) => {
+													if (e.key === 'Enter' || e.key === ' ') {
+														e.preventDefault();
+														if (canManageTimetable) openEntryPopover(entry);
+													}
+												}}
+												role="button"
+												tabindex="0"
+											>
+												{#if lockedBy}
+													<div class="absolute -top-2 -right-2 z-20">
+														<span
+															class="text-[9px] font-bold px-1.5 py-0.5 rounded text-white shadow-sm"
+															style="background-color: {lockedBy.color};"
+														>
+															{lockedBy.name}
+														</span>
+													</div>
+												{/if}
+
+												{#if entry.subject_code}
+													<div class="font-bold text-foreground/90 truncate text-sm leading-tight">
+														{entry.subject_code}
+													</div>
+													<div
+														class="line-clamp-1 text-foreground/70 text-[11px] leading-tight mb-auto"
+														title={entry.subject_name_th || undefined}
+													>
+														{entry.subject_name_th || ''}
+													</div>
+												{:else}
+													<!-- TEXT-batch / activity: full title (รองรับหลายบรรทัดจาก textarea) -->
+													<div
+														class="font-bold text-foreground/90 text-sm leading-tight whitespace-pre-line line-clamp-3 mb-auto"
+														title={entry.title || undefined}
+													>
+														{entry.title || getEntryTypeFallbackLabel(entry.entry_type)}
+													</div>
+												{/if}
+												{#if hasMetaRow}
+													<div
+														class="mt-1 pt-1 border-t border-foreground/15 gap-0.5 flex flex-col text-[10px] text-muted-foreground"
+													>
+														{#if viewMode === 'CLASSROOM'}
+															{#if teacherText}
+																<div class="flex items-center gap-1 truncate">
+																	<Users class="w-3 h-3 shrink-0" />
+																	{teacherText}
+																</div>
+															{/if}
+														{:else if entry.entry_type === 'ACTIVITY' && entry.activity_slot_id && entry.activity_scheduling_mode === 'independent'}
+															<!-- Independent: แสดงชื่อห้อง -->
+															<div class="flex items-center gap-1 truncate">
+																<School class="w-3 h-3 shrink-0" />
+																{entry.classroom_name || '-'}
+															</div>
+														{:else if entry.entry_type === 'ACTIVITY' && entry.activity_slot_id}
+															<!-- Synchronized: แสดงชื่อกิจกรรมถ้ามี -->
+															{@const groupName = instructorGroupsMap[entry.activity_slot_id]}
+															<div class="flex items-center gap-1 truncate">
+																<BookOpen class="w-3 h-3 shrink-0" />
+																{#if groupName}
+																	{groupName}
+																{:else}
+																	{entry.activity_slot_name || '-'}
+																{/if}
+															</div>
+														{:else if entry.classroom_name}
+															<div class="flex items-center gap-1 truncate">
+																<School class="w-3 h-3 shrink-0" />
+																{entry.classroom_name}
+															</div>
+														{/if}
+
+														{#if viewMode === 'INSTRUCTOR' && isGhost}
+															<div class="flex items-center gap-1 text-amber-700 text-[10px]">
+																<span>👻</span>
+																<span>อยู่ในทีม (ยังไม่ได้สอนคาบนี้)</span>
+															</div>
+														{:else if viewMode === 'INSTRUCTOR' && coTeacherCount > 0}
+															<div
+																class="flex items-center gap-1 text-foreground/60 text-[10px]"
+																title={entry.instructor_names?.join(', ')}
+															>
+																<Users class="w-3 h-3 shrink-0" />
+																<span>+{coTeacherCount} ครูร่วม</span>
+															</div>
+														{/if}
+
+														{#if entry.room_id}
+															<div
+																class="flex items-center gap-1 truncate text-foreground/60"
+																title={rooms.find((r) => r.id === entry.room_id)?.name_th}
+															>
+																<MapPin class="w-3 h-3 shrink-0" />
+																{rooms.find((r) => r.id === entry.room_id)?.name_th || '?'}
+															</div>
+														{/if}
+													</div>
+												{/if}
+
+												<!-- มุมขวาบน: pending spinner (กันลบระหว่างบันทึก) | delete button (hover) -->
+												{#if canManageTimetable && !isGhost && !isRemoteLocked}
+													{#if pendingEntryIds.has(entry.id)}
+														<div
+															class="absolute top-0.5 right-0.5 z-30 p-0.5 rounded bg-amber-50/90"
+															title="กำลังบันทึก..."
+														>
+															<Loader2 class="w-3 h-3 animate-spin text-amber-600" />
+														</div>
+													{:else}
+														<button
+															class="absolute top-0.5 right-0.5 opacity-0 group-hover:opacity-100 p-0.5 hover:bg-red-100 hover:text-red-500 rounded transition-all z-30"
+															onclick={(e) => {
+																e.stopPropagation();
+																handleDeleteEntry(entry);
+															}}
+														>
+															<Trash2 class="w-3 h-3" />
+														</button>
+													{/if}
+												{/if}
+											</div>
+										{:else if isOccupied}
+											{@const conflicts = slotConflicts.get(getSlotKey(day.value, period.id)) ?? []}
+											{@const primary = conflicts[0]}
+											<div
+												class="absolute inset-0 flex flex-col items-center justify-center px-1 py-0.5 text-center select-none gap-0.5"
+												title={conflicts
+													.map((c) => {
+														const subj = [c.subject_code, c.subject_name]
+															.filter(Boolean)
+															.join(' · ');
+														const loc = [c.classroom_name, c.room_code ? `ห้อง ${c.room_code}` : '']
+															.filter(Boolean)
+															.join(' ');
+														return c.kind === 'classroom'
+															? `ห้องติด: ${subj}${loc ? ' (' + loc + ')' : ''}`
+															: `${c.teacher_name} ติด: ${subj}${loc ? ' (' + loc + ')' : ''}`;
+													})
+													.join('\n')}
+											>
+												{#if primary}
+													<div
+														class="flex items-center gap-1 text-[11px] text-red-600 font-semibold truncate max-w-full leading-tight"
+													>
+														{#if primary.kind === 'classroom'}
+															<BookOpen class="w-3 h-3 shrink-0" />
+															<span class="truncate">{primary.subject_code || 'ไม่ว่าง'}</span>
+														{:else}
+															<Users class="w-3 h-3 shrink-0" />
+															<span class="truncate">{primary.teacher_name}</span>
+														{/if}
+													</div>
+													{#if primary.subject_name}
+														<div
+															class="text-[10px] text-red-500/80 truncate max-w-full leading-tight"
+														>
+															{primary.subject_name}
+														</div>
+													{/if}
+													{#if primary.kind === 'teacher' || primary.room_code}
+														<div
+															class="text-[9px] text-red-500/70 truncate max-w-full leading-tight"
+														>
+															{#if primary.kind === 'teacher'}
+																{primary.classroom_name}{#if primary.room_code}
+																	· ห้อง {primary.room_code}{/if}
+															{:else}
+																ห้อง {primary.room_code}
+															{/if}
+														</div>
+													{/if}
+													{#if conflicts.length > 1}
+														<div class="text-[9px] text-red-400 leading-none">
+															+{conflicts.length - 1} ติดเพิ่ม
+														</div>
+													{/if}
+												{:else}
+													<div class="text-xs text-red-500 font-medium">
+														{viewMode === 'INSTRUCTOR' ? 'ห้องนี้ไม่ว่าง' : 'ครูติดสอน'}
+													</div>
+												{/if}
+											</div>
+										{:else if canManageTimetable && draggedCourse}
+											<div
+												class="absolute inset-0 flex items-center justify-center opacity-0 hover:opacity-100 pointer-events-none"
+											>
+												<div class="text-xs text-blue-500 font-medium">+ วางที่นี่</div>
+											</div>
+										{/if}
+									</div>
+								{/each}
+							</div>
+						{/each}
+					</div>
+				</div>
+			</Card.Root>
+		</div>
+
+		<!-- Floating Conflict Popup (ระหว่าง drag — native title ใช้ไม่ได้ใน drag state) -->
+		{#if hoverDragCell && draggedCourse}
+			{@const hoverConflicts =
+				slotConflicts.get(getSlotKey(hoverDragCell.day, hoverDragCell.periodId)) ?? []}
+			{#if hoverConflicts.length > 0}
+				<div
+					class="fixed z-[10000] pointer-events-none bg-white border border-red-300 rounded-md shadow-lg p-2 text-xs max-w-xs space-y-1"
+					style="top: {hoverDragCell.y + 45}px; left: {hoverDragCell.x + 68}px;"
+				>
+					{#each hoverConflicts as c, i (i)}
+						<div class="flex items-start gap-1.5 text-red-700">
+							{#if c.kind === 'classroom'}
+								<BookOpen class="w-3.5 h-3.5 shrink-0 mt-0.5" />
+								<div class="flex-1 leading-tight">
+									<div class="font-semibold">ห้องติด: {c.subject_code}</div>
+									{#if c.subject_name}
+										<div class="text-red-600/80">{c.subject_name}</div>
+									{/if}
+									{#if c.classroom_name || c.room_code}
+										<div class="text-red-500/70 text-[10px]">
+											{c.classroom_name}{#if c.room_code}
+												· ห้อง {c.room_code}{/if}
+										</div>
+									{/if}
+								</div>
+							{:else}
+								<Users class="w-3.5 h-3.5 shrink-0 mt-0.5" />
+								<div class="flex-1 leading-tight">
+									<div class="font-semibold">{c.teacher_name} ติด: {c.subject_code}</div>
+									{#if c.subject_name}
+										<div class="text-red-600/80">{c.subject_name}</div>
+									{/if}
+									{#if c.classroom_name || c.room_code}
+										<div class="text-red-500/70 text-[10px]">
+											{c.classroom_name}{#if c.room_code}
+												· ห้อง {c.room_code}{/if}
+										</div>
+									{/if}
+								</div>
+							{/if}
+						</div>
+					{/each}
+				</div>
+			{/if}
+		{/if}
+
+		<!-- GHOST UI OVERLAY (fixed, clipped to workspace via clip-path) -->
+		<div
+			class="pointer-events-none fixed inset-0 z-[9999]"
+			style={wsRect
+				? `clip-path: inset(${wsRect.top}px ${typeof window !== 'undefined' ? window.innerWidth - wsRect.right : 0}px ${typeof window !== 'undefined' ? window.innerHeight - wsRect.bottom : 0}px ${wsRect.left}px)`
+				: 'display:none'}
+		>
+			{#each $activeUsers as user (user.user_id)}
+				{@const cursor = $remoteCursors[user.user_id]}
+
+				{#if cursor && user.user_id !== $authStore.user?.id}
+					{#if cursor.context?.view_mode === viewMode && cursor.context?.view_id === (viewMode === 'CLASSROOM' ? selectedClassroomId : selectedInstructorId)}
+						<div
+							class="absolute transition-transform duration-100 ease-linear flex flex-col items-start gap-1"
+							style="transform: translate({cursor.x * (wsRect?.width ?? 0) +
+								(wsRect?.left ?? 0)}px, {cursor.y * (wsRect?.height ?? 0) + (wsRect?.top ?? 0)}px);"
+						>
+							<svg
+								xmlns="http://www.w3.org/2000/svg"
+								class="h-5 w-5 drop-shadow-md"
+								fill={user.color}
+								viewBox="0 0 24 24"
+								stroke="white"
+								stroke-width="2"
+							>
+								<path d="M3 3l7.07 16.97 2.51-7.39 7.39-2.51L3 3z" />
+							</svg>
+
+							<div
+								class="px-2 py-0.5 rounded text-[10px] text-white font-bold whitespace-nowrap shadow-sm"
+								style="background-color: {user.color}"
+							>
+								{user.name}
+							</div>
+
+							{#if $remoteActivities[user.user_id]}
+								{@const act = $remoteActivities[user.user_id]}
+								<div
+									class="px-2 py-0.5 rounded text-[10px] text-white whitespace-nowrap shadow-sm flex items-center gap-1 mt-0.5"
+									style="background-color: {user.color}dd"
+								>
+									<span>⚡</span>
+									<span>{activityLabel(act)}</span>
+								</div>
+							{/if}
+
+							{#if $userDrags[user.user_id]}
+								{@const drag = $userDrags[user.user_id]}
+								<div
+									class="bg-background border rounded shadow-lg p-2.5 flex items-center gap-3 mt-2 opacity-95 scale-90 origin-top-left animate-in fade-in zoom-in duration-200 min-w-[150px]"
+								>
+									<div class="p-1.5 rounded bg-muted">
+										<BookOpen class="w-4 h-4 text-primary" />
+									</div>
+									<div class="flex flex-col">
+										<span class="text-xs font-bold leading-tight line-clamp-1"
+											>{drag.info?.code || 'วิชา'}</span
+										>
+										<span class="text-[10px] text-muted-foreground line-clamp-1"
+											>{drag.info?.title || 'กำลังลาก...'}</span
+										>
+									</div>
+								</div>
+							{/if}
+						</div>
+					{/if}
+				{/if}
+			{/each}
+		</div>
+	{/if}
+</div>
+
+<!-- Per-cell Instructor Editor Popover -->
+{#if canManageTimetable}
+	<Dialog.Root bind:open={entryPopoverOpen}>
+		<Dialog.Content class="sm:max-w-[480px]">
+			<Dialog.Header>
+				<Dialog.Title>
+					{#if entryPopoverTarget}
+						{entryPopoverTarget.subject_code ?? ''} {entryPopoverTarget.subject_name_th ?? ''}
+					{:else}
+						แก้ไขคาบนี้
+					{/if}
+				</Dialog.Title>
+				<Dialog.Description>
+					{#if entryPopoverTarget}
+						{entryPopoverTarget.classroom_name} · {entryPopoverTarget.day_of_week} · {entryPopoverTarget.period_name ??
+							''}
+					{/if}
+				</Dialog.Description>
+			</Dialog.Header>
+
+			<div class="py-2 space-y-3">
+				{#if entryPopoverLoading}
+					<div class="text-center py-4">
+						<Loader2 class="w-5 h-5 animate-spin mx-auto" />
+					</div>
+				{:else if entryPopoverTarget}
+					<div class="space-y-2">
+						<div class="text-sm font-medium">ครูสอนในคาบนี้</div>
+						{#if popoverInCell.length === 0}
+							<p class="text-xs text-muted-foreground italic">ไม่มีครูในคาบนี้</p>
+						{:else}
+							<div class="flex flex-wrap gap-1.5">
+								{#each popoverInCell as uid, idx (uid)}
+									{@const isSelf = viewMode === 'INSTRUCTOR' && uid === selectedInstructorId}
+									<Badge variant={isSelf ? 'default' : 'secondary'} class="gap-1 pr-1">
+										<span>
+											{isSelf ? '👤 ' : ''}{popoverInCellNames[idx] ?? uid}
+											{#if isSelf}<span class="text-[10px] opacity-80">(คุณ)</span>{/if}
+										</span>
+										<button
+											type="button"
+											class="ml-1 rounded hover:bg-destructive/20 p-0.5"
+											onclick={() => handlePopoverRemoveInstructor(uid)}
+											disabled={entryPopoverSaving === uid}
+											aria-label="ลบครู"
+										>
+											{#if entryPopoverSaving === uid}
+												<Loader2 class="h-3 w-3 animate-spin" />
+											{:else}
+												<Trash2 class="h-3 w-3" />
+											{/if}
+										</button>
+									</Badge>
+								{/each}
+							</div>
+						{/if}
+					</div>
+
+					<div class="space-y-2 border-t pt-3">
+						<div class="text-sm font-medium">เพิ่มครูจากทีมวิชา</div>
+						{#if popoverNotInCell.length === 0}
+							<p class="text-xs text-muted-foreground italic">ครูในทีมอยู่ในคาบนี้ครบแล้ว</p>
+						{:else}
+							<div class="flex flex-wrap gap-1.5">
+								{#each popoverNotInCell as t (t.instructor_id)}
+									<Button
+										variant="outline"
+										size="sm"
+										class="h-7 text-xs"
+										onclick={() => handlePopoverAddInstructor(t.instructor_id, t.role)}
+										disabled={entryPopoverSaving === t.instructor_id}
+									>
+										{#if entryPopoverSaving === t.instructor_id}
+											<Loader2 class="h-3 w-3 animate-spin mr-1" />
+										{:else}
+											+
+										{/if}
+										{t.role === 'primary' ? '⭐ ' : ''}{t.instructor_name ?? t.instructor_id}
+									</Button>
+								{/each}
+							</div>
+						{/if}
+					</div>
+
+					<!-- ห้องเรียน — เปลี่ยนเฉพาะคาบนี้ได้ (ทุก view; INSTRUCTOR ghost = ไม่ใช่ entry ของเรา → ซ่อน) -->
+					{#if !entryPopoverIsGhost}
+						<div class="space-y-2 border-t pt-3">
+							<div class="text-sm font-medium">ห้องเรียน</div>
+							<Popover.Root bind:open={entryPopoverRoomPickerOpen}>
+								<Popover.Trigger class="w-full">
+									<Button
+										variant="outline"
+										role="combobox"
+										aria-expanded={entryPopoverRoomPickerOpen}
+										class="w-full justify-between font-normal"
+										disabled={entryPopoverSavingRoom}
+									>
+										<span class="truncate flex items-center gap-1.5">
+											{#if entryPopoverSavingRoom}
+												<Loader2 class="h-3.5 w-3.5 animate-spin" />
+											{:else}
+												<MapPin class="h-3.5 w-3.5 shrink-0 opacity-70" />
+											{/if}
+											{#if entryPopoverTarget?.room_id}
+												{@const r = rooms.find((x) => x.id === entryPopoverTarget?.room_id)}
+												{r
+													? `${r.name_th}${r.building_name ? ` (${r.building_name})` : ''}`
+													: 'ห้องไม่พบ'}
+											{:else}
+												ไม่ระบุห้อง
+											{/if}
+										</span>
+										<ChevronsUpDown class="ml-2 h-4 w-4 shrink-0 opacity-50" />
+									</Button>
+								</Popover.Trigger>
+								<Popover.Content class="w-[--bits-popover-trigger-width] p-0">
+									<Command.Root>
+										<Command.Input placeholder="ค้นหาห้อง..." />
+										<Command.Empty>ไม่พบห้อง</Command.Empty>
+										<Command.Group class="max-h-[280px] overflow-y-auto">
+											{#each rooms as room (room.id)}
+												{@const isBusy = entryPopoverUnavailableRooms.has(room.id)}
+												{@const isSelected = entryPopoverTarget?.room_id === room.id}
+												{#if !isBusy || isSelected}
+													<Command.Item
+														value={`${room.name_th} ${room.building_name ?? ''}`}
+														onSelect={() => handlePopoverChangeRoom(room.id)}
+													>
+														<Check
+															class="mr-2 h-4 w-4 {isSelected ? 'opacity-100' : 'opacity-0'}"
+														/>
+														{room.name_th}{room.building_name ? ` (${room.building_name})` : ''}
+													</Command.Item>
+												{/if}
+											{/each}
+										</Command.Group>
+									</Command.Root>
+								</Popover.Content>
+							</Popover.Root>
+						</div>
+					{/if}
+				{/if}
+			</div>
+
+			<Dialog.Footer>
+				<Button variant="outline" onclick={() => (entryPopoverOpen = false)}>ปิด</Button>
+			</Dialog.Footer>
+		</Dialog.Content>
+	</Dialog.Root>
+{/if}
+
+{#if canManageTimetable}
+	<Dialog.Root bind:open={showRoomModal}>
+		<Dialog.Content class="sm:max-w-[425px]">
+			<Dialog.Header>
+				<Dialog.Title>เลือกห้องเรียน ({draggedCourse?.subject_code})</Dialog.Title>
+				<Dialog.Description>
+					<div class="flex flex-col gap-1 mt-1 text-foreground text-left">
+						<span class="font-medium text-sm text-primary"
+							>{draggedCourse?.subject_name_th ||
+								draggedCourse?.title_th ||
+								draggedCourse?.title}</span
+						>
+						<span class="text-xs text-muted-foreground flex items-center gap-2">
+							{#if viewMode === 'CLASSROOM'}
+								<span class="flex items-center gap-1"
+									><Users class="w-3 h-3" />
+									{draggedActivityInstructor?.name || draggedCourse?.instructor_name || '-'}</span
+								>
+								<span class="flex items-center gap-1"
+									><School class="w-3 h-3" />
+									{classrooms.find((c) => c.id === selectedClassroomId)?.name || ''}</span
+								>
+							{:else}
+								<span class="flex items-center gap-1"
+									><School class="w-3 h-3" /> {draggedCourse?.classroom_name || '-'}</span
+								>
+								{#if draggedActivityInstructor}
+									<span class="flex items-center gap-1"
+										><Users class="w-3 h-3" /> {draggedActivityInstructor.name}</span
+									>
+								{/if}
+							{/if}
+						</span>
+					</div>
+				</Dialog.Description>
+			</Dialog.Header>
+
+			<div class="py-4 space-y-4">
+				<div class="space-y-2">
+					<Label.Root>ห้องเรียน</Label.Root>
+					<Popover.Root bind:open={roomPickerOpen}>
+						<Popover.Trigger class="w-full">
+							<Button
+								variant="outline"
+								role="combobox"
+								aria-expanded={roomPickerOpen}
+								class="w-full justify-between font-normal"
+							>
+								<span class="truncate">
+									{#if selectedRoomId === 'none'}
+										ไม่ระบุห้อง
+									{:else if selectedRoomId}
+										{@const r = rooms.find((x) => x.id === selectedRoomId)}
+										{r ? `${r.name_th} (${r.building_name})` : 'เลือกห้อง'}
+									{:else}
+										เลือกห้อง
+									{/if}
+								</span>
+								<ChevronsUpDown class="ml-2 h-4 w-4 shrink-0 opacity-50" />
+							</Button>
+						</Popover.Trigger>
+						<Popover.Content class="w-[--bits-popover-trigger-width] p-0">
+							<Command.Root>
+								<Command.Input placeholder="ค้นหาห้อง..." />
+								<Command.Empty>ไม่พบห้อง</Command.Empty>
+								<Command.Group class="max-h-[280px] overflow-y-auto">
+									<Command.Item
+										value="ไม่ระบุห้อง"
+										onSelect={() => {
+											selectedRoomId = 'none';
+											roomPickerOpen = false;
+										}}
+									>
+										<Check
+											class="mr-2 h-4 w-4 {selectedRoomId === 'none' ? 'opacity-100' : 'opacity-0'}"
+										/>
+										<span class="text-muted-foreground">ไม่ระบุห้อง</span>
+									</Command.Item>
+									{#each rooms as room (room.id)}
+										{@const isBusy = unavailableRooms.has(room.id)}
+										{@const displaySelected = selectedRoomId === room.id}
+										{#if !isBusy || displaySelected}
+											<Command.Item
+												value={`${room.name_th} ${room.building_name ?? ''}`}
+												onSelect={() => {
+													selectedRoomId = room.id;
+													roomPickerOpen = false;
+												}}
+											>
+												<Check
+													class="mr-2 h-4 w-4 {selectedRoomId === room.id
+														? 'opacity-100'
+														: 'opacity-0'}"
+												/>
+												{room.name_th} ({room.building_name})
+											</Command.Item>
+										{/if}
+									{/each}
+								</Command.Group>
+							</Command.Root>
+						</Popover.Content>
+					</Popover.Root>
+				</div>
+			</div>
+
+			<Dialog.Footer>
+				<Button
+					variant="outline"
+					onclick={() => {
+						showRoomModal = false;
+						isDropPending = false;
+						handleDragEnd(); // Cancel drag
+					}}>ยกเลิก</Button
+				>
+				<Button onclick={confirmDropWithRoom} disabled={submitting}>
+					{#if submitting}
+						<Loader2 class="mr-2 h-4 w-4 animate-spin" />
+					{/if}
+					ยืนยัน
+				</Button>
+			</Dialog.Footer>
+		</Dialog.Content>
+	</Dialog.Root>
+{/if}
 
 <!-- Delete Activity Dialog (synchronized: single vs batch) -->
 <!-- Delete Batch Group Dialog (entry ที่มาจาก /timetable/batch) -->
-<Dialog.Root bind:open={showDeleteBatchDialog}>
-	<Dialog.Content class="max-w-sm">
-		<Dialog.Header>
-			<Dialog.Title>
-				{isInstructorSyncDelete ? 'ซ่อนตัวเองจากกิจกรรม' : 'ลบคาบที่สร้างจาก Batch'}
-			</Dialog.Title>
-			<Dialog.Description>
-				<span class="font-medium text-foreground">{deleteBatchTarget?.title || 'กิจกรรม'}</span>
-				<br />
-				{#if isInstructorSyncDelete}
-					กิจกรรมนี้สอนพร้อมกันหลายห้อง — ซ่อนครูแบบไหนดี? (ห้องอื่นยังเห็นกิจกรรมเหมือนเดิม)
-				{:else}
-					คาบนี้ถูกสร้างพร้อมกับคาบอื่นจาก Batch เดียวกัน — ลบแบบไหนดี?
-				{/if}
-			</Dialog.Description>
-		</Dialog.Header>
-		<div class="flex flex-col gap-2 py-2">
-			<Button variant="outline" onclick={doDeleteBatchSingle}>
-				{isInstructorSyncDelete ? 'ซ่อนเฉพาะคาบนี้' : 'ลบแค่คาบนี้'}
-			</Button>
-			<Button variant="destructive" onclick={doDeleteBatchGroup}>
-				{isInstructorSyncDelete ? 'ซ่อนทั้งกิจกรรม' : 'ลบทั้งหมดที่สร้างพร้อมกัน'}
-			</Button>
-		</div>
-		<Dialog.Footer>
-			<Button
-				variant="ghost"
-				onclick={() => {
-					showDeleteBatchDialog = false;
-					deleteBatchTarget = null;
-				}}>ยกเลิก</Button
-			>
-		</Dialog.Footer>
-	</Dialog.Content>
-</Dialog.Root>
+{#if canManageTimetable}
+	<Dialog.Root bind:open={showDeleteBatchDialog}>
+		<Dialog.Content class="max-w-sm">
+			<Dialog.Header>
+				<Dialog.Title>
+					{isInstructorSyncDelete ? 'ซ่อนตัวเองจากกิจกรรม' : 'ลบคาบที่สร้างจาก Batch'}
+				</Dialog.Title>
+				<Dialog.Description>
+					<span class="font-medium text-foreground">{deleteBatchTarget?.title || 'กิจกรรม'}</span>
+					<br />
+					{#if isInstructorSyncDelete}
+						กิจกรรมนี้สอนพร้อมกันหลายห้อง — ซ่อนครูแบบไหนดี? (ห้องอื่นยังเห็นกิจกรรมเหมือนเดิม)
+					{:else}
+						คาบนี้ถูกสร้างพร้อมกับคาบอื่นจาก Batch เดียวกัน — ลบแบบไหนดี?
+					{/if}
+				</Dialog.Description>
+			</Dialog.Header>
+			<div class="flex flex-col gap-2 py-2">
+				<Button variant="outline" onclick={doDeleteBatchSingle}>
+					{isInstructorSyncDelete ? 'ซ่อนเฉพาะคาบนี้' : 'ลบแค่คาบนี้'}
+				</Button>
+				<Button variant="destructive" onclick={doDeleteBatchGroup}>
+					{isInstructorSyncDelete ? 'ซ่อนทั้งกิจกรรม' : 'ลบทั้งหมดที่สร้างพร้อมกัน'}
+				</Button>
+			</div>
+			<Dialog.Footer>
+				<Button
+					variant="ghost"
+					onclick={() => {
+						showDeleteBatchDialog = false;
+						deleteBatchTarget = null;
+					}}>ยกเลิก</Button
+				>
+			</Dialog.Footer>
+		</Dialog.Content>
+	</Dialog.Root>
+{/if}
 
-<Dialog.Root bind:open={showDeleteActivityDialog}>
-	<Dialog.Content class="max-w-sm">
-		<Dialog.Header>
-			<Dialog.Title>ลบกิจกรรมจากตาราง</Dialog.Title>
-			<Dialog.Description>
-				{deleteActivityTarget?.activity_slot_name || deleteActivityTarget?.title || 'กิจกรรม'}
-				{#if deleteActivityTarget?.classroom_name}
-					— {deleteActivityTarget.classroom_name}
-				{/if}
-			</Dialog.Description>
-		</Dialog.Header>
-		<div class="flex flex-col gap-2 py-2">
-			<Button
-				variant="outline"
-				onclick={() => {
-					if (deleteActivityTarget) doDeleteEntry(deleteActivityTarget.id, false);
-				}}
-			>
-				ลบเฉพาะห้องนี้
-			</Button>
-			<Button
-				variant="destructive"
-				onclick={() => {
-					if (deleteActivityTarget) doDeleteEntry(deleteActivityTarget.id, true);
-				}}
-			>
-				ลบทุกห้อง
-			</Button>
-		</div>
-		<Dialog.Footer>
-			<Button
-				variant="ghost"
-				onclick={() => {
-					showDeleteActivityDialog = false;
-				}}>ยกเลิก</Button
-			>
-		</Dialog.Footer>
-	</Dialog.Content>
-</Dialog.Root>
+{#if canManageTimetable}
+	<Dialog.Root bind:open={showDeleteActivityDialog}>
+		<Dialog.Content class="max-w-sm">
+			<Dialog.Header>
+				<Dialog.Title>ลบกิจกรรมจากตาราง</Dialog.Title>
+				<Dialog.Description>
+					{deleteActivityTarget?.activity_slot_name || deleteActivityTarget?.title || 'กิจกรรม'}
+					{#if deleteActivityTarget?.classroom_name}
+						— {deleteActivityTarget.classroom_name}
+					{/if}
+				</Dialog.Description>
+			</Dialog.Header>
+			<div class="flex flex-col gap-2 py-2">
+				<Button
+					variant="outline"
+					onclick={() => {
+						if (deleteActivityTarget) doDeleteEntry(deleteActivityTarget.id, false);
+					}}
+				>
+					ลบเฉพาะห้องนี้
+				</Button>
+				<Button
+					variant="destructive"
+					onclick={() => {
+						if (deleteActivityTarget) doDeleteEntry(deleteActivityTarget.id, true);
+					}}
+				>
+					ลบทุกห้อง
+				</Button>
+			</div>
+			<Dialog.Footer>
+				<Button
+					variant="ghost"
+					onclick={() => {
+						showDeleteActivityDialog = false;
+					}}>ยกเลิก</Button
+				>
+			</Dialog.Footer>
+		</Dialog.Content>
+	</Dialog.Root>
+{/if}
 
 <!-- Export Modal -->
-<Dialog.Root bind:open={showExportModal}>
-	<Dialog.Content class="sm:max-w-[500px]">
-		<Dialog.Header>
-			<Dialog.Title>Download PDF</Dialog.Title>
-			<Dialog.Description>เลือกข้อมูลที่ต้องการดาวน์โหลดตารางเรียน</Dialog.Description>
-		</Dialog.Header>
+{#if canReadTimetable}
+	<Dialog.Root bind:open={showExportModal}>
+		<Dialog.Content class="sm:max-w-[500px]">
+			<Dialog.Header>
+				<Dialog.Title>Download PDF</Dialog.Title>
+				<Dialog.Description>เลือกข้อมูลที่ต้องการดาวน์โหลดตารางเรียน</Dialog.Description>
+			</Dialog.Header>
 
-		<div class="grid gap-4 py-4">
-			<div class="flex flex-col gap-2">
-				<Label.Root>ประเภท</Label.Root>
-				<div class="flex gap-2">
-					<Button
-						variant={exportType === 'CLASSROOM' ? 'default' : 'outline'}
-						size="sm"
-						onclick={() => {
-							exportType = 'CLASSROOM';
-							exportTargetIds = [];
-						}}
-						class="flex-1"
-					>
-						<Users class="w-4 h-4 mr-2" /> ห้องเรียน
-					</Button>
-					<Button
-						variant={exportType === 'INSTRUCTOR' ? 'default' : 'outline'}
-						size="sm"
-						onclick={() => {
-							exportType = 'INSTRUCTOR';
-							exportTargetIds = [];
-						}}
-						class="flex-1"
-					>
-						<School class="w-4 h-4 mr-2" /> ครูผู้สอน
-					</Button>
-				</div>
-			</div>
-
-			<div class="flex flex-col gap-2">
-				<Label.Root>รูปแบบหน้า</Label.Root>
-				<div class="flex gap-2">
-					<Button
-						variant={exportLayout === 'full' ? 'default' : 'outline'}
-						size="sm"
-						onclick={() => (exportLayout = 'full')}
-						class="flex-1"
-					>
-						1 ตาราง/หน้า (Landscape)
-					</Button>
-					<Button
-						variant={exportLayout === 'portrait-2col' ? 'default' : 'outline'}
-						size="sm"
-						onclick={() => (exportLayout = 'portrait-2col')}
-						class="flex-1"
-					>
-						2 คอลัม/หน้า (Portrait)
-					</Button>
-				</div>
-				{#if exportLayout === 'portrait-2col'}
-					<p class="text-xs text-muted-foreground">
-						โหมดเปรียบเทียบ — แนวตั้ง 2 คอลัมเรียงลงมา (~6 ตาราง/หน้า) ซ่อนชื่อครู/ห้อง
-					</p>
-				{/if}
-			</div>
-
-			<div class="flex flex-col gap-2 max-h-[300px] overflow-y-auto border rounded p-2">
-				<div class="flex justify-between items-center mb-2 px-1">
-					<Label.Root>เลือกรายการ ({exportTargetIds.length})</Label.Root>
-					<Button
-						variant="ghost"
-						size="sm"
-						class="h-6 text-xs"
-						onclick={() => {
-							if (exportType === 'CLASSROOM') {
-								if (exportTargetIds.length === classrooms.length) exportTargetIds = [];
-								else exportTargetIds = classrooms.map((c) => c.id);
-							} else {
-								if (exportTargetIds.length === instructors.length) exportTargetIds = [];
-								else exportTargetIds = instructors.map((i) => i.id);
-							}
-						}}
-					>
-						{exportTargetIds.length > 0 ? 'ล้างการเลือก' : 'เลือกทั้งหมด'}
-					</Button>
-				</div>
-
-				{#if exportType === 'CLASSROOM'}
-					{#each classrooms as room (room.id)}
-						<div class="flex items-center space-x-2 p-1 hover:bg-muted rounded">
-							<Checkbox
-								id="export-room-{room.id}"
-								checked={exportTargetIds.includes(room.id)}
-								onCheckedChange={(checked) => {
-									if (checked) exportTargetIds = [...exportTargetIds, room.id];
-									else exportTargetIds = exportTargetIds.filter((id) => id !== room.id);
-								}}
-							/>
-							<Label.Root for="export-room-{room.id}" class="flex-1 cursor-pointer">
-								{room.name}
-							</Label.Root>
-						</div>
-					{/each}
-				{:else}
-					{#each instructors as teacher (teacher.id)}
-						<div class="flex items-center space-x-2 p-1 hover:bg-muted rounded">
-							<Checkbox
-								id="export-teacher-{teacher.id}"
-								checked={exportTargetIds.includes(teacher.id)}
-								onCheckedChange={(checked) => {
-									if (checked) exportTargetIds = [...exportTargetIds, teacher.id];
-									else exportTargetIds = exportTargetIds.filter((id) => id !== teacher.id);
-								}}
-							/>
-							<Label.Root for="export-teacher-{teacher.id}" class="flex-1 cursor-pointer">
-								{teacher.name}
-							</Label.Root>
-						</div>
-					{/each}
-				{/if}
-			</div>
-		</div>
-
-		<Dialog.Footer>
-			<Button variant="outline" onclick={() => (showExportModal = false)}>ยกเลิก</Button>
-			<Button onclick={confirmExport} disabled={isExporting || exportTargetIds.length === 0}>
-				{#if isExporting}
-					<Loader2 class="mr-2 h-4 w-4 animate-spin" />
-				{/if}
-				ดาวน์โหลด ({exportTargetIds.length})
-			</Button>
-		</Dialog.Footer>
-	</Dialog.Content>
-</Dialog.Root>
-
-<!-- Batch Assign Modal -->
-
-<Dialog.Root bind:open={showBatchModal}>
-	<Dialog.Content class="sm:max-w-[600px] max-h-[90vh] flex flex-col overflow-hidden">
-		<Dialog.Header>
-			<Dialog.Title>เพิ่มกิจกรรมพิเศษ (Batch)</Dialog.Title>
-			<Dialog.Description>
-				เพิ่มกิจกรรมให้หลายห้องเรียนพร้อมกัน (เช่น กิจกรรมหน้าเสาธง, ประชุมระดับ)
-			</Dialog.Description>
-		</Dialog.Header>
-
-		<div class="grid gap-3 py-3 overflow-y-auto flex-1 pr-2">
-			<!-- Mode Selection -->
-			<div class="grid grid-cols-4 items-center gap-4">
-				<Label.Root class="text-right">รูปแบบ</Label.Root>
-				<div class="col-span-3 flex gap-2">
-					<Button
-						variant={batchMode === 'TEXT' ? 'default' : 'outline'}
-						size="sm"
-						onclick={() => (batchMode = 'TEXT')}
-					>
-						ระบุชื่อเอง
-					</Button>
-					<Button
-						variant={batchMode === 'SLOT' ? 'default' : 'outline'}
-						size="sm"
-						onclick={() => {
-							batchMode = 'SLOT';
-							ensureActivitySlotsLoaded();
-						}}
-					>
-						จากกิจกรรมพัฒนาผู้เรียน
-					</Button>
-				</div>
-			</div>
-
-			{#if batchMode === 'TEXT'}
-				<div class="grid grid-cols-4 items-start gap-4">
-					<Label.Root class="text-right mt-2">ชื่อกิจกรรม</Label.Root>
-					<div class="col-span-3">
-						<textarea
-							rows="2"
-							class="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 resize-y min-h-[60px]"
-							bind:value={batchTitle}
-							placeholder="เช่น ประชุมระดับ, กิจกรรมพัฒนาผู้เรียน&#10;ขึ้นบรรทัดใหม่ได้ (Enter)"
-						></textarea>
-						<p class="text-[10px] text-muted-foreground mt-1">
-							พิมพ์หลายบรรทัดได้ (เช่น "พักกลางวัน\nรับประทานอาหาร")
-						</p>
+			<div class="grid gap-4 py-4">
+				<div class="flex flex-col gap-2">
+					<Label.Root>ประเภท</Label.Root>
+					<div class="flex gap-2">
+						<Button
+							variant={exportType === 'CLASSROOM' ? 'default' : 'outline'}
+							size="sm"
+							onclick={() => {
+								exportType = 'CLASSROOM';
+								exportTargetIds = [];
+							}}
+							class="flex-1"
+						>
+							<Users class="w-4 h-4 mr-2" /> ห้องเรียน
+						</Button>
+						<Button
+							variant={exportType === 'INSTRUCTOR' ? 'default' : 'outline'}
+							size="sm"
+							onclick={() => {
+								exportType = 'INSTRUCTOR';
+								exportTargetIds = [];
+							}}
+							class="flex-1"
+						>
+							<School class="w-4 h-4 mr-2" /> ครูผู้สอน
+						</Button>
 					</div>
 				</div>
 
+				<div class="flex flex-col gap-2">
+					<Label.Root>รูปแบบหน้า</Label.Root>
+					<div class="flex gap-2">
+						<Button
+							variant={exportLayout === 'full' ? 'default' : 'outline'}
+							size="sm"
+							onclick={() => (exportLayout = 'full')}
+							class="flex-1"
+						>
+							1 ตาราง/หน้า (Landscape)
+						</Button>
+						<Button
+							variant={exportLayout === 'portrait-2col' ? 'default' : 'outline'}
+							size="sm"
+							onclick={() => (exportLayout = 'portrait-2col')}
+							class="flex-1"
+						>
+							2 คอลัม/หน้า (Portrait)
+						</Button>
+					</div>
+					{#if exportLayout === 'portrait-2col'}
+						<p class="text-xs text-muted-foreground">
+							โหมดเปรียบเทียบ — แนวตั้ง 2 คอลัมเรียงลงมา (~6 ตาราง/หน้า) ซ่อนชื่อครู/ห้อง
+						</p>
+					{/if}
+				</div>
+
+				<div class="flex flex-col gap-2 max-h-[300px] overflow-y-auto border rounded p-2">
+					<div class="flex justify-between items-center mb-2 px-1">
+						<Label.Root>เลือกรายการ ({exportTargetIds.length})</Label.Root>
+						<Button
+							variant="ghost"
+							size="sm"
+							class="h-6 text-xs"
+							onclick={() => {
+								if (exportType === 'CLASSROOM') {
+									if (exportTargetIds.length === classrooms.length) exportTargetIds = [];
+									else exportTargetIds = classrooms.map((c) => c.id);
+								} else {
+									if (exportTargetIds.length === instructors.length) exportTargetIds = [];
+									else exportTargetIds = instructors.map((i) => i.id);
+								}
+							}}
+						>
+							{exportTargetIds.length > 0 ? 'ล้างการเลือก' : 'เลือกทั้งหมด'}
+						</Button>
+					</div>
+
+					{#if exportType === 'CLASSROOM'}
+						{#each classrooms as room (room.id)}
+							<div class="flex items-center space-x-2 p-1 hover:bg-muted rounded">
+								<Checkbox
+									id="export-room-{room.id}"
+									checked={exportTargetIds.includes(room.id)}
+									onCheckedChange={(checked) => {
+										if (checked) exportTargetIds = [...exportTargetIds, room.id];
+										else exportTargetIds = exportTargetIds.filter((id) => id !== room.id);
+									}}
+								/>
+								<Label.Root for="export-room-{room.id}" class="flex-1 cursor-pointer">
+									{room.name}
+								</Label.Root>
+							</div>
+						{/each}
+					{:else}
+						{#each instructors as teacher (teacher.id)}
+							<div class="flex items-center space-x-2 p-1 hover:bg-muted rounded">
+								<Checkbox
+									id="export-teacher-{teacher.id}"
+									checked={exportTargetIds.includes(teacher.id)}
+									onCheckedChange={(checked) => {
+										if (checked) exportTargetIds = [...exportTargetIds, teacher.id];
+										else exportTargetIds = exportTargetIds.filter((id) => id !== teacher.id);
+									}}
+								/>
+								<Label.Root for="export-teacher-{teacher.id}" class="flex-1 cursor-pointer">
+									{teacher.name}
+								</Label.Root>
+							</div>
+						{/each}
+					{/if}
+				</div>
+			</div>
+
+			<Dialog.Footer>
+				<Button variant="outline" onclick={() => (showExportModal = false)}>ยกเลิก</Button>
+				<Button onclick={confirmExport} disabled={isExporting || exportTargetIds.length === 0}>
+					{#if isExporting}
+						<Loader2 class="mr-2 h-4 w-4 animate-spin" />
+					{/if}
+					ดาวน์โหลด ({exportTargetIds.length})
+				</Button>
+			</Dialog.Footer>
+		</Dialog.Content>
+	</Dialog.Root>
+{/if}
+
+<!-- Batch Assign Modal -->
+
+{#if canManageTimetable}
+	<Dialog.Root bind:open={showBatchModal}>
+		<Dialog.Content class="sm:max-w-[600px] max-h-[90vh] flex flex-col overflow-hidden">
+			<Dialog.Header>
+				<Dialog.Title>เพิ่มกิจกรรมพิเศษ (Batch)</Dialog.Title>
+				<Dialog.Description>
+					เพิ่มกิจกรรมให้หลายห้องเรียนพร้อมกัน (เช่น กิจกรรมหน้าเสาธง, ประชุมระดับ)
+				</Dialog.Description>
+			</Dialog.Header>
+
+			<div class="grid gap-3 py-3 overflow-y-auto flex-1 pr-2">
+				<!-- Mode Selection -->
 				<div class="grid grid-cols-4 items-center gap-4">
-					<Label.Root class="text-right">ประเภท</Label.Root>
+					<Label.Root class="text-right">รูปแบบ</Label.Root>
+					<div class="col-span-3 flex gap-2">
+						<Button
+							variant={batchMode === 'TEXT' ? 'default' : 'outline'}
+							size="sm"
+							onclick={() => (batchMode = 'TEXT')}
+						>
+							ระบุชื่อเอง
+						</Button>
+						<Button
+							variant={batchMode === 'SLOT' ? 'default' : 'outline'}
+							size="sm"
+							onclick={() => {
+								batchMode = 'SLOT';
+								ensureActivitySlotsLoaded();
+							}}
+						>
+							จากกิจกรรมพัฒนาผู้เรียน
+						</Button>
+					</div>
+				</div>
+
+				{#if batchMode === 'TEXT'}
+					<div class="grid grid-cols-4 items-start gap-4">
+						<Label.Root class="text-right mt-2">ชื่อกิจกรรม</Label.Root>
+						<div class="col-span-3">
+							<textarea
+								rows="2"
+								class="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 resize-y min-h-[60px]"
+								bind:value={batchTitle}
+								placeholder="เช่น ประชุมระดับ, กิจกรรมพัฒนาผู้เรียน&#10;ขึ้นบรรทัดใหม่ได้ (Enter)"
+							></textarea>
+							<p class="text-[10px] text-muted-foreground mt-1">
+								พิมพ์หลายบรรทัดได้ (เช่น "พักกลางวัน\nรับประทานอาหาร")
+							</p>
+						</div>
+					</div>
+
+					<div class="grid grid-cols-4 items-center gap-4">
+						<Label.Root class="text-right">ประเภท</Label.Root>
+						<div class="col-span-3">
+							<Select.Root type="single" bind:value={batchType}>
+								<Select.Trigger class="w-full">
+									{#if batchType === 'ACTIVITY'}
+										กิจกรรม
+									{:else if batchType === 'BREAK'}
+										พักเบรค/พักเที่ยง
+									{:else if batchType === 'HOMEROOM'}
+										โฮมรูม
+									{:else if batchType === 'ACADEMIC'}
+										วิชาการ
+									{:else}
+										{batchType}
+									{/if}
+								</Select.Trigger>
+								<Select.Content>
+									<Select.Item value="ACTIVITY">กิจกรรม</Select.Item>
+									<Select.Item value="BREAK">พักเบรค/พักเที่ยง</Select.Item>
+									<Select.Item value="HOMEROOM">โฮมรูม</Select.Item>
+									<Select.Item value="ACADEMIC">วิชาการ</Select.Item>
+								</Select.Content>
+							</Select.Root>
+						</div>
+					</div>
+				{:else if batchMode === 'SLOT'}
+					<div class="grid grid-cols-4 items-center gap-4">
+						<Label.Root class="text-right">กิจกรรม</Label.Root>
+						<div class="col-span-3">
+							{#if loadingSlots}
+								<div class="text-sm text-muted-foreground flex items-center gap-2">
+									<Loader2 class="w-3 h-3 animate-spin" /> กำลังโหลด...
+								</div>
+							{:else if activitySlots.length === 0}
+								<p class="text-sm text-muted-foreground">ไม่พบ Activity Slot ในภาคเรียนนี้</p>
+							{:else}
+								<Select.Root type="single" bind:value={batchSlotId}>
+									<Select.Trigger class="w-full h-auto py-2">
+										<div class="flex flex-col items-start gap-0.5 text-left overflow-hidden">
+											<span class="truncate block w-full">
+												{activitySlots.find((s) => s.id === batchSlotId)?.name || 'เลือกกิจกรรม'}
+											</span>
+											{#if batchSlotId}
+												{@const slot = activitySlots.find((s) => s.id === batchSlotId)}
+												{#if slot}
+													<span class="text-xs text-muted-foreground">
+														{ACTIVITY_TYPE_LABELS[slot.activity_type] || slot.activity_type}
+													</span>
+												{/if}
+											{/if}
+										</div>
+									</Select.Trigger>
+									<Select.Content class="max-h-[300px] w-[350px] overflow-y-auto">
+										{#each activitySlots as slot (slot.id)}
+											<Select.Item
+												value={slot.id}
+												label={slot.name}
+												class="flex flex-col items-start py-2 border-b last:border-0"
+											>
+												<span class="font-medium text-sm">{slot.name}</span>
+												<span class="text-xs text-muted-foreground">
+													{ACTIVITY_TYPE_LABELS[slot.activity_type] || slot.activity_type}
+												</span>
+											</Select.Item>
+										{/each}
+									</Select.Content>
+								</Select.Root>
+							{/if}
+							<p class="text-[10px] text-muted-foreground mt-1.5 leading-relaxed">
+								*Batch รองรับเฉพาะ <b>Synchronized</b> (ทุกห้องตรงกัน) — Independent
+								ให้ลากทีละห้องจาก sidebar<br />
+								นักเรียนกดดูกิจกรรมที่ตัวเองลงทะเบียนได้จากตารางเรียน
+							</p>
+						</div>
+					</div>
+				{/if}
+
+				<div class="grid grid-cols-4 items-start gap-4">
+					<Label.Root class="text-right mt-1">วัน ({batchDays.length})</Label.Root>
+					<div class="col-span-3 flex flex-wrap gap-1.5">
+						{#each DAYS.slice(0, 5) as day (day.value)}
+							<label
+								class="flex items-center gap-1.5 px-2.5 py-1 rounded border cursor-pointer text-sm transition-colors {batchDays.includes(
+									day.value
+								)
+									? 'border-primary bg-primary/10 text-primary font-medium'
+									: 'bg-background hover:bg-muted/50'}"
+							>
+								<input
+									type="checkbox"
+									checked={batchDays.includes(day.value)}
+									onchange={() => {
+										if (batchDays.includes(day.value)) {
+											batchDays = batchDays.filter((d) => d !== day.value);
+										} else {
+											batchDays = [...batchDays, day.value];
+										}
+									}}
+									class="rounded"
+								/>
+								<span>{day.label}</span>
+							</label>
+						{/each}
+					</div>
+				</div>
+
+				<div class="grid grid-cols-4 items-start gap-4">
+					<Label.Root class="text-right mt-1">คาบ ({batchPeriodIds.length})</Label.Root>
+					<div
+						class="col-span-3 border rounded-md max-h-[160px] overflow-y-auto p-2 bg-muted/20 grid grid-cols-2 gap-1.5"
+					>
+						{#each periods as period (period.id)}
+							<label
+								class="flex items-center gap-2 p-1.5 rounded border bg-background cursor-pointer hover:bg-muted/50 text-sm {batchPeriodIds.includes(
+									period.id
+								)
+									? 'border-primary bg-primary/5'
+									: ''}"
+							>
+								<input
+									type="checkbox"
+									checked={batchPeriodIds.includes(period.id)}
+									onchange={() => {
+										if (batchPeriodIds.includes(period.id)) {
+											batchPeriodIds = batchPeriodIds.filter((id) => id !== period.id);
+										} else {
+											batchPeriodIds = [...batchPeriodIds, period.id];
+										}
+									}}
+									class="rounded"
+								/>
+								<span class="truncate">
+									{period.name ? `${period.name} ` : ''}({formatTime(
+										period.start_time
+									)}-{formatTime(period.end_time)})
+								</span>
+							</label>
+						{/each}
+					</div>
+				</div>
+
+				<!-- Room (Optional) -->
+				<div class="grid grid-cols-4 items-center gap-4">
+					<Label.Root class="text-right">ห้อง (ถ้ามี)</Label.Root>
 					<div class="col-span-3">
-						<Select.Root type="single" bind:value={batchType}>
+						<Select.Root type="single" bind:value={batchRoomId}>
 							<Select.Trigger class="w-full">
-								{#if batchType === 'ACTIVITY'}
-									กิจกรรม
-								{:else if batchType === 'BREAK'}
-									พักเบรค/พักเที่ยง
-								{:else if batchType === 'HOMEROOM'}
-									โฮมรูม
-								{:else if batchType === 'ACADEMIC'}
-									วิชาการ
-								{:else}
-									{batchType}
-								{/if}
+								{rooms.find((r) => r.id === batchRoomId)?.name_th ||
+									(batchRoomId === 'none' ? 'ไม่ระบุห้อง' : 'เลือกห้อง')}
 							</Select.Trigger>
-							<Select.Content>
-								<Select.Item value="ACTIVITY">กิจกรรม</Select.Item>
-								<Select.Item value="BREAK">พักเบรค/พักเที่ยง</Select.Item>
-								<Select.Item value="HOMEROOM">โฮมรูม</Select.Item>
-								<Select.Item value="ACADEMIC">วิชาการ</Select.Item>
+							<Select.Content class="max-h-[200px] overflow-y-auto">
+								<Select.Item value="none" class="text-muted-foreground">ไม่ระบุห้อง</Select.Item>
+								{#each rooms as room (room.id)}
+									<Select.Item value={room.id}>
+										{room.name_th}
+									</Select.Item>
+								{/each}
 							</Select.Content>
 						</Select.Root>
 					</div>
 				</div>
-			{:else if batchMode === 'SLOT'}
-				<div class="grid grid-cols-4 items-center gap-4">
-					<Label.Root class="text-right">กิจกรรม</Label.Root>
-					<div class="col-span-3">
-						{#if loadingSlots}
-							<div class="text-sm text-muted-foreground flex items-center gap-2">
-								<Loader2 class="w-3 h-3 animate-spin" /> กำลังโหลด...
-							</div>
-						{:else if activitySlots.length === 0}
-							<p class="text-sm text-muted-foreground">ไม่พบ Activity Slot ในภาคเรียนนี้</p>
-						{:else}
-							<Select.Root type="single" bind:value={batchSlotId}>
-								<Select.Trigger class="w-full h-auto py-2">
-									<div class="flex flex-col items-start gap-0.5 text-left overflow-hidden">
-										<span class="truncate block w-full">
-											{activitySlots.find((s) => s.id === batchSlotId)?.name || 'เลือกกิจกรรม'}
+
+				<!-- Targets Selection -->
+				<div class="border-t pt-3 mt-1 space-y-3">
+					{#if batchMode === 'SLOT' && batchSlotId}
+						<!-- SLOT mode: ใช้ข้อมูลจาก slot ทั้งห้องและครู (read-only summary) -->
+						<div class="rounded-md border border-emerald-200 bg-emerald-50/50 p-3 space-y-2">
+							<p class="text-[11px] text-emerald-800">
+								ใช้ข้อมูลจาก slot ตรงๆ — แก้จำนวนห้อง/ครูในหน้า
+								<a
+									href={resolve('/staff/academic/activities')}
+									target="_blank"
+									class="underline font-medium">Activities</a
+								>
+							</p>
+							<div class="text-xs">
+								<span class="font-semibold text-emerald-700">
+									<School class="inline w-3 h-3 mb-0.5" /> ห้องเรียน ({batchClassrooms.length})
+								</span>
+								<div class="flex flex-wrap gap-1 mt-1">
+									{#if batchClassrooms.length === 0}
+										<span class="text-muted-foreground italic">
+											slot นี้ยังไม่มีห้อง — เพิ่มในหน้า Activities ก่อน
 										</span>
-										{#if batchSlotId}
-											{@const slot = activitySlots.find((s) => s.id === batchSlotId)}
-											{#if slot}
-												<span class="text-xs text-muted-foreground">
-													{ACTIVITY_TYPE_LABELS[slot.activity_type] || slot.activity_type}
-												</span>
-											{/if}
-										{/if}
-									</div>
-								</Select.Trigger>
-								<Select.Content class="max-h-[300px] w-[350px] overflow-y-auto">
-									{#each activitySlots as slot (slot.id)}
-										<Select.Item
-											value={slot.id}
-											label={slot.name}
-											class="flex flex-col items-start py-2 border-b last:border-0"
-										>
-											<span class="font-medium text-sm">{slot.name}</span>
-											<span class="text-xs text-muted-foreground">
-												{ACTIVITY_TYPE_LABELS[slot.activity_type] || slot.activity_type}
+									{:else}
+										{#each batchClassrooms as cid (cid)}
+											{@const cr = classrooms.find((c) => c.id === cid)}
+											<span class="bg-white border border-emerald-300 rounded px-1.5 py-0.5">
+												{cr?.name || cid.slice(0, 8)}
 											</span>
-										</Select.Item>
-									{/each}
-								</Select.Content>
-							</Select.Root>
-						{/if}
-						<p class="text-[10px] text-muted-foreground mt-1.5 leading-relaxed">
-							*Batch รองรับเฉพาะ <b>Synchronized</b> (ทุกห้องตรงกัน) — Independent ให้ลากทีละห้องจาก
-							sidebar<br />
-							นักเรียนกดดูกิจกรรมที่ตัวเองลงทะเบียนได้จากตารางเรียน
-						</p>
-					</div>
-				</div>
-			{/if}
-
-			<div class="grid grid-cols-4 items-start gap-4">
-				<Label.Root class="text-right mt-1">วัน ({batchDays.length})</Label.Root>
-				<div class="col-span-3 flex flex-wrap gap-1.5">
-					{#each DAYS.slice(0, 5) as day (day.value)}
-						<label
-							class="flex items-center gap-1.5 px-2.5 py-1 rounded border cursor-pointer text-sm transition-colors {batchDays.includes(
-								day.value
-							)
-								? 'border-primary bg-primary/10 text-primary font-medium'
-								: 'bg-background hover:bg-muted/50'}"
-						>
-							<input
-								type="checkbox"
-								checked={batchDays.includes(day.value)}
-								onchange={() => {
-									if (batchDays.includes(day.value)) {
-										batchDays = batchDays.filter((d) => d !== day.value);
-									} else {
-										batchDays = [...batchDays, day.value];
-									}
-								}}
-								class="rounded"
-							/>
-							<span>{day.label}</span>
-						</label>
-					{/each}
-				</div>
-			</div>
-
-			<div class="grid grid-cols-4 items-start gap-4">
-				<Label.Root class="text-right mt-1">คาบ ({batchPeriodIds.length})</Label.Root>
-				<div
-					class="col-span-3 border rounded-md max-h-[160px] overflow-y-auto p-2 bg-muted/20 grid grid-cols-2 gap-1.5"
-				>
-					{#each periods as period (period.id)}
-						<label
-							class="flex items-center gap-2 p-1.5 rounded border bg-background cursor-pointer hover:bg-muted/50 text-sm {batchPeriodIds.includes(
-								period.id
-							)
-								? 'border-primary bg-primary/5'
-								: ''}"
-						>
-							<input
-								type="checkbox"
-								checked={batchPeriodIds.includes(period.id)}
-								onchange={() => {
-									if (batchPeriodIds.includes(period.id)) {
-										batchPeriodIds = batchPeriodIds.filter((id) => id !== period.id);
-									} else {
-										batchPeriodIds = [...batchPeriodIds, period.id];
-									}
-								}}
-								class="rounded"
-							/>
-							<span class="truncate">
-								{period.name ? `${period.name} ` : ''}({formatTime(period.start_time)}-{formatTime(
-									period.end_time
-								)})
-							</span>
-						</label>
-					{/each}
-				</div>
-			</div>
-
-			<!-- Room (Optional) -->
-			<div class="grid grid-cols-4 items-center gap-4">
-				<Label.Root class="text-right">ห้อง (ถ้ามี)</Label.Root>
-				<div class="col-span-3">
-					<Select.Root type="single" bind:value={batchRoomId}>
-						<Select.Trigger class="w-full">
-							{rooms.find((r) => r.id === batchRoomId)?.name_th ||
-								(batchRoomId === 'none' ? 'ไม่ระบุห้อง' : 'เลือกห้อง')}
-						</Select.Trigger>
-						<Select.Content class="max-h-[200px] overflow-y-auto">
-							<Select.Item value="none" class="text-muted-foreground">ไม่ระบุห้อง</Select.Item>
-							{#each rooms as room (room.id)}
-								<Select.Item value={room.id}>
-									{room.name_th}
-								</Select.Item>
-							{/each}
-						</Select.Content>
-					</Select.Root>
-				</div>
-			</div>
-
-			<!-- Targets Selection -->
-			<div class="border-t pt-3 mt-1 space-y-3">
-				{#if batchMode === 'SLOT' && batchSlotId}
-					<!-- SLOT mode: ใช้ข้อมูลจาก slot ทั้งห้องและครู (read-only summary) -->
-					<div class="rounded-md border border-emerald-200 bg-emerald-50/50 p-3 space-y-2">
-						<p class="text-[11px] text-emerald-800">
-							ใช้ข้อมูลจาก slot ตรงๆ — แก้จำนวนห้อง/ครูในหน้า
-							<a
-								href={resolve('/staff/academic/activities')}
-								target="_blank"
-								class="underline font-medium">Activities</a
-							>
-						</p>
-						<div class="text-xs">
-							<span class="font-semibold text-emerald-700">
-								<School class="inline w-3 h-3 mb-0.5" /> ห้องเรียน ({batchClassrooms.length})
-							</span>
-							<div class="flex flex-wrap gap-1 mt-1">
-								{#if batchClassrooms.length === 0}
-									<span class="text-muted-foreground italic">
-										slot นี้ยังไม่มีห้อง — เพิ่มในหน้า Activities ก่อน
-									</span>
-								{:else}
-									{#each batchClassrooms as cid (cid)}
-										{@const cr = classrooms.find((c) => c.id === cid)}
-										<span class="bg-white border border-emerald-300 rounded px-1.5 py-0.5">
-											{cr?.name || cid.slice(0, 8)}
+										{/each}
+									{/if}
+								</div>
+							</div>
+							<div class="text-xs">
+								<span class="font-semibold text-emerald-700">
+									<Users class="inline w-3 h-3 mb-0.5" /> ครู ({batchInstructors.length})
+								</span>
+								<div class="flex flex-wrap gap-1 mt-1">
+									{#if batchInstructors.length === 0}
+										<span class="text-muted-foreground italic">
+											slot นี้ยังไม่มีครู — เพิ่มในหน้า Activities ก่อน
 										</span>
-									{/each}
-								{/if}
+									{:else}
+										{#each batchInstructors as iid (iid)}
+											{@const ins = instructors.find((i) => i.id === iid)}
+											<span class="bg-white border border-emerald-300 rounded px-1.5 py-0.5">
+												{ins?.name || iid.slice(0, 8)}
+											</span>
+										{/each}
+									{/if}
+								</div>
 							</div>
 						</div>
-						<div class="text-xs">
-							<span class="font-semibold text-emerald-700">
-								<Users class="inline w-3 h-3 mb-0.5" /> ครู ({batchInstructors.length})
-							</span>
-							<div class="flex flex-wrap gap-1 mt-1">
-								{#if batchInstructors.length === 0}
-									<span class="text-muted-foreground italic">
-										slot นี้ยังไม่มีครู — เพิ่มในหน้า Activities ก่อน
-									</span>
-								{:else}
-									{#each batchInstructors as iid (iid)}
-										{@const ins = instructors.find((i) => i.id === iid)}
-										<span class="bg-white border border-emerald-300 rounded px-1.5 py-0.5">
-											{ins?.name || iid.slice(0, 8)}
-										</span>
-									{/each}
-								{/if}
-							</div>
-						</div>
-					</div>
-				{:else}
-					<!-- TEXT mode: เลือก ห้อง / ครู อิสระ -->
-					<p class="text-[11px] text-muted-foreground -mb-1">
-						เลือก <b>ห้องเรียน</b> ให้กิจกรรมขึ้นในตารางนักเรียน / เลือก <b>ครู</b>
-						ให้ขึ้นในตารางครู (เลือกทั้งคู่ได้ — event จะผูกครูทุกคนที่เลือกในทุกห้อง)
-					</p>
+					{:else}
+						<!-- TEXT mode: เลือก ห้อง / ครู อิสระ -->
+						<p class="text-[11px] text-muted-foreground -mb-1">
+							เลือก <b>ห้องเรียน</b> ให้กิจกรรมขึ้นในตารางนักเรียน / เลือก <b>ครู</b>
+							ให้ขึ้นในตารางครู (เลือกทั้งคู่ได้ — event จะผูกครูทุกคนที่เลือกในทุกห้อง)
+						</p>
 
-					<!-- ห้องเรียน -->
-					<div>
-						<div class="flex items-center gap-2 mb-2">
-							<Label.Root class="text-xs">กรองชั้น:</Label.Root>
-							<select
-								class="flex h-7 w-full items-center justify-between rounded-md border border-input bg-background px-2 py-0.5 text-xs ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
-								value={batchGradeFilterId}
-								onchange={(e) => (batchGradeFilterId = e.currentTarget.value)}
-								onmouseenter={loadBatchGradeLevels}
+						<!-- ห้องเรียน -->
+						<div>
+							<div class="flex items-center gap-2 mb-2">
+								<Label.Root class="text-xs">กรองชั้น:</Label.Root>
+								<select
+									class="flex h-7 w-full items-center justify-between rounded-md border border-input bg-background px-2 py-0.5 text-xs ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+									value={batchGradeFilterId}
+									onchange={(e) => (batchGradeFilterId = e.currentTarget.value)}
+									onmouseenter={loadBatchGradeLevels}
+								>
+									<option value="all">ทุกระดับ ({classrooms.length})</option>
+									{#each batchGradeLevels as gl (gl.id)}
+										<option value={gl.id}>{gl.name}</option>
+									{/each}
+								</select>
+							</div>
+
+							<div class="flex justify-between items-center mb-1">
+								<Label.Root class="text-xs">ห้องเรียน ({batchClassrooms.length})</Label.Root>
+								<Button
+									variant="ghost"
+									size="sm"
+									class="h-6 text-xs"
+									onclick={selectAllBatchClassrooms}
+								>
+									เลือกทั้งหมด
+								</Button>
+							</div>
+							<div
+								class="border rounded-md max-h-[140px] min-h-[60px] overflow-y-auto p-1.5 bg-muted/20 grid grid-cols-3 gap-1"
 							>
-								<option value="all">ทุกระดับ ({classrooms.length})</option>
-								{#each batchGradeLevels as gl (gl.id)}
-									<option value={gl.id}>{gl.name}</option>
+								{#each filteredBatchClassroomsList as classroom (classroom.id)}
+									<label
+										class="flex items-center gap-1.5 bg-background px-1.5 py-1 rounded border shadow-sm text-xs cursor-pointer hover:bg-muted/50"
+									>
+										<Checkbox
+											checked={batchClassrooms.includes(classroom.id)}
+											onCheckedChange={() => toggleBatchClassroom(classroom.id)}
+										/>
+										<span class="truncate">{classroom.name}</span>
+									</label>
+								{:else}
+									<div
+										class="col-span-3 flex flex-col items-center justify-center text-muted-foreground py-2 opacity-70"
+									>
+										<School class="w-6 h-6 mb-1 opacity-20" />
+										<span class="text-xs">ไม่พบห้องเรียน</span>
+									</div>
 								{/each}
-							</select>
+							</div>
 						</div>
 
-						<div class="flex justify-between items-center mb-1">
-							<Label.Root class="text-xs">ห้องเรียน ({batchClassrooms.length})</Label.Root>
-							<Button
-								variant="ghost"
-								size="sm"
-								class="h-6 text-xs"
-								onclick={selectAllBatchClassrooms}
+						<!-- ครู -->
+						<div>
+							<div class="flex justify-between items-center mb-1">
+								<Label.Root class="text-xs">ครู ({batchInstructors.length})</Label.Root>
+								<Button
+									variant="ghost"
+									size="sm"
+									class="h-6 text-xs"
+									onclick={() => {
+										if (batchInstructors.length === instructors.length) {
+											batchInstructors = [];
+										} else {
+											batchInstructors = instructors.map((i) => i.id);
+										}
+									}}
+								>
+									{batchInstructors.length === instructors.length ? 'ล้าง' : 'เลือกทั้งหมด'}
+								</Button>
+							</div>
+							<div
+								class="border rounded-md max-h-[140px] min-h-[60px] overflow-y-auto p-1.5 bg-muted/20 grid grid-cols-2 gap-1"
 							>
-								เลือกทั้งหมด
-							</Button>
+								{#each instructors as instructor (instructor.id)}
+									<label
+										class="flex items-center gap-1.5 bg-background px-1.5 py-1 rounded border shadow-sm text-xs cursor-pointer hover:bg-muted/50"
+									>
+										<Checkbox
+											checked={batchInstructors.includes(instructor.id)}
+											onCheckedChange={() => {
+												if (batchInstructors.includes(instructor.id)) {
+													batchInstructors = batchInstructors.filter((i) => i !== instructor.id);
+												} else {
+													batchInstructors = [...batchInstructors, instructor.id];
+												}
+											}}
+										/>
+										<span class="truncate">{instructor.name}</span>
+									</label>
+								{:else}
+									<div
+										class="col-span-2 flex flex-col items-center justify-center text-muted-foreground py-2 opacity-70"
+									>
+										<Users class="w-6 h-6 mb-1 opacity-20" />
+										<span class="text-xs">ไม่พบครู</span>
+									</div>
+								{/each}
+							</div>
 						</div>
-						<div
-							class="border rounded-md max-h-[140px] min-h-[60px] overflow-y-auto p-1.5 bg-muted/20 grid grid-cols-3 gap-1"
-						>
-							{#each filteredBatchClassroomsList as classroom (classroom.id)}
-								<label
-									class="flex items-center gap-1.5 bg-background px-1.5 py-1 rounded border shadow-sm text-xs cursor-pointer hover:bg-muted/50"
-								>
-									<Checkbox
-										checked={batchClassrooms.includes(classroom.id)}
-										onCheckedChange={() => toggleBatchClassroom(classroom.id)}
-									/>
-									<span class="truncate">{classroom.name}</span>
-								</label>
-							{:else}
-								<div
-									class="col-span-3 flex flex-col items-center justify-center text-muted-foreground py-2 opacity-70"
-								>
-									<School class="w-6 h-6 mb-1 opacity-20" />
-									<span class="text-xs">ไม่พบห้องเรียน</span>
-								</div>
-							{/each}
-						</div>
-					</div>
-
-					<!-- ครู -->
-					<div>
-						<div class="flex justify-between items-center mb-1">
-							<Label.Root class="text-xs">ครู ({batchInstructors.length})</Label.Root>
-							<Button
-								variant="ghost"
-								size="sm"
-								class="h-6 text-xs"
-								onclick={() => {
-									if (batchInstructors.length === instructors.length) {
-										batchInstructors = [];
-									} else {
-										batchInstructors = instructors.map((i) => i.id);
-									}
-								}}
+					{/if}
+				</div>
+				<div class="border-t pt-3 mt-1">
+					<!-- Override Option -->
+					<div
+						class="flex items-start space-x-2 mt-4 p-3 rounded-md border border-red-200 bg-red-50/50"
+					>
+						<Checkbox
+							id="batch-force"
+							bind:checked={batchForce}
+							class="mt-0.5 data-[state=checked]:bg-red-600 data-[state=checked]:border-red-600"
+						/>
+						<div class="grid gap-1.5 leading-none">
+							<label
+								for="batch-force"
+								class="text-sm font-medium leading-none text-red-600 cursor-pointer"
 							>
-								{batchInstructors.length === instructors.length ? 'ล้าง' : 'เลือกทั้งหมด'}
-							</Button>
+								บังคับลงตาราง (Override)
+							</label>
+							<p class="text-xs text-muted-foreground">
+								หากเลือก: ระบบจะลบรายการเดิมที่เวลาชนกันออกโดยอัตโนมัติ (ทั้งตารางนักเรียน, ครู
+								และห้องเรียน) เพื่อให้กิจกรรมนี้ลงได้
+							</p>
 						</div>
-						<div
-							class="border rounded-md max-h-[140px] min-h-[60px] overflow-y-auto p-1.5 bg-muted/20 grid grid-cols-2 gap-1"
-						>
-							{#each instructors as instructor (instructor.id)}
-								<label
-									class="flex items-center gap-1.5 bg-background px-1.5 py-1 rounded border shadow-sm text-xs cursor-pointer hover:bg-muted/50"
-								>
-									<Checkbox
-										checked={batchInstructors.includes(instructor.id)}
-										onCheckedChange={() => {
-											if (batchInstructors.includes(instructor.id)) {
-												batchInstructors = batchInstructors.filter((i) => i !== instructor.id);
-											} else {
-												batchInstructors = [...batchInstructors, instructor.id];
-											}
-										}}
-									/>
-									<span class="truncate">{instructor.name}</span>
-								</label>
-							{:else}
-								<div
-									class="col-span-2 flex flex-col items-center justify-center text-muted-foreground py-2 opacity-70"
-								>
-									<Users class="w-6 h-6 mb-1 opacity-20" />
-									<span class="text-xs">ไม่พบครู</span>
-								</div>
-							{/each}
-						</div>
-					</div>
-				{/if}
-			</div>
-			<div class="border-t pt-3 mt-1">
-				<!-- Override Option -->
-				<div
-					class="flex items-start space-x-2 mt-4 p-3 rounded-md border border-red-200 bg-red-50/50"
-				>
-					<Checkbox
-						id="batch-force"
-						bind:checked={batchForce}
-						class="mt-0.5 data-[state=checked]:bg-red-600 data-[state=checked]:border-red-600"
-					/>
-					<div class="grid gap-1.5 leading-none">
-						<label
-							for="batch-force"
-							class="text-sm font-medium leading-none text-red-600 cursor-pointer"
-						>
-							บังคับลงตาราง (Override)
-						</label>
-						<p class="text-xs text-muted-foreground">
-							หากเลือก: ระบบจะลบรายการเดิมที่เวลาชนกันออกโดยอัตโนมัติ (ทั้งตารางนักเรียน, ครู
-							และห้องเรียน) เพื่อให้กิจกรรมนี้ลงได้
-						</p>
 					</div>
 				</div>
 			</div>
-		</div>
 
-		<Dialog.Footer>
-			<Button variant="outline" onclick={() => (showBatchModal = false)}>ยกเลิก</Button>
-			<Button onclick={handleBatchSubmit} disabled={submitting}>
-				{#if submitting}
-					<Loader2 class="mr-2 h-4 w-4 animate-spin" />
-				{/if}
-				บันทึก
-			</Button>
-		</Dialog.Footer>
-	</Dialog.Content>
-</Dialog.Root>
+			<Dialog.Footer>
+				<Button variant="outline" onclick={() => (showBatchModal = false)}>ยกเลิก</Button>
+				<Button onclick={handleBatchSubmit} disabled={submitting}>
+					{#if submitting}
+						<Loader2 class="mr-2 h-4 w-4 animate-spin" />
+					{/if}
+					บันทึก
+				</Button>
+			</Dialog.Footer>
+		</Dialog.Content>
+	</Dialog.Root>
+{/if}
 
 <!-- Batch summary — แสดงผลลัพธ์หลัง batch (skipped/blocked/deleted/excluded) -->
-<Dialog.Root bind:open={showBatchSummary}>
-	<Dialog.Content class="sm:max-w-[600px] max-h-[80vh] flex flex-col">
-		<Dialog.Header>
-			<Dialog.Title>
-				{#if batchSummary && batchSummary.inserted_count > 0}
-					✅ บันทึก batch สำเร็จ — สรุปการทำงาน
-				{:else}
-					⚠️ Batch ไม่สามารถลงได้
+{#if canManageTimetable}
+	<Dialog.Root bind:open={showBatchSummary}>
+		<Dialog.Content class="sm:max-w-[600px] max-h-[80vh] flex flex-col">
+			<Dialog.Header>
+				<Dialog.Title>
+					{#if batchSummary && batchSummary.inserted_count > 0}
+						✅ บันทึก batch สำเร็จ — สรุปการทำงาน
+					{:else}
+						⚠️ Batch ไม่สามารถลงได้
+					{/if}
+				</Dialog.Title>
+				<Dialog.Description>
+					{#if batchSummary}
+						ลง <strong>{batchSummary.inserted_count}</strong> รายการ
+						{#if batchSummary.skipped.length > 0}
+							· ข้าม <strong>{batchSummary.skipped.length}</strong>
+						{/if}
+						{#if batchSummary.blocked.length > 0}
+							· ลงไม่ได้ <strong>{batchSummary.blocked.length}</strong>
+						{/if}
+						{#if batchSummary.deleted.length > 0}
+							· ทับ <strong>{batchSummary.deleted.length}</strong>
+						{/if}
+						{#if batchSummary.excluded_instructors.length > 0}
+							· ซ่อนครู <strong>{batchSummary.excluded_instructors.length}</strong>
+						{/if}
+					{/if}
+				</Dialog.Description>
+			</Dialog.Header>
+
+			<div class="overflow-y-auto space-y-3 py-2">
+				{#if batchSummary && batchSummary.deleted.length > 0}
+					<div class="border rounded-md p-3 bg-red-50 border-red-200">
+						<div class="text-sm font-medium text-red-700 mb-2 flex items-center gap-1.5">
+							🔄 เขียนทับ {batchSummary.deleted.length} รายการ
+						</div>
+						<ul class="text-xs space-y-1 text-foreground/80">
+							{#each batchSummary.deleted as d (d.id)}
+								<li>
+									<span class="font-medium">{d.classroom_name ?? '?'}</span>
+									· {d.day_of_week}
+									{d.period_name ?? ''} — ลบ "<span class="font-medium">{d.title}</span>"
+									{#if d.instructor_names.length > 0}
+										<span class="text-muted-foreground">({d.instructor_names.join(', ')})</span>
+									{/if}
+								</li>
+							{/each}
+						</ul>
+					</div>
 				{/if}
-			</Dialog.Title>
-			<Dialog.Description>
-				{#if batchSummary}
-					ลง <strong>{batchSummary.inserted_count}</strong> รายการ
-					{#if batchSummary.skipped.length > 0}
-						· ข้าม <strong>{batchSummary.skipped.length}</strong>
-					{/if}
-					{#if batchSummary.blocked.length > 0}
-						· ลงไม่ได้ <strong>{batchSummary.blocked.length}</strong>
-					{/if}
-					{#if batchSummary.deleted.length > 0}
-						· ทับ <strong>{batchSummary.deleted.length}</strong>
-					{/if}
-					{#if batchSummary.excluded_instructors.length > 0}
-						· ซ่อนครู <strong>{batchSummary.excluded_instructors.length}</strong>
-					{/if}
+
+				{#if batchSummary && batchSummary.skipped.length > 0}
+					<div class="border rounded-md p-3 bg-amber-50 border-amber-200">
+						<div class="text-sm font-medium text-amber-700 mb-2 flex items-center gap-1.5">
+							⚠️ ข้าม {batchSummary.skipped.length} รายการ
+						</div>
+						<ul class="text-xs space-y-1 text-foreground/80">
+							{#each batchSummary.skipped as s (`${s.classroom_id ?? 'all'}-${s.day_of_week}-${s.period_id}-${s.message}`)}
+								<li>{s.message}</li>
+							{/each}
+						</ul>
+					</div>
 				{/if}
-			</Dialog.Description>
-		</Dialog.Header>
 
-		<div class="overflow-y-auto space-y-3 py-2">
-			{#if batchSummary && batchSummary.deleted.length > 0}
-				<div class="border rounded-md p-3 bg-red-50 border-red-200">
-					<div class="text-sm font-medium text-red-700 mb-2 flex items-center gap-1.5">
-						🔄 เขียนทับ {batchSummary.deleted.length} รายการ
+				{#if batchSummary && batchSummary.blocked.length > 0}
+					<div class="border rounded-md p-3 bg-rose-50 border-rose-300">
+						<div class="text-sm font-medium text-rose-700 mb-2 flex items-center gap-1.5">
+							🚫 ลงไม่ได้ {batchSummary.blocked.length} รายการ
+						</div>
+						<ul class="text-xs space-y-1 text-foreground/80">
+							{#each batchSummary.blocked as b (`${b.classroom_id}-${b.day_of_week}-${b.period_id}-${b.message}`)}
+								<li>{b.message}</li>
+							{/each}
+						</ul>
 					</div>
-					<ul class="text-xs space-y-1 text-foreground/80">
-						{#each batchSummary.deleted as d (d.id)}
-							<li>
-								<span class="font-medium">{d.classroom_name ?? '?'}</span>
-								· {d.day_of_week}
-								{d.period_name ?? ''} — ลบ "<span class="font-medium">{d.title}</span>"
-								{#if d.instructor_names.length > 0}
-									<span class="text-muted-foreground">({d.instructor_names.join(', ')})</span>
-								{/if}
-							</li>
-						{/each}
-					</ul>
-				</div>
-			{/if}
+				{/if}
 
-			{#if batchSummary && batchSummary.skipped.length > 0}
-				<div class="border rounded-md p-3 bg-amber-50 border-amber-200">
-					<div class="text-sm font-medium text-amber-700 mb-2 flex items-center gap-1.5">
-						⚠️ ข้าม {batchSummary.skipped.length} รายการ
+				{#if batchSummary && batchSummary.excluded_instructors.length > 0}
+					<div class="border rounded-md p-3 bg-blue-50 border-blue-200">
+						<div class="text-sm font-medium text-blue-700 mb-2 flex items-center gap-1.5">
+							👤 ซ่อนครู {batchSummary.excluded_instructors.length} คน (ครูติดสอนคาบนี้)
+						</div>
+						<ul class="text-xs space-y-1 text-foreground/80">
+							{#each batchSummary.excluded_instructors as ex (ex.instructor_id)}
+								<li>
+									<span class="font-medium">{ex.instructor_name}</span> — ไม่ได้ attach กับ entries
+									ใหม่
+									{#if ex.conflicting_at.length > 0}
+										<div class="ml-3 text-muted-foreground">
+											ติดที่: {ex.conflicting_at
+												.map((c) => `${c.day_of_week} ${c.period_name ?? ''}: ${c.existing_title}`)
+												.join(', ')}
+										</div>
+									{/if}
+								</li>
+							{/each}
+						</ul>
 					</div>
-					<ul class="text-xs space-y-1 text-foreground/80">
-						{#each batchSummary.skipped as s (`${s.classroom_id ?? 'all'}-${s.day_of_week}-${s.period_id}-${s.message}`)}
-							<li>{s.message}</li>
-						{/each}
-					</ul>
-				</div>
-			{/if}
+				{/if}
 
-			{#if batchSummary && batchSummary.blocked.length > 0}
-				<div class="border rounded-md p-3 bg-rose-50 border-rose-300">
-					<div class="text-sm font-medium text-rose-700 mb-2 flex items-center gap-1.5">
-						🚫 ลงไม่ได้ {batchSummary.blocked.length} รายการ
-					</div>
-					<ul class="text-xs space-y-1 text-foreground/80">
-						{#each batchSummary.blocked as b (`${b.classroom_id}-${b.day_of_week}-${b.period_id}-${b.message}`)}
-							<li>{b.message}</li>
-						{/each}
-					</ul>
-				</div>
-			{/if}
+				{#if batchSummary && batchSummary.inserted_count === 0 && batchSummary.skipped.length === 0 && batchSummary.blocked.length === 0 && batchSummary.deleted.length === 0}
+					<p class="text-sm text-muted-foreground text-center py-4">ไม่มี cell ที่จะลง</p>
+				{/if}
+			</div>
 
-			{#if batchSummary && batchSummary.excluded_instructors.length > 0}
-				<div class="border rounded-md p-3 bg-blue-50 border-blue-200">
-					<div class="text-sm font-medium text-blue-700 mb-2 flex items-center gap-1.5">
-						👤 ซ่อนครู {batchSummary.excluded_instructors.length} คน (ครูติดสอนคาบนี้)
-					</div>
-					<ul class="text-xs space-y-1 text-foreground/80">
-						{#each batchSummary.excluded_instructors as ex (ex.instructor_id)}
-							<li>
-								<span class="font-medium">{ex.instructor_name}</span> — ไม่ได้ attach กับ entries
-								ใหม่
-								{#if ex.conflicting_at.length > 0}
-									<div class="ml-3 text-muted-foreground">
-										ติดที่: {ex.conflicting_at
-											.map((c) => `${c.day_of_week} ${c.period_name ?? ''}: ${c.existing_title}`)
-											.join(', ')}
-									</div>
-								{/if}
-							</li>
-						{/each}
-					</ul>
-				</div>
-			{/if}
-
-			{#if batchSummary && batchSummary.inserted_count === 0 && batchSummary.skipped.length === 0 && batchSummary.blocked.length === 0 && batchSummary.deleted.length === 0}
-				<p class="text-sm text-muted-foreground text-center py-4">ไม่มี cell ที่จะลง</p>
-			{/if}
-		</div>
-
-		<Dialog.Footer>
-			<Button onclick={() => (showBatchSummary = false)}>ปิด</Button>
-		</Dialog.Footer>
-	</Dialog.Content>
-</Dialog.Root>
+			<Dialog.Footer>
+				<Button onclick={() => (showBatchSummary = false)}>ปิด</Button>
+			</Dialog.Footer>
+		</Dialog.Content>
+	</Dialog.Root>
+{/if}
 
 <style>
 	/* Custom Scrollbar */

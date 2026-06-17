@@ -40,6 +40,9 @@
 	import * as Select from '$lib/components/ui/select';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import * as Tabs from '$lib/components/ui/tabs';
+	import { Alert, AlertDescription, AlertTitle } from '$lib/components/ui/alert';
+	import { PERMISSIONS } from '$lib/permissions/registry';
+	import { can } from '$lib/stores/permissions';
 	import {
 		Loader2,
 		BookOpen,
@@ -48,7 +51,8 @@
 		Settings,
 		Wand2,
 		Plus,
-		FileSpreadsheet
+		FileSpreadsheet,
+		AlertTriangle
 	} from 'lucide-svelte';
 	import {
 		actualRowsForWorksheet,
@@ -63,6 +67,9 @@
 		classroom_id: string;
 		semester_id: string;
 	};
+
+	const canReadCoursePlan = $derived($can.has(PERMISSIONS.ACADEMIC_COURSE_PLAN_READ_ALL));
+	const canManageCoursePlan = $derived($can.has(PERMISSIONS.ACADEMIC_COURSE_PLAN_MANAGE_ALL));
 
 	// State
 	let loading = $state(true);
@@ -112,6 +119,8 @@
 	let teamDialogRole = $state<'primary' | 'secondary'>('secondary');
 
 	async function loadTeamInstructors(courseId: string) {
+		if (!canReadCoursePlan) return;
+
 		try {
 			const res = await listCourseInstructors(courseId);
 			teamInstructorsMap[courseId] = res.data ?? [];
@@ -122,6 +131,11 @@
 	}
 
 	async function openTeamDialog(courseId: string) {
+		if (!canManageCoursePlan) {
+			toast.error('ไม่มีสิทธิ์จัดการทีมครูผู้สอน');
+			return;
+		}
+
 		teamDialogCourseId = courseId;
 		teamDialogSelectedInstructor = '';
 		teamDialogRole = 'secondary';
@@ -131,6 +145,11 @@
 	}
 
 	async function handleAddTeamInstructor() {
+		if (!canManageCoursePlan) {
+			toast.error('ไม่มีสิทธิ์จัดการทีมครูผู้สอน');
+			return;
+		}
+
 		if (!teamDialogSelectedInstructor) return;
 		try {
 			await addCourseInstructor(teamDialogCourseId, teamDialogSelectedInstructor, teamDialogRole);
@@ -144,6 +163,11 @@
 	}
 
 	async function handleRemoveTeamInstructor(courseId: string, userId: string) {
+		if (!canManageCoursePlan) {
+			toast.error('ไม่มีสิทธิ์จัดการทีมครูผู้สอน');
+			return;
+		}
+
 		try {
 			await removeCourseInstructor(courseId, userId);
 			await loadTeamInstructors(courseId);
@@ -155,6 +179,11 @@
 	}
 
 	async function handlePromoteToPrimary(courseId: string, userId: string) {
+		if (!canManageCoursePlan) {
+			toast.error('ไม่มีสิทธิ์จัดการทีมครูผู้สอน');
+			return;
+		}
+
 		try {
 			await updateCourseInstructorRole(courseId, userId, 'primary');
 			await loadTeamInstructors(courseId);
@@ -226,6 +255,15 @@
 
 	// Effects / Loaders
 	async function initData() {
+		if (!canReadCoursePlan) {
+			structure = { years: [], semesters: [], levels: [] };
+			classrooms = [];
+			courses = [];
+			classroomActivities = [];
+			loading = false;
+			return;
+		}
+
 		try {
 			loading = true;
 			const res = await getAcademicStructure();
@@ -239,7 +277,7 @@
 				await fetchClassrooms();
 				await fetchClassrooms();
 			}
-			loadTeachers(); // Preload teachers
+			if (canManageCoursePlan) loadTeachers(); // Preload teachers for management flows
 		} catch (e) {
 			console.error(e);
 			toast.error('โหลดข้อมูลตั้งต้นไม่สำเร็จ');
@@ -249,6 +287,11 @@
 	}
 
 	function openActualExportDialog() {
+		if (!canReadCoursePlan) {
+			toast.error('ไม่มีสิทธิ์ส่งออกข้อมูลใช้จริง');
+			return;
+		}
+
 		actualExportYearId =
 			actualExportYearId ||
 			selectedYearId ||
@@ -258,6 +301,11 @@
 	}
 
 	async function handleExportActualCurriculum() {
+		if (!canReadCoursePlan) {
+			toast.error('ไม่มีสิทธิ์ส่งออกข้อมูลใช้จริง');
+			return;
+		}
+
 		if (!actualExportYearId) {
 			toast.error('กรุณาเลือกปีการศึกษา');
 			return;
@@ -352,7 +400,7 @@
 	}
 
 	async function fetchClassrooms() {
-		if (!selectedYearId) return;
+		if (!canReadCoursePlan || !selectedYearId) return;
 		try {
 			const res = await listClassrooms({ year_id: selectedYearId });
 			classrooms = res.data;
@@ -364,7 +412,7 @@
 	}
 
 	async function fetchCourses() {
-		if (!selectedClassroomId || !selectedTermId) return;
+		if (!canReadCoursePlan || !selectedClassroomId || !selectedTermId) return;
 		try {
 			loading = true;
 			const res = await listClassroomCourses(selectedClassroomId, selectedTermId);
@@ -378,6 +426,8 @@
 	}
 
 	async function fetchClassroomActivities() {
+		if (!canReadCoursePlan) return;
+
 		if (!selectedClassroomId || !selectedTermId) {
 			classroomActivities = [];
 			return;
@@ -395,6 +445,11 @@
 	}
 
 	async function handleRemoveClassroomActivity(activity: ClassroomActivity) {
+		if (!canManageCoursePlan) {
+			toast.error('ไม่มีสิทธิ์ลบกิจกรรมออกจากห้องเรียน');
+			return;
+		}
+
 		if (!selectedClassroomId) return;
 		try {
 			await removeClassroomFromSlot(selectedClassroomId, activity.slot_id);
@@ -407,11 +462,21 @@
 	}
 
 	function openDeleteDialog(course: ClassroomCourse) {
+		if (!canManageCoursePlan) {
+			toast.error('ไม่มีสิทธิ์ลบวิชาออกจากห้องเรียน');
+			return;
+		}
+
 		deletingCourse = course;
 		showDeleteDialog = true;
 	}
 
 	async function handleRemove() {
+		if (!canManageCoursePlan) {
+			toast.error('ไม่มีสิทธิ์ลบวิชาออกจากห้องเรียน');
+			return;
+		}
+
 		if (!deletingCourse) return;
 
 		submitting = true;
@@ -430,6 +495,11 @@
 
 	// Auto-Generate Courses from Study Plan
 	async function handleAutoGenerate() {
+		if (!canManageCoursePlan) {
+			toast.error('ไม่มีสิทธิ์สร้างรายวิชาอัตโนมัติ');
+			return;
+		}
+
 		if (!selectedClassroomId || !selectedTermId || !currentClassroom) {
 			toast.error('กรุณาเลือกห้องเรียนและภาคเรียน');
 			return;
@@ -461,6 +531,11 @@
 	}
 
 	async function openAddCourseDialog() {
+		if (!canManageCoursePlan) {
+			toast.error('ไม่มีสิทธิ์เพิ่มรายวิชา');
+			return;
+		}
+
 		if (!selectedClassroomId || !selectedTermId || !currentClassroom) {
 			toast.error('กรุณาเลือกห้องเรียนและภาคเรียน');
 			return;
@@ -471,6 +546,8 @@
 	}
 
 	async function loadAddCourseLists() {
+		if (!canManageCoursePlan) return;
+
 		if (!currentClassroom || !selectedTermId || !selectedYearId) return;
 		addCourseLoading = true;
 		try {
@@ -514,6 +591,11 @@
 	}
 
 	async function handleAddCourse(subjectId: string) {
+		if (!canManageCoursePlan) {
+			toast.error('ไม่มีสิทธิ์เพิ่มรายวิชา');
+			return;
+		}
+
 		if (!selectedClassroomId || !selectedTermId) return;
 		addCourseSaving = subjectId;
 		try {
@@ -533,6 +615,8 @@
 	}
 
 	async function loadTeachers() {
+		if (!canManageCoursePlan) return;
+
 		if (teachersLoaded) return;
 		try {
 			const res = await lookupStaff({ activeOnly: true, limit: 1000 });
@@ -544,6 +628,11 @@
 	}
 
 	async function openEditDialog(course: ClassroomCourse) {
+		if (!canManageCoursePlan) {
+			toast.error('ไม่มีสิทธิ์แก้ไขรายวิชา');
+			return;
+		}
+
 		editingCourse = course;
 		selectedTeacherId = course.primary_instructor_id || 'unassigned';
 		if (!teachersLoaded) await loadTeachers();
@@ -551,6 +640,11 @@
 	}
 
 	async function handleUpdateCourse() {
+		if (!canManageCoursePlan) {
+			toast.error('ไม่มีสิทธิ์แก้ไขรายวิชา');
+			return;
+		}
+
 		if (!editingCourse) return;
 		submitting = true;
 		try {
@@ -586,7 +680,7 @@
 	// When Class/Term Changes -> Filter Courses
 	// We can use $effect
 	$effect(() => {
-		if (selectedClassroomId && selectedTermId) {
+		if (canReadCoursePlan && selectedClassroomId && selectedTermId) {
 			fetchCourses();
 			fetchClassroomActivities();
 		} else {
@@ -599,6 +693,8 @@
 	let loadedTeamCourseIds = new SvelteSet<string>();
 
 	$effect(() => {
+		if (!canReadCoursePlan) return;
+
 		const courseIds = courses.map((c) => c.id).filter((id) => !loadedTeamCourseIds.has(id));
 		if (courseIds.length === 0) return;
 
@@ -645,14 +741,383 @@
 	</div>
 
 	<!-- Filters -->
-	<Card.Root>
-		<Card.Content class="pt-6">
-			<div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-				<div class="space-y-2">
+	{#if !canReadCoursePlan}
+		<Alert>
+			<AlertTriangle class="h-4 w-4" />
+			<AlertTitle>ไม่มีสิทธิ์ดูแผนการเรียนที่เปิดสอน</AlertTitle>
+			<AlertDescription>
+				บัญชีนี้เข้า module วางแผนรายวิชาได้ แต่ยังไม่มีสิทธิ์อ่านข้อมูลแผนรายวิชา
+			</AlertDescription>
+		</Alert>
+	{:else}
+		<Card.Root>
+			<Card.Content class="pt-6">
+				<div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+					<div class="space-y-2">
+						<Label>ปีการศึกษา</Label>
+						<Select.Root type="single" value={selectedYearId} onValueChange={onYearChange}>
+							<Select.Trigger>
+								{structure.years.find((y) => y.id === selectedYearId)?.name || 'เลือกปีการศึกษา'}
+							</Select.Trigger>
+							<Select.Content>
+								{#each structure.years as year (year.id)}
+									<Select.Item value={year.id}>{year.name}</Select.Item>
+								{/each}
+							</Select.Content>
+						</Select.Root>
+					</div>
+
+					<div class="space-y-2">
+						<Label>ภาคเรียน (Semster)</Label>
+						<Select.Root type="single" bind:value={selectedTermId}>
+							<Select.Trigger disabled={!selectedYearId}>
+								{filteredSemesters.find((s) => s.id === selectedTermId)?.term || 'เลือกภาคเรียน'}
+							</Select.Trigger>
+							<Select.Content>
+								{#each filteredSemesters as term (term.id)}
+									<Select.Item value={term.id}>เทอม {term.term} ({term.name})</Select.Item>
+								{/each}
+							</Select.Content>
+						</Select.Root>
+					</div>
+
+					<div class="space-y-2">
+						<Label>ห้องเรียน</Label>
+						<Select.Root type="single" bind:value={selectedClassroomId}>
+							<Select.Trigger disabled={!selectedYearId}>
+								{classrooms.find((c) => c.id === selectedClassroomId)?.name || 'เลือกห้องเรียน'}
+							</Select.Trigger>
+							<Select.Content class="max-h-[300px]">
+								{#each classrooms as room (room.id)}
+									<Select.Item value={room.id}>{room.name} ({room.grade_level_name})</Select.Item>
+								{/each}
+							</Select.Content>
+						</Select.Root>
+					</div>
+				</div>
+			</Card.Content>
+		</Card.Root>
+
+		<!-- Content -->
+		{#if !selectedClassroomId || !selectedTermId}
+			<div
+				class="h-64 flex flex-col items-center justify-center border rounded-lg bg-muted/10 text-muted-foreground border-dashed"
+			>
+				<Calendar class="w-12 h-12 mb-4 opacity-20" />
+				<p>กรุณาเลือก ปีการศึกษา, ภาคเรียน และ ห้องเรียน เพื่อจัดการข้อมูล</p>
+			</div>
+		{:else}
+			<div class="space-y-4">
+				<!-- Summary Statistic Cards -->
+				<div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+					<Card.Root>
+						<Card.Content class="p-3 flex flex-col items-center justify-center text-center">
+							<h4 class="text-sm font-medium text-muted-foreground mb-1">วิชาพื้นฐาน</h4>
+							<div class="text-xl font-bold">
+								{summaryStats.basic.credit.toFixed(1)}
+								<span class="text-xs font-normal text-muted-foreground">นก.</span>
+							</div>
+							<div class="text-xs text-muted-foreground">
+								{summaryStats.basic.hours} ชม./เทอม
+							</div>
+						</Card.Content>
+					</Card.Root>
+					<Card.Root>
+						<Card.Content class="p-3 flex flex-col items-center justify-center text-center">
+							<h4 class="text-sm font-medium text-muted-foreground mb-1">วิชาเพิ่มเติม</h4>
+							<div class="text-xl font-bold">
+								{summaryStats.additional.credit.toFixed(1)}
+								<span class="text-xs font-normal text-muted-foreground">นก.</span>
+							</div>
+							<div class="text-xs text-muted-foreground">
+								{summaryStats.additional.hours} ชม./เทอม
+							</div>
+						</Card.Content>
+					</Card.Root>
+					<Card.Root>
+						<Card.Content class="p-3 flex flex-col items-center justify-center text-center">
+							<h4 class="text-sm font-medium text-muted-foreground mb-1">กิจกรรมพัฒนาผู้เรียน</h4>
+							<div class="text-xl font-bold">
+								{summaryStats.activity.count}
+								<span class="text-xs font-normal text-muted-foreground">กิจกรรม</span>
+							</div>
+							<div class="text-xs text-muted-foreground">
+								{summaryStats.activity.periods} คาบ/สัปดาห์
+							</div>
+						</Card.Content>
+					</Card.Root>
+					<Card.Root class="bg-primary/5 border-primary/20">
+						<Card.Content class="p-3 flex flex-col items-center justify-center text-center">
+							<h4 class="text-sm font-medium text-primary mb-1">รวมทั้งสิ้น (วิชา)</h4>
+							<div class="text-xl font-bold text-primary">
+								{summaryStats.total.credit.toFixed(1)}
+								<span class="text-xs font-normal opacity-70">นก.</span>
+							</div>
+							<div class="text-xs text-muted-foreground">{summaryStats.total.hours} ชม./เทอม</div>
+						</Card.Content>
+					</Card.Root>
+				</div>
+
+				<div class="flex justify-between items-center">
+					<h3 class="text-xl font-semibold">
+						รายวิชาของห้อง {currentClassroom?.name}
+						<Badge variant="outline" class="ml-2"
+							>เทอม {filteredSemesters.find((s) => s.id === selectedTermId)?.term}</Badge
+						>
+					</h3>
+					<div class="flex gap-2">
+						{#if canManageCoursePlan}
+							<Button
+								onclick={openAddCourseDialog}
+								variant="outline"
+								class="flex items-center gap-2"
+							>
+								<Plus class="w-4 h-4" />
+								เพิ่มรายวิชา
+							</Button>
+						{/if}
+						{#if canManageCoursePlan && currentClassroom?.study_plan_version_id}
+							<Button
+								onclick={() => (showAutoGenerateDialog = true)}
+								variant="secondary"
+								class="flex items-center gap-2"
+							>
+								<Wand2 class="w-4 h-4" />
+								สร้างรายวิชาอัตโนมัติ
+							</Button>
+						{/if}
+					</div>
+				</div>
+
+				<div class="bg-card border rounded-lg overflow-hidden" data-section="courses">
+					<Table.Root>
+						<Table.Header>
+							<Table.Row>
+								<Table.Head class="w-[120px]">รหัสวิชา</Table.Head>
+								<Table.Head>ชื่อวิชา</Table.Head>
+								<Table.Head class="w-[100px]">ประเภท</Table.Head>
+								<Table.Head class="text-center w-[100px]">หน่วยกิต</Table.Head>
+								<Table.Head>ครูผู้สอน</Table.Head>
+								<Table.Head class="text-right w-[80px]"></Table.Head>
+							</Table.Row>
+						</Table.Header>
+						<Table.Body>
+							{#if loading}
+								<Table.Row>
+									<Table.Cell colspan={5} class="h-32 text-center text-muted-foreground">
+										<Loader2 class="w-6 h-6 animate-spin mx-auto" />
+									</Table.Cell>
+								</Table.Row>
+							{:else if courses.length === 0}
+								<Table.Row>
+									<Table.Cell colspan={5} class="h-32 text-center text-muted-foreground">
+										ยังไม่มีรายวิชาในภาคเรียนนี้
+									</Table.Cell>
+								</Table.Row>
+							{:else}
+								{#each sortedCourses as course (course.id)}
+									<Table.Row>
+										<Table.Cell class="font-medium">{course.subject_code}</Table.Cell>
+										<Table.Cell>
+											<div class="font-bold">{course.subject_name_th}</div>
+											{#if course.subject_name_en}
+												<div class="text-xs text-muted-foreground">{course.subject_name_en}</div>
+											{/if}
+										</Table.Cell>
+										<Table.Cell>
+											{#if course.subject_type === 'BASIC'}
+												<Badge variant="outline">พื้นฐาน</Badge>
+											{:else if course.subject_type === 'ADDITIONAL'}
+												<Badge variant="secondary">เพิ่มเติม</Badge>
+											{:else if course.subject_type === 'ACTIVITY'}
+												<Badge
+													variant="secondary"
+													class="bg-green-100 text-green-800 hover:bg-green-100 hover:text-green-800 border-green-200"
+													>กิจกรรม</Badge
+												>
+											{:else}
+												<span class="text-muted-foreground text-xs">-</span>
+											{/if}
+										</Table.Cell>
+										<Table.Cell class="text-center">
+											<div class="text-sm font-medium">
+												{course.subject_credit ?? '-'}
+												<span class="text-xs font-normal text-muted-foreground">นก.</span>
+											</div>
+											{#if course.subject_hours !== undefined && course.subject_hours !== null}
+												<div class="text-[11px] text-muted-foreground">
+													{course.subject_hours} ชม./เทอม
+												</div>
+											{/if}
+										</Table.Cell>
+										<Table.Cell>
+											<div class="flex items-center gap-2 flex-wrap">
+												{#each teamInstructorsMap[course.id] ?? [] as instr (instr.id)}
+													<Badge
+														variant={instr.role === 'primary' ? 'default' : 'secondary'}
+														class="gap-1"
+													>
+														{instr.role === 'primary' ? 'หลัก' : 'ร่วม'}: {instr.instructor_name ??
+															'—'}
+														{#if instr.role === 'secondary'}
+															<button
+																class="ml-1 text-[10px]"
+																onclick={() =>
+																	handlePromoteToPrimary(course.id, instr.instructor_id)}
+																title="เปลี่ยนเป็นครูหลัก"
+																disabled={!canManageCoursePlan}
+															>
+																↑
+															</button>
+														{/if}
+														{#if canManageCoursePlan}
+															<button
+																class="ml-1 hover:text-destructive"
+																onclick={() =>
+																	handleRemoveTeamInstructor(course.id, instr.instructor_id)}
+															>
+																×
+															</button>
+														{/if}
+													</Badge>
+												{:else}
+													{#if course.instructor_name}
+														<span class="text-sm">{course.instructor_name}</span>
+													{:else}
+														<span class="text-muted-foreground text-sm">- ไม่ระบุ -</span>
+													{/if}
+												{/each}
+												{#if canManageCoursePlan}
+													<Button
+														variant="outline"
+														size="sm"
+														class="h-6 text-xs"
+														onclick={() => openTeamDialog(course.id)}
+													>
+														+ เพิ่มครู
+													</Button>
+												{/if}
+											</div>
+										</Table.Cell>
+										<Table.Cell class="text-right">
+											{#if canManageCoursePlan}
+												<Button variant="ghost" size="icon" onclick={() => openEditDialog(course)}>
+													<Settings class="w-4 h-4" />
+												</Button>
+												<Button
+													variant="ghost"
+													size="icon"
+													class="text-destructive hover:bg-destructive/10"
+													onclick={() => openDeleteDialog(course)}
+												>
+													<Trash2 class="w-4 h-4" />
+												</Button>
+											{/if}
+										</Table.Cell>
+									</Table.Row>
+								{/each}
+							{/if}
+						</Table.Body>
+					</Table.Root>
+				</div>
+
+				<!-- กิจกรรมพัฒนาผู้เรียน -->
+				<div class="space-y-3 pt-4">
+					<h3 class="text-xl font-semibold">
+						กิจกรรมพัฒนาผู้เรียน
+						<Badge variant="outline" class="ml-2">{classroomActivities.length} กิจกรรม</Badge>
+					</h3>
+					<p class="text-sm text-muted-foreground">
+						ช่องกิจกรรมที่ห้องนี้เข้าร่วม — ลบได้จากห้องนี้ (ถ้าเป็นห้องสุดท้าย slot
+						จะถูกลบโดยอัตโนมัติพร้อมกิจกรรม/ตารางสอน)
+					</p>
+
+					<div class="bg-card border rounded-lg overflow-hidden">
+						<Table.Root>
+							<Table.Header>
+								<Table.Row>
+									<Table.Head>ชื่อกิจกรรม</Table.Head>
+									<Table.Head class="w-[140px]">ประเภท</Table.Head>
+									<Table.Head class="w-[120px]">คาบ/สัปดาห์</Table.Head>
+									<Table.Head class="w-[140px]">โหมด</Table.Head>
+									<Table.Head class="text-right w-[160px]">การจัดการ</Table.Head>
+								</Table.Row>
+							</Table.Header>
+							<Table.Body>
+								{#if loadingActivities}
+									<Table.Row>
+										<Table.Cell colspan={5} class="h-20 text-center text-muted-foreground">
+											<Loader2 class="w-5 h-5 animate-spin mx-auto" />
+										</Table.Cell>
+									</Table.Row>
+								{:else if classroomActivities.length === 0}
+									<Table.Row>
+										<Table.Cell colspan={5} class="h-20 text-center text-muted-foreground">
+											ห้องนี้ยังไม่ได้เข้าร่วมกิจกรรมใดในภาคเรียนนี้
+										</Table.Cell>
+									</Table.Row>
+								{:else}
+									{#each classroomActivities as activity (activity.slot_id)}
+										<Table.Row>
+											<Table.Cell class="font-medium">{activity.name}</Table.Cell>
+											<Table.Cell>
+												<Badge
+													variant="secondary"
+													class="bg-green-100 text-green-800 hover:bg-green-100 hover:text-green-800 border-green-200"
+												>
+													{ACTIVITY_TYPE_LABELS[activity.activity_type] ?? activity.activity_type}
+												</Badge>
+											</Table.Cell>
+											<Table.Cell>
+												<span class="font-medium">{activity.periods_per_week}</span>
+												<span class="text-xs text-muted-foreground ml-1">คาบ/สัปดาห์</span>
+											</Table.Cell>
+											<Table.Cell class="text-xs text-muted-foreground">
+												{activity.scheduling_mode === 'independent'
+													? 'แต่ละห้องจัดเอง'
+													: 'จัดพร้อมกันทุกห้อง'}
+											</Table.Cell>
+											<Table.Cell class="text-right">
+												{#if canManageCoursePlan}
+													<Button
+														variant="outline"
+														size="sm"
+														class="text-destructive hover:bg-destructive/10"
+														onclick={() => handleRemoveClassroomActivity(activity)}
+													>
+														<Trash2 class="w-3 h-3 mr-1" />
+														ลบออกจากห้องนี้
+													</Button>
+												{/if}
+											</Table.Cell>
+										</Table.Row>
+									{/each}
+								{/if}
+							</Table.Body>
+						</Table.Root>
+					</div>
+				</div>
+			</div>
+		{/if}
+	{/if}
+
+	<!-- Actual Curriculum Export Dialog -->
+	{#if canReadCoursePlan}
+		<Dialog.Root bind:open={showActualExportDialog}>
+			<Dialog.Content class="sm:max-w-[440px]">
+				<Dialog.Header>
+					<Dialog.Title>ส่งออกรายวิชาที่ใช้จริง</Dialog.Title>
+					<Dialog.Description>
+						ดาวน์โหลดรายวิชาและกิจกรรมที่ผูกกับห้องเรียนจริงทุกห้อง ทุกภาคเรียน ในปีการศึกษาที่เลือก
+					</Dialog.Description>
+				</Dialog.Header>
+
+				<div class="space-y-2 py-2">
 					<Label>ปีการศึกษา</Label>
-					<Select.Root type="single" value={selectedYearId} onValueChange={onYearChange}>
-						<Select.Trigger>
-							{structure.years.find((y) => y.id === selectedYearId)?.name || 'เลือกปีการศึกษา'}
+					<Select.Root type="single" bind:value={actualExportYearId}>
+						<Select.Trigger class="w-full">
+							{structure.years.find((year) => year.id === actualExportYearId)?.name ??
+								'เลือกปีการศึกษา'}
 						</Select.Trigger>
 						<Select.Content>
 							{#each structure.years as year (year.id)}
@@ -662,673 +1127,342 @@
 					</Select.Root>
 				</div>
 
-				<div class="space-y-2">
-					<Label>ภาคเรียน (Semster)</Label>
-					<Select.Root type="single" bind:value={selectedTermId}>
-						<Select.Trigger disabled={!selectedYearId}>
-							{filteredSemesters.find((s) => s.id === selectedTermId)?.term || 'เลือกภาคเรียน'}
-						</Select.Trigger>
-						<Select.Content>
-							{#each filteredSemesters as term (term.id)}
-								<Select.Item value={term.id}>เทอม {term.term} ({term.name})</Select.Item>
-							{/each}
-						</Select.Content>
-					</Select.Root>
-				</div>
-
-				<div class="space-y-2">
-					<Label>ห้องเรียน</Label>
-					<Select.Root type="single" bind:value={selectedClassroomId}>
-						<Select.Trigger disabled={!selectedYearId}>
-							{classrooms.find((c) => c.id === selectedClassroomId)?.name || 'เลือกห้องเรียน'}
-						</Select.Trigger>
-						<Select.Content class="max-h-[300px]">
-							{#each classrooms as room (room.id)}
-								<Select.Item value={room.id}>{room.name} ({room.grade_level_name})</Select.Item>
-							{/each}
-						</Select.Content>
-					</Select.Root>
-				</div>
-			</div>
-		</Card.Content>
-	</Card.Root>
-
-	<!-- Content -->
-	{#if !selectedClassroomId || !selectedTermId}
-		<div
-			class="h-64 flex flex-col items-center justify-center border rounded-lg bg-muted/10 text-muted-foreground border-dashed"
-		>
-			<Calendar class="w-12 h-12 mb-4 opacity-20" />
-			<p>กรุณาเลือก ปีการศึกษา, ภาคเรียน และ ห้องเรียน เพื่อจัดการข้อมูล</p>
-		</div>
-	{:else}
-		<div class="space-y-4">
-			<!-- Summary Statistic Cards -->
-			<div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-				<Card.Root>
-					<Card.Content class="p-3 flex flex-col items-center justify-center text-center">
-						<h4 class="text-sm font-medium text-muted-foreground mb-1">วิชาพื้นฐาน</h4>
-						<div class="text-xl font-bold">
-							{summaryStats.basic.credit.toFixed(1)}
-							<span class="text-xs font-normal text-muted-foreground">นก.</span>
-						</div>
-						<div class="text-xs text-muted-foreground">
-							{summaryStats.basic.hours} ชม./เทอม
-						</div>
-					</Card.Content>
-				</Card.Root>
-				<Card.Root>
-					<Card.Content class="p-3 flex flex-col items-center justify-center text-center">
-						<h4 class="text-sm font-medium text-muted-foreground mb-1">วิชาเพิ่มเติม</h4>
-						<div class="text-xl font-bold">
-							{summaryStats.additional.credit.toFixed(1)}
-							<span class="text-xs font-normal text-muted-foreground">นก.</span>
-						</div>
-						<div class="text-xs text-muted-foreground">
-							{summaryStats.additional.hours} ชม./เทอม
-						</div>
-					</Card.Content>
-				</Card.Root>
-				<Card.Root>
-					<Card.Content class="p-3 flex flex-col items-center justify-center text-center">
-						<h4 class="text-sm font-medium text-muted-foreground mb-1">กิจกรรมพัฒนาผู้เรียน</h4>
-						<div class="text-xl font-bold">
-							{summaryStats.activity.count}
-							<span class="text-xs font-normal text-muted-foreground">กิจกรรม</span>
-						</div>
-						<div class="text-xs text-muted-foreground">
-							{summaryStats.activity.periods} คาบ/สัปดาห์
-						</div>
-					</Card.Content>
-				</Card.Root>
-				<Card.Root class="bg-primary/5 border-primary/20">
-					<Card.Content class="p-3 flex flex-col items-center justify-center text-center">
-						<h4 class="text-sm font-medium text-primary mb-1">รวมทั้งสิ้น (วิชา)</h4>
-						<div class="text-xl font-bold text-primary">
-							{summaryStats.total.credit.toFixed(1)}
-							<span class="text-xs font-normal opacity-70">นก.</span>
-						</div>
-						<div class="text-xs text-muted-foreground">{summaryStats.total.hours} ชม./เทอม</div>
-					</Card.Content>
-				</Card.Root>
-			</div>
-
-			<div class="flex justify-between items-center">
-				<h3 class="text-xl font-semibold">
-					รายวิชาของห้อง {currentClassroom?.name}
-					<Badge variant="outline" class="ml-2"
-						>เทอม {filteredSemesters.find((s) => s.id === selectedTermId)?.term}</Badge
+				<Dialog.Footer>
+					<Button
+						variant="outline"
+						onclick={() => (showActualExportDialog = false)}
+						disabled={exportingActualCurriculum}
 					>
-				</h3>
-				<div class="flex gap-2">
-					<Button onclick={openAddCourseDialog} variant="outline" class="flex items-center gap-2">
-						<Plus class="w-4 h-4" />
-						เพิ่มรายวิชา
+						ยกเลิก
 					</Button>
-					{#if currentClassroom?.study_plan_version_id}
-						<Button
-							onclick={() => (showAutoGenerateDialog = true)}
-							variant="secondary"
-							class="flex items-center gap-2"
-						>
-							<Wand2 class="w-4 h-4" />
-							สร้างรายวิชาอัตโนมัติ
-						</Button>
-					{/if}
-				</div>
-			</div>
-
-			<div class="bg-card border rounded-lg overflow-hidden" data-section="courses">
-				<Table.Root>
-					<Table.Header>
-						<Table.Row>
-							<Table.Head class="w-[120px]">รหัสวิชา</Table.Head>
-							<Table.Head>ชื่อวิชา</Table.Head>
-							<Table.Head class="w-[100px]">ประเภท</Table.Head>
-							<Table.Head class="text-center w-[100px]">หน่วยกิต</Table.Head>
-							<Table.Head>ครูผู้สอน</Table.Head>
-							<Table.Head class="text-right w-[80px]"></Table.Head>
-						</Table.Row>
-					</Table.Header>
-					<Table.Body>
-						{#if loading}
-							<Table.Row>
-								<Table.Cell colspan={5} class="h-32 text-center text-muted-foreground">
-									<Loader2 class="w-6 h-6 animate-spin mx-auto" />
-								</Table.Cell>
-							</Table.Row>
-						{:else if courses.length === 0}
-							<Table.Row>
-								<Table.Cell colspan={5} class="h-32 text-center text-muted-foreground">
-									ยังไม่มีรายวิชาในภาคเรียนนี้
-								</Table.Cell>
-							</Table.Row>
+					<Button
+						onclick={handleExportActualCurriculum}
+						disabled={exportingActualCurriculum || !actualExportYearId}
+					>
+						{#if exportingActualCurriculum}
+							<Loader2 class="w-4 h-4 mr-2 animate-spin" />
+							กำลังส่งออก...
 						{:else}
-							{#each sortedCourses as course (course.id)}
-								<Table.Row>
-									<Table.Cell class="font-medium">{course.subject_code}</Table.Cell>
-									<Table.Cell>
-										<div class="font-bold">{course.subject_name_th}</div>
-										{#if course.subject_name_en}
-											<div class="text-xs text-muted-foreground">{course.subject_name_en}</div>
-										{/if}
-									</Table.Cell>
-									<Table.Cell>
-										{#if course.subject_type === 'BASIC'}
-											<Badge variant="outline">พื้นฐาน</Badge>
-										{:else if course.subject_type === 'ADDITIONAL'}
-											<Badge variant="secondary">เพิ่มเติม</Badge>
-										{:else if course.subject_type === 'ACTIVITY'}
-											<Badge
-												variant="secondary"
-												class="bg-green-100 text-green-800 hover:bg-green-100 hover:text-green-800 border-green-200"
-												>กิจกรรม</Badge
-											>
-										{:else}
-											<span class="text-muted-foreground text-xs">-</span>
-										{/if}
-									</Table.Cell>
-									<Table.Cell class="text-center">
-										<div class="text-sm font-medium">
-											{course.subject_credit ?? '-'}
-											<span class="text-xs font-normal text-muted-foreground">นก.</span>
-										</div>
-										{#if course.subject_hours !== undefined && course.subject_hours !== null}
-											<div class="text-[11px] text-muted-foreground">
-												{course.subject_hours} ชม./เทอม
-											</div>
-										{/if}
-									</Table.Cell>
-									<Table.Cell>
-										<div class="flex items-center gap-2 flex-wrap">
-											{#each teamInstructorsMap[course.id] ?? [] as instr (instr.id)}
-												<Badge
-													variant={instr.role === 'primary' ? 'default' : 'secondary'}
-													class="gap-1"
-												>
-													{instr.role === 'primary' ? 'หลัก' : 'ร่วม'}: {instr.instructor_name ??
-														'—'}
-													{#if instr.role === 'secondary'}
-														<button
-															class="ml-1 text-[10px]"
-															onclick={() => handlePromoteToPrimary(course.id, instr.instructor_id)}
-															title="เปลี่ยนเป็นครูหลัก"
-														>
-															↑
-														</button>
-													{/if}
-													<button
-														class="ml-1 hover:text-destructive"
-														onclick={() =>
-															handleRemoveTeamInstructor(course.id, instr.instructor_id)}
-													>
-														×
-													</button>
-												</Badge>
-											{:else}
-												{#if course.instructor_name}
-													<span class="text-sm">{course.instructor_name}</span>
-												{:else}
-													<span class="text-muted-foreground text-sm">- ไม่ระบุ -</span>
-												{/if}
-											{/each}
-											<Button
-												variant="outline"
-												size="sm"
-												class="h-6 text-xs"
-												onclick={() => openTeamDialog(course.id)}
-											>
-												+ เพิ่มครู
-											</Button>
-										</div>
-									</Table.Cell>
-									<Table.Cell class="text-right">
-										<Button variant="ghost" size="icon" onclick={() => openEditDialog(course)}>
-											<Settings class="w-4 h-4" />
-										</Button>
-										<Button
-											variant="ghost"
-											size="icon"
-											class="text-destructive hover:bg-destructive/10"
-											onclick={() => openDeleteDialog(course)}
-										>
-											<Trash2 class="w-4 h-4" />
-										</Button>
-									</Table.Cell>
-								</Table.Row>
-							{/each}
+							<FileSpreadsheet class="w-4 h-4 mr-2" />
+							ดาวน์โหลด XLSX
 						{/if}
-					</Table.Body>
-				</Table.Root>
-			</div>
-
-			<!-- กิจกรรมพัฒนาผู้เรียน -->
-			<div class="space-y-3 pt-4">
-				<h3 class="text-xl font-semibold">
-					กิจกรรมพัฒนาผู้เรียน
-					<Badge variant="outline" class="ml-2">{classroomActivities.length} กิจกรรม</Badge>
-				</h3>
-				<p class="text-sm text-muted-foreground">
-					ช่องกิจกรรมที่ห้องนี้เข้าร่วม — ลบได้จากห้องนี้ (ถ้าเป็นห้องสุดท้าย slot
-					จะถูกลบโดยอัตโนมัติพร้อมกิจกรรม/ตารางสอน)
-				</p>
-
-				<div class="bg-card border rounded-lg overflow-hidden">
-					<Table.Root>
-						<Table.Header>
-							<Table.Row>
-								<Table.Head>ชื่อกิจกรรม</Table.Head>
-								<Table.Head class="w-[140px]">ประเภท</Table.Head>
-								<Table.Head class="w-[120px]">คาบ/สัปดาห์</Table.Head>
-								<Table.Head class="w-[140px]">โหมด</Table.Head>
-								<Table.Head class="text-right w-[160px]">การจัดการ</Table.Head>
-							</Table.Row>
-						</Table.Header>
-						<Table.Body>
-							{#if loadingActivities}
-								<Table.Row>
-									<Table.Cell colspan={5} class="h-20 text-center text-muted-foreground">
-										<Loader2 class="w-5 h-5 animate-spin mx-auto" />
-									</Table.Cell>
-								</Table.Row>
-							{:else if classroomActivities.length === 0}
-								<Table.Row>
-									<Table.Cell colspan={5} class="h-20 text-center text-muted-foreground">
-										ห้องนี้ยังไม่ได้เข้าร่วมกิจกรรมใดในภาคเรียนนี้
-									</Table.Cell>
-								</Table.Row>
-							{:else}
-								{#each classroomActivities as activity (activity.slot_id)}
-									<Table.Row>
-										<Table.Cell class="font-medium">{activity.name}</Table.Cell>
-										<Table.Cell>
-											<Badge
-												variant="secondary"
-												class="bg-green-100 text-green-800 hover:bg-green-100 hover:text-green-800 border-green-200"
-											>
-												{ACTIVITY_TYPE_LABELS[activity.activity_type] ?? activity.activity_type}
-											</Badge>
-										</Table.Cell>
-										<Table.Cell>
-											<span class="font-medium">{activity.periods_per_week}</span>
-											<span class="text-xs text-muted-foreground ml-1">คาบ/สัปดาห์</span>
-										</Table.Cell>
-										<Table.Cell class="text-xs text-muted-foreground">
-											{activity.scheduling_mode === 'independent'
-												? 'แต่ละห้องจัดเอง'
-												: 'จัดพร้อมกันทุกห้อง'}
-										</Table.Cell>
-										<Table.Cell class="text-right">
-											<Button
-												variant="outline"
-												size="sm"
-												class="text-destructive hover:bg-destructive/10"
-												onclick={() => handleRemoveClassroomActivity(activity)}
-											>
-												<Trash2 class="w-3 h-3 mr-1" />
-												ลบออกจากห้องนี้
-											</Button>
-										</Table.Cell>
-									</Table.Row>
-								{/each}
-							{/if}
-						</Table.Body>
-					</Table.Root>
-				</div>
-			</div>
-		</div>
+					</Button>
+				</Dialog.Footer>
+			</Dialog.Content>
+		</Dialog.Root>
 	{/if}
 
-	<!-- Actual Curriculum Export Dialog -->
-	<Dialog.Root bind:open={showActualExportDialog}>
-		<Dialog.Content class="sm:max-w-[440px]">
-			<Dialog.Header>
-				<Dialog.Title>ส่งออกรายวิชาที่ใช้จริง</Dialog.Title>
-				<Dialog.Description>
-					ดาวน์โหลดรายวิชาและกิจกรรมที่ผูกกับห้องเรียนจริงทุกห้อง ทุกภาคเรียน ในปีการศึกษาที่เลือก
-				</Dialog.Description>
-			</Dialog.Header>
-
-			<div class="space-y-2 py-2">
-				<Label>ปีการศึกษา</Label>
-				<Select.Root type="single" bind:value={actualExportYearId}>
-					<Select.Trigger class="w-full">
-						{structure.years.find((year) => year.id === actualExportYearId)?.name ??
-							'เลือกปีการศึกษา'}
-					</Select.Trigger>
-					<Select.Content>
-						{#each structure.years as year (year.id)}
-							<Select.Item value={year.id}>{year.name}</Select.Item>
-						{/each}
-					</Select.Content>
-				</Select.Root>
-			</div>
-
-			<Dialog.Footer>
-				<Button
-					variant="outline"
-					onclick={() => (showActualExportDialog = false)}
-					disabled={exportingActualCurriculum}
-				>
-					ยกเลิก
-				</Button>
-				<Button
-					onclick={handleExportActualCurriculum}
-					disabled={exportingActualCurriculum || !actualExportYearId}
-				>
-					{#if exportingActualCurriculum}
-						<Loader2 class="w-4 h-4 mr-2 animate-spin" />
-						กำลังส่งออก...
-					{:else}
-						<FileSpreadsheet class="w-4 h-4 mr-2" />
-						ดาวน์โหลด XLSX
-					{/if}
-				</Button>
-			</Dialog.Footer>
-		</Dialog.Content>
-	</Dialog.Root>
-
 	<!-- Edit Dialog -->
-	<Dialog.Root bind:open={showEditDialog}>
-		<Dialog.Content class="sm:max-w-[500px]">
-			<Dialog.Header>
-				<Dialog.Title>แก้ไขรายวิชา</Dialog.Title>
-			</Dialog.Header>
+	{#if canManageCoursePlan}
+		<Dialog.Root bind:open={showEditDialog}>
+			<Dialog.Content class="sm:max-w-[500px]">
+				<Dialog.Header>
+					<Dialog.Title>แก้ไขรายวิชา</Dialog.Title>
+				</Dialog.Header>
 
-			<div class="grid gap-4 py-4">
-				<div class="space-y-2">
-					<Label>วิชา</Label>
-					<div class="font-medium p-2 border rounded bg-muted/20">
-						{editingCourse?.subject_code}
-						{editingCourse?.subject_name_th}
+				<div class="grid gap-4 py-4">
+					<div class="space-y-2">
+						<Label>วิชา</Label>
+						<div class="font-medium p-2 border rounded bg-muted/20">
+							{editingCourse?.subject_code}
+							{editingCourse?.subject_name_th}
+						</div>
+					</div>
+
+					<div class="space-y-2">
+						<Label>ครูผู้สอน (Primary Instructor)</Label>
+						<Select.Root type="single" bind:value={selectedTeacherId}>
+							<Select.Trigger class="w-full">
+								{#if selectedTeacherId === 'unassigned'}
+									<span class="text-muted-foreground">- ไม่ระบุ -</span>
+								{:else}
+									{teachers.find((t) => t.id === selectedTeacherId)?.name}
+								{/if}
+							</Select.Trigger>
+							<Select.Content class="max-h-[300px]">
+								<Select.Item value="unassigned">- ไม่ระบุ -</Select.Item>
+								{#each teachers as teacher (teacher.id)}
+									<Select.Item value={teacher.id}>
+										{teacher.name}
+									</Select.Item>
+								{/each}
+							</Select.Content>
+						</Select.Root>
 					</div>
 				</div>
 
-				<div class="space-y-2">
-					<Label>ครูผู้สอน (Primary Instructor)</Label>
-					<Select.Root type="single" bind:value={selectedTeacherId}>
-						<Select.Trigger class="w-full">
-							{#if selectedTeacherId === 'unassigned'}
-								<span class="text-muted-foreground">- ไม่ระบุ -</span>
-							{:else}
-								{teachers.find((t) => t.id === selectedTeacherId)?.name}
-							{/if}
-						</Select.Trigger>
-						<Select.Content class="max-h-[300px]">
-							<Select.Item value="unassigned">- ไม่ระบุ -</Select.Item>
-							{#each teachers as teacher (teacher.id)}
-								<Select.Item value={teacher.id}>
-									{teacher.name}
-								</Select.Item>
-							{/each}
-						</Select.Content>
-					</Select.Root>
-				</div>
-			</div>
-
-			<Dialog.Footer>
-				<Button variant="outline" onclick={() => (showEditDialog = false)}>ยกเลิก</Button>
-				<Button onclick={handleUpdateCourse} disabled={submitting}>
-					{#if submitting}
-						<Loader2 class="w-4 h-4 mr-2 animate-spin" />
-					{/if}
-					บันทึกการเปลี่ยนแปลง
-				</Button>
-			</Dialog.Footer>
-		</Dialog.Content>
-	</Dialog.Root>
+				<Dialog.Footer>
+					<Button variant="outline" onclick={() => (showEditDialog = false)}>ยกเลิก</Button>
+					<Button onclick={handleUpdateCourse} disabled={submitting}>
+						{#if submitting}
+							<Loader2 class="w-4 h-4 mr-2 animate-spin" />
+						{/if}
+						บันทึกการเปลี่ยนแปลง
+					</Button>
+				</Dialog.Footer>
+			</Dialog.Content>
+		</Dialog.Root>
+	{/if}
 	<!-- Delete Dialog -->
-	<Dialog.Root bind:open={showDeleteDialog}>
-		<Dialog.Content class="sm:max-w-[425px]">
-			<Dialog.Header>
-				<Dialog.Title>ยืนยันการลบวิชา</Dialog.Title>
-				<Dialog.Description>
-					คุณต้องการลบวิชา <strong
-						>{deletingCourse?.subject_code} {deletingCourse?.subject_name_th}</strong
-					> ออกจากห้องเรียนนี้ใช่หรือไม่?
-				</Dialog.Description>
-			</Dialog.Header>
-			<Dialog.Footer>
-				<Button variant="outline" onclick={() => (showDeleteDialog = false)}>ยกเลิก</Button>
-				<Button variant="destructive" onclick={handleRemove} disabled={submitting}>
-					{#if submitting}
-						<Loader2 class="w-4 h-4 mr-2 animate-spin" />
-					{/if}
-					ยืนยันลบ
-				</Button>
-			</Dialog.Footer>
-		</Dialog.Content>
-	</Dialog.Root>
+	{#if canManageCoursePlan}
+		<Dialog.Root bind:open={showDeleteDialog}>
+			<Dialog.Content class="sm:max-w-[425px]">
+				<Dialog.Header>
+					<Dialog.Title>ยืนยันการลบวิชา</Dialog.Title>
+					<Dialog.Description>
+						คุณต้องการลบวิชา <strong
+							>{deletingCourse?.subject_code} {deletingCourse?.subject_name_th}</strong
+						> ออกจากห้องเรียนนี้ใช่หรือไม่?
+					</Dialog.Description>
+				</Dialog.Header>
+				<Dialog.Footer>
+					<Button variant="outline" onclick={() => (showDeleteDialog = false)}>ยกเลิก</Button>
+					<Button variant="destructive" onclick={handleRemove} disabled={submitting}>
+						{#if submitting}
+							<Loader2 class="w-4 h-4 mr-2 animate-spin" />
+						{/if}
+						ยืนยันลบ
+					</Button>
+				</Dialog.Footer>
+			</Dialog.Content>
+		</Dialog.Root>
+	{/if}
 	<!-- Auto-Generate Dialog -->
-	<Dialog.Root bind:open={showAutoGenerateDialog}>
-		<Dialog.Content class="sm:max-w-[500px]">
-			<Dialog.Header>
-				<Dialog.Title class="flex items-center gap-2">
-					<Wand2 class="w-5 h-5" />
-					สร้างวิชา + กิจกรรมอัตโนมัติจากแผนการเรียน
-				</Dialog.Title>
-				<Dialog.Description>
-					ระบบจะดึงทั้ง <b>รายวิชา</b> และ <b>กิจกรรมพัฒนาผู้เรียน</b> จากหลักสูตรที่ห้องนี้ใช้ แล้วสร้างให้อัตโนมัติตามระดับชั้น
-					+ ภาคเรียนที่เลือก (ครูทีมจะถูก copy จากคลังรายวิชาให้ด้วย)
-				</Dialog.Description>
-			</Dialog.Header>
+	{#if canManageCoursePlan}
+		<Dialog.Root bind:open={showAutoGenerateDialog}>
+			<Dialog.Content class="sm:max-w-[500px]">
+				<Dialog.Header>
+					<Dialog.Title class="flex items-center gap-2">
+						<Wand2 class="w-5 h-5" />
+						สร้างวิชา + กิจกรรมอัตโนมัติจากแผนการเรียน
+					</Dialog.Title>
+					<Dialog.Description>
+						ระบบจะดึงทั้ง <b>รายวิชา</b> และ <b>กิจกรรมพัฒนาผู้เรียน</b> จากหลักสูตรที่ห้องนี้ใช้ แล้วสร้างให้อัตโนมัติตามระดับชั้น
+						+ ภาคเรียนที่เลือก (ครูทีมจะถูก copy จากคลังรายวิชาให้ด้วย)
+					</Dialog.Description>
+				</Dialog.Header>
 
-			<div class="space-y-4 py-4">
-				<div class="p-4 bg-muted/50 rounded-lg space-y-2">
-					<div class="flex items-center justify-between">
-						<span class="text-sm font-medium">ห้องเรียน:</span>
-						<Badge variant="secondary">{currentClassroom?.name}</Badge>
+				<div class="space-y-4 py-4">
+					<div class="p-4 bg-muted/50 rounded-lg space-y-2">
+						<div class="flex items-center justify-between">
+							<span class="text-sm font-medium">ห้องเรียน:</span>
+							<Badge variant="secondary">{currentClassroom?.name}</Badge>
+						</div>
+						<div class="flex items-center justify-between">
+							<span class="text-sm font-medium">ภาคเรียน:</span>
+							<Badge variant="secondary">
+								เทอม {filteredSemesters.find((s) => s.id === selectedTermId)?.term}
+							</Badge>
+						</div>
 					</div>
-					<div class="flex items-center justify-between">
-						<span class="text-sm font-medium">ภาคเรียน:</span>
-						<Badge variant="secondary">
-							เทอม {filteredSemesters.find((s) => s.id === selectedTermId)?.term}
-						</Badge>
-					</div>
-				</div>
 
-				<div
-					class="p-4 bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-900 rounded-lg"
-				>
-					<div class="flex gap-2">
-						<div class="text-blue-600 dark:text-blue-400 mt-0.5">ℹ️</div>
-						<div class="text-sm text-blue-900 dark:text-blue-100 space-y-1">
-							<p class="font-medium">หมายเหตุ:</p>
-							<ul class="list-disc list-inside space-y-1 text-xs">
-								<li>รายวิชา/กิจกรรมที่มีอยู่แล้วจะไม่ถูกสร้างซ้ำ</li>
-								<li>ต้องการเพิ่ม/เอาวิชาออก → แก้ที่หลักสูตรแล้วกดซ้ำได้</li>
-								<li>สามารถลบหรือแก้ไขรายวิชาที่สร้างแล้วในห้องนี้ได้</li>
-							</ul>
+					<div
+						class="p-4 bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-900 rounded-lg"
+					>
+						<div class="flex gap-2">
+							<div class="text-blue-600 dark:text-blue-400 mt-0.5">ℹ️</div>
+							<div class="text-sm text-blue-900 dark:text-blue-100 space-y-1">
+								<p class="font-medium">หมายเหตุ:</p>
+								<ul class="list-disc list-inside space-y-1 text-xs">
+									<li>รายวิชา/กิจกรรมที่มีอยู่แล้วจะไม่ถูกสร้างซ้ำ</li>
+									<li>ต้องการเพิ่ม/เอาวิชาออก → แก้ที่หลักสูตรแล้วกดซ้ำได้</li>
+									<li>สามารถลบหรือแก้ไขรายวิชาที่สร้างแล้วในห้องนี้ได้</li>
+								</ul>
+							</div>
 						</div>
 					</div>
 				</div>
-			</div>
 
-			<Dialog.Footer>
-				<Button
-					variant="outline"
-					onclick={() => (showAutoGenerateDialog = false)}
-					disabled={autoGenerating}
-				>
-					ยกเลิก
-				</Button>
-				<Button onclick={handleAutoGenerate} disabled={autoGenerating}>
-					{#if autoGenerating}
-						<Loader2 class="w-4 h-4 mr-2 animate-spin" />
-						กำลังสร้าง...
-					{:else}
-						<Wand2 class="w-4 h-4 mr-2" />
-						สร้างวิชา + กิจกรรม
-					{/if}
-				</Button>
-			</Dialog.Footer>
-		</Dialog.Content>
-	</Dialog.Root>
+				<Dialog.Footer>
+					<Button
+						variant="outline"
+						onclick={() => (showAutoGenerateDialog = false)}
+						disabled={autoGenerating}
+					>
+						ยกเลิก
+					</Button>
+					<Button onclick={handleAutoGenerate} disabled={autoGenerating}>
+						{#if autoGenerating}
+							<Loader2 class="w-4 h-4 mr-2 animate-spin" />
+							กำลังสร้าง...
+						{:else}
+							<Wand2 class="w-4 h-4 mr-2" />
+							สร้างวิชา + กิจกรรม
+						{/if}
+					</Button>
+				</Dialog.Footer>
+			</Dialog.Content>
+		</Dialog.Root>
+	{/if}
 
 	<!-- Add Course Dialog -->
-	<Dialog.Root bind:open={showAddCourseDialog}>
-		<Dialog.Content class="max-w-2xl">
-			<Dialog.Header>
-				<Dialog.Title>เพิ่มรายวิชา</Dialog.Title>
-				<Dialog.Description>
-					เพิ่มวิชาเข้าห้อง {currentClassroom?.name} — ครูประจำวิชา (default) จะถูกใส่ให้อัตโนมัติ
-				</Dialog.Description>
-			</Dialog.Header>
+	{#if canManageCoursePlan}
+		<Dialog.Root bind:open={showAddCourseDialog}>
+			<Dialog.Content class="max-w-2xl">
+				<Dialog.Header>
+					<Dialog.Title>เพิ่มรายวิชา</Dialog.Title>
+					<Dialog.Description>
+						เพิ่มวิชาเข้าห้อง {currentClassroom?.name} — ครูประจำวิชา (default) จะถูกใส่ให้อัตโนมัติ
+					</Dialog.Description>
+				</Dialog.Header>
 
-			<Tabs.Root bind:value={addCourseTab} class="w-full">
-				<Tabs.List class="grid w-full grid-cols-2">
-					<Tabs.Trigger value="plan" disabled={!currentClassroom?.study_plan_version_id}>
-						จากหลักสูตร ({planSubjectsForAdd.filter(
-							(sps) => !courses.some((c) => c.subject_id === sps.subject_id)
-						).length})
-					</Tabs.Trigger>
-					<Tabs.Trigger value="catalog">
-						จากคลังวิชาทั้งหมด ({catalogSubjectsForAdd.filter(
-							(s) => !courses.some((c) => c.subject_id === s.id)
-						).length})
-					</Tabs.Trigger>
-				</Tabs.List>
-
-				<Tabs.Content value="plan" class="mt-3">
-					<p class="text-xs text-muted-foreground mb-2">
-						วิชาที่หลักสูตรกำหนดแต่ยังไม่อยู่ในห้องนี้ (แนะนำใช้ path นี้เพื่อ sync กับหลักสูตร)
-					</p>
-					<div class="max-h-[400px] overflow-y-auto divide-y rounded border">
-						{#if addCourseLoading}
-							<div class="py-4 text-center text-muted-foreground text-sm">
-								<Loader2 class="w-4 h-4 animate-spin inline mr-1" /> กำลังโหลด...
-							</div>
-						{:else}
-							{@const availablePlan = planSubjectsForAdd.filter(
+				<Tabs.Root bind:value={addCourseTab} class="w-full">
+					<Tabs.List class="grid w-full grid-cols-2">
+						<Tabs.Trigger value="plan" disabled={!currentClassroom?.study_plan_version_id}>
+							จากหลักสูตร ({planSubjectsForAdd.filter(
 								(sps) => !courses.some((c) => c.subject_id === sps.subject_id)
-							)}
-							{#each availablePlan as sps (sps.id)}
-								<div class="flex items-center gap-2 px-3 py-2 text-sm">
-									<span class="flex-1 truncate">
-										<span class="font-medium">{sps.subject_code}</span>
-										<span class="text-muted-foreground ml-2">{sps.subject_name_th}</span>
-										{#if sps.subject_type === 'BASIC'}
-											<Badge variant="outline" class="ml-2 text-[10px]">พื้นฐาน</Badge>
-										{:else if sps.subject_type === 'ADDITIONAL'}
-											<Badge variant="secondary" class="ml-2 text-[10px]">เพิ่มเติม</Badge>
-										{/if}
-									</span>
-									<Button
-										variant="outline"
-										size="sm"
-										class="h-7"
-										onclick={() => handleAddCourse(sps.subject_id)}
-										disabled={addCourseSaving === sps.subject_id}
-									>
-										{#if addCourseSaving === sps.subject_id}
-											<Loader2 class="w-3 h-3 animate-spin" />
-										{:else}
-											เพิ่ม
-										{/if}
-									</Button>
-								</div>
-							{:else}
-								<p class="text-xs text-muted-foreground italic text-center py-3">
-									วิชาในหลักสูตรถูกเพิ่มครบแล้ว
-								</p>
-							{/each}
-						{/if}
-					</div>
-				</Tabs.Content>
-
-				<Tabs.Content value="catalog" class="mt-3">
-					<p class="text-xs text-muted-foreground mb-2">
-						คลังวิชาทั้งหมด — ใช้เมื่อห้องนี้ต้องการวิชา**นอกหลักสูตร** (เช่น ห้องพิเศษ/ตกซ้ำชั้น)
-					</p>
-					<div class="max-h-[400px] overflow-y-auto divide-y rounded border">
-						{#if addCourseLoading}
-							<div class="py-4 text-center text-muted-foreground text-sm">
-								<Loader2 class="w-4 h-4 animate-spin inline mr-1" /> กำลังโหลด...
-							</div>
-						{:else}
-							{@const availableCatalog = catalogSubjectsForAdd.filter(
+							).length})
+						</Tabs.Trigger>
+						<Tabs.Trigger value="catalog">
+							จากคลังวิชาทั้งหมด ({catalogSubjectsForAdd.filter(
 								(s) => !courses.some((c) => c.subject_id === s.id)
-							)}
-							{#each availableCatalog as s (s.id)}
-								<div class="flex items-center gap-2 px-3 py-2 text-sm">
-									<span class="flex-1 truncate">
-										<span class="font-medium">{s.code}</span>
-										<span class="text-muted-foreground ml-2">{s.name_th}</span>
-										{#if s.type === 'BASIC'}
-											<Badge variant="outline" class="ml-2 text-[10px]">พื้นฐาน</Badge>
-										{:else if s.type === 'ADDITIONAL'}
-											<Badge variant="secondary" class="ml-2 text-[10px]">เพิ่มเติม</Badge>
-										{/if}
-									</span>
-									<Button
-										variant="outline"
-										size="sm"
-										class="h-7"
-										onclick={() => handleAddCourse(s.id)}
-										disabled={addCourseSaving === s.id}
-									>
-										{#if addCourseSaving === s.id}
-											<Loader2 class="w-3 h-3 animate-spin" />
-										{:else}
-											เพิ่ม
-										{/if}
-									</Button>
+							).length})
+						</Tabs.Trigger>
+					</Tabs.List>
+
+					<Tabs.Content value="plan" class="mt-3">
+						<p class="text-xs text-muted-foreground mb-2">
+							วิชาที่หลักสูตรกำหนดแต่ยังไม่อยู่ในห้องนี้ (แนะนำใช้ path นี้เพื่อ sync กับหลักสูตร)
+						</p>
+						<div class="max-h-[400px] overflow-y-auto divide-y rounded border">
+							{#if addCourseLoading}
+								<div class="py-4 text-center text-muted-foreground text-sm">
+									<Loader2 class="w-4 h-4 animate-spin inline mr-1" /> กำลังโหลด...
 								</div>
 							{:else}
-								<p class="text-xs text-muted-foreground italic text-center py-3">
-									ไม่มีวิชาในคลังที่ยังไม่ได้เพิ่ม
-								</p>
-							{/each}
-						{/if}
-					</div>
-				</Tabs.Content>
-			</Tabs.Root>
+								{@const availablePlan = planSubjectsForAdd.filter(
+									(sps) => !courses.some((c) => c.subject_id === sps.subject_id)
+								)}
+								{#each availablePlan as sps (sps.id)}
+									<div class="flex items-center gap-2 px-3 py-2 text-sm">
+										<span class="flex-1 truncate">
+											<span class="font-medium">{sps.subject_code}</span>
+											<span class="text-muted-foreground ml-2">{sps.subject_name_th}</span>
+											{#if sps.subject_type === 'BASIC'}
+												<Badge variant="outline" class="ml-2 text-[10px]">พื้นฐาน</Badge>
+											{:else if sps.subject_type === 'ADDITIONAL'}
+												<Badge variant="secondary" class="ml-2 text-[10px]">เพิ่มเติม</Badge>
+											{/if}
+										</span>
+										<Button
+											variant="outline"
+											size="sm"
+											class="h-7"
+											onclick={() => handleAddCourse(sps.subject_id)}
+											disabled={addCourseSaving === sps.subject_id}
+										>
+											{#if addCourseSaving === sps.subject_id}
+												<Loader2 class="w-3 h-3 animate-spin" />
+											{:else}
+												เพิ่ม
+											{/if}
+										</Button>
+									</div>
+								{:else}
+									<p class="text-xs text-muted-foreground italic text-center py-3">
+										วิชาในหลักสูตรถูกเพิ่มครบแล้ว
+									</p>
+								{/each}
+							{/if}
+						</div>
+					</Tabs.Content>
 
-			<Dialog.Footer>
-				<Button variant="outline" onclick={() => (showAddCourseDialog = false)}>ปิด</Button>
-			</Dialog.Footer>
-		</Dialog.Content>
-	</Dialog.Root>
+					<Tabs.Content value="catalog" class="mt-3">
+						<p class="text-xs text-muted-foreground mb-2">
+							คลังวิชาทั้งหมด — ใช้เมื่อห้องนี้ต้องการวิชา**นอกหลักสูตร** (เช่น ห้องพิเศษ/ตกซ้ำชั้น)
+						</p>
+						<div class="max-h-[400px] overflow-y-auto divide-y rounded border">
+							{#if addCourseLoading}
+								<div class="py-4 text-center text-muted-foreground text-sm">
+									<Loader2 class="w-4 h-4 animate-spin inline mr-1" /> กำลังโหลด...
+								</div>
+							{:else}
+								{@const availableCatalog = catalogSubjectsForAdd.filter(
+									(s) => !courses.some((c) => c.subject_id === s.id)
+								)}
+								{#each availableCatalog as s (s.id)}
+									<div class="flex items-center gap-2 px-3 py-2 text-sm">
+										<span class="flex-1 truncate">
+											<span class="font-medium">{s.code}</span>
+											<span class="text-muted-foreground ml-2">{s.name_th}</span>
+											{#if s.type === 'BASIC'}
+												<Badge variant="outline" class="ml-2 text-[10px]">พื้นฐาน</Badge>
+											{:else if s.type === 'ADDITIONAL'}
+												<Badge variant="secondary" class="ml-2 text-[10px]">เพิ่มเติม</Badge>
+											{/if}
+										</span>
+										<Button
+											variant="outline"
+											size="sm"
+											class="h-7"
+											onclick={() => handleAddCourse(s.id)}
+											disabled={addCourseSaving === s.id}
+										>
+											{#if addCourseSaving === s.id}
+												<Loader2 class="w-3 h-3 animate-spin" />
+											{:else}
+												เพิ่ม
+											{/if}
+										</Button>
+									</div>
+								{:else}
+									<p class="text-xs text-muted-foreground italic text-center py-3">
+										ไม่มีวิชาในคลังที่ยังไม่ได้เพิ่ม
+									</p>
+								{/each}
+							{/if}
+						</div>
+					</Tabs.Content>
+				</Tabs.Root>
+
+				<Dialog.Footer>
+					<Button variant="outline" onclick={() => (showAddCourseDialog = false)}>ปิด</Button>
+				</Dialog.Footer>
+			</Dialog.Content>
+		</Dialog.Root>
+	{/if}
 
 	<!-- Team Teaching Dialog -->
-	<Dialog.Root bind:open={showTeamDialog}>
-		<Dialog.Content class="max-w-sm">
-			<Dialog.Header>
-				<Dialog.Title>เพิ่มครูผู้สอน</Dialog.Title>
-			</Dialog.Header>
-			<div class="space-y-2 py-2">
-				<Label>ครู</Label>
-				<Select.Root type="single" bind:value={teamDialogSelectedInstructor}>
-					<Select.Trigger class="w-full">
-						{teachers.find((t) => t.id === teamDialogSelectedInstructor)?.name || 'เลือกครู'}
-					</Select.Trigger>
-					<Select.Content class="max-h-[280px] overflow-y-auto">
-						{#each teachers as t (t.id)}
-							<Select.Item value={t.id}>{t.name}</Select.Item>
-						{/each}
-					</Select.Content>
-				</Select.Root>
+	{#if canManageCoursePlan}
+		<Dialog.Root bind:open={showTeamDialog}>
+			<Dialog.Content class="max-w-sm">
+				<Dialog.Header>
+					<Dialog.Title>เพิ่มครูผู้สอน</Dialog.Title>
+				</Dialog.Header>
+				<div class="space-y-2 py-2">
+					<Label>ครู</Label>
+					<Select.Root type="single" bind:value={teamDialogSelectedInstructor}>
+						<Select.Trigger class="w-full">
+							{teachers.find((t) => t.id === teamDialogSelectedInstructor)?.name || 'เลือกครู'}
+						</Select.Trigger>
+						<Select.Content class="max-h-[280px] overflow-y-auto">
+							{#each teachers as t (t.id)}
+								<Select.Item value={t.id}>{t.name}</Select.Item>
+							{/each}
+						</Select.Content>
+					</Select.Root>
 
-				<Label>บทบาท</Label>
-				<Select.Root type="single" bind:value={teamDialogRole}>
-					<Select.Trigger class="w-full"
-						>{teamDialogRole === 'primary' ? 'ครูหลัก' : 'ครูร่วม'}</Select.Trigger
+					<Label>บทบาท</Label>
+					<Select.Root type="single" bind:value={teamDialogRole}>
+						<Select.Trigger class="w-full"
+							>{teamDialogRole === 'primary' ? 'ครูหลัก' : 'ครูร่วม'}</Select.Trigger
+						>
+						<Select.Content>
+							<Select.Item value="primary">ครูหลัก</Select.Item>
+							<Select.Item value="secondary">ครูร่วม</Select.Item>
+						</Select.Content>
+					</Select.Root>
+				</div>
+				<Dialog.Footer>
+					<Button
+						variant="outline"
+						onclick={() => {
+							showTeamDialog = false;
+						}}>ปิด</Button
 					>
-					<Select.Content>
-						<Select.Item value="primary">ครูหลัก</Select.Item>
-						<Select.Item value="secondary">ครูร่วม</Select.Item>
-					</Select.Content>
-				</Select.Root>
-			</div>
-			<Dialog.Footer>
-				<Button
-					variant="outline"
-					onclick={() => {
-						showTeamDialog = false;
-					}}>ปิด</Button
-				>
-				<Button onclick={handleAddTeamInstructor}>เพิ่ม</Button>
-			</Dialog.Footer>
-		</Dialog.Content>
-	</Dialog.Root>
+					<Button onclick={handleAddTeamInstructor}>เพิ่ม</Button>
+				</Dialog.Footer>
+			</Dialog.Content>
+		</Dialog.Root>
+	{/if}
 </div>
