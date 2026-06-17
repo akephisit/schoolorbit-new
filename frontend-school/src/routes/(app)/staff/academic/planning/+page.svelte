@@ -40,7 +40,7 @@
 	import * as Select from '$lib/components/ui/select';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import * as Tabs from '$lib/components/ui/tabs';
-	import { Alert, AlertDescription, AlertTitle } from '$lib/components/ui/alert';
+	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import { PERMISSIONS } from '$lib/permissions/registry';
 	import { can } from '$lib/stores/permissions';
 	import {
@@ -51,8 +51,7 @@
 		Settings,
 		Wand2,
 		Plus,
-		FileSpreadsheet,
-		AlertTriangle
+		FileSpreadsheet
 	} from 'lucide-svelte';
 	import {
 		actualRowsForWorksheet,
@@ -742,13 +741,11 @@
 
 	<!-- Filters -->
 	{#if !canReadCoursePlan}
-		<Alert>
-			<AlertTriangle class="h-4 w-4" />
-			<AlertTitle>ไม่มีสิทธิ์ดูแผนการเรียนที่เปิดสอน</AlertTitle>
-			<AlertDescription>
-				บัญชีนี้เข้า module วางแผนรายวิชาได้ แต่ยังไม่มีสิทธิ์อ่านข้อมูลแผนรายวิชา
-			</AlertDescription>
-		</Alert>
+		<PageState
+			variant="permission"
+			title="ไม่มีสิทธิ์ดูแผนการเรียนที่เปิดสอน"
+			description="บัญชีนี้เข้า module วางแผนรายวิชาได้ แต่ยังไม่มีสิทธิ์อ่านข้อมูลแผนรายวิชา"
+		/>
 	{:else}
 		<Card.Root>
 			<Card.Content class="pt-6">
@@ -904,14 +901,17 @@
 						<Table.Body>
 							{#if loading}
 								<Table.Row>
-									<Table.Cell colspan={5} class="h-32 text-center text-muted-foreground">
-										<Loader2 class="w-6 h-6 animate-spin mx-auto" />
+									<Table.Cell colspan={5} class="p-0">
+										<PageSkeleton variant="table" rows={5} columns={5} />
 									</Table.Cell>
 								</Table.Row>
 							{:else if courses.length === 0}
 								<Table.Row>
-									<Table.Cell colspan={5} class="h-32 text-center text-muted-foreground">
-										ยังไม่มีรายวิชาในภาคเรียนนี้
+									<Table.Cell colspan={5} class="p-0">
+										<PageState
+											title="ยังไม่มีรายวิชา"
+											description="ยังไม่มีรายวิชาในภาคเรียนนี้"
+										/>
 									</Table.Cell>
 								</Table.Row>
 							{:else}

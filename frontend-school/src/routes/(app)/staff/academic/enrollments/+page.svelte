@@ -24,7 +24,7 @@
 	import { Label } from '$lib/components/ui/label';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import * as Select from '$lib/components/ui/select';
-	import { Alert, AlertDescription, AlertTitle } from '$lib/components/ui/alert';
+	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import { PERMISSIONS } from '$lib/permissions/registry';
 	import { can } from '$lib/stores/permissions';
 	import Loader2 from 'lucide-svelte/icons/loader-2';
@@ -32,7 +32,6 @@
 	import Trash2 from 'lucide-svelte/icons/trash-2';
 	import Search from 'lucide-svelte/icons/search';
 	import GraduationCap from 'lucide-svelte/icons/graduation-cap';
-	import AlertTriangle from 'lucide-svelte/icons/alert-triangle';
 	import * as RadioGroup from '$lib/components/ui/radio-group';
 	import { Checkbox } from '$lib/components/ui/checkbox';
 	import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
@@ -293,13 +292,11 @@
 	</div>
 
 	{#if !canReadEnrollments}
-		<Alert>
-			<AlertTriangle class="h-4 w-4" />
-			<AlertTitle>ไม่มีสิทธิ์ดูการจัดห้องเรียน</AlertTitle>
-			<AlertDescription>
-				บัญชีนี้เข้า module การจัดห้องเรียนได้ แต่ยังไม่มีสิทธิ์อ่านรายชื่อนักเรียนในห้อง
-			</AlertDescription>
-		</Alert>
+		<PageState
+			variant="permission"
+			title="ไม่มีสิทธิ์ดูการจัดห้องเรียน"
+			description="บัญชีนี้เข้า module การจัดห้องเรียนได้ แต่ยังไม่มีสิทธิ์อ่านรายชื่อนักเรียนในห้อง"
+		/>
 	{:else}
 		<!-- Filters -->
 		<Card.Root>
@@ -349,11 +346,10 @@
 
 		<!-- Content -->
 		{#if !selectedClassroomId}
-			<div
-				class="flex h-64 flex-col items-center justify-center rounded-md border border-dashed text-muted-foreground"
-			>
-				<p>กรุณาเลือกปีการศึกษาและห้องเรียน</p>
-			</div>
+			<PageState
+				title="ยังไม่ได้เลือกห้องเรียน"
+				description="กรุณาเลือกปีการศึกษาและห้องเรียนเพื่อดูรายชื่อนักเรียน"
+			/>
 		{:else}
 			<div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
 				<h3 class="text-lg font-semibold flex items-center gap-2">
@@ -380,9 +376,7 @@
 			</div>
 
 			{#if loadingEnrollments}
-				<div class="flex h-40 items-center justify-center">
-					<Loader2 class="h-8 w-8 animate-spin text-primary" />
-				</div>
+				<PageSkeleton variant="table" rows={6} columns={canUpdateEnrollments ? 6 : 5} />
 			{:else}
 				<div class="rounded-md border bg-card overflow-x-auto">
 					<Table.Root>

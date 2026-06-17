@@ -35,12 +35,11 @@
 	import { Label } from '$lib/components/ui/label';
 	import { Textarea } from '$lib/components/ui/textarea';
 	import { Badge } from '$lib/components/ui/badge';
-	import { Alert, AlertDescription, AlertTitle } from '$lib/components/ui/alert';
+	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import * as Select from '$lib/components/ui/select';
 	import { toast } from 'svelte-sonner';
 	import {
-		AlertTriangle,
 		Users,
 		Plus,
 		Pencil,
@@ -660,13 +659,11 @@
 	</div>
 
 	{#if !canListActivity}
-		<Alert variant="destructive">
-			<AlertTriangle class="h-4 w-4" />
-			<AlertTitle>ไม่มีสิทธิ์ดูข้อมูลกิจกรรม</AlertTitle>
-			<AlertDescription>
-				บัญชีนี้เข้า module กิจกรรมได้ แต่ยังไม่มีสิทธิ์อ่านหรือจัดการกิจกรรมในขอบเขตที่ระบบอนุญาต
-			</AlertDescription>
-		</Alert>
+		<PageState
+			variant="permission"
+			title="ไม่มีสิทธิ์ดูข้อมูลกิจกรรม"
+			description="บัญชีนี้เข้า module กิจกรรมได้ แต่ยังไม่มีสิทธิ์อ่านหรือจัดการกิจกรรมในขอบเขตที่ระบบอนุญาต"
+		/>
 	{:else}
 		<!-- Filters + Action -->
 		<div class="flex flex-wrap items-center gap-3">
@@ -712,9 +709,9 @@
 
 		<!-- Slots & Groups -->
 		{#if loading}
-			<p class="text-muted-foreground text-sm">กำลังโหลด...</p>
+			<PageSkeleton variant="cards" rows={3} />
 		{:else if filteredSlots.length === 0}
-			<p class="text-muted-foreground text-sm">ไม่พบช่องกิจกรรม</p>
+			<PageState title="ไม่พบช่องกิจกรรม" description="ยังไม่มีช่องกิจกรรมตามเงื่อนไขที่เลือก" />
 		{:else}
 			<div class="space-y-3">
 				{#each filteredSlots as slot (slot.id)}

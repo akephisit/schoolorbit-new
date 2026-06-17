@@ -16,6 +16,7 @@
 	import { Label } from '$lib/components/ui/label';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import * as Select from '$lib/components/ui/select';
+	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import { FileStack, Plus, Trash2, Play, Eraser, LoaderCircle, ArrowLeft } from 'lucide-svelte';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
@@ -220,15 +221,14 @@
 	</Card.Root>
 
 	{#if loading}
-		<div class="flex items-center justify-center py-20">
-			<LoaderCircle class="w-8 h-8 animate-spin text-muted-foreground" />
-		</div>
+		<PageSkeleton variant="cards" rows={3} />
 	{:else if templates.length === 0}
-		<Card.Root class="p-8 text-center text-muted-foreground">
-			<FileStack class="w-12 h-12 mx-auto mb-3 opacity-30" />
-			<p>ยังไม่มี template</p>
-			<p class="text-xs mt-1">กด "สร้างจากตารางปัจจุบัน" เพื่อ snapshot ตาราง semester ปัจจุบัน</p>
-		</Card.Root>
+		<PageState
+			title="ยังไม่มี template"
+			description={'กด "สร้างจากตารางปัจจุบัน" เพื่อ snapshot ตาราง semester ปัจจุบัน'}
+			actionLabel="สร้างจากตารางปัจจุบัน"
+			onaction={() => (showCreateDialog = true)}
+		/>
 	{:else}
 		<div class="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
 			{#each templates as t (t.id)}

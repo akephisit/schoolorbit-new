@@ -49,7 +49,7 @@
 	import { Textarea } from '$lib/components/ui/textarea';
 	import * as Select from '$lib/components/ui/select';
 	import * as Tabs from '$lib/components/ui/tabs';
-	import { Alert, AlertDescription, AlertTitle } from '$lib/components/ui/alert';
+	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import { PERMISSIONS } from '$lib/permissions/registry';
 	import { can } from '$lib/stores/permissions';
 	import {
@@ -60,8 +60,7 @@
 		BookOpen,
 		ListTodo,
 		FileSpreadsheet,
-		Loader2,
-		AlertTriangle
+		Loader2
 	} from 'lucide-svelte';
 	import {
 		buildEffectiveStudyPlanRows,
@@ -883,13 +882,11 @@
 	</div>
 
 	{#if !canReadStudyPlans}
-		<Alert>
-			<AlertTriangle class="h-4 w-4" />
-			<AlertTitle>ไม่มีสิทธิ์ดูหลักสูตรสถานศึกษา</AlertTitle>
-			<AlertDescription>
-				บัญชีนี้เข้า module หลักสูตรได้ แต่ยังไม่มีสิทธิ์อ่านแผนการเรียนและเวอร์ชันหลักสูตร
-			</AlertDescription>
-		</Alert>
+		<PageState
+			variant="permission"
+			title="ไม่มีสิทธิ์ดูหลักสูตรสถานศึกษา"
+			description="บัญชีนี้เข้า module หลักสูตรได้ แต่ยังไม่มีสิทธิ์อ่านแผนการเรียนและเวอร์ชันหลักสูตร"
+		/>
 	{:else}
 		<!-- Tabs -->
 		<Tabs.Root bind:value={activeTab}>
@@ -923,12 +920,14 @@
 						<Table.Body>
 							{#if loading}
 								<Table.Row>
-									<Table.Cell colspan={4} class="text-center h-24">กำลังโหลด...</Table.Cell>
+									<Table.Cell colspan={4} class="p-0">
+										<PageSkeleton variant="table" rows={4} columns={4} />
+									</Table.Cell>
 								</Table.Row>
 							{:else if plans.length === 0}
 								<Table.Row>
-									<Table.Cell colspan={4} class="text-center h-24 text-muted-foreground">
-										ไม่พบข้อมูล
+									<Table.Cell colspan={4} class="p-0">
+										<PageState title="ไม่พบข้อมูล" description="ยังไม่มีแผนการเรียนในระบบ" />
 									</Table.Cell>
 								</Table.Row>
 							{:else}

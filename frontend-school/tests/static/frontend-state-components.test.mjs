@@ -83,3 +83,26 @@ test('academic top-level workspaces use shared frontend state components', async
 		assert.match(source, /<PageState\b/, `${page} should use PageState for empty/blocked states`);
 	}
 });
+
+test('academic curriculum and planning workspaces use shared frontend state components', async () => {
+	const pages = [
+		'src/routes/(app)/staff/academic/activities/+page.svelte',
+		'src/routes/(app)/staff/academic/enrollments/+page.svelte',
+		'src/routes/(app)/staff/academic/planning/+page.svelte',
+		'src/routes/(app)/staff/academic/study-plans/+page.svelte',
+		'src/routes/(app)/staff/academic/timetable/templates/+page.svelte',
+		'src/routes/(app)/staff/academic/timetable/scheduling-config/+page.svelte'
+	];
+
+	for (const page of pages) {
+		const source = await readProjectFile(page);
+
+		assert.match(
+			source,
+			/from '\$lib\/components\/app-state'/,
+			`${page} should import shared app-state components`
+		);
+		assert.match(source, /<PageSkeleton\b/, `${page} should use PageSkeleton for loading`);
+		assert.match(source, /<PageState\b/, `${page} should use PageState for empty/blocked states`);
+	}
+});

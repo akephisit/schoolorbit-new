@@ -36,6 +36,7 @@
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import { Badge } from '$lib/components/ui/badge';
+	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import {
 		GripVertical,
 		ChevronDown,
@@ -646,9 +647,12 @@
 	</div>
 
 	{#if loading}
-		<div class="flex items-center justify-center py-20">
-			<LoaderCircle class="w-8 h-8 animate-spin text-muted-foreground" />
-		</div>
+		<PageSkeleton variant="detail" />
+	{:else if semesters.length === 0}
+		<PageState
+			title="ยังไม่มีภาคเรียนสำหรับจัดตาราง"
+			description="ตั้งค่าปีการศึกษาและภาคเรียนก่อนจึงจะกำหนดเงื่อนไขการจัดตารางได้"
+		/>
 	{:else}
 		<!-- Global settings -->
 		<Card.Root class="p-4">

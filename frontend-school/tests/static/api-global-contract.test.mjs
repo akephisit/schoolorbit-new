@@ -712,7 +712,7 @@ test('academic structure workspace pages gate read and mutation actions', async 
 		},
 		{
 			file: 'frontend-school/src/routes/(app)/staff/academic/enrollments/+page.svelte',
-			imports: ['$lib/components/ui/alert'],
+			imports: ['$lib/components/app-state'],
 			permissions: [
 				'PERMISSIONS.ACADEMIC_ENROLLMENT_READ_ALL',
 				'PERMISSIONS.ACADEMIC_ENROLLMENT_UPDATE_ALL'
@@ -784,7 +784,7 @@ test('academic curriculum workspace pages gate read and mutation actions', async
 		},
 		{
 			file: 'frontend-school/src/routes/(app)/staff/academic/study-plans/+page.svelte',
-			imports: ['$lib/components/ui/alert'],
+			imports: ['$lib/components/app-state'],
 			permissions: [
 				'PERMISSIONS.ACADEMIC_CURRICULUM_READ_ALL',
 				'PERMISSIONS.ACADEMIC_CURRICULUM_READ_ORGANIZATION_TREE',
@@ -825,7 +825,7 @@ test('academic course planning pages gate read and manage actions', async () => 
 	const routeExpectations = [
 		{
 			file: 'frontend-school/src/routes/(app)/staff/academic/planning/+page.svelte',
-			imports: ['$lib/components/ui/alert'],
+			imports: ['$lib/components/app-state'],
 			permissions: [
 				'PERMISSIONS.ACADEMIC_COURSE_PLAN_READ_ALL',
 				'PERMISSIONS.ACADEMIC_COURSE_PLAN_MANAGE_ALL'
@@ -967,7 +967,7 @@ test('activity workspace gates read, owner, admin, and member actions', async ()
 	const routeExpectations = [
 		{
 			file: 'frontend-school/src/routes/(app)/staff/academic/activities/+page.svelte',
-			imports: ['$lib/components/ui/alert'],
+			imports: ['$lib/components/app-state'],
 			permissions: [
 				'PERMISSIONS.ACTIVITY_READ_ALL',
 				'PERMISSIONS.ACTIVITY_MANAGE_ALL',
