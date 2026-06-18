@@ -4,11 +4,13 @@ import { browser } from '$app/environment';
 // UI Preferences type
 interface UIPreferences {
 	sidebarCollapsed: boolean;
+	sidebarExpandedGroups: Record<string, boolean>;
 	theme: 'light' | 'dark' | 'system';
 }
 
 const defaultPreferences: UIPreferences = {
 	sidebarCollapsed: false,
+	sidebarExpandedGroups: {},
 	theme: 'system'
 };
 
@@ -37,6 +39,21 @@ function createUIPreferencesStore() {
 		setSidebarCollapsed: (collapsed: boolean) => {
 			update((prefs) => {
 				const updated = { ...prefs, sidebarCollapsed: collapsed };
+				if (browser) {
+					localStorage.setItem('ui-preferences', JSON.stringify(updated));
+				}
+				return updated;
+			});
+		},
+		setSidebarGroupExpanded: (groupId: string, expanded: boolean) => {
+			update((prefs) => {
+				const updated = {
+					...prefs,
+					sidebarExpandedGroups: {
+						...prefs.sidebarExpandedGroups,
+						[groupId]: expanded
+					}
+				};
 				if (browser) {
 					localStorage.setItem('ui-preferences', JSON.stringify(updated));
 				}

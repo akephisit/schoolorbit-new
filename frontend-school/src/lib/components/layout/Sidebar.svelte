@@ -1,39 +1,33 @@
 <script lang="ts">
-	import { ChevronLeft, GraduationCap, Inbox } from 'lucide-svelte';
+	import { ChevronDown, ChevronLeft, GraduationCap, Inbox } from 'lucide-svelte';
+	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import { authStore } from '$lib/stores/auth';
-	import { getUserMenu, type MenuGroup, type MenuItem } from '$lib/api/menu';
-	import { getIconComponent } from '$lib/utils/icon-mapper';
+	import { getUserMenu, type MenuGroup } from '$lib/api/menu';
+	import { Button, buttonVariants } from '$lib/components/ui/button';
+	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
 	import * as Tooltip from '$lib/components/ui/tooltip';
 	import { uiPreferences } from '$lib/stores/ui-preferences';
 	import { workStore } from '$lib/stores/work';
+	import { cn } from '$lib/utils';
+	import { getIconComponent } from '$lib/utils/icon-mapper';
+	import {
+		buildSidebarNavigation,
+		type SidebarMenuItem,
+		type SidebarMenuSection
+	} from './sidebar-navigation';
 
 	let { isCollapsed = $bindable($uiPreferences.sidebarCollapsed) }: { isCollapsed?: boolean } =
 		$props();
 	let isMobileOpen = $state(false);
-
-	// Dynamic menu state
 	let menuGroups = $state<MenuGroup[]>([]);
 	let menuLoading = $state(true);
 
-	const workspaceLabels: Record<string, string> = {
-		home: 'งานประจำ',
-		academic: 'งานวิชาการ',
-		personnel: 'บุคลากร',
-		operations: 'งานบริหารทั่วไป',
-		settings: 'ตั้งค่าระบบ'
-	};
-
-	const workspaceOrder = ['home', 'academic', 'personnel', 'operations', 'settings'];
-
-	// Load menu from API
 	async function loadMenu() {
 		try {
 			menuLoading = true;
 			const response = await getUserMenu();
-
-			// Backend already filters by user_type - use response directly
 			menuGroups = response.groups;
 		} catch (error) {
 			console.error('Failed to load menu:', error);
@@ -43,7 +37,6 @@
 		}
 	}
 
-	// Load menu when user is authenticated
 	$effect(() => {
 		const user = $authStore.user;
 		if (user?.id) {
@@ -55,47 +48,77 @@
 		}
 	});
 
-	// Sync isCollapsed changes to localStorage
 	$effect(() => {
 		uiPreferences.setSidebarCollapsed(isCollapsed);
 	});
 
-	// Get all menu paths for finding best match
+	let workspaceSections = $derived.by(() => buildSidebarNavigation(menuGroups));
+
 	let allMenuPaths = $derived.by(() => {
 		const paths: string[] = ['/staff/work'];
-		for (const group of menuGroups) {
-			for (const item of group.items) {
-				paths.push(item.path);
+		for (const workspace of workspaceSections) {
+			for (const section of workspace.sections) {
+				for (const item of section.items) {
+					paths.push(item.path);
+				}
 			}
 		}
 		return paths;
-	});
-
-	let workspaceSections = $derived.by(() => {
-		const workspaceMap: Record<string, MenuGroup[]> = {};
-
-		for (const group of menuGroups) {
-			const workspaceCode = group.workspaceCode || 'operations';
-			workspaceMap[workspaceCode] = [...(workspaceMap[workspaceCode] ?? []), group];
-		}
-
-		return Object.entries(workspaceMap)
-			.sort(([a], [b]) => {
-				const aIndex = workspaceOrder.indexOf(a);
-				const bIndex = workspaceOrder.indexOf(b);
-				return (aIndex === -1 ? 999 : aIndex) - (bIndex === -1 ? 999 : bIndex);
-			})
-			.map(([code, groups]) => ({
-				code,
-				name: workspaceLabels[code] ?? code,
-				groups
-			}));
 	});
 
 	let activeWorkCount = $derived(
 		$workStore.counts.open + $workStore.counts.dueSoon + $workStore.counts.overdue
 	);
 	let urgentWorkCount = $derived($workStore.counts.dueSoon + $workStore.counts.overdue);
+
+	function sectionHasActiveItem(section: SidebarMenuSection): boolean {
+		return section.items.some((item) => isActive(item.path));
+	}
+
+	function sectionExpanded(section: SidebarMenuSection): boolean {
+		if (isCollapsed) return false;
+
+		const savedValue = $uiPreferences.sidebarExpandedGroups[section.id];
+		if (savedValue !== undefined) return savedValue;
+
+		return sectionHasActiveItem(section) || section.defaultOpen;
+	}
+
+	function toggleSection(section: SidebarMenuSection) {
+		uiPreferences.setSidebarGroupExpanded(section.id, !sectionExpanded(section));
+	}
+
+	function navItemClass(item: SidebarMenuItem, nested = false): string {
+		return cn(
+			'relative h-9 w-full justify-start gap-2 rounded-md px-2 text-sm transition-all',
+			nested && 'pl-3',
+			isActive(item.path)
+				? 'bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground'
+				: 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+		);
+	}
+
+	function sectionTriggerClass(section: SidebarMenuSection): string {
+		return cn(
+			'h-9 w-full justify-start gap-2 rounded-md px-2 text-xs font-semibold text-muted-foreground hover:bg-accent hover:text-accent-foreground',
+			sectionHasActiveItem(section) && 'text-foreground'
+		);
+	}
+
+	function collapsedSectionTriggerClass(section: SidebarMenuSection): string {
+		return cn(
+			buttonVariants({ variant: 'ghost', size: 'icon' }),
+			'relative h-10 w-10 rounded-lg',
+			sectionHasActiveItem(section)
+				? 'bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground'
+				: 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+		);
+	}
+
+	function navigateToMenuItem(item: SidebarMenuItem) {
+		handleNavClick();
+		void goto(resolve(item.path as any));
+	}
 
 	// Check if a route is active
 	// Only highlights the BEST matching menu item (longest matching path)
@@ -172,17 +195,17 @@
 			</div>
 		{/if}
 
-		<!-- Toggle Button (Desktop) -->
-		<button
+		<Button
+			variant="ghost"
+			size="icon-sm"
 			onclick={toggleSidebar}
-			class="hidden lg:flex p-2 rounded-lg hover:bg-accent transition-colors
-      {isCollapsed ? 'mx-auto' : ''}"
+			class="hidden rounded-lg lg:flex {isCollapsed ? 'mx-auto' : ''}"
 			aria-label={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
 		>
 			<div class="transition-transform duration-300 {isCollapsed ? 'rotate-180' : ''}">
 				<ChevronLeft class="w-5 h-5" />
 			</div>
-		</button>
+		</Button>
 	</div>
 
 	<!-- Navigation -->
@@ -206,14 +229,17 @@
 			{:else}
 				<Tooltip.Root delayDuration={0} disabled={!isCollapsed}>
 					<Tooltip.Trigger class="w-full">
-						<a
-							href={resolve('/staff/work' as any)}
+						<Button
+							href="/staff/work"
+							variant="ghost"
 							onclick={handleNavClick}
-							class="relative flex items-center h-[44px] rounded-lg transition-all duration-300 group px-0 mb-3 {isCollapsed
-								? 'w-[40px]'
-								: 'w-full'} {isActive('/staff/work')
-								? 'bg-primary text-primary-foreground'
-								: 'text-foreground bg-accent/60 hover:bg-accent'}"
+							class={cn(
+								'relative mb-3 h-11 rounded-lg px-0 transition-all duration-300',
+								isCollapsed ? 'w-10' : 'w-full justify-start',
+								isActive('/staff/work')
+									? 'bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground'
+									: 'bg-accent/60 text-foreground hover:bg-accent'
+							)}
 						>
 							<div class="w-[40px] h-[40px] flex items-center justify-center flex-shrink-0">
 								<Inbox
@@ -240,7 +266,7 @@
 									{activeWorkCount > 99 ? '99+' : activeWorkCount}
 								</span>
 							{/if}
-						</a>
+						</Button>
 					</Tooltip.Trigger>
 					{#if isCollapsed}
 						<Tooltip.Content side="right" class="font-medium">งานของฉัน</Tooltip.Content>
@@ -248,7 +274,7 @@
 				</Tooltip.Root>
 
 				<!-- Workspace Menu Sections -->
-				{#each workspaceSections as section (section.code)}
+				{#each workspaceSections as workspace (workspace.code)}
 					<div class="relative my-3 h-5 flex items-center px-3">
 						<div
 							class="flex-1 border-t border-border transition-opacity duration-300
@@ -258,53 +284,78 @@
 							class="absolute text-xs font-semibold text-muted-foreground uppercase whitespace-nowrap transition-opacity duration-300
 							{isCollapsed ? 'opacity-0' : 'opacity-100'}"
 						>
-							{section.name}
+							{workspace.name}
 						</p>
 					</div>
 
-					{#each section.groups as group (group.code)}
-						{#if !isCollapsed && section.groups.length > 1}
-							<p class="px-3 pb-1 pt-2 text-[11px] font-medium text-muted-foreground">
-								{group.name}
-							</p>
-						{/if}
-
-						{#each group.items as item (item.id)}
-							{@const Icon = getIconComponent(item.icon)}
-							<Tooltip.Root delayDuration={0} disabled={!isCollapsed}>
-								<Tooltip.Trigger class="w-full">
-									<a
-										href={resolve(item.path as any)}
-										onclick={handleNavClick}
-										class="relative flex items-center h-[40px] rounded-lg transition-all duration-300 group px-0 {isCollapsed
-											? 'w-[40px]'
-											: 'w-full'} {isActive(item.path)
-											? 'bg-primary text-primary-foreground'
-											: 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'}"
-									>
-										<div class="w-[40px] h-[40px] flex items-center justify-center flex-shrink-0">
-											<Icon
-												class="w-5 h-5 transition-colors {isActive(item.path)
-													? 'text-primary-foreground'
-													: 'text-muted-foreground group-hover:text-accent-foreground'}"
-											/>
-										</div>
-										<span
-											class="font-medium whitespace-nowrap overflow-hidden transition-all duration-300 {isCollapsed
-												? 'w-0 opacity-0 hidden'
-												: 'w-auto opacity-100 ml-1'}"
+					{#each workspace.sections as section (section.id)}
+						{@const SectionIcon = getIconComponent(section.icon)}
+						{#if isCollapsed}
+							<DropdownMenu.Root>
+								<DropdownMenu.Trigger
+									class={collapsedSectionTriggerClass(section)}
+									aria-label={section.name}
+								>
+									<SectionIcon class="h-5 w-5" />
+									{#if sectionHasActiveItem(section)}
+										<span class="absolute right-1 top-1 size-1.5 rounded-full bg-current"></span>
+									{/if}
+								</DropdownMenu.Trigger>
+								<DropdownMenu.Content side="right" align="start" class="w-60">
+									<DropdownMenu.Label class="px-2 py-1.5 text-xs font-semibold">
+										{section.name}
+									</DropdownMenu.Label>
+									<DropdownMenu.Separator />
+									<DropdownMenu.Group>
+										{#each section.items as item (item.id)}
+											{@const Icon = getIconComponent(item.icon)}
+											<DropdownMenu.Item
+												onclick={() => navigateToMenuItem(item)}
+												class={cn(
+													'cursor-pointer gap-2',
+													isActive(item.path) && 'bg-accent text-accent-foreground font-medium'
+												)}
+											>
+												<Icon class="h-4 w-4" />
+												<span class="truncate">{item.name}</span>
+											</DropdownMenu.Item>
+										{/each}
+									</DropdownMenu.Group>
+								</DropdownMenu.Content>
+							</DropdownMenu.Root>
+						{:else}
+							<Button
+								variant="ghost"
+								onclick={() => toggleSection(section)}
+								class={sectionTriggerClass(section)}
+								aria-expanded={sectionExpanded(section)}
+							>
+								<SectionIcon class="h-4 w-4" />
+								<span class="min-w-0 flex-1 truncate text-left">{section.name}</span>
+								<ChevronDown
+									class={cn(
+										'ml-auto h-4 w-4 transition-transform',
+										sectionExpanded(section) && 'rotate-180'
+									)}
+								/>
+							</Button>
+							{#if sectionExpanded(section)}
+								<div class="ml-4 space-y-1 border-l border-border/70 pl-2">
+									{#each section.items as item (item.id)}
+										{@const Icon = getIconComponent(item.icon)}
+										<Button
+											href={item.path}
+											variant="ghost"
+											onclick={handleNavClick}
+											class={navItemClass(item, true)}
 										>
-											{item.name}
-										</span>
-									</a>
-								</Tooltip.Trigger>
-								{#if isCollapsed}
-									<Tooltip.Content side="right" class="font-medium">
-										{item.name}
-									</Tooltip.Content>
-								{/if}
-							</Tooltip.Root>
-						{/each}
+											<Icon class="h-4 w-4" />
+											<span class="truncate">{item.name}</span>
+										</Button>
+									{/each}
+								</div>
+							{/if}
+						{/if}
 					{/each}
 				{/each}
 			{/if}
