@@ -51,3 +51,23 @@ test('sidebar navigation is grouped into persisted collapsible workflow sections
 	assert.match(rules, /Sidebar Navigation IA/);
 	assert.match(rules, /collapsible workflow sections/);
 });
+
+test('collapsed sidebar renders a workspace icon rail with section flyouts', async () => {
+	const sidebar = await readProjectFile('src/lib/components/layout/Sidebar.svelte');
+	const navigation = await readProjectFile('src/lib/components/layout/sidebar-navigation.ts');
+	const rules = await readRepoFile('.rules');
+
+	assert.match(navigation, /WORKSPACE_ICONS/);
+	assert.match(navigation, /icon:\s*WORKSPACE_ICONS\[section\.workspaceCode\]/);
+
+	assert.match(sidebar, /function workspaceHasActiveItem/);
+	assert.match(sidebar, /function collapsedWorkspaceTriggerClass/);
+	assert.match(sidebar, /WorkspaceIcon = getIconComponent\(workspace\.icon\)/);
+	assert.match(sidebar, /aria-label=\{workspace\.name\}/);
+	assert.match(sidebar, /DropdownMenu\.Label[\s\S]*\{workspace\.name\}/);
+	assert.match(sidebar, /\{#each workspace\.sections as section, sectionIndex \(section\.id\)\}/);
+	assert.match(sidebar, /\{#each section\.items as item \(item\.id\)\}/);
+	assert.doesNotMatch(sidebar, /collapsedSectionTriggerClass/);
+
+	assert.match(rules, /workspace icon rail/);
+});

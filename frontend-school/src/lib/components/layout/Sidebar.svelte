@@ -15,7 +15,8 @@
 	import {
 		buildSidebarNavigation,
 		type SidebarMenuItem,
-		type SidebarMenuSection
+		type SidebarMenuSection,
+		type SidebarWorkspaceSection
 	} from './sidebar-navigation';
 
 	let { isCollapsed = $bindable($uiPreferences.sidebarCollapsed) }: { isCollapsed?: boolean } =
@@ -75,6 +76,10 @@
 		return section.items.some((item) => isActive(item.path));
 	}
 
+	function workspaceHasActiveItem(workspace: SidebarWorkspaceSection): boolean {
+		return workspace.sections.some(sectionHasActiveItem);
+	}
+
 	function sectionExpanded(section: SidebarMenuSection): boolean {
 		if (isCollapsed) return false;
 
@@ -105,11 +110,11 @@
 		);
 	}
 
-	function collapsedSectionTriggerClass(section: SidebarMenuSection): string {
+	function collapsedWorkspaceTriggerClass(workspace: SidebarWorkspaceSection): string {
 		return cn(
 			buttonVariants({ variant: 'ghost', size: 'icon' }),
 			'relative h-10 w-10 rounded-lg',
-			sectionHasActiveItem(section)
+			workspaceHasActiveItem(workspace)
 				? 'bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground'
 				: 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
 		);
@@ -275,38 +280,32 @@
 
 				<!-- Workspace Menu Sections -->
 				{#each workspaceSections as workspace (workspace.code)}
-					<div class="relative my-3 h-5 flex items-center px-3">
-						<div
-							class="flex-1 border-t border-border transition-opacity duration-300
-							{isCollapsed ? 'opacity-100' : 'opacity-0'}"
-						></div>
-						<p
-							class="absolute text-xs font-semibold text-muted-foreground uppercase whitespace-nowrap transition-opacity duration-300
-							{isCollapsed ? 'opacity-0' : 'opacity-100'}"
-						>
-							{workspace.name}
-						</p>
-					</div>
-
-					{#each workspace.sections as section (section.id)}
-						{@const SectionIcon = getIconComponent(section.icon)}
-						{#if isCollapsed}
-							<DropdownMenu.Root>
-								<DropdownMenu.Trigger
-									class={collapsedSectionTriggerClass(section)}
-									aria-label={section.name}
-								>
-									<SectionIcon class="h-5 w-5" />
-									{#if sectionHasActiveItem(section)}
-										<span class="absolute right-1 top-1 size-1.5 rounded-full bg-current"></span>
-									{/if}
-								</DropdownMenu.Trigger>
-								<DropdownMenu.Content side="right" align="start" class="w-60">
-									<DropdownMenu.Label class="px-2 py-1.5 text-xs font-semibold">
-										{section.name}
-									</DropdownMenu.Label>
-									<DropdownMenu.Separator />
+					{@const WorkspaceIcon = getIconComponent(workspace.icon)}
+					{#if isCollapsed}
+						<DropdownMenu.Root>
+							<DropdownMenu.Trigger
+								class={collapsedWorkspaceTriggerClass(workspace)}
+								aria-label={workspace.name}
+							>
+								<WorkspaceIcon class="h-5 w-5" />
+								{#if workspaceHasActiveItem(workspace)}
+									<span class="absolute right-1 top-1 size-1.5 rounded-full bg-current"></span>
+								{/if}
+							</DropdownMenu.Trigger>
+							<DropdownMenu.Content side="right" align="start" class="w-72">
+								<DropdownMenu.Label class="px-2 py-1.5 text-sm font-semibold">
+									{workspace.name}
+								</DropdownMenu.Label>
+								<DropdownMenu.Separator />
+								{#each workspace.sections as section, sectionIndex (section.id)}
+									{@const SectionIcon = getIconComponent(section.icon)}
 									<DropdownMenu.Group>
+										<DropdownMenu.Label
+											class="flex items-center gap-2 px-2 py-1.5 text-xs font-semibold text-muted-foreground"
+										>
+											<SectionIcon class="h-3.5 w-3.5" />
+											<span class="truncate">{section.name}</span>
+										</DropdownMenu.Label>
 										{#each section.items as item (item.id)}
 											{@const Icon = getIconComponent(item.icon)}
 											<DropdownMenu.Item
@@ -321,9 +320,23 @@
 											</DropdownMenu.Item>
 										{/each}
 									</DropdownMenu.Group>
-								</DropdownMenu.Content>
-							</DropdownMenu.Root>
-						{:else}
+									{#if sectionIndex < workspace.sections.length - 1}
+										<DropdownMenu.Separator />
+									{/if}
+								{/each}
+							</DropdownMenu.Content>
+						</DropdownMenu.Root>
+					{:else}
+						<div class="relative my-3 h-5 flex items-center px-3">
+							<p
+								class="absolute text-xs font-semibold text-muted-foreground uppercase whitespace-nowrap transition-opacity duration-300"
+							>
+								{workspace.name}
+							</p>
+						</div>
+
+						{#each workspace.sections as section (section.id)}
+							{@const SectionIcon = getIconComponent(section.icon)}
 							<Button
 								variant="ghost"
 								onclick={() => toggleSection(section)}
@@ -355,8 +368,8 @@
 									{/each}
 								</div>
 							{/if}
-						{/if}
-					{/each}
+						{/each}
+					{/if}
 				{/each}
 			{/if}
 		</nav>

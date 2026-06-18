@@ -19,6 +19,7 @@ export type SidebarMenuSection = {
 export type SidebarWorkspaceSection = {
 	code: string;
 	name: string;
+	icon: string;
 	order: number;
 	sections: SidebarMenuSection[];
 };
@@ -50,6 +51,15 @@ export const WORKSPACE_ORDER = [
 	'operations',
 	'settings'
 ];
+
+export const WORKSPACE_ICONS: Record<string, string> = {
+	home: 'Inbox',
+	academic: 'GraduationCap',
+	student_affairs: 'UserRoundCheck',
+	personnel: 'Users',
+	operations: 'Building2',
+	settings: 'Settings'
+};
 
 export const SIDEBAR_SECTION_DEFINITIONS: SidebarSectionDefinition[] = [
 	{
@@ -220,6 +230,7 @@ export function buildSidebarNavigation(menuGroups: MenuGroup[]): SidebarWorkspac
 			({
 				code: section.workspaceCode,
 				name: WORKSPACE_LABELS[section.workspaceCode] ?? section.workspaceCode,
+				icon: WORKSPACE_ICONS[section.workspaceCode] ?? 'PanelLeft',
 				order: workspaceOrder(section.workspaceCode),
 				sections: []
 			} satisfies SidebarWorkspaceSection);
