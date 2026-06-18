@@ -29,7 +29,7 @@
 <PageShell
 	title="สิทธิ์การเข้าถึง"
 	description="ตรวจสอบสิทธิ์ของบัญชีก่อนเข้าใช้งานหน้านี้"
-	class="mx-auto max-w-xl"
+	contentClass="max-w-xl"
 >
 	<PageState
 		variant="permission"

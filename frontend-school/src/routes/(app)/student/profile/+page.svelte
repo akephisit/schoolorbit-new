@@ -83,7 +83,7 @@
 <PageShell
 	title="ข้อมูลส่วนตัว"
 	description="ดูและแก้ไขข้อมูลส่วนตัวของคุณ"
-	class="max-w-4xl mx-auto"
+	contentClass="max-w-4xl"
 >
 	{#snippet actions()}
 		{#if !editing && !loading}

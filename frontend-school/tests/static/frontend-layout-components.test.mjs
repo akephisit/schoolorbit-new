@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { readFile, readdir } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
@@ -16,10 +16,27 @@ async function readRepoFile(relativePath) {
 	return readFile(path.join(repoRoot, relativePath), 'utf8');
 }
 
+async function listFiles(directory) {
+	const entries = await readdir(directory, { withFileTypes: true });
+	const files = [];
+
+	for (const entry of entries) {
+		const fullPath = path.join(directory, entry.name);
+		if (entry.isDirectory()) {
+			files.push(...(await listFiles(fullPath)));
+		} else {
+			files.push(fullPath);
+		}
+	}
+
+	return files;
+}
+
 test('shared app layout components define consistent page header and shell', async () => {
 	const pageHeader = await readProjectFile('src/lib/components/app-layout/PageHeader.svelte');
 	const pageShell = await readProjectFile('src/lib/components/app-layout/PageShell.svelte');
 	const appLayoutIndex = await readProjectFile('src/lib/components/app-layout/index.ts');
+	const appLayout = await readProjectFile('src/routes/(app)/+layout.svelte');
 	const rules = await readRepoFile('.rules');
 
 	assert.match(pageHeader, /from '\$lib\/components\/ui\/button'/);
@@ -34,10 +51,21 @@ test('shared app layout components define consistent page header and shell', asy
 	assert.match(pageShell, /space-y-6/);
 	assert.match(
 		pageShell,
+		/class=\{cn\('space-y-6 px-4 py-4 lg:px-6 lg:py-6', className\)\}/,
+		'PageShell root should own consistent app page padding'
+	);
+	assert.match(
+		pageShell,
 		/class=\{cn\('space-y-6', contentClass\)\}/,
 		'PageShell content wrapper should preserve vertical spacing between page content blocks'
 	);
 	assert.match(pageShell, /@render children/);
+	assert.match(appLayout, /<div class="h-full">/);
+	assert.doesNotMatch(
+		appLayout,
+		/<div class="p-4 lg:p-6 h-full">/,
+		'app layout should not add page padding around PageShell'
+	);
 
 	assert.match(appLayoutIndex, /PageHeader/);
 	assert.match(appLayoutIndex, /PageShell/);
@@ -45,6 +73,36 @@ test('shared app layout components define consistent page header and shell', asy
 	assert.match(rules, /Shared Page Layout UI/);
 	assert.match(rules, /PageHeader/);
 	assert.match(rules, /PageShell/);
+});
+
+test('app pages keep outer spacing on PageShell instead of page-local root classes', async () => {
+	const appRoutesDir = path.join(projectRoot, 'src/routes/(app)');
+	const pages = (await listFiles(appRoutesDir)).filter((file) => file.endsWith('+page.svelte'));
+	const violations = [];
+	const disallowedRootClass = /^(?:container|max-w-.+|mx-auto|p[trblxy]?-.+|m[trbly]?-.+)$/;
+
+	for (const file of pages) {
+		const source = await readFile(file, 'utf8');
+		const pageShellOpenTags = source.match(/<PageShell\b[^>]*>/g) ?? [];
+
+		for (const tag of pageShellOpenTags) {
+			const classMatch = tag.match(/\bclass="([^"]*)"/);
+			if (!classMatch) continue;
+
+			const disallowed = classMatch[1].split(/\s+/).filter((token) => disallowedRootClass.test(token));
+			if (disallowed.length === 0) continue;
+
+			violations.push(
+				`${path.relative(projectRoot, file)} uses PageShell root class "${disallowed.join(' ')}"`
+			);
+		}
+	}
+
+	assert.deepEqual(
+		violations,
+		[],
+		'PageShell class should not set page-local padding, margins, or max width. Use contentClass or an inner wrapper for content-only sizing.'
+	);
 });
 
 test('pilot workspaces use shared app page shell', async () => {

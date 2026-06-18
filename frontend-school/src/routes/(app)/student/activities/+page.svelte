@@ -102,7 +102,7 @@
 <PageShell
 	title="ลงทะเบียนกิจกรรม"
 	description="เลือกและจัดการกิจกรรมที่เปิดให้นักเรียนลงทะเบียน"
-	class="max-w-2xl mx-auto"
+	contentClass="max-w-2xl"
 >
 	{#if loading}
 		<PageSkeleton variant="cards" rows={3} />

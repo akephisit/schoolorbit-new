@@ -129,7 +129,7 @@
 <PageShell
 	title="จัดการความยินยอม"
 	description="จัดการความยินยอมการเก็บและใช้ข้อมูลส่วนบุคคลของคุณ ตาม พ.ร.บ. คุ้มครองข้อมูลส่วนบุคคล พ.ศ. 2562"
-	class="max-w-5xl"
+	contentClass="max-w-5xl"
 >
 	{#if loading}
 		<PageSkeleton variant="detail" />

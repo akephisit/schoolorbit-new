@@ -937,7 +937,6 @@
 <PageShell
 	title="นิเทศการสอน"
 	description="จัดรอบนิเทศ จองคาบ ประเมิน ส่งตรวจทาน และรับทราบผลในพื้นที่เดียว"
-	class="mx-auto w-full max-w-7xl"
 >
 	{#snippet actions()}
 		<Button variant="outline" size="sm" onclick={refreshAll} disabled={loading || saving}>
