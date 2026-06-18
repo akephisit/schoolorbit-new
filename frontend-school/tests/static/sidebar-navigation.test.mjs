@@ -71,3 +71,23 @@ test('collapsed sidebar renders a workspace icon rail with section flyouts', asy
 
 	assert.match(rules, /workspace icon rail/);
 });
+
+test('collapsed sidebar keeps the rail vertical during width transition', async () => {
+	const sidebar = await readProjectFile('src/lib/components/layout/Sidebar.svelte');
+
+	assert.match(
+		sidebar,
+		/class=\{cn\(\s*'flex-1 overflow-y-auto overflow-x-hidden py-4 sidebar-nav',\s*isCollapsed\s*\?\s*'flex flex-col items-center gap-1 px-4'\s*:\s*'space-y-1 px-4'\s*\)\}/,
+		'nav should become a flex column as soon as collapsed mode renders'
+	);
+	assert.match(
+		sidebar,
+		/buttonVariants\(\{ variant: 'ghost', size: 'icon' \}\),\s*'relative flex h-10 w-10 rounded-lg'/,
+		'collapsed workspace triggers should override inline-flex with block-level flex layout'
+	);
+	assert.match(
+		sidebar,
+		/isCollapsed \? 'mx-auto w-10' : 'w-full justify-start'/,
+		'work shortcut should stay centered in the collapsed rail during the transition'
+	);
+});

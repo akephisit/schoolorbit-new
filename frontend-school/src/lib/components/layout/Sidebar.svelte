@@ -113,7 +113,7 @@
 	function collapsedWorkspaceTriggerClass(workspace: SidebarWorkspaceSection): string {
 		return cn(
 			buttonVariants({ variant: 'ghost', size: 'icon' }),
-			'relative h-10 w-10 rounded-lg',
+			'relative flex h-10 w-10 rounded-lg',
 			workspaceHasActiveItem(workspace)
 				? 'bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground'
 				: 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
@@ -215,7 +215,12 @@
 
 	<!-- Navigation -->
 	<Tooltip.Provider>
-		<nav class="flex-1 overflow-y-auto overflow-x-hidden py-4 space-y-1 sidebar-nav px-4">
+		<nav
+			class={cn(
+				'flex-1 overflow-y-auto overflow-x-hidden py-4 sidebar-nav',
+				isCollapsed ? 'flex flex-col items-center gap-1 px-4' : 'space-y-1 px-4'
+			)}
+		>
 			{#if menuLoading}
 				<!-- Loading skeleton -->
 				<div class="space-y-2">
@@ -240,7 +245,7 @@
 							onclick={handleNavClick}
 							class={cn(
 								'relative mb-3 h-11 rounded-lg px-0 transition-all duration-300',
-								isCollapsed ? 'w-10' : 'w-full justify-start',
+								isCollapsed ? 'mx-auto w-10' : 'w-full justify-start',
 								isActive('/staff/work')
 									? 'bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground'
 									: 'bg-accent/60 text-foreground hover:bg-accent'
