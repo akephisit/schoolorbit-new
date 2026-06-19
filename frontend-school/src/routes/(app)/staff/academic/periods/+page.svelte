@@ -26,15 +26,7 @@
 	import { PERMISSIONS } from '$lib/permissions/registry';
 	import { can } from '$lib/stores/permissions';
 
-	import {
-		Plus,
-		Settings,
-		Trash2,
-		LoaderCircle,
-		Calendar,
-		GripVertical,
-		Info
-	} from 'lucide-svelte';
+	import { Plus, Settings, Trash2, Calendar, GripVertical, Info } from 'lucide-svelte';
 
 	let loading = $state(true);
 	let periods = $state<AcademicPeriod[]>([]);

@@ -389,6 +389,23 @@ test('teaching supervision frontend contract uses typed API and permission metad
 	assert.match(supervisionPage, /timetableGridDays/);
 	assert.match(supervisionPage, /timetablePeriodRows/);
 	assert.match(supervisionPage, /selectTimetableEntry/);
+	assert.match(supervisionPage, /class="overflow-x-auto rounded-md border"/);
+	assert.match(
+		supervisionPage,
+		/<Table\.Head\s+class="sticky left-0 z-10 w-\[112px\] bg-background"[\s\S]*>วัน<\/Table\.Head/
+	);
+	assert.match(
+		supervisionPage,
+		/<Table\.Header>[\s\S]*\{#each timetablePeriodRows\(\) as row \(row\.key\)\}/
+	);
+	assert.match(
+		supervisionPage,
+		/<Table\.Body>[\s\S]*\{#each timetableGridDays as day \(day\.code\)\}/
+	);
+	assert.doesNotMatch(
+		supervisionPage,
+		/grid gap-2 md:hidden[\s\S]*timetableEntriesForSelectedCycle/
+	);
 	assert.match(supervisionPage, /cycleStatusCreateOptions/);
 	assert.match(supervisionPage, /status:\s*cycleForm\.status/);
 	assert.match(supervisionPage, /setCycleStatus/);

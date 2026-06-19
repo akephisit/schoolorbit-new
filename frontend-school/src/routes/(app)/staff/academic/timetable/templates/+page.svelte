@@ -214,7 +214,7 @@
 	{:else if templates.length === 0}
 		<PageState
 			title="ยังไม่มี template"
-			description={'กด "สร้างจากตารางปัจจุบัน" เพื่อ snapshot ตาราง semester ปัจจุบัน'}
+			description="กด &quot;สร้างจากตารางปัจจุบัน&quot; เพื่อ snapshot ตาราง semester ปัจจุบัน"
 			actionLabel="สร้างจากตารางปัจจุบัน"
 			onaction={() => (showCreateDialog = true)}
 		/>

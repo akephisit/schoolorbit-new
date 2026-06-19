@@ -43,7 +43,7 @@
 		{#if action}
 			{@render action()}
 		{:else if actionLabel}
-			<Button variant="outline" onclick={onaction} href={href}>{actionLabel}</Button>
+			<Button variant="outline" onclick={onaction} {href}>{actionLabel}</Button>
 		{/if}
 	</div>
 {:else if variant === 'permission'}
@@ -67,7 +67,7 @@
 					{@render action()}
 				</div>
 			{:else if actionLabel}
-				<Button class="mt-4" onclick={onaction} href={href}>{actionLabel}</Button>
+				<Button class="mt-4" onclick={onaction} {href}>{actionLabel}</Button>
 			{/if}
 		</CardContent>
 	</Card>

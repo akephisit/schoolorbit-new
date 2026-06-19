@@ -1065,51 +1065,32 @@
 										</Alert.Description>
 									</Alert.Root>
 								{:else}
-									<div class="grid gap-2 md:hidden">
-										{#each timetableEntriesForSelectedCycle() as entry (entry.id)}
-											<button
-												type="button"
-												class={cn(
-													'rounded-md border p-3 text-left transition hover:bg-muted/60',
-													selectedTimetableEntryId === entry.id && 'border-primary bg-primary/10'
-												)}
-												onclick={() => selectTimetableEntry(entry)}
-											>
-												<div class="flex items-center justify-between gap-2">
-													<span class="font-medium">{timetableEntryTitle(entry)}</span>
-													<Badge variant="secondary">{entry.day_of_week}</Badge>
-												</div>
-												<p class="text-sm text-muted-foreground">
-													{entry.period_name ?? 'คาบสอน'}
-													{timetableTimeLabel(entry)}
-												</p>
-												<p class="text-xs text-muted-foreground">
-													{entry.classroom_name ?? '-'}
-													{entry.room_code ? `ห้อง ${entry.room_code}` : ''}
-												</p>
-											</button>
-										{/each}
-									</div>
-									<div class="hidden rounded-md border md:block">
+									<div class="overflow-x-auto rounded-md border">
 										<Table.Root>
 											<Table.Header>
 												<Table.Row>
-													<Table.Head class="w-[120px]">คาบ</Table.Head>
-													{#each timetableGridDays as day (day.code)}
-														<Table.Head class="min-w-[150px] text-center">{day.label}</Table.Head>
+													<Table.Head class="sticky left-0 z-10 w-[112px] bg-background"
+														>วัน</Table.Head
+													>
+													{#each timetablePeriodRows() as row (row.key)}
+														<Table.Head class="min-w-[150px] text-center">
+															<div class="font-medium">{row.label}</div>
+															{#if row.timeLabel}
+																<div class="text-xs font-normal text-muted-foreground">
+																	{row.timeLabel}
+																</div>
+															{/if}
+														</Table.Head>
 													{/each}
 												</Table.Row>
 											</Table.Header>
 											<Table.Body>
-												{#each timetablePeriodRows() as row (row.key)}
+												{#each timetableGridDays as day (day.code)}
 													<Table.Row>
-														<Table.Cell class="bg-muted/30 align-top">
-															<div class="font-medium">{row.label}</div>
-															{#if row.timeLabel}
-																<div class="text-xs text-muted-foreground">{row.timeLabel}</div>
-															{/if}
+														<Table.Cell class="sticky left-0 z-10 bg-background align-top">
+															<div class="font-medium">{day.label}</div>
 														</Table.Cell>
-														{#each timetableGridDays as day (day.code)}
+														{#each timetablePeriodRows() as row (row.key)}
 															{@const entry = timetableEntryFor(day.code, row)}
 															<Table.Cell class="min-w-[150px] p-1 align-top">
 																{#if entry}
@@ -1125,6 +1106,9 @@
 																		<div class="text-sm font-medium leading-snug">
 																			{timetableEntryTitle(entry)}
 																		</div>
+																		<p class="mt-1 text-xs text-muted-foreground">
+																			{entry.period_name ?? row.label}
+																		</p>
 																		<p class="mt-1 text-xs text-muted-foreground">
 																			{entry.classroom_name ?? '-'}
 																		</p>

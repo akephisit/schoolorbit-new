@@ -85,11 +85,7 @@ export const SIDEBAR_SECTION_DEFINITIONS: SidebarSectionDefinition[] = [
 		workspaceCode: 'academic',
 		order: 10,
 		defaultOpen: true,
-		paths: [
-			'/staff/academic/structure',
-			'/staff/academic/periods',
-			'/staff/academic/classrooms'
-		]
+		paths: ['/staff/academic/structure', '/staff/academic/periods', '/staff/academic/classrooms']
 	},
 	{
 		id: 'academic-curriculum',

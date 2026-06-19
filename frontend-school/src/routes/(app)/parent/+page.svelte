@@ -2,7 +2,6 @@
 	import { onMount } from 'svelte';
 	import { getOwnParentProfile, type ParentProfile } from '$lib/api/parents';
 	import { Card } from '$lib/components/ui/card';
-	import { Button } from '$lib/components/ui/button';
 	import { PageShell } from '$lib/components/app-layout';
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import { Badge } from '$lib/components/ui/badge';

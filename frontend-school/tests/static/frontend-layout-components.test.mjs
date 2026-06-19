@@ -89,7 +89,9 @@ test('app pages keep outer spacing on PageShell instead of page-local root class
 			const classMatch = tag.match(/\bclass="([^"]*)"/);
 			if (!classMatch) continue;
 
-			const disallowed = classMatch[1].split(/\s+/).filter((token) => disallowedRootClass.test(token));
+			const disallowed = classMatch[1]
+				.split(/\s+/)
+				.filter((token) => disallowedRootClass.test(token));
 			if (disallowed.length === 0) continue;
 
 			violations.push(
