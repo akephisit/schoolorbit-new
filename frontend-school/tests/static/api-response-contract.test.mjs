@@ -421,6 +421,11 @@ test('teaching supervision frontend contract uses typed API and permission metad
 	assert.match(supervisionPage, /sectionRubricProgress/);
 	assert.match(supervisionPage, /overflow-x-hidden/);
 	assert.match(supervisionPage, /min-w-0/);
+	assert.match(supervisionPage, /max-w-6xl/);
+	assert.match(
+		supervisionPage,
+		/<div class="min-w-0 space-y-2 md:col-span-3">\s*<Label>ชื่อแบบประเมิน<\/Label>/
+	);
 	assert.doesNotMatch(supervisionPage, /lg:grid-cols-\[120px_1fr_auto\]/);
 	assert.doesNotMatch(supervisionPage, /md:grid-cols-\[1fr_220px\]/);
 	assert.doesNotMatch(supervisionPage, /ratingLabel/);

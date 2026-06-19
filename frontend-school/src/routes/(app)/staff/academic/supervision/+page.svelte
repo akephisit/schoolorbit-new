@@ -2195,7 +2195,7 @@
 
 <Dialog.Root bind:open={createTemplateDialogOpen}>
 	<Dialog.Content
-		class="flex max-h-[92vh] w-[calc(100vw-1rem)] max-w-5xl flex-col gap-0 overflow-hidden p-0 sm:w-[calc(100vw-2rem)]"
+		class="flex max-h-[92vh] w-[calc(100vw-1rem)] max-w-6xl flex-col gap-0 overflow-hidden p-0 sm:w-[calc(100vw-2rem)]"
 	>
 		<Dialog.Header class="border-b px-4 py-4 pr-12 text-left sm:px-6">
 			<Dialog.Title
@@ -2206,8 +2206,8 @@
 			</Dialog.Description>
 		</Dialog.Header>
 		<div class="min-h-0 flex-1 space-y-4 overflow-y-auto overflow-x-hidden px-4 py-4 sm:px-6">
-			<div class="grid min-w-0 gap-4 md:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_160px_130px_130px]">
-				<div class="min-w-0 space-y-2">
+			<div class="grid min-w-0 gap-4 md:grid-cols-3">
+				<div class="min-w-0 space-y-2 md:col-span-3">
 					<Label>ชื่อแบบประเมิน</Label>
 					<Input bind:value={templateForm.title} placeholder="ชื่อแบบประเมิน" />
 				</div>
@@ -2236,7 +2236,7 @@
 					<Label>คะแนนสูงสุด</Label>
 					<Input type="number" min="1" bind:value={templateForm.ratingMax} />
 				</div>
-				<div class="min-w-0 space-y-2 md:col-span-2 xl:col-span-4">
+				<div class="min-w-0 space-y-2 md:col-span-3">
 					<Label>รายละเอียด</Label>
 					<Textarea bind:value={templateForm.description} rows={2} placeholder="รายละเอียด" />
 				</div>
