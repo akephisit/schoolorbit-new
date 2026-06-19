@@ -412,6 +412,15 @@ test('teaching supervision frontend contract uses typed API and permission metad
 	assert.match(supervisionPage, /cycleStatusCreateOptions/);
 	assert.match(supervisionPage, /status:\s*cycleForm\.status/);
 	assert.match(supervisionPage, /setCycleStatus/);
+	assert.match(supervisionPage, /createPaperSupervisionRubricSections/);
+	assert.match(supervisionPage, /templateForm\.sections/);
+	assert.match(supervisionPage, /addTemplateSection/);
+	assert.match(supervisionPage, /addTemplateItem/);
+	assert.match(supervisionPage, /moveTemplateItem/);
+	assert.match(supervisionPage, /calculateRubricDraftSummary/);
+	assert.match(supervisionPage, /sectionRubricProgress/);
+	assert.doesNotMatch(supervisionPage, /ratingLabel/);
+	assert.doesNotMatch(supervisionPage, /textLabel/);
 	assert.match(supervisionPage, /canManageSchool/);
 	assert.match(supervisionPage, /canManageRequests/);
 	assert.match(supervisionPage, /canReadObservations/);

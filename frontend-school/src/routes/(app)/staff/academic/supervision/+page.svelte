@@ -5,12 +5,15 @@
 		BookOpenCheck,
 		Check,
 		ChevronsUpDown,
+		ArrowDown,
+		ArrowUp,
 		FileSignature,
 		Loader2,
 		Plus,
 		RefreshCw,
 		Send,
 		Settings2,
+		Trash2,
 		UserCheck
 	} from 'lucide-svelte';
 	import { toast } from 'svelte-sonner';
@@ -39,6 +42,7 @@
 		submitMySupervisionEvaluation,
 		submitSupervisionObservationForReview,
 		updateSupervisionCycle,
+		updateSupervisionTemplate,
 		type CreateSupervisionCycleRequest,
 		type CreateSupervisionTemplateRequest,
 		type SaveEvaluationRequest,
@@ -47,8 +51,19 @@
 		type SupervisionCycleProgress,
 		type SupervisionObservation,
 		type SupervisionObservationStatus,
-		type SupervisionTemplate
+		type SupervisionTemplate,
+		type SupervisionTemplateStatus
 	} from '$lib/api/supervision';
+	import {
+		calculateRubricDraftSummary,
+		createBlankRubricItem,
+		createBlankRubricSection,
+		createPaperSupervisionRubricSections,
+		sectionRubricProgress,
+		type RubricFormSection,
+		type RubricItemType,
+		type RubricResponseDraft
+	} from '$lib/utils/supervision-rubric';
 	import { PERMISSIONS } from '$lib/permissions/registry';
 	import { authStore } from '$lib/stores/auth';
 	import { can } from '$lib/stores/permissions';
@@ -60,6 +75,7 @@
 	import { Button } from '$lib/components/ui/button';
 	import * as Card from '$lib/components/ui/card';
 	import * as Command from '$lib/components/ui/command';
+	import { Checkbox } from '$lib/components/ui/checkbox';
 	import DatePicker from '$lib/components/ui/date-picker/DatePicker.svelte';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { Input } from '$lib/components/ui/input';
@@ -71,9 +87,14 @@
 	import * as Tabs from '$lib/components/ui/tabs';
 	import { Textarea } from '$lib/components/ui/textarea';
 
-	type ResponseDraft = {
-		ratingScore: string;
-		textResponse: string;
+	type ResponseDraft = RubricResponseDraft;
+	type TemplateFormState = {
+		title: string;
+		description: string;
+		status: SupervisionTemplateStatus;
+		ratingMin: number;
+		ratingMax: number;
+		sections: RubricFormSection[];
 	};
 
 	const timetableGridDays = getSchoolDays();
@@ -124,6 +145,35 @@
 		}
 	];
 
+	function createDefaultTemplateForm(): TemplateFormState {
+		return {
+			title: 'แบบนิเทศการจัดการเรียนรู้',
+			description: 'แบบประเมินการจัดการเรียนรู้ตามหัวข้อการนิเทศในชั้นเรียน',
+			status: 'draft',
+			ratingMin: 1,
+			ratingMax: 5,
+			sections: createPaperSupervisionRubricSections()
+		};
+	}
+
+	function templateSectionsToRubricForm(template: SupervisionTemplate | null): RubricFormSection[] {
+		if (!template) return [];
+		return template.sections.map((section, sectionIndex) => ({
+			localId: section.id,
+			title: section.title,
+			description: section.description ?? '',
+			sortOrder: section.sortOrder || sectionIndex + 1,
+			items: section.items.map((item, itemIndex) => ({
+				localId: item.id,
+				label: item.label,
+				description: item.description ?? '',
+				itemType: item.itemType,
+				required: item.required,
+				sortOrder: item.sortOrder || itemIndex + 1
+			}))
+		}));
+	}
+
 	let { data } = $props();
 
 	let loading = $state(true);
@@ -160,6 +210,7 @@
 	let progress = $state<SupervisionCycleProgress | null>(null);
 	let createCycleDialogOpen = $state(false);
 	let createTemplateDialogOpen = $state(false);
+	let editingTemplateId = $state('');
 	let cycleAcademicYearId = $state('');
 	let loadedTimetableCycleId = $state('');
 	let cycleForm = $state<CycleFormState>({
@@ -179,14 +230,7 @@
 		endsDate: '',
 		endsTime: '16:30'
 	});
-	let templateForm = $state({
-		title: '',
-		description: '',
-		ratingMin: 1,
-		ratingMax: 5,
-		ratingLabel: 'การจัดกิจกรรมการเรียนรู้เหมาะสม',
-		textLabel: 'ข้อเสนอแนะเพิ่มเติม'
-	});
+	let templateForm = $state<TemplateFormState>(createDefaultTemplateForm());
 
 	const currentUserId = $derived($authStore.user?.id ?? '');
 	const canRequest = $derived($can.has(PERMISSIONS.SUPERVISION_REQUEST_OWN));
@@ -278,6 +322,16 @@
 		selectedEvaluation
 			? (templates.find((template) => template.id === selectedEvaluation.templateId) ?? null)
 			: null
+	);
+	const selectedEvaluationRubricSections = $derived(
+		templateSectionsToRubricForm(selectedEvaluationTemplate)
+	);
+	const selectedEvaluationDraftSummary = $derived(
+		calculateRubricDraftSummary(
+			selectedEvaluationRubricSections,
+			responseDrafts,
+			selectedEvaluationTemplate?.ratingMax ?? 5
+		)
 	);
 	const reviewableObservations = $derived(
 		observations.filter(
@@ -652,6 +706,13 @@
 		responseDrafts = nextDrafts;
 	}
 
+	function ratingScale(min: number, max: number): number[] {
+		const start = Math.trunc(Number(min));
+		const end = Math.trunc(Number(max));
+		if (!Number.isFinite(start) || !Number.isFinite(end) || start > end) return [];
+		return Array.from({ length: end - start + 1 }, (_, index) => start + index);
+	}
+
 	function updateDraft(itemId: string, patch: Partial<ResponseDraft>) {
 		if (!canEvaluate) return;
 		responseDrafts = {
@@ -665,18 +726,18 @@
 
 	function evaluationPayload(): SaveEvaluationRequest {
 		const responses = [];
-		for (const section of selectedEvaluationTemplate?.sections ?? []) {
+		for (const section of selectedEvaluationRubricSections) {
 			for (const item of section.items) {
-				const draft = responseDrafts[item.id] ?? { ratingScore: '', textResponse: '' };
+				const draft = responseDrafts[item.localId] ?? { ratingScore: '', textResponse: '' };
 				if (item.itemType === 'rating') {
 					responses.push({
-						templateItemId: item.id,
+						templateItemId: item.localId,
 						ratingScore: draft.ratingScore ? Number(draft.ratingScore) : null,
 						textResponse: null
 					});
 				} else {
 					responses.push({
-						templateItemId: item.id,
+						templateItemId: item.localId,
 						ratingScore: null,
 						textResponse: draft.textResponse || null
 					});
@@ -686,11 +747,34 @@
 		return { responses };
 	}
 
+	function missingRequiredEvaluationLabels(): string[] {
+		const missing: string[] = [];
+		for (const section of selectedEvaluationRubricSections) {
+			for (const item of section.items) {
+				if (!item.required) continue;
+				const draft = responseDrafts[item.localId] ?? { ratingScore: '', textResponse: '' };
+				const answered =
+					item.itemType === 'rating'
+						? Boolean(draft.ratingScore)
+						: Boolean(draft.textResponse.trim());
+				if (!answered) missing.push(item.label);
+			}
+		}
+		return missing;
+	}
+
 	async function saveEvaluation(submit = false) {
 		if (!canEvaluate) return;
 		if (!evaluationObservationId) {
 			toast.error('เลือกรายการประเมินก่อน');
 			return;
+		}
+		if (submit) {
+			const missing = missingRequiredEvaluationLabels();
+			if (missing.length > 0) {
+				toast.error(`กรอกหัวข้อบังคับให้ครบ (${missing.length} ข้อ)`);
+				return;
+			}
 		}
 
 		saving = true;
@@ -851,39 +935,189 @@
 		}
 	}
 
-	async function createTemplate() {
-		if (!canManageSchool) return;
-		if (!templateForm.title || !templateForm.ratingLabel || !templateForm.textLabel) {
-			toast.error('กรอกชื่อแบบประเมินและหัวข้อประเมินให้ครบ');
+	function normalizeTemplateSections(sections: RubricFormSection[]): RubricFormSection[] {
+		return sections.map((section, sectionIndex) => ({
+			...section,
+			sortOrder: sectionIndex + 1,
+			items: section.items.map((item, itemIndex) => ({
+				...item,
+				sortOrder: itemIndex + 1
+			}))
+		}));
+	}
+
+	function resetTemplateForm() {
+		editingTemplateId = '';
+		templateForm = createDefaultTemplateForm();
+	}
+
+	function openCreateTemplateDialog() {
+		resetTemplateForm();
+		createTemplateDialogOpen = true;
+	}
+
+	function openEditTemplateDialog(template: SupervisionTemplate) {
+		editingTemplateId = template.id;
+		templateForm = {
+			title: template.title,
+			description: template.description ?? '',
+			status: template.status,
+			ratingMin: template.ratingMin,
+			ratingMax: template.ratingMax,
+			sections: templateSectionsToRubricForm(template)
+		};
+		createTemplateDialogOpen = true;
+	}
+
+	function loadPaperTemplatePreset() {
+		templateForm = {
+			...templateForm,
+			title: templateForm.title || 'แบบนิเทศการจัดการเรียนรู้',
+			description:
+				templateForm.description || 'แบบประเมินการจัดการเรียนรู้ตามหัวข้อการนิเทศในชั้นเรียน',
+			ratingMin: 1,
+			ratingMax: 5,
+			sections: createPaperSupervisionRubricSections()
+		};
+	}
+
+	function updateTemplateSection(sectionLocalId: string, patch: Partial<RubricFormSection>) {
+		templateForm = {
+			...templateForm,
+			sections: templateForm.sections.map((section) =>
+				section.localId === sectionLocalId ? { ...section, ...patch } : section
+			)
+		};
+	}
+
+	function updateTemplateItem(
+		sectionLocalId: string,
+		itemLocalId: string,
+		patch: Partial<RubricFormSection['items'][number]>
+	) {
+		templateForm = {
+			...templateForm,
+			sections: templateForm.sections.map((section) =>
+				section.localId === sectionLocalId
+					? {
+							...section,
+							items: section.items.map((item) =>
+								item.localId === itemLocalId ? { ...item, ...patch } : item
+							)
+						}
+					: section
+			)
+		};
+	}
+
+	function moveItemInList<T>(items: T[], index: number, direction: -1 | 1): T[] {
+		const targetIndex = index + direction;
+		if (index < 0 || targetIndex < 0 || targetIndex >= items.length) return items;
+		const next = [...items];
+		const [item] = next.splice(index, 1);
+		next.splice(targetIndex, 0, item);
+		return next;
+	}
+
+	function addTemplateSection() {
+		templateForm = {
+			...templateForm,
+			sections: normalizeTemplateSections([
+				...templateForm.sections,
+				createBlankRubricSection(templateForm.sections.length + 1)
+			])
+		};
+	}
+
+	function removeTemplateSection(sectionLocalId: string) {
+		if (templateForm.sections.length <= 1) {
+			toast.error('แบบประเมินต้องมีอย่างน้อย 1 หมวด');
 			return;
 		}
+		templateForm = {
+			...templateForm,
+			sections: normalizeTemplateSections(
+				templateForm.sections.filter((section) => section.localId !== sectionLocalId)
+			)
+		};
+	}
 
-		const payload: CreateSupervisionTemplateRequest = {
-			title: templateForm.title,
-			description: templateForm.description || null,
-			status: 'draft',
+	function moveTemplateSection(sectionLocalId: string, direction: -1 | 1) {
+		const index = templateForm.sections.findIndex((section) => section.localId === sectionLocalId);
+		templateForm = {
+			...templateForm,
+			sections: normalizeTemplateSections(moveItemInList(templateForm.sections, index, direction))
+		};
+	}
+
+	function addTemplateItem(sectionLocalId: string, itemType: RubricItemType) {
+		templateForm = {
+			...templateForm,
+			sections: templateForm.sections.map((section) =>
+				section.localId === sectionLocalId
+					? {
+							...section,
+							items: section.items
+								.map((item, index) => ({ ...item, sortOrder: index + 1 }))
+								.concat(createBlankRubricItem(itemType, section.items.length + 1))
+						}
+					: section
+			)
+		};
+	}
+
+	function removeTemplateItem(sectionLocalId: string, itemLocalId: string) {
+		templateForm = {
+			...templateForm,
+			sections: templateForm.sections.map((section) =>
+				section.localId === sectionLocalId
+					? {
+							...section,
+							items: section.items
+								.filter((item) => item.localId !== itemLocalId)
+								.map((item, index) => ({ ...item, sortOrder: index + 1 }))
+						}
+					: section
+			)
+		};
+	}
+
+	function moveTemplateItem(sectionLocalId: string, itemLocalId: string, direction: -1 | 1) {
+		templateForm = {
+			...templateForm,
+			sections: templateForm.sections.map((section) => {
+				if (section.localId !== sectionLocalId) return section;
+				const index = section.items.findIndex((item) => item.localId === itemLocalId);
+				return {
+					...section,
+					items: moveItemInList(section.items, index, direction).map((item, itemIndex) => ({
+						...item,
+						sortOrder: itemIndex + 1
+					}))
+				};
+			})
+		};
+	}
+
+	function templatePayload(): CreateSupervisionTemplateRequest {
+		return {
+			title: templateForm.title.trim(),
+			description: templateForm.description.trim() || null,
+			status: templateForm.status,
 			ratingMin: Number(templateForm.ratingMin),
 			ratingMax: Number(templateForm.ratingMax),
-			sections: [
-				{
-					title: 'การจัดการเรียนรู้',
-					sortOrder: 1,
-					items: [
-						{
-							label: templateForm.ratingLabel,
-							itemType: 'rating',
-							required: true,
-							sortOrder: 1
-						},
-						{
-							label: templateForm.textLabel,
-							itemType: 'text',
-							required: false,
-							sortOrder: 2
-						}
-					]
-				}
-			],
+			sections: normalizeTemplateSections(templateForm.sections).map((section) => ({
+				title: section.title.trim(),
+				description: section.description.trim() || null,
+				sortOrder: section.sortOrder,
+				items: section.items.map((item) => ({
+					label: item.label.trim(),
+					description: item.description.trim() || null,
+					itemType: item.itemType,
+					required: item.required,
+					sortOrder: item.sortOrder
+				}))
+			})),
 			steps: [
 				{
 					stepOrder: 1,
@@ -904,18 +1138,53 @@
 				}
 			]
 		};
+	}
+
+	function validateTemplateForm(): boolean {
+		if (!templateForm.title.trim()) {
+			toast.error('กรอกชื่อแบบประเมิน');
+			return false;
+		}
+		if (Number(templateForm.ratingMin) >= Number(templateForm.ratingMax)) {
+			toast.error('คะแนนต่ำสุดต้องน้อยกว่าคะแนนสูงสุด');
+			return false;
+		}
+		if (templateForm.sections.length === 0) {
+			toast.error('เพิ่มหมวดแบบประเมินอย่างน้อย 1 หมวด');
+			return false;
+		}
+		if (templateForm.sections.every((section) => section.items.length === 0)) {
+			toast.error('เพิ่มหัวข้อประเมินอย่างน้อย 1 ข้อ');
+			return false;
+		}
+		if (templateForm.sections.some((section) => !section.title.trim())) {
+			toast.error('กรอกชื่อหมวดให้ครบ');
+			return false;
+		}
+		if (templateForm.sections.some((section) => section.items.some((item) => !item.label.trim()))) {
+			toast.error('กรอกหัวข้อประเมินให้ครบ');
+			return false;
+		}
+		return true;
+	}
+
+	async function createTemplate() {
+		if (!canManageSchool) return;
+		if (!validateTemplateForm()) return;
 
 		saving = true;
 		try {
-			const response = await createSupervisionTemplate(payload);
-			if (!response.success) throw new Error(response.error || 'สร้างแบบประเมินไม่สำเร็จ');
-			toast.success('สร้างแบบประเมินนิเทศแล้ว');
-			templateForm.title = '';
-			templateForm.description = '';
+			const payload = templatePayload();
+			const response = editingTemplateId
+				? await updateSupervisionTemplate(editingTemplateId, payload)
+				: await createSupervisionTemplate(payload);
+			if (!response.success) throw new Error(response.error || 'บันทึกแบบประเมินไม่สำเร็จ');
+			toast.success(editingTemplateId ? 'แก้ไขแบบประเมินนิเทศแล้ว' : 'สร้างแบบประเมินนิเทศแล้ว');
+			resetTemplateForm();
 			createTemplateDialogOpen = false;
 			await refreshAll();
 		} catch (error) {
-			toast.error(error instanceof Error ? error.message : 'สร้างแบบประเมินไม่สำเร็จ');
+			toast.error(error instanceof Error ? error.message : 'บันทึกแบบประเมินไม่สำเร็จ');
 		} finally {
 			saving = false;
 		}
@@ -961,7 +1230,7 @@
 				<Plus class="mr-2 h-4 w-4" />
 				สร้างรอบนิเทศ
 			</Button>
-			<Button size="sm" variant="outline" onclick={() => (createTemplateDialogOpen = true)}>
+			<Button size="sm" variant="outline" onclick={openCreateTemplateDialog}>
 				<Settings2 class="mr-2 h-4 w-4" />
 				สร้างแบบประเมิน
 			</Button>
@@ -1408,35 +1677,93 @@
 
 					{#if selectedEvaluation && selectedEvaluationTemplate}
 						<div class="space-y-4 rounded-md border p-4">
-							<div>
-								<h3 class="font-semibold">{selectedEvaluationTemplate.title}</h3>
-								<p class="text-sm text-muted-foreground">
-									{selectedEvaluation.observedDisplayName ?? 'ครูผู้ถูกนิเทศ'}
-								</p>
+							<div class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+								<div>
+									<h3 class="font-semibold">{selectedEvaluationTemplate.title}</h3>
+									<p class="text-sm text-muted-foreground">
+										{selectedEvaluation.observedDisplayName ?? 'ครูผู้ถูกนิเทศ'}
+									</p>
+								</div>
+								<div
+									class="grid gap-2 rounded-md border bg-muted/20 p-3 text-sm sm:grid-cols-4 lg:min-w-[520px]"
+								>
+									<div>
+										<p class="text-xs text-muted-foreground">คะแนนรวม</p>
+										<p class="font-semibold">
+											{selectedEvaluationDraftSummary.totalScore} /
+											{selectedEvaluationDraftSummary.maxScore}
+										</p>
+									</div>
+									<div>
+										<p class="text-xs text-muted-foreground">ร้อยละ</p>
+										<p class="font-semibold">
+											{selectedEvaluationDraftSummary.percentage === null
+												? '-'
+												: selectedEvaluationDraftSummary.percentage.toFixed(2)}
+										</p>
+									</div>
+									<div>
+										<p class="text-xs text-muted-foreground">ระดับคุณภาพ</p>
+										<p class="font-semibold">{selectedEvaluationDraftSummary.qualityLabel}</p>
+									</div>
+									<div>
+										<p class="text-xs text-muted-foreground">ให้คะแนนแล้ว</p>
+										<p class="font-semibold">
+											{selectedEvaluationDraftSummary.answeredRatingCount} /
+											{selectedEvaluationDraftSummary.ratingItemCount}
+										</p>
+									</div>
+								</div>
 							</div>
-							{#each selectedEvaluationTemplate.sections as section (section.id)}
-								<div class="space-y-3">
-									<h4 class="text-sm font-semibold">{section.title}</h4>
-									{#each section.items as item (item.id)}
+							{#each selectedEvaluationRubricSections as section (section.localId)}
+								{@const progress = sectionRubricProgress(section, responseDrafts)}
+								<div class="space-y-3 rounded-md border bg-background p-3">
+									<div class="flex flex-wrap items-start justify-between gap-2">
+										<div>
+											<h4 class="text-sm font-semibold">{section.title}</h4>
+											{#if section.description}
+												<p class="text-xs text-muted-foreground">{section.description}</p>
+											{/if}
+										</div>
+										<div class="flex flex-wrap gap-2">
+											<Badge variant="secondary">
+												บังคับ {progress.answeredRequiredCount}/{progress.requiredCount}
+											</Badge>
+											<Badge variant="outline">
+												คะแนน {progress.answeredRatingCount}/{progress.ratingCount}
+											</Badge>
+										</div>
+									</div>
+									{#each section.items as item (item.localId)}
 										<div class="space-y-2 rounded-md border p-3">
-											<Label>{item.label}</Label>
+											<div class="space-y-1">
+												<Label>{item.label}</Label>
+												{#if item.description}
+													<p class="text-xs text-muted-foreground">{item.description}</p>
+												{/if}
+											</div>
 											{#if item.itemType === 'rating'}
-												<Input
-													type="number"
-													min={selectedEvaluationTemplate.ratingMin}
-													max={selectedEvaluationTemplate.ratingMax}
-													bind:value={responseDrafts[item.id].ratingScore}
-													oninput={(event) =>
-														updateDraft(item.id, {
-															ratingScore: (event.currentTarget as HTMLInputElement).value
-														})}
-												/>
+												<div class="flex flex-wrap gap-2">
+													{#each ratingScale(selectedEvaluationTemplate.ratingMin, selectedEvaluationTemplate.ratingMax) as score (score)}
+														<Button
+															type="button"
+															size="sm"
+															variant={responseDrafts[item.localId]?.ratingScore === String(score)
+																? 'default'
+																: 'outline'}
+															onclick={() =>
+																updateDraft(item.localId, { ratingScore: String(score) })}
+														>
+															{score}
+														</Button>
+													{/each}
+												</div>
 											{:else}
 												<Textarea
 													rows={3}
-													bind:value={responseDrafts[item.id].textResponse}
+													value={responseDrafts[item.localId]?.textResponse ?? ''}
 													oninput={(event) =>
-														updateDraft(item.id, {
+														updateDraft(item.localId, {
 															textResponse: (event.currentTarget as HTMLTextAreaElement).value
 														})}
 												/>
@@ -1553,7 +1880,7 @@
 						<Card.Description>แบบประเมินใช้กับรอบนิเทศและขั้นตอนอนุมัติผล</Card.Description>
 					</div>
 					{#if canManageSchool}
-						<Button onclick={() => (createTemplateDialogOpen = true)}>
+						<Button onclick={openCreateTemplateDialog}>
 							<Plus class="mr-2 h-4 w-4" />
 							สร้างแบบประเมิน
 						</Button>
@@ -1565,14 +1892,16 @@
 							<Table.Row>
 								<Table.Head>ชื่อแบบประเมิน</Table.Head>
 								<Table.Head>หมวด</Table.Head>
+								<Table.Head>ข้อ</Table.Head>
 								<Table.Head>ช่วงคะแนน</Table.Head>
 								<Table.Head>สถานะ</Table.Head>
+								<Table.Head class="text-right">คำสั่ง</Table.Head>
 							</Table.Row>
 						</Table.Header>
 						<Table.Body>
 							{#if templates.length === 0}
 								<Table.Row>
-									<Table.Cell colspan={4} class="h-24 text-center text-muted-foreground">
+									<Table.Cell colspan={6} class="h-24 text-center text-muted-foreground">
 										ยังไม่มีแบบประเมินนิเทศ
 									</Table.Cell>
 								</Table.Row>
@@ -1581,8 +1910,24 @@
 									<Table.Row>
 										<Table.Cell class="font-medium">{template.title}</Table.Cell>
 										<Table.Cell>{template.sections.length}</Table.Cell>
+										<Table.Cell>
+											{template.sections.reduce((sum, section) => sum + section.items.length, 0)}
+										</Table.Cell>
 										<Table.Cell>{template.ratingMin} - {template.ratingMax}</Table.Cell>
 										<Table.Cell><Badge variant="secondary">{template.status}</Badge></Table.Cell>
+										<Table.Cell class="text-right">
+											{#if canManageSchool}
+												<Button
+													size="sm"
+													variant="outline"
+													onclick={() => openEditTemplateDialog(template)}
+												>
+													แก้ไข
+												</Button>
+											{:else}
+												<span class="text-sm text-muted-foreground">-</span>
+											{/if}
+										</Table.Cell>
 									</Table.Row>
 								{/each}
 							{/if}
@@ -1849,42 +2194,249 @@
 </Dialog.Root>
 
 <Dialog.Root bind:open={createTemplateDialogOpen}>
-	<Dialog.Content class="max-w-2xl">
+	<Dialog.Content class="max-h-[92vh] max-w-5xl overflow-y-auto">
 		<Dialog.Header>
-			<Dialog.Title>สร้างแบบประเมินพื้นฐาน</Dialog.Title>
-			<Dialog.Description>สร้างแบบประเมินเริ่มต้นที่มีหัวข้อคะแนนและข้อเสนอแนะ</Dialog.Description>
+			<Dialog.Title
+				>{editingTemplateId ? 'แก้ไขแบบประเมินนิเทศ' : 'สร้างแบบประเมินนิเทศ'}</Dialog.Title
+			>
+			<Dialog.Description>
+				กำหนดหมวดและหัวข้อประเมินหลายข้อ รองรับแบบฟอร์มนิเทศการสอนจริงของโรงเรียน
+			</Dialog.Description>
 		</Dialog.Header>
-		<div class="grid gap-4 py-2 lg:grid-cols-2">
-			<div class="space-y-2 lg:col-span-2">
-				<Label>ชื่อแบบประเมิน</Label>
-				<Input bind:value={templateForm.title} placeholder="ชื่อแบบประเมิน" />
+		<div class="space-y-4 py-2">
+			<div class="grid gap-4 lg:grid-cols-[1fr_180px_160px_160px]">
+				<div class="space-y-2">
+					<Label>ชื่อแบบประเมิน</Label>
+					<Input bind:value={templateForm.title} placeholder="ชื่อแบบประเมิน" />
+				</div>
+				<div class="space-y-2">
+					<Label>สถานะ</Label>
+					<Select.Root type="single" bind:value={templateForm.status}>
+						<Select.Trigger class="w-full">
+							{templateForm.status === 'active'
+								? 'ใช้งาน'
+								: templateForm.status === 'archived'
+									? 'เก็บถาวร'
+									: 'ร่าง'}
+						</Select.Trigger>
+						<Select.Content>
+							<Select.Item value="draft">ร่าง</Select.Item>
+							<Select.Item value="active">ใช้งาน</Select.Item>
+							<Select.Item value="archived">เก็บถาวร</Select.Item>
+						</Select.Content>
+					</Select.Root>
+				</div>
+				<div class="space-y-2">
+					<Label>คะแนนต่ำสุด</Label>
+					<Input type="number" min="0" bind:value={templateForm.ratingMin} />
+				</div>
+				<div class="space-y-2">
+					<Label>คะแนนสูงสุด</Label>
+					<Input type="number" min="1" bind:value={templateForm.ratingMax} />
+				</div>
+				<div class="space-y-2 lg:col-span-4">
+					<Label>รายละเอียด</Label>
+					<Textarea bind:value={templateForm.description} rows={2} placeholder="รายละเอียด" />
+				</div>
 			</div>
-			<div class="space-y-2 lg:col-span-2">
-				<Label>รายละเอียด</Label>
-				<Input bind:value={templateForm.description} placeholder="รายละเอียด" />
+
+			<div
+				class="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-muted/20 p-3"
+			>
+				<div>
+					<p class="text-sm font-medium">โครงสร้างแบบประเมิน</p>
+					<p class="text-xs text-muted-foreground">
+						{templateForm.sections.length} หมวด · {templateForm.sections.reduce(
+							(sum, section) => sum + section.items.length,
+							0
+						)}
+						ข้อ
+					</p>
+				</div>
+				<div class="flex flex-wrap gap-2">
+					<Button type="button" variant="outline" size="sm" onclick={loadPaperTemplatePreset}>
+						โหลดแบบฟอร์มนิเทศมาตรฐาน
+					</Button>
+					<Button type="button" size="sm" onclick={addTemplateSection}>
+						<Plus class="mr-2 h-4 w-4" />
+						เพิ่มหมวด
+					</Button>
+				</div>
 			</div>
-			<div class="space-y-2">
-				<Label>คะแนนต่ำสุด</Label>
-				<Input type="number" bind:value={templateForm.ratingMin} />
-			</div>
-			<div class="space-y-2">
-				<Label>คะแนนสูงสุด</Label>
-				<Input type="number" bind:value={templateForm.ratingMax} />
-			</div>
-			<div class="space-y-2 lg:col-span-2">
-				<Label>หัวข้อแบบคะแนน</Label>
-				<Input bind:value={templateForm.ratingLabel} placeholder="หัวข้อแบบคะแนน" />
-			</div>
-			<div class="space-y-2 lg:col-span-2">
-				<Label>หัวข้อแบบข้อความ</Label>
-				<Input bind:value={templateForm.textLabel} placeholder="หัวข้อแบบข้อความ" />
+
+			<div class="space-y-3">
+				{#each templateForm.sections as section, sectionIndex (section.localId)}
+					<div class="rounded-md border">
+						<div class="space-y-3 border-b bg-muted/10 p-3">
+							<div class="grid gap-3 lg:grid-cols-[1fr_auto]">
+								<div class="space-y-2">
+									<Label>ชื่อหมวด</Label>
+									<Input
+										value={section.title}
+										oninput={(event) =>
+											updateTemplateSection(section.localId, {
+												title: (event.currentTarget as HTMLInputElement).value
+											})}
+									/>
+								</div>
+								<div class="flex items-end gap-1">
+									<Button
+										type="button"
+										variant="outline"
+										size="icon"
+										disabled={sectionIndex === 0}
+										onclick={() => moveTemplateSection(section.localId, -1)}
+										aria-label="ย้ายหมวดขึ้น"
+									>
+										<ArrowUp class="h-4 w-4" />
+									</Button>
+									<Button
+										type="button"
+										variant="outline"
+										size="icon"
+										disabled={sectionIndex === templateForm.sections.length - 1}
+										onclick={() => moveTemplateSection(section.localId, 1)}
+										aria-label="ย้ายหมวดลง"
+									>
+										<ArrowDown class="h-4 w-4" />
+									</Button>
+									<Button
+										type="button"
+										variant="outline"
+										size="icon"
+										onclick={() => removeTemplateSection(section.localId)}
+										aria-label="ลบหมวด"
+									>
+										<Trash2 class="h-4 w-4" />
+									</Button>
+								</div>
+							</div>
+							<div class="space-y-2">
+								<Label>คำอธิบายหมวด</Label>
+								<Input
+									value={section.description}
+									placeholder="เว้นว่างได้"
+									oninput={(event) =>
+										updateTemplateSection(section.localId, {
+											description: (event.currentTarget as HTMLInputElement).value
+										})}
+								/>
+							</div>
+						</div>
+
+						<div class="space-y-2 p-3">
+							{#if section.items.length === 0}
+								<PageState
+									title="หมวดนี้ยังไม่มีหัวข้อ"
+									description="เพิ่มหัวข้อแบบคะแนนหรือข้อเสนอแนะ"
+								/>
+							{:else}
+								{#each section.items as item, itemIndex (item.localId)}
+									<div class="grid gap-2 rounded-md border p-3 lg:grid-cols-[120px_1fr_auto]">
+										<div class="space-y-1">
+											<Badge variant="secondary">
+												{item.itemType === 'rating' ? 'คะแนน' : 'ข้อความ'}
+											</Badge>
+											<div class="flex items-center gap-2 pt-2">
+												<Checkbox
+													checked={item.required}
+													onCheckedChange={(checked) =>
+														updateTemplateItem(section.localId, item.localId, {
+															required: !!checked
+														})}
+													aria-label="บังคับตอบ"
+												/>
+												<span class="text-xs text-muted-foreground">บังคับตอบ</span>
+											</div>
+										</div>
+										<div class="grid gap-2 md:grid-cols-[1fr_220px]">
+											<div class="space-y-2">
+												<Label>หัวข้อประเมิน</Label>
+												<Input
+													value={item.label}
+													oninput={(event) =>
+														updateTemplateItem(section.localId, item.localId, {
+															label: (event.currentTarget as HTMLInputElement).value
+														})}
+												/>
+											</div>
+											<div class="space-y-2">
+												<Label>คำอธิบาย</Label>
+												<Input
+													value={item.description}
+													placeholder="เว้นว่างได้"
+													oninput={(event) =>
+														updateTemplateItem(section.localId, item.localId, {
+															description: (event.currentTarget as HTMLInputElement).value
+														})}
+												/>
+											</div>
+										</div>
+										<div class="flex items-end gap-1">
+											<Button
+												type="button"
+												variant="outline"
+												size="icon"
+												disabled={itemIndex === 0}
+												onclick={() => moveTemplateItem(section.localId, item.localId, -1)}
+												aria-label="ย้ายหัวข้อขึ้น"
+											>
+												<ArrowUp class="h-4 w-4" />
+											</Button>
+											<Button
+												type="button"
+												variant="outline"
+												size="icon"
+												disabled={itemIndex === section.items.length - 1}
+												onclick={() => moveTemplateItem(section.localId, item.localId, 1)}
+												aria-label="ย้ายหัวข้อลง"
+											>
+												<ArrowDown class="h-4 w-4" />
+											</Button>
+											<Button
+												type="button"
+												variant="outline"
+												size="icon"
+												onclick={() => removeTemplateItem(section.localId, item.localId)}
+												aria-label="ลบหัวข้อ"
+											>
+												<Trash2 class="h-4 w-4" />
+											</Button>
+										</div>
+									</div>
+								{/each}
+							{/if}
+
+							<div class="flex flex-wrap gap-2">
+								<Button
+									type="button"
+									variant="outline"
+									size="sm"
+									onclick={() => addTemplateItem(section.localId, 'rating')}
+								>
+									<Plus class="mr-2 h-4 w-4" />
+									เพิ่มข้อคะแนน
+								</Button>
+								<Button
+									type="button"
+									variant="outline"
+									size="sm"
+									onclick={() => addTemplateItem(section.localId, 'text')}
+								>
+									<Plus class="mr-2 h-4 w-4" />
+									เพิ่มข้อเสนอแนะ
+								</Button>
+							</div>
+						</div>
+					</div>
+				{/each}
 			</div>
 		</div>
 		<Dialog.Footer>
 			<Button variant="outline" onclick={() => (createTemplateDialogOpen = false)}>ยกเลิก</Button>
 			<Button onclick={createTemplate} disabled={saving}>
 				{#if saving}<Loader2 class="mr-2 h-4 w-4 animate-spin" />{/if}
-				สร้างแบบประเมิน
+				{editingTemplateId ? 'บันทึกแบบประเมิน' : 'สร้างแบบประเมิน'}
 			</Button>
 		</Dialog.Footer>
 	</Dialog.Content>
