@@ -386,6 +386,7 @@ test('teaching supervision frontend contract uses typed API and permission metad
 	assert.match(supervisionPage, /acknowledgeSupervisionObservation/);
 	assert.match(supervisionPage, /getMyTimetable/);
 	assert.match(supervisionPage, /academic_semester_id:\s*cycle\?\.academicSemesterId/);
+	assert.match(supervisionPage, /getSchoolDays/);
 	assert.match(supervisionPage, /timetableGridDays/);
 	assert.match(supervisionPage, /timetablePeriodRows/);
 	assert.match(supervisionPage, /selectTimetableEntry/);
@@ -402,7 +403,7 @@ test('teaching supervision frontend contract uses typed API and permission metad
 	);
 	assert.match(
 		supervisionPage,
-		/<Table\.Body>[\s\S]*\{#each timetableGridDays as day \(day\.code\)\}/
+		/<Table\.Body>[\s\S]*\{#each timetableSchoolDays as day \(day\.value\)\}/
 	);
 	assert.doesNotMatch(
 		supervisionPage,

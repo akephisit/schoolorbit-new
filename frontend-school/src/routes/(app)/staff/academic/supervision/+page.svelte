@@ -14,7 +14,11 @@
 		UserCheck
 	} from 'lucide-svelte';
 	import { toast } from 'svelte-sonner';
-	import { getAcademicStructure, type AcademicStructureData } from '$lib/api/academic';
+	import {
+		getAcademicStructure,
+		getSchoolDays,
+		type AcademicStructureData
+	} from '$lib/api/academic';
 	import { lookupStaff, type StaffLookupItem } from '$lib/api/lookup';
 	import { getMyTimetable, type TimetableEntry } from '$lib/api/timetable';
 	import {
@@ -72,17 +76,8 @@
 		textResponse: string;
 	};
 
-	const timetableGridDays = [
-		{ code: 'MON', label: 'จันทร์' },
-		{ code: 'TUE', label: 'อังคาร' },
-		{ code: 'WED', label: 'พุธ' },
-		{ code: 'THU', label: 'พฤหัส' },
-		{ code: 'FRI', label: 'ศุกร์' },
-		{ code: 'SAT', label: 'เสาร์' },
-		{ code: 'SUN', label: 'อาทิตย์' }
-	] as const;
+	const timetableGridDays = getSchoolDays();
 
-	type TimetableGridDayCode = (typeof timetableGridDays)[number]['code'];
 	type TimetablePeriodRow = {
 		key: string;
 		label: string;
@@ -236,6 +231,28 @@
 	);
 	const selectedCycleDetail = $derived(
 		cycles.find((cycle) => cycle.id === selectedCycleId) ?? null
+	);
+	const selectedCycleSemester = $derived(
+		selectedCycleDetail?.academicSemesterId
+			? (academicStructure.semesters.find(
+					(semester) => semester.id === selectedCycleDetail.academicSemesterId
+				) ?? null)
+			: null
+	);
+	const selectedCycleAcademicYear = $derived(
+		selectedCycleSemester
+			? (academicStructure.years.find(
+					(year) => year.id === selectedCycleSemester.academic_year_id
+				) ?? null)
+			: selectedCycleDetail
+				? (academicStructure.years.find((year) => year.year === selectedCycleDetail.academicYear) ??
+					activeAcademicYear)
+				: activeAcademicYear
+	);
+	const timetableSchoolDays = $derived(
+		selectedCycleAcademicYear
+			? getSchoolDays(selectedCycleAcademicYear.school_days)
+			: timetableGridDays
 	);
 	const selectedTimetableEntry = $derived(
 		timetableEntries.find((entry) => entry.id === selectedTimetableEntryId) ?? null
@@ -451,10 +468,7 @@
 		);
 	}
 
-	function timetableEntryFor(
-		day: TimetableGridDayCode,
-		row: TimetablePeriodRow
-	): TimetableEntry | null {
+	function timetableEntryFor(day: string, row: TimetablePeriodRow): TimetableEntry | null {
 		return (
 			timetableEntriesForSelectedCycle().find(
 				(entry) => entry.day_of_week === day && timetablePeriodKey(entry) === row.key
@@ -1084,13 +1098,13 @@
 												</Table.Row>
 											</Table.Header>
 											<Table.Body>
-												{#each timetableGridDays as day (day.code)}
+												{#each timetableSchoolDays as day (day.value)}
 													<Table.Row>
 														<Table.Cell class="sticky left-0 z-10 bg-background align-top">
 															<div class="font-medium">{day.label}</div>
 														</Table.Cell>
 														{#each timetablePeriodRows() as row (row.key)}
-															{@const entry = timetableEntryFor(day.code, row)}
+															{@const entry = timetableEntryFor(day.value, row)}
 															<Table.Cell class="min-w-[150px] p-1 align-top">
 																{#if entry}
 																	<button
