@@ -76,6 +76,7 @@ export interface TimetableEntry {
 	room_code?: string;
 	subject_name_en?: string;
 	period_name?: string;
+	period_order_index?: number;
 	start_time?: string;
 	end_time?: string;
 	activity_slot_name?: string;

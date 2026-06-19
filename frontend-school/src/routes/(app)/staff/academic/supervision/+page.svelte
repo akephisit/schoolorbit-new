@@ -418,8 +418,7 @@
 	}
 
 	function timetablePeriodSort(entry: TimetableEntry): number {
-		const periodNumber = entry.period_name?.match(/\d+/)?.[0];
-		if (periodNumber) return Number(periodNumber);
+		if (typeof entry.period_order_index === 'number') return entry.period_order_index;
 		if (entry.start_time) {
 			const [hour = '0', minute = '0'] = entry.start_time.split(':');
 			return Number(hour) * 60 + Number(minute);

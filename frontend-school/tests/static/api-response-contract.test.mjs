@@ -389,6 +389,8 @@ test('teaching supervision frontend contract uses typed API and permission metad
 	assert.match(supervisionPage, /timetableGridDays/);
 	assert.match(supervisionPage, /timetablePeriodRows/);
 	assert.match(supervisionPage, /selectTimetableEntry/);
+	assert.match(supervisionPage, /entry\.period_order_index/);
+	assert.doesNotMatch(supervisionPage, /period_name\?\.match\(/);
 	assert.match(supervisionPage, /class="overflow-x-auto rounded-md border"/);
 	assert.match(
 		supervisionPage,
@@ -509,6 +511,7 @@ test('timetable API exposes typed loaded responses and conflict unions without r
 	assert.match(timetableApi, /apiClient\.post<TimetableEntry \| ConflictPayload>/);
 	assert.match(timetableApi, /apiClient\.put<TimetableEntry \| ConflictPayload>/);
 	assert.match(timetableApi, /fetchApi<AcademicPeriod\[\]>/);
+	assert.match(timetableApi, /period_order_index\?:\s*number/);
 	assert.match(timetableApi, /fetchApi<MoveValidityCell\[\]>/);
 	assert.match(timetableApi, /fetchApi<OccupancyEntry\[\]>/);
 	assert.match(timetableApi, /interface\s+MyActivityForEntry/);
@@ -517,6 +520,7 @@ test('timetable API exposes typed loaded responses and conflict unions without r
 	assert.doesNotMatch(timetableApi, /ApiResponse<unknown>/);
 	assert.doesNotMatch(timetableApi, /response\.data as/);
 	assert.match(timetableService, /struct\s+MyActivityForEntry/);
+	assert.match(timetableService, /ap\.order_index\s+AS\s+period_order_index/);
 	assert.match(
 		timetableService,
 		/get_my_activity_for_entry[\s\S]*?Result<Option<MyActivityForEntry>,\s*AppError>/

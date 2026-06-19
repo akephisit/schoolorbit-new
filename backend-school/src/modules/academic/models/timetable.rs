@@ -127,6 +127,9 @@ pub struct TimetableEntry {
     pub period_name: Option<String>,
     #[sqlx(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub period_order_index: Option<i32>,
+    #[sqlx(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub activity_slot_name: Option<String>,
     #[sqlx(default)]
     #[serde(skip_serializing_if = "Option::is_none")]

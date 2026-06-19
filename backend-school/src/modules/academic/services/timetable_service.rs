@@ -202,6 +202,7 @@ SELECT
     cr.name  AS classroom_name,
     r.code   AS room_code,
     ap.name  AS period_name,
+    ap.order_index AS period_order_index,
     ap.start_time,
     ap.end_time,
     asl_ac.name AS activity_slot_name,
