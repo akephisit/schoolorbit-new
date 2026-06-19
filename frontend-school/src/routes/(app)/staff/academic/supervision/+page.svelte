@@ -2194,8 +2194,10 @@
 </Dialog.Root>
 
 <Dialog.Root bind:open={createTemplateDialogOpen}>
-	<Dialog.Content class="max-h-[92vh] max-w-5xl overflow-y-auto">
-		<Dialog.Header>
+	<Dialog.Content
+		class="flex max-h-[92vh] w-[calc(100vw-1rem)] max-w-5xl flex-col gap-0 overflow-hidden p-0 sm:w-[calc(100vw-2rem)]"
+	>
+		<Dialog.Header class="border-b px-4 py-4 pr-12 text-left sm:px-6">
 			<Dialog.Title
 				>{editingTemplateId ? 'แก้ไขแบบประเมินนิเทศ' : 'สร้างแบบประเมินนิเทศ'}</Dialog.Title
 			>
@@ -2203,13 +2205,13 @@
 				กำหนดหมวดและหัวข้อประเมินหลายข้อ รองรับแบบฟอร์มนิเทศการสอนจริงของโรงเรียน
 			</Dialog.Description>
 		</Dialog.Header>
-		<div class="space-y-4 py-2">
-			<div class="grid gap-4 lg:grid-cols-[1fr_180px_160px_160px]">
-				<div class="space-y-2">
+		<div class="min-h-0 flex-1 space-y-4 overflow-y-auto overflow-x-hidden px-4 py-4 sm:px-6">
+			<div class="grid min-w-0 gap-4 md:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_160px_130px_130px]">
+				<div class="min-w-0 space-y-2">
 					<Label>ชื่อแบบประเมิน</Label>
 					<Input bind:value={templateForm.title} placeholder="ชื่อแบบประเมิน" />
 				</div>
-				<div class="space-y-2">
+				<div class="min-w-0 space-y-2">
 					<Label>สถานะ</Label>
 					<Select.Root type="single" bind:value={templateForm.status}>
 						<Select.Trigger class="w-full">
@@ -2226,15 +2228,15 @@
 						</Select.Content>
 					</Select.Root>
 				</div>
-				<div class="space-y-2">
+				<div class="min-w-0 space-y-2">
 					<Label>คะแนนต่ำสุด</Label>
 					<Input type="number" min="0" bind:value={templateForm.ratingMin} />
 				</div>
-				<div class="space-y-2">
+				<div class="min-w-0 space-y-2">
 					<Label>คะแนนสูงสุด</Label>
 					<Input type="number" min="1" bind:value={templateForm.ratingMax} />
 				</div>
-				<div class="space-y-2 lg:col-span-4">
+				<div class="min-w-0 space-y-2 md:col-span-2 xl:col-span-4">
 					<Label>รายละเอียด</Label>
 					<Textarea bind:value={templateForm.description} rows={2} placeholder="รายละเอียด" />
 				</div>
@@ -2266,10 +2268,10 @@
 
 			<div class="space-y-3">
 				{#each templateForm.sections as section, sectionIndex (section.localId)}
-					<div class="rounded-md border">
+					<div class="min-w-0 rounded-md border">
 						<div class="space-y-3 border-b bg-muted/10 p-3">
-							<div class="grid gap-3 lg:grid-cols-[1fr_auto]">
-								<div class="space-y-2">
+							<div class="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+								<div class="min-w-0 flex-1 space-y-2">
 									<Label>ชื่อหมวด</Label>
 									<Input
 										value={section.title}
@@ -2279,7 +2281,7 @@
 											})}
 									/>
 								</div>
-								<div class="flex items-end gap-1">
+								<div class="flex shrink-0 gap-1">
 									<Button
 										type="button"
 										variant="outline"
@@ -2332,25 +2334,58 @@
 								/>
 							{:else}
 								{#each section.items as item, itemIndex (item.localId)}
-									<div class="grid gap-2 rounded-md border p-3 lg:grid-cols-[120px_1fr_auto]">
-										<div class="space-y-1">
-											<Badge variant="secondary">
-												{item.itemType === 'rating' ? 'คะแนน' : 'ข้อความ'}
-											</Badge>
-											<div class="flex items-center gap-2 pt-2">
-												<Checkbox
-													checked={item.required}
-													onCheckedChange={(checked) =>
-														updateTemplateItem(section.localId, item.localId, {
-															required: !!checked
-														})}
-													aria-label="บังคับตอบ"
-												/>
-												<span class="text-xs text-muted-foreground">บังคับตอบ</span>
+									<div class="min-w-0 rounded-md border p-3">
+										<div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+											<div class="flex min-w-0 flex-wrap items-center gap-3">
+												<Badge variant="secondary">
+													{item.itemType === 'rating' ? 'คะแนน' : 'ข้อความ'}
+												</Badge>
+												<div class="flex items-center gap-2">
+													<Checkbox
+														checked={item.required}
+														onCheckedChange={(checked) =>
+															updateTemplateItem(section.localId, item.localId, {
+																required: !!checked
+															})}
+														aria-label="บังคับตอบ"
+													/>
+													<span class="text-xs text-muted-foreground">บังคับตอบ</span>
+												</div>
+											</div>
+											<div class="flex shrink-0 gap-1">
+												<Button
+													type="button"
+													variant="outline"
+													size="icon"
+													disabled={itemIndex === 0}
+													onclick={() => moveTemplateItem(section.localId, item.localId, -1)}
+													aria-label="ย้ายหัวข้อขึ้น"
+												>
+													<ArrowUp class="h-4 w-4" />
+												</Button>
+												<Button
+													type="button"
+													variant="outline"
+													size="icon"
+													disabled={itemIndex === section.items.length - 1}
+													onclick={() => moveTemplateItem(section.localId, item.localId, 1)}
+													aria-label="ย้ายหัวข้อลง"
+												>
+													<ArrowDown class="h-4 w-4" />
+												</Button>
+												<Button
+													type="button"
+													variant="outline"
+													size="icon"
+													onclick={() => removeTemplateItem(section.localId, item.localId)}
+													aria-label="ลบหัวข้อ"
+												>
+													<Trash2 class="h-4 w-4" />
+												</Button>
 											</div>
 										</div>
-										<div class="grid gap-2 md:grid-cols-[1fr_220px]">
-											<div class="space-y-2">
+										<div class="mt-3 grid min-w-0 gap-3 lg:grid-cols-2">
+											<div class="min-w-0 space-y-2">
 												<Label>หัวข้อประเมิน</Label>
 												<Input
 													value={item.label}
@@ -2360,7 +2395,7 @@
 														})}
 												/>
 											</div>
-											<div class="space-y-2">
+											<div class="min-w-0 space-y-2">
 												<Label>คำอธิบาย</Label>
 												<Input
 													value={item.description}
@@ -2371,37 +2406,6 @@
 														})}
 												/>
 											</div>
-										</div>
-										<div class="flex items-end gap-1">
-											<Button
-												type="button"
-												variant="outline"
-												size="icon"
-												disabled={itemIndex === 0}
-												onclick={() => moveTemplateItem(section.localId, item.localId, -1)}
-												aria-label="ย้ายหัวข้อขึ้น"
-											>
-												<ArrowUp class="h-4 w-4" />
-											</Button>
-											<Button
-												type="button"
-												variant="outline"
-												size="icon"
-												disabled={itemIndex === section.items.length - 1}
-												onclick={() => moveTemplateItem(section.localId, item.localId, 1)}
-												aria-label="ย้ายหัวข้อลง"
-											>
-												<ArrowDown class="h-4 w-4" />
-											</Button>
-											<Button
-												type="button"
-												variant="outline"
-												size="icon"
-												onclick={() => removeTemplateItem(section.localId, item.localId)}
-												aria-label="ลบหัวข้อ"
-											>
-												<Trash2 class="h-4 w-4" />
-											</Button>
 										</div>
 									</div>
 								{/each}
@@ -2432,7 +2436,7 @@
 				{/each}
 			</div>
 		</div>
-		<Dialog.Footer>
+		<Dialog.Footer class="border-t px-4 py-4 sm:px-6">
 			<Button variant="outline" onclick={() => (createTemplateDialogOpen = false)}>ยกเลิก</Button>
 			<Button onclick={createTemplate} disabled={saving}>
 				{#if saving}<Loader2 class="mr-2 h-4 w-4 animate-spin" />{/if}
