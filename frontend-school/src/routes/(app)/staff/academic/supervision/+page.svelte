@@ -69,7 +69,7 @@
 	import { can } from '$lib/stores/permissions';
 	import { cn } from '$lib/utils';
 	import { PageShell } from '$lib/components/app-layout';
-	import { PageSkeleton, PageState } from '$lib/components/app-state';
+	import { LoadingButton, PageSkeleton, PageState } from '$lib/components/app-state';
 	import * as Alert from '$lib/components/ui/alert';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
@@ -179,6 +179,9 @@
 	let loading = $state(true);
 	let loadingTimetable = $state(false);
 	let saving = $state(false);
+	let savingAction = $state<string | null>(null);
+	let savingTemplate = $state(false);
+	let savingEvaluation = $state<'draft' | 'submit' | null>(null);
 	let activeTab = $state('mine');
 	let cycles = $state<SupervisionCycle[]>([]);
 	let templates = $state<SupervisionTemplate[]>([]);
@@ -233,6 +236,9 @@
 	let templateForm = $state<TemplateFormState>(createDefaultTemplateForm());
 
 	const currentUserId = $derived($authStore.user?.id ?? '');
+	const mutationBusy = $derived(
+		saving || savingAction !== null || savingTemplate || savingEvaluation !== null
+	);
 	const canRequest = $derived($can.has(PERMISSIONS.SUPERVISION_REQUEST_OWN));
 	const canManageSchool = $derived($can.has(PERMISSIONS.SUPERVISION_MANAGE_SCHOOL));
 	const canManageRequests = $derived(
@@ -596,6 +602,43 @@
 		}
 	}
 
+	function replaceCycle(cycle: SupervisionCycle) {
+		cycles = cycles.some((item) => item.id === cycle.id)
+			? cycles.map((item) => (item.id === cycle.id ? cycle : item))
+			: [cycle, ...cycles];
+		selectedCycleId ||= cycle.id;
+		progressCycleId ||= cycle.id;
+	}
+
+	async function refreshTemplates() {
+		templates = await listSupervisionTemplates();
+		cycleForm.templateId ||= templates[0]?.id ?? '';
+	}
+
+	function replaceTemplate(template: SupervisionTemplate) {
+		templates = templates.some((item) => item.id === template.id)
+			? templates.map((item) => (item.id === template.id ? template : item))
+			: [template, ...templates];
+		cycleForm.templateId ||= template.id;
+	}
+
+	function replaceObservation(observation: SupervisionObservation) {
+		observations = observations.some((item) => item.id === observation.id)
+			? observations.map((item) => (item.id === observation.id ? observation : item))
+			: [observation, ...observations];
+	}
+
+	function requireMutationData<T>(
+		response: { success: boolean; data?: T; error?: string },
+		fallbackError: string
+	): T {
+		if (!response.success || response.data === undefined) {
+			throw new Error(response.error || fallbackError);
+		}
+
+		return response.data;
+	}
+
 	async function createBookingRequest() {
 		if (!canRequest) return;
 		if (!selectedCycleId) {
@@ -619,7 +662,7 @@
 			return;
 		}
 
-		saving = true;
+		savingAction = 'request-booking';
 		try {
 			const response = await requestSupervisionObservation({
 				cycleId: selectedCycleId,
@@ -635,13 +678,13 @@
 						}
 					: null
 			});
-			if (!response.success) throw new Error(response.error || 'ส่งคำขอไม่สำเร็จ');
+			const observation = requireMutationData(response, 'ส่งคำขอไม่สำเร็จ');
+			replaceObservation(observation);
 			toast.success('ส่งคำขอจองนิเทศแล้ว');
-			await refreshAll();
 		} catch (error) {
 			toast.error(error instanceof Error ? error.message : 'ส่งคำขอไม่สำเร็จ');
 		} finally {
-			saving = false;
+			savingAction = null;
 		}
 	}
 
@@ -658,38 +701,38 @@
 			return;
 		}
 
-		saving = true;
+		savingAction = 'approve-request';
 		try {
 			const response = await approveSupervisionObservationRequest(approvalObservationId, {
 				evaluators: [{ evaluatorUserId: approvalEvaluatorId, isRequired: true }]
 			});
-			if (!response.success) throw new Error(response.error || 'อนุมัติคำขอไม่สำเร็จ');
+			const observation = requireMutationData(response, 'อนุมัติคำขอไม่สำเร็จ');
+			replaceObservation(observation);
 			toast.success('อนุมัติคำขอและมอบหมายผู้ประเมินแล้ว');
 			approvalObservationId = '';
 			approvalEvaluatorId = '';
-			await refreshAll();
 		} catch (error) {
 			toast.error(error instanceof Error ? error.message : 'อนุมัติคำขอไม่สำเร็จ');
 		} finally {
-			saving = false;
+			savingAction = null;
 		}
 	}
 
 	async function returnRequest(id: string) {
 		if (!canManageRequests) return;
-		saving = true;
+		savingAction = `return-request:${id}`;
 		try {
 			const response = await returnSupervisionObservationRequest(id, {
 				comment: requestReturnComment || null
 			});
-			if (!response.success) throw new Error(response.error || 'ส่งกลับคำขอไม่สำเร็จ');
+			const observation = requireMutationData(response, 'ส่งกลับคำขอไม่สำเร็จ');
+			replaceObservation(observation);
 			toast.success('ส่งกลับคำขอแล้ว');
 			requestReturnComment = '';
-			await refreshAll();
 		} catch (error) {
 			toast.error(error instanceof Error ? error.message : 'ส่งกลับคำขอไม่สำเร็จ');
 		} finally {
-			saving = false;
+			savingAction = null;
 		}
 	}
 
@@ -777,97 +820,97 @@
 			}
 		}
 
-		saving = true;
+		savingEvaluation = submit ? 'submit' : 'draft';
 		try {
 			const payload = evaluationPayload();
 			const response = submit
 				? await submitMySupervisionEvaluation(evaluationObservationId, payload)
 				: await saveMySupervisionEvaluation(evaluationObservationId, payload);
-			if (!response.success) throw new Error(response.error || 'บันทึกผลประเมินไม่สำเร็จ');
+			const observation = requireMutationData(response, 'บันทึกผลประเมินไม่สำเร็จ');
+			replaceObservation(observation);
 			toast.success(submit ? 'ส่งผลประเมินแล้ว' : 'บันทึกแบบร่างแล้ว');
-			await refreshAll();
 		} catch (error) {
 			toast.error(error instanceof Error ? error.message : 'บันทึกผลประเมินไม่สำเร็จ');
 		} finally {
-			saving = false;
+			savingEvaluation = null;
 		}
 	}
 
 	async function submitForReview(id: string) {
 		if (!canManageRequests) return;
-		saving = true;
+		savingAction = `submit-review:${id}`;
 		try {
 			const response = await submitSupervisionObservationForReview(id);
-			if (!response.success) throw new Error(response.error || 'ส่งตรวจทานไม่สำเร็จ');
+			const observation = requireMutationData(response, 'ส่งตรวจทานไม่สำเร็จ');
+			replaceObservation(observation);
 			toast.success('ส่งตรวจทานแล้ว');
-			await refreshAll();
 		} catch (error) {
 			toast.error(error instanceof Error ? error.message : 'ส่งตรวจทานไม่สำเร็จ');
 		} finally {
-			saving = false;
+			savingAction = null;
 		}
 	}
 
 	async function approveResult(id: string) {
 		if (!canApprove) return;
-		saving = true;
+		savingAction = `approve-result:${id}`;
 		try {
 			const response = await approveSupervisionObservation(id);
-			if (!response.success) throw new Error(response.error || 'อนุมัติผลไม่สำเร็จ');
+			const observation = requireMutationData(response, 'อนุมัติผลไม่สำเร็จ');
+			replaceObservation(observation);
 			toast.success('อนุมัติผลนิเทศแล้ว');
-			await refreshAll();
 		} catch (error) {
 			toast.error(error instanceof Error ? error.message : 'อนุมัติผลไม่สำเร็จ');
 		} finally {
-			saving = false;
+			savingAction = null;
 		}
 	}
 
 	async function publishResult(id: string) {
 		if (!canApprove) return;
-		saving = true;
+		savingAction = `publish-result:${id}`;
 		try {
 			const response = await publishSupervisionObservation(id);
-			if (!response.success) throw new Error(response.error || 'เผยแพร่ผลไม่สำเร็จ');
+			const observation = requireMutationData(response, 'เผยแพร่ผลไม่สำเร็จ');
+			replaceObservation(observation);
 			toast.success('เผยแพร่ผลนิเทศแล้ว');
-			await refreshAll();
 		} catch (error) {
 			toast.error(error instanceof Error ? error.message : 'เผยแพร่ผลไม่สำเร็จ');
 		} finally {
-			saving = false;
+			savingAction = null;
 		}
 	}
 
 	async function returnResult(id: string) {
 		if (!canApprove) return;
-		saving = true;
+		savingAction = `return-result:${id}`;
 		try {
 			const response = await returnSupervisionObservation(id, { comment: reviewComment || null });
-			if (!response.success) throw new Error(response.error || 'ส่งกลับผลไม่สำเร็จ');
+			const observation = requireMutationData(response, 'ส่งกลับผลไม่สำเร็จ');
+			replaceObservation(observation);
 			toast.success('ส่งกลับผลนิเทศแล้ว');
 			reviewComment = '';
-			await refreshAll();
 		} catch (error) {
 			toast.error(error instanceof Error ? error.message : 'ส่งกลับผลไม่สำเร็จ');
 		} finally {
-			saving = false;
+			savingAction = null;
 		}
 	}
 
 	async function acknowledgeResult(id: string) {
-		saving = true;
+		savingAction = `acknowledge-result:${id}`;
 		try {
 			const response = await acknowledgeSupervisionObservation(id, {
 				comment: acknowledgeComment || null
 			});
-			if (!response.success) throw new Error(response.error || 'รับทราบผลไม่สำเร็จ');
+			const observation = requireMutationData(response, 'รับทราบผลไม่สำเร็จ');
+			replaceObservation(observation);
 			toast.success('รับทราบผลนิเทศแล้ว');
 			acknowledgeComment = '';
-			await refreshAll();
 		} catch (error) {
 			toast.error(error instanceof Error ? error.message : 'รับทราบผลไม่สำเร็จ');
 		} finally {
-			saving = false;
+			savingAction = null;
 		}
 	}
 
@@ -902,19 +945,19 @@
 			targets: [{ targetType: 'school', requiredObservations: 1, priority: 100 }]
 		};
 
-		saving = true;
+		savingAction = 'create-cycle';
 		try {
 			const response = await createSupervisionCycle(payload);
-			if (!response.success) throw new Error(response.error || 'สร้างรอบนิเทศไม่สำเร็จ');
+			const cycle = requireMutationData(response, 'สร้างรอบนิเทศไม่สำเร็จ');
+			replaceCycle(cycle);
 			toast.success('สร้างรอบนิเทศแล้ว');
 			cycleForm.title = '';
 			cycleForm.description = '';
 			createCycleDialogOpen = false;
-			await refreshAll();
 		} catch (error) {
 			toast.error(error instanceof Error ? error.message : 'สร้างรอบนิเทศไม่สำเร็จ');
 		} finally {
-			saving = false;
+			savingAction = null;
 		}
 	}
 
@@ -922,16 +965,16 @@
 		if (!canManageSchool) return;
 		if (cycle.status === status) return;
 
-		saving = true;
+		savingAction = `cycle-status:${cycle.id}:${status}`;
 		try {
 			const response = await updateSupervisionCycle(cycle.id, { status });
-			if (!response.success) throw new Error(response.error || 'เปลี่ยนสถานะรอบนิเทศไม่สำเร็จ');
+			const updatedCycle = requireMutationData(response, 'เปลี่ยนสถานะรอบนิเทศไม่สำเร็จ');
+			replaceCycle(updatedCycle);
 			toast.success(`เปลี่ยนสถานะรอบนิเทศเป็น${statusLabel(status)}แล้ว`);
-			await refreshAll();
 		} catch (error) {
 			toast.error(error instanceof Error ? error.message : 'เปลี่ยนสถานะรอบนิเทศไม่สำเร็จ');
 		} finally {
-			saving = false;
+			savingAction = null;
 		}
 	}
 
@@ -1172,21 +1215,25 @@
 		if (!canManageSchool) return;
 		if (!validateTemplateForm()) return;
 
-		saving = true;
+		savingTemplate = true;
 		try {
 			const payload = templatePayload();
 			const response = editingTemplateId
 				? await updateSupervisionTemplate(editingTemplateId, payload)
 				: await createSupervisionTemplate(payload);
 			if (!response.success) throw new Error(response.error || 'บันทึกแบบประเมินไม่สำเร็จ');
+			if (response.data) {
+				replaceTemplate(response.data);
+			} else {
+				await refreshTemplates();
+			}
 			toast.success(editingTemplateId ? 'แก้ไขแบบประเมินนิเทศแล้ว' : 'สร้างแบบประเมินนิเทศแล้ว');
 			resetTemplateForm();
 			createTemplateDialogOpen = false;
-			await refreshAll();
 		} catch (error) {
 			toast.error(error instanceof Error ? error.message : 'บันทึกแบบประเมินไม่สำเร็จ');
 		} finally {
-			saving = false;
+			savingTemplate = false;
 		}
 	}
 
@@ -1221,7 +1268,7 @@
 	description="จัดรอบนิเทศ จองคาบ ประเมิน ส่งตรวจทาน และรับทราบผลในพื้นที่เดียว"
 >
 	{#snippet actions()}
-		<Button variant="outline" size="sm" onclick={refreshAll} disabled={loading || saving}>
+		<Button variant="outline" size="sm" onclick={refreshAll} disabled={loading || mutationBusy}>
 			<RefreshCw class={cn('mr-2 h-4 w-4', loading && 'animate-spin')} />
 			รีเฟรช
 		</Button>
@@ -1451,10 +1498,15 @@
 							</div>
 						{/if}
 
-						<Button onclick={createBookingRequest} disabled={saving || loading}>
+						<LoadingButton
+							onclick={createBookingRequest}
+							loading={savingAction === 'request-booking'}
+							loadingLabel="กำลังส่ง..."
+							disabled={loading || mutationBusy}
+						>
 							<Send class="mr-2 h-4 w-4" />
 							ส่งคำขอจอง
-						</Button>
+						</LoadingButton>
 					{/if}
 				</Card.Content>
 			</Card.Root>
@@ -1518,12 +1570,14 @@
 															placeholder="ความคิดเห็นเพิ่มเติม (ถ้ามี)"
 														/>
 														<Dialog.Footer>
-															<Button
+															<LoadingButton
 																onclick={() => acknowledgeResult(observation.id)}
-																disabled={saving}
+																loading={savingAction === `acknowledge-result:${observation.id}`}
+																loadingLabel="กำลังบันทึก..."
+																disabled={mutationBusy}
 															>
 																ยืนยันรับทราบ
-															</Button>
+															</LoadingButton>
 														</Dialog.Footer>
 													</Dialog.Content>
 												</Dialog.Root>
@@ -1618,7 +1672,14 @@
 								</Popover.Content>
 							</Popover.Root>
 
-							<Button onclick={approveRequest} disabled={saving}>อนุมัติและมอบหมาย</Button>
+							<LoadingButton
+								onclick={approveRequest}
+								loading={savingAction === 'approve-request'}
+								loadingLabel="กำลังอนุมัติ..."
+								disabled={mutationBusy}
+							>
+								อนุมัติและมอบหมาย
+							</LoadingButton>
 						</div>
 						<div class="space-y-2 rounded-md border p-3">
 							<Label>ส่งกลับคำขอ</Label>
@@ -1627,14 +1688,16 @@
 								rows={2}
 								placeholder="ระบุเหตุผลส่งกลับ"
 							/>
-							<Button
+							<LoadingButton
 								variant="outline"
 								size="sm"
-								disabled={!approvalObservationId || saving}
+								loading={savingAction === `return-request:${approvalObservationId}`}
+								loadingLabel="กำลังส่งกลับ..."
+								disabled={!approvalObservationId || mutationBusy}
 								onclick={() => returnRequest(approvalObservationId)}
 							>
 								ส่งกลับคำขอ
-							</Button>
+							</LoadingButton>
 						</div>
 					{/if}
 				</Card.Content>
@@ -1773,10 +1836,23 @@
 								</div>
 							{/each}
 							<div class="flex flex-wrap gap-2">
-								<Button variant="outline" onclick={() => saveEvaluation(false)} disabled={saving}>
+								<LoadingButton
+									variant="outline"
+									onclick={() => saveEvaluation(false)}
+									loading={savingEvaluation === 'draft'}
+									loadingLabel="กำลังบันทึก..."
+									disabled={savingEvaluation !== null}
+								>
 									บันทึกร่าง
-								</Button>
-								<Button onclick={() => saveEvaluation(true)} disabled={saving}>ส่งผลประเมิน</Button>
+								</LoadingButton>
+								<LoadingButton
+									onclick={() => saveEvaluation(true)}
+									loading={savingEvaluation === 'submit'}
+									loadingLabel="กำลังส่ง..."
+									disabled={savingEvaluation !== null}
+								>
+									ส่งผลประเมิน
+								</LoadingButton>
 							</div>
 						</div>
 					{/if}
@@ -1834,31 +1910,37 @@
 										>
 										<Table.Cell class="text-right">
 											{#if cycle.status === 'draft'}
-												<Button
+												<LoadingButton
 													size="sm"
 													onclick={() => setCycleStatus(cycle, 'open')}
-													disabled={saving}
+													loading={savingAction === `cycle-status:${cycle.id}:open`}
+													loadingLabel="กำลังเปิด..."
+													disabled={mutationBusy}
 												>
 													เปิดให้จอง
-												</Button>
+												</LoadingButton>
 											{:else if cycle.status === 'open'}
-												<Button
+												<LoadingButton
 													size="sm"
 													variant="outline"
 													onclick={() => setCycleStatus(cycle, 'closed')}
-													disabled={saving}
+													loading={savingAction === `cycle-status:${cycle.id}:closed`}
+													loadingLabel="กำลังปิด..."
+													disabled={mutationBusy}
 												>
 													ปิดรอบ
-												</Button>
+												</LoadingButton>
 											{:else if cycle.status === 'closed'}
-												<Button
+												<LoadingButton
 													size="sm"
 													variant="outline"
 													onclick={() => setCycleStatus(cycle, 'open')}
-													disabled={saving}
+													loading={savingAction === `cycle-status:${cycle.id}:open`}
+													loadingLabel="กำลังเปิด..."
+													disabled={mutationBusy}
 												>
 													เปิดอีกครั้ง
-												</Button>
+												</LoadingButton>
 											{:else}
 												<span class="text-sm text-muted-foreground">-</span>
 											{/if}
@@ -1957,7 +2039,9 @@
 								{/each}
 							</Select.Content>
 						</Select.Root>
-						<Button onclick={loadProgress} disabled={saving}>โหลดรายงาน</Button>
+						<LoadingButton onclick={loadProgress} loading={saving} loadingLabel="กำลังโหลด...">
+							โหลดรายงาน
+						</LoadingButton>
 					</div>
 
 					{#if progress}
@@ -2018,40 +2102,48 @@
 											</Table.Cell>
 											<Table.Cell class="space-x-2 text-right">
 												{#if canManageRequests}
-													<Button
+													<LoadingButton
 														size="sm"
 														variant="outline"
 														onclick={() => submitForReview(observation.id)}
-														disabled={saving}
+														loading={savingAction === `submit-review:${observation.id}`}
+														loadingLabel="กำลังส่ง..."
+														disabled={mutationBusy}
 													>
 														ส่งตรวจทาน
-													</Button>
+													</LoadingButton>
 												{/if}
 												{#if canApprove}
-													<Button
+													<LoadingButton
 														size="sm"
 														variant="outline"
 														onclick={() => approveResult(observation.id)}
-														disabled={saving}
+														loading={savingAction === `approve-result:${observation.id}`}
+														loadingLabel="กำลังอนุมัติ..."
+														disabled={mutationBusy}
 													>
 														อนุมัติ
-													</Button>
-													<Button
+													</LoadingButton>
+													<LoadingButton
 														size="sm"
 														variant="outline"
 														onclick={() => publishResult(observation.id)}
-														disabled={saving}
+														loading={savingAction === `publish-result:${observation.id}`}
+														loadingLabel="กำลังเผยแพร่..."
+														disabled={mutationBusy}
 													>
 														เผยแพร่
-													</Button>
-													<Button
+													</LoadingButton>
+													<LoadingButton
 														size="sm"
 														variant="outline"
 														onclick={() => returnResult(observation.id)}
-														disabled={saving}
+														loading={savingAction === `return-result:${observation.id}`}
+														loadingLabel="กำลังส่งกลับ..."
+														disabled={mutationBusy}
 													>
 														ส่งกลับ
-													</Button>
+													</LoadingButton>
 												{/if}
 												{#if !canManageRequests && !canApprove}
 													<span class="text-sm text-muted-foreground">-</span>
@@ -2185,10 +2277,13 @@
 		</div>
 		<Dialog.Footer>
 			<Button variant="outline" onclick={() => (createCycleDialogOpen = false)}>ยกเลิก</Button>
-			<Button onclick={createCycle} disabled={saving}>
-				{#if saving}<Loader2 class="mr-2 h-4 w-4 animate-spin" />{/if}
+			<LoadingButton
+				onclick={createCycle}
+				loading={savingAction === 'create-cycle'}
+				loadingLabel="กำลังสร้าง..."
+			>
 				สร้างรอบนิเทศ
-			</Button>
+			</LoadingButton>
 		</Dialog.Footer>
 	</Dialog.Content>
 </Dialog.Root>
@@ -2438,10 +2533,13 @@
 		</div>
 		<Dialog.Footer class="border-t px-4 py-4 sm:px-6">
 			<Button variant="outline" onclick={() => (createTemplateDialogOpen = false)}>ยกเลิก</Button>
-			<Button onclick={createTemplate} disabled={saving}>
-				{#if saving}<Loader2 class="mr-2 h-4 w-4 animate-spin" />{/if}
+			<LoadingButton
+				onclick={createTemplate}
+				loading={savingTemplate}
+				loadingLabel={editingTemplateId ? 'กำลังบันทึก...' : 'กำลังสร้าง...'}
+			>
 				{editingTemplateId ? 'บันทึกแบบประเมิน' : 'สร้างแบบประเมิน'}
-			</Button>
+			</LoadingButton>
 		</Dialog.Footer>
 	</Dialog.Content>
 </Dialog.Root>

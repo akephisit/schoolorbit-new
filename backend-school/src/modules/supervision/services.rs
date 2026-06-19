@@ -50,6 +50,38 @@ pub struct EvaluatorSubmissionState {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+struct TemplateSectionBulkRow {
+    id: Uuid,
+    title: String,
+    description: Option<String>,
+    sort_order: i32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct TemplateItemBulkRow {
+    section_id: Uuid,
+    label: String,
+    description: Option<String>,
+    item_type: SupervisionTemplateItemType,
+    required: bool,
+    sort_order: i32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct EvaluationItemSpec {
+    item_type: SupervisionTemplateItemType,
+    rating_min: i32,
+    rating_max: i32,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct EvaluationResponseBulkRow {
+    template_item_id: Uuid,
+    rating_score: Option<f64>,
+    text_response: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SupervisionObservationListAccess {
     Own(Uuid),
     Assigned(Uuid),
@@ -1008,33 +1040,14 @@ pub async fn save_my_evaluation(
         ));
     }
 
-    for response in input.responses {
-        validate_evaluation_response(pool, observation_id, &response).await?;
-        sqlx::query(
-            r#"
-            INSERT INTO supervision_evaluator_responses (
-                observation_id, evaluator_id, template_item_id, rating_score, text_response
-            )
-            VALUES ($1, $2, $3, $4::numeric, $5)
-            ON CONFLICT (evaluator_id, template_item_id)
-            DO UPDATE SET
-                rating_score = EXCLUDED.rating_score,
-                text_response = EXCLUDED.text_response,
-                updated_at = now()
-            "#,
-        )
-        .bind(observation_id)
-        .bind(evaluator.id)
-        .bind(response.template_item_id)
-        .bind(response.rating_score)
-        .bind(&response.text_response)
-        .execute(pool)
-        .await
-        .map_err(|error| {
-            tracing::error!("Failed to save supervision evaluation response: {}", error);
-            AppError::InternalServerError("ไม่สามารถบันทึกผลประเมินได้".to_string())
-        })?;
-    }
+    let responses = dedupe_evaluation_responses(input.responses);
+    let template_item_ids = responses
+        .iter()
+        .map(|response| response.template_item_id)
+        .collect::<Vec<_>>();
+    let item_specs = load_evaluation_item_specs(pool, observation_id, &template_item_ids).await?;
+    let response_rows = build_evaluation_response_bulk_rows(&responses, &item_specs)?;
+    bulk_upsert_evaluation_responses(pool, observation_id, evaluator.id, &response_rows).await?;
 
     sqlx::query(
         r#"
@@ -1541,50 +1554,109 @@ async fn insert_template_sections(
     template_id: Uuid,
     sections: &[CreateSupervisionTemplateSectionRequest],
 ) -> Result<(), AppError> {
-    for section in sections {
-        let section_id: Uuid = sqlx::query_scalar(
-            r#"
-            INSERT INTO supervision_template_sections (
-                template_id, title, description, sort_order
-            )
-            VALUES ($1, $2, $3, $4)
-            RETURNING id
-            "#,
-        )
-        .bind(template_id)
-        .bind(&section.title)
-        .bind(&section.description)
-        .bind(section.sort_order)
-        .fetch_one(&mut **tx)
-        .await
-        .map_err(|error| {
-            tracing::error!("Failed to insert supervision template section: {}", error);
-            AppError::InternalServerError("ไม่สามารถบันทึกหมวดแบบประเมินนิเทศได้".to_string())
-        })?;
+    let (section_rows, item_rows) = build_template_section_bulk_rows(sections);
+    bulk_insert_template_sections(tx, template_id, &section_rows).await?;
+    bulk_insert_template_items(tx, &item_rows).await?;
 
-        for item in &section.items {
-            sqlx::query(
-                r#"
-                INSERT INTO supervision_template_items (
-                    section_id, label, description, item_type, required, sort_order
-                )
-                VALUES ($1, $2, $3, $4, $5, $6)
-                "#,
-            )
-            .bind(section_id)
-            .bind(&item.label)
-            .bind(&item.description)
-            .bind(item.item_type.as_str())
-            .bind(item.required)
-            .bind(item.sort_order)
-            .execute(&mut **tx)
-            .await
-            .map_err(|error| {
-                tracing::error!("Failed to insert supervision template item: {}", error);
-                AppError::InternalServerError("ไม่สามารถบันทึกหัวข้อแบบประเมินนิเทศได้".to_string())
-            })?;
-        }
+    Ok(())
+}
+
+fn build_template_section_bulk_rows(
+    sections: &[CreateSupervisionTemplateSectionRequest],
+) -> (Vec<TemplateSectionBulkRow>, Vec<TemplateItemBulkRow>) {
+    let mut section_rows = Vec::with_capacity(sections.len());
+    let mut item_rows = Vec::new();
+
+    for section in sections {
+        let section_id = Uuid::new_v4();
+        section_rows.push(TemplateSectionBulkRow {
+            id: section_id,
+            title: section.title.clone(),
+            description: section.description.clone(),
+            sort_order: section.sort_order,
+        });
+
+        item_rows.extend(section.items.iter().map(|item| TemplateItemBulkRow {
+            section_id,
+            label: item.label.clone(),
+            description: item.description.clone(),
+            item_type: item.item_type,
+            required: item.required,
+            sort_order: item.sort_order,
+        }));
     }
+
+    (section_rows, item_rows)
+}
+
+async fn bulk_insert_template_sections(
+    tx: &mut sqlx::Transaction<'_, Postgres>,
+    template_id: Uuid,
+    rows: &[TemplateSectionBulkRow],
+) -> Result<(), AppError> {
+    if rows.is_empty() {
+        return Ok(());
+    }
+
+    let mut builder = QueryBuilder::new(
+        r#"
+        INSERT INTO supervision_template_sections (
+            id, template_id, title, description, sort_order
+        )
+        "#,
+    );
+    builder.push_values(rows, |mut row_builder, row| {
+        row_builder
+            .push_bind(row.id)
+            .push_bind(template_id)
+            .push_bind(&row.title)
+            .push_bind(&row.description)
+            .push_bind(row.sort_order);
+    });
+
+    builder.build().execute(&mut **tx).await.map_err(|error| {
+        tracing::error!(
+            "Failed to bulk insert supervision template sections: {}",
+            error
+        );
+        AppError::InternalServerError("ไม่สามารถบันทึกหมวดแบบประเมินนิเทศได้".to_string())
+    })?;
+
+    Ok(())
+}
+
+async fn bulk_insert_template_items(
+    tx: &mut sqlx::Transaction<'_, Postgres>,
+    rows: &[TemplateItemBulkRow],
+) -> Result<(), AppError> {
+    if rows.is_empty() {
+        return Ok(());
+    }
+
+    let mut builder = QueryBuilder::new(
+        r#"
+        INSERT INTO supervision_template_items (
+            section_id, label, description, item_type, required, sort_order
+        )
+        "#,
+    );
+    builder.push_values(rows, |mut row_builder, row| {
+        row_builder
+            .push_bind(row.section_id)
+            .push_bind(&row.label)
+            .push_bind(&row.description)
+            .push_bind(row.item_type.as_str())
+            .push_bind(row.required)
+            .push_bind(row.sort_order);
+    });
+
+    builder.build().execute(&mut **tx).await.map_err(|error| {
+        tracing::error!(
+            "Failed to bulk insert supervision template items: {}",
+            error
+        );
+        AppError::InternalServerError("ไม่สามารถบันทึกหัวข้อแบบประเมินนิเทศได้".to_string())
+    })?;
 
     Ok(())
 }
@@ -2324,71 +2396,176 @@ async fn load_evaluator_for_user(
     .ok_or_else(|| AppError::Forbidden("ไม่ได้รับมอบหมายให้ประเมินรายการนี้".to_string()))
 }
 
-async fn validate_evaluation_response(
+fn dedupe_evaluation_responses(
+    responses: Vec<EvaluationResponseInput>,
+) -> Vec<EvaluationResponseInput> {
+    let mut ordered = Vec::<EvaluationResponseInput>::with_capacity(responses.len());
+    let mut index_by_item = HashMap::<Uuid, usize>::with_capacity(responses.len());
+
+    for response in responses {
+        if let Some(index) = index_by_item.get(&response.template_item_id).copied() {
+            ordered[index] = response;
+        } else {
+            index_by_item.insert(response.template_item_id, ordered.len());
+            ordered.push(response);
+        }
+    }
+
+    ordered
+}
+
+async fn load_evaluation_item_specs(
     pool: &PgPool,
     observation_id: Uuid,
-    response: &EvaluationResponseInput,
-) -> Result<(), AppError> {
-    let row = sqlx::query(
+    template_item_ids: &[Uuid],
+) -> Result<HashMap<Uuid, EvaluationItemSpec>, AppError> {
+    if template_item_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    let rows = sqlx::query(
         r#"
-        SELECT i.item_type, t.rating_min, t.rating_max
+        SELECT i.id, i.item_type, t.rating_min, t.rating_max
         FROM supervision_template_items i
         JOIN supervision_template_sections s ON i.section_id = s.id
         JOIN supervision_templates t ON s.template_id = t.id
         JOIN supervision_observations o ON o.template_id = t.id
-        WHERE o.id = $1 AND i.id = $2
+        WHERE o.id = $1 AND i.id = ANY($2)
         "#,
     )
     .bind(observation_id)
-    .bind(response.template_item_id)
-    .fetch_optional(pool)
+    .bind(template_item_ids)
+    .fetch_all(pool)
     .await
     .map_err(|error| {
-        tracing::error!("Failed to validate supervision response item: {}", error);
-        AppError::InternalServerError("ไม่สามารถตรวจสอบหัวข้อประเมินได้".to_string())
-    })?
-    .ok_or_else(|| AppError::ValidationError("หัวข้อประเมินไม่อยู่ในแบบประเมินนี้".to_string()))?;
-
-    let item_type: String = row.try_get("item_type").map_err(|error| {
-        tracing::error!("Failed to read supervision item type: {}", error);
+        tracing::error!("Failed to load supervision response item specs: {}", error);
         AppError::InternalServerError("ไม่สามารถตรวจสอบหัวข้อประเมินได้".to_string())
     })?;
-    let rating_min: i32 = row.try_get("rating_min").map_err(|error| {
-        tracing::error!("Failed to read supervision rating min: {}", error);
-        AppError::InternalServerError("ไม่สามารถตรวจสอบคะแนนประเมินได้".to_string())
-    })?;
-    let rating_max: i32 = row.try_get("rating_max").map_err(|error| {
-        tracing::error!("Failed to read supervision rating max: {}", error);
-        AppError::InternalServerError("ไม่สามารถตรวจสอบคะแนนประเมินได้".to_string())
-    })?;
 
-    match parse_template_item_type(&item_type)? {
-        SupervisionTemplateItemType::Rating => {
-            if response
-                .text_response
-                .as_deref()
-                .is_some_and(|text| !text.trim().is_empty())
-            {
-                return Err(AppError::ValidationError(
-                    "หัวข้อแบบคะแนนไม่รับคำตอบข้อความ".to_string(),
-                ));
-            }
-            if let Some(score) = response.rating_score {
-                if score < rating_min as f64 || score > rating_max as f64 {
+    let mut specs = HashMap::with_capacity(rows.len());
+    for row in rows {
+        let item_id: Uuid = row.try_get("id").map_err(|error| {
+            tracing::error!("Failed to read supervision item id: {}", error);
+            AppError::InternalServerError("ไม่สามารถตรวจสอบหัวข้อประเมินได้".to_string())
+        })?;
+        let item_type: String = row.try_get("item_type").map_err(|error| {
+            tracing::error!("Failed to read supervision item type: {}", error);
+            AppError::InternalServerError("ไม่สามารถตรวจสอบหัวข้อประเมินได้".to_string())
+        })?;
+        let rating_min: i32 = row.try_get("rating_min").map_err(|error| {
+            tracing::error!("Failed to read supervision rating min: {}", error);
+            AppError::InternalServerError("ไม่สามารถตรวจสอบคะแนนประเมินได้".to_string())
+        })?;
+        let rating_max: i32 = row.try_get("rating_max").map_err(|error| {
+            tracing::error!("Failed to read supervision rating max: {}", error);
+            AppError::InternalServerError("ไม่สามารถตรวจสอบคะแนนประเมินได้".to_string())
+        })?;
+
+        specs.insert(
+            item_id,
+            EvaluationItemSpec {
+                item_type: parse_template_item_type(&item_type)?,
+                rating_min,
+                rating_max,
+            },
+        );
+    }
+
+    Ok(specs)
+}
+
+fn build_evaluation_response_bulk_rows(
+    responses: &[EvaluationResponseInput],
+    item_specs: &HashMap<Uuid, EvaluationItemSpec>,
+) -> Result<Vec<EvaluationResponseBulkRow>, AppError> {
+    let mut rows = Vec::with_capacity(responses.len());
+
+    for response in responses {
+        let spec = item_specs
+            .get(&response.template_item_id)
+            .ok_or_else(|| AppError::ValidationError("หัวข้อประเมินไม่อยู่ในแบบประเมินนี้".to_string()))?;
+
+        match spec.item_type {
+            SupervisionTemplateItemType::Rating => {
+                if response
+                    .text_response
+                    .as_deref()
+                    .is_some_and(|text| !text.trim().is_empty())
+                {
                     return Err(AppError::ValidationError(
-                        "คะแนนอยู่นอกช่วงที่แบบประเมินกำหนด".to_string(),
+                        "หัวข้อแบบคะแนนไม่รับคำตอบข้อความ".to_string(),
+                    ));
+                }
+                if let Some(score) = response.rating_score {
+                    if score < spec.rating_min as f64 || score > spec.rating_max as f64 {
+                        return Err(AppError::ValidationError(
+                            "คะแนนอยู่นอกช่วงที่แบบประเมินกำหนด".to_string(),
+                        ));
+                    }
+                }
+            }
+            SupervisionTemplateItemType::Text => {
+                if response.rating_score.is_some() {
+                    return Err(AppError::ValidationError(
+                        "หัวข้อแบบข้อความไม่รับคะแนน".to_string(),
                     ));
                 }
             }
         }
-        SupervisionTemplateItemType::Text => {
-            if response.rating_score.is_some() {
-                return Err(AppError::ValidationError(
-                    "หัวข้อแบบข้อความไม่รับคะแนน".to_string(),
-                ));
-            }
-        }
+
+        rows.push(EvaluationResponseBulkRow {
+            template_item_id: response.template_item_id,
+            rating_score: response.rating_score,
+            text_response: response.text_response.clone(),
+        });
     }
+
+    Ok(rows)
+}
+
+async fn bulk_upsert_evaluation_responses(
+    pool: &PgPool,
+    observation_id: Uuid,
+    evaluator_id: Uuid,
+    rows: &[EvaluationResponseBulkRow],
+) -> Result<(), AppError> {
+    if rows.is_empty() {
+        return Ok(());
+    }
+
+    let mut builder = QueryBuilder::new(
+        r#"
+        INSERT INTO supervision_evaluator_responses (
+            observation_id, evaluator_id, template_item_id, rating_score, text_response
+        )
+        "#,
+    );
+    builder.push_values(rows, |mut row_builder, row| {
+        row_builder
+            .push_bind(observation_id)
+            .push_bind(evaluator_id)
+            .push_bind(row.template_item_id)
+            .push_bind(row.rating_score)
+            .push_unseparated("::numeric")
+            .push_bind(&row.text_response);
+    });
+    builder.push(
+        r#"
+        ON CONFLICT (evaluator_id, template_item_id)
+        DO UPDATE SET
+            rating_score = EXCLUDED.rating_score,
+            text_response = EXCLUDED.text_response,
+            updated_at = now()
+        "#,
+    );
+
+    builder.build().execute(pool).await.map_err(|error| {
+        tracing::error!(
+            "Failed to bulk upsert supervision evaluation responses: {}",
+            error
+        );
+        AppError::InternalServerError("ไม่สามารถบันทึกผลประเมินได้".to_string())
+    })?;
 
     Ok(())
 }
@@ -2472,6 +2649,7 @@ fn parse_evaluator_status(code: &str) -> Result<SupervisionEvaluatorStatus, AppE
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::modules::supervision::models::CreateSupervisionTemplateItemRequest;
 
     fn target_rule(
         target_type: SupervisionTargetType,
@@ -2619,6 +2797,120 @@ mod tests {
         ];
 
         assert!(all_required_evaluators_submitted(&submitted_states));
+    }
+
+    #[test]
+    fn template_bulk_rows_preserve_section_item_relationships() {
+        let (section_rows, item_rows) =
+            build_template_section_bulk_rows(&[CreateSupervisionTemplateSectionRequest {
+                title: "ด้านการจัดกิจกรรม".to_string(),
+                description: Some("ตรวจแผนและกิจกรรมการเรียนรู้".to_string()),
+                sort_order: 1,
+                items: vec![
+                    CreateSupervisionTemplateItemRequest {
+                        label: "จัดกิจกรรมตามแผน".to_string(),
+                        description: None,
+                        item_type: SupervisionTemplateItemType::Rating,
+                        required: true,
+                        sort_order: 1,
+                    },
+                    CreateSupervisionTemplateItemRequest {
+                        label: "ข้อเสนอแนะ".to_string(),
+                        description: Some("บันทึกเพิ่มเติม".to_string()),
+                        item_type: SupervisionTemplateItemType::Text,
+                        required: false,
+                        sort_order: 2,
+                    },
+                ],
+            }]);
+
+        assert_eq!(section_rows.len(), 1);
+        assert_eq!(item_rows.len(), 2);
+        assert_ne!(section_rows[0].id, Uuid::nil());
+        assert!(item_rows
+            .iter()
+            .all(|item| item.section_id == section_rows[0].id));
+        assert_eq!(item_rows[0].item_type, SupervisionTemplateItemType::Rating);
+        assert_eq!(item_rows[1].item_type, SupervisionTemplateItemType::Text);
+    }
+
+    #[test]
+    fn duplicate_evaluation_responses_keep_the_latest_answer() {
+        let item_id = Uuid::new_v4();
+        let responses = dedupe_evaluation_responses(vec![
+            EvaluationResponseInput {
+                template_item_id: item_id,
+                rating_score: Some(2.0),
+                text_response: None,
+            },
+            EvaluationResponseInput {
+                template_item_id: item_id,
+                rating_score: Some(5.0),
+                text_response: None,
+            },
+        ]);
+
+        assert_eq!(responses.len(), 1);
+        assert_eq!(responses[0].template_item_id, item_id);
+        assert_eq!(responses[0].rating_score, Some(5.0));
+    }
+
+    #[test]
+    fn evaluation_bulk_rows_validate_item_type_and_rating_range() {
+        let rating_item_id = Uuid::new_v4();
+        let text_item_id = Uuid::new_v4();
+        let specs = HashMap::from([
+            (
+                rating_item_id,
+                EvaluationItemSpec {
+                    item_type: SupervisionTemplateItemType::Rating,
+                    rating_min: 1,
+                    rating_max: 5,
+                },
+            ),
+            (
+                text_item_id,
+                EvaluationItemSpec {
+                    item_type: SupervisionTemplateItemType::Text,
+                    rating_min: 1,
+                    rating_max: 5,
+                },
+            ),
+        ]);
+
+        let rows = build_evaluation_response_bulk_rows(
+            &[
+                EvaluationResponseInput {
+                    template_item_id: rating_item_id,
+                    rating_score: Some(4.0),
+                    text_response: None,
+                },
+                EvaluationResponseInput {
+                    template_item_id: text_item_id,
+                    rating_score: None,
+                    text_response: Some("จัดกิจกรรมได้ต่อเนื่อง".to_string()),
+                },
+            ],
+            &specs,
+        )
+        .expect("valid bulk rows");
+
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].rating_score, Some(4.0));
+        assert_eq!(rows[1].text_response.as_deref(), Some("จัดกิจกรรมได้ต่อเนื่อง"));
+
+        let invalid = build_evaluation_response_bulk_rows(
+            &[EvaluationResponseInput {
+                template_item_id: rating_item_id,
+                rating_score: Some(6.0),
+                text_response: None,
+            }],
+            &specs,
+        );
+
+        assert!(
+            matches!(invalid, Err(AppError::ValidationError(message)) if message == "คะแนนอยู่นอกช่วงที่แบบประเมินกำหนด")
+        );
     }
 
     #[test]

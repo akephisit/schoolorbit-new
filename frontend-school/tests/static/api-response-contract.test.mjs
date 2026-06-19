@@ -422,6 +422,14 @@ test('teaching supervision frontend contract uses typed API and permission metad
 	assert.match(supervisionPage, /overflow-x-hidden/);
 	assert.match(supervisionPage, /min-w-0/);
 	assert.match(supervisionPage, /max-w-6xl/);
+	assert.match(supervisionPage, /LoadingButton/);
+	assert.match(supervisionPage, /savingAction/);
+	assert.match(supervisionPage, /savingTemplate/);
+	assert.match(supervisionPage, /savingEvaluation/);
+	assert.match(supervisionPage, /function replaceCycle/);
+	assert.match(supervisionPage, /function replaceTemplate/);
+	assert.match(supervisionPage, /function replaceObservation/);
+	assert.match(supervisionPage, /async function refreshTemplates/);
 	assert.match(
 		supervisionPage,
 		/<div class="min-w-0 space-y-2 md:col-span-3">\s*<Label>ชื่อแบบประเมิน<\/Label>/
@@ -459,6 +467,15 @@ test('teaching supervision frontend contract uses typed API and permission metad
 		supervisionPage,
 		/Promise\.all\(\[\s*listSupervisionCycles\(\),\s*listSupervisionTemplates\(\),\s*listSupervisionObservations\(\),\s*lookupStaff/
 	);
+	const createTemplateBody =
+		supervisionPage.match(/async function createTemplate\(\) \{[\s\S]*?\n\t\}/)?.[0] ?? '';
+	const saveEvaluationBody =
+		supervisionPage.match(
+			/async function saveEvaluation\(submit = false\) \{[\s\S]*?\n\t\}/
+		)?.[0] ?? '';
+	assert.doesNotMatch(createTemplateBody, /await refreshAll\(\)/);
+	assert.doesNotMatch(saveEvaluationBody, /await refreshAll\(\)/);
+	assert.doesNotMatch(supervisionPage, /disabled=\{saving\}/);
 	assert.doesNotMatch(supervisionPage, /\bfetch\s*\(/);
 });
 

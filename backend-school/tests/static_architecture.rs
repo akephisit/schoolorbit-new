@@ -1640,6 +1640,32 @@ fn teaching_supervision_handlers_use_request_context_and_services() {
 }
 
 #[test]
+fn teaching_supervision_services_use_bulk_mutations_for_multi_row_writes() {
+    let service = strip_comments(&read_source(
+        manifest_dir().join("src/modules/supervision/services.rs"),
+    ));
+
+    for expected in [
+        "build_template_section_bulk_rows",
+        "bulk_insert_template_sections",
+        "bulk_insert_template_items",
+        "load_evaluation_item_specs",
+        "bulk_upsert_evaluation_responses",
+        "dedupe_evaluation_responses",
+    ] {
+        assert!(
+            service.contains(expected),
+            "supervision service should keep multi-row mutation helper {expected}"
+        );
+    }
+
+    assert!(
+        !service.contains("for response in input.responses"),
+        "supervision evaluation responses should not be saved one database call per response"
+    );
+}
+
+#[test]
 fn internal_api_secrets_use_constant_time_comparison_and_caller_headers() {
     let checked_files = [
         repo_root().join("backend-school/src/middleware/internal_auth.rs"),
