@@ -88,12 +88,28 @@ struct EvaluationResponseBulkRow {
     text_response: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum SupervisionObservationListAccess {
-    Own(Uuid),
-    Assigned(Uuid),
-    OrganizationUnits(Vec<Uuid>),
-    School,
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SupervisionObservationListAccess {
+    pub school: bool,
+    pub own_user_id: Option<Uuid>,
+    pub assigned_user_id: Option<Uuid>,
+    pub organization_unit_ids: Vec<Uuid>,
+}
+
+impl SupervisionObservationListAccess {
+    pub fn school() -> Self {
+        Self {
+            school: true,
+            ..Self::default()
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        !self.school
+            && self.own_user_id.is_none()
+            && self.assigned_user_id.is_none()
+            && self.organization_unit_ids.is_empty()
+    }
 }
 
 #[derive(Debug, sqlx::FromRow)]
@@ -2152,34 +2168,49 @@ async fn list_observation_rows(
 ) -> Result<Vec<SupervisionObservationRow>, AppError> {
     let mut builder = QueryBuilder::<Postgres>::new(observation_select_sql());
 
-    match access {
-        SupervisionObservationListAccess::School => {}
-        SupervisionObservationListAccess::Own(user_id) => {
-            builder.push(" AND o.observed_user_id = ");
-            builder.push_bind(user_id);
+    if !access.school {
+        if access.is_empty() {
+            return Ok(Vec::new());
         }
-        SupervisionObservationListAccess::Assigned(user_id) => {
+
+        let mut has_scope = false;
+        builder.push(" AND (");
+
+        if let Some(user_id) = access.own_user_id {
+            builder.push("o.observed_user_id = ");
+            builder.push_bind(user_id);
+            has_scope = true;
+        }
+
+        if let Some(user_id) = access.assigned_user_id {
+            if has_scope {
+                builder.push(" OR ");
+            }
             builder.push(
-                " AND EXISTS (
+                "EXISTS (
                     SELECT 1 FROM supervision_evaluators e
                     WHERE e.observation_id = o.id AND e.evaluator_user_id = ",
             );
             builder.push_bind(user_id);
             builder.push(")");
+            has_scope = true;
         }
-        SupervisionObservationListAccess::OrganizationUnits(unit_ids) => {
-            if unit_ids.is_empty() {
-                return Ok(Vec::new());
+
+        if !access.organization_unit_ids.is_empty() {
+            if has_scope {
+                builder.push(" OR ");
             }
             builder.push(
-                " AND EXISTS (
+                "EXISTS (
                     SELECT 1 FROM organization_members om
                     WHERE om.user_id = o.observed_user_id
                       AND om.organization_unit_id = ANY(",
             );
-            builder.push_bind(unit_ids);
+            builder.push_bind(access.organization_unit_ids);
             builder.push(") AND (om.ended_at IS NULL OR om.ended_at > CURRENT_DATE))");
         }
+
+        builder.push(")");
     }
 
     if let Some(cycle_id) = filter.cycle_id {

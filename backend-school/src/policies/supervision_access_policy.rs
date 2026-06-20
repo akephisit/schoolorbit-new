@@ -6,8 +6,8 @@ use crate::middleware::permission::ActorContext;
 use crate::modules::supervision::services::SupervisionObservationListAccess;
 use crate::permissions::registry::codes;
 use crate::policies::resource_access_policy::{
-    accessible_organization_unit_ids, require_user_resource_access,
-    resolve_user_resource_list_access, ResourceAccessPermissions, UserResourceListAccess,
+    accessible_organization_unit_ids, require_user_resource_access, ResourceAccessPermissions,
+    UserResourceListAccess,
 };
 
 pub fn can_manage_school(actor: &ActorContext) -> bool {
@@ -93,43 +93,34 @@ pub async fn resolve_observation_list_access(
     pool: &PgPool,
     actor: &ActorContext,
 ) -> Result<SupervisionObservationListAccess, AppError> {
-    if can_manage_school(actor) || can_approve_school(actor) {
-        return Ok(SupervisionObservationListAccess::School);
+    let mut access = observation_base_list_access(actor)
+        .ok_or_else(|| AppError::Forbidden("ไม่มีสิทธิ์ดูรายการนิเทศ".to_string()))?;
+
+    if access.school {
+        return Ok(access);
     }
 
-    if can_manage_organization_tree(actor) {
-        return organization_list_access(
+    if can_manage_organization_tree(actor)
+        || actor.has_permission(codes::SUPERVISION_READ_ORGANIZATION_TREE)
+    {
+        access.organization_unit_ids = accessible_organization_unit_ids(
             pool,
             UserResourceListAccess::OrganizationTree(actor.user_id),
         )
-        .await;
-    }
-
-    if can_manage_organization_unit(actor) {
-        return organization_list_access(
+        .await?
+        .unwrap_or_default();
+    } else if can_manage_organization_unit(actor)
+        || actor.has_permission(codes::SUPERVISION_READ_ORGANIZATION_UNIT)
+    {
+        access.organization_unit_ids = accessible_organization_unit_ids(
             pool,
             UserResourceListAccess::OrganizationUnit(actor.user_id),
         )
-        .await;
+        .await?
+        .unwrap_or_default();
     }
 
-    let access = resolve_user_resource_list_access(actor, supervision_read_permissions())
-        .ok_or_else(|| AppError::Forbidden("ไม่มีสิทธิ์ดูรายการนิเทศ".to_string()))?;
-
-    match access {
-        UserResourceListAccess::School => Ok(SupervisionObservationListAccess::School),
-        UserResourceListAccess::Own(user_id) => Ok(SupervisionObservationListAccess::Own(user_id)),
-        UserResourceListAccess::Assigned(user_id) => {
-            Ok(SupervisionObservationListAccess::Assigned(user_id))
-        }
-        UserResourceListAccess::OrganizationUnit(_)
-        | UserResourceListAccess::OrganizationTree(_) => {
-            let unit_ids = accessible_organization_unit_ids(pool, access).await?;
-            Ok(SupervisionObservationListAccess::OrganizationUnits(
-                unit_ids.unwrap_or_default(),
-            ))
-        }
-    }
+    Ok(access)
 }
 
 pub async fn require_observation_management_access(
@@ -175,14 +166,37 @@ pub async fn require_observation_read_access(
     .map(|_| ())
 }
 
-async fn organization_list_access(
-    pool: &PgPool,
-    access: UserResourceListAccess,
-) -> Result<SupervisionObservationListAccess, AppError> {
-    let unit_ids = accessible_organization_unit_ids(pool, access).await?;
-    Ok(SupervisionObservationListAccess::OrganizationUnits(
-        unit_ids.unwrap_or_default(),
-    ))
+fn observation_base_list_access(actor: &ActorContext) -> Option<SupervisionObservationListAccess> {
+    if can_manage_school(actor)
+        || can_approve_school(actor)
+        || actor.has_permission(codes::SUPERVISION_READ_SCHOOL)
+    {
+        return Some(SupervisionObservationListAccess::school());
+    }
+
+    let mut access = SupervisionObservationListAccess::default();
+
+    if actor.has_permission(codes::SUPERVISION_READ_OWN) {
+        access.own_user_id = Some(actor.user_id);
+    }
+
+    if actor.has_permission(codes::SUPERVISION_READ_ASSIGNED) {
+        access.assigned_user_id = Some(actor.user_id);
+    }
+
+    if can_manage_organization_tree(actor)
+        || can_manage_organization_unit(actor)
+        || actor.has_permission(codes::SUPERVISION_READ_ORGANIZATION_TREE)
+        || actor.has_permission(codes::SUPERVISION_READ_ORGANIZATION_UNIT)
+    {
+        return Some(access);
+    }
+
+    if access.is_empty() {
+        None
+    } else {
+        Some(access)
+    }
 }
 
 fn supervision_read_permissions() -> ResourceAccessPermissions {
@@ -210,8 +224,12 @@ mod tests {
     use super::*;
 
     fn actor(permissions: &[&str]) -> ActorContext {
+        actor_with_id(Uuid::new_v4(), permissions)
+    }
+
+    fn actor_with_id(user_id: Uuid, permissions: &[&str]) -> ActorContext {
         ActorContext {
-            user_id: Uuid::new_v4(),
+            user_id,
             permissions: permissions
                 .iter()
                 .map(|permission| permission.to_string())
@@ -267,5 +285,24 @@ mod tests {
 
         assert!(can_evaluate_assigned(&actor));
         assert!(require_evaluate_assigned(&actor).is_ok());
+    }
+
+    #[test]
+    fn observation_list_access_includes_own_and_assigned_scopes() {
+        let user_id = Uuid::new_v4();
+        let actor = actor_with_id(
+            user_id,
+            &[
+                codes::SUPERVISION_READ_OWN,
+                codes::SUPERVISION_READ_ASSIGNED,
+            ],
+        );
+
+        let access =
+            observation_base_list_access(&actor).expect("read scopes should produce access");
+
+        assert!(!access.school);
+        assert_eq!(access.own_user_id, Some(user_id));
+        assert_eq!(access.assigned_user_id, Some(user_id));
     }
 }
