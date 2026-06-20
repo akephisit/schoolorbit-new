@@ -1666,6 +1666,8 @@ fn teaching_supervision_observation_detail_actions_are_registered() {
         "UpdateSupervisionObservationRequest",
         "ReplaceObservationEvaluatorsRequest",
         "CancelObservationRequest",
+        "SupervisionAction",
+        "pub actions: Vec<SupervisionAction>",
     ] {
         assert!(
             models.contains(expected),
@@ -1678,6 +1680,7 @@ fn teaching_supervision_observation_detail_actions_are_registered() {
         "replace_observation_evaluators",
         "cancel_observation",
         "normalize_evaluator_replacement",
+        "load_observation_actions",
     ] {
         assert!(
             service.contains(expected),

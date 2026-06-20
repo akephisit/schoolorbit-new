@@ -160,6 +160,31 @@
 		);
 	}
 
+	function actionKindLabel(actionKind: string): string {
+		return (
+			{
+				requested: 'ส่งคำขอ',
+				request_cancelled: 'ยกเลิกคำขอ',
+				updated: 'แก้ไขรายการ',
+				evaluators_updated: 'แก้ไขผู้ประเมิน',
+				planned: 'วางแผน/อนุมัติคำขอ',
+				returned: 'ส่งกลับแก้ไข',
+				request_returned: 'ส่งกลับคำขอ',
+				evaluator_draft_saved: 'บันทึกร่างผลประเมิน',
+				evaluator_submitted: 'ส่งผลประเมิน',
+				submitted_for_review: 'ส่งตรวจทาน',
+				approved: 'อนุมัติผล',
+				result_approved: 'อนุมัติผล',
+				result_returned: 'ส่งกลับผล',
+				published: 'เผยแพร่ผล',
+				result_published: 'เผยแพร่ผล',
+				acknowledged: 'รับทราบผล',
+				result_acknowledged: 'รับทราบผล',
+				cancelled: 'ยกเลิกรายการ'
+			}[actionKind] ?? actionKind
+		);
+	}
+
 	function formatDateTime(value?: string | null): string {
 		if (!value) return '-';
 		return new Date(value).toLocaleString('th-TH', {
@@ -213,15 +238,6 @@
 			{ label: 'ห้องเรียน', value: observationRoomLabel(item) },
 			{ label: 'วันที่/เวลา', value: formatDateTime(item.observedAt) },
 			{ label: 'ที่มา', value: item.timetableEntryId ? 'ตารางสอน' : 'กำหนดเอง' }
-		];
-	}
-
-	function lifecycleDetails(item: SupervisionObservation): DetailItem[] {
-		return [
-			{ label: 'ส่งคำขอ', value: formatDateTime(item.requestedAt) },
-			{ label: 'อนุมัติคำขอ', value: formatDateTime(item.approvedAt) },
-			{ label: 'อัปเดตล่าสุด', value: formatDateTime(item.updatedAt) },
-			{ label: 'ยกเลิก', value: formatDateTime(item.cancelledAt) }
 		];
 	}
 
@@ -554,18 +570,39 @@
 				<Card.Root>
 					<Card.Header>
 						<Card.Title>ประวัติ</Card.Title>
-						<Card.Description>สถานะหลักจากรายการนิเทศ</Card.Description>
+						<Card.Description>ลำดับการทำงานที่บันทึกจากระบบ</Card.Description>
 					</Card.Header>
 					<Card.Content class="space-y-3">
-						{#each lifecycleDetails(observation) as detail (detail.label)}
-							<div class="flex items-start gap-3">
-								<div class="mt-1 h-2 w-2 rounded-full bg-primary"></div>
-								<div>
-									<p class="text-sm font-medium">{detail.label}</p>
-									<p class="text-sm text-muted-foreground">{detail.value}</p>
+						{#if observation.actions.length === 0}
+							<PageState
+								title="ยังไม่มีประวัติ"
+								description="เมื่อมีการดำเนินการ ระบบจะแสดงประวัติที่นี่"
+							/>
+						{:else}
+							{#each observation.actions as action (action.id)}
+								<div class="flex items-start gap-3 rounded-md border p-3">
+									<div class="mt-1 h-2 w-2 shrink-0 rounded-full bg-primary"></div>
+									<div class="min-w-0 space-y-1">
+										<div class="flex flex-wrap items-center gap-2">
+											<p class="text-sm font-medium">{actionKindLabel(action.actionKind)}</p>
+											{#if action.fromStatus || action.toStatus}
+												<Badge variant="outline">
+													{action.fromStatus ? statusLabel(action.fromStatus) : '-'} → {action.toStatus
+														? statusLabel(action.toStatus)
+														: '-'}
+												</Badge>
+											{/if}
+										</div>
+										<p class="text-sm text-muted-foreground">
+											{action.actorDisplayName ?? 'ระบบ'} · {formatDateTime(action.createdAt)}
+										</p>
+										{#if action.comment}
+											<p class="text-sm">{action.comment}</p>
+										{/if}
+									</div>
 								</div>
-							</div>
-						{/each}
+							{/each}
+						{/if}
 					</Card.Content>
 				</Card.Root>
 			</div>

@@ -144,6 +144,18 @@ export interface SupervisionEvaluator {
 	updatedAt: string;
 }
 
+export interface SupervisionAction {
+	id: string;
+	observationId: string;
+	actorUserId?: string | null;
+	actorDisplayName?: string | null;
+	actionKind: string;
+	fromStatus?: SupervisionObservationStatus | null;
+	toStatus?: SupervisionObservationStatus | null;
+	comment?: string | null;
+	createdAt: string;
+}
+
 export interface SupervisionObservation {
 	id: string;
 	cycleId: string;
@@ -163,6 +175,7 @@ export interface SupervisionObservation {
 	createdAt: string;
 	updatedAt: string;
 	evaluators: SupervisionEvaluator[];
+	actions: SupervisionAction[];
 	averageRating?: number | null;
 }
 

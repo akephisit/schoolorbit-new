@@ -372,6 +372,20 @@ pub struct SupervisionEvaluator {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct SupervisionAction {
+    pub id: Uuid,
+    pub observation_id: Uuid,
+    pub actor_user_id: Option<Uuid>,
+    pub actor_display_name: Option<String>,
+    pub action_kind: String,
+    pub from_status: Option<SupervisionObservationStatus>,
+    pub to_status: Option<SupervisionObservationStatus>,
+    pub comment: Option<String>,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SupervisionObservation {
     pub id: Uuid,
     pub cycle_id: Uuid,
@@ -391,6 +405,7 @@ pub struct SupervisionObservation {
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub evaluators: Vec<SupervisionEvaluator>,
+    pub actions: Vec<SupervisionAction>,
     pub average_rating: Option<f64>,
 }
 

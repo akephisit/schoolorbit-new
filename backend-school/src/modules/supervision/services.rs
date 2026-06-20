@@ -13,12 +13,12 @@ use crate::modules::supervision::models::{
     CreateSupervisionTemplateStepRequest, EvaluationResponseInput, EvaluatorAssignmentInput,
     LessonSnapshot, ManualLesson, ManualLessonInput, ReplaceObservationEvaluatorsRequest,
     RequestSupervisionObservationRequest, ReturnObservationRequest, SaveEvaluationRequest,
-    SupervisionCycle, SupervisionCycleProgress, SupervisionCycleStatus, SupervisionCycleTarget,
-    SupervisionEvaluator, SupervisionEvaluatorStatus, SupervisionObservation,
-    SupervisionObservationFilter, SupervisionObservationStatus, SupervisionTargetType,
-    SupervisionTemplate, SupervisionTemplateItem, SupervisionTemplateItemType,
-    SupervisionTemplateSection, SupervisionTemplateStatus, SupervisionTemplateStep,
-    SupervisionTemplateStepActionKind, SupervisionTemplateStepActorKind,
+    SupervisionAction, SupervisionCycle, SupervisionCycleProgress, SupervisionCycleStatus,
+    SupervisionCycleTarget, SupervisionEvaluator, SupervisionEvaluatorStatus,
+    SupervisionObservation, SupervisionObservationFilter, SupervisionObservationStatus,
+    SupervisionTargetType, SupervisionTemplate, SupervisionTemplateItem,
+    SupervisionTemplateItemType, SupervisionTemplateSection, SupervisionTemplateStatus,
+    SupervisionTemplateStep, SupervisionTemplateStepActionKind, SupervisionTemplateStepActorKind,
     UpdateRequestedObservationRequest, UpdateSupervisionCycleRequest,
     UpdateSupervisionObservationRequest, UpdateSupervisionTemplateRequest,
 };
@@ -217,6 +217,19 @@ struct SupervisionEvaluatorRow {
     submitted_at: Option<DateTime<Utc>>,
     created_at: DateTime<Utc>,
     updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct SupervisionActionRow {
+    id: Uuid,
+    observation_id: Uuid,
+    actor_user_id: Option<Uuid>,
+    actor_display_name: Option<String>,
+    action_kind: String,
+    from_status: Option<String>,
+    to_status: Option<String>,
+    comment: Option<String>,
+    created_at: DateTime<Utc>,
 }
 
 #[derive(Debug, sqlx::FromRow)]
@@ -2232,6 +2245,7 @@ async fn observation_from_row(
     row: SupervisionObservationRow,
 ) -> Result<SupervisionObservation, AppError> {
     let evaluators = load_observation_evaluators(pool, row.id).await?;
+    let actions = load_observation_actions(pool, row.id).await?;
     let average_rating = fetch_observation_average_rating(pool, row.id).await?;
     let manual_lesson = manual_lesson_from_row(&row);
 
@@ -2254,6 +2268,7 @@ async fn observation_from_row(
         created_at: row.created_at,
         updated_at: row.updated_at,
         evaluators,
+        actions,
         average_rating,
     })
 }
@@ -2309,6 +2324,47 @@ fn evaluator_from_row(row: SupervisionEvaluatorRow) -> Result<SupervisionEvaluat
         submitted_at: row.submitted_at,
         created_at: row.created_at,
         updated_at: row.updated_at,
+    })
+}
+
+async fn load_observation_actions(
+    pool: &PgPool,
+    observation_id: Uuid,
+) -> Result<Vec<SupervisionAction>, AppError> {
+    let rows = sqlx::query_as::<_, SupervisionActionRow>(
+        r#"
+        SELECT a.id, a.observation_id, a.actor_user_id,
+               NULLIF(TRIM(CONCAT(COALESCE(u.title, ''), u.first_name, ' ', u.last_name)), '')
+                   AS actor_display_name,
+               a.action_kind, a.from_status, a.to_status, a.comment, a.created_at
+        FROM supervision_actions a
+        LEFT JOIN users u ON u.id = a.actor_user_id
+        WHERE a.observation_id = $1
+        ORDER BY a.created_at DESC
+        "#,
+    )
+    .bind(observation_id)
+    .fetch_all(pool)
+    .await
+    .map_err(|error| {
+        tracing::error!("Failed to load supervision actions: {}", error);
+        AppError::InternalServerError("ไม่สามารถดึงประวัติรายการนิเทศได้".to_string())
+    })?;
+
+    rows.into_iter().map(action_from_row).collect()
+}
+
+fn action_from_row(row: SupervisionActionRow) -> Result<SupervisionAction, AppError> {
+    Ok(SupervisionAction {
+        id: row.id,
+        observation_id: row.observation_id,
+        actor_user_id: row.actor_user_id,
+        actor_display_name: row.actor_display_name,
+        action_kind: row.action_kind,
+        from_status: parse_optional_observation_status(row.from_status)?,
+        to_status: parse_optional_observation_status(row.to_status)?,
+        comment: row.comment,
+        created_at: row.created_at,
     })
 }
 
@@ -3028,6 +3084,13 @@ fn parse_step_action_kind(code: &str) -> Result<SupervisionTemplateStepActionKin
 fn parse_observation_status(code: &str) -> Result<SupervisionObservationStatus, AppError> {
     SupervisionObservationStatus::from_code(code)
         .ok_or_else(|| AppError::InternalServerError("สถานะรายการนิเทศในฐานข้อมูลไม่ถูกต้อง".to_string()))
+}
+
+fn parse_optional_observation_status(
+    code: Option<String>,
+) -> Result<Option<SupervisionObservationStatus>, AppError> {
+    code.map(|value| parse_observation_status(&value))
+        .transpose()
 }
 
 fn parse_evaluator_status(code: &str) -> Result<SupervisionEvaluatorStatus, AppError> {

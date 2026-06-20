@@ -134,6 +134,8 @@ test('teaching supervision observation detail supports safe edit actions', async
 	assert.match(supervisionApi, /updateSupervisionObservation/);
 	assert.match(supervisionApi, /replaceSupervisionObservationEvaluators/);
 	assert.match(supervisionApi, /cancelSupervisionObservation/);
+	assert.match(supervisionApi, /interface SupervisionAction/);
+	assert.match(supervisionApi, /actions:\s*SupervisionAction\[\]/);
 	assert.match(detailRoute, /_meta\s*=\s*\{\s*access:/);
 	assert.doesNotMatch(detailRoute, /menu:/);
 	assert.match(detailPage, /getSupervisionObservation/);
@@ -143,5 +145,7 @@ test('teaching supervision observation detail supports safe edit actions', async
 	assert.match(detailPage, /PageShell/);
 	assert.match(detailPage, /LoadingButton/);
 	assert.match(detailPage, /replaceObservation\(updated/);
+	assert.match(detailPage, /observation\.actions/);
+	assert.match(detailPage, /actionKindLabel/);
 	assert.match(parentPage, /href=\{`\/staff\/academic\/supervision\/\$\{observation\.id\}`\}/);
 });
