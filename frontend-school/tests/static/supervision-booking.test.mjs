@@ -60,3 +60,61 @@ test('teaching supervision templates expose a read-only form preview', async () 
 	assert.match(supervisionPage, /aria-label=\{`ช่องคะแนน \$\{score\}/);
 	assert.match(supervisionPage, /readonly/i);
 });
+
+test('teaching supervision request approval renders request rows with multiple evaluators', async () => {
+	const supervisionPage = await readRepoFile(
+		'frontend-school/src/routes/(app)/staff/academic/supervision/+page.svelte'
+	);
+
+	assert.match(supervisionPage, /requestEvaluatorIds/);
+	assert.match(supervisionPage, /requestReturnComments/);
+	assert.match(supervisionPage, /toggleRequestEvaluatorForRequest/);
+	assert.match(supervisionPage, /selectedRequestEvaluators\(observation\.id\)/);
+	assert.match(supervisionPage, /approveRequest\(observation\.id\)/);
+	assert.match(supervisionPage, /evaluatorUserId:\s*evaluatorId/);
+	assert.match(supervisionPage, /requestReturnComments\[observation\.id\]/);
+	assert.match(supervisionPage, /observationLessonTitle\(observation\)/);
+	assert.doesNotMatch(
+		supervisionPage,
+		/<Select\.Root\s+type="single"\s+bind:value=\{approvalObservationId\}/
+	);
+	assert.doesNotMatch(supervisionPage, /approvalEvaluatorId/);
+});
+
+test('teaching supervision own and assigned lists show complete lesson and evaluator context', async () => {
+	const supervisionPage = await readRepoFile(
+		'frontend-school/src/routes/(app)/staff/academic/supervision/+page.svelte'
+	);
+
+	assert.match(
+		supervisionPage,
+		/function observationSubjectLabel\(observation: SupervisionObservation\)/
+	);
+	assert.match(
+		supervisionPage,
+		/function observationClassroomLabel\(observation: SupervisionObservation\)/
+	);
+	assert.match(
+		supervisionPage,
+		/function observationPeriodLabel\(observation: SupervisionObservation\)/
+	);
+	assert.match(
+		supervisionPage,
+		/function observationRoomLabel\(observation: SupervisionObservation\)/
+	);
+	assert.match(
+		supervisionPage,
+		/function observationEvaluatorNames\(observation: SupervisionObservation\)/
+	);
+	assert.match(
+		supervisionPage,
+		/function observationDetailGrid\(observation: SupervisionObservation\)/
+	);
+	assert.match(supervisionPage, /ผู้นิเทศ/);
+	assert.match(supervisionPage, /นิเทศใคร/);
+	assert.match(supervisionPage, /เริ่มประเมิน/);
+	assert.match(supervisionPage, /observationDetailGrid\(observation\)/);
+	assert.match(supervisionPage, /observationEvaluatorNames\(observation\)/);
+	assert.match(supervisionPage, /data-supervision-own-list="cards"/);
+	assert.match(supervisionPage, /data-supervision-assigned-list="cards"/);
+});

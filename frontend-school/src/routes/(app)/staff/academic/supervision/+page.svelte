@@ -106,6 +106,10 @@
 		timeLabel: string;
 		sort: number;
 	};
+	type ObservationDetailItem = {
+		label: string;
+		value: string;
+	};
 	type CycleFormState = {
 		academicYear: number;
 		semester: string;
@@ -205,10 +209,9 @@
 		periodLabel: '',
 		reason: ''
 	});
-	let requestReturnComment = $state('');
-	let approvalObservationId = $state('');
-	let approvalEvaluatorId = $state('');
-	let evaluatorPickerOpen = $state(false);
+	let requestEvaluatorIds = $state<Record<string, string[]>>({});
+	let requestReturnComments = $state<Record<string, string>>({});
+	let evaluatorPickerOpenByRequest = $state<Record<string, boolean>>({});
 	let evaluationObservationId = $state('');
 	let responseDrafts = $state<{ [itemId: string]: ResponseDraft }>({});
 	let acknowledgeComment = $state('');
@@ -332,12 +335,6 @@
 		observations.filter((observation) =>
 			observation.evaluators.some((evaluator) => evaluator.evaluatorUserId === currentUserId)
 		)
-	);
-	const selectedApprovalObservation = $derived(
-		observations.find((observation) => observation.id === approvalObservationId) ?? null
-	);
-	const selectedEvaluator = $derived(
-		staffList.find((staff) => staff.id === approvalEvaluatorId) ?? null
 	);
 	const selectedEvaluation = $derived(
 		observations.find((observation) => observation.id === evaluationObservationId) ?? null
@@ -777,6 +774,56 @@
 		);
 	}
 
+	function observationSubjectLabel(observation: SupervisionObservation): string {
+		return (
+			observation.lessonSnapshot.subjectName ??
+			observation.manualLesson?.subjectName ??
+			'ไม่ระบุวิชา'
+		);
+	}
+
+	function observationClassroomLabel(observation: SupervisionObservation): string {
+		return (
+			observation.lessonSnapshot.classroomLabel ??
+			observation.manualLesson?.classroomLabel ??
+			'ไม่ระบุชั้นเรียน'
+		);
+	}
+
+	function observationPeriodLabel(observation: SupervisionObservation): string {
+		return (
+			observation.lessonSnapshot.periodLabel ??
+			observation.manualLesson?.periodLabel ??
+			'ไม่ระบุคาบ'
+		);
+	}
+
+	function observationRoomLabel(observation: SupervisionObservation): string {
+		return observation.lessonSnapshot.roomLabel ?? observation.manualLesson?.roomLabel ?? '-';
+	}
+
+	function observationEvaluatorNames(observation: SupervisionObservation): string {
+		if (observation.evaluators.length === 0) return 'ยังไม่มอบหมาย';
+		return observation.evaluators
+			.map((evaluator) => evaluator.evaluatorDisplayName ?? 'ผู้ประเมิน')
+			.join(', ');
+	}
+
+	function observationDetailGrid(observation: SupervisionObservation): ObservationDetailItem[] {
+		return [
+			{ label: 'วันที่/เวลา', value: formatDate(observation.observedAt) },
+			{ label: 'วิชา', value: observationSubjectLabel(observation) },
+			{ label: 'คาบ', value: observationPeriodLabel(observation) },
+			{ label: 'ห้อง/ชั้นเรียน', value: observationClassroomLabel(observation) },
+			{ label: 'ห้องเรียน', value: observationRoomLabel(observation) },
+			{ label: 'รอบนิเทศ', value: requestCycleLabel(observation) },
+			{ label: 'แบบประเมิน', value: requestTemplateTitle(observation) },
+			{ label: 'ผู้นิเทศ', value: observationEvaluatorNames(observation) },
+			{ label: 'ส่งคำขอ', value: formatDate(observation.requestedAt) },
+			{ label: 'อนุมัติ', value: formatDate(observation.approvedAt) }
+		];
+	}
+
 	function combineLocalDateTime(date: string, time: string): string {
 		return new Date(`${date}T${time || '00:00'}`).toISOString();
 	}
@@ -904,29 +951,92 @@
 		}
 	}
 
-	function selectEvaluator(staff: StaffLookupItem) {
-		if (!canManageRequests) return;
-		approvalEvaluatorId = staff.id;
-		evaluatorPickerOpen = false;
+	function requestCycleLabel(observation: SupervisionObservation): string {
+		const cycle = cycles.find((item) => item.id === observation.cycleId);
+		return cycle ? cycleLabel(cycle) : 'ไม่พบรอบนิเทศ';
 	}
 
-	async function approveRequest() {
+	function requestTemplateTitle(observation: SupervisionObservation): string {
+		return (
+			templates.find((template) => template.id === observation.templateId)?.title ??
+			'ไม่พบแบบประเมิน'
+		);
+	}
+
+	function selectedRequestEvaluatorIds(observationId: string): string[] {
+		return requestEvaluatorIds[observationId] ?? [];
+	}
+
+	function selectedRequestEvaluators(observationId: string): StaffLookupItem[] {
+		const selectedIds = new Set(selectedRequestEvaluatorIds(observationId));
+		return staffList.filter((staff) => selectedIds.has(staff.id));
+	}
+
+	function requestEvaluatorPickerOpen(observationId: string): boolean {
+		return Boolean(evaluatorPickerOpenByRequest[observationId]);
+	}
+
+	function setRequestEvaluatorPickerOpen(observationId: string, open: boolean) {
+		evaluatorPickerOpenByRequest = {
+			...evaluatorPickerOpenByRequest,
+			[observationId]: open
+		};
+	}
+
+	function toggleRequestEvaluatorForRequest(observationId: string, staff: StaffLookupItem) {
 		if (!canManageRequests) return;
-		if (!approvalObservationId || !approvalEvaluatorId) {
-			toast.error('เลือกรายการและผู้ประเมินก่อน');
+		const currentIds = selectedRequestEvaluatorIds(observationId);
+		requestEvaluatorIds = {
+			...requestEvaluatorIds,
+			[observationId]: currentIds.includes(staff.id)
+				? currentIds.filter((id) => id !== staff.id)
+				: [...currentIds, staff.id]
+		};
+	}
+
+	function removeRequestEvaluatorForRequest(observationId: string, evaluatorId: string) {
+		requestEvaluatorIds = {
+			...requestEvaluatorIds,
+			[observationId]: selectedRequestEvaluatorIds(observationId).filter((id) => id !== evaluatorId)
+		};
+	}
+
+	function setRequestReturnCommentForRequest(observationId: string, comment: string) {
+		requestReturnComments = {
+			...requestReturnComments,
+			[observationId]: comment
+		};
+	}
+
+	function clearRequestApprovalState(observationId: string) {
+		const { [observationId]: _evaluatorIds, ...remainingEvaluatorIds } = requestEvaluatorIds;
+		const { [observationId]: _comment, ...remainingComments } = requestReturnComments;
+		const { [observationId]: _pickerOpen, ...remainingPickerOpen } = evaluatorPickerOpenByRequest;
+		requestEvaluatorIds = remainingEvaluatorIds;
+		requestReturnComments = remainingComments;
+		evaluatorPickerOpenByRequest = remainingPickerOpen;
+	}
+
+	async function approveRequest(observationId: string) {
+		if (!canManageRequests) return;
+		const evaluatorIds = selectedRequestEvaluatorIds(observationId);
+		if (evaluatorIds.length === 0) {
+			toast.error('เลือกผู้ประเมินอย่างน้อย 1 คนก่อนอนุมัติ');
 			return;
 		}
 
-		savingAction = 'approve-request';
+		savingAction = `approve-request:${observationId}`;
 		try {
-			const response = await approveSupervisionObservationRequest(approvalObservationId, {
-				evaluators: [{ evaluatorUserId: approvalEvaluatorId, isRequired: true }]
+			const response = await approveSupervisionObservationRequest(observationId, {
+				evaluators: evaluatorIds.map((evaluatorId) => ({
+					evaluatorUserId: evaluatorId,
+					isRequired: true
+				}))
 			});
 			const observation = requireMutationData(response, 'อนุมัติคำขอไม่สำเร็จ');
 			replaceObservation(observation);
 			toast.success('อนุมัติคำขอและมอบหมายผู้ประเมินแล้ว');
-			approvalObservationId = '';
-			approvalEvaluatorId = '';
+			clearRequestApprovalState(observationId);
 		} catch (error) {
 			toast.error(error instanceof Error ? error.message : 'อนุมัติคำขอไม่สำเร็จ');
 		} finally {
@@ -939,12 +1049,12 @@
 		savingAction = `return-request:${id}`;
 		try {
 			const response = await returnSupervisionObservationRequest(id, {
-				comment: requestReturnComment || null
+				comment: requestReturnComments[id] || null
 			});
 			const observation = requireMutationData(response, 'ส่งกลับคำขอไม่สำเร็จ');
 			replaceObservation(observation);
 			toast.success('ส่งกลับคำขอแล้ว');
-			requestReturnComment = '';
+			clearRequestApprovalState(id);
 		} catch (error) {
 			toast.error(error instanceof Error ? error.message : 'ส่งกลับคำขอไม่สำเร็จ');
 		} finally {
@@ -1807,28 +1917,53 @@
 							description="เมื่อส่งคำขอหรือได้รับผลนิเทศ รายการจะแสดงที่นี่"
 						/>
 					{:else}
-						<Table.Root>
-							<Table.Header>
-								<Table.Row>
-									<Table.Head>คาบ</Table.Head>
-									<Table.Head>วันที่</Table.Head>
-									<Table.Head>สถานะ</Table.Head>
-									<Table.Head class="text-right">การรับทราบ</Table.Head>
-								</Table.Row>
-							</Table.Header>
-							<Table.Body>
-								{#each myObservations as observation (observation.id)}
-									<Table.Row>
-										<Table.Cell class="font-medium"
-											>{observationLessonTitle(observation)}</Table.Cell
-										>
-										<Table.Cell>
+						<div class="space-y-3" data-supervision-own-list="cards">
+							{#each myObservations as observation (observation.id)}
+								<div class="rounded-md border bg-background p-4">
+									<div class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+										<div class="min-w-0 space-y-1">
+											<div class="flex flex-wrap items-center gap-2">
+												<h3 class="font-semibold">{observationSubjectLabel(observation)}</h3>
+												<Badge variant="secondary">{statusLabel(observation.status)}</Badge>
+											</div>
+											<p class="text-sm text-muted-foreground">
+												{observationPeriodLabel(observation)} · {observationClassroomLabel(
+													observation
+												)}
+											</p>
+										</div>
+										<div class="shrink-0 text-sm text-muted-foreground">
 											{formatDate(observation.observedAt)}
-										</Table.Cell>
-										<Table.Cell>
-											<Badge variant="secondary">{statusLabel(observation.status)}</Badge>
-										</Table.Cell>
-										<Table.Cell class="text-right">
+										</div>
+									</div>
+
+									<div class="mt-4 grid gap-3 text-sm sm:grid-cols-2 xl:grid-cols-5">
+										{#each observationDetailGrid(observation) as detail (detail.label)}
+											<div>
+												<p class="text-xs text-muted-foreground">{detail.label}</p>
+												<p class="font-medium">{detail.value}</p>
+											</div>
+										{/each}
+									</div>
+
+									<div
+										class="mt-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between"
+									>
+										<div class="min-w-0">
+											<p class="text-xs text-muted-foreground">ผู้นิเทศ</p>
+											<div class="mt-1 flex flex-wrap gap-2">
+												{#if observation.evaluators.length === 0}
+													<Badge variant="outline">ยังไม่มอบหมาย</Badge>
+												{:else}
+													{#each observation.evaluators as evaluator (evaluator.id)}
+														<Badge variant="secondary">
+															{evaluator.evaluatorDisplayName ?? 'ผู้ประเมิน'}
+														</Badge>
+													{/each}
+												{/if}
+											</div>
+										</div>
+										<div class="shrink-0">
 											{#if observation.status === 'published'}
 												<Dialog.Root>
 													<Dialog.Trigger>
@@ -1866,11 +2001,11 @@
 											{:else}
 												<span class="text-sm text-muted-foreground">-</span>
 											{/if}
-										</Table.Cell>
-									</Table.Row>
-								{/each}
-							</Table.Body>
-						</Table.Root>
+										</div>
+									</div>
+								</div>
+							{/each}
+						</div>
 					{/if}
 				</Card.Content>
 			</Card.Root>
@@ -1883,7 +2018,9 @@
 						<UserCheck class="h-5 w-5" />
 						คำขอจองที่รออนุมัติ
 					</Card.Title>
-					<Card.Description>เลือกคำขอและมอบหมายผู้ประเมินก่อนอนุมัติ</Card.Description>
+					<Card.Description>
+						ตรวจข้อมูลการจอง มอบหมายผู้ประเมินได้หลายคน แล้วอนุมัติทีละรายการ
+					</Card.Description>
 				</Card.Header>
 				<Card.Content class="space-y-4">
 					{#if requestedObservations.length === 0}
@@ -1892,94 +2029,173 @@
 							description="เมื่อครูส่งคำขอจอง รายการจะปรากฏในส่วนนี้"
 						/>
 					{:else}
-						<div class="grid gap-3 lg:grid-cols-[1fr_280px_auto]">
-							<Select.Root type="single" bind:value={approvalObservationId}>
-								<Select.Trigger class="w-full">
-									{selectedApprovalObservation
-										? `${selectedApprovalObservation.observedDisplayName ?? 'ครู'} - ${observationLessonTitle(selectedApprovalObservation)}`
-										: 'เลือกรายการคำขอ'}
-								</Select.Trigger>
-								<Select.Content>
-									{#each requestedObservations as observation (observation.id)}
-										<Select.Item value={observation.id}>
-											{observation.observedDisplayName ?? 'ครู'} - {observationLessonTitle(
-												observation
-											)}
-										</Select.Item>
-									{/each}
-								</Select.Content>
-							</Select.Root>
+						<div class="space-y-3">
+							{#each requestedObservations as observation (observation.id)}
+								<div class="rounded-md border bg-background p-4">
+									<div class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+										<div class="min-w-0 space-y-1">
+											<div class="flex flex-wrap items-center gap-2">
+												<h3 class="font-semibold">
+													{observation.observedDisplayName ?? 'ครูผู้ขอรับนิเทศ'}
+												</h3>
+												<Badge variant="secondary">{statusLabel(observation.status)}</Badge>
+											</div>
+											<p class="text-sm text-muted-foreground">
+												{observationLessonTitle(observation)}
+											</p>
+										</div>
+										<div class="text-sm text-muted-foreground">
+											ส่งคำขอ {formatDate(observation.requestedAt)}
+										</div>
+									</div>
 
-							<Popover.Root bind:open={evaluatorPickerOpen}>
-								<Popover.Trigger>
-									{#snippet child({ props })}
-										<Button
-											variant="outline"
-											role="combobox"
-											aria-expanded={evaluatorPickerOpen}
-											class="w-full justify-between font-normal"
-											{...props}
-										>
-											<span class={cn('truncate', !selectedEvaluator && 'text-muted-foreground')}>
-												{selectedEvaluator?.name ?? 'เลือกผู้ประเมิน'}
-											</span>
-											<ChevronsUpDown class="ml-2 h-4 w-4 shrink-0 opacity-50" />
-										</Button>
-									{/snippet}
-								</Popover.Trigger>
-								<Popover.Content class="w-[--bits-popover-trigger-width] p-0">
-									<Command.Root>
-										<Command.Input placeholder="ค้นหาครูผู้ประเมิน..." />
-										<Command.Empty>ไม่พบครู</Command.Empty>
-										<Command.List class="max-h-72">
-											<Command.Group>
-												{#each staffList as staff (staff.id)}
-													<Command.Item value={staff.name} onSelect={() => selectEvaluator(staff)}>
-														<Check
-															class={cn(
-																'mr-2 h-4 w-4',
-																approvalEvaluatorId === staff.id ? 'opacity-100' : 'opacity-0'
-															)}
-														/>
-														<span>{staff.name}</span>
-														{#if staff.title}
-															<span class="ml-1 text-xs text-muted-foreground">({staff.title})</span
+									<div class="mt-4 grid gap-3 text-sm md:grid-cols-2 xl:grid-cols-3">
+										<div>
+											<p class="text-xs text-muted-foreground">วันที่นิเทศ</p>
+											<p class="font-medium">{formatDate(observation.observedAt)}</p>
+										</div>
+										<div>
+											<p class="text-xs text-muted-foreground">รอบนิเทศ</p>
+											<p class="font-medium">{requestCycleLabel(observation)}</p>
+										</div>
+										<div>
+											<p class="text-xs text-muted-foreground">แบบประเมิน</p>
+											<p class="font-medium">{requestTemplateTitle(observation)}</p>
+										</div>
+										<div>
+											<p class="text-xs text-muted-foreground">คาบ/ห้องเรียน</p>
+											<p class="font-medium">{observationLessonTitle(observation)}</p>
+										</div>
+										<div>
+											<p class="text-xs text-muted-foreground">ผู้ขอรับนิเทศ</p>
+											<p class="font-medium">{observation.observedDisplayName ?? '-'}</p>
+										</div>
+										<div>
+											<p class="text-xs text-muted-foreground">จำนวนผู้ประเมินที่เลือก</p>
+											<p class="font-medium">
+												{selectedRequestEvaluatorIds(observation.id).length} คน
+											</p>
+										</div>
+									</div>
+
+									<div class="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
+										<div class="space-y-2">
+											<Label>ผู้ประเมิน</Label>
+											<div class="flex min-h-10 flex-wrap items-center gap-2 rounded-md border p-2">
+												{#if selectedRequestEvaluators(observation.id).length === 0}
+													<span class="text-sm text-muted-foreground">ยังไม่ได้เลือกผู้ประเมิน</span
+													>
+												{:else}
+													{#each selectedRequestEvaluators(observation.id) as evaluator (evaluator.id)}
+														<Badge variant="secondary" class="gap-1 pr-1">
+															<span>{evaluator.name}</span>
+															<button
+																type="button"
+																class="rounded-sm p-0.5 text-muted-foreground hover:bg-background hover:text-foreground"
+																aria-label={`ลบผู้ประเมิน ${evaluator.name}`}
+																onclick={() =>
+																	removeRequestEvaluatorForRequest(observation.id, evaluator.id)}
 															>
-														{/if}
-													</Command.Item>
-												{/each}
-											</Command.Group>
-										</Command.List>
-									</Command.Root>
-								</Popover.Content>
-							</Popover.Root>
+																<Trash2 class="h-3 w-3" />
+															</button>
+														</Badge>
+													{/each}
+												{/if}
+											</div>
+											<Popover.Root
+												open={requestEvaluatorPickerOpen(observation.id)}
+												onOpenChange={(open) => setRequestEvaluatorPickerOpen(observation.id, open)}
+											>
+												<Popover.Trigger>
+													{#snippet child({ props })}
+														<Button
+															type="button"
+															variant="outline"
+															role="combobox"
+															aria-expanded={requestEvaluatorPickerOpen(observation.id)}
+															class="w-full justify-between font-normal sm:w-[320px]"
+															disabled={mutationBusy}
+															{...props}
+														>
+															<span class="truncate">เพิ่ม/เลือกผู้ประเมิน</span>
+															<ChevronsUpDown class="ml-2 h-4 w-4 shrink-0 opacity-50" />
+														</Button>
+													{/snippet}
+												</Popover.Trigger>
+												<Popover.Content class="w-[--bits-popover-trigger-width] p-0">
+													<Command.Root>
+														<Command.Input placeholder="ค้นหาครูผู้ประเมิน..." />
+														<Command.Empty>ไม่พบครู</Command.Empty>
+														<Command.List class="max-h-72">
+															<Command.Group>
+																{#each staffList as staff (staff.id)}
+																	<Command.Item
+																		value={`${staff.name} ${staff.title ?? ''} ${staff.id}`}
+																		onSelect={() =>
+																			toggleRequestEvaluatorForRequest(observation.id, staff)}
+																	>
+																		<Check
+																			class={cn(
+																				'mr-2 h-4 w-4',
+																				selectedRequestEvaluatorIds(observation.id).includes(
+																					staff.id
+																				)
+																					? 'opacity-100'
+																					: 'opacity-0'
+																			)}
+																		/>
+																		<span>{staff.name}</span>
+																		{#if staff.title}
+																			<span class="ml-1 text-xs text-muted-foreground"
+																				>({staff.title})</span
+																			>
+																		{/if}
+																	</Command.Item>
+																{/each}
+															</Command.Group>
+														</Command.List>
+													</Command.Root>
+												</Popover.Content>
+											</Popover.Root>
+										</div>
 
-							<LoadingButton
-								onclick={approveRequest}
-								loading={savingAction === 'approve-request'}
-								loadingLabel="กำลังอนุมัติ..."
-								disabled={mutationBusy}
-							>
-								อนุมัติและมอบหมาย
-							</LoadingButton>
-						</div>
-						<div class="space-y-2 rounded-md border p-3">
-							<Label>ส่งกลับคำขอ</Label>
-							<Textarea
-								bind:value={requestReturnComment}
-								rows={2}
-								placeholder="ระบุเหตุผลส่งกลับ"
-							/>
-							<LoadingButton
-								variant="outline"
-								size="sm"
-								loading={savingAction === `return-request:${approvalObservationId}`}
-								loadingLabel="กำลังส่งกลับ..."
-								disabled={!approvalObservationId || mutationBusy}
-								onclick={() => returnRequest(approvalObservationId)}
-							>
-								ส่งกลับคำขอ
-							</LoadingButton>
+										<div class="space-y-2">
+											<Label>ส่งกลับคำขอ</Label>
+											<Textarea
+												value={requestReturnComments[observation.id] ?? ''}
+												rows={3}
+												placeholder="ระบุเหตุผลส่งกลับ"
+												oninput={(event) =>
+													setRequestReturnCommentForRequest(
+														observation.id,
+														(event.currentTarget as HTMLTextAreaElement).value
+													)}
+											/>
+										</div>
+									</div>
+
+									<div class="mt-4 flex flex-wrap justify-end gap-2">
+										<LoadingButton
+											variant="outline"
+											loading={savingAction === `return-request:${observation.id}`}
+											loadingLabel="กำลังส่งกลับ..."
+											disabled={mutationBusy}
+											onclick={() => returnRequest(observation.id)}
+										>
+											ส่งกลับคำขอ
+										</LoadingButton>
+										<LoadingButton
+											onclick={() => approveRequest(observation.id)}
+											loading={savingAction === `approve-request:${observation.id}`}
+											loadingLabel="กำลังอนุมัติ..."
+											disabled={mutationBusy ||
+												selectedRequestEvaluatorIds(observation.id).length === 0}
+										>
+											อนุมัติและมอบหมาย
+										</LoadingButton>
+									</div>
+								</div>
+							{/each}
 						</div>
 					{/if}
 				</Card.Content>
@@ -1998,24 +2214,79 @@
 							description="รายการจะปรากฏเมื่อผู้ดูแลอนุมัติคำขอและมอบหมายให้ประเมิน"
 						/>
 					{:else}
-						<div class="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+						<div class="space-y-3" data-supervision-assigned-list="cards">
 							{#each assignedObservations as observation (observation.id)}
-								<button
-									type="button"
+								<div
 									class={cn(
-										'rounded-md border p-3 text-left transition hover:bg-muted/40',
+										'rounded-md border bg-background p-4 transition',
 										evaluationObservationId === observation.id && 'border-primary bg-primary/5'
 									)}
-									onclick={() => prepareEvaluationDraft(observation)}
 								>
-									<div class="font-medium">
-										{observation.observedDisplayName ?? 'ครูผู้ถูกนิเทศ'}
+									<div class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+										<div class="min-w-0 space-y-1">
+											<div class="flex flex-wrap items-center gap-2">
+												<h3 class="font-semibold">
+													{observation.observedDisplayName ?? 'ครูผู้ถูกนิเทศ'}
+												</h3>
+												<Badge variant="secondary">{statusLabel(observation.status)}</Badge>
+											</div>
+											<p class="text-sm text-muted-foreground">
+												{observationSubjectLabel(observation)} · {observationPeriodLabel(
+													observation
+												)}
+											</p>
+										</div>
+										<div class="shrink-0 text-sm text-muted-foreground">
+											{formatDate(observation.observedAt)}
+										</div>
 									</div>
-									<div class="text-sm text-muted-foreground">
-										{observationLessonTitle(observation)}
+
+									<div class="mt-4 grid gap-3 text-sm sm:grid-cols-2 xl:grid-cols-5">
+										<div>
+											<p class="text-xs text-muted-foreground">นิเทศใคร</p>
+											<p class="font-medium">{observation.observedDisplayName ?? '-'}</p>
+										</div>
+										{#each observationDetailGrid(observation) as detail (detail.label)}
+											<div>
+												<p class="text-xs text-muted-foreground">{detail.label}</p>
+												<p class="font-medium">{detail.value}</p>
+											</div>
+										{/each}
 									</div>
-									<Badge class="mt-2" variant="secondary">{statusLabel(observation.status)}</Badge>
-								</button>
+
+									<div
+										class="mt-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between"
+									>
+										<div class="min-w-0">
+											<p class="text-xs text-muted-foreground">ผู้นิเทศร่วม</p>
+											<div class="mt-1 flex flex-wrap gap-2">
+												{#if observation.evaluators.length === 0}
+													<Badge variant="outline">ยังไม่มอบหมาย</Badge>
+												{:else}
+													{#each observation.evaluators as evaluator (evaluator.id)}
+														<Badge
+															variant={evaluator.evaluatorUserId === currentUserId
+																? 'default'
+																: 'secondary'}
+														>
+															{evaluator.evaluatorDisplayName ?? 'ผู้ประเมิน'}
+														</Badge>
+													{/each}
+												{/if}
+											</div>
+										</div>
+										<Button
+											type="button"
+											class="shrink-0"
+											variant={evaluationObservationId === observation.id ? 'default' : 'outline'}
+											onclick={() => prepareEvaluationDraft(observation)}
+										>
+											{evaluationObservationId === observation.id
+												? 'กำลังเปิดแบบประเมิน'
+												: 'เริ่มประเมิน'}
+										</Button>
+									</div>
+								</div>
 							{/each}
 						</div>
 					{/if}
