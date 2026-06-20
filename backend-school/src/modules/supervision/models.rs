@@ -558,6 +558,28 @@ pub struct UpdateRequestedObservationRequest {
     pub manual_lesson: Option<ManualLessonInput>,
 }
 
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateSupervisionObservationRequest {
+    pub template_id: Option<Uuid>,
+    pub timetable_entry_id: Option<Uuid>,
+    pub observed_at: Option<DateTime<Utc>>,
+    pub manual_lesson: Option<ManualLessonInput>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReplaceObservationEvaluatorsRequest {
+    #[serde(default)]
+    pub evaluators: Vec<EvaluatorAssignmentInput>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CancelObservationRequest {
+    pub reason: Option<String>,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EvaluatorAssignmentInput {

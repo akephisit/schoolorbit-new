@@ -240,6 +240,12 @@ export type UpdateRequestedObservationRequest = Pick<
 	'timetableEntryId' | 'observedAt' | 'manualLesson'
 >;
 
+export type UpdateSupervisionObservationRequest = Partial<
+	Pick<RequestSupervisionObservationRequest, 'timetableEntryId' | 'observedAt' | 'manualLesson'> & {
+		templateId: string;
+	}
+>;
+
 export interface EvaluatorAssignmentInput {
 	evaluatorUserId: string;
 	roleLabel?: string | null;
@@ -250,8 +256,16 @@ export interface ApproveObservationRequest {
 	evaluators: EvaluatorAssignmentInput[];
 }
 
+export interface ReplaceObservationEvaluatorsRequest {
+	evaluators: EvaluatorAssignmentInput[];
+}
+
 export interface ReturnObservationRequest {
 	comment?: string | null;
+}
+
+export interface CancelObservationRequest {
+	reason?: string | null;
 }
 
 export interface EvaluationResponseInput {
@@ -373,6 +387,33 @@ export async function cancelRequestedSupervisionObservation(
 	id: string
 ): Promise<ApiResponse<SupervisionObservation>> {
 	return apiClient.delete<SupervisionObservation>(`/api/supervision/observations/${id}/request`);
+}
+
+export async function updateSupervisionObservation(
+	id: string,
+	payload: UpdateSupervisionObservationRequest
+): Promise<ApiResponse<SupervisionObservation>> {
+	return apiClient.patch<SupervisionObservation>(`/api/supervision/observations/${id}`, payload);
+}
+
+export async function replaceSupervisionObservationEvaluators(
+	id: string,
+	payload: ReplaceObservationEvaluatorsRequest
+): Promise<ApiResponse<SupervisionObservation>> {
+	return apiClient.put<SupervisionObservation>(
+		`/api/supervision/observations/${id}/evaluators`,
+		payload
+	);
+}
+
+export async function cancelSupervisionObservation(
+	id: string,
+	payload: CancelObservationRequest
+): Promise<ApiResponse<SupervisionObservation>> {
+	return apiClient.post<SupervisionObservation>(
+		`/api/supervision/observations/${id}/cancel`,
+		payload
+	);
 }
 
 export async function approveSupervisionObservationRequest(

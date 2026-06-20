@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use chrono::{DateTime, Datelike, FixedOffset, Utc, Weekday};
 use sqlx::types::Json;
@@ -7,10 +7,11 @@ use uuid::Uuid;
 
 use crate::error::AppError;
 use crate::modules::supervision::models::{
-    AcknowledgeObservationRequest, ApproveObservationRequest, CreateSupervisionCycleRequest,
-    CreateSupervisionCycleTargetRequest, CreateSupervisionTemplateRequest,
-    CreateSupervisionTemplateSectionRequest, CreateSupervisionTemplateStepRequest,
-    EvaluationResponseInput, LessonSnapshot, ManualLesson, ManualLessonInput,
+    AcknowledgeObservationRequest, ApproveObservationRequest, CancelObservationRequest,
+    CreateSupervisionCycleRequest, CreateSupervisionCycleTargetRequest,
+    CreateSupervisionTemplateRequest, CreateSupervisionTemplateSectionRequest,
+    CreateSupervisionTemplateStepRequest, EvaluationResponseInput, EvaluatorAssignmentInput,
+    LessonSnapshot, ManualLesson, ManualLessonInput, ReplaceObservationEvaluatorsRequest,
     RequestSupervisionObservationRequest, ReturnObservationRequest, SaveEvaluationRequest,
     SupervisionCycle, SupervisionCycleProgress, SupervisionCycleStatus, SupervisionCycleTarget,
     SupervisionEvaluator, SupervisionEvaluatorStatus, SupervisionObservation,
@@ -19,7 +20,7 @@ use crate::modules::supervision::models::{
     SupervisionTemplateSection, SupervisionTemplateStatus, SupervisionTemplateStep,
     SupervisionTemplateStepActionKind, SupervisionTemplateStepActorKind,
     UpdateRequestedObservationRequest, UpdateSupervisionCycleRequest,
-    UpdateSupervisionTemplateRequest,
+    UpdateSupervisionObservationRequest, UpdateSupervisionTemplateRequest,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -47,6 +48,12 @@ pub struct EvaluatorRatingInput {
 pub struct EvaluatorSubmissionState {
     pub is_required: bool,
     pub submitted: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct EvaluatorReplacementState {
+    evaluator_user_id: Uuid,
+    submitted: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -237,6 +244,66 @@ pub fn teacher_can_edit_requested_observation(status: SupervisionObservationStat
     status == SupervisionObservationStatus::Requested
 }
 
+pub fn manager_can_edit_observation(status: SupervisionObservationStatus) -> bool {
+    matches!(
+        status,
+        SupervisionObservationStatus::Requested
+            | SupervisionObservationStatus::Planned
+            | SupervisionObservationStatus::Returned
+    )
+}
+
+fn normalize_evaluator_replacement(
+    existing: &[EvaluatorReplacementState],
+    requested: Vec<EvaluatorAssignmentInput>,
+) -> Result<Vec<EvaluatorAssignmentInput>, AppError> {
+    let mut normalized = Vec::new();
+    let mut seen = HashSet::new();
+
+    for evaluator in existing.iter().filter(|evaluator| evaluator.submitted) {
+        if seen.insert(evaluator.evaluator_user_id) {
+            normalized.push(EvaluatorAssignmentInput {
+                evaluator_user_id: evaluator.evaluator_user_id,
+                role_label: None,
+                is_required: Some(true),
+            });
+        }
+    }
+
+    for evaluator in requested {
+        if seen.insert(evaluator.evaluator_user_id) {
+            normalized.push(evaluator);
+        } else if !existing
+            .iter()
+            .any(|state| state.submitted && state.evaluator_user_id == evaluator.evaluator_user_id)
+        {
+            if let Some(existing_evaluator) = normalized
+                .iter_mut()
+                .find(|item| item.evaluator_user_id == evaluator.evaluator_user_id)
+            {
+                *existing_evaluator = evaluator;
+            }
+        }
+    }
+
+    if normalized.is_empty() {
+        return Err(AppError::ValidationError(
+            "ต้องมีผู้ประเมินอย่างน้อย 1 คน".to_string(),
+        ));
+    }
+
+    if normalized
+        .iter()
+        .all(|evaluator| evaluator.is_required.unwrap_or(true) == false)
+    {
+        return Err(AppError::ValidationError(
+            "ต้องมีผู้ประเมินหลักอย่างน้อย 1 คน".to_string(),
+        ));
+    }
+
+    Ok(normalized)
+}
+
 pub fn average_submitted_evaluator_rating(inputs: &[EvaluatorRatingInput]) -> Option<f64> {
     let evaluator_averages = inputs
         .iter()
@@ -291,12 +358,16 @@ pub fn can_transition_observation_status(
             | (Planned, Cancelled)
             | (InProgress, EvaluatorsSubmitted)
             | (InProgress, Returned)
+            | (InProgress, Cancelled)
             | (EvaluatorsSubmitted, UnderReview)
             | (EvaluatorsSubmitted, Returned)
+            | (EvaluatorsSubmitted, Cancelled)
             | (UnderReview, Approved)
             | (UnderReview, Returned)
+            | (UnderReview, Cancelled)
             | (Approved, Published)
             | (Approved, Returned)
+            | (Approved, Cancelled)
             | (Published, Acknowledged)
             | (Acknowledged, Completed)
     )
@@ -900,6 +971,207 @@ pub async fn cancel_requested_observation(
         SupervisionObservationStatus::Cancelled,
         "request_cancelled",
         None,
+    )
+    .await
+}
+
+pub async fn update_observation(
+    pool: &PgPool,
+    actor_user_id: Uuid,
+    observation_id: Uuid,
+    input: UpdateSupervisionObservationRequest,
+) -> Result<SupervisionObservation, AppError> {
+    let current = get_observation(pool, observation_id).await?;
+    if !manager_can_edit_observation(current.status) {
+        return Err(AppError::ValidationError(
+            "แก้ไขรายการนิเทศได้เฉพาะสถานะรออนุมัติ วางแผน หรือส่งกลับ".to_string(),
+        ));
+    }
+
+    let cycle = load_cycle_for_request(pool, current.cycle_id).await?;
+    let template_id = input.template_id.unwrap_or(current.template_id);
+    let manual_lesson = match (input.manual_lesson, current.manual_lesson) {
+        (Some(manual), _) => Some(manual),
+        (None, Some(manual)) if input.timetable_entry_id.is_none() => Some(ManualLessonInput {
+            subject_name: manual.subject_name,
+            classroom_label: manual.classroom_label,
+            room_label: manual.room_label,
+            observed_at: input.observed_at.unwrap_or(manual.observed_at),
+            period_label: manual.period_label,
+            reason: manual.reason,
+        }),
+        (None, _) => None,
+    };
+    let timetable_entry_id = if manual_lesson.is_some() {
+        None
+    } else {
+        input.timetable_entry_id.or(current.timetable_entry_id)
+    };
+    let observed_at = if manual_lesson.is_some() {
+        None
+    } else {
+        Some(input.observed_at.unwrap_or(current.observed_at))
+    };
+    let lesson = resolve_lesson_input(
+        pool,
+        &cycle,
+        current.observed_user_id,
+        timetable_entry_id,
+        observed_at,
+        manual_lesson,
+    )
+    .await?;
+
+    sqlx::query(
+        r#"
+        UPDATE supervision_observations
+        SET template_id = $2,
+            timetable_entry_id = $3,
+            manual_subject_name = $4,
+            manual_classroom_label = $5,
+            manual_room_label = $6,
+            observed_at = $7,
+            manual_period_label = $8,
+            manual_reason = $9,
+            lesson_snapshot = $10
+        WHERE id = $1
+        "#,
+    )
+    .bind(observation_id)
+    .bind(template_id)
+    .bind(lesson.timetable_entry_id)
+    .bind(&lesson.manual_subject_name)
+    .bind(&lesson.manual_classroom_label)
+    .bind(&lesson.manual_room_label)
+    .bind(lesson.observed_at)
+    .bind(&lesson.manual_period_label)
+    .bind(&lesson.manual_reason)
+    .bind(Json(lesson.snapshot))
+    .execute(pool)
+    .await
+    .map_err(|error| {
+        tracing::error!("Failed to update supervision observation: {}", error);
+        AppError::InternalServerError("ไม่สามารถแก้ไขรายการนิเทศได้".to_string())
+    })?;
+
+    insert_observation_action(
+        pool,
+        observation_id,
+        Some(actor_user_id),
+        "updated",
+        Some(current.status),
+        Some(current.status),
+        None,
+    )
+    .await?;
+
+    get_observation(pool, observation_id).await
+}
+
+pub async fn replace_observation_evaluators(
+    pool: &PgPool,
+    actor_user_id: Uuid,
+    observation_id: Uuid,
+    input: ReplaceObservationEvaluatorsRequest,
+) -> Result<SupervisionObservation, AppError> {
+    let current = get_observation(pool, observation_id).await?;
+    if !manager_can_edit_observation(current.status) {
+        return Err(AppError::ValidationError(
+            "แก้ไขผู้ประเมินได้เฉพาะสถานะรออนุมัติ วางแผน หรือส่งกลับ".to_string(),
+        ));
+    }
+    if input
+        .evaluators
+        .iter()
+        .any(|evaluator| evaluator.evaluator_user_id == current.observed_user_id)
+    {
+        return Err(AppError::ValidationError(
+            "ครูผู้ถูกนิเทศเป็นผู้ประเมินรายการของตนเองไม่ได้".to_string(),
+        ));
+    }
+
+    let existing_states = current
+        .evaluators
+        .iter()
+        .map(|evaluator| EvaluatorReplacementState {
+            evaluator_user_id: evaluator.evaluator_user_id,
+            submitted: evaluator.status == SupervisionEvaluatorStatus::Submitted,
+        })
+        .collect::<Vec<_>>();
+    let submitted_user_ids = existing_states
+        .iter()
+        .filter(|state| state.submitted)
+        .map(|state| state.evaluator_user_id)
+        .collect::<HashSet<_>>();
+    let replacement = normalize_evaluator_replacement(&existing_states, input.evaluators)?;
+    let insert_rows = replacement
+        .into_iter()
+        .filter(|evaluator| !submitted_user_ids.contains(&evaluator.evaluator_user_id))
+        .collect::<Vec<_>>();
+
+    let mut tx = pool.begin().await.map_err(|error| {
+        tracing::error!(
+            "Failed to begin replace supervision evaluators transaction: {}",
+            error
+        );
+        AppError::InternalServerError("ไม่สามารถเริ่มแก้ไขผู้ประเมินได้".to_string())
+    })?;
+
+    sqlx::query(
+        r#"
+        DELETE FROM supervision_evaluators
+        WHERE observation_id = $1
+          AND status <> 'submitted'
+        "#,
+    )
+    .bind(observation_id)
+    .execute(&mut *tx)
+    .await
+    .map_err(|error| {
+        tracing::error!(
+            "Failed to clear non-submitted supervision evaluators: {}",
+            error
+        );
+        AppError::InternalServerError("ไม่สามารถแก้ไขผู้ประเมินได้".to_string())
+    })?;
+
+    insert_supervision_evaluators(&mut tx, observation_id, &insert_rows).await?;
+
+    tx.commit().await.map_err(|error| {
+        tracing::error!(
+            "Failed to commit replace supervision evaluators transaction: {}",
+            error
+        );
+        AppError::InternalServerError("ไม่สามารถบันทึกผู้ประเมินได้".to_string())
+    })?;
+
+    insert_observation_action(
+        pool,
+        observation_id,
+        Some(actor_user_id),
+        "evaluators_updated",
+        Some(current.status),
+        Some(current.status),
+        None,
+    )
+    .await?;
+
+    get_observation(pool, observation_id).await
+}
+
+pub async fn cancel_observation(
+    pool: &PgPool,
+    actor_user_id: Uuid,
+    observation_id: Uuid,
+    input: CancelObservationRequest,
+) -> Result<SupervisionObservation, AppError> {
+    set_observation_status(
+        pool,
+        observation_id,
+        actor_user_id,
+        SupervisionObservationStatus::Cancelled,
+        "cancelled",
+        input.reason,
     )
     .await
 }
@@ -2857,6 +3129,59 @@ mod tests {
         assert!(!teacher_can_edit_requested_observation(
             SupervisionObservationStatus::Cancelled
         ));
+    }
+
+    #[test]
+    fn manager_can_edit_only_manageable_observation_statuses() {
+        assert!(manager_can_edit_observation(
+            SupervisionObservationStatus::Requested
+        ));
+        assert!(manager_can_edit_observation(
+            SupervisionObservationStatus::Planned
+        ));
+        assert!(manager_can_edit_observation(
+            SupervisionObservationStatus::Returned
+        ));
+        assert!(!manager_can_edit_observation(
+            SupervisionObservationStatus::UnderReview
+        ));
+        assert!(!manager_can_edit_observation(
+            SupervisionObservationStatus::Approved
+        ));
+        assert!(!manager_can_edit_observation(
+            SupervisionObservationStatus::Published
+        ));
+        assert!(!manager_can_edit_observation(
+            SupervisionObservationStatus::Completed
+        ));
+        assert!(!manager_can_edit_observation(
+            SupervisionObservationStatus::Cancelled
+        ));
+    }
+
+    #[test]
+    fn evaluator_replacement_keeps_submitted_evaluators() {
+        let submitted_user_id = Uuid::new_v4();
+        let requested_user_id = Uuid::new_v4();
+        let retained = normalize_evaluator_replacement(
+            &[EvaluatorReplacementState {
+                evaluator_user_id: submitted_user_id,
+                submitted: true,
+            }],
+            vec![EvaluatorAssignmentInput {
+                evaluator_user_id: requested_user_id,
+                role_label: None,
+                is_required: Some(true),
+            }],
+        )
+        .expect("replacement");
+
+        assert!(retained
+            .iter()
+            .any(|evaluator| evaluator.evaluator_user_id == submitted_user_id));
+        assert!(retained
+            .iter()
+            .any(|evaluator| evaluator.evaluator_user_id == requested_user_id));
     }
 
     #[test]

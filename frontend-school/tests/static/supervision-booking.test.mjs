@@ -118,3 +118,30 @@ test('teaching supervision own and assigned lists show complete lesson and evalu
 	assert.match(supervisionPage, /data-supervision-own-list="cards"/);
 	assert.match(supervisionPage, /data-supervision-assigned-list="cards"/);
 });
+
+test('teaching supervision observation detail supports safe edit actions', async () => {
+	const supervisionApi = await readRepoFile('frontend-school/src/lib/api/supervision.ts');
+	const parentPage = await readRepoFile(
+		'frontend-school/src/routes/(app)/staff/academic/supervision/+page.svelte'
+	);
+	const detailRoute = await readRepoFile(
+		'frontend-school/src/routes/(app)/staff/academic/supervision/[id]/+page.ts'
+	);
+	const detailPage = await readRepoFile(
+		'frontend-school/src/routes/(app)/staff/academic/supervision/[id]/+page.svelte'
+	);
+
+	assert.match(supervisionApi, /updateSupervisionObservation/);
+	assert.match(supervisionApi, /replaceSupervisionObservationEvaluators/);
+	assert.match(supervisionApi, /cancelSupervisionObservation/);
+	assert.match(detailRoute, /_meta\s*=\s*\{\s*access:/);
+	assert.doesNotMatch(detailRoute, /menu:/);
+	assert.match(detailPage, /getSupervisionObservation/);
+	assert.match(detailPage, /updateSupervisionObservation/);
+	assert.match(detailPage, /replaceSupervisionObservationEvaluators/);
+	assert.match(detailPage, /cancelSupervisionObservation/);
+	assert.match(detailPage, /PageShell/);
+	assert.match(detailPage, /LoadingButton/);
+	assert.match(detailPage, /replaceObservation\(updated/);
+	assert.match(parentPage, /href=\{`\/staff\/academic\/supervision\/\$\{observation\.id\}`\}/);
+});

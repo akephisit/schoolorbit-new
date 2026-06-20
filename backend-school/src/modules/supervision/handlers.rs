@@ -12,12 +12,13 @@ use uuid::Uuid;
 use crate::api_response::ApiResponse;
 use crate::error::AppError;
 use crate::modules::supervision::models::{
-    AcknowledgeObservationRequest, ApproveObservationRequest, CreateSupervisionCycleRequest,
-    CreateSupervisionTemplateRequest, RequestSupervisionObservationRequest,
+    AcknowledgeObservationRequest, ApproveObservationRequest, CancelObservationRequest,
+    CreateSupervisionCycleRequest, CreateSupervisionTemplateRequest,
+    ReplaceObservationEvaluatorsRequest, RequestSupervisionObservationRequest,
     ReturnObservationRequest, SaveEvaluationRequest, SupervisionCycle, SupervisionObservation,
     SupervisionObservationFilter, SupervisionObservationStatus, SupervisionTemplate,
     UpdateRequestedObservationRequest, UpdateSupervisionCycleRequest,
-    UpdateSupervisionTemplateRequest,
+    UpdateSupervisionObservationRequest, UpdateSupervisionTemplateRequest,
 };
 use crate::modules::supervision::services;
 use crate::policies::supervision_access_policy;
@@ -229,6 +230,76 @@ pub async fn cancel_requested_observation(
     Ok(Json(ApiResponse::ok(observation)).into_response())
 }
 
+pub async fn update_observation(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+    Json(payload): Json<UpdateSupervisionObservationRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context(&state, &headers).await?;
+    let current = services::get_observation(&context.tenant.pool, id).await?;
+    supervision_access_policy::require_observation_management_access(
+        &context.tenant.pool,
+        &context.actor,
+        current.observed_user_id,
+    )
+    .await?;
+
+    let observation =
+        services::update_observation(&context.tenant.pool, context.actor.user_id, id, payload)
+            .await?;
+
+    Ok(Json(ApiResponse::ok(observation)).into_response())
+}
+
+pub async fn replace_observation_evaluators(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+    Json(payload): Json<ReplaceObservationEvaluatorsRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context(&state, &headers).await?;
+    let current = services::get_observation(&context.tenant.pool, id).await?;
+    supervision_access_policy::require_observation_management_access(
+        &context.tenant.pool,
+        &context.actor,
+        current.observed_user_id,
+    )
+    .await?;
+
+    let observation = services::replace_observation_evaluators(
+        &context.tenant.pool,
+        context.actor.user_id,
+        id,
+        payload,
+    )
+    .await?;
+
+    Ok(Json(ApiResponse::ok(observation)).into_response())
+}
+
+pub async fn cancel_observation(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+    Json(payload): Json<CancelObservationRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context(&state, &headers).await?;
+    let current = services::get_observation(&context.tenant.pool, id).await?;
+    supervision_access_policy::require_observation_management_access(
+        &context.tenant.pool,
+        &context.actor,
+        current.observed_user_id,
+    )
+    .await?;
+
+    let observation =
+        services::cancel_observation(&context.tenant.pool, context.actor.user_id, id, payload)
+            .await?;
+
+    Ok(Json(ApiResponse::ok(observation)).into_response())
+}
+
 pub async fn approve_observation_request(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -415,7 +486,15 @@ pub fn routes() -> Router<AppState> {
         .route("/templates/{id}", get(get_template).patch(update_template))
         .route("/observations", get(list_observations))
         .route("/observations/requests", post(request_observation))
-        .route("/observations/{id}", get(get_observation))
+        .route(
+            "/observations/{id}",
+            get(get_observation).patch(update_observation),
+        )
+        .route(
+            "/observations/{id}/evaluators",
+            put(replace_observation_evaluators),
+        )
+        .route("/observations/{id}/cancel", post(cancel_observation))
         .route(
             "/observations/{id}/request",
             patch(update_requested_observation).delete(cancel_requested_observation),

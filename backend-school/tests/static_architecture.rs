@@ -1640,6 +1640,53 @@ fn teaching_supervision_handlers_use_request_context_and_services() {
 }
 
 #[test]
+fn teaching_supervision_observation_detail_actions_are_registered() {
+    let handler = strip_comments(&read_source(
+        manifest_dir().join("src/modules/supervision/handlers.rs"),
+    ));
+    let models = strip_comments(&read_source(
+        manifest_dir().join("src/modules/supervision/models.rs"),
+    ));
+    let service = strip_comments(&read_source(
+        manifest_dir().join("src/modules/supervision/services.rs"),
+    ));
+
+    for expected in [
+        "patch(update_observation)",
+        "put(replace_observation_evaluators)",
+        "post(cancel_observation)",
+    ] {
+        assert!(
+            handler.contains(expected),
+            "missing supervision observation detail route/action {expected}"
+        );
+    }
+
+    for expected in [
+        "UpdateSupervisionObservationRequest",
+        "ReplaceObservationEvaluatorsRequest",
+        "CancelObservationRequest",
+    ] {
+        assert!(
+            models.contains(expected),
+            "missing supervision observation detail DTO {expected}"
+        );
+    }
+
+    for expected in [
+        "manager_can_edit_observation",
+        "replace_observation_evaluators",
+        "cancel_observation",
+        "normalize_evaluator_replacement",
+    ] {
+        assert!(
+            service.contains(expected),
+            "missing supervision observation detail service helper {expected}"
+        );
+    }
+}
+
+#[test]
 fn teaching_supervision_services_use_bulk_mutations_for_multi_row_writes() {
     let service = strip_comments(&read_source(
         manifest_dir().join("src/modules/supervision/services.rs"),

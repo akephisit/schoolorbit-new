@@ -1963,7 +1963,15 @@
 												{/if}
 											</div>
 										</div>
-										<div class="shrink-0">
+										<div class="flex shrink-0 flex-wrap gap-2">
+											<Button
+												size="sm"
+												variant="outline"
+												href={`/staff/academic/supervision/${observation.id}`}
+											>
+												<Eye class="h-4 w-4" />
+												รายละเอียด
+											</Button>
 											{#if observation.status === 'published'}
 												<Dialog.Root>
 													<Dialog.Trigger>
@@ -2175,6 +2183,14 @@
 									</div>
 
 									<div class="mt-4 flex flex-wrap justify-end gap-2">
+										<Button
+											size="sm"
+											variant="outline"
+											href={`/staff/academic/supervision/${observation.id}`}
+										>
+											<Eye class="h-4 w-4" />
+											รายละเอียด
+										</Button>
 										<LoadingButton
 											variant="outline"
 											loading={savingAction === `return-request:${observation.id}`}
@@ -2275,16 +2291,26 @@
 												{/if}
 											</div>
 										</div>
-										<Button
-											type="button"
-											class="shrink-0"
-											variant={evaluationObservationId === observation.id ? 'default' : 'outline'}
-											onclick={() => prepareEvaluationDraft(observation)}
-										>
-											{evaluationObservationId === observation.id
-												? 'กำลังเปิดแบบประเมิน'
-												: 'เริ่มประเมิน'}
-										</Button>
+										<div class="flex shrink-0 flex-wrap gap-2">
+											<Button
+												size="sm"
+												variant="outline"
+												href={`/staff/academic/supervision/${observation.id}`}
+											>
+												<Eye class="h-4 w-4" />
+												รายละเอียด
+											</Button>
+											<Button
+												type="button"
+												size="sm"
+												variant={evaluationObservationId === observation.id ? 'default' : 'outline'}
+												onclick={() => prepareEvaluationDraft(observation)}
+											>
+												{evaluationObservationId === observation.id
+													? 'กำลังเปิดแบบประเมิน'
+													: 'เริ่มประเมิน'}
+											</Button>
+										</div>
 									</div>
 								</div>
 							{/each}
@@ -2662,6 +2688,14 @@
 												<Badge variant="secondary">{statusLabel(observation.status)}</Badge>
 											</Table.Cell>
 											<Table.Cell class="space-x-2 text-right">
+												<Button
+													size="sm"
+													variant="outline"
+													href={`/staff/academic/supervision/${observation.id}`}
+												>
+													<Eye class="h-4 w-4" />
+													รายละเอียด
+												</Button>
 												{#if canManageRequests}
 													<LoadingButton
 														size="sm"
