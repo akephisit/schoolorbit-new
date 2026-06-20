@@ -899,6 +899,52 @@ pub async fn cancel_requested_observation(
     .await
 }
 
+async fn insert_supervision_evaluators(
+    tx: &mut sqlx::Transaction<'_, Postgres>,
+    observation_id: Uuid,
+    evaluators: &[crate::modules::supervision::models::EvaluatorAssignmentInput],
+) -> Result<(), AppError> {
+    if evaluators.is_empty() {
+        return Ok(());
+    }
+
+    let evaluator_user_ids: Vec<Uuid> = evaluators
+        .iter()
+        .map(|evaluator| evaluator.evaluator_user_id)
+        .collect();
+    let role_labels: Vec<Option<String>> = evaluators
+        .iter()
+        .map(|evaluator| evaluator.role_label.clone())
+        .collect();
+    let required_flags: Vec<bool> = evaluators
+        .iter()
+        .map(|evaluator| evaluator.is_required.unwrap_or(true))
+        .collect();
+
+    sqlx::query(
+        r#"
+        INSERT INTO supervision_evaluators (
+            observation_id, evaluator_user_id, role_label, is_required
+        )
+        SELECT $1, evaluator_user_id, role_label, is_required
+        FROM UNNEST($2::uuid[], $3::text[], $4::bool[])
+             AS rows(evaluator_user_id, role_label, is_required)
+        "#,
+    )
+    .bind(observation_id)
+    .bind(&evaluator_user_ids)
+    .bind(&role_labels)
+    .bind(&required_flags)
+    .execute(&mut **tx)
+    .await
+    .map_err(|error| {
+        tracing::error!("Failed to assign supervision evaluators: {}", error);
+        AppError::InternalServerError("ไม่สามารถกำหนดผู้ประเมินได้".to_string())
+    })?;
+
+    Ok(())
+}
+
 pub async fn approve_observation_request(
     pool: &PgPool,
     actor_user_id: Uuid,
@@ -967,26 +1013,7 @@ pub async fn approve_observation_request(
             AppError::InternalServerError("ไม่สามารถกำหนดผู้ประเมินได้".to_string())
         })?;
 
-    for evaluator in input.evaluators {
-        sqlx::query(
-            r#"
-            INSERT INTO supervision_evaluators (
-                observation_id, evaluator_user_id, role_label, is_required
-            )
-            VALUES ($1, $2, $3, $4)
-            "#,
-        )
-        .bind(observation_id)
-        .bind(evaluator.evaluator_user_id)
-        .bind(&evaluator.role_label)
-        .bind(evaluator.is_required.unwrap_or(true))
-        .execute(&mut *tx)
-        .await
-        .map_err(|error| {
-            tracing::error!("Failed to assign supervision evaluator: {}", error);
-            AppError::InternalServerError("ไม่สามารถกำหนดผู้ประเมินได้".to_string())
-        })?;
-    }
+    insert_supervision_evaluators(&mut tx, observation_id, &input.evaluators).await?;
 
     tx.commit().await.map_err(|error| {
         tracing::error!(
@@ -1376,27 +1403,43 @@ async fn insert_cycle_targets(
     cycle_id: Uuid,
     targets: &[CreateSupervisionCycleTargetRequest],
 ) -> Result<(), AppError> {
-    for target in targets {
-        sqlx::query(
-            r#"
-            INSERT INTO supervision_cycle_targets (
-                cycle_id, target_type, target_id, required_observations, priority
-            )
-            VALUES ($1, $2, $3, $4, $5)
-            "#,
-        )
-        .bind(cycle_id)
-        .bind(target.target_type.as_str())
-        .bind(target.target_id)
-        .bind(target.required_observations)
-        .bind(target.priority)
-        .execute(&mut **tx)
-        .await
-        .map_err(|error| {
-            tracing::error!("Failed to insert supervision cycle target: {}", error);
-            AppError::InternalServerError("ไม่สามารถบันทึกเป้าหมายรอบนิเทศได้".to_string())
-        })?;
+    if targets.is_empty() {
+        return Ok(());
     }
+
+    let target_types: Vec<String> = targets
+        .iter()
+        .map(|target| target.target_type.as_str().to_string())
+        .collect();
+    let target_ids: Vec<Option<Uuid>> = targets.iter().map(|target| target.target_id).collect();
+    let required_observations: Vec<i32> = targets
+        .iter()
+        .map(|target| target.required_observations)
+        .collect();
+    let priorities: Vec<i32> = targets.iter().map(|target| target.priority).collect();
+
+    sqlx::query(
+        r#"
+        INSERT INTO supervision_cycle_targets (
+            cycle_id, target_type, target_id, required_observations, priority
+        )
+        SELECT $1, target_type, target_id, required_observations, priority
+        FROM UNNEST($2::text[], $3::uuid[], $4::int4[], $5::int4[])
+             AS rows(target_type, target_id, required_observations, priority)
+        "#,
+    )
+    .bind(cycle_id)
+    .bind(&target_types)
+    .bind(&target_ids)
+    .bind(&required_observations)
+    .bind(&priorities)
+    .execute(&mut **tx)
+    .await
+    .map_err(|error| {
+        tracing::error!("Failed to insert supervision cycle targets: {}", error);
+        AppError::InternalServerError("ไม่สามารถบันทึกเป้าหมายรอบนิเทศได้".to_string())
+    })?;
+
     Ok(())
 }
 
@@ -1666,32 +1709,63 @@ async fn insert_template_steps(
     template_id: Uuid,
     steps: &[CreateSupervisionTemplateStepRequest],
 ) -> Result<(), AppError> {
-    for step in steps {
-        sqlx::query(
-            r#"
-            INSERT INTO supervision_template_steps (
-                template_id, step_order, step_code, label, actor_kind, actor_permission,
-                organization_position_code, action_kind, required
-            )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-            "#,
-        )
-        .bind(template_id)
-        .bind(step.step_order)
-        .bind(&step.step_code)
-        .bind(&step.label)
-        .bind(step.actor_kind.as_str())
-        .bind(&step.actor_permission)
-        .bind(&step.organization_position_code)
-        .bind(step.action_kind.as_str())
-        .bind(step.required)
-        .execute(&mut **tx)
-        .await
-        .map_err(|error| {
-            tracing::error!("Failed to insert supervision template step: {}", error);
-            AppError::InternalServerError("ไม่สามารถบันทึกขั้นตอนแบบประเมินนิเทศได้".to_string())
-        })?;
+    if steps.is_empty() {
+        return Ok(());
     }
+
+    let step_orders: Vec<i32> = steps.iter().map(|step| step.step_order).collect();
+    let step_codes: Vec<String> = steps.iter().map(|step| step.step_code.clone()).collect();
+    let labels: Vec<String> = steps.iter().map(|step| step.label.clone()).collect();
+    let actor_kinds: Vec<String> = steps
+        .iter()
+        .map(|step| step.actor_kind.as_str().to_string())
+        .collect();
+    let actor_permissions: Vec<Option<String>> = steps
+        .iter()
+        .map(|step| step.actor_permission.clone())
+        .collect();
+    let organization_position_codes: Vec<Option<String>> = steps
+        .iter()
+        .map(|step| step.organization_position_code.clone())
+        .collect();
+    let action_kinds: Vec<String> = steps
+        .iter()
+        .map(|step| step.action_kind.as_str().to_string())
+        .collect();
+    let required_flags: Vec<bool> = steps.iter().map(|step| step.required).collect();
+
+    sqlx::query(
+        r#"
+        INSERT INTO supervision_template_steps (
+            template_id, step_order, step_code, label, actor_kind, actor_permission,
+            organization_position_code, action_kind, required
+        )
+        SELECT $1, step_order, step_code, label, actor_kind, actor_permission,
+               organization_position_code, action_kind, required
+        FROM UNNEST(
+            $2::int4[], $3::text[], $4::text[], $5::text[], $6::text[],
+            $7::text[], $8::text[], $9::bool[]
+        ) AS rows(
+            step_order, step_code, label, actor_kind, actor_permission,
+            organization_position_code, action_kind, required
+        )
+        "#,
+    )
+    .bind(template_id)
+    .bind(&step_orders)
+    .bind(&step_codes)
+    .bind(&labels)
+    .bind(&actor_kinds)
+    .bind(&actor_permissions)
+    .bind(&organization_position_codes)
+    .bind(&action_kinds)
+    .bind(&required_flags)
+    .execute(&mut **tx)
+    .await
+    .map_err(|error| {
+        tracing::error!("Failed to insert supervision template steps: {}", error);
+        AppError::InternalServerError("ไม่สามารถบันทึกขั้นตอนแบบประเมินนิเทศได้".to_string())
+    })?;
 
     Ok(())
 }

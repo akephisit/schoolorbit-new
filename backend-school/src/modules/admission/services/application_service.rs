@@ -63,6 +63,67 @@ fn next_available_student_number(occupied: &HashSet<i64>, start_number: i64) -> 
     next
 }
 
+#[derive(Debug, Clone, sqlx::FromRow)]
+struct AppIdRow {
+    application_id: Uuid,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct StudentIdAssignmentRow {
+    application_id: Uuid,
+    assigned_student_id: String,
+}
+
+fn student_id_assignment_rows(
+    students: &[AppIdRow],
+    occupied: &mut HashSet<i64>,
+    start_number: i64,
+) -> Vec<StudentIdAssignmentRow> {
+    let mut next = start_number;
+    students
+        .iter()
+        .map(|student| {
+            next = next_available_student_number(occupied, next);
+            let assigned_student_id = next.to_string();
+            occupied.insert(next);
+            next += 1;
+            StudentIdAssignmentRow {
+                application_id: student.application_id,
+                assigned_student_id,
+            }
+        })
+        .collect()
+}
+
+async fn bulk_update_assigned_student_ids(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    rows: &[StudentIdAssignmentRow],
+) -> Result<u64, AppError> {
+    if rows.is_empty() {
+        return Ok(0);
+    }
+
+    let application_ids: Vec<Uuid> = rows.iter().map(|row| row.application_id).collect();
+    let assigned_student_ids: Vec<String> = rows
+        .iter()
+        .map(|row| row.assigned_student_id.clone())
+        .collect();
+
+    let result = sqlx::query(
+        "UPDATE admission_applications AS application
+         SET assigned_student_id = updates.assigned_student_id, updated_at = NOW()
+         FROM UNNEST($1::uuid[], $2::text[]) AS updates(application_id, assigned_student_id)
+         WHERE application.id = updates.application_id",
+    )
+    .bind(&application_ids)
+    .bind(&assigned_student_ids)
+    .execute(&mut **tx)
+    .await
+    .map_err(|_| AppError::InternalServerError("Database error".to_string()))?;
+
+    Ok(result.rows_affected())
+}
+
 // ==========================================
 // Public submit
 // ==========================================
@@ -1384,11 +1445,6 @@ pub async fn auto_assign_student_ids(
 
     let mut occupied = occupied_student_numbers(&existing);
 
-    #[derive(sqlx::FromRow)]
-    struct AppIdRow {
-        application_id: Uuid,
-    }
-
     let students = sqlx::query_as::<_, AppIdRow>(
         r#"
         SELECT ara.application_id
@@ -1414,24 +1470,8 @@ pub async fn auto_assign_student_ids(
         .await
         .map_err(|_| AppError::InternalServerError("Transaction failed".to_string()))?;
 
-    let mut next = start_number;
-    let mut assigned: i64 = 0;
-
-    for student in &students {
-        next = next_available_student_number(&occupied, next);
-        sqlx::query(
-            "UPDATE admission_applications SET assigned_student_id = $1, updated_at = NOW() WHERE id = $2",
-        )
-        .bind(next.to_string())
-        .bind(student.application_id)
-        .execute(&mut *tx)
-        .await
-        .map_err(|_| AppError::InternalServerError("Database error".to_string()))?;
-
-        occupied.insert(next);
-        assigned += 1;
-        next += 1;
-    }
+    let assignment_rows = student_id_assignment_rows(&students, &mut occupied, start_number);
+    let assigned = bulk_update_assigned_student_ids(&mut tx, &assignment_rows).await? as i64;
 
     tx.commit()
         .await
@@ -1678,6 +1718,38 @@ mod tests {
         let occupied = HashSet::from([7, 8, 9, 11]);
 
         assert_eq!(next_available_student_number(&occupied, 7), 10);
+    }
+
+    #[test]
+    fn student_id_assignment_rows_skip_occupied_numbers_in_order() {
+        let first = Uuid::new_v4();
+        let second = Uuid::new_v4();
+        let mut occupied = HashSet::from([1001]);
+
+        assert_eq!(
+            student_id_assignment_rows(
+                &[
+                    AppIdRow {
+                        application_id: first,
+                    },
+                    AppIdRow {
+                        application_id: second,
+                    },
+                ],
+                &mut occupied,
+                1001,
+            ),
+            vec![
+                StudentIdAssignmentRow {
+                    application_id: first,
+                    assigned_student_id: "1002".to_string(),
+                },
+                StudentIdAssignmentRow {
+                    application_id: second,
+                    assigned_student_id: "1003".to_string(),
+                },
+            ]
+        );
     }
 }
 

@@ -1,15 +1,105 @@
 use crate::error::AppError;
 use crate::modules::academic::models::curriculum::{
-    AddSubjectDefaultInstructorRequest, CreateSubjectRequest, Subject, SubjectDefaultInstructor,
-    SubjectFilter, SubjectGroup, UpdateSubjectRequest,
+    AddSubjectDefaultInstructorRequest, CreateSubjectRequest, DefaultInstructorInput, Subject,
+    SubjectDefaultInstructor, SubjectFilter, SubjectGroup, UpdateSubjectRequest,
 };
-use sqlx::PgPool;
+use sqlx::{PgPool, Postgres, Transaction};
+use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SubjectGroupAccess {
     All,
     Groups(Vec<Uuid>),
+}
+
+fn ordered_unique_subject_grade_level_ids(level_ids: &[Uuid]) -> Vec<Uuid> {
+    let mut seen = HashSet::with_capacity(level_ids.len());
+    level_ids
+        .iter()
+        .copied()
+        .filter(|level_id| seen.insert(*level_id))
+        .collect()
+}
+
+fn unique_subject_default_instructors(
+    team: &[DefaultInstructorInput],
+) -> Result<Vec<DefaultInstructorInput>, AppError> {
+    let mut rows: Vec<DefaultInstructorInput> = Vec::with_capacity(team.len());
+    let mut index_by_instructor = HashMap::with_capacity(team.len());
+
+    for instructor in team {
+        let role = instructor.role.clone();
+        validate_subject_instructor_role(&role)?;
+        let row = DefaultInstructorInput {
+            instructor_id: instructor.instructor_id,
+            role,
+        };
+        if let Some(index) = index_by_instructor.get(&instructor.instructor_id).copied() {
+            rows[index] = row;
+        } else {
+            index_by_instructor.insert(instructor.instructor_id, rows.len());
+            rows.push(row);
+        }
+    }
+
+    Ok(rows)
+}
+
+async fn bulk_insert_subject_grade_levels(
+    tx: &mut Transaction<'_, Postgres>,
+    subject_id: Uuid,
+    level_ids: &[Uuid],
+) -> Result<(), AppError> {
+    let level_ids = ordered_unique_subject_grade_level_ids(level_ids);
+    if level_ids.is_empty() {
+        return Ok(());
+    }
+
+    sqlx::query(
+        "INSERT INTO subject_grade_levels (subject_id, grade_level_id)
+         SELECT $1, grade_level_id
+         FROM UNNEST($2::uuid[]) AS rows(grade_level_id)
+         ON CONFLICT DO NOTHING",
+    )
+    .bind(subject_id)
+    .bind(&level_ids)
+    .execute(&mut **tx)
+    .await
+    .map_err(|e| {
+        AppError::InternalServerError(format!("Failed to save grade level links: {}", e))
+    })?;
+
+    Ok(())
+}
+
+async fn bulk_upsert_subject_default_instructors(
+    tx: &mut Transaction<'_, Postgres>,
+    subject_id: Uuid,
+    team: &[DefaultInstructorInput],
+) -> Result<(), AppError> {
+    let team = unique_subject_default_instructors(team)?;
+    if team.is_empty() {
+        return Ok(());
+    }
+
+    let instructor_ids: Vec<Uuid> = team.iter().map(|item| item.instructor_id).collect();
+    let roles: Vec<String> = team.iter().map(|item| item.role.clone()).collect();
+
+    sqlx::query(
+        "INSERT INTO subject_default_instructors (subject_id, instructor_id, role)
+         SELECT $1, instructor_id, role
+         FROM UNNEST($2::uuid[], $3::text[]) AS rows(instructor_id, role)
+         ON CONFLICT (subject_id, instructor_id) DO UPDATE SET role = EXCLUDED.role",
+    )
+    .bind(subject_id)
+    .bind(&instructor_ids)
+    .bind(&roles)
+    .execute(&mut **tx)
+    .await
+    .map_err(|e| AppError::InternalServerError(format!("Failed to save team: {}", e)))?;
+
+    Ok(())
 }
 
 pub async fn list_subject_groups(pool: &PgPool) -> Result<Vec<SubjectGroup>, AppError> {
@@ -171,19 +261,7 @@ pub async fn create_subject(
     })?;
 
     if let Some(level_ids) = &payload.grade_level_ids {
-        for lid in level_ids {
-            sqlx::query(
-                "INSERT INTO subject_grade_levels (subject_id, grade_level_id) VALUES ($1, $2)",
-            )
-            .bind(subject.id)
-            .bind(lid)
-            .execute(&mut *tx)
-            .await
-            .map_err(|e| {
-                tracing::error!("Failed to link grade level: {}", e);
-                AppError::InternalServerError("Failed to save grade level links".to_string())
-            })?;
-        }
+        bulk_insert_subject_grade_levels(&mut tx, subject.id, level_ids).await?;
         subject.grade_level_ids = Some(level_ids.clone());
     }
 
@@ -193,20 +271,7 @@ pub async fn create_subject(
             .execute(&mut *tx)
             .await
             .map_err(|e| AppError::InternalServerError(format!("Failed to clear team: {}", e)))?;
-        for t in team {
-            validate_subject_instructor_role(&t.role)?;
-            sqlx::query(
-                "INSERT INTO subject_default_instructors (subject_id, instructor_id, role)
-                 VALUES ($1, $2, $3)
-                 ON CONFLICT (subject_id, instructor_id) DO UPDATE SET role = EXCLUDED.role",
-            )
-            .bind(subject.id)
-            .bind(t.instructor_id)
-            .bind(&t.role)
-            .execute(&mut *tx)
-            .await
-            .map_err(|e| AppError::InternalServerError(format!("Failed to save team: {}", e)))?;
-        }
+        bulk_upsert_subject_default_instructors(&mut tx, subject.id, team).await?;
     }
 
     tx.commit()
@@ -252,18 +317,7 @@ pub async fn update_subject(
             .execute(&mut *tx)
             .await
             .map_err(|e| AppError::InternalServerError(format!("Failed to clear links: {}", e)))?;
-        for lid in level_ids {
-            sqlx::query(
-                "INSERT INTO subject_grade_levels (subject_id, grade_level_id) VALUES ($1, $2)",
-            )
-            .bind(id)
-            .bind(lid)
-            .execute(&mut *tx)
-            .await
-            .map_err(|e| {
-                AppError::InternalServerError(format!("Failed to link grade level: {}", e))
-            })?;
-        }
+        bulk_insert_subject_grade_levels(&mut tx, id, level_ids).await?;
         subject.grade_level_ids = Some(level_ids.clone());
     }
 
@@ -273,20 +327,7 @@ pub async fn update_subject(
             .execute(&mut *tx)
             .await
             .map_err(|e| AppError::InternalServerError(format!("Failed to clear team: {}", e)))?;
-        for t in team {
-            validate_subject_instructor_role(&t.role)?;
-            sqlx::query(
-                "INSERT INTO subject_default_instructors (subject_id, instructor_id, role)
-                 VALUES ($1, $2, $3)
-                 ON CONFLICT (subject_id, instructor_id) DO UPDATE SET role = EXCLUDED.role",
-            )
-            .bind(id)
-            .bind(t.instructor_id)
-            .bind(&t.role)
-            .execute(&mut *tx)
-            .await
-            .map_err(|e| AppError::InternalServerError(format!("Failed to save team: {}", e)))?;
-        }
+        bulk_upsert_subject_default_instructors(&mut tx, id, team).await?;
     }
 
     tx.commit()
@@ -640,6 +681,38 @@ mod tests {
             subject_instructor_role_or_default(Some("primary".to_string())),
             "primary"
         );
+    }
+
+    #[test]
+    fn ordered_unique_subject_grade_level_ids_preserves_first_seen_order() {
+        let first = Uuid::new_v4();
+        let second = Uuid::new_v4();
+
+        assert_eq!(
+            ordered_unique_subject_grade_level_ids(&[first, second, first]),
+            vec![first, second]
+        );
+    }
+
+    #[test]
+    fn unique_subject_default_instructors_keeps_latest_role_per_instructor() {
+        let instructor_id = Uuid::new_v4();
+
+        let rows = unique_subject_default_instructors(&[
+            DefaultInstructorInput {
+                instructor_id,
+                role: "secondary".to_string(),
+            },
+            DefaultInstructorInput {
+                instructor_id,
+                role: "primary".to_string(),
+            },
+        ])
+        .expect("roles should be valid");
+
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].instructor_id, instructor_id);
+        assert_eq!(rows[0].role, "primary");
     }
 
     #[test]

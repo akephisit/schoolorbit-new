@@ -5,6 +5,7 @@ use crate::policies::activity_access_policy;
 use crate::policies::resource_access_policy::UserResourceListAccess;
 use chrono::{DateTime, Utc};
 use sqlx::{types::Json, FromRow, PgPool};
+use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
 
 fn activity_datetime_from_rfc3339(value: Option<&str>) -> Option<chrono::DateTime<Utc>> {
@@ -25,6 +26,67 @@ fn activity_actor_scope_filter(access: UserResourceListAccess) -> Option<Uuid> {
         | UserResourceListAccess::OrganizationUnit(actor_user_id)
         | UserResourceListAccess::OrganizationTree(actor_user_id) => Some(actor_user_id),
     }
+}
+
+fn unique_activity_student_ids(student_ids: &[Uuid]) -> Vec<Uuid> {
+    let mut seen = HashSet::with_capacity(student_ids.len());
+    student_ids
+        .iter()
+        .copied()
+        .filter(|student_id| seen.insert(*student_id))
+        .collect()
+}
+
+async fn bulk_insert_activity_group_members(
+    pool: &PgPool,
+    group_id: Uuid,
+    student_ids: &[Uuid],
+) -> Result<usize, AppError> {
+    if student_ids.is_empty() {
+        return Ok(0);
+    }
+
+    let result = sqlx::query(
+        "INSERT INTO activity_group_members (activity_group_id, student_id)
+         SELECT $1, student_id
+         FROM UNNEST($2::uuid[]) AS rows(student_id)
+         ON CONFLICT DO NOTHING",
+    )
+    .bind(group_id)
+    .bind(student_ids)
+    .execute(pool)
+    .await
+    .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+    Ok(result.rows_affected() as usize)
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SlotClassroomAssignmentBulkRow {
+    classroom_id: Uuid,
+    instructor_id: Uuid,
+}
+
+fn slot_classroom_assignment_bulk_rows(
+    assignments: &[UpsertSlotClassroomAssignmentRequest],
+) -> Vec<SlotClassroomAssignmentBulkRow> {
+    let mut rows: Vec<SlotClassroomAssignmentBulkRow> = Vec::with_capacity(assignments.len());
+    let mut index_by_classroom = HashMap::with_capacity(assignments.len());
+
+    for assignment in assignments {
+        let row = SlotClassroomAssignmentBulkRow {
+            classroom_id: assignment.classroom_id,
+            instructor_id: assignment.instructor_id,
+        };
+        if let Some(index) = index_by_classroom.get(&assignment.classroom_id).copied() {
+            rows[index] = row;
+        } else {
+            index_by_classroom.insert(assignment.classroom_id, rows.len());
+            rows.push(row);
+        }
+    }
+
+    rows
 }
 
 #[derive(Debug, FromRow)]
@@ -607,26 +669,15 @@ pub async fn add_members(
             .await
             .map_err(|_| AppError::NotFound("ไม่พบกลุ่มกิจกรรม".to_string()))?;
 
+    let student_ids = unique_activity_student_ids(&student_ids);
+
     if let Some(cap) = max_cap {
         if current_count + student_ids.len() as i64 > cap as i64 {
             return Ok(AddMembersOutcome::OverCapacity(cap));
         }
     }
 
-    let mut inserted = 0usize;
-    for student_id in &student_ids {
-        let result = sqlx::query(
-            "INSERT INTO activity_group_members (activity_group_id, student_id)
-             VALUES ($1, $2) ON CONFLICT DO NOTHING",
-        )
-        .bind(group_id)
-        .bind(student_id)
-        .execute(pool)
-        .await;
-        if let Ok(r) = result {
-            inserted += r.rows_affected() as usize;
-        }
-    }
+    let inserted = bulk_insert_activity_group_members(pool, group_id, &student_ids).await?;
     Ok(AddMembersOutcome::Inserted(inserted))
 }
 
@@ -1101,60 +1152,78 @@ pub async fn batch_upsert_slot_classroom_assignments(
     slot_id: Uuid,
     body: BatchUpsertSlotClassroomAssignmentsRequest,
 ) -> Result<usize, AppError> {
+    let assignment_rows = slot_classroom_assignment_bulk_rows(&body.assignments);
+    if assignment_rows.is_empty() {
+        return Ok(0);
+    }
+
+    let classroom_ids: Vec<Uuid> = assignment_rows
+        .iter()
+        .map(|assignment| assignment.classroom_id)
+        .collect();
+    let instructor_ids: Vec<Uuid> = assignment_rows
+        .iter()
+        .map(|assignment| assignment.instructor_id)
+        .collect();
+
     let mut tx = pool
         .begin()
         .await
         .map_err(|e| AppError::InternalServerError(e.to_string()))?;
 
-    for a in &body.assignments {
-        sqlx::query(
-            r#"INSERT INTO activity_slot_classroom_assignments (slot_id, classroom_id, instructor_id)
-               VALUES ($1, $2, $3)
-               ON CONFLICT (slot_id, classroom_id)
-               DO UPDATE SET instructor_id = EXCLUDED.instructor_id"#,
-        )
-        .bind(slot_id)
-        .bind(a.classroom_id)
-        .bind(a.instructor_id)
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| {
-            tracing::error!("upsert_slot_classroom_assignment error: {e}");
-            AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
-        })?;
+    sqlx::query(
+        r#"INSERT INTO activity_slot_classroom_assignments (slot_id, classroom_id, instructor_id)
+           SELECT $1, classroom_id, instructor_id
+           FROM UNNEST($2::uuid[], $3::uuid[]) AS rows(classroom_id, instructor_id)
+           ON CONFLICT (slot_id, classroom_id)
+           DO UPDATE SET instructor_id = EXCLUDED.instructor_id"#,
+    )
+    .bind(slot_id)
+    .bind(&classroom_ids)
+    .bind(&instructor_ids)
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| {
+        tracing::error!("upsert_slot_classroom_assignment error: {e}");
+        AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
+    })?;
 
-        sqlx::query(
-            r#"DELETE FROM timetable_entry_instructors tei
-               USING academic_timetable_entries te
-               WHERE tei.entry_id = te.id
-                 AND te.activity_slot_id = $1
-                 AND te.classroom_id = $2"#,
-        )
-        .bind(slot_id)
-        .bind(a.classroom_id)
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+    sqlx::query(
+        r#"DELETE FROM timetable_entry_instructors tei
+           USING academic_timetable_entries te
+           WHERE tei.entry_id = te.id
+             AND te.activity_slot_id = $1
+             AND te.classroom_id = ANY($2)"#,
+    )
+    .bind(slot_id)
+    .bind(&classroom_ids)
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| AppError::InternalServerError(e.to_string()))?;
 
-        sqlx::query(
-            r#"INSERT INTO timetable_entry_instructors (entry_id, instructor_id, role)
-               SELECT te.id, $3, 'primary'
-               FROM academic_timetable_entries te
-               WHERE te.activity_slot_id = $1 AND te.classroom_id = $2
-               ON CONFLICT (entry_id, instructor_id) DO NOTHING"#,
-        )
-        .bind(slot_id)
-        .bind(a.classroom_id)
-        .bind(a.instructor_id)
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
-    }
+    sqlx::query(
+        r#"WITH assignment_rows AS (
+               SELECT classroom_id, instructor_id
+               FROM UNNEST($2::uuid[], $3::uuid[]) AS rows(classroom_id, instructor_id)
+           )
+           INSERT INTO timetable_entry_instructors (entry_id, instructor_id, role)
+           SELECT te.id, assignment_rows.instructor_id, 'primary'
+           FROM academic_timetable_entries te
+           JOIN assignment_rows ON assignment_rows.classroom_id = te.classroom_id
+           WHERE te.activity_slot_id = $1
+           ON CONFLICT (entry_id, instructor_id) DO NOTHING"#,
+    )
+    .bind(slot_id)
+    .bind(&classroom_ids)
+    .bind(&instructor_ids)
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| AppError::InternalServerError(e.to_string()))?;
 
     tx.commit()
         .await
         .map_err(|e| AppError::InternalServerError(e.to_string()))?;
-    Ok(body.assignments.len())
+    Ok(assignment_rows.len())
 }
 
 pub async fn delete_all_slot_classroom_assignments(
@@ -1252,6 +1321,41 @@ mod tests {
         assert_eq!(
             optional_uuid_list_json(Some(&[id])).map(|Json(ids)| ids),
             Some(vec![id])
+        );
+    }
+
+    #[test]
+    fn unique_activity_student_ids_preserves_first_seen_order() {
+        let first = Uuid::new_v4();
+        let second = Uuid::new_v4();
+
+        assert_eq!(
+            unique_activity_student_ids(&[first, second, first]),
+            vec![first, second]
+        );
+    }
+
+    #[test]
+    fn slot_classroom_assignment_bulk_rows_keeps_latest_classroom_assignment() {
+        let classroom_id = Uuid::new_v4();
+        let old_instructor_id = Uuid::new_v4();
+        let new_instructor_id = Uuid::new_v4();
+
+        assert_eq!(
+            slot_classroom_assignment_bulk_rows(&[
+                UpsertSlotClassroomAssignmentRequest {
+                    classroom_id,
+                    instructor_id: old_instructor_id,
+                },
+                UpsertSlotClassroomAssignmentRequest {
+                    classroom_id,
+                    instructor_id: new_instructor_id,
+                },
+            ]),
+            vec![SlotClassroomAssignmentBulkRow {
+                classroom_id,
+                instructor_id: new_instructor_id,
+            }]
         );
     }
 

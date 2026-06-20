@@ -1694,8 +1694,83 @@ fn mutation_performance_foundation_services_use_bulk_helpers() {
         ),
         (
             "src/modules/academic/services/study_plan_service.rs",
-            ["bulk_insert_study_plan_subjects"].as_slice(),
-            ["for subject in &req.subjects"].as_slice(),
+            [
+                "bulk_insert_study_plan_subjects",
+                "bulk_upsert_catalog_default_instructors",
+            ]
+            .as_slice(),
+            ["for subject in &req.subjects", "for t in team"].as_slice(),
+        ),
+        (
+            "src/modules/academic/services/academic_structure_service.rs",
+            [
+                "bulk_mark_existing_enrollments_moved_out",
+                "bulk_upsert_class_enrollments",
+                "bulk_insert_year_levels",
+                "insert_advisors",
+                "bulk_update_class_numbers_by_student_ids",
+                "bulk_update_class_numbers_by_enrollment_ids",
+            ]
+            .as_slice(),
+            [
+                "for student_id in &payload.student_ids",
+                "for level_id in grade_level_ids",
+                "for advisor in advisors",
+                "for (index, student_id)",
+                "for (index, student)",
+            ]
+            .as_slice(),
+        ),
+        (
+            "src/modules/academic/services/subject_service.rs",
+            [
+                "bulk_insert_subject_grade_levels",
+                "bulk_upsert_subject_default_instructors",
+            ]
+            .as_slice(),
+            ["for lid in level_ids", "for t in team"].as_slice(),
+        ),
+        (
+            "src/modules/academic/services/activity_service.rs",
+            [
+                "bulk_insert_activity_group_members",
+                "slot_classroom_assignment_bulk_rows",
+            ]
+            .as_slice(),
+            [
+                "for student_id in &student_ids",
+                "for a in &body.assignments",
+            ]
+            .as_slice(),
+        ),
+        (
+            "src/modules/admission/services/application_service.rs",
+            [
+                "student_id_assignment_rows",
+                "bulk_update_assigned_student_ids",
+            ]
+            .as_slice(),
+            ["for student in &students"].as_slice(),
+        ),
+        (
+            "src/modules/menu/services/menu_service.rs",
+            ["reorder_menu_groups"].as_slice(),
+            ["for (id, display_order) in &groups"].as_slice(),
+        ),
+        (
+            "src/modules/supervision/services.rs",
+            [
+                "insert_supervision_evaluators",
+                "Failed to insert supervision cycle targets",
+                "Failed to insert supervision template steps",
+            ]
+            .as_slice(),
+            [
+                "for evaluator in input.evaluators",
+                "Failed to insert supervision cycle target:",
+                "Failed to insert supervision template step:",
+            ]
+            .as_slice(),
         ),
         (
             "src/modules/staff/services/organization_permission_service.rs",

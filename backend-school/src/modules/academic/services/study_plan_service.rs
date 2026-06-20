@@ -2,6 +2,7 @@ use crate::error::AppError;
 use crate::modules::academic::models::study_plans::*;
 use chrono::{DateTime, Utc};
 use sqlx::{types::Json, FromRow, PgPool};
+use std::collections::HashMap;
 use uuid::Uuid;
 
 fn grade_level_ids_json(ids: Option<&[Uuid]>) -> Option<Json<&[Uuid]>> {
@@ -75,6 +76,58 @@ fn validate_catalog_instructor_role(role: &str) -> Result<(), AppError> {
     Err(AppError::BadRequest(
         "role must be 'primary' or 'secondary'".to_string(),
     ))
+}
+
+fn unique_catalog_default_instructors(
+    team: &[CatalogDefaultInstructorInput],
+) -> Result<Vec<CatalogDefaultInstructorInput>, AppError> {
+    let mut rows: Vec<CatalogDefaultInstructorInput> = Vec::with_capacity(team.len());
+    let mut index_by_instructor = HashMap::with_capacity(team.len());
+
+    for instructor in team {
+        validate_catalog_instructor_role(&instructor.role)?;
+        let row = CatalogDefaultInstructorInput {
+            instructor_id: instructor.instructor_id,
+            role: instructor.role.clone(),
+        };
+        if let Some(index) = index_by_instructor.get(&instructor.instructor_id).copied() {
+            rows[index] = row;
+        } else {
+            index_by_instructor.insert(instructor.instructor_id, rows.len());
+            rows.push(row);
+        }
+    }
+
+    Ok(rows)
+}
+
+async fn bulk_upsert_catalog_default_instructors(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    catalog_id: Uuid,
+    team: &[CatalogDefaultInstructorInput],
+) -> Result<(), AppError> {
+    let team = unique_catalog_default_instructors(team)?;
+    if team.is_empty() {
+        return Ok(());
+    }
+
+    let instructor_ids: Vec<Uuid> = team.iter().map(|item| item.instructor_id).collect();
+    let roles: Vec<String> = team.iter().map(|item| item.role.clone()).collect();
+
+    sqlx::query(
+        "INSERT INTO activity_catalog_default_instructors (catalog_id, instructor_id, role)
+         SELECT $1, instructor_id, role
+         FROM UNNEST($2::uuid[], $3::text[]) AS rows(instructor_id, role)
+         ON CONFLICT (catalog_id, instructor_id) DO UPDATE SET role = EXCLUDED.role",
+    )
+    .bind(catalog_id)
+    .bind(&instructor_ids)
+    .bind(&roles)
+    .execute(&mut **tx)
+    .await
+    .map_err(|e| AppError::InternalServerError(format!("Failed to save team: {}", e)))?;
+
+    Ok(())
 }
 
 #[derive(Debug, FromRow)]
@@ -1015,20 +1068,7 @@ pub async fn create_activity_catalog(
     .map_err(|e| AppError::BadRequest(e.to_string()))?;
 
     if let Some(team) = &req.default_instructors {
-        for t in team {
-            validate_catalog_instructor_role(&t.role)?;
-            sqlx::query(
-                "INSERT INTO activity_catalog_default_instructors (catalog_id, instructor_id, role)
-                 VALUES ($1, $2, $3)
-                 ON CONFLICT (catalog_id, instructor_id) DO UPDATE SET role = EXCLUDED.role",
-            )
-            .bind(row.id)
-            .bind(t.instructor_id)
-            .bind(&t.role)
-            .execute(&mut *tx)
-            .await
-            .map_err(|e| AppError::InternalServerError(format!("Failed to save team: {}", e)))?;
-        }
+        bulk_upsert_catalog_default_instructors(&mut tx, row.id, team).await?;
     }
 
     tx.commit()
@@ -1340,6 +1380,27 @@ mod tests {
     fn validate_catalog_instructor_role_accepts_supported_roles() {
         assert!(validate_catalog_instructor_role("primary").is_ok());
         assert!(validate_catalog_instructor_role("secondary").is_ok());
+    }
+
+    #[test]
+    fn unique_catalog_default_instructors_keeps_latest_role_per_instructor() {
+        let instructor_id = Uuid::new_v4();
+
+        let rows = unique_catalog_default_instructors(&[
+            CatalogDefaultInstructorInput {
+                instructor_id,
+                role: "secondary".to_string(),
+            },
+            CatalogDefaultInstructorInput {
+                instructor_id,
+                role: "primary".to_string(),
+            },
+        ])
+        .expect("roles should be valid");
+
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].instructor_id, instructor_id);
+        assert_eq!(rows[0].role, "primary");
     }
 
     #[test]

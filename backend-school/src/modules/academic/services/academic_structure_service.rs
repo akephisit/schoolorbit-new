@@ -25,6 +25,56 @@ struct ClassroomIdentity {
     code: String,
 }
 
+fn ordered_unique_uuids(ids: &[Uuid]) -> Vec<Uuid> {
+    let mut seen = HashSet::with_capacity(ids.len());
+    ids.iter().copied().filter(|id| seen.insert(*id)).collect()
+}
+
+async fn bulk_mark_existing_enrollments_moved_out(
+    tx: &mut Transaction<'_, Postgres>,
+    student_ids: &[Uuid],
+) -> Result<(), AppError> {
+    if student_ids.is_empty() {
+        return Ok(());
+    }
+
+    sqlx::query(
+        "UPDATE student_class_enrollments SET status = 'moved_out', updated_at = NOW()
+         WHERE student_id = ANY($1) AND status = 'active'",
+    )
+    .bind(student_ids)
+    .execute(&mut **tx)
+    .await?;
+
+    Ok(())
+}
+
+async fn bulk_upsert_class_enrollments(
+    tx: &mut Transaction<'_, Postgres>,
+    class_room_id: Uuid,
+    enrollment_date: chrono::NaiveDate,
+    student_ids: &[Uuid],
+) -> Result<u64, AppError> {
+    if student_ids.is_empty() {
+        return Ok(0);
+    }
+
+    let result = sqlx::query(
+        "INSERT INTO student_class_enrollments (student_id, class_room_id, enrollment_date, status)
+         SELECT student_id, $2, $3, 'active'
+         FROM UNNEST($1::uuid[]) AS rows(student_id)
+         ON CONFLICT (student_id, class_room_id)
+         DO UPDATE SET status = 'active', enrollment_date = $3, updated_at = NOW()",
+    )
+    .bind(student_ids)
+    .bind(class_room_id)
+    .bind(enrollment_date)
+    .execute(&mut **tx)
+    .await?;
+
+    Ok(result.rows_affected())
+}
+
 pub async fn list_academic_structure(pool: &PgPool) -> Result<AcademicStructure, AppError> {
     let years =
         sqlx::query_as::<_, AcademicYear>("SELECT * FROM academic_years ORDER BY year DESC")
@@ -465,32 +515,12 @@ pub async fn enroll_students(
         .enrollment_date
         .unwrap_or(chrono::Local::now().date_naive());
 
+    let student_ids = ordered_unique_uuids(&payload.student_ids);
     let mut tx = pool.begin().await?;
-    let mut enrolled_count = 0;
-
-    for student_id in &payload.student_ids {
-        sqlx::query(
-            "UPDATE student_class_enrollments SET status = 'moved_out', updated_at = NOW() 
-             WHERE student_id = $1 AND status = 'active'",
-        )
-        .bind(student_id)
-        .execute(&mut *tx)
-        .await?;
-
-        sqlx::query(
-            "INSERT INTO student_class_enrollments (student_id, class_room_id, enrollment_date, status)
-             VALUES ($1, $2, $3, 'active')
-             ON CONFLICT (student_id, class_room_id) 
-             DO UPDATE SET status = 'active', enrollment_date = $3, updated_at = NOW()",
-        )
-        .bind(student_id)
-        .bind(payload.class_room_id)
-        .bind(enroll_date)
-        .execute(&mut *tx)
-        .await?;
-
-        enrolled_count += 1;
-    }
+    bulk_mark_existing_enrollments_moved_out(&mut tx, &student_ids).await?;
+    let enrolled_count =
+        bulk_upsert_class_enrollments(&mut tx, payload.class_room_id, enroll_date, &student_ids)
+            .await? as usize;
 
     tx.commit().await?;
 
@@ -589,15 +619,33 @@ pub async fn update_year_levels(
         .execute(&mut *tx)
         .await?;
 
-    for level_id in grade_level_ids {
-        sqlx::query("INSERT INTO academic_year_grade_levels (academic_year_id, grade_level_id) VALUES ($1, $2)")
-            .bind(year_id)
-            .bind(level_id)
-            .execute(&mut *tx)
-            .await?;
-    }
+    bulk_insert_year_levels(&mut tx, year_id, &grade_level_ids).await?;
 
     tx.commit().await?;
+    Ok(())
+}
+
+async fn bulk_insert_year_levels(
+    tx: &mut Transaction<'_, Postgres>,
+    year_id: Uuid,
+    grade_level_ids: &[Uuid],
+) -> Result<(), AppError> {
+    let grade_level_ids = ordered_unique_uuids(grade_level_ids);
+    if grade_level_ids.is_empty() {
+        return Ok(());
+    }
+
+    sqlx::query(
+        "INSERT INTO academic_year_grade_levels (academic_year_id, grade_level_id)
+         SELECT $1, grade_level_id
+         FROM UNNEST($2::uuid[]) AS rows(grade_level_id)
+         ON CONFLICT DO NOTHING",
+    )
+    .bind(year_id)
+    .bind(&grade_level_ids)
+    .execute(&mut **tx)
+    .await?;
+
     Ok(())
 }
 
@@ -655,18 +703,27 @@ async fn insert_advisors(
     classroom_id: Uuid,
     advisors: &[ClassroomAdvisorInput],
 ) -> Result<(), AppError> {
-    for advisor in advisors {
-        sqlx::query(
-            "INSERT INTO classroom_advisors (classroom_id, user_id, role)
-             VALUES ($1, $2, $3)
-             ON CONFLICT (classroom_id, user_id) DO UPDATE SET role = EXCLUDED.role",
-        )
-        .bind(classroom_id)
-        .bind(advisor.user_id)
-        .bind(&advisor.role)
-        .execute(&mut **tx)
-        .await?;
+    if advisors.is_empty() {
+        return Ok(());
     }
+
+    let user_ids: Vec<Uuid> = advisors.iter().map(|advisor| advisor.user_id).collect();
+    let roles: Vec<String> = advisors
+        .iter()
+        .map(|advisor| advisor.role.clone())
+        .collect();
+
+    sqlx::query(
+        "INSERT INTO classroom_advisors (classroom_id, user_id, role)
+         SELECT $1, user_id, role
+         FROM UNNEST($2::uuid[], $3::text[]) AS rows(user_id, role)
+         ON CONFLICT (classroom_id, user_id) DO UPDATE SET role = EXCLUDED.role",
+    )
+    .bind(classroom_id)
+    .bind(&user_ids)
+    .bind(&roles)
+    .execute(&mut **tx)
+    .await?;
 
     Ok(())
 }
@@ -763,20 +820,46 @@ async fn append_class_numbers(
 
     let start_number = max_number.unwrap_or(0) + 1;
 
-    for (index, student_id) in payload.student_ids.iter().enumerate() {
-        let class_number = start_number + index as i32;
+    let student_ids = ordered_unique_uuids(&payload.student_ids);
+    let class_numbers: Vec<i32> = student_ids
+        .iter()
+        .enumerate()
+        .map(|(index, _)| start_number + index as i32)
+        .collect();
+    bulk_update_class_numbers_by_student_ids(
+        pool,
+        payload.class_room_id,
+        &student_ids,
+        &class_numbers,
+    )
+    .await?;
 
-        sqlx::query(
-            "UPDATE student_class_enrollments 
-             SET class_number = $1, updated_at = NOW()
-             WHERE student_id = $2 AND class_room_id = $3 AND status = 'active'",
-        )
-        .bind(class_number)
-        .bind(student_id)
-        .bind(payload.class_room_id)
-        .execute(pool)
-        .await?;
+    Ok(())
+}
+
+async fn bulk_update_class_numbers_by_student_ids(
+    pool: &PgPool,
+    class_room_id: Uuid,
+    student_ids: &[Uuid],
+    class_numbers: &[i32],
+) -> Result<(), AppError> {
+    if student_ids.is_empty() {
+        return Ok(());
     }
+
+    sqlx::query(
+        "UPDATE student_class_enrollments AS enrollment
+         SET class_number = updates.class_number, updated_at = NOW()
+         FROM UNNEST($1::uuid[], $2::int4[]) AS updates(student_id, class_number)
+         WHERE enrollment.student_id = updates.student_id
+           AND enrollment.class_room_id = $3
+           AND enrollment.status = 'active'",
+    )
+    .bind(student_ids)
+    .bind(class_numbers)
+    .bind(class_room_id)
+    .execute(pool)
+    .await?;
 
     Ok(())
 }
@@ -852,20 +935,38 @@ async fn update_class_numbers(
 ) -> Result<(), AppError> {
     let mut tx = pool.begin().await?;
 
-    for (index, student) in students.iter().enumerate() {
-        let class_number = (index + 1) as i32;
-
-        sqlx::query(
-            "UPDATE student_class_enrollments SET class_number = $1, updated_at = NOW() 
-             WHERE id = $2",
-        )
-        .bind(class_number)
-        .bind(student.id)
-        .execute(&mut *tx)
-        .await?;
-    }
+    let enrollment_ids: Vec<Uuid> = students.iter().map(|student| student.id).collect();
+    let class_numbers: Vec<i32> = students
+        .iter()
+        .enumerate()
+        .map(|(index, _)| (index + 1) as i32)
+        .collect();
+    bulk_update_class_numbers_by_enrollment_ids(&mut tx, &enrollment_ids, &class_numbers).await?;
 
     tx.commit().await?;
+    Ok(())
+}
+
+async fn bulk_update_class_numbers_by_enrollment_ids(
+    tx: &mut Transaction<'_, Postgres>,
+    enrollment_ids: &[Uuid],
+    class_numbers: &[i32],
+) -> Result<(), AppError> {
+    if enrollment_ids.is_empty() {
+        return Ok(());
+    }
+
+    sqlx::query(
+        "UPDATE student_class_enrollments AS enrollment
+         SET class_number = updates.class_number, updated_at = NOW()
+         FROM UNNEST($1::uuid[], $2::int4[]) AS updates(id, class_number)
+         WHERE enrollment.id = updates.id",
+    )
+    .bind(enrollment_ids)
+    .bind(class_numbers)
+    .execute(&mut **tx)
+    .await?;
+
     Ok(())
 }
 
@@ -988,6 +1089,17 @@ mod tests {
 
         assert!(
             matches!(result, Err(AppError::BadRequest(message)) if message == "Invalid sort_by parameter")
+        );
+    }
+
+    #[test]
+    fn ordered_unique_uuids_preserves_first_seen_order() {
+        let first = Uuid::new_v4();
+        let second = Uuid::new_v4();
+
+        assert_eq!(
+            ordered_unique_uuids(&[first, second, first]),
+            vec![first, second]
         );
     }
 

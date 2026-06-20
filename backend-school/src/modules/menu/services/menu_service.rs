@@ -427,31 +427,29 @@ pub async fn reorder_menu_groups(
     pool: &PgPool,
     groups: Vec<(Uuid, i32)>,
 ) -> Result<usize, AppError> {
-    let mut tx = pool
-        .begin()
-        .await
-        .map_err(|e| AppError::InternalServerError(format!("Transaction failed: {}", e)))?;
-
-    for (id, display_order) in &groups {
-        if let Err(e) = sqlx::query("UPDATE menu_groups SET display_order = $1 WHERE id = $2")
-            .bind(display_order)
-            .bind(id)
-            .execute(&mut *tx)
-            .await
-        {
-            if let Err(rb_err) = tx.rollback().await {
-                tracing::error!("⚠️ Transaction rollback failed: {}", rb_err);
-            }
-            return Err(AppError::InternalServerError(format!(
-                "Failed to reorder: {}",
-                e
-            )));
-        }
+    if groups.is_empty() {
+        return Ok(0);
     }
-    tx.commit()
-        .await
-        .map_err(|e| AppError::InternalServerError(format!("Failed to commit: {}", e)))?;
-    Ok(groups.len())
+
+    let ids: Vec<Uuid> = groups.iter().map(|(id, _)| *id).collect();
+    let display_orders: Vec<i32> = groups
+        .iter()
+        .map(|(_, display_order)| *display_order)
+        .collect();
+
+    sqlx::query(
+        "UPDATE menu_groups AS menu_group
+         SET display_order = updates.display_order, updated_at = NOW()
+         FROM UNNEST($1::uuid[], $2::int4[]) AS updates(id, display_order)
+         WHERE menu_group.id = updates.id",
+    )
+    .bind(&ids)
+    .bind(&display_orders)
+    .execute(pool)
+    .await
+    .map_err(|e| AppError::InternalServerError(format!("Failed to reorder groups: {}", e)))?;
+
+    Ok(ids.len())
 }
 
 pub async fn move_item_to_group(
