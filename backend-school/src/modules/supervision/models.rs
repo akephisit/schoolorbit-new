@@ -381,6 +381,7 @@ pub struct SupervisionObservation {
     pub approved_by: Option<Uuid>,
     pub template_id: Uuid,
     pub timetable_entry_id: Option<Uuid>,
+    pub observed_at: DateTime<Utc>,
     pub manual_lesson: Option<ManualLesson>,
     pub lesson_snapshot: LessonSnapshot,
     pub status: SupervisionObservationStatus,
@@ -545,6 +546,7 @@ impl ManualLessonInput {
 pub struct RequestSupervisionObservationRequest {
     pub cycle_id: Uuid,
     pub timetable_entry_id: Option<Uuid>,
+    pub observed_at: Option<DateTime<Utc>>,
     pub manual_lesson: Option<ManualLessonInput>,
 }
 
@@ -552,6 +554,7 @@ pub struct RequestSupervisionObservationRequest {
 #[serde(rename_all = "camelCase")]
 pub struct UpdateRequestedObservationRequest {
     pub timetable_entry_id: Option<Uuid>,
+    pub observed_at: Option<DateTime<Utc>>,
     pub manual_lesson: Option<ManualLessonInput>,
 }
 

@@ -153,6 +153,7 @@ export interface SupervisionObservation {
 	approvedBy?: string | null;
 	templateId: string;
 	timetableEntryId?: string | null;
+	observedAt: string;
 	manualLesson?: ManualLesson | null;
 	lessonSnapshot: LessonSnapshot;
 	status: SupervisionObservationStatus;
@@ -230,12 +231,13 @@ export type UpdateSupervisionTemplateRequest = Partial<CreateSupervisionTemplate
 export interface RequestSupervisionObservationRequest {
 	cycleId: string;
 	timetableEntryId?: string | null;
+	observedAt?: string | null;
 	manualLesson?: ManualLesson | null;
 }
 
 export type UpdateRequestedObservationRequest = Pick<
 	RequestSupervisionObservationRequest,
-	'timetableEntryId' | 'manualLesson'
+	'timetableEntryId' | 'observedAt' | 'manualLesson'
 >;
 
 export interface EvaluatorAssignmentInput {

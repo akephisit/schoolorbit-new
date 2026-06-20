@@ -403,8 +403,9 @@ test('teaching supervision frontend contract uses typed API and permission metad
 	);
 	assert.match(
 		supervisionPage,
-		/<Table\.Body>[\s\S]*\{#each timetableSchoolDays as day \(day\.value\)\}/
+		/<Table\.Body>[\s\S]*\{#each bookingWeekDays as day \(day\.value\)\}/
 	);
+	assert.match(supervisionPage, /formatShortDate\(day\.date\)/);
 	assert.doesNotMatch(
 		supervisionPage,
 		/grid gap-2 md:hidden[\s\S]*timetableEntriesForSelectedCycle/

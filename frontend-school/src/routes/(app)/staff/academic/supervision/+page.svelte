@@ -191,6 +191,9 @@
 	let academicStructure = $state<AcademicStructureData>({ years: [], semesters: [], levels: [] });
 	let selectedCycleId = $state('');
 	let selectedTimetableEntryId = $state('');
+	let selectedBookingDate = $state('');
+	let bookingWeekStartDate = $state('');
+	let bookingWeekCycleId = $state('');
 	let manualMode = $state(false);
 	let manualLessonDate = $state('');
 	let manualLessonTime = $state('08:30');
@@ -276,6 +279,12 @@
 		)
 	);
 	const openCycles = $derived(cycles.filter((cycle) => cycle.status === 'open'));
+	const activeBookingCycles = $derived(openCycles.filter((cycle) => cycleAcceptsBookings(cycle)));
+	const currentBookingCycle = $derived(
+		activeBookingCycles.find((cycle) => cycle.id === selectedCycleId) ??
+			activeBookingCycles[0] ??
+			null
+	);
 	const requestedObservations = $derived(
 		observations.filter((observation) => observation.status === 'requested')
 	);
@@ -303,6 +312,12 @@
 		selectedCycleAcademicYear
 			? getSchoolDays(selectedCycleAcademicYear.school_days)
 			: timetableGridDays
+	);
+	const bookingWeekDays = $derived(
+		timetableSchoolDays.map((day) => ({
+			...day,
+			date: dateForTimetableDay(day.value)
+		}))
 	);
 	const selectedTimetableEntry = $derived(
 		timetableEntries.find((entry) => entry.id === selectedTimetableEntryId) ?? null
@@ -394,11 +409,25 @@
 	});
 
 	$effect(() => {
+		if (!currentBookingCycle) return;
+		if (selectedCycleId !== currentBookingCycle.id) {
+			selectedCycleId = currentBookingCycle.id;
+		}
+		if (bookingWeekCycleId !== currentBookingCycle.id) {
+			bookingWeekCycleId = currentBookingCycle.id;
+			bookingWeekStartDate = defaultBookingWeekStartDate(currentBookingCycle);
+			selectedTimetableEntryId = '';
+			selectedBookingDate = '';
+		}
+	});
+
+	$effect(() => {
 		if (!selectedTimetableEntryId) return;
 		if (
 			!timetableEntriesForSelectedCycle().some((entry) => entry.id === selectedTimetableEntryId)
 		) {
 			selectedTimetableEntryId = '';
+			selectedBookingDate = '';
 		}
 	});
 
@@ -466,12 +495,155 @@
 		return labels[status] ?? status;
 	}
 
+	function toLocalDateInputValue(date: Date): string {
+		const year = date.getFullYear();
+		const month = String(date.getMonth() + 1).padStart(2, '0');
+		const day = String(date.getDate()).padStart(2, '0');
+		return `${year}-${month}-${day}`;
+	}
+
+	function parseLocalDate(date: string): Date {
+		const [year = '1970', month = '1', day = '1'] = date.split('-');
+		return new Date(Number(year), Number(month) - 1, Number(day));
+	}
+
+	function addDays(date: Date, days: number): Date {
+		return new Date(date.getFullYear(), date.getMonth(), date.getDate() + days);
+	}
+
+	function startOfWeek(date: Date): Date {
+		const mondayOffset = (date.getDay() + 6) % 7;
+		return addDays(date, -mondayOffset);
+	}
+
+	function addWeeks(date: string, weeks: number): string {
+		return toLocalDateInputValue(addDays(parseLocalDate(date), weeks * 7));
+	}
+
+	function dateForTimetableDay(day: string): string {
+		const offsets: Record<string, number> = {
+			MON: 0,
+			TUE: 1,
+			WED: 2,
+			THU: 3,
+			FRI: 4,
+			SAT: 5,
+			SUN: 6
+		};
+		const weekStart = bookingWeekStartDate || toLocalDateInputValue(startOfWeek(new Date()));
+		return toLocalDateInputValue(addDays(parseLocalDate(weekStart), offsets[day] ?? 0));
+	}
+
+	function formatShortDate(date: string): string {
+		return new Intl.DateTimeFormat('th-TH', {
+			day: 'numeric',
+			month: 'short'
+		}).format(parseLocalDate(date));
+	}
+
+	function bookingWeekLabel(): string {
+		if (!bookingWeekStartDate) return 'สัปดาห์ปัจจุบัน';
+		const start = parseLocalDate(bookingWeekStartDate);
+		const end = addDays(start, 6);
+		return `${formatShortDate(toLocalDateInputValue(start))} - ${formatShortDate(
+			toLocalDateInputValue(end)
+		)}`;
+	}
+
+	function cycleDateRange(cycle: SupervisionCycle): { start: string; end: string } {
+		return {
+			start: toLocalDateInputValue(new Date(cycle.startsAt)),
+			end: toLocalDateInputValue(new Date(cycle.endsAt))
+		};
+	}
+
+	function cycleAcceptsBookings(cycle: SupervisionCycle): boolean {
+		const now = new Date();
+		if (cycle.status !== 'open') return false;
+		if (cycle.bookingOpensAt && now < new Date(cycle.bookingOpensAt)) return false;
+		if (cycle.bookingClosesAt && now > new Date(cycle.bookingClosesAt)) return false;
+		return now >= new Date(cycle.startsAt) && now <= new Date(cycle.endsAt);
+	}
+
+	function defaultBookingWeekStartDate(cycle: SupervisionCycle): string {
+		const now = new Date();
+		const cycleStart = new Date(cycle.startsAt);
+		const cycleEnd = new Date(cycle.endsAt);
+		const base = now >= cycleStart && now <= cycleEnd ? now : cycleStart;
+		return toLocalDateInputValue(startOfWeek(base));
+	}
+
+	function bookingDateInCycle(date: string, cycle: SupervisionCycle | null = currentBookingCycle) {
+		if (!cycle) return false;
+		const range = cycleDateRange(cycle);
+		return date >= range.start && date <= range.end;
+	}
+
+	function canNavigateBookingWeek(direction: -1 | 1): boolean {
+		if (!currentBookingCycle || !bookingWeekStartDate) return false;
+		const nextStart = addWeeks(bookingWeekStartDate, direction);
+		const nextEnd = toLocalDateInputValue(addDays(parseLocalDate(nextStart), 6));
+		const cycleRange = cycleDateRange(currentBookingCycle);
+		return nextEnd >= cycleRange.start && nextStart <= cycleRange.end;
+	}
+
+	function goToPreviousBookingWeek() {
+		if (!canNavigateBookingWeek(-1)) return;
+		bookingWeekStartDate = addWeeks(bookingWeekStartDate, -1);
+		selectedTimetableEntryId = '';
+		selectedBookingDate = '';
+	}
+
+	function goToNextBookingWeek() {
+		if (!canNavigateBookingWeek(1)) return;
+		bookingWeekStartDate = addWeeks(bookingWeekStartDate, 1);
+		selectedTimetableEntryId = '';
+		selectedBookingDate = '';
+	}
+
+	function resetToCurrentBookingWeek() {
+		if (!currentBookingCycle) return;
+		bookingWeekStartDate = defaultBookingWeekStartDate(currentBookingCycle);
+		selectedTimetableEntryId = '';
+		selectedBookingDate = '';
+	}
+
 	function timetableLabel(entry: TimetableEntry): string {
 		const title = entry.subject_name_th || entry.title || entry.subject_code || 'คาบสอน';
 		const period = entry.period_name ? ` ${entry.period_name}` : '';
 		const room = entry.room_code ? ` ห้อง ${entry.room_code}` : '';
 		const classroom = entry.classroom_name ? ` ${entry.classroom_name}` : '';
 		return `${entry.day_of_week}${period} - ${title}${classroom}${room}`;
+	}
+
+	function timetableObservedAt(entry: TimetableEntry, bookingDate: string): string {
+		const startTime = entry.start_time?.slice(0, 5) || '08:00';
+		return combineLocalDateTime(bookingDate, startTime);
+	}
+
+	function observationDate(observation: SupervisionObservation): string | null {
+		const observedAt =
+			observation.observedAt ??
+			observation.lessonSnapshot.observedAt ??
+			observation.manualLesson?.observedAt;
+		return observedAt ? toLocalDateInputValue(new Date(observedAt)) : null;
+	}
+
+	function observationForTimetableCell(
+		entry: TimetableEntry,
+		bookingDate: string
+	): SupervisionObservation | null {
+		const matches = observations
+			.filter(
+				(observation) =>
+					observation.cycleId === currentBookingCycle?.id &&
+					observation.observedUserId === currentUserId &&
+					observation.timetableEntryId === entry.id &&
+					observation.status !== 'cancelled' &&
+					observationDate(observation) === bookingDate
+			)
+			.sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt));
+		return matches[0] ?? null;
 	}
 
 	function timetableEntryTitle(entry: TimetableEntry): string {
@@ -536,9 +708,12 @@
 		);
 	}
 
-	function selectTimetableEntry(entry: TimetableEntry) {
+	function selectTimetableEntry(entry: TimetableEntry, bookingDate: string) {
 		if (!canRequest) return;
+		const existingObservation = observationForTimetableCell(entry, bookingDate);
+		if (existingObservation && existingObservation.status !== 'returned') return;
 		selectedTimetableEntryId = entry.id;
+		selectedBookingDate = bookingDate;
 	}
 
 	async function refreshTimetableForCycle(cycleId: string) {
@@ -641,12 +816,12 @@
 
 	async function createBookingRequest() {
 		if (!canRequest) return;
-		if (!selectedCycleId) {
-			toast.error('เลือกรอบนิเทศก่อน');
+		if (!currentBookingCycle) {
+			toast.error('ยังไม่มีรอบนิเทศที่เปิดให้จองในขณะนี้');
 			return;
 		}
 
-		if (!manualMode && !selectedTimetableEntryId) {
+		if (!manualMode && (!selectedTimetableEntryId || !selectedBookingDate)) {
 			toast.error('เลือกคาบจากตารางสอนก่อน');
 			return;
 		}
@@ -665,8 +840,12 @@
 		savingAction = 'request-booking';
 		try {
 			const response = await requestSupervisionObservation({
-				cycleId: selectedCycleId,
+				cycleId: currentBookingCycle.id,
 				timetableEntryId: manualMode ? null : selectedTimetableEntryId,
+				observedAt:
+					manualMode || !selectedTimetableEntry
+						? null
+						: timetableObservedAt(selectedTimetableEntry, selectedBookingDate),
 				manualLesson: manualMode
 					? {
 							subjectName: manualLesson.subjectName,
@@ -1334,20 +1513,24 @@
 							description="ต้องมีสิทธิ์จองคาบนิเทศของตนเองก่อนจึงจะส่งคำขอได้"
 						/>
 					{:else}
-						<div class="grid gap-4 lg:grid-cols-2">
-							<div class="space-y-2">
-								<Label>รอบนิเทศ</Label>
-								<Select.Root type="single" bind:value={selectedCycleId}>
-									<Select.Trigger class="w-full">
-										{openCycles.find((cycle) => cycle.id === selectedCycleId)?.title ??
-											'เลือกรอบนิเทศ'}
-									</Select.Trigger>
-									<Select.Content>
-										{#each openCycles as cycle (cycle.id)}
-											<Select.Item value={cycle.id}>{cycleLabel(cycle)}</Select.Item>
-										{/each}
-									</Select.Content>
-								</Select.Root>
+						<div class="grid gap-4 lg:grid-cols-[1fr_auto]">
+							<div class="rounded-md border bg-muted/20 p-3">
+								<Label>รอบนิเทศปัจจุบัน</Label>
+								{#if currentBookingCycle}
+									<div class="mt-1 flex flex-wrap items-center gap-2">
+										<p class="font-medium">{cycleLabel(currentBookingCycle)}</p>
+										<Badge variant="secondary">{statusLabel(currentBookingCycle.status)}</Badge>
+									</div>
+									<p class="mt-1 text-xs text-muted-foreground">
+										จองได้ {formatDate(currentBookingCycle.bookingOpensAt)} - {formatDate(
+											currentBookingCycle.bookingClosesAt
+										)}
+									</p>
+								{:else}
+									<p class="mt-1 text-sm text-muted-foreground">
+										ยังไม่มีรอบนิเทศที่เปิดให้จองในขณะนี้
+									</p>
+								{/if}
 							</div>
 							<div class="space-y-2">
 								<Label>รูปแบบคาบ</Label>
@@ -1374,17 +1557,59 @@
 
 						{#if !manualMode}
 							<div class="space-y-2">
-								<Label>คาบจากตารางสอน</Label>
-								{#if selectedCycleDetail?.academicSemesterId}
-									<p class="text-xs text-muted-foreground">
-										แสดงคาบสอนจาก {semesterLabel(selectedCycleDetail.academicSemesterId)}
-									</p>
-								{/if}
+								<div class="flex flex-col gap-2 lg:flex-row lg:items-end lg:justify-between">
+									<div>
+										<Label>คาบจากตารางสอน</Label>
+										{#if currentBookingCycle?.academicSemesterId}
+											<p class="text-xs text-muted-foreground">
+												แสดงคาบสอนจาก {semesterLabel(currentBookingCycle.academicSemesterId)}
+											</p>
+										{/if}
+									</div>
+									<div class="flex flex-wrap items-center gap-2">
+										<Button
+											type="button"
+											variant="outline"
+											size="sm"
+											onclick={goToPreviousBookingWeek}
+											disabled={!canNavigateBookingWeek(-1)}
+										>
+											<ArrowUp class="mr-1 h-4 w-4" />
+											สัปดาห์ก่อน
+										</Button>
+										<Badge variant="outline" class="px-3 py-1">{bookingWeekLabel()}</Badge>
+										<Button
+											type="button"
+											variant="outline"
+											size="sm"
+											onclick={resetToCurrentBookingWeek}
+										>
+											สัปดาห์นี้
+										</Button>
+										<Button
+											type="button"
+											variant="outline"
+											size="sm"
+											onclick={goToNextBookingWeek}
+											disabled={!canNavigateBookingWeek(1)}
+										>
+											สัปดาห์ถัดไป
+											<ArrowDown class="ml-1 h-4 w-4" />
+										</Button>
+									</div>
+								</div>
 								{#if loadingTimetable}
 									<Alert.Root>
 										<Loader2 class="h-4 w-4 animate-spin" />
 										<Alert.Title>กำลังโหลดตารางสอน</Alert.Title>
 										<Alert.Description>ระบบกำลังโหลดคาบสอนตามภาคเรียนของรอบนิเทศ</Alert.Description>
+									</Alert.Root>
+								{:else if !currentBookingCycle}
+									<Alert.Root>
+										<Alert.Title>ยังไม่มีรอบที่เปิดให้จอง</Alert.Title>
+										<Alert.Description>
+											เมื่อฝ่ายวิชาการเปิดรอบนิเทศในช่วงเวลาปัจจุบัน ตารางจองจะแสดงอัตโนมัติ
+										</Alert.Description>
 									</Alert.Root>
 								{:else if timetableEntriesForSelectedCycle().length === 0}
 									<Alert.Root>
@@ -1414,13 +1639,20 @@
 												</Table.Row>
 											</Table.Header>
 											<Table.Body>
-												{#each timetableSchoolDays as day (day.value)}
+												{#each bookingWeekDays as day (day.value)}
 													<Table.Row>
 														<Table.Cell class="sticky left-0 z-10 bg-background align-top">
 															<div class="font-medium">{day.label}</div>
+															<div class="text-xs text-muted-foreground">
+																{formatShortDate(day.date)}
+															</div>
 														</Table.Cell>
 														{#each timetablePeriodRows() as row (row.key)}
 															{@const entry = timetableEntryFor(day.value, row)}
+															{@const cellObservation = entry
+																? observationForTimetableCell(entry, day.date)
+																: null}
+															{@const isOutsideCycle = !bookingDateInCycle(day.date)}
 															<Table.Cell class="min-w-[150px] p-1 align-top">
 																{#if entry}
 																	<button
@@ -1428,12 +1660,26 @@
 																		class={cn(
 																			'min-h-20 w-full rounded-md border p-2 text-left transition hover:border-primary hover:bg-primary/5',
 																			selectedTimetableEntryId === entry.id &&
+																				selectedBookingDate === day.date &&
 																				'border-primary bg-primary/10 shadow-sm'
 																		)}
-																		onclick={() => selectTimetableEntry(entry)}
+																		disabled={isOutsideCycle ||
+																			(!!cellObservation && cellObservation.status !== 'returned')}
+																		onclick={() => selectTimetableEntry(entry, day.date)}
 																	>
-																		<div class="text-sm font-medium leading-snug">
-																			{timetableEntryTitle(entry)}
+																		<div class="flex items-start justify-between gap-2">
+																			<div class="text-sm font-medium leading-snug">
+																				{timetableEntryTitle(entry)}
+																			</div>
+																			{#if cellObservation}
+																				<Badge variant="secondary" class="shrink-0 text-[10px]">
+																					{statusLabel(cellObservation.status)}
+																				</Badge>
+																			{:else if isOutsideCycle}
+																				<Badge variant="outline" class="shrink-0 text-[10px]">
+																					นอกช่วง
+																				</Badge>
+																			{/if}
 																		</div>
 																		<p class="mt-1 text-xs text-muted-foreground">
 																			{entry.period_name ?? row.label}
@@ -1462,7 +1708,9 @@
 								{/if}
 								{#if selectedTimetableEntry}
 									<p class="text-xs text-muted-foreground">
-										เลือกแล้ว: {timetableLabel(selectedTimetableEntry)}
+										เลือกแล้ว: {formatShortDate(selectedBookingDate)} · {timetableLabel(
+											selectedTimetableEntry
+										)}
 									</p>
 								{/if}
 							</div>
@@ -1538,10 +1786,7 @@
 											>{observationLessonTitle(observation)}</Table.Cell
 										>
 										<Table.Cell>
-											{formatDate(
-												observation.lessonSnapshot.observedAt ??
-													observation.manualLesson?.observedAt
-											)}
+											{formatDate(observation.observedAt)}
 										</Table.Cell>
 										<Table.Cell>
 											<Badge variant="secondary">{statusLabel(observation.status)}</Badge>

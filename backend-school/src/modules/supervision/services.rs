@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Datelike, FixedOffset, Utc, Weekday};
 use sqlx::types::Json;
 use sqlx::{PgPool, Postgres, QueryBuilder, Row};
 use uuid::Uuid;
@@ -183,10 +183,10 @@ struct SupervisionObservationRow {
     approved_by: Option<Uuid>,
     template_id: Uuid,
     timetable_entry_id: Option<Uuid>,
+    observed_at: DateTime<Utc>,
     manual_subject_name: Option<String>,
     manual_classroom_label: Option<String>,
     manual_room_label: Option<String>,
-    manual_observed_at: Option<DateTime<Utc>>,
     manual_period_label: Option<String>,
     manual_reason: Option<String>,
     lesson_snapshot: Json<LessonSnapshot>,
@@ -766,8 +766,10 @@ pub async fn request_observation(
 
     let lesson = resolve_lesson_input(
         pool,
+        &cycle,
         actor_user_id,
         input.timetable_entry_id,
+        input.observed_at,
         input.manual_lesson,
     )
     .await?;
@@ -777,7 +779,7 @@ pub async fn request_observation(
         INSERT INTO supervision_observations (
             cycle_id, observed_user_id, requested_by, template_id, timetable_entry_id,
             manual_subject_name, manual_classroom_label, manual_room_label,
-            manual_observed_at, manual_period_label, manual_reason, lesson_snapshot
+            observed_at, manual_period_label, manual_reason, lesson_snapshot
         )
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
         RETURNING id
@@ -791,7 +793,7 @@ pub async fn request_observation(
     .bind(&lesson.manual_subject_name)
     .bind(&lesson.manual_classroom_label)
     .bind(&lesson.manual_room_label)
-    .bind(lesson.manual_observed_at)
+    .bind(lesson.observed_at)
     .bind(&lesson.manual_period_label)
     .bind(&lesson.manual_reason)
     .bind(Json(lesson.snapshot))
@@ -832,10 +834,13 @@ pub async fn update_requested_observation(
         ));
     }
 
+    let cycle = load_cycle_for_request(pool, current.cycle_id).await?;
     let lesson = resolve_lesson_input(
         pool,
+        &cycle,
         actor_user_id,
         input.timetable_entry_id,
+        input.observed_at,
         input.manual_lesson,
     )
     .await?;
@@ -847,7 +852,7 @@ pub async fn update_requested_observation(
             manual_subject_name = $3,
             manual_classroom_label = $4,
             manual_room_label = $5,
-            manual_observed_at = $6,
+            observed_at = $6,
             manual_period_label = $7,
             manual_reason = $8,
             lesson_snapshot = $9
@@ -859,7 +864,7 @@ pub async fn update_requested_observation(
     .bind(&lesson.manual_subject_name)
     .bind(&lesson.manual_classroom_label)
     .bind(&lesson.manual_room_label)
-    .bind(lesson.manual_observed_at)
+    .bind(lesson.observed_at)
     .bind(&lesson.manual_period_label)
     .bind(&lesson.manual_reason)
     .bind(Json(lesson.snapshot))
@@ -1939,8 +1944,9 @@ fn observation_select_sql() -> &'static str {
            NULLIF(TRIM(CONCAT(COALESCE(u.title, ''), u.first_name, ' ', u.last_name)), '')
                AS observed_display_name,
            o.requested_by, o.approved_by, o.template_id, o.timetable_entry_id,
+           o.observed_at,
            o.manual_subject_name, o.manual_classroom_label, o.manual_room_label,
-           o.manual_observed_at, o.manual_period_label, o.manual_reason,
+           o.manual_period_label, o.manual_reason,
            o.lesson_snapshot, o.status, o.requested_at, o.approved_at,
            o.cancelled_at, o.created_at, o.updated_at
     FROM supervision_observations o
@@ -1966,6 +1972,7 @@ async fn observation_from_row(
         approved_by: row.approved_by,
         template_id: row.template_id,
         timetable_entry_id: row.timetable_entry_id,
+        observed_at: row.observed_at,
         manual_lesson,
         lesson_snapshot: row.lesson_snapshot.0,
         status: parse_observation_status(&row.status)?,
@@ -1984,7 +1991,7 @@ fn manual_lesson_from_row(row: &SupervisionObservationRow) -> Option<ManualLesso
         subject_name: row.manual_subject_name.clone()?,
         classroom_label: row.manual_classroom_label.clone()?,
         room_label: row.manual_room_label.clone(),
-        observed_at: row.manual_observed_at?,
+        observed_at: row.observed_at,
         period_label: row.manual_period_label.clone()?,
         reason: row.manual_reason.clone()?,
     })
@@ -2230,10 +2237,10 @@ fn validate_cycle_accepts_requests(cycle: &CycleForRequestRow) -> Result<(), App
 
 struct ResolvedLessonInput {
     timetable_entry_id: Option<Uuid>,
+    observed_at: DateTime<Utc>,
     manual_subject_name: Option<String>,
     manual_classroom_label: Option<String>,
     manual_room_label: Option<String>,
-    manual_observed_at: Option<DateTime<Utc>>,
     manual_period_label: Option<String>,
     manual_reason: Option<String>,
     snapshot: LessonSnapshot,
@@ -2241,32 +2248,45 @@ struct ResolvedLessonInput {
 
 async fn resolve_lesson_input(
     pool: &PgPool,
+    cycle: &CycleForRequestRow,
     actor_user_id: Uuid,
     timetable_entry_id: Option<Uuid>,
+    observed_at: Option<DateTime<Utc>>,
     manual_lesson: Option<ManualLessonInput>,
 ) -> Result<ResolvedLessonInput, AppError> {
-    match (timetable_entry_id, manual_lesson) {
-        (Some(entry_id), None) => {
-            ensure_timetable_entry_belongs_to_teacher(pool, entry_id, actor_user_id).await?;
+    match (timetable_entry_id, observed_at, manual_lesson) {
+        (Some(entry_id), Some(observed_at), None) => {
+            validate_observed_at_in_cycle(cycle, observed_at)?;
+            let entry_day =
+                load_timetable_entry_day_for_teacher(pool, entry_id, actor_user_id).await?;
+            if !day_of_week_matches_observed_at(&entry_day, observed_at) {
+                return Err(AppError::ValidationError(
+                    "วันที่นิเทศไม่ตรงกับวันของคาบสอน".to_string(),
+                ));
+            }
             Ok(ResolvedLessonInput {
                 timetable_entry_id: Some(entry_id),
+                observed_at,
                 manual_subject_name: None,
                 manual_classroom_label: None,
                 manual_room_label: None,
-                manual_observed_at: None,
                 manual_period_label: None,
                 manual_reason: None,
-                snapshot: load_timetable_lesson_snapshot(pool, entry_id).await?,
+                snapshot: load_timetable_lesson_snapshot(pool, entry_id, observed_at).await?,
             })
         }
-        (None, Some(manual)) => {
+        (Some(_), None, None) => Err(AppError::ValidationError(
+            "ต้องระบุวันที่นิเทศสำหรับคาบจากตารางสอน".to_string(),
+        )),
+        (None, _, Some(manual)) => {
             validate_manual_lesson(&manual)?;
+            validate_observed_at_in_cycle(cycle, manual.observed_at)?;
             Ok(ResolvedLessonInput {
                 timetable_entry_id: None,
+                observed_at: manual.observed_at,
                 manual_subject_name: Some(manual.subject_name.clone()),
                 manual_classroom_label: Some(manual.classroom_label.clone()),
                 manual_room_label: manual.room_label.clone(),
-                manual_observed_at: Some(manual.observed_at),
                 manual_period_label: Some(manual.period_label.clone()),
                 manual_reason: Some(manual.reason.clone()),
                 snapshot: manual.snapshot(),
@@ -2276,6 +2296,36 @@ async fn resolve_lesson_input(
             "ต้องเลือกคาบจากตารางสอนหรือระบุคาบแบบกำหนดเองอย่างใดอย่างหนึ่ง".to_string(),
         )),
     }
+}
+
+fn validate_observed_at_in_cycle(
+    cycle: &CycleForRequestRow,
+    observed_at: DateTime<Utc>,
+) -> Result<(), AppError> {
+    if observed_at < cycle.starts_at || observed_at > cycle.ends_at {
+        return Err(AppError::ValidationError(
+            "วันที่นิเทศอยู่นอกช่วงรอบนิเทศ".to_string(),
+        ));
+    }
+
+    Ok(())
+}
+
+fn day_of_week_matches_observed_at(day_of_week: &str, observed_at: DateTime<Utc>) -> bool {
+    let Some(bangkok_offset) = FixedOffset::east_opt(7 * 60 * 60) else {
+        return false;
+    };
+    let observed_weekday = observed_at.with_timezone(&bangkok_offset).weekday();
+    matches!(
+        (day_of_week, observed_weekday),
+        ("MON", Weekday::Mon)
+            | ("TUE", Weekday::Tue)
+            | ("WED", Weekday::Wed)
+            | ("THU", Weekday::Thu)
+            | ("FRI", Weekday::Fri)
+            | ("SAT", Weekday::Sat)
+            | ("SUN", Weekday::Sun)
+    )
 }
 
 fn validate_manual_lesson(manual: &ManualLessonInput) -> Result<(), AppError> {
@@ -2291,41 +2341,35 @@ fn validate_manual_lesson(manual: &ManualLessonInput) -> Result<(), AppError> {
     Ok(())
 }
 
-async fn ensure_timetable_entry_belongs_to_teacher(
+async fn load_timetable_entry_day_for_teacher(
     pool: &PgPool,
     entry_id: Uuid,
     teacher_user_id: Uuid,
-) -> Result<(), AppError> {
-    let belongs = sqlx::query_scalar::<_, bool>(
+) -> Result<String, AppError> {
+    let day_of_week = sqlx::query_scalar::<_, String>(
         r#"
-        SELECT EXISTS (
-            SELECT 1
-            FROM timetable_entry_instructors
-            WHERE entry_id = $1 AND instructor_id = $2
-        )
+        SELECT e.day_of_week
+        FROM academic_timetable_entries e
+        JOIN timetable_entry_instructors tei ON tei.entry_id = e.id
+        WHERE e.id = $1 AND tei.instructor_id = $2
         "#,
     )
     .bind(entry_id)
     .bind(teacher_user_id)
-    .fetch_one(pool)
+    .fetch_optional(pool)
     .await
     .map_err(|error| {
         tracing::error!("Failed to validate supervision timetable entry: {}", error);
         AppError::InternalServerError("ไม่สามารถตรวจสอบคาบสอนได้".to_string())
     })?;
 
-    if belongs {
-        Ok(())
-    } else {
-        Err(AppError::Forbidden(
-            "เลือกจองได้เฉพาะคาบสอนของตนเอง".to_string(),
-        ))
-    }
+    day_of_week.ok_or_else(|| AppError::Forbidden("เลือกจองได้เฉพาะคาบสอนของตนเอง".to_string()))
 }
 
 async fn load_timetable_lesson_snapshot(
     pool: &PgPool,
     entry_id: Uuid,
+    observed_at: DateTime<Utc>,
 ) -> Result<LessonSnapshot, AppError> {
     let row = sqlx::query(
         r#"
@@ -2357,7 +2401,7 @@ async fn load_timetable_lesson_snapshot(
         subject_name: row.try_get("subject_name").ok(),
         classroom_label: row.try_get("classroom_label").ok(),
         room_label: row.try_get("room_label").ok(),
-        observed_at: None,
+        observed_at: Some(observed_at),
         period_label: row.try_get("period_label").ok(),
     })
 }
