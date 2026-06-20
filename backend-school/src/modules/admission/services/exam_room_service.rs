@@ -282,6 +282,54 @@ pub struct AssignSeatsResult {
     pub message: String,
 }
 
+async fn insert_exam_seat_assignments(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    assignments: &[(Uuid, Uuid, i32, String)],
+    user_id: Uuid,
+) -> Result<(), AppError> {
+    if assignments.is_empty() {
+        return Ok(());
+    }
+
+    let application_ids: Vec<Uuid> = assignments
+        .iter()
+        .map(|(application_id, _, _, _)| *application_id)
+        .collect();
+    let room_ids: Vec<Uuid> = assignments
+        .iter()
+        .map(|(_, room_id, _, _)| *room_id)
+        .collect();
+    let seat_numbers: Vec<i32> = assignments
+        .iter()
+        .map(|(_, _, seat_number, _)| *seat_number)
+        .collect();
+    let exam_ids: Vec<String> = assignments
+        .iter()
+        .map(|(_, _, _, exam_id)| exam_id.clone())
+        .collect();
+
+    sqlx::query(
+        r#"INSERT INTO admission_exam_seat_assignments
+           (application_id, exam_room_id, seat_number, exam_id, assigned_by)
+           SELECT application_id, exam_room_id, seat_number, exam_id, $5
+           FROM UNNEST($1::uuid[], $2::uuid[], $3::int4[], $4::text[])
+                AS t(application_id, exam_room_id, seat_number, exam_id)"#,
+    )
+    .bind(&application_ids)
+    .bind(&room_ids)
+    .bind(&seat_numbers)
+    .bind(&exam_ids)
+    .bind(user_id)
+    .execute(&mut **tx)
+    .await
+    .map_err(|e| {
+        tracing::error!("Failed to insert seat assignments: {}", e);
+        AppError::InternalServerError("ไม่สามารถบันทึกที่นั่งสอบได้".to_string())
+    })?;
+
+    Ok(())
+}
+
 pub async fn assign_exam_seats(
     pool: &PgPool,
     round_id: Uuid,
@@ -463,24 +511,7 @@ pub async fn assign_exam_seats(
             .begin()
             .await
             .map_err(|_| AppError::InternalServerError("Transaction error".to_string()))?;
-        for (app_id, rid, seat, eid) in &new_assignments {
-            sqlx::query(
-                r#"INSERT INTO admission_exam_seat_assignments
-                   (application_id, exam_room_id, seat_number, exam_id, assigned_by)
-                   VALUES ($1, $2, $3, $4, $5)"#,
-            )
-            .bind(app_id)
-            .bind(rid)
-            .bind(seat)
-            .bind(eid)
-            .bind(user_id)
-            .execute(&mut *tx)
-            .await
-            .map_err(|e| {
-                tracing::error!("Failed to insert seat assignment (append): {}", e);
-                AppError::InternalServerError("ไม่สามารถบันทึกที่นั่งสอบได้".to_string())
-            })?;
-        }
+        insert_exam_seat_assignments(&mut tx, &new_assignments, user_id).await?;
         tx.commit()
             .await
             .map_err(|_| AppError::InternalServerError("Transaction commit failed".to_string()))?;
@@ -571,24 +602,7 @@ pub async fn assign_exam_seats(
     .bind(round_id).execute(&mut *tx).await
     .map_err(|_| AppError::InternalServerError("ไม่สามารถล้างข้อมูลเดิมได้".to_string()))?;
 
-    for (app_id, rid, seat, eid) in &assignments {
-        sqlx::query(
-            r#"INSERT INTO admission_exam_seat_assignments
-               (application_id, exam_room_id, seat_number, exam_id, assigned_by)
-               VALUES ($1, $2, $3, $4, $5)"#,
-        )
-        .bind(app_id)
-        .bind(rid)
-        .bind(seat)
-        .bind(eid)
-        .bind(user_id)
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| {
-            tracing::error!("Failed to insert seat assignment: {}", e);
-            AppError::InternalServerError("ไม่สามารถบันทึกที่นั่งสอบได้".to_string())
-        })?;
-    }
+    insert_exam_seat_assignments(&mut tx, &assignments, user_id).await?;
     tx.commit()
         .await
         .map_err(|_| AppError::InternalServerError("Transaction commit failed".to_string()))?;

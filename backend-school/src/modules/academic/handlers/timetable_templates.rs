@@ -166,7 +166,7 @@ pub async fn from_current(
     let user_id = actor.user_id;
     let entry_types = payload.entry_types.unwrap_or_else(default_non_course_types);
 
-    let id = timetable_template_service::from_current(
+    let template = timetable_template_service::from_current(
         &pool,
         payload.semester_id,
         &payload.name,
@@ -176,7 +176,7 @@ pub async fn from_current(
     )
     .await?;
 
-    Ok(Json(ApiResponse::ok(IdData::new(id))).into_response())
+    Ok(Json(ApiResponse::ok(template)).into_response())
 }
 
 pub async fn apply_template(

@@ -481,6 +481,12 @@ test('teaching supervision frontend contract uses typed API and permission metad
 
 test('scheduling API uses backend envelope data types without response casts', async () => {
 	const schedulingApi = await readRepoFile('frontend-school/src/lib/api/scheduling.ts');
+	const timetableTemplatePage = await readRepoFile(
+		'frontend-school/src/routes/(app)/staff/academic/timetable/templates/+page.svelte'
+	);
+	const schedulingConfigPage = await readRepoFile(
+		'frontend-school/src/routes/(app)/staff/academic/timetable/scheduling-config/+page.svelte'
+	);
 
 	assert.match(
 		schedulingApi,
@@ -514,6 +520,25 @@ test('scheduling API uses backend envelope data types without response casts', a
 		schedulingApi,
 		/return response as \{ success: boolean; data: \{ deleted: number \} \}/
 	);
+	assert.match(timetableTemplatePage, /LoadingButton/);
+	assert.match(timetableTemplatePage, /replaceTemplate/);
+	assert.match(timetableTemplatePage, /removeTemplate/);
+	assert.match(timetableTemplatePage, /deletingTemplateId/);
+	const createTemplateBody =
+		timetableTemplatePage.match(/async function handleCreate\(\) \{[\s\S]*?\n\t\}/)?.[0] ?? '';
+	const deleteTemplateBody =
+		timetableTemplatePage.match(/async function handleDelete\([^)]*\) \{[\s\S]*?\n\t\}/)?.[0] ?? '';
+	assert.doesNotMatch(createTemplateBody, /await loadAll\(\)/);
+	assert.doesNotMatch(deleteTemplateBody, /await loadAll\(\)/);
+
+	assert.match(schedulingConfigPage, /LoadingButton/);
+	assert.match(schedulingConfigPage, /applySavedInstructorEdits/);
+	assert.match(schedulingConfigPage, /applySavedCcEdits/);
+	assert.match(schedulingConfigPage, /applySavedCcRoomEdits/);
+	const saveAllStart = schedulingConfigPage.indexOf('async function saveAll()');
+	const saveAllEnd = schedulingConfigPage.indexOf('function slotsEqual');
+	const saveAllBody = schedulingConfigPage.slice(saveAllStart, saveAllEnd);
+	assert.doesNotMatch(saveAllBody, /await loadAll\(\)/);
 });
 
 test('facility API returns typed loaded envelope data without helper casts', async () => {

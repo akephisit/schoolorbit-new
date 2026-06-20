@@ -366,7 +366,10 @@ export async function createTemplateFromCurrent(req: {
 	description?: string;
 	entry_types?: string[];
 }) {
-	return apiClient.post<{ id: UUID }>('/api/academic/timetable-templates/from-current', req);
+	return apiClient.post<TimetableTemplateView>(
+		'/api/academic/timetable-templates/from-current',
+		req
+	);
 }
 
 export async function applyTimetableTemplate(id: UUID, req: { semester_id: UUID }) {

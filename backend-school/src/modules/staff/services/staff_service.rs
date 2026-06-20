@@ -79,6 +79,137 @@ pub struct PublicStaffOrganizationUnit {
     pub position_title: Option<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct UserRoleBulkRow {
+    role_id: Uuid,
+    is_primary: bool,
+}
+
+fn user_role_bulk_rows(role_ids: &[Uuid], primary_role_id: Option<Uuid>) -> Vec<UserRoleBulkRow> {
+    let mut seen = std::collections::HashSet::with_capacity(role_ids.len());
+    role_ids
+        .iter()
+        .copied()
+        .filter(|role_id| seen.insert(*role_id))
+        .map(|role_id| UserRoleBulkRow {
+            role_id,
+            is_primary: Some(role_id) == primary_role_id,
+        })
+        .collect()
+}
+
+async fn insert_user_roles(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    user_id: Uuid,
+    rows: &[UserRoleBulkRow],
+) -> Result<(), AppError> {
+    if rows.is_empty() {
+        return Ok(());
+    }
+
+    let role_ids: Vec<Uuid> = rows.iter().map(|row| row.role_id).collect();
+    let primary_flags: Vec<bool> = rows.iter().map(|row| row.is_primary).collect();
+
+    sqlx::query(
+        "INSERT INTO user_roles (user_id, role_id, is_primary, started_at)
+         SELECT $1, role_id, is_primary, CURRENT_DATE
+         FROM UNNEST($2::uuid[], $3::bool[]) AS rows(role_id, is_primary)
+         ON CONFLICT DO NOTHING",
+    )
+    .bind(user_id)
+    .bind(&role_ids)
+    .bind(&primary_flags)
+    .execute(&mut **tx)
+    .await
+    .map_err(|e| {
+        tracing::error!("❌ Failed to assign roles: {}", e);
+        AppError::InternalServerError("ไม่สามารถบันทึกบทบาทได้".to_string())
+    })?;
+
+    Ok(())
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct OrganizationMembershipBulkRow {
+    organization_unit_id: Uuid,
+    position_code: String,
+    position_title: Option<String>,
+    is_primary: bool,
+    responsibilities: Option<String>,
+}
+
+fn organization_assignments_to_bulk_rows(
+    assignments: &[OrganizationAssignment],
+) -> Vec<OrganizationMembershipBulkRow> {
+    let mut rows: Vec<OrganizationMembershipBulkRow> = Vec::with_capacity(assignments.len());
+    let mut index_by_unit = std::collections::HashMap::with_capacity(assignments.len());
+
+    for assignment in assignments {
+        let row = OrganizationMembershipBulkRow {
+            organization_unit_id: assignment.organization_unit_id,
+            position_code: assignment.position_code.clone(),
+            position_title: assignment.position_title.clone(),
+            is_primary: assignment.is_primary.unwrap_or(false),
+            responsibilities: assignment.responsibilities.clone(),
+        };
+
+        if let Some(index) = index_by_unit.get(&assignment.organization_unit_id).copied() {
+            rows[index] = row;
+        } else {
+            index_by_unit.insert(assignment.organization_unit_id, rows.len());
+            rows.push(row);
+        }
+    }
+
+    rows
+}
+
+async fn insert_organization_memberships(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    user_id: Uuid,
+    rows: &[OrganizationMembershipBulkRow],
+) -> Result<(), AppError> {
+    if rows.is_empty() {
+        return Ok(());
+    }
+
+    let organization_unit_ids: Vec<Uuid> =
+        rows.iter().map(|row| row.organization_unit_id).collect();
+    let position_codes: Vec<String> = rows.iter().map(|row| row.position_code.clone()).collect();
+    let position_titles: Vec<Option<String>> =
+        rows.iter().map(|row| row.position_title.clone()).collect();
+    let primary_flags: Vec<bool> = rows.iter().map(|row| row.is_primary).collect();
+    let responsibilities: Vec<Option<String>> = rows
+        .iter()
+        .map(|row| row.responsibilities.clone())
+        .collect();
+
+    sqlx::query(
+        "INSERT INTO organization_members (
+            user_id, organization_unit_id, position_code, position_title,
+            is_primary, responsibilities, started_at
+        )
+        SELECT $1, organization_unit_id, position_code, position_title,
+               is_primary, responsibilities, CURRENT_DATE
+        FROM UNNEST($2::uuid[], $3::text[], $4::text[], $5::bool[], $6::text[])
+             AS rows(organization_unit_id, position_code, position_title, is_primary, responsibilities)",
+    )
+    .bind(user_id)
+    .bind(&organization_unit_ids)
+    .bind(&position_codes)
+    .bind(&position_titles)
+    .bind(&primary_flags)
+    .bind(&responsibilities)
+    .execute(&mut **tx)
+    .await
+    .map_err(|e| {
+        tracing::error!("❌ Failed to assign organization units: {}", e);
+        AppError::InternalServerError("ไม่สามารถบันทึกหน่วยงานได้".to_string())
+    })?;
+
+    Ok(())
+}
+
 #[derive(Debug, Serialize)]
 pub struct PublicStaffProfile {
     pub id: Uuid,
@@ -630,44 +761,12 @@ pub async fn create_staff(pool: &PgPool, payload: CreateStaffRequest) -> Result<
         }
     }
 
-    for role_id in &payload.role_ids {
-        let is_primary = payload.primary_role_id.as_ref() == Some(role_id);
-        sqlx::query(
-            "INSERT INTO user_roles (user_id, role_id, is_primary, started_at)
-             VALUES ($1, $2, $3, CURRENT_DATE)",
-        )
-        .bind(user_id)
-        .bind(role_id)
-        .bind(is_primary)
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| {
-            tracing::error!("❌ Failed to assign role: {}", e);
-            AppError::InternalServerError("ไม่สามารถบันทึกบทบาทได้".to_string())
-        })?;
-    }
+    let role_rows = user_role_bulk_rows(&payload.role_ids, payload.primary_role_id);
+    insert_user_roles(&mut tx, user_id, &role_rows).await?;
 
     if let Some(organization_assignments) = &payload.organization_assignments {
-        for assignment in organization_assignments {
-            sqlx::query(
-                "INSERT INTO organization_members (
-                    user_id, organization_unit_id, position_code, position_title,
-                    is_primary, responsibilities, started_at
-                ) VALUES ($1, $2, $3, $4, $5, $6, CURRENT_DATE)",
-            )
-            .bind(user_id)
-            .bind(assignment.organization_unit_id)
-            .bind(&assignment.position_code)
-            .bind(&assignment.position_title)
-            .bind(assignment.is_primary.unwrap_or(false))
-            .bind(&assignment.responsibilities)
-            .execute(&mut *tx)
-            .await
-            .map_err(|e| {
-                tracing::error!("❌ Failed to assign organization unit: {}", e);
-                AppError::InternalServerError("ไม่สามารถบันทึกหน่วยงานได้".to_string())
-            })?;
-        }
+        let membership_rows = organization_assignments_to_bulk_rows(organization_assignments);
+        insert_organization_memberships(&mut tx, user_id, &membership_rows).await?;
     }
 
     tx.commit().await.map_err(|e| {
@@ -795,22 +894,8 @@ pub async fn update_staff(
                 AppError::InternalServerError("ไม่สามารถอัพเดตบทบาทได้".to_string())
             })?;
 
-        for role_id in role_ids {
-            let is_primary = payload.primary_role_id.as_ref() == Some(role_id);
-            sqlx::query(
-                "INSERT INTO user_roles (user_id, role_id, is_primary, started_at)
-                 VALUES ($1, $2, $3, CURRENT_DATE)",
-            )
-            .bind(staff_id)
-            .bind(role_id)
-            .bind(is_primary)
-            .execute(&mut *tx)
-            .await
-            .map_err(|e| {
-                tracing::error!("❌ Failed to insert role: {}", e);
-                AppError::InternalServerError("ไม่สามารถเพิ่มบทบาทได้".to_string())
-            })?;
-        }
+        let role_rows = user_role_bulk_rows(role_ids, payload.primary_role_id);
+        insert_user_roles(&mut tx, staff_id, &role_rows).await?;
     }
 
     if let Some(organization_assignments) = &payload.organization_assignments {
@@ -823,26 +908,8 @@ pub async fn update_staff(
                 AppError::InternalServerError("ไม่สามารถอัพเดตหน่วยงานได้".to_string())
             })?;
 
-        for assignment in organization_assignments {
-            sqlx::query(
-                "INSERT INTO organization_members (
-                    user_id, organization_unit_id, position_code, position_title,
-                    is_primary, responsibilities, started_at
-                ) VALUES ($1, $2, $3, $4, $5, $6, CURRENT_DATE)",
-            )
-            .bind(staff_id)
-            .bind(assignment.organization_unit_id)
-            .bind(&assignment.position_code)
-            .bind(&assignment.position_title)
-            .bind(assignment.is_primary.unwrap_or(false))
-            .bind(&assignment.responsibilities)
-            .execute(&mut *tx)
-            .await
-            .map_err(|e| {
-                tracing::error!("❌ Failed to insert organization member: {}", e);
-                AppError::InternalServerError("ไม่สามารถเพิ่มหน่วยงานได้".to_string())
-            })?;
-        }
+        let membership_rows = organization_assignments_to_bulk_rows(organization_assignments);
+        insert_organization_memberships(&mut tx, staff_id, &membership_rows).await?;
     }
 
     tx.commit().await.map_err(|e| {
@@ -1059,5 +1126,56 @@ mod tests {
     fn staff_title_or_default_uses_empty_string_when_missing() {
         assert_eq!(staff_title_or_default(None), "");
         assert_eq!(staff_title_or_default(Some("นาย".to_string())), "นาย");
+    }
+
+    #[test]
+    fn user_role_bulk_rows_dedupes_roles_and_marks_primary() {
+        let role_a = Uuid::new_v4();
+        let role_b = Uuid::new_v4();
+
+        assert_eq!(
+            user_role_bulk_rows(&[role_a, role_b, role_a], Some(role_b)),
+            vec![
+                UserRoleBulkRow {
+                    role_id: role_a,
+                    is_primary: false,
+                },
+                UserRoleBulkRow {
+                    role_id: role_b,
+                    is_primary: true,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn organization_assignments_to_bulk_rows_keeps_latest_unit_assignment() {
+        let organization_unit_id = Uuid::new_v4();
+
+        assert_eq!(
+            organization_assignments_to_bulk_rows(&[
+                OrganizationAssignment {
+                    organization_unit_id,
+                    position_code: "member".to_string(),
+                    position_title: None,
+                    is_primary: Some(false),
+                    responsibilities: None,
+                },
+                OrganizationAssignment {
+                    organization_unit_id,
+                    position_code: "head".to_string(),
+                    position_title: Some("หัวหน้ากลุ่ม".to_string()),
+                    is_primary: Some(true),
+                    responsibilities: Some("ดูแลหลักสูตร".to_string()),
+                },
+            ]),
+            vec![OrganizationMembershipBulkRow {
+                organization_unit_id,
+                position_code: "head".to_string(),
+                position_title: Some("หัวหน้ากลุ่ม".to_string()),
+                is_primary: true,
+                responsibilities: Some("ดูแลหลักสูตร".to_string()),
+            }]
+        );
     }
 }

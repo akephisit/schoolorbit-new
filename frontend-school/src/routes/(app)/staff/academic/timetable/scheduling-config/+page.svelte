@@ -37,7 +37,7 @@
 	import { Label } from '$lib/components/ui/label';
 	import { Badge } from '$lib/components/ui/badge';
 	import { PageShell } from '$lib/components/app-layout';
-	import { PageSkeleton, PageState } from '$lib/components/app-state';
+	import { LoadingButton, PageSkeleton, PageState } from '$lib/components/app-state';
 	import {
 		GripVertical,
 		ChevronDown,
@@ -96,6 +96,19 @@
 	// DnD state
 	let draggedId = $state<string | null>(null);
 	let priorityDirty = $state(false);
+
+	type SavedInstructorUpdate = {
+		id: string;
+		hardUnavailableSlots: TimeSlot[];
+		assignedRoomId: string;
+	};
+
+	type SavedCcUpdate = {
+		id: string;
+		hardUnavailableSlots: TimeSlot[];
+		consecutivePattern: number[] | null;
+		sameDayUnique: boolean;
+	};
 
 	function slotKey(day: string, periodId: string): string {
 		return `${day}__${periodId}`;
@@ -193,11 +206,73 @@
 	// Save
 	// =========================================
 
+	function applySavedInstructorEdits(updates: SavedInstructorUpdate[]) {
+		const updateById = new Map(updates.map((update) => [update.id, update]));
+
+		instructors = instructors.map((instructor) => {
+			const update = updateById.get(instructor.id);
+			if (!update) return instructor;
+			const assignedRoom = allRooms.find((room) => room.id === update.assignedRoomId);
+			return {
+				...instructor,
+				hard_unavailable_slots: [...update.hardUnavailableSlots],
+				assigned_room_id: update.assignedRoomId || undefined,
+				assigned_room_name: assignedRoom?.name_th
+			};
+		});
+
+		for (const update of updates) {
+			unavailableEdits.set(update.id, [...update.hardUnavailableSlots]);
+			instructorRoomEdits.set(update.id, update.assignedRoomId);
+		}
+	}
+
+	function applySavedCcEdits(updates: SavedCcUpdate[]) {
+		const updateById = new Map(updates.map((update) => [update.id, update]));
+
+		for (const [instructorId, ccList] of ccByInstructor.entries()) {
+			ccByInstructor.set(
+				instructorId,
+				ccList.map((cc) => {
+					const update = updateById.get(cc.id);
+					if (!update) return cc;
+					return {
+						...cc,
+						hard_unavailable_slots: [...update.hardUnavailableSlots],
+						consecutive_pattern: update.consecutivePattern,
+						same_day_unique: update.sameDayUnique
+					};
+				})
+			);
+		}
+
+		for (const update of updates) {
+			ccUnavailableEdits.set(update.id, [...update.hardUnavailableSlots]);
+			ccPatternEdits.set(update.id, update.consecutivePattern);
+			ccSameDayUniqueEdits.set(update.id, update.sameDayUnique);
+		}
+	}
+
+	function cloneCcRooms(rooms: CcPreferredRoom[]): CcPreferredRoom[] {
+		return rooms.map((room) => ({ ...room }));
+	}
+
+	function applySavedCcRoomEdits(ccIds: string[]) {
+		for (const ccId of ccIds) {
+			const local = cloneCcRooms(ccRoomsEdits.get(ccId) ?? []);
+			ccRoomsServer.set(ccId, cloneCcRooms(local));
+			ccRoomsEdits.set(ccId, cloneCcRooms(local));
+		}
+	}
+
 	async function saveAll() {
 		if (saving) return;
 		saving = true;
 		try {
 			const ops: Promise<unknown>[] = [];
+			const savedInstructorUpdates: SavedInstructorUpdate[] = [];
+			const savedCcUpdates: SavedCcUpdate[] = [];
+			const savedCcRoomIds: string[] = [];
 
 			// 1. Priority order — bulk endpoint (1 query batch)
 			if (priorityDirty) {
@@ -228,6 +303,11 @@
 						req.assigned_room_id = localRoom;
 					}
 				}
+				savedInstructorUpdates.push({
+					id: i.id,
+					hardUnavailableSlots: [...localUnavail],
+					assignedRoomId: localRoom
+				});
 				ops.push(updateInstructorConstraints(i.id, req));
 			}
 
@@ -244,6 +324,12 @@
 
 					if (!unavailChanged && !patternChanged && !sduChanged) continue;
 
+					savedCcUpdates.push({
+						id: cc.id,
+						hardUnavailableSlots: [...localUnavail],
+						consecutivePattern: localPattern,
+						sameDayUnique: localSdu ?? cc.same_day_unique
+					});
 					ops.push(
 						updateClassroomCourseConstraints(cc.id, {
 							hard_unavailable_slots: unavailChanged ? localUnavail : undefined,
@@ -258,6 +344,7 @@
 			for (const [ccId, _] of ccRoomsEdits.entries()) {
 				if (!ccRoomsChanged(ccId)) continue;
 				const local = ccRoomsEdits.get(ccId) ?? [];
+				savedCcRoomIds.push(ccId);
 				ops.push(
 					setCcPreferredRooms(ccId, {
 						rooms: local.map((r) => ({
@@ -270,9 +357,11 @@
 			}
 
 			await Promise.all(ops);
+			applySavedInstructorEdits(savedInstructorUpdates);
+			applySavedCcEdits(savedCcUpdates);
+			applySavedCcRoomEdits(savedCcRoomIds);
 			toast.success('บันทึกการตั้งค่าสำเร็จ');
 			priorityDirty = false;
-			await loadAll();
 		} catch (e) {
 			toast.error(e instanceof Error ? e.message : 'บันทึกไม่สำเร็จ');
 		} finally {
@@ -606,25 +695,25 @@
 			<History class="w-4 h-4 mr-2" />
 			ประวัติ
 		</Button>
-		<Button variant="outline" onclick={saveAll} disabled={saving || loading || autoScheduling}>
-			{#if saving}
-				<LoaderCircle class="w-4 h-4 animate-spin mr-2" />
-			{:else}
-				<Save class="w-4 h-4 mr-2" />
-			{/if}
-			บันทึก
-		</Button>
-		<Button
-			onclick={runAutoSchedule}
-			disabled={saving || loading || autoScheduling || !selectedSemesterId}
+		<LoadingButton
+			variant="outline"
+			onclick={saveAll}
+			disabled={loading || autoScheduling}
+			loading={saving}
+			loadingLabel="กำลังบันทึก"
 		>
-			{#if autoScheduling}
-				<LoaderCircle class="w-4 h-4 animate-spin mr-2" />
-			{:else}
-				<Zap class="w-4 h-4 mr-2" />
-			{/if}
+			<Save class="w-4 h-4 mr-2" />
+			บันทึก
+		</LoadingButton>
+		<LoadingButton
+			onclick={runAutoSchedule}
+			disabled={saving || loading || !selectedSemesterId}
+			loading={autoScheduling}
+			loadingLabel="กำลังจัดอัตโนมัติ"
+		>
+			<Zap class="w-4 h-4 mr-2" />
 			บันทึกและจัดอัตโนมัติ
-		</Button>
+		</LoadingButton>
 	{/snippet}
 
 	{#if loading}

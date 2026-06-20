@@ -151,6 +151,39 @@ pub async fn delete_period(pool: &PgPool, id: Uuid) -> Result<(), AppError> {
     Ok(())
 }
 
+fn period_reorder_arrays(payload: &ReorderPeriodsRequest) -> (Vec<Uuid>, Vec<i32>) {
+    (
+        payload.items.iter().map(|item| item.id).collect(),
+        payload.items.iter().map(|item| item.order_index).collect(),
+    )
+}
+
+async fn bulk_update_period_order(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    academic_year_id: Uuid,
+    ids: &[Uuid],
+    order_indexes: &[i32],
+) -> Result<(), AppError> {
+    if ids.is_empty() {
+        return Ok(());
+    }
+
+    sqlx::query(
+        r#"UPDATE academic_periods AS period
+           SET order_index = updates.order_index, updated_at = NOW()
+           FROM UNNEST($1::uuid[], $2::int4[]) AS updates(id, order_index)
+           WHERE period.id = updates.id AND period.academic_year_id = $3"#,
+    )
+    .bind(ids)
+    .bind(order_indexes)
+    .bind(academic_year_id)
+    .execute(&mut **tx)
+    .await
+    .map_err(|e| AppError::InternalServerError(format!("Failed to update periods: {}", e)))?;
+
+    Ok(())
+}
+
 /// Batch update order_index หลายแถวใน transaction เดียว
 /// ใช้ SET CONSTRAINTS DEFERRED เพื่อเลี่ยง unique constraint ชนระหว่าง update
 pub async fn reorder_periods(
@@ -171,17 +204,8 @@ pub async fn reorder_periods(
         .await
         .map_err(|e| AppError::InternalServerError(format!("Failed to defer constraint: {}", e)))?;
 
-    for item in &payload.items {
-        sqlx::query(
-            "UPDATE academic_periods SET order_index = $1 WHERE id = $2 AND academic_year_id = $3",
-        )
-        .bind(item.order_index)
-        .bind(item.id)
-        .bind(payload.academic_year_id)
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| AppError::InternalServerError(format!("Failed to update period: {}", e)))?;
-    }
+    let (ids, order_indexes) = period_reorder_arrays(&payload);
+    bulk_update_period_order(&mut tx, payload.academic_year_id, &ids, &order_indexes).await?;
 
     tx.commit().await.map_err(|e| {
         let msg = if e.to_string().contains("unique_period_per_year") {
@@ -262,5 +286,29 @@ mod tests {
             Some("คาบ 1".to_string())
         );
         assert_eq!(normalized_period_name(None), None);
+    }
+
+    #[test]
+    fn period_reorder_arrays_preserve_payload_order() {
+        let first = Uuid::new_v4();
+        let second = Uuid::new_v4();
+        let payload = ReorderPeriodsRequest {
+            academic_year_id: Uuid::new_v4(),
+            items: vec![
+                crate::modules::academic::models::timetable::ReorderPeriodItem {
+                    id: first,
+                    order_index: 2,
+                },
+                crate::modules::academic::models::timetable::ReorderPeriodItem {
+                    id: second,
+                    order_index: 1,
+                },
+            ],
+        };
+
+        let (ids, order_indexes) = period_reorder_arrays(&payload);
+
+        assert_eq!(ids, vec![first, second]);
+        assert_eq!(order_indexes, vec![2, 1]);
     }
 }

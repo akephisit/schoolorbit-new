@@ -22,6 +22,40 @@ fn unique_permission_grants(
         .collect()
 }
 
+async fn bulk_insert_organization_permission_grants(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    organization_unit_id: Uuid,
+    grants: &[OrganizationPermissionGrantInput],
+) -> Result<(), AppError> {
+    if grants.is_empty() {
+        return Ok(());
+    }
+
+    let permission_ids: Vec<Uuid> = grants.iter().map(|grant| grant.permission_id).collect();
+    let position_codes: Vec<Option<String>> = grants
+        .iter()
+        .map(|grant| grant.position_code.clone())
+        .collect();
+
+    sqlx::query(
+        "INSERT INTO organization_permission_grants
+            (organization_unit_id, permission_id, position_code)
+         SELECT $1, permission_id, position_code
+         FROM UNNEST($2::uuid[], $3::text[]) AS grants(permission_id, position_code)",
+    )
+    .bind(organization_unit_id)
+    .bind(&permission_ids)
+    .bind(&position_codes)
+    .execute(&mut **tx)
+    .await
+    .map_err(|e| {
+        tracing::error!("Failed to insert organization permission grants: {}", e);
+        AppError::InternalServerError("ไม่สามารถกำหนดสิทธิ์ของหน่วยงานได้".to_string())
+    })?;
+
+    Ok(())
+}
+
 pub async fn list_organization_permission_grants(
     pool: &PgPool,
     organization_unit_id: Uuid,
@@ -70,22 +104,8 @@ pub async fn replace_organization_permission_grants(
             AppError::InternalServerError("ไม่สามารถลบสิทธิ์เดิมของหน่วยงานได้".to_string())
         })?;
 
-    for grant in unique_permission_grants(grants) {
-        sqlx::query(
-            "INSERT INTO organization_permission_grants
-                (organization_unit_id, permission_id, position_code)
-             VALUES ($1, $2, $3)",
-        )
-        .bind(organization_unit_id)
-        .bind(grant.permission_id)
-        .bind(grant.position_code)
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| {
-            tracing::error!("Failed to insert organization permission grant: {}", e);
-            AppError::InternalServerError("ไม่สามารถกำหนดสิทธิ์ของหน่วยงานได้".to_string())
-        })?;
-    }
+    let grants = unique_permission_grants(grants);
+    bulk_insert_organization_permission_grants(&mut tx, organization_unit_id, &grants).await?;
 
     tx.commit().await.map_err(|e| {
         tracing::error!(

@@ -14,6 +14,33 @@ LEFT JOIN role_permissions rp ON r.id = rp.role_id
 LEFT JOIN permissions p ON rp.permission_id = p.id
 "#;
 
+async fn insert_role_permissions(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    role_id: Uuid,
+    permission_ids: &[Uuid],
+) -> Result<(), AppError> {
+    if permission_ids.is_empty() {
+        return Ok(());
+    }
+
+    sqlx::query(
+        "INSERT INTO role_permissions (role_id, permission_id)
+         SELECT $1, permission_id
+         FROM UNNEST($2::uuid[]) AS permissions(permission_id)
+         ON CONFLICT DO NOTHING",
+    )
+    .bind(role_id)
+    .bind(permission_ids)
+    .execute(&mut **tx)
+    .await
+    .map_err(|e| {
+        tracing::error!("❌ Failed to assign permissions: {}", e);
+        AppError::InternalServerError("ไม่สามารถกำหนดสิทธิ์ได้".to_string())
+    })?;
+
+    Ok(())
+}
+
 pub async fn list_roles(pool: &PgPool) -> Result<Vec<Role>, AppError> {
     let sql = format!(
         "{} WHERE r.is_active = true GROUP BY r.id ORDER BY r.level DESC, r.name",
@@ -87,19 +114,7 @@ pub async fn create_role(pool: &PgPool, payload: CreateRoleRequest) -> Result<Uu
                         AppError::InternalServerError("ไม่พบสิทธิ์การใช้งานที่ระบุ".to_string())
                     })?;
 
-            for perm_id in perm_ids {
-                sqlx::query(
-                    "INSERT INTO role_permissions (role_id, permission_id) VALUES ($1, $2)",
-                )
-                .bind(role_id)
-                .bind(perm_id)
-                .execute(&mut *tx)
-                .await
-                .map_err(|e| {
-                    tracing::error!("❌ Failed to assign permission: {}", e);
-                    AppError::InternalServerError("ไม่สามารถกำหนดสิทธิ์ได้".to_string())
-                })?;
-            }
+            insert_role_permissions(&mut tx, role_id, &perm_ids).await?;
         }
     }
 
@@ -183,19 +198,7 @@ pub async fn update_role(
                         AppError::InternalServerError("ไม่พบสิทธิ์การใช้งานที่ระบุ".to_string())
                     })?;
 
-            for perm_id in perm_ids {
-                sqlx::query(
-                    "INSERT INTO role_permissions (role_id, permission_id) VALUES ($1, $2)",
-                )
-                .bind(role_id)
-                .bind(perm_id)
-                .execute(&mut *tx)
-                .await
-                .map_err(|e| {
-                    tracing::error!("❌ Failed to assign new permission: {}", e);
-                    AppError::InternalServerError("ไม่สามารถกำหนดสิทธิ์ใหม่ได้".to_string())
-                })?;
-            }
+            insert_role_permissions(&mut tx, role_id, &perm_ids).await?;
         }
     }
 

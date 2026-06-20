@@ -1,6 +1,7 @@
 use crate::error::AppError;
 use crate::modules::admission::models::applications::*;
 use sqlx::PgPool;
+use std::collections::HashMap;
 use uuid::Uuid;
 
 #[derive(sqlx::FromRow, serde::Serialize)]
@@ -24,6 +25,100 @@ fn should_mark_application_scored(total_subjects: i64, scored_subjects: i64) -> 
 
 fn bulk_score_entry_count(entries: &[BulkScoreEntry]) -> usize {
     entries.iter().map(|entry| entry.scores.len()).sum()
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct ScoreBulkRow {
+    application_id: Uuid,
+    exam_subject_id: Uuid,
+    score: Option<f64>,
+}
+
+fn push_score_bulk_row(
+    rows: &mut Vec<ScoreBulkRow>,
+    index_by_key: &mut HashMap<(Uuid, Uuid), usize>,
+    row: ScoreBulkRow,
+) {
+    let key = (row.application_id, row.exam_subject_id);
+    if let Some(index) = index_by_key.get(&key).copied() {
+        rows[index] = row;
+    } else {
+        index_by_key.insert(key, rows.len());
+        rows.push(row);
+    }
+}
+
+fn score_entries_to_bulk_rows(
+    application_id: Uuid,
+    scores: &[UpdateScoreEntry],
+) -> Vec<ScoreBulkRow> {
+    let mut rows = Vec::with_capacity(scores.len());
+    let mut index_by_key = HashMap::with_capacity(scores.len());
+    for score in scores {
+        push_score_bulk_row(
+            &mut rows,
+            &mut index_by_key,
+            ScoreBulkRow {
+                application_id,
+                exam_subject_id: score.exam_subject_id,
+                score: score.score,
+            },
+        );
+    }
+    rows
+}
+
+fn bulk_score_entries_to_rows(entries: &[BulkScoreEntry]) -> Vec<ScoreBulkRow> {
+    let mut rows = Vec::with_capacity(bulk_score_entry_count(entries));
+    let mut index_by_key = HashMap::with_capacity(rows.capacity());
+    for bulk_entry in entries {
+        for score in &bulk_entry.scores {
+            push_score_bulk_row(
+                &mut rows,
+                &mut index_by_key,
+                ScoreBulkRow {
+                    application_id: bulk_entry.application_id,
+                    exam_subject_id: score.exam_subject_id,
+                    score: score.score,
+                },
+            );
+        }
+    }
+    rows
+}
+
+async fn upsert_application_scores(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    user_id: Uuid,
+    rows: &[ScoreBulkRow],
+) -> Result<(), AppError> {
+    if rows.is_empty() {
+        return Ok(());
+    }
+
+    let app_ids: Vec<Uuid> = rows.iter().map(|row| row.application_id).collect();
+    let sub_ids: Vec<Uuid> = rows.iter().map(|row| row.exam_subject_id).collect();
+    let score_vals: Vec<Option<f64>> = rows.iter().map(|row| row.score).collect();
+
+    sqlx::query(
+        r#"INSERT INTO admission_exam_scores (application_id, exam_subject_id, score, entered_by, entered_at, updated_at)
+           SELECT application_id, exam_subject_id, score, $4, NOW(), NOW()
+           FROM UNNEST($1::uuid[], $2::uuid[], $3::float8[]) AS t(application_id, exam_subject_id, score)
+           ON CONFLICT (application_id, exam_subject_id)
+           DO UPDATE SET score = EXCLUDED.score, entered_by = EXCLUDED.entered_by, updated_at = NOW()"#,
+    )
+    .bind(&app_ids)
+    .bind(&sub_ids)
+    .bind(&score_vals)
+    .bind(user_id)
+    .execute(&mut **tx)
+    .await
+    .map_err(|e| {
+        tracing::error!("Failed to upsert scores: {}", e);
+        AppError::InternalServerError("Failed to update score".to_string())
+    })?;
+
+    Ok(())
 }
 
 pub async fn get_all_scores(pool: &PgPool, round_id: Uuid) -> Result<Vec<ScoreRow>, AppError> {
@@ -80,20 +175,8 @@ pub async fn update_application_scores(
         .await
         .map_err(|_| AppError::InternalServerError("Transaction failed".to_string()))?;
 
-    for entry in scores {
-        sqlx::query(
-            r#"INSERT INTO admission_exam_scores (application_id, exam_subject_id, score, entered_by, entered_at, updated_at)
-               VALUES ($1, $2, $3, $4, NOW(), NOW())
-               ON CONFLICT (application_id, exam_subject_id)
-               DO UPDATE SET score = $3, entered_by = $4, updated_at = NOW()"#
-        )
-        .bind(application_id).bind(entry.exam_subject_id).bind(entry.score).bind(user_id)
-        .execute(&mut *tx).await
-        .map_err(|e| {
-            tracing::error!("Failed to upsert score: {}", e);
-            AppError::InternalServerError("Failed to update score".to_string())
-        })?;
-    }
+    let score_rows = score_entries_to_bulk_rows(application_id, scores);
+    upsert_application_scores(&mut tx, user_id, &score_rows).await?;
 
     let total: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM admission_exam_subjects WHERE admission_round_id = (SELECT admission_round_id FROM admission_applications WHERE id = $1)"
@@ -124,21 +207,14 @@ pub async fn bulk_update_scores(
     user_id: Uuid,
     entries: &[BulkScoreEntry],
 ) -> Result<usize, AppError> {
-    let mut app_ids: Vec<Uuid> = Vec::new();
-    let mut sub_ids: Vec<Uuid> = Vec::new();
-    let mut score_vals: Vec<Option<f64>> = Vec::new();
-
-    for entry in entries {
-        for score in &entry.scores {
-            app_ids.push(entry.application_id);
-            sub_ids.push(score.exam_subject_id);
-            score_vals.push(score.score);
-        }
-    }
-
     let updated = bulk_score_entry_count(entries);
+    let rows = bulk_score_entries_to_rows(entries);
 
-    if updated > 0 {
+    if !rows.is_empty() {
+        let app_ids: Vec<Uuid> = rows.iter().map(|row| row.application_id).collect();
+        let sub_ids: Vec<Uuid> = rows.iter().map(|row| row.exam_subject_id).collect();
+        let score_vals: Vec<Option<f64>> = rows.iter().map(|row| row.score).collect();
+
         sqlx::query(
             r#"INSERT INTO admission_exam_scores (application_id, exam_subject_id, score, entered_by, entered_at, updated_at)
                SELECT a, s, sc, $4, NOW(), NOW()
@@ -212,5 +288,34 @@ mod tests {
         ];
 
         assert_eq!(bulk_score_entry_count(&entries), 2);
+    }
+
+    #[test]
+    fn score_entries_to_bulk_rows_dedupes_subjects_with_latest_score() {
+        let application_id = Uuid::new_v4();
+        let subject_id = Uuid::new_v4();
+
+        let rows = score_entries_to_bulk_rows(
+            application_id,
+            &[
+                UpdateScoreEntry {
+                    exam_subject_id: subject_id,
+                    score: Some(8.0),
+                },
+                UpdateScoreEntry {
+                    exam_subject_id: subject_id,
+                    score: Some(9.5),
+                },
+            ],
+        );
+
+        assert_eq!(
+            rows,
+            vec![ScoreBulkRow {
+                application_id,
+                exam_subject_id: subject_id,
+                score: Some(9.5),
+            }]
+        );
     }
 }

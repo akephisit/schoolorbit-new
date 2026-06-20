@@ -17,8 +17,8 @@
 	import * as Dialog from '$lib/components/ui/dialog';
 	import * as Select from '$lib/components/ui/select';
 	import { PageShell } from '$lib/components/app-layout';
-	import { PageSkeleton, PageState } from '$lib/components/app-state';
-	import { Plus, Trash2, Play, Eraser, LoaderCircle } from 'lucide-svelte';
+	import { LoadingButton, PageSkeleton, PageState } from '$lib/components/app-state';
+	import { Plus, Trash2, Play, Eraser } from 'lucide-svelte';
 
 	let { data } = $props();
 
@@ -32,6 +32,7 @@
 	let createName = $state('');
 	let createDescription = $state('');
 	let creating = $state(false);
+	let deletingTemplateId = $state<string | null>(null);
 
 	// Apply dialog
 	let showApplyDialog = $state(false);
@@ -67,6 +68,14 @@
 		}
 	}
 
+	function replaceTemplate(template: TimetableTemplateView) {
+		templates = [template, ...templates.filter((item) => item.id !== template.id)];
+	}
+
+	function removeTemplate(templateId: string) {
+		templates = templates.filter((item) => item.id !== templateId);
+	}
+
 	async function handleCreate() {
 		if (!createName.trim()) {
 			toast.error('กรุณาระบุชื่อ template');
@@ -78,16 +87,18 @@
 		}
 		creating = true;
 		try {
-			await createTemplateFromCurrent({
+			const response = await createTemplateFromCurrent({
 				semester_id: selectedSemesterId,
 				name: createName.trim(),
 				description: createDescription.trim() || undefined
 			});
+			if (response.data) {
+				replaceTemplate(response.data);
+			}
 			toast.success('สร้าง template สำเร็จ');
 			showCreateDialog = false;
 			createName = '';
 			createDescription = '';
-			await loadAll();
 		} catch (e) {
 			toast.error(e instanceof Error ? e.message : 'สร้างไม่สำเร็จ');
 		} finally {
@@ -97,12 +108,15 @@
 
 	async function handleDelete(t: TimetableTemplateView) {
 		if (!window.confirm(`ลบ "${t.name}"? — ไม่สามารถกู้คืนได้`)) return;
+		deletingTemplateId = t.id;
 		try {
 			await deleteTimetableTemplate(t.id);
+			removeTemplate(t.id);
 			toast.success('ลบสำเร็จ');
-			await loadAll();
 		} catch (e) {
 			toast.error(e instanceof Error ? e.message : 'ลบไม่สำเร็จ');
+		} finally {
+			deletingTemplateId = null;
 		}
 	}
 
@@ -247,9 +261,16 @@
 							<Play class="w-3 h-3 mr-1" />
 							ใช้ template
 						</Button>
-						<Button size="sm" variant="ghost" onclick={() => handleDelete(t)}>
+						<LoadingButton
+							size="sm"
+							variant="ghost"
+							onclick={() => handleDelete(t)}
+							loading={deletingTemplateId === t.id}
+							loadingLabel=""
+							aria-label={`ลบ ${t.name}`}
+						>
 							<Trash2 class="w-3 h-3 text-destructive" />
-						</Button>
+						</LoadingButton>
 					</div>
 				</Card.Root>
 			{/each}
@@ -283,12 +304,9 @@
 		</div>
 		<Dialog.Footer>
 			<Button variant="outline" onclick={() => (showCreateDialog = false)}>ยกเลิก</Button>
-			<Button onclick={handleCreate} disabled={creating}>
-				{#if creating}
-					<LoaderCircle class="w-4 h-4 animate-spin mr-2" />
-				{/if}
+			<LoadingButton onclick={handleCreate} loading={creating} loadingLabel="กำลังสร้าง">
 				สร้าง
-			</Button>
+			</LoadingButton>
 		</Dialog.Footer>
 	</Dialog.Content>
 </Dialog.Root>
@@ -309,12 +327,9 @@
 		</p>
 		<Dialog.Footer>
 			<Button variant="outline" onclick={() => (showApplyDialog = false)}>ยกเลิก</Button>
-			<Button onclick={handleApply} disabled={applying}>
-				{#if applying}
-					<LoaderCircle class="w-4 h-4 animate-spin mr-2" />
-				{/if}
+			<LoadingButton onclick={handleApply} loading={applying} loadingLabel="กำลังใช้ template">
 				Apply
-			</Button>
+			</LoadingButton>
 		</Dialog.Footer>
 	</Dialog.Content>
 </Dialog.Root>
@@ -346,12 +361,14 @@
 		</div>
 		<Dialog.Footer>
 			<Button variant="outline" onclick={() => (showClearDialog = false)}>ยกเลิก</Button>
-			<Button variant="destructive" onclick={handleClear} disabled={clearing}>
-				{#if clearing}
-					<LoaderCircle class="w-4 h-4 animate-spin mr-2" />
-				{/if}
+			<LoadingButton
+				variant="destructive"
+				onclick={handleClear}
+				loading={clearing}
+				loadingLabel="กำลังเคลียร์"
+			>
 				เคลียร์
-			</Button>
+			</LoadingButton>
 		</Dialog.Footer>
 	</Dialog.Content>
 </Dialog.Root>

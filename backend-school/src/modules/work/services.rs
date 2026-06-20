@@ -298,6 +298,69 @@ pub fn normalize_assignee_target(
     })
 }
 
+#[derive(Debug, PartialEq, Eq)]
+struct WorkItemAssigneeBulkRows {
+    assignee_types: Vec<String>,
+    user_ids: Vec<Option<Uuid>>,
+    organization_unit_ids: Vec<Option<Uuid>>,
+    position_codes: Vec<Option<String>>,
+}
+
+fn work_item_assignee_bulk_rows(assignees: &[WorkItemAssigneeTarget]) -> WorkItemAssigneeBulkRows {
+    WorkItemAssigneeBulkRows {
+        assignee_types: assignees
+            .iter()
+            .map(|target| target.assignee_type.as_str().to_string())
+            .collect(),
+        user_ids: assignees.iter().map(|target| target.user_id).collect(),
+        organization_unit_ids: assignees
+            .iter()
+            .map(|target| target.organization_unit_id)
+            .collect(),
+        position_codes: assignees
+            .iter()
+            .map(|target| target.position_code.clone())
+            .collect(),
+    }
+}
+
+async fn insert_work_item_assignees(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    item_id: Uuid,
+    assignees: &[WorkItemAssigneeTarget],
+) -> Result<(), AppError> {
+    if assignees.is_empty() {
+        return Ok(());
+    }
+
+    let rows = work_item_assignee_bulk_rows(assignees);
+
+    sqlx::query(
+        r#"
+        INSERT INTO work_item_assignees (
+            work_item_id, assignee_type, user_id, organization_unit_id, position_code
+        )
+        SELECT $1, assignee_type, user_id, organization_unit_id, position_code
+        FROM UNNEST($2::text[], $3::uuid[], $4::uuid[], $5::text[])
+             AS rows(assignee_type, user_id, organization_unit_id, position_code)
+        ON CONFLICT DO NOTHING
+        "#,
+    )
+    .bind(item_id)
+    .bind(&rows.assignee_types)
+    .bind(&rows.user_ids)
+    .bind(&rows.organization_unit_ids)
+    .bind(&rows.position_codes)
+    .execute(&mut **tx)
+    .await
+    .map_err(|error| {
+        tracing::error!("Failed to insert work item assignees: {}", error);
+        AppError::InternalServerError("ไม่สามารถมอบหมายงานได้".to_string())
+    })?;
+
+    Ok(())
+}
+
 pub async fn create_work_item(pool: &PgPool, input: CreateWorkItemInput) -> Result<Uuid, AppError> {
     if input.assignees.is_empty() {
         return Err(AppError::ValidationError(
@@ -343,28 +406,7 @@ pub async fn create_work_item(pool: &PgPool, input: CreateWorkItemInput) -> Resu
         AppError::InternalServerError("ไม่สามารถสร้างงานได้".to_string())
     })?;
 
-    for assignee in assignees {
-        sqlx::query(
-            r#"
-            INSERT INTO work_item_assignees (
-                work_item_id, assignee_type, user_id, organization_unit_id, position_code
-            )
-            VALUES ($1, $2, $3, $4, $5)
-            ON CONFLICT DO NOTHING
-            "#,
-        )
-        .bind(item_id)
-        .bind(assignee.assignee_type.as_str())
-        .bind(assignee.user_id)
-        .bind(assignee.organization_unit_id)
-        .bind(&assignee.position_code)
-        .execute(&mut *tx)
-        .await
-        .map_err(|error| {
-            tracing::error!("Failed to insert work item assignee: {}", error);
-            AppError::InternalServerError("ไม่สามารถมอบหมายงานได้".to_string())
-        })?;
-    }
+    insert_work_item_assignees(&mut tx, item_id, &assignees).await?;
 
     tx.commit().await.map_err(|error| {
         tracing::error!("Failed to commit work item transaction: {}", error);
@@ -633,5 +675,34 @@ mod tests {
             position_code: Some("head".to_string()),
         })
         .is_err());
+    }
+
+    #[test]
+    fn work_item_assignee_bulk_rows_maps_targets_to_parallel_arrays() {
+        let user_id = Uuid::new_v4();
+        let organization_unit_id = Uuid::new_v4();
+
+        assert_eq!(
+            work_item_assignee_bulk_rows(&[
+                WorkItemAssigneeTarget {
+                    assignee_type: WorkItemAssigneeType::User,
+                    user_id: Some(user_id),
+                    organization_unit_id: None,
+                    position_code: None,
+                },
+                WorkItemAssigneeTarget {
+                    assignee_type: WorkItemAssigneeType::OrganizationPosition,
+                    user_id: None,
+                    organization_unit_id: Some(organization_unit_id),
+                    position_code: Some("head".to_string()),
+                },
+            ]),
+            WorkItemAssigneeBulkRows {
+                assignee_types: vec!["user".to_string(), "organization_position".to_string()],
+                user_ids: vec![Some(user_id), None],
+                organization_unit_ids: vec![None, Some(organization_unit_id)],
+                position_codes: vec![None, Some("head".to_string())],
+            }
+        );
     }
 }

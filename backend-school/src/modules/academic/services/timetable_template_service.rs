@@ -164,7 +164,7 @@ pub async fn from_current(
     description: Option<&str>,
     entry_types: Vec<String>,
     user_id: Option<Uuid>,
-) -> Result<Uuid, AppError> {
+) -> Result<TimetableTemplateView, AppError> {
     let mut tx = pool
         .begin()
         .await
@@ -207,7 +207,8 @@ pub async fn from_current(
     tx.commit()
         .await
         .map_err(|e| AppError::InternalServerError(e.to_string()))?;
-    Ok(template_id)
+    let (template, _) = get_template(pool, template_id).await?;
+    Ok(template)
 }
 
 pub async fn apply_template(

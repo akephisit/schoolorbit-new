@@ -1666,6 +1666,87 @@ fn teaching_supervision_services_use_bulk_mutations_for_multi_row_writes() {
 }
 
 #[test]
+fn mutation_performance_foundation_services_use_bulk_helpers() {
+    let checked = [
+        (
+            "src/modules/admission/services/score_service.rs",
+            [
+                "upsert_application_scores",
+                "score_entries_to_bulk_rows",
+                "bulk_update_scores",
+            ]
+            .as_slice(),
+            ["for entry in scores"].as_slice(),
+        ),
+        (
+            "src/modules/admission/services/exam_room_service.rs",
+            ["insert_exam_seat_assignments"].as_slice(),
+            [
+                "for (app_id, rid, seat, eid) in &new_assignments",
+                "for (app_id, rid, seat, eid) in &assignments",
+            ]
+            .as_slice(),
+        ),
+        (
+            "src/modules/academic/services/period_service.rs",
+            ["bulk_update_period_order"].as_slice(),
+            ["for item in &payload.items"].as_slice(),
+        ),
+        (
+            "src/modules/academic/services/study_plan_service.rs",
+            ["bulk_insert_study_plan_subjects"].as_slice(),
+            ["for subject in &req.subjects"].as_slice(),
+        ),
+        (
+            "src/modules/staff/services/organization_permission_service.rs",
+            ["bulk_insert_organization_permission_grants"].as_slice(),
+            ["for grant in unique_permission_grants"].as_slice(),
+        ),
+        (
+            "src/modules/staff/services/role_service.rs",
+            ["insert_role_permissions"].as_slice(),
+            ["for perm_id in perm_ids"].as_slice(),
+        ),
+        (
+            "src/modules/staff/services/staff_service.rs",
+            [
+                "insert_user_roles",
+                "insert_organization_memberships",
+                "organization_assignments_to_bulk_rows",
+            ]
+            .as_slice(),
+            [
+                "for role_id in &payload.role_ids",
+                "for role_id in role_ids",
+                "for assignment in organization_assignments",
+            ]
+            .as_slice(),
+        ),
+        (
+            "src/modules/work/services.rs",
+            ["insert_work_item_assignees"].as_slice(),
+            ["for assignee in assignees"].as_slice(),
+        ),
+    ];
+
+    for (path, required_helpers, rejected_patterns) in checked {
+        let source = strip_comments(&read_source(manifest_dir().join(path)));
+        for helper in required_helpers {
+            assert!(
+                source.contains(helper),
+                "{path}: missing bulk mutation helper {helper}"
+            );
+        }
+        for pattern in rejected_patterns {
+            assert!(
+                !source.contains(pattern),
+                "{path}: replace per-row mutation loop `{pattern}` with a bulk helper"
+            );
+        }
+    }
+}
+
+#[test]
 fn internal_api_secrets_use_constant_time_comparison_and_caller_headers() {
     let checked_files = [
         repo_root().join("backend-school/src/middleware/internal_auth.rs"),

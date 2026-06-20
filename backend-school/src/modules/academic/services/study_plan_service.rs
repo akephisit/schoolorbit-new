@@ -16,6 +16,57 @@ fn study_plan_subject_display_order(display_order: Option<i32>) -> i32 {
     display_order.unwrap_or(0)
 }
 
+fn study_plan_subject_bulk_rows(
+    subjects: &[SubjectInPlan],
+) -> (Vec<Uuid>, Vec<String>, Vec<Uuid>, Vec<i32>) {
+    (
+        subjects
+            .iter()
+            .map(|subject| subject.grade_level_id)
+            .collect(),
+        subjects
+            .iter()
+            .map(|subject| subject.term.clone())
+            .collect(),
+        subjects.iter().map(|subject| subject.subject_id).collect(),
+        subjects
+            .iter()
+            .map(|subject| study_plan_subject_display_order(subject.display_order))
+            .collect(),
+    )
+}
+
+async fn bulk_insert_study_plan_subjects(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    version_id: Uuid,
+    grade_level_ids: &[Uuid],
+    terms: &[String],
+    subject_ids: &[Uuid],
+    display_orders: &[i32],
+) -> Result<(), AppError> {
+    if grade_level_ids.is_empty() {
+        return Ok(());
+    }
+
+    sqlx::query(
+        "INSERT INTO study_plan_subjects
+         (study_plan_version_id, grade_level_id, term, subject_id, display_order)
+         SELECT $1, grade_level_id, term, subject_id, display_order
+         FROM UNNEST($2::uuid[], $3::text[], $4::uuid[], $5::int4[])
+              AS rows(grade_level_id, term, subject_id, display_order)
+         ON CONFLICT (study_plan_version_id, grade_level_id, term, subject_id) DO NOTHING",
+    )
+    .bind(version_id)
+    .bind(grade_level_ids)
+    .bind(terms)
+    .bind(subject_ids)
+    .bind(display_orders)
+    .execute(&mut **tx)
+    .await?;
+
+    Ok(())
+}
+
 fn validate_catalog_instructor_role(role: &str) -> Result<(), AppError> {
     if role == "primary" || role == "secondary" {
         return Ok(());
@@ -413,21 +464,17 @@ pub async fn add_subjects_to_version(
     req: AddSubjectsToVersionRequest,
 ) -> Result<usize, AppError> {
     let mut tx = pool.begin().await?;
-    for subject in &req.subjects {
-        sqlx::query(
-            "INSERT INTO study_plan_subjects
-             (study_plan_version_id, grade_level_id, term, subject_id, display_order)
-             VALUES ($1, $2, $3, $4, $5)
-             ON CONFLICT (study_plan_version_id, grade_level_id, term, subject_id) DO NOTHING",
-        )
-        .bind(version_id)
-        .bind(subject.grade_level_id)
-        .bind(&subject.term)
-        .bind(subject.subject_id)
-        .bind(study_plan_subject_display_order(subject.display_order))
-        .execute(&mut *tx)
-        .await?;
-    }
+    let (grade_level_ids, terms, subject_ids, display_orders) =
+        study_plan_subject_bulk_rows(&req.subjects);
+    bulk_insert_study_plan_subjects(
+        &mut tx,
+        version_id,
+        &grade_level_ids,
+        &terms,
+        &subject_ids,
+        &display_orders,
+    )
+    .await?;
     tx.commit().await?;
     Ok(req.subjects.len())
 }
@@ -1268,6 +1315,25 @@ mod tests {
     fn study_plan_subject_display_order_defaults_to_zero() {
         assert_eq!(study_plan_subject_display_order(None), 0);
         assert_eq!(study_plan_subject_display_order(Some(7)), 7);
+    }
+
+    #[test]
+    fn study_plan_subject_bulk_rows_maps_payload_for_batch_insert() {
+        let grade_level_id = Uuid::new_v4();
+        let subject_id = Uuid::new_v4();
+
+        let (grade_level_ids, terms, subject_ids, display_orders) =
+            study_plan_subject_bulk_rows(&[SubjectInPlan {
+                grade_level_id,
+                term: "1".to_string(),
+                subject_id,
+                display_order: None,
+            }]);
+
+        assert_eq!(grade_level_ids, vec![grade_level_id]);
+        assert_eq!(terms, vec!["1".to_string()]);
+        assert_eq!(subject_ids, vec![subject_id]);
+        assert_eq!(display_orders, vec![0]);
     }
 
     #[test]
