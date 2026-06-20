@@ -26,6 +26,7 @@
 		type SlotClassroomAssignment,
 		listStudyPlanVersions,
 		generateActivitiesFromPlan,
+		type GenerateActivitiesFromPlanResponse,
 		type StudyPlanVersion
 	} from '$lib/api/academic';
 	import { SvelteSet } from 'svelte/reactivity';
@@ -244,6 +245,21 @@
 		};
 	}
 
+	function mergeGeneratedActivities(result: GenerateActivitiesFromPlanResponse) {
+		slots = result.slots;
+		groups = result.groups;
+		expandedSlots.clear();
+		for (const slot of slots) expandedSlots.add(slot.id);
+		slotInstructorsMap = {
+			...slotInstructorsMap,
+			...result.slot_instructors
+		};
+		slotClassroomAssignmentsMap = {
+			...slotClassroomAssignmentsMap,
+			...result.slot_classroom_assignments
+		};
+	}
+
 	// ── Load ───────────────────────────────────────────
 	onMount(async () => {
 		if (!canListActivity) {
@@ -385,7 +401,7 @@
 			});
 			toast.success(`สร้าง ${res.created} กิจกรรม (ข้าม ${res.skipped} อันที่มีอยู่แล้ว)`);
 			showGenerateDialog = false;
-			await loadData();
+			mergeGeneratedActivities(res);
 		} catch {
 			toast.error('Generate ไม่สำเร็จ');
 		} finally {

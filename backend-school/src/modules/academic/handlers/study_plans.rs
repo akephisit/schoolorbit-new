@@ -29,13 +29,6 @@ struct GenerateCoursesData {
     activities_skipped: i32,
 }
 
-#[derive(Debug, Serialize)]
-struct GenerateActivitiesData {
-    created: i32,
-    skipped: i32,
-    total_templates: i64,
-}
-
 // ============================================
 // Study Plans
 // ============================================
@@ -270,13 +263,8 @@ pub async fn generate_activities_from_plan(
 ) -> Result<impl IntoResponse, AppError> {
     let pool = tenant_pool(&state, &headers).await?;
     let user_id = optional_user_id_from_headers(&headers, &pool).await;
-    let (created, skipped, total) =
-        study_plan_service::generate_activities_from_plan(&pool, req, user_id).await?;
-    Ok(Json(ApiResponse::ok(GenerateActivitiesData {
-        created,
-        skipped,
-        total_templates: total,
-    })))
+    let result = study_plan_service::generate_activities_from_plan(&pool, req, user_id).await?;
+    Ok(Json(ApiResponse::ok(result)))
 }
 
 // ============================================

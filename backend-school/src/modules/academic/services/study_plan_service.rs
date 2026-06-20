@@ -1,5 +1,10 @@
 use crate::error::AppError;
+use crate::modules::academic::models::activity::{
+    ActivityGroup, ActivityGroupFilter, ActivitySlot, ActivitySlotFilter, SlotClassroomAssignment,
+};
 use crate::modules::academic::models::study_plans::*;
+use crate::modules::academic::services::activity_service::{self, SlotInstructorInfo};
+use crate::policies::resource_access_policy::UserResourceListAccess;
 use chrono::{DateTime, Utc};
 use sqlx::{types::Json, FromRow, PgPool};
 use std::collections::HashMap;
@@ -35,6 +40,109 @@ fn study_plan_subject_bulk_rows(
             .map(|subject| study_plan_subject_display_order(subject.display_order))
             .collect(),
     )
+}
+
+#[derive(Debug, FromRow)]
+struct SlotInstructorForSlotRow {
+    slot_id: Uuid,
+    id: Uuid,
+    user_id: Uuid,
+    instructor_name: Option<String>,
+}
+
+#[derive(Debug, serde::Serialize)]
+pub struct GenerateActivitiesFromPlanOutcome {
+    pub created: i32,
+    pub skipped: i32,
+    pub total_templates: i64,
+    pub slots: Vec<ActivitySlot>,
+    pub groups: Vec<ActivityGroup>,
+    pub slot_instructors: HashMap<Uuid, Vec<SlotInstructorInfo>>,
+    pub slot_classroom_assignments: HashMap<Uuid, Vec<SlotClassroomAssignment>>,
+}
+
+async fn list_slot_instructors_for_slots(
+    pool: &PgPool,
+    slot_ids: &[Uuid],
+) -> Result<HashMap<Uuid, Vec<SlotInstructorInfo>>, AppError> {
+    let mut grouped = slot_ids
+        .iter()
+        .copied()
+        .map(|slot_id| (slot_id, Vec::new()))
+        .collect::<HashMap<_, _>>();
+
+    if slot_ids.is_empty() {
+        return Ok(grouped);
+    }
+
+    let slot_ids = slot_ids.to_vec();
+    let rows = sqlx::query_as::<_, SlotInstructorForSlotRow>(
+        r#"SELECT asi.slot_id, asi.id, asi.user_id,
+                  u.first_name || ' ' || u.last_name AS instructor_name
+           FROM activity_slot_instructors asi
+           JOIN users u ON u.id = asi.user_id
+           WHERE asi.slot_id = ANY($1)
+           ORDER BY u.first_name"#,
+    )
+    .bind(&slot_ids)
+    .fetch_all(pool)
+    .await
+    .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+    for row in rows {
+        grouped
+            .entry(row.slot_id)
+            .or_default()
+            .push(SlotInstructorInfo {
+                id: row.id,
+                user_id: row.user_id,
+                instructor_name: row.instructor_name,
+            });
+    }
+
+    Ok(grouped)
+}
+
+async fn list_slot_classroom_assignments_for_slots(
+    pool: &PgPool,
+    slot_ids: &[Uuid],
+) -> Result<HashMap<Uuid, Vec<SlotClassroomAssignment>>, AppError> {
+    let mut grouped = slot_ids
+        .iter()
+        .copied()
+        .map(|slot_id| (slot_id, Vec::new()))
+        .collect::<HashMap<_, _>>();
+
+    if slot_ids.is_empty() {
+        return Ok(grouped);
+    }
+
+    let slot_ids = slot_ids.to_vec();
+    let rows = sqlx::query_as::<_, SlotClassroomAssignment>(
+        r#"SELECT asca.*, cr.name AS classroom_name,
+                  concat(u.first_name, ' ', u.last_name) AS instructor_name
+           FROM activity_slot_classroom_assignments asca
+           JOIN class_rooms cr ON cr.id = asca.classroom_id
+           JOIN users u ON u.id = asca.instructor_id
+           WHERE asca.slot_id = ANY($1)
+           ORDER BY cr.name"#,
+    )
+    .bind(&slot_ids)
+    .fetch_all(pool)
+    .await
+    .map_err(|e| {
+        tracing::error!("list generated slot classroom assignments error: {e}");
+        AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
+    })?;
+
+    for assignment in rows {
+        grouped
+            .entry(assignment.slot_id)
+            .or_default()
+            .push(assignment);
+    }
+
+    Ok(grouped)
 }
 
 async fn bulk_insert_study_plan_subjects(
@@ -899,7 +1007,7 @@ pub async fn generate_activities_from_plan(
     pool: &PgPool,
     req: GenerateActivitiesFromPlanRequest,
     user_id: Option<Uuid>,
-) -> Result<(i32, i32, i64), AppError> {
+) -> Result<GenerateActivitiesFromPlanOutcome, AppError> {
     let counts: (i64, i64) = sqlx::query_as(
         r#"
         WITH target_year AS (
@@ -1001,7 +1109,44 @@ pub async fn generate_activities_from_plan(
 
     let created = counts.1 as i32;
     let skipped = (counts.0 - counts.1) as i32;
-    Ok((created, skipped, counts.0))
+    let slots = activity_service::list_slots(
+        pool,
+        ActivitySlotFilter {
+            semester_id: Some(req.semester_id),
+            activity_type: None,
+            teacher_reg_open: None,
+            student_reg_open: None,
+        },
+        UserResourceListAccess::School,
+    )
+    .await?;
+    let groups = activity_service::list_groups(
+        pool,
+        ActivityGroupFilter {
+            slot_id: None,
+            semester_id: Some(req.semester_id),
+            activity_type: None,
+            instructor_id: None,
+            registration_open: None,
+            search: None,
+        },
+        UserResourceListAccess::School,
+    )
+    .await?;
+    let slot_ids = slots.iter().map(|slot| slot.id).collect::<Vec<_>>();
+    let slot_instructors = list_slot_instructors_for_slots(pool, &slot_ids).await?;
+    let slot_classroom_assignments =
+        list_slot_classroom_assignments_for_slots(pool, &slot_ids).await?;
+
+    Ok(GenerateActivitiesFromPlanOutcome {
+        created,
+        skipped,
+        total_templates: counts.0,
+        slots,
+        groups,
+        slot_instructors,
+        slot_classroom_assignments,
+    })
 }
 
 // ============================================

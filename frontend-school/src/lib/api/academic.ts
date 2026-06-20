@@ -1347,6 +1347,10 @@ export interface GenerateActivitiesFromPlanResponse {
 	created: number;
 	skipped: number;
 	total_templates: number;
+	slots: ActivitySlot[];
+	groups: ActivityGroup[];
+	slot_instructors: Record<string, SlotInstructor[]>;
+	slot_classroom_assignments: Record<string, SlotClassroomAssignment[]>;
 }
 
 // ==========================================
