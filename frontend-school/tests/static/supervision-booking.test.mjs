@@ -44,3 +44,19 @@ test('teaching supervision booking uses a weekly timetable grid with exact obser
 	assert.match(migration, /ADD COLUMN observed_at timestamp with time zone/);
 	assert.match(migration, /DROP COLUMN manual_observed_at/);
 });
+
+test('teaching supervision templates expose a read-only form preview', async () => {
+	const supervisionPage = await readRepoFile(
+		'frontend-school/src/routes/(app)/staff/academic/supervision/+page.svelte'
+	);
+
+	assert.match(supervisionPage, /previewTemplateDialogOpen/);
+	assert.match(supervisionPage, /openTemplatePreviewDialog\(template\)/);
+	assert.match(supervisionPage, />\s*ดูตัวอย่าง\s*</);
+	assert.match(supervisionPage, /<Dialog\.Title>ตัวอย่างแบบประเมินนิเทศ<\/Dialog\.Title>/);
+	assert.match(supervisionPage, /templateRatingColumns\(previewTemplate\)/);
+	assert.match(supervisionPage, /\{#each previewTemplate\.sections as section/);
+	assert.match(supervisionPage, /\{#each section\.items as item/);
+	assert.match(supervisionPage, /aria-label=\{`ช่องคะแนน \$\{score\}/);
+	assert.match(supervisionPage, /readonly/i);
+});

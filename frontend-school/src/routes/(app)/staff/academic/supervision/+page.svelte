@@ -7,6 +7,7 @@
 		ChevronsUpDown,
 		ArrowDown,
 		ArrowUp,
+		Eye,
 		FileSignature,
 		Loader2,
 		Plus,
@@ -216,6 +217,8 @@
 	let progress = $state<SupervisionCycleProgress | null>(null);
 	let createCycleDialogOpen = $state(false);
 	let createTemplateDialogOpen = $state(false);
+	let previewTemplateDialogOpen = $state(false);
+	let previewTemplateId = $state('');
 	let editingTemplateId = $state('');
 	let cycleAcademicYearId = $state('');
 	let loadedTimetableCycleId = $state('');
@@ -343,6 +346,9 @@
 		selectedEvaluation
 			? (templates.find((template) => template.id === selectedEvaluation.templateId) ?? null)
 			: null
+	);
+	const previewTemplate = $derived(
+		templates.find((template) => template.id === previewTemplateId) ?? null
 	);
 	const selectedEvaluationRubricSections = $derived(
 		templateSectionsToRubricForm(selectedEvaluationTemplate)
@@ -493,6 +499,37 @@
 			cancelled: 'ยกเลิก'
 		};
 		return labels[status] ?? status;
+	}
+
+	function templateStatusLabel(status: SupervisionTemplateStatus): string {
+		const labels: Record<SupervisionTemplateStatus, string> = {
+			draft: 'ร่าง',
+			active: 'ใช้งาน',
+			archived: 'เก็บถาวร'
+		};
+		return labels[status] ?? status;
+	}
+
+	function templateItemCount(template: SupervisionTemplate): number {
+		return template.sections.reduce((sum, section) => sum + section.items.length, 0);
+	}
+
+	function templateRatingColumns(template: SupervisionTemplate): number[] {
+		const min = Math.min(Number(template.ratingMin), Number(template.ratingMax));
+		const max = Math.max(Number(template.ratingMin), Number(template.ratingMax));
+		return Array.from({ length: max - min + 1 }, (_, index) => max - index);
+	}
+
+	function openTemplatePreviewDialog(template: SupervisionTemplate) {
+		previewTemplateId = template.id;
+		previewTemplateDialogOpen = true;
+	}
+
+	function setTemplatePreviewDialogOpen(open: boolean) {
+		previewTemplateDialogOpen = open;
+		if (!open) {
+			previewTemplateId = '';
+		}
 	}
 
 	function toLocalDateInputValue(date: Date): string {
@@ -2237,23 +2274,31 @@
 									<Table.Row>
 										<Table.Cell class="font-medium">{template.title}</Table.Cell>
 										<Table.Cell>{template.sections.length}</Table.Cell>
-										<Table.Cell>
-											{template.sections.reduce((sum, section) => sum + section.items.length, 0)}
-										</Table.Cell>
+										<Table.Cell>{templateItemCount(template)}</Table.Cell>
 										<Table.Cell>{template.ratingMin} - {template.ratingMax}</Table.Cell>
-										<Table.Cell><Badge variant="secondary">{template.status}</Badge></Table.Cell>
+										<Table.Cell>
+											<Badge variant="secondary">{templateStatusLabel(template.status)}</Badge>
+										</Table.Cell>
 										<Table.Cell class="text-right">
-											{#if canManageSchool}
+											<div class="flex justify-end gap-2">
 												<Button
 													size="sm"
 													variant="outline"
-													onclick={() => openEditTemplateDialog(template)}
+													onclick={() => openTemplatePreviewDialog(template)}
 												>
-													แก้ไข
+													<Eye class="mr-2 h-4 w-4" />
+													ดูตัวอย่าง
 												</Button>
-											{:else}
-												<span class="text-sm text-muted-foreground">-</span>
-											{/if}
+												{#if canManageSchool}
+													<Button
+														size="sm"
+														variant="outline"
+														onclick={() => openEditTemplateDialog(template)}
+													>
+														แก้ไข
+													</Button>
+												{/if}
+											</div>
 										</Table.Cell>
 									</Table.Row>
 								{/each}
@@ -2785,6 +2830,164 @@
 			>
 				{editingTemplateId ? 'บันทึกแบบประเมิน' : 'สร้างแบบประเมิน'}
 			</LoadingButton>
+		</Dialog.Footer>
+	</Dialog.Content>
+</Dialog.Root>
+
+<Dialog.Root bind:open={previewTemplateDialogOpen} onOpenChange={setTemplatePreviewDialogOpen}>
+	<Dialog.Content
+		class="flex max-h-[92vh] w-[calc(100vw-1rem)] max-w-5xl flex-col gap-0 overflow-hidden p-0 sm:w-[calc(100vw-2rem)]"
+	>
+		<Dialog.Header class="border-b px-4 py-4 pr-12 text-left sm:px-6">
+			<Dialog.Title>ตัวอย่างแบบประเมินนิเทศ</Dialog.Title>
+			<Dialog.Description>
+				ตรวจรูปแบบการแสดงผลของแบบประเมินแบบอ่านอย่างเดียว ก่อนนำไปใช้กับรอบนิเทศ
+			</Dialog.Description>
+		</Dialog.Header>
+
+		<div class="min-h-0 flex-1 overflow-y-auto overflow-x-hidden bg-muted/30 px-3 py-4 sm:px-6">
+			{#if previewTemplate}
+				<div
+					class="mx-auto max-w-4xl rounded-md border bg-background p-4 shadow-sm sm:p-6"
+					data-template-preview-mode="readonly"
+				>
+					<div class="space-y-3 text-center">
+						<div
+							class="mx-auto flex h-10 w-10 items-center justify-center rounded-md border bg-muted/40"
+						>
+							<FileSignature class="h-5 w-5" />
+						</div>
+						<div>
+							<h2 class="text-xl font-semibold">{previewTemplate.title}</h2>
+							{#if previewTemplate.description}
+								<p class="mt-1 text-sm text-muted-foreground">{previewTemplate.description}</p>
+							{/if}
+						</div>
+						<div class="flex flex-wrap justify-center gap-2">
+							<Badge variant="secondary">{templateStatusLabel(previewTemplate.status)}</Badge>
+							<Badge variant="outline">{previewTemplate.sections.length} หมวด</Badge>
+							<Badge variant="outline">{templateItemCount(previewTemplate)} ข้อ</Badge>
+							<Badge variant="outline">
+								คะแนน {previewTemplate.ratingMin} - {previewTemplate.ratingMax}
+							</Badge>
+						</div>
+					</div>
+
+					<div class="mt-6 rounded-md border">
+						<Table.Root class="table-fixed">
+							<Table.Header>
+								<Table.Row>
+									<Table.Head class="w-[42%] whitespace-normal">หัวข้อการประเมิน</Table.Head>
+									{#each templateRatingColumns(previewTemplate) as score (score)}
+										<Table.Head class="w-10 px-1 text-center text-xs">{score}</Table.Head>
+									{/each}
+									<Table.Head class="w-[24%] whitespace-normal text-center text-xs">
+										ข้อเสนอแนะ
+									</Table.Head>
+								</Table.Row>
+							</Table.Header>
+							<Table.Body>
+								{#each previewTemplate.sections as section (section.id)}
+									<Table.Row>
+										<Table.Cell
+											colspan={templateRatingColumns(previewTemplate).length + 2}
+											class="whitespace-normal bg-muted/30 font-medium"
+										>
+											<div>{section.title}</div>
+											{#if section.description}
+												<div class="mt-1 text-xs font-normal text-muted-foreground">
+													{section.description}
+												</div>
+											{/if}
+										</Table.Cell>
+									</Table.Row>
+									{#if section.items.length === 0}
+										<Table.Row>
+											<Table.Cell
+												colspan={templateRatingColumns(previewTemplate).length + 2}
+												class="whitespace-normal text-center text-sm text-muted-foreground"
+											>
+												ยังไม่มีหัวข้อในหมวดนี้
+											</Table.Cell>
+										</Table.Row>
+									{:else}
+										{#each section.items as item (item.id)}
+											<Table.Row>
+												<Table.Cell class="whitespace-normal align-top">
+													<div class="font-medium leading-snug">{item.label}</div>
+													{#if item.description}
+														<div class="mt-1 text-xs text-muted-foreground">
+															{item.description}
+														</div>
+													{/if}
+													{#if item.required}
+														<div class="mt-1 text-[11px] text-muted-foreground">บังคับตอบ</div>
+													{/if}
+												</Table.Cell>
+												{#if item.itemType === 'rating'}
+													{#each templateRatingColumns(previewTemplate) as score (score)}
+														<Table.Cell class="px-1 text-center align-top">
+															<span
+																class="mx-auto block h-4 w-4 rounded border"
+																aria-label={`ช่องคะแนน ${score} สำหรับ ${item.label}`}
+															></span>
+														</Table.Cell>
+													{/each}
+													<Table.Cell
+														class="whitespace-normal align-top text-xs text-muted-foreground"
+													>
+														พื้นที่ข้อเสนอแนะ
+													</Table.Cell>
+												{:else}
+													<Table.Cell
+														colspan={templateRatingColumns(previewTemplate).length}
+														class="whitespace-normal text-center text-xs text-muted-foreground"
+													>
+														คำตอบแบบข้อความ
+													</Table.Cell>
+													<Table.Cell
+														class="whitespace-normal align-top text-xs text-muted-foreground"
+													>
+														พื้นที่ตอบข้อความ
+													</Table.Cell>
+												{/if}
+											</Table.Row>
+										{/each}
+									{/if}
+								{/each}
+							</Table.Body>
+						</Table.Root>
+					</div>
+
+					<div class="mt-6 grid gap-3 sm:grid-cols-2">
+						<div class="rounded-md border p-3">
+							<p class="text-xs text-muted-foreground">ผู้รับการนิเทศ</p>
+							<div class="mt-8 border-t pt-2 text-center text-xs text-muted-foreground">ลงชื่อ</div>
+						</div>
+						<div class="rounded-md border p-3">
+							<p class="text-xs text-muted-foreground">ผู้นิเทศ</p>
+							<div class="mt-8 border-t pt-2 text-center text-xs text-muted-foreground">ลงชื่อ</div>
+						</div>
+					</div>
+				</div>
+			{:else}
+				<PageState title="ไม่พบแบบประเมิน" description="เลือกแบบประเมินจากรายการอีกครั้ง" />
+			{/if}
+		</div>
+
+		<Dialog.Footer class="border-t px-4 py-4 sm:px-6">
+			<Button variant="outline" onclick={() => setTemplatePreviewDialogOpen(false)}>ปิด</Button>
+			{#if previewTemplate && canManageSchool}
+				<Button
+					onclick={() => {
+						const template = previewTemplate;
+						setTemplatePreviewDialogOpen(false);
+						openEditTemplateDialog(template);
+					}}
+				>
+					แก้ไขแบบประเมิน
+				</Button>
+			{/if}
 		</Dialog.Footer>
 	</Dialog.Content>
 </Dialog.Root>
