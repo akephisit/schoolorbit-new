@@ -541,6 +541,210 @@ test('scheduling API uses backend envelope data types without response casts', a
 	assert.doesNotMatch(saveAllBody, /await loadAll\(\)/);
 });
 
+test('academic curriculum mutations patch local state instead of broad workspace reloads', async () => {
+	const structurePage = await readRepoFile(
+		'frontend-school/src/routes/(app)/staff/academic/structure/+page.svelte'
+	);
+	const subjectsPage = await readRepoFile(
+		'frontend-school/src/routes/(app)/staff/academic/subjects/+page.svelte'
+	);
+
+	for (const helper of [
+		'replaceAcademicYear',
+		'replaceSemester',
+		'removeSemester',
+		'replaceGradeLevel',
+		'removeGradeLevel'
+	]) {
+		assert.match(structurePage, new RegExp(`function ${helper}\\b`));
+	}
+
+	for (const functionName of [
+		'saveConfig',
+		'handleSaveSemester',
+		'handleDeleteSemester',
+		'handleCreateYear',
+		'handleToggleActive',
+		'handleCreateLevel',
+		'confirmDeleteLevel'
+	]) {
+		const body =
+			structurePage.match(
+				new RegExp(`async function ${functionName}\\([^)]*\\) \\{[\\s\\S]*?\\n\\t\\}`)
+			)?.[0] ?? '';
+		assert.notEqual(body, '', `${functionName} should exist`);
+		assert.doesNotMatch(body, /await loadData\(\)/, `${functionName} should patch local state`);
+	}
+
+	for (const helper of [
+		'subjectMatchesCurrentFilters',
+		'replaceSubject',
+		'removeSubject',
+		'catalogMatchesCurrentFilters',
+		'replaceCatalogItem',
+		'removeCatalogItem'
+	]) {
+		assert.match(subjectsPage, new RegExp(`function ${helper}\\b`));
+	}
+
+	for (const functionName of [
+		'handleSubmit',
+		'handleConfirmDelete',
+		'handleSaveCatalog',
+		'confirmDeleteCatalog'
+	]) {
+		const body =
+			subjectsPage.match(
+				new RegExp(`async function ${functionName}\\([^)]*\\)[:\\w\\s<>]*\\{[\\s\\S]*?\\n\\t\\}`)
+			)?.[0] ?? '';
+		assert.notEqual(body, '', `${functionName} should exist`);
+		assert.doesNotMatch(
+			body,
+			/await load(Data|Catalog)\(\)/,
+			`${functionName} should patch local state`
+		);
+	}
+});
+
+test('academic activity mutations patch affected state without broad slot reloads', async () => {
+	const activitiesPage = await readRepoFile(
+		'frontend-school/src/routes/(app)/staff/academic/activities/+page.svelte'
+	);
+
+	for (const helper of [
+		'replaceActivitySlot',
+		'removeActivitySlot',
+		'replaceActivityGroup',
+		'removeActivityGroup',
+		'replaceSlotInstructors',
+		'replaceSlotClassroomAssignment'
+	]) {
+		assert.match(activitiesPage, new RegExp(`function ${helper}\\b`));
+	}
+
+	for (const functionName of [
+		'handleToggleTeacherReg',
+		'handleToggleStudentReg',
+		'handleDeleteSlot',
+		'handleSaveGroup',
+		'handleDeleteGroup',
+		'doSaveSlot',
+		'handleAssignClassroomInstructor',
+		'handleRemoveSlotInstructor',
+		'handleAddSlotInstructorsBatch'
+	]) {
+		const body =
+			activitiesPage.match(
+				new RegExp(`async function ${functionName}\\([^)]*\\) \\{[\\s\\S]*?\\n\\t\\}`)
+			)?.[0] ?? '';
+		assert.notEqual(body, '', `${functionName} should exist`);
+		assert.doesNotMatch(body, /await loadData\(\)/, `${functionName} should patch local state`);
+		assert.doesNotMatch(
+			body,
+			/await list(SlotInstructors|SlotClassroomAssignments)\(/,
+			`${functionName} should avoid immediate list refetch after mutation`
+		);
+	}
+});
+
+test('admission exam-room mutations return typed data and patch local state', async () => {
+	const admissionApi = await readRepoFile('frontend-school/src/lib/api/admission.ts');
+	const examRoomsPage = await readRepoFile(
+		'frontend-school/src/routes/(app)/staff/academic/admission/[id]/exam-rooms/+page.svelte'
+	);
+	const examRoomsHandler = await readRepoFile(
+		'backend-school/src/modules/admission/handlers/exam_rooms.rs'
+	);
+
+	assert.match(admissionApi, /addExamRoom[\s\S]*apiClient\.post<ExamRoom>/);
+	assert.match(admissionApi, /updateExamRoom[\s\S]*apiClient\.put<ExamRoom>/);
+	assert.match(admissionApi, /copyExamRoomsFromRound[\s\S]*apiClient\.post<ExamRoomsResponse>/);
+	for (const functionName of ['addExamRoom', 'updateExamRoom', 'copyExamRoomsFromRound']) {
+		const body =
+			admissionApi.match(new RegExp(`export async function ${functionName}\\([^]*?\\n\\}`))?.[0] ??
+			'';
+		assert.notEqual(body, '', `${functionName} should exist`);
+		assert.doesNotMatch(body, /apiClient\.(post|put)<Record<string, never>>/);
+	}
+
+	for (const helper of [
+		'replaceExamRoom',
+		'removeExamRoomFromList',
+		'replaceExamRooms',
+		'applySeatAssignmentsToRooms'
+	]) {
+		assert.match(examRoomsPage, new RegExp(`function ${helper}\\b`));
+	}
+
+	for (const functionName of [
+		'handleAddRoom',
+		'handleRemoveRoom',
+		'saveCapacity',
+		'handleCopyFromRound'
+	]) {
+		const body =
+			examRoomsPage.match(
+				new RegExp(`async function ${functionName}\\([^)]*\\) \\{[\\s\\S]*?\\n\\t\\}`)
+			)?.[0] ?? '';
+		assert.notEqual(body, '', `${functionName} should exist`);
+		assert.doesNotMatch(
+			body,
+			/await refreshRooms\(\)/,
+			`${functionName} should patch rooms locally`
+		);
+	}
+
+	const assignBody =
+		examRoomsPage.match(/async function handleAssignSeats\(\) \{[\s\S]*?\n\t\}/)?.[0] ?? '';
+	assert.doesNotMatch(assignBody, /refreshRooms\(\)/);
+	assert.match(assignBody, /applySeatAssignmentsToRooms/);
+
+	assert.match(examRoomsHandler, /ApiResponse::ok\(room\)/);
+	assert.match(examRoomsHandler, /ApiResponse::with_message\(\s*ListExamRoomsData/);
+});
+
+test('facility workspace mutations patch buildings and rooms locally', async () => {
+	const facilityPage = await readRepoFile(
+		'frontend-school/src/routes/(app)/staff/facility/buildings/+page.svelte'
+	);
+
+	for (const helper of ['replaceBuilding', 'removeBuilding', 'replaceRoom', 'removeRoom']) {
+		assert.match(facilityPage, new RegExp(`function ${helper}\\b`));
+	}
+
+	for (const functionName of ['handleSaveBuilding', 'handleSaveRoom', 'handleDelete']) {
+		const body =
+			facilityPage.match(
+				new RegExp(`async function ${functionName}\\([^)]*\\) \\{[\\s\\S]*?\\n\\t\\}`)
+			)?.[0] ?? '';
+		assert.notEqual(body, '', `${functionName} should exist`);
+		assert.doesNotMatch(
+			body,
+			/\b(loadData|refreshRooms)\(\)/,
+			`${functionName} should patch local state`
+		);
+	}
+});
+
+test('achievement workspace mutations patch saved and deleted rows locally', async () => {
+	const achievementPage = await readRepoFile(
+		'frontend-school/src/routes/(app)/staff/achievements/+page.svelte'
+	);
+
+	for (const helper of ['replaceAchievement', 'removeAchievement']) {
+		assert.match(achievementPage, new RegExp(`function ${helper}\\b`));
+	}
+
+	for (const functionName of ['handleSave', 'confirmDelete']) {
+		const body =
+			achievementPage.match(
+				new RegExp(`async function ${functionName}\\([^)]*\\) \\{[\\s\\S]*?\\n\\t\\}`)
+			)?.[0] ?? '';
+		assert.notEqual(body, '', `${functionName} should exist`);
+		assert.doesNotMatch(body, /\bloadData\(\)/, `${functionName} should patch local state`);
+	}
+});
+
 test('facility API returns typed loaded envelope data without helper casts', async () => {
 	const facilityApi = await readRepoFile('frontend-school/src/lib/api/facility.ts');
 

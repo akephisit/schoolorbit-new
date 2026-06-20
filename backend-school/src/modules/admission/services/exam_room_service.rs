@@ -92,6 +92,37 @@ pub async fn list_exam_rooms(
     })
 }
 
+pub async fn get_exam_room(
+    pool: &PgPool,
+    round_id: Uuid,
+    exam_room_id: Uuid,
+) -> Result<ExamRoomRow, AppError> {
+    sqlx::query_as::<_, ExamRoomRow>(
+        r#"SELECT er.id, er.room_id,
+                  COALESCE(er.custom_name, r.name_th, r.name_en) AS room_name,
+                  b.name_th AS building_name,
+                  COALESCE(er.capacity_override, r.capacity, 40)::INT AS capacity,
+                  er.display_order,
+                  COUNT(sa.id)::BIGINT AS assigned_count
+           FROM admission_exam_rooms er
+           LEFT JOIN rooms r ON r.id = er.room_id
+           LEFT JOIN buildings b ON b.id = r.building_id
+           LEFT JOIN admission_exam_seat_assignments sa ON sa.exam_room_id = er.id
+           WHERE er.admission_round_id = $1 AND er.id = $2
+           GROUP BY er.id, er.room_id, er.custom_name, r.name_th, r.name_en, b.name_th,
+                    er.capacity_override, r.capacity, er.display_order"#,
+    )
+    .bind(round_id)
+    .bind(exam_room_id)
+    .fetch_optional(pool)
+    .await
+    .map_err(|e| {
+        tracing::error!("Failed to get exam room: {}", e);
+        AppError::InternalServerError("ไม่สามารถดึงข้อมูลห้องสอบได้".to_string())
+    })?
+    .ok_or_else(|| AppError::NotFound("ไม่พบห้องสอบ".to_string()))
+}
+
 pub async fn add_exam_room(
     pool: &PgPool,
     round_id: Uuid,
@@ -99,7 +130,7 @@ pub async fn add_exam_room(
     custom_name: Option<String>,
     capacity_override: Option<i32>,
     display_order: Option<i32>,
-) -> Result<(), AppError> {
+) -> Result<ExamRoomRow, AppError> {
     validate_exam_room_source(room_id, custom_name.clone())?;
 
     let max_order: Option<i32> = sqlx::query_scalar(
@@ -113,23 +144,24 @@ pub async fn add_exam_room(
 
     let display_order = exam_room_display_order(display_order, max_order);
 
-    sqlx::query(
+    let exam_room_id = sqlx::query_scalar::<_, Uuid>(
         r#"INSERT INTO admission_exam_rooms
            (admission_round_id, room_id, custom_name, capacity_override, display_order)
-           VALUES ($1, $2, $3, $4, $5)"#,
+           VALUES ($1, $2, $3, $4, $5)
+           RETURNING id"#,
     )
     .bind(round_id)
     .bind(room_id)
     .bind(&custom_name)
     .bind(capacity_override)
     .bind(display_order)
-    .execute(pool)
+    .fetch_one(pool)
     .await
     .map_err(|e| {
         tracing::error!("Failed to add exam room: {}", e);
         AppError::InternalServerError("ไม่สามารถเพิ่มห้องสอบได้".to_string())
     })?;
-    Ok(())
+    get_exam_room(pool, round_id, exam_room_id).await
 }
 
 pub async fn update_exam_room(
@@ -139,29 +171,28 @@ pub async fn update_exam_room(
     capacity_override: Option<i32>,
     display_order: Option<i32>,
     custom_name: Option<String>,
-) -> Result<(), AppError> {
-    let result = sqlx::query(
+) -> Result<ExamRoomRow, AppError> {
+    let updated_id = sqlx::query_scalar::<_, Uuid>(
         r#"UPDATE admission_exam_rooms
            SET capacity_override = COALESCE($3, capacity_override),
                display_order = COALESCE($4, display_order),
                custom_name = COALESCE($5, custom_name)
-           WHERE id = $1 AND admission_round_id = $2"#,
+           WHERE id = $1 AND admission_round_id = $2
+           RETURNING id"#,
     )
     .bind(room_id)
     .bind(round_id)
     .bind(capacity_override)
     .bind(display_order)
     .bind(&custom_name)
-    .execute(pool)
+    .fetch_optional(pool)
     .await
     .map_err(|e| {
         tracing::error!("Failed to update exam room: {}", e);
         AppError::InternalServerError("ไม่สามารถอัปเดตห้องสอบได้".to_string())
     })?;
-    if result.rows_affected() == 0 {
-        return Err(AppError::NotFound("ไม่พบห้องสอบ".to_string()));
-    }
-    Ok(())
+    let updated_id = updated_id.ok_or_else(|| AppError::NotFound("ไม่พบห้องสอบ".to_string()))?;
+    get_exam_room(pool, round_id, updated_id).await
 }
 
 pub async fn remove_exam_room(
@@ -189,14 +220,14 @@ pub async fn copy_exam_rooms_from_round(
     pool: &PgPool,
     round_id: Uuid,
     from_round_id: Uuid,
-) -> Result<u64, AppError> {
+) -> Result<ListExamRoomsResult, AppError> {
     sqlx::query("DELETE FROM admission_exam_rooms WHERE admission_round_id = $1")
         .bind(round_id)
         .execute(pool)
         .await
         .ok();
 
-    let result = sqlx::query(
+    sqlx::query(
         r#"INSERT INTO admission_exam_rooms
            (admission_round_id, room_id, custom_name, capacity_override, display_order)
            SELECT $1, room_id, custom_name, capacity_override, display_order
@@ -211,7 +242,7 @@ pub async fn copy_exam_rooms_from_round(
         tracing::error!("Failed to copy exam rooms: {}", e);
         AppError::InternalServerError("ไม่สามารถ copy ห้องสอบได้".to_string())
     })?;
-    Ok(result.rows_affected())
+    list_exam_rooms(pool, round_id).await
 }
 
 async fn load_exam_config_storage(

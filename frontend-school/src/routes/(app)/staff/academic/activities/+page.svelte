@@ -164,6 +164,86 @@
 		structure.semesters.find((s) => s.id === filterSemesterId)?.name ?? 'เลือกภาคเรียน'
 	);
 
+	function replaceActivitySlot(slot: ActivitySlot) {
+		slots = slots.some((item) => item.id === slot.id)
+			? slots.map((item) => (item.id === slot.id ? slot : item))
+			: [slot, ...slots];
+		expandedSlots.add(slot.id);
+	}
+
+	function removeActivitySlot(slotId: string) {
+		slots = slots.filter((slot) => slot.id !== slotId);
+		groups = groups.filter((group) => group.slot_id !== slotId);
+		const nextInstructorsMap = { ...slotInstructorsMap };
+		const nextAssignmentsMap = { ...slotClassroomAssignmentsMap };
+		delete nextInstructorsMap[slotId];
+		delete nextAssignmentsMap[slotId];
+		slotInstructorsMap = nextInstructorsMap;
+		slotClassroomAssignmentsMap = nextAssignmentsMap;
+		expandedSlots.delete(slotId);
+	}
+
+	function replaceActivityGroup(group: ActivityGroup) {
+		groups = groups.some((item) => item.id === group.id)
+			? groups.map((item) => (item.id === group.id ? group : item))
+			: [group, ...groups];
+		if (group.slot_id) expandedSlots.add(group.slot_id);
+	}
+
+	function removeActivityGroup(groupId: string) {
+		groups = groups.filter((group) => group.id !== groupId);
+	}
+
+	function slotInstructorFromStaff(slotId: string, userId: string): SlotInstructor {
+		const staff = staffList.find((item) => item.id === userId);
+		return {
+			id: `${slotId}:${userId}`,
+			user_id: userId,
+			instructor_name: staff?.name
+		};
+	}
+
+	function replaceSlotInstructors(slotId: string, nextInstructors: SlotInstructor[]) {
+		const uniqueByUser: Record<string, SlotInstructor> = {};
+		for (const instructor of nextInstructors) {
+			uniqueByUser[instructor.user_id] = instructor;
+		}
+		slotInstructorsMap = {
+			...slotInstructorsMap,
+			[slotId]: Object.values(uniqueByUser).sort((a, b) =>
+				(a.instructor_name ?? '').localeCompare(b.instructor_name ?? '', 'th')
+			)
+		};
+	}
+
+	function replaceSlotClassroomAssignment(
+		slotId: string,
+		classroomId: string,
+		instructorId: string
+	) {
+		const assignments = slotClassroomAssignmentsMap[slotId] ?? [];
+		const existing = assignments.find((assignment) => assignment.classroom_id === classroomId);
+		const classroom = classrooms.find((item) => item.id === classroomId);
+		const staff = staffList.find((item) => item.id === instructorId);
+		const nextAssignment: SlotClassroomAssignment = {
+			id: existing?.id ?? `${slotId}:${classroomId}`,
+			slot_id: slotId,
+			classroom_id: classroomId,
+			instructor_id: instructorId,
+			classroom_name: classroom?.name ?? existing?.classroom_name,
+			instructor_name: staff?.name ?? existing?.instructor_name
+		};
+
+		slotClassroomAssignmentsMap = {
+			...slotClassroomAssignmentsMap,
+			[slotId]: assignments.some((assignment) => assignment.classroom_id === classroomId)
+				? assignments.map((assignment) =>
+						assignment.classroom_id === classroomId ? nextAssignment : assignment
+					)
+				: [...assignments, nextAssignment]
+		};
+	}
+
 	// ── Load ───────────────────────────────────────────
 	onMount(async () => {
 		if (!canListActivity) {
@@ -339,8 +419,8 @@
 			toast.error('ไม่มีสิทธิ์จัดการช่องกิจกรรม');
 			return;
 		}
-		await updateActivitySlot(slot.id, { teacher_reg_open: !slot.teacher_reg_open });
-		await loadData();
+		const res = await updateActivitySlot(slot.id, { teacher_reg_open: !slot.teacher_reg_open });
+		replaceActivitySlot(res.data);
 		toast.success(slot.teacher_reg_open ? 'ปิดลงทะเบียนครูแล้ว' : 'เปิดลงทะเบียนครูแล้ว');
 	}
 
@@ -349,8 +429,8 @@
 			toast.error('ไม่มีสิทธิ์จัดการช่องกิจกรรม');
 			return;
 		}
-		await updateActivitySlot(slot.id, { student_reg_open: !slot.student_reg_open });
-		await loadData();
+		const res = await updateActivitySlot(slot.id, { student_reg_open: !slot.student_reg_open });
+		replaceActivitySlot(res.data);
 		toast.success(slot.student_reg_open ? 'ปิดลงทะเบียนนักเรียนแล้ว' : 'เปิดลงทะเบียนนักเรียนแล้ว');
 	}
 
@@ -363,9 +443,9 @@
 		try {
 			await deleteSlotTimetableEntries(deleteSlotTarget.id);
 			await deleteActivitySlot(deleteSlotTarget.id);
+			removeActivitySlot(deleteSlotTarget.id);
 			toast.success('ลบแล้ว');
 			showDeleteSlotDialog = false;
-			await loadData();
 		} catch {
 			toast.error('เกิดข้อผิดพลาด');
 		}
@@ -440,15 +520,18 @@
 				allowed_classroom_ids:
 					groupAllowedClassroomIds.length > 0 ? groupAllowedClassroomIds : undefined
 			};
+			let savedGroup: ActivityGroup;
 			if (isGroupEdit && editGroupTarget) {
-				await updateActivityGroup(editGroupTarget.id, payload);
+				const res = await updateActivityGroup(editGroupTarget.id, payload);
+				savedGroup = res.data;
 				toast.success('แก้ไขกิจกรรมแล้ว');
 			} else {
-				await createActivityGroup({ slot_id: groupSlotId, ...payload });
+				const res = await createActivityGroup({ slot_id: groupSlotId, ...payload });
+				savedGroup = res.data;
 				toast.success('สร้างกิจกรรมแล้ว');
 			}
+			replaceActivityGroup(savedGroup);
 			showGroupDialog = false;
-			await loadData();
 		} catch {
 			toast.error('เกิดข้อผิดพลาด');
 		} finally {
@@ -470,9 +553,9 @@
 		if (!deleteGroupTarget) return;
 		try {
 			await deleteActivityGroup(deleteGroupTarget.id);
+			removeActivityGroup(deleteGroupTarget.id);
 			toast.success('ลบแล้ว');
 			showDeleteGroupDialog = false;
-			await loadData();
 		} catch {
 			toast.error('เกิดข้อผิดพลาด');
 		}
@@ -540,12 +623,12 @@
 		try {
 			// Semester-specific fields only. Template (name/type/periods/mode/grade)
 			// lives in activity_catalog — edit at คลังกิจกรรม.
-			await updateActivitySlot(editSlotTarget.id, {
+			const res = await updateActivitySlot(editSlotTarget.id, {
 				registration_type: slotRegistrationType
 			});
+			replaceActivitySlot(res.data);
 			toast.success('แก้ไขการลงทะเบียนแล้ว');
 			showSlotDialog = false;
-			await loadData();
 		} catch {
 			toast.error('เกิดข้อผิดพลาด');
 		} finally {
@@ -566,8 +649,7 @@
 			await batchUpsertSlotClassroomAssignments(slotId, [
 				{ classroom_id: classroomId, instructor_id: instructorId }
 			]);
-			slotClassroomAssignmentsMap[slotId] = (await listSlotClassroomAssignments(slotId)).data ?? [];
-			slotClassroomAssignmentsMap = { ...slotClassroomAssignmentsMap };
+			replaceSlotClassroomAssignment(slotId, classroomId, instructorId);
 			toast.success('กำหนดครูแล้ว');
 		} catch {
 			toast.error('เกิดข้อผิดพลาด');
@@ -582,8 +664,10 @@
 		try {
 			await removeSlotInstructor(slotId, userId);
 			toast.success('ลบครูแล้ว');
-			slotInstructorsMap[slotId] = (await listSlotInstructors(slotId)).data ?? [];
-			slotInstructorsMap = { ...slotInstructorsMap };
+			replaceSlotInstructors(
+				slotId,
+				(slotInstructorsMap[slotId] ?? []).filter((instructor) => instructor.user_id !== userId)
+			);
 		} catch {
 			toast.error('เกิดข้อผิดพลาด');
 		}
@@ -628,11 +712,15 @@
 		addingSlotInstructors = true;
 		try {
 			// 1 transaction (เดิม loop ทีละคน → ช้า + transaction ซ้อน)
-			await addSlotInstructorsBatch(slotInstructorSlotId, slotInstructorSelectedIds);
-			toast.success(`เพิ่มครู ${slotInstructorSelectedIds.length} คนแล้ว`);
-			slotInstructorsMap[slotInstructorSlotId] =
-				(await listSlotInstructors(slotInstructorSlotId)).data ?? [];
-			slotInstructorsMap = { ...slotInstructorsMap };
+			const res = await addSlotInstructorsBatch(slotInstructorSlotId, slotInstructorSelectedIds);
+			const existing = slotInstructorsMap[slotInstructorSlotId] ?? [];
+			replaceSlotInstructors(slotInstructorSlotId, [
+				...existing,
+				...slotInstructorSelectedIds.map((userId) =>
+					slotInstructorFromStaff(slotInstructorSlotId, userId)
+				)
+			]);
+			toast.success(`เพิ่มครู ${res.data.added} คนแล้ว`);
 			showSlotInstructorDialog = false;
 		} catch {
 			toast.error('เกิดข้อผิดพลาด');

@@ -95,6 +95,45 @@
 		}));
 	}
 
+	function replaceMenuGroup(group: MenuGroup) {
+		groups = groups.some((item) => item.id === group.id)
+			? groups.map((item) => (item.id === group.id ? group : item))
+			: [...groups, group];
+		groups = groups.sort((a, b) => a.display_order - b.display_order);
+		rebuildContainers();
+	}
+
+	function removeMenuGroup(groupId: string) {
+		const fallbackGroupId = groups.find((group) => group.code === 'other')?.id;
+		groups = groups.filter((group) => group.id !== groupId);
+		if (fallbackGroupId) {
+			items = items.map((item) =>
+				item.group_id === groupId ? { ...item, group_id: fallbackGroupId } : item
+			);
+		} else {
+			items = items.filter((item) => item.group_id !== groupId);
+		}
+		rebuildContainers();
+	}
+
+	function removeMenuItem(itemId: string) {
+		items = items.filter((item) => item.id !== itemId);
+		containers = containers.map((container) => ({
+			...container,
+			nesteds: container.nesteds.filter((item) => item.id !== itemId)
+		}));
+	}
+
+	function handleGroupMutation(
+		result: { type: 'upsert'; group: MenuGroup } | { type: 'delete'; groupId: string }
+	) {
+		if (result.type === 'upsert') {
+			replaceMenuGroup(result.group);
+		} else {
+			removeMenuGroup(result.groupId);
+		}
+	}
+
 	// Filtered for display
 	// Note: Mutating 'containers' directly maps to view.
 	// If filtering is active, we might limit interaction scope.
@@ -324,8 +363,8 @@
 		if (!confirm(`ต้องการลบเมนู "${item.name}" ใช่หรือไม่?`)) return;
 		try {
 			await deleteMenuItem(item.id);
+			removeMenuItem(item.id);
 			toast.success('ลบเมนูสำเร็จ');
-			await loadData();
 		} catch {
 			toast.error('ไม่สามารถลบเมนูได้');
 		}
@@ -513,6 +552,6 @@
 	canCreate={canCreateMenu}
 	canUpdate={canUpdateMenu}
 	canDelete={canDeleteMenu}
-	onSuccess={loadData}
+	onSuccess={handleGroupMutation}
 	onOpenChange={(open) => (groupDialogOpen = open)}
 />

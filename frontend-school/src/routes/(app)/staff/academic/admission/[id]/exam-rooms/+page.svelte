@@ -118,23 +118,55 @@
 		}
 	}
 
-	async function loadSeats() {
-		if (!id || !canManageAdmission) return;
+	async function loadSeats(): Promise<ExamRoomGroup[]> {
+		if (!id || !canManageAdmission) return [];
 		try {
 			const result = await getExamSeats(id);
 			seatGroups = Array.isArray(result) ? result : [];
+			return seatGroups;
 		} catch {
 			toast.error('ไม่สามารถโหลดผลจัดที่นั่งได้');
 			seatGroups = [];
+			return seatGroups;
 		}
 	}
 
-	async function refreshRooms() {
-		if (!id || !canManageAdmission) return;
-		const res = await listExamRooms(id);
-		examRooms = res.rooms;
-		totalCapacity = res.totalCapacity;
-		totalAssigned = res.totalAssigned;
+	function updateRoomTotals(nextRooms = examRooms) {
+		totalCapacity = nextRooms.reduce((sum, room) => sum + room.capacity, 0);
+		totalAssigned = nextRooms.reduce((sum, room) => sum + room.assignedCount, 0);
+	}
+
+	function replaceExamRooms(data: {
+		rooms: ExamRoom[];
+		totalCapacity: number;
+		totalAssigned: number;
+	}) {
+		examRooms = data.rooms;
+		totalCapacity = data.totalCapacity;
+		totalAssigned = data.totalAssigned;
+	}
+
+	function replaceExamRoom(room: ExamRoom) {
+		const nextRooms = examRooms.some((item) => item.id === room.id)
+			? examRooms.map((item) => (item.id === room.id ? room : item))
+			: [...examRooms, room];
+		examRooms = nextRooms.sort((a, b) => a.displayOrder - b.displayOrder);
+		updateRoomTotals();
+	}
+
+	function removeExamRoomFromList(roomId: string) {
+		examRooms = examRooms.filter((room) => room.id !== roomId);
+		seatGroups = seatGroups.filter((group) => group.examRoomId !== roomId);
+		updateRoomTotals();
+	}
+
+	function applySeatAssignmentsToRooms(groups = seatGroups) {
+		const assignedByRoom = new Map(groups.map((group) => [group.examRoomId, group.seats.length]));
+		examRooms = examRooms.map((room) => ({
+			...room,
+			assignedCount: assignedByRoom.get(room.id) ?? 0
+		}));
+		updateRoomTotals();
 	}
 
 	async function handleAddRoom() {
@@ -146,23 +178,24 @@
 					toast.error('กรุณาเลือกห้อง');
 					return;
 				}
-				await addExamRoom(id, { roomId: selectedFacilityRoomId });
+				replaceExamRoom(await addExamRoom(id, { roomId: selectedFacilityRoomId }));
 			} else {
 				if (!customRoomName.trim()) {
 					toast.error('กรุณาระบุชื่อห้อง');
 					return;
 				}
-				await addExamRoom(id, {
-					customName: customRoomName.trim(),
-					capacityOverride: customRoomCapacity
-				});
+				replaceExamRoom(
+					await addExamRoom(id, {
+						customName: customRoomName.trim(),
+						capacityOverride: customRoomCapacity
+					})
+				);
 			}
 			toast.success('เพิ่มห้องสอบแล้ว');
 			showAddRoomDialog = false;
 			selectedFacilityRoomId = '';
 			customRoomName = '';
 			customRoomCapacity = 40;
-			await refreshRooms();
 		} catch {
 			toast.error('ไม่สามารถเพิ่มห้องสอบได้');
 		} finally {
@@ -174,8 +207,8 @@
 		if (!id || !canManageAdmission || !confirm('ลบห้องสอบนี้?')) return;
 		try {
 			await removeExamRoom(id, roomId);
+			removeExamRoomFromList(roomId);
 			toast.success('ลบห้องสอบแล้ว');
-			await refreshRooms();
 		} catch {
 			toast.error('ไม่สามารถลบห้องสอบได้');
 		}
@@ -190,10 +223,9 @@
 	async function saveCapacity(roomId: string) {
 		if (!id || !canManageAdmission || editingCapacityValue < 1) return;
 		try {
-			await updateExamRoom(id, roomId, { capacityOverride: editingCapacityValue });
+			replaceExamRoom(await updateExamRoom(id, roomId, { capacityOverride: editingCapacityValue }));
 			toast.success('อัปเดตความจุแล้ว');
 			editingCapacityId = null;
-			await refreshRooms();
 		} catch {
 			toast.error('ไม่สามารถอัปเดตความจุได้');
 		}
@@ -208,9 +240,9 @@
 		copying = true;
 		try {
 			const result = await copyExamRoomsFromRound(id, copyFromRoundId);
+			replaceExamRooms(result);
 			toast.success(result.message);
 			copyFromRoundId = '';
-			await refreshRooms();
 		} catch {
 			toast.error('ไม่สามารถ copy ห้องสอบได้');
 		} finally {
@@ -243,7 +275,8 @@
 			});
 			toast.success(result.message);
 			showAssignDialog = false;
-			await Promise.all([loadSeats(), refreshRooms()]);
+			const groups = await loadSeats();
+			applySeatAssignmentsToRooms(groups);
 			activeTab = 'seats';
 		} catch (e: unknown) {
 			const err = e as { response?: { data?: { error?: string } } };

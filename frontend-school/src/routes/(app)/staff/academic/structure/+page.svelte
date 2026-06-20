@@ -17,7 +17,12 @@
 		deleteSemester,
 		ALL_DAYS
 	} from '$lib/api/academic';
-	import type { AcademicStructureData, GradeLevel, Semester } from '$lib/api/academic';
+	import type {
+		AcademicStructureData,
+		AcademicYear,
+		GradeLevel,
+		Semester
+	} from '$lib/api/academic';
 	import { toast } from 'svelte-sonner';
 	import * as Card from '$lib/components/ui/card';
 	import * as Table from '$lib/components/ui/table';
@@ -50,6 +55,82 @@
 
 	const canReadAcademicStructure = $derived($can.has(PERMISSIONS.ACADEMIC_STRUCTURE_READ_ALL));
 	const canManageAcademicStructure = $derived($can.has(PERMISSIONS.ACADEMIC_STRUCTURE_MANAGE_ALL));
+
+	function replaceAcademicYear(year: AcademicYear) {
+		const nextYears = structure.years.some((existing) => existing.id === year.id)
+			? structure.years.map((existing) => {
+					if (existing.id === year.id) return year;
+					return year.is_active ? { ...existing, is_active: false } : existing;
+				})
+			: [
+					year,
+					...structure.years.map((existing) =>
+						year.is_active ? { ...existing, is_active: false } : existing
+					)
+				];
+
+		structure = {
+			...structure,
+			years: nextYears.sort((a, b) => b.year - a.year)
+		};
+
+		if (selectedYearForSemesters?.id === year.id) {
+			selectedYearForSemesters = year;
+		}
+		if (configYear?.id === year.id) {
+			configYear = year;
+		}
+	}
+
+	function replaceSemester(semester: Semester) {
+		const nextSemesters = structure.semesters.some((existing) => existing.id === semester.id)
+			? structure.semesters.map((existing) => (existing.id === semester.id ? semester : existing))
+			: [semester, ...structure.semesters];
+
+		structure = {
+			...structure,
+			semesters: nextSemesters.sort((a, b) => {
+				if (a.academic_year_id !== b.academic_year_id) {
+					const aYear = structure.years.find((year) => year.id === a.academic_year_id)?.year ?? 0;
+					const bYear = structure.years.find((year) => year.id === b.academic_year_id)?.year ?? 0;
+					return bYear - aYear;
+				}
+				return a.term.localeCompare(b.term, 'th');
+			})
+		};
+	}
+
+	function removeSemester(id: string) {
+		structure = {
+			...structure,
+			semesters: structure.semesters.filter((semester) => semester.id !== id)
+		};
+	}
+
+	function gradeLevelSortValue(level: GradeLevel) {
+		const levelTypeOrder = { kindergarten: 1, primary: 2, secondary: 3 } as const;
+		return (levelTypeOrder[level.level_type] ?? 99) * 100 + level.year;
+	}
+
+	function replaceGradeLevel(level: GradeLevel) {
+		const nextLevels = structure.levels.some((existing) => existing.id === level.id)
+			? structure.levels.map((existing) => (existing.id === level.id ? level : existing))
+			: [...structure.levels, level];
+
+		structure = {
+			...structure,
+			levels: nextLevels.sort((a, b) => gradeLevelSortValue(a) - gradeLevelSortValue(b))
+		};
+	}
+
+	function removeGradeLevel(id: string) {
+		structure = {
+			...structure,
+			levels: structure.levels.filter((level) => level.id !== id)
+		};
+		activeYearLevelIds = activeYearLevelIds.filter((levelId) => levelId !== id);
+		configLevelIds = configLevelIds.filter((levelId) => levelId !== id);
+	}
 
 	// Year state
 	let showCreateYearDialog = $state(false);
@@ -107,12 +188,15 @@
 		isSavingConfig = true;
 		try {
 			await saveYearLevelConfig(configYear.id, configLevelIds);
-			await updateAcademicYear(configYear.id, {
+			const res = await updateAcademicYear(configYear.id, {
 				school_days: configSchoolDays.join(',')
 			});
+			replaceAcademicYear(res.data);
+			if (res.data.is_active) {
+				activeYearLevelIds = [...configLevelIds];
+			}
 			toast.success(`บันทึกการตั้งค่าสำหรับ ${configYear.name} เรียบร้อย`);
 			showConfigDialog = false;
-			await loadData();
 		} catch (error) {
 			console.error(error);
 			toast.error('บันทึกข้อมูลไม่สำเร็จ');
@@ -205,18 +289,21 @@
 
 		isSubmittingSemester = true;
 		try {
+			let savedSemester: Semester;
 			if (semesterToEdit) {
-				await updateSemester(semesterToEdit.id, newSemester);
+				const res = await updateSemester(semesterToEdit.id, newSemester);
+				savedSemester = res.data;
 				toast.success('แก้ไขภาคเรียนสำเร็จ');
 			} else {
-				await createSemester({
+				const res = await createSemester({
 					academic_year_id: selectedYearForSemesters.id,
 					...newSemester
 				});
+				savedSemester = res.data;
 				toast.success('สร้างภาคเรียนสำเร็จ');
 			}
+			replaceSemester(savedSemester);
 			showSemesterForm = false;
-			await loadData(); // Reload to refresh list
 		} catch (error) {
 			console.error(error);
 			toast.error('บันทึกข้อมูลไม่สำเร็จ');
@@ -235,7 +322,7 @@
 		try {
 			await deleteSemester(id);
 			toast.success('ลบภาคเรียนสำเร็จ');
-			await loadData();
+			removeSemester(id);
 		} catch (error) {
 			console.error(error);
 			toast.error('ลบภาคเรียนไม่สำเร็จ (อาจมีการใช้งานอยู่)');
@@ -325,10 +412,14 @@
 
 		isSubmitting = true;
 		try {
-			await createAcademicYear(newYear);
+			const res = await createAcademicYear(newYear);
+			replaceAcademicYear(res.data);
+			if (res.data.is_active) {
+				const configRes = await getYearLevelConfig(res.data.id);
+				activeYearLevelIds = configRes.data;
+			}
 			toast.success('สร้างปีการศึกษาสำเร็จ');
 			showCreateYearDialog = false;
-			await loadData();
 			// Reset form
 			newYear = {
 				year: new Date().getFullYear() + 543 + 1,
@@ -353,8 +444,13 @@
 
 		try {
 			await toggleActiveYear(id);
+			structure = {
+				...structure,
+				years: structure.years.map((year) => ({ ...year, is_active: year.id === id }))
+			};
+			const configRes = await getYearLevelConfig(id);
+			activeYearLevelIds = configRes.data;
 			toast.success('อัปเดตสถานะปีการศึกษาเรียบร้อย');
-			await loadData();
 		} catch (error) {
 			console.error(error);
 			toast.error('เกิดข้อผิดพลาด');
@@ -374,13 +470,13 @@
 
 		isSubmittingLevel = true;
 		try {
-			await createGradeLevel({
+			const res = await createGradeLevel({
 				level_type: newLevel.level_type as 'kindergarten' | 'primary' | 'secondary',
 				year: parseInt(newLevel.year, 10)
 			});
+			replaceGradeLevel(res.data);
 			toast.success('เพิ่มระดับชั้นเรียบร้อย');
 			showCreateLevelDialog = false;
-			await loadData();
 
 			// Reset form
 			newLevel = {
@@ -415,10 +511,10 @@
 		isDeletingLevel = true;
 		try {
 			await deleteGradeLevel(levelToDelete.id);
+			removeGradeLevel(levelToDelete.id);
 			toast.success('ลบระดับชั้นเรียบร้อย');
 			showDeleteLevelDialog = false;
 			levelToDelete = null;
-			await loadData();
 		} catch (error) {
 			console.error(error);
 			toast.error(error instanceof Error ? error.message : 'ลบระดับชั้นไม่สำเร็จ');

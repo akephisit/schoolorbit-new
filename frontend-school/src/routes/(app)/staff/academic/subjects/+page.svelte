@@ -402,6 +402,73 @@
 		return map;
 	});
 
+	function academicYearValue(yearId?: string): number {
+		return academicYears.find((year) => year.id === yearId)?.year ?? 0;
+	}
+
+	function subjectSortValue(subject: Subject): string {
+		return `${subject.code.padStart(20, '0')}:${String(9999 - academicYearValue(subject.start_academic_year_id)).padStart(4, '0')}`;
+	}
+
+	function subjectIsEffectiveInSelectedYear(subject: Subject): boolean {
+		if (!selectedYearFilter) return true;
+		const targetYear = academicYearValue(selectedYearFilter);
+		const subjectStartYear = academicYearValue(subject.start_academic_year_id);
+		if (!targetYear || !subjectStartYear) return true;
+		return subjectStartYear <= targetYear;
+	}
+
+	function subjectMatchesCurrentFilters(subject: Subject): boolean {
+		if (selectedGroupId && subject.group_id !== selectedGroupId) return false;
+		if (selectedSubjectType && subject.type !== selectedSubjectType) return false;
+		if (!subjectIsEffectiveInSelectedYear(subject)) return false;
+
+		const query = searchQuery.trim().toLowerCase();
+		if (!query) return true;
+		return [subject.code, subject.name_th, subject.name_en, subject.group_name_th]
+			.filter(Boolean)
+			.some((value) => value!.toLowerCase().includes(query));
+	}
+
+	function replaceSubject(subject: Subject) {
+		const withoutSubject = subjects.filter((item) => item.id !== subject.id);
+		if (!subjectMatchesCurrentFilters(subject)) {
+			subjects = withoutSubject;
+			return;
+		}
+
+		if (showAllVersions) {
+			subjects = [subject, ...withoutSubject].sort((a, b) =>
+				subjectSortValue(a).localeCompare(subjectSortValue(b), 'th')
+			);
+			return;
+		}
+
+		const visibleSameCode = withoutSubject.filter((item) => item.code === subject.code);
+		const latestVisibleSameCode = [...visibleSameCode]
+			.sort(
+				(a, b) =>
+					academicYearValue(b.start_academic_year_id) - academicYearValue(a.start_academic_year_id)
+			)
+			.at(0);
+		if (
+			latestVisibleSameCode &&
+			academicYearValue(subject.start_academic_year_id) <
+				academicYearValue(latestVisibleSameCode.start_academic_year_id)
+		) {
+			subjects = withoutSubject;
+			return;
+		}
+
+		subjects = [subject, ...withoutSubject.filter((item) => item.code !== subject.code)].sort(
+			(a, b) => subjectSortValue(a).localeCompare(subjectSortValue(b), 'th')
+		);
+	}
+
+	function removeSubject(id: string) {
+		subjects = subjects.filter((subject) => subject.id !== id);
+	}
+
 	/** Compose a short effective-year-range label for an older version.
 	 *  "เก่า (ปี 2566 → 2567)" means: effective from 2566 until 2567 (exclusive).
 	 *  If it's the oldest loaded version with no successor, falls back to just "ปี 2566". */
@@ -621,15 +688,18 @@
 				role: t.role
 			}));
 
+			let savedSubject: Subject;
 			if (isEditing && payload.id) {
-				await updateSubject(payload.id, payload);
+				const res = await updateSubject(payload.id, payload);
+				savedSubject = res.data;
 				toast.success('บันทึกแล้ว');
 			} else {
-				await createSubject(payload);
+				const res = await createSubject(payload);
+				savedSubject = res.data;
 				toast.success('เพิ่มรายวิชาแล้ว');
 			}
+			replaceSubject(savedSubject);
 			showDialog = false;
-			await loadData();
 			return true;
 		} catch (e) {
 			const msg = e instanceof Error ? e.message : '';
@@ -655,8 +725,8 @@
 		deleting = true;
 		try {
 			await deleteSubject(currentSubject.id);
+			removeSubject(currentSubject.id);
 			showDeleteDialog = false;
-			await loadData();
 		} catch (e) {
 			toast.error('ลบไม่สำเร็จ: ' + (e instanceof Error ? e.message : ''));
 		} finally {
@@ -702,6 +772,55 @@
 		}
 		return map;
 	});
+
+	function catalogSortValue(item: ActivityCatalog): string {
+		return `${item.name}:${String(9999 - academicYearValue(item.start_academic_year_id)).padStart(4, '0')}`;
+	}
+
+	function catalogMatchesCurrentFilters(_item: ActivityCatalog): boolean {
+		return true;
+	}
+
+	function replaceCatalogItem(item: ActivityCatalog) {
+		const withoutItem = catalogItems.filter((catalogItem) => catalogItem.id !== item.id);
+		if (!catalogMatchesCurrentFilters(item)) {
+			catalogItems = withoutItem;
+			return;
+		}
+
+		if (showAllCatalogVersions) {
+			catalogItems = [item, ...withoutItem].sort((a, b) =>
+				catalogSortValue(a).localeCompare(catalogSortValue(b), 'th')
+			);
+			return;
+		}
+
+		const visibleSameName = withoutItem.filter((catalogItem) => catalogItem.name === item.name);
+		const latestVisibleSameName = [...visibleSameName]
+			.sort(
+				(a, b) =>
+					academicYearValue(b.start_academic_year_id) - academicYearValue(a.start_academic_year_id)
+			)
+			.at(0);
+		if (
+			latestVisibleSameName &&
+			academicYearValue(item.start_academic_year_id) <
+				academicYearValue(latestVisibleSameName.start_academic_year_id)
+		) {
+			catalogItems = withoutItem;
+			return;
+		}
+
+		catalogItems = [
+			item,
+			...withoutItem.filter((catalogItem) => catalogItem.name !== item.name)
+		].sort((a, b) => catalogSortValue(a).localeCompare(catalogSortValue(b), 'th'));
+		catalogLoaded = true;
+	}
+
+	function removeCatalogItem(id: string) {
+		catalogItems = catalogItems.filter((item) => item.id !== id);
+	}
 
 	function catalogVersionRangeLabel(item: ActivityCatalog): string {
 		const info = catalogVersionsByName.get(item.name);
@@ -843,15 +962,17 @@
 				grade_level_ids: catalogGradeLevelIds.length > 0 ? catalogGradeLevelIds : undefined
 			};
 
+			let savedCatalog: ActivityCatalog;
 			if (editingCatalog) {
-				await updateActivityCatalog(editingCatalog.id, payload);
+				const res = await updateActivityCatalog(editingCatalog.id, payload);
+				savedCatalog = res.data;
 				toast.success('บันทึกแล้ว');
 			} else {
 				if (!catalogStartYearId) {
 					toast.error('กรุณาเลือกปีเริ่มใช้');
 					return false;
 				}
-				await createActivityCatalog({
+				const res = await createActivityCatalog({
 					...payload,
 					start_academic_year_id: catalogStartYearId,
 					default_instructors:
@@ -859,10 +980,11 @@
 							? catalogTeam.map((t) => ({ instructor_id: t.instructor_id, role: t.role }))
 							: undefined
 				});
+				savedCatalog = res.data;
 				toast.success(isNewCatalogVersion ? 'สร้าง version ใหม่แล้ว' : 'เพิ่มกิจกรรมแล้ว');
 			}
+			replaceCatalogItem(savedCatalog);
 			showCatalogDialog = false;
-			await loadCatalog();
 			return true;
 		} catch (e) {
 			const msg = e instanceof Error ? e.message : '';
@@ -897,10 +1019,10 @@
 		catalogDeleting = true;
 		try {
 			await deleteActivityCatalog(catalogDeleteTarget.id);
+			removeCatalogItem(catalogDeleteTarget.id);
 			toast.success('ลบแล้ว');
 			showCatalogDeleteDialog = false;
 			catalogDeleteTarget = null;
-			await loadCatalog();
 		} catch (e) {
 			toast.error('ลบไม่สำเร็จ: ' + (e instanceof Error ? e.message : ''));
 		} finally {

@@ -1172,10 +1172,8 @@ export async function addExamRoom(
 		displayOrder?: number;
 	}
 ) {
-	const res = await apiClient.post<Record<string, never>>(
-		`/api/admission/rounds/${roundId}/exam-rooms`,
-		data
-	);
+	const res = await apiClient.post<ExamRoom>(`/api/admission/rounds/${roundId}/exam-rooms`, data);
+	if (!res.success || !res.data) throw new Error(res.error);
 	return res.data;
 }
 
@@ -1188,10 +1186,11 @@ export async function updateExamRoom(
 		customName?: string;
 	}
 ) {
-	const res = await apiClient.put<Record<string, never>>(
+	const res = await apiClient.put<ExamRoom>(
 		`/api/admission/rounds/${roundId}/exam-rooms/${roomId}`,
 		data
 	);
+	if (!res.success || !res.data) throw new Error(res.error);
 	return res.data;
 }
 
@@ -1203,11 +1202,11 @@ export async function removeExamRoom(roundId: string, roomId: string) {
 }
 
 export async function copyExamRoomsFromRound(roundId: string, fromRoundId: string) {
-	const res = await apiClient.post<Record<string, never>>(
+	const res = await apiClient.post<ExamRoomsResponse>(
 		`/api/admission/rounds/${roundId}/exam-rooms/copy-from/${fromRoundId}`
 	);
-	if (!res.success) throw new Error(res.error);
-	return { message: res.message ?? 'copy ห้องสอบเรียบร้อย' };
+	if (!res.success || !res.data) throw new Error(res.error);
+	return { ...res.data, message: res.message ?? 'copy ห้องสอบเรียบร้อย' };
 }
 
 export async function getExamConfig(roundId: string) {

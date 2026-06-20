@@ -114,6 +114,49 @@
 		}
 	}
 
+	function replaceBuilding(building: Building) {
+		buildings = buildings.some((item) => item.id === building.id)
+			? buildings.map((item) => (item.id === building.id ? building : item))
+			: [...buildings, building];
+		buildings = buildings.sort((a, b) =>
+			(a.code ?? a.name_th).localeCompare(b.code ?? b.name_th, 'th')
+		);
+		rooms = rooms.map((room) =>
+			room.building_id === building.id ? { ...room, building_name: building.name_th } : room
+		);
+	}
+
+	function removeBuilding(id: string) {
+		buildings = buildings.filter((building) => building.id !== id);
+		rooms = rooms.filter((room) => room.building_id !== id);
+	}
+
+	function roomMatchesCurrentFilters(room: Room) {
+		if (selectedBuildingFilter !== 'all' && room.building_id !== selectedBuildingFilter)
+			return false;
+		const query = searchTerm.trim().toLowerCase();
+		if (!query) return true;
+		return [room.name_th, room.name_en, room.code, room.building_name]
+			.filter(Boolean)
+			.some((value) => value!.toLowerCase().includes(query));
+	}
+
+	function replaceRoom(room: Room) {
+		if (!roomMatchesCurrentFilters(room)) {
+			removeRoom(room.id);
+			return;
+		}
+
+		rooms = rooms.some((item) => item.id === room.id)
+			? rooms.map((item) => (item.id === room.id ? room : item))
+			: [...rooms, room];
+		rooms = rooms.sort((a, b) => (a.code ?? a.name_th).localeCompare(b.code ?? b.name_th, 'th'));
+	}
+
+	function removeRoom(id: string) {
+		rooms = rooms.filter((room) => room.id !== id);
+	}
+
 	// Actions: Buildings
 	async function handleSaveBuilding(e: SubmitEvent) {
 		e.preventDefault();
@@ -130,14 +173,13 @@
 		submitting = true;
 		try {
 			if (editingItem) {
-				await updateBuilding(editingItem.id, payload);
+				replaceBuilding((await updateBuilding(editingItem.id, payload)).data);
 				toast.success('บันทึกข้อมูลอาคารสำเร็จ');
 			} else {
-				await createBuilding(payload);
+				replaceBuilding((await createBuilding(payload)).data);
 				toast.success('เพิ่มอาคารสำเร็จ');
 			}
 			showBuildingDialog = false;
-			loadData();
 		} catch {
 			toast.error('บันทึกไม่สำเร็จ');
 		} finally {
@@ -166,14 +208,13 @@
 		submitting = true;
 		try {
 			if (editingItem) {
-				await updateRoom(editingItem.id, payload);
+				replaceRoom((await updateRoom(editingItem.id, payload)).data);
 				toast.success('บันทึกข้อมูลห้องสำเร็จ');
 			} else {
-				await createRoom(payload);
+				replaceRoom((await createRoom(payload)).data);
 				toast.success('เพิ่มห้องสำเร็จ');
 			}
 			showRoomDialog = false;
-			refreshRooms();
 		} catch {
 			toast.error('บันทึกไม่สำเร็จ');
 		} finally {
@@ -187,12 +228,12 @@
 		try {
 			if (deleteTarget.type === 'building') {
 				await deleteBuilding(deleteTarget.id);
+				removeBuilding(deleteTarget.id);
 				toast.success('ลบอาคารสำเร็จ');
-				loadData();
 			} else {
 				await deleteRoom(deleteTarget.id);
+				removeRoom(deleteTarget.id);
 				toast.success('ลบห้องสำเร็จ');
-				refreshRooms();
 			}
 			showDeleteDialog = false;
 		} catch {

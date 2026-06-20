@@ -14,7 +14,9 @@
 		canCreate?: boolean;
 		canUpdate?: boolean;
 		canDelete?: boolean;
-		onSuccess: () => void;
+		onSuccess: (
+			result: { type: 'upsert'; group: MenuGroup } | { type: 'delete'; groupId: string }
+		) => void;
 		onOpenChange: (open: boolean) => void;
 	}
 
@@ -72,9 +74,10 @@
 
 		saving = true;
 		try {
+			let savedGroup: MenuGroup;
 			if (group) {
 				// Update
-				await updateMenuGroup(group.id, {
+				savedGroup = await updateMenuGroup(group.id, {
 					name: formData.name,
 					name_en: formData.name_en || undefined,
 					icon: formData.icon || undefined
@@ -82,7 +85,7 @@
 				toast.success('แก้ไขกลุ่มเมนูสำเร็จ');
 			} else {
 				// Create
-				await createMenuGroup({
+				savedGroup = await createMenuGroup({
 					code: formData.code,
 					name: formData.name,
 					name_en: formData.name_en || undefined,
@@ -90,7 +93,7 @@
 				});
 				toast.success('สร้างกลุ่มเมนูสำเร็จ');
 			}
-			onSuccess();
+			onSuccess({ type: 'upsert', group: savedGroup });
 			open = false;
 		} catch (error) {
 			const message = error instanceof Error ? error.message : 'เกิดข้อผิดพลาด';
@@ -124,7 +127,7 @@
 		try {
 			await deleteMenuGroup(group.id);
 			toast.success('ลบกลุ่มเมนูสำเร็จ');
-			onSuccess();
+			onSuccess({ type: 'delete', groupId: group.id });
 			open = false;
 		} catch (error) {
 			const message = error instanceof Error ? error.message : 'เกิดข้อผิดพลาด';

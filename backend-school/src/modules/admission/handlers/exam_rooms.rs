@@ -91,7 +91,7 @@ pub async fn add_exam_room(
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ADMISSION_MANAGE_ALL)?;
-    exam_room_service::add_exam_room(
+    let room = exam_room_service::add_exam_room(
         &pool,
         round_id,
         payload.room_id,
@@ -100,7 +100,7 @@ pub async fn add_exam_room(
         payload.display_order,
     )
     .await?;
-    Ok(Json(ApiResponse::empty()).into_response())
+    Ok(Json(ApiResponse::ok(room)).into_response())
 }
 
 pub async fn update_exam_room(
@@ -113,7 +113,7 @@ pub async fn update_exam_room(
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ADMISSION_MANAGE_ALL)?;
-    exam_room_service::update_exam_room(
+    let room = exam_room_service::update_exam_room(
         &pool,
         round_id,
         room_id,
@@ -122,7 +122,7 @@ pub async fn update_exam_room(
         payload.custom_name,
     )
     .await?;
-    Ok(Json(ApiResponse::empty()).into_response())
+    Ok(Json(ApiResponse::ok(room)).into_response())
 }
 
 pub async fn remove_exam_room(
@@ -147,11 +147,17 @@ pub async fn copy_exam_rooms_from_round(
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ADMISSION_MANAGE_ALL)?;
-    let n = exam_room_service::copy_exam_rooms_from_round(&pool, round_id, from_round_id).await?;
-    Ok(Json(ApiResponse::empty_with_message(format!(
-        "copy ห้องสอบ {} ห้องเรียบร้อย",
-        n
-    )))
+    let result =
+        exam_room_service::copy_exam_rooms_from_round(&pool, round_id, from_round_id).await?;
+    let copied_count = result.rooms.len();
+    Ok(Json(ApiResponse::with_message(
+        ListExamRoomsData {
+            total_capacity: result.total_capacity,
+            total_assigned: result.total_assigned,
+            rooms: result.rooms,
+        },
+        format!("copy ห้องสอบ {} ห้องเรียบร้อย", copied_count),
+    ))
     .into_response())
 }
 

@@ -58,6 +58,7 @@
 	let selectedAchievement = $state<Achievement | null>(null);
 	let showDeleteDialog = $state(false);
 	let deleteId = $state<string | null>(null);
+	let deleting = $state(false);
 
 	// File Preview State
 	let showFileDialog = $state(false);
@@ -138,6 +139,30 @@
 		loadData();
 	}
 
+	function achievementMatchesCurrentTab(achievement: Achievement) {
+		return activeTab === 'all' || achievement.user_id === userId;
+	}
+
+	function replaceAchievement(achievement: Achievement) {
+		if (!achievementMatchesCurrentTab(achievement)) {
+			removeAchievement(achievement.id);
+			return;
+		}
+
+		achievements = achievements.some((item) => item.id === achievement.id)
+			? achievements.map((item) => (item.id === achievement.id ? achievement : item))
+			: [achievement, ...achievements];
+		achievements = achievements.sort(
+			(a, b) =>
+				new Date(b.achievement_date).getTime() - new Date(a.achievement_date).getTime() ||
+				b.created_at.localeCompare(a.created_at)
+		);
+	}
+
+	function removeAchievement(id: string) {
+		achievements = achievements.filter((achievement) => achievement.id !== id);
+	}
+
 	function formatDate(dateStr: string) {
 		return new Date(dateStr).toLocaleDateString('th-TH', {
 			year: 'numeric',
@@ -212,7 +237,9 @@
 		if (res.success) {
 			toast.success('บันทึกข้อมูลเรียบร้อย');
 			showDialog = false;
-			loadData();
+			if (res.data) {
+				replaceAchievement(res.data);
+			}
 		} else {
 			toast.error(res.error || 'บันทึกข้อมูลไม่สำเร็จ');
 		}
@@ -230,13 +257,13 @@
 		const achievement = achievements.find((item) => item.id === deleteId);
 		if (!achievement || !(canDeleteAll || (canDeleteOwn && achievement.user_id === userId))) return;
 
-		loading = true; // Optional: Show loading state
+		deleting = true;
 		const res = await deleteAchievement(deleteId);
-		loading = false;
+		deleting = false;
 
 		if (res.success) {
 			toast.success('ลบข้อมูลเรียบร้อย');
-			achievements = achievements.filter((a) => a.id !== deleteId);
+			removeAchievement(deleteId);
 		} else {
 			toast.error(res.error || 'ลบข้อมูลไม่สำเร็จ');
 		}
@@ -492,8 +519,13 @@
 						</Dialog.Description>
 					</Dialog.Header>
 					<Dialog.Footer>
-						<Button variant="outline" onclick={() => (showDeleteDialog = false)}>ยกเลิก</Button>
-						<Button variant="destructive" onclick={confirmDelete}>ลบข้อมูล</Button>
+						<Button variant="outline" onclick={() => (showDeleteDialog = false)} disabled={deleting}
+							>ยกเลิก</Button
+						>
+						<Button variant="destructive" onclick={confirmDelete} disabled={deleting}>
+							{#if deleting}<LoaderCircle class="mr-2 h-4 w-4 animate-spin" />{/if}
+							ลบข้อมูล
+						</Button>
 					</Dialog.Footer>
 				</Dialog.Content>
 			</Dialog.Root>
