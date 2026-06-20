@@ -112,11 +112,27 @@ test('teaching supervision own and assigned lists show complete lesson and evalu
 	);
 	assert.match(supervisionPage, /ผู้นิเทศ/);
 	assert.match(supervisionPage, /นิเทศใคร/);
-	assert.match(supervisionPage, /เริ่มประเมิน/);
+	assert.match(supervisionPage, /เปิดแบบประเมิน/);
 	assert.match(supervisionPage, /observationDetailGrid\(observation\)/);
 	assert.match(supervisionPage, /observationEvaluatorNames\(observation\)/);
 	assert.match(supervisionPage, /data-supervision-own-list="cards"/);
 	assert.match(supervisionPage, /data-supervision-assigned-list="cards"/);
+});
+
+test('teaching supervision evaluation uses a dialog workflow', async () => {
+	const supervisionPage = await readRepoFile(
+		'frontend-school/src/routes/(app)/staff/academic/supervision/+page.svelte'
+	);
+
+	assert.match(supervisionPage, /evaluationDialogOpen/);
+	assert.match(supervisionPage, /setEvaluationDialogOpen\(open: boolean\)/);
+	assert.match(supervisionPage, /clearEvaluationDraft\(\)/);
+	assert.match(supervisionPage, /<Dialog\.Root bind:open=\{evaluationDialogOpen\}/);
+	assert.match(supervisionPage, /<Dialog\.Title>ทำแบบประเมินนิเทศ<\/Dialog\.Title>/);
+	assert.match(supervisionPage, /ตอบแล้ว/);
+	assert.match(supervisionPage, /selectedEvaluationDraftSummary\.totalScore/);
+	assert.match(supervisionPage, /clearEvaluationDraft\(\);[\s\S]*toast\.success/);
+	assert.doesNotMatch(supervisionPage, /กำลังเปิดแบบประเมิน/);
 });
 
 test('teaching supervision observation detail supports safe edit actions', async () => {

@@ -187,6 +187,7 @@
 	let savingAction = $state<string | null>(null);
 	let savingTemplate = $state(false);
 	let savingEvaluation = $state<'draft' | 'submit' | null>(null);
+	let evaluationDialogOpen = $state(false);
 	let activeTab = $state('mine');
 	let cycles = $state<SupervisionCycle[]>([]);
 	let templates = $state<SupervisionTemplate[]>([]);
@@ -1073,6 +1074,20 @@
 			}
 		}
 		responseDrafts = nextDrafts;
+		evaluationDialogOpen = true;
+	}
+
+	function clearEvaluationDraft() {
+		evaluationDialogOpen = false;
+		evaluationObservationId = '';
+		responseDrafts = {};
+	}
+
+	function setEvaluationDialogOpen(open: boolean) {
+		evaluationDialogOpen = open;
+		if (!open) {
+			clearEvaluationDraft();
+		}
 	}
 
 	function ratingScale(min: number, max: number): number[] {
@@ -1154,6 +1169,7 @@
 				: await saveMySupervisionEvaluation(evaluationObservationId, payload);
 			const observation = requireMutationData(response, 'บันทึกผลประเมินไม่สำเร็จ');
 			replaceObservation(observation);
+			clearEvaluationDraft();
 			toast.success(submit ? 'ส่งผลประเมินแล้ว' : 'บันทึกแบบร่างแล้ว');
 		} catch (error) {
 			toast.error(error instanceof Error ? error.message : 'บันทึกผลประเมินไม่สำเร็จ');
@@ -2306,133 +2322,12 @@
 												variant={evaluationObservationId === observation.id ? 'default' : 'outline'}
 												onclick={() => prepareEvaluationDraft(observation)}
 											>
-												{evaluationObservationId === observation.id
-													? 'กำลังเปิดแบบประเมิน'
-													: 'เริ่มประเมิน'}
+												เปิดแบบประเมิน
 											</Button>
 										</div>
 									</div>
 								</div>
 							{/each}
-						</div>
-					{/if}
-
-					{#if selectedEvaluation && selectedEvaluationTemplate}
-						<div class="space-y-4 rounded-md border p-4">
-							<div class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-								<div>
-									<h3 class="font-semibold">{selectedEvaluationTemplate.title}</h3>
-									<p class="text-sm text-muted-foreground">
-										{selectedEvaluation.observedDisplayName ?? 'ครูผู้ถูกนิเทศ'}
-									</p>
-								</div>
-								<div
-									class="grid gap-2 rounded-md border bg-muted/20 p-3 text-sm sm:grid-cols-4 lg:min-w-[520px]"
-								>
-									<div>
-										<p class="text-xs text-muted-foreground">คะแนนรวม</p>
-										<p class="font-semibold">
-											{selectedEvaluationDraftSummary.totalScore} /
-											{selectedEvaluationDraftSummary.maxScore}
-										</p>
-									</div>
-									<div>
-										<p class="text-xs text-muted-foreground">ร้อยละ</p>
-										<p class="font-semibold">
-											{selectedEvaluationDraftSummary.percentage === null
-												? '-'
-												: selectedEvaluationDraftSummary.percentage.toFixed(2)}
-										</p>
-									</div>
-									<div>
-										<p class="text-xs text-muted-foreground">ระดับคุณภาพ</p>
-										<p class="font-semibold">{selectedEvaluationDraftSummary.qualityLabel}</p>
-									</div>
-									<div>
-										<p class="text-xs text-muted-foreground">ให้คะแนนแล้ว</p>
-										<p class="font-semibold">
-											{selectedEvaluationDraftSummary.answeredRatingCount} /
-											{selectedEvaluationDraftSummary.ratingItemCount}
-										</p>
-									</div>
-								</div>
-							</div>
-							{#each selectedEvaluationRubricSections as section (section.localId)}
-								{@const progress = sectionRubricProgress(section, responseDrafts)}
-								<div class="space-y-3 rounded-md border bg-background p-3">
-									<div class="flex flex-wrap items-start justify-between gap-2">
-										<div>
-											<h4 class="text-sm font-semibold">{section.title}</h4>
-											{#if section.description}
-												<p class="text-xs text-muted-foreground">{section.description}</p>
-											{/if}
-										</div>
-										<div class="flex flex-wrap gap-2">
-											<Badge variant="secondary">
-												บังคับ {progress.answeredRequiredCount}/{progress.requiredCount}
-											</Badge>
-											<Badge variant="outline">
-												คะแนน {progress.answeredRatingCount}/{progress.ratingCount}
-											</Badge>
-										</div>
-									</div>
-									{#each section.items as item (item.localId)}
-										<div class="space-y-2 rounded-md border p-3">
-											<div class="space-y-1">
-												<Label>{item.label}</Label>
-												{#if item.description}
-													<p class="text-xs text-muted-foreground">{item.description}</p>
-												{/if}
-											</div>
-											{#if item.itemType === 'rating'}
-												<div class="flex flex-wrap gap-2">
-													{#each ratingScale(selectedEvaluationTemplate.ratingMin, selectedEvaluationTemplate.ratingMax) as score (score)}
-														<Button
-															type="button"
-															size="sm"
-															variant={responseDrafts[item.localId]?.ratingScore === String(score)
-																? 'default'
-																: 'outline'}
-															onclick={() =>
-																updateDraft(item.localId, { ratingScore: String(score) })}
-														>
-															{score}
-														</Button>
-													{/each}
-												</div>
-											{:else}
-												<Textarea
-													rows={3}
-													value={responseDrafts[item.localId]?.textResponse ?? ''}
-													oninput={(event) =>
-														updateDraft(item.localId, {
-															textResponse: (event.currentTarget as HTMLTextAreaElement).value
-														})}
-												/>
-											{/if}
-										</div>
-									{/each}
-								</div>
-							{/each}
-							<div class="flex flex-wrap gap-2">
-								<LoadingButton
-									variant="outline"
-									onclick={() => saveEvaluation(false)}
-									loading={savingEvaluation === 'draft'}
-									loadingLabel="กำลังบันทึก..."
-									disabled={savingEvaluation !== null}
-								>
-									บันทึกร่าง
-								</LoadingButton>
-								<LoadingButton
-									onclick={() => saveEvaluation(true)}
-									loading={savingEvaluation === 'submit'}
-									loadingLabel="กำลังส่ง..."
-									disabled={savingEvaluation !== null}
-								>
-									ส่งผลประเมิน
-								</LoadingButton>
-							</div>
 						</div>
 					{/if}
 				</Card.Content>
@@ -2755,6 +2650,158 @@
 		</Tabs.Content>
 	</Tabs.Root>
 </PageShell>
+
+<Dialog.Root bind:open={evaluationDialogOpen} onOpenChange={setEvaluationDialogOpen}>
+	<Dialog.Content class="flex max-h-[92vh] flex-col sm:max-w-5xl">
+		<Dialog.Header>
+			<Dialog.Title>ทำแบบประเมินนิเทศ</Dialog.Title>
+			<Dialog.Description>
+				{#if selectedEvaluation && selectedEvaluationTemplate}
+					{selectedEvaluationTemplate.title} · {selectedEvaluation.observedDisplayName ??
+						'ครูผู้ถูกนิเทศ'}
+				{:else}
+					เลือกรายการที่ได้รับมอบหมายเพื่อทำแบบประเมิน
+				{/if}
+			</Dialog.Description>
+		</Dialog.Header>
+
+		{#if selectedEvaluation && selectedEvaluationTemplate}
+			<div
+				class="grid gap-3 rounded-md border bg-muted/20 p-3 text-sm sm:grid-cols-2 lg:grid-cols-4"
+			>
+				<div>
+					<p class="text-xs text-muted-foreground">คะแนนรวม</p>
+					<p class="font-semibold">
+						{selectedEvaluationDraftSummary.totalScore} / {selectedEvaluationDraftSummary.maxScore}
+					</p>
+				</div>
+				<div>
+					<p class="text-xs text-muted-foreground">ร้อยละ</p>
+					<p class="font-semibold">
+						{selectedEvaluationDraftSummary.percentage === null
+							? '-'
+							: selectedEvaluationDraftSummary.percentage.toFixed(2)}
+					</p>
+				</div>
+				<div>
+					<p class="text-xs text-muted-foreground">ระดับคุณภาพ</p>
+					<p class="font-semibold">{selectedEvaluationDraftSummary.qualityLabel}</p>
+				</div>
+				<div>
+					<p class="text-xs text-muted-foreground">ตอบแล้ว</p>
+					<p class="font-semibold">
+						{selectedEvaluationDraftSummary.answeredRatingCount} /
+						{selectedEvaluationDraftSummary.ratingItemCount}
+					</p>
+				</div>
+			</div>
+
+			<div class="grid gap-3 rounded-md border p-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
+				<div>
+					<p class="text-xs text-muted-foreground">นิเทศใคร</p>
+					<p class="font-medium">{selectedEvaluation.observedDisplayName ?? '-'}</p>
+				</div>
+				{#each observationDetailGrid(selectedEvaluation) as detail (detail.label)}
+					<div>
+						<p class="text-xs text-muted-foreground">{detail.label}</p>
+						<p class="font-medium">{detail.value}</p>
+					</div>
+				{/each}
+			</div>
+
+			<div class="min-h-0 flex-1 space-y-4 overflow-y-auto pr-1">
+				{#each selectedEvaluationRubricSections as section (section.localId)}
+					{@const progress = sectionRubricProgress(section, responseDrafts)}
+					<div class="space-y-3 rounded-md border bg-background p-3">
+						<div class="flex flex-wrap items-start justify-between gap-2">
+							<div>
+								<h4 class="text-sm font-semibold">{section.title}</h4>
+								{#if section.description}
+									<p class="text-xs text-muted-foreground">{section.description}</p>
+								{/if}
+							</div>
+							<div class="flex flex-wrap gap-2">
+								<Badge variant="secondary">
+									บังคับ {progress.answeredRequiredCount}/{progress.requiredCount}
+								</Badge>
+								<Badge variant="outline">
+									ตอบคะแนน {progress.answeredRatingCount}/{progress.ratingCount}
+								</Badge>
+							</div>
+						</div>
+						{#each section.items as item (item.localId)}
+							<div class="space-y-2 rounded-md border p-3">
+								<div class="space-y-1">
+									<Label>{item.label}</Label>
+									{#if item.description}
+										<p class="text-xs text-muted-foreground">{item.description}</p>
+									{/if}
+								</div>
+								{#if item.itemType === 'rating'}
+									<div class="flex flex-wrap gap-2">
+										{#each ratingScale(selectedEvaluationTemplate.ratingMin, selectedEvaluationTemplate.ratingMax) as score (score)}
+											<Button
+												type="button"
+												size="sm"
+												variant={responseDrafts[item.localId]?.ratingScore === String(score)
+													? 'default'
+													: 'outline'}
+												onclick={() => updateDraft(item.localId, { ratingScore: String(score) })}
+											>
+												{score}
+											</Button>
+										{/each}
+									</div>
+								{:else}
+									<Textarea
+										rows={3}
+										value={responseDrafts[item.localId]?.textResponse ?? ''}
+										oninput={(event) =>
+											updateDraft(item.localId, {
+												textResponse: (event.currentTarget as HTMLTextAreaElement).value
+											})}
+									/>
+								{/if}
+							</div>
+						{/each}
+					</div>
+				{/each}
+			</div>
+
+			<Dialog.Footer>
+				<Button
+					variant="outline"
+					onclick={clearEvaluationDraft}
+					disabled={savingEvaluation !== null}
+				>
+					ปิด
+				</Button>
+				<LoadingButton
+					variant="outline"
+					onclick={() => saveEvaluation(false)}
+					loading={savingEvaluation === 'draft'}
+					loadingLabel="กำลังบันทึก..."
+					disabled={savingEvaluation !== null}
+				>
+					บันทึกร่าง
+				</LoadingButton>
+				<LoadingButton
+					onclick={() => saveEvaluation(true)}
+					loading={savingEvaluation === 'submit'}
+					loadingLabel="กำลังส่ง..."
+					disabled={savingEvaluation !== null}
+				>
+					ส่งผลประเมิน
+				</LoadingButton>
+			</Dialog.Footer>
+		{:else}
+			<PageState
+				title="ยังไม่ได้เลือกรายการประเมิน"
+				description="เลือกงานนิเทศที่ได้รับมอบหมายก่อนเริ่มทำแบบประเมิน"
+			/>
+		{/if}
+	</Dialog.Content>
+</Dialog.Root>
 
 <Dialog.Root bind:open={createCycleDialogOpen}>
 	<Dialog.Content class="max-w-3xl">
