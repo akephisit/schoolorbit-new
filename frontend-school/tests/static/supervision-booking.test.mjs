@@ -125,11 +125,18 @@ test('teaching supervision evaluation uses a dialog workflow', async () => {
 	);
 
 	assert.match(supervisionPage, /evaluationDialogOpen/);
+	assert.match(supervisionPage, /activeAssignedObservations/);
+	assert.match(supervisionPage, /submittedAssignedObservations/);
+	assert.match(supervisionPage, /currentUserEvaluator\(observation\)\?\.status !== 'submitted'/);
+	assert.match(supervisionPage, /ประวัติการประเมินที่ส่งแล้ว/);
 	assert.match(supervisionPage, /setEvaluationDialogOpen\(open: boolean\)/);
 	assert.match(supervisionPage, /clearEvaluationDraft\(\)/);
 	assert.match(supervisionPage, /<Dialog\.Root bind:open=\{evaluationDialogOpen\}/);
 	assert.match(supervisionPage, /<Dialog\.Title>ทำแบบประเมินนิเทศ<\/Dialog\.Title>/);
 	assert.match(supervisionPage, /ตอบแล้ว/);
+	assert.match(supervisionPage, /progress\.totalScore/);
+	assert.match(supervisionPage, /progress\.maxScore/);
+	assert.match(supervisionPage, /progress\.qualityLabel/);
 	assert.match(supervisionPage, /selectedEvaluationDraftSummary\.totalScore/);
 	assert.match(supervisionPage, /clearEvaluationDraft\(\);[\s\S]*toast\.success/);
 	assert.doesNotMatch(supervisionPage, /กำลังเปิดแบบประเมิน/);

@@ -36,6 +36,10 @@ export interface RubricSectionProgress {
 	answeredRequiredCount: number;
 	ratingCount: number;
 	answeredRatingCount: number;
+	totalScore: number;
+	maxScore: number;
+	percentage: number | null;
+	qualityLabel: string;
 }
 
 const paperRubricSections: Array<{
@@ -178,7 +182,8 @@ export function calculateRubricDraftSummary(
 
 export function sectionRubricProgress(
 	section: RubricFormSection,
-	drafts: Record<string, RubricResponseDraft>
+	drafts: Record<string, RubricResponseDraft>,
+	ratingMax: number
 ): RubricSectionProgress {
 	const requiredItems = section.items.filter((item) => item.required);
 	const ratingItems = section.items.filter((item) => item.itemType === 'rating');
@@ -189,11 +194,21 @@ export function sectionRubricProgress(
 			? Boolean(draft.ratingScore)
 			: Boolean(draft.textResponse.trim());
 	};
+	const totalScore = ratingItems.reduce((sum, item) => {
+		const score = Number(drafts[item.localId]?.ratingScore || 0);
+		return sum + (Number.isFinite(score) ? score : 0);
+	}, 0);
+	const maxScore = ratingItems.length * ratingMax;
+	const percentage = maxScore > 0 ? Math.round((totalScore / maxScore) * 10000) / 100 : null;
 
 	return {
 		requiredCount: requiredItems.length,
 		answeredRequiredCount: requiredItems.filter(isAnswered).length,
 		ratingCount: ratingItems.length,
-		answeredRatingCount: ratingItems.filter(isAnswered).length
+		answeredRatingCount: ratingItems.filter(isAnswered).length,
+		totalScore,
+		maxScore,
+		percentage,
+		qualityLabel: qualityLevelFromPercentage(percentage)
 	};
 }

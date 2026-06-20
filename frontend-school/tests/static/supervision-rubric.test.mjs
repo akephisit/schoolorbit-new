@@ -4,7 +4,8 @@ import { describe, it } from 'node:test';
 import {
 	calculateRubricDraftSummary,
 	createPaperSupervisionRubricSections,
-	qualityLevelFromPercentage
+	qualityLevelFromPercentage,
+	sectionRubricProgress
 } from '../../src/lib/utils/supervision-rubric.ts';
 
 describe('supervision rubric helpers', () => {
@@ -34,6 +35,24 @@ describe('supervision rubric helpers', () => {
 		assert.equal(summary.totalScore, 100);
 		assert.equal(summary.percentage, 100);
 		assert.equal(summary.qualityLabel, 'ดีมาก');
+	});
+
+	it('calculates section score from selected ratings instead of answered count', () => {
+		const [section] = createPaperSupervisionRubricSections();
+		const drafts = {
+			[section.items[0].localId]: { ratingScore: '5', textResponse: '' },
+			[section.items[1].localId]: { ratingScore: '4', textResponse: '' },
+			[section.items[2].localId]: { ratingScore: '2', textResponse: '' }
+		};
+
+		const progress = sectionRubricProgress(section, drafts, 5);
+
+		assert.equal(progress.ratingCount, 3);
+		assert.equal(progress.answeredRatingCount, 3);
+		assert.equal(progress.totalScore, 11);
+		assert.equal(progress.maxScore, 15);
+		assert.equal(progress.percentage, 73.33);
+		assert.equal(progress.qualityLabel, 'พอใช้');
 	});
 
 	it('maps paper-form quality thresholds', () => {

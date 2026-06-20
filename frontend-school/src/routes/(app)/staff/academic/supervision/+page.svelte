@@ -337,6 +337,16 @@
 			observation.evaluators.some((evaluator) => evaluator.evaluatorUserId === currentUserId)
 		)
 	);
+	const activeAssignedObservations = $derived(
+		assignedObservations.filter(
+			(observation) => currentUserEvaluator(observation)?.status !== 'submitted'
+		)
+	);
+	const submittedAssignedObservations = $derived(
+		assignedObservations.filter(
+			(observation) => currentUserEvaluator(observation)?.status === 'submitted'
+		)
+	);
 	const selectedEvaluation = $derived(
 		observations.find((observation) => observation.id === evaluationObservationId) ?? null
 	);
@@ -886,6 +896,10 @@
 		observations = observations.some((item) => item.id === observation.id)
 			? observations.map((item) => (item.id === observation.id ? observation : item))
 			: [observation, ...observations];
+	}
+
+	function currentUserEvaluator(observation: SupervisionObservation) {
+		return observation.evaluators.find((evaluator) => evaluator.evaluatorUserId === currentUserId);
 	}
 
 	function requireMutationData<T>(
@@ -1636,7 +1650,7 @@
 			<p class="text-xs text-muted-foreground">คำขอรออนุมัติ</p>
 		</div>
 		<div class="rounded-md border bg-background px-3 py-2 text-center">
-			<p class="text-lg font-semibold">{assignedObservations.length}</p>
+			<p class="text-lg font-semibold">{activeAssignedObservations.length}</p>
 			<p class="text-xs text-muted-foreground">รอประเมิน</p>
 		</div>
 		<div class="rounded-md border bg-background px-3 py-2 text-center">
@@ -2240,14 +2254,14 @@
 					<Card.Title>รายการที่ได้รับมอบหมายให้ประเมิน</Card.Title>
 				</Card.Header>
 				<Card.Content class="space-y-4">
-					{#if assignedObservations.length === 0}
+					{#if activeAssignedObservations.length === 0}
 						<PageState
 							title="ยังไม่มีรายการที่ได้รับมอบหมาย"
-							description="รายการจะปรากฏเมื่อผู้ดูแลอนุมัติคำขอและมอบหมายให้ประเมิน"
+							description="รายการจะปรากฏเมื่อผู้ดูแลอนุมัติคำขอและมอบหมายให้ประเมิน หรือเมื่อมีงานที่ยังไม่ได้ส่งผล"
 						/>
 					{:else}
 						<div class="space-y-3" data-supervision-assigned-list="cards">
-							{#each assignedObservations as observation (observation.id)}
+							{#each activeAssignedObservations as observation (observation.id)}
 								<div
 									class={cn(
 										'rounded-md border bg-background p-4 transition',
@@ -2328,6 +2342,84 @@
 									</div>
 								</div>
 							{/each}
+						</div>
+					{/if}
+
+					{#if submittedAssignedObservations.length > 0}
+						<div class="space-y-3 border-t pt-4">
+							<div>
+								<h3 class="text-sm font-semibold">ประวัติการประเมินที่ส่งแล้ว</h3>
+								<p class="text-xs text-muted-foreground">
+									รายการที่ส่งผลประเมินแล้วจะเก็บไว้ตรวจสอบย้อนหลัง ไม่แสดงปนกับคิวที่ต้องทำ
+								</p>
+							</div>
+
+							<div class="space-y-3" data-supervision-submitted-assigned-list="cards">
+								{#each submittedAssignedObservations as observation (observation.id)}
+									{@const submittedEvaluator = currentUserEvaluator(observation)}
+									<div class="rounded-md border bg-muted/20 p-4">
+										<div class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+											<div class="min-w-0 space-y-1">
+												<div class="flex flex-wrap items-center gap-2">
+													<h3 class="font-semibold">
+														{observation.observedDisplayName ?? 'ครูผู้ถูกนิเทศ'}
+													</h3>
+													<Badge variant="secondary">ส่งผลแล้ว</Badge>
+													<Badge variant="outline">{statusLabel(observation.status)}</Badge>
+												</div>
+												<p class="text-sm text-muted-foreground">
+													{observationSubjectLabel(observation)} · {observationPeriodLabel(
+														observation
+													)}
+												</p>
+											</div>
+											<div class="shrink-0 text-sm text-muted-foreground">
+												ส่งเมื่อ {formatDate(submittedEvaluator?.submittedAt)}
+											</div>
+										</div>
+
+										<div class="mt-4 grid gap-3 text-sm sm:grid-cols-2 xl:grid-cols-5">
+											<div>
+												<p class="text-xs text-muted-foreground">นิเทศใคร</p>
+												<p class="font-medium">{observation.observedDisplayName ?? '-'}</p>
+											</div>
+											{#each observationDetailGrid(observation) as detail (detail.label)}
+												<div>
+													<p class="text-xs text-muted-foreground">{detail.label}</p>
+													<p class="font-medium">{detail.value}</p>
+												</div>
+											{/each}
+										</div>
+
+										<div
+											class="mt-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between"
+										>
+											<div class="min-w-0">
+												<p class="text-xs text-muted-foreground">ผู้นิเทศร่วม</p>
+												<div class="mt-1 flex flex-wrap gap-2">
+													{#each observation.evaluators as evaluator (evaluator.id)}
+														<Badge
+															variant={evaluator.evaluatorUserId === currentUserId
+																? 'default'
+																: 'secondary'}
+														>
+															{evaluator.evaluatorDisplayName ?? 'ผู้ประเมิน'}
+														</Badge>
+													{/each}
+												</div>
+											</div>
+											<Button
+												size="sm"
+												variant="outline"
+												href={`/staff/academic/supervision/${observation.id}`}
+											>
+												<Eye class="h-4 w-4" />
+												รายละเอียด
+											</Button>
+										</div>
+									</div>
+								{/each}
+							</div>
 						</div>
 					{/if}
 				</Card.Content>
@@ -2711,7 +2803,11 @@
 
 			<div class="min-h-0 flex-1 space-y-4 overflow-y-auto pr-1">
 				{#each selectedEvaluationRubricSections as section (section.localId)}
-					{@const progress = sectionRubricProgress(section, responseDrafts)}
+					{@const progress = sectionRubricProgress(
+						section,
+						responseDrafts,
+						selectedEvaluationTemplate.ratingMax
+					)}
 					<div class="space-y-3 rounded-md border bg-background p-3">
 						<div class="flex flex-wrap items-start justify-between gap-2">
 							<div>
@@ -2725,7 +2821,11 @@
 									บังคับ {progress.answeredRequiredCount}/{progress.requiredCount}
 								</Badge>
 								<Badge variant="outline">
-									ตอบคะแนน {progress.answeredRatingCount}/{progress.ratingCount}
+									คะแนน {progress.totalScore}/{progress.maxScore}
+								</Badge>
+								<Badge variant="outline">
+									{progress.percentage === null ? '-' : progress.percentage.toFixed(2)}% ·
+									{progress.qualityLabel}
 								</Badge>
 							</div>
 						</div>
