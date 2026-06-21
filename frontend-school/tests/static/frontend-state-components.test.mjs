@@ -11,6 +11,18 @@ async function readProjectFile(relativePath) {
 	return readFile(path.join(projectRoot, relativePath), 'utf8');
 }
 
+async function readPageStateContractSource(page) {
+	const pageSource = await readProjectFile(page);
+	if (!pageSource.includes("from '$lib/components/supervision/SupervisionWorkspace.svelte'")) {
+		return pageSource;
+	}
+
+	const workspaceSource = await readProjectFile(
+		'src/lib/components/supervision/SupervisionWorkspace.svelte'
+	);
+	return `${pageSource}\n${workspaceSource}`;
+}
+
 test('shared frontend state components use local shadcn-svelte primitives', async () => {
 	const pageState = await readProjectFile('src/lib/components/app-state/PageState.svelte');
 	const pageSkeleton = await readProjectFile('src/lib/components/app-state/PageSkeleton.svelte');
@@ -114,7 +126,7 @@ test('academic large workspaces use shared frontend state components', async () 
 	];
 
 	for (const page of pages) {
-		const source = await readProjectFile(page);
+		const source = await readPageStateContractSource(page);
 
 		assert.match(
 			source,
