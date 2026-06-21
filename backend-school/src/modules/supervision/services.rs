@@ -1820,7 +1820,7 @@ pub async fn cycle_teacher_status(
                rating.average_rating
         FROM users u
         LEFT JOIN LATERAL (
-            SELECT ARRAY_AGG(DISTINCT sg.name ORDER BY sg.name) AS organization_unit_names
+            SELECT ARRAY_AGG(DISTINCT sg.name_th ORDER BY sg.name_th) AS organization_unit_names
             FROM organization_members om
             JOIN organization_units ou ON ou.id = om.organization_unit_id
             JOIN subject_groups sg ON sg.id = ou.subject_group_id

@@ -356,7 +356,8 @@ test('teaching supervision manager view exposes teacher status overview and alig
 	assert.match(supervisionHandlers, /teacher_status_overview/);
 	assert.match(supervisionService, /cycle_teacher_status/);
 	assert.match(supervisionService, /JOIN subject_groups sg ON sg\.id = ou\.subject_group_id/);
-	assert.match(supervisionService, /ARRAY_AGG\(DISTINCT sg\.name ORDER BY sg\.name\)/);
+	assert.match(supervisionService, /ARRAY_AGG\(DISTINCT sg\.name_th ORDER BY sg\.name_th\)/);
+	assert.doesNotMatch(supervisionService, /sg\.name\b/);
 	assert.doesNotMatch(
 		supervisionService,
 		/ARRAY_AGG\(ou\.name ORDER BY om\.is_primary DESC, ou\.name\)/
