@@ -469,34 +469,16 @@ export async function submitMySupervisionEvaluation(
 	);
 }
 
-export async function submitSupervisionObservationForReview(
+export async function certifySupervisionObservation(
 	id: string
 ): Promise<ApiResponse<SupervisionObservation>> {
-	return apiClient.post<SupervisionObservation>(
-		`/api/supervision/observations/${id}/submit-review`
-	);
+	return apiClient.post<SupervisionObservation>(`/api/supervision/observations/${id}/certify`);
 }
 
 export async function approveSupervisionObservation(
 	id: string
 ): Promise<ApiResponse<SupervisionObservation>> {
 	return apiClient.post<SupervisionObservation>(`/api/supervision/observations/${id}/approve`);
-}
-
-export async function returnSupervisionObservation(
-	id: string,
-	payload: ReturnObservationRequest
-): Promise<ApiResponse<SupervisionObservation>> {
-	return apiClient.post<SupervisionObservation>(
-		`/api/supervision/observations/${id}/return`,
-		payload
-	);
-}
-
-export async function publishSupervisionObservation(
-	id: string
-): Promise<ApiResponse<SupervisionObservation>> {
-	return apiClient.post<SupervisionObservation>(`/api/supervision/observations/${id}/publish`);
 }
 
 export async function acknowledgeSupervisionObservation(

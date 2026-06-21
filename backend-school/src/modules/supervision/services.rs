@@ -367,7 +367,7 @@ pub fn can_transition_observation_status(
 ) -> bool {
     use SupervisionObservationStatus::{
         Acknowledged, Approved, Cancelled, Completed, EvaluatorsSubmitted, InProgress, Planned,
-        Published, Requested, Returned, UnderReview,
+        Published, Requested, Returned,
     };
 
     if from == to {
@@ -388,16 +388,11 @@ pub fn can_transition_observation_status(
             | (InProgress, EvaluatorsSubmitted)
             | (InProgress, Returned)
             | (InProgress, Cancelled)
-            | (EvaluatorsSubmitted, UnderReview)
-            | (EvaluatorsSubmitted, Returned)
+            | (EvaluatorsSubmitted, Approved)
             | (EvaluatorsSubmitted, Cancelled)
-            | (UnderReview, Approved)
-            | (UnderReview, Returned)
-            | (UnderReview, Cancelled)
             | (Approved, Published)
-            | (Approved, Returned)
             | (Approved, Cancelled)
-            | (Published, Acknowledged)
+            | (Published, Completed)
             | (Acknowledged, Completed)
     )
 }
@@ -1460,7 +1455,7 @@ pub async fn submit_my_evaluation(
     get_observation(pool, observation_id).await
 }
 
-pub async fn submit_observation_for_review(
+pub async fn certify_observation(
     pool: &PgPool,
     actor_user_id: Uuid,
     observation_id: Uuid,
@@ -1476,8 +1471,8 @@ pub async fn submit_observation_for_review(
         pool,
         observation_id,
         actor_user_id,
-        SupervisionObservationStatus::UnderReview,
-        "submitted_for_review",
+        SupervisionObservationStatus::Approved,
+        "subject_group_certified",
         None,
     )
     .await
@@ -1492,41 +1487,8 @@ pub async fn approve_observation(
         pool,
         observation_id,
         actor_user_id,
-        SupervisionObservationStatus::Approved,
-        "approved",
-        None,
-    )
-    .await
-}
-
-pub async fn return_observation(
-    pool: &PgPool,
-    actor_user_id: Uuid,
-    observation_id: Uuid,
-    input: ReturnObservationRequest,
-) -> Result<SupervisionObservation, AppError> {
-    set_observation_status(
-        pool,
-        observation_id,
-        actor_user_id,
-        SupervisionObservationStatus::Returned,
-        "returned",
-        input.comment,
-    )
-    .await
-}
-
-pub async fn publish_observation(
-    pool: &PgPool,
-    actor_user_id: Uuid,
-    observation_id: Uuid,
-) -> Result<SupervisionObservation, AppError> {
-    set_observation_status(
-        pool,
-        observation_id,
-        actor_user_id,
         SupervisionObservationStatus::Published,
-        "published",
+        "academic_approved",
         None,
     )
     .await
@@ -1557,7 +1519,7 @@ pub async fn acknowledge_observation(
         pool,
         observation_id,
         actor_user_id,
-        SupervisionObservationStatus::Acknowledged,
+        SupervisionObservationStatus::Completed,
         action_kind,
         input.comment,
     )
@@ -1574,7 +1536,7 @@ pub async fn cycle_progress(
             COUNT(*) AS total_observations,
             COUNT(*) FILTER (WHERE status = 'requested') AS requested_count,
             COUNT(*) FILTER (WHERE status = 'planned') AS planned_count,
-            COUNT(*) FILTER (WHERE status = 'under_review') AS under_review_count,
+            COUNT(*) FILTER (WHERE status IN ('evaluators_submitted', 'under_review')) AS under_review_count,
             COUNT(*) FILTER (WHERE status = 'approved') AS approved_count,
             COUNT(*) FILTER (WHERE status = 'published') AS published_count,
             COUNT(*) FILTER (WHERE status IN ('acknowledged', 'completed')) AS completed_count,
@@ -3457,12 +3419,28 @@ mod tests {
             SupervisionObservationStatus::Planned
         ));
         assert!(can_transition_observation_status(
+            SupervisionObservationStatus::EvaluatorsSubmitted,
+            SupervisionObservationStatus::Approved
+        ));
+        assert!(can_transition_observation_status(
+            SupervisionObservationStatus::Approved,
+            SupervisionObservationStatus::Published
+        ));
+        assert!(can_transition_observation_status(
             SupervisionObservationStatus::Published,
-            SupervisionObservationStatus::Acknowledged
+            SupervisionObservationStatus::Completed
         ));
         assert!(!can_transition_observation_status(
             SupervisionObservationStatus::Requested,
             SupervisionObservationStatus::Approved
+        ));
+        assert!(!can_transition_observation_status(
+            SupervisionObservationStatus::EvaluatorsSubmitted,
+            SupervisionObservationStatus::UnderReview
+        ));
+        assert!(!can_transition_observation_status(
+            SupervisionObservationStatus::Approved,
+            SupervisionObservationStatus::Returned
         ));
         assert!(!can_transition_observation_status(
             SupervisionObservationStatus::Completed,

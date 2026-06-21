@@ -142,6 +142,45 @@ test('teaching supervision evaluation uses a dialog workflow', async () => {
 	assert.doesNotMatch(supervisionPage, /กำลังเปิดแบบประเมิน/);
 });
 
+test('teaching supervision approval workflow skips review submission', async () => {
+	const supervisionApi = await readRepoFile('frontend-school/src/lib/api/supervision.ts');
+	const supervisionPage = await readRepoFile(
+		'frontend-school/src/routes/(app)/staff/academic/supervision/+page.svelte'
+	);
+	const supervisionDetailPage = await readRepoFile(
+		'frontend-school/src/routes/(app)/staff/academic/supervision/[id]/+page.svelte'
+	);
+	const supervisionHandlers = await readRepoFile(
+		'backend-school/src/modules/supervision/handlers.rs'
+	);
+	const supervisionService = await readRepoFile(
+		'backend-school/src/modules/supervision/services.rs'
+	);
+
+	assert.match(supervisionApi, /certifySupervisionObservation/);
+	assert.match(supervisionApi, /\/api\/supervision\/observations\/\$\{id\}\/certify/);
+	assert.doesNotMatch(supervisionApi, /submitSupervisionObservationForReview/);
+	assert.doesNotMatch(supervisionApi, /publishSupervisionObservation/);
+	assert.doesNotMatch(supervisionApi, /returnSupervisionObservation\(/);
+	assert.match(supervisionPage, /certifiableObservations/);
+	assert.match(supervisionPage, /approvableObservations/);
+	assert.match(supervisionPage, /certifyResult\(observation\.id\)/);
+	assert.match(supervisionPage, /รับรองผล/);
+	assert.match(supervisionPage, /อนุมัติผล/);
+	assert.match(supervisionPage, /รอครูรับทราบ/);
+	assert.doesNotMatch(supervisionPage, /ส่งตรวจทาน/);
+	assert.doesNotMatch(supervisionPage, /ส่งกลับผล/);
+	assert.doesNotMatch(supervisionPage, /returnResult/);
+	assert.match(supervisionDetailPage, /subject_group_certified:\s*'รับรองผล'/);
+	assert.match(supervisionDetailPage, /academic_approved:\s*'อนุมัติผล'/);
+	assert.doesNotMatch(supervisionDetailPage, /ส่งตรวจทาน/);
+	assert.match(supervisionHandlers, /\/observations\/\{id\}\/certify/);
+	assert.doesNotMatch(supervisionHandlers, /submit-review/);
+	assert.match(supervisionService, /SupervisionObservationStatus::Completed/);
+	assert.match(supervisionService, /status IN \('evaluators_submitted', 'under_review'\)/);
+	assert.match(supervisionService, /academic_approved/);
+});
+
 test('teaching supervision observation detail supports safe edit actions', async () => {
 	const supervisionApi = await readRepoFile('frontend-school/src/lib/api/supervision.ts');
 	const parentPage = await readRepoFile(

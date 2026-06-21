@@ -384,7 +384,7 @@ pub async fn submit_my_evaluation(
     Ok(Json(ApiResponse::ok(observation)).into_response())
 }
 
-pub async fn submit_observation_for_review(
+pub async fn certify_observation(
     State(state): State<AppState>,
     headers: HeaderMap,
     Path(id): Path<Uuid>,
@@ -399,8 +399,7 @@ pub async fn submit_observation_for_review(
     .await?;
 
     let observation =
-        services::submit_observation_for_review(&context.tenant.pool, context.actor.user_id, id)
-            .await?;
+        services::certify_observation(&context.tenant.pool, context.actor.user_id, id).await?;
 
     Ok(Json(ApiResponse::ok(observation)).into_response())
 }
@@ -415,36 +414,6 @@ pub async fn approve_observation(
 
     let observation =
         services::approve_observation(&context.tenant.pool, context.actor.user_id, id).await?;
-
-    Ok(Json(ApiResponse::ok(observation)).into_response())
-}
-
-pub async fn return_observation(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Path(id): Path<Uuid>,
-    Json(payload): Json<ReturnObservationRequest>,
-) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
-    supervision_access_policy::require_approve_school(&context.actor)?;
-
-    let observation =
-        services::return_observation(&context.tenant.pool, context.actor.user_id, id, payload)
-            .await?;
-
-    Ok(Json(ApiResponse::ok(observation)).into_response())
-}
-
-pub async fn publish_observation(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Path(id): Path<Uuid>,
-) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
-    supervision_access_policy::require_approve_school(&context.actor)?;
-
-    let observation =
-        services::publish_observation(&context.tenant.pool, context.actor.user_id, id).await?;
 
     Ok(Json(ApiResponse::ok(observation)).into_response())
 }
@@ -512,13 +481,8 @@ pub fn routes() -> Router<AppState> {
             "/observations/{id}/evaluations/me/submit",
             post(submit_my_evaluation),
         )
-        .route(
-            "/observations/{id}/submit-review",
-            post(submit_observation_for_review),
-        )
+        .route("/observations/{id}/certify", post(certify_observation))
         .route("/observations/{id}/approve", post(approve_observation))
-        .route("/observations/{id}/return", post(return_observation))
-        .route("/observations/{id}/publish", post(publish_observation))
         .route(
             "/observations/{id}/acknowledge",
             post(acknowledge_observation),

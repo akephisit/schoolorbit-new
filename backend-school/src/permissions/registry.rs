@@ -910,6 +910,6 @@ pub const ALL_PERMISSIONS: &[PermissionDef] = &[
         module: "supervision",
         action: "approve",
         scope: "school",
-        description: "ตรวจสอบ อนุมัติ เผยแพร่ หรือส่งกลับผลนิเทศการสอนทั้งโรงเรียน",
+        description: "ตรวจสอบและอนุมัติผลนิเทศการสอนทั้งโรงเรียนก่อนให้ครูรับทราบผล",
     },
 ];

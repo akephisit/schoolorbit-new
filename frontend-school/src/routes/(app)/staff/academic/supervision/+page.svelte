@@ -29,19 +29,17 @@
 		acknowledgeSupervisionObservation,
 		approveSupervisionObservation,
 		approveSupervisionObservationRequest,
+		certifySupervisionObservation,
 		createSupervisionCycle,
 		createSupervisionTemplate,
 		getSupervisionCycleProgress,
 		listSupervisionCycles,
 		listSupervisionObservations,
 		listSupervisionTemplates,
-		publishSupervisionObservation,
 		requestSupervisionObservation,
-		returnSupervisionObservation,
 		returnSupervisionObservationRequest,
 		saveMySupervisionEvaluation,
 		submitMySupervisionEvaluation,
-		submitSupervisionObservationForReview,
 		updateSupervisionCycle,
 		updateSupervisionTemplate,
 		type CreateSupervisionCycleRequest,
@@ -216,7 +214,6 @@
 	let evaluationObservationId = $state('');
 	let responseDrafts = $state<{ [itemId: string]: ResponseDraft }>({});
 	let acknowledgeComment = $state('');
-	let reviewComment = $state('');
 	let progressCycleId = $state('');
 	let progress = $state<SupervisionCycleProgress | null>(null);
 	let createCycleDialogOpen = $state(false);
@@ -368,14 +365,16 @@
 			selectedEvaluationTemplate?.ratingMax ?? 5
 		)
 	);
-	const reviewableObservations = $derived(
-		observations.filter(
-			(item) =>
-				item.status === 'evaluators_submitted' ||
-				item.status === 'under_review' ||
-				item.status === 'approved'
-		)
+	const certifiableObservations = $derived(
+		observations.filter((item) => item.status === 'evaluators_submitted')
 	);
+	const approvableObservations = $derived(
+		observations.filter((item) => item.status === 'approved')
+	);
+	const approvalWorkflowObservations = $derived([
+		...certifiableObservations,
+		...approvableObservations
+	]);
 	const progressPercent = $derived(
 		progress && progress.totalObservations > 0
 			? Math.round((progress.completedCount / progress.totalObservations) * 100)
@@ -497,12 +496,12 @@
 			requested: 'รออนุมัติ',
 			planned: 'นัดหมายแล้ว',
 			in_progress: 'กำลังประเมิน',
-			evaluators_submitted: 'ผู้ประเมินส่งครบ',
-			under_review: 'รอตรวจทาน',
-			returned: 'ส่งกลับ',
-			approved: 'อนุมัติแล้ว',
-			published: 'เผยแพร่แล้ว',
-			acknowledged: 'รับทราบแล้ว',
+			evaluators_submitted: 'รอรับรองผล',
+			under_review: 'รอรับรองผล',
+			returned: 'ส่งกลับคำขอ',
+			approved: 'รออนุมัติผล',
+			published: 'รอครูรับทราบ',
+			acknowledged: 'เสร็จสิ้น',
 			completed: 'เสร็จสิ้น',
 			cancelled: 'ยกเลิก'
 		};
@@ -1192,16 +1191,16 @@
 		}
 	}
 
-	async function submitForReview(id: string) {
+	async function certifyResult(id: string) {
 		if (!canManageRequests) return;
-		savingAction = `submit-review:${id}`;
+		savingAction = `certify-result:${id}`;
 		try {
-			const response = await submitSupervisionObservationForReview(id);
-			const observation = requireMutationData(response, 'ส่งตรวจทานไม่สำเร็จ');
+			const response = await certifySupervisionObservation(id);
+			const observation = requireMutationData(response, 'รับรองผลไม่สำเร็จ');
 			replaceObservation(observation);
-			toast.success('ส่งตรวจทานแล้ว');
+			toast.success('รับรองผลนิเทศแล้ว');
 		} catch (error) {
-			toast.error(error instanceof Error ? error.message : 'ส่งตรวจทานไม่สำเร็จ');
+			toast.error(error instanceof Error ? error.message : 'รับรองผลไม่สำเร็จ');
 		} finally {
 			savingAction = null;
 		}
@@ -1217,37 +1216,6 @@
 			toast.success('อนุมัติผลนิเทศแล้ว');
 		} catch (error) {
 			toast.error(error instanceof Error ? error.message : 'อนุมัติผลไม่สำเร็จ');
-		} finally {
-			savingAction = null;
-		}
-	}
-
-	async function publishResult(id: string) {
-		if (!canApprove) return;
-		savingAction = `publish-result:${id}`;
-		try {
-			const response = await publishSupervisionObservation(id);
-			const observation = requireMutationData(response, 'เผยแพร่ผลไม่สำเร็จ');
-			replaceObservation(observation);
-			toast.success('เผยแพร่ผลนิเทศแล้ว');
-		} catch (error) {
-			toast.error(error instanceof Error ? error.message : 'เผยแพร่ผลไม่สำเร็จ');
-		} finally {
-			savingAction = null;
-		}
-	}
-
-	async function returnResult(id: string) {
-		if (!canApprove) return;
-		savingAction = `return-result:${id}`;
-		try {
-			const response = await returnSupervisionObservation(id, { comment: reviewComment || null });
-			const observation = requireMutationData(response, 'ส่งกลับผลไม่สำเร็จ');
-			replaceObservation(observation);
-			toast.success('ส่งกลับผลนิเทศแล้ว');
-			reviewComment = '';
-		} catch (error) {
-			toast.error(error instanceof Error ? error.message : 'ส่งกลับผลไม่สำเร็จ');
 		} finally {
 			savingAction = null;
 		}
@@ -1621,7 +1589,7 @@
 
 <PageShell
 	title="นิเทศการสอน"
-	description="จัดรอบนิเทศ จองคาบ ประเมิน ส่งตรวจทาน และรับทราบผลในพื้นที่เดียว"
+	description="จัดรอบนิเทศ จองคาบ ประเมิน รับรองผล อนุมัติผล และรับทราบผลในพื้นที่เดียว"
 >
 	{#snippet actions()}
 		<Button variant="outline" size="sm" onclick={refreshAll} disabled={loading || mutationBusy}>
@@ -1670,7 +1638,7 @@
 			<Tabs.Trigger value="evaluate" disabled={!canEvaluate}>ประเมิน</Tabs.Trigger>
 			<Tabs.Trigger value="cycles" disabled={!canManageSchool}>รอบนิเทศ</Tabs.Trigger>
 			<Tabs.Trigger value="templates" disabled={!canManageSchool}>แบบประเมิน</Tabs.Trigger>
-			<Tabs.Trigger value="reports" disabled={!canReport}>รายงาน</Tabs.Trigger>
+			<Tabs.Trigger value="reports" disabled={!canReport}>รับรอง/อนุมัติ</Tabs.Trigger>
 		</Tabs.List>
 
 		<Tabs.Content value="mine" class="space-y-4">
@@ -2598,8 +2566,11 @@
 				<Card.Header>
 					<Card.Title class="flex items-center gap-2">
 						<BarChart3 class="h-5 w-5" />
-						รายงานความคืบหน้ารอบนิเทศ
+						รับรองและอนุมัติผลนิเทศ
 					</Card.Title>
+					<Card.Description>
+						หัวหน้ากลุ่มสาระรับรองผลก่อน แล้วฝ่ายวิชาการอนุมัติผลเพื่อให้ครูรับทราบ
+					</Card.Description>
 				</Card.Header>
 				<Card.Content class="space-y-4">
 					<div class="flex flex-col gap-2 md:flex-row">
@@ -2629,8 +2600,10 @@
 								<p class="text-xs text-muted-foreground">เสร็จสิ้น/รับทราบ</p>
 							</div>
 							<div class="rounded-md border px-3 py-2">
-								<p class="text-xl font-semibold">{progress.underReviewCount}</p>
-								<p class="text-xs text-muted-foreground">รอตรวจทาน</p>
+								<p class="text-xl font-semibold">
+									{progress.underReviewCount + progress.approvedCount}
+								</p>
+								<p class="text-xs text-muted-foreground">รอรับรอง/อนุมัติ</p>
 							</div>
 							<div class="rounded-md border px-3 py-2">
 								<p class="text-xl font-semibold">{progress.averageRating?.toFixed(2) ?? '-'}</p>
@@ -2647,9 +2620,6 @@
 					{/if}
 
 					<div class="space-y-2">
-						{#if canApprove}
-							<Textarea bind:value={reviewComment} rows={2} placeholder="เหตุผลส่งกลับผลนิเทศ" />
-						{/if}
 						<Table.Root>
 							<Table.Header>
 								<Table.Row>
@@ -2660,14 +2630,14 @@
 								</Table.Row>
 							</Table.Header>
 							<Table.Body>
-								{#if reviewableObservations.length === 0}
+								{#if approvalWorkflowObservations.length === 0}
 									<Table.Row>
 										<Table.Cell colspan={4} class="h-24 text-center text-muted-foreground">
-											ยังไม่มีรายการที่ต้องตรวจทาน
+											ยังไม่มีรายการที่ต้องรับรองหรืออนุมัติ
 										</Table.Cell>
 									</Table.Row>
 								{:else}
-									{#each reviewableObservations as observation (observation.id)}
+									{#each approvalWorkflowObservations as observation (observation.id)}
 										<Table.Row>
 											<Table.Cell>{observation.observedDisplayName ?? 'ครู'}</Table.Cell>
 											<Table.Cell>{observationLessonTitle(observation)}</Table.Cell>
@@ -2683,19 +2653,19 @@
 													<Eye class="h-4 w-4" />
 													รายละเอียด
 												</Button>
-												{#if canManageRequests}
+												{#if canManageRequests && observation.status === 'evaluators_submitted'}
 													<LoadingButton
 														size="sm"
 														variant="outline"
-														onclick={() => submitForReview(observation.id)}
-														loading={savingAction === `submit-review:${observation.id}`}
-														loadingLabel="กำลังส่ง..."
+														onclick={() => certifyResult(observation.id)}
+														loading={savingAction === `certify-result:${observation.id}`}
+														loadingLabel="กำลังรับรอง..."
 														disabled={mutationBusy}
 													>
-														ส่งตรวจทาน
+														รับรองผล
 													</LoadingButton>
 												{/if}
-												{#if canApprove}
+												{#if canApprove && observation.status === 'approved'}
 													<LoadingButton
 														size="sm"
 														variant="outline"
@@ -2704,30 +2674,10 @@
 														loadingLabel="กำลังอนุมัติ..."
 														disabled={mutationBusy}
 													>
-														อนุมัติ
-													</LoadingButton>
-													<LoadingButton
-														size="sm"
-														variant="outline"
-														onclick={() => publishResult(observation.id)}
-														loading={savingAction === `publish-result:${observation.id}`}
-														loadingLabel="กำลังเผยแพร่..."
-														disabled={mutationBusy}
-													>
-														เผยแพร่
-													</LoadingButton>
-													<LoadingButton
-														size="sm"
-														variant="outline"
-														onclick={() => returnResult(observation.id)}
-														loading={savingAction === `return-result:${observation.id}`}
-														loadingLabel="กำลังส่งกลับ..."
-														disabled={mutationBusy}
-													>
-														ส่งกลับ
+														อนุมัติผล
 													</LoadingButton>
 												{/if}
-												{#if !canManageRequests && !canApprove}
+												{#if !(canManageRequests && observation.status === 'evaluators_submitted') && !(canApprove && observation.status === 'approved')}
 													<span class="text-sm text-muted-foreground">-</span>
 												{/if}
 											</Table.Cell>
