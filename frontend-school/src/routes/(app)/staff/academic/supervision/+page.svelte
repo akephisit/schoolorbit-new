@@ -23,7 +23,6 @@
 		getSchoolDays,
 		type AcademicStructureData
 	} from '$lib/api/academic';
-	import { lookupStaff, type StaffLookupItem } from '$lib/api/lookup';
 	import { getMyTimetable, type TimetableEntry } from '$lib/api/timetable';
 	import {
 		acknowledgeSupervisionObservation,
@@ -32,13 +31,14 @@
 		certifySupervisionObservation,
 		createSupervisionCycle,
 		createSupervisionTemplate,
+		getSupervisionEvaluatorAvailability,
 		getSupervisionCycleProgress,
+		getSupervisionTeacherStatusOverview,
 		listSupervisionCycles,
 		listSupervisionObservations,
 		listSupervisionTemplates,
 		requestSupervisionObservation,
 		returnSupervisionObservationRequest,
-		saveMySupervisionEvaluation,
 		submitMySupervisionEvaluation,
 		updateSupervisionCycle,
 		updateSupervisionTemplate,
@@ -48,8 +48,10 @@
 		type SupervisionCycle,
 		type SupervisionCycleStatus,
 		type SupervisionCycleProgress,
+		type SupervisionEvaluatorAvailability,
 		type SupervisionObservation,
 		type SupervisionObservationStatus,
+		type SupervisionTeacherStatusRow,
 		type SupervisionTemplate,
 		type SupervisionTemplateStatus
 	} from '$lib/api/supervision';
@@ -184,14 +186,15 @@
 	let saving = $state(false);
 	let savingAction = $state<string | null>(null);
 	let savingTemplate = $state(false);
-	let savingEvaluation = $state<'draft' | 'submit' | null>(null);
+	let savingEvaluation = $state<'submit' | null>(null);
 	let evaluationDialogOpen = $state(false);
 	let activeTab = $state('mine');
 	let cycles = $state<SupervisionCycle[]>([]);
 	let templates = $state<SupervisionTemplate[]>([]);
 	let observations = $state<SupervisionObservation[]>([]);
 	let timetableEntries = $state<TimetableEntry[]>([]);
-	let staffList = $state<StaffLookupItem[]>([]);
+	let requestEvaluatorAvailability = $state<Record<string, SupervisionEvaluatorAvailability[]>>({});
+	let requestEvaluatorAvailabilityLoading = $state<Record<string, boolean>>({});
 	let academicStructure = $state<AcademicStructureData>({ years: [], semesters: [], levels: [] });
 	let selectedCycleId = $state('');
 	let selectedTimetableEntryId = $state('');
@@ -216,6 +219,8 @@
 	let acknowledgeComment = $state('');
 	let progressCycleId = $state('');
 	let progress = $state<SupervisionCycleProgress | null>(null);
+	let teacherStatusRows = $state<SupervisionTeacherStatusRow[]>([]);
+	let loadingTeacherStatus = $state(false);
 	let createCycleDialogOpen = $state(false);
 	let createTemplateDialogOpen = $state(false);
 	let previewTemplateDialogOpen = $state(false);
@@ -269,7 +274,10 @@
 			canApprove
 	);
 	const canReport = $derived(
-		$can.has(PERMISSIONS.SUPERVISION_READ_SCHOOL) || canManageSchool || canApprove
+		$can.has(PERMISSIONS.SUPERVISION_READ_SCHOOL) ||
+			canManageSchool ||
+			canManageRequests ||
+			canApprove
 	);
 	const activeAcademicYear = $derived(
 		academicStructure.years.find((year) => year.is_active) ?? academicStructure.years[0] ?? null
@@ -851,13 +859,11 @@
 				getAcademicStructure()
 			]);
 			const observationItems = canReadObservations ? await listSupervisionObservations() : [];
-			const staffItems = canManageRequests
-				? await lookupStaff({ activeOnly: true, limit: 1000 })
-				: [];
 			cycles = cycleItems;
 			templates = templateItems;
 			observations = observationItems;
-			staffList = staffItems;
+			requestEvaluatorAvailability = {};
+			requestEvaluatorAvailabilityLoading = {};
 			academicStructure = structure.data;
 			selectedCycleId ||=
 				cycleItems.find((cycle) => cycle.status === 'open')?.id ?? cycleItems[0]?.id ?? '';
@@ -981,9 +987,24 @@
 		return requestEvaluatorIds[observationId] ?? [];
 	}
 
-	function selectedRequestEvaluators(observationId: string): StaffLookupItem[] {
+	function requestEvaluatorOptions(observationId: string): SupervisionEvaluatorAvailability[] {
+		return requestEvaluatorAvailability[observationId] ?? [];
+	}
+
+	function availableRequestEvaluatorOptions(
+		observationId: string
+	): SupervisionEvaluatorAvailability[] {
+		return requestEvaluatorOptions(observationId).filter((evaluator) => evaluator.available);
+	}
+
+	function unavailableRequestEvaluatorCount(observationId: string): number {
+		return requestEvaluatorOptions(observationId).filter((evaluator) => !evaluator.available)
+			.length;
+	}
+
+	function selectedRequestEvaluators(observationId: string): SupervisionEvaluatorAvailability[] {
 		const selectedIds = new Set(selectedRequestEvaluatorIds(observationId));
-		return staffList.filter((staff) => selectedIds.has(staff.id));
+		return requestEvaluatorOptions(observationId).filter((staff) => selectedIds.has(staff.id));
 	}
 
 	function requestEvaluatorPickerOpen(observationId: string): boolean {
@@ -997,8 +1018,51 @@
 		};
 	}
 
-	function toggleRequestEvaluatorForRequest(observationId: string, staff: StaffLookupItem) {
+	async function loadRequestEvaluatorAvailability(observationId: string, force = false) {
 		if (!canManageRequests) return;
+		if (!force && requestEvaluatorAvailability[observationId]) return;
+		requestEvaluatorAvailabilityLoading = {
+			...requestEvaluatorAvailabilityLoading,
+			[observationId]: true
+		};
+		try {
+			const items = await getSupervisionEvaluatorAvailability(observationId);
+			const availableIds = new Set(
+				items.filter((evaluator) => evaluator.available).map((evaluator) => evaluator.id)
+			);
+			requestEvaluatorAvailability = {
+				...requestEvaluatorAvailability,
+				[observationId]: items
+			};
+			requestEvaluatorIds = {
+				...requestEvaluatorIds,
+				[observationId]: selectedRequestEvaluatorIds(observationId).filter((id) =>
+					availableIds.has(id)
+				)
+			};
+		} catch (error) {
+			toast.error(error instanceof Error ? error.message : 'ไม่สามารถตรวจสอบผู้ประเมินที่ว่างได้');
+		} finally {
+			requestEvaluatorAvailabilityLoading = {
+				...requestEvaluatorAvailabilityLoading,
+				[observationId]: false
+			};
+		}
+	}
+
+	function handleRequestEvaluatorPickerOpen(observationId: string, open: boolean) {
+		setRequestEvaluatorPickerOpen(observationId, open);
+		if (open) {
+			void loadRequestEvaluatorAvailability(observationId);
+		}
+	}
+
+	function toggleRequestEvaluatorForRequest(
+		observationId: string,
+		staff: SupervisionEvaluatorAvailability
+	) {
+		if (!canManageRequests) return;
+		if (!staff.available) return;
 		const currentIds = selectedRequestEvaluatorIds(observationId);
 		requestEvaluatorIds = {
 			...requestEvaluatorIds,
@@ -1026,9 +1090,15 @@
 		const { [observationId]: _evaluatorIds, ...remainingEvaluatorIds } = requestEvaluatorIds;
 		const { [observationId]: _comment, ...remainingComments } = requestReturnComments;
 		const { [observationId]: _pickerOpen, ...remainingPickerOpen } = evaluatorPickerOpenByRequest;
+		const { [observationId]: _availability, ...remainingAvailability } =
+			requestEvaluatorAvailability;
+		const { [observationId]: _availabilityLoading, ...remainingAvailabilityLoading } =
+			requestEvaluatorAvailabilityLoading;
 		requestEvaluatorIds = remainingEvaluatorIds;
 		requestReturnComments = remainingComments;
 		evaluatorPickerOpenByRequest = remainingPickerOpen;
+		requestEvaluatorAvailability = remainingAvailability;
+		requestEvaluatorAvailabilityLoading = remainingAvailabilityLoading;
 	}
 
 	async function approveRequest(observationId: string) {
@@ -1052,6 +1122,7 @@
 			toast.success('อนุมัติคำขอและมอบหมายผู้ประเมินแล้ว');
 			clearRequestApprovalState(observationId);
 		} catch (error) {
+			void loadRequestEvaluatorAvailability(observationId, true);
 			toast.error(error instanceof Error ? error.message : 'อนุมัติคำขอไม่สำเร็จ');
 		} finally {
 			savingAction = null;
@@ -1160,30 +1231,26 @@
 		return missing;
 	}
 
-	async function saveEvaluation(submit = false) {
+	async function saveEvaluation() {
 		if (!canEvaluate) return;
 		if (!evaluationObservationId) {
 			toast.error('เลือกรายการประเมินก่อน');
 			return;
 		}
-		if (submit) {
-			const missing = missingRequiredEvaluationLabels();
-			if (missing.length > 0) {
-				toast.error(`กรอกหัวข้อบังคับให้ครบ (${missing.length} ข้อ)`);
-				return;
-			}
+		const missing = missingRequiredEvaluationLabels();
+		if (missing.length > 0) {
+			toast.error(`กรอกหัวข้อบังคับให้ครบ (${missing.length} ข้อ)`);
+			return;
 		}
 
-		savingEvaluation = submit ? 'submit' : 'draft';
+		savingEvaluation = 'submit';
 		try {
 			const payload = evaluationPayload();
-			const response = submit
-				? await submitMySupervisionEvaluation(evaluationObservationId, payload)
-				: await saveMySupervisionEvaluation(evaluationObservationId, payload);
+			const response = await submitMySupervisionEvaluation(evaluationObservationId, payload);
 			const observation = requireMutationData(response, 'บันทึกผลประเมินไม่สำเร็จ');
 			replaceObservation(observation);
 			clearEvaluationDraft();
-			toast.success(submit ? 'ส่งผลประเมินแล้ว' : 'บันทึกแบบร่างแล้ว');
+			toast.success('ส่งผลประเมินแล้ว');
 		} catch (error) {
 			toast.error(error instanceof Error ? error.message : 'บันทึกผลประเมินไม่สำเร็จ');
 		} finally {
@@ -1578,6 +1645,23 @@
 		}
 	}
 
+	async function loadTeacherStatusOverview() {
+		if (!canReport) return;
+		if (!progressCycleId) {
+			toast.error('เลือกรอบนิเทศก่อน');
+			return;
+		}
+
+		loadingTeacherStatus = true;
+		try {
+			teacherStatusRows = await getSupervisionTeacherStatusOverview(progressCycleId);
+		} catch (error) {
+			toast.error(error instanceof Error ? error.message : 'โหลดภาพรวมสถานะครูไม่สำเร็จ');
+		} finally {
+			loadingTeacherStatus = false;
+		}
+	}
+
 	onMount(() => {
 		void refreshAll();
 	});
@@ -1632,12 +1716,13 @@
 	{/if}
 
 	<Tabs.Root bind:value={activeTab} class="space-y-4">
-		<Tabs.List class="grid w-full grid-cols-2 md:grid-cols-6">
+		<Tabs.List class="grid w-full grid-cols-2 md:grid-cols-7">
 			<Tabs.Trigger value="mine">ของฉัน</Tabs.Trigger>
 			<Tabs.Trigger value="requests" disabled={!canManageRequests}>คำขอจอง</Tabs.Trigger>
 			<Tabs.Trigger value="evaluate" disabled={!canEvaluate}>ประเมิน</Tabs.Trigger>
 			<Tabs.Trigger value="cycles" disabled={!canManageSchool}>รอบนิเทศ</Tabs.Trigger>
 			<Tabs.Trigger value="templates" disabled={!canManageSchool}>แบบประเมิน</Tabs.Trigger>
+			<Tabs.Trigger value="overview" disabled={!canReport}>ภาพรวม</Tabs.Trigger>
 			<Tabs.Trigger value="reports" disabled={!canReport}>รับรอง/อนุมัติ</Tabs.Trigger>
 		</Tabs.List>
 
@@ -2110,7 +2195,8 @@
 											</div>
 											<Popover.Root
 												open={requestEvaluatorPickerOpen(observation.id)}
-												onOpenChange={(open) => setRequestEvaluatorPickerOpen(observation.id, open)}
+												onOpenChange={(open) =>
+													handleRequestEvaluatorPickerOpen(observation.id, open)}
 											>
 												<Popover.Trigger>
 													{#snippet child({ props })}
@@ -2120,40 +2206,45 @@
 															role="combobox"
 															aria-expanded={requestEvaluatorPickerOpen(observation.id)}
 															class="w-full justify-between font-normal sm:w-[320px]"
-															disabled={mutationBusy}
+															disabled={mutationBusy ||
+																requestEvaluatorAvailabilityLoading[observation.id]}
 															{...props}
 														>
-															<span class="truncate">เพิ่ม/เลือกผู้ประเมิน</span>
+															<span class="truncate">
+																{requestEvaluatorAvailabilityLoading[observation.id]
+																	? 'กำลังตรวจผู้ประเมินที่ว่าง...'
+																	: 'เพิ่ม/เลือกผู้ประเมิน'}
+															</span>
 															<ChevronsUpDown class="ml-2 h-4 w-4 shrink-0 opacity-50" />
 														</Button>
 													{/snippet}
 												</Popover.Trigger>
 												<Popover.Content class="w-[--bits-popover-trigger-width] p-0">
 													<Command.Root>
-														<Command.Input placeholder="ค้นหาครูผู้ประเมิน..." />
-														<Command.Empty>ไม่พบครู</Command.Empty>
+														<Command.Input placeholder="ค้นหาครูผู้ประเมินที่ว่าง..." />
+														<Command.Empty>ไม่พบครูผู้ประเมินที่ว่าง</Command.Empty>
 														<Command.List class="max-h-72">
 															<Command.Group>
-																{#each staffList as staff (staff.id)}
+																{#each availableRequestEvaluatorOptions(observation.id) as evaluator (evaluator.id)}
 																	<Command.Item
-																		value={`${staff.name} ${staff.title ?? ''} ${staff.id}`}
+																		value={`${evaluator.name} ${evaluator.title ?? ''} ${evaluator.id}`}
 																		onSelect={() =>
-																			toggleRequestEvaluatorForRequest(observation.id, staff)}
+																			toggleRequestEvaluatorForRequest(observation.id, evaluator)}
 																	>
 																		<Check
 																			class={cn(
 																				'mr-2 h-4 w-4',
 																				selectedRequestEvaluatorIds(observation.id).includes(
-																					staff.id
+																					evaluator.id
 																				)
 																					? 'opacity-100'
 																					: 'opacity-0'
 																			)}
 																		/>
-																		<span>{staff.name}</span>
-																		{#if staff.title}
+																		<span>{evaluator.name}</span>
+																		{#if evaluator.title}
 																			<span class="ml-1 text-xs text-muted-foreground"
-																				>({staff.title})</span
+																				>({evaluator.title})</span
 																			>
 																		{/if}
 																	</Command.Item>
@@ -2163,6 +2254,11 @@
 													</Command.Root>
 												</Popover.Content>
 											</Popover.Root>
+											{#if unavailableRequestEvaluatorCount(observation.id) > 0}
+												<p class="text-xs text-muted-foreground">
+													ซ่อนผู้ประเมิน {unavailableRequestEvaluatorCount(observation.id)} คนที่มีงานนิเทศชนช่วงนี้
+												</p>
+											{/if}
 										</div>
 
 										<div class="space-y-2">
@@ -2180,10 +2276,11 @@
 										</div>
 									</div>
 
-									<div class="mt-4 flex flex-wrap justify-end gap-2">
+									<div class="mt-4 flex flex-wrap items-center justify-end gap-2">
 										<Button
 											size="sm"
 											variant="outline"
+											class="h-8"
 											href={`/staff/academic/supervision/${observation.id}`}
 										>
 											<Eye class="h-4 w-4" />
@@ -2561,6 +2658,95 @@
 			</Card.Root>
 		</Tabs.Content>
 
+		<Tabs.Content value="overview" class="space-y-4">
+			<Card.Root>
+				<Card.Header>
+					<Card.Title class="flex items-center gap-2">
+						<BarChart3 class="h-5 w-5" />
+						สถานะครูในรอบนิเทศ
+					</Card.Title>
+					<Card.Description>
+						ดูว่าครูแต่ละคนจองคาบแล้วหรือยัง อยู่ขั้นตอนไหน ใครเป็นผู้นิเทศ และคะแนนล่าสุดเท่าไร
+					</Card.Description>
+				</Card.Header>
+				<Card.Content class="space-y-4">
+					<div class="flex flex-col gap-2 md:flex-row">
+						<Select.Root type="single" bind:value={progressCycleId}>
+							<Select.Trigger class="w-full md:w-[360px]">
+								{cycles.find((cycle) => cycle.id === progressCycleId)?.title ?? 'เลือกรอบนิเทศ'}
+							</Select.Trigger>
+							<Select.Content>
+								{#each cycles as cycle (cycle.id)}
+									<Select.Item value={cycle.id}>{cycleLabel(cycle)}</Select.Item>
+								{/each}
+							</Select.Content>
+						</Select.Root>
+						<LoadingButton
+							onclick={loadTeacherStatusOverview}
+							loading={loadingTeacherStatus}
+							loadingLabel="กำลังโหลด..."
+						>
+							โหลดสถานะครู
+						</LoadingButton>
+					</div>
+
+					<Table.Root>
+						<Table.Header>
+							<Table.Row>
+								<Table.Head>ครู</Table.Head>
+								<Table.Head>หน่วยงาน</Table.Head>
+								<Table.Head>คาบนิเทศ</Table.Head>
+								<Table.Head>สถานะครู</Table.Head>
+								<Table.Head>ขั้นตอนถัดไป</Table.Head>
+								<Table.Head>ผู้ประเมิน</Table.Head>
+								<Table.Head class="text-right">คะแนน</Table.Head>
+							</Table.Row>
+						</Table.Header>
+						<Table.Body>
+							{#if teacherStatusRows.length === 0}
+								<Table.Row>
+									<Table.Cell colspan={7} class="h-24 text-center text-muted-foreground">
+										เลือกและโหลดรอบนิเทศเพื่อดูสถานะครู
+									</Table.Cell>
+								</Table.Row>
+							{:else}
+								{#each teacherStatusRows as row (row.teacherId)}
+									<Table.Row>
+										<Table.Cell class="font-medium">{row.teacherDisplayName}</Table.Cell>
+										<Table.Cell>
+											{row.organizationUnitNames.length > 0
+												? row.organizationUnitNames.join(', ')
+												: '-'}
+										</Table.Cell>
+										<Table.Cell>
+											<div class="space-y-1">
+												<p class="font-medium">{row.lessonTitle ?? '-'}</p>
+												<p class="text-xs text-muted-foreground">{formatDate(row.observedAt)}</p>
+											</div>
+										</Table.Cell>
+										<Table.Cell>
+											<Badge variant="secondary">
+												{row.status ? statusLabel(row.status) : 'ยังไม่จอง'}
+											</Badge>
+										</Table.Cell>
+										<Table.Cell>{row.nextStepLabel}</Table.Cell>
+										<Table.Cell>
+											{row.evaluatorNames.length > 0 ? row.evaluatorNames.join(', ') : '-'}
+										</Table.Cell>
+										<Table.Cell class="text-right">
+											{row.averageRating === null || row.averageRating === undefined
+												? '-'
+												: row.averageRating.toFixed(2)}
+										</Table.Cell>
+									</Table.Row>
+								{/each}
+							{/if}
+						</Table.Body>
+					</Table.Root>
+				</Card.Content>
+			</Card.Root>
+		</Tabs.Content>
+
 		<Tabs.Content value="reports" class="space-y-4">
 			<Card.Root>
 				<Card.Header>
@@ -2644,42 +2830,45 @@
 											<Table.Cell>
 												<Badge variant="secondary">{statusLabel(observation.status)}</Badge>
 											</Table.Cell>
-											<Table.Cell class="space-x-2 text-right">
-												<Button
-													size="sm"
-													variant="outline"
-													href={`/staff/academic/supervision/${observation.id}`}
-												>
-													<Eye class="h-4 w-4" />
-													รายละเอียด
-												</Button>
-												{#if canManageRequests && observation.status === 'evaluators_submitted'}
-													<LoadingButton
+											<Table.Cell>
+												<div class="flex flex-wrap items-center justify-end gap-2">
+													<Button
 														size="sm"
 														variant="outline"
-														onclick={() => certifyResult(observation.id)}
-														loading={savingAction === `certify-result:${observation.id}`}
-														loadingLabel="กำลังรับรอง..."
-														disabled={mutationBusy}
+														class="h-8"
+														href={`/staff/academic/supervision/${observation.id}`}
 													>
-														รับรองผล
-													</LoadingButton>
-												{/if}
-												{#if canApprove && observation.status === 'approved'}
-													<LoadingButton
-														size="sm"
-														variant="outline"
-														onclick={() => approveResult(observation.id)}
-														loading={savingAction === `approve-result:${observation.id}`}
-														loadingLabel="กำลังอนุมัติ..."
-														disabled={mutationBusy}
-													>
-														อนุมัติผล
-													</LoadingButton>
-												{/if}
-												{#if !(canManageRequests && observation.status === 'evaluators_submitted') && !(canApprove && observation.status === 'approved')}
-													<span class="text-sm text-muted-foreground">-</span>
-												{/if}
+														<Eye class="h-4 w-4" />
+														รายละเอียด
+													</Button>
+													{#if canManageRequests && observation.status === 'evaluators_submitted'}
+														<LoadingButton
+															size="sm"
+															variant="outline"
+															onclick={() => certifyResult(observation.id)}
+															loading={savingAction === `certify-result:${observation.id}`}
+															loadingLabel="กำลังรับรอง..."
+															disabled={mutationBusy}
+														>
+															รับรองผล
+														</LoadingButton>
+													{/if}
+													{#if canApprove && observation.status === 'approved'}
+														<LoadingButton
+															size="sm"
+															variant="outline"
+															onclick={() => approveResult(observation.id)}
+															loading={savingAction === `approve-result:${observation.id}`}
+															loadingLabel="กำลังอนุมัติ..."
+															disabled={mutationBusy}
+														>
+															อนุมัติผล
+														</LoadingButton>
+													{/if}
+													{#if !(canManageRequests && observation.status === 'evaluators_submitted') && !(canApprove && observation.status === 'approved')}
+														<span class="text-sm text-muted-foreground">-</span>
+													{/if}
+												</div>
 											</Table.Cell>
 										</Table.Row>
 									{/each}
@@ -2827,16 +3016,7 @@
 					ปิด
 				</Button>
 				<LoadingButton
-					variant="outline"
-					onclick={() => saveEvaluation(false)}
-					loading={savingEvaluation === 'draft'}
-					loadingLabel="กำลังบันทึก..."
-					disabled={savingEvaluation !== null}
-				>
-					บันทึกร่าง
-				</LoadingButton>
-				<LoadingButton
-					onclick={() => saveEvaluation(true)}
+					onclick={saveEvaluation}
 					loading={savingEvaluation === 'submit'}
 					loadingLabel="กำลังส่ง..."
 					disabled={savingEvaluation !== null}

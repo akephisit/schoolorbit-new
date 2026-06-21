@@ -6,6 +6,8 @@ use sqlx::{PgPool, Postgres, QueryBuilder, Row};
 use uuid::Uuid;
 
 use crate::error::AppError;
+use crate::modules::academic::models::timetable::TimetableEntry;
+use crate::modules::academic::services::timetable_service::{self, TimetableFilter};
 use crate::modules::supervision::models::{
     AcknowledgeObservationRequest, ApproveObservationRequest, CancelObservationRequest,
     CreateSupervisionCycleRequest, CreateSupervisionCycleTargetRequest,
@@ -14,9 +16,10 @@ use crate::modules::supervision::models::{
     LessonSnapshot, ManualLesson, ManualLessonInput, ReplaceObservationEvaluatorsRequest,
     RequestSupervisionObservationRequest, ReturnObservationRequest, SaveEvaluationRequest,
     SupervisionAction, SupervisionCycle, SupervisionCycleProgress, SupervisionCycleStatus,
-    SupervisionCycleTarget, SupervisionEvaluator, SupervisionEvaluatorStatus,
-    SupervisionObservation, SupervisionObservationFilter, SupervisionObservationStatus,
-    SupervisionTargetType, SupervisionTemplate, SupervisionTemplateItem,
+    SupervisionCycleTarget, SupervisionEvaluator, SupervisionEvaluatorAvailability,
+    SupervisionEvaluatorConflict, SupervisionEvaluatorStatus, SupervisionObservation,
+    SupervisionObservationFilter, SupervisionObservationStatus, SupervisionTargetType,
+    SupervisionTeacherStatusRow, SupervisionTemplate, SupervisionTemplateItem,
     SupervisionTemplateItemType, SupervisionTemplateSection, SupervisionTemplateStatus,
     SupervisionTemplateStep, SupervisionTemplateStepActionKind, SupervisionTemplateStepActorKind,
     UpdateRequestedObservationRequest, UpdateSupervisionCycleRequest,
@@ -249,9 +252,44 @@ struct SupervisionActionRow {
 }
 
 #[derive(Debug, sqlx::FromRow)]
+struct EvaluatorAvailabilityRow {
+    id: Uuid,
+    title: Option<String>,
+    first_name: String,
+    last_name: String,
+    conflict_observation_id: Option<Uuid>,
+    conflict_observed_display_name: Option<String>,
+    conflict_observed_at: Option<DateTime<Utc>>,
+    conflict_subject_name: Option<String>,
+    conflict_period_label: Option<String>,
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct EvaluatorConflictRow {
+    evaluator_display_name: Option<String>,
+    observed_display_name: Option<String>,
+    subject_name: Option<String>,
+    period_label: Option<String>,
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct TeacherStatusOverviewRow {
+    teacher_id: Uuid,
+    teacher_display_name: String,
+    organization_unit_names: Vec<String>,
+    observation_id: Option<Uuid>,
+    status: Option<String>,
+    observed_at: Option<DateTime<Utc>>,
+    lesson_title: Option<String>,
+    evaluator_names: Vec<String>,
+    average_rating: Option<f64>,
+}
+
+#[derive(Debug, sqlx::FromRow)]
 struct CycleForRequestRow {
     id: Uuid,
     template_id: Uuid,
+    academic_semester_id: Option<Uuid>,
     status: String,
     booking_opens_at: Option<DateTime<Utc>>,
     booking_closes_at: Option<DateTime<Utc>>,
@@ -850,6 +888,86 @@ pub async fn get_observation(pool: &PgPool, id: Uuid) -> Result<SupervisionObser
     observation_from_row(pool, row).await
 }
 
+pub async fn evaluator_availability(
+    pool: &PgPool,
+    observation_id: Uuid,
+) -> Result<Vec<SupervisionEvaluatorAvailability>, AppError> {
+    let observation = get_observation(pool, observation_id).await?;
+    let conflict_statuses = evaluator_conflict_status_codes()
+        .iter()
+        .map(|status| (*status).to_string())
+        .collect::<Vec<_>>();
+
+    let rows = sqlx::query_as::<_, EvaluatorAvailabilityRow>(
+        r#"
+        SELECT u.id, u.title, u.first_name, u.last_name,
+               conflict.observation_id AS conflict_observation_id,
+               conflict.observed_display_name AS conflict_observed_display_name,
+               conflict.observed_at AS conflict_observed_at,
+               conflict.subject_name AS conflict_subject_name,
+               conflict.period_label AS conflict_period_label
+        FROM users u
+        LEFT JOIN LATERAL (
+            SELECT o.id AS observation_id,
+                   NULLIF(TRIM(CONCAT(COALESCE(observed.title, ''), observed.first_name, ' ', observed.last_name)), '')
+                       AS observed_display_name,
+                   o.observed_at,
+                   COALESCE(NULLIF(o.manual_subject_name, ''), NULLIF(o.lesson_snapshot->>'subjectName', ''))
+                       AS subject_name,
+                   COALESCE(NULLIF(o.manual_period_label, ''), NULLIF(o.lesson_snapshot->>'periodLabel', ''))
+                       AS period_label
+            FROM supervision_evaluators e
+            JOIN supervision_observations o ON o.id = e.observation_id
+            JOIN users observed ON observed.id = o.observed_user_id
+            WHERE e.evaluator_user_id = u.id
+              AND o.id <> $1
+              AND o.observed_at = $2
+              AND o.status = ANY($3::text[])
+            ORDER BY o.approved_at DESC NULLS LAST, o.created_at DESC
+            LIMIT 1
+        ) conflict ON true
+        WHERE u.user_type = 'staff'
+          AND u.status = 'active'
+          AND u.id <> $4
+        ORDER BY (conflict.observation_id IS NOT NULL), u.first_name, u.last_name
+        "#,
+    )
+    .bind(observation_id)
+    .bind(observation.observed_at)
+    .bind(&conflict_statuses)
+    .bind(observation.observed_user_id)
+    .fetch_all(pool)
+    .await
+    .map_err(|error| {
+        tracing::error!("Failed to load supervision evaluator availability: {}", error);
+        AppError::InternalServerError("ไม่สามารถตรวจสอบผู้ประเมินที่ว่างได้".to_string())
+    })?;
+
+    Ok(rows
+        .into_iter()
+        .map(evaluator_availability_from_row)
+        .collect())
+}
+
+pub async fn observation_timetable_options(
+    pool: &PgPool,
+    observation_id: Uuid,
+) -> Result<Vec<TimetableEntry>, AppError> {
+    let observation = get_observation(pool, observation_id).await?;
+    let cycle = load_cycle_for_request(pool, observation.cycle_id).await?;
+
+    timetable_service::list_entries(
+        pool,
+        TimetableFilter {
+            instructor_id: Some(observation.observed_user_id),
+            academic_semester_id: cycle.academic_semester_id,
+            include_team_ghosts: true,
+            ..TimetableFilter::default()
+        },
+    )
+    .await
+}
+
 pub async fn request_observation(
     pool: &PgPool,
     actor_user_id: Uuid,
@@ -1045,6 +1163,18 @@ pub async fn update_observation(
         manual_lesson,
     )
     .await?;
+    let evaluator_user_ids = current
+        .evaluators
+        .iter()
+        .map(|evaluator| evaluator.evaluator_user_id)
+        .collect::<Vec<_>>();
+    validate_evaluator_availability_for_observation(
+        pool,
+        observation_id,
+        lesson.observed_at,
+        &evaluator_user_ids,
+    )
+    .await?;
 
     sqlx::query(
         r#"
@@ -1113,6 +1243,18 @@ pub async fn replace_observation_evaluators(
             "ครูผู้ถูกนิเทศเป็นผู้ประเมินรายการของตนเองไม่ได้".to_string(),
         ));
     }
+    let requested_evaluator_user_ids = input
+        .evaluators
+        .iter()
+        .map(|evaluator| evaluator.evaluator_user_id)
+        .collect::<Vec<_>>();
+    validate_evaluator_availability_for_observation(
+        pool,
+        observation_id,
+        current.observed_at,
+        &requested_evaluator_user_ids,
+    )
+    .await?;
 
     let existing_states = current
         .evaluators
@@ -1280,6 +1422,18 @@ pub async fn approve_observation_request(
             "ครูผู้ถูกนิเทศเป็นผู้ประเมินรายการของตนเองไม่ได้".to_string(),
         ));
     }
+    let requested_evaluator_user_ids = input
+        .evaluators
+        .iter()
+        .map(|evaluator| evaluator.evaluator_user_id)
+        .collect::<Vec<_>>();
+    validate_evaluator_availability_for_observation(
+        pool,
+        observation_id,
+        observation.observed_at,
+        &requested_evaluator_user_ids,
+    )
+    .await?;
 
     let mut tx = pool.begin().await.map_err(|error| {
         tracing::error!(
@@ -1355,7 +1509,7 @@ pub async fn return_observation_request(
     .await
 }
 
-pub async fn save_my_evaluation(
+async fn save_my_evaluation(
     pool: &PgPool,
     evaluator_user_id: Uuid,
     observation_id: Uuid,
@@ -1590,6 +1744,127 @@ pub async fn cycle_progress(
         cancelled_count: row.try_get("cancelled_count").unwrap_or(0),
         average_rating,
     })
+}
+
+pub async fn cycle_teacher_status(
+    pool: &PgPool,
+    access: SupervisionObservationListAccess,
+    cycle_id: Uuid,
+) -> Result<Vec<SupervisionTeacherStatusRow>, AppError> {
+    if !access.school && access.organization_unit_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let mut builder = QueryBuilder::<Postgres>::new(
+        r#"
+        SELECT u.id AS teacher_id,
+               COALESCE(NULLIF(TRIM(CONCAT(COALESCE(u.title, ''), u.first_name, ' ', u.last_name)), ''), u.username)
+                   AS teacher_display_name,
+               COALESCE(units.organization_unit_names, ARRAY[]::text[]) AS organization_unit_names,
+               latest.id AS observation_id,
+               latest.status,
+               latest.observed_at,
+               NULLIF(
+                   CONCAT_WS(
+                       ' / ',
+                       NULLIF(COALESCE(latest.manual_subject_name, latest.lesson_snapshot->>'subjectName'), ''),
+                       NULLIF(COALESCE(latest.manual_period_label, latest.lesson_snapshot->>'periodLabel'), ''),
+                       NULLIF(COALESCE(latest.manual_classroom_label, latest.lesson_snapshot->>'classroomLabel'), '')
+                   ),
+                   ''
+               ) AS lesson_title,
+               COALESCE(evaluators.evaluator_names, ARRAY[]::text[]) AS evaluator_names,
+               rating.average_rating
+        FROM users u
+        LEFT JOIN LATERAL (
+            SELECT ARRAY_AGG(ou.name ORDER BY om.is_primary DESC, ou.name) AS organization_unit_names
+            FROM organization_members om
+            JOIN organization_units ou ON ou.id = om.organization_unit_id
+            WHERE om.user_id = u.id
+              AND (om.ended_at IS NULL OR om.ended_at > CURRENT_DATE)
+        ) units ON true
+        LEFT JOIN LATERAL (
+            SELECT o.*
+            FROM supervision_observations o
+            WHERE o.cycle_id =
+        "#,
+    );
+    builder.push_bind(cycle_id);
+    builder.push(
+        r#"
+              AND o.observed_user_id = u.id
+              AND o.status <> 'cancelled'
+            ORDER BY o.updated_at DESC, o.created_at DESC
+            LIMIT 1
+        ) latest ON true
+        LEFT JOIN LATERAL (
+            SELECT ARRAY_AGG(
+                       COALESCE(
+                           NULLIF(TRIM(CONCAT(COALESCE(eu.title, ''), eu.first_name, ' ', eu.last_name)), ''),
+                           eu.username
+                       )
+                       ORDER BY e.is_required DESC, e.created_at
+                   ) AS evaluator_names
+            FROM supervision_evaluators e
+            JOIN users eu ON eu.id = e.evaluator_user_id
+            WHERE e.observation_id = latest.id
+        ) evaluators ON latest.id IS NOT NULL
+        LEFT JOIN LATERAL (
+            SELECT AVG(evaluator_average)::double precision AS average_rating
+            FROM (
+                SELECT AVG(r.rating_score)::double precision AS evaluator_average
+                FROM supervision_evaluators e
+                JOIN supervision_evaluator_responses r ON r.evaluator_id = e.id
+                JOIN supervision_template_items i ON i.id = r.template_item_id
+                WHERE e.observation_id = latest.id
+                  AND e.status = 'submitted'
+                  AND i.item_type = 'rating'
+                  AND r.rating_score IS NOT NULL
+                GROUP BY e.id
+            ) evaluator_averages
+        ) rating ON latest.id IS NOT NULL
+        WHERE u.user_type = 'staff'
+          AND u.status = 'active'
+        "#,
+    );
+
+    if !access.school {
+        builder.push(
+            r#"
+          AND EXISTS (
+              SELECT 1
+              FROM organization_members om_scope
+              WHERE om_scope.user_id = u.id
+                AND om_scope.organization_unit_id = ANY(
+            "#,
+        );
+        builder.push_bind(access.organization_unit_ids);
+        builder.push(
+            r#"
+                )
+                AND (om_scope.ended_at IS NULL OR om_scope.ended_at > CURRENT_DATE)
+          )
+            "#,
+        );
+    }
+
+    builder.push(" ORDER BY u.first_name, u.last_name, u.username");
+
+    let rows = builder
+        .build_query_as::<TeacherStatusOverviewRow>()
+        .fetch_all(pool)
+        .await
+        .map_err(|error| {
+            tracing::error!(
+                "Failed to load supervision teacher status overview: {}",
+                error
+            );
+            AppError::InternalServerError("ไม่สามารถโหลดภาพรวมสถานะครูได้".to_string())
+        })?;
+
+    rows.into_iter()
+        .map(teacher_status_from_row)
+        .collect::<Result<Vec<_>, _>>()
 }
 
 fn target_rule_matches(rule: &SupervisionTargetRule, staff_match: &SupervisionTargetMatch) -> bool {
@@ -2361,6 +2636,46 @@ fn action_from_row(row: SupervisionActionRow) -> Result<SupervisionAction, AppEr
     })
 }
 
+fn teacher_status_from_row(
+    row: TeacherStatusOverviewRow,
+) -> Result<SupervisionTeacherStatusRow, AppError> {
+    let status = parse_optional_observation_status(row.status)?;
+    Ok(SupervisionTeacherStatusRow {
+        teacher_id: row.teacher_id,
+        teacher_display_name: row.teacher_display_name,
+        organization_unit_names: row.organization_unit_names,
+        observation_id: row.observation_id,
+        status,
+        observed_at: row.observed_at,
+        lesson_title: row.lesson_title,
+        evaluator_names: row.evaluator_names,
+        average_rating: row.average_rating,
+        next_step_label: teacher_status_next_step_label(status),
+    })
+}
+
+fn teacher_status_next_step_label(status: Option<SupervisionObservationStatus>) -> String {
+    match status {
+        None => "ยังไม่จองคาบนิเทศ",
+        Some(SupervisionObservationStatus::Requested) => "รอหัวหน้าหน่วยงานอนุมัติคำขอ",
+        Some(SupervisionObservationStatus::Planned | SupervisionObservationStatus::InProgress) => {
+            "รอผู้ประเมินส่งผล"
+        }
+        Some(
+            SupervisionObservationStatus::EvaluatorsSubmitted
+            | SupervisionObservationStatus::UnderReview,
+        ) => "รอหัวหน้ากลุ่มสาระรับรองผล",
+        Some(SupervisionObservationStatus::Returned) => "รอครูแก้ไขคำขอ",
+        Some(SupervisionObservationStatus::Approved) => "รอฝ่ายวิชาการอนุมัติผล",
+        Some(SupervisionObservationStatus::Published) => "รอครูรับทราบผล",
+        Some(
+            SupervisionObservationStatus::Acknowledged | SupervisionObservationStatus::Completed,
+        ) => "เสร็จสิ้น",
+        Some(SupervisionObservationStatus::Cancelled) => "ยกเลิก",
+    }
+    .to_string()
+}
+
 async fn fetch_observation_average_rating(
     pool: &PgPool,
     observation_id: Uuid,
@@ -2416,7 +2731,8 @@ async fn load_cycle_for_request(
 ) -> Result<CycleForRequestRow, AppError> {
     sqlx::query_as::<_, CycleForRequestRow>(
         r#"
-        SELECT id, template_id, status, booking_opens_at, booking_closes_at, starts_at, ends_at
+        SELECT id, template_id, academic_semester_id, status,
+               booking_opens_at, booking_closes_at, starts_at, ends_at
         FROM supervision_cycles
         WHERE id = $1
         "#,
@@ -3092,6 +3408,136 @@ fn parse_evaluator_status(code: &str) -> Result<SupervisionEvaluatorStatus, AppE
     })
 }
 
+pub fn evaluator_conflict_status_codes() -> &'static [&'static str] {
+    &[
+        "planned",
+        "in_progress",
+        "evaluators_submitted",
+        "approved",
+        "published",
+        "completed",
+    ]
+}
+
+fn evaluator_availability_from_row(
+    row: EvaluatorAvailabilityRow,
+) -> SupervisionEvaluatorAvailability {
+    let name = format!("{} {}", row.first_name, row.last_name);
+    let conflict = row
+        .conflict_observation_id
+        .zip(row.conflict_observed_at)
+        .map(
+            |(observation_id, observed_at)| SupervisionEvaluatorConflict {
+                observation_id,
+                observed_display_name: row.conflict_observed_display_name.clone(),
+                observed_at,
+                lesson_title: conflict_lesson_title(
+                    row.conflict_subject_name.as_deref(),
+                    row.conflict_period_label.as_deref(),
+                ),
+            },
+        );
+    let conflict_reason = conflict.as_ref().map(|conflict| {
+        let observed_name = conflict
+            .observed_display_name
+            .as_deref()
+            .unwrap_or("ครูอีกคน");
+        let lesson = conflict.lesson_title.as_deref().unwrap_or("คาบเดียวกัน");
+        format!("มีงานนิเทศ {observed_name} ({lesson}) ในช่วงเวลาเดียวกัน")
+    });
+
+    SupervisionEvaluatorAvailability {
+        id: row.id,
+        name,
+        title: row.title,
+        available: conflict.is_none(),
+        conflict_reason,
+        conflict,
+    }
+}
+
+fn conflict_lesson_title(subject_name: Option<&str>, period_label: Option<&str>) -> Option<String> {
+    match (
+        subject_name.filter(|value| !value.trim().is_empty()),
+        period_label.filter(|value| !value.trim().is_empty()),
+    ) {
+        (Some(subject), Some(period)) => Some(format!("{subject} / {period}")),
+        (Some(subject), None) => Some(subject.to_string()),
+        (None, Some(period)) => Some(period.to_string()),
+        (None, None) => None,
+    }
+}
+
+async fn validate_evaluator_availability_for_observation(
+    pool: &PgPool,
+    observation_id: Uuid,
+    observed_at: DateTime<Utc>,
+    evaluator_user_ids: &[Uuid],
+) -> Result<(), AppError> {
+    if evaluator_user_ids.is_empty() {
+        return Ok(());
+    }
+
+    let conflict_statuses = evaluator_conflict_status_codes()
+        .iter()
+        .map(|status| (*status).to_string())
+        .collect::<Vec<_>>();
+    let conflict = sqlx::query_as::<_, EvaluatorConflictRow>(
+        r#"
+        SELECT NULLIF(TRIM(CONCAT(COALESCE(evaluator.title, ''), evaluator.first_name, ' ', evaluator.last_name)), '')
+                   AS evaluator_display_name,
+               NULLIF(TRIM(CONCAT(COALESCE(observed.title, ''), observed.first_name, ' ', observed.last_name)), '')
+                   AS observed_display_name,
+               COALESCE(NULLIF(o.manual_subject_name, ''), NULLIF(o.lesson_snapshot->>'subjectName', ''))
+                   AS subject_name,
+               COALESCE(NULLIF(o.manual_period_label, ''), NULLIF(o.lesson_snapshot->>'periodLabel', ''))
+                   AS period_label
+        FROM supervision_evaluators e
+        JOIN supervision_observations o ON o.id = e.observation_id
+        JOIN users evaluator ON evaluator.id = e.evaluator_user_id
+        JOIN users observed ON observed.id = o.observed_user_id
+        WHERE e.evaluator_user_id = ANY($1::uuid[])
+          AND o.id <> $2
+          AND o.observed_at = $3
+          AND o.status = ANY($4::text[])
+        ORDER BY o.approved_at DESC NULLS LAST, o.created_at DESC
+        LIMIT 1
+        "#,
+    )
+    .bind(evaluator_user_ids)
+    .bind(observation_id)
+    .bind(observed_at)
+    .bind(&conflict_statuses)
+    .fetch_optional(pool)
+    .await
+    .map_err(|error| {
+        tracing::error!("Failed to validate supervision evaluator availability: {}", error);
+        AppError::InternalServerError("ไม่สามารถตรวจสอบผู้ประเมินที่ว่างได้".to_string())
+    })?;
+
+    if let Some(conflict) = conflict {
+        let evaluator_name = conflict
+            .evaluator_display_name
+            .as_deref()
+            .unwrap_or("ผู้ประเมินที่เลือก");
+        let observed_name = conflict
+            .observed_display_name
+            .as_deref()
+            .unwrap_or("ครูอีกคน");
+        let lesson = conflict_lesson_title(
+            conflict.subject_name.as_deref(),
+            conflict.period_label.as_deref(),
+        )
+        .unwrap_or_else(|| "คาบเดียวกัน".to_string());
+
+        return Err(AppError::ValidationError(format!(
+            "{evaluator_name} มีงานนิเทศ {observed_name} ({lesson}) ในช่วงเวลาเดียวกัน"
+        )));
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -3296,6 +3742,21 @@ mod tests {
         ];
 
         assert!(all_required_evaluators_submitted(&submitted_states));
+    }
+
+    #[test]
+    fn evaluator_conflicts_count_only_approved_or_active_observations() {
+        let conflict_statuses = evaluator_conflict_status_codes();
+
+        assert!(conflict_statuses.contains(&"planned"));
+        assert!(conflict_statuses.contains(&"in_progress"));
+        assert!(conflict_statuses.contains(&"evaluators_submitted"));
+        assert!(conflict_statuses.contains(&"approved"));
+        assert!(conflict_statuses.contains(&"published"));
+        assert!(conflict_statuses.contains(&"completed"));
+        assert!(!conflict_statuses.contains(&"requested"));
+        assert!(!conflict_statuses.contains(&"returned"));
+        assert!(!conflict_statuses.contains(&"cancelled"));
     }
 
     #[test]

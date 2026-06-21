@@ -13,7 +13,9 @@
 	import {
 		cancelRequestedSupervisionObservation,
 		cancelSupervisionObservation,
+		getSupervisionEvaluatorAvailability,
 		getSupervisionObservation,
+		getSupervisionObservationTimetableOptions,
 		getSupervisionTemplate,
 		listSupervisionCycles,
 		replaceSupervisionObservationEvaluators,
@@ -21,12 +23,13 @@
 		updateSupervisionObservation,
 		type ManualLesson,
 		type SupervisionCycle,
+		type SupervisionEvaluatorAvailability,
 		type SupervisionEvaluator,
 		type SupervisionObservation,
 		type SupervisionObservationStatus,
 		type SupervisionTemplate
 	} from '$lib/api/supervision';
-	import { lookupStaff, type StaffLookupItem } from '$lib/api/lookup';
+	import type { TimetableEntry } from '$lib/api/timetable';
 	import { PERMISSIONS } from '$lib/permissions/registry';
 	import { authStore } from '$lib/stores/auth';
 	import { can } from '$lib/stores/permissions';
@@ -41,6 +44,7 @@
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import * as Popover from '$lib/components/ui/popover';
+	import * as Table from '$lib/components/ui/table';
 	import { Textarea } from '$lib/components/ui/textarea';
 	import type { PageData } from './$types';
 
@@ -67,7 +71,13 @@
 	let observation = $state<SupervisionObservation | null>(null);
 	let template = $state<SupervisionTemplate | null>(null);
 	let cycles = $state<SupervisionCycle[]>([]);
-	let staffList = $state<StaffLookupItem[]>([]);
+	let availableEvaluators = $state<SupervisionEvaluatorAvailability[]>([]);
+	let loadingEvaluatorAvailability = $state(false);
+	let editTimetableEntries = $state<TimetableEntry[]>([]);
+	let loadingEditTimetable = $state(false);
+	let selectedEditTimetableEntryId = $state('');
+	let selectedEditTimetableDate = $state('');
+	let editWeekStartDate = $state('');
 	let editLessonOpen = $state(false);
 	let editEvaluatorsOpen = $state(false);
 	let evaluatorPickerOpen = $state(false);
@@ -121,7 +131,13 @@
 	const cycle = $derived(cycles.find((item) => item.id === observation?.cycleId) ?? null);
 	const pageTitle = $derived(observation?.observedDisplayName ?? 'รายละเอียดรายการนิเทศ');
 	const selectedEvaluators = $derived(
-		staffList.filter((staff) => selectedEvaluatorIds.includes(staff.id))
+		availableEvaluators.filter((staff) => selectedEvaluatorIds.includes(staff.id))
+	);
+	const unavailableEvaluatorCount = $derived(
+		availableEvaluators.filter((evaluator) => !evaluator.available).length
+	);
+	const selectedEditTimetableEntry = $derived(
+		editTimetableEntries.find((entry) => entry.id === selectedEditTimetableEntryId) ?? null
 	);
 
 	onMount(loadPage);
@@ -154,7 +170,7 @@
 		return (
 			{
 				assigned: 'มอบหมายแล้ว',
-				draft: 'บันทึกร่าง',
+				draft: 'ยังไม่ส่ง',
 				submitted: 'ส่งผลแล้ว'
 			}[status] ?? status
 		);
@@ -170,7 +186,7 @@
 				planned: 'วางแผน/อนุมัติคำขอ',
 				returned: 'ส่งกลับคำขอ',
 				request_returned: 'ส่งกลับคำขอ',
-				evaluator_draft_saved: 'บันทึกร่างผลประเมิน',
+				evaluator_draft_saved: 'บันทึกผลประเมินชั่วคราว',
 				evaluator_submitted: 'ส่งผลประเมิน',
 				submitted_for_review: 'เข้าคิวรับรองผล',
 				subject_group_certified: 'รับรองผล',
@@ -213,6 +229,163 @@
 
 	function toIsoDateTime(date: string, time: string): string {
 		return new Date(`${date}T${time || '00:00'}`).toISOString();
+	}
+
+	function parseLocalDate(date: string): Date {
+		const [year = '1970', month = '1', day = '1'] = date.split('-');
+		return new Date(Number(year), Number(month) - 1, Number(day));
+	}
+
+	function toLocalDateInputValue(date: Date): string {
+		const year = date.getFullYear();
+		const month = String(date.getMonth() + 1).padStart(2, '0');
+		const day = String(date.getDate()).padStart(2, '0');
+		return `${year}-${month}-${day}`;
+	}
+
+	function addDays(date: Date, days: number): Date {
+		return new Date(date.getFullYear(), date.getMonth(), date.getDate() + days);
+	}
+
+	function startOfWeek(date: Date): Date {
+		const mondayOffset = (date.getDay() + 6) % 7;
+		return addDays(date, -mondayOffset);
+	}
+
+	function addWeeks(date: string, weeks: number): string {
+		return toLocalDateInputValue(addDays(parseLocalDate(date), weeks * 7));
+	}
+
+	function editTimetableDayValues(): string[] {
+		const order: TimetableEntry['day_of_week'][] = [
+			'MON',
+			'TUE',
+			'WED',
+			'THU',
+			'FRI',
+			'SAT',
+			'SUN'
+		];
+		const days = new Set(editTimetableEntries.map((entry) => entry.day_of_week));
+		return order.filter((day) => days.has(day));
+	}
+
+	function editTimetableDayLabel(day: string): string {
+		return (
+			{
+				MON: 'จันทร์',
+				TUE: 'อังคาร',
+				WED: 'พุธ',
+				THU: 'พฤหัสบดี',
+				FRI: 'ศุกร์',
+				SAT: 'เสาร์',
+				SUN: 'อาทิตย์'
+			}[day] ?? day
+		);
+	}
+
+	function dateForEditTimetableDay(day: string): string {
+		const offsets: Record<string, number> = {
+			MON: 0,
+			TUE: 1,
+			WED: 2,
+			THU: 3,
+			FRI: 4,
+			SAT: 5,
+			SUN: 6
+		};
+		const weekStart = editWeekStartDate || toLocalDateInputValue(startOfWeek(new Date()));
+		return toLocalDateInputValue(addDays(parseLocalDate(weekStart), offsets[day] ?? 0));
+	}
+
+	function formatShortDate(date: string): string {
+		return new Intl.DateTimeFormat('th-TH', {
+			day: 'numeric',
+			month: 'short'
+		}).format(parseLocalDate(date));
+	}
+
+	function editTimetableObservedAt(entry: TimetableEntry, observedDate: string): string {
+		const startTime = entry.start_time?.slice(0, 5) || '08:00';
+		return toIsoDateTime(observedDate, startTime);
+	}
+
+	function editDateInCycle(date: string): boolean {
+		if (!cycle) return true;
+		return date >= formatDateInput(cycle.startsAt) && date <= formatDateInput(cycle.endsAt);
+	}
+
+	function editTimetablePeriodKey(entry: TimetableEntry): string {
+		return (
+			entry.period_id ||
+			`${entry.start_time ?? ''}-${entry.end_time ?? ''}-${entry.period_name ?? ''}`
+		);
+	}
+
+	function editTimetablePeriodLabel(entry: TimetableEntry): string {
+		return entry.period_name || entry.title || 'ไม่ระบุคาบ';
+	}
+
+	function editTimetableTimeLabel(entry: TimetableEntry): string {
+		if (!entry.start_time && !entry.end_time) return '';
+		return `${entry.start_time?.slice(0, 5) ?? ''}-${entry.end_time?.slice(0, 5) ?? ''}`;
+	}
+
+	function editTimetablePeriodSort(entry: TimetableEntry): number {
+		if (typeof entry.period_order_index === 'number') return entry.period_order_index;
+		if (entry.start_time) {
+			const [hour = '0', minute = '0'] = entry.start_time.split(':');
+			return Number(hour) * 60 + Number(minute);
+		}
+		return 9999;
+	}
+
+	function editTimetablePeriodRows() {
+		const rows: { key: string; label: string; timeLabel: string; sort: number }[] = [];
+		for (const entry of editTimetableEntries) {
+			const key = editTimetablePeriodKey(entry);
+			if (!rows.some((row) => row.key === key)) {
+				rows.push({
+					key,
+					label: editTimetablePeriodLabel(entry),
+					timeLabel: editTimetableTimeLabel(entry),
+					sort: editTimetablePeriodSort(entry)
+				});
+			}
+		}
+		return rows.sort(
+			(left, right) => left.sort - right.sort || left.label.localeCompare(right.label)
+		);
+	}
+
+	function editTimetableEntryFor(day: string, row: { key: string }): TimetableEntry | null {
+		return (
+			editTimetableEntries.find(
+				(entry) => entry.day_of_week === day && editTimetablePeriodKey(entry) === row.key
+			) ?? null
+		);
+	}
+
+	function editTimetableEntryTitle(entry: TimetableEntry): string {
+		return entry.subject_name_th || entry.title || entry.subject_code || 'คาบสอน';
+	}
+
+	function editTimetableEntryMeta(entry: TimetableEntry): string {
+		const classroom = entry.classroom_name ?? '';
+		const room = entry.room_code ? `ห้อง ${entry.room_code}` : '';
+		return [classroom, room].filter(Boolean).join(' · ') || 'ไม่มีรายละเอียดเพิ่มเติม';
+	}
+
+	function selectLessonTimetableEntry(entry: TimetableEntry, observedDate: string) {
+		if (!editDateInCycle(observedDate)) return;
+		selectedEditTimetableEntryId = entry.id;
+		selectedEditTimetableDate = observedDate;
+		lessonForm.subjectName = editTimetableEntryTitle(entry);
+		lessonForm.classroomLabel = entry.classroom_name ?? '';
+		lessonForm.roomLabel = entry.room_code ?? '';
+		lessonForm.periodLabel = entry.period_name ?? entry.title ?? '';
+		lessonForm.observedDate = observedDate;
+		lessonForm.observedTime = entry.start_time?.slice(0, 5) || '08:00';
 	}
 
 	function observationSubjectLabel(item: SupervisionObservation): string {
@@ -276,8 +449,24 @@
 		}
 	}
 
-	function openLessonEditor() {
+	async function loadEditTimetableOptions(force = false) {
 		if (!observation || !canEditLesson) return;
+		if (!force && editTimetableEntries.length > 0) return;
+		loadingEditTimetable = true;
+		try {
+			editTimetableEntries = await getSupervisionObservationTimetableOptions(observation.id);
+		} catch (loadError) {
+			toast.error(loadError instanceof Error ? loadError.message : 'โหลดคาบสอนไม่สำเร็จ');
+		} finally {
+			loadingEditTimetable = false;
+		}
+	}
+
+	async function openLessonEditor() {
+		if (!observation || !canEditLesson) return;
+		selectedEditTimetableEntryId = observation.timetableEntryId ?? '';
+		selectedEditTimetableDate = formatDateInput(observation.observedAt);
+		editWeekStartDate = toLocalDateInputValue(startOfWeek(new Date(observation.observedAt)));
 		lessonForm = {
 			subjectName: observationSubjectLabel(observation),
 			classroomLabel: observationClassroomLabel(observation),
@@ -287,34 +476,52 @@
 			observedTime: formatTimeInput(observation.observedAt),
 			reason: observation.manualLesson?.reason ?? 'แก้ไขรายการนิเทศจากหน้ารายละเอียด'
 		};
+		await loadEditTimetableOptions(true);
 		editLessonOpen = true;
 	}
 
 	async function saveLessonEdit() {
 		if (!observation || !canEditLesson) return;
+		if (selectedEditTimetableEntry && !selectedEditTimetableDate) {
+			toast.error('เลือกวันที่จากตารางสอนก่อน');
+			return;
+		}
 		if (
-			!lessonForm.subjectName ||
-			!lessonForm.classroomLabel ||
-			!lessonForm.periodLabel ||
-			!lessonForm.observedDate
+			!selectedEditTimetableEntry &&
+			(!lessonForm.subjectName ||
+				!lessonForm.classroomLabel ||
+				!lessonForm.periodLabel ||
+				!lessonForm.observedDate)
 		) {
 			toast.error('กรอกวิชา ชั้น/ห้อง คาบ และวันที่ให้ครบ');
 			return;
 		}
-		const manualLesson: ManualLesson = {
-			subjectName: lessonForm.subjectName,
-			classroomLabel: lessonForm.classroomLabel,
-			roomLabel: lessonForm.roomLabel || null,
-			periodLabel: lessonForm.periodLabel,
-			observedAt: toIsoDateTime(lessonForm.observedDate, lessonForm.observedTime),
-			reason: lessonForm.reason || 'แก้ไขรายการนิเทศ'
-		};
+		const payload =
+			selectedEditTimetableEntry && selectedEditTimetableDate
+				? {
+						timetableEntryId: selectedEditTimetableEntryId,
+						observedAt: editTimetableObservedAt(
+							selectedEditTimetableEntry,
+							selectedEditTimetableDate
+						),
+						manualLesson: null
+					}
+				: {
+						manualLesson: {
+							subjectName: lessonForm.subjectName,
+							classroomLabel: lessonForm.classroomLabel,
+							roomLabel: lessonForm.roomLabel || null,
+							periodLabel: lessonForm.periodLabel,
+							observedAt: toIsoDateTime(lessonForm.observedDate, lessonForm.observedTime),
+							reason: lessonForm.reason || 'แก้ไขรายการนิเทศ'
+						} satisfies ManualLesson
+					};
 
 		savingAction = 'lesson';
 		try {
 			const response = canManageObservation
-				? await updateSupervisionObservation(observation.id, { manualLesson })
-				: await updateRequestedSupervisionObservation(observation.id, { manualLesson });
+				? await updateSupervisionObservation(observation.id, payload)
+				: await updateRequestedSupervisionObservation(observation.id, payload);
 			const updated = mutationData(response, 'แก้ไขรายการนิเทศไม่สำเร็จ');
 			replaceObservation(updated);
 			editLessonOpen = false;
@@ -328,15 +535,34 @@
 
 	async function openEvaluatorEditor() {
 		if (!observation || !canEditEvaluators) return;
-		if (staffList.length === 0) {
-			staffList = await lookupStaff({ limit: 5000 });
-		}
+		await loadEvaluatorAvailability(true);
 		selectedEvaluatorIds = observation.evaluators.map((evaluator) => evaluator.evaluatorUserId);
 		editEvaluatorsOpen = true;
 	}
 
-	function toggleEvaluator(staff: StaffLookupItem) {
+	async function loadEvaluatorAvailability(force = false) {
+		if (!observation || !canEditEvaluators) return;
+		if (!force && availableEvaluators.length > 0) return;
+		loadingEvaluatorAvailability = true;
+		try {
+			const items = await getSupervisionEvaluatorAvailability(observation.id);
+			const availableIds = new Set(
+				items.filter((evaluator) => evaluator.available).map((evaluator) => evaluator.id)
+			);
+			availableEvaluators = items;
+			selectedEvaluatorIds = selectedEvaluatorIds.filter((id) => availableIds.has(id));
+		} catch (loadError) {
+			toast.error(
+				loadError instanceof Error ? loadError.message : 'ไม่สามารถตรวจสอบผู้ประเมินที่ว่างได้'
+			);
+		} finally {
+			loadingEvaluatorAvailability = false;
+		}
+	}
+
+	function toggleEvaluator(staff: SupervisionEvaluatorAvailability) {
 		if (!canEditEvaluators) return;
+		if (!staff.available) return;
 		selectedEvaluatorIds = selectedEvaluatorIds.includes(staff.id)
 			? selectedEvaluatorIds.filter((id) => id !== staff.id)
 			: [...selectedEvaluatorIds, staff.id];
@@ -365,6 +591,7 @@
 			editEvaluatorsOpen = false;
 			toast.success('แก้ไขผู้ประเมินแล้ว');
 		} catch (saveError) {
+			void loadEvaluatorAvailability(true);
 			toast.error(saveError instanceof Error ? saveError.message : 'แก้ไขผู้ประเมินไม่สำเร็จ');
 		} finally {
 			savingAction = null;
@@ -435,7 +662,7 @@
 							</div>
 							<div class="flex flex-wrap gap-2">
 								{#if canEditLesson}
-									<Button variant="outline" onclick={openLessonEditor}>
+									<Button variant="outline" onclick={() => void openLessonEditor()}>
 										<CalendarClock class="h-4 w-4" />
 										แก้คาบ/วันเวลา
 									</Button>
@@ -612,41 +839,177 @@
 </PageShell>
 
 <Dialog.Root bind:open={editLessonOpen}>
-	<Dialog.Content class="sm:max-w-2xl">
+	<Dialog.Content class="flex max-h-[92vh] flex-col sm:max-w-5xl">
 		<Dialog.Header>
 			<Dialog.Title>แก้คาบ/วันเวลา</Dialog.Title>
 			<Dialog.Description>
-				การแก้จากหน้ารายละเอียดจะบันทึกเป็นคาบกำหนดเอง เพื่อเก็บรายละเอียดที่แก้ไว้ชัดเจน
+				เลือกคาบจากตารางสอนของครูผู้ถูกนิเทศ หรือระบุคาบกำหนดเองเมื่อไม่มีในตาราง
 			</Dialog.Description>
 		</Dialog.Header>
-		<div class="grid gap-4 sm:grid-cols-2">
-			<div class="space-y-2">
-				<Label>วิชา</Label>
-				<Input bind:value={lessonForm.subjectName} />
+		<div class="min-h-0 flex-1 space-y-4 overflow-y-auto pr-1">
+			<div
+				class="flex flex-col gap-2 rounded-md border bg-muted/20 p-3 sm:flex-row sm:items-center sm:justify-between"
+			>
+				<div>
+					<p class="text-sm font-medium">สัปดาห์ {formatShortDate(editWeekStartDate)}</p>
+					<p class="text-xs text-muted-foreground">
+						แสดงเฉพาะวันที่มีคาบสอนของครูผู้ถูกนิเทศในตาราง
+					</p>
+				</div>
+				<div class="flex flex-wrap gap-2">
+					<Button
+						type="button"
+						size="sm"
+						variant="outline"
+						onclick={() => (editWeekStartDate = addWeeks(editWeekStartDate, -1))}
+					>
+						สัปดาห์ก่อน
+					</Button>
+					<Button
+						type="button"
+						size="sm"
+						variant="outline"
+						onclick={() => (editWeekStartDate = toLocalDateInputValue(startOfWeek(new Date())))}
+					>
+						สัปดาห์นี้
+					</Button>
+					<Button
+						type="button"
+						size="sm"
+						variant="outline"
+						onclick={() => (editWeekStartDate = addWeeks(editWeekStartDate, 1))}
+					>
+						สัปดาห์ถัดไป
+					</Button>
+				</div>
 			</div>
-			<div class="space-y-2">
-				<Label>คาบ</Label>
-				<Input bind:value={lessonForm.periodLabel} />
-			</div>
-			<div class="space-y-2">
-				<Label>ชั้น/ห้อง</Label>
-				<Input bind:value={lessonForm.classroomLabel} />
-			</div>
-			<div class="space-y-2">
-				<Label>ห้องเรียน</Label>
-				<Input bind:value={lessonForm.roomLabel} />
-			</div>
-			<div class="space-y-2">
-				<Label>วันที่</Label>
-				<Input type="date" bind:value={lessonForm.observedDate} />
-			</div>
-			<div class="space-y-2">
-				<Label>เวลา</Label>
-				<Input type="time" bind:value={lessonForm.observedTime} />
-			</div>
-			<div class="space-y-2 sm:col-span-2">
-				<Label>เหตุผล/หมายเหตุ</Label>
-				<Textarea bind:value={lessonForm.reason} rows={3} />
+
+			{#if loadingEditTimetable}
+				<PageState title="กำลังโหลดตารางสอน" description="กำลังดึงคาบสอนสำหรับแก้ไขรายการนิเทศ" />
+			{:else if editTimetableEntries.length === 0}
+				<PageState
+					title="ไม่พบคาบสอนในตาราง"
+					description="ใช้คาบกำหนดเองด้านล่างเมื่อคาบนิเทศไม่ได้อยู่ในตารางสอน"
+				/>
+			{:else}
+				<div class="overflow-x-auto rounded-md border">
+					<Table.Root>
+						<Table.Header>
+							<Table.Row>
+								<Table.Head class="w-36">คาบ</Table.Head>
+								{#each editTimetableDayValues() as day (day)}
+									<Table.Head class="min-w-40">
+										<div class="space-y-1">
+											<p>{editTimetableDayLabel(day)}</p>
+											<p class="text-xs font-normal text-muted-foreground">
+												{formatShortDate(dateForEditTimetableDay(day))}
+											</p>
+										</div>
+									</Table.Head>
+								{/each}
+							</Table.Row>
+						</Table.Header>
+						<Table.Body>
+							{#each editTimetablePeriodRows() as row (row.key)}
+								<Table.Row>
+									<Table.Cell class="align-top">
+										<p class="font-medium">{row.label}</p>
+										{#if row.timeLabel}
+											<p class="text-xs text-muted-foreground">{row.timeLabel}</p>
+										{/if}
+									</Table.Cell>
+									{#each editTimetableDayValues() as day (day)}
+										{@const entry = editTimetableEntryFor(day, row)}
+										{@const observedDate = dateForEditTimetableDay(day)}
+										<Table.Cell class="align-top">
+											{#if entry}
+												<Button
+													type="button"
+													variant={selectedEditTimetableEntryId === entry.id &&
+													selectedEditTimetableDate === observedDate
+														? 'default'
+														: 'outline'}
+													class="h-auto w-full justify-start whitespace-normal px-3 py-2 text-left"
+													disabled={!editDateInCycle(observedDate)}
+													onclick={() => selectLessonTimetableEntry(entry, observedDate)}
+												>
+													<div class="space-y-1">
+														<p class="font-medium">{editTimetableEntryTitle(entry)}</p>
+														<p class="text-xs opacity-80">{editTimetableEntryMeta(entry)}</p>
+													</div>
+												</Button>
+											{:else}
+												<div
+													class="rounded-md border border-dashed p-3 text-xs text-muted-foreground"
+												>
+													ว่าง
+												</div>
+											{/if}
+										</Table.Cell>
+									{/each}
+								</Table.Row>
+							{/each}
+						</Table.Body>
+					</Table.Root>
+				</div>
+			{/if}
+
+			<div class="grid gap-4 rounded-md border p-3 sm:grid-cols-2">
+				<div class="space-y-2 sm:col-span-2">
+					<Label>คาบกำหนดเอง</Label>
+					<p class="text-xs text-muted-foreground">
+						แก้ช่องด้านล่างเฉพาะกรณีไม่ได้เลือกคาบจากตารางสอน
+					</p>
+				</div>
+				<div class="space-y-2">
+					<Label>วิชา</Label>
+					<Input bind:value={lessonForm.subjectName} />
+				</div>
+				<div class="space-y-2">
+					<Label>คาบ</Label>
+					<Input bind:value={lessonForm.periodLabel} />
+				</div>
+				<div class="space-y-2">
+					<Label>ชั้น/ห้อง</Label>
+					<Input bind:value={lessonForm.classroomLabel} />
+				</div>
+				<div class="space-y-2">
+					<Label>ห้องเรียน</Label>
+					<Input bind:value={lessonForm.roomLabel} />
+				</div>
+				<div class="space-y-2">
+					<Label>วันที่</Label>
+					<Input
+						type="date"
+						bind:value={lessonForm.observedDate}
+						oninput={() => {
+							selectedEditTimetableEntryId = '';
+							selectedEditTimetableDate = '';
+						}}
+					/>
+				</div>
+				<div class="space-y-2">
+					<Label>เวลา</Label>
+					<Input
+						type="time"
+						bind:value={lessonForm.observedTime}
+						oninput={() => {
+							selectedEditTimetableEntryId = '';
+							selectedEditTimetableDate = '';
+						}}
+					/>
+				</div>
+				<div class="space-y-2 sm:col-span-2">
+					<Label>เหตุผล/หมายเหตุ</Label>
+					<Textarea
+						bind:value={lessonForm.reason}
+						rows={3}
+						oninput={() => {
+							selectedEditTimetableEntryId = '';
+							selectedEditTimetableDate = '';
+						}}
+					/>
+				</div>
 			</div>
 		</div>
 		<Dialog.Footer>
@@ -700,20 +1063,25 @@
 							role="combobox"
 							aria-expanded={evaluatorPickerOpen}
 							class="w-full justify-between font-normal"
+							disabled={loadingEvaluatorAvailability}
 							{...props}
 						>
-							<span class="truncate">เพิ่ม/เลือกผู้ประเมิน</span>
+							<span class="truncate">
+								{loadingEvaluatorAvailability
+									? 'กำลังตรวจผู้ประเมินที่ว่าง...'
+									: 'เพิ่ม/เลือกผู้ประเมิน'}
+							</span>
 							<ChevronsUpDown class="ml-2 h-4 w-4 shrink-0 opacity-50" />
 						</Button>
 					{/snippet}
 				</Popover.Trigger>
 				<Popover.Content class="w-[--bits-popover-trigger-width] p-0">
 					<Command.Root>
-						<Command.Input placeholder="ค้นหาครูผู้ประเมิน..." />
-						<Command.Empty>ไม่พบครู</Command.Empty>
+						<Command.Input placeholder="ค้นหาครูผู้ประเมินที่ว่าง..." />
+						<Command.Empty>ไม่พบครูผู้ประเมินที่ว่าง</Command.Empty>
 						<Command.List class="max-h-72">
 							<Command.Group>
-								{#each staffList as staff (staff.id)}
+								{#each availableEvaluators.filter((evaluator) => evaluator.available) as staff (staff.id)}
 									<Command.Item
 										value={`${staff.name} ${staff.title ?? ''} ${staff.id}`}
 										onSelect={() => toggleEvaluator(staff)}
@@ -735,6 +1103,11 @@
 					</Command.Root>
 				</Popover.Content>
 			</Popover.Root>
+			{#if unavailableEvaluatorCount > 0}
+				<p class="text-xs text-muted-foreground">
+					ซ่อนผู้ประเมิน {unavailableEvaluatorCount} คนที่มีงานนิเทศชนช่วงนี้
+				</p>
+			{/if}
 		</div>
 		<Dialog.Footer>
 			<Button variant="outline" onclick={() => (editEvaluatorsOpen = false)}>ยกเลิก</Button>

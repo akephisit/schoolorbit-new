@@ -382,7 +382,8 @@ test('teaching supervision frontend contract uses typed API and permission metad
 	assert.match(supervisionPage, /requestSupervisionObservation/);
 	assert.match(supervisionPage, /updateSupervisionCycle/);
 	assert.match(supervisionPage, /approveSupervisionObservationRequest/);
-	assert.match(supervisionPage, /saveMySupervisionEvaluation/);
+	assert.match(supervisionPage, /submitMySupervisionEvaluation/);
+	assert.doesNotMatch(supervisionPage, /saveMySupervisionEvaluation/);
 	assert.match(supervisionPage, /acknowledgeSupervisionObservation/);
 	assert.match(supervisionPage, /getMyTimetable/);
 	assert.match(supervisionPage, /academic_semester_id:\s*cycle\?\.academicSemesterId/);
@@ -453,7 +454,9 @@ test('teaching supervision frontend contract uses typed API and permission metad
 		supervisionPage,
 		/canReadObservations[\s\S]*await\s+listSupervisionObservations\(\)[\s\S]*:\s*\[\]/
 	);
-	assert.match(supervisionPage, /canManageRequests[\s\S]*await\s+lookupStaff/);
+	assert.match(supervisionPage, /getSupervisionEvaluatorAvailability/);
+	assert.match(supervisionPage, /requestEvaluatorAvailability/);
+	assert.doesNotMatch(supervisionPage, /lookupStaff/);
 	assert.match(supervisionPage, /getAcademicStructure/);
 	assert.match(supervisionPage, /\* as Select/);
 	assert.match(supervisionPage, /\* as Dialog/);

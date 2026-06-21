@@ -1,4 +1,5 @@
 import { apiClient, requireApiData, type ApiResponse } from '$lib/api/client';
+import type { TimetableEntry } from '$lib/api/timetable';
 
 export type SupervisionCycleStatus = 'draft' | 'open' | 'closed' | 'archived';
 export type SupervisionTemplateStatus = 'draft' | 'active' | 'archived';
@@ -142,6 +143,22 @@ export interface SupervisionEvaluator {
 	submittedAt?: string | null;
 	createdAt: string;
 	updatedAt: string;
+}
+
+export interface SupervisionEvaluatorConflict {
+	observationId: string;
+	observedDisplayName?: string | null;
+	observedAt: string;
+	lessonTitle?: string | null;
+}
+
+export interface SupervisionEvaluatorAvailability {
+	id: string;
+	name: string;
+	title?: string | null;
+	available: boolean;
+	conflictReason?: string | null;
+	conflict?: SupervisionEvaluatorConflict | null;
 }
 
 export interface SupervisionAction {
@@ -313,6 +330,19 @@ export interface SupervisionCycleProgress {
 	averageRating?: number | null;
 }
 
+export interface SupervisionTeacherStatusRow {
+	teacherId: string;
+	teacherDisplayName: string;
+	organizationUnitNames: string[];
+	observationId?: string | null;
+	status?: SupervisionObservationStatus | null;
+	observedAt?: string | null;
+	lessonTitle?: string | null;
+	evaluatorNames: string[];
+	averageRating?: number | null;
+	nextStepLabel: string;
+}
+
 function observationsQuery(params: ListSupervisionObservationsParams = {}): string {
 	const search = new URLSearchParams();
 	if (params.cycleId) search.set('cycleId', params.cycleId);
@@ -419,6 +449,24 @@ export async function replaceSupervisionObservationEvaluators(
 	);
 }
 
+export async function getSupervisionEvaluatorAvailability(
+	id: string
+): Promise<SupervisionEvaluatorAvailability[]> {
+	const response = await apiClient.get<{ items: SupervisionEvaluatorAvailability[] }>(
+		`/api/supervision/observations/${id}/evaluator-availability`
+	);
+	return requireApiData(response, 'ไม่สามารถตรวจสอบผู้ประเมินที่ว่างได้').items;
+}
+
+export async function getSupervisionObservationTimetableOptions(
+	id: string
+): Promise<TimetableEntry[]> {
+	const response = await apiClient.get<{ items: TimetableEntry[] }>(
+		`/api/supervision/observations/${id}/timetable-options`
+	);
+	return requireApiData(response, 'ไม่สามารถโหลดคาบสอนสำหรับแก้ไขได้').items;
+}
+
 export async function cancelSupervisionObservation(
 	id: string,
 	payload: CancelObservationRequest
@@ -445,16 +493,6 @@ export async function returnSupervisionObservationRequest(
 ): Promise<ApiResponse<SupervisionObservation>> {
 	return apiClient.post<SupervisionObservation>(
 		`/api/supervision/observations/${id}/return-request`,
-		payload
-	);
-}
-
-export async function saveMySupervisionEvaluation(
-	id: string,
-	payload: SaveEvaluationRequest
-): Promise<ApiResponse<SupervisionObservation>> {
-	return apiClient.put<SupervisionObservation>(
-		`/api/supervision/observations/${id}/evaluations/me`,
 		payload
 	);
 }
@@ -498,4 +536,13 @@ export async function getSupervisionCycleProgress(
 		`/api/supervision/reports/cycles/${cycleId}/progress`
 	);
 	return requireApiData(response, 'ไม่สามารถโหลดรายงานรอบนิเทศได้');
+}
+
+export async function getSupervisionTeacherStatusOverview(
+	cycleId: string
+): Promise<SupervisionTeacherStatusRow[]> {
+	const response = await apiClient.get<{ items: SupervisionTeacherStatusRow[] }>(
+		`/api/supervision/reports/cycles/${cycleId}/teacher-status`
+	);
+	return requireApiData(response, 'ไม่สามารถโหลดภาพรวมสถานะครูได้').items;
 }

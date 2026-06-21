@@ -65,15 +65,35 @@ test('teaching supervision request approval renders request rows with multiple e
 	const supervisionPage = await readRepoFile(
 		'frontend-school/src/routes/(app)/staff/academic/supervision/+page.svelte'
 	);
+	const supervisionApi = await readRepoFile('frontend-school/src/lib/api/supervision.ts');
+	const supervisionHandlers = await readRepoFile(
+		'backend-school/src/modules/supervision/handlers.rs'
+	);
+	const supervisionService = await readRepoFile(
+		'backend-school/src/modules/supervision/services.rs'
+	);
 
+	assert.match(supervisionApi, /SupervisionEvaluatorAvailability/);
+	assert.match(supervisionApi, /conflictReason/);
+	assert.match(supervisionApi, /getSupervisionEvaluatorAvailability/);
+	assert.match(
+		supervisionApi,
+		/\/api\/supervision\/observations\/\$\{id\}\/evaluator-availability/
+	);
 	assert.match(supervisionPage, /requestEvaluatorIds/);
 	assert.match(supervisionPage, /requestReturnComments/);
+	assert.match(supervisionPage, /requestEvaluatorAvailability/);
+	assert.match(supervisionPage, /handleRequestEvaluatorPickerOpen\(observation\.id,\s*open\)/);
+	assert.match(supervisionPage, /loadRequestEvaluatorAvailability\(observationId\)/);
 	assert.match(supervisionPage, /toggleRequestEvaluatorForRequest/);
 	assert.match(supervisionPage, /selectedRequestEvaluators\(observation\.id\)/);
+	assert.match(supervisionPage, /evaluator\.available/);
 	assert.match(supervisionPage, /approveRequest\(observation\.id\)/);
 	assert.match(supervisionPage, /evaluatorUserId:\s*evaluatorId/);
 	assert.match(supervisionPage, /requestReturnComments\[observation\.id\]/);
 	assert.match(supervisionPage, /observationLessonTitle\(observation\)/);
+	assert.match(supervisionHandlers, /evaluator_availability/);
+	assert.match(supervisionService, /validate_evaluator_availability_for_observation/);
 	assert.doesNotMatch(
 		supervisionPage,
 		/<Select\.Root\s+type="single"\s+bind:value=\{approvalObservationId\}/
@@ -120,6 +140,7 @@ test('teaching supervision own and assigned lists show complete lesson and evalu
 });
 
 test('teaching supervision evaluation uses a dialog workflow', async () => {
+	const supervisionApi = await readRepoFile('frontend-school/src/lib/api/supervision.ts');
 	const supervisionPage = await readRepoFile(
 		'frontend-school/src/routes/(app)/staff/academic/supervision/+page.svelte'
 	);
@@ -139,6 +160,10 @@ test('teaching supervision evaluation uses a dialog workflow', async () => {
 	assert.match(supervisionPage, /progress\.qualityLabel/);
 	assert.match(supervisionPage, /selectedEvaluationDraftSummary\.totalScore/);
 	assert.match(supervisionPage, /clearEvaluationDraft\(\);[\s\S]*toast\.success/);
+	assert.doesNotMatch(supervisionPage, /saveMySupervisionEvaluation/);
+	assert.doesNotMatch(supervisionPage, /saveEvaluation\(false\)/);
+	assert.doesNotMatch(supervisionPage, />\s*บันทึกร่าง\s*</);
+	assert.doesNotMatch(supervisionApi, /saveMySupervisionEvaluation/);
 	assert.doesNotMatch(supervisionPage, /กำลังเปิดแบบประเมิน/);
 });
 
@@ -162,6 +187,7 @@ test('teaching supervision approval workflow skips review submission', async () 
 	assert.doesNotMatch(supervisionApi, /submitSupervisionObservationForReview/);
 	assert.doesNotMatch(supervisionApi, /publishSupervisionObservation/);
 	assert.doesNotMatch(supervisionApi, /returnSupervisionObservation\(/);
+	assert.match(supervisionPage, /const canReport = \$derived\([\s\S]*canManageRequests/);
 	assert.match(supervisionPage, /certifiableObservations/);
 	assert.match(supervisionPage, /approvableObservations/);
 	assert.match(supervisionPage, /certifyResult\(observation\.id\)/);
@@ -195,6 +221,8 @@ test('teaching supervision observation detail supports safe edit actions', async
 
 	assert.match(supervisionApi, /updateSupervisionObservation/);
 	assert.match(supervisionApi, /replaceSupervisionObservationEvaluators/);
+	assert.match(supervisionApi, /getSupervisionEvaluatorAvailability/);
+	assert.match(supervisionApi, /getSupervisionObservationTimetableOptions/);
 	assert.match(supervisionApi, /cancelSupervisionObservation/);
 	assert.match(supervisionApi, /interface SupervisionAction/);
 	assert.match(supervisionApi, /actions:\s*SupervisionAction\[\]/);
@@ -203,6 +231,15 @@ test('teaching supervision observation detail supports safe edit actions', async
 	assert.match(detailPage, /getSupervisionObservation/);
 	assert.match(detailPage, /updateSupervisionObservation/);
 	assert.match(detailPage, /replaceSupervisionObservationEvaluators/);
+	assert.match(detailPage, /getSupervisionEvaluatorAvailability/);
+	assert.match(detailPage, /getSupervisionObservationTimetableOptions/);
+	assert.match(detailPage, /availableEvaluators/);
+	assert.match(detailPage, /editTimetableEntries/);
+	assert.match(detailPage, /selectLessonTimetableEntry/);
+	assert.match(detailPage, /selectedEditTimetableEntryId/);
+	assert.match(detailPage, /editTimetableObservedAt/);
+	assert.match(detailPage, /timetableEntryId:\s*selectedEditTimetableEntryId/);
+	assert.doesNotMatch(detailPage, /การแก้จากหน้ารายละเอียดจะบันทึกเป็นคาบกำหนดเอง/);
 	assert.match(detailPage, /cancelSupervisionObservation/);
 	assert.match(detailPage, /PageShell/);
 	assert.match(detailPage, /LoadingButton/);
@@ -210,4 +247,41 @@ test('teaching supervision observation detail supports safe edit actions', async
 	assert.match(detailPage, /observation\.actions/);
 	assert.match(detailPage, /actionKindLabel/);
 	assert.match(parentPage, /href=\{`\/staff\/academic\/supervision\/\$\{observation\.id\}`\}/);
+});
+
+test('teaching supervision manager view exposes teacher status overview and aligned actions', async () => {
+	const supervisionApi = await readRepoFile('frontend-school/src/lib/api/supervision.ts');
+	const supervisionPage = await readRepoFile(
+		'frontend-school/src/routes/(app)/staff/academic/supervision/+page.svelte'
+	);
+	const supervisionHandlers = await readRepoFile(
+		'backend-school/src/modules/supervision/handlers.rs'
+	);
+	const supervisionService = await readRepoFile(
+		'backend-school/src/modules/supervision/services.rs'
+	);
+	const supervisionPolicy = await readRepoFile(
+		'backend-school/src/policies/supervision_access_policy.rs'
+	);
+
+	assert.match(supervisionApi, /SupervisionTeacherStatusRow/);
+	assert.match(supervisionApi, /getSupervisionTeacherStatusOverview/);
+	assert.match(
+		supervisionApi,
+		/\/api\/supervision\/reports\/cycles\/\$\{cycleId\}\/teacher-status/
+	);
+	assert.match(supervisionPage, /teacherStatusRows/);
+	assert.match(supervisionPage, /loadTeacherStatusOverview/);
+	assert.match(supervisionPage, /<Tabs\.Trigger value="overview"[^>]*>ภาพรวม<\/Tabs\.Trigger>/);
+	assert.match(supervisionPage, /สถานะครู/);
+	assert.match(supervisionPage, /nextStepLabel/);
+	assert.match(supervisionPage, /averageRating/);
+	assert.match(supervisionPage, /class="flex flex-wrap items-center justify-end gap-2"/);
+	assert.match(supervisionPage, /class="h-8"/);
+	assert.match(supervisionHandlers, /teacher_status_overview/);
+	assert.match(supervisionService, /cycle_teacher_status/);
+	assert.match(
+		supervisionPolicy,
+		/require_observation_management_access[\s\S]*\.await[\s\S]*return Ok\(\(\)\)/
+	);
 });

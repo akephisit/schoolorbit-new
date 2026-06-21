@@ -155,6 +155,13 @@ pub async fn require_observation_read_access(
         return Ok(());
     }
 
+    if require_observation_management_access(pool, actor, observed_user_id)
+        .await
+        .is_ok()
+    {
+        return Ok(());
+    }
+
     require_user_resource_access(
         pool,
         actor,

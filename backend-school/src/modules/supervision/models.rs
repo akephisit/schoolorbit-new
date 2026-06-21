@@ -372,6 +372,26 @@ pub struct SupervisionEvaluator {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct SupervisionEvaluatorConflict {
+    pub observation_id: Uuid,
+    pub observed_display_name: Option<String>,
+    pub observed_at: DateTime<Utc>,
+    pub lesson_title: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SupervisionEvaluatorAvailability {
+    pub id: Uuid,
+    pub name: String,
+    pub title: Option<String>,
+    pub available: bool,
+    pub conflict_reason: Option<String>,
+    pub conflict: Option<SupervisionEvaluatorConflict>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SupervisionAction {
     pub id: Uuid,
     pub observation_id: Uuid,
@@ -656,6 +676,21 @@ pub struct SupervisionCycleProgress {
     pub completed_count: i64,
     pub cancelled_count: i64,
     pub average_rating: Option<f64>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SupervisionTeacherStatusRow {
+    pub teacher_id: Uuid,
+    pub teacher_display_name: String,
+    pub organization_unit_names: Vec<String>,
+    pub observation_id: Option<Uuid>,
+    pub status: Option<SupervisionObservationStatus>,
+    pub observed_at: Option<DateTime<Utc>>,
+    pub lesson_title: Option<String>,
+    pub evaluator_names: Vec<String>,
+    pub average_rating: Option<f64>,
+    pub next_step_label: String,
 }
 
 fn default_required_observations() -> i32 {

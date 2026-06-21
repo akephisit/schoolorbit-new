@@ -15,8 +15,9 @@ use crate::modules::supervision::models::{
     AcknowledgeObservationRequest, ApproveObservationRequest, CancelObservationRequest,
     CreateSupervisionCycleRequest, CreateSupervisionTemplateRequest,
     ReplaceObservationEvaluatorsRequest, RequestSupervisionObservationRequest,
-    ReturnObservationRequest, SaveEvaluationRequest, SupervisionCycle, SupervisionObservation,
-    SupervisionObservationFilter, SupervisionObservationStatus, SupervisionTemplate,
+    ReturnObservationRequest, SaveEvaluationRequest, SupervisionCycle,
+    SupervisionEvaluatorAvailability, SupervisionObservation, SupervisionObservationFilter,
+    SupervisionObservationStatus, SupervisionTeacherStatusRow, SupervisionTemplate,
     UpdateRequestedObservationRequest, UpdateSupervisionCycleRequest,
     UpdateSupervisionObservationRequest, UpdateSupervisionTemplateRequest,
 };
@@ -179,6 +180,55 @@ pub async fn get_observation(
     .await?;
 
     Ok(Json(ApiResponse::ok(observation)).into_response())
+}
+
+pub async fn evaluator_availability(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context(&state, &headers).await?;
+    let observation = services::get_observation(&context.tenant.pool, id).await?;
+    supervision_access_policy::require_observation_management_access(
+        &context.tenant.pool,
+        &context.actor,
+        observation.observed_user_id,
+    )
+    .await?;
+
+    let items = services::evaluator_availability(&context.tenant.pool, id).await?;
+
+    Ok(Json(ApiResponse::ok(ItemsData::<
+        SupervisionEvaluatorAvailability,
+    > {
+        items,
+    }))
+    .into_response())
+}
+
+pub async fn observation_timetable_options(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context(&state, &headers).await?;
+    let observation = services::get_observation(&context.tenant.pool, id).await?;
+    let can_edit_own_request = observation.observed_user_id == context.actor.user_id
+        && services::teacher_can_edit_requested_observation(observation.status)
+        && supervision_access_policy::can_request_own(&context.actor);
+
+    if !can_edit_own_request {
+        supervision_access_policy::require_observation_management_access(
+            &context.tenant.pool,
+            &context.actor,
+            observation.observed_user_id,
+        )
+        .await?;
+    }
+
+    let items = services::observation_timetable_options(&context.tenant.pool, id).await?;
+
+    Ok(Json(ApiResponse::ok(ItemsData { items })).into_response())
 }
 
 pub async fn request_observation(
@@ -352,22 +402,6 @@ pub async fn return_observation_request(
     Ok(Json(ApiResponse::ok(observation)).into_response())
 }
 
-pub async fn save_my_evaluation(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Path(id): Path<Uuid>,
-    Json(payload): Json<SaveEvaluationRequest>,
-) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
-    supervision_access_policy::require_evaluate_assigned(&context.actor)?;
-
-    let observation =
-        services::save_my_evaluation(&context.tenant.pool, context.actor.user_id, id, payload)
-            .await?;
-
-    Ok(Json(ApiResponse::ok(observation)).into_response())
-}
-
 pub async fn submit_my_evaluation(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -447,6 +481,33 @@ pub async fn cycle_progress(
     Ok(Json(ApiResponse::ok(progress)).into_response())
 }
 
+pub async fn teacher_status_overview(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context(&state, &headers).await?;
+    let access = supervision_access_policy::resolve_observation_list_access(
+        &context.tenant.pool,
+        &context.actor,
+    )
+    .await?;
+    if !access.school && access.organization_unit_ids.is_empty() {
+        return Err(AppError::Forbidden(
+            "ไม่มีสิทธิ์ดูภาพรวมสถานะครูในรอบนิเทศ".to_string(),
+        ));
+    }
+
+    let items = services::cycle_teacher_status(&context.tenant.pool, access, id).await?;
+
+    Ok(
+        Json(ApiResponse::ok(ItemsData::<SupervisionTeacherStatusRow> {
+            items,
+        }))
+        .into_response(),
+    )
+}
+
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/cycles", get(list_cycles).post(create_cycle))
@@ -458,6 +519,14 @@ pub fn routes() -> Router<AppState> {
         .route(
             "/observations/{id}",
             get(get_observation).patch(update_observation),
+        )
+        .route(
+            "/observations/{id}/evaluator-availability",
+            get(evaluator_availability),
+        )
+        .route(
+            "/observations/{id}/timetable-options",
+            get(observation_timetable_options),
         )
         .route(
             "/observations/{id}/evaluators",
@@ -476,7 +545,6 @@ pub fn routes() -> Router<AppState> {
             "/observations/{id}/return-request",
             post(return_observation_request),
         )
-        .route("/observations/{id}/evaluations/me", put(save_my_evaluation))
         .route(
             "/observations/{id}/evaluations/me/submit",
             post(submit_my_evaluation),
@@ -488,4 +556,8 @@ pub fn routes() -> Router<AppState> {
             post(acknowledge_observation),
         )
         .route("/reports/cycles/{id}/progress", get(cycle_progress))
+        .route(
+            "/reports/cycles/{id}/teacher-status",
+            get(teacher_status_overview),
+        )
 }
