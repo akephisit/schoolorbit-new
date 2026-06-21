@@ -1,3 +1,4 @@
+pub mod dashboard_service;
 pub mod organization_delegation_service;
 pub mod organization_member_service;
 pub mod organization_permission_service;
