@@ -8,7 +8,7 @@ import {
 
 type RouteAccessMeta = {
 	user_type?: string;
-	permission?: RoutePermission;
+	permission?: RoutePermission | RoutePermission[];
 	workflowManage?: boolean;
 };
 
@@ -21,7 +21,7 @@ type RouteMetaModule = {
 
 export type RouteAccess = {
 	userType?: string;
-	permission?: RoutePermission;
+	permission?: RoutePermission | RoutePermission[];
 	workflowManage?: boolean;
 };
 
@@ -63,11 +63,14 @@ export function getRouteAccess(routeId: string | null): RouteAccess | undefined 
 
 export function routePermissionMatches(
 	permissions: string[],
-	requiredPermission?: string,
+	requiredPermission?: string | string[],
 	workflowManage = false
 ): boolean {
 	if (workflowManage && !hasWorkflowManagePermission(permissions)) return false;
 	if (!requiredPermission) return true;
+	if (Array.isArray(requiredPermission)) {
+		return requiredPermission.some((permission) => routePermissionMatches(permissions, permission));
+	}
 
 	return requiredPermission.includes('.')
 		? hasPermission(permissions, requiredPermission)

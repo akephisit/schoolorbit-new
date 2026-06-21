@@ -359,8 +359,11 @@ test('academic admission workflow pages use shared app page shell', async () => 
 test('academic detail and supervision pages use shared app page shell', async () => {
 	const pages = [
 		'src/routes/(app)/staff/academic/activities/[id]/+page.svelte',
-		'src/routes/(app)/staff/academic/supervision/+page.svelte'
+		'src/lib/components/supervision/SupervisionWorkspace.svelte'
 	];
+	const supervisionRoute = await readProjectFile(
+		'src/routes/(app)/staff/academic/supervision/+page.svelte'
+	);
 
 	for (const page of pages) {
 		const source = await readProjectFile(page);
@@ -377,6 +380,9 @@ test('academic detail and supervision pages use shared app page shell', async ()
 			`${page} should not hand-roll the page header wrapper`
 		);
 	}
+
+	assert.match(supervisionRoute, /SupervisionWorkspace/);
+	assert.match(supervisionRoute, /section="mine"/);
 });
 
 test('self-service and system pages use shared app page shell', async () => {

@@ -367,8 +367,8 @@ test('teaching supervision frontend contract uses typed API and permission metad
 	const supervisionRoute = await readRepoFile(
 		'frontend-school/src/routes/(app)/staff/academic/supervision/+page.ts'
 	);
-	const supervisionPage = await readRepoFile(
-		'frontend-school/src/routes/(app)/staff/academic/supervision/+page.svelte'
+	const supervisionWorkspace = await readRepoFile(
+		'frontend-school/src/lib/components/supervision/SupervisionWorkspace.svelte'
 	);
 
 	assert.match(supervisionApi, /export\s+type\s+SupervisionObservationStatus/);
@@ -378,109 +378,111 @@ test('teaching supervision frontend contract uses typed API and permission metad
 	assert.doesNotMatch(supervisionApi, /Record<string,\s*unknown>/);
 	assert.doesNotMatch(supervisionApi, /res\.data as/);
 	assert.match(supervisionRoute, /PERMISSION_MODULES\.SUPERVISION/);
-	assert.match(supervisionPage, /listSupervisionCycles/);
-	assert.match(supervisionPage, /requestSupervisionObservation/);
-	assert.match(supervisionPage, /updateSupervisionCycle/);
-	assert.match(supervisionPage, /approveSupervisionObservationRequest/);
-	assert.match(supervisionPage, /submitMySupervisionEvaluation/);
-	assert.doesNotMatch(supervisionPage, /saveMySupervisionEvaluation/);
-	assert.match(supervisionPage, /acknowledgeSupervisionObservation/);
-	assert.match(supervisionPage, /getMyTimetable/);
-	assert.match(supervisionPage, /academic_semester_id:\s*cycle\?\.academicSemesterId/);
-	assert.match(supervisionPage, /getSchoolDays/);
-	assert.match(supervisionPage, /timetableGridDays/);
-	assert.match(supervisionPage, /timetablePeriodRows/);
-	assert.match(supervisionPage, /selectTimetableEntry/);
-	assert.match(supervisionPage, /entry\.period_order_index/);
-	assert.doesNotMatch(supervisionPage, /period_name\?\.match\(/);
-	assert.match(supervisionPage, /class="overflow-x-auto rounded-md border"/);
+	assert.match(supervisionWorkspace, /listSupervisionCycles/);
+	assert.match(supervisionWorkspace, /requestSupervisionObservation/);
+	assert.match(supervisionWorkspace, /updateSupervisionCycle/);
+	assert.match(supervisionWorkspace, /approveSupervisionObservationRequest/);
+	assert.match(supervisionWorkspace, /submitMySupervisionEvaluation/);
+	assert.doesNotMatch(supervisionWorkspace, /saveMySupervisionEvaluation/);
+	assert.match(supervisionWorkspace, /acknowledgeSupervisionObservation/);
+	assert.match(supervisionWorkspace, /getMyTimetable/);
+	assert.match(supervisionWorkspace, /academic_semester_id:\s*cycle\?\.academicSemesterId/);
+	assert.match(supervisionWorkspace, /getSchoolDays/);
+	assert.match(supervisionWorkspace, /timetableGridDays/);
+	assert.match(supervisionWorkspace, /timetablePeriodRows/);
+	assert.match(supervisionWorkspace, /selectTimetableEntry/);
+	assert.match(supervisionWorkspace, /entry\.period_order_index/);
+	assert.doesNotMatch(supervisionWorkspace, /period_name\?\.match\(/);
+	assert.match(supervisionWorkspace, /class="overflow-x-auto rounded-md border"/);
 	assert.match(
-		supervisionPage,
+		supervisionWorkspace,
 		/<Table\.Head\s+class="sticky left-0 z-10 w-\[112px\] bg-background"[\s\S]*>วัน<\/Table\.Head/
 	);
 	assert.match(
-		supervisionPage,
+		supervisionWorkspace,
 		/<Table\.Header>[\s\S]*\{#each timetablePeriodRows\(\) as row \(row\.key\)\}/
 	);
 	assert.match(
-		supervisionPage,
+		supervisionWorkspace,
 		/<Table\.Body>[\s\S]*\{#each bookingWeekDays as day \(day\.value\)\}/
 	);
-	assert.match(supervisionPage, /formatShortDate\(day\.date\)/);
+	assert.match(supervisionWorkspace, /formatShortDate\(day\.date\)/);
 	assert.doesNotMatch(
-		supervisionPage,
+		supervisionWorkspace,
 		/grid gap-2 md:hidden[\s\S]*timetableEntriesForSelectedCycle/
 	);
-	assert.match(supervisionPage, /cycleStatusCreateOptions/);
-	assert.match(supervisionPage, /status:\s*cycleForm\.status/);
-	assert.match(supervisionPage, /setCycleStatus/);
-	assert.match(supervisionPage, /createPaperSupervisionRubricSections/);
-	assert.match(supervisionPage, /templateForm\.sections/);
-	assert.match(supervisionPage, /addTemplateSection/);
-	assert.match(supervisionPage, /addTemplateItem/);
-	assert.match(supervisionPage, /moveTemplateItem/);
-	assert.match(supervisionPage, /calculateRubricDraftSummary/);
-	assert.match(supervisionPage, /sectionRubricProgress/);
-	assert.match(supervisionPage, /overflow-x-hidden/);
-	assert.match(supervisionPage, /min-w-0/);
-	assert.match(supervisionPage, /max-w-6xl/);
-	assert.match(supervisionPage, /LoadingButton/);
-	assert.match(supervisionPage, /savingAction/);
-	assert.match(supervisionPage, /savingTemplate/);
-	assert.match(supervisionPage, /savingEvaluation/);
-	assert.match(supervisionPage, /function replaceCycle/);
-	assert.match(supervisionPage, /function replaceTemplate/);
-	assert.match(supervisionPage, /function replaceObservation/);
-	assert.match(supervisionPage, /async function refreshTemplates/);
+	assert.match(supervisionWorkspace, /cycleStatusCreateOptions/);
+	assert.match(supervisionWorkspace, /status:\s*cycleForm\.status/);
+	assert.match(supervisionWorkspace, /setCycleStatus/);
+	assert.match(supervisionWorkspace, /createPaperSupervisionRubricSections/);
+	assert.match(supervisionWorkspace, /templateForm\.sections/);
+	assert.match(supervisionWorkspace, /addTemplateSection/);
+	assert.match(supervisionWorkspace, /addTemplateItem/);
+	assert.match(supervisionWorkspace, /moveTemplateItem/);
+	assert.match(supervisionWorkspace, /calculateRubricDraftSummary/);
+	assert.match(supervisionWorkspace, /sectionRubricProgress/);
+	assert.match(supervisionWorkspace, /overflow-x-hidden/);
+	assert.match(supervisionWorkspace, /min-w-0/);
+	assert.match(supervisionWorkspace, /LoadingButton/);
+	assert.match(supervisionWorkspace, /savingAction/);
+	assert.match(supervisionWorkspace, /savingTemplate/);
+	assert.match(supervisionWorkspace, /savingEvaluation/);
+	assert.match(supervisionWorkspace, /function replaceCycle/);
+	assert.match(supervisionWorkspace, /function replaceTemplate/);
+	assert.match(supervisionWorkspace, /function replaceObservation/);
+	assert.match(supervisionWorkspace, /async function refreshTemplates/);
 	assert.match(
-		supervisionPage,
+		supervisionWorkspace,
 		/<div class="min-w-0 space-y-2 md:col-span-3">\s*<Label>ชื่อแบบประเมิน<\/Label>/
 	);
-	assert.doesNotMatch(supervisionPage, /lg:grid-cols-\[120px_1fr_auto\]/);
-	assert.doesNotMatch(supervisionPage, /md:grid-cols-\[1fr_220px\]/);
-	assert.doesNotMatch(supervisionPage, /ratingLabel/);
-	assert.doesNotMatch(supervisionPage, /textLabel/);
-	assert.match(supervisionPage, /canManageSchool/);
-	assert.match(supervisionPage, /canManageRequests/);
-	assert.match(supervisionPage, /canReadObservations/);
-	assert.match(supervisionPage, /SUPERVISION_READ_OWN/);
-	assert.match(supervisionPage, /SUPERVISION_READ_ASSIGNED/);
-	assert.match(supervisionPage, /SUPERVISION_READ_ORGANIZATION_UNIT/);
-	assert.match(supervisionPage, /SUPERVISION_READ_ORGANIZATION_TREE/);
-	assert.match(supervisionPage, /SUPERVISION_READ_SCHOOL/);
-	assert.match(supervisionPage, /SUPERVISION_MANAGE_ORGANIZATION_UNIT/);
-	assert.match(supervisionPage, /SUPERVISION_MANAGE_ORGANIZATION_TREE/);
+	assert.doesNotMatch(supervisionWorkspace, /lg:grid-cols-\[120px_1fr_auto\]/);
+	assert.doesNotMatch(supervisionWorkspace, /md:grid-cols-\[1fr_220px\]/);
+	assert.doesNotMatch(supervisionWorkspace, /ratingLabel/);
+	assert.doesNotMatch(supervisionWorkspace, /textLabel/);
+	assert.match(supervisionWorkspace, /canManageSchool/);
+	assert.match(supervisionWorkspace, /canManageRequests/);
+	assert.match(supervisionWorkspace, /canReadObservations/);
+	assert.match(supervisionWorkspace, /SUPERVISION_READ_OWN/);
+	assert.match(supervisionWorkspace, /SUPERVISION_READ_ASSIGNED/);
+	assert.match(supervisionWorkspace, /SUPERVISION_READ_ORGANIZATION_UNIT/);
+	assert.match(supervisionWorkspace, /SUPERVISION_READ_ORGANIZATION_TREE/);
+	assert.match(supervisionWorkspace, /SUPERVISION_READ_SCHOOL/);
+	assert.match(supervisionWorkspace, /SUPERVISION_MANAGE_ORGANIZATION_UNIT/);
+	assert.match(supervisionWorkspace, /SUPERVISION_MANAGE_ORGANIZATION_TREE/);
 	assert.match(
-		supervisionPage,
-		/canReadObservations[\s\S]*await\s+listSupervisionObservations\(\)[\s\S]*:\s*\[\]/
+		supervisionWorkspace,
+		/shouldLoadObservations[\s\S]*await\s+listSupervisionObservations\(\)[\s\S]*:\s*\[\]/
 	);
-	assert.match(supervisionPage, /getSupervisionEvaluatorAvailability/);
-	assert.match(supervisionPage, /requestEvaluatorAvailability/);
-	assert.doesNotMatch(supervisionPage, /lookupStaff/);
-	assert.match(supervisionPage, /getAcademicStructure/);
-	assert.match(supervisionPage, /\* as Select/);
-	assert.match(supervisionPage, /\* as Dialog/);
-	assert.match(supervisionPage, /\* as Table/);
-	assert.match(supervisionPage, /\* as Alert/);
-	assert.match(supervisionPage, /Progress/);
-	assert.doesNotMatch(supervisionPage, /<select\b/);
-	assert.doesNotMatch(supervisionPage, /type="datetime-local"/);
-	assert.doesNotMatch(supervisionPage, /status:\s*'draft',\s*\n\s*targets:/);
-	assert.doesNotMatch(supervisionPage, /Select\.Root[^>]*bind:value=\{selectedTimetableEntryId\}/);
+	assert.match(supervisionWorkspace, /getSupervisionEvaluatorAvailability/);
+	assert.match(supervisionWorkspace, /requestEvaluatorAvailability/);
+	assert.doesNotMatch(supervisionWorkspace, /lookupStaff/);
+	assert.match(supervisionWorkspace, /getAcademicStructure/);
+	assert.match(supervisionWorkspace, /\* as Select/);
+	assert.match(supervisionWorkspace, /\* as Dialog/);
+	assert.match(supervisionWorkspace, /\* as Table/);
+	assert.match(supervisionWorkspace, /\* as Alert/);
+	assert.match(supervisionWorkspace, /Progress/);
+	assert.doesNotMatch(supervisionWorkspace, /<select\b/);
+	assert.doesNotMatch(supervisionWorkspace, /type="datetime-local"/);
+	assert.doesNotMatch(supervisionWorkspace, /status:\s*'draft',\s*\n\s*targets:/);
 	assert.doesNotMatch(
-		supervisionPage,
+		supervisionWorkspace,
+		/Select\.Root[^>]*bind:value=\{selectedTimetableEntryId\}/
+	);
+	assert.doesNotMatch(
+		supervisionWorkspace,
 		/Promise\.all\(\[\s*listSupervisionCycles\(\),\s*listSupervisionTemplates\(\),\s*listSupervisionObservations\(\),\s*lookupStaff/
 	);
 	const createTemplateBody =
-		supervisionPage.match(/async function createTemplate\(\) \{[\s\S]*?\n\t\}/)?.[0] ?? '';
+		supervisionWorkspace.match(/async function createTemplate\(\) \{[\s\S]*?\n\t\}/)?.[0] ?? '';
 	const saveEvaluationBody =
-		supervisionPage.match(
+		supervisionWorkspace.match(
 			/async function saveEvaluation\(submit = false\) \{[\s\S]*?\n\t\}/
 		)?.[0] ?? '';
 	assert.doesNotMatch(createTemplateBody, /await refreshAll\(\)/);
 	assert.doesNotMatch(saveEvaluationBody, /await refreshAll\(\)/);
-	assert.doesNotMatch(supervisionPage, /disabled=\{saving\}/);
-	assert.doesNotMatch(supervisionPage, /\bfetch\s*\(/);
+	assert.doesNotMatch(supervisionWorkspace, /disabled=\{saving\}/);
+	assert.doesNotMatch(supervisionWorkspace, /\bfetch\s*\(/);
 });
 
 test('scheduling API uses backend envelope data types without response casts', async () => {

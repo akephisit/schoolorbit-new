@@ -2,4 +2,4 @@
 	import SupervisionWorkspace from '$lib/components/supervision/SupervisionWorkspace.svelte';
 </script>
 
-<SupervisionWorkspace section="mine" />
+<SupervisionWorkspace section="overview" />

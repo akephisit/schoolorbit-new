@@ -14,7 +14,7 @@ async function readRepoFile(relativePath) {
 test('teaching supervision booking uses a weekly timetable grid with exact observed dates', async () => {
 	const supervisionApi = await readRepoFile('frontend-school/src/lib/api/supervision.ts');
 	const supervisionPage = await readRepoFile(
-		'frontend-school/src/routes/(app)/staff/academic/supervision/+page.svelte'
+		'frontend-school/src/lib/components/supervision/SupervisionWorkspace.svelte'
 	);
 	const supervisionModels = await readRepoFile('backend-school/src/modules/supervision/models.rs');
 	const supervisionService = await readRepoFile(
@@ -47,7 +47,7 @@ test('teaching supervision booking uses a weekly timetable grid with exact obser
 
 test('teaching supervision templates expose a read-only form preview', async () => {
 	const supervisionPage = await readRepoFile(
-		'frontend-school/src/routes/(app)/staff/academic/supervision/+page.svelte'
+		'frontend-school/src/lib/components/supervision/SupervisionWorkspace.svelte'
 	);
 
 	assert.match(supervisionPage, /previewTemplateDialogOpen/);
@@ -63,7 +63,7 @@ test('teaching supervision templates expose a read-only form preview', async () 
 
 test('teaching supervision request approval renders request rows with multiple evaluators', async () => {
 	const supervisionPage = await readRepoFile(
-		'frontend-school/src/routes/(app)/staff/academic/supervision/+page.svelte'
+		'frontend-school/src/lib/components/supervision/SupervisionWorkspace.svelte'
 	);
 	const supervisionApi = await readRepoFile('frontend-school/src/lib/api/supervision.ts');
 	const supervisionHandlers = await readRepoFile(
@@ -103,7 +103,7 @@ test('teaching supervision request approval renders request rows with multiple e
 
 test('teaching supervision own and assigned lists show complete lesson and evaluator context', async () => {
 	const supervisionPage = await readRepoFile(
-		'frontend-school/src/routes/(app)/staff/academic/supervision/+page.svelte'
+		'frontend-school/src/lib/components/supervision/SupervisionWorkspace.svelte'
 	);
 
 	assert.match(
@@ -142,7 +142,7 @@ test('teaching supervision own and assigned lists show complete lesson and evalu
 test('teaching supervision evaluation uses a dialog workflow', async () => {
 	const supervisionApi = await readRepoFile('frontend-school/src/lib/api/supervision.ts');
 	const supervisionPage = await readRepoFile(
-		'frontend-school/src/routes/(app)/staff/academic/supervision/+page.svelte'
+		'frontend-school/src/lib/components/supervision/SupervisionWorkspace.svelte'
 	);
 
 	assert.match(supervisionPage, /evaluationDialogOpen/);
@@ -170,7 +170,7 @@ test('teaching supervision evaluation uses a dialog workflow', async () => {
 test('teaching supervision approval workflow skips review submission', async () => {
 	const supervisionApi = await readRepoFile('frontend-school/src/lib/api/supervision.ts');
 	const supervisionPage = await readRepoFile(
-		'frontend-school/src/routes/(app)/staff/academic/supervision/+page.svelte'
+		'frontend-school/src/lib/components/supervision/SupervisionWorkspace.svelte'
 	);
 	const supervisionDetailPage = await readRepoFile(
 		'frontend-school/src/routes/(app)/staff/academic/supervision/[id]/+page.svelte'
@@ -222,7 +222,7 @@ test('teaching supervision approval workflow skips review submission', async () 
 test('teaching supervision observation detail supports safe edit actions', async () => {
 	const supervisionApi = await readRepoFile('frontend-school/src/lib/api/supervision.ts');
 	const parentPage = await readRepoFile(
-		'frontend-school/src/routes/(app)/staff/academic/supervision/+page.svelte'
+		'frontend-school/src/lib/components/supervision/SupervisionWorkspace.svelte'
 	);
 	const detailRoute = await readRepoFile(
 		'frontend-school/src/routes/(app)/staff/academic/supervision/[id]/+page.ts'
@@ -285,8 +285,8 @@ test('teaching supervision detail hides scores until academic approval releases 
 
 test('teaching supervision approval review shows completed rubric before approving', async () => {
 	const supervisionApi = await readRepoFile('frontend-school/src/lib/api/supervision.ts');
-	const supervisionPage = await readRepoFile(
-		'frontend-school/src/routes/(app)/staff/academic/supervision/+page.svelte'
+	const supervisionWorkspace = await readRepoFile(
+		'frontend-school/src/lib/components/supervision/SupervisionWorkspace.svelte'
 	);
 	const detailPage = await readRepoFile(
 		'frontend-school/src/routes/(app)/staff/academic/supervision/[id]/+page.svelte'
@@ -318,15 +318,88 @@ test('teaching supervision approval review shows completed rubric before approvi
 	assert.match(detailPage, /data-supervision-review-rubric="readonly"/);
 	assert.match(detailPage, />\s*รับรองผล\s*</);
 	assert.match(detailPage, />\s*อนุมัติผล\s*</);
-	assert.doesNotMatch(supervisionPage, /onclick=\{\(\) => certifyResult\(observation\.id\)\}/);
-	assert.doesNotMatch(supervisionPage, /onclick=\{\(\) => approveResult\(observation\.id\)\}/);
-	assert.match(supervisionPage, />\s*ตรวจผล\s*</);
+	assert.doesNotMatch(supervisionWorkspace, /onclick=\{\(\) => certifyResult\(observation\.id\)\}/);
+	assert.doesNotMatch(supervisionWorkspace, /onclick=\{\(\) => approveResult\(observation\.id\)\}/);
+	assert.match(supervisionWorkspace, />\s*ตรวจผล\s*</);
+});
+
+test('teaching supervision workflows are routed instead of tab-only state', async () => {
+	const supervisionWorkspace = await readRepoFile(
+		'frontend-school/src/lib/components/supervision/SupervisionWorkspace.svelte'
+	);
+	const routeAccess = await readRepoFile('frontend-school/src/lib/auth/route-access.ts');
+	const routeFiles = {
+		base: await readRepoFile(
+			'frontend-school/src/routes/(app)/staff/academic/supervision/+page.svelte'
+		),
+		evaluate: await readRepoFile(
+			'frontend-school/src/routes/(app)/staff/academic/supervision/evaluate/+page.svelte'
+		),
+		requests: await readRepoFile(
+			'frontend-school/src/routes/(app)/staff/academic/supervision/requests/+page.svelte'
+		),
+		overview: await readRepoFile(
+			'frontend-school/src/routes/(app)/staff/academic/supervision/overview/+page.svelte'
+		),
+		approvals: await readRepoFile(
+			'frontend-school/src/routes/(app)/staff/academic/supervision/approvals/+page.svelte'
+		),
+		cycles: await readRepoFile(
+			'frontend-school/src/routes/(app)/staff/academic/supervision/cycles/+page.svelte'
+		),
+		templates: await readRepoFile(
+			'frontend-school/src/routes/(app)/staff/academic/supervision/templates/+page.svelte'
+		)
+	};
+	const routeMetaFiles = {
+		evaluate: await readRepoFile(
+			'frontend-school/src/routes/(app)/staff/academic/supervision/evaluate/+page.ts'
+		),
+		requests: await readRepoFile(
+			'frontend-school/src/routes/(app)/staff/academic/supervision/requests/+page.ts'
+		),
+		overview: await readRepoFile(
+			'frontend-school/src/routes/(app)/staff/academic/supervision/overview/+page.ts'
+		),
+		approvals: await readRepoFile(
+			'frontend-school/src/routes/(app)/staff/academic/supervision/approvals/+page.ts'
+		),
+		cycles: await readRepoFile(
+			'frontend-school/src/routes/(app)/staff/academic/supervision/cycles/+page.ts'
+		),
+		templates: await readRepoFile(
+			'frontend-school/src/routes/(app)/staff/academic/supervision/templates/+page.ts'
+		)
+	};
+
+	assert.doesNotMatch(supervisionWorkspace, /<Tabs\.Root/);
+	assert.doesNotMatch(supervisionWorkspace, /bind:value=\{activeTab\}/);
+	assert.match(supervisionWorkspace, /export type SupervisionWorkspaceSection/);
+	assert.match(supervisionWorkspace, /section:/);
+	assert.match(supervisionWorkspace, /function sectionRoute/);
+	assert.match(supervisionWorkspace, /shouldLoadTemplates/);
+	assert.match(supervisionWorkspace, /shouldLoadStructure/);
+	assert.match(supervisionWorkspace, /shouldLoadObservations/);
+	assert.match(routeAccess, /permission\?: RoutePermission \| RoutePermission\[\]/);
+	assert.match(routeAccess, /Array\.isArray\(requiredPermission\)/);
+
+	for (const [section, source] of Object.entries(routeFiles)) {
+		assert.match(source, /SupervisionWorkspace/);
+		assert.match(source, new RegExp(`section="${section === 'base' ? 'mine' : section}"`));
+	}
+
+	for (const [section, source] of Object.entries(routeMetaFiles)) {
+		assert.match(source, /_meta/);
+		assert.match(source, /access/);
+		assert.doesNotMatch(source, /menu:/);
+		assert.match(source, /PERMISSIONS\./, `${section} route should use exact permission access`);
+	}
 });
 
 test('teaching supervision manager view exposes teacher status overview and aligned actions', async () => {
 	const supervisionApi = await readRepoFile('frontend-school/src/lib/api/supervision.ts');
-	const supervisionPage = await readRepoFile(
-		'frontend-school/src/routes/(app)/staff/academic/supervision/+page.svelte'
+	const supervisionWorkspace = await readRepoFile(
+		'frontend-school/src/lib/components/supervision/SupervisionWorkspace.svelte'
 	);
 	const supervisionHandlers = await readRepoFile(
 		'backend-school/src/modules/supervision/handlers.rs'
@@ -344,15 +417,14 @@ test('teaching supervision manager view exposes teacher status overview and alig
 		supervisionApi,
 		/\/api\/supervision\/reports\/cycles\/\$\{cycleId\}\/teacher-status/
 	);
-	assert.match(supervisionPage, /teacherStatusRows/);
-	assert.match(supervisionPage, /loadTeacherStatusOverview/);
-	assert.match(supervisionPage, /<Tabs\.Trigger value="overview"[^>]*>ภาพรวม<\/Tabs\.Trigger>/);
-	assert.match(supervisionPage, /สถานะครู/);
-	assert.match(supervisionPage, /<Table\.Head>กลุ่มสาระ<\/Table\.Head>/);
-	assert.match(supervisionPage, /nextStepLabel/);
-	assert.match(supervisionPage, /averageRating/);
-	assert.match(supervisionPage, /class="flex flex-wrap items-center justify-end gap-2"/);
-	assert.match(supervisionPage, /class="h-8"/);
+	assert.match(supervisionWorkspace, /teacherStatusRows/);
+	assert.match(supervisionWorkspace, /loadTeacherStatusOverview/);
+	assert.match(supervisionWorkspace, /สถานะครู/);
+	assert.match(supervisionWorkspace, /<Table\.Head>กลุ่มสาระ<\/Table\.Head>/);
+	assert.match(supervisionWorkspace, /nextStepLabel/);
+	assert.match(supervisionWorkspace, /averageRating/);
+	assert.match(supervisionWorkspace, /class="flex flex-wrap items-center justify-end gap-2"/);
+	assert.match(supervisionWorkspace, /class="h-8"/);
 	assert.match(supervisionHandlers, /teacher_status_overview/);
 	assert.match(supervisionService, /cycle_teacher_status/);
 	assert.match(supervisionService, /JOIN subject_groups sg ON sg\.id = ou\.subject_group_id/);
