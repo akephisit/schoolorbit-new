@@ -304,12 +304,16 @@ test('teaching supervision manager view exposes teacher status overview and alig
 	assert.match(supervisionPage, /loadTeacherStatusOverview/);
 	assert.match(supervisionPage, /<Tabs\.Trigger value="overview"[^>]*>ภาพรวม<\/Tabs\.Trigger>/);
 	assert.match(supervisionPage, /สถานะครู/);
+	assert.match(supervisionPage, /<Table\.Head>กลุ่มสาระ<\/Table\.Head>/);
 	assert.match(supervisionPage, /nextStepLabel/);
 	assert.match(supervisionPage, /averageRating/);
 	assert.match(supervisionPage, /class="flex flex-wrap items-center justify-end gap-2"/);
 	assert.match(supervisionPage, /class="h-8"/);
 	assert.match(supervisionHandlers, /teacher_status_overview/);
 	assert.match(supervisionService, /cycle_teacher_status/);
+	assert.match(supervisionService, /JOIN subject_groups sg ON sg\.id = ou\.subject_group_id/);
+	assert.match(supervisionService, /ARRAY_AGG\(DISTINCT sg\.name ORDER BY sg\.name\)/);
+	assert.doesNotMatch(supervisionService, /ARRAY_AGG\(ou\.name ORDER BY om\.is_primary DESC, ou\.name\)/);
 	assert.match(
 		supervisionPolicy,
 		/require_observation_management_access[\s\S]*\.await[\s\S]*return Ok\(\(\)\)/

@@ -2694,7 +2694,7 @@
 						<Table.Header>
 							<Table.Row>
 								<Table.Head>ครู</Table.Head>
-								<Table.Head>หน่วยงาน</Table.Head>
+								<Table.Head>กลุ่มสาระ</Table.Head>
 								<Table.Head>คาบนิเทศ</Table.Head>
 								<Table.Head>สถานะครู</Table.Head>
 								<Table.Head>ขั้นตอนถัดไป</Table.Head>
