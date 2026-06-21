@@ -121,6 +121,34 @@ test('user role assignment API contract stays aligned across backend and fronten
 	assert.match(publicStaffPage, /PublicStaffProfileResponse/);
 });
 
+test('staff dashboard API uses a typed aggregate-only response', async () => {
+	const frontendStaffApi = await readRepoFile('frontend-school/src/lib/api/staff.ts');
+	const backendService = await readRepoFile(
+		'backend-school/src/modules/staff/services/dashboard_service.rs'
+	);
+	const backendHandler = await readRepoFile('backend-school/src/modules/staff/handlers/staff.rs');
+
+	assert.match(frontendStaffApi, /interface\s+StaffDashboardOverview/);
+	assert.match(frontendStaffApi, /totalStaff:\s*number/);
+	assert.match(frontendStaffApi, /totalStudents:\s*number/);
+	assert.match(frontendStaffApi, /activeClassrooms:\s*number/);
+	assert.match(
+		frontendStaffApi,
+		/getStaffDashboard\(\):\s*Promise<ApiResponse<StaffDashboardOverview>>/
+	);
+	assert.match(
+		frontendStaffApi,
+		/apiClient\.get<StaffDashboardOverview>\('\/api\/staff\/dashboard'\)/
+	);
+
+	assert.match(backendService, /struct\s+StaffDashboardOverview/);
+	assert.match(backendService, /#\[serde\(rename_all = "camelCase"\)\]/);
+	assert.match(backendHandler, /ApiResponse::ok\(data\)/);
+
+	assert.doesNotMatch(frontendStaffApi, /listStaff\(\{[\s\S]*page_size:\s*1/);
+	assert.doesNotMatch(frontendStaffApi, /listStudents\(\{[\s\S]*page_size:\s*1/);
+});
+
 test('admission application detail contract returns application and documents in data', async () => {
 	const backendHandler = await readRepoFile(
 		'backend-school/src/modules/admission/handlers/applications.rs'

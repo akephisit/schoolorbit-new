@@ -23,6 +23,12 @@ export interface StaffListResponse {
 	total_pages: number;
 }
 
+export interface StaffDashboardOverview {
+	totalStaff: number;
+	totalStudents: number;
+	activeClassrooms: number;
+}
+
 export interface RoleResponse {
 	id: string;
 	code: string;
@@ -257,6 +263,10 @@ interface StaffListData {
 	page: number;
 	page_size: number;
 	total_pages: number;
+}
+
+export async function getStaffDashboard(): Promise<ApiResponse<StaffDashboardOverview>> {
+	return apiClient.get<StaffDashboardOverview>('/api/staff/dashboard');
 }
 
 export async function listStaff(filter?: StaffFilter): Promise<StaffListResponse> {
