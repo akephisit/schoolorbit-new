@@ -198,9 +198,13 @@ test('teaching supervision approval workflow skips review submission', async () 
 		supervisionPage,
 		/const approvableObservations = \$derived\([\s\S]*canApprove[\s\S]*item\.status === 'approved'/
 	);
-	assert.match(supervisionPage, /certifyResult\(observation\.id\)/);
-	assert.match(supervisionPage, /รับรองผล/);
-	assert.match(supervisionPage, /อนุมัติผล/);
+	assert.doesNotMatch(supervisionPage, /certifyResult\(observation\.id\)/);
+	assert.doesNotMatch(supervisionPage, /approveResult\(observation\.id\)/);
+	assert.match(supervisionPage, />\s*ตรวจผล\s*</);
+	assert.match(supervisionDetailPage, /async function certifyResult\(\)/);
+	assert.match(supervisionDetailPage, /async function approveResult\(\)/);
+	assert.match(supervisionDetailPage, />\s*รับรองผล\s*</);
+	assert.match(supervisionDetailPage, />\s*อนุมัติผล\s*</);
 	assert.match(supervisionPage, /รอครูรับทราบ/);
 	assert.doesNotMatch(supervisionPage, /ส่งตรวจทาน/);
 	assert.doesNotMatch(supervisionPage, /ส่งกลับผล/);
@@ -279,6 +283,46 @@ test('teaching supervision detail hides scores until academic approval releases 
 	assert.match(supervisionService, /SupervisionObservationStatus::Completed/);
 });
 
+test('teaching supervision approval review shows completed rubric before approving', async () => {
+	const supervisionApi = await readRepoFile('frontend-school/src/lib/api/supervision.ts');
+	const supervisionPage = await readRepoFile(
+		'frontend-school/src/routes/(app)/staff/academic/supervision/+page.svelte'
+	);
+	const detailPage = await readRepoFile(
+		'frontend-school/src/routes/(app)/staff/academic/supervision/[id]/+page.svelte'
+	);
+	const supervisionHandlers = await readRepoFile(
+		'backend-school/src/modules/supervision/handlers.rs'
+	);
+	const supervisionModels = await readRepoFile('backend-school/src/modules/supervision/models.rs');
+	const supervisionService = await readRepoFile(
+		'backend-school/src/modules/supervision/services.rs'
+	);
+
+	assert.match(supervisionApi, /SupervisionObservationReview/);
+	assert.match(supervisionApi, /SupervisionReviewEvaluatorResult/);
+	assert.match(supervisionApi, /getSupervisionObservationReview/);
+	assert.match(supervisionApi, /\/api\/supervision\/observations\/\$\{id\}\/review/);
+	assert.match(supervisionHandlers, /get_observation_review/);
+	assert.match(supervisionHandlers, /\/observations\/\{id\}\/review/);
+	assert.match(supervisionModels, /pub struct SupervisionObservationReview/);
+	assert.match(supervisionModels, /pub struct SupervisionReviewEvaluatorResult/);
+	assert.match(supervisionModels, /pub struct SupervisionReviewItemSummary/);
+	assert.match(supervisionService, /pub async fn get_observation_review/);
+	assert.match(supervisionService, /load_observation_review_responses/);
+	assert.match(detailPage, /review = \$state<SupervisionObservationReview \| null>\(null\)/);
+	assert.match(detailPage, /loadReviewDetail/);
+	assert.match(detailPage, /reviewAverageScoreLabel/);
+	assert.match(detailPage, /selectedReviewEvaluatorId/);
+	assert.match(detailPage, /reviewItemRatingFor/);
+	assert.match(detailPage, /data-supervision-review-rubric="readonly"/);
+	assert.match(detailPage, />\s*รับรองผล\s*</);
+	assert.match(detailPage, />\s*อนุมัติผล\s*</);
+	assert.doesNotMatch(supervisionPage, /onclick=\{\(\) => certifyResult\(observation\.id\)\}/);
+	assert.doesNotMatch(supervisionPage, /onclick=\{\(\) => approveResult\(observation\.id\)\}/);
+	assert.match(supervisionPage, />\s*ตรวจผล\s*</);
+});
+
 test('teaching supervision manager view exposes teacher status overview and aligned actions', async () => {
 	const supervisionApi = await readRepoFile('frontend-school/src/lib/api/supervision.ts');
 	const supervisionPage = await readRepoFile(
@@ -313,7 +357,10 @@ test('teaching supervision manager view exposes teacher status overview and alig
 	assert.match(supervisionService, /cycle_teacher_status/);
 	assert.match(supervisionService, /JOIN subject_groups sg ON sg\.id = ou\.subject_group_id/);
 	assert.match(supervisionService, /ARRAY_AGG\(DISTINCT sg\.name ORDER BY sg\.name\)/);
-	assert.doesNotMatch(supervisionService, /ARRAY_AGG\(ou\.name ORDER BY om\.is_primary DESC, ou\.name\)/);
+	assert.doesNotMatch(
+		supervisionService,
+		/ARRAY_AGG\(ou\.name ORDER BY om\.is_primary DESC, ou\.name\)/
+	);
 	assert.match(
 		supervisionPolicy,
 		/require_observation_management_access[\s\S]*\.await[\s\S]*return Ok\(\(\)\)/

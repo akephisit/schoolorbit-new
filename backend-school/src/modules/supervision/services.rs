@@ -18,12 +18,14 @@ use crate::modules::supervision::models::{
     SupervisionAction, SupervisionCycle, SupervisionCycleProgress, SupervisionCycleStatus,
     SupervisionCycleTarget, SupervisionEvaluator, SupervisionEvaluatorAvailability,
     SupervisionEvaluatorConflict, SupervisionEvaluatorStatus, SupervisionObservation,
-    SupervisionObservationFilter, SupervisionObservationStatus, SupervisionTargetType,
-    SupervisionTeacherStatusRow, SupervisionTemplate, SupervisionTemplateItem,
-    SupervisionTemplateItemType, SupervisionTemplateSection, SupervisionTemplateStatus,
-    SupervisionTemplateStep, SupervisionTemplateStepActionKind, SupervisionTemplateStepActorKind,
-    UpdateRequestedObservationRequest, UpdateSupervisionCycleRequest,
-    UpdateSupervisionObservationRequest, UpdateSupervisionTemplateRequest,
+    SupervisionObservationFilter, SupervisionObservationReview, SupervisionObservationStatus,
+    SupervisionReviewEvaluatorResult, SupervisionReviewItemSummary, SupervisionReviewResponse,
+    SupervisionTargetType, SupervisionTeacherStatusRow, SupervisionTemplate,
+    SupervisionTemplateItem, SupervisionTemplateItemType, SupervisionTemplateSection,
+    SupervisionTemplateStatus, SupervisionTemplateStep, SupervisionTemplateStepActionKind,
+    SupervisionTemplateStepActorKind, UpdateRequestedObservationRequest,
+    UpdateSupervisionCycleRequest, UpdateSupervisionObservationRequest,
+    UpdateSupervisionTemplateRequest,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -283,6 +285,14 @@ struct TeacherStatusOverviewRow {
     lesson_title: Option<String>,
     evaluator_names: Vec<String>,
     average_rating: Option<f64>,
+}
+
+#[derive(Debug, Clone, sqlx::FromRow)]
+struct SupervisionReviewResponseRow {
+    evaluator_id: Uuid,
+    template_item_id: Uuid,
+    rating_score: Option<f64>,
+    text_response: Option<String>,
 }
 
 #[derive(Debug, sqlx::FromRow)]
@@ -899,6 +909,26 @@ pub async fn list_observations(
 pub async fn get_observation(pool: &PgPool, id: Uuid) -> Result<SupervisionObservation, AppError> {
     let row = load_observation_row(pool, id).await?;
     observation_from_row(pool, row).await
+}
+
+pub async fn get_observation_review(
+    pool: &PgPool,
+    id: Uuid,
+) -> Result<SupervisionObservationReview, AppError> {
+    let observation = get_observation(pool, id).await?;
+    let template = get_template(pool, observation.template_id).await?;
+    let response_rows = load_observation_review_responses(pool, id).await?;
+    let average_rating = observation.average_rating;
+    let evaluator_results = build_review_evaluator_results(&observation.evaluators, response_rows);
+    let item_summaries = build_review_item_summaries(&evaluator_results);
+
+    Ok(SupervisionObservationReview {
+        observation,
+        template,
+        evaluator_results,
+        item_summaries,
+        average_rating,
+    })
 }
 
 pub async fn evaluator_availability(
@@ -2594,6 +2624,114 @@ async fn load_observation_evaluators(
     rows.into_iter().map(evaluator_from_row).collect()
 }
 
+async fn load_observation_review_responses(
+    pool: &PgPool,
+    observation_id: Uuid,
+) -> Result<Vec<SupervisionReviewResponseRow>, AppError> {
+    sqlx::query_as::<_, SupervisionReviewResponseRow>(
+        r#"
+        SELECT evaluator_id,
+               template_item_id,
+               rating_score::double precision AS rating_score,
+               text_response
+        FROM supervision_evaluator_responses
+        WHERE observation_id = $1
+        ORDER BY updated_at
+        "#,
+    )
+    .bind(observation_id)
+    .fetch_all(pool)
+    .await
+    .map_err(|error| {
+        tracing::error!("Failed to load supervision review responses: {}", error);
+        AppError::InternalServerError("ไม่สามารถดึงคำตอบแบบประเมินนิเทศได้".to_string())
+    })
+}
+
+fn build_review_evaluator_results(
+    evaluators: &[SupervisionEvaluator],
+    response_rows: Vec<SupervisionReviewResponseRow>,
+) -> Vec<SupervisionReviewEvaluatorResult> {
+    let mut responses_by_evaluator = HashMap::<Uuid, Vec<SupervisionReviewResponse>>::new();
+    for row in response_rows {
+        responses_by_evaluator
+            .entry(row.evaluator_id)
+            .or_default()
+            .push(SupervisionReviewResponse {
+                template_item_id: row.template_item_id,
+                rating_score: row.rating_score,
+                text_response: row.text_response,
+            });
+    }
+
+    evaluators
+        .iter()
+        .map(|evaluator| {
+            let responses = responses_by_evaluator
+                .remove(&evaluator.id)
+                .unwrap_or_default();
+            let average_rating = average_rating_from_scores(
+                responses
+                    .iter()
+                    .filter_map(|response| response.rating_score),
+            );
+
+            SupervisionReviewEvaluatorResult {
+                evaluator_id: evaluator.id,
+                evaluator_user_id: evaluator.evaluator_user_id,
+                evaluator_display_name: evaluator.evaluator_display_name.clone(),
+                role_label: evaluator.role_label.clone(),
+                status: evaluator.status,
+                submitted_at: evaluator.submitted_at,
+                average_rating,
+                responses,
+            }
+        })
+        .collect()
+}
+
+fn build_review_item_summaries(
+    evaluator_results: &[SupervisionReviewEvaluatorResult],
+) -> Vec<SupervisionReviewItemSummary> {
+    let mut scores_by_item = HashMap::<Uuid, Vec<f64>>::new();
+    for evaluator in evaluator_results {
+        for response in &evaluator.responses {
+            if let Some(score) = response.rating_score {
+                scores_by_item
+                    .entry(response.template_item_id)
+                    .or_default()
+                    .push(score);
+            }
+        }
+    }
+
+    let mut summaries = scores_by_item
+        .into_iter()
+        .map(|(template_item_id, scores)| SupervisionReviewItemSummary {
+            template_item_id,
+            average_rating: average_rating_from_scores(scores.iter().copied()),
+            response_count: scores.len() as i64,
+        })
+        .collect::<Vec<_>>();
+    summaries.sort_by_key(|summary| summary.template_item_id);
+    summaries
+}
+
+fn average_rating_from_scores(scores: impl IntoIterator<Item = f64>) -> Option<f64> {
+    let mut total = 0.0;
+    let mut count = 0.0;
+    for score in scores {
+        total += score;
+        count += 1.0;
+    }
+
+    if count > 0.0 {
+        Some(total / count)
+    } else {
+        None
+    }
+}
+
 fn evaluator_from_row(row: SupervisionEvaluatorRow) -> Result<SupervisionEvaluator, AppError> {
     Ok(SupervisionEvaluator {
         id: row.id,
@@ -3859,6 +3997,83 @@ mod tests {
         assert_eq!(responses.len(), 1);
         assert_eq!(responses[0].template_item_id, item_id);
         assert_eq!(responses[0].rating_score, Some(5.0));
+    }
+
+    #[test]
+    fn review_results_average_scores_by_evaluator_and_item() {
+        let first_evaluator_id = Uuid::new_v4();
+        let second_evaluator_id = Uuid::new_v4();
+        let first_item_id = Uuid::new_v4();
+        let second_item_id = Uuid::new_v4();
+        let evaluators = vec![
+            SupervisionEvaluator {
+                id: first_evaluator_id,
+                observation_id: Uuid::new_v4(),
+                evaluator_user_id: Uuid::new_v4(),
+                evaluator_display_name: Some("ผู้ประเมิน 1".to_string()),
+                role_label: None,
+                is_required: true,
+                status: SupervisionEvaluatorStatus::Submitted,
+                submitted_at: None,
+                created_at: Utc::now(),
+                updated_at: Utc::now(),
+            },
+            SupervisionEvaluator {
+                id: second_evaluator_id,
+                observation_id: Uuid::new_v4(),
+                evaluator_user_id: Uuid::new_v4(),
+                evaluator_display_name: Some("ผู้ประเมิน 2".to_string()),
+                role_label: None,
+                is_required: true,
+                status: SupervisionEvaluatorStatus::Submitted,
+                submitted_at: None,
+                created_at: Utc::now(),
+                updated_at: Utc::now(),
+            },
+        ];
+
+        let evaluator_results = build_review_evaluator_results(
+            &evaluators,
+            vec![
+                SupervisionReviewResponseRow {
+                    evaluator_id: first_evaluator_id,
+                    template_item_id: first_item_id,
+                    rating_score: Some(5.0),
+                    text_response: None,
+                },
+                SupervisionReviewResponseRow {
+                    evaluator_id: first_evaluator_id,
+                    template_item_id: second_item_id,
+                    rating_score: Some(3.0),
+                    text_response: None,
+                },
+                SupervisionReviewResponseRow {
+                    evaluator_id: second_evaluator_id,
+                    template_item_id: first_item_id,
+                    rating_score: Some(4.0),
+                    text_response: None,
+                },
+            ],
+        );
+        let item_summaries = build_review_item_summaries(&evaluator_results);
+
+        assert_eq!(evaluator_results.len(), 2);
+        assert_eq!(evaluator_results[0].average_rating, Some(4.0));
+        assert_eq!(evaluator_results[1].average_rating, Some(4.0));
+        assert_eq!(
+            item_summaries
+                .iter()
+                .find(|summary| summary.template_item_id == first_item_id)
+                .map(|summary| (summary.average_rating, summary.response_count)),
+            Some((Some(4.5), 2))
+        );
+        assert_eq!(
+            item_summaries
+                .iter()
+                .find(|summary| summary.template_item_id == second_item_id)
+                .map(|summary| (summary.average_rating, summary.response_count)),
+            Some((Some(3.0), 1))
+        );
     }
 
     #[test]

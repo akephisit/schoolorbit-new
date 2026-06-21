@@ -235,6 +235,43 @@ pub async fn get_observation(
     Ok(Json(ApiResponse::ok(observation)).into_response())
 }
 
+pub async fn get_observation_review(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context(&state, &headers).await?;
+    let observation = services::get_observation(&context.tenant.pool, id).await?;
+    let evaluator_user_ids = observation
+        .evaluators
+        .iter()
+        .map(|evaluator| evaluator.evaluator_user_id)
+        .collect::<Vec<_>>();
+
+    if services::can_view_observation_results(observation.status, false) {
+        supervision_access_policy::require_observation_read_access(
+            &context.tenant.pool,
+            &context.actor,
+            observation.observed_user_id,
+            &evaluator_user_ids,
+        )
+        .await?;
+    } else if !supervision_access_policy::can_approve_school(&context.actor)
+        && !supervision_access_policy::can_manage_school(&context.actor)
+    {
+        supervision_access_policy::require_observation_management_access(
+            &context.tenant.pool,
+            &context.actor,
+            observation.observed_user_id,
+        )
+        .await?;
+    }
+
+    let review = services::get_observation_review(&context.tenant.pool, id).await?;
+
+    Ok(Json(ApiResponse::ok(review)).into_response())
+}
+
 pub async fn evaluator_availability(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -586,6 +623,7 @@ pub fn routes() -> Router<AppState> {
             "/observations/{id}",
             get(get_observation).patch(update_observation),
         )
+        .route("/observations/{id}/review", get(get_observation_review))
         .route(
             "/observations/{id}/evaluator-availability",
             get(evaluator_availability),

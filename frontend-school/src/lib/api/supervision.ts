@@ -196,6 +196,37 @@ export interface SupervisionObservation {
 	averageRating?: number | null;
 }
 
+export interface SupervisionReviewResponse {
+	templateItemId: string;
+	ratingScore?: number | null;
+	textResponse?: string | null;
+}
+
+export interface SupervisionReviewEvaluatorResult {
+	evaluatorId: string;
+	evaluatorUserId: string;
+	evaluatorDisplayName?: string | null;
+	roleLabel?: string | null;
+	status: SupervisionEvaluatorStatus;
+	submittedAt?: string | null;
+	averageRating?: number | null;
+	responses: SupervisionReviewResponse[];
+}
+
+export interface SupervisionReviewItemSummary {
+	templateItemId: string;
+	averageRating?: number | null;
+	responseCount: number;
+}
+
+export interface SupervisionObservationReview {
+	observation: SupervisionObservation;
+	template: SupervisionTemplate;
+	evaluatorResults: SupervisionReviewEvaluatorResult[];
+	itemSummaries: SupervisionReviewItemSummary[];
+	averageRating?: number | null;
+}
+
 export interface CreateSupervisionCycleTargetRequest {
 	targetType: SupervisionTargetType;
 	targetId?: string | null;
@@ -408,6 +439,15 @@ export async function getSupervisionObservation(id: string): Promise<Supervision
 		`/api/supervision/observations/${id}`
 	);
 	return requireApiData(response, 'ไม่สามารถโหลดรายการนิเทศได้');
+}
+
+export async function getSupervisionObservationReview(
+	id: string
+): Promise<SupervisionObservationReview> {
+	const response = await apiClient.get<SupervisionObservationReview>(
+		`/api/supervision/observations/${id}/review`
+	);
+	return requireApiData(response, 'ไม่สามารถโหลดผลประเมินนิเทศได้');
 }
 
 export async function requestSupervisionObservation(

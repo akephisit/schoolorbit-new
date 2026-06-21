@@ -431,6 +431,45 @@ pub struct SupervisionObservation {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct SupervisionReviewResponse {
+    pub template_item_id: Uuid,
+    pub rating_score: Option<f64>,
+    pub text_response: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SupervisionReviewEvaluatorResult {
+    pub evaluator_id: Uuid,
+    pub evaluator_user_id: Uuid,
+    pub evaluator_display_name: Option<String>,
+    pub role_label: Option<String>,
+    pub status: SupervisionEvaluatorStatus,
+    pub submitted_at: Option<DateTime<Utc>>,
+    pub average_rating: Option<f64>,
+    pub responses: Vec<SupervisionReviewResponse>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SupervisionReviewItemSummary {
+    pub template_item_id: Uuid,
+    pub average_rating: Option<f64>,
+    pub response_count: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SupervisionObservationReview {
+    pub observation: SupervisionObservation,
+    pub template: SupervisionTemplate,
+    pub evaluator_results: Vec<SupervisionReviewEvaluatorResult>,
+    pub item_summaries: Vec<SupervisionReviewItemSummary>,
+    pub average_rating: Option<f64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ManualLesson {
     pub subject_name: String,
     pub classroom_label: String,

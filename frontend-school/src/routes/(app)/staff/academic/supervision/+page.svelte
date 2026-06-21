@@ -26,9 +26,7 @@
 	import { getMyTimetable, type TimetableEntry } from '$lib/api/timetable';
 	import {
 		acknowledgeSupervisionObservation,
-		approveSupervisionObservation,
 		approveSupervisionObservationRequest,
-		certifySupervisionObservation,
 		createSupervisionCycle,
 		createSupervisionTemplate,
 		getSupervisionEvaluatorAvailability,
@@ -1255,36 +1253,6 @@
 			toast.error(error instanceof Error ? error.message : 'บันทึกผลประเมินไม่สำเร็จ');
 		} finally {
 			savingEvaluation = null;
-		}
-	}
-
-	async function certifyResult(id: string) {
-		if (!canManageRequests) return;
-		savingAction = `certify-result:${id}`;
-		try {
-			const response = await certifySupervisionObservation(id);
-			const observation = requireMutationData(response, 'รับรองผลไม่สำเร็จ');
-			replaceObservation(observation);
-			toast.success('รับรองผลนิเทศแล้ว');
-		} catch (error) {
-			toast.error(error instanceof Error ? error.message : 'รับรองผลไม่สำเร็จ');
-		} finally {
-			savingAction = null;
-		}
-	}
-
-	async function approveResult(id: string) {
-		if (!canApprove) return;
-		savingAction = `approve-result:${id}`;
-		try {
-			const response = await approveSupervisionObservation(id);
-			const observation = requireMutationData(response, 'อนุมัติผลไม่สำเร็จ');
-			replaceObservation(observation);
-			toast.success('อนุมัติผลนิเทศแล้ว');
-		} catch (error) {
-			toast.error(error instanceof Error ? error.message : 'อนุมัติผลไม่สำเร็จ');
-		} finally {
-			savingAction = null;
 		}
 	}
 
@@ -2839,35 +2807,8 @@
 														href={`/staff/academic/supervision/${observation.id}`}
 													>
 														<Eye class="h-4 w-4" />
-														รายละเอียด
+														ตรวจผล
 													</Button>
-													{#if canManageRequests && observation.status === 'evaluators_submitted'}
-														<LoadingButton
-															size="sm"
-															variant="outline"
-															onclick={() => certifyResult(observation.id)}
-															loading={savingAction === `certify-result:${observation.id}`}
-															loadingLabel="กำลังรับรอง..."
-															disabled={mutationBusy}
-														>
-															รับรองผล
-														</LoadingButton>
-													{/if}
-													{#if canApprove && observation.status === 'approved'}
-														<LoadingButton
-															size="sm"
-															variant="outline"
-															onclick={() => approveResult(observation.id)}
-															loading={savingAction === `approve-result:${observation.id}`}
-															loadingLabel="กำลังอนุมัติ..."
-															disabled={mutationBusy}
-														>
-															อนุมัติผล
-														</LoadingButton>
-													{/if}
-													{#if !(canManageRequests && observation.status === 'evaluators_submitted') && !(canApprove && observation.status === 'approved')}
-														<span class="text-sm text-muted-foreground">-</span>
-													{/if}
 												</div>
 											</Table.Cell>
 										</Table.Row>
