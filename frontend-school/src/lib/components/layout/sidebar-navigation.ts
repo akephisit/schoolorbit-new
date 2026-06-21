@@ -124,7 +124,7 @@ export const SIDEBAR_SECTION_DEFINITIONS: SidebarSectionDefinition[] = [
 		icon: 'CalendarDays',
 		workspaceCode: 'academic',
 		order: 50,
-		paths: ['/staff/academic/timetable']
+		paths: ['/staff/academic/timetable/today', '/staff/academic/timetable']
 	},
 	{
 		id: 'personnel-management',

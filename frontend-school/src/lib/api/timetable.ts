@@ -85,6 +85,56 @@ export interface TimetableEntry {
 	batch_id?: string;
 }
 
+export interface DailyTeachingPeriod {
+	id: string;
+	name: string | null;
+	startTime: string;
+	endTime: string;
+	orderIndex: number;
+}
+
+export interface DailyTeachingEntry {
+	entryId: string;
+	entryType: 'COURSE' | 'BREAK' | 'ACTIVITY' | 'HOMEROOM' | 'ACADEMIC';
+	subjectCode: string | null;
+	subjectName: string | null;
+	subjectGroupName: string | null;
+	classroomName: string | null;
+	roomCode: string | null;
+	title: string | null;
+	note: string | null;
+	isTeamTeaching: boolean;
+}
+
+export interface DailyTeachingPeriodCell {
+	periodId: string;
+	entries: DailyTeachingEntry[];
+}
+
+export interface DailyTeachingTeacher {
+	id: string;
+	displayName: string;
+	organizationUnitNames: string[];
+	periods: DailyTeachingPeriodCell[];
+}
+
+export interface DailyTeachingSummary {
+	totalTeacherCount: number;
+	displayedTeacherCount: number;
+	teachersTeachingCount: number;
+	lessonCount: number;
+	emptyTeacherCount: number;
+}
+
+export interface DailyTeachingOverview {
+	date: string;
+	dayOfWeek: string;
+	academicSemesterId: string;
+	periods: DailyTeachingPeriod[];
+	teachers: DailyTeachingTeacher[];
+	summary: DailyTeachingSummary;
+}
+
 export interface TimetablePeriodSummary {
 	id: string;
 	name: string | null;
@@ -316,6 +366,26 @@ export const listTimetableEntries = async (
 };
 
 export const listTimetableEntriesWithSeq = listTimetableEntries;
+
+export const getDailyTeachingOverview = async (
+	filters: {
+		date?: string;
+		academicSemesterId?: string;
+		includeEmptyTeachers?: boolean;
+	} = {}
+): Promise<LoadedApiResponse<DailyTeachingOverview>> => {
+	const params = new URLSearchParams();
+	if (filters.date) params.append('date', filters.date);
+	if (filters.academicSemesterId) params.append('academic_semester_id', filters.academicSemesterId);
+	if (filters.includeEmptyTeachers) params.append('include_empty_teachers', 'true');
+
+	const queryString = params.toString() ? `?${params.toString()}` : '';
+	const response = await apiClient.get<DailyTeachingOverview>(
+		`/api/academic/timetable/daily-teaching${queryString}`
+	);
+	const data = requireApiData(response, 'ไม่สามารถโหลดตารางสอนวันนี้ได้');
+	return { success: true, data, message: response.message };
+};
 
 /**
  * ตารางของผู้ใช้ปัจจุบัน (student/staff)

@@ -530,6 +530,61 @@ fn staff_dashboard_endpoint_is_staff_scoped_and_aggregate_only() {
 }
 
 #[test]
+fn daily_teaching_overview_endpoint_is_read_only_and_pii_safe() {
+    let routes = strip_comments(&read_source(manifest_dir().join("src/modules/academic.rs")));
+    let handler = strip_comments(&read_source(
+        manifest_dir().join("src/modules/academic/handlers/timetable.rs"),
+    ));
+    let service = strip_comments(&read_source(
+        manifest_dir().join("src/modules/academic/services/daily_teaching_service.rs"),
+    ));
+    let registry = read_source(manifest_dir().join("src/permissions/registry.rs"));
+    let daily_handler = handler
+        .split("pub async fn daily_teaching_overview")
+        .nth(1)
+        .unwrap_or("")
+        .split("pub async fn replay_events")
+        .next()
+        .unwrap_or("");
+
+    assert!(routes.contains("\"/timetable/daily-teaching\""));
+    assert!(routes.contains("get(handlers::timetable::daily_teaching_overview)"));
+    assert!(
+        routes.find("\"/timetable/daily-teaching\"") < routes.find("\"/timetable/{id}\""),
+        "daily teaching route must be registered before /timetable/{{id}}"
+    );
+
+    assert!(daily_handler.contains("actor_tenant_context(&state, &headers).await?"));
+    assert!(daily_handler.contains("ACADEMIC_TIMETABLE_TODAY_READ_SCHOOL"));
+    assert!(daily_handler.contains("ACADEMIC_COURSE_PLAN_READ_ALL"));
+    assert!(!daily_handler.contains("ACADEMIC_COURSE_PLAN_MANAGE_ALL"));
+    assert!(daily_handler.contains("daily_teaching_service::get_daily_teaching_overview"));
+    assert!(daily_handler.contains("ApiResponse::ok(data)"));
+
+    assert!(service.contains("#[serde(rename_all = \"camelCase\")]"));
+    assert!(service.contains("DailyTeachingOverview"));
+    assert!(service.contains("timetable_entry_instructors"));
+    assert!(service.contains("subject_group_name"));
+    assert!(service.contains("user_roles"));
+    assert!(service.contains("role_def.code IN ('TEACHER', 'HEAD')"));
+    assert!(registry.contains("academic_timetable_today.read.school"));
+
+    for forbidden in [
+        "national_id",
+        "phone",
+        "email",
+        "username",
+        "address",
+        "student_",
+    ] {
+        assert!(
+            !service.contains(forbidden),
+            "daily teaching service must not expose or select `{forbidden}`"
+        );
+    }
+}
+
+#[test]
 fn academic_curriculum_access_uses_resource_policy_tree_resolution() {
     let curriculum_policy = strip_comments(&read_source(
         manifest_dir().join("src/policies/curriculum_access_policy.rs"),

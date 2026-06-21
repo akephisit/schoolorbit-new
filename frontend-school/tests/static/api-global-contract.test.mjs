@@ -372,6 +372,26 @@ test('permission registry covers backend and frontend permission references', as
 	assert.deepEqual(violations, []);
 });
 
+test('daily teaching overview permission is registered across backend and frontend', async () => {
+	const backendRegistry = await readFile(
+		path.join(repoRoot, 'backend-school/src/permissions/registry.rs'),
+		'utf8'
+	);
+	const frontendRegistry = await readFile(
+		path.join(repoRoot, 'frontend-school/src/lib/permissions/registry.ts'),
+		'utf8'
+	);
+	const migration = await readFile(
+		path.join(repoRoot, 'backend-school/migrations/011_daily_teaching_overview_permission.sql'),
+		'utf8'
+	);
+
+	for (const source of [backendRegistry, frontendRegistry, migration]) {
+		assert.match(source, /academic_timetable_today\.read\.school/);
+		assert.match(source, /academic_timetable_today/);
+	}
+});
+
 test('frontend app route metadata uses permission registry constants', async () => {
 	const routeFiles = await listFiles(
 		path.join(repoRoot, 'frontend-school/src/routes/(app)'),
@@ -840,6 +860,21 @@ test('academic course planning pages gate read and manage actions', async () => 
 				'PERMISSIONS.ACADEMIC_COURSE_PLAN_MANAGE_ALL'
 			],
 			identifiers: ['canReadTimetable', 'canManageTimetable']
+		},
+		{
+			file: 'frontend-school/src/routes/(app)/staff/academic/timetable/today/+page.svelte',
+			imports: ['$lib/components/app-state', '$lib/components/app-layout'],
+			permissions: [
+				'PERMISSIONS.ACADEMIC_TIMETABLE_TODAY_READ_SCHOOL',
+				'PERMISSIONS.ACADEMIC_COURSE_PLAN_READ_ALL',
+				'PERMISSIONS.ACADEMIC_COURSE_PLAN_MANAGE_ALL'
+			],
+			identifiers: [
+				'getDailyTeachingOverview',
+				'canReadDailyTeaching',
+				'canUseAcademicFilters',
+				'includeEmptyTeachers'
+			]
 		}
 	];
 	const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -859,6 +894,49 @@ test('academic course planning pages gate read and manage actions', async () => 
 			assert.match(source, new RegExp(`\\b${identifier}\\b`));
 		}
 	}
+});
+
+test('daily teaching overview page is table based and read only', async () => {
+	const page = stripComments(
+		await readFile(
+			path.join(
+				repoRoot,
+				'frontend-school/src/routes/(app)/staff/academic/timetable/today/+page.svelte'
+			),
+			'utf8'
+		)
+	);
+	const meta = stripComments(
+		await readFile(
+			path.join(
+				repoRoot,
+				'frontend-school/src/routes/(app)/staff/academic/timetable/today/+page.ts'
+			),
+			'utf8'
+		)
+	);
+	const sidebar = stripComments(
+		await readFile(
+			path.join(repoRoot, 'frontend-school/src/lib/components/layout/sidebar-navigation.ts'),
+			'utf8'
+		)
+	);
+
+	assert.match(meta, /PERMISSION_MODULES\.ACADEMIC_TIMETABLE_TODAY/);
+	assert.match(meta, /title:\s*'ตารางสอนวันนี้'/);
+	assert.match(page, /<PageShell/);
+	assert.match(page, /<PageSkeleton\s+variant="table"/);
+	assert.match(page, /<PageState/);
+	assert.match(page, /\* as Table/);
+	assert.match(page, /sticky left-0/);
+	assert.match(page, /overflow-x-auto/);
+	assert.match(page, /Dialog\.Root/);
+	assert.match(page, /href="\/staff\/academic\/timetable"/);
+	assert.match(sidebar, /\/staff\/academic\/timetable\/today/);
+	assert.doesNotMatch(
+		page,
+		/listStaff\(|listStudents\(|createTimetableEntry|updateTimetableEntry|deleteTimetableEntry/
+	);
 });
 
 test('student workspace pages gate read, mutation, and PII actions', async () => {

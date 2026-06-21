@@ -1,7 +1,9 @@
 use crate::api_response::{ApiErrorResponseWithData, ApiResponse};
 use crate::error::AppError;
 use crate::modules::academic::models::timetable::*;
-use crate::modules::academic::services::{period_service, timetable_service};
+use crate::modules::academic::services::{
+    daily_teaching_service, period_service, timetable_service,
+};
 use crate::modules::academic::websockets::TimetableEvent;
 use crate::permissions::registry::codes;
 use crate::utils::request_context::{
@@ -188,6 +190,32 @@ pub async fn list_timetable_entries(
         current_seq,
     }))
     .into_response())
+}
+
+/// GET /api/academic/timetable/daily-teaching
+pub async fn daily_teaching_overview(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<daily_teaching_service::DailyTeachingQuery>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+
+    actor.require_any_permission(&[
+        codes::ACADEMIC_TIMETABLE_TODAY_READ_SCHOOL,
+        codes::ACADEMIC_COURSE_PLAN_READ_ALL,
+    ])?;
+
+    let include_empty_teachers_allowed = actor.has_permission(codes::ACADEMIC_COURSE_PLAN_READ_ALL);
+    let data = daily_teaching_service::get_daily_teaching_overview(
+        &pool,
+        query,
+        include_empty_teachers_allowed,
+    )
+    .await?;
+
+    Ok(Json(ApiResponse::ok(data)).into_response())
 }
 
 /// GET /api/academic/timetable/replay

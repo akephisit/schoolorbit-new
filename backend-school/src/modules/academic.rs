@@ -165,6 +165,10 @@ pub fn academic_routes() -> Router<AppState> {
             get(handlers::timetable::get_timetable_occupancy),
         )
         .route(
+            "/timetable/daily-teaching",
+            get(handlers::timetable::daily_teaching_overview),
+        )
+        .route(
             "/timetable/{id}",
             axum::routing::put(handlers::timetable::update_timetable_entry)
                 .delete(handlers::timetable::delete_timetable_entry),

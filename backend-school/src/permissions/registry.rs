@@ -111,6 +111,7 @@ pub mod codes {
     // Course Planning (Assigning subjects to classrooms)
     pub const ACADEMIC_COURSE_PLAN_READ_ALL: &str = "academic_course_plan.read.all";
     pub const ACADEMIC_COURSE_PLAN_MANAGE_ALL: &str = "academic_course_plan.manage.all";
+    pub const ACADEMIC_TIMETABLE_TODAY_READ_SCHOOL: &str = "academic_timetable_today.read.school";
 
     // Facility permissions
     pub const FACILITY_READ_ALL: &str = "facility.read.all";
@@ -674,6 +675,14 @@ pub const ALL_PERMISSIONS: &[PermissionDef] = &[
         action: "manage",
         scope: "all",
         description: "เพิ่ม/ลบ/แก้ไข วิชาที่เปิดสอนในห้องเรียน",
+    },
+    PermissionDef {
+        code: codes::ACADEMIC_TIMETABLE_TODAY_READ_SCHOOL,
+        name: "ดูตารางสอนวันนี้ทั้งโรงเรียน",
+        module: "academic_timetable_today",
+        action: "read",
+        scope: "school",
+        description: "ดูภาพรวมตารางสอนรายวันของครูทั้งโรงเรียนแบบอ่านอย่างเดียว",
     },
     // Facility Permissions
     PermissionDef {

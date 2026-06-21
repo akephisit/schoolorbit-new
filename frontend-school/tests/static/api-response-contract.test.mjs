@@ -149,6 +149,26 @@ test('staff dashboard API uses a typed aggregate-only response', async () => {
 	assert.doesNotMatch(frontendStaffApi, /listStudents\(\{[\s\S]*page_size:\s*1/);
 });
 
+test('daily teaching overview API uses typed response contracts', async () => {
+	const frontendTimetableApi = await readRepoFile('frontend-school/src/lib/api/timetable.ts');
+	const backendService = await readRepoFile(
+		'backend-school/src/modules/academic/services/daily_teaching_service.rs'
+	);
+	const backendHandler = await readRepoFile(
+		'backend-school/src/modules/academic/handlers/timetable.rs'
+	);
+
+	assert.match(frontendTimetableApi, /interface\s+DailyTeachingOverview/);
+	assert.match(frontendTimetableApi, /interface\s+DailyTeachingTeacher/);
+	assert.match(frontendTimetableApi, /interface\s+DailyTeachingEntry/);
+	assert.match(frontendTimetableApi, /getDailyTeachingOverview/);
+	assert.match(frontendTimetableApi, /apiClient\.get<DailyTeachingOverview>/);
+	assert.match(frontendTimetableApi, /\/api\/academic\/timetable\/daily-teaching/);
+	assert.match(backendService, /struct\s+DailyTeachingOverview/);
+	assert.match(backendService, /#\[serde\(rename_all = "camelCase"\)\]/);
+	assert.match(backendHandler, /ApiResponse::ok\(data\)/);
+});
+
 test('admission application detail contract returns application and documents in data', async () => {
 	const backendHandler = await readRepoFile(
 		'backend-school/src/modules/admission/handlers/applications.rs'

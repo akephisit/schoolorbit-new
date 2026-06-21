@@ -1,6 +1,7 @@
 pub mod academic_structure_service;
 pub mod activity_service;
 pub mod course_planning_service;
+pub mod daily_teaching_service;
 pub mod period_service;
 pub mod scheduler;
 pub mod scheduler_data;
