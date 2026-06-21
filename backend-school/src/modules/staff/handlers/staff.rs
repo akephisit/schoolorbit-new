@@ -1,7 +1,7 @@
 use crate::api_response::{ApiResponse, IdData};
 use crate::error::AppError;
 use crate::modules::staff::models::*;
-use crate::modules::staff::services::staff_service;
+use crate::modules::staff::services::{dashboard_service, staff_service};
 use crate::permissions::registry::codes;
 use crate::policies::staff_access_policy;
 use crate::utils::request_context::{
@@ -29,6 +29,20 @@ struct StaffListData {
 // ============================================
 // Handlers
 // ============================================
+
+pub async fn get_staff_dashboard(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+
+    dashboard_service::ensure_active_staff_user(&pool, actor.user_id).await?;
+    let data = dashboard_service::get_staff_dashboard(&pool).await?;
+
+    Ok((StatusCode::OK, Json(ApiResponse::ok(data))).into_response())
+}
 
 pub async fn list_staff(
     State(state): State<AppState>,

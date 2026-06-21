@@ -165,6 +165,11 @@ async fn main() {
                 .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
         )
         .route(
+            "/api/staff/dashboard",
+            get(modules::staff::handlers::staff::get_staff_dashboard)
+                .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
+        )
+        .route(
             "/api/staff/{id}",
             get(modules::staff::handlers::staff::get_staff_profile)
                 .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),

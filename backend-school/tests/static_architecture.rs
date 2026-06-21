@@ -487,6 +487,49 @@ fn staff_list_uses_resource_aware_access_scope() {
 }
 
 #[test]
+fn staff_dashboard_endpoint_is_staff_scoped_and_aggregate_only() {
+    let routes = strip_comments(&read_source(manifest_dir().join("src/main.rs")));
+    let staff_handler = strip_comments(&read_source(
+        manifest_dir().join("src/modules/staff/handlers/staff.rs"),
+    ));
+    let dashboard_service = strip_comments(&read_source(
+        manifest_dir().join("src/modules/staff/services/dashboard_service.rs"),
+    ));
+
+    assert!(routes.contains("\"/api/staff/dashboard\""));
+    assert!(routes.contains("get(modules::staff::handlers::staff::get_staff_dashboard)"));
+    assert!(
+        routes.find("\"/api/staff/dashboard\"") < routes.find("\"/api/staff/{id}\""),
+        "dashboard route must be registered before /api/staff/{{id}}"
+    );
+
+    assert!(staff_handler.contains("dashboard_service::ensure_active_staff_user"));
+    assert!(staff_handler.contains("dashboard_service::get_staff_dashboard"));
+    assert!(staff_handler.contains("ApiResponse::ok(data)"));
+    assert!(!staff_handler.contains("actor.require_permission(codes::STAFF_READ_ALL)"));
+
+    assert!(dashboard_service.contains("COUNT(*)"));
+    assert!(dashboard_service.contains("user_type = 'staff'"));
+    assert!(dashboard_service.contains("user_type = 'student'"));
+    assert!(dashboard_service.contains("class_rooms"));
+
+    for forbidden in [
+        "national_id",
+        "phone",
+        "email",
+        "first_name",
+        "last_name",
+        "staff_service::list_staff",
+        "student_service::list_students",
+    ] {
+        assert!(
+            !dashboard_service.contains(forbidden),
+            "staff dashboard aggregate service must not expose or select `{forbidden}`"
+        );
+    }
+}
+
+#[test]
 fn academic_curriculum_access_uses_resource_policy_tree_resolution() {
     let curriculum_policy = strip_comments(&read_source(
         manifest_dir().join("src/policies/curriculum_access_policy.rs"),
