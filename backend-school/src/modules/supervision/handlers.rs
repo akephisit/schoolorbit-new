@@ -11,6 +11,7 @@ use uuid::Uuid;
 
 use crate::api_response::ApiResponse;
 use crate::error::AppError;
+use crate::middleware::permission::ActorContext;
 use crate::modules::supervision::models::{
     AcknowledgeObservationRequest, ApproveObservationRequest, CancelObservationRequest,
     CreateSupervisionCycleRequest, CreateSupervisionTemplateRequest,
@@ -37,6 +38,56 @@ pub struct ListObservationsQuery {
 #[serde(rename_all = "camelCase")]
 struct ItemsData<T> {
     items: Vec<T>,
+}
+
+fn actor_can_view_unreleased_results(actor: &ActorContext) -> bool {
+    supervision_access_policy::can_manage_school(actor)
+        || supervision_access_policy::can_manage_organization_unit(actor)
+        || supervision_access_policy::can_manage_organization_tree(actor)
+        || supervision_access_policy::can_approve_school(actor)
+}
+
+fn redact_observation_results_for_actor(
+    actor: &ActorContext,
+    observation: &mut SupervisionObservation,
+) {
+    if !services::can_view_observation_results(
+        observation.status,
+        actor_can_view_unreleased_results(actor),
+    ) {
+        observation.average_rating = None;
+    }
+}
+
+fn redacted_observation_for_actor(
+    actor: &ActorContext,
+    mut observation: SupervisionObservation,
+) -> SupervisionObservation {
+    redact_observation_results_for_actor(actor, &mut observation);
+    observation
+}
+
+fn redact_observations_results_for_actor(
+    actor: &ActorContext,
+    observations: &mut [SupervisionObservation],
+) {
+    for observation in observations {
+        redact_observation_results_for_actor(actor, observation);
+    }
+}
+
+fn redact_teacher_status_results_for_actor(
+    actor: &ActorContext,
+    rows: &mut [SupervisionTeacherStatusRow],
+) {
+    let can_view_unreleased_results = actor_can_view_unreleased_results(actor);
+    for row in rows {
+        if let Some(status) = row.status {
+            if !services::can_view_observation_results(status, can_view_unreleased_results) {
+                row.average_rating = None;
+            }
+        }
+    }
 }
 
 pub async fn list_cycles(
@@ -143,7 +194,7 @@ pub async fn list_observations(
         &context.actor,
     )
     .await?;
-    let items = services::list_observations(
+    let mut items = services::list_observations(
         &context.tenant.pool,
         access,
         SupervisionObservationFilter {
@@ -152,6 +203,7 @@ pub async fn list_observations(
         },
     )
     .await?;
+    redact_observations_results_for_actor(&context.actor, &mut items);
 
     Ok(Json(ApiResponse::ok(ItemsData::<SupervisionObservation> {
         items,
@@ -165,7 +217,7 @@ pub async fn get_observation(
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
     let context = actor_tenant_context(&state, &headers).await?;
-    let observation = services::get_observation(&context.tenant.pool, id).await?;
+    let mut observation = services::get_observation(&context.tenant.pool, id).await?;
     let evaluator_user_ids = observation
         .evaluators
         .iter()
@@ -178,6 +230,7 @@ pub async fn get_observation(
         &evaluator_user_ids,
     )
     .await?;
+    redact_observation_results_for_actor(&context.actor, &mut observation);
 
     Ok(Json(ApiResponse::ok(observation)).into_response())
 }
@@ -241,6 +294,7 @@ pub async fn request_observation(
 
     let observation =
         services::request_observation(&context.tenant.pool, context.actor.user_id, payload).await?;
+    let observation = redacted_observation_for_actor(&context.actor, observation);
 
     Ok((StatusCode::CREATED, Json(ApiResponse::ok(observation))).into_response())
 }
@@ -261,6 +315,7 @@ pub async fn update_requested_observation(
         payload,
     )
     .await?;
+    let observation = redacted_observation_for_actor(&context.actor, observation);
 
     Ok(Json(ApiResponse::ok(observation)).into_response())
 }
@@ -276,6 +331,7 @@ pub async fn cancel_requested_observation(
     let observation =
         services::cancel_requested_observation(&context.tenant.pool, context.actor.user_id, id)
             .await?;
+    let observation = redacted_observation_for_actor(&context.actor, observation);
 
     Ok(Json(ApiResponse::ok(observation)).into_response())
 }
@@ -298,6 +354,7 @@ pub async fn update_observation(
     let observation =
         services::update_observation(&context.tenant.pool, context.actor.user_id, id, payload)
             .await?;
+    let observation = redacted_observation_for_actor(&context.actor, observation);
 
     Ok(Json(ApiResponse::ok(observation)).into_response())
 }
@@ -324,6 +381,7 @@ pub async fn replace_observation_evaluators(
         payload,
     )
     .await?;
+    let observation = redacted_observation_for_actor(&context.actor, observation);
 
     Ok(Json(ApiResponse::ok(observation)).into_response())
 }
@@ -346,6 +404,7 @@ pub async fn cancel_observation(
     let observation =
         services::cancel_observation(&context.tenant.pool, context.actor.user_id, id, payload)
             .await?;
+    let observation = redacted_observation_for_actor(&context.actor, observation);
 
     Ok(Json(ApiResponse::ok(observation)).into_response())
 }
@@ -372,6 +431,7 @@ pub async fn approve_observation_request(
         payload,
     )
     .await?;
+    let observation = redacted_observation_for_actor(&context.actor, observation);
 
     Ok(Json(ApiResponse::ok(observation)).into_response())
 }
@@ -398,6 +458,7 @@ pub async fn return_observation_request(
         payload,
     )
     .await?;
+    let observation = redacted_observation_for_actor(&context.actor, observation);
 
     Ok(Json(ApiResponse::ok(observation)).into_response())
 }
@@ -414,6 +475,7 @@ pub async fn submit_my_evaluation(
     let observation =
         services::submit_my_evaluation(&context.tenant.pool, context.actor.user_id, id, payload)
             .await?;
+    let observation = redacted_observation_for_actor(&context.actor, observation);
 
     Ok(Json(ApiResponse::ok(observation)).into_response())
 }
@@ -434,6 +496,7 @@ pub async fn certify_observation(
 
     let observation =
         services::certify_observation(&context.tenant.pool, context.actor.user_id, id).await?;
+    let observation = redacted_observation_for_actor(&context.actor, observation);
 
     Ok(Json(ApiResponse::ok(observation)).into_response())
 }
@@ -448,6 +511,7 @@ pub async fn approve_observation(
 
     let observation =
         services::approve_observation(&context.tenant.pool, context.actor.user_id, id).await?;
+    let observation = redacted_observation_for_actor(&context.actor, observation);
 
     Ok(Json(ApiResponse::ok(observation)).into_response())
 }
@@ -464,6 +528,7 @@ pub async fn acknowledge_observation(
     let observation =
         services::acknowledge_observation(&context.tenant.pool, context.actor.user_id, id, payload)
             .await?;
+    let observation = redacted_observation_for_actor(&context.actor, observation);
 
     Ok(Json(ApiResponse::ok(observation)).into_response())
 }
@@ -498,7 +563,8 @@ pub async fn teacher_status_overview(
         ));
     }
 
-    let items = services::cycle_teacher_status(&context.tenant.pool, access, id).await?;
+    let mut items = services::cycle_teacher_status(&context.tenant.pool, access, id).await?;
+    redact_teacher_status_results_for_actor(&context.actor, &mut items);
 
     Ok(
         Json(ApiResponse::ok(ItemsData::<SupervisionTeacherStatusRow> {

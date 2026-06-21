@@ -392,6 +392,19 @@ pub fn average_submitted_evaluator_rating(inputs: &[EvaluatorRatingInput]) -> Op
     Some(evaluator_averages.iter().sum::<f64>() / evaluator_averages.len() as f64)
 }
 
+pub fn can_view_observation_results(
+    status: SupervisionObservationStatus,
+    can_view_unreleased_results: bool,
+) -> bool {
+    can_view_unreleased_results
+        || matches!(
+            status,
+            SupervisionObservationStatus::Published
+                | SupervisionObservationStatus::Acknowledged
+                | SupervisionObservationStatus::Completed
+        )
+}
+
 pub fn all_required_evaluators_submitted(states: &[EvaluatorSubmissionState]) -> bool {
     states
         .iter()
@@ -3705,6 +3718,38 @@ mod tests {
             .expect("submitted rating average");
 
         assert!((average - 3.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn observation_results_release_after_academic_approval_for_regular_readers() {
+        assert!(!can_view_observation_results(
+            SupervisionObservationStatus::EvaluatorsSubmitted,
+            false
+        ));
+        assert!(!can_view_observation_results(
+            SupervisionObservationStatus::Approved,
+            false
+        ));
+        assert!(can_view_observation_results(
+            SupervisionObservationStatus::Published,
+            false
+        ));
+        assert!(can_view_observation_results(
+            SupervisionObservationStatus::Completed,
+            false
+        ));
+    }
+
+    #[test]
+    fn observation_result_reviewers_can_view_unreleased_scores() {
+        assert!(can_view_observation_results(
+            SupervisionObservationStatus::EvaluatorsSubmitted,
+            true
+        ));
+        assert!(can_view_observation_results(
+            SupervisionObservationStatus::Approved,
+            true
+        ));
     }
 
     #[test]

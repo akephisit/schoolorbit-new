@@ -257,6 +257,28 @@ test('teaching supervision observation detail supports safe edit actions', async
 	assert.match(parentPage, /href=\{`\/staff\/academic\/supervision\/\$\{observation\.id\}`\}/);
 });
 
+test('teaching supervision detail hides scores until academic approval releases results', async () => {
+	const detailPage = await readRepoFile(
+		'frontend-school/src/routes/(app)/staff/academic/supervision/[id]/+page.svelte'
+	);
+	const supervisionHandlers = await readRepoFile(
+		'backend-school/src/modules/supervision/handlers.rs'
+	);
+	const supervisionService = await readRepoFile(
+		'backend-school/src/modules/supervision/services.rs'
+	);
+
+	assert.match(detailPage, /function observationResultsReleased/);
+	assert.match(detailPage, /function observationAverageScoreLabel/);
+	assert.match(detailPage, /รอหัวหน้ากลุ่มบริหารวิชาการอนุมัติผล/);
+	assert.match(detailPage, /observationAverageScoreLabel\(observation\)/);
+	assert.match(supervisionHandlers, /redact_observation_results_for_actor/);
+	assert.match(supervisionHandlers, /redact_teacher_status_results_for_actor/);
+	assert.match(supervisionService, /can_view_observation_results/);
+	assert.match(supervisionService, /SupervisionObservationStatus::Published/);
+	assert.match(supervisionService, /SupervisionObservationStatus::Completed/);
+});
+
 test('teaching supervision manager view exposes teacher status overview and aligned actions', async () => {
 	const supervisionApi = await readRepoFile('frontend-school/src/lib/api/supervision.ts');
 	const supervisionPage = await readRepoFile(

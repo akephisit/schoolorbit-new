@@ -166,6 +166,20 @@
 		);
 	}
 
+	function observationResultsReleased(status: SupervisionObservationStatus): boolean {
+		return status === 'published' || status === 'acknowledged' || status === 'completed';
+	}
+
+	function observationAverageScoreLabel(item: SupervisionObservation): string {
+		if (item.averageRating !== null && item.averageRating !== undefined) {
+			return item.averageRating.toFixed(2);
+		}
+		if (!observationResultsReleased(item.status)) {
+			return 'รอหัวหน้ากลุ่มบริหารวิชาการอนุมัติผล';
+		}
+		return '-';
+	}
+
 	function evaluatorStatusLabel(status: SupervisionEvaluator['status']): string {
 		return (
 			{
@@ -750,11 +764,7 @@
 						</div>
 						<div class="rounded-md border bg-muted/20 p-3">
 							<p class="text-xs text-muted-foreground">คะแนนเฉลี่ย</p>
-							<p class="font-medium">
-								{observation.averageRating === null || observation.averageRating === undefined
-									? '-'
-									: observation.averageRating.toFixed(2)}
-							</p>
+							<p class="font-medium">{observationAverageScoreLabel(observation)}</p>
 						</div>
 						<div class="rounded-md border bg-muted/20 p-3">
 							<p class="text-xs text-muted-foreground">จำนวนผู้ประเมิน</p>
