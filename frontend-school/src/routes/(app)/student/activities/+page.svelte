@@ -99,11 +99,7 @@
 	<title>ลงทะเบียนกิจกรรม</title>
 </svelte:head>
 
-<PageShell
-	title="ลงทะเบียนกิจกรรม"
-	description="เลือกและจัดการกิจกรรมที่เปิดให้นักเรียนลงทะเบียน"
-	contentClass="max-w-2xl"
->
+<PageShell title="ลงทะเบียนกิจกรรม" description="เลือกและจัดการกิจกรรมที่เปิดให้นักเรียนลงทะเบียน">
 	{#if loading}
 		<PageSkeleton variant="cards" rows={3} />
 	{:else if error}

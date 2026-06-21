@@ -51,13 +51,13 @@ test('shared app layout components define consistent page header and shell', asy
 	assert.match(pageShell, /space-y-6/);
 	assert.match(
 		pageShell,
-		/class=\{cn\('space-y-6 px-4 py-4 lg:px-6 lg:py-6', className\)\}/,
+		/class=\{cn\('w-full min-w-0 space-y-6 px-4 py-4 lg:px-6 lg:py-6', className\)\}/,
 		'PageShell root should own consistent app page padding'
 	);
 	assert.match(
 		pageShell,
-		/class=\{cn\('space-y-6', contentClass\)\}/,
-		'PageShell content wrapper should preserve vertical spacing between page content blocks'
+		/class=\{cn\('w-full min-w-0 space-y-6', contentClass\)\}/,
+		'PageShell content wrapper should preserve full-width layout and vertical spacing between page content blocks'
 	);
 	assert.match(pageShell, /@render children/);
 	assert.match(appLayout, /<div class="h-full">/);
@@ -73,6 +73,36 @@ test('shared app layout components define consistent page header and shell', asy
 	assert.match(rules, /Shared Page Layout UI/);
 	assert.match(rules, /PageHeader/);
 	assert.match(rules, /PageShell/);
+	assert.match(rules, /full available app width/);
+	assert.match(rules, /do not put `container`, `mx-auto`, or `max-w-\*` in `contentClass`/);
+});
+
+test('app pages keep PageShell content full width', async () => {
+	const appRoutesDir = path.join(projectRoot, 'src/routes/(app)');
+	const pages = (await listFiles(appRoutesDir)).filter((file) => file.endsWith('+page.svelte'));
+	const violations = [];
+	const disallowedContentClass = /\b(?:container|mx-auto|max-w-[^\s"'}]+)\b/;
+
+	for (const file of pages) {
+		const source = await readFile(file, 'utf8');
+		const pageShellOpenTags = source.match(/<PageShell\b[\s\S]*?>/g) ?? [];
+
+		for (const tag of pageShellOpenTags) {
+			const contentClassMatch = tag.match(/\bcontentClass="([^"]*)"/);
+			if (!contentClassMatch) continue;
+			if (!disallowedContentClass.test(contentClassMatch[1])) continue;
+
+			violations.push(
+				`${path.relative(projectRoot, file)} limits PageShell content with "${contentClassMatch[1]}"`
+			);
+		}
+	}
+
+	assert.deepEqual(
+		violations,
+		[],
+		'PageShell content should use available app width. Put max-width on an inner card/form wrapper only when a specific content block should stay narrow.'
+	);
 });
 
 test('app pages keep outer spacing on PageShell instead of page-local root classes', async () => {

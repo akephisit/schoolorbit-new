@@ -28,9 +28,9 @@
 	} = $props();
 </script>
 
-<div class={cn('space-y-6 px-4 py-4 lg:px-6 lg:py-6', className)}>
+<div class={cn('w-full min-w-0 space-y-6 px-4 py-4 lg:px-6 lg:py-6', className)}>
 	<PageHeader {title} {description} {backHref} {backLabel} {icon} {meta} {actions} />
-	<div class={cn('space-y-6', contentClass)}>
+	<div class={cn('w-full min-w-0 space-y-6', contentClass)}>
 		{@render children?.()}
 	</div>
 </div>

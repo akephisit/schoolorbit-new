@@ -80,11 +80,7 @@
 	<title>ข้อมูลส่วนตัว - Student Portal</title>
 </svelte:head>
 
-<PageShell
-	title="ข้อมูลส่วนตัว"
-	description="ดูและแก้ไขข้อมูลส่วนตัวของคุณ"
-	contentClass="max-w-4xl"
->
+<PageShell title="ข้อมูลส่วนตัว" description="ดูและแก้ไขข้อมูลส่วนตัวของคุณ">
 	{#snippet actions()}
 		{#if !editing && !loading}
 			<Button onclick={() => (editing = true)}>

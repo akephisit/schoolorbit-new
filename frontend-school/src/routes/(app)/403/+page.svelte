@@ -26,11 +26,7 @@
 	<title>{data.title} - SchoolOrbit</title>
 </svelte:head>
 
-<PageShell
-	title="สิทธิ์การเข้าถึง"
-	description="ตรวจสอบสิทธิ์ของบัญชีก่อนเข้าใช้งานหน้านี้"
-	contentClass="max-w-xl"
->
+<PageShell title="สิทธิ์การเข้าถึง" description="ตรวจสอบสิทธิ์ของบัญชีก่อนเข้าใช้งานหน้านี้">
 	<PageState
 		variant="permission"
 		title="ไม่มีสิทธิ์เข้าถึงหน้านี้"

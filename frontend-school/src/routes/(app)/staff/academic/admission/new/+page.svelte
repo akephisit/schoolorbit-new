@@ -137,7 +137,6 @@
 	title="สร้างรอบรับสมัครใหม่"
 	description="กรอกข้อมูลสำหรับเปิดรอบรับสมัครนักเรียนใหม่"
 	backHref="/staff/academic/admission"
-	contentClass="max-w-2xl"
 >
 	{#if !canManageAdmission}
 		<PageState

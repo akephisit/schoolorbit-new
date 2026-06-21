@@ -889,7 +889,6 @@
 	description="รายละเอียดคาบนิเทศ ผู้ประเมิน ผลประเมิน และการจัดการรายการเดียว"
 	backHref="/staff/academic/supervision"
 	backLabel="กลับหน้านิเทศการสอน"
-	contentClass="max-w-6xl"
 >
 	{#snippet actions()}
 		<Button variant="outline" href="/staff/academic/supervision">
@@ -909,8 +908,8 @@
 	{:else if !observation}
 		<PageState title="ไม่พบรายการนิเทศ" description="รายการนี้อาจถูกลบหรือคุณไม่มีสิทธิ์เข้าถึง" />
 	{:else}
-		<div class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
-			<div class="space-y-4">
+		<div class="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+			<div class="min-w-0 space-y-4">
 				<Card.Root>
 					<Card.Header>
 						<div class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
@@ -1262,7 +1261,7 @@
 				</Card.Root>
 			</div>
 
-			<div class="space-y-4">
+			<div class="min-w-0 space-y-4">
 				<Card.Root>
 					<Card.Header>
 						<Card.Title>ภาพรวม</Card.Title>
