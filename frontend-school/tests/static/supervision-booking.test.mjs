@@ -190,6 +190,14 @@ test('teaching supervision approval workflow skips review submission', async () 
 	assert.match(supervisionPage, /const canReport = \$derived\([\s\S]*canManageRequests/);
 	assert.match(supervisionPage, /certifiableObservations/);
 	assert.match(supervisionPage, /approvableObservations/);
+	assert.match(
+		supervisionPage,
+		/const certifiableObservations = \$derived\([\s\S]*canManageRequests[\s\S]*item\.status === 'evaluators_submitted'/
+	);
+	assert.match(
+		supervisionPage,
+		/const approvableObservations = \$derived\([\s\S]*canApprove[\s\S]*item\.status === 'approved'/
+	);
 	assert.match(supervisionPage, /certifyResult\(observation\.id\)/);
 	assert.match(supervisionPage, /รับรองผล/);
 	assert.match(supervisionPage, /อนุมัติผล/);

@@ -374,10 +374,10 @@
 		)
 	);
 	const certifiableObservations = $derived(
-		observations.filter((item) => item.status === 'evaluators_submitted')
+		canManageRequests ? observations.filter((item) => item.status === 'evaluators_submitted') : []
 	);
 	const approvableObservations = $derived(
-		observations.filter((item) => item.status === 'approved')
+		canApprove ? observations.filter((item) => item.status === 'approved') : []
 	);
 	const approvalWorkflowObservations = $derived([
 		...certifiableObservations,
