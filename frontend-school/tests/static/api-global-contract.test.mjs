@@ -1250,6 +1250,16 @@ test('dashboard and self-view routes stay user-scoped with module-aware staff sh
 	assert.deepEqual(routeViolations, []);
 	assert.match(staffDashboard, /from '\$lib\/stores\/permissions'/);
 	assert.match(staffDashboard, /from '\$lib\/permissions\/registry'/);
+	assert.match(staffDashboard, /getStaffDashboard/);
+	assert.match(staffDashboard, /StaffDashboardOverview/);
+	assert.match(staffDashboard, /loadDashboard/);
+	assert.match(staffDashboard, /<PageSkeleton\s+variant="cards"/);
+	assert.match(staffDashboard, /<PageState[\s\S]*โหลดภาพรวมโรงเรียนไม่สำเร็จ/);
+	assert.match(staffDashboard, /stats\.activeClassrooms/);
+	assert.doesNotMatch(staffDashboard, /placeholder - should fetch from API/);
+	assert.doesNotMatch(staffDashboard, /totalStaff:\s*0/);
+	assert.doesNotMatch(staffDashboard, /listStaff\(/);
+	assert.doesNotMatch(staffDashboard, /listStudents\(/);
 	for (const moduleName of ['STAFF_PROFILE', 'STUDENT', 'ROLES', 'SETTINGS']) {
 		assert.match(
 			staffDashboard,
