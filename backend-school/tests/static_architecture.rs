@@ -1602,6 +1602,27 @@ fn teaching_supervision_subject_group_management_permissions_are_seeded() {
 }
 
 #[test]
+fn teaching_supervision_academic_affairs_approval_permission_is_seeded() {
+    let migration = read_source(
+        manifest_dir().join("migrations/010_supervision_academic_affairs_approval_grant.sql"),
+    );
+
+    for expected in [
+        "supervision.approve.school",
+        "organization_permission_grants",
+        "code = 'ACAD-01'",
+        "'head'",
+        "'deputy_head'",
+        "ON CONFLICT DO NOTHING",
+    ] {
+        assert!(
+            migration.contains(expected),
+            "missing supervision academic affairs approval seed {expected}"
+        );
+    }
+}
+
+#[test]
 fn teaching_supervision_default_staff_permissions_are_seeded() {
     let migration = read_source(
         manifest_dir().join("migrations/006_teaching_supervision_default_permissions.sql"),
