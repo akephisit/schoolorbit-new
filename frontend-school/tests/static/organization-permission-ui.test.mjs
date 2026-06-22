@@ -89,6 +89,22 @@ test('organization members section exposes full school position set', async () =
 	assert.match(source, /activeMemberCount/);
 });
 
+test('organization member picker is a searchable combobox with browsable initial staff options', async () => {
+	const source = await readProjectFile(
+		'src/lib/components/staff/OrganizationMembersSection.svelte'
+	);
+
+	assert.match(source, /from '\$lib\/components\/ui\/popover'/);
+	assert.match(source, /from '\$lib\/components\/ui\/command'/);
+	assert.match(source, /role="combobox"/);
+	assert.match(source, /aria-expanded=\{staffPickerOpen\}/);
+	assert.match(source, /<Command\.Root shouldFilter=\{false\}>/);
+	assert.match(source, /<Command\.Input[^>]+bind:value=\{staffSearch\}/);
+	assert.match(source, /loadStaffOptions\(''\)/);
+	assert.match(source, /listStaff\(\{ search: query \|\| undefined, page_size: 50 \}\)/);
+	assert.doesNotMatch(source, /if\s*\(\s*staffSearch\.length < 2\s*\)/);
+});
+
 test('organization delegation tab follows backend school-wide authorization policy', async () => {
 	const source = await readProjectFile('src/routes/(app)/staff/organization/[id]/+page.svelte');
 	const registry = await readProjectFile('src/lib/permissions/registry.ts');
@@ -156,7 +172,6 @@ test('organization member and delegation dialogs use shadcn-svelte primitives', 
 		assert.doesNotMatch(source, /<select\b/);
 		assert.doesNotMatch(source, /<input\b/);
 		assert.match(source, /from '\$lib\/components\/ui\/dialog'/);
-		assert.match(source, /from '\$lib\/components\/ui\/input'/);
 		assert.match(source, /from '\$lib\/components\/ui\/label'/);
 		assert.match(source, /from '\$lib\/components\/ui\/select'/);
 		assert.match(source, /<Dialog\.Root/);
@@ -168,7 +183,12 @@ test('organization member and delegation dialogs use shadcn-svelte primitives', 
 	}
 
 	assert.match(members, /from '\$lib\/components\/ui\/checkbox'/);
+	assert.match(members, /from '\$lib\/components\/ui\/command'/);
+	assert.match(members, /from '\$lib\/components\/ui\/popover'/);
 	assert.match(members, /<Checkbox/);
+	assert.match(members, /<Command\.Input/);
+	assert.match(members, /<Popover\.Root/);
+	assert.match(detail, /from '\$lib\/components\/ui\/input'/);
 });
 
 test('organization delegation expiry uses the shared date picker', async () => {

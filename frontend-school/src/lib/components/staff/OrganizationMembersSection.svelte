@@ -15,10 +15,21 @@
 	import { Badge } from '$lib/components/ui/badge';
 	import { Checkbox } from '$lib/components/ui/checkbox';
 	import * as Dialog from '$lib/components/ui/dialog';
-	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
+	import * as Popover from '$lib/components/ui/popover';
+	import * as Command from '$lib/components/ui/command';
 	import * as Select from '$lib/components/ui/select';
-	import { Users, Plus, Pencil, Trash2, Crown, UserCog, UserRound } from 'lucide-svelte';
+	import {
+		Users,
+		Plus,
+		Pencil,
+		Trash2,
+		Crown,
+		UserCog,
+		UserRound,
+		Check,
+		ChevronsUpDown
+	} from 'lucide-svelte';
 
 	interface Props {
 		organizationUnitId: string;
@@ -61,9 +72,14 @@
 	let loadingMembers = $state(false);
 
 	let showAddDialog = $state(false);
+	let staffPickerOpen = $state(false);
 	let staffSearch = $state('');
+	let selectedStaffLabel = $state('');
 	let staffResults: StaffListItem[] = $state([]);
+	let staffOptionsLoaded = $state(false);
 	let searchLoading = $state(false);
+	let staffSearchError = $state('');
+	let staffSearchRequestId = 0;
 	let addForm = $state({
 		user_id: '',
 		position_code: 'member' as PositionCode,
@@ -153,15 +169,31 @@
 		loadingMembers = false;
 	}
 
-	async function searchStaff() {
-		if (staffSearch.length < 2) {
-			staffResults = [];
-			return;
-		}
+	async function loadStaffOptions(query: string) {
+		query = query.trim();
+		const requestId = ++staffSearchRequestId;
 		searchLoading = true;
-		const res = await listStaff({ search: staffSearch, page_size: 20 });
-		staffResults = res.data ?? [];
-		searchLoading = false;
+		staffSearchError = '';
+
+		try {
+			const res = await listStaff({ search: query || undefined, page_size: 50 });
+			if (requestId !== staffSearchRequestId) return;
+
+			const activeMemberIds = new Set(members.map((member) => member.user_id));
+			staffResults = (res.data ?? []).filter(
+				(staff) => !activeMemberIds.has(staff.id) || staff.id === addForm.user_id
+			);
+			if (!query) staffOptionsLoaded = true;
+		} catch (error) {
+			if (requestId !== staffSearchRequestId) return;
+			console.error('Failed to load staff options:', error);
+			staffResults = [];
+			staffSearchError = 'โหลดรายชื่อบุคลากรไม่สำเร็จ';
+		} finally {
+			if (requestId === staffSearchRequestId) {
+				searchLoading = false;
+			}
+		}
 	}
 
 	async function handleAdd() {
@@ -179,7 +211,9 @@
 			showAddDialog = false;
 			addForm = { user_id: '', position_code: 'member', is_primary: false, target_unit_id: '' };
 			staffSearch = '';
+			selectedStaffLabel = '';
 			staffResults = [];
+			staffOptionsLoaded = false;
 			await loadMembers();
 			onChanged?.();
 		} else {
@@ -238,13 +272,26 @@
 	}
 
 	function openAddDialog() {
-		addForm.target_unit_id = organizationUnitId;
+		addForm = {
+			user_id: '',
+			position_code: 'member',
+			is_primary: false,
+			target_unit_id: organizationUnitId
+		};
+		staffPickerOpen = false;
+		staffSearch = '';
+		selectedStaffLabel = '';
+		staffResults = [];
+		staffSearchError = '';
+		staffOptionsLoaded = false;
 		showAddDialog = true;
+		void loadStaffOptions('');
 	}
 
 	function closeAddDialog() {
 		showAddDialog = false;
 		addError = '';
+		staffPickerOpen = false;
 	}
 
 	function closeEditDialog() {
@@ -254,8 +301,17 @@
 
 	function selectStaff(staff: StaffListItem) {
 		addForm.user_id = staff.id;
-		staffSearch = `${staff.title}${staff.first_name} ${staff.last_name}`;
-		staffResults = [];
+		selectedStaffLabel = staffDisplayName(staff);
+		staffSearch = '';
+		staffPickerOpen = false;
+	}
+
+	function staffDisplayName(staff: StaffListItem) {
+		return `${staff.title}${staff.first_name} ${staff.last_name}`.trim();
+	}
+
+	function staffOptionValue(staff: StaffListItem) {
+		return `${staff.username} ${staffDisplayName(staff)}`;
 	}
 
 	function unitOptionLabel(unitId: string) {
@@ -267,13 +323,21 @@
 	}
 
 	let debounceTimer: ReturnType<typeof setTimeout>;
-	function onSearchInput() {
+	function onStaffSearchInput() {
+		addForm.user_id = '';
+		selectedStaffLabel = '';
 		clearTimeout(debounceTimer);
-		debounceTimer = setTimeout(searchStaff, 300);
+		debounceTimer = setTimeout(() => loadStaffOptions(staffSearch), 300);
 	}
 
 	$effect(() => {
 		if (organizationUnitId) loadMembers();
+	});
+
+	$effect(() => {
+		if (staffPickerOpen && !staffOptionsLoaded && !searchLoading) {
+			void loadStaffOptions('');
+		}
 	});
 </script>
 
@@ -392,31 +456,65 @@
 
 			<div class="space-y-2">
 				<Label for="staff-search">ค้นหาบุคลากร *</Label>
-				<Input
-					id="staff-search"
-					bind:value={staffSearch}
-					oninput={onSearchInput}
-					placeholder="พิมพ์ชื่อหรือรหัส..."
-				/>
-				{#if searchLoading}
-					<p class="text-xs text-muted-foreground">กำลังค้นหา...</p>
-				{:else if staffResults.length > 0}
-					<div class="max-h-48 overflow-y-auto rounded-md border">
-						{#each staffResults as staff (staff.id)}
-							<button
+				<Popover.Root bind:open={staffPickerOpen}>
+					<Popover.Trigger>
+						{#snippet child({ props })}
+							<Button
 								type="button"
-								class="w-full px-3 py-2 text-left text-sm transition-colors hover:bg-muted {addForm.user_id ===
-								staff.id
-									? 'bg-primary/10 font-medium'
-									: ''}"
-								onclick={() => selectStaff(staff)}
+								variant="outline"
+								role="combobox"
+								aria-expanded={staffPickerOpen}
+								class="w-full justify-between font-normal"
+								{...props}
 							>
-								{staff.title}{staff.first_name}
-								{staff.last_name}
-							</button>
-						{/each}
-					</div>
-				{/if}
+								<span class="truncate {selectedStaffLabel ? '' : 'text-muted-foreground'}">
+									{selectedStaffLabel || 'เลือกบุคลากร'}
+								</span>
+								<ChevronsUpDown class="ml-2 h-4 w-4 shrink-0 opacity-50" />
+							</Button>
+						{/snippet}
+					</Popover.Trigger>
+					<Popover.Content class="w-[--bits-popover-trigger-width] p-0">
+						<Command.Root shouldFilter={false}>
+							<Command.Input
+								id="staff-search"
+								placeholder="ค้นหาด้วยชื่อหรือรหัส..."
+								bind:value={staffSearch}
+								oninput={onStaffSearchInput}
+							/>
+							<Command.List class="max-h-64">
+								{#if searchLoading}
+									<div class="py-6 text-center text-sm text-muted-foreground">กำลังค้นหา...</div>
+								{:else if staffSearchError}
+									<div class="py-6 text-center text-sm text-destructive">{staffSearchError}</div>
+								{:else if staffResults.length === 0}
+									<div class="py-6 text-center text-sm text-muted-foreground">
+										ไม่พบรายชื่อบุคลากร
+									</div>
+								{:else}
+									<Command.Group>
+										{#each staffResults as staff (staff.id)}
+											<Command.Item
+												value={staffOptionValue(staff)}
+												onSelect={() => selectStaff(staff)}
+											>
+												<Check
+													class="mr-2 h-4 w-4 shrink-0 {addForm.user_id === staff.id
+														? 'opacity-100'
+														: 'opacity-0'}"
+												/>
+												<span class="truncate">{staffDisplayName(staff)}</span>
+												<span class="ml-auto shrink-0 text-xs text-muted-foreground">
+													{staff.username}
+												</span>
+											</Command.Item>
+										{/each}
+									</Command.Group>
+								{/if}
+							</Command.List>
+						</Command.Root>
+					</Popover.Content>
+				</Popover.Root>
 			</div>
 
 			{#if includeChildren}
