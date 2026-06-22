@@ -59,7 +59,7 @@
 	let selectedSemesterId = $state('');
 	let includeEmptyTeachers = $state(false);
 	let teacherSearch = $state('');
-	let selectedOrganizationUnit = $state('all');
+	let selectedSubjectGroup = $state('all');
 	let selectedSubject = $state('all');
 	let selectedClassroom = $state('all');
 	let cellDialogOpen = $state(false);
@@ -79,11 +79,11 @@
 	const semesterOptions = $derived(
 		semesters.filter((semester) => !selectedYearId || semester.academic_year_id === selectedYearId)
 	);
-	const organizationOptions = $derived.by(() => {
+	const subjectGroupOptions = $derived.by(() => {
 		const values = new Set<string>();
 		for (const teacher of overview?.teachers ?? []) {
-			for (const unitName of teacher.organizationUnitNames) {
-				if (unitName) values.add(unitName);
+			for (const subjectGroupName of teacher.subjectGroupNames) {
+				if (subjectGroupName) values.add(subjectGroupName);
 			}
 		}
 		return toSortedOptions(values);
@@ -110,10 +110,9 @@
 			const matchesTeacher =
 				!query ||
 				teacher.displayName.toLowerCase().includes(query) ||
-				teacher.organizationUnitNames.some((name) => name.toLowerCase().includes(query));
-			const matchesOrganization =
-				selectedOrganizationUnit === 'all' ||
-				teacher.organizationUnitNames.includes(selectedOrganizationUnit);
+				teacher.subjectGroupNames.some((name) => name.toLowerCase().includes(query));
+			const matchesSubjectGroup =
+				selectedSubjectGroup === 'all' || teacher.subjectGroupNames.includes(selectedSubjectGroup);
 			const matchesSubject =
 				selectedSubject === 'all' ||
 				teacher.periods.some((cell) =>
@@ -125,7 +124,7 @@
 					cell.entries.some((entry) => entry.classroomName === selectedClassroom)
 				);
 
-			return matchesTeacher && matchesOrganization && matchesSubject && matchesClassroom;
+			return matchesTeacher && matchesSubjectGroup && matchesSubject && matchesClassroom;
 		});
 	});
 	const tableMinWidth = $derived(Math.max(760, 220 + (overview?.periods.length ?? 4) * 184));
@@ -198,11 +197,8 @@
 	}
 
 	function resetInvalidFilters() {
-		if (
-			selectedOrganizationUnit !== 'all' &&
-			!organizationOptions.some(matchesSelectedOrganization)
-		) {
-			selectedOrganizationUnit = 'all';
+		if (selectedSubjectGroup !== 'all' && !subjectGroupOptions.some(matchesSelectedSubjectGroup)) {
+			selectedSubjectGroup = 'all';
 		}
 		if (selectedSubject !== 'all' && !subjectOptions.some(matchesSelectedSubject)) {
 			selectedSubject = 'all';
@@ -212,8 +208,8 @@
 		}
 	}
 
-	function matchesSelectedOrganization(option: FilterOption) {
-		return option.value === selectedOrganizationUnit;
+	function matchesSelectedSubjectGroup(option: FilterOption) {
+		return option.value === selectedSubjectGroup;
 	}
 
 	function matchesSelectedSubject(option: FilterOption) {
@@ -496,14 +492,14 @@
 		{#if canUseAcademicFilters}
 			<div class="grid gap-3 border-t pt-3 md:grid-cols-2 xl:grid-cols-4">
 				<div class="space-y-1.5">
-					<Label for="organization-filter">กลุ่มงาน</Label>
-					<Select.Root type="single" bind:value={selectedOrganizationUnit}>
-						<Select.Trigger id="organization-filter" class="w-full">
-							{selectedOrganizationUnit === 'all' ? 'ทุกกลุ่มงาน' : selectedOrganizationUnit}
+					<Label for="subject-group-filter">กลุ่มสาระ</Label>
+					<Select.Root type="single" bind:value={selectedSubjectGroup}>
+						<Select.Trigger id="subject-group-filter" class="w-full">
+							{selectedSubjectGroup === 'all' ? 'ทุกกลุ่มสาระ' : selectedSubjectGroup}
 						</Select.Trigger>
 						<Select.Content>
-							<Select.Item value="all">ทุกกลุ่มงาน</Select.Item>
-							{#each organizationOptions as option (option.value)}
+							<Select.Item value="all">ทุกกลุ่มสาระ</Select.Item>
+							{#each subjectGroupOptions as option (option.value)}
 								<Select.Item value={option.value}>{option.label}</Select.Item>
 							{/each}
 						</Select.Content>
@@ -622,18 +618,18 @@
 					class="m-4"
 				/>
 			{:else}
-				<div class="overflow-x-auto">
+				<div class="daily-teaching-scroll max-h-[70vh] overflow-x-auto overflow-y-auto">
 					<Table.Root
 						class="daily-teaching-table border-0"
 						style={`min-width: ${tableMinWidth}px;`}
 					>
-						<Table.Header>
+						<Table.Header class="sticky top-0 z-40">
 							<Table.Row class="bg-muted/60 hover:bg-muted/60">
-								<Table.Head class="sticky left-0 z-30 w-[220px] min-w-[220px] bg-muted">
+								<Table.Head class="sticky left-0 top-0 z-50 w-[220px] min-w-[220px] bg-muted">
 									ครู
 								</Table.Head>
 								{#each overview.periods as period (period.id)}
-									<Table.Head class="min-w-[184px] bg-muted text-center">
+									<Table.Head class="sticky top-0 z-40 min-w-[184px] bg-muted text-center">
 										<div class="font-medium">{periodLabel(period)}</div>
 										<div class="text-muted-foreground text-xs font-normal">
 											{periodTime(period)}
@@ -648,9 +644,9 @@
 									<Table.Cell class="sticky left-0 z-20 w-[220px] min-w-[220px] bg-background">
 										<div class="min-w-0">
 											<p class="truncate font-medium">{teacher.displayName}</p>
-											{#if teacher.organizationUnitNames.length > 0}
+											{#if teacher.subjectGroupNames.length > 0}
 												<p class="text-muted-foreground truncate text-xs">
-													{teacher.organizationUnitNames.join(', ')}
+													{teacher.subjectGroupNames.join(', ')}
 												</p>
 											{/if}
 										</div>
@@ -770,6 +766,10 @@
 	:global(.daily-teaching-table th),
 	:global(.daily-teaching-table td) {
 		border-bottom: 1px solid hsl(var(--border));
+	}
+
+	:global(.daily-teaching-scroll [data-slot='table-container']) {
+		overflow: visible;
 	}
 
 	@media print {

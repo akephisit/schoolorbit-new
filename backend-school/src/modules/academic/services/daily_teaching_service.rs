@@ -47,7 +47,7 @@ pub struct DailyTeachingPeriod {
 pub struct DailyTeachingTeacher {
     pub id: Uuid,
     pub display_name: String,
-    pub organization_unit_names: Vec<String>,
+    pub subject_group_names: Vec<String>,
     pub periods: Vec<DailyTeachingPeriodCell>,
 }
 
@@ -87,7 +87,7 @@ pub struct DailyTeachingSummary {
 struct DailyTeachingTeacherSeed {
     id: Uuid,
     display_name: String,
-    organization_unit_names: Vec<String>,
+    subject_group_names: Vec<String>,
     sort_order: i32,
 }
 
@@ -198,7 +198,7 @@ fn build_daily_teaching_overview(
             DailyTeachingTeacher {
                 id: teacher.id,
                 display_name: teacher.display_name,
-                organization_unit_names: teacher.organization_unit_names,
+                subject_group_names: teacher.subject_group_names,
                 periods: teacher_periods,
             }
         })
@@ -280,11 +280,11 @@ async fn list_daily_teachers(
             u.id,
             concat_ws(' ', u.first_name, u.last_name) AS display_name,
             COALESCE(
-                ARRAY_AGG(ou.name ORDER BY ou.display_order, ou.name)
-                    FILTER (WHERE ou.id IS NOT NULL),
+                ARRAY_AGG(teacher_sg.name_th ORDER BY teacher_sg.display_order, teacher_sg.name_th)
+                    FILTER (WHERE teacher_sg.id IS NOT NULL),
                 ARRAY[]::text[]
-            ) AS organization_unit_names,
-            COALESCE(MIN(ou.display_order), 9999)::int AS sort_order
+            ) AS subject_group_names,
+            COALESCE(MIN(teacher_sg.display_order), 9999)::int AS sort_order
         FROM users u
         LEFT JOIN organization_members om
             ON om.user_id = u.id
@@ -292,6 +292,10 @@ async fn list_daily_teachers(
         LEFT JOIN organization_units ou
             ON ou.id = om.organization_unit_id
            AND ou.is_active = true
+           AND ou.unit_type = 'subject_group'
+        LEFT JOIN subject_groups teacher_sg
+            ON teacher_sg.id = ou.subject_group_id
+           AND teacher_sg.is_active = true
         WHERE u.user_type = 'staff'
           AND u.status = 'active'
           AND (
@@ -445,13 +449,13 @@ mod tests {
                 DailyTeachingTeacherSeed {
                     id: teacher_a,
                     display_name: "ครูก".to_string(),
-                    organization_unit_names: vec!["คณิตศาสตร์".to_string()],
+                    subject_group_names: vec!["คณิตศาสตร์".to_string()],
                     sort_order: 10,
                 },
                 DailyTeachingTeacherSeed {
                     id: teacher_b,
                     display_name: "ครูข".to_string(),
-                    organization_unit_names: vec!["คณิตศาสตร์".to_string()],
+                    subject_group_names: vec!["คณิตศาสตร์".to_string()],
                     sort_order: 10,
                 },
             ],
@@ -515,13 +519,13 @@ mod tests {
             DailyTeachingTeacherSeed {
                 id: teacher_with_lesson,
                 display_name: "ครูมีคาบ".to_string(),
-                organization_unit_names: vec![],
+                subject_group_names: vec![],
                 sort_order: 0,
             },
             DailyTeachingTeacherSeed {
                 id: empty_teacher,
                 display_name: "ครูว่าง".to_string(),
-                organization_unit_names: vec![],
+                subject_group_names: vec![],
                 sort_order: 0,
             },
         ];

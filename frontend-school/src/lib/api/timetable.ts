@@ -114,7 +114,7 @@ export interface DailyTeachingPeriodCell {
 export interface DailyTeachingTeacher {
 	id: string;
 	displayName: string;
-	organizationUnitNames: string[];
+	subjectGroupNames: string[];
 	periods: DailyTeachingPeriodCell[];
 }
 

@@ -929,6 +929,10 @@ test('daily teaching overview page is table based and read only', async () => {
 	assert.match(page, /<PageState/);
 	assert.match(page, /\* as Table/);
 	assert.match(page, /sticky left-0/);
+	assert.match(page, /sticky top-0/);
+	assert.match(page, /overflow-y-auto/);
+	assert.match(page, /subjectGroupNames/);
+	assert.doesNotMatch(page, /organizationUnitNames/);
 	assert.match(page, /overflow-x-auto/);
 	assert.match(page, /Dialog\.Root/);
 	assert.match(page, /href="\/staff\/academic\/timetable"/);
