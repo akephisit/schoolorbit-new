@@ -1,6 +1,7 @@
 export const WILDCARD_PERMISSION = '*' as const;
 
 export const PERMISSION_MODULES = {
+	ACADEMIC_ASSESSMENT: 'academic_assessment',
 	ACADEMIC_CLASSROOM: 'academic_classroom',
 	ACADEMIC_COURSE_PLAN: 'academic_course_plan',
 	ACADEMIC_CURRICULUM: 'academic_curriculum',
@@ -28,6 +29,10 @@ export const PERMISSION_MODULES = {
 } as const;
 
 export const PERMISSIONS = {
+	ACADEMIC_ASSESSMENT_MANAGE_ASSIGNED: 'academic_assessment.manage.assigned',
+	ACADEMIC_ASSESSMENT_MANAGE_SCHOOL: 'academic_assessment.manage.school',
+	ACADEMIC_ASSESSMENT_READ_ASSIGNED: 'academic_assessment.read.assigned',
+	ACADEMIC_ASSESSMENT_READ_SCHOOL: 'academic_assessment.read.school',
 	ACADEMIC_CLASSROOM_CREATE_ALL: 'academic_classroom.create.all',
 	ACADEMIC_CLASSROOM_DELETE_ALL: 'academic_classroom.delete.all',
 	ACADEMIC_CLASSROOM_READ_ALL: 'academic_classroom.read.all',

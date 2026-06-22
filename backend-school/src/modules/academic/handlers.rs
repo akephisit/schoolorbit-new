@@ -5,6 +5,7 @@ use crate::utils::request_context::tenant_pool;
 use crate::AppState;
 
 pub mod activity;
+pub mod assessment;
 pub mod course_planning;
 pub mod scheduling;
 pub mod scheduling_config;

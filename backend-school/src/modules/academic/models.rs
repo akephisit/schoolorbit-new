@@ -8,6 +8,7 @@ use uuid::Uuid;
 // Curriculum Models
 // ==========================================
 pub mod activity;
+pub mod assessment;
 pub mod course_planning;
 pub mod curriculum;
 pub mod scheduling;

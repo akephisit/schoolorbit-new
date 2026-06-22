@@ -113,6 +113,12 @@ pub mod codes {
     pub const ACADEMIC_COURSE_PLAN_MANAGE_ALL: &str = "academic_course_plan.manage.all";
     pub const ACADEMIC_TIMETABLE_TODAY_READ_SCHOOL: &str = "academic_timetable_today.read.school";
 
+    // Academic Assessment Plans (Score structures for opened courses)
+    pub const ACADEMIC_ASSESSMENT_READ_ASSIGNED: &str = "academic_assessment.read.assigned";
+    pub const ACADEMIC_ASSESSMENT_MANAGE_ASSIGNED: &str = "academic_assessment.manage.assigned";
+    pub const ACADEMIC_ASSESSMENT_READ_SCHOOL: &str = "academic_assessment.read.school";
+    pub const ACADEMIC_ASSESSMENT_MANAGE_SCHOOL: &str = "academic_assessment.manage.school";
+
     // Facility permissions
     pub const FACILITY_READ_ALL: &str = "facility.read.all";
     pub const FACILITY_CREATE_ALL: &str = "facility.create.all";
@@ -683,6 +689,38 @@ pub const ALL_PERMISSIONS: &[PermissionDef] = &[
         action: "read",
         scope: "school",
         description: "ดูภาพรวมตารางสอนรายวันของครูทั้งโรงเรียนแบบอ่านอย่างเดียว",
+    },
+    PermissionDef {
+        code: codes::ACADEMIC_ASSESSMENT_READ_ASSIGNED,
+        name: "ดูโครงสร้างคะแนนรายวิชาที่รับผิดชอบ",
+        module: "academic_assessment",
+        action: "read",
+        scope: "assigned",
+        description: "ดูโครงสร้างคะแนนของรายวิชาที่ตนเองเป็นครูผู้สอน",
+    },
+    PermissionDef {
+        code: codes::ACADEMIC_ASSESSMENT_MANAGE_ASSIGNED,
+        name: "จัดโครงสร้างคะแนนรายวิชาที่รับผิดชอบ",
+        module: "academic_assessment",
+        action: "manage",
+        scope: "assigned",
+        description: "เพิ่ม/แก้ไข/ส่งโครงสร้างคะแนนของรายวิชาที่ตนเองเป็นครูผู้สอน",
+    },
+    PermissionDef {
+        code: codes::ACADEMIC_ASSESSMENT_READ_SCHOOL,
+        name: "ดูภาพรวมโครงสร้างคะแนนทั้งโรงเรียน",
+        module: "academic_assessment",
+        action: "read",
+        scope: "school",
+        description: "ดูภาพรวมโครงสร้างคะแนนและรูปแบบการสอบของรายวิชาที่เปิดสอนทั้งโรงเรียน",
+    },
+    PermissionDef {
+        code: codes::ACADEMIC_ASSESSMENT_MANAGE_SCHOOL,
+        name: "จัดการโครงสร้างคะแนนทั้งโรงเรียน",
+        module: "academic_assessment",
+        action: "manage",
+        scope: "school",
+        description: "จัดการโครงสร้างคะแนนและสถานะการส่งของรายวิชาที่เปิดสอนทั้งโรงเรียน",
     },
     // Facility Permissions
     PermissionDef {

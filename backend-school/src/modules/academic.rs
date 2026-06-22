@@ -123,6 +123,20 @@ pub fn academic_routes() -> Router<AppState> {
             "/planning/classrooms/{classroom_id}/activities/{slot_id}",
             axum::routing::delete(handlers::course_planning::remove_classroom_from_slot),
         )
+        // Assessment Plans (โครงสร้างคะแนนรายวิชา)
+        .route(
+            "/assessments/plans",
+            get(handlers::assessment::list_assessment_plans),
+        )
+        .route(
+            "/assessments/courses/{course_id}",
+            get(handlers::assessment::get_assessment_plan)
+                .put(handlers::assessment::save_assessment_plan),
+        )
+        .route(
+            "/assessments/courses/{course_id}/submit",
+            post(handlers::assessment::submit_assessment_plan),
+        )
         // Timetable: Periods
         .route(
             "/periods",

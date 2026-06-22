@@ -205,15 +205,16 @@ mod tests {
     }
 
     #[test]
-    fn clean_migrator_contains_only_the_baseline_migration() {
+    fn active_migrator_uses_contiguous_versions_without_db_lock() {
         let migrator = all_migrations_without_db_lock();
         let versions = migrator
             .iter()
             .map(|migration| migration.version)
             .collect::<Vec<_>>();
+        let expected_versions = (1..=versions.len() as i64).collect::<Vec<_>>();
 
         assert!(!migrator.locking);
-        assert_eq!(versions, vec![1]);
+        assert_eq!(versions, expected_versions);
     }
 
     #[test]
