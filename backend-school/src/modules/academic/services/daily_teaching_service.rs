@@ -346,7 +346,7 @@ async fn list_daily_entries(
             te.entry_type,
             s.code AS subject_code,
             s.name_th AS subject_name,
-            sg.name AS subject_group_name,
+            sg.name_th AS subject_group_name,
             cr.name AS classroom_name,
             r.code AS room_code,
             te.title,
@@ -358,7 +358,7 @@ async fn list_daily_entries(
         JOIN academic_periods ap ON ap.id = te.period_id
         LEFT JOIN classroom_courses cc ON cc.id = te.classroom_course_id
         LEFT JOIN subjects s ON s.id = cc.subject_id
-        LEFT JOIN subject_groups sg ON sg.id = s.subject_group_id
+        LEFT JOIN subject_groups sg ON sg.id = s.group_id
         LEFT JOIN class_rooms cr ON cr.id = te.classroom_id
         LEFT JOIN rooms r ON r.id = te.room_id
         WHERE te.is_active = true

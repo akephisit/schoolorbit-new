@@ -565,6 +565,10 @@ fn daily_teaching_overview_endpoint_is_read_only_and_pii_safe() {
     assert!(service.contains("DailyTeachingOverview"));
     assert!(service.contains("timetable_entry_instructors"));
     assert!(service.contains("subject_group_name"));
+    assert!(service.contains("LEFT JOIN subject_groups sg ON sg.id = s.group_id"));
+    assert!(service.contains("sg.name_th AS subject_group_name"));
+    assert!(!service.contains("s.subject_group_id"));
+    assert!(!service.contains("sg.name AS subject_group_name"));
     assert!(service.contains("user_roles"));
     assert!(service.contains("role_def.code IN ('TEACHER', 'HEAD')"));
     assert!(registry.contains("academic_timetable_today.read.school"));
