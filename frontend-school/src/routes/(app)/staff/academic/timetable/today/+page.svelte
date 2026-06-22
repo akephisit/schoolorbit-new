@@ -127,7 +127,17 @@
 			return matchesTeacher && matchesSubjectGroup && matchesSubject && matchesClassroom;
 		});
 	});
-	const tableMinWidth = $derived(Math.max(760, 220 + (overview?.periods.length ?? 4) * 184));
+	const teacherColumnWidth = $derived.by(() => {
+		const longestNameLength = Math.max(
+			3,
+			...filteredTeachers.map((teacher) => teacher.displayName.length)
+		);
+		return clamp(104 + longestNameLength * 7, 136, 188);
+	});
+	const periodColumnWidth = 168;
+	const tableMinWidth = $derived(
+		Math.max(680, teacherColumnWidth + (overview?.periods.length ?? 4) * periodColumnWidth)
+	);
 
 	function currentOverviewKey(): string {
 		return [
@@ -291,10 +301,22 @@
 		return entry.title ?? entry.subjectName ?? entryTypeLabel(entry.entryType);
 	}
 
+	function entrySubjectCodeLine(entry: DailyTeachingEntry): string {
+		if (entry.entryType !== 'COURSE') return '';
+		return entry.subjectCode ?? '';
+	}
+
+	function entrySubjectNameLine(entry: DailyTeachingEntry): string {
+		if (entry.entryType !== 'COURSE') {
+			return entry.title ?? entry.subjectName ?? entryTypeLabel(entry.entryType);
+		}
+		if (entry.subjectName) return entry.subjectName;
+		if (entry.title && entry.title !== entry.subjectCode) return entry.title;
+		return entry.subjectCode ? '' : entryTypeLabel(entry.entryType);
+	}
+
 	function entryMeta(entry: DailyTeachingEntry): string {
-		return [entry.classroomName, entry.roomCode, entry.subjectGroupName]
-			.filter(Boolean)
-			.join(' / ');
+		return [entry.classroomName, entry.roomCode].filter(Boolean).join(' / ');
 	}
 
 	function periodLabel(period: DailyTeachingPeriod): string {
@@ -328,6 +350,10 @@
 		const month = String(date.getMonth() + 1).padStart(2, '0');
 		const day = String(date.getDate()).padStart(2, '0');
 		return `${year}-${month}-${day}`;
+	}
+
+	function clamp(value: number, min: number, max: number): number {
+		return Math.min(max, Math.max(min, value));
 	}
 
 	function entryTypeLabel(entryType: DailyTeachingEntry['entryType']): string {
@@ -621,15 +647,17 @@
 				<div class="daily-teaching-scroll max-h-[70vh] overflow-x-auto overflow-y-auto">
 					<Table.Root
 						class="daily-teaching-table border-0"
-						style={`min-width: ${tableMinWidth}px;`}
+						style={`--teacher-column-width: ${teacherColumnWidth}px; --period-column-width: ${periodColumnWidth}px; min-width: ${tableMinWidth}px;`}
 					>
 						<Table.Header class="sticky top-0 z-40">
 							<Table.Row class="bg-muted/60 hover:bg-muted/60">
-								<Table.Head class="sticky left-0 top-0 z-50 w-[220px] min-w-[220px] bg-muted">
+								<Table.Head class="daily-teaching-teacher-column sticky left-0 top-0 z-50 bg-muted">
 									ครู
 								</Table.Head>
 								{#each overview.periods as period (period.id)}
-									<Table.Head class="sticky top-0 z-40 min-w-[184px] bg-muted text-center">
+									<Table.Head
+										class="daily-teaching-period-column sticky top-0 z-40 bg-muted text-center"
+									>
 										<div class="font-medium">{periodLabel(period)}</div>
 										<div class="text-muted-foreground text-xs font-normal">
 											{periodTime(period)}
@@ -641,7 +669,9 @@
 						<Table.Body>
 							{#each filteredTeachers as teacher (teacher.id)}
 								<Table.Row>
-									<Table.Cell class="sticky left-0 z-20 w-[220px] min-w-[220px] bg-background">
+									<Table.Cell
+										class="daily-teaching-teacher-column sticky left-0 z-20 overflow-hidden bg-background"
+									>
 										<div class="min-w-0">
 											<p class="truncate font-medium">{teacher.displayName}</p>
 											{#if teacher.subjectGroupNames.length > 0}
@@ -654,7 +684,7 @@
 
 									{#each overview.periods as period (period.id)}
 										{@const cell = cellForPeriod(teacher, period.id)}
-										<Table.Cell class="min-w-[184px] align-top">
+										<Table.Cell class="daily-teaching-period-column align-top">
 											<button
 												type="button"
 												class="hover:border-primary/50 hover:bg-accent/40 focus-visible:border-ring focus-visible:ring-ring/50 min-h-24 w-full rounded-md border border-dashed border-transparent p-2 text-left transition-colors focus-visible:ring-[3px] focus-visible:outline-none"
@@ -665,6 +695,8 @@
 												{:else}
 													<div class="space-y-1.5">
 														{#each cell.entries as entry (entry.entryId)}
+															{@const subjectCodeLine = entrySubjectCodeLine(entry)}
+															{@const subjectNameLine = entrySubjectNameLine(entry)}
 															<div class="rounded-md border bg-muted/30 p-2">
 																<div class="flex items-center gap-1.5">
 																	<Badge
@@ -677,9 +709,18 @@
 																		<Badge variant="outline">ทีมสอน</Badge>
 																	{/if}
 																</div>
-																<p class="mt-1 line-clamp-2 text-sm font-medium">
-																	{entryTitle(entry)}
-																</p>
+																<div class="mt-1 min-w-0">
+																	{#if subjectCodeLine}
+																		<p class="text-muted-foreground truncate text-xs font-medium">
+																			{subjectCodeLine}
+																		</p>
+																	{/if}
+																	{#if subjectNameLine}
+																		<p class="line-clamp-2 text-sm font-medium">
+																			{subjectNameLine}
+																		</p>
+																	{/if}
+																</div>
 																{#if entryMeta(entry)}
 																	<p class="text-muted-foreground mt-1 truncate text-xs">
 																		{entryMeta(entry)}
@@ -766,6 +807,18 @@
 	:global(.daily-teaching-table th),
 	:global(.daily-teaching-table td) {
 		border-bottom: 1px solid hsl(var(--border));
+	}
+
+	:global(.daily-teaching-teacher-column) {
+		width: var(--teacher-column-width);
+		min-width: var(--teacher-column-width);
+		max-width: var(--teacher-column-width);
+	}
+
+	:global(.daily-teaching-period-column) {
+		width: var(--period-column-width);
+		min-width: var(--period-column-width);
+		max-width: var(--period-column-width);
 	}
 
 	:global(.daily-teaching-scroll [data-slot='table-container']) {
