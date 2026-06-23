@@ -72,6 +72,7 @@ pub struct AssessmentPlanSummary {
     pub midterm_exam_duration_minutes: Option<i32>,
     pub final_exam_duration_minutes: Option<i32>,
     pub has_unallocated_categories: bool,
+    pub can_manage: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]

@@ -32,6 +32,7 @@ export const PERMISSIONS = {
 	ACADEMIC_ASSESSMENT_MANAGE_ASSIGNED: 'academic_assessment.manage.assigned',
 	ACADEMIC_ASSESSMENT_MANAGE_SCHOOL: 'academic_assessment.manage.school',
 	ACADEMIC_ASSESSMENT_READ_ASSIGNED: 'academic_assessment.read.assigned',
+	ACADEMIC_ASSESSMENT_READ_ORGANIZATION_UNIT: 'academic_assessment.read.organization_unit',
 	ACADEMIC_ASSESSMENT_READ_SCHOOL: 'academic_assessment.read.school',
 	ACADEMIC_CLASSROOM_CREATE_ALL: 'academic_classroom.create.all',
 	ACADEMIC_CLASSROOM_DELETE_ALL: 'academic_classroom.delete.all',

@@ -26,6 +26,10 @@ test('academic assessment permissions are registered for teachers and academic o
 	);
 	assert.match(
 		registry,
+		/ACADEMIC_ASSESSMENT_READ_ORGANIZATION_UNIT:\s*['"]academic_assessment\.read\.organization_unit['"]/
+	);
+	assert.match(
+		registry,
 		/ACADEMIC_ASSESSMENT_MANAGE_ASSIGNED:\s*['"]academic_assessment\.manage\.assigned['"]/
 	);
 	assert.match(
@@ -79,6 +83,9 @@ test('academic assessment route exposes overview, downloads, and quick score edi
 	assert.match(page, /assessment-exam-cell/);
 	assert.match(page, /quickExamModeOptions/);
 	assert.match(page, /outside_timetable/);
+	assert.match(page, /canEditAssessmentPlan/);
+	assert.match(page, /plan\.canManage/);
+	assert.match(page, /ดูอย่างเดียว/);
 });
 
 test('academic assessment score table uses dedicated score and exam columns', async () => {
@@ -135,7 +142,8 @@ test('academic assessment summary exposes core score buckets for table editing',
 		'afterMidtermScore',
 		'finalScore',
 		'midtermExamMode',
-		'finalExamMode'
+		'finalExamMode',
+		'canManage'
 	]) {
 		assert.match(api, new RegExp(`${field}[?]?:`));
 	}
@@ -146,11 +154,40 @@ test('academic assessment summary exposes core score buckets for table editing',
 		'after_midterm_score',
 		'final_score',
 		'midterm_exam_mode',
-		'final_exam_mode'
+		'final_exam_mode',
+		'can_manage'
 	]) {
 		assert.match(model, new RegExp(`pub ${field}:`));
 		assert.match(service, new RegExp(`${field}`));
 	}
+});
+
+test('academic assessment exposes subject-group read access while keeping row editing scoped', async () => {
+	const page = await readProjectFile('src/routes/(app)/staff/academic/assessments/+page.svelte');
+	const api = await readProjectFile('src/lib/api/academicAssessments.ts');
+	const service = await readRepoFile(
+		'backend-school/src/modules/academic/services/assessment_service.rs'
+	);
+	const backendRegistry = await readRepoFile('backend-school/src/permissions/registry.rs');
+	const migration = await readRepoFile(
+		'backend-school/migrations/015_academic_assessment_subject_group_read.sql'
+	);
+
+	assert.match(api, /canManage:\s*boolean/);
+	assert.match(page, /PERMISSIONS\.ACADEMIC_ASSESSMENT_READ_ORGANIZATION_UNIT/);
+	assert.match(page, /function canEditAssessmentPlan\(plan: AssessmentPlanSummary\)/);
+	assert.match(page, /plan\.canManage/);
+	assert.match(page, /const dirtyPlans = plans[\s\S]*\.filter\(canEditAssessmentPlan\)/);
+	assert.match(page, /ดูอย่างเดียว/);
+
+	assert.match(backendRegistry, /ACADEMIC_ASSESSMENT_READ_ORGANIZATION_UNIT/);
+	assert.match(service, /AssessmentPlanListAccess/);
+	assert.match(service, /subject_group_ids/);
+	assert.match(service, /s\.group_id = ANY/);
+	assert.match(service, /can_manage/);
+	assert.match(migration, /academic_assessment\.read\.organization_unit/);
+	assert.match(migration, /unit_type = 'subject_group'/);
+	assert.match(migration, /organization_permission_grants/);
 });
 
 test('academic assessment page can gate teacher access from the overview', async () => {

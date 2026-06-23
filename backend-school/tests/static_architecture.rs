@@ -394,6 +394,47 @@ fn academic_assessment_plans_are_subject_semester_scoped() {
 }
 
 #[test]
+fn academic_assessment_supports_subject_group_read_scope() {
+    let migration_path = manifest_dir()
+        .join("migrations")
+        .join("015_academic_assessment_subject_group_read.sql");
+    let migration = read_source(&migration_path);
+    let service = strip_comments(&read_source(
+        manifest_dir().join("src/modules/academic/services/assessment_service.rs"),
+    ));
+    let models = strip_comments(&read_source(
+        manifest_dir().join("src/modules/academic/models/assessment.rs"),
+    ));
+    let backend_registry = strip_comments(&read_source(
+        manifest_dir().join("src/permissions/registry.rs"),
+    ));
+
+    for source in [&backend_registry, &migration] {
+        assert!(
+            source.contains("academic_assessment.read.organization_unit"),
+            "assessment subject-group read permission must be registered in backend and migration"
+        );
+    }
+
+    assert!(
+        migration.contains("unit_type = 'subject_group'")
+            && migration.contains("organization_permission_grants"),
+        "{} must grant subject-group read access through organization units",
+        repo_relative(&migration_path)
+    );
+    assert!(
+        service.contains("AssessmentPlanListAccess")
+            && service.contains("subject_group_ids")
+            && service.contains("s.group_id = ANY"),
+        "assessment list service must support subject-group scoped reads"
+    );
+    assert!(
+        service.contains("can_manage") && models.contains("pub can_manage: bool"),
+        "assessment summaries must expose row-level editability"
+    );
+}
+
+#[test]
 fn operational_bins_use_central_tenant_migration_runner() {
     let bin_files = list_files(manifest_dir().join("src/bin"), |path| {
         path.extension().and_then(|extension| extension.to_str()) == Some("rs")

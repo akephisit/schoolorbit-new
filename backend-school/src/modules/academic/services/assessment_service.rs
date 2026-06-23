@@ -13,6 +13,7 @@ use crate::modules::academic::models::assessment::{
 };
 use crate::modules::system::services::feature_toggle_service;
 use crate::permissions::registry::codes;
+use crate::policies::resource_access_policy::{self, UserResourceListAccess};
 
 pub const TEACHER_ACCESS_FEATURE_CODE: &str = "academic_assessment_teacher_access";
 
@@ -32,6 +33,35 @@ pub enum AllocationStatus {
     Complete,
     UnderAllocated,
     OverAllocated,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AssessmentPlanListAccess {
+    pub read_school: bool,
+    pub assigned_instructor_id: Option<Uuid>,
+    pub subject_group_ids: Vec<Uuid>,
+    pub manage_school: bool,
+    pub manage_assigned_instructor_id: Option<Uuid>,
+}
+
+impl AssessmentPlanListAccess {
+    fn scoped(
+        assigned_instructor_id: Option<Uuid>,
+        subject_group_ids: Vec<Uuid>,
+        manage_assigned_instructor_id: Option<Uuid>,
+    ) -> Self {
+        Self {
+            read_school: false,
+            assigned_instructor_id,
+            subject_group_ids,
+            manage_school: false,
+            manage_assigned_instructor_id,
+        }
+    }
+
+    pub fn is_school(&self) -> bool {
+        self.read_school
+    }
 }
 
 impl AllocationStatus {
@@ -189,9 +219,77 @@ fn ensure_non_negative_score(score: f64) -> Result<(), AppError> {
 pub async fn list_assessment_plans(
     pool: &PgPool,
     query: &AssessmentPlanListQuery,
-    assigned_instructor_id: Option<Uuid>,
+    access: &AssessmentPlanListAccess,
 ) -> Result<Vec<AssessmentPlanSummary>, AppError> {
-    let mut sql = String::from(
+    let mut scoped_filters = String::new();
+    let mut idx = 0u32;
+    if query.academic_semester_id.is_some() {
+        idx += 1;
+        scoped_filters.push_str(&format!(" AND cc.academic_semester_id = ${idx}"));
+    }
+    if query.classroom_id.is_some() {
+        idx += 1;
+        scoped_filters.push_str(&format!(" AND cc.classroom_id = ${idx}"));
+    }
+    if query.subject_id.is_some() {
+        idx += 1;
+        scoped_filters.push_str(&format!(" AND cc.subject_id = ${idx}"));
+    }
+    if query.instructor_id.is_some() {
+        idx += 1;
+        scoped_filters.push_str(&format!(
+            " AND (cc.primary_instructor_id = ${idx} OR EXISTS (SELECT 1 FROM classroom_course_instructors cci WHERE cci.classroom_course_id = cc.id AND cci.instructor_id = ${idx}))"
+        ));
+    }
+
+    if !access.read_school {
+        let mut read_predicates = Vec::new();
+        if access.assigned_instructor_id.is_some() {
+            idx += 1;
+            read_predicates.push(format!(
+                "(cc.primary_instructor_id = ${idx} OR EXISTS (SELECT 1 FROM classroom_course_instructors cci WHERE cci.classroom_course_id = cc.id AND cci.instructor_id = ${idx}))"
+            ));
+        }
+        if !access.subject_group_ids.is_empty() {
+            idx += 1;
+            read_predicates.push(format!("s.group_id = ANY(${idx})"));
+        }
+
+        if read_predicates.is_empty() {
+            scoped_filters.push_str(" AND FALSE");
+        } else {
+            scoped_filters.push_str(" AND (");
+            scoped_filters.push_str(&read_predicates.join(" OR "));
+            scoped_filters.push(')');
+        }
+    }
+
+    let can_manage_expression = if access.manage_school {
+        "TRUE".to_string()
+    } else if access.manage_assigned_instructor_id.is_some() {
+        idx += 1;
+        format!(
+            r#"EXISTS (
+        SELECT 1
+        FROM classroom_courses editable_cc
+        WHERE editable_cc.academic_semester_id = rc.academic_semester_id
+          AND editable_cc.subject_id = rc.subject_id
+          AND (
+              editable_cc.primary_instructor_id = ${idx}
+              OR EXISTS (
+                  SELECT 1
+                  FROM classroom_course_instructors editable_cci
+                  WHERE editable_cci.classroom_course_id = editable_cc.id
+                    AND editable_cci.instructor_id = ${idx}
+              )
+          )
+    )"#
+        )
+    } else {
+        "FALSE".to_string()
+    };
+
+    let sql_prefix = format!(
         r#"
 WITH scoped_courses AS (
     SELECT
@@ -209,35 +307,10 @@ WITH scoped_courses AS (
     JOIN subjects s ON s.id = cc.subject_id
     JOIN class_rooms cr ON cr.id = cc.classroom_id
     LEFT JOIN users u ON u.id = cc.primary_instructor_id
-    WHERE 1 = 1"#,
+    WHERE 1 = 1{scoped_filters}"#,
     );
 
-    let mut idx = 0u32;
-    if query.academic_semester_id.is_some() {
-        idx += 1;
-        sql.push_str(&format!(" AND cc.academic_semester_id = ${idx}"));
-    }
-    if query.classroom_id.is_some() {
-        idx += 1;
-        sql.push_str(&format!(" AND cc.classroom_id = ${idx}"));
-    }
-    if query.subject_id.is_some() {
-        idx += 1;
-        sql.push_str(&format!(" AND cc.subject_id = ${idx}"));
-    }
-    if query.instructor_id.is_some() {
-        idx += 1;
-        sql.push_str(&format!(
-            " AND (cc.primary_instructor_id = ${idx} OR EXISTS (SELECT 1 FROM classroom_course_instructors cci WHERE cci.classroom_course_id = cc.id AND cci.instructor_id = ${idx}))"
-        ));
-    }
-    if assigned_instructor_id.is_some() {
-        idx += 1;
-        sql.push_str(&format!(
-            " AND (cc.primary_instructor_id = ${idx} OR EXISTS (SELECT 1 FROM classroom_course_instructors cci WHERE cci.classroom_course_id = cc.id AND cci.instructor_id = ${idx}))"
-        ));
-    }
-
+    let mut sql = sql_prefix;
     sql.push_str(
         r#"
 ),
@@ -335,7 +408,12 @@ SELECT
     COALESCE(cs.final_exam_mode, 'in_timetable') AS final_exam_mode,
     cs.midterm_exam_duration_minutes,
     cs.final_exam_duration_minutes,
-    COALESCE(als.has_unallocated_categories, FALSE) AS has_unallocated_categories
+    COALESCE(als.has_unallocated_categories, FALSE) AS has_unallocated_categories,
+"#,
+    );
+    sql.push_str(&format!("    {can_manage_expression} AS can_manage"));
+    sql.push_str(
+        r#"
 FROM representative_courses rc
 JOIN course_rollup rollup
   ON rollup.academic_semester_id = rc.academic_semester_id
@@ -370,8 +448,18 @@ WHERE 1 = 1"#,
     if let Some(id) = query.instructor_id {
         db_query = db_query.bind(id);
     }
-    if let Some(id) = assigned_instructor_id {
-        db_query = db_query.bind(id);
+    if !access.read_school {
+        if let Some(id) = access.assigned_instructor_id {
+            db_query = db_query.bind(id);
+        }
+        if !access.subject_group_ids.is_empty() {
+            db_query = db_query.bind(&access.subject_group_ids);
+        }
+    }
+    if !access.manage_school {
+        if let Some(id) = access.manage_assigned_instructor_id {
+            db_query = db_query.bind(id);
+        }
     }
     if let Some(status) = &query.status {
         db_query = db_query.bind(status);
@@ -411,6 +499,7 @@ pub async fn update_assessment_settings(
 pub fn require_assessment_settings_read_access(actor: &ActorContext) -> Result<(), AppError> {
     actor.require_any_permission(&[
         codes::ACADEMIC_ASSESSMENT_READ_ASSIGNED,
+        codes::ACADEMIC_ASSESSMENT_READ_ORGANIZATION_UNIT,
         codes::ACADEMIC_ASSESSMENT_MANAGE_ASSIGNED,
         codes::ACADEMIC_ASSESSMENT_READ_SCHOOL,
         codes::ACADEMIC_ASSESSMENT_MANAGE_SCHOOL,
@@ -456,12 +545,41 @@ async fn require_teacher_access_enabled(pool: &PgPool) -> Result<(), AppError> {
     ))
 }
 
-pub fn assigned_instructor_filter_for_list(actor: &ActorContext) -> Result<Option<Uuid>, AppError> {
+pub async fn resolve_assessment_plan_list_access(
+    pool: &PgPool,
+    actor: &ActorContext,
+) -> Result<AssessmentPlanListAccess, AppError> {
+    let can_manage_assigned = can_manage_assigned(actor);
+    let manage_assigned_instructor_id = can_manage_assigned.then_some(actor.user_id);
+
     if can_read_school(actor) {
-        return Ok(None);
+        return Ok(AssessmentPlanListAccess {
+            read_school: true,
+            assigned_instructor_id: None,
+            subject_group_ids: Vec::new(),
+            manage_school: can_manage_school(actor),
+            manage_assigned_instructor_id,
+        });
     }
-    actor.require_permission(codes::ACADEMIC_ASSESSMENT_READ_ASSIGNED)?;
-    Ok(Some(actor.user_id))
+
+    actor.require_any_permission(&[
+        codes::ACADEMIC_ASSESSMENT_READ_ASSIGNED,
+        codes::ACADEMIC_ASSESSMENT_READ_ORGANIZATION_UNIT,
+        codes::ACADEMIC_ASSESSMENT_MANAGE_ASSIGNED,
+    ])?;
+
+    let assigned_instructor_id = can_read_assigned(actor).then_some(actor.user_id);
+    let subject_group_ids = if can_read_subject_group(actor) {
+        actor_subject_group_ids(pool, actor.user_id).await?
+    } else {
+        Vec::new()
+    };
+
+    Ok(AssessmentPlanListAccess::scoped(
+        assigned_instructor_id,
+        subject_group_ids,
+        manage_assigned_instructor_id,
+    ))
 }
 
 pub async fn require_course_read_access(
@@ -472,8 +590,19 @@ pub async fn require_course_read_access(
     if can_read_school(actor) {
         return Ok(());
     }
-    actor.require_permission(codes::ACADEMIC_ASSESSMENT_READ_ASSIGNED)?;
-    require_assigned_course(pool, actor.user_id, course_id).await
+    if can_read_assigned(actor)
+        && course_subject_plan_is_assigned_instructor(pool, course_id, actor.user_id).await?
+    {
+        return Ok(());
+    }
+    if can_read_subject_group(actor)
+        && course_subject_group_is_accessible(pool, course_id, actor.user_id).await?
+    {
+        return Ok(());
+    }
+    Err(AppError::Forbidden(
+        "ไม่มีสิทธิ์ดูโครงสร้างคะแนนรายวิชานี้".to_string(),
+    ))
 }
 
 pub async fn require_course_manage_access(
@@ -486,6 +615,21 @@ pub async fn require_course_manage_access(
     }
     actor.require_permission(codes::ACADEMIC_ASSESSMENT_MANAGE_ASSIGNED)?;
     require_assigned_course(pool, actor.user_id, course_id).await
+}
+
+fn can_read_assigned(actor: &ActorContext) -> bool {
+    actor.has_any_permission(&[
+        codes::ACADEMIC_ASSESSMENT_READ_ASSIGNED,
+        codes::ACADEMIC_ASSESSMENT_MANAGE_ASSIGNED,
+    ])
+}
+
+fn can_read_subject_group(actor: &ActorContext) -> bool {
+    actor.has_permission(codes::ACADEMIC_ASSESSMENT_READ_ORGANIZATION_UNIT)
+}
+
+fn can_manage_assigned(actor: &ActorContext) -> bool {
+    actor.has_permission(codes::ACADEMIC_ASSESSMENT_MANAGE_ASSIGNED)
 }
 
 fn can_read_school(actor: &ActorContext) -> bool {
@@ -509,12 +653,62 @@ async fn require_assigned_course(
     actor_id: Uuid,
     course_id: Uuid,
 ) -> Result<(), AppError> {
-    if course_is_assigned_instructor(pool, course_id, actor_id).await? {
+    if course_subject_plan_is_assigned_instructor(pool, course_id, actor_id).await? {
         return Ok(());
     }
     Err(AppError::Forbidden(
         "ไม่มีสิทธิ์จัดการรายวิชาที่ไม่ได้รับผิดชอบ".to_string(),
     ))
+}
+
+async fn actor_subject_group_ids(pool: &PgPool, actor_id: Uuid) -> Result<Vec<Uuid>, AppError> {
+    let Some(organization_unit_ids) = resource_access_policy::accessible_organization_unit_ids(
+        pool,
+        UserResourceListAccess::OrganizationUnit(actor_id),
+    )
+    .await?
+    else {
+        return Ok(Vec::new());
+    };
+
+    subject_group_ids_for_organization_units(pool, &organization_unit_ids).await
+}
+
+async fn subject_group_ids_for_organization_units(
+    pool: &PgPool,
+    organization_unit_ids: &[Uuid],
+) -> Result<Vec<Uuid>, AppError> {
+    if organization_unit_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    sqlx::query_scalar(
+        r#"SELECT DISTINCT subject_group_id
+           FROM organization_units
+           WHERE id = ANY($1)
+             AND subject_group_id IS NOT NULL
+             AND is_active = true"#,
+    )
+    .bind(organization_unit_ids)
+    .fetch_all(pool)
+    .await
+    .map_err(|error| {
+        tracing::error!("Failed to fetch assessment subject group access: {}", error);
+        AppError::InternalServerError("ไม่สามารถตรวจสอบกลุ่มสาระได้".to_string())
+    })
+}
+
+async fn course_subject_group_is_accessible(
+    pool: &PgPool,
+    course_id: Uuid,
+    actor_id: Uuid,
+) -> Result<bool, AppError> {
+    let subject_group_id = course_subject_group_id(pool, course_id).await?;
+    let Some(subject_group_id) = subject_group_id else {
+        return Ok(false);
+    };
+    let subject_group_ids = actor_subject_group_ids(pool, actor_id).await?;
+    Ok(subject_group_ids.contains(&subject_group_id))
 }
 
 pub async fn get_plan_detail(
@@ -623,25 +817,30 @@ pub async fn submit_plan(
     fetch_plan_detail(pool, &scope).await
 }
 
-pub async fn course_is_assigned_instructor(
+async fn course_subject_plan_is_assigned_instructor(
     pool: &PgPool,
     course_id: Uuid,
     instructor_id: Uuid,
 ) -> Result<bool, AppError> {
     sqlx::query_scalar(
-        r#"SELECT EXISTS(
+        r#"WITH target_course AS (
+            SELECT subject_id, academic_semester_id
+            FROM classroom_courses
+            WHERE id = $1
+        )
+        SELECT EXISTS(
             SELECT 1
             FROM classroom_courses cc
-            WHERE cc.id = $1
-              AND (
-                cc.primary_instructor_id = $2
-                OR EXISTS (
+            JOIN target_course target
+              ON target.subject_id = cc.subject_id
+             AND target.academic_semester_id = cc.academic_semester_id
+            WHERE cc.primary_instructor_id = $2
+               OR EXISTS (
                     SELECT 1
                     FROM classroom_course_instructors cci
                     WHERE cci.classroom_course_id = cc.id
                       AND cci.instructor_id = $2
                 )
-              )
         )"#,
     )
     .bind(course_id)
@@ -649,6 +848,20 @@ pub async fn course_is_assigned_instructor(
     .fetch_one(pool)
     .await
     .map_err(|error| AppError::InternalServerError(error.to_string()))
+}
+
+async fn course_subject_group_id(pool: &PgPool, course_id: Uuid) -> Result<Option<Uuid>, AppError> {
+    sqlx::query_scalar(
+        r#"SELECT s.group_id
+           FROM classroom_courses cc
+           JOIN subjects s ON s.id = cc.subject_id
+           WHERE cc.id = $1"#,
+    )
+    .bind(course_id)
+    .fetch_optional(pool)
+    .await
+    .map_err(|error| AppError::InternalServerError(error.to_string()))
+    .map(|value| value.flatten())
 }
 
 async fn resolve_plan_scope(

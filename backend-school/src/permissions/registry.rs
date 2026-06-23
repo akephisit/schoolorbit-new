@@ -115,6 +115,8 @@ pub mod codes {
 
     // Academic Assessment Plans (Score structures for opened courses)
     pub const ACADEMIC_ASSESSMENT_READ_ASSIGNED: &str = "academic_assessment.read.assigned";
+    pub const ACADEMIC_ASSESSMENT_READ_ORGANIZATION_UNIT: &str =
+        "academic_assessment.read.organization_unit";
     pub const ACADEMIC_ASSESSMENT_MANAGE_ASSIGNED: &str = "academic_assessment.manage.assigned";
     pub const ACADEMIC_ASSESSMENT_READ_SCHOOL: &str = "academic_assessment.read.school";
     pub const ACADEMIC_ASSESSMENT_MANAGE_SCHOOL: &str = "academic_assessment.manage.school";
@@ -697,6 +699,14 @@ pub const ALL_PERMISSIONS: &[PermissionDef] = &[
         action: "read",
         scope: "assigned",
         description: "ดูโครงสร้างคะแนนของรายวิชาที่ตนเองเป็นครูผู้สอน",
+    },
+    PermissionDef {
+        code: codes::ACADEMIC_ASSESSMENT_READ_ORGANIZATION_UNIT,
+        name: "ดูโครงสร้างคะแนนในกลุ่มสาระ",
+        module: "academic_assessment",
+        action: "read",
+        scope: "organization_unit",
+        description: "ดูโครงสร้างคะแนนของรายวิชาในกลุ่มสาระเดียวกันแบบอ่านอย่างเดียว",
     },
     PermissionDef {
         code: codes::ACADEMIC_ASSESSMENT_MANAGE_ASSIGNED,

@@ -69,6 +69,7 @@
 	const canReadAssessment = $derived(
 		$can.hasAny(
 			PERMISSIONS.ACADEMIC_ASSESSMENT_READ_ASSIGNED,
+			PERMISSIONS.ACADEMIC_ASSESSMENT_READ_ORGANIZATION_UNIT,
 			PERMISSIONS.ACADEMIC_ASSESSMENT_READ_SCHOOL,
 			PERMISSIONS.ACADEMIC_ASSESSMENT_MANAGE_ASSIGNED,
 			PERMISSIONS.ACADEMIC_ASSESSMENT_MANAGE_SCHOOL,
@@ -238,6 +239,10 @@
 
 	function canEditExamDuration(mode: AssessmentExamMode | string) {
 		return mode === 'in_timetable';
+	}
+
+	function canEditAssessmentPlan(plan: AssessmentPlanSummary) {
+		return canManageAssessment && plan.canManage && plan.status !== 'locked';
 	}
 
 	function quickScoreDraftFromPlan(plan: AssessmentPlanSummary): QuickScoreDraft {
@@ -501,7 +506,7 @@
 	}
 
 	async function persistQuickScorePlan(plan: AssessmentPlanSummary) {
-		if (!canManageAssessment || plan.status === 'locked') return false;
+		if (!canEditAssessmentPlan(plan)) return false;
 		const draft = quickDraftForPlan(plan);
 		try {
 			const detailResponse = await getAssessmentPlan(plan.classroomCourseId);
@@ -518,7 +523,9 @@
 
 	async function saveAllQuickScoreRows() {
 		if (!canManageAssessment || savingAllQuickScores) return;
-		const dirtyPlans = plans.filter((plan) => quickScoreDrafts[assessmentPlanKey(plan)]?.dirty);
+		const dirtyPlans = plans
+			.filter(canEditAssessmentPlan)
+			.filter((plan) => quickScoreDrafts[assessmentPlanKey(plan)]?.dirty);
 		if (dirtyPlans.length === 0) return;
 		savingAllQuickScores = true;
 		let savedCount = 0;
@@ -802,8 +809,7 @@
 						{:else}
 							{#each plans as plan (assessmentPlanKey(plan))}
 								{@const quickDraft = quickScoreDrafts[assessmentPlanKey(plan)]}
-								{@const canEditPlan =
-									canManageAssessment && plan.status !== 'locked' && !!quickDraft}
+								{@const canEditPlan = !!quickDraft && canEditAssessmentPlan(plan)}
 								<Table.Row>
 									<Table.Cell>
 										<div class="font-medium">{courseTitle(plan)}</div>
@@ -937,6 +943,9 @@
 											</Badge>
 											{#if quickDraft?.dirty}
 												<Badge variant="outline">ยังไม่บันทึก</Badge>
+											{/if}
+											{#if !plan.canManage}
+												<Badge variant="outline">ดูอย่างเดียว</Badge>
 											{/if}
 											{#if plan.hasUnallocatedCategories}
 												<Badge variant="destructive">

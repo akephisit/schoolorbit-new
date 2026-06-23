@@ -44,6 +44,7 @@ export interface AssessmentPlanSummary {
 	midtermExamDurationMinutes?: number | null;
 	finalExamDurationMinutes?: number | null;
 	hasUnallocatedCategories: boolean;
+	canManage: boolean;
 }
 
 export interface AssessmentPlanDetail {

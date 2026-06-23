@@ -23,13 +23,13 @@ pub async fn list_assessment_plans(
     let context = actor_tenant_context(&state, &headers).await?;
     let actor = context.actor;
     let pool = context.tenant.pool;
-    let assigned_filter = assessment_service::assigned_instructor_filter_for_list(&actor)?;
-    if assigned_filter.is_some() {
+    let access = assessment_service::resolve_assessment_plan_list_access(&pool, &actor).await?;
+    if !access.is_school() {
         assessment_service::require_teacher_access_enabled_for_assigned_reader(&pool, &actor)
             .await?;
     }
 
-    let plans = assessment_service::list_assessment_plans(&pool, &query, assigned_filter).await?;
+    let plans = assessment_service::list_assessment_plans(&pool, &query, &access).await?;
     Ok(Json(ApiResponse::ok(plans)).into_response())
 }
 
