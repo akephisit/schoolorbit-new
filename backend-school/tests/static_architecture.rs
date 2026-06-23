@@ -435,6 +435,22 @@ fn academic_assessment_supports_subject_group_read_scope() {
 }
 
 #[test]
+fn academic_assessment_teacher_scope_uses_primary_instructors_only() {
+    let service = strip_comments(&read_source(
+        manifest_dir().join("src/modules/academic/services/assessment_service.rs"),
+    ));
+
+    assert!(
+        service.contains("primary_instructor_id"),
+        "assessment teacher scope should use the primary instructor on classroom_courses"
+    );
+    assert!(
+        !service.contains("classroom_course_instructors"),
+        "assessment teacher scope must not count co-teachers as primary assessment owners"
+    );
+}
+
+#[test]
 fn operational_bins_use_central_tenant_migration_runner() {
     let bin_files = list_files(manifest_dir().join("src/bin"), |path| {
         path.extension().and_then(|extension| extension.to_str()) == Some("rs")

@@ -237,18 +237,14 @@ pub async fn list_assessment_plans(
     }
     if query.instructor_id.is_some() {
         idx += 1;
-        scoped_filters.push_str(&format!(
-            " AND (cc.primary_instructor_id = ${idx} OR EXISTS (SELECT 1 FROM classroom_course_instructors cci WHERE cci.classroom_course_id = cc.id AND cci.instructor_id = ${idx}))"
-        ));
+        scoped_filters.push_str(&format!(" AND cc.primary_instructor_id = ${idx}"));
     }
 
     if !access.read_school {
         let mut read_predicates = Vec::new();
         if access.assigned_instructor_id.is_some() {
             idx += 1;
-            read_predicates.push(format!(
-                "(cc.primary_instructor_id = ${idx} OR EXISTS (SELECT 1 FROM classroom_course_instructors cci WHERE cci.classroom_course_id = cc.id AND cci.instructor_id = ${idx}))"
-            ));
+            read_predicates.push(format!("cc.primary_instructor_id = ${idx}"));
         }
         if !access.subject_group_ids.is_empty() {
             idx += 1;
@@ -274,15 +270,7 @@ pub async fn list_assessment_plans(
         FROM classroom_courses editable_cc
         WHERE editable_cc.academic_semester_id = rc.academic_semester_id
           AND editable_cc.subject_id = rc.subject_id
-          AND (
-              editable_cc.primary_instructor_id = ${idx}
-              OR EXISTS (
-                  SELECT 1
-                  FROM classroom_course_instructors editable_cci
-                  WHERE editable_cci.classroom_course_id = editable_cc.id
-                    AND editable_cci.instructor_id = ${idx}
-              )
-          )
+          AND editable_cc.primary_instructor_id = ${idx}
     )"#
         )
     } else {
@@ -835,12 +823,6 @@ async fn course_subject_plan_is_assigned_instructor(
               ON target.subject_id = cc.subject_id
              AND target.academic_semester_id = cc.academic_semester_id
             WHERE cc.primary_instructor_id = $2
-               OR EXISTS (
-                    SELECT 1
-                    FROM classroom_course_instructors cci
-                    WHERE cci.classroom_course_id = cc.id
-                      AND cci.instructor_id = $2
-                )
         )"#,
     )
     .bind(course_id)
