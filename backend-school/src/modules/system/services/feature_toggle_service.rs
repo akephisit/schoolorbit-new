@@ -50,6 +50,35 @@ pub async fn toggle_feature(pool: &PgPool, id: Uuid) -> Result<FeatureToggle, Ap
     .ok_or(AppError::NotFound("Feature toggle not found".to_string()))
 }
 
+pub async fn is_feature_enabled(pool: &PgPool, code: &str) -> Result<bool, AppError> {
+    sqlx::query_scalar::<_, bool>(
+        "SELECT COALESCE((SELECT is_enabled FROM feature_toggles WHERE code = $1), TRUE)",
+    )
+    .bind(code)
+    .fetch_one(pool)
+    .await
+    .map_err(|e| AppError::InternalServerError(format!("Failed to fetch feature state: {}", e)))
+}
+
+pub async fn update_feature_enabled_by_code(
+    pool: &PgPool,
+    code: &str,
+    is_enabled: bool,
+) -> Result<FeatureToggle, AppError> {
+    sqlx::query_as::<_, FeatureToggle>(
+        "UPDATE feature_toggles
+         SET is_enabled = $2, updated_at = NOW()
+         WHERE code = $1
+         RETURNING id, code, name, name_en, module, is_enabled",
+    )
+    .bind(code)
+    .bind(is_enabled)
+    .fetch_optional(pool)
+    .await
+    .map_err(|e| AppError::InternalServerError(format!("Failed to update feature: {}", e)))?
+    .ok_or(AppError::NotFound("Feature toggle not found".to_string()))
+}
+
 fn feature_update_set_clause(is_enabled: Option<bool>) -> String {
     let mut query = String::from("UPDATE feature_toggles SET updated_at = NOW()");
     if let Some(enabled) = is_enabled {

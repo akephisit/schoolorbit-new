@@ -66,7 +66,8 @@ pub struct AssessmentPlanSummary {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AssessmentPlanDetail {
-    pub id: Uuid,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub id: Option<Uuid>,
     pub classroom_course_id: Uuid,
     pub status: String,
     pub submitted_at: Option<DateTime<Utc>>,
@@ -77,7 +78,8 @@ pub struct AssessmentPlanDetail {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AssessmentCategory {
-    pub id: Uuid,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub id: Option<Uuid>,
     pub code: Option<String>,
     pub name: String,
     pub max_score: f64,
@@ -116,4 +118,16 @@ pub struct AssessmentCategoryRow {
     pub max_score: f64,
     pub exam_mode: String,
     pub display_order: i32,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AssessmentSettingsResponse {
+    pub teacher_access_enabled: bool,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateAssessmentSettingsRequest {
+    pub teacher_access_enabled: bool,
 }

@@ -7,10 +7,14 @@ use crate::error::AppError;
 use crate::middleware::permission::ActorContext;
 use crate::modules::academic::models::assessment::{
     AssessmentCategory, AssessmentCategoryRow, AssessmentItem, AssessmentPlanDetail,
-    AssessmentPlanListQuery, AssessmentPlanRow, AssessmentPlanSummary,
+    AssessmentPlanListQuery, AssessmentPlanRow, AssessmentPlanSummary, AssessmentSettingsResponse,
     SaveAssessmentCategoryRequest, SaveAssessmentItemRequest, SaveAssessmentPlanRequest,
+    UpdateAssessmentSettingsRequest,
 };
+use crate::modules::system::services::feature_toggle_service;
 use crate::permissions::registry::codes;
+
+pub const TEACHER_ACCESS_FEATURE_CODE: &str = "academic_assessment_teacher_access";
 
 const VALID_CATEGORY_CODES: &[&str] = &[
     "before_midterm",
@@ -71,6 +75,35 @@ pub fn default_categories() -> Vec<SaveAssessmentCategoryRequest> {
         default_category("after_midterm", "หลังกลางภาค", "none", 30),
         default_category("final", "ปลายภาค", "in_timetable", 40),
     ]
+}
+
+pub fn not_configured_plan_detail(course_id: Uuid) -> AssessmentPlanDetail {
+    let categories = default_categories()
+        .into_iter()
+        .map(|category| {
+            let status = allocation_status(category.max_score, 0.0);
+            AssessmentCategory {
+                id: None,
+                code: category.code,
+                name: category.name,
+                max_score: category.max_score,
+                exam_mode: category.exam_mode,
+                display_order: category.display_order,
+                item_total_score: 0.0,
+                allocation_status: status.as_str().to_string(),
+                items: Vec::new(),
+            }
+        })
+        .collect();
+
+    AssessmentPlanDetail {
+        id: None,
+        classroom_course_id: course_id,
+        status: "not_configured".to_string(),
+        submitted_at: None,
+        locked_at: None,
+        categories,
+    }
 }
 
 fn default_category(
@@ -249,6 +282,79 @@ WHERE 1 = 1"#,
     })
 }
 
+pub async fn get_assessment_settings(
+    pool: &PgPool,
+) -> Result<AssessmentSettingsResponse, AppError> {
+    let teacher_access_enabled =
+        feature_toggle_service::is_feature_enabled(pool, TEACHER_ACCESS_FEATURE_CODE).await?;
+    Ok(AssessmentSettingsResponse {
+        teacher_access_enabled,
+    })
+}
+
+pub async fn update_assessment_settings(
+    pool: &PgPool,
+    payload: UpdateAssessmentSettingsRequest,
+) -> Result<AssessmentSettingsResponse, AppError> {
+    feature_toggle_service::update_feature_enabled_by_code(
+        pool,
+        TEACHER_ACCESS_FEATURE_CODE,
+        payload.teacher_access_enabled,
+    )
+    .await?;
+    Ok(AssessmentSettingsResponse {
+        teacher_access_enabled: payload.teacher_access_enabled,
+    })
+}
+
+pub fn require_assessment_settings_read_access(actor: &ActorContext) -> Result<(), AppError> {
+    actor.require_any_permission(&[
+        codes::ACADEMIC_ASSESSMENT_READ_ASSIGNED,
+        codes::ACADEMIC_ASSESSMENT_MANAGE_ASSIGNED,
+        codes::ACADEMIC_ASSESSMENT_READ_SCHOOL,
+        codes::ACADEMIC_ASSESSMENT_MANAGE_SCHOOL,
+        codes::ACADEMIC_COURSE_PLAN_READ_ALL,
+        codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL,
+    ])
+}
+
+pub fn require_assessment_settings_manage_access(actor: &ActorContext) -> Result<(), AppError> {
+    actor.require_any_permission(&[
+        codes::ACADEMIC_ASSESSMENT_MANAGE_SCHOOL,
+        codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL,
+    ])
+}
+
+pub async fn require_teacher_access_enabled_for_assigned_reader(
+    pool: &PgPool,
+    actor: &ActorContext,
+) -> Result<(), AppError> {
+    if can_read_school(actor) {
+        return Ok(());
+    }
+    require_teacher_access_enabled(pool).await
+}
+
+pub async fn require_teacher_access_enabled_for_assigned_manager(
+    pool: &PgPool,
+    actor: &ActorContext,
+) -> Result<(), AppError> {
+    if can_manage_school(actor) {
+        return Ok(());
+    }
+    require_teacher_access_enabled(pool).await
+}
+
+async fn require_teacher_access_enabled(pool: &PgPool) -> Result<(), AppError> {
+    let settings = get_assessment_settings(pool).await?;
+    if settings.teacher_access_enabled {
+        return Ok(());
+    }
+    Err(AppError::Forbidden(
+        "ยังไม่เปิดให้ครูกรอกโครงสร้างคะแนน".to_string(),
+    ))
+}
+
 pub fn assigned_instructor_filter_for_list(actor: &ActorContext) -> Result<Option<Uuid>, AppError> {
     if can_read_school(actor) {
         return Ok(None);
@@ -310,22 +416,15 @@ async fn require_assigned_course(
     ))
 }
 
-pub async fn get_or_create_plan_detail(
+pub async fn get_plan_detail(
     pool: &PgPool,
     course_id: Uuid,
-    actor_id: Uuid,
 ) -> Result<AssessmentPlanDetail, AppError> {
     ensure_course_exists(pool, course_id).await?;
-    let mut tx = pool
-        .begin()
-        .await
-        .map_err(|error| AppError::InternalServerError(error.to_string()))?;
-    let plan = ensure_plan_in_tx(&mut tx, course_id).await?;
-    ensure_default_categories_in_tx(&mut tx, plan.id, actor_id).await?;
-    tx.commit()
-        .await
-        .map_err(|error| AppError::InternalServerError(error.to_string()))?;
-    fetch_plan_detail(pool, course_id).await
+    match fetch_plan_detail_optional(pool, course_id).await? {
+        Some(detail) => Ok(detail),
+        None => Ok(not_configured_plan_detail(course_id)),
+    }
 }
 
 pub async fn save_plan(
@@ -385,6 +484,9 @@ pub async fn submit_plan(
     actor_id: Uuid,
 ) -> Result<AssessmentPlanDetail, AppError> {
     let detail = fetch_plan_detail(pool, course_id).await?;
+    let plan_id = detail
+        .id
+        .ok_or_else(|| AppError::NotFound("ยังไม่มีโครงสร้างคะแนนรายวิชานี้".to_string()))?;
     if detail.categories.is_empty() {
         return Err(AppError::ValidationError(
             "ต้องมีหมวดคะแนนอย่างน้อย 1 หมวดก่อนส่งโครงสร้างคะแนน".to_string(),
@@ -404,7 +506,7 @@ pub async fn submit_plan(
            SET status = 'submitted', submitted_at = NOW(), submitted_by = $2, updated_at = NOW()
            WHERE id = $1"#,
     )
-    .bind(detail.id)
+    .bind(plan_id)
     .bind(actor_id)
     .execute(pool)
     .await
@@ -469,43 +571,6 @@ async fn ensure_plan_in_tx(
     .fetch_one(&mut **tx)
     .await
     .map_err(|error| AppError::InternalServerError(error.to_string()))
-}
-
-async fn ensure_default_categories_in_tx(
-    tx: &mut Transaction<'_, Postgres>,
-    plan_id: Uuid,
-    actor_id: Uuid,
-) -> Result<(), AppError> {
-    let count: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*)::BIGINT FROM academic_assessment_categories WHERE plan_id = $1",
-    )
-    .bind(plan_id)
-    .fetch_one(&mut **tx)
-    .await
-    .map_err(|error| AppError::InternalServerError(error.to_string()))?;
-    if count > 0 {
-        return Ok(());
-    }
-
-    for category in default_categories() {
-        sqlx::query(
-            r#"INSERT INTO academic_assessment_categories
-               (plan_id, code, name, max_score, exam_mode, display_order, created_by, updated_by)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $7)"#,
-        )
-        .bind(plan_id)
-        .bind(category.code)
-        .bind(category.name)
-        .bind(category.max_score)
-        .bind(category.exam_mode)
-        .bind(category.display_order)
-        .bind(actor_id)
-        .execute(&mut **tx)
-        .await
-        .map_err(|error| AppError::InternalServerError(error.to_string()))?;
-    }
-
-    Ok(())
 }
 
 async fn upsert_category_in_tx(
@@ -654,18 +719,27 @@ async fn fetch_plan_detail(
     pool: &PgPool,
     course_id: Uuid,
 ) -> Result<AssessmentPlanDetail, AppError> {
+    fetch_plan_detail_optional(pool, course_id)
+        .await?
+        .ok_or_else(|| AppError::NotFound("ยังไม่มีโครงสร้างคะแนนรายวิชานี้".to_string()))
+}
+
+async fn fetch_plan_detail_optional(
+    pool: &PgPool,
+    course_id: Uuid,
+) -> Result<Option<AssessmentPlanDetail>, AppError> {
     let plan = sqlx::query_as::<_, AssessmentPlanRow>(
         r#"SELECT id, classroom_course_id, status, submitted_at, locked_at
            FROM academic_assessment_plans
            WHERE classroom_course_id = $1"#,
     )
     .bind(course_id)
-    .fetch_one(pool)
+    .fetch_optional(pool)
     .await
-    .map_err(|error| match error {
-        sqlx::Error::RowNotFound => AppError::NotFound("ยังไม่มีโครงสร้างคะแนนรายวิชานี้".to_string()),
-        other => AppError::InternalServerError(other.to_string()),
-    })?;
+    .map_err(|error| AppError::InternalServerError(error.to_string()))?;
+    let Some(plan) = plan else {
+        return Ok(None);
+    };
 
     let category_rows = sqlx::query_as::<_, AssessmentCategoryRow>(
         r#"SELECT id, code, name, max_score, exam_mode, display_order
@@ -715,7 +789,7 @@ async fn fetch_plan_detail(
                 allocation_status(row.max_score, item_total_score)
             };
             AssessmentCategory {
-                id: row.id,
+                id: Some(row.id),
                 code: row.code,
                 name: row.name,
                 max_score: row.max_score,
@@ -728,21 +802,21 @@ async fn fetch_plan_detail(
         })
         .collect();
 
-    Ok(AssessmentPlanDetail {
-        id: plan.id,
+    Ok(Some(AssessmentPlanDetail {
+        id: Some(plan.id),
         classroom_course_id: plan.classroom_course_id,
         status: plan.status,
         submitted_at: plan.submitted_at,
         locked_at: plan.locked_at,
         categories,
-    })
+    }))
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        allocation_status, default_categories, item_total_score, validate_plan_payload,
-        AllocationStatus,
+        allocation_status, default_categories, item_total_score, not_configured_plan_detail,
+        validate_plan_payload, AllocationStatus,
     };
     use crate::error::AppError;
     use crate::modules::academic::models::assessment::{
@@ -822,6 +896,22 @@ mod tests {
         assert_eq!(categories[1].name, "กลางภาค");
         assert_eq!(categories[1].exam_mode, "in_timetable");
         assert_eq!(categories[3].exam_mode, "in_timetable");
+    }
+
+    #[test]
+    fn missing_plan_detail_uses_virtual_defaults_without_persisted_ids() {
+        let course_id = uuid::Uuid::new_v4();
+
+        let detail = not_configured_plan_detail(course_id);
+
+        assert_eq!(detail.id, None);
+        assert_eq!(detail.classroom_course_id, course_id);
+        assert_eq!(detail.status, "not_configured");
+        assert_eq!(detail.categories.len(), 4);
+        assert!(detail
+            .categories
+            .iter()
+            .all(|category| category.id.is_none() && category.items.is_empty()));
     }
 
     #[test]

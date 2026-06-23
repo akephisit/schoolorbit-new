@@ -129,6 +129,11 @@ pub fn academic_routes() -> Router<AppState> {
             get(handlers::assessment::list_assessment_plans),
         )
         .route(
+            "/assessments/settings",
+            get(handlers::assessment::get_assessment_settings)
+                .put(handlers::assessment::update_assessment_settings),
+        )
+        .route(
             "/assessments/courses/{course_id}",
             get(handlers::assessment::get_assessment_plan)
                 .put(handlers::assessment::save_assessment_plan),

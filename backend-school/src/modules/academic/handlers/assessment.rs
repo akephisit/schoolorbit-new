@@ -9,7 +9,7 @@ use uuid::Uuid;
 use crate::api_response::ApiResponse;
 use crate::error::AppError;
 use crate::modules::academic::models::assessment::{
-    AssessmentPlanListQuery, SaveAssessmentPlanRequest,
+    AssessmentPlanListQuery, SaveAssessmentPlanRequest, UpdateAssessmentSettingsRequest,
 };
 use crate::modules::academic::services::assessment_service;
 use crate::utils::request_context::actor_tenant_context;
@@ -24,9 +24,35 @@ pub async fn list_assessment_plans(
     let actor = context.actor;
     let pool = context.tenant.pool;
     let assigned_filter = assessment_service::assigned_instructor_filter_for_list(&actor)?;
+    if assigned_filter.is_some() {
+        assessment_service::require_teacher_access_enabled_for_assigned_reader(&pool, &actor)
+            .await?;
+    }
 
     let plans = assessment_service::list_assessment_plans(&pool, &query, assigned_filter).await?;
     Ok(Json(ApiResponse::ok(plans)).into_response())
+}
+
+pub async fn get_assessment_settings(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context(&state, &headers).await?;
+    assessment_service::require_assessment_settings_read_access(&context.actor)?;
+    let settings = assessment_service::get_assessment_settings(&context.tenant.pool).await?;
+    Ok(Json(ApiResponse::ok(settings)).into_response())
+}
+
+pub async fn update_assessment_settings(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<UpdateAssessmentSettingsRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context(&state, &headers).await?;
+    assessment_service::require_assessment_settings_manage_access(&context.actor)?;
+    let settings =
+        assessment_service::update_assessment_settings(&context.tenant.pool, payload).await?;
+    Ok(Json(ApiResponse::ok(settings)).into_response())
 }
 
 pub async fn get_assessment_plan(
@@ -37,12 +63,12 @@ pub async fn get_assessment_plan(
     let context = actor_tenant_context(&state, &headers).await?;
     assessment_service::require_course_read_access(&context.tenant.pool, &context.actor, course_id)
         .await?;
-    let plan = assessment_service::get_or_create_plan_detail(
+    assessment_service::require_teacher_access_enabled_for_assigned_reader(
         &context.tenant.pool,
-        course_id,
-        context.actor.user_id,
+        &context.actor,
     )
     .await?;
+    let plan = assessment_service::get_plan_detail(&context.tenant.pool, course_id).await?;
     Ok(Json(ApiResponse::ok(plan)).into_response())
 }
 
@@ -57,6 +83,11 @@ pub async fn save_assessment_plan(
         &context.tenant.pool,
         &context.actor,
         course_id,
+    )
+    .await?;
+    assessment_service::require_teacher_access_enabled_for_assigned_manager(
+        &context.tenant.pool,
+        &context.actor,
     )
     .await?;
     let plan = assessment_service::save_plan(
@@ -79,6 +110,11 @@ pub async fn submit_assessment_plan(
         &context.tenant.pool,
         &context.actor,
         course_id,
+    )
+    .await?;
+    assessment_service::require_teacher_access_enabled_for_assigned_manager(
+        &context.tenant.pool,
+        &context.actor,
     )
     .await?;
     let plan =

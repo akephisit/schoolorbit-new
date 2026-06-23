@@ -37,7 +37,7 @@ export interface AssessmentPlanSummary {
 }
 
 export interface AssessmentPlanDetail {
-	id: string;
+	id?: string;
 	classroomCourseId: string;
 	status: AssessmentPlanStatus;
 	submittedAt?: string;
@@ -46,7 +46,7 @@ export interface AssessmentPlanDetail {
 }
 
 export interface AssessmentCategory {
-	id: string;
+	id?: string;
 	code?: string;
 	name: string;
 	maxScore: number;
@@ -88,6 +88,14 @@ export interface SaveAssessmentItemRequest {
 	isActive: boolean;
 }
 
+export interface AssessmentSettings {
+	teacherAccessEnabled: boolean;
+}
+
+export interface UpdateAssessmentSettingsRequest {
+	teacherAccessEnabled: boolean;
+}
+
 function assessmentPlanQuery(filters: AssessmentPlanFilters = {}): string {
 	const params = new URLSearchParams();
 	if (filters.academicSemesterId) params.set('academic_semester_id', filters.academicSemesterId);
@@ -115,6 +123,25 @@ export async function getAssessmentPlan(courseId: string): Promise<{ data: Asses
 	);
 	return {
 		data: requireApiData(response, 'ไม่สามารถโหลดโครงสร้างคะแนนรายวิชาได้')
+	};
+}
+
+export async function getAssessmentSettings(): Promise<{ data: AssessmentSettings }> {
+	const response = await apiClient.get<AssessmentSettings>('/api/academic/assessments/settings');
+	return {
+		data: requireApiData(response, 'ไม่สามารถโหลดการตั้งค่าโครงสร้างคะแนนได้')
+	};
+}
+
+export async function updateAssessmentSettings(
+	payload: UpdateAssessmentSettingsRequest
+): Promise<{ data: AssessmentSettings }> {
+	const response = await apiClient.put<AssessmentSettings>(
+		'/api/academic/assessments/settings',
+		payload
+	);
+	return {
+		data: requireApiData(response, 'ไม่สามารถบันทึกการตั้งค่าโครงสร้างคะแนนได้')
 	};
 }
 

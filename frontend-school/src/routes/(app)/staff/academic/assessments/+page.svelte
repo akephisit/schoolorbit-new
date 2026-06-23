@@ -3,9 +3,11 @@
 	import { toast } from 'svelte-sonner';
 	import {
 		getAssessmentPlan,
+		getAssessmentSettings,
 		listAssessmentPlans,
 		saveAssessmentPlan,
 		submitAssessmentPlan,
+		updateAssessmentSettings,
 		type AssessmentExamMode,
 		type AssessmentPlanDetail,
 		type AssessmentPlanStatus,
@@ -28,6 +30,7 @@
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import * as Select from '$lib/components/ui/select';
+	import { Switch } from '$lib/components/ui/switch';
 	import * as Table from '$lib/components/ui/table';
 	import { PERMISSIONS } from '$lib/permissions/registry';
 	import { can } from '$lib/stores/permissions';
@@ -60,6 +63,8 @@
 		items: EditorItem[];
 	};
 
+	let teacherAccessEnabled = $state(true);
+
 	const canReadAssessment = $derived(
 		$can.hasAny(
 			PERMISSIONS.ACADEMIC_ASSESSMENT_READ_ASSIGNED,
@@ -70,12 +75,23 @@
 			PERMISSIONS.ACADEMIC_COURSE_PLAN_MANAGE_ALL
 		)
 	);
-	const canManageAssessment = $derived(
+	const canReadSchoolAssessment = $derived(
 		$can.hasAny(
-			PERMISSIONS.ACADEMIC_ASSESSMENT_MANAGE_ASSIGNED,
+			PERMISSIONS.ACADEMIC_ASSESSMENT_READ_SCHOOL,
+			PERMISSIONS.ACADEMIC_ASSESSMENT_MANAGE_SCHOOL,
+			PERMISSIONS.ACADEMIC_COURSE_PLAN_READ_ALL,
+			PERMISSIONS.ACADEMIC_COURSE_PLAN_MANAGE_ALL
+		)
+	);
+	const canManageSchoolAssessment = $derived(
+		$can.hasAny(
 			PERMISSIONS.ACADEMIC_ASSESSMENT_MANAGE_SCHOOL,
 			PERMISSIONS.ACADEMIC_COURSE_PLAN_MANAGE_ALL
 		)
+	);
+	const canManageAssessment = $derived(
+		canManageSchoolAssessment ||
+			(teacherAccessEnabled && $can.has(PERMISSIONS.ACADEMIC_ASSESSMENT_MANAGE_ASSIGNED))
 	);
 
 	const examModeOptions: { value: AssessmentExamMode; label: string }[] = [
@@ -95,6 +111,8 @@
 
 	let loading = $state(true);
 	let loadingPlans = $state(false);
+	let settingsLoading = $state(false);
+	let settingsSaving = $state(false);
 	let exporting = $state(false);
 	let structure = $state<AcademicStructureData>({ years: [], semesters: [], levels: [] });
 	let classrooms = $state<Classroom[]>([]);
@@ -115,6 +133,7 @@
 	const filteredSemesters = $derived(
 		structure.semesters.filter((semester) => semester.academic_year_id === selectedYearId)
 	);
+	const teacherAccessBlocked = $derived(!canReadSchoolAssessment && !teacherAccessEnabled);
 
 	const summary = $derived({
 		total: plans.length,
@@ -173,6 +192,11 @@
 		}
 		loading = true;
 		try {
+			await loadAssessmentSettings();
+			if (teacherAccessBlocked) {
+				plans = [];
+				return;
+			}
 			const structureResponse = await getAcademicStructure();
 			structure = structureResponse.data;
 			const activeYear = structure.years.find((year) => year.is_active) ?? structure.years[0];
@@ -191,6 +215,16 @@
 		}
 	}
 
+	async function loadAssessmentSettings() {
+		settingsLoading = true;
+		try {
+			const response = await getAssessmentSettings();
+			teacherAccessEnabled = response.data.teacherAccessEnabled;
+		} finally {
+			settingsLoading = false;
+		}
+	}
+
 	async function loadClassrooms() {
 		if (!selectedYearId) {
 			classrooms = [];
@@ -201,7 +235,10 @@
 	}
 
 	async function loadPlans() {
-		if (!canReadAssessment) return;
+		if (!canReadAssessment || teacherAccessBlocked) {
+			plans = [];
+			return;
+		}
 		loadingPlans = true;
 		try {
 			const response = await listAssessmentPlans({
@@ -226,6 +263,21 @@
 		selectedSemesterId = firstSemester?.id ?? '';
 		await loadClassrooms();
 		await loadPlans();
+	}
+
+	async function toggleTeacherAccess(enabled: boolean) {
+		if (!canManageSchoolAssessment || settingsSaving) return;
+		settingsSaving = true;
+		try {
+			const response = await updateAssessmentSettings({ teacherAccessEnabled: enabled });
+			teacherAccessEnabled = response.data.teacherAccessEnabled;
+			toast.success(teacherAccessEnabled ? 'เปิดให้ครูกรอกแล้ว' : 'ปิดการกรอกของครูแล้ว');
+			await loadPlans();
+		} catch (error) {
+			toast.error(error instanceof Error ? error.message : 'ไม่สามารถเปลี่ยนสถานะได้');
+		} finally {
+			settingsSaving = false;
+		}
 	}
 
 	async function openPlanEditor(course: AssessmentPlanSummary) {
@@ -407,6 +459,20 @@
 	description="กำหนดคะแนนก่อนกลางภาค กลางภาค หลังกลางภาค ปลายภาค และรูปแบบการสอบของรายวิชาที่เปิดสอน"
 >
 	{#snippet actions()}
+		{#if canManageSchoolAssessment}
+			<div class="flex items-center gap-2 rounded-md border bg-background px-3 py-2">
+				{#if settingsSaving}
+					<Loader2 class="h-4 w-4 animate-spin text-muted-foreground" />
+				{/if}
+				<Switch
+					id="teacher-assessment-access"
+					checked={teacherAccessEnabled}
+					onCheckedChange={(checked) => toggleTeacherAccess(checked === true)}
+					disabled={settingsLoading || settingsSaving}
+				/>
+				<Label for="teacher-assessment-access" class="text-sm">เปิดให้ครูกรอก</Label>
+			</div>
+		{/if}
 		<DropdownMenu.Root>
 			<DropdownMenu.Trigger>
 				<Button variant="outline" size="sm" disabled={exporting || plans.length === 0}>
@@ -439,6 +505,12 @@
 		/>
 	{:else if loading}
 		<PageSkeleton variant="table" rows={6} columns={7} />
+	{:else if teacherAccessBlocked}
+		<PageState
+			variant="empty"
+			title="ยังไม่เปิดให้ครูกรอกโครงสร้างคะแนน"
+			description="ฝ่ายวิชาการยังปิดช่วงสำรวจโครงสร้างคะแนนรายวิชาอยู่"
+		/>
 	{:else}
 		<div class="space-y-5">
 			<div class="grid gap-3 md:grid-cols-2 xl:grid-cols-5">

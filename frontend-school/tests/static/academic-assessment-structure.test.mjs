@@ -40,12 +40,15 @@ test('academic assessment api client targets the assessment plan endpoints', asy
 		'listAssessmentPlans',
 		'getAssessmentPlan',
 		'saveAssessmentPlan',
-		'submitAssessmentPlan'
+		'submitAssessmentPlan',
+		'getAssessmentSettings',
+		'updateAssessmentSettings'
 	]) {
 		assert.match(source, new RegExp(`export async function ${exportName}`));
 	}
 
 	assert.match(source, /\/api\/academic\/assessments\/plans/);
+	assert.match(source, /\/api\/academic\/assessments\/settings/);
 	assert.match(source, /\/api\/academic\/assessments\/courses\/\$\{courseId\}/);
 	assert.match(source, /\/api\/academic\/assessments\/courses\/\$\{courseId\}\/submit/);
 	assert.match(
@@ -72,4 +75,14 @@ test('academic assessment route exposes overview, downloads, and nested score it
 	assert.match(page, /examModeOptions/);
 	assert.match(page, /outside_timetable/);
 	assert.match(page, /allocationStatusLabel/);
+});
+
+test('academic assessment page can gate teacher access from the overview', async () => {
+	const page = await readProjectFile('src/routes/(app)/staff/academic/assessments/+page.svelte');
+
+	assert.match(page, /teacherAccessEnabled/);
+	assert.match(page, /toggleTeacherAccess/);
+	assert.match(page, /Switch/);
+	assert.match(page, /เปิดให้ครูกรอก/);
+	assert.match(page, /ยังไม่เปิดให้ครูกรอกโครงสร้างคะแนน/);
 });
