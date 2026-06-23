@@ -26,7 +26,7 @@ async fn main() {
         .await
         .expect("Failed to connect to database");
 
-    info!("connected to Neon PostgreSQL");
+    info!("connected to admin PostgreSQL database");
 
     // Run migrations
     sqlx::migrate!("./migrations")
