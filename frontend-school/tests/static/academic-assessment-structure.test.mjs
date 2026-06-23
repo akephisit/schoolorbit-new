@@ -62,7 +62,7 @@ test('academic assessment api client targets the assessment plan endpoints', asy
 	);
 });
 
-test('academic assessment route exposes overview, downloads, quick score editing, and nested score item editing', async () => {
+test('academic assessment route exposes overview, downloads, and quick score editing', async () => {
 	const meta = await readProjectFile('src/routes/(app)/staff/academic/assessments/+page.ts');
 	const page = await readProjectFile('src/routes/(app)/staff/academic/assessments/+page.svelte');
 
@@ -74,16 +74,11 @@ test('academic assessment route exposes overview, downloads, quick score editing
 	assert.match(page, /Download/);
 	assert.match(page, /exportAssessmentReport/);
 	assert.match(page, /quickScoreDrafts/);
-	assert.match(page, /saveQuickScoreRow/);
 	assert.match(page, /saveAllQuickScoreRows/);
-	assert.match(page, /assessment-quick-score-grid/);
-	assert.match(page, /toggleInlineEditor/);
-	assert.match(page, /addCategory/);
-	assert.match(page, /addItem/);
-	assert.match(page, /removeItem/);
-	assert.match(page, /examModeOptions/);
+	assert.match(page, /assessment-score-bundle-grid/);
+	assert.match(page, /assessment-exam-cell/);
+	assert.match(page, /quickExamModeOptions/);
 	assert.match(page, /outside_timetable/);
-	assert.match(page, /allocationStatusLabel/);
 });
 
 test('academic assessment summary exposes core score buckets for table editing', async () => {
@@ -127,19 +122,22 @@ test('academic assessment page can gate teacher access from the overview', async
 	assert.match(page, /ยังไม่เปิดให้ครูกรอกโครงสร้างคะแนน/);
 });
 
-test('academic assessment page edits plans inline instead of opening a dialog', async () => {
+test('academic assessment page uses one-save spreadsheet editing without expanded inline panels', async () => {
 	const page = await readProjectFile('src/routes/(app)/staff/academic/assessments/+page.svelte');
 
 	assert.doesNotMatch(page, /Dialog\.Root/);
 	assert.doesNotMatch(page, /Dialog\.Content/);
 	assert.doesNotMatch(page, /editorOpen/);
-	assert.match(page, /expandedPlanKey/);
-	assert.match(page, /toggleInlineEditor/);
-	assert.match(page, /assessment-inline-editor-row/);
-	assert.match(page, /assessment-inline-category-grid/);
-	assert.match(page, /assessment-inline-item-grid/);
-	assert.match(page, /ChevronDown/);
-	assert.match(page, /ChevronRight/);
+	assert.doesNotMatch(page, /expandedPlanKey/);
+	assert.doesNotMatch(page, /toggleInlineEditor/);
+	assert.doesNotMatch(page, /assessment-inline-editor-row/);
+	assert.doesNotMatch(page, /assessment-inline-category-grid/);
+	assert.doesNotMatch(page, /assessment-inline-item-grid/);
+	assert.doesNotMatch(page, /saveQuickScoreRow/);
+	assert.doesNotMatch(page, /submitQuickScoreRow/);
+	assert.doesNotMatch(page, /ChevronDown/);
+	assert.doesNotMatch(page, /ChevronRight/);
+	assert.match(page, /บันทึกการเปลี่ยนแปลง/);
 });
 
 test('academic assessment plans are grouped by subject and capture exam duration', async () => {
@@ -151,8 +149,10 @@ test('academic assessment plans are grouped by subject and capture exam duration
 	assert.match(page, /function assessmentPlanKey\(plan: AssessmentPlanSummary\)/);
 	assert.match(page, /\{#each plans as plan \(assessmentPlanKey\(plan\)\)\}/);
 	assert.match(page, /ห้องเรียนที่เปิด/);
-	assert.match(page, /showsExamDuration/);
-	assert.match(page, /ระยะเวลาสอบ \(นาที\)/);
+	assert.match(page, /เวลากลาง/);
+	assert.match(page, /เวลาปลาย/);
+	assert.match(page, /ระยะเวลากลางภาค/);
+	assert.match(page, /ระยะเวลาปลายภาค/);
 	assert.match(page, /examDurationMinutes/);
 	assert.doesNotMatch(page, /\{#each plans as plan \(plan\.classroomCourseId\)\}/);
 });
