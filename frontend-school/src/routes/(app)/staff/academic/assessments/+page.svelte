@@ -773,10 +773,10 @@
 							{#each quickScoreColumns as column (column.field)}
 								<Table.Head class="w-[72px] px-2 text-right">{column.heading}</Table.Head>
 							{/each}
-							<Table.Head class="w-[116px] px-2">สอบกลางภาค</Table.Head>
-							<Table.Head class="w-[104px] px-2">เวลากลางภาค</Table.Head>
-							<Table.Head class="w-[116px] px-2">สอบปลายภาค</Table.Head>
-							<Table.Head class="w-[104px] px-2">เวลาปลายภาค</Table.Head>
+							<Table.Head>สอบกลางภาค</Table.Head>
+							<Table.Head>เวลากลางภาค</Table.Head>
+							<Table.Head>สอบปลายภาค</Table.Head>
+							<Table.Head>เวลาปลายภาค</Table.Head>
 							<Table.Head class="px-2 text-right">รวม</Table.Head>
 							<Table.Head>สถานะ</Table.Head>
 						</Table.Row>
@@ -833,7 +833,7 @@
 											{/if}
 										</Table.Cell>
 									{/each}
-									<Table.Cell class="assessment-exam-cell px-2">
+									<Table.Cell class="assessment-exam-cell">
 										{#if quickDraft}
 											<Select.Root
 												type="single"
@@ -842,7 +842,7 @@
 													setQuickExamModeValue(plan, 'midtermExamMode', value)}
 												disabled={!canEditPlan || savingAllQuickScores}
 											>
-												<Select.Trigger class="h-8 px-2 text-xs">
+												<Select.Trigger class="h-9 text-xs">
 													{quickExamModeOptions.find(
 														(option) => option.value === quickDraft.midtermExamMode
 													)?.label}
@@ -855,13 +855,13 @@
 											</Select.Root>
 										{/if}
 									</Table.Cell>
-									<Table.Cell class="px-2">
+									<Table.Cell>
 										{#if quickDraft}
 											<Input
 												type="number"
 												min="1"
 												step="1"
-												class="h-8 px-2 text-right tabular-nums"
+												class="h-9 text-right tabular-nums"
 												aria-label="ระยะเวลากลางภาค"
 												placeholder="นาที"
 												value={quickDraft.midtermExamDurationMinutes ?? ''}
@@ -877,7 +877,7 @@
 											/>
 										{/if}
 									</Table.Cell>
-									<Table.Cell class="assessment-exam-cell px-2">
+									<Table.Cell class="assessment-exam-cell">
 										{#if quickDraft}
 											<Select.Root
 												type="single"
@@ -886,7 +886,7 @@
 													setQuickExamModeValue(plan, 'finalExamMode', value)}
 												disabled={!canEditPlan || savingAllQuickScores}
 											>
-												<Select.Trigger class="h-8 px-2 text-xs">
+												<Select.Trigger class="h-9 text-xs">
 													{quickExamModeOptions.find(
 														(option) => option.value === quickDraft.finalExamMode
 													)?.label}
@@ -899,13 +899,13 @@
 											</Select.Root>
 										{/if}
 									</Table.Cell>
-									<Table.Cell class="px-2">
+									<Table.Cell>
 										{#if quickDraft}
 											<Input
 												type="number"
 												min="1"
 												step="1"
-												class="h-8 px-2 text-right tabular-nums"
+												class="h-9 text-right tabular-nums"
 												aria-label="ระยะเวลาปลายภาค"
 												placeholder="นาที"
 												value={quickDraft.finalExamDurationMinutes ?? ''}
