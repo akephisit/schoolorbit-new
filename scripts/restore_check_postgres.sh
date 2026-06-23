@@ -10,13 +10,26 @@ restore_check_passed="0"
 
 cleanup() {
     local status=$?
+    local cleanup_failed=0
 
     if [[ "$created_database" == "1" ]]; then
-        dropdb --if-exists --maintenance-db="$admin_url" "$database_name" >/dev/null 2>&1 || true
+        if ! dropdb --force --if-exists --maintenance-db="$admin_url" "$database_name" >/dev/null 2>&1; then
+            cleanup_failed=1
+            printf 'Warning: failed to drop disposable restore-check database: %s\n' "$database_name" >&2
+        fi
     fi
 
     if [[ "$status" -ne 0 && "$restore_check_passed" != "1" ]]; then
         printf 'Restore check failed for %s dump: %s\n' "$database_kind" "$dump_path" >&2
+    fi
+
+    if [[ "$status" -eq 0 && "$restore_check_passed" == "1" ]]; then
+        if [[ "$cleanup_failed" -eq 1 ]]; then
+            printf 'Restore check failed during cleanup for %s dump: %s\n' "$database_kind" "$dump_path" >&2
+            exit 1
+        fi
+
+        printf 'Restore check passed for %s dump: %s\n' "$database_kind" "$dump_path"
     fi
 }
 trap cleanup EXIT
@@ -101,8 +114,17 @@ case "$database_kind" in
         )"
         printf 'Tenant successful migrations count: %s\n' "$successful_migrations_count"
         printf 'Tenant permissions count: %s\n' "$permissions_count"
+
+        if [[ ! "$successful_migrations_count" =~ ^[0-9]+$ || "$successful_migrations_count" -eq 0 ]]; then
+            printf 'Tenant restore sanity check failed: successful migration count must be greater than zero.\n' >&2
+            exit 1
+        fi
+
+        if [[ ! "$permissions_count" =~ ^[0-9]+$ || "$permissions_count" -eq 0 ]]; then
+            printf 'Tenant restore sanity check failed: permissions count must be greater than zero.\n' >&2
+            exit 1
+        fi
         ;;
 esac
 
 restore_check_passed="1"
-printf 'Restore check passed for %s dump: %s\n' "$database_kind" "$dump_path"
