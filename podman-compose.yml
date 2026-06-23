@@ -14,8 +14,11 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-schoolorbit_provisioner}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: postgres
+      ADMIN_APP_PASSWORD: ${ADMIN_APP_PASSWORD}
+      TENANT_OWNER_PASSWORD: ${TENANT_OWNER_PASSWORD}
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init_postgres_roles.sh:/docker-entrypoint-initdb.d/01-init-schoolorbit.sh:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-schoolorbit_provisioner} -d postgres"]
       interval: 10s

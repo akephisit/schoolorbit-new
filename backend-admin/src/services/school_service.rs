@@ -1032,7 +1032,7 @@ mod tests {
     }
 
     #[test]
-    fn active_school_config_records_deployment_url_without_neon_db_id() {
+    fn active_school_config_records_deployment_url_without_provider_db_id() {
         let config = build_active_school_config("", "https://sandbox.schoolorbit.app");
 
         assert_eq!(config.db_id, None);

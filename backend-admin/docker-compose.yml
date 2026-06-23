@@ -9,6 +9,8 @@ services:
       - "8080:8080"
     environment:
       # Database and tenant provisioning
+      # Expects an external self-hosted PostgreSQL initialized with
+      # schoolorbit_provisioner, schoolorbit_admin_app, and schoolorbit_tenant_owner.
       - DATABASE_URL=${DATABASE_URL}
       - SELF_HOSTED_POSTGRES_ADMIN_URL=${SELF_HOSTED_POSTGRES_ADMIN_URL}
       - SELF_HOSTED_POSTGRES_APP_HOST=${SELF_HOSTED_POSTGRES_APP_HOST:-postgres}
