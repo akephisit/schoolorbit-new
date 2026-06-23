@@ -88,8 +88,11 @@ test('academic assessment score table uses dedicated score and exam columns', as
 		assert.match(page, new RegExp(`heading:\\s*['"]${heading}['"]`));
 	}
 
-	for (const heading of ['สอบกลางภาค', 'เวลากลางภาค', 'สอบปลายภาค', 'เวลาปลายภาค']) {
+	for (const heading of ['สอบกลางภาค', 'สอบปลายภาค']) {
 		assert.match(page, new RegExp(`<Table\\.Head>${heading}</Table\\.Head>`));
+	}
+	for (const heading of ['เวลากลางภาค', 'เวลาปลายภาค']) {
+		assert.match(page, new RegExp(`<Table\\.Head class="w-\\[96px\\]">${heading}</Table\\.Head>`));
 	}
 
 	const tableHeader = page.slice(page.indexOf('<Table.Header>'), page.indexOf('<Table.Body>'));
@@ -105,6 +108,8 @@ test('academic assessment score table uses dedicated score and exam columns', as
 	assert.match(page, /w-\[72px\] px-2 text-right/);
 	assert.match(page, /assessment-score-cell px-2/);
 	assert.match(page, /<Table\.Cell class="assessment-exam-cell">/);
+	assert.match(page, /<Table\.Cell class="assessment-duration-cell w-\[96px\]">/);
+	assert.equal(page.match(/<Table\.Cell class="assessment-duration-cell w-\[96px\]">/g)?.length, 2);
 	assert.match(page, /<Select\.Trigger class="h-9 text-xs">/);
 	assert.doesNotMatch(page, /w-\[116px\] px-2/);
 	assert.doesNotMatch(page, /w-\[104px\] px-2/);

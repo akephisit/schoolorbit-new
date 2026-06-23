@@ -774,9 +774,9 @@
 								<Table.Head class="w-[72px] px-2 text-right">{column.heading}</Table.Head>
 							{/each}
 							<Table.Head>สอบกลางภาค</Table.Head>
-							<Table.Head>เวลากลางภาค</Table.Head>
+							<Table.Head class="w-[96px]">เวลากลางภาค</Table.Head>
 							<Table.Head>สอบปลายภาค</Table.Head>
-							<Table.Head>เวลาปลายภาค</Table.Head>
+							<Table.Head class="w-[96px]">เวลาปลายภาค</Table.Head>
 							<Table.Head class="px-2 text-right">รวม</Table.Head>
 							<Table.Head>สถานะ</Table.Head>
 						</Table.Row>
@@ -855,7 +855,7 @@
 											</Select.Root>
 										{/if}
 									</Table.Cell>
-									<Table.Cell>
+									<Table.Cell class="assessment-duration-cell w-[96px]">
 										{#if quickDraft}
 											<Input
 												type="number"
@@ -899,7 +899,7 @@
 											</Select.Root>
 										{/if}
 									</Table.Cell>
-									<Table.Cell>
+									<Table.Cell class="assessment-duration-cell w-[96px]">
 										{#if quickDraft}
 											<Input
 												type="number"
