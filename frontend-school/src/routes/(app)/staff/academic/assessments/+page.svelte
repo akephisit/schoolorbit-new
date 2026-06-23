@@ -114,11 +114,9 @@
 		{ value: 'in_timetable', label: 'ในตาราง' },
 		{ value: 'outside_timetable', label: 'นอกตาราง' }
 	];
-	const preMidtermScoreColumns: QuickScoreColumn[] = [
+	const quickScoreColumns: QuickScoreColumn[] = [
 		{ field: 'beforeMidtermScore', heading: 'ก่อน', label: 'ก่อนกลางภาค' },
-		{ field: 'midtermScore', heading: 'กลาง', label: 'กลางภาค' }
-	];
-	const postMidtermScoreColumns: QuickScoreColumn[] = [
+		{ field: 'midtermScore', heading: 'กลาง', label: 'กลางภาค' },
 		{ field: 'afterMidtermScore', heading: 'หลัง', label: 'หลังกลางภาค' },
 		{ field: 'finalScore', heading: 'ปลาย', label: 'ปลายภาค' }
 	];
@@ -766,23 +764,20 @@
 			</div>
 
 			<div class="overflow-x-auto rounded-lg border bg-background">
-				<Table.Root class="min-w-[1360px]">
+				<Table.Root class="min-w-[1240px]">
 					<Table.Header>
 						<Table.Row>
 							<Table.Head>รายวิชา</Table.Head>
 							<Table.Head>ห้องเรียนที่เปิด</Table.Head>
 							<Table.Head>ครูผู้สอน</Table.Head>
-							{#each preMidtermScoreColumns as column (column.field)}
-								<Table.Head class="w-[84px] text-right">{column.heading}</Table.Head>
+							{#each quickScoreColumns as column (column.field)}
+								<Table.Head class="w-[72px] px-2 text-right">{column.heading}</Table.Head>
 							{/each}
-							<Table.Head class="min-w-[132px]">สอบกลางภาค</Table.Head>
-							<Table.Head class="w-[112px]">เวลากลางภาค</Table.Head>
-							{#each postMidtermScoreColumns as column (column.field)}
-								<Table.Head class="w-[84px] text-right">{column.heading}</Table.Head>
-							{/each}
-							<Table.Head class="min-w-[132px]">สอบปลายภาค</Table.Head>
-							<Table.Head class="w-[112px]">เวลาปลายภาค</Table.Head>
-							<Table.Head class="text-right">รวม</Table.Head>
+							<Table.Head class="w-[116px] px-2">สอบกลางภาค</Table.Head>
+							<Table.Head class="w-[104px] px-2">เวลากลางภาค</Table.Head>
+							<Table.Head class="w-[116px] px-2">สอบปลายภาค</Table.Head>
+							<Table.Head class="w-[104px] px-2">เวลาปลายภาค</Table.Head>
+							<Table.Head class="px-2 text-right">รวม</Table.Head>
 							<Table.Head>สถานะ</Table.Head>
 						</Table.Row>
 					</Table.Header>
@@ -818,14 +813,14 @@
 									</Table.Cell>
 									<Table.Cell>{classroomSummary(plan)}</Table.Cell>
 									<Table.Cell>{plan.instructorName ?? '-'}</Table.Cell>
-									{#each preMidtermScoreColumns as column (column.field)}
-										<Table.Cell class="assessment-score-cell">
+									{#each quickScoreColumns as column (column.field)}
+										<Table.Cell class="assessment-score-cell px-2">
 											{#if quickDraft}
 												<Input
 													type="number"
 													min="0"
 													step="0.5"
-													class="assessment-score-input h-9 text-right tabular-nums"
+													class="assessment-score-input h-8 px-2 text-right tabular-nums"
 													aria-label={column.label}
 													placeholder={column.heading}
 													value={quickDraft[column.field] ?? ''}
@@ -838,7 +833,7 @@
 											{/if}
 										</Table.Cell>
 									{/each}
-									<Table.Cell class="assessment-exam-cell">
+									<Table.Cell class="assessment-exam-cell px-2">
 										{#if quickDraft}
 											<Select.Root
 												type="single"
@@ -847,7 +842,7 @@
 													setQuickExamModeValue(plan, 'midtermExamMode', value)}
 												disabled={!canEditPlan || savingAllQuickScores}
 											>
-												<Select.Trigger class="h-9 text-xs">
+												<Select.Trigger class="h-8 px-2 text-xs">
 													{quickExamModeOptions.find(
 														(option) => option.value === quickDraft.midtermExamMode
 													)?.label}
@@ -860,13 +855,13 @@
 											</Select.Root>
 										{/if}
 									</Table.Cell>
-									<Table.Cell>
+									<Table.Cell class="px-2">
 										{#if quickDraft}
 											<Input
 												type="number"
 												min="1"
 												step="1"
-												class="h-9 text-right tabular-nums"
+												class="h-8 px-2 text-right tabular-nums"
 												aria-label="ระยะเวลากลางภาค"
 												placeholder="นาที"
 												value={quickDraft.midtermExamDurationMinutes ?? ''}
@@ -882,27 +877,7 @@
 											/>
 										{/if}
 									</Table.Cell>
-									{#each postMidtermScoreColumns as column (column.field)}
-										<Table.Cell class="assessment-score-cell">
-											{#if quickDraft}
-												<Input
-													type="number"
-													min="0"
-													step="0.5"
-													class="assessment-score-input h-9 text-right tabular-nums"
-													aria-label={column.label}
-													placeholder={column.heading}
-													value={quickDraft[column.field] ?? ''}
-													data-assessment-quick-score-input
-													disabled={!canEditPlan || savingAllQuickScores}
-													oninput={(event) =>
-														setQuickScoreValue(plan, column.field, event.currentTarget.value)}
-													onkeydown={handleQuickScoreEnter}
-												/>
-											{/if}
-										</Table.Cell>
-									{/each}
-									<Table.Cell class="assessment-exam-cell">
+									<Table.Cell class="assessment-exam-cell px-2">
 										{#if quickDraft}
 											<Select.Root
 												type="single"
@@ -911,7 +886,7 @@
 													setQuickExamModeValue(plan, 'finalExamMode', value)}
 												disabled={!canEditPlan || savingAllQuickScores}
 											>
-												<Select.Trigger class="h-9 text-xs">
+												<Select.Trigger class="h-8 px-2 text-xs">
 													{quickExamModeOptions.find(
 														(option) => option.value === quickDraft.finalExamMode
 													)?.label}
@@ -924,13 +899,13 @@
 											</Select.Root>
 										{/if}
 									</Table.Cell>
-									<Table.Cell>
+									<Table.Cell class="px-2">
 										{#if quickDraft}
 											<Input
 												type="number"
 												min="1"
 												step="1"
-												class="h-9 text-right tabular-nums"
+												class="h-8 px-2 text-right tabular-nums"
 												aria-label="ระยะเวลาปลายภาค"
 												placeholder="นาที"
 												value={quickDraft.finalExamDurationMinutes ?? ''}
@@ -946,7 +921,7 @@
 											/>
 										{/if}
 									</Table.Cell>
-									<Table.Cell class="text-right tabular-nums">
+									<Table.Cell class="px-2 text-right tabular-nums">
 										{#if quickDraft}
 											<div class={quickDraft.dirty ? 'font-semibold text-primary' : ''}>
 												{quickScoreTotal(quickDraft)}

@@ -95,11 +95,15 @@ test('academic assessment score table uses dedicated score and exam columns', as
 	const tableHeader = page.slice(page.indexOf('<Table.Header>'), page.indexOf('<Table.Body>'));
 	assert.match(
 		tableHeader,
-		/\{#each preMidtermScoreColumns as column \(column\.field\)\}[\s\S]*สอบกลางภาค[\s\S]*เวลากลางภาค[\s\S]*\{#each postMidtermScoreColumns as column \(column\.field\)\}[\s\S]*สอบปลายภาค[\s\S]*เวลาปลายภาค/
+		/\{#each quickScoreColumns as column \(column\.field\)\}[\s\S]*สอบกลางภาค[\s\S]*เวลากลางภาค[\s\S]*สอบปลายภาค[\s\S]*เวลาปลายภาค/
 	);
-	assert.match(page, /\{#each preMidtermScoreColumns as column \(column\.field\)\}/);
-	assert.match(page, /\{#each postMidtermScoreColumns as column \(column\.field\)\}/);
+	assert.match(page, /\{#each quickScoreColumns as column \(column\.field\)\}/);
+	assert.doesNotMatch(page, /preMidtermScoreColumns/);
+	assert.doesNotMatch(page, /postMidtermScoreColumns/);
 	assert.match(page, /\{column\.heading\}/);
+	assert.match(page, /Table\.Root class="min-w-\[1240px\]"/);
+	assert.match(page, /w-\[72px\] px-2 text-right/);
+	assert.match(page, /assessment-score-cell px-2/);
 	assert.doesNotMatch(page, /<Table\.Head[^>]*>คะแนน<\/Table\.Head>/);
 	assert.match(page, /handleQuickScoreEnter/);
 	assert.match(page, /data-assessment-quick-score-input/);
