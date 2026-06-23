@@ -8,11 +8,14 @@
 		saveAssessmentPlan,
 		submitAssessmentPlan,
 		updateAssessmentSettings,
+		type AssessmentCategory,
 		type AssessmentExamMode,
+		type AssessmentItem,
 		type AssessmentPlanDetail,
 		type AssessmentPlanStatus,
 		type AssessmentPlanSummary,
-		type SaveAssessmentCategoryRequest
+		type SaveAssessmentCategoryRequest,
+		type SaveAssessmentItemRequest
 	} from '$lib/api/academicAssessments';
 	import {
 		getAcademicStructure,
@@ -62,6 +65,24 @@
 		clientId: string;
 		items: EditorItem[];
 	};
+	type ScheduledExamMode = Extract<AssessmentExamMode, 'in_timetable' | 'outside_timetable'>;
+	type QuickScoreField = 'beforeMidtermScore' | 'midtermScore' | 'afterMidtermScore' | 'finalScore';
+	type QuickDurationField = 'midtermExamDurationMinutes' | 'finalExamDurationMinutes';
+	type QuickExamModeField = 'midtermExamMode' | 'finalExamMode';
+	type CoreCategoryCode = 'before_midterm' | 'midterm' | 'after_midterm' | 'final';
+	type QuickScoreDraft = {
+		beforeMidtermScore: number | null;
+		midtermScore: number | null;
+		afterMidtermScore: number | null;
+		finalScore: number | null;
+		midtermExamMode: ScheduledExamMode;
+		finalExamMode: ScheduledExamMode;
+		midtermExamDurationMinutes: number | null;
+		finalExamDurationMinutes: number | null;
+		dirty: boolean;
+		saving: boolean;
+		submitting: boolean;
+	};
 
 	let teacherAccessEnabled = $state(true);
 
@@ -108,6 +129,55 @@
 		{ value: 'submitted', label: 'ส่งแล้ว' },
 		{ value: 'locked', label: 'ล็อกแล้ว' }
 	];
+	const quickExamModeOptions: { value: ScheduledExamMode; label: string }[] = [
+		{ value: 'in_timetable', label: 'ในตาราง' },
+		{ value: 'outside_timetable', label: 'นอกตาราง' }
+	];
+	const coreAssessmentCategories: {
+		code: CoreCategoryCode;
+		name: string;
+		displayOrder: number;
+		scoreField: QuickScoreField;
+		examMode: AssessmentExamMode;
+		examModeField?: QuickExamModeField;
+		durationField?: QuickDurationField;
+	}[] = [
+		{
+			code: 'before_midterm',
+			name: 'ก่อนกลางภาค',
+			displayOrder: 10,
+			scoreField: 'beforeMidtermScore',
+			examMode: 'none'
+		},
+		{
+			code: 'midterm',
+			name: 'กลางภาค',
+			displayOrder: 20,
+			scoreField: 'midtermScore',
+			examMode: 'in_timetable',
+			examModeField: 'midtermExamMode',
+			durationField: 'midtermExamDurationMinutes'
+		},
+		{
+			code: 'after_midterm',
+			name: 'หลังกลางภาค',
+			displayOrder: 30,
+			scoreField: 'afterMidtermScore',
+			examMode: 'none'
+		},
+		{
+			code: 'final',
+			name: 'ปลายภาค',
+			displayOrder: 40,
+			scoreField: 'finalScore',
+			examMode: 'in_timetable',
+			examModeField: 'finalExamMode',
+			durationField: 'finalExamDurationMinutes'
+		}
+	];
+	const coreAssessmentCategoryCodes = new Set<string>(
+		coreAssessmentCategories.map((category) => category.code)
+	);
 
 	let loading = $state(true);
 	let loadingPlans = $state(false);
@@ -125,15 +195,20 @@
 	let editorLoading = $state(false);
 	let saving = $state(false);
 	let submitting = $state(false);
+	let savingAllQuickScores = $state(false);
 	let editingCourse = $state<AssessmentPlanSummary | null>(null);
 	let editingPlan = $state<AssessmentPlanDetail | null>(null);
 	let editorCategories = $state<EditorCategory[]>([]);
+	let quickScoreDrafts = $state<Record<string, QuickScoreDraft>>({});
 	let localIdCounter = 0;
 
 	const filteredSemesters = $derived(
 		structure.semesters.filter((semester) => semester.academic_year_id === selectedYearId)
 	);
 	const teacherAccessBlocked = $derived(!canReadSchoolAssessment && !teacherAccessEnabled);
+	const hasDirtyQuickScoreDrafts = $derived(
+		Object.values(quickScoreDrafts).some((draft) => draft.dirty)
+	);
 
 	const summary = $derived({
 		total: plans.length,
@@ -212,6 +287,152 @@
 			.reduce((total, item) => total + Number(item.maxScore || 0), 0);
 	}
 
+	function scheduledExamMode(value?: string | null): ScheduledExamMode {
+		return value === 'outside_timetable' ? 'outside_timetable' : 'in_timetable';
+	}
+
+	function quickScoreDraftFromPlan(plan: AssessmentPlanSummary): QuickScoreDraft {
+		return {
+			beforeMidtermScore: plan.beforeMidtermScore,
+			midtermScore: plan.midtermScore,
+			afterMidtermScore: plan.afterMidtermScore,
+			finalScore: plan.finalScore,
+			midtermExamMode: scheduledExamMode(plan.midtermExamMode),
+			finalExamMode: scheduledExamMode(plan.finalExamMode),
+			midtermExamDurationMinutes: plan.midtermExamDurationMinutes ?? null,
+			finalExamDurationMinutes: plan.finalExamDurationMinutes ?? null,
+			dirty: false,
+			saving: false,
+			submitting: false
+		};
+	}
+
+	function syncQuickScoreDrafts(nextPlans: AssessmentPlanSummary[]) {
+		const nextDrafts: Record<string, QuickScoreDraft> = {};
+		for (const plan of nextPlans) {
+			const key = assessmentPlanKey(plan);
+			const existing = quickScoreDrafts[key];
+			nextDrafts[key] =
+				existing && (existing.dirty || existing.saving || existing.submitting)
+					? existing
+					: quickScoreDraftFromPlan(plan);
+		}
+		quickScoreDrafts = nextDrafts;
+	}
+
+	function quickDraftForPlan(plan: AssessmentPlanSummary) {
+		const key = assessmentPlanKey(plan);
+		quickScoreDrafts[key] ??= quickScoreDraftFromPlan(plan);
+		return quickScoreDrafts[key];
+	}
+
+	function parseQuickNumber(value: string) {
+		if (value.trim() === '') return null;
+		const parsed = Number.parseFloat(value);
+		return Number.isFinite(parsed) ? parsed : null;
+	}
+
+	function setQuickScoreValue(plan: AssessmentPlanSummary, field: QuickScoreField, value: string) {
+		const draft = quickDraftForPlan(plan);
+		draft[field] = parseQuickNumber(value);
+		draft.dirty = true;
+	}
+
+	function setQuickDurationValue(
+		plan: AssessmentPlanSummary,
+		field: QuickDurationField,
+		value: string
+	) {
+		const draft = quickDraftForPlan(plan);
+		draft[field] = parseQuickNumber(value);
+		draft.dirty = true;
+	}
+
+	function setQuickExamModeValue(
+		plan: AssessmentPlanSummary,
+		field: QuickExamModeField,
+		value: string
+	) {
+		const draft = quickDraftForPlan(plan);
+		draft[field] = scheduledExamMode(value);
+		draft.dirty = true;
+	}
+
+	function quickScoreValue(value: number | null) {
+		return Number(value ?? 0);
+	}
+
+	function quickDurationValue(value: number | null) {
+		if (value == null) return null;
+		const duration = Math.trunc(Number(value));
+		return duration > 0 ? duration : null;
+	}
+
+	function quickScoreTotal(draft: QuickScoreDraft) {
+		return (
+			quickScoreValue(draft.beforeMidtermScore) +
+			quickScoreValue(draft.midtermScore) +
+			quickScoreValue(draft.afterMidtermScore) +
+			quickScoreValue(draft.finalScore)
+		);
+	}
+
+	function itemToSaveRequest(item: AssessmentItem): SaveAssessmentItemRequest {
+		return {
+			id: item.id,
+			name: item.name,
+			maxScore: item.maxScore,
+			displayOrder: item.displayOrder,
+			isActive: item.isActive
+		};
+	}
+
+	function categoryToSaveRequest(category: AssessmentCategory): SaveAssessmentCategoryRequest {
+		return {
+			id: category.id,
+			code: category.code,
+			name: category.name,
+			maxScore: category.maxScore,
+			examMode: category.examMode,
+			examDurationMinutes: category.examDurationMinutes ?? null,
+			displayOrder: category.displayOrder,
+			items: category.items.map(itemToSaveRequest)
+		};
+	}
+
+	function buildQuickScorePayload(detail: AssessmentPlanDetail, draft: QuickScoreDraft) {
+		const categoriesByCode = new Map<string, AssessmentCategory>();
+		for (const category of detail.categories) {
+			if (category.code) {
+				categoriesByCode.set(category.code, category);
+			}
+		}
+
+		const coreCategories = coreAssessmentCategories.map((template) => {
+			const existing = categoriesByCode.get(template.code);
+			return {
+				id: existing?.id,
+				code: template.code,
+				name: existing?.name || template.name,
+				maxScore: quickScoreValue(draft[template.scoreField]),
+				examMode: template.examModeField ? draft[template.examModeField] : template.examMode,
+				examDurationMinutes: template.durationField
+					? quickDurationValue(draft[template.durationField])
+					: null,
+				displayOrder: existing?.displayOrder ?? template.displayOrder,
+				items: existing?.items.map(itemToSaveRequest) ?? []
+			};
+		});
+
+		const customCategories = detail.categories
+			.filter((category) => !coreAssessmentCategoryCodes.has(category.code ?? ''))
+			.map(categoryToSaveRequest);
+
+		return {
+			categories: [...coreCategories, ...customCategories]
+		};
+	}
+
 	async function initData() {
 		if (!canReadAssessment) {
 			loading = false;
@@ -274,6 +495,7 @@
 				status: selectedStatus === 'all' ? undefined : selectedStatus
 			});
 			plans = response.data;
+			syncQuickScoreDrafts(response.data);
 		} catch (error) {
 			toast.error(error instanceof Error ? error.message : 'ไม่สามารถโหลดโครงสร้างคะแนนได้');
 		} finally {
@@ -459,6 +681,86 @@
 		}
 	}
 
+	async function saveQuickScoreRow(
+		plan: AssessmentPlanSummary,
+		options: { reload?: boolean; silent?: boolean } = {}
+	) {
+		if (!canManageAssessment || plan.status === 'locked') return false;
+		const draft = quickDraftForPlan(plan);
+		draft.saving = true;
+		try {
+			const detailResponse = await getAssessmentPlan(plan.classroomCourseId);
+			const saveResponse = await saveAssessmentPlan(
+				plan.classroomCourseId,
+				buildQuickScorePayload(detailResponse.data, draft)
+			);
+			if (expandedPlanKey === assessmentPlanKey(plan)) {
+				setEditorFromDetail(saveResponse.data);
+			}
+			draft.dirty = false;
+			if (!options.silent) {
+				toast.success('บันทึกคะแนนรายวิชาแล้ว');
+			}
+			if (options.reload !== false) {
+				await loadPlans();
+			}
+			return true;
+		} catch (error) {
+			if (!options.silent) {
+				toast.error(error instanceof Error ? error.message : 'ไม่สามารถบันทึกคะแนนรายวิชาได้');
+			}
+			return false;
+		} finally {
+			draft.saving = false;
+		}
+	}
+
+	async function submitQuickScoreRow(plan: AssessmentPlanSummary) {
+		if (!canManageAssessment || plan.status === 'locked') return;
+		const draft = quickDraftForPlan(plan);
+		draft.submitting = true;
+		try {
+			const detailResponse = await getAssessmentPlan(plan.classroomCourseId);
+			await saveAssessmentPlan(
+				plan.classroomCourseId,
+				buildQuickScorePayload(detailResponse.data, draft)
+			);
+			const submitResponse = await submitAssessmentPlan(plan.classroomCourseId);
+			if (expandedPlanKey === assessmentPlanKey(plan)) {
+				setEditorFromDetail(submitResponse.data);
+			}
+			draft.dirty = false;
+			toast.success('ส่งโครงสร้างคะแนนแล้ว');
+			await loadPlans();
+		} catch (error) {
+			toast.error(error instanceof Error ? error.message : 'ไม่สามารถส่งโครงสร้างคะแนนได้');
+		} finally {
+			draft.submitting = false;
+		}
+	}
+
+	async function saveAllQuickScoreRows() {
+		if (!canManageAssessment || savingAllQuickScores) return;
+		const dirtyPlans = plans.filter((plan) => quickScoreDrafts[assessmentPlanKey(plan)]?.dirty);
+		if (dirtyPlans.length === 0) return;
+		savingAllQuickScores = true;
+		let savedCount = 0;
+		try {
+			for (const plan of dirtyPlans) {
+				const saved = await saveQuickScoreRow(plan, { reload: false, silent: true });
+				if (saved) savedCount += 1;
+			}
+			await loadPlans();
+			if (savedCount === dirtyPlans.length) {
+				toast.success('บันทึกคะแนนทั้งหมดแล้ว');
+			} else {
+				toast.error(`บันทึกสำเร็จ ${savedCount}/${dirtyPlans.length} รายวิชา`);
+			}
+		} finally {
+			savingAllQuickScores = false;
+		}
+	}
+
 	async function exportAssessmentReport(kind: 'overview' | 'exam') {
 		if (plans.length === 0) {
 			toast.error('ไม่มีข้อมูลสำหรับดาวน์โหลด');
@@ -480,10 +782,16 @@
 					ครูผู้สอน: plan.instructorName ?? '',
 					สถานะ: statusLabel(plan.status),
 					คะแนนรวม: plan.totalScore,
+					ก่อนกลางภาค: plan.beforeMidtermScore,
+					กลางภาค: plan.midtermScore,
+					หลังกลางภาค: plan.afterMidtermScore,
+					ปลายภาค: plan.finalScore,
 					จำนวนหมวด: plan.categoryCount,
 					จำนวนคะแนนย่อย: plan.itemCount,
 					สอบในตาราง: plan.inTimetableCount,
 					สอบนอกตาราง: plan.outsideTimetableCount,
+					รูปแบบกลางภาค: examModeLabel(plan.midtermExamMode),
+					รูปแบบปลายภาค: examModeLabel(plan.finalExamMode),
 					เวลากลางภาค: plan.midtermExamDurationMinutes ?? '',
 					เวลาปลายภาค: plan.finalExamDurationMinutes ?? '',
 					คะแนนย่อยไม่ลงตัว: plan.hasUnallocatedCategories ? 'ใช่' : 'ไม่ใช่'
@@ -527,6 +835,21 @@
 				/>
 				<Label for="teacher-assessment-access" class="text-sm">เปิดให้ครูกรอก</Label>
 			</div>
+		{/if}
+		{#if canManageAssessment}
+			<Button
+				variant="outline"
+				size="sm"
+				onclick={saveAllQuickScoreRows}
+				disabled={!hasDirtyQuickScoreDrafts || savingAllQuickScores}
+			>
+				{#if savingAllQuickScores}
+					<Loader2 class="mr-2 h-4 w-4 animate-spin" />
+				{:else}
+					<Save class="mr-2 h-4 w-4" />
+				{/if}
+				บันทึกทั้งหมด
+			</Button>
 		{/if}
 		<DropdownMenu.Root>
 			<DropdownMenu.Trigger>
@@ -670,23 +993,26 @@
 							<Table.Head>รายวิชา</Table.Head>
 							<Table.Head>ห้องเรียนที่เปิด</Table.Head>
 							<Table.Head>ครูผู้สอน</Table.Head>
-							<Table.Head class="text-right">คะแนนรวม</Table.Head>
-							<Table.Head>รูปแบบสอบ</Table.Head>
+							<Table.Head class="min-w-[96px] text-right">ก่อน</Table.Head>
+							<Table.Head class="min-w-[176px]">กลาง</Table.Head>
+							<Table.Head class="min-w-[96px] text-right">หลัง</Table.Head>
+							<Table.Head class="min-w-[176px]">ปลาย</Table.Head>
+							<Table.Head class="text-right">รวม</Table.Head>
 							<Table.Head>สถานะ</Table.Head>
-							<Table.Head class="w-[96px] text-right">จัดการ</Table.Head>
+							<Table.Head class="w-[152px] text-right">จัดการ</Table.Head>
 						</Table.Row>
 					</Table.Header>
 					<Table.Body>
 						{#if loadingPlans}
 							<Table.Row>
-								<Table.Cell colspan={7} class="h-24 text-center text-muted-foreground">
+								<Table.Cell colspan={10} class="h-24 text-center text-muted-foreground">
 									<Loader2 class="mx-auto mb-2 h-5 w-5 animate-spin" />
 									กำลังโหลดข้อมูล
 								</Table.Cell>
 							</Table.Row>
 						{:else if plans.length === 0}
 							<Table.Row>
-								<Table.Cell colspan={7}>
+								<Table.Cell colspan={10}>
 									<PageState
 										variant="empty"
 										title="ยังไม่มีรายวิชาตามตัวกรองนี้"
@@ -697,6 +1023,12 @@
 						{:else}
 							{#each plans as plan (assessmentPlanKey(plan))}
 								{@const isExpanded = expandedPlanKey === assessmentPlanKey(plan)}
+								{@const quickDraft = quickScoreDrafts[assessmentPlanKey(plan)]}
+								{@const canEditPlan =
+									canManageAssessment && plan.status !== 'locked' && !!quickDraft}
+								{@const rowBusy =
+									!!quickDraft &&
+									(quickDraft.saving || quickDraft.submitting || savingAllQuickScores)}
 								<Table.Row class={isExpanded ? 'bg-muted/20' : ''}>
 									<Table.Cell>
 										<div class="font-medium">{courseTitle(plan)}</div>
@@ -706,35 +1038,171 @@
 									</Table.Cell>
 									<Table.Cell>{classroomSummary(plan)}</Table.Cell>
 									<Table.Cell>{plan.instructorName ?? '-'}</Table.Cell>
-									<Table.Cell class="text-right tabular-nums">{plan.totalScore}</Table.Cell>
+									<Table.Cell class="text-right">
+										{#if quickDraft}
+											<div class="assessment-quick-score-grid grid gap-1">
+												<Input
+													type="number"
+													min="0"
+													step="0.5"
+													class="h-9 text-right tabular-nums"
+													aria-label="ก่อนกลางภาค"
+													value={quickDraft.beforeMidtermScore ?? ''}
+													disabled={!canEditPlan || rowBusy}
+													oninput={(event) =>
+														setQuickScoreValue(
+															plan,
+															'beforeMidtermScore',
+															event.currentTarget.value
+														)}
+												/>
+											</div>
+										{/if}
+									</Table.Cell>
 									<Table.Cell>
-										<div class="flex flex-wrap gap-1">
-											{#if plan.inTimetableCount > 0}
-												<Badge variant="secondary">ในตาราง {plan.inTimetableCount}</Badge>
-											{/if}
-											{#if plan.outsideTimetableCount > 0}
-												<Badge variant="outline">นอกตาราง {plan.outsideTimetableCount}</Badge>
-											{/if}
-											{#if plan.midtermExamDurationMinutes}
-												<Badge variant="outline">
-													กลางภาค {examDurationLabel(plan.midtermExamDurationMinutes)}
-												</Badge>
-											{/if}
-											{#if plan.finalExamDurationMinutes}
-												<Badge variant="outline">
-													ปลายภาค {examDurationLabel(plan.finalExamDurationMinutes)}
-												</Badge>
-											{/if}
-											{#if plan.inTimetableCount === 0 && plan.outsideTimetableCount === 0}
-												<span class="text-sm text-muted-foreground">ไม่มีการสอบ</span>
-											{/if}
-										</div>
+										{#if quickDraft}
+											<div class="assessment-quick-score-grid grid grid-cols-[76px_80px] gap-2">
+												<Input
+													type="number"
+													min="0"
+													step="0.5"
+													class="h-9 text-right tabular-nums"
+													aria-label="กลางภาค"
+													value={quickDraft.midtermScore ?? ''}
+													disabled={!canEditPlan || rowBusy}
+													oninput={(event) =>
+														setQuickScoreValue(plan, 'midtermScore', event.currentTarget.value)}
+												/>
+												<Input
+													type="number"
+													min="1"
+													step="1"
+													class="h-9 text-right tabular-nums"
+													aria-label="ระยะเวลากลางภาค"
+													placeholder="นาที"
+													value={quickDraft.midtermExamDurationMinutes ?? ''}
+													disabled={!canEditPlan || rowBusy}
+													oninput={(event) =>
+														setQuickDurationValue(
+															plan,
+															'midtermExamDurationMinutes',
+															event.currentTarget.value
+														)}
+												/>
+												<div class="col-span-2">
+													<Select.Root
+														type="single"
+														value={quickDraft.midtermExamMode}
+														onValueChange={(value) =>
+															setQuickExamModeValue(plan, 'midtermExamMode', value)}
+														disabled={!canEditPlan || rowBusy}
+													>
+														<Select.Trigger class="h-8 text-xs">
+															{quickExamModeOptions.find(
+																(option) => option.value === quickDraft.midtermExamMode
+															)?.label}
+														</Select.Trigger>
+														<Select.Content>
+															{#each quickExamModeOptions as option (option.value)}
+																<Select.Item value={option.value}>{option.label}</Select.Item>
+															{/each}
+														</Select.Content>
+													</Select.Root>
+												</div>
+											</div>
+										{/if}
+									</Table.Cell>
+									<Table.Cell class="text-right">
+										{#if quickDraft}
+											<div class="assessment-quick-score-grid grid gap-1">
+												<Input
+													type="number"
+													min="0"
+													step="0.5"
+													class="h-9 text-right tabular-nums"
+													aria-label="หลังกลางภาค"
+													value={quickDraft.afterMidtermScore ?? ''}
+													disabled={!canEditPlan || rowBusy}
+													oninput={(event) =>
+														setQuickScoreValue(
+															plan,
+															'afterMidtermScore',
+															event.currentTarget.value
+														)}
+												/>
+											</div>
+										{/if}
+									</Table.Cell>
+									<Table.Cell>
+										{#if quickDraft}
+											<div class="assessment-quick-score-grid grid grid-cols-[76px_80px] gap-2">
+												<Input
+													type="number"
+													min="0"
+													step="0.5"
+													class="h-9 text-right tabular-nums"
+													aria-label="ปลายภาค"
+													value={quickDraft.finalScore ?? ''}
+													disabled={!canEditPlan || rowBusy}
+													oninput={(event) =>
+														setQuickScoreValue(plan, 'finalScore', event.currentTarget.value)}
+												/>
+												<Input
+													type="number"
+													min="1"
+													step="1"
+													class="h-9 text-right tabular-nums"
+													aria-label="ระยะเวลาปลายภาค"
+													placeholder="นาที"
+													value={quickDraft.finalExamDurationMinutes ?? ''}
+													disabled={!canEditPlan || rowBusy}
+													oninput={(event) =>
+														setQuickDurationValue(
+															plan,
+															'finalExamDurationMinutes',
+															event.currentTarget.value
+														)}
+												/>
+												<div class="col-span-2">
+													<Select.Root
+														type="single"
+														value={quickDraft.finalExamMode}
+														onValueChange={(value) =>
+															setQuickExamModeValue(plan, 'finalExamMode', value)}
+														disabled={!canEditPlan || rowBusy}
+													>
+														<Select.Trigger class="h-8 text-xs">
+															{quickExamModeOptions.find(
+																(option) => option.value === quickDraft.finalExamMode
+															)?.label}
+														</Select.Trigger>
+														<Select.Content>
+															{#each quickExamModeOptions as option (option.value)}
+																<Select.Item value={option.value}>{option.label}</Select.Item>
+															{/each}
+														</Select.Content>
+													</Select.Root>
+												</div>
+											</div>
+										{/if}
+									</Table.Cell>
+									<Table.Cell class="text-right tabular-nums">
+										{#if quickDraft}
+											<div class={quickDraft.dirty ? 'font-semibold text-primary' : ''}>
+												{quickScoreTotal(quickDraft)}
+											</div>
+										{:else}
+											{plan.totalScore}
+										{/if}
 									</Table.Cell>
 									<Table.Cell>
 										<div class="flex flex-wrap items-center gap-2">
 											<Badge variant={statusBadgeVariant(plan.status)}>
 												{statusLabel(plan.status)}
 											</Badge>
+											{#if quickDraft?.dirty}
+												<Badge variant="outline">ยังไม่บันทึก</Badge>
+											{/if}
 											{#if plan.hasUnallocatedCategories}
 												<Badge variant="destructive">
 													<AlertTriangle class="h-3 w-3" />
@@ -744,25 +1212,53 @@
 										</div>
 									</Table.Cell>
 									<Table.Cell class="text-right">
-										<Button
-											variant="ghost"
-											size="icon"
-											disabled={!canManageAssessment || editorLoading || saving || submitting}
-											onclick={() => toggleInlineEditor(plan)}
-											title={isExpanded ? 'ปิดการแก้ไข' : 'แก้ในตาราง'}
-											aria-expanded={isExpanded}
-										>
-											{#if isExpanded}
-												<ChevronDown class="h-4 w-4" />
-											{:else}
-												<ChevronRight class="h-4 w-4" />
-											{/if}
-										</Button>
+										<div class="flex justify-end gap-1">
+											<Button
+												variant={quickDraft?.dirty ? 'default' : 'outline'}
+												size="icon"
+												disabled={!canEditPlan || !quickDraft?.dirty || rowBusy}
+												onclick={() => saveQuickScoreRow(plan)}
+												title="บันทึกคะแนน"
+											>
+												{#if quickDraft?.saving}
+													<Loader2 class="h-4 w-4 animate-spin" />
+												{:else}
+													<Save class="h-4 w-4" />
+												{/if}
+											</Button>
+											<Button
+												variant="ghost"
+												size="icon"
+												disabled={!canEditPlan || rowBusy}
+												onclick={() => submitQuickScoreRow(plan)}
+												title="ส่งโครงสร้าง"
+											>
+												{#if quickDraft?.submitting}
+													<Loader2 class="h-4 w-4 animate-spin" />
+												{:else}
+													<Send class="h-4 w-4" />
+												{/if}
+											</Button>
+											<Button
+												variant="ghost"
+												size="icon"
+												disabled={!canManageAssessment || editorLoading || saving || submitting}
+												onclick={() => toggleInlineEditor(plan)}
+												title={isExpanded ? 'ปิดคะแนนย่อย' : 'คะแนนย่อย'}
+												aria-expanded={isExpanded}
+											>
+												{#if isExpanded}
+													<ChevronDown class="h-4 w-4" />
+												{:else}
+													<ChevronRight class="h-4 w-4" />
+												{/if}
+											</Button>
+										</div>
 									</Table.Cell>
 								</Table.Row>
 								{#if isExpanded}
 									<Table.Row>
-										<Table.Cell colspan={7} class="bg-muted/30 p-0">
+										<Table.Cell colspan={10} class="bg-muted/30 p-0">
 											<div class="assessment-inline-editor-row space-y-4 border-t px-4 py-4">
 												<div
 													class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between"

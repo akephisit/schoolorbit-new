@@ -6,9 +6,14 @@ import test from 'node:test';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(__dirname, '../..');
+const repoRoot = path.resolve(__dirname, '../../..');
 
 async function readProjectFile(relativePath) {
 	return readFile(path.join(projectRoot, relativePath), 'utf8');
+}
+
+async function readRepoFile(relativePath) {
+	return readFile(path.join(repoRoot, relativePath), 'utf8');
 }
 
 test('academic assessment permissions are registered for teachers and academic office', async () => {
@@ -57,7 +62,7 @@ test('academic assessment api client targets the assessment plan endpoints', asy
 	);
 });
 
-test('academic assessment route exposes overview, downloads, and nested score item editing', async () => {
+test('academic assessment route exposes overview, downloads, quick score editing, and nested score item editing', async () => {
 	const meta = await readProjectFile('src/routes/(app)/staff/academic/assessments/+page.ts');
 	const page = await readProjectFile('src/routes/(app)/staff/academic/assessments/+page.svelte');
 
@@ -68,6 +73,10 @@ test('academic assessment route exposes overview, downloads, and nested score it
 	assert.match(page, /PageShell/);
 	assert.match(page, /Download/);
 	assert.match(page, /exportAssessmentReport/);
+	assert.match(page, /quickScoreDrafts/);
+	assert.match(page, /saveQuickScoreRow/);
+	assert.match(page, /saveAllQuickScoreRows/);
+	assert.match(page, /assessment-quick-score-grid/);
 	assert.match(page, /toggleInlineEditor/);
 	assert.match(page, /addCategory/);
 	assert.match(page, /addItem/);
@@ -75,6 +84,37 @@ test('academic assessment route exposes overview, downloads, and nested score it
 	assert.match(page, /examModeOptions/);
 	assert.match(page, /outside_timetable/);
 	assert.match(page, /allocationStatusLabel/);
+});
+
+test('academic assessment summary exposes core score buckets for table editing', async () => {
+	const api = await readProjectFile('src/lib/api/academicAssessments.ts');
+	const model = await readRepoFile('backend-school/src/modules/academic/models/assessment.rs');
+	const service = await readRepoFile(
+		'backend-school/src/modules/academic/services/assessment_service.rs'
+	);
+
+	for (const field of [
+		'beforeMidtermScore',
+		'midtermScore',
+		'afterMidtermScore',
+		'finalScore',
+		'midtermExamMode',
+		'finalExamMode'
+	]) {
+		assert.match(api, new RegExp(`${field}[?]?:`));
+	}
+
+	for (const field of [
+		'before_midterm_score',
+		'midterm_score',
+		'after_midterm_score',
+		'final_score',
+		'midterm_exam_mode',
+		'final_exam_mode'
+	]) {
+		assert.match(model, new RegExp(`pub ${field}:`));
+		assert.match(service, new RegExp(`${field}`));
+	}
 });
 
 test('academic assessment page can gate teacher access from the overview', async () => {

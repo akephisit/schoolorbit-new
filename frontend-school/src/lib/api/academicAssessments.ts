@@ -33,8 +33,14 @@ export interface AssessmentPlanSummary {
 	categoryCount: number;
 	itemCount: number;
 	totalScore: number;
+	beforeMidtermScore: number;
+	midtermScore: number;
+	afterMidtermScore: number;
+	finalScore: number;
 	outsideTimetableCount: number;
 	inTimetableCount: number;
+	midtermExamMode: AssessmentExamMode;
+	finalExamMode: AssessmentExamMode;
 	midtermExamDurationMinutes?: number | null;
 	finalExamDurationMinutes?: number | null;
 	hasUnallocatedCategories: boolean;
