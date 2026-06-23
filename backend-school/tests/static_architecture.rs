@@ -451,6 +451,49 @@ fn academic_assessment_teacher_scope_uses_primary_instructors_only() {
 }
 
 #[test]
+fn academic_assessment_save_preserves_submitted_status() {
+    let service = strip_comments(&read_source(
+        manifest_dir().join("src/modules/academic/services/assessment_service.rs"),
+    ));
+
+    assert!(
+        service.contains("CASE WHEN status = 'submitted' THEN status ELSE 'draft' END"),
+        "saving an assessment plan should preserve submitted status instead of forcing draft"
+    );
+    assert!(
+        service.contains("CASE WHEN status = 'submitted' THEN submitted_at ELSE NULL END"),
+        "saving an assessment plan should preserve submitted metadata for submitted plans"
+    );
+    assert!(
+        !service.contains("SET status = 'draft', submitted_at = NULL, submitted_by = NULL"),
+        "assessment save must not blindly reset every plan to draft"
+    );
+}
+
+#[test]
+fn academic_assessment_list_sorts_self_first_then_teacher_and_grade() {
+    let service = strip_comments(&read_source(
+        manifest_dir().join("src/modules/academic/services/assessment_service.rs"),
+    ));
+
+    assert!(
+        service.contains("sort_actor_id"),
+        "assessment list access should carry the current actor for self-first sorting"
+    );
+    assert!(
+        service.contains("sort_cc.primary_instructor_id"),
+        "assessment list ordering should detect whether the actor is a primary instructor"
+    );
+    assert!(
+        service.contains("LOWER(COALESCE(rollup.instructor_name")
+            && service.contains("grade_level_sort")
+            && service.contains("grade_year")
+            && service.contains("classroom_room_number"),
+        "assessment list should sort remaining rows by teacher, grade level, room, then subject"
+    );
+}
+
+#[test]
 fn operational_bins_use_central_tenant_migration_runner() {
     let bin_files = list_files(manifest_dir().join("src/bin"), |path| {
         path.extension().and_then(|extension| extension.to_str()) == Some("rs")
