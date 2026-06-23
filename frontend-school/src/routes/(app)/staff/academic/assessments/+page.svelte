@@ -51,6 +51,7 @@
 	type QuickDurationField = 'midtermExamDurationMinutes' | 'finalExamDurationMinutes';
 	type QuickExamModeField = 'midtermExamMode' | 'finalExamMode';
 	type CoreCategoryCode = 'before_midterm' | 'midterm' | 'after_midterm' | 'final';
+	type QuickScoreColumn = { field: QuickScoreField; heading: string; label: string };
 	type QuickScoreDraft = {
 		beforeMidtermScore: number | null;
 		midtermScore: number | null;
@@ -113,9 +114,11 @@
 		{ value: 'in_timetable', label: 'ในตาราง' },
 		{ value: 'outside_timetable', label: 'นอกตาราง' }
 	];
-	const quickScoreColumns: { field: QuickScoreField; heading: string; label: string }[] = [
+	const preMidtermScoreColumns: QuickScoreColumn[] = [
 		{ field: 'beforeMidtermScore', heading: 'ก่อน', label: 'ก่อนกลางภาค' },
-		{ field: 'midtermScore', heading: 'กลาง', label: 'กลางภาค' },
+		{ field: 'midtermScore', heading: 'กลาง', label: 'กลางภาค' }
+	];
+	const postMidtermScoreColumns: QuickScoreColumn[] = [
 		{ field: 'afterMidtermScore', heading: 'หลัง', label: 'หลังกลางภาค' },
 		{ field: 'finalScore', heading: 'ปลาย', label: 'ปลายภาค' }
 	];
@@ -769,11 +772,14 @@
 							<Table.Head>รายวิชา</Table.Head>
 							<Table.Head>ห้องเรียนที่เปิด</Table.Head>
 							<Table.Head>ครูผู้สอน</Table.Head>
-							{#each quickScoreColumns as column (column.field)}
+							{#each preMidtermScoreColumns as column (column.field)}
 								<Table.Head class="w-[84px] text-right">{column.heading}</Table.Head>
 							{/each}
 							<Table.Head class="min-w-[132px]">สอบกลางภาค</Table.Head>
 							<Table.Head class="w-[112px]">เวลากลางภาค</Table.Head>
+							{#each postMidtermScoreColumns as column (column.field)}
+								<Table.Head class="w-[84px] text-right">{column.heading}</Table.Head>
+							{/each}
 							<Table.Head class="min-w-[132px]">สอบปลายภาค</Table.Head>
 							<Table.Head class="w-[112px]">เวลาปลายภาค</Table.Head>
 							<Table.Head class="text-right">รวม</Table.Head>
@@ -812,7 +818,7 @@
 									</Table.Cell>
 									<Table.Cell>{classroomSummary(plan)}</Table.Cell>
 									<Table.Cell>{plan.instructorName ?? '-'}</Table.Cell>
-									{#each quickScoreColumns as column (column.field)}
+									{#each preMidtermScoreColumns as column (column.field)}
 										<Table.Cell class="assessment-score-cell">
 											{#if quickDraft}
 												<Input
@@ -876,6 +882,26 @@
 											/>
 										{/if}
 									</Table.Cell>
+									{#each postMidtermScoreColumns as column (column.field)}
+										<Table.Cell class="assessment-score-cell">
+											{#if quickDraft}
+												<Input
+													type="number"
+													min="0"
+													step="0.5"
+													class="assessment-score-input h-9 text-right tabular-nums"
+													aria-label={column.label}
+													placeholder={column.heading}
+													value={quickDraft[column.field] ?? ''}
+													data-assessment-quick-score-input
+													disabled={!canEditPlan || savingAllQuickScores}
+													oninput={(event) =>
+														setQuickScoreValue(plan, column.field, event.currentTarget.value)}
+													onkeydown={handleQuickScoreEnter}
+												/>
+											{/if}
+										</Table.Cell>
+									{/each}
 									<Table.Cell class="assessment-exam-cell">
 										{#if quickDraft}
 											<Select.Root

@@ -92,7 +92,13 @@ test('academic assessment score table uses dedicated score and exam columns', as
 		assert.match(page, new RegExp(`<Table\\.Head[^>]*>${heading}</Table\\.Head>`));
 	}
 
-	assert.match(page, /\{#each quickScoreColumns as column \(column\.field\)\}/);
+	const tableHeader = page.slice(page.indexOf('<Table.Header>'), page.indexOf('<Table.Body>'));
+	assert.match(
+		tableHeader,
+		/\{#each preMidtermScoreColumns as column \(column\.field\)\}[\s\S]*สอบกลางภาค[\s\S]*เวลากลางภาค[\s\S]*\{#each postMidtermScoreColumns as column \(column\.field\)\}[\s\S]*สอบปลายภาค[\s\S]*เวลาปลายภาค/
+	);
+	assert.match(page, /\{#each preMidtermScoreColumns as column \(column\.field\)\}/);
+	assert.match(page, /\{#each postMidtermScoreColumns as column \(column\.field\)\}/);
 	assert.match(page, /\{column\.heading\}/);
 	assert.doesNotMatch(page, /<Table\.Head[^>]*>คะแนน<\/Table\.Head>/);
 	assert.match(page, /handleQuickScoreEnter/);
