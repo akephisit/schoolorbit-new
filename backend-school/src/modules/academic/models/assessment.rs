@@ -8,6 +8,7 @@ use uuid::Uuid;
 pub struct AssessmentPlanListQuery {
     pub academic_semester_id: Option<Uuid>,
     pub classroom_id: Option<Uuid>,
+    pub subject_id: Option<Uuid>,
     pub instructor_id: Option<Uuid>,
     pub status: Option<String>,
 }
@@ -26,6 +27,7 @@ pub struct SaveAssessmentCategoryRequest {
     pub name: String,
     pub max_score: f64,
     pub exam_mode: String,
+    pub exam_duration_minutes: Option<i32>,
     pub display_order: i32,
     pub items: Vec<SaveAssessmentItemRequest>,
 }
@@ -54,12 +56,15 @@ pub struct AssessmentPlanSummary {
     pub subject_name_th: Option<String>,
     pub subject_name_en: Option<String>,
     pub classroom_name: Option<String>,
+    pub classroom_count: i64,
     pub instructor_name: Option<String>,
     pub category_count: i64,
     pub item_count: i64,
     pub total_score: f64,
     pub outside_timetable_count: i64,
     pub in_timetable_count: i64,
+    pub midterm_exam_duration_minutes: Option<i32>,
+    pub final_exam_duration_minutes: Option<i32>,
     pub has_unallocated_categories: bool,
 }
 
@@ -69,6 +74,8 @@ pub struct AssessmentPlanDetail {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub id: Option<Uuid>,
     pub classroom_course_id: Uuid,
+    pub subject_id: Uuid,
+    pub academic_semester_id: Uuid,
     pub status: String,
     pub submitted_at: Option<DateTime<Utc>>,
     pub locked_at: Option<DateTime<Utc>>,
@@ -84,6 +91,7 @@ pub struct AssessmentCategory {
     pub name: String,
     pub max_score: f64,
     pub exam_mode: String,
+    pub exam_duration_minutes: Option<i32>,
     pub display_order: i32,
     pub item_total_score: f64,
     pub allocation_status: String,
@@ -104,10 +112,19 @@ pub struct AssessmentItem {
 #[derive(Debug, Clone, FromRow)]
 pub struct AssessmentPlanRow {
     pub id: Uuid,
-    pub classroom_course_id: Uuid,
+    pub classroom_course_id: Option<Uuid>,
+    pub subject_id: Uuid,
+    pub academic_semester_id: Uuid,
     pub status: String,
     pub submitted_at: Option<DateTime<Utc>>,
     pub locked_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Clone, FromRow)]
+pub struct AssessmentPlanScope {
+    pub classroom_course_id: Uuid,
+    pub subject_id: Uuid,
+    pub academic_semester_id: Uuid,
 }
 
 #[derive(Debug, Clone, FromRow)]
@@ -117,6 +134,7 @@ pub struct AssessmentCategoryRow {
     pub name: String,
     pub max_score: f64,
     pub exam_mode: String,
+    pub exam_duration_minutes: Option<i32>,
     pub display_order: i32,
 }
 

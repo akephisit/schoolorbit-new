@@ -11,6 +11,7 @@ export type AssessmentAllocationStatus =
 export interface AssessmentPlanFilters {
 	academicSemesterId?: string;
 	classroomId?: string;
+	subjectId?: string;
 	instructorId?: string;
 	status?: AssessmentPlanStatus;
 }
@@ -27,18 +28,23 @@ export interface AssessmentPlanSummary {
 	subjectNameTh?: string;
 	subjectNameEn?: string;
 	classroomName?: string;
+	classroomCount: number;
 	instructorName?: string;
 	categoryCount: number;
 	itemCount: number;
 	totalScore: number;
 	outsideTimetableCount: number;
 	inTimetableCount: number;
+	midtermExamDurationMinutes?: number | null;
+	finalExamDurationMinutes?: number | null;
 	hasUnallocatedCategories: boolean;
 }
 
 export interface AssessmentPlanDetail {
 	id?: string;
 	classroomCourseId: string;
+	subjectId: string;
+	academicSemesterId: string;
 	status: AssessmentPlanStatus;
 	submittedAt?: string;
 	lockedAt?: string;
@@ -51,6 +57,7 @@ export interface AssessmentCategory {
 	name: string;
 	maxScore: number;
 	examMode: AssessmentExamMode;
+	examDurationMinutes?: number | null;
 	displayOrder: number;
 	itemTotalScore: number;
 	allocationStatus: AssessmentAllocationStatus;
@@ -76,6 +83,7 @@ export interface SaveAssessmentCategoryRequest {
 	name: string;
 	maxScore: number;
 	examMode: AssessmentExamMode;
+	examDurationMinutes?: number | null;
 	displayOrder: number;
 	items: SaveAssessmentItemRequest[];
 }
@@ -100,6 +108,7 @@ function assessmentPlanQuery(filters: AssessmentPlanFilters = {}): string {
 	const params = new URLSearchParams();
 	if (filters.academicSemesterId) params.set('academic_semester_id', filters.academicSemesterId);
 	if (filters.classroomId) params.set('classroom_id', filters.classroomId);
+	if (filters.subjectId) params.set('subject_id', filters.subjectId);
 	if (filters.instructorId) params.set('instructor_id', filters.instructorId);
 	if (filters.status) params.set('status', filters.status);
 	const query = params.toString();

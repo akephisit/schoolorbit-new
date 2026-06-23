@@ -179,6 +179,33 @@
 		return subject || 'รายวิชา';
 	}
 
+	function assessmentPlanKey(plan: AssessmentPlanSummary) {
+		return `${plan.academicSemesterId}-${plan.subjectId}`;
+	}
+
+	function classroomSummary(plan: AssessmentPlanSummary) {
+		if (!plan.classroomName) return '-';
+		if (plan.classroomCount <= 1) return plan.classroomName;
+		return `${plan.classroomName} (${plan.classroomCount} ห้อง)`;
+	}
+
+	function showsExamDuration(category: Pick<EditorCategory, 'examMode'>) {
+		return category.examMode === 'in_timetable' || category.examMode === 'outside_timetable';
+	}
+
+	function setCategoryExamDuration(category: EditorCategory, value: string) {
+		if (value.trim() === '') {
+			category.examDurationMinutes = null;
+			return;
+		}
+		const duration = Number.parseInt(value, 10);
+		category.examDurationMinutes = Number.isNaN(duration) ? null : duration;
+	}
+
+	function examDurationLabel(duration?: number | null) {
+		return duration ? `${duration} นาที` : 'ยังไม่ระบุเวลา';
+	}
+
 	function categoryTotal(category: EditorCategory) {
 		return category.items
 			.filter((item) => item.isActive)
@@ -295,6 +322,7 @@
 				name: category.name,
 				maxScore: category.maxScore,
 				examMode: category.examMode,
+				examDurationMinutes: category.examDurationMinutes ?? null,
 				displayOrder: category.displayOrder,
 				items: category.items.map((item) => ({
 					clientId: nextClientId('item'),
@@ -320,6 +348,7 @@
 			name: 'หมวดคะแนนใหม่',
 			maxScore: 0,
 			examMode: 'none',
+			examDurationMinutes: null,
 			displayOrder: (editorCategories.length + 1) * 10,
 			items: []
 		});
@@ -363,6 +392,11 @@
 				name: category.name.trim(),
 				maxScore: Number(category.maxScore || 0),
 				examMode: category.examMode,
+				examDurationMinutes: showsExamDuration(category)
+					? category.examDurationMinutes == null
+						? null
+						: Number(category.examDurationMinutes)
+					: null,
 				displayOrder: category.displayOrder,
 				items: category.items.map((item, index) => ({
 					id: item.id,
@@ -421,7 +455,8 @@
 						kind === 'overview' || plan.inTimetableCount > 0 || plan.outsideTimetableCount > 0
 				)
 				.map((plan) => ({
-					ห้องเรียน: plan.classroomName ?? '',
+					ห้องเรียนที่เปิด: plan.classroomName ?? '',
+					จำนวนห้อง: plan.classroomCount,
 					รหัสวิชา: plan.subjectCode ?? '',
 					รายวิชา: plan.subjectNameTh ?? plan.subjectNameEn ?? '',
 					ครูผู้สอน: plan.instructorName ?? '',
@@ -431,6 +466,8 @@
 					จำนวนคะแนนย่อย: plan.itemCount,
 					สอบในตาราง: plan.inTimetableCount,
 					สอบนอกตาราง: plan.outsideTimetableCount,
+					เวลากลางภาค: plan.midtermExamDurationMinutes ?? '',
+					เวลาปลายภาค: plan.finalExamDurationMinutes ?? '',
 					คะแนนย่อยไม่ลงตัว: plan.hasUnallocatedCategories ? 'ใช่' : 'ไม่ใช่'
 				}));
 			const worksheet = XLSX.utils.json_to_sheet(rows);
@@ -613,7 +650,7 @@
 					<Table.Header>
 						<Table.Row>
 							<Table.Head>รายวิชา</Table.Head>
-							<Table.Head>ห้องเรียน</Table.Head>
+							<Table.Head>ห้องเรียนที่เปิด</Table.Head>
 							<Table.Head>ครูผู้สอน</Table.Head>
 							<Table.Head class="text-right">คะแนนรวม</Table.Head>
 							<Table.Head>รูปแบบสอบ</Table.Head>
@@ -640,7 +677,7 @@
 								</Table.Cell>
 							</Table.Row>
 						{:else}
-							{#each plans as plan (plan.classroomCourseId)}
+							{#each plans as plan (assessmentPlanKey(plan))}
 								<Table.Row>
 									<Table.Cell>
 										<div class="font-medium">{courseTitle(plan)}</div>
@@ -648,7 +685,7 @@
 											{plan.categoryCount} หมวด · {plan.itemCount} รายการย่อย
 										</div>
 									</Table.Cell>
-									<Table.Cell>{plan.classroomName ?? '-'}</Table.Cell>
+									<Table.Cell>{classroomSummary(plan)}</Table.Cell>
 									<Table.Cell>{plan.instructorName ?? '-'}</Table.Cell>
 									<Table.Cell class="text-right tabular-nums">{plan.totalScore}</Table.Cell>
 									<Table.Cell>
@@ -658,6 +695,16 @@
 											{/if}
 											{#if plan.outsideTimetableCount > 0}
 												<Badge variant="outline">นอกตาราง {plan.outsideTimetableCount}</Badge>
+											{/if}
+											{#if plan.midtermExamDurationMinutes}
+												<Badge variant="outline">
+													กลางภาค {examDurationLabel(plan.midtermExamDurationMinutes)}
+												</Badge>
+											{/if}
+											{#if plan.finalExamDurationMinutes}
+												<Badge variant="outline">
+													ปลายภาค {examDurationLabel(plan.finalExamDurationMinutes)}
+												</Badge>
 											{/if}
 											{#if plan.inTimetableCount === 0 && plan.outsideTimetableCount === 0}
 												<span class="text-sm text-muted-foreground">ไม่มีการสอบ</span>
@@ -767,6 +814,19 @@
 								</Button>
 							</div>
 						</div>
+
+						{#if showsExamDuration(category)}
+							<div class="mt-4 max-w-xs space-y-2">
+								<Label>ระยะเวลาสอบ (นาที)</Label>
+								<Input
+									type="number"
+									min="1"
+									step="1"
+									value={category.examDurationMinutes ?? ''}
+									oninput={(event) => setCategoryExamDuration(category, event.currentTarget.value)}
+								/>
+							</div>
+						{/if}
 
 						<div class="mt-5 rounded-md bg-muted/40 p-3 sm:p-4">
 							<div class="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">

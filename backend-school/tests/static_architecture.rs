@@ -355,6 +355,45 @@ fn academic_curriculum_tree_scope_is_explicitly_registered() {
 }
 
 #[test]
+fn academic_assessment_plans_are_subject_semester_scoped() {
+    let migration_path = manifest_dir()
+        .join("migrations")
+        .join("014_academic_assessment_subject_plans.sql");
+    let migration = read_source(&migration_path);
+    let service = strip_comments(&read_source(
+        manifest_dir().join("src/modules/academic/services/assessment_service.rs"),
+    ));
+    let models = strip_comments(&read_source(
+        manifest_dir().join("src/modules/academic/models/assessment.rs"),
+    ));
+
+    for required_fragment in [
+        "academic_semester_id UUID",
+        "subject_id UUID",
+        "exam_duration_minutes INTEGER",
+        "UNIQUE (academic_semester_id, subject_id)",
+        "DROP CONSTRAINT IF EXISTS academic_assessment_plans_classroom_course_id_key",
+    ] {
+        assert!(
+            migration.contains(required_fragment),
+            "{} must contain `{required_fragment}`",
+            repo_relative(&migration_path)
+        );
+    }
+
+    assert!(
+        service.contains("ap.academic_semester_id = rc.academic_semester_id")
+            && service.contains("ap.subject_id = rc.subject_id"),
+        "assessment list must join plans by semester+subject, not classroom course"
+    );
+    assert!(
+        !service.contains("ap.classroom_course_id = cc.id"),
+        "assessment service must not use classroom_course_id as the plan join key"
+    );
+    assert!(models.contains("exam_duration_minutes"));
+}
+
+#[test]
 fn operational_bins_use_central_tenant_migration_runner() {
     let bin_files = list_files(manifest_dir().join("src/bin"), |path| {
         path.extension().and_then(|extension| extension.to_str()) == Some("rs")

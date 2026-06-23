@@ -7,9 +7,9 @@ use crate::error::AppError;
 use crate::middleware::permission::ActorContext;
 use crate::modules::academic::models::assessment::{
     AssessmentCategory, AssessmentCategoryRow, AssessmentItem, AssessmentPlanDetail,
-    AssessmentPlanListQuery, AssessmentPlanRow, AssessmentPlanSummary, AssessmentSettingsResponse,
-    SaveAssessmentCategoryRequest, SaveAssessmentItemRequest, SaveAssessmentPlanRequest,
-    UpdateAssessmentSettingsRequest,
+    AssessmentPlanListQuery, AssessmentPlanRow, AssessmentPlanScope, AssessmentPlanSummary,
+    AssessmentSettingsResponse, SaveAssessmentCategoryRequest, SaveAssessmentItemRequest,
+    SaveAssessmentPlanRequest, UpdateAssessmentSettingsRequest,
 };
 use crate::modules::system::services::feature_toggle_service;
 use crate::permissions::registry::codes;
@@ -24,6 +24,7 @@ const VALID_CATEGORY_CODES: &[&str] = &[
     "custom",
 ];
 const VALID_EXAM_MODES: &[&str] = &["none", "in_timetable", "outside_timetable", "practical"];
+const SCHEDULED_EXAM_MODES: &[&str] = &["in_timetable", "outside_timetable"];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AllocationStatus {
@@ -77,7 +78,7 @@ pub fn default_categories() -> Vec<SaveAssessmentCategoryRequest> {
     ]
 }
 
-pub fn not_configured_plan_detail(course_id: Uuid) -> AssessmentPlanDetail {
+pub fn not_configured_plan_detail(scope: &AssessmentPlanScope) -> AssessmentPlanDetail {
     let categories = default_categories()
         .into_iter()
         .map(|category| {
@@ -88,6 +89,7 @@ pub fn not_configured_plan_detail(course_id: Uuid) -> AssessmentPlanDetail {
                 name: category.name,
                 max_score: category.max_score,
                 exam_mode: category.exam_mode,
+                exam_duration_minutes: category.exam_duration_minutes,
                 display_order: category.display_order,
                 item_total_score: 0.0,
                 allocation_status: status.as_str().to_string(),
@@ -98,7 +100,9 @@ pub fn not_configured_plan_detail(course_id: Uuid) -> AssessmentPlanDetail {
 
     AssessmentPlanDetail {
         id: None,
-        classroom_course_id: course_id,
+        classroom_course_id: scope.classroom_course_id,
+        subject_id: scope.subject_id,
+        academic_semester_id: scope.academic_semester_id,
         status: "not_configured".to_string(),
         submitted_at: None,
         locked_at: None,
@@ -118,6 +122,7 @@ fn default_category(
         name: name.to_string(),
         max_score: 0.0,
         exam_mode: exam_mode.to_string(),
+        exam_duration_minutes: None,
         display_order,
         items: Vec::new(),
     }
@@ -137,6 +142,7 @@ pub fn validate_plan_payload(payload: &SaveAssessmentPlanRequest) -> Result<(), 
         if !VALID_EXAM_MODES.contains(&category.exam_mode.as_str()) {
             return Err(AppError::ValidationError("รูปแบบการสอบไม่ถูกต้อง".to_string()));
         }
+        validate_exam_duration_for_save(category)?;
 
         for item in &category.items {
             if item.name.trim().is_empty() {
@@ -147,6 +153,28 @@ pub fn validate_plan_payload(payload: &SaveAssessmentPlanRequest) -> Result<(), 
     }
 
     Ok(())
+}
+
+fn validate_exam_duration_for_save(
+    category: &SaveAssessmentCategoryRequest,
+) -> Result<(), AppError> {
+    if let Some(duration) = category.exam_duration_minutes {
+        if duration <= 0 {
+            return Err(AppError::ValidationError(
+                "ระยะเวลาสอบต้องมากกว่า 0 นาที".to_string(),
+            ));
+        }
+        if !is_scheduled_exam_mode(&category.exam_mode) {
+            return Err(AppError::ValidationError(
+                "ระยะเวลาสอบระบุได้เฉพาะหมวดที่เป็นการสอบในตารางหรือนอกตาราง".to_string(),
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn is_scheduled_exam_mode(exam_mode: &str) -> bool {
+    SCHEDULED_EXAM_MODES.contains(&exam_mode)
 }
 
 fn ensure_non_negative_score(score: f64) -> Result<(), AppError> {
@@ -165,13 +193,87 @@ pub async fn list_assessment_plans(
 ) -> Result<Vec<AssessmentPlanSummary>, AppError> {
     let mut sql = String::from(
         r#"
-WITH category_stats AS (
+WITH scoped_courses AS (
+    SELECT
+        cc.id AS classroom_course_id,
+        cc.classroom_id,
+        cc.subject_id,
+        cc.academic_semester_id,
+        cc.primary_instructor_id,
+        s.code AS subject_code,
+        s.name_th AS subject_name_th,
+        s.name_en AS subject_name_en,
+        cr.name AS classroom_name,
+        NULLIF(CONCAT_WS(' ', u.first_name, u.last_name), '') AS instructor_name
+    FROM classroom_courses cc
+    JOIN subjects s ON s.id = cc.subject_id
+    JOIN class_rooms cr ON cr.id = cc.classroom_id
+    LEFT JOIN users u ON u.id = cc.primary_instructor_id
+    WHERE 1 = 1"#,
+    );
+
+    let mut idx = 0u32;
+    if query.academic_semester_id.is_some() {
+        idx += 1;
+        sql.push_str(&format!(" AND cc.academic_semester_id = ${idx}"));
+    }
+    if query.classroom_id.is_some() {
+        idx += 1;
+        sql.push_str(&format!(" AND cc.classroom_id = ${idx}"));
+    }
+    if query.subject_id.is_some() {
+        idx += 1;
+        sql.push_str(&format!(" AND cc.subject_id = ${idx}"));
+    }
+    if query.instructor_id.is_some() {
+        idx += 1;
+        sql.push_str(&format!(
+            " AND (cc.primary_instructor_id = ${idx} OR EXISTS (SELECT 1 FROM classroom_course_instructors cci WHERE cci.classroom_course_id = cc.id AND cci.instructor_id = ${idx}))"
+        ));
+    }
+    if assigned_instructor_id.is_some() {
+        idx += 1;
+        sql.push_str(&format!(
+            " AND (cc.primary_instructor_id = ${idx} OR EXISTS (SELECT 1 FROM classroom_course_instructors cci WHERE cci.classroom_course_id = cc.id AND cci.instructor_id = ${idx}))"
+        ));
+    }
+
+    sql.push_str(
+        r#"
+),
+representative_courses AS (
+    SELECT DISTINCT ON (academic_semester_id, subject_id)
+        classroom_course_id,
+        classroom_id,
+        subject_id,
+        academic_semester_id,
+        primary_instructor_id,
+        subject_code,
+        subject_name_th,
+        subject_name_en
+    FROM scoped_courses
+    ORDER BY academic_semester_id, subject_id, classroom_name ASC, classroom_course_id ASC
+),
+course_rollup AS (
+    SELECT
+        academic_semester_id,
+        subject_id,
+        COUNT(DISTINCT classroom_id)::BIGINT AS classroom_count,
+        STRING_AGG(DISTINCT classroom_name, ', ' ORDER BY classroom_name) AS classroom_name,
+        STRING_AGG(DISTINCT instructor_name, ', ' ORDER BY instructor_name)
+            FILTER (WHERE instructor_name IS NOT NULL) AS instructor_name
+    FROM scoped_courses
+    GROUP BY academic_semester_id, subject_id
+),
+category_stats AS (
     SELECT
         plan_id,
         COUNT(*)::BIGINT AS category_count,
         COALESCE(SUM(max_score), 0)::FLOAT8 AS total_score,
         COUNT(*) FILTER (WHERE exam_mode = 'outside_timetable')::BIGINT AS outside_timetable_count,
-        COUNT(*) FILTER (WHERE exam_mode = 'in_timetable')::BIGINT AS in_timetable_count
+        COUNT(*) FILTER (WHERE exam_mode = 'in_timetable')::BIGINT AS in_timetable_count,
+        MAX(exam_duration_minutes) FILTER (WHERE code = 'midterm') AS midterm_exam_duration_minutes,
+        MAX(exam_duration_minutes) FILTER (WHERE code = 'final') AS final_exam_duration_minutes
     FROM academic_assessment_categories
     GROUP BY plan_id
 ),
@@ -202,62 +304,46 @@ allocation_stats AS (
 )
 SELECT
     ap.id AS plan_id,
-    cc.id AS classroom_course_id,
-    cc.classroom_id,
-    cc.subject_id,
-    cc.academic_semester_id,
-    cc.primary_instructor_id,
+    rc.classroom_course_id,
+    rc.classroom_id,
+    rc.subject_id,
+    rc.academic_semester_id,
+    rc.primary_instructor_id,
     COALESCE(ap.status, 'not_configured') AS status,
-    s.code AS subject_code,
-    s.name_th AS subject_name_th,
-    s.name_en AS subject_name_en,
-    cr.name AS classroom_name,
-    NULLIF(CONCAT_WS(' ', u.first_name, u.last_name), '') AS instructor_name,
+    rc.subject_code,
+    rc.subject_name_th,
+    rc.subject_name_en,
+    rollup.classroom_name,
+    rollup.classroom_count,
+    rollup.instructor_name,
     COALESCE(cs.category_count, 0)::BIGINT AS category_count,
     COALESCE(ist.item_count, 0)::BIGINT AS item_count,
     COALESCE(cs.total_score, 0)::FLOAT8 AS total_score,
     COALESCE(cs.outside_timetable_count, 0)::BIGINT AS outside_timetable_count,
     COALESCE(cs.in_timetable_count, 0)::BIGINT AS in_timetable_count,
+    cs.midterm_exam_duration_minutes,
+    cs.final_exam_duration_minutes,
     COALESCE(als.has_unallocated_categories, FALSE) AS has_unallocated_categories
-FROM classroom_courses cc
-JOIN subjects s ON s.id = cc.subject_id
-JOIN class_rooms cr ON cr.id = cc.classroom_id
-LEFT JOIN users u ON u.id = cc.primary_instructor_id
-LEFT JOIN academic_assessment_plans ap ON ap.classroom_course_id = cc.id
+FROM representative_courses rc
+JOIN course_rollup rollup
+  ON rollup.academic_semester_id = rc.academic_semester_id
+ AND rollup.subject_id = rc.subject_id
+LEFT JOIN academic_assessment_plans ap
+  ON ap.academic_semester_id = rc.academic_semester_id
+ AND ap.subject_id = rc.subject_id
 LEFT JOIN category_stats cs ON cs.plan_id = ap.id
 LEFT JOIN item_stats ist ON ist.plan_id = ap.id
 LEFT JOIN allocation_stats als ON als.plan_id = ap.id
 WHERE 1 = 1"#,
     );
 
-    let mut idx = 0u32;
-    if query.academic_semester_id.is_some() {
-        idx += 1;
-        sql.push_str(&format!(" AND cc.academic_semester_id = ${idx}"));
-    }
-    if query.classroom_id.is_some() {
-        idx += 1;
-        sql.push_str(&format!(" AND cc.classroom_id = ${idx}"));
-    }
-    if query.instructor_id.is_some() {
-        idx += 1;
-        sql.push_str(&format!(
-            " AND (cc.primary_instructor_id = ${idx} OR EXISTS (SELECT 1 FROM classroom_course_instructors cci WHERE cci.classroom_course_id = cc.id AND cci.instructor_id = ${idx}))"
-        ));
-    }
     if query.status.is_some() {
         idx += 1;
         sql.push_str(&format!(
             " AND COALESCE(ap.status, 'not_configured') = ${idx}"
         ));
     }
-    if assigned_instructor_id.is_some() {
-        idx += 1;
-        sql.push_str(&format!(
-            " AND (cc.primary_instructor_id = ${idx} OR EXISTS (SELECT 1 FROM classroom_course_instructors cci WHERE cci.classroom_course_id = cc.id AND cci.instructor_id = ${idx}))"
-        ));
-    }
-    sql.push_str(" ORDER BY cr.name ASC, s.code ASC, s.name_th ASC");
+    sql.push_str(" ORDER BY rc.subject_code ASC NULLS LAST, rc.subject_name_th ASC NULLS LAST");
 
     let mut db_query = sqlx::query_as::<_, AssessmentPlanSummary>(&sql);
     if let Some(id) = query.academic_semester_id {
@@ -266,14 +352,17 @@ WHERE 1 = 1"#,
     if let Some(id) = query.classroom_id {
         db_query = db_query.bind(id);
     }
+    if let Some(id) = query.subject_id {
+        db_query = db_query.bind(id);
+    }
     if let Some(id) = query.instructor_id {
+        db_query = db_query.bind(id);
+    }
+    if let Some(id) = assigned_instructor_id {
         db_query = db_query.bind(id);
     }
     if let Some(status) = &query.status {
         db_query = db_query.bind(status);
-    }
-    if let Some(id) = assigned_instructor_id {
-        db_query = db_query.bind(id);
     }
 
     db_query.fetch_all(pool).await.map_err(|error| {
@@ -420,10 +509,10 @@ pub async fn get_plan_detail(
     pool: &PgPool,
     course_id: Uuid,
 ) -> Result<AssessmentPlanDetail, AppError> {
-    ensure_course_exists(pool, course_id).await?;
-    match fetch_plan_detail_optional(pool, course_id).await? {
+    let scope = resolve_plan_scope(pool, course_id).await?;
+    match fetch_plan_detail_optional(pool, &scope).await? {
         Some(detail) => Ok(detail),
-        None => Ok(not_configured_plan_detail(course_id)),
+        None => Ok(not_configured_plan_detail(&scope)),
     }
 }
 
@@ -434,13 +523,13 @@ pub async fn save_plan(
     payload: SaveAssessmentPlanRequest,
 ) -> Result<AssessmentPlanDetail, AppError> {
     validate_plan_payload(&payload)?;
-    ensure_course_exists(pool, course_id).await?;
+    let scope = resolve_plan_scope(pool, course_id).await?;
 
     let mut tx = pool
         .begin()
         .await
         .map_err(|error| AppError::InternalServerError(error.to_string()))?;
-    let plan = ensure_plan_in_tx(&mut tx, course_id).await?;
+    let plan = ensure_plan_in_tx(&mut tx, &scope).await?;
     if plan.status == "locked" {
         return Err(AppError::ValidationError(
             "โครงสร้างคะแนนถูกล็อกแล้ว ไม่สามารถแก้ไขได้".to_string(),
@@ -475,7 +564,7 @@ pub async fn save_plan(
     tx.commit()
         .await
         .map_err(|error| AppError::InternalServerError(error.to_string()))?;
-    fetch_plan_detail(pool, course_id).await
+    fetch_plan_detail(pool, &scope).await
 }
 
 pub async fn submit_plan(
@@ -483,7 +572,8 @@ pub async fn submit_plan(
     course_id: Uuid,
     actor_id: Uuid,
 ) -> Result<AssessmentPlanDetail, AppError> {
-    let detail = fetch_plan_detail(pool, course_id).await?;
+    let scope = resolve_plan_scope(pool, course_id).await?;
+    let detail = fetch_plan_detail(pool, &scope).await?;
     let plan_id = detail
         .id
         .ok_or_else(|| AppError::NotFound("ยังไม่มีโครงสร้างคะแนนรายวิชานี้".to_string()))?;
@@ -496,6 +586,12 @@ pub async fn submit_plan(
         if !category.items.is_empty() && category.allocation_status != "complete" {
             return Err(AppError::ValidationError(format!(
                 "คะแนนย่อยของหมวด {} ต้องรวมเท่ากับคะแนนเต็มหมวดก่อนส่ง",
+                category.name
+            )));
+        }
+        if is_scheduled_exam_mode(&category.exam_mode) && category.exam_duration_minutes.is_none() {
+            return Err(AppError::ValidationError(format!(
+                "ต้องระบุระยะเวลาสอบของหมวด {} ก่อนส่งโครงสร้างคะแนน",
                 category.name
             )));
         }
@@ -512,7 +608,7 @@ pub async fn submit_plan(
     .await
     .map_err(|error| AppError::InternalServerError(error.to_string()))?;
 
-    fetch_plan_detail(pool, course_id).await
+    fetch_plan_detail(pool, &scope).await
 }
 
 pub async fn course_is_assigned_instructor(
@@ -543,31 +639,52 @@ pub async fn course_is_assigned_instructor(
     .map_err(|error| AppError::InternalServerError(error.to_string()))
 }
 
-async fn ensure_course_exists(pool: &PgPool, course_id: Uuid) -> Result<(), AppError> {
-    let exists: bool =
-        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM classroom_courses WHERE id = $1)")
-            .bind(course_id)
-            .fetch_one(pool)
-            .await
-            .map_err(|error| AppError::InternalServerError(error.to_string()))?;
-    if !exists {
-        return Err(AppError::NotFound("ไม่พบรายวิชาที่เปิดสอน".to_string()));
-    }
-    Ok(())
+async fn resolve_plan_scope(
+    pool: &PgPool,
+    course_id: Uuid,
+) -> Result<AssessmentPlanScope, AppError> {
+    sqlx::query_as::<_, AssessmentPlanScope>(
+        r#"SELECT
+               id AS classroom_course_id,
+               subject_id,
+               academic_semester_id
+           FROM classroom_courses
+           WHERE id = $1"#,
+    )
+    .bind(course_id)
+    .fetch_optional(pool)
+    .await
+    .map_err(|error| AppError::InternalServerError(error.to_string()))?
+    .ok_or_else(|| AppError::NotFound("ไม่พบรายวิชาที่เปิดสอน".to_string()))
 }
 
 async fn ensure_plan_in_tx(
     tx: &mut Transaction<'_, Postgres>,
-    course_id: Uuid,
+    scope: &AssessmentPlanScope,
 ) -> Result<AssessmentPlanRow, AppError> {
     sqlx::query_as::<_, AssessmentPlanRow>(
-        r#"INSERT INTO academic_assessment_plans (classroom_course_id)
-           VALUES ($1)
-           ON CONFLICT (classroom_course_id)
-           DO UPDATE SET updated_at = academic_assessment_plans.updated_at
-           RETURNING id, classroom_course_id, status, submitted_at, locked_at"#,
+        r#"INSERT INTO academic_assessment_plans
+               (classroom_course_id, academic_semester_id, subject_id)
+           VALUES ($1, $2, $3)
+           ON CONFLICT (academic_semester_id, subject_id)
+           DO UPDATE SET
+               classroom_course_id = COALESCE(
+                   academic_assessment_plans.classroom_course_id,
+                   EXCLUDED.classroom_course_id
+               ),
+               updated_at = academic_assessment_plans.updated_at
+           RETURNING
+               id,
+               classroom_course_id,
+               subject_id,
+               academic_semester_id,
+               status,
+               submitted_at,
+               locked_at"#,
     )
-    .bind(course_id)
+    .bind(scope.classroom_course_id)
+    .bind(scope.academic_semester_id)
+    .bind(scope.subject_id)
     .fetch_one(&mut **tx)
     .await
     .map_err(|error| AppError::InternalServerError(error.to_string()))
@@ -586,8 +703,9 @@ async fn upsert_category_in_tx(
                    name = $4,
                    max_score = $5,
                    exam_mode = $6,
-                   display_order = $7,
-                   updated_by = $8,
+                   exam_duration_minutes = $7,
+                   display_order = $8,
+                   updated_by = $9,
                    updated_at = NOW()
                WHERE id = $1 AND plan_id = $2
                RETURNING id"#,
@@ -598,6 +716,7 @@ async fn upsert_category_in_tx(
         .bind(category.name.trim())
         .bind(category.max_score)
         .bind(category.exam_mode)
+        .bind(category.exam_duration_minutes)
         .bind(category.display_order)
         .bind(actor_id)
         .fetch_optional(&mut **tx)
@@ -609,8 +728,18 @@ async fn upsert_category_in_tx(
 
     sqlx::query_scalar::<_, Uuid>(
         r#"INSERT INTO academic_assessment_categories
-           (plan_id, code, name, max_score, exam_mode, display_order, created_by, updated_by)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $7)
+           (
+               plan_id,
+               code,
+               name,
+               max_score,
+               exam_mode,
+               exam_duration_minutes,
+               display_order,
+               created_by,
+               updated_by
+           )
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $8)
            RETURNING id"#,
     )
     .bind(plan_id)
@@ -618,6 +747,7 @@ async fn upsert_category_in_tx(
     .bind(category.name.trim())
     .bind(category.max_score)
     .bind(category.exam_mode)
+    .bind(category.exam_duration_minutes)
     .bind(category.display_order)
     .bind(actor_id)
     .fetch_one(&mut **tx)
@@ -717,23 +847,32 @@ async fn delete_missing_categories_in_tx(
 
 async fn fetch_plan_detail(
     pool: &PgPool,
-    course_id: Uuid,
+    scope: &AssessmentPlanScope,
 ) -> Result<AssessmentPlanDetail, AppError> {
-    fetch_plan_detail_optional(pool, course_id)
+    fetch_plan_detail_optional(pool, scope)
         .await?
         .ok_or_else(|| AppError::NotFound("ยังไม่มีโครงสร้างคะแนนรายวิชานี้".to_string()))
 }
 
 async fn fetch_plan_detail_optional(
     pool: &PgPool,
-    course_id: Uuid,
+    scope: &AssessmentPlanScope,
 ) -> Result<Option<AssessmentPlanDetail>, AppError> {
     let plan = sqlx::query_as::<_, AssessmentPlanRow>(
-        r#"SELECT id, classroom_course_id, status, submitted_at, locked_at
+        r#"SELECT
+               id,
+               classroom_course_id,
+               subject_id,
+               academic_semester_id,
+               status,
+               submitted_at,
+               locked_at
            FROM academic_assessment_plans
-           WHERE classroom_course_id = $1"#,
+           WHERE academic_semester_id = $1
+             AND subject_id = $2"#,
     )
-    .bind(course_id)
+    .bind(scope.academic_semester_id)
+    .bind(scope.subject_id)
     .fetch_optional(pool)
     .await
     .map_err(|error| AppError::InternalServerError(error.to_string()))?;
@@ -742,7 +881,14 @@ async fn fetch_plan_detail_optional(
     };
 
     let category_rows = sqlx::query_as::<_, AssessmentCategoryRow>(
-        r#"SELECT id, code, name, max_score, exam_mode, display_order
+        r#"SELECT
+               id,
+               code,
+               name,
+               max_score,
+               exam_mode,
+               exam_duration_minutes,
+               display_order
            FROM academic_assessment_categories
            WHERE plan_id = $1
            ORDER BY display_order ASC, created_at ASC"#,
@@ -794,6 +940,7 @@ async fn fetch_plan_detail_optional(
                 name: row.name,
                 max_score: row.max_score,
                 exam_mode: row.exam_mode,
+                exam_duration_minutes: row.exam_duration_minutes,
                 display_order: row.display_order,
                 item_total_score,
                 allocation_status: status.as_str().to_string(),
@@ -804,7 +951,11 @@ async fn fetch_plan_detail_optional(
 
     Ok(Some(AssessmentPlanDetail {
         id: Some(plan.id),
-        classroom_course_id: plan.classroom_course_id,
+        classroom_course_id: plan
+            .classroom_course_id
+            .unwrap_or(scope.classroom_course_id),
+        subject_id: plan.subject_id,
+        academic_semester_id: plan.academic_semester_id,
         status: plan.status,
         submitted_at: plan.submitted_at,
         locked_at: plan.locked_at,
@@ -820,7 +971,8 @@ mod tests {
     };
     use crate::error::AppError;
     use crate::modules::academic::models::assessment::{
-        SaveAssessmentCategoryRequest, SaveAssessmentItemRequest, SaveAssessmentPlanRequest,
+        AssessmentPlanScope, SaveAssessmentCategoryRequest, SaveAssessmentItemRequest,
+        SaveAssessmentPlanRequest,
     };
 
     fn item(name: &str, max_score: f64, display_order: i32) -> SaveAssessmentItemRequest {
@@ -845,6 +997,7 @@ mod tests {
             name: name.to_string(),
             max_score,
             exam_mode: exam_mode.to_string(),
+            exam_duration_minutes: None,
             display_order: 10,
             items,
         }
@@ -900,12 +1053,18 @@ mod tests {
 
     #[test]
     fn missing_plan_detail_uses_virtual_defaults_without_persisted_ids() {
-        let course_id = uuid::Uuid::new_v4();
+        let scope = AssessmentPlanScope {
+            classroom_course_id: uuid::Uuid::new_v4(),
+            subject_id: uuid::Uuid::new_v4(),
+            academic_semester_id: uuid::Uuid::new_v4(),
+        };
 
-        let detail = not_configured_plan_detail(course_id);
+        let detail = not_configured_plan_detail(&scope);
 
         assert_eq!(detail.id, None);
-        assert_eq!(detail.classroom_course_id, course_id);
+        assert_eq!(detail.classroom_course_id, scope.classroom_course_id);
+        assert_eq!(detail.subject_id, scope.subject_id);
+        assert_eq!(detail.academic_semester_id, scope.academic_semester_id);
         assert_eq!(detail.status, "not_configured");
         assert_eq!(detail.categories.len(), 4);
         assert!(detail
@@ -948,6 +1107,41 @@ mod tests {
         assert!(matches!(
             validate_plan_payload(&invalid_exam_mode),
             Err(AppError::ValidationError(message)) if message.contains("รูปแบบการสอบ")
+        ));
+    }
+
+    #[test]
+    fn validates_exam_duration_only_for_scheduled_exam_categories() {
+        let mut scheduled_exam = category("กลางภาค", 30.0, "in_timetable", vec![]);
+        scheduled_exam.exam_duration_minutes = Some(60);
+        assert!(validate_plan_payload(&SaveAssessmentPlanRequest {
+            categories: vec![scheduled_exam],
+        })
+        .is_ok());
+
+        let mut missing_duration_draft = category("กลางภาค", 30.0, "in_timetable", vec![]);
+        missing_duration_draft.exam_duration_minutes = None;
+        assert!(validate_plan_payload(&SaveAssessmentPlanRequest {
+            categories: vec![missing_duration_draft],
+        })
+        .is_ok());
+
+        let mut zero_duration = category("กลางภาค", 30.0, "in_timetable", vec![]);
+        zero_duration.exam_duration_minutes = Some(0);
+        assert!(matches!(
+            validate_plan_payload(&SaveAssessmentPlanRequest {
+                categories: vec![zero_duration],
+            }),
+            Err(AppError::ValidationError(message)) if message.contains("ระยะเวลาสอบ")
+        ));
+
+        let mut non_exam_duration = category("ก่อนกลางภาค", 10.0, "none", vec![]);
+        non_exam_duration.exam_duration_minutes = Some(30);
+        assert!(matches!(
+            validate_plan_payload(&SaveAssessmentPlanRequest {
+                categories: vec![non_exam_duration],
+            }),
+            Err(AppError::ValidationError(message)) if message.contains("เฉพาะหมวด")
         ));
     }
 }

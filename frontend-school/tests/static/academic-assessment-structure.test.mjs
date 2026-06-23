@@ -98,3 +98,18 @@ test('academic assessment editor dialog uses a roomier responsive layout', async
 	assert.match(page, /sm:grid-cols-\[minmax\(0,1fr\)_140px_auto\]/);
 	assert.match(page, /xl:grid-cols-\[minmax\(0,1\.2fr\)_140px_220px_auto\]/);
 });
+
+test('academic assessment plans are grouped by subject and capture exam duration', async () => {
+	const api = await readProjectFile('src/lib/api/academicAssessments.ts');
+	const page = await readProjectFile('src/routes/(app)/staff/academic/assessments/+page.svelte');
+
+	assert.match(api, /classroomCount:\s*number/);
+	assert.match(api, /examDurationMinutes\?:\s*number\s*\|\s*null/);
+	assert.match(page, /function assessmentPlanKey\(plan: AssessmentPlanSummary\)/);
+	assert.match(page, /\{#each plans as plan \(assessmentPlanKey\(plan\)\)\}/);
+	assert.match(page, /ห้องเรียนที่เปิด/);
+	assert.match(page, /showsExamDuration/);
+	assert.match(page, /ระยะเวลาสอบ \(นาที\)/);
+	assert.match(page, /examDurationMinutes/);
+	assert.doesNotMatch(page, /\{#each plans as plan \(plan\.classroomCourseId\)\}/);
+});
