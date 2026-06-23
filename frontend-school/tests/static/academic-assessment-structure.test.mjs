@@ -68,7 +68,7 @@ test('academic assessment route exposes overview, downloads, and nested score it
 	assert.match(page, /PageShell/);
 	assert.match(page, /Download/);
 	assert.match(page, /exportAssessmentReport/);
-	assert.match(page, /openPlanEditor/);
+	assert.match(page, /toggleInlineEditor/);
 	assert.match(page, /addCategory/);
 	assert.match(page, /addItem/);
 	assert.match(page, /removeItem/);
@@ -87,16 +87,19 @@ test('academic assessment page can gate teacher access from the overview', async
 	assert.match(page, /ยังไม่เปิดให้ครูกรอกโครงสร้างคะแนน/);
 });
 
-test('academic assessment editor dialog uses a roomier responsive layout', async () => {
+test('academic assessment page edits plans inline instead of opening a dialog', async () => {
 	const page = await readProjectFile('src/routes/(app)/staff/academic/assessments/+page.svelte');
 
-	assert.match(page, /max-w-\[min\(96vw,1200px\)\]/);
-	assert.match(page, /editor-scroll-area/);
-	assert.match(page, /assessment-category-card/);
-	assert.match(page, /assessment-category-grid/);
-	assert.match(page, /assessment-item-grid/);
-	assert.match(page, /sm:grid-cols-\[minmax\(0,1fr\)_140px_auto\]/);
-	assert.match(page, /xl:grid-cols-\[minmax\(0,1\.2fr\)_140px_220px_auto\]/);
+	assert.doesNotMatch(page, /Dialog\.Root/);
+	assert.doesNotMatch(page, /Dialog\.Content/);
+	assert.doesNotMatch(page, /editorOpen/);
+	assert.match(page, /expandedPlanKey/);
+	assert.match(page, /toggleInlineEditor/);
+	assert.match(page, /assessment-inline-editor-row/);
+	assert.match(page, /assessment-inline-category-grid/);
+	assert.match(page, /assessment-inline-item-grid/);
+	assert.match(page, /ChevronDown/);
+	assert.match(page, /ChevronRight/);
 });
 
 test('academic assessment plans are grouped by subject and capture exam duration', async () => {

@@ -25,7 +25,6 @@
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import { Checkbox } from '$lib/components/ui/checkbox';
-	import * as Dialog from '$lib/components/ui/dialog';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
@@ -36,11 +35,12 @@
 	import { can } from '$lib/stores/permissions';
 	import {
 		AlertTriangle,
+		ChevronDown,
+		ChevronRight,
 		ClipboardList,
 		Download,
 		FileSpreadsheet,
 		Loader2,
-		Pencil,
 		Plus,
 		Save,
 		Send,
@@ -121,7 +121,7 @@
 	let selectedSemesterId = $state('');
 	let selectedClassroomId = $state('');
 	let selectedStatus = $state<StatusFilter>('all');
-	let editorOpen = $state(false);
+	let expandedPlanKey = $state<string | null>(null);
 	let editorLoading = $state(false);
 	let saving = $state(false);
 	let submitting = $state(false);
@@ -307,35 +307,53 @@
 		}
 	}
 
-	async function openPlanEditor(course: AssessmentPlanSummary) {
-		if (!canManageAssessment) return;
+	function setEditorFromDetail(detail: AssessmentPlanDetail) {
+		editingPlan = detail;
+		editorCategories = detail.categories.map((category) => ({
+			clientId: nextClientId('category'),
+			id: category.id,
+			code: category.code,
+			name: category.name,
+			maxScore: category.maxScore,
+			examMode: category.examMode,
+			examDurationMinutes: category.examDurationMinutes ?? null,
+			displayOrder: category.displayOrder,
+			items: category.items.map((item) => ({
+				clientId: nextClientId('item'),
+				id: item.id,
+				name: item.name,
+				maxScore: item.maxScore,
+				displayOrder: item.displayOrder,
+				isActive: item.isActive
+			}))
+		}));
+	}
+
+	function clearInlineEditor() {
+		expandedPlanKey = null;
+		editingCourse = null;
+		editingPlan = null;
+		editorCategories = [];
+	}
+
+	async function toggleInlineEditor(course: AssessmentPlanSummary) {
+		if (!canManageAssessment || editorLoading || saving || submitting) return;
+		const planKey = assessmentPlanKey(course);
+		if (expandedPlanKey === planKey) {
+			clearInlineEditor();
+			return;
+		}
+		expandedPlanKey = planKey;
 		editingCourse = course;
-		editorOpen = true;
+		editingPlan = null;
+		editorCategories = [];
 		editorLoading = true;
 		try {
 			const response = await getAssessmentPlan(course.classroomCourseId);
-			editingPlan = response.data;
-			editorCategories = response.data.categories.map((category) => ({
-				clientId: nextClientId('category'),
-				id: category.id,
-				code: category.code,
-				name: category.name,
-				maxScore: category.maxScore,
-				examMode: category.examMode,
-				examDurationMinutes: category.examDurationMinutes ?? null,
-				displayOrder: category.displayOrder,
-				items: category.items.map((item) => ({
-					clientId: nextClientId('item'),
-					id: item.id,
-					name: item.name,
-					maxScore: item.maxScore,
-					displayOrder: item.displayOrder,
-					isActive: item.isActive
-				}))
-			}));
+			setEditorFromDetail(response.data);
 		} catch (error) {
 			toast.error(error instanceof Error ? error.message : 'ไม่สามารถเปิดโครงสร้างคะแนนได้');
-			editorOpen = false;
+			clearInlineEditor();
 		} finally {
 			editorLoading = false;
 		}
@@ -414,7 +432,7 @@
 		saving = true;
 		try {
 			const response = await saveAssessmentPlan(editingCourse.classroomCourseId, buildPayload());
-			editingPlan = response.data;
+			setEditorFromDetail(response.data);
 			toast.success('บันทึกโครงสร้างคะแนนแล้ว');
 			await loadPlans();
 		} catch (error) {
@@ -430,10 +448,10 @@
 		try {
 			await saveAssessmentPlan(editingCourse.classroomCourseId, buildPayload());
 			const response = await submitAssessmentPlan(editingCourse.classroomCourseId);
-			editingPlan = response.data;
+			setEditorFromDetail(response.data);
 			toast.success('ส่งโครงสร้างคะแนนแล้ว');
 			await loadPlans();
-			editorOpen = false;
+			clearInlineEditor();
 		} catch (error) {
 			toast.error(error instanceof Error ? error.message : 'ไม่สามารถส่งโครงสร้างคะแนนได้');
 		} finally {
@@ -678,7 +696,8 @@
 							</Table.Row>
 						{:else}
 							{#each plans as plan (assessmentPlanKey(plan))}
-								<Table.Row>
+								{@const isExpanded = expandedPlanKey === assessmentPlanKey(plan)}
+								<Table.Row class={isExpanded ? 'bg-muted/20' : ''}>
 									<Table.Cell>
 										<div class="font-medium">{courseTitle(plan)}</div>
 										<div class="text-xs text-muted-foreground">
@@ -728,14 +747,259 @@
 										<Button
 											variant="ghost"
 											size="icon"
-											disabled={!canManageAssessment}
-											onclick={() => openPlanEditor(plan)}
-											title="แก้โครงสร้างคะแนน"
+											disabled={!canManageAssessment || editorLoading || saving || submitting}
+											onclick={() => toggleInlineEditor(plan)}
+											title={isExpanded ? 'ปิดการแก้ไข' : 'แก้ในตาราง'}
+											aria-expanded={isExpanded}
 										>
-											<Pencil class="h-4 w-4" />
+											{#if isExpanded}
+												<ChevronDown class="h-4 w-4" />
+											{:else}
+												<ChevronRight class="h-4 w-4" />
+											{/if}
 										</Button>
 									</Table.Cell>
 								</Table.Row>
+								{#if isExpanded}
+									<Table.Row>
+										<Table.Cell colspan={7} class="bg-muted/30 p-0">
+											<div class="assessment-inline-editor-row space-y-4 border-t px-4 py-4">
+												<div
+													class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between"
+												>
+													<div class="min-w-0">
+														<div class="flex flex-wrap items-center gap-2">
+															<p class="font-medium">{courseTitle(plan)}</p>
+															<Badge
+																variant={statusBadgeVariant(editingPlan?.status ?? plan.status)}
+															>
+																{statusLabel(editingPlan?.status ?? plan.status)}
+															</Badge>
+														</div>
+														<p class="mt-1 text-sm text-muted-foreground">
+															{classroomSummary(plan)} · {plan.instructorName ?? '-'}
+														</p>
+													</div>
+													<div class="flex flex-wrap gap-2">
+														<Button
+															variant="outline"
+															size="sm"
+															onclick={addCategory}
+															disabled={editorLoading || saving || submitting}
+														>
+															<Plus class="mr-2 h-4 w-4" />
+															เพิ่มหมวด
+														</Button>
+														<Button
+															variant="ghost"
+															size="sm"
+															onclick={clearInlineEditor}
+															disabled={editorLoading || saving || submitting}
+														>
+															<ChevronDown class="mr-2 h-4 w-4" />
+															ปิด
+														</Button>
+														<Button
+															variant="outline"
+															size="sm"
+															onclick={saveEditor}
+															disabled={editorLoading || saving || submitting}
+														>
+															{#if saving}
+																<Loader2 class="mr-2 h-4 w-4 animate-spin" />
+															{:else}
+																<Save class="mr-2 h-4 w-4" />
+															{/if}
+															บันทึกร่าง
+														</Button>
+														<Button
+															size="sm"
+															onclick={submitEditor}
+															disabled={editorLoading || saving || submitting}
+														>
+															{#if submitting}
+																<Loader2 class="mr-2 h-4 w-4 animate-spin" />
+															{:else}
+																<Send class="mr-2 h-4 w-4" />
+															{/if}
+															ส่งโครงสร้าง
+														</Button>
+													</div>
+												</div>
+
+												{#if editorLoading}
+													<div
+														class="rounded-md border bg-background px-4 py-8 text-center text-muted-foreground"
+													>
+														<Loader2 class="mx-auto mb-2 h-6 w-6 animate-spin" />
+														กำลังโหลดโครงสร้างคะแนน
+													</div>
+												{:else if editorCategories.length === 0}
+													<div
+														class="rounded-md border bg-background px-4 py-8 text-center text-muted-foreground"
+													>
+														ยังไม่มีหมวดคะแนน
+													</div>
+												{:else}
+													<div class="space-y-3">
+														{#each editorCategories as category, categoryIndex (category.clientId)}
+															<div class="rounded-lg border bg-background p-3 sm:p-4">
+																<div
+																	class="assessment-inline-category-grid grid gap-3 xl:grid-cols-[minmax(0,1.2fr)_120px_minmax(160px,220px)_150px_auto]"
+																>
+																	<div class="space-y-2">
+																		<Label>หมวดคะแนน</Label>
+																		<Input bind:value={category.name} />
+																	</div>
+																	<div class="space-y-2">
+																		<Label>คะแนนเต็ม</Label>
+																		<Input
+																			type="number"
+																			min="0"
+																			step="0.5"
+																			bind:value={category.maxScore}
+																		/>
+																	</div>
+																	<div class="space-y-2">
+																		<Label>รูปแบบ</Label>
+																		<Select.Root type="single" bind:value={category.examMode}>
+																			<Select.Trigger
+																				>{examModeLabel(category.examMode)}</Select.Trigger
+																			>
+																			<Select.Content>
+																				{#each examModeOptions as option (option.value)}
+																					<Select.Item value={option.value}
+																						>{option.label}</Select.Item
+																					>
+																				{/each}
+																			</Select.Content>
+																		</Select.Root>
+																	</div>
+																	<div class="space-y-2">
+																		<Label>ระยะเวลาสอบ (นาที)</Label>
+																		{#if showsExamDuration(category)}
+																			<Input
+																				type="number"
+																				min="1"
+																				step="1"
+																				value={category.examDurationMinutes ?? ''}
+																				oninput={(event) =>
+																					setCategoryExamDuration(
+																						category,
+																						event.currentTarget.value
+																					)}
+																			/>
+																		{:else}
+																			<div
+																				class="flex h-9 items-center rounded-md border bg-muted/40 px-3 text-sm text-muted-foreground"
+																			>
+																				-
+																			</div>
+																		{/if}
+																	</div>
+																	<div class="flex items-end justify-start xl:justify-end">
+																		<Button
+																			variant="ghost"
+																			size="icon"
+																			onclick={() => removeCategory(categoryIndex)}
+																			disabled={saving || submitting}
+																			title="ลบหมวด"
+																		>
+																			<Trash2 class="h-4 w-4" />
+																		</Button>
+																	</div>
+																</div>
+
+																<div class="mt-4 rounded-md bg-muted/40 p-3">
+																	<div
+																		class="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
+																	>
+																		<div class="text-sm text-muted-foreground">
+																			คะแนนย่อยรวม {categoryTotal(category)} / {Number(
+																				category.maxScore || 0
+																			)}
+																			<span class="ml-2 font-medium">
+																				{allocationStatusLabel(
+																					category.items.length === 0
+																						? Number(category.maxScore || 0) === 0
+																							? 'not_started'
+																							: 'complete'
+																						: Math.abs(
+																									categoryTotal(category) -
+																										Number(category.maxScore || 0)
+																							  ) < 0.0001
+																							? 'complete'
+																							: categoryTotal(category) <
+																								  Number(category.maxScore || 0)
+																								? 'under_allocated'
+																								: 'over_allocated'
+																				)}
+																			</span>
+																		</div>
+																		<Button
+																			variant="outline"
+																			size="sm"
+																			onclick={() => addItem(categoryIndex)}
+																			disabled={saving || submitting}
+																		>
+																			<Plus class="mr-2 h-4 w-4" />
+																			เพิ่มคะแนนย่อย
+																		</Button>
+																	</div>
+
+																	{#if category.items.length === 0}
+																		<p class="text-sm text-muted-foreground">
+																			ยังไม่แยกคะแนนย่อย ระบบจะถือว่าหมวดนี้เป็นรายการเดียวชั่วคราว
+																		</p>
+																	{:else}
+																		<div class="space-y-2">
+																			{#each category.items as item, itemIndex (item.clientId)}
+																				<div
+																					class="assessment-inline-item-grid grid gap-3 rounded-md border bg-background p-3 md:grid-cols-[minmax(0,1fr)_120px_110px_auto]"
+																				>
+																					<div class="space-y-2">
+																						<Label>รายการ</Label>
+																						<Input bind:value={item.name} />
+																					</div>
+																					<div class="space-y-2">
+																						<Label>คะแนน</Label>
+																						<Input
+																							type="number"
+																							min="0"
+																							step="0.5"
+																							bind:value={item.maxScore}
+																						/>
+																					</div>
+																					<label
+																						class="flex min-h-10 items-end gap-2 text-sm md:pb-2"
+																					>
+																						<Checkbox bind:checked={item.isActive} />
+																						ใช้งาน
+																					</label>
+																					<div class="flex items-end justify-start md:justify-end">
+																						<Button
+																							variant="ghost"
+																							size="icon"
+																							onclick={() => removeItem(categoryIndex, itemIndex)}
+																							disabled={saving || submitting}
+																							title="ลบคะแนนย่อย"
+																						>
+																							<Trash2 class="h-4 w-4" />
+																						</Button>
+																					</div>
+																				</div>
+																			{/each}
+																		</div>
+																	{/if}
+																</div>
+															</div>
+														{/each}
+													</div>
+												{/if}
+											</div>
+										</Table.Cell>
+									</Table.Row>
+								{/if}
 							{/each}
 						{/if}
 					</Table.Body>
@@ -744,179 +1008,3 @@
 		</div>
 	{/if}
 </PageShell>
-
-<Dialog.Root bind:open={editorOpen}>
-	<Dialog.Content
-		class="flex max-h-[92vh] w-[min(96vw,1200px)] max-w-[min(96vw,1200px)] flex-col gap-0 overflow-hidden p-0 sm:max-w-[min(96vw,1200px)]"
-	>
-		<Dialog.Header class="border-b px-5 py-4 pr-12 sm:px-6">
-			<Dialog.Title>โครงสร้างคะแนนรายวิชา</Dialog.Title>
-			<Dialog.Description>
-				{editingCourse
-					? `${courseTitle(editingCourse)} · ${editingCourse.classroomName ?? ''}`
-					: ''}
-			</Dialog.Description>
-		</Dialog.Header>
-
-		{#if editorLoading}
-			<div class="px-6 py-12 text-center text-muted-foreground">
-				<Loader2 class="mx-auto mb-2 h-6 w-6 animate-spin" />
-				กำลังโหลดโครงสร้างคะแนน
-			</div>
-		{:else}
-			<div class="editor-scroll-area min-h-0 flex-1 space-y-5 overflow-y-auto px-5 py-5 sm:px-6">
-				<div
-					class="flex flex-col gap-3 rounded-md border bg-muted/30 p-3 sm:flex-row sm:items-center sm:justify-between"
-				>
-					<div>
-						<p class="text-sm text-muted-foreground">
-							สถานะ: {editingPlan ? statusLabel(editingPlan.status) : '-'}
-						</p>
-					</div>
-					<Button variant="outline" size="sm" onclick={addCategory}>
-						<Plus class="mr-2 h-4 w-4" />
-						เพิ่มหมวด
-					</Button>
-				</div>
-
-				{#each editorCategories as category, categoryIndex (category.clientId)}
-					<div class="assessment-category-card rounded-lg border bg-background p-4 sm:p-5">
-						<div
-							class="assessment-category-grid grid gap-4 xl:grid-cols-[minmax(0,1.2fr)_140px_220px_auto]"
-						>
-							<div class="space-y-2">
-								<Label>หมวดคะแนน</Label>
-								<Input bind:value={category.name} />
-							</div>
-							<div class="space-y-2">
-								<Label>คะแนนเต็ม</Label>
-								<Input type="number" min="0" step="0.5" bind:value={category.maxScore} />
-							</div>
-							<div class="space-y-2">
-								<Label>รูปแบบ</Label>
-								<Select.Root type="single" bind:value={category.examMode}>
-									<Select.Trigger>{examModeLabel(category.examMode)}</Select.Trigger>
-									<Select.Content>
-										{#each examModeOptions as option (option.value)}
-											<Select.Item value={option.value}>{option.label}</Select.Item>
-										{/each}
-									</Select.Content>
-								</Select.Root>
-							</div>
-							<div class="flex items-end justify-start xl:justify-end">
-								<Button
-									variant="ghost"
-									size="icon"
-									onclick={() => removeCategory(categoryIndex)}
-									title="ลบหมวด"
-								>
-									<Trash2 class="h-4 w-4" />
-								</Button>
-							</div>
-						</div>
-
-						{#if showsExamDuration(category)}
-							<div class="mt-4 max-w-xs space-y-2">
-								<Label>ระยะเวลาสอบ (นาที)</Label>
-								<Input
-									type="number"
-									min="1"
-									step="1"
-									value={category.examDurationMinutes ?? ''}
-									oninput={(event) => setCategoryExamDuration(category, event.currentTarget.value)}
-								/>
-							</div>
-						{/if}
-
-						<div class="mt-5 rounded-md bg-muted/40 p-3 sm:p-4">
-							<div class="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-								<div class="text-sm text-muted-foreground">
-									คะแนนย่อยรวม {categoryTotal(category)} / {Number(category.maxScore || 0)}
-									<span class="ml-2 font-medium">
-										{allocationStatusLabel(
-											category.items.length === 0
-												? Number(category.maxScore || 0) === 0
-													? 'not_started'
-													: 'complete'
-												: Math.abs(categoryTotal(category) - Number(category.maxScore || 0)) <
-													  0.0001
-													? 'complete'
-													: categoryTotal(category) < Number(category.maxScore || 0)
-														? 'under_allocated'
-														: 'over_allocated'
-										)}
-									</span>
-								</div>
-								<Button variant="outline" size="sm" onclick={() => addItem(categoryIndex)}>
-									<Plus class="mr-2 h-4 w-4" />
-									เพิ่มคะแนนย่อย
-								</Button>
-							</div>
-
-							{#if category.items.length === 0}
-								<p class="text-sm text-muted-foreground">
-									ยังไม่แยกคะแนนย่อย ระบบจะถือว่าหมวดนี้เป็นรายการเดียวชั่วคราว
-								</p>
-							{:else}
-								<div class="space-y-2">
-									{#each category.items as item, itemIndex (item.clientId)}
-										<div
-											class="assessment-item-grid grid gap-3 rounded-md bg-background p-3 sm:grid-cols-[minmax(0,1fr)_140px_auto] lg:grid-cols-[minmax(0,1fr)_140px_110px_auto]"
-										>
-											<Input bind:value={item.name} />
-											<Input type="number" min="0" step="0.5" bind:value={item.maxScore} />
-											<label class="flex min-h-10 items-center gap-2 text-sm">
-												<Checkbox bind:checked={item.isActive} />
-												ใช้งาน
-											</label>
-											<div class="flex justify-start lg:justify-end">
-												<Button
-													variant="ghost"
-													size="icon"
-													onclick={() => removeItem(categoryIndex, itemIndex)}
-													title="ลบคะแนนย่อย"
-												>
-													<Trash2 class="h-4 w-4" />
-												</Button>
-											</div>
-										</div>
-									{/each}
-								</div>
-							{/if}
-						</div>
-					</div>
-				{/each}
-			</div>
-		{/if}
-
-		<Dialog.Footer class="border-t bg-background px-5 py-4 sm:px-6">
-			<Button
-				variant="outline"
-				onclick={() => (editorOpen = false)}
-				disabled={saving || submitting}
-			>
-				ปิด
-			</Button>
-			<Button
-				variant="outline"
-				onclick={saveEditor}
-				disabled={editorLoading || saving || submitting}
-			>
-				{#if saving}
-					<Loader2 class="mr-2 h-4 w-4 animate-spin" />
-				{:else}
-					<Save class="mr-2 h-4 w-4" />
-				{/if}
-				บันทึกร่าง
-			</Button>
-			<Button onclick={submitEditor} disabled={editorLoading || saving || submitting}>
-				{#if submitting}
-					<Loader2 class="mr-2 h-4 w-4 animate-spin" />
-				{:else}
-					<Send class="mr-2 h-4 w-4" />
-				{/if}
-				ส่งโครงสร้าง
-			</Button>
-		</Dialog.Footer>
-	</Dialog.Content>
-</Dialog.Root>
