@@ -113,6 +113,12 @@
 		{ value: 'in_timetable', label: 'ในตาราง' },
 		{ value: 'outside_timetable', label: 'นอกตาราง' }
 	];
+	const quickScoreColumns: { field: QuickScoreField; heading: string; label: string }[] = [
+		{ field: 'beforeMidtermScore', heading: 'ก่อน', label: 'ก่อนกลางภาค' },
+		{ field: 'midtermScore', heading: 'กลาง', label: 'กลางภาค' },
+		{ field: 'afterMidtermScore', heading: 'หลัง', label: 'หลังกลางภาค' },
+		{ field: 'finalScore', heading: 'ปลาย', label: 'ปลายภาค' }
+	];
 	const coreAssessmentCategories: {
 		code: CoreCategoryCode;
 		name: string;
@@ -229,6 +235,10 @@
 		return 'in_timetable';
 	}
 
+	function canEditExamDuration(mode: AssessmentExamMode | string) {
+		return mode === 'in_timetable';
+	}
+
 	function quickScoreDraftFromPlan(plan: AssessmentPlanSummary): QuickScoreDraft {
 		return {
 			beforeMidtermScore: plan.beforeMidtermScore,
@@ -289,13 +299,31 @@
 	) {
 		const draft = quickDraftForPlan(plan);
 		draft[field] = quickExamMode(value);
-		if (field === 'midtermExamMode' && draft.midtermExamMode === 'none') {
+		if (field === 'midtermExamMode' && !canEditExamDuration(draft.midtermExamMode)) {
 			draft.midtermExamDurationMinutes = null;
 		}
-		if (field === 'finalExamMode' && draft.finalExamMode === 'none') {
+		if (field === 'finalExamMode' && !canEditExamDuration(draft.finalExamMode)) {
 			draft.finalExamDurationMinutes = null;
 		}
 		draft.dirty = true;
+	}
+
+	function handleQuickScoreEnter(event: KeyboardEvent) {
+		if (event.key !== 'Enter') return;
+		const currentInput = event.currentTarget;
+		if (!(currentInput instanceof HTMLInputElement)) return;
+		event.preventDefault();
+
+		const inputScope = currentInput.closest('table') ?? document;
+		const scoreInputs = Array.from(
+			inputScope.querySelectorAll<HTMLInputElement>(
+				'input[data-assessment-quick-score-input]:not(:disabled)'
+			)
+		);
+		const currentIndex = scoreInputs.indexOf(currentInput);
+		const nextInput = scoreInputs[currentIndex + 1];
+		nextInput?.focus();
+		nextInput?.select();
 	}
 
 	function quickScoreValue(value: number | null) {
@@ -358,7 +386,7 @@
 				maxScore: quickScoreValue(draft[template.scoreField]),
 				examMode,
 				examDurationMinutes:
-					template.durationField && examMode !== 'none'
+					template.durationField && canEditExamDuration(examMode)
 						? quickDurationValue(draft[template.durationField])
 						: null,
 				displayOrder: existing?.displayOrder ?? template.displayOrder,
@@ -735,17 +763,19 @@
 			</div>
 
 			<div class="overflow-x-auto rounded-lg border bg-background">
-				<Table.Root class="min-w-[1160px]">
+				<Table.Root class="min-w-[1360px]">
 					<Table.Header>
 						<Table.Row>
 							<Table.Head>รายวิชา</Table.Head>
 							<Table.Head>ห้องเรียนที่เปิด</Table.Head>
 							<Table.Head>ครูผู้สอน</Table.Head>
-							<Table.Head class="min-w-[280px]">คะแนน</Table.Head>
-							<Table.Head class="min-w-[132px]">สอบกลาง</Table.Head>
-							<Table.Head class="w-[104px]">เวลากลาง</Table.Head>
-							<Table.Head class="min-w-[132px]">สอบปลาย</Table.Head>
-							<Table.Head class="w-[104px]">เวลาปลาย</Table.Head>
+							{#each quickScoreColumns as column (column.field)}
+								<Table.Head class="w-[84px] text-right">{column.heading}</Table.Head>
+							{/each}
+							<Table.Head class="min-w-[132px]">สอบกลางภาค</Table.Head>
+							<Table.Head class="w-[112px]">เวลากลางภาค</Table.Head>
+							<Table.Head class="min-w-[132px]">สอบปลายภาค</Table.Head>
+							<Table.Head class="w-[112px]">เวลาปลายภาค</Table.Head>
 							<Table.Head class="text-right">รวม</Table.Head>
 							<Table.Head>สถานะ</Table.Head>
 						</Table.Row>
@@ -753,14 +783,14 @@
 					<Table.Body>
 						{#if loadingPlans}
 							<Table.Row>
-								<Table.Cell colspan={10} class="h-24 text-center text-muted-foreground">
+								<Table.Cell colspan={13} class="h-24 text-center text-muted-foreground">
 									<Loader2 class="mx-auto mb-2 h-5 w-5 animate-spin" />
 									กำลังโหลดข้อมูล
 								</Table.Cell>
 							</Table.Row>
 						{:else if plans.length === 0}
 							<Table.Row>
-								<Table.Cell colspan={10}>
+								<Table.Cell colspan={13}>
 									<PageState
 										variant="empty"
 										title="ยังไม่มีรายวิชาตามตัวกรองนี้"
@@ -782,68 +812,26 @@
 									</Table.Cell>
 									<Table.Cell>{classroomSummary(plan)}</Table.Cell>
 									<Table.Cell>{plan.instructorName ?? '-'}</Table.Cell>
-									<Table.Cell>
-										{#if quickDraft}
-											<div class="assessment-score-bundle-grid grid grid-cols-4 gap-1">
+									{#each quickScoreColumns as column (column.field)}
+										<Table.Cell class="assessment-score-cell">
+											{#if quickDraft}
 												<Input
 													type="number"
 													min="0"
 													step="0.5"
-													class="h-9 text-right tabular-nums"
-													aria-label="ก่อนกลางภาค"
-													placeholder="ก่อน"
-													value={quickDraft.beforeMidtermScore ?? ''}
+													class="assessment-score-input h-9 text-right tabular-nums"
+													aria-label={column.label}
+													placeholder={column.heading}
+													value={quickDraft[column.field] ?? ''}
+													data-assessment-quick-score-input
 													disabled={!canEditPlan || savingAllQuickScores}
 													oninput={(event) =>
-														setQuickScoreValue(
-															plan,
-															'beforeMidtermScore',
-															event.currentTarget.value
-														)}
+														setQuickScoreValue(plan, column.field, event.currentTarget.value)}
+													onkeydown={handleQuickScoreEnter}
 												/>
-												<Input
-													type="number"
-													min="0"
-													step="0.5"
-													class="h-9 text-right tabular-nums"
-													aria-label="กลางภาค"
-													placeholder="กลาง"
-													value={quickDraft.midtermScore ?? ''}
-													disabled={!canEditPlan || savingAllQuickScores}
-													oninput={(event) =>
-														setQuickScoreValue(plan, 'midtermScore', event.currentTarget.value)}
-												/>
-												<Input
-													type="number"
-													min="0"
-													step="0.5"
-													class="h-9 text-right tabular-nums"
-													aria-label="หลังกลางภาค"
-													placeholder="หลัง"
-													value={quickDraft.afterMidtermScore ?? ''}
-													disabled={!canEditPlan || savingAllQuickScores}
-													oninput={(event) =>
-														setQuickScoreValue(
-															plan,
-															'afterMidtermScore',
-															event.currentTarget.value
-														)}
-												/>
-												<Input
-													type="number"
-													min="0"
-													step="0.5"
-													class="h-9 text-right tabular-nums"
-													aria-label="ปลายภาค"
-													placeholder="ปลาย"
-													value={quickDraft.finalScore ?? ''}
-													disabled={!canEditPlan || savingAllQuickScores}
-													oninput={(event) =>
-														setQuickScoreValue(plan, 'finalScore', event.currentTarget.value)}
-												/>
-											</div>
-										{/if}
-									</Table.Cell>
+											{/if}
+										</Table.Cell>
+									{/each}
 									<Table.Cell class="assessment-exam-cell">
 										{#if quickDraft}
 											<Select.Root
@@ -878,7 +866,7 @@
 												value={quickDraft.midtermExamDurationMinutes ?? ''}
 												disabled={!canEditPlan ||
 													savingAllQuickScores ||
-													quickDraft.midtermExamMode === 'none'}
+													!canEditExamDuration(quickDraft.midtermExamMode)}
 												oninput={(event) =>
 													setQuickDurationValue(
 														plan,
@@ -922,7 +910,7 @@
 												value={quickDraft.finalExamDurationMinutes ?? ''}
 												disabled={!canEditPlan ||
 													savingAllQuickScores ||
-													quickDraft.finalExamMode === 'none'}
+													!canEditExamDuration(quickDraft.finalExamMode)}
 												oninput={(event) =>
 													setQuickDurationValue(
 														plan,

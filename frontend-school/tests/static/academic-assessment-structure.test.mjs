@@ -75,10 +75,30 @@ test('academic assessment route exposes overview, downloads, and quick score edi
 	assert.match(page, /exportAssessmentReport/);
 	assert.match(page, /quickScoreDrafts/);
 	assert.match(page, /saveAllQuickScoreRows/);
-	assert.match(page, /assessment-score-bundle-grid/);
+	assert.match(page, /assessment-score-input/);
 	assert.match(page, /assessment-exam-cell/);
 	assert.match(page, /quickExamModeOptions/);
 	assert.match(page, /outside_timetable/);
+});
+
+test('academic assessment score table uses dedicated score and exam columns', async () => {
+	const page = await readProjectFile('src/routes/(app)/staff/academic/assessments/+page.svelte');
+
+	for (const heading of ['ก่อน', 'กลาง', 'หลัง', 'ปลาย']) {
+		assert.match(page, new RegExp(`heading:\\s*['"]${heading}['"]`));
+	}
+
+	for (const heading of ['สอบกลางภาค', 'เวลากลางภาค', 'สอบปลายภาค', 'เวลาปลายภาค']) {
+		assert.match(page, new RegExp(`<Table\\.Head[^>]*>${heading}</Table\\.Head>`));
+	}
+
+	assert.match(page, /\{#each quickScoreColumns as column \(column\.field\)\}/);
+	assert.match(page, /\{column\.heading\}/);
+	assert.doesNotMatch(page, /<Table\.Head[^>]*>คะแนน<\/Table\.Head>/);
+	assert.match(page, /handleQuickScoreEnter/);
+	assert.match(page, /data-assessment-quick-score-input/);
+	assert.match(page, /canEditExamDuration/);
+	assert.match(page, /mode === 'in_timetable'/);
 });
 
 test('academic assessment summary exposes core score buckets for table editing', async () => {
@@ -149,8 +169,8 @@ test('academic assessment plans are grouped by subject and capture exam duration
 	assert.match(page, /function assessmentPlanKey\(plan: AssessmentPlanSummary\)/);
 	assert.match(page, /\{#each plans as plan \(assessmentPlanKey\(plan\)\)\}/);
 	assert.match(page, /ห้องเรียนที่เปิด/);
-	assert.match(page, /เวลากลาง/);
-	assert.match(page, /เวลาปลาย/);
+	assert.match(page, /เวลากลางภาค/);
+	assert.match(page, /เวลาปลายภาค/);
 	assert.match(page, /ระยะเวลากลางภาค/);
 	assert.match(page, /ระยะเวลาปลายภาค/);
 	assert.match(page, /examDurationMinutes/);
