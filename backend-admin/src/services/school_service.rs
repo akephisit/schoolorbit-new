@@ -9,6 +9,8 @@ pub struct SchoolService {
     pool: PgPool,
 }
 
+const DELETION_FAILED_STATUS: &str = "deletion_failed";
+
 fn build_provisioning_failure_message(primary_error: &str, cleanup_errors: &[String]) -> String {
     if cleanup_errors.is_empty() {
         return primary_error.to_string();
@@ -19,6 +21,25 @@ fn build_provisioning_failure_message(primary_error: &str, cleanup_errors: &[Str
         primary_error,
         cleanup_errors.join("; ")
     )
+}
+
+fn build_deletion_failure_message(
+    database_name: &str,
+    cleanup_error: &str,
+    status_update_error: Option<&str>,
+) -> String {
+    let primary = format!(
+        "Tenant database cleanup failed for '{}': {}. School metadata preserved for manual cleanup.",
+        database_name, cleanup_error
+    );
+
+    match status_update_error {
+        Some(error) => format!(
+            "{} failed to mark school as {}: {}",
+            primary, DELETION_FAILED_STATUS, error
+        ),
+        None => primary,
+    }
 }
 
 fn validate_school_subdomain(subdomain: &str) -> Result<(), AppError> {
@@ -172,7 +193,7 @@ impl SchoolService {
         status: &str,
         reason: &str,
     ) -> Result<(), String> {
-        warn!(%school_id, status, reason, "marking school status after provisioning error");
+        warn!(%school_id, status, reason, "marking school status after workflow error");
 
         match sqlx::query("UPDATE schools SET status = $1, updated_at = NOW() WHERE id = $2")
             .bind(status)
@@ -182,7 +203,7 @@ impl SchoolService {
         {
             Ok(_) => Ok(()),
             Err(e) => {
-                warn!(error = %e, "failed to update school status after provisioning error");
+                warn!(error = %e, "failed to update school status after workflow error");
                 Err(e.to_string())
             }
         }
@@ -263,6 +284,27 @@ impl SchoolService {
         };
 
         AppError::ExternalServiceError(build_provisioning_failure_message(&reason, &cleanup_errors))
+    }
+
+    async fn mark_school_deletion_failed(
+        &self,
+        school_id: Uuid,
+        db_name: &str,
+        cleanup_error: String,
+    ) -> AppError {
+        let status_update_error = match self
+            .mark_school_failed(school_id, DELETION_FAILED_STATUS, &cleanup_error)
+            .await
+        {
+            Ok(_) => None,
+            Err(e) => Some(e),
+        };
+
+        AppError::ExternalServiceError(build_deletion_failure_message(
+            db_name,
+            &cleanup_error,
+            status_update_error.as_deref(),
+        ))
     }
 
     async fn provision_tenant_database(
@@ -708,6 +750,7 @@ impl SchoolService {
                         db_name,
                         "failed to delete tenant database; manual cleanup may be needed"
                     );
+                    return Err(self.mark_school_deletion_failed(id, db_name, e).await);
                 }
             },
             Err(e) => {
@@ -716,6 +759,7 @@ impl SchoolService {
                     db_name,
                     "database provisioner not available; tenant database cleanup skipped"
                 );
+                return Err(self.mark_school_deletion_failed(id, db_name, e).await);
             }
         }
 
@@ -938,7 +982,8 @@ impl SchoolService {
                 Err(e) => {
                     logger
                         .warning(&format!("⚠️  Tenant database deletion failed: {}", e))
-                        .await
+                        .await;
+                    return Err(self.mark_school_deletion_failed(id, db_name, e).await);
                 }
             },
             Err(e) => {
@@ -947,7 +992,8 @@ impl SchoolService {
                         "⚠️  Database provisioner unavailable; tenant database cleanup skipped: {}",
                         e
                     ))
-                    .await
+                    .await;
+                return Err(self.mark_school_deletion_failed(id, db_name, e).await);
             }
         }
 
@@ -975,8 +1021,9 @@ impl SchoolService {
 #[cfg(test)]
 mod tests {
     use super::{
-        build_active_school_config, build_provisioning_failure_message, build_school_database_name,
-        database_name_for_school, validate_school_subdomain, ProvisioningRunOptions,
+        build_active_school_config, build_deletion_failure_message,
+        build_provisioning_failure_message, build_school_database_name, database_name_for_school,
+        validate_school_subdomain, ProvisioningRunOptions, DELETION_FAILED_STATUS,
     };
     use crate::models::{School, SchoolConfig};
     use sqlx::types::Json;
@@ -1004,6 +1051,34 @@ mod tests {
         assert!(message
             .contains("failed to drop self-hosted tenant database 'schoolorbit_test': locked"));
         assert!(message.contains("failed to delete school record: connection closed"));
+    }
+
+    #[test]
+    fn deletion_failure_message_preserves_metadata_context() {
+        let message = build_deletion_failure_message(
+            "schoolorbit_sandbox",
+            "database is being accessed by other users",
+            None,
+        );
+
+        assert_eq!(DELETION_FAILED_STATUS, "deletion_failed");
+        assert!(message.contains("schoolorbit_sandbox"));
+        assert!(message.contains("database is being accessed by other users"));
+        assert!(message.contains("metadata preserved for manual cleanup"));
+        assert!(!message.contains("postgresql://"));
+    }
+
+    #[test]
+    fn deletion_failure_message_includes_status_update_error() {
+        let message = build_deletion_failure_message(
+            "schoolorbit_sandbox",
+            "missing SELF_HOSTED_POSTGRES_ADMIN_URL",
+            Some("connection refused"),
+        );
+
+        assert!(message.contains("missing SELF_HOSTED_POSTGRES_ADMIN_URL"));
+        assert!(message.contains("failed to mark school as deletion_failed"));
+        assert!(message.contains("connection refused"));
     }
 
     #[test]

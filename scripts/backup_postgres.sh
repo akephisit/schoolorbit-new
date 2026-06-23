@@ -2,7 +2,7 @@
 set -euo pipefail
 
 timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
-backup_root="${BACKUP_ROOT:-./backups/postgres}"
+backup_root="${BACKUP_ROOT:-/opt/schoolorbit/backups}"
 retention_days="${BACKUP_RETENTION_DAYS:-14}"
 rclone_remote="${BACKUP_RCLONE_REMOTE:-}"
 admin_database_url="${DATABASE_URL:-}"
@@ -70,8 +70,7 @@ psql \
     -t <<'SQL' > "$tenant_list"
 SELECT subdomain, db_connection_string
 FROM schools
-WHERE status IN ('active', 'provisioning')
-  AND db_connection_string IS NOT NULL
+WHERE db_connection_string IS NOT NULL
   AND btrim(db_connection_string) <> ''
 ORDER BY subdomain;
 SQL

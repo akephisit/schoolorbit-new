@@ -22,7 +22,7 @@ SELF_HOSTED_POSTGRES_TENANT_USER=schoolorbit_tenant_owner
 SELF_HOSTED_POSTGRES_TENANT_PASSWORD=<tenant-owner-password>
 SELF_HOSTED_POSTGRES_SSLMODE=disable
 
-BACKUP_ROOT=/opt/schoolorbit/backups/postgres
+BACKUP_ROOT=/opt/schoolorbit/backups
 BACKUP_RETENTION_DAYS=14
 BACKUP_RCLONE_REMOTE=
 ```

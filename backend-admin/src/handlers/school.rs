@@ -1,3 +1,4 @@
+use crate::error::AppError;
 use crate::models::{CreateSchool, School, UpdateSchool};
 use crate::services::SchoolService;
 use crate::types::ApiResponse;
@@ -34,6 +35,13 @@ pub struct SchoolListResponse {
     pub page: i64,
     pub limit: i64,
     pub total_pages: i64,
+}
+
+fn delete_school_error_status(error: &AppError) -> StatusCode {
+    match error {
+        AppError::NotFound(_) => StatusCode::NOT_FOUND,
+        _ => StatusCode::BAD_REQUEST,
+    }
 }
 
 // Create school
@@ -131,11 +139,16 @@ pub async fn delete_school(State(state): State<AppState>, Path(id): Path<Uuid>) 
             Json(serde_json::json!({"success": true, "message": "School deleted"})),
         )
             .into_response(),
-        Err(_) => (
-            StatusCode::NOT_FOUND,
-            Json(serde_json::json!({"error": "School not found"})),
-        )
-            .into_response(),
+        Err(e) => {
+            let status = delete_school_error_status(&e);
+            let error = if matches!(e, AppError::NotFound(_)) {
+                "School not found".to_string()
+            } else {
+                e.to_string()
+            };
+
+            (status, Json(serde_json::json!({"error": error}))).into_response()
+        }
     }
 }
 
@@ -178,6 +191,29 @@ pub async fn bulk_deploy_schools(
             Json(serde_json::json!({"error": e.to_string()})),
         )
             .into_response(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::delete_school_error_status;
+    use crate::error::AppError;
+    use axum::http::StatusCode;
+
+    #[test]
+    fn delete_school_maps_not_found_to_not_found() {
+        let error = AppError::NotFound("School not found".to_string());
+
+        assert_eq!(delete_school_error_status(&error), StatusCode::NOT_FOUND);
+    }
+
+    #[test]
+    fn delete_school_maps_cleanup_failure_to_bad_request() {
+        let error = AppError::ExternalServiceError(
+            "tenant database cleanup failed; metadata preserved".to_string(),
+        );
+
+        assert_eq!(delete_school_error_status(&error), StatusCode::BAD_REQUEST);
     }
 }
 

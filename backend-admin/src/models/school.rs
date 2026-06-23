@@ -9,6 +9,7 @@ pub struct School {
     pub name: String,
     pub subdomain: String,
     pub db_name: String,
+    #[serde(skip_serializing)]
     pub db_connection_string: Option<String>,
     pub status: String,
     pub config: Json<SchoolConfig>,
@@ -45,8 +46,9 @@ pub struct SchoolConfig {
 
 #[cfg(test)]
 mod tests {
-    use super::SchoolConfig;
+    use super::{School, SchoolConfig};
     use sqlx::types::Json;
+    use uuid::Uuid;
 
     #[test]
     fn school_config_defaults_allow_provisioning_records() {
@@ -85,5 +87,30 @@ mod tests {
         assert_eq!(value["db_id"], 42);
         assert_eq!(value["dns_record_id"], "record_123");
         assert_eq!(value["deployment_url"], "https://sandbox.schoolorbit.app");
+    }
+
+    #[test]
+    fn school_public_serialization_omits_database_connection_string() {
+        let secret_url =
+            "postgresql://tenant_owner:secret-password@postgres:5432/schoolorbit_sandbox";
+        let school = School {
+            id: Uuid::nil(),
+            name: "Sandbox".to_string(),
+            subdomain: "sandbox".to_string(),
+            db_name: "schoolorbit_sandbox".to_string(),
+            db_connection_string: Some(secret_url.to_string()),
+            status: "active".to_string(),
+            config: Json(SchoolConfig::default()),
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+        };
+
+        let value = serde_json::to_value(school).unwrap();
+        let serialized = serde_json::to_string(&value).unwrap();
+
+        assert!(value.get("db_connection_string").is_none());
+        assert!(value.get("dbConnectionString").is_none());
+        assert!(!serialized.contains("secret-password"));
+        assert!(!serialized.contains(secret_url));
     }
 }
