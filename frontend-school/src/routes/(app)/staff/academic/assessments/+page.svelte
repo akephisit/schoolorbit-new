@@ -699,8 +699,10 @@
 </PageShell>
 
 <Dialog.Root bind:open={editorOpen}>
-	<Dialog.Content class="flex max-h-[88vh] max-w-5xl flex-col overflow-hidden">
-		<Dialog.Header>
+	<Dialog.Content
+		class="flex max-h-[92vh] w-[min(96vw,1200px)] max-w-[min(96vw,1200px)] flex-col gap-0 overflow-hidden p-0 sm:max-w-[min(96vw,1200px)]"
+	>
+		<Dialog.Header class="border-b px-5 py-4 pr-12 sm:px-6">
 			<Dialog.Title>โครงสร้างคะแนนรายวิชา</Dialog.Title>
 			<Dialog.Description>
 				{editingCourse
@@ -710,13 +712,15 @@
 		</Dialog.Header>
 
 		{#if editorLoading}
-			<div class="py-12 text-center text-muted-foreground">
+			<div class="px-6 py-12 text-center text-muted-foreground">
 				<Loader2 class="mx-auto mb-2 h-6 w-6 animate-spin" />
 				กำลังโหลดโครงสร้างคะแนน
 			</div>
 		{:else}
-			<div class="min-h-0 flex-1 space-y-4 overflow-y-auto pr-1">
-				<div class="flex items-center justify-between gap-3">
+			<div class="editor-scroll-area min-h-0 flex-1 space-y-5 overflow-y-auto px-5 py-5 sm:px-6">
+				<div
+					class="flex flex-col gap-3 rounded-md border bg-muted/30 p-3 sm:flex-row sm:items-center sm:justify-between"
+				>
 					<div>
 						<p class="text-sm text-muted-foreground">
 							สถานะ: {editingPlan ? statusLabel(editingPlan.status) : '-'}
@@ -729,8 +733,10 @@
 				</div>
 
 				{#each editorCategories as category, categoryIndex (category.clientId)}
-					<div class="rounded-lg border p-4">
-						<div class="grid gap-3 lg:grid-cols-[1fr_120px_180px_auto]">
+					<div class="assessment-category-card rounded-lg border bg-background p-4 sm:p-5">
+						<div
+							class="assessment-category-grid grid gap-4 xl:grid-cols-[minmax(0,1.2fr)_140px_220px_auto]"
+						>
 							<div class="space-y-2">
 								<Label>หมวดคะแนน</Label>
 								<Input bind:value={category.name} />
@@ -750,7 +756,7 @@
 									</Select.Content>
 								</Select.Root>
 							</div>
-							<div class="flex items-end justify-end">
+							<div class="flex items-end justify-start xl:justify-end">
 								<Button
 									variant="ghost"
 									size="icon"
@@ -762,8 +768,8 @@
 							</div>
 						</div>
 
-						<div class="mt-4 rounded-md bg-muted/40 p-3">
-							<div class="mb-3 flex flex-wrap items-center justify-between gap-2">
+						<div class="mt-5 rounded-md bg-muted/40 p-3 sm:p-4">
+							<div class="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
 								<div class="text-sm text-muted-foreground">
 									คะแนนย่อยรวม {categoryTotal(category)} / {Number(category.maxScore || 0)}
 									<span class="ml-2 font-medium">
@@ -795,22 +801,24 @@
 								<div class="space-y-2">
 									{#each category.items as item, itemIndex (item.clientId)}
 										<div
-											class="grid gap-2 rounded-md bg-background p-2 md:grid-cols-[1fr_110px_100px_auto]"
+											class="assessment-item-grid grid gap-3 rounded-md bg-background p-3 sm:grid-cols-[minmax(0,1fr)_140px_auto] lg:grid-cols-[minmax(0,1fr)_140px_110px_auto]"
 										>
 											<Input bind:value={item.name} />
 											<Input type="number" min="0" step="0.5" bind:value={item.maxScore} />
-											<label class="flex items-center gap-2 text-sm">
+											<label class="flex min-h-10 items-center gap-2 text-sm">
 												<Checkbox bind:checked={item.isActive} />
 												ใช้งาน
 											</label>
-											<Button
-												variant="ghost"
-												size="icon"
-												onclick={() => removeItem(categoryIndex, itemIndex)}
-												title="ลบคะแนนย่อย"
-											>
-												<Trash2 class="h-4 w-4" />
-											</Button>
+											<div class="flex justify-start lg:justify-end">
+												<Button
+													variant="ghost"
+													size="icon"
+													onclick={() => removeItem(categoryIndex, itemIndex)}
+													title="ลบคะแนนย่อย"
+												>
+													<Trash2 class="h-4 w-4" />
+												</Button>
+											</div>
 										</div>
 									{/each}
 								</div>
@@ -821,7 +829,7 @@
 			</div>
 		{/if}
 
-		<Dialog.Footer class="gap-2">
+		<Dialog.Footer class="border-t bg-background px-5 py-4 sm:px-6">
 			<Button
 				variant="outline"
 				onclick={() => (editorOpen = false)}

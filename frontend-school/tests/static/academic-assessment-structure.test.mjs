@@ -86,3 +86,15 @@ test('academic assessment page can gate teacher access from the overview', async
 	assert.match(page, /เปิดให้ครูกรอก/);
 	assert.match(page, /ยังไม่เปิดให้ครูกรอกโครงสร้างคะแนน/);
 });
+
+test('academic assessment editor dialog uses a roomier responsive layout', async () => {
+	const page = await readProjectFile('src/routes/(app)/staff/academic/assessments/+page.svelte');
+
+	assert.match(page, /max-w-\[min\(96vw,1200px\)\]/);
+	assert.match(page, /editor-scroll-area/);
+	assert.match(page, /assessment-category-card/);
+	assert.match(page, /assessment-category-grid/);
+	assert.match(page, /assessment-item-grid/);
+	assert.match(page, /sm:grid-cols-\[minmax\(0,1fr\)_140px_auto\]/);
+	assert.match(page, /xl:grid-cols-\[minmax\(0,1\.2fr\)_140px_220px_auto\]/);
+});
