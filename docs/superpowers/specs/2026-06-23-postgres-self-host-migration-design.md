@@ -1,13 +1,14 @@
 # PostgreSQL Self-Host Migration Design
 
 Date: 2026-06-23
-Status: Draft for review
+Updated: 2026-06-24
+Status: Approved direction
 
 ## Goal
 
-Move SchoolOrbit production database hosting away from Neon because Neon cost is now too high. The target platform is PostgreSQL 18 self-hosted, with Databasus managing scheduled backups, restore visibility, and point-in-time recovery where configured.
+Move SchoolOrbit database hosting away from Neon to PostgreSQL 18 self-hosted. This is a self-host-only migration: after the change, `backend-admin` creates and deletes tenant databases directly through a PostgreSQL admin connection. The codebase will not keep a Neon runtime path.
 
-The migration strategy is clean migration, not near-zero-downtime replication. The current production data set is small or non-critical enough that the first production path can prioritize simplicity and rollback clarity over live replication.
+Backups for the first cutover use PostgreSQL-native backup scripts, object storage, and restore drills. Databasus is not part of the first migration scope.
 
 ## Current State
 
@@ -32,58 +33,59 @@ The main Neon coupling is in `backend-admin`:
 ## Decisions
 
 1. Use PostgreSQL 18 self-hosted for the platform/admin DB and tenant DBs.
-2. Use Databasus for backup orchestration and restore verification, not as a database host or HA system.
-3. Keep one database per school tenant. Do not collapse tenants into shared schemas.
-4. Do not do logical replication for the first migration.
-5. Keep Neon support temporarily behind a provider interface so rollback and staged migration remain possible.
-6. New tenant provisioning should default to self-hosted PostgreSQL after the provider switch.
-7. Existing Neon tenant databases can be copied only when they are worth keeping.
+2. Remove Neon from the production provisioning/deletion code path.
+3. Do not add a dual provider abstraction for `neon|self_hosted_postgres`.
+4. Use one database per school tenant. Do not collapse tenants into shared schemas.
+5. Do not do logical replication for the first migration.
+6. Use native `pg_dump`/`pg_restore` scripts plus object storage and restore checks for the first backup foundation.
+7. Existing Neon tenant databases are copied only when they are worth keeping.
+8. Neon may remain as an external source archive for a short operational window, but not as an application fallback.
 
 ## Architecture
 
-Add a provider boundary inside `backend-admin`:
+Replace Neon-specific database creation with one self-hosted provisioning unit:
 
 ```text
 SchoolService
-  -> DatabaseProvider
-       -> NeonDatabaseProvider
-       -> SelfHostedPostgresProvider
+  -> SelfHostedPostgresProvisioner
+       -> CREATE DATABASE schoolorbit_sandbox
+       -> build self-hosted tenant connection string
+       -> wait until tenant DB accepts connections
 ```
 
 `SchoolService` keeps the current high-level flow:
 
 1. validate school input;
-2. ask the provider to create a tenant database and return metadata plus connection string;
-3. insert the `schools` row with `status = 'provisioning'`;
+2. create the tenant database through `SelfHostedPostgresProvisioner`;
+3. insert the `schools` row with `status = 'provisioning'` and the self-hosted connection string;
 4. call `backend-school /internal/provision`;
 5. deploy/finalize the tenant frontend;
 6. mark the school active.
 
-Provider outputs should use a small typed result:
+The provisioner returns:
 
 ```text
 ProvisionedDatabase {
-  provider: "neon" | "self_hosted_postgres",
   database_name: String,
   connection_string: String,
-  external_id: Option<String>,
 }
 ```
 
-Deletion uses the same provider boundary. For self-hosted PostgreSQL, deletion should either:
+Deletion also uses `SelfHostedPostgresProvisioner`:
 
-- terminate active sessions and `DROP DATABASE ... WITH (FORCE)` when supported, or
-- mark cleanup pending and let an operational cleanup command retry safely.
+- terminate active sessions for the tenant DB;
+- run `DROP DATABASE IF EXISTS ... WITH (FORCE)`;
+- if deletion cannot complete, log/report manual cleanup needed before removing the operational record.
 
 ## Self-Hosted PostgreSQL Layout
 
-The self-hosted cluster should contain:
+The self-hosted cluster contains:
 
 - one platform/admin database, e.g. `schoolorbit_admin`;
 - one tenant database per school, e.g. `schoolorbit_sandbox`;
-- a provisioning/admin role with permission to create databases and roles;
-- an app role for `backend-admin`;
-- tenant owner/app credentials used in each tenant connection string.
+- `schoolorbit_provisioner`, which can create and drop tenant databases;
+- `schoolorbit_admin_app`, used by `backend-admin` runtime;
+- `schoolorbit_tenant_owner`, used in tenant connection strings and tenant migrations.
 
 Required tenant migration capabilities:
 
@@ -91,65 +93,87 @@ Required tenant migration capabilities:
 - create `pg_trgm`;
 - create tables, indexes, enums, PL/pgSQL functions, triggers, and comments.
 
-The first implementation will use one tenant owner role for all tenant databases. Per-tenant database roles and independent tenant password rotation are out of scope for this migration and can be added after the self-hosted cutover is stable.
+The first implementation uses one tenant owner role for all tenant databases. Per-tenant database roles and independent tenant password rotation are out of scope for this migration and can be added after the self-hosted cutover is stable.
 
 ## Environment
 
-Add these provider-focused environment variables:
+Use self-hosted PostgreSQL variables only:
 
 ```text
-DATABASE_PROVIDER=self_hosted_postgres
-DATABASE_URL=postgresql://.../schoolorbit_admin
-SELF_HOSTED_POSTGRES_ADMIN_URL=postgresql://provisioner:...@postgres:5432/postgres
+DATABASE_URL=postgresql://schoolorbit_admin_app:...@postgres:5432/schoolorbit_admin?sslmode=disable
+SELF_HOSTED_POSTGRES_ADMIN_URL=postgresql://schoolorbit_provisioner:...@postgres:5432/postgres?sslmode=disable
 SELF_HOSTED_POSTGRES_APP_HOST=postgres
 SELF_HOSTED_POSTGRES_APP_PORT=5432
 SELF_HOSTED_POSTGRES_TENANT_USER=schoolorbit_tenant_owner
 SELF_HOSTED_POSTGRES_TENANT_PASSWORD=...
 SELF_HOSTED_POSTGRES_SSLMODE=disable|require
+BACKUP_STORAGE_URL=s3://...
+BACKUP_RETENTION_DAYS=14
 ```
 
-Production should not keep `NEON_*` variables as required after the switch. They can remain optional while `DATABASE_PROVIDER=neon` is still supported.
+Production should not require `NEON_*` variables after the switch.
 
 ## Infrastructure
 
-Production stack should add:
+Production stack adds:
 
 - PostgreSQL 18 container or VM-managed service with persistent volume;
-- Databasus container/service;
-- backup storage target, preferably Cloudflare R2 or S3-compatible storage;
-- health checks for Postgres and Databasus;
+- object storage for backup artifacts, preferably Cloudflare R2 or another S3-compatible target;
+- host cron or systemd timers for backup and restore-check scripts;
+- health checks for Postgres;
 - disk usage monitoring and alerting;
-- clear restore runbook.
+- a restore runbook.
 
-The first self-host deployment should run side by side with Neon. Neon remains a read-only fallback source until the migration is verified and a retention window has passed.
+Databasus, pgBackRest, WAL-G, and point-in-time recovery are not part of the first migration. They remain future options after the self-hosted baseline is stable.
+
+## Native Backup Foundation
+
+The first backup foundation is script-based:
+
+1. `scripts/backup_postgres.sh`
+   - backs up `schoolorbit_admin`;
+   - reads tenant database URLs from `backend-admin.schools`;
+   - runs `pg_dump --format=custom` for each database;
+   - uploads dumps to object storage;
+   - enforces retention.
+2. `scripts/restore_check_postgres.sh`
+   - downloads or reads the latest backup artifact;
+   - restores it into a disposable database;
+   - runs sanity queries;
+   - drops the disposable database.
+
+Minimum restore checks:
+
+- admin DB: `SELECT COUNT(*) FROM schools;`
+- tenant DB: successful migration row count, permission count, and basic auth-related table presence.
 
 ## Migration Flow
 
 ### Phase 1: Stand Up Self-Hosted Database
 
 1. Deploy PostgreSQL 18.
-2. Create platform/admin database.
+2. Create roles and `schoolorbit_admin`.
 3. Restore or migrate `backend-admin` data from Neon.
 4. Run `backend-admin` migrations.
-5. Configure Databasus backups for the admin database and future tenant databases.
-6. Perform a test restore into a disposable database.
+5. Configure native backup scripts and object storage.
+6. Perform a restore check into a disposable database.
 
-### Phase 2: Implement Provider Boundary
+### Phase 2: Replace Neon Provisioning
 
-1. Move Neon-specific code behind `NeonDatabaseProvider`.
-2. Add `SelfHostedPostgresProvider`.
-3. Add config parsing for `DATABASE_PROVIDER`.
-4. Update provisioning progress messages so they no longer hardcode "Neon" when self-hosted mode is active.
-5. Update deletion and rollback cleanup through the provider.
+1. Remove `NeonClient` usage from school provisioning/deletion.
+2. Add `SelfHostedPostgresProvisioner`.
+3. Add config parsing for `SELF_HOSTED_POSTGRES_*`.
+4. Update provisioning/deletion progress messages so they use generic tenant database wording.
+5. Update rollback cleanup through the self-host provisioner.
 6. Update compose/env examples.
 
 ### Phase 3: Sandbox Tenant
 
-1. Provision a new sandbox tenant through the self-host provider.
+1. Provision a new sandbox tenant through the self-hosted flow.
 2. Verify `backend-school /internal/provision` applies clean baseline migrations.
 3. Verify login, `/api/auth/me`, tenant resolution, CORS, and smoke tests.
-4. Add Databasus backup job for the sandbox tenant.
-5. Restore sandbox backup into a disposable database and validate a simple login/query path.
+4. Run backup for the sandbox tenant.
+5. Restore sandbox backup into a disposable database and validate sanity queries.
 
 ### Phase 4: Optional Data Copy for Important Tenants
 
@@ -162,30 +186,30 @@ For each tenant worth preserving:
 5. Update `schools.db_connection_string` to the self-hosted target connection string.
 6. Hit the tenant through the real backend and verify smoke checks.
 
-### Phase 5: Cut Over Defaults
+### Phase 5: Cut Over and Retire Neon
 
-1. Set production `DATABASE_PROVIDER=self_hosted_postgres`.
+1. Deploy production with self-hosted env.
 2. Remove required `NEON_*` env vars from production deployment.
-3. Keep Neon credentials available only for rollback until the retention window ends.
-4. Keep Neon databases read-only or untouched for 7-14 days.
-5. After validation, delete Neon tenant databases and close paid Neon resources.
+3. Store final Neon dumps in object storage.
+4. Keep Neon untouched briefly only as an external archive source, not as app fallback.
+5. After validation and restore checks pass, delete Neon tenant databases and close paid Neon resources.
 
-## Error Handling and Rollback
+## Error Handling
 
 Provisioning rollback must clean up in this order:
 
 1. mark school row as failed when a row exists;
 2. drop the newly created tenant DB when it is safe;
-3. delete the school row only if the provider cleanup succeeded and no tenant data was committed;
+3. delete the school row only if the database cleanup succeeded and no tenant data was committed;
 4. include cleanup errors in the returned provisioning error.
 
 If tenant deletion cannot drop the database because connections are active, the app should report cleanup pending instead of pretending deletion fully succeeded.
 
-Rollback from self-host migration is simple while Neon is retained:
+Rollback after Neon resources are removed is restore-based:
 
-- restore the old `schools.db_connection_string`;
-- set `DATABASE_PROVIDER=neon` if new provisioning must temporarily return to Neon;
-- redeploy services with the previous env;
+- restore the latest `schoolorbit_admin` dump;
+- restore required tenant dumps;
+- redeploy services with self-hosted env;
 - verify tenant login and smoke checks.
 
 ## Security and Privacy
@@ -196,7 +220,7 @@ The migration must preserve the current app-side PII standard:
 - `*_national_id_hash` remains HMAC blind-indexed using `BLIND_INDEX_KEY`;
 - plaintext PII must not be logged during provisioning, cutover, dump, restore, or backup verification.
 
-Connection strings are secrets. They must not be logged. Admin/provisioner credentials should not be shared with runtime tenant connections if per-tenant roles are implemented.
+Connection strings are secrets. They must not be logged. Admin/provisioner credentials should not be shared with runtime tenant connections.
 
 ## Verification
 
@@ -207,11 +231,15 @@ Minimum verification before production cutover:
 - tenant baseline applies with exactly one successful SQLx migration row at version `1`.
 - `scripts/check_migration_rebaseline_ready.sh` passes for the self-hosted tenant.
 - smoke test passes for sandbox.
-- Databasus creates a backup and a restore is tested into a disposable database.
-- `git diff --check` and relevant backend checks pass for provider changes.
+- backup script creates admin and tenant backups.
+- restore-check script restores a backup into a disposable database and validates sanity queries.
+- `git diff --check` and relevant backend checks pass for provisioning changes.
 
 ## Out of Scope
 
+- Neon runtime fallback;
+- dual database provider abstraction;
+- Databasus in the first migration;
 - zero-downtime logical replication;
 - automatic high availability/failover;
 - cross-region PostgreSQL replication;
@@ -222,9 +250,9 @@ Minimum verification before production cutover:
 ## Risks
 
 - Self-hosting shifts responsibility for patching, disk space, backup quality, restore drills, and security hardening to the project.
-- Databasus reduces backup operational burden but does not replace monitoring or HA.
+- Native backup scripts are simple and transparent, but they do not provide point-in-time recovery by themselves.
 - A single self-hosted PostgreSQL node is cheaper but has more outage risk than a managed provider.
-- The first provider refactor touches provisioning and deletion paths, so sandbox provisioning must be verified before production use.
+- The first provisioner refactor touches provisioning and deletion paths, so sandbox provisioning must be verified before production use.
 
 ## References
 
@@ -234,5 +262,4 @@ Minimum verification before production cutover:
 - `backend-school/src/db/migration.rs`
 - `docs/TESTING.md`
 - PostgreSQL 18 release notes: https://www.postgresql.org/docs/release/18.4/
-- Neon pricing/plans: https://neon.com/docs/introduction/plans
-- Databasus: https://databasus.com/
+- PostgreSQL backup documentation: https://www.postgresql.org/docs/current/backup.html
