@@ -86,7 +86,14 @@ impl SelfHostedPostgresProvisioner {
         }
 
         let connection_string = self.config.connection_string_for_database(database_name);
-        wait_for_database_connectable(&connection_string).await?;
+        if let Err(wait_error) = wait_for_database_connectable(&connection_string).await {
+            let cleanup_result = self.drop_database_by_name(database_name).await;
+            return Err(connectability_failure_error(
+                database_name,
+                &wait_error,
+                cleanup_result,
+            ));
+        }
 
         Ok(ProvisionedDatabase {
             database_name: database_name.to_string(),
@@ -147,12 +154,12 @@ impl SelfHostedPostgresConfig {
     pub fn connection_string_for_database(&self, database_name: &str) -> String {
         format!(
             "postgresql://{}:{}@{}:{}/{}?sslmode={}",
-            self.tenant_user,
-            self.tenant_password,
+            percent_encode_url_component(&self.tenant_user),
+            percent_encode_url_component(&self.tenant_password),
             self.app_host,
             self.app_port,
-            database_name,
-            self.sslmode
+            percent_encode_url_component(database_name),
+            percent_encode_url_component(&self.sslmode)
         )
     }
 }
@@ -184,6 +191,44 @@ fn parse_port(value: &str) -> Result<u16, String> {
 
 fn quote_pg_identifier(identifier: &str) -> String {
     format!("\"{}\"", identifier.replace('"', "\"\""))
+}
+
+fn percent_encode_url_component(value: &str) -> String {
+    const HEX: &[u8; 16] = b"0123456789ABCDEF";
+
+    let mut encoded = String::with_capacity(value.len());
+
+    for byte in value.bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' => {
+                encoded.push(byte as char);
+            }
+            _ => {
+                encoded.push('%');
+                encoded.push(HEX[(byte >> 4) as usize] as char);
+                encoded.push(HEX[(byte & 0x0f) as usize] as char);
+            }
+        }
+    }
+
+    encoded
+}
+
+fn connectability_failure_error(
+    database_name: &str,
+    wait_error: &str,
+    cleanup_result: Result<(), String>,
+) -> String {
+    match cleanup_result {
+        Ok(()) => format!(
+            "Failed to verify self-hosted tenant database '{}' after creation: {}. The database was dropped during cleanup.",
+            database_name, wait_error
+        ),
+        Err(cleanup_error) => format!(
+            "Failed to verify self-hosted tenant database '{}' after creation: {}. Cleanup also failed while dropping the database: {}",
+            database_name, wait_error, cleanup_error
+        ),
+    }
 }
 
 async fn wait_for_database_connectable(connection_string: &str) -> Result<(), String> {
@@ -222,22 +267,54 @@ mod tests {
     use super::*;
     use std::sync::{Mutex, OnceLock};
 
+    const SELF_HOST_ENV_KEYS: [&str; 6] = [
+        "SELF_HOSTED_POSTGRES_ADMIN_URL",
+        "SELF_HOSTED_POSTGRES_APP_HOST",
+        "SELF_HOSTED_POSTGRES_APP_PORT",
+        "SELF_HOSTED_POSTGRES_TENANT_USER",
+        "SELF_HOSTED_POSTGRES_TENANT_PASSWORD",
+        "SELF_HOSTED_POSTGRES_SSLMODE",
+    ];
+
+    struct SelfHostEnvGuard {
+        previous_values: Vec<(&'static str, Option<String>)>,
+    }
+
+    impl SelfHostEnvGuard {
+        fn capture() -> Self {
+            let previous_values = SELF_HOST_ENV_KEYS
+                .into_iter()
+                .map(|key| (key, env::var(key).ok()))
+                .collect();
+
+            Self { previous_values }
+        }
+
+        fn clear() -> Self {
+            let guard = Self::capture();
+
+            for key in SELF_HOST_ENV_KEYS {
+                env::remove_var(key);
+            }
+
+            guard
+        }
+    }
+
+    impl Drop for SelfHostEnvGuard {
+        fn drop(&mut self) {
+            for (key, value) in &self.previous_values {
+                match value {
+                    Some(previous_value) => env::set_var(key, previous_value),
+                    None => env::remove_var(key),
+                }
+            }
+        }
+    }
+
     fn env_lock() -> std::sync::MutexGuard<'static, ()> {
         static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
         LOCK.get_or_init(|| Mutex::new(())).lock().unwrap()
-    }
-
-    fn clear_self_host_env() {
-        for key in [
-            "SELF_HOSTED_POSTGRES_ADMIN_URL",
-            "SELF_HOSTED_POSTGRES_APP_HOST",
-            "SELF_HOSTED_POSTGRES_APP_PORT",
-            "SELF_HOSTED_POSTGRES_TENANT_USER",
-            "SELF_HOSTED_POSTGRES_TENANT_PASSWORD",
-            "SELF_HOSTED_POSTGRES_SSLMODE",
-        ] {
-            env::remove_var(key);
-        }
     }
 
     #[test]
@@ -262,6 +339,27 @@ mod tests {
     }
 
     #[test]
+    fn percent_encode_url_component_leaves_unreserved_values_unchanged() {
+        assert_eq!(
+            percent_encode_url_component("schoolorbit_tenant_owner-._~"),
+            "schoolorbit_tenant_owner-._~"
+        );
+    }
+
+    #[test]
+    fn percent_encode_url_component_encodes_reserved_values() {
+        assert_eq!(
+            percent_encode_url_component("tenant/user@name"),
+            "tenant%2Fuser%40name"
+        );
+        assert_eq!(
+            percent_encode_url_component("p@ss:word/with?&=#%"),
+            "p%40ss%3Aword%2Fwith%3F%26%3D%23%25"
+        );
+        assert_eq!(percent_encode_url_component("verify full"), "verify%20full");
+    }
+
+    #[test]
     fn connection_string_uses_configured_host_port_and_sslmode() {
         let config = SelfHostedPostgresConfig {
             admin_url: "postgresql://provisioner:secret@postgres:5432/postgres".to_string(),
@@ -281,9 +379,74 @@ mod tests {
     }
 
     #[test]
+    fn connection_string_percent_encodes_reserved_url_components() {
+        let config = SelfHostedPostgresConfig {
+            admin_url: "postgresql://provisioner:secret@postgres:5432/postgres".to_string(),
+            app_host: "postgres.internal".to_string(),
+            app_port: 5433,
+            tenant_user: "tenant/user@name".to_string(),
+            tenant_password: "p@ss:word/with?&=#%".to_string(),
+            sslmode: "verify full".to_string(),
+        };
+
+        let url = config.connection_string_for_database("school orbit/demo?x=1");
+
+        assert_eq!(
+            url,
+            "postgresql://tenant%2Fuser%40name:p%40ss%3Aword%2Fwith%3F%26%3D%23%25@postgres.internal:5433/school%20orbit%2Fdemo%3Fx%3D1?sslmode=verify%20full"
+        );
+    }
+
+    #[test]
+    fn connectability_failure_error_reports_cleanup_success() {
+        let error = connectability_failure_error("schoolorbit_demo", "wait failed", Ok(()));
+
+        assert_eq!(
+            error,
+            "Failed to verify self-hosted tenant database 'schoolorbit_demo' after creation: wait failed. The database was dropped during cleanup."
+        );
+    }
+
+    #[test]
+    fn connectability_failure_error_includes_cleanup_failure_context() {
+        let error = connectability_failure_error(
+            "schoolorbit_demo",
+            "wait failed",
+            Err("drop failed".to_string()),
+        );
+
+        assert_eq!(
+            error,
+            "Failed to verify self-hosted tenant database 'schoolorbit_demo' after creation: wait failed. Cleanup also failed while dropping the database: drop failed"
+        );
+    }
+
+    #[test]
+    fn self_host_env_guard_restores_previous_values() {
+        let _guard = env_lock();
+        let _restore_original_environment = SelfHostEnvGuard::capture();
+
+        env::set_var("SELF_HOSTED_POSTGRES_ADMIN_URL", "original-admin-url");
+        env::remove_var("SELF_HOSTED_POSTGRES_APP_HOST");
+
+        {
+            let _restore_test_environment = SelfHostEnvGuard::clear();
+            env::set_var("SELF_HOSTED_POSTGRES_ADMIN_URL", "temporary-admin-url");
+            env::set_var("SELF_HOSTED_POSTGRES_APP_HOST", "temporary-host");
+        }
+
+        assert_eq!(
+            env::var("SELF_HOSTED_POSTGRES_ADMIN_URL").as_deref(),
+            Ok("original-admin-url")
+        );
+        assert!(env::var("SELF_HOSTED_POSTGRES_APP_HOST").is_err());
+    }
+
+    #[test]
     fn from_env_loads_self_hosted_config() {
         let _guard = env_lock();
-        clear_self_host_env();
+        let _restore_environment = SelfHostEnvGuard::clear();
+
         env::set_var(
             "SELF_HOSTED_POSTGRES_ADMIN_URL",
             "postgresql://provisioner:secret@postgres:5432/postgres",
@@ -303,7 +466,5 @@ mod tests {
         assert_eq!(provisioner.config().app_port, 5433);
         assert_eq!(provisioner.config().tenant_user, "schoolorbit_tenant_owner");
         assert_eq!(provisioner.config().sslmode, "require");
-
-        clear_self_host_env();
     }
 }
