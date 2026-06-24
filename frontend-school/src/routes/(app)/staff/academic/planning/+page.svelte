@@ -38,13 +38,25 @@
 	import { Badge } from '$lib/components/ui/badge';
 	import { Label } from '$lib/components/ui/label';
 	import * as Select from '$lib/components/ui/select';
+	import * as Popover from '$lib/components/ui/popover';
+	import * as Command from '$lib/components/ui/command';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import * as Tabs from '$lib/components/ui/tabs';
 	import { PageShell } from '$lib/components/app-layout';
-	import { PageSkeleton, PageState } from '$lib/components/app-state';
+	import { LoadingButton, PageSkeleton, PageState } from '$lib/components/app-state';
 	import { PERMISSIONS } from '$lib/permissions/registry';
 	import { can } from '$lib/stores/permissions';
-	import { Loader2, Trash2, Calendar, Settings, Wand2, Plus, FileSpreadsheet } from 'lucide-svelte';
+	import {
+		Loader2,
+		Trash2,
+		Calendar,
+		Settings,
+		Wand2,
+		Plus,
+		FileSpreadsheet,
+		Check,
+		ChevronsUpDown
+	} from 'lucide-svelte';
 	import {
 		actualRowsForWorksheet,
 		actualSubjectActivityReportForWorksheet,
@@ -84,7 +96,8 @@
 	let showDeleteDialog = $state(false);
 	let submitting = $state(false);
 	let teachers = $state<StaffLookupItem[]>([]);
-	let selectedTeacherId = $state<string>(''); // For dropdown
+	let selectedTeacherId = $state<string>('');
+	let editTeacherPickerOpen = $state(false);
 	let teachersLoaded = $state(false);
 
 	// Auto-generate states
@@ -108,6 +121,12 @@
 	let teamDialogCourseId = $state('');
 	let teamDialogSelectedInstructor = $state('');
 	let teamDialogRole = $state<'primary' | 'secondary'>('secondary');
+	let teamTeacherPickerOpen = $state(false);
+	let teamInstructorAdding = $state(false);
+
+	function teacherName(teacherId: string) {
+		return teachers.find((teacher) => teacher.id === teacherId)?.name ?? '';
+	}
 
 	async function loadTeamInstructors(courseId: string) {
 		if (!canReadCoursePlan) return;
@@ -130,6 +149,7 @@
 		teamDialogCourseId = courseId;
 		teamDialogSelectedInstructor = '';
 		teamDialogRole = 'secondary';
+		teamTeacherPickerOpen = false;
 		if (!teachersLoaded) await loadTeachers();
 		showTeamDialog = true;
 		loadTeamInstructors(courseId);
@@ -142,14 +162,18 @@
 		}
 
 		if (!teamDialogSelectedInstructor) return;
+		teamInstructorAdding = true;
 		try {
 			await addCourseInstructor(teamDialogCourseId, teamDialogSelectedInstructor, teamDialogRole);
 			await loadTeamInstructors(teamDialogCourseId);
 			await fetchCourses();
 			teamDialogSelectedInstructor = '';
+			teamTeacherPickerOpen = false;
 			toast.success('เพิ่มครูแล้ว');
 		} catch {
 			toast.error('เกิดข้อผิดพลาด');
+		} finally {
+			teamInstructorAdding = false;
 		}
 	}
 
@@ -626,6 +650,7 @@
 
 		editingCourse = course;
 		selectedTeacherId = course.primary_instructor_id || 'unassigned';
+		editTeacherPickerOpen = false;
 		if (!teachersLoaded) await loadTeachers();
 		showEditDialog = true;
 	}
@@ -1155,23 +1180,68 @@
 
 					<div class="space-y-2">
 						<Label>ครูผู้สอน (Primary Instructor)</Label>
-						<Select.Root type="single" bind:value={selectedTeacherId}>
-							<Select.Trigger class="w-full">
-								{#if selectedTeacherId === 'unassigned'}
-									<span class="text-muted-foreground">- ไม่ระบุ -</span>
-								{:else}
-									{teachers.find((t) => t.id === selectedTeacherId)?.name}
-								{/if}
-							</Select.Trigger>
-							<Select.Content class="max-h-[300px]">
-								<Select.Item value="unassigned">- ไม่ระบุ -</Select.Item>
-								{#each teachers as teacher (teacher.id)}
-									<Select.Item value={teacher.id}>
-										{teacher.name}
-									</Select.Item>
-								{/each}
-							</Select.Content>
-						</Select.Root>
+						<Popover.Root bind:open={editTeacherPickerOpen}>
+							<Popover.Trigger class="w-full">
+								<Button
+									variant="outline"
+									role="combobox"
+									aria-expanded={editTeacherPickerOpen}
+									class="w-full justify-between font-normal"
+									disabled={submitting}
+								>
+									<span
+										class="truncate {selectedTeacherId === 'unassigned' || !selectedTeacherId
+											? 'text-muted-foreground'
+											: ''}"
+									>
+										{#if selectedTeacherId === 'unassigned'}
+											- ไม่ระบุ -
+										{:else}
+											{teacherName(selectedTeacherId) || 'เลือกครู'}
+										{/if}
+									</span>
+									<ChevronsUpDown class="ml-2 h-4 w-4 shrink-0 opacity-50" />
+								</Button>
+							</Popover.Trigger>
+							<Popover.Content class="w-[--bits-popover-trigger-width] p-0">
+								<Command.Root>
+									<Command.Input placeholder="ค้นหาครู..." />
+									<Command.Empty>ไม่พบครู</Command.Empty>
+									<Command.Group class="max-h-[300px] overflow-y-auto">
+										<Command.Item
+											value="- ไม่ระบุ -"
+											onSelect={() => {
+												selectedTeacherId = 'unassigned';
+												editTeacherPickerOpen = false;
+											}}
+										>
+											<Check
+												class="mr-2 h-4 w-4 {selectedTeacherId === 'unassigned'
+													? 'opacity-100'
+													: 'opacity-0'}"
+											/>
+											- ไม่ระบุ -
+										</Command.Item>
+										{#each teachers as teacher (teacher.id)}
+											<Command.Item
+												value={teacher.name}
+												onSelect={() => {
+													selectedTeacherId = teacher.id;
+													editTeacherPickerOpen = false;
+												}}
+											>
+												<Check
+													class="mr-2 h-4 w-4 {selectedTeacherId === teacher.id
+														? 'opacity-100'
+														: 'opacity-0'}"
+												/>
+												{teacher.name}
+											</Command.Item>
+										{/each}
+									</Command.Group>
+								</Command.Root>
+							</Popover.Content>
+						</Popover.Root>
 					</div>
 				</div>
 
@@ -1415,20 +1485,50 @@
 				</Dialog.Header>
 				<div class="space-y-2 py-2">
 					<Label>ครู</Label>
-					<Select.Root type="single" bind:value={teamDialogSelectedInstructor}>
-						<Select.Trigger class="w-full">
-							{teachers.find((t) => t.id === teamDialogSelectedInstructor)?.name || 'เลือกครู'}
-						</Select.Trigger>
-						<Select.Content class="max-h-[280px] overflow-y-auto">
-							{#each teachers as t (t.id)}
-								<Select.Item value={t.id}>{t.name}</Select.Item>
-							{/each}
-						</Select.Content>
-					</Select.Root>
+					<Popover.Root bind:open={teamTeacherPickerOpen}>
+						<Popover.Trigger class="w-full">
+							<Button
+								variant="outline"
+								role="combobox"
+								aria-expanded={teamTeacherPickerOpen}
+								class="w-full justify-between font-normal"
+								disabled={teamInstructorAdding}
+							>
+								<span class="truncate">
+									{teacherName(teamDialogSelectedInstructor) || 'เลือกครู'}
+								</span>
+								<ChevronsUpDown class="ml-2 h-4 w-4 shrink-0 opacity-50" />
+							</Button>
+						</Popover.Trigger>
+						<Popover.Content class="w-[--bits-popover-trigger-width] p-0">
+							<Command.Root>
+								<Command.Input placeholder="ค้นหาครู..." />
+								<Command.Empty>ไม่พบครู</Command.Empty>
+								<Command.Group class="max-h-[280px] overflow-y-auto">
+									{#each teachers as teacher (teacher.id)}
+										<Command.Item
+											value={teacher.name}
+											onSelect={() => {
+												teamDialogSelectedInstructor = teacher.id;
+												teamTeacherPickerOpen = false;
+											}}
+										>
+											<Check
+												class="mr-2 h-4 w-4 {teamDialogSelectedInstructor === teacher.id
+													? 'opacity-100'
+													: 'opacity-0'}"
+											/>
+											{teacher.name}
+										</Command.Item>
+									{/each}
+								</Command.Group>
+							</Command.Root>
+						</Popover.Content>
+					</Popover.Root>
 
 					<Label>บทบาท</Label>
 					<Select.Root type="single" bind:value={teamDialogRole}>
-						<Select.Trigger class="w-full"
+						<Select.Trigger class="w-full" disabled={teamInstructorAdding}
 							>{teamDialogRole === 'primary' ? 'ครูหลัก' : 'ครูร่วม'}</Select.Trigger
 						>
 						<Select.Content>
@@ -1442,9 +1542,17 @@
 						variant="outline"
 						onclick={() => {
 							showTeamDialog = false;
-						}}>ปิด</Button
+						}}
+						disabled={teamInstructorAdding}>ปิด</Button
 					>
-					<Button onclick={handleAddTeamInstructor}>เพิ่ม</Button>
+					<LoadingButton
+						onclick={handleAddTeamInstructor}
+						loading={teamInstructorAdding}
+						disabled={!teamDialogSelectedInstructor || teamInstructorAdding}
+						loadingLabel="กำลังเพิ่ม..."
+					>
+						เพิ่ม
+					</LoadingButton>
 				</Dialog.Footer>
 			</Dialog.Content>
 		</Dialog.Root>
