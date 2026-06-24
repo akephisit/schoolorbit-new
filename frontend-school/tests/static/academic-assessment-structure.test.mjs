@@ -218,6 +218,15 @@ test('academic assessment page uses one-save spreadsheet editing without expande
 	assert.match(page, /บันทึกการเปลี่ยนแปลง/);
 });
 
+test('academic assessment save feedback uses toast without saved status badge', async () => {
+	const page = await readProjectFile('src/routes/(app)/staff/academic/assessments/+page.svelte');
+
+	assert.match(page, /toast\.success\(['"]บันทึกการเปลี่ยนแปลงแล้ว['"]\)/);
+	assert.doesNotMatch(page, /บันทึกคะแนนทั้งหมดแล้ว/);
+	assert.match(page, /ยังไม่บันทึก/);
+	assert.doesNotMatch(page, />บันทึกแล้ว</);
+});
+
 test('academic assessment plans are grouped by subject and capture exam duration', async () => {
 	const api = await readProjectFile('src/lib/api/academicAssessments.ts');
 	const page = await readProjectFile('src/routes/(app)/staff/academic/assessments/+page.svelte');

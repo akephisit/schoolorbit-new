@@ -536,7 +536,7 @@
 			}
 			await loadPlans();
 			if (savedCount === dirtyPlans.length) {
-				toast.success('บันทึกคะแนนทั้งหมดแล้ว');
+				toast.success('บันทึกการเปลี่ยนแปลงแล้ว');
 			} else {
 				toast.error(`บันทึกสำเร็จ ${savedCount}/${dirtyPlans.length} รายวิชา`);
 			}
