@@ -103,7 +103,10 @@ test('academic assessment score table uses dedicated score and exam columns', as
 		assert.match(page, new RegExp(`<Table\\.Head>${heading}</Table\\.Head>`));
 	}
 	for (const heading of ['เวลากลางภาค', 'เวลาปลายภาค']) {
-		assert.match(page, new RegExp(`<Table\\.Head class="w-\\[96px\\]">${heading}</Table\\.Head>`));
+		assert.match(
+			page,
+			new RegExp(`<Table\\.Head class="w-\\[84px\\] min-w-\\[84px\\]">${heading}</Table\\.Head>`)
+		);
 	}
 
 	const tableHeader = page.slice(page.indexOf('<Table.Header>'), page.indexOf('<Table.Body>'));
@@ -123,8 +126,14 @@ test('academic assessment score table uses dedicated score and exam columns', as
 	assert.match(page, /\[&::-webkit-inner-spin-button\]:appearance-none/);
 	assert.match(page, /\[&::-webkit-outer-spin-button\]:appearance-none/);
 	assert.match(page, /<Table\.Cell class="assessment-exam-cell">/);
-	assert.match(page, /<Table\.Cell class="assessment-duration-cell w-\[96px\]">/);
-	assert.equal(page.match(/<Table\.Cell class="assessment-duration-cell w-\[96px\]">/g)?.length, 2);
+	assert.match(page, /<Table\.Cell class="assessment-duration-cell w-\[84px\] min-w-\[84px\]">/);
+	assert.equal(
+		page.match(/<Table\.Cell class="assessment-duration-cell w-\[84px\] min-w-\[84px\]">/g)
+			?.length,
+		2
+	);
+	assert.match(page, /class="h-9 w-\[72px\] min-w-\[72px\] text-right tabular-nums/);
+	assert.doesNotMatch(page, /assessment-duration-cell w-\[96px\]/);
 	assert.match(page, /<Select\.Trigger class="h-9 text-xs">/);
 	assert.doesNotMatch(page, /w-\[72px\] px-2 text-right/);
 	assert.doesNotMatch(page, /assessment-score-cell px-2/);

@@ -790,9 +790,9 @@
 								>
 							{/each}
 							<Table.Head>สอบกลางภาค</Table.Head>
-							<Table.Head class="w-[96px]">เวลากลางภาค</Table.Head>
+							<Table.Head class="w-[84px] min-w-[84px]">เวลากลางภาค</Table.Head>
 							<Table.Head>สอบปลายภาค</Table.Head>
-							<Table.Head class="w-[96px]">เวลาปลายภาค</Table.Head>
+							<Table.Head class="w-[84px] min-w-[84px]">เวลาปลายภาค</Table.Head>
 							<Table.Head class="px-2 text-right">รวม</Table.Head>
 							<Table.Head>สถานะ</Table.Head>
 						</Table.Row>
@@ -870,13 +870,13 @@
 											</Select.Root>
 										{/if}
 									</Table.Cell>
-									<Table.Cell class="assessment-duration-cell w-[96px]">
+									<Table.Cell class="assessment-duration-cell w-[84px] min-w-[84px]">
 										{#if quickDraft}
 											<Input
 												type="number"
 												min="1"
 												step="1"
-												class="h-9 text-right tabular-nums"
+												class="h-9 w-[72px] min-w-[72px] text-right tabular-nums [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
 												aria-label="ระยะเวลากลางภาค"
 												placeholder="นาที"
 												value={quickDraft.midtermExamDurationMinutes ?? ''}
@@ -914,13 +914,13 @@
 											</Select.Root>
 										{/if}
 									</Table.Cell>
-									<Table.Cell class="assessment-duration-cell w-[96px]">
+									<Table.Cell class="assessment-duration-cell w-[84px] min-w-[84px]">
 										{#if quickDraft}
 											<Input
 												type="number"
 												min="1"
 												step="1"
-												class="h-9 text-right tabular-nums"
+												class="h-9 w-[72px] min-w-[72px] text-right tabular-nums [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
 												aria-label="ระยะเวลาปลายภาค"
 												placeholder="นาที"
 												value={quickDraft.finalExamDurationMinutes ?? ''}
