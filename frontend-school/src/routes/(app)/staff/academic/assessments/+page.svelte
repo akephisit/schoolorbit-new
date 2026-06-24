@@ -49,6 +49,7 @@
 	type QuickExamMode = Extract<AssessmentExamMode, 'none' | 'in_timetable' | 'outside_timetable'>;
 	type QuickScoreField = 'beforeMidtermScore' | 'midtermScore' | 'afterMidtermScore' | 'finalScore';
 	type QuickDurationField = 'midtermExamDurationMinutes' | 'finalExamDurationMinutes';
+	type QuickValidationField = QuickScoreField | QuickDurationField;
 	type QuickExamModeField = 'midtermExamMode' | 'finalExamMode';
 	type CoreCategoryCode = 'before_midterm' | 'midterm' | 'after_midterm' | 'final';
 	type QuickScoreColumn = { field: QuickScoreField; heading: string; label: string };
@@ -62,6 +63,11 @@
 		midtermExamDurationMinutes: number | null;
 		finalExamDurationMinutes: number | null;
 		dirty: boolean;
+	};
+	type QuickScoreValidationIssue = {
+		planKey: string;
+		field: QuickValidationField;
+		message: string;
 	};
 
 	let teacherAccessEnabled = $state(true);
@@ -335,8 +341,73 @@
 		nextInput?.select();
 	}
 
+	function firstQuickScoreValidationIssue(
+		targetPlans: AssessmentPlanSummary[]
+	): QuickScoreValidationIssue | null {
+		for (const plan of targetPlans) {
+			const planKey = assessmentPlanKey(plan);
+			const draft = quickScoreDrafts[planKey];
+			if (!draft) continue;
+
+			for (const column of quickScoreColumns) {
+				if (draft[column.field] == null) {
+					return {
+						planKey,
+						field: column.field,
+						message: `กรุณากรอกคะแนน${column.label}: ${courseTitle(plan)}`
+					};
+				}
+			}
+
+			if (canEditExamDuration(draft.midtermExamMode) && draft.midtermExamDurationMinutes == null) {
+				return {
+					planKey,
+					field: 'midtermExamDurationMinutes',
+					message: `กรุณากรอกระยะเวลากลางภาค: ${courseTitle(plan)}`
+				};
+			}
+
+			if (canEditExamDuration(draft.finalExamMode) && draft.finalExamDurationMinutes == null) {
+				return {
+					planKey,
+					field: 'finalExamDurationMinutes',
+					message: `กรุณากรอกระยะเวลาปลายภาค: ${courseTitle(plan)}`
+				};
+			}
+		}
+
+		return null;
+	}
+
+	function focusQuickScoreValidationIssue(issue: QuickScoreValidationIssue) {
+		const input = Array.from(
+			document.querySelectorAll<HTMLInputElement>(
+				'input[data-assessment-plan-key][data-assessment-field]'
+			)
+		).find(
+			(candidate) =>
+				candidate.dataset.assessmentPlanKey === issue.planKey &&
+				candidate.dataset.assessmentField === issue.field
+		);
+		input?.scrollIntoView({ block: 'nearest', inline: 'center' });
+		input?.focus();
+		input?.select();
+	}
+
+	function showQuickScoreValidationIssue(issue: QuickScoreValidationIssue) {
+		toast.error(issue.message);
+		focusQuickScoreValidationIssue(issue);
+	}
+
 	function quickScoreValue(value: number | null) {
 		return Number(value ?? 0);
+	}
+
+	function scoreToSaveValue(value: number | null) {
+		if (value == null) {
+			throw new Error('คะแนนยังไม่ครบ');
+		}
+		return Number(value);
 	}
 
 	function quickDurationValue(value: number | null) {
@@ -392,7 +463,7 @@
 				id: existing?.id,
 				code: template.code,
 				name: existing?.name || template.name,
-				maxScore: quickScoreValue(draft[template.scoreField]),
+				maxScore: scoreToSaveValue(draft[template.scoreField]),
 				examMode,
 				examDurationMinutes:
 					template.durationField && canEditExamDuration(examMode)
@@ -530,6 +601,11 @@
 			.filter(canEditAssessmentPlan)
 			.filter((plan) => quickScoreDrafts[assessmentPlanKey(plan)]?.dirty);
 		if (dirtyPlans.length === 0) return;
+		const validationIssue = firstQuickScoreValidationIssue(dirtyPlans);
+		if (validationIssue) {
+			showQuickScoreValidationIssue(validationIssue);
+			return;
+		}
 		savingAllQuickScores = true;
 		let savedCount = 0;
 		try {
@@ -840,6 +916,9 @@
 													placeholder={column.heading}
 													value={quickDraft[column.field] ?? ''}
 													data-assessment-quick-score-input
+													data-assessment-plan-key={assessmentPlanKey(plan)}
+													data-assessment-field={column.field}
+													required={canEditPlan}
 													disabled={!canEditPlan || savingAllQuickScores}
 													oninput={(event) =>
 														setQuickScoreValue(plan, column.field, event.currentTarget.value)}
@@ -880,6 +959,9 @@
 												aria-label="ระยะเวลากลางภาค"
 												placeholder="นาที"
 												value={quickDraft.midtermExamDurationMinutes ?? ''}
+												data-assessment-plan-key={assessmentPlanKey(plan)}
+												data-assessment-field="midtermExamDurationMinutes"
+												required={canEditPlan && canEditExamDuration(quickDraft.midtermExamMode)}
 												disabled={!canEditPlan ||
 													savingAllQuickScores ||
 													!canEditExamDuration(quickDraft.midtermExamMode)}
@@ -924,6 +1006,9 @@
 												aria-label="ระยะเวลาปลายภาค"
 												placeholder="นาที"
 												value={quickDraft.finalExamDurationMinutes ?? ''}
+												data-assessment-plan-key={assessmentPlanKey(plan)}
+												data-assessment-field="finalExamDurationMinutes"
+												required={canEditPlan && canEditExamDuration(quickDraft.finalExamMode)}
 												disabled={!canEditPlan ||
 													savingAllQuickScores ||
 													!canEditExamDuration(quickDraft.finalExamMode)}

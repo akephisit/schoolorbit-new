@@ -128,8 +128,7 @@ test('academic assessment score table uses dedicated score and exam columns', as
 	assert.match(page, /<Table\.Cell class="assessment-exam-cell">/);
 	assert.match(page, /<Table\.Cell class="assessment-duration-cell w-\[84px\] min-w-\[84px\]">/);
 	assert.equal(
-		page.match(/<Table\.Cell class="assessment-duration-cell w-\[84px\] min-w-\[84px\]">/g)
-			?.length,
+		page.match(/<Table\.Cell class="assessment-duration-cell w-\[84px\] min-w-\[84px\]">/g)?.length,
 		2
 	);
 	assert.match(page, /class="h-9 w-\[72px\] min-w-\[72px\] text-right tabular-nums/);
@@ -245,6 +244,41 @@ test('academic assessment save feedback uses toast and saved status label', asyn
 	assert.match(page, /ยังไม่บันทึก/);
 	assert.match(page, /\{ value: 'saved', label: 'บันทึกแล้ว' \}/);
 	assert.match(page, /saved:\s*plans\.filter\(\(plan\) => plan\.status === 'saved'\)\.length/);
+});
+
+test('academic assessment quick save validates required score and duration fields', async () => {
+	const page = await readProjectFile('src/routes/(app)/staff/academic/assessments/+page.svelte');
+
+	assert.match(page, /type QuickValidationField = QuickScoreField \| QuickDurationField/);
+	assert.match(page, /type QuickScoreValidationIssue =/);
+	assert.match(page, /function firstQuickScoreValidationIssue/);
+	assert.match(page, /function showQuickScoreValidationIssue/);
+	assert.match(page, /function focusQuickScoreValidationIssue/);
+	assert.match(page, /function scoreToSaveValue/);
+	assert.match(page, /draft\[column\.field\] == null/);
+	assert.match(page, /draft\.midtermExamDurationMinutes == null/);
+	assert.match(page, /draft\.finalExamDurationMinutes == null/);
+	assert.match(page, /กรุณากรอกคะแนน/);
+	assert.match(page, /กรุณากรอกระยะเวลา/);
+	assert.match(page, /data-assessment-plan-key=\{assessmentPlanKey\(plan\)\}/);
+	assert.match(page, /data-assessment-field=\{column\.field\}/);
+	assert.match(page, /data-assessment-field="midtermExamDurationMinutes"/);
+	assert.match(page, /data-assessment-field="finalExamDurationMinutes"/);
+	assert.match(page, /required=\{canEditPlan\}/);
+	assert.match(
+		page,
+		/required=\{canEditPlan && canEditExamDuration\(quickDraft\.midtermExamMode\)\}/
+	);
+	assert.match(
+		page,
+		/required=\{canEditPlan && canEditExamDuration\(quickDraft\.finalExamMode\)\}/
+	);
+	assert.match(
+		page,
+		/const validationIssue = firstQuickScoreValidationIssue\(dirtyPlans\);[\s\S]*if \(validationIssue\) \{[\s\S]*showQuickScoreValidationIssue\(validationIssue\);[\s\S]*return;[\s\S]*\}/
+	);
+	assert.match(page, /maxScore: scoreToSaveValue\(draft\[template\.scoreField\]\)/);
+	assert.doesNotMatch(page, /maxScore: quickScoreValue\(draft\[template\.scoreField\]\)/);
 });
 
 test('academic assessment plans are grouped by subject and capture exam duration', async () => {
