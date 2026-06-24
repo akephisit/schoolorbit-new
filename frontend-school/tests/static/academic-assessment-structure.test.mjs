@@ -116,9 +116,9 @@ test('academic assessment score table uses dedicated score and exam columns', as
 	assert.doesNotMatch(page, /postMidtermScoreColumns/);
 	assert.match(page, /\{column\.heading\}/);
 	assert.match(page, /Table\.Root class="min-w-\[1240px\]"/);
-	assert.match(page, /w-\[84px\] min-w-\[84px\] px-2 text-right/);
-	assert.match(page, /assessment-score-cell w-\[84px\] min-w-\[84px\] px-2/);
-	assert.match(page, /assessment-score-input h-8 w-16 min-w-16 px-2 text-right tabular-nums/);
+	assert.match(page, /w-\[78px\] min-w-\[78px\] px-2 text-right/);
+	assert.match(page, /assessment-score-cell w-\[78px\] min-w-\[78px\] px-2/);
+	assert.match(page, /assessment-score-input h-8 w-14 min-w-14 px-2 text-right tabular-nums/);
 	assert.match(page, /\[appearance:textfield\]/);
 	assert.match(page, /\[&::-webkit-inner-spin-button\]:appearance-none/);
 	assert.match(page, /\[&::-webkit-outer-spin-button\]:appearance-none/);

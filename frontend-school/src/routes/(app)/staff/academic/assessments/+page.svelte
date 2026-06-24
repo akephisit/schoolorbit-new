@@ -785,7 +785,7 @@
 							<Table.Head>ห้องเรียนที่เปิด</Table.Head>
 							<Table.Head>ครูผู้สอน</Table.Head>
 							{#each quickScoreColumns as column (column.field)}
-								<Table.Head class="w-[84px] min-w-[84px] px-2 text-right"
+								<Table.Head class="w-[78px] min-w-[78px] px-2 text-right"
 									>{column.heading}</Table.Head
 								>
 							{/each}
@@ -829,13 +829,13 @@
 									<Table.Cell>{classroomSummary(plan)}</Table.Cell>
 									<Table.Cell>{plan.instructorName ?? '-'}</Table.Cell>
 									{#each quickScoreColumns as column (column.field)}
-										<Table.Cell class="assessment-score-cell w-[84px] min-w-[84px] px-2">
+										<Table.Cell class="assessment-score-cell w-[78px] min-w-[78px] px-2">
 											{#if quickDraft}
 												<Input
 													type="number"
 													min="0"
 													step="0.5"
-													class="assessment-score-input h-8 w-16 min-w-16 px-2 text-right tabular-nums [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+													class="assessment-score-input h-8 w-14 min-w-14 px-2 text-right tabular-nums [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
 													aria-label={column.label}
 													placeholder={column.heading}
 													value={quickDraft[column.field] ?? ''}
