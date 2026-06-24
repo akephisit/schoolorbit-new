@@ -2,19 +2,15 @@
 	import { onMount } from 'svelte';
 	import { toast } from 'svelte-sonner';
 	import {
-		getAssessmentPlan,
+		bulkSaveAssessmentQuickScores,
 		getAssessmentSettings,
 		listAssessmentPlans,
-		saveAssessmentPlan,
 		updateAssessmentSettings,
-		type AssessmentCategory,
 		type AssessmentExamMode,
-		type AssessmentItem,
-		type AssessmentPlanDetail,
 		type AssessmentPlanStatus,
 		type AssessmentPlanSummary,
-		type SaveAssessmentCategoryRequest,
-		type SaveAssessmentItemRequest
+		type AssessmentQuickScoreSaveResult,
+		type SaveAssessmentQuickScoreEntryRequest
 	} from '$lib/api/academicAssessments';
 	import {
 		getAcademicStructure,
@@ -51,7 +47,6 @@
 	type QuickDurationField = 'midtermExamDurationMinutes' | 'finalExamDurationMinutes';
 	type QuickValidationField = QuickScoreField | QuickDurationField;
 	type QuickExamModeField = 'midtermExamMode' | 'finalExamMode';
-	type CoreCategoryCode = 'before_midterm' | 'midterm' | 'after_midterm' | 'final';
 	type QuickScoreColumn = { field: QuickScoreField; heading: string; label: string };
 	type QuickScoreDraft = {
 		beforeMidtermScore: number | null;
@@ -128,52 +123,6 @@
 		{ field: 'afterMidtermScore', heading: 'หลัง', label: 'หลังกลางภาค' },
 		{ field: 'finalScore', heading: 'ปลาย', label: 'ปลายภาค' }
 	];
-	const coreAssessmentCategories: {
-		code: CoreCategoryCode;
-		name: string;
-		displayOrder: number;
-		scoreField: QuickScoreField;
-		examMode: AssessmentExamMode;
-		examModeField?: QuickExamModeField;
-		durationField?: QuickDurationField;
-	}[] = [
-		{
-			code: 'before_midterm',
-			name: 'ก่อนกลางภาค',
-			displayOrder: 10,
-			scoreField: 'beforeMidtermScore',
-			examMode: 'none'
-		},
-		{
-			code: 'midterm',
-			name: 'กลางภาค',
-			displayOrder: 20,
-			scoreField: 'midtermScore',
-			examMode: 'in_timetable',
-			examModeField: 'midtermExamMode',
-			durationField: 'midtermExamDurationMinutes'
-		},
-		{
-			code: 'after_midterm',
-			name: 'หลังกลางภาค',
-			displayOrder: 30,
-			scoreField: 'afterMidtermScore',
-			examMode: 'none'
-		},
-		{
-			code: 'final',
-			name: 'ปลายภาค',
-			displayOrder: 40,
-			scoreField: 'finalScore',
-			examMode: 'in_timetable',
-			examModeField: 'finalExamMode',
-			durationField: 'finalExamDurationMinutes'
-		}
-	];
-	const coreAssessmentCategoryCodes = new Set<string>(
-		coreAssessmentCategories.map((category) => category.code)
-	);
-
 	let loading = $state(true);
 	let loadingPlans = $state(false);
 	let settingsLoading = $state(false);
@@ -252,6 +201,10 @@
 
 	function canEditAssessmentPlan(plan: AssessmentPlanSummary) {
 		return canManageAssessment && plan.canManage && plan.status !== 'locked';
+	}
+
+	function planMatchesStatusFilter(plan: AssessmentPlanSummary) {
+		return selectedStatus === 'all' || plan.status === selectedStatus;
 	}
 
 	function quickScoreDraftValue(plan: AssessmentPlanSummary, value: number) {
@@ -430,62 +383,67 @@
 		);
 	}
 
-	function itemToSaveRequest(item: AssessmentItem): SaveAssessmentItemRequest {
+	function buildQuickScoreEntry(
+		plan: AssessmentPlanSummary,
+		draft: QuickScoreDraft
+	): SaveAssessmentQuickScoreEntryRequest {
 		return {
-			id: item.id,
-			name: item.name,
-			maxScore: item.maxScore,
-			displayOrder: item.displayOrder,
-			isActive: item.isActive
+			classroomCourseId: plan.classroomCourseId,
+			beforeMidtermScore: scoreToSaveValue(draft.beforeMidtermScore),
+			midtermScore: scoreToSaveValue(draft.midtermScore),
+			afterMidtermScore: scoreToSaveValue(draft.afterMidtermScore),
+			finalScore: scoreToSaveValue(draft.finalScore),
+			midtermExamMode: draft.midtermExamMode,
+			midtermExamDurationMinutes: canEditExamDuration(draft.midtermExamMode)
+				? quickDurationValue(draft.midtermExamDurationMinutes)
+				: null,
+			finalExamMode: draft.finalExamMode,
+			finalExamDurationMinutes: canEditExamDuration(draft.finalExamMode)
+				? quickDurationValue(draft.finalExamDurationMinutes)
+				: null
 		};
 	}
 
-	function categoryToSaveRequest(category: AssessmentCategory): SaveAssessmentCategoryRequest {
-		return {
-			id: category.id,
-			code: category.code,
-			name: category.name,
-			maxScore: category.maxScore,
-			examMode: category.examMode,
-			examDurationMinutes: category.examDurationMinutes ?? null,
-			displayOrder: category.displayOrder,
-			items: category.items.map(itemToSaveRequest)
-		};
-	}
-
-	function buildQuickScorePayload(detail: AssessmentPlanDetail, draft: QuickScoreDraft) {
-		const categoriesByCode = new Map<string, AssessmentCategory>();
-		for (const category of detail.categories) {
-			if (category.code) {
-				categoriesByCode.set(category.code, category);
+	function patchQuickScoreSaveResults(results: AssessmentQuickScoreSaveResult[]) {
+		const resultsByCourseId = new Map(results.map((result) => [result.classroomCourseId, result]));
+		const nextDrafts = { ...quickScoreDrafts };
+		const patchedPlans = plans.map((plan) => {
+			const result = resultsByCourseId.get(plan.classroomCourseId);
+			if (!result) return plan;
+			const key = assessmentPlanKey(plan);
+			const draft = nextDrafts[key];
+			if (draft) {
+				draft.beforeMidtermScore = result.beforeMidtermScore;
+				draft.midtermScore = result.midtermScore;
+				draft.afterMidtermScore = result.afterMidtermScore;
+				draft.finalScore = result.finalScore;
+				draft.midtermExamMode = quickExamMode(result.midtermExamMode);
+				draft.finalExamMode = quickExamMode(result.finalExamMode);
+				draft.midtermExamDurationMinutes = result.midtermExamDurationMinutes ?? null;
+				draft.finalExamDurationMinutes = result.finalExamDurationMinutes ?? null;
+				draft.dirty = false;
 			}
-		}
-
-		const coreCategories = coreAssessmentCategories.map((template) => {
-			const existing = categoriesByCode.get(template.code);
-			const examMode = template.examModeField ? draft[template.examModeField] : template.examMode;
 			return {
-				id: existing?.id,
-				code: template.code,
-				name: existing?.name || template.name,
-				maxScore: scoreToSaveValue(draft[template.scoreField]),
-				examMode,
-				examDurationMinutes:
-					template.durationField && canEditExamDuration(examMode)
-						? quickDurationValue(draft[template.durationField])
-						: null,
-				displayOrder: existing?.displayOrder ?? template.displayOrder,
-				items: existing?.items.map(itemToSaveRequest) ?? []
+				...plan,
+				status: result.status,
+				categoryCount: result.categoryCount,
+				itemCount: result.itemCount,
+				totalScore: result.totalScore,
+				beforeMidtermScore: result.beforeMidtermScore,
+				midtermScore: result.midtermScore,
+				afterMidtermScore: result.afterMidtermScore,
+				finalScore: result.finalScore,
+				outsideTimetableCount: result.outsideTimetableCount,
+				inTimetableCount: result.inTimetableCount,
+				midtermExamMode: result.midtermExamMode,
+				finalExamMode: result.finalExamMode,
+				midtermExamDurationMinutes: result.midtermExamDurationMinutes ?? null,
+				finalExamDurationMinutes: result.finalExamDurationMinutes ?? null,
+				hasUnallocatedCategories: result.hasUnallocatedCategories
 			};
 		});
-
-		const customCategories = detail.categories
-			.filter((category) => !coreAssessmentCategoryCodes.has(category.code ?? ''))
-			.map(categoryToSaveRequest);
-
-		return {
-			categories: [...coreCategories, ...customCategories]
-		};
+		plans = patchedPlans.filter(planMatchesStatusFilter);
+		quickScoreDrafts = nextDrafts;
 	}
 
 	async function initData() {
@@ -584,22 +542,6 @@
 		}
 	}
 
-	async function persistQuickScorePlan(plan: AssessmentPlanSummary) {
-		if (!canEditAssessmentPlan(plan)) return false;
-		const draft = quickDraftForPlan(plan);
-		try {
-			const detailResponse = await getAssessmentPlan(plan.classroomCourseId);
-			await saveAssessmentPlan(
-				plan.classroomCourseId,
-				buildQuickScorePayload(detailResponse.data, draft)
-			);
-			draft.dirty = false;
-			return true;
-		} catch {
-			return false;
-		}
-	}
-
 	async function saveAllQuickScoreRows() {
 		if (!canManageAssessment || savingAllQuickScores) return;
 		const dirtyPlans = plans
@@ -612,18 +554,14 @@
 			return;
 		}
 		savingAllQuickScores = true;
-		let savedCount = 0;
 		try {
-			for (const plan of dirtyPlans) {
-				const saved = await persistQuickScorePlan(plan);
-				if (saved) savedCount += 1;
-			}
-			await loadPlans();
-			if (savedCount === dirtyPlans.length) {
-				toast.success('บันทึกการเปลี่ยนแปลงแล้ว');
-			} else {
-				toast.error(`บันทึกสำเร็จ ${savedCount}/${dirtyPlans.length} รายวิชา`);
-			}
+			const response = await bulkSaveAssessmentQuickScores({
+				plans: dirtyPlans.map((plan) => buildQuickScoreEntry(plan, quickDraftForPlan(plan)))
+			});
+			patchQuickScoreSaveResults(response.data.plans);
+			toast.success('บันทึกการเปลี่ยนแปลงแล้ว');
+		} catch (error) {
+			toast.error(error instanceof Error ? error.message : 'ไม่สามารถบันทึกการเปลี่ยนแปลงได้');
 		} finally {
 			savingAllQuickScores = false;
 		}

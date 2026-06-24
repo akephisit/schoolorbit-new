@@ -49,6 +49,7 @@ test('academic assessment api client targets the assessment plan endpoints', asy
 		'listAssessmentPlans',
 		'getAssessmentPlan',
 		'saveAssessmentPlan',
+		'bulkSaveAssessmentQuickScores',
 		'submitAssessmentPlan',
 		'getAssessmentSettings',
 		'updateAssessmentSettings'
@@ -57,9 +58,13 @@ test('academic assessment api client targets the assessment plan endpoints', asy
 	}
 
 	assert.match(source, /\/api\/academic\/assessments\/plans/);
+	assert.match(source, /\/api\/academic\/assessments\/plans\/quick-scores/);
 	assert.match(source, /\/api\/academic\/assessments\/settings/);
 	assert.match(source, /\/api\/academic\/assessments\/courses\/\$\{courseId\}/);
 	assert.match(source, /\/api\/academic\/assessments\/courses\/\$\{courseId\}\/submit/);
+	assert.match(source, /interface BulkSaveAssessmentQuickScoresRequest/);
+	assert.match(source, /interface SaveAssessmentQuickScoreEntryRequest/);
+	assert.match(source, /interface BulkSaveAssessmentQuickScoresResponse/);
 	assert.match(
 		source,
 		/type AssessmentExamMode = 'none' \| 'in_timetable' \| 'outside_timetable' \| 'practical'/
@@ -283,8 +288,45 @@ test('academic assessment quick save validates required score and duration field
 		page,
 		/const validationIssue = firstQuickScoreValidationIssue\(dirtyPlans\);[\s\S]*if \(validationIssue\) \{[\s\S]*showQuickScoreValidationIssue\(validationIssue\);[\s\S]*return;[\s\S]*\}/
 	);
-	assert.match(page, /maxScore: scoreToSaveValue\(draft\[template\.scoreField\]\)/);
-	assert.doesNotMatch(page, /maxScore: quickScoreValue\(draft\[template\.scoreField\]\)/);
+	assert.match(page, /beforeMidtermScore: scoreToSaveValue\(draft\.beforeMidtermScore\)/);
+	assert.match(page, /midtermScore: scoreToSaveValue\(draft\.midtermScore\)/);
+	assert.match(page, /afterMidtermScore: scoreToSaveValue\(draft\.afterMidtermScore\)/);
+	assert.match(page, /finalScore: scoreToSaveValue\(draft\.finalScore\)/);
+	assert.doesNotMatch(page, /maxScore: quickScoreValue/);
+});
+
+test('academic assessment quick save uses one bulk request and patches rows locally', async () => {
+	const page = await readProjectFile('src/routes/(app)/staff/academic/assessments/+page.svelte');
+	const handler = await readRepoFile('backend-school/src/modules/academic/handlers/assessment.rs');
+	const router = await readRepoFile('backend-school/src/modules/academic.rs');
+	const model = await readRepoFile('backend-school/src/modules/academic/models/assessment.rs');
+	const service = await readRepoFile(
+		'backend-school/src/modules/academic/services/assessment_service.rs'
+	);
+
+	assert.match(page, /bulkSaveAssessmentQuickScores/);
+	assert.match(page, /function buildQuickScoreEntry/);
+	assert.match(page, /function patchQuickScoreSaveResults/);
+	assert.match(page, /function planMatchesStatusFilter/);
+	assert.match(page, /const response = await bulkSaveAssessmentQuickScores/);
+	assert.match(page, /patchQuickScoreSaveResults\(response\.data\.plans\)/);
+	assert.match(page, /patchedPlans\.filter\(planMatchesStatusFilter\)/);
+	assert.doesNotMatch(page, /function persistQuickScorePlan/);
+	assert.doesNotMatch(page, /getAssessmentPlan\(plan\.classroomCourseId\)/);
+	assert.doesNotMatch(page, /saveAssessmentPlan\(/);
+	const saveAllQuickScoreRows = page.slice(
+		page.indexOf('async function saveAllQuickScoreRows'),
+		page.indexOf('async function exportAssessmentReport')
+	);
+	assert.doesNotMatch(saveAllQuickScoreRows, /await loadPlans\(\)/);
+
+	assert.match(handler, /pub async fn bulk_save_assessment_quick_scores/);
+	assert.match(router, /\/assessments\/plans\/quick-scores/);
+	assert.match(model, /BulkSaveAssessmentQuickScoresRequest/);
+	assert.match(model, /SaveAssessmentQuickScoreEntryRequest/);
+	assert.match(model, /BulkSaveAssessmentQuickScoresResponse/);
+	assert.match(service, /pub async fn bulk_save_quick_scores/);
+	assert.match(service, /validate_quick_score_bulk_payload/);
 });
 
 test('academic assessment plans are grouped by subject and capture exam duration', async () => {
@@ -300,6 +342,7 @@ test('academic assessment plans are grouped by subject and capture exam duration
 	assert.match(page, /เวลาปลายภาค/);
 	assert.match(page, /ระยะเวลากลางภาค/);
 	assert.match(page, /ระยะเวลาปลายภาค/);
-	assert.match(page, /examDurationMinutes/);
+	assert.match(page, /midtermExamDurationMinutes/);
+	assert.match(page, /finalExamDurationMinutes/);
 	assert.doesNotMatch(page, /\{#each plans as plan \(plan\.classroomCourseId\)\}/);
 });

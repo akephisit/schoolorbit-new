@@ -84,6 +84,45 @@ export interface SaveAssessmentPlanRequest {
 	categories: SaveAssessmentCategoryRequest[];
 }
 
+export interface BulkSaveAssessmentQuickScoresRequest {
+	plans: SaveAssessmentQuickScoreEntryRequest[];
+}
+
+export interface SaveAssessmentQuickScoreEntryRequest {
+	classroomCourseId: string;
+	beforeMidtermScore: number;
+	midtermScore: number;
+	afterMidtermScore: number;
+	finalScore: number;
+	midtermExamMode: AssessmentExamMode;
+	midtermExamDurationMinutes?: number | null;
+	finalExamMode: AssessmentExamMode;
+	finalExamDurationMinutes?: number | null;
+}
+
+export interface BulkSaveAssessmentQuickScoresResponse {
+	plans: AssessmentQuickScoreSaveResult[];
+}
+
+export interface AssessmentQuickScoreSaveResult {
+	classroomCourseId: string;
+	status: AssessmentPlanStatus;
+	categoryCount: number;
+	itemCount: number;
+	totalScore: number;
+	beforeMidtermScore: number;
+	midtermScore: number;
+	afterMidtermScore: number;
+	finalScore: number;
+	outsideTimetableCount: number;
+	inTimetableCount: number;
+	midtermExamMode: AssessmentExamMode;
+	finalExamMode: AssessmentExamMode;
+	midtermExamDurationMinutes?: number | null;
+	finalExamDurationMinutes?: number | null;
+	hasUnallocatedCategories: boolean;
+}
+
 export interface SaveAssessmentCategoryRequest {
 	id?: string;
 	code?: string;
@@ -167,6 +206,18 @@ export async function saveAssessmentPlan(
 ): Promise<{ data: AssessmentPlanDetail }> {
 	const response = await apiClient.put<AssessmentPlanDetail>(
 		`/api/academic/assessments/courses/${courseId}`,
+		payload
+	);
+	return {
+		data: requireApiData(response, 'ไม่สามารถบันทึกโครงสร้างคะแนนได้')
+	};
+}
+
+export async function bulkSaveAssessmentQuickScores(
+	payload: BulkSaveAssessmentQuickScoresRequest
+): Promise<{ data: BulkSaveAssessmentQuickScoresResponse }> {
+	const response = await apiClient.put<BulkSaveAssessmentQuickScoresResponse>(
+		'/api/academic/assessments/plans/quick-scores',
 		payload
 	);
 	return {

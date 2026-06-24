@@ -129,6 +129,10 @@ pub fn academic_routes() -> Router<AppState> {
             get(handlers::assessment::list_assessment_plans),
         )
         .route(
+            "/assessments/plans/quick-scores",
+            put(handlers::assessment::bulk_save_assessment_quick_scores),
+        )
+        .route(
             "/assessments/settings",
             get(handlers::assessment::get_assessment_settings)
                 .put(handlers::assessment::update_assessment_settings),

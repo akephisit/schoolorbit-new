@@ -21,6 +21,53 @@ pub struct SaveAssessmentPlanRequest {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct BulkSaveAssessmentQuickScoresRequest {
+    pub plans: Vec<SaveAssessmentQuickScoreEntryRequest>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SaveAssessmentQuickScoreEntryRequest {
+    pub classroom_course_id: Uuid,
+    pub before_midterm_score: f64,
+    pub midterm_score: f64,
+    pub after_midterm_score: f64,
+    pub final_score: f64,
+    pub midterm_exam_mode: String,
+    pub midterm_exam_duration_minutes: Option<i32>,
+    pub final_exam_mode: String,
+    pub final_exam_duration_minutes: Option<i32>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BulkSaveAssessmentQuickScoresResponse {
+    pub plans: Vec<AssessmentQuickScoreSaveResult>,
+}
+
+#[derive(Debug, Clone, Serialize, FromRow)]
+#[serde(rename_all = "camelCase")]
+pub struct AssessmentQuickScoreSaveResult {
+    pub classroom_course_id: Uuid,
+    pub status: String,
+    pub category_count: i64,
+    pub item_count: i64,
+    pub total_score: f64,
+    pub before_midterm_score: f64,
+    pub midterm_score: f64,
+    pub after_midterm_score: f64,
+    pub final_score: f64,
+    pub outside_timetable_count: i64,
+    pub in_timetable_count: i64,
+    pub midterm_exam_mode: String,
+    pub final_exam_mode: String,
+    pub midterm_exam_duration_minutes: Option<i32>,
+    pub final_exam_duration_minutes: Option<i32>,
+    pub has_unallocated_categories: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SaveAssessmentCategoryRequest {
     pub id: Option<Uuid>,
     pub code: Option<String>,

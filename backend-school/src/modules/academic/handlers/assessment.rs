@@ -9,7 +9,8 @@ use uuid::Uuid;
 use crate::api_response::ApiResponse;
 use crate::error::AppError;
 use crate::modules::academic::models::assessment::{
-    AssessmentPlanListQuery, SaveAssessmentPlanRequest, UpdateAssessmentSettingsRequest,
+    AssessmentPlanListQuery, BulkSaveAssessmentQuickScoresRequest, SaveAssessmentPlanRequest,
+    UpdateAssessmentSettingsRequest,
 };
 use crate::modules::academic::services::assessment_service;
 use crate::utils::request_context::actor_tenant_context;
@@ -98,6 +99,34 @@ pub async fn save_assessment_plan(
     )
     .await?;
     Ok(Json(ApiResponse::ok(plan)).into_response())
+}
+
+pub async fn bulk_save_assessment_quick_scores(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<BulkSaveAssessmentQuickScoresRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context(&state, &headers).await?;
+    for entry in &payload.plans {
+        assessment_service::require_course_manage_access(
+            &context.tenant.pool,
+            &context.actor,
+            entry.classroom_course_id,
+        )
+        .await?;
+    }
+    assessment_service::require_teacher_access_enabled_for_assigned_manager(
+        &context.tenant.pool,
+        &context.actor,
+    )
+    .await?;
+    let response = assessment_service::bulk_save_quick_scores(
+        &context.tenant.pool,
+        context.actor.user_id,
+        payload,
+    )
+    .await?;
+    Ok(Json(ApiResponse::ok(response)).into_response())
 }
 
 pub async fn submit_assessment_plan(

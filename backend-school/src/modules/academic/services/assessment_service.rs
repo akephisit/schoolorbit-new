@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
@@ -8,8 +8,10 @@ use crate::middleware::permission::ActorContext;
 use crate::modules::academic::models::assessment::{
     AssessmentCategory, AssessmentCategoryRow, AssessmentItem, AssessmentPlanDetail,
     AssessmentPlanListQuery, AssessmentPlanRow, AssessmentPlanScope, AssessmentPlanSummary,
-    AssessmentSettingsResponse, SaveAssessmentCategoryRequest, SaveAssessmentItemRequest,
-    SaveAssessmentPlanRequest, UpdateAssessmentSettingsRequest,
+    AssessmentQuickScoreSaveResult, AssessmentSettingsResponse,
+    BulkSaveAssessmentQuickScoresRequest, BulkSaveAssessmentQuickScoresResponse,
+    SaveAssessmentCategoryRequest, SaveAssessmentItemRequest, SaveAssessmentPlanRequest,
+    SaveAssessmentQuickScoreEntryRequest, UpdateAssessmentSettingsRequest,
 };
 use crate::modules::system::services::feature_toggle_service;
 use crate::permissions::registry::codes;
@@ -26,6 +28,7 @@ const VALID_CATEGORY_CODES: &[&str] = &[
 ];
 const VALID_EXAM_MODES: &[&str] = &["none", "in_timetable", "outside_timetable", "practical"];
 const SCHEDULED_EXAM_MODES: &[&str] = &["in_timetable", "outside_timetable"];
+const ASSESSMENT_PLAN_ADVISORY_LOCK_NAMESPACE: i64 = 0x4153_5345_5353_0000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AllocationStatus {
@@ -185,6 +188,135 @@ pub fn validate_plan_payload(payload: &SaveAssessmentPlanRequest) -> Result<(), 
         }
     }
 
+    Ok(())
+}
+
+pub fn validate_quick_score_bulk_payload(
+    payload: &BulkSaveAssessmentQuickScoresRequest,
+) -> Result<(), AppError> {
+    let mut seen_course_ids = HashSet::new();
+    for entry in &payload.plans {
+        if !seen_course_ids.insert(entry.classroom_course_id) {
+            return Err(AppError::ValidationError(
+                "มีรายวิชาซ้ำในชุดข้อมูลที่บันทึก".to_string(),
+            ));
+        }
+
+        for score in [
+            entry.before_midterm_score,
+            entry.midterm_score,
+            entry.after_midterm_score,
+            entry.final_score,
+        ] {
+            ensure_non_negative_score(score)?;
+        }
+
+        validate_quick_exam_mode("สอบกลางภาค", &entry.midterm_exam_mode)?;
+        validate_quick_exam_mode("สอบปลายภาค", &entry.final_exam_mode)?;
+        validate_quick_exam_duration(
+            "กลางภาค",
+            &entry.midterm_exam_mode,
+            entry.midterm_exam_duration_minutes,
+        )?;
+        validate_quick_exam_duration(
+            "ปลายภาค",
+            &entry.final_exam_mode,
+            entry.final_exam_duration_minutes,
+        )?;
+    }
+
+    Ok(())
+}
+
+pub fn quick_score_entry_to_core_categories(
+    entry: &SaveAssessmentQuickScoreEntryRequest,
+) -> Vec<SaveAssessmentCategoryRequest> {
+    vec![
+        quick_score_category(
+            "before_midterm",
+            "ก่อนกลางภาค",
+            entry.before_midterm_score,
+            "none",
+            None,
+            10,
+        ),
+        quick_score_category(
+            "midterm",
+            "กลางภาค",
+            entry.midterm_score,
+            &entry.midterm_exam_mode,
+            entry.midterm_exam_duration_minutes,
+            20,
+        ),
+        quick_score_category(
+            "after_midterm",
+            "หลังกลางภาค",
+            entry.after_midterm_score,
+            "none",
+            None,
+            30,
+        ),
+        quick_score_category(
+            "final",
+            "ปลายภาค",
+            entry.final_score,
+            &entry.final_exam_mode,
+            entry.final_exam_duration_minutes,
+            40,
+        ),
+    ]
+}
+
+fn quick_score_category(
+    code: &str,
+    name: &str,
+    max_score: f64,
+    exam_mode: &str,
+    exam_duration_minutes: Option<i32>,
+    display_order: i32,
+) -> SaveAssessmentCategoryRequest {
+    SaveAssessmentCategoryRequest {
+        id: None,
+        code: Some(code.to_string()),
+        name: name.to_string(),
+        max_score,
+        exam_mode: exam_mode.to_string(),
+        exam_duration_minutes,
+        display_order,
+        items: Vec::new(),
+    }
+}
+
+fn validate_quick_exam_mode(label: &str, exam_mode: &str) -> Result<(), AppError> {
+    if ["none", "in_timetable", "outside_timetable"].contains(&exam_mode) {
+        return Ok(());
+    }
+    Err(AppError::ValidationError(format!("รูปแบบ{}ไม่ถูกต้อง", label)))
+}
+
+fn validate_quick_exam_duration(
+    label: &str,
+    exam_mode: &str,
+    duration: Option<i32>,
+) -> Result<(), AppError> {
+    if exam_mode == "in_timetable" && duration.is_none() {
+        return Err(AppError::ValidationError(format!(
+            "ต้องระบุระยะเวลา{}สำหรับการสอบในตาราง",
+            label
+        )));
+    }
+    if let Some(duration) = duration {
+        if duration <= 0 {
+            return Err(AppError::ValidationError(
+                "ระยะเวลาสอบต้องมากกว่า 0 นาที".to_string(),
+            ));
+        }
+        if exam_mode != "in_timetable" {
+            return Err(AppError::ValidationError(
+                "ระยะเวลาสอบระบุได้เฉพาะการสอบในตาราง".to_string(),
+            ));
+        }
+    }
     Ok(())
 }
 
@@ -766,6 +898,7 @@ pub async fn save_plan(
         .await
         .map_err(|error| AppError::InternalServerError(error.to_string()))?;
     let plan = ensure_plan_in_tx(&mut tx, &scope).await?;
+    lock_assessment_plan_in_tx(&mut tx, plan.id).await?;
     if plan.status == "locked" {
         return Err(AppError::ValidationError(
             "โครงสร้างคะแนนถูกล็อกแล้ว ไม่สามารถแก้ไขได้".to_string(),
@@ -801,6 +934,61 @@ pub async fn save_plan(
         .await
         .map_err(|error| AppError::InternalServerError(error.to_string()))?;
     fetch_plan_detail(pool, &scope).await
+}
+
+pub async fn bulk_save_quick_scores(
+    pool: &PgPool,
+    actor_id: Uuid,
+    payload: BulkSaveAssessmentQuickScoresRequest,
+) -> Result<BulkSaveAssessmentQuickScoresResponse, AppError> {
+    validate_quick_score_bulk_payload(&payload)?;
+    if payload.plans.is_empty() {
+        return Ok(BulkSaveAssessmentQuickScoresResponse { plans: Vec::new() });
+    }
+
+    let mut tx = pool
+        .begin()
+        .await
+        .map_err(|error| AppError::InternalServerError(error.to_string()))?;
+    let mut plan_ids = Vec::with_capacity(payload.plans.len());
+    let mut seen_plan_ids = HashSet::new();
+    let mut classroom_course_ids = Vec::with_capacity(payload.plans.len());
+    let mut core_categories = Vec::with_capacity(payload.plans.len() * 4);
+
+    for entry in payload.plans {
+        let scope = resolve_plan_scope_in_tx(&mut tx, entry.classroom_course_id).await?;
+        let plan = ensure_plan_in_tx(&mut tx, &scope).await?;
+        if !seen_plan_ids.insert(plan.id) {
+            return Err(AppError::ValidationError(
+                "มีรายวิชาที่ใช้โครงสร้างคะแนนเดียวกันซ้ำในชุดข้อมูลที่บันทึก".to_string(),
+            ));
+        }
+        lock_assessment_plan_in_tx(&mut tx, plan.id).await?;
+        if plan.status == "locked" {
+            return Err(AppError::ValidationError(
+                "โครงสร้างคะแนนถูกล็อกแล้ว ไม่สามารถแก้ไขได้".to_string(),
+            ));
+        }
+
+        for category in quick_score_entry_to_core_categories(&entry) {
+            core_categories.push((plan.id, category));
+        }
+
+        plan_ids.push(plan.id);
+        classroom_course_ids.push(entry.classroom_course_id);
+    }
+
+    upsert_core_categories_by_code_in_tx(&mut tx, actor_id, &core_categories).await?;
+    mark_quick_score_plans_saved_in_tx(&mut tx, &plan_ids).await?;
+
+    let plans =
+        fetch_quick_score_save_results_in_tx(&mut tx, &plan_ids, &classroom_course_ids).await?;
+
+    tx.commit()
+        .await
+        .map_err(|error| AppError::InternalServerError(error.to_string()))?;
+
+    Ok(BulkSaveAssessmentQuickScoresResponse { plans })
 }
 
 pub async fn submit_plan(
@@ -907,6 +1095,25 @@ async fn resolve_plan_scope(
     .ok_or_else(|| AppError::NotFound("ไม่พบรายวิชาที่เปิดสอน".to_string()))
 }
 
+async fn resolve_plan_scope_in_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    course_id: Uuid,
+) -> Result<AssessmentPlanScope, AppError> {
+    sqlx::query_as::<_, AssessmentPlanScope>(
+        r#"SELECT
+               id AS classroom_course_id,
+               subject_id,
+               academic_semester_id
+           FROM classroom_courses
+           WHERE id = $1"#,
+    )
+    .bind(course_id)
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(|error| AppError::InternalServerError(error.to_string()))?
+    .ok_or_else(|| AppError::NotFound("ไม่พบรายวิชาที่เปิดสอน".to_string()))
+}
+
 async fn ensure_plan_in_tx(
     tx: &mut Transaction<'_, Postgres>,
     scope: &AssessmentPlanScope,
@@ -937,6 +1144,167 @@ async fn ensure_plan_in_tx(
     .fetch_one(&mut **tx)
     .await
     .map_err(|error| AppError::InternalServerError(error.to_string()))
+}
+
+fn assessment_plan_advisory_lock_key(plan_id: Uuid) -> i64 {
+    let mut key_bytes = [0_u8; 8];
+    key_bytes.copy_from_slice(&plan_id.as_bytes()[..8]);
+    i64::from_be_bytes(key_bytes) ^ ASSESSMENT_PLAN_ADVISORY_LOCK_NAMESPACE
+}
+
+async fn lock_assessment_plan_in_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    plan_id: Uuid,
+) -> Result<(), AppError> {
+    sqlx::query("SELECT pg_advisory_xact_lock($1)")
+        .bind(assessment_plan_advisory_lock_key(plan_id))
+        .execute(&mut **tx)
+        .await
+        .map_err(|error| AppError::InternalServerError(error.to_string()))?;
+    Ok(())
+}
+
+async fn upsert_core_categories_by_code_in_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    actor_id: Uuid,
+    categories: &[(Uuid, SaveAssessmentCategoryRequest)],
+) -> Result<(), AppError> {
+    if categories.is_empty() {
+        return Ok(());
+    }
+
+    let mut plan_ids = Vec::with_capacity(categories.len());
+    let mut codes = Vec::with_capacity(categories.len());
+    let mut names = Vec::with_capacity(categories.len());
+    let mut max_scores = Vec::with_capacity(categories.len());
+    let mut exam_modes = Vec::with_capacity(categories.len());
+    let mut exam_duration_minutes = Vec::with_capacity(categories.len());
+    let mut display_orders = Vec::with_capacity(categories.len());
+
+    for (plan_id, category) in categories {
+        let code = category
+            .code
+            .as_deref()
+            .ok_or_else(|| AppError::ValidationError("ต้องระบุรหัสหมวดคะแนนหลัก".to_string()))?;
+        plan_ids.push(*plan_id);
+        codes.push(code.to_string());
+        names.push(category.name.trim().to_string());
+        max_scores.push(category.max_score);
+        exam_modes.push(category.exam_mode.clone());
+        exam_duration_minutes.push(category.exam_duration_minutes);
+        display_orders.push(category.display_order);
+    }
+
+    sqlx::query(
+        r#"
+WITH input_rows AS (
+    SELECT *
+    FROM UNNEST(
+        $1::uuid[],
+        $2::text[],
+        $3::text[],
+        $4::float8[],
+        $5::text[],
+        $6::integer[],
+        $7::integer[]
+    ) WITH ORDINALITY AS input_row(
+        plan_id,
+        code,
+        name,
+        max_score,
+        exam_mode,
+        exam_duration_minutes,
+        display_order,
+        sort_order
+    )
+),
+existing_categories AS (
+    SELECT DISTINCT ON (c.plan_id, c.code)
+        c.id,
+        c.plan_id,
+        c.code
+    FROM academic_assessment_categories c
+    JOIN input_rows input
+      ON input.plan_id = c.plan_id
+     AND input.code = c.code
+    ORDER BY c.plan_id, c.code, c.display_order ASC, c.created_at ASC, c.id ASC
+),
+updated_categories AS (
+    UPDATE academic_assessment_categories c
+    SET name = input.name,
+        max_score = input.max_score,
+        exam_mode = input.exam_mode,
+        exam_duration_minutes = input.exam_duration_minutes,
+        display_order = input.display_order,
+        updated_by = $8,
+        updated_at = NOW()
+    FROM input_rows input
+    JOIN existing_categories existing
+      ON existing.plan_id = input.plan_id
+     AND existing.code = input.code
+    WHERE c.id = existing.id
+    RETURNING c.id
+)
+INSERT INTO academic_assessment_categories
+    (
+        plan_id,
+        code,
+        name,
+        max_score,
+        exam_mode,
+        exam_duration_minutes,
+        display_order,
+        created_by,
+        updated_by
+    )
+SELECT
+    input.plan_id,
+    input.code,
+    input.name,
+    input.max_score,
+    input.exam_mode,
+    input.exam_duration_minutes,
+    input.display_order,
+    $8,
+    $8
+FROM input_rows input
+LEFT JOIN existing_categories existing
+  ON existing.plan_id = input.plan_id
+ AND existing.code = input.code
+WHERE existing.id IS NULL"#,
+    )
+    .bind(&plan_ids)
+    .bind(&codes)
+    .bind(&names)
+    .bind(&max_scores)
+    .bind(&exam_modes)
+    .bind(&exam_duration_minutes)
+    .bind(&display_orders)
+    .bind(actor_id)
+    .execute(&mut **tx)
+    .await
+    .map_err(|error| AppError::InternalServerError(error.to_string()))?;
+    Ok(())
+}
+
+async fn mark_quick_score_plans_saved_in_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    plan_ids: &[Uuid],
+) -> Result<(), AppError> {
+    if plan_ids.is_empty() {
+        return Ok(());
+    }
+
+    sqlx::query(
+        r#"UPDATE academic_assessment_plans
+           SET status = 'saved', submitted_at = NULL, submitted_by = NULL, updated_at = NOW()
+           WHERE id = ANY($1)"#,
+    )
+    .bind(plan_ids)
+    .execute(&mut **tx)
+    .await
+    .map_err(|error| AppError::InternalServerError(error.to_string()))?;
+    Ok(())
 }
 
 async fn upsert_category_in_tx(
@@ -1094,6 +1462,95 @@ async fn delete_missing_categories_in_tx(
     Ok(())
 }
 
+async fn fetch_quick_score_save_results_in_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    plan_ids: &[Uuid],
+    classroom_course_ids: &[Uuid],
+) -> Result<Vec<AssessmentQuickScoreSaveResult>, AppError> {
+    sqlx::query_as::<_, AssessmentQuickScoreSaveResult>(
+		r#"
+WITH target_plans AS (
+    SELECT *
+    FROM UNNEST($1::uuid[], $2::uuid[]) WITH ORDINALITY
+        AS target(plan_id, classroom_course_id, sort_order)
+),
+category_stats AS (
+    SELECT
+        c.plan_id,
+        COUNT(*)::BIGINT AS category_count,
+        COALESCE(SUM(c.max_score), 0)::FLOAT8 AS total_score,
+        COALESCE(MAX(c.max_score) FILTER (WHERE c.code = 'before_midterm'), 0)::FLOAT8 AS before_midterm_score,
+        COALESCE(MAX(c.max_score) FILTER (WHERE c.code = 'midterm'), 0)::FLOAT8 AS midterm_score,
+        COALESCE(MAX(c.max_score) FILTER (WHERE c.code = 'after_midterm'), 0)::FLOAT8 AS after_midterm_score,
+        COALESCE(MAX(c.max_score) FILTER (WHERE c.code = 'final'), 0)::FLOAT8 AS final_score,
+        COUNT(*) FILTER (WHERE c.exam_mode = 'outside_timetable')::BIGINT AS outside_timetable_count,
+        COUNT(*) FILTER (WHERE c.exam_mode = 'in_timetable')::BIGINT AS in_timetable_count,
+        COALESCE(MAX(c.exam_mode) FILTER (WHERE c.code = 'midterm'), 'in_timetable') AS midterm_exam_mode,
+        COALESCE(MAX(c.exam_mode) FILTER (WHERE c.code = 'final'), 'in_timetable') AS final_exam_mode,
+        MAX(c.exam_duration_minutes) FILTER (WHERE c.code = 'midterm') AS midterm_exam_duration_minutes,
+        MAX(c.exam_duration_minutes) FILTER (WHERE c.code = 'final') AS final_exam_duration_minutes
+    FROM academic_assessment_categories c
+    JOIN target_plans target ON target.plan_id = c.plan_id
+    GROUP BY c.plan_id
+),
+item_stats AS (
+    SELECT
+        c.plan_id,
+        COUNT(i.id)::BIGINT AS item_count
+    FROM academic_assessment_categories c
+    JOIN target_plans target ON target.plan_id = c.plan_id
+    LEFT JOIN academic_assessment_items i ON i.category_id = c.id
+    GROUP BY c.plan_id
+),
+allocation_stats AS (
+    SELECT
+        c.plan_id,
+        BOOL_OR(
+            item_totals.item_count > 0
+            AND ABS(c.max_score - item_totals.item_total_score) > 0.0001
+        ) AS has_unallocated_categories
+    FROM academic_assessment_categories c
+    JOIN target_plans target ON target.plan_id = c.plan_id
+    LEFT JOIN LATERAL (
+        SELECT
+            COUNT(i.id) AS item_count,
+            COALESCE(SUM(i.max_score) FILTER (WHERE i.is_active), 0)::FLOAT8 AS item_total_score
+        FROM academic_assessment_items i
+        WHERE i.category_id = c.id
+    ) item_totals ON TRUE
+    GROUP BY c.plan_id
+)
+SELECT
+    target.classroom_course_id,
+    ap.status,
+    COALESCE(cs.category_count, 0)::BIGINT AS category_count,
+    COALESCE(ist.item_count, 0)::BIGINT AS item_count,
+    COALESCE(cs.total_score, 0)::FLOAT8 AS total_score,
+    COALESCE(cs.before_midterm_score, 0)::FLOAT8 AS before_midterm_score,
+    COALESCE(cs.midterm_score, 0)::FLOAT8 AS midterm_score,
+    COALESCE(cs.after_midterm_score, 0)::FLOAT8 AS after_midterm_score,
+    COALESCE(cs.final_score, 0)::FLOAT8 AS final_score,
+    COALESCE(cs.outside_timetable_count, 0)::BIGINT AS outside_timetable_count,
+    COALESCE(cs.in_timetable_count, 0)::BIGINT AS in_timetable_count,
+    COALESCE(cs.midterm_exam_mode, 'in_timetable') AS midterm_exam_mode,
+    COALESCE(cs.final_exam_mode, 'in_timetable') AS final_exam_mode,
+    cs.midterm_exam_duration_minutes,
+    cs.final_exam_duration_minutes,
+    COALESCE(als.has_unallocated_categories, FALSE) AS has_unallocated_categories
+FROM target_plans target
+JOIN academic_assessment_plans ap ON ap.id = target.plan_id
+LEFT JOIN category_stats cs ON cs.plan_id = ap.id
+LEFT JOIN item_stats ist ON ist.plan_id = ap.id
+LEFT JOIN allocation_stats als ON als.plan_id = ap.id
+ORDER BY target.sort_order"#,
+	)
+	.bind(plan_ids)
+	.bind(classroom_course_ids)
+	.fetch_all(&mut **tx)
+	.await
+	.map_err(|error| AppError::InternalServerError(error.to_string()))
+}
+
 async fn fetch_plan_detail(
     pool: &PgPool,
     scope: &AssessmentPlanScope,
@@ -1215,13 +1672,15 @@ async fn fetch_plan_detail_optional(
 #[cfg(test)]
 mod tests {
     use super::{
-        allocation_status, default_categories, item_total_score, not_configured_plan_detail,
-        validate_plan_payload, AllocationStatus,
+        allocation_status, assessment_plan_advisory_lock_key, default_categories, item_total_score,
+        not_configured_plan_detail, quick_score_entry_to_core_categories, validate_plan_payload,
+        validate_quick_score_bulk_payload, AllocationStatus,
+        ASSESSMENT_PLAN_ADVISORY_LOCK_NAMESPACE,
     };
     use crate::error::AppError;
     use crate::modules::academic::models::assessment::{
-        AssessmentPlanScope, SaveAssessmentCategoryRequest, SaveAssessmentItemRequest,
-        SaveAssessmentPlanRequest,
+        AssessmentPlanScope, BulkSaveAssessmentQuickScoresRequest, SaveAssessmentCategoryRequest,
+        SaveAssessmentItemRequest, SaveAssessmentPlanRequest, SaveAssessmentQuickScoreEntryRequest,
     };
 
     fn item(name: &str, max_score: f64, display_order: i32) -> SaveAssessmentItemRequest {
@@ -1249,6 +1708,20 @@ mod tests {
             exam_duration_minutes: None,
             display_order: 10,
             items,
+        }
+    }
+
+    fn quick_score_entry(course_id: uuid::Uuid) -> SaveAssessmentQuickScoreEntryRequest {
+        SaveAssessmentQuickScoreEntryRequest {
+            classroom_course_id: course_id,
+            before_midterm_score: 20.0,
+            midterm_score: 30.0,
+            after_midterm_score: 20.0,
+            final_score: 30.0,
+            midterm_exam_mode: "in_timetable".to_string(),
+            midterm_exam_duration_minutes: Some(60),
+            final_exam_mode: "outside_timetable".to_string(),
+            final_exam_duration_minutes: None,
         }
     }
 
@@ -1392,5 +1865,75 @@ mod tests {
             }),
             Err(AppError::ValidationError(message)) if message.contains("เฉพาะหมวด")
         ));
+    }
+
+    #[test]
+    fn maps_quick_score_entry_to_four_core_categories() {
+        let entry = quick_score_entry(uuid::Uuid::new_v4());
+
+        let categories = quick_score_entry_to_core_categories(&entry);
+
+        let codes: Vec<&str> = categories
+            .iter()
+            .filter_map(|category| category.code.as_deref())
+            .collect();
+        assert_eq!(
+            codes,
+            vec!["before_midterm", "midterm", "after_midterm", "final"]
+        );
+        assert_eq!(categories[0].max_score, 20.0);
+        assert_eq!(categories[1].max_score, 30.0);
+        assert_eq!(categories[1].exam_mode, "in_timetable");
+        assert_eq!(categories[1].exam_duration_minutes, Some(60));
+        assert_eq!(categories[2].max_score, 20.0);
+        assert_eq!(categories[3].max_score, 30.0);
+        assert_eq!(categories[3].exam_mode, "outside_timetable");
+        assert_eq!(categories[3].exam_duration_minutes, None);
+        assert!(categories.iter().all(|category| category.items.is_empty()));
+    }
+
+    #[test]
+    fn validates_quick_score_bulk_payload() {
+        let course_id = uuid::Uuid::new_v4();
+        let valid = BulkSaveAssessmentQuickScoresRequest {
+            plans: vec![quick_score_entry(course_id)],
+        };
+        assert!(validate_quick_score_bulk_payload(&valid).is_ok());
+
+        let duplicate = BulkSaveAssessmentQuickScoresRequest {
+            plans: vec![quick_score_entry(course_id), quick_score_entry(course_id)],
+        };
+        assert!(matches!(
+            validate_quick_score_bulk_payload(&duplicate),
+            Err(AppError::ValidationError(message)) if message.contains("ซ้ำ")
+        ));
+
+        let mut missing_duration = quick_score_entry(uuid::Uuid::new_v4());
+        missing_duration.midterm_exam_duration_minutes = None;
+        let invalid_duration = BulkSaveAssessmentQuickScoresRequest {
+            plans: vec![missing_duration],
+        };
+        assert!(matches!(
+            validate_quick_score_bulk_payload(&invalid_duration),
+            Err(AppError::ValidationError(message)) if message.contains("ระยะเวลากลางภาค")
+        ));
+    }
+
+    #[test]
+    fn assessment_plan_advisory_lock_key_is_namespaced_and_stable() {
+        let plan_id = uuid::Uuid::from_u128(0x1234_5678_90ab_cdef_1234_5678_90ab_cdef);
+
+        let key = assessment_plan_advisory_lock_key(plan_id);
+
+        assert_eq!(key, assessment_plan_advisory_lock_key(plan_id));
+        assert_ne!(
+            key,
+            i64::from_be_bytes(*b"\x12\x34\x56\x78\x90\xab\xcd\xef")
+        );
+        assert_eq!(
+            key,
+            i64::from_be_bytes(*b"\x12\x34\x56\x78\x90\xab\xcd\xef")
+                ^ ASSESSMENT_PLAN_ADVISORY_LOCK_NAMESPACE
+        );
     }
 }
