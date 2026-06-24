@@ -254,12 +254,17 @@
 		return canManageAssessment && plan.canManage && plan.status !== 'locked';
 	}
 
+	function quickScoreDraftValue(plan: AssessmentPlanSummary, value: number) {
+		if (plan.status === 'not_configured' && value === 0) return null;
+		return value;
+	}
+
 	function quickScoreDraftFromPlan(plan: AssessmentPlanSummary): QuickScoreDraft {
 		return {
-			beforeMidtermScore: plan.beforeMidtermScore,
-			midtermScore: plan.midtermScore,
-			afterMidtermScore: plan.afterMidtermScore,
-			finalScore: plan.finalScore,
+			beforeMidtermScore: quickScoreDraftValue(plan, plan.beforeMidtermScore),
+			midtermScore: quickScoreDraftValue(plan, plan.midtermScore),
+			afterMidtermScore: quickScoreDraftValue(plan, plan.afterMidtermScore),
+			finalScore: quickScoreDraftValue(plan, plan.finalScore),
 			midtermExamMode: quickExamMode(plan.midtermExamMode),
 			finalExamMode: quickExamMode(plan.finalExamMode),
 			midtermExamDurationMinutes: plan.midtermExamDurationMinutes ?? null,

@@ -249,6 +249,12 @@ test('academic assessment save feedback uses toast and saved status label', asyn
 test('academic assessment quick save validates required score and duration fields', async () => {
 	const page = await readProjectFile('src/routes/(app)/staff/academic/assessments/+page.svelte');
 
+	assert.match(page, /function quickScoreDraftValue/);
+	assert.match(page, /plan\.status === 'not_configured' && value === 0/);
+	assert.match(page, /beforeMidtermScore: quickScoreDraftValue\(plan, plan\.beforeMidtermScore\)/);
+	assert.match(page, /midtermScore: quickScoreDraftValue\(plan, plan\.midtermScore\)/);
+	assert.match(page, /afterMidtermScore: quickScoreDraftValue\(plan, plan\.afterMidtermScore\)/);
+	assert.match(page, /finalScore: quickScoreDraftValue\(plan, plan\.finalScore\)/);
 	assert.match(page, /type QuickValidationField = QuickScoreField \| QuickDurationField/);
 	assert.match(page, /type QuickScoreValidationIssue =/);
 	assert.match(page, /function firstQuickScoreValidationIssue/);
