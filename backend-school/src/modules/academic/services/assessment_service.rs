@@ -789,10 +789,7 @@ pub async fn save_plan(
 
     sqlx::query(
         r#"UPDATE academic_assessment_plans
-           SET status = CASE WHEN status = 'submitted' THEN status ELSE 'draft' END,
-               submitted_at = CASE WHEN status = 'submitted' THEN submitted_at ELSE NULL END,
-               submitted_by = CASE WHEN status = 'submitted' THEN submitted_by ELSE NULL END,
-               updated_at = NOW()
+           SET status = 'saved', submitted_at = NULL, submitted_by = NULL, updated_at = NOW()
            WHERE id = $1"#,
     )
     .bind(plan.id)

@@ -1,7 +1,7 @@
 import { apiClient, requireApiData } from '$lib/api/client';
 
 export type AssessmentExamMode = 'none' | 'in_timetable' | 'outside_timetable' | 'practical';
-export type AssessmentPlanStatus = 'not_configured' | 'draft' | 'submitted' | 'locked';
+export type AssessmentPlanStatus = 'not_configured' | 'draft' | 'saved' | 'submitted' | 'locked';
 export type AssessmentAllocationStatus =
 	| 'not_started'
 	| 'complete'

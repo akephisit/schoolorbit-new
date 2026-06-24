@@ -451,22 +451,27 @@ fn academic_assessment_teacher_scope_uses_primary_instructors_only() {
 }
 
 #[test]
-fn academic_assessment_save_preserves_submitted_status() {
+fn academic_assessment_save_persists_saved_status() {
+    let migration_path = manifest_dir()
+        .join("migrations")
+        .join("016_academic_assessment_saved_status.sql");
+    let migration = read_source(&migration_path);
     let service = strip_comments(&read_source(
         manifest_dir().join("src/modules/academic/services/assessment_service.rs"),
     ));
 
     assert!(
-        service.contains("CASE WHEN status = 'submitted' THEN status ELSE 'draft' END"),
-        "saving an assessment plan should preserve submitted status instead of forcing draft"
+        migration.contains("'saved'"),
+        "{} must add the saved assessment status to the database constraint",
+        repo_relative(&migration_path)
     );
     assert!(
-        service.contains("CASE WHEN status = 'submitted' THEN submitted_at ELSE NULL END"),
-        "saving an assessment plan should preserve submitted metadata for submitted plans"
+        service.contains("SET status = 'saved', submitted_at = NULL, submitted_by = NULL"),
+        "saving an assessment plan should persist saved status"
     );
     assert!(
-        !service.contains("SET status = 'draft', submitted_at = NULL, submitted_by = NULL"),
-        "assessment save must not blindly reset every plan to draft"
+        !service.contains("CASE WHEN status = 'submitted' THEN status ELSE 'draft' END"),
+        "assessment save must not keep submitted status when a plan is edited and saved"
     );
 }
 
