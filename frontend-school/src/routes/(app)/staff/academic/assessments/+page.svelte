@@ -107,6 +107,7 @@
 		{ value: 'all', label: 'ทุกสถานะ' },
 		{ value: 'not_configured', label: 'ยังไม่ตั้งค่า' },
 		{ value: 'draft', label: 'ร่าง' },
+		{ value: 'saved', label: 'บันทึกแล้ว' },
 		{ value: 'submitted', label: 'ส่งแล้ว' },
 		{ value: 'locked', label: 'ล็อกแล้ว' }
 	];
@@ -194,6 +195,7 @@
 		total: plans.length,
 		draft: plans.filter((plan) => plan.status === 'draft' || plan.status === 'not_configured')
 			.length,
+		saved: plans.filter((plan) => plan.status === 'saved').length,
 		submitted: plans.filter((plan) => plan.status === 'submitted').length,
 		locked: plans.filter((plan) => plan.status === 'locked').length,
 		outside: plans.reduce((total, plan) => total + plan.outsideTimetableCount, 0),
@@ -205,6 +207,7 @@
 	}
 
 	function statusBadgeVariant(status: AssessmentPlanStatus) {
+		if (status === 'saved') return 'default';
 		if (status === 'submitted') return 'default';
 		if (status === 'locked') return 'secondary';
 		if (status === 'not_configured') return 'outline';
@@ -536,7 +539,7 @@
 			}
 			await loadPlans();
 			if (savedCount === dirtyPlans.length) {
-				toast.success('บันทึกคะแนนทั้งหมดแล้ว');
+				toast.success('บันทึกการเปลี่ยนแปลงแล้ว');
 			} else {
 				toast.error(`บันทึกสำเร็จ ${savedCount}/${dirtyPlans.length} รายวิชา`);
 			}
@@ -675,7 +678,7 @@
 		/>
 	{:else}
 		<div class="space-y-5">
-			<div class="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+			<div class="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
 				<div class="rounded-lg border bg-background p-4">
 					<p class="text-sm text-muted-foreground">รายวิชา</p>
 					<p class="mt-2 text-2xl font-semibold">{summary.total}</p>
@@ -683,6 +686,10 @@
 				<div class="rounded-lg border bg-background p-4">
 					<p class="text-sm text-muted-foreground">ร่าง/ยังไม่ตั้งค่า</p>
 					<p class="mt-2 text-2xl font-semibold">{summary.draft}</p>
+				</div>
+				<div class="rounded-lg border bg-background p-4">
+					<p class="text-sm text-muted-foreground">บันทึกแล้ว</p>
+					<p class="mt-2 text-2xl font-semibold">{summary.saved}</p>
 				</div>
 				<div class="rounded-lg border bg-background p-4">
 					<p class="text-sm text-muted-foreground">ส่งแล้ว</p>

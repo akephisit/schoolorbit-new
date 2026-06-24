@@ -38,6 +38,7 @@ pub enum AllocationStatus {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AssessmentPlanListAccess {
     pub read_school: bool,
+    pub sort_actor_id: Uuid,
     pub assigned_instructor_id: Option<Uuid>,
     pub subject_group_ids: Vec<Uuid>,
     pub manage_school: bool,
@@ -46,12 +47,14 @@ pub struct AssessmentPlanListAccess {
 
 impl AssessmentPlanListAccess {
     fn scoped(
+        sort_actor_id: Uuid,
         assigned_instructor_id: Option<Uuid>,
         subject_group_ids: Vec<Uuid>,
         manage_assigned_instructor_id: Option<Uuid>,
     ) -> Self {
         Self {
             read_school: false,
+            sort_actor_id,
             assigned_instructor_id,
             subject_group_ids,
             manage_school: false,
@@ -290,10 +293,19 @@ WITH scoped_courses AS (
         s.name_th AS subject_name_th,
         s.name_en AS subject_name_en,
         cr.name AS classroom_name,
+        CASE gl.level_type
+            WHEN 'kindergarten' THEN 1
+            WHEN 'primary' THEN 2
+            WHEN 'secondary' THEN 3
+            ELSE 4
+        END AS grade_level_sort,
+        gl.year AS grade_year,
+        cr.room_number AS classroom_room_number,
         NULLIF(CONCAT_WS(' ', u.first_name, u.last_name), '') AS instructor_name
     FROM classroom_courses cc
     JOIN subjects s ON s.id = cc.subject_id
     JOIN class_rooms cr ON cr.id = cc.classroom_id
+    JOIN grade_levels gl ON gl.id = cr.grade_level_id
     LEFT JOIN users u ON u.id = cc.primary_instructor_id
     WHERE 1 = 1{scoped_filters}"#,
     );
@@ -311,9 +323,19 @@ representative_courses AS (
         primary_instructor_id,
         subject_code,
         subject_name_th,
-        subject_name_en
+        subject_name_en,
+        grade_level_sort,
+        grade_year,
+        classroom_room_number
     FROM scoped_courses
-    ORDER BY academic_semester_id, subject_id, classroom_name ASC, classroom_course_id ASC
+    ORDER BY
+        academic_semester_id,
+        subject_id,
+        grade_level_sort ASC,
+        grade_year ASC,
+        classroom_room_number ASC NULLS LAST,
+        classroom_name ASC,
+        classroom_course_id ASC
 ),
 course_rollup AS (
     SELECT
@@ -421,7 +443,24 @@ WHERE 1 = 1"#,
             " AND COALESCE(ap.status, 'not_configured') = ${idx}"
         ));
     }
-    sql.push_str(" ORDER BY rc.subject_code ASC NULLS LAST, rc.subject_name_th ASC NULLS LAST");
+    idx += 1;
+    let sort_actor_idx = idx;
+    sql.push_str(&format!(
+        r#" ORDER BY
+    CASE WHEN EXISTS (
+        SELECT 1
+        FROM classroom_courses sort_cc
+        WHERE sort_cc.academic_semester_id = rc.academic_semester_id
+          AND sort_cc.subject_id = rc.subject_id
+          AND sort_cc.primary_instructor_id = ${sort_actor_idx}
+    ) THEN 0 ELSE 1 END,
+    LOWER(COALESCE(rollup.instructor_name, '')) ASC,
+    rc.grade_level_sort ASC,
+    rc.grade_year ASC,
+    rc.classroom_room_number ASC NULLS LAST,
+    rc.subject_code ASC NULLS LAST,
+    rc.subject_name_th ASC NULLS LAST"#
+    ));
 
     let mut db_query = sqlx::query_as::<_, AssessmentPlanSummary>(&sql);
     if let Some(id) = query.academic_semester_id {
@@ -452,6 +491,7 @@ WHERE 1 = 1"#,
     if let Some(status) = &query.status {
         db_query = db_query.bind(status);
     }
+    db_query = db_query.bind(access.sort_actor_id);
 
     db_query.fetch_all(pool).await.map_err(|error| {
         tracing::error!("Failed to list assessment plans: {}", error);
@@ -543,6 +583,7 @@ pub async fn resolve_assessment_plan_list_access(
     if can_read_school(actor) {
         return Ok(AssessmentPlanListAccess {
             read_school: true,
+            sort_actor_id: actor.user_id,
             assigned_instructor_id: None,
             subject_group_ids: Vec::new(),
             manage_school: can_manage_school(actor),
@@ -564,6 +605,7 @@ pub async fn resolve_assessment_plan_list_access(
     };
 
     Ok(AssessmentPlanListAccess::scoped(
+        actor.user_id,
         assigned_instructor_id,
         subject_group_ids,
         manage_assigned_instructor_id,
@@ -747,7 +789,7 @@ pub async fn save_plan(
 
     sqlx::query(
         r#"UPDATE academic_assessment_plans
-           SET status = 'draft', submitted_at = NULL, submitted_by = NULL, updated_at = NOW()
+           SET status = 'saved', submitted_at = NULL, submitted_by = NULL, updated_at = NOW()
            WHERE id = $1"#,
     )
     .bind(plan.id)
