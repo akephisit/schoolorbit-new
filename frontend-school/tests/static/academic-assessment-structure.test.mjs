@@ -105,12 +105,17 @@ test('academic assessment score table uses dedicated score and exam columns', as
 	}
 
 	for (const heading of ['สอบกลางภาค', 'สอบปลายภาค']) {
-		assert.match(page, new RegExp(`<Table\\.Head>${heading}</Table\\.Head>`));
+		assert.match(
+			page,
+			new RegExp(`<Table\\.Head[^>]*>[\\s\\S]*${heading}[\\s\\S]*</Table\\.Head\\s*>`)
+		);
 	}
 	for (const heading of ['เวลากลางภาค', 'เวลาปลายภาค']) {
 		assert.match(
 			page,
-			new RegExp(`<Table\\.Head class="w-\\[84px\\] min-w-\\[84px\\]">${heading}</Table\\.Head>`)
+			new RegExp(
+				`<Table\\.Head[\\s\\S]*class="[^"]*w-\\[84px\\] min-w-\\[84px\\][^"]*"[\\s\\S]*>${heading}</Table\\.Head\\s*>`
+			)
 		);
 	}
 
@@ -124,7 +129,7 @@ test('academic assessment score table uses dedicated score and exam columns', as
 	assert.doesNotMatch(page, /postMidtermScoreColumns/);
 	assert.match(page, /\{column\.heading\}/);
 	assert.match(page, /Table\.Root class="min-w-\[1240px\]"/);
-	assert.match(page, /w-\[78px\] min-w-\[78px\] px-2 text-right/);
+	assert.match(page, /w-\[78px\] min-w-\[78px\][^"]*px-2 text-right/);
 	assert.match(page, /assessment-score-cell w-\[78px\] min-w-\[78px\] px-2/);
 	assert.match(page, /assessment-score-input h-8 w-14 min-w-14 px-2 text-right tabular-nums/);
 	assert.match(page, /\[appearance:textfield\]/);
@@ -239,6 +244,33 @@ test('academic assessment page uses one-save spreadsheet editing without expande
 	assert.doesNotMatch(page, /ChevronDown/);
 	assert.doesNotMatch(page, /ChevronRight/);
 	assert.match(page, /บันทึกการเปลี่ยนแปลง/);
+});
+
+test('academic assessment table keeps save action near sticky score grid', async () => {
+	const page = await readProjectFile('src/routes/(app)/staff/academic/assessments/+page.svelte');
+	const headerActions = page.slice(
+		page.indexOf('{#snippet actions()}'),
+		page.indexOf('{/snippet}')
+	);
+	const tableShell = page.slice(
+		page.indexOf('assessment-table-shell'),
+		page.indexOf('</Table.Root>')
+	);
+
+	assert.doesNotMatch(headerActions, /saveAllQuickScoreRows/);
+	assert.match(tableShell, /assessment-table-toolbar/);
+	assert.match(tableShell, /onclick=\{saveAllQuickScoreRows\}/);
+	assert.match(tableShell, /class="w-full md:w-auto"/);
+	assert.ok(
+		tableShell.indexOf('onclick={saveAllQuickScoreRows}') < tableShell.indexOf('<Table.Root')
+	);
+	assert.match(tableShell, /assessment-table-scroll/);
+	assert.match(tableShell, /\[&_\[data-slot='table-container'\]\]:overflow-visible/);
+	assert.match(tableShell, /assessment-sticky-head/);
+	assert.match(tableShell, /assessment-sticky-subject-head/);
+	assert.match(tableShell, /assessment-sticky-subject/);
+	assert.match(tableShell, /sticky left-0 top-0/);
+	assert.match(tableShell, /sticky top-0/);
 });
 
 test('academic assessment save feedback uses toast and saved status label', async () => {

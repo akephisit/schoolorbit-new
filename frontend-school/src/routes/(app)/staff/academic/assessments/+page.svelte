@@ -642,21 +642,6 @@
 				<Label for="teacher-assessment-access" class="text-sm">เปิดให้ครูกรอก</Label>
 			</div>
 		{/if}
-		{#if canManageAssessment}
-			<Button
-				variant="outline"
-				size="sm"
-				onclick={saveAllQuickScoreRows}
-				disabled={!hasDirtyQuickScoreDrafts || savingAllQuickScores}
-			>
-				{#if savingAllQuickScores}
-					<Loader2 class="mr-2 h-4 w-4 animate-spin" />
-				{:else}
-					<Save class="mr-2 h-4 w-4" />
-				{/if}
-				บันทึกการเปลี่ยนแปลง
-			</Button>
-		{/if}
 		<DropdownMenu.Root>
 			<DropdownMenu.Trigger>
 				<Button variant="outline" size="sm" disabled={exporting || plans.length === 0}>
@@ -796,207 +781,254 @@
 				</div>
 			</div>
 
-			<div class="overflow-x-auto rounded-lg border bg-background">
-				<Table.Root class="min-w-[1240px]">
-					<Table.Header>
-						<Table.Row>
-							<Table.Head>รายวิชา</Table.Head>
-							<Table.Head>ห้องเรียนที่เปิด</Table.Head>
-							<Table.Head>ครูผู้สอน</Table.Head>
-							{#each quickScoreColumns as column (column.field)}
-								<Table.Head class="w-[78px] min-w-[78px] px-2 text-right"
-									>{column.heading}</Table.Head
+			<div class="assessment-table-shell rounded-lg border bg-background">
+				{#if canManageAssessment}
+					<div class="assessment-table-toolbar flex justify-end border-b bg-background p-3">
+						<Button
+							class="w-full md:w-auto"
+							variant="outline"
+							size="sm"
+							onclick={saveAllQuickScoreRows}
+							disabled={!hasDirtyQuickScoreDrafts || savingAllQuickScores}
+						>
+							{#if savingAllQuickScores}
+								<Loader2 class="mr-2 h-4 w-4 animate-spin" />
+							{:else}
+								<Save class="mr-2 h-4 w-4" />
+							{/if}
+							บันทึกการเปลี่ยนแปลง
+						</Button>
+					</div>
+				{/if}
+				<div
+					class="assessment-table-scroll max-h-[calc(100vh-12rem)] overflow-auto md:max-h-[calc(100vh-16rem)] [&_[data-slot='table-container']]:overflow-visible"
+				>
+					<Table.Root class="min-w-[1240px]">
+						<Table.Header>
+							<Table.Row>
+								<Table.Head
+									class="assessment-sticky-head assessment-sticky-subject-head sticky left-0 top-0 z-40 min-w-[240px] border-r bg-background"
+									>รายวิชา</Table.Head
 								>
-							{/each}
-							<Table.Head>สอบกลางภาค</Table.Head>
-							<Table.Head class="w-[84px] min-w-[84px]">เวลากลางภาค</Table.Head>
-							<Table.Head>สอบปลายภาค</Table.Head>
-							<Table.Head class="w-[84px] min-w-[84px]">เวลาปลายภาค</Table.Head>
-							<Table.Head class="px-2 text-right">รวม</Table.Head>
-							<Table.Head>สถานะ</Table.Head>
-						</Table.Row>
-					</Table.Header>
-					<Table.Body>
-						{#if loadingPlans}
-							<Table.Row>
-								<Table.Cell colspan={13} class="h-24 text-center text-muted-foreground">
-									<Loader2 class="mx-auto mb-2 h-5 w-5 animate-spin" />
-									กำลังโหลดข้อมูล
-								</Table.Cell>
+								<Table.Head class="assessment-sticky-head sticky top-0 z-30 bg-background"
+									>ห้องเรียนที่เปิด</Table.Head
+								>
+								<Table.Head class="assessment-sticky-head sticky top-0 z-30 bg-background"
+									>ครูผู้สอน</Table.Head
+								>
+								{#each quickScoreColumns as column (column.field)}
+									<Table.Head
+										class="assessment-sticky-head sticky top-0 z-30 w-[78px] min-w-[78px] bg-background px-2 text-right"
+										>{column.heading}</Table.Head
+									>
+								{/each}
+								<Table.Head class="assessment-sticky-head sticky top-0 z-30 bg-background"
+									>สอบกลางภาค</Table.Head
+								>
+								<Table.Head
+									class="assessment-sticky-head sticky top-0 z-30 w-[84px] min-w-[84px] bg-background"
+									>เวลากลางภาค</Table.Head
+								>
+								<Table.Head class="assessment-sticky-head sticky top-0 z-30 bg-background"
+									>สอบปลายภาค</Table.Head
+								>
+								<Table.Head
+									class="assessment-sticky-head sticky top-0 z-30 w-[84px] min-w-[84px] bg-background"
+									>เวลาปลายภาค</Table.Head
+								>
+								<Table.Head
+									class="assessment-sticky-head sticky top-0 z-30 bg-background px-2 text-right"
+									>รวม</Table.Head
+								>
+								<Table.Head class="assessment-sticky-head sticky top-0 z-30 bg-background"
+									>สถานะ</Table.Head
+								>
 							</Table.Row>
-						{:else if plans.length === 0}
-							<Table.Row>
-								<Table.Cell colspan={13}>
-									<PageState
-										variant="empty"
-										title="ยังไม่มีรายวิชาตามตัวกรองนี้"
-										description="เลือกปี ภาคเรียน หรือห้องเรียนอื่นเพื่อดูโครงสร้างคะแนน"
-									/>
-								</Table.Cell>
-							</Table.Row>
-						{:else}
-							{#each plans as plan (assessmentPlanKey(plan))}
-								{@const quickDraft = quickScoreDrafts[assessmentPlanKey(plan)]}
-								{@const canEditPlan = !!quickDraft && canEditAssessmentPlan(plan)}
+						</Table.Header>
+						<Table.Body>
+							{#if loadingPlans}
 								<Table.Row>
-									<Table.Cell>
-										<div class="font-medium">{courseTitle(plan)}</div>
-										<div class="text-xs text-muted-foreground">
-											{plan.categoryCount} หมวด · {plan.itemCount} รายการย่อย
-										</div>
+									<Table.Cell colspan={13} class="h-24 text-center text-muted-foreground">
+										<Loader2 class="mx-auto mb-2 h-5 w-5 animate-spin" />
+										กำลังโหลดข้อมูล
 									</Table.Cell>
-									<Table.Cell>{classroomSummary(plan)}</Table.Cell>
-									<Table.Cell>{plan.instructorName ?? '-'}</Table.Cell>
-									{#each quickScoreColumns as column (column.field)}
-										<Table.Cell class="assessment-score-cell w-[78px] min-w-[78px] px-2">
+								</Table.Row>
+							{:else if plans.length === 0}
+								<Table.Row>
+									<Table.Cell colspan={13}>
+										<PageState
+											variant="empty"
+											title="ยังไม่มีรายวิชาตามตัวกรองนี้"
+											description="เลือกปี ภาคเรียน หรือห้องเรียนอื่นเพื่อดูโครงสร้างคะแนน"
+										/>
+									</Table.Cell>
+								</Table.Row>
+							{:else}
+								{#each plans as plan (assessmentPlanKey(plan))}
+									{@const quickDraft = quickScoreDrafts[assessmentPlanKey(plan)]}
+									{@const canEditPlan = !!quickDraft && canEditAssessmentPlan(plan)}
+									<Table.Row>
+										<Table.Cell
+											class="assessment-sticky-subject sticky left-0 z-20 min-w-[240px] border-r bg-background align-top"
+										>
+											<div class="font-medium">{courseTitle(plan)}</div>
+											<div class="text-xs text-muted-foreground">
+												{plan.categoryCount} หมวด · {plan.itemCount} รายการย่อย
+											</div>
+										</Table.Cell>
+										<Table.Cell>{classroomSummary(plan)}</Table.Cell>
+										<Table.Cell>{plan.instructorName ?? '-'}</Table.Cell>
+										{#each quickScoreColumns as column (column.field)}
+											<Table.Cell class="assessment-score-cell w-[78px] min-w-[78px] px-2">
+												{#if quickDraft}
+													<Input
+														type="number"
+														min="0"
+														step="0.5"
+														class="assessment-score-input h-8 w-14 min-w-14 px-2 text-right tabular-nums [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+														aria-label={column.label}
+														placeholder={column.heading}
+														value={quickDraft[column.field] ?? ''}
+														data-assessment-quick-score-input
+														data-assessment-plan-key={assessmentPlanKey(plan)}
+														data-assessment-field={column.field}
+														required={canEditPlan}
+														disabled={!canEditPlan || savingAllQuickScores}
+														oninput={(event) =>
+															setQuickScoreValue(plan, column.field, event.currentTarget.value)}
+														onkeydown={handleQuickScoreEnter}
+													/>
+												{/if}
+											</Table.Cell>
+										{/each}
+										<Table.Cell class="assessment-exam-cell">
+											{#if quickDraft}
+												<Select.Root
+													type="single"
+													value={quickDraft.midtermExamMode}
+													onValueChange={(value) =>
+														setQuickExamModeValue(plan, 'midtermExamMode', value)}
+													disabled={!canEditPlan || savingAllQuickScores}
+												>
+													<Select.Trigger class="h-9 text-xs">
+														{quickExamModeOptions.find(
+															(option) => option.value === quickDraft.midtermExamMode
+														)?.label}
+													</Select.Trigger>
+													<Select.Content>
+														{#each quickExamModeOptions as option (option.value)}
+															<Select.Item value={option.value}>{option.label}</Select.Item>
+														{/each}
+													</Select.Content>
+												</Select.Root>
+											{/if}
+										</Table.Cell>
+										<Table.Cell class="assessment-duration-cell w-[84px] min-w-[84px]">
 											{#if quickDraft}
 												<Input
 													type="number"
-													min="0"
-													step="0.5"
-													class="assessment-score-input h-8 w-14 min-w-14 px-2 text-right tabular-nums [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-													aria-label={column.label}
-													placeholder={column.heading}
-													value={quickDraft[column.field] ?? ''}
-													data-assessment-quick-score-input
+													min="1"
+													step="1"
+													class="h-9 w-[72px] min-w-[72px] text-right tabular-nums [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+													aria-label="ระยะเวลากลางภาค"
+													placeholder="นาที"
+													value={quickDraft.midtermExamDurationMinutes ?? ''}
 													data-assessment-plan-key={assessmentPlanKey(plan)}
-													data-assessment-field={column.field}
-													required={canEditPlan}
-													disabled={!canEditPlan || savingAllQuickScores}
+													data-assessment-field="midtermExamDurationMinutes"
+													required={canEditPlan && canEditExamDuration(quickDraft.midtermExamMode)}
+													disabled={!canEditPlan ||
+														savingAllQuickScores ||
+														!canEditExamDuration(quickDraft.midtermExamMode)}
 													oninput={(event) =>
-														setQuickScoreValue(plan, column.field, event.currentTarget.value)}
-													onkeydown={handleQuickScoreEnter}
+														setQuickDurationValue(
+															plan,
+															'midtermExamDurationMinutes',
+															event.currentTarget.value
+														)}
 												/>
 											{/if}
 										</Table.Cell>
-									{/each}
-									<Table.Cell class="assessment-exam-cell">
-										{#if quickDraft}
-											<Select.Root
-												type="single"
-												value={quickDraft.midtermExamMode}
-												onValueChange={(value) =>
-													setQuickExamModeValue(plan, 'midtermExamMode', value)}
-												disabled={!canEditPlan || savingAllQuickScores}
-											>
-												<Select.Trigger class="h-9 text-xs">
-													{quickExamModeOptions.find(
-														(option) => option.value === quickDraft.midtermExamMode
-													)?.label}
-												</Select.Trigger>
-												<Select.Content>
-													{#each quickExamModeOptions as option (option.value)}
-														<Select.Item value={option.value}>{option.label}</Select.Item>
-													{/each}
-												</Select.Content>
-											</Select.Root>
-										{/if}
-									</Table.Cell>
-									<Table.Cell class="assessment-duration-cell w-[84px] min-w-[84px]">
-										{#if quickDraft}
-											<Input
-												type="number"
-												min="1"
-												step="1"
-												class="h-9 w-[72px] min-w-[72px] text-right tabular-nums [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-												aria-label="ระยะเวลากลางภาค"
-												placeholder="นาที"
-												value={quickDraft.midtermExamDurationMinutes ?? ''}
-												data-assessment-plan-key={assessmentPlanKey(plan)}
-												data-assessment-field="midtermExamDurationMinutes"
-												required={canEditPlan && canEditExamDuration(quickDraft.midtermExamMode)}
-												disabled={!canEditPlan ||
-													savingAllQuickScores ||
-													!canEditExamDuration(quickDraft.midtermExamMode)}
-												oninput={(event) =>
-													setQuickDurationValue(
-														plan,
-														'midtermExamDurationMinutes',
-														event.currentTarget.value
-													)}
-											/>
-										{/if}
-									</Table.Cell>
-									<Table.Cell class="assessment-exam-cell">
-										{#if quickDraft}
-											<Select.Root
-												type="single"
-												value={quickDraft.finalExamMode}
-												onValueChange={(value) =>
-													setQuickExamModeValue(plan, 'finalExamMode', value)}
-												disabled={!canEditPlan || savingAllQuickScores}
-											>
-												<Select.Trigger class="h-9 text-xs">
-													{quickExamModeOptions.find(
-														(option) => option.value === quickDraft.finalExamMode
-													)?.label}
-												</Select.Trigger>
-												<Select.Content>
-													{#each quickExamModeOptions as option (option.value)}
-														<Select.Item value={option.value}>{option.label}</Select.Item>
-													{/each}
-												</Select.Content>
-											</Select.Root>
-										{/if}
-									</Table.Cell>
-									<Table.Cell class="assessment-duration-cell w-[84px] min-w-[84px]">
-										{#if quickDraft}
-											<Input
-												type="number"
-												min="1"
-												step="1"
-												class="h-9 w-[72px] min-w-[72px] text-right tabular-nums [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-												aria-label="ระยะเวลาปลายภาค"
-												placeholder="นาที"
-												value={quickDraft.finalExamDurationMinutes ?? ''}
-												data-assessment-plan-key={assessmentPlanKey(plan)}
-												data-assessment-field="finalExamDurationMinutes"
-												required={canEditPlan && canEditExamDuration(quickDraft.finalExamMode)}
-												disabled={!canEditPlan ||
-													savingAllQuickScores ||
-													!canEditExamDuration(quickDraft.finalExamMode)}
-												oninput={(event) =>
-													setQuickDurationValue(
-														plan,
-														'finalExamDurationMinutes',
-														event.currentTarget.value
-													)}
-											/>
-										{/if}
-									</Table.Cell>
-									<Table.Cell class="px-2 text-right tabular-nums">
-										{#if quickDraft}
-											<div class={quickDraft.dirty ? 'font-semibold text-primary' : ''}>
-												{quickScoreTotal(quickDraft)}
-											</div>
-										{:else}
-											{plan.totalScore}
-										{/if}
-									</Table.Cell>
-									<Table.Cell>
-										<div class="flex flex-wrap items-center gap-2">
-											<Badge variant={statusBadgeVariant(plan.status)}>
-												{statusLabel(plan.status)}
-											</Badge>
-											{#if quickDraft?.dirty}
-												<Badge variant="outline">ยังไม่บันทึก</Badge>
+										<Table.Cell class="assessment-exam-cell">
+											{#if quickDraft}
+												<Select.Root
+													type="single"
+													value={quickDraft.finalExamMode}
+													onValueChange={(value) =>
+														setQuickExamModeValue(plan, 'finalExamMode', value)}
+													disabled={!canEditPlan || savingAllQuickScores}
+												>
+													<Select.Trigger class="h-9 text-xs">
+														{quickExamModeOptions.find(
+															(option) => option.value === quickDraft.finalExamMode
+														)?.label}
+													</Select.Trigger>
+													<Select.Content>
+														{#each quickExamModeOptions as option (option.value)}
+															<Select.Item value={option.value}>{option.label}</Select.Item>
+														{/each}
+													</Select.Content>
+												</Select.Root>
 											{/if}
-											{#if !plan.canManage}
-												<Badge variant="outline">ดูอย่างเดียว</Badge>
+										</Table.Cell>
+										<Table.Cell class="assessment-duration-cell w-[84px] min-w-[84px]">
+											{#if quickDraft}
+												<Input
+													type="number"
+													min="1"
+													step="1"
+													class="h-9 w-[72px] min-w-[72px] text-right tabular-nums [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+													aria-label="ระยะเวลาปลายภาค"
+													placeholder="นาที"
+													value={quickDraft.finalExamDurationMinutes ?? ''}
+													data-assessment-plan-key={assessmentPlanKey(plan)}
+													data-assessment-field="finalExamDurationMinutes"
+													required={canEditPlan && canEditExamDuration(quickDraft.finalExamMode)}
+													disabled={!canEditPlan ||
+														savingAllQuickScores ||
+														!canEditExamDuration(quickDraft.finalExamMode)}
+													oninput={(event) =>
+														setQuickDurationValue(
+															plan,
+															'finalExamDurationMinutes',
+															event.currentTarget.value
+														)}
+												/>
 											{/if}
-											{#if plan.hasUnallocatedCategories}
-												<Badge variant="destructive">
-													<AlertTriangle class="h-3 w-3" />
-													คะแนนย่อยไม่ลงตัว
+										</Table.Cell>
+										<Table.Cell class="px-2 text-right tabular-nums">
+											{#if quickDraft}
+												<div class={quickDraft.dirty ? 'font-semibold text-primary' : ''}>
+													{quickScoreTotal(quickDraft)}
+												</div>
+											{:else}
+												{plan.totalScore}
+											{/if}
+										</Table.Cell>
+										<Table.Cell>
+											<div class="flex flex-wrap items-center gap-2">
+												<Badge variant={statusBadgeVariant(plan.status)}>
+													{statusLabel(plan.status)}
 												</Badge>
-											{/if}
-										</div>
-									</Table.Cell>
-								</Table.Row>
-							{/each}
-						{/if}
-					</Table.Body>
-				</Table.Root>
+												{#if quickDraft?.dirty}
+													<Badge variant="outline">ยังไม่บันทึก</Badge>
+												{/if}
+												{#if !plan.canManage}
+													<Badge variant="outline">ดูอย่างเดียว</Badge>
+												{/if}
+												{#if plan.hasUnallocatedCategories}
+													<Badge variant="destructive">
+														<AlertTriangle class="h-3 w-3" />
+														คะแนนย่อยไม่ลงตัว
+													</Badge>
+												{/if}
+											</div>
+										</Table.Cell>
+									</Table.Row>
+								{/each}
+							{/if}
+						</Table.Body>
+					</Table.Root>
+				</div>
 			</div>
 		</div>
 	{/if}
