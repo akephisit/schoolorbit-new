@@ -246,7 +246,7 @@ test('academic assessment page uses one-save spreadsheet editing without expande
 	assert.match(page, /บันทึกการเปลี่ยนแปลง/);
 });
 
-test('academic assessment table keeps save action near sticky score grid', async () => {
+test('academic assessment table keeps save action near grid without sticky subject column', async () => {
 	const page = await readProjectFile('src/routes/(app)/staff/academic/assessments/+page.svelte');
 	const headerActions = page.slice(
 		page.indexOf('{#snippet actions()}'),
@@ -267,10 +267,10 @@ test('academic assessment table keeps save action near sticky score grid', async
 	assert.match(tableShell, /assessment-table-scroll/);
 	assert.match(tableShell, /\[&_\[data-slot='table-container'\]\]:overflow-visible/);
 	assert.match(tableShell, /assessment-sticky-head/);
-	assert.match(tableShell, /assessment-sticky-subject-head/);
-	assert.match(tableShell, /assessment-sticky-subject/);
-	assert.match(tableShell, /sticky left-0 top-0/);
 	assert.match(tableShell, /sticky top-0/);
+	assert.doesNotMatch(tableShell, /assessment-sticky-subject/);
+	assert.doesNotMatch(tableShell, /left-0/);
+	assert.doesNotMatch(tableShell, /sticky left/);
 });
 
 test('academic assessment save feedback uses toast and saved status label', async () => {

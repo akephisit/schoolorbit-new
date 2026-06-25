@@ -807,7 +807,7 @@
 						<Table.Header>
 							<Table.Row>
 								<Table.Head
-									class="assessment-sticky-head assessment-sticky-subject-head sticky left-0 top-0 z-40 min-w-[240px] border-r bg-background"
+									class="assessment-sticky-head sticky top-0 z-30 bg-background"
 									>รายวิชา</Table.Head
 								>
 								<Table.Head class="assessment-sticky-head sticky top-0 z-30 bg-background"
@@ -868,9 +868,7 @@
 									{@const quickDraft = quickScoreDrafts[assessmentPlanKey(plan)]}
 									{@const canEditPlan = !!quickDraft && canEditAssessmentPlan(plan)}
 									<Table.Row>
-										<Table.Cell
-											class="assessment-sticky-subject sticky left-0 z-20 min-w-[240px] border-r bg-background align-top"
-										>
+										<Table.Cell>
 											<div class="font-medium">{courseTitle(plan)}</div>
 											<div class="text-xs text-muted-foreground">
 												{plan.categoryCount} หมวด · {plan.itemCount} รายการย่อย
