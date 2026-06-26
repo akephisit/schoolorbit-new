@@ -96,11 +96,11 @@ pub async fn assign_courses(pool: &PgPool, payload: AssignCoursesRequest) -> Res
         r#"WITH inserted AS (
                INSERT INTO classroom_courses (classroom_id, academic_semester_id, subject_id, primary_instructor_id)
                SELECT $1, $2, s.id,
-                      COALESCE(
-                          (SELECT sdi.instructor_id FROM subject_default_instructors sdi
-                           WHERE sdi.subject_id = s.id AND sdi.role = 'primary' LIMIT 1),
-                          s.default_instructor_id
-                      )
+                      (SELECT sdi.instructor_id
+                       FROM subject_default_instructors sdi
+                       WHERE sdi.subject_id = s.id
+                       ORDER BY (sdi.role = 'primary') DESC, sdi.created_at ASC
+                       LIMIT 1)
                FROM subjects s WHERE s.id = ANY($3)
                ON CONFLICT (classroom_id, academic_semester_id, subject_id) DO NOTHING
                RETURNING id, subject_id

@@ -306,7 +306,6 @@ export interface Subject {
 	group_name_th?: string;
 	grade_level_ids?: string[];
 	term?: string;
-	default_instructor_id?: string;
 	default_instructor_name?: string;
 	/** Pass on create/update to replace default instructor team atomically. */
 	default_instructors?: { instructor_id: string; role: 'primary' | 'secondary' }[];

@@ -114,21 +114,46 @@ pub async fn list_subject_groups(pool: &PgPool) -> Result<Vec<SubjectGroup>, App
     })
 }
 
+fn subject_response_base_query() -> String {
+    String::from(
+        r#"SELECT s.*, sg.name_th as group_name_th,
+                  (SELECT COALESCE(array_agg(sgl.grade_level_id), '{}')
+                   FROM subject_grade_levels sgl WHERE sgl.subject_id = s.id) as grade_level_ids,
+                  primary_instructor.default_instructor_name
+           FROM subjects s
+           LEFT JOIN subject_groups sg ON s.group_id = sg.id
+           LEFT JOIN LATERAL (
+               SELECT concat(u.first_name, ' ', u.last_name) as default_instructor_name
+               FROM subject_default_instructors sdi
+               JOIN users u ON u.id = sdi.instructor_id
+               WHERE sdi.subject_id = s.id
+               ORDER BY (sdi.role = 'primary') DESC, sdi.created_at ASC
+               LIMIT 1
+           ) primary_instructor ON true
+           WHERE 1=1"#,
+    )
+}
+
+async fn get_subject_for_response(pool: &PgPool, id: Uuid) -> Result<Subject, AppError> {
+    let mut query = subject_response_base_query();
+    query.push_str(" AND s.id = $1");
+
+    sqlx::query_as::<_, Subject>(&query)
+        .bind(id)
+        .fetch_one(pool)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to fetch subject {} for response: {}", id, e);
+            AppError::InternalServerError("Failed to fetch subject".to_string())
+        })
+}
+
 pub async fn list_subjects(
     pool: &PgPool,
     filter: SubjectFilter,
     access: SubjectGroupAccess,
 ) -> Result<Vec<Subject>, AppError> {
-    let mut query = String::from(
-        r#"SELECT s.*, sg.name_th as group_name_th,
-                  (SELECT COALESCE(array_agg(sgl.grade_level_id), '{}')
-                   FROM subject_grade_levels sgl WHERE sgl.subject_id = s.id) as grade_level_ids,
-                  concat(u.first_name, ' ', u.last_name) as default_instructor_name
-           FROM subjects s
-           LEFT JOIN subject_groups sg ON s.group_id = sg.id
-           LEFT JOIN users u ON s.default_instructor_id = u.id
-           WHERE 1=1"#,
-    );
+    let mut query = subject_response_base_query();
 
     let mut idx = 0u32;
 
@@ -246,14 +271,14 @@ pub async fn create_subject(
 
     let mut subject = sqlx::query_as::<_, Subject>(
         r#"INSERT INTO subjects (code, name_th, name_en, credit, hours_per_semester, type, group_id, description,
-                                 start_academic_year_id, term, default_instructor_id)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+                                 start_academic_year_id, term)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
            RETURNING *"#
     )
     .bind(&payload.code).bind(&payload.name_th).bind(&payload.name_en)
     .bind(payload.credit.unwrap_or(0.0)).bind(payload.hours_per_semester)
     .bind(&payload.subject_type).bind(payload.group_id).bind(&payload.description)
-    .bind(payload.start_academic_year_id).bind(&payload.term).bind(payload.default_instructor_id)
+    .bind(payload.start_academic_year_id).bind(&payload.term)
     .fetch_one(&mut *tx).await
     .map_err(|e| {
         tracing::error!("Failed to create subject: {}", e);
@@ -277,7 +302,7 @@ pub async fn create_subject(
     tx.commit()
         .await
         .map_err(|_| AppError::InternalServerError("Commit failed".to_string()))?;
-    Ok(subject)
+    get_subject_for_response(pool, subject.id).await
 }
 
 pub async fn update_subject(
@@ -297,14 +322,14 @@ pub async fn update_subject(
             type = COALESCE($6, type), group_id = COALESCE($7, group_id),
             description = COALESCE($8, description), is_active = COALESCE($9, is_active),
             start_academic_year_id = COALESCE($10, start_academic_year_id),
-            term = $12, default_instructor_id = $13, updated_at = NOW()
+            term = $12, updated_at = NOW()
            WHERE id = $11 RETURNING *"#
     )
     .bind(&payload.code).bind(&payload.name_th).bind(&payload.name_en)
     .bind(payload.credit).bind(payload.hours_per_semester)
     .bind(&payload.subject_type).bind(payload.group_id).bind(&payload.description)
     .bind(payload.is_active).bind(payload.start_academic_year_id).bind(id)
-    .bind(&payload.term).bind(payload.default_instructor_id)
+    .bind(&payload.term)
     .fetch_one(&mut *tx).await
     .map_err(|e| {
         tracing::error!("Failed to update subject {}: {}", id, e);
@@ -333,7 +358,7 @@ pub async fn update_subject(
     tx.commit()
         .await
         .map_err(|_| AppError::InternalServerError("Commit failed".to_string()))?;
-    Ok(subject)
+    get_subject_for_response(pool, subject.id).await
 }
 
 pub async fn delete_subject(pool: &PgPool, id: Uuid) -> Result<(), AppError> {

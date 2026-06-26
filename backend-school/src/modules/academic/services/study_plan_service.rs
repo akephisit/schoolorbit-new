@@ -725,9 +725,8 @@ pub async fn generate_courses_from_plan(
     let counts: (i64, i64) = sqlx::query_as(
         r#"
         WITH plan_subjects AS (
-            SELECT sps.subject_id, s.default_instructor_id
+            SELECT sps.subject_id
             FROM study_plan_subjects sps
-            JOIN subjects s ON s.id = sps.subject_id
             WHERE sps.study_plan_version_id = $1
               AND sps.grade_level_id = $2
               AND sps.term = $3
@@ -736,11 +735,11 @@ pub async fn generate_courses_from_plan(
             INSERT INTO classroom_courses
                 (classroom_id, subject_id, academic_semester_id, settings, primary_instructor_id)
             SELECT $4, ps.subject_id, $5, '{}'::jsonb,
-                COALESCE(
-                    (SELECT sdi.instructor_id FROM subject_default_instructors sdi
-                     WHERE sdi.subject_id = ps.subject_id AND sdi.role = 'primary' LIMIT 1),
-                    ps.default_instructor_id
-                )
+                (SELECT sdi.instructor_id
+                 FROM subject_default_instructors sdi
+                 WHERE sdi.subject_id = ps.subject_id
+                 ORDER BY (sdi.role = 'primary') DESC, sdi.created_at ASC
+                 LIMIT 1)
             FROM plan_subjects ps
             ON CONFLICT (classroom_id, subject_id, academic_semester_id) DO NOTHING
             RETURNING id, subject_id

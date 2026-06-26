@@ -773,6 +773,102 @@ fn academic_curriculum_permission_decisions_live_in_policy_layer() {
 }
 
 #[test]
+fn academic_subject_list_and_mutations_return_hydrated_display_fields() {
+    let subject_service = strip_comments(&read_source(
+        manifest_dir().join("src/modules/academic/services/subject_service.rs"),
+    ));
+
+    let list_subjects = subject_service
+        .split("pub async fn list_subjects")
+        .nth(1)
+        .unwrap_or("")
+        .split("pub async fn create_subject")
+        .next()
+        .unwrap_or("");
+    let create_subject = subject_service
+        .split("pub async fn create_subject")
+        .nth(1)
+        .unwrap_or("")
+        .split("pub async fn update_subject")
+        .next()
+        .unwrap_or("");
+    let update_subject = subject_service
+        .split("pub async fn update_subject")
+        .nth(1)
+        .unwrap_or("")
+        .split("pub async fn delete_subject")
+        .next()
+        .unwrap_or("");
+
+    assert!(subject_service.contains("LEFT JOIN subject_groups sg ON s.group_id = sg.id"));
+    assert!(subject_service.contains("subject_default_instructors"));
+    assert!(subject_service.contains("default_instructor_name"));
+    assert!(list_subjects.contains("subject_response_base_query()"));
+    assert!(
+        !subject_service.contains("LEFT JOIN users u ON s.default_instructor_id = u.id"),
+        "subject list should resolve the primary teacher from subject_default_instructors"
+    );
+    assert!(create_subject.contains("get_subject_for_response(pool, subject.id)"));
+    assert!(update_subject.contains("get_subject_for_response(pool, subject.id)"));
+}
+
+#[test]
+fn academic_subject_default_instructor_uses_junction_only() {
+    let subject_model = strip_comments(&read_source(
+        manifest_dir().join("src/modules/academic/models/curriculum.rs"),
+    ));
+    let subject_service = strip_comments(&read_source(
+        manifest_dir().join("src/modules/academic/services/subject_service.rs"),
+    ));
+    let course_planning_service = strip_comments(&read_source(
+        manifest_dir().join("src/modules/academic/services/course_planning_service.rs"),
+    ));
+    let study_plan_service = strip_comments(&read_source(
+        manifest_dir().join("src/modules/academic/services/study_plan_service.rs"),
+    ));
+    let frontend_api = strip_comments(&read_source(
+        repo_root()
+            .join("frontend-school")
+            .join("src/lib/api/academic.ts"),
+    ));
+    let subjects_page = strip_comments(&read_source(
+        repo_root()
+            .join("frontend-school")
+            .join("src/routes/(app)/staff/academic/subjects/+page.svelte"),
+    ));
+    let drop_migration = read_source(
+        manifest_dir()
+            .join("migrations")
+            .join("017_drop_subject_default_instructor_id.sql"),
+    );
+
+    for (label, source) in [
+        ("subject model", subject_model),
+        ("subject service", subject_service),
+        ("course planning service", course_planning_service),
+        ("study plan service", study_plan_service),
+        ("frontend academic api", frontend_api),
+        ("subjects page", subjects_page),
+    ] {
+        assert!(
+            !source.contains("default_instructor_id"),
+            "{label} should use subject_default_instructors instead of subjects.default_instructor_id"
+        );
+    }
+
+    assert!(drop_migration.contains("DROP TRIGGER IF EXISTS subject_sync_junction ON subjects"));
+    assert!(drop_migration.contains("DROP FUNCTION IF EXISTS refresh_subject_default_instructor"));
+    assert!(drop_migration.contains("DROP FUNCTION IF EXISTS trg_subject_sync_junction"));
+    assert!(drop_migration.contains("DROP FUNCTION IF EXISTS trg_sdi_sync_primary"));
+    assert!(drop_migration.contains("INSERT INTO subject_default_instructors"));
+    assert!(drop_migration.contains("WHERE default_instructor_id IS NOT NULL"));
+    assert!(drop_migration.contains("ON CONFLICT (subject_id, instructor_id)"));
+    assert!(drop_migration.contains("DROP COLUMN IF EXISTS default_instructor_id"));
+    assert!(drop_migration.contains("CREATE TRIGGER sdi_enforce_single_primary"));
+    assert!(drop_migration.contains("trg_sdi_enforce_single_primary"));
+}
+
+#[test]
 fn student_profile_access_uses_resource_policy_and_separate_pii_scope() {
     let policies_root = read_source(manifest_dir().join("src/policies.rs"));
     let student_handler = strip_comments(&read_source(

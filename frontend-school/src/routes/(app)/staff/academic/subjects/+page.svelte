@@ -623,7 +623,6 @@
 			group_id: subject.group_id ?? '',
 			grade_level_ids: [...(subject.grade_level_ids ?? [])],
 			term: subject.term ?? '',
-			default_instructor_id: subject.default_instructor_id ?? '',
 			credit: subject.credit,
 			hours_per_semester: subject.hours_per_semester,
 			description: subject.description ?? '',
@@ -674,7 +673,6 @@
 
 			payload.group_id = nullify(payload.group_id) ?? undefined;
 			payload.start_academic_year_id = nullify(payload.start_academic_year_id) ?? '';
-			payload.default_instructor_id = nullify(payload.default_instructor_id) ?? undefined;
 			payload.description = nullify(payload.description) ?? undefined;
 			payload.term = nullify(payload.term) ?? undefined;
 

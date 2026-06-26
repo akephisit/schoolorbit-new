@@ -41,7 +41,6 @@ pub struct Subject {
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub term: Option<String>,
-    pub default_instructor_id: Option<Uuid>,
 
     // Joined Fields (Optional)
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -76,10 +75,8 @@ pub struct CreateSubjectRequest {
     pub description: Option<String>,
     pub grade_level_ids: Option<Vec<Uuid>>,
     pub term: Option<String>,
-    pub default_instructor_id: Option<Uuid>,
     /// Full team to store in subject_default_instructors. When provided,
-    /// overrides default_instructor_id seeding behavior — junction rows are
-    /// written exactly as listed. Leave None to keep legacy single-primary path.
+    /// junction rows are written exactly as listed.
     pub default_instructors: Option<Vec<DefaultInstructorInput>>,
 }
 
@@ -98,7 +95,6 @@ pub struct UpdateSubjectRequest {
     pub start_academic_year_id: Option<Uuid>,
     pub grade_level_ids: Option<Vec<Uuid>>,
     pub term: Option<String>,
-    pub default_instructor_id: Option<Uuid>,
     /// When provided, replaces the subject's default team atomically.
     /// Pass `Some([])` to clear all defaults. Leave None to skip team update.
     pub default_instructors: Option<Vec<DefaultInstructorInput>>,
