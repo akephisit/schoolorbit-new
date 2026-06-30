@@ -180,6 +180,43 @@
 		return subject || 'รายวิชา';
 	}
 
+	function compareNullableNumber(left?: number | null, right?: number | null) {
+		const leftValue = left ?? Number.MAX_SAFE_INTEGER;
+		const rightValue = right ?? Number.MAX_SAFE_INTEGER;
+		return leftValue - rightValue;
+	}
+
+	function compareExportText(left?: string | null, right?: string | null) {
+		return (left ?? '').localeCompare(right ?? '', 'th', {
+			numeric: true,
+			sensitivity: 'base'
+		});
+	}
+
+	function gradeLevelLabel(plan: AssessmentPlanSummary) {
+		const prefixBySort: Record<number, string> = {
+			1: 'อ.',
+			2: 'ป.',
+			3: 'ม.'
+		};
+		const prefix = prefixBySort[plan.gradeLevelSort] ?? '';
+		return prefix ? `${prefix}${plan.gradeYear}` : '';
+	}
+
+	function sortedAssessmentExportPlans(sourcePlans: AssessmentPlanSummary[]) {
+		return [...sourcePlans].sort((left, right) => {
+			return (
+				compareNullableNumber(left.subjectGroupDisplayOrder, right.subjectGroupDisplayOrder) ||
+				compareExportText(left.subjectGroupName, right.subjectGroupName) ||
+				compareNullableNumber(left.gradeLevelSort, right.gradeLevelSort) ||
+				compareNullableNumber(left.gradeYear, right.gradeYear) ||
+				compareExportText(left.classroomRoomNumber, right.classroomRoomNumber) ||
+				compareExportText(left.subjectCode, right.subjectCode) ||
+				compareExportText(courseTitle(left), courseTitle(right))
+			);
+		});
+	}
+
 	function assessmentPlanKey(plan: AssessmentPlanSummary) {
 		return `${plan.academicSemesterId}-${plan.subjectId}`;
 	}
@@ -575,12 +612,14 @@
 		exporting = true;
 		try {
 			const XLSX = await import('xlsx');
-			const rows = plans
+			const rows = sortedAssessmentExportPlans(plans)
 				.filter(
 					(plan) =>
 						kind === 'overview' || plan.inTimetableCount > 0 || plan.outsideTimetableCount > 0
 				)
 				.map((plan) => ({
+					กลุ่มสาระ: plan.subjectGroupName ?? '',
+					ระดับชั้น: gradeLevelLabel(plan),
 					ห้องเรียนที่เปิด: plan.classroomName ?? '',
 					จำนวนห้อง: plan.classroomCount,
 					รหัสวิชา: plan.subjectCode ?? '',

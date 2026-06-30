@@ -27,6 +27,12 @@ export interface AssessmentPlanSummary {
 	subjectCode?: string;
 	subjectNameTh?: string;
 	subjectNameEn?: string;
+	subjectGroupId?: string;
+	subjectGroupName?: string;
+	subjectGroupDisplayOrder?: number | null;
+	gradeLevelSort: number;
+	gradeYear: number;
+	classroomRoomNumber?: string | null;
 	classroomName?: string;
 	classroomCount: number;
 	instructorName?: string;

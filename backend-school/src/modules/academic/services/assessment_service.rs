@@ -424,6 +424,9 @@ WITH scoped_courses AS (
         s.code AS subject_code,
         s.name_th AS subject_name_th,
         s.name_en AS subject_name_en,
+        s.group_id AS subject_group_id,
+        sg.name_th AS subject_group_name,
+        sg.display_order AS subject_group_display_order,
         cr.name AS classroom_name,
         CASE gl.level_type
             WHEN 'kindergarten' THEN 1
@@ -436,6 +439,7 @@ WITH scoped_courses AS (
         NULLIF(CONCAT_WS(' ', u.first_name, u.last_name), '') AS instructor_name
     FROM classroom_courses cc
     JOIN subjects s ON s.id = cc.subject_id
+    LEFT JOIN subject_groups sg ON sg.id = s.group_id
     JOIN class_rooms cr ON cr.id = cc.classroom_id
     JOIN grade_levels gl ON gl.id = cr.grade_level_id
     LEFT JOIN users u ON u.id = cc.primary_instructor_id
@@ -456,6 +460,9 @@ representative_courses AS (
         subject_code,
         subject_name_th,
         subject_name_en,
+        subject_group_id,
+        subject_group_name,
+        subject_group_display_order,
         grade_level_sort,
         grade_year,
         classroom_room_number
@@ -534,6 +541,12 @@ SELECT
     rc.subject_code,
     rc.subject_name_th,
     rc.subject_name_en,
+    rc.subject_group_id,
+    rc.subject_group_name,
+    rc.subject_group_display_order,
+    rc.grade_level_sort,
+    rc.grade_year,
+    rc.classroom_room_number,
     rollup.classroom_name,
     rollup.classroom_count,
     rollup.instructor_name,

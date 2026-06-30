@@ -378,3 +378,38 @@ test('academic assessment plans are grouped by subject and capture exam duration
 	assert.match(page, /finalExamDurationMinutes/);
 	assert.doesNotMatch(page, /\{#each plans as plan \(plan\.classroomCourseId\)\}/);
 });
+
+test('academic assessment export sorts by subject group then grade level', async () => {
+	const api = await readProjectFile('src/lib/api/academicAssessments.ts');
+	const page = await readProjectFile('src/routes/(app)/staff/academic/assessments/+page.svelte');
+	const model = await readRepoFile('backend-school/src/modules/academic/models/assessment.rs');
+	const service = await readRepoFile(
+		'backend-school/src/modules/academic/services/assessment_service.rs'
+	);
+
+	assert.match(api, /subjectGroupName\?:\s*string/);
+	assert.match(api, /subjectGroupDisplayOrder\?:\s*number\s*\|\s*null/);
+	assert.match(api, /gradeLevelSort:\s*number/);
+	assert.match(api, /gradeYear:\s*number/);
+	assert.match(api, /classroomRoomNumber\?:\s*string\s*\|\s*null/);
+
+	assert.match(model, /pub subject_group_name: Option<String>/);
+	assert.match(model, /pub subject_group_display_order: Option<i32>/);
+	assert.match(model, /pub grade_level_sort: i32/);
+	assert.match(model, /pub grade_year: i32/);
+	assert.match(model, /pub classroom_room_number: Option<String>/);
+
+	assert.match(service, /LEFT JOIN subject_groups sg ON sg\.id = s\.group_id/);
+	assert.match(service, /sg\.name_th AS subject_group_name/);
+	assert.match(service, /sg\.display_order AS subject_group_display_order/);
+
+	assert.match(page, /function sortedAssessmentExportPlans/);
+	assert.match(page, /subjectGroupDisplayOrder/);
+	assert.match(page, /subjectGroupName/);
+	assert.match(page, /gradeLevelSort/);
+	assert.match(page, /gradeYear/);
+	assert.match(page, /classroomRoomNumber/);
+	assert.match(page, /const rows = sortedAssessmentExportPlans\(plans\)/);
+	assert.match(page, /กลุ่มสาระ:\s*plan\.subjectGroupName/);
+	assert.match(page, /ระดับชั้น:\s*gradeLevelLabel\(plan\)/);
+});
