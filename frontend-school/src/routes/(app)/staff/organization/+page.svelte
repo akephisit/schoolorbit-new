@@ -15,6 +15,7 @@
 	import { Input } from '$lib/components/ui/input';
 	import { Badge } from '$lib/components/ui/badge';
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
+	import MobileDragDropPolyfill from '$lib/components/MobileDragDropPolyfill.svelte';
 	import {
 		ArrowRight,
 		Building2,
@@ -331,6 +332,8 @@
 <svelte:head>
 	<title>โครงสร้างโรงเรียน - SchoolOrbit</title>
 </svelte:head>
+
+<MobileDragDropPolyfill />
 
 <PageShell
 	title="โครงสร้างโรงเรียน"

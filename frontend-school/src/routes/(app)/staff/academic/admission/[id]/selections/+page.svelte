@@ -25,6 +25,7 @@
 	import { Badge } from '$lib/components/ui/badge';
 	import { Checkbox } from '$lib/components/ui/checkbox';
 	import { Label } from '$lib/components/ui/label';
+	import MobileDragDropPolyfill from '$lib/components/MobileDragDropPolyfill.svelte';
 	import { PageShell } from '$lib/components/app-layout';
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import * as RadioGroup from '$lib/components/ui/radio-group';
@@ -445,6 +446,8 @@
 <svelte:head>
 	<title>{data.title} - SchoolOrbit</title>
 </svelte:head>
+
+<MobileDragDropPolyfill />
 
 <PageShell
 	title="จัดห้องเรียน (เรียงคะแนน)"

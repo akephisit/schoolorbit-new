@@ -14,6 +14,7 @@
 	import { PageShell } from '$lib/components/app-layout';
 	import { Card } from '$lib/components/ui/card';
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
+	import MobileDragDropPolyfill from '$lib/components/MobileDragDropPolyfill.svelte';
 	import * as Tabs from '$lib/components/ui/tabs';
 	import { GripVertical } from 'lucide-svelte';
 	import * as Select from '$lib/components/ui/select';
@@ -374,6 +375,8 @@
 <svelte:head>
 	<title>จัดการเมนู - Menu Management</title>
 </svelte:head>
+
+<MobileDragDropPolyfill />
 
 <PageShell title="จัดการเมนู" description="จัดการโครงสร้างเมนูและกลุ่มเมนู (Native Drag & Drop)">
 	{#if !canReadMenu}

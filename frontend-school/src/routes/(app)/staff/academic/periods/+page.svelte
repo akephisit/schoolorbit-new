@@ -21,6 +21,7 @@
 	import { Badge } from '$lib/components/ui/badge';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import * as Select from '$lib/components/ui/select';
+	import MobileDragDropPolyfill from '$lib/components/MobileDragDropPolyfill.svelte';
 	import { PageShell } from '$lib/components/app-layout';
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import { PERMISSIONS } from '$lib/permissions/registry';
@@ -242,6 +243,8 @@
 <svelte:head>
 	<title>{data.title} - SchoolOrbit</title>
 </svelte:head>
+
+<MobileDragDropPolyfill />
 
 <PageShell
 	title="ตั้งค่าคาบเวลา"

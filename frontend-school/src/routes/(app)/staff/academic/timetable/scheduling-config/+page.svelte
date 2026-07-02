@@ -36,6 +36,7 @@
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import { Badge } from '$lib/components/ui/badge';
+	import MobileDragDropPolyfill from '$lib/components/MobileDragDropPolyfill.svelte';
 	import { PageShell } from '$lib/components/app-layout';
 	import { LoadingButton, PageSkeleton, PageState } from '$lib/components/app-state';
 	import {
@@ -684,6 +685,8 @@
 <svelte:head>
 	<title>{data.title}</title>
 </svelte:head>
+
+<MobileDragDropPolyfill />
 
 <PageShell
 	title="ตั้งค่าจัดตารางอัตโนมัติ"

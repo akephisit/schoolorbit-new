@@ -53,17 +53,6 @@
 		return userCanAccessRoute($authStore.user, $userPermissions, page.route.id);
 	}
 
-	async function enableMobileDragDrop() {
-		const { polyfill } = await import('mobile-drag-drop');
-		const { scrollBehaviourDragImageTranslateOverride } =
-			await import('mobile-drag-drop/scroll-behaviour');
-
-		polyfill({
-			dragImageTranslateOverride: scrollBehaviourDragImageTranslateOverride,
-			holdToDrag: 200
-		});
-	}
-
 	// Check authentication for protected routes
 	onMount(async () => {
 		const isAuthenticated = await authAPI.checkAuth();
@@ -80,7 +69,6 @@
 
 		authStatus = 'authenticated';
 		notificationStore.subscribeToPush();
-		await enableMobileDragDrop();
 	});
 
 	$effect(() => {
@@ -98,13 +86,6 @@
 		void redirectToForbidden();
 	});
 </script>
-
-<svelte:head>
-	<link
-		rel="stylesheet"
-		href="https://cdn.jsdelivr.net/npm/mobile-drag-drop@3.0.0-rc.0/default.css"
-	/>
-</svelte:head>
 
 {#if authStatus === 'authenticated'}
 	<div class="h-screen flex flex-col bg-background overflow-hidden">

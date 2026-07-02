@@ -62,6 +62,7 @@
 	import * as Command from '$lib/components/ui/command';
 	import { Badge } from '$lib/components/ui/badge';
 	import * as Tooltip from '$lib/components/ui/tooltip';
+	import MobileDragDropPolyfill from '$lib/components/MobileDragDropPolyfill.svelte';
 	import { PageShell } from '$lib/components/app-layout';
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import { PERMISSIONS } from '$lib/permissions/registry';
@@ -3267,6 +3268,8 @@
 <svelte:head>
 	<title>{data.title} - SchoolOrbit</title>
 </svelte:head>
+
+<MobileDragDropPolyfill />
 
 <PageShell
 	title="จัดตารางสอน"
