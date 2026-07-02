@@ -318,6 +318,20 @@ Behavior:
 
 The implementation plan should choose the exact idempotent locking query, but duplicate reminders must be avoided.
 
+### Future Reminder Precision
+
+V1 intentionally uses day-based reminders to keep Neon tenant databases idle most of the day. The implementation must keep reminder calculation isolated in service helpers so a future self-hosted deployment can add more precise reminders without rewriting calendar events.
+
+Future migration path:
+
+- Add `offset_minutes integer`.
+- Add `scheduled_at timestamptz`.
+- Add `precision varchar(20)` with values such as `daily` and `datetime`.
+- Keep existing `days_before` and `remind_on` for V1 daily reminders.
+- Extend reminder query logic to process `precision = 'daily'` from `remind_on` and `precision = 'datetime'` from `scheduled_at`.
+
+Frontend copy should use the neutral label "เตือนล่วงหน้า" while V1 controls expose day-based choices only.
+
 ## Frontend Routes
 
 Staff management:
