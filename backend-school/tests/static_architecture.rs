@@ -2344,3 +2344,56 @@ fn course_instructor_batch_endpoint_accepts_post_body() {
         "batch request DTO should carry course_ids as a typed UUID array"
     );
 }
+
+#[test]
+fn calendar_schema_routes_and_permissions_are_registered() {
+    let migration = read_source(manifest_dir().join("migrations/018_school_calendar.sql"));
+    let backend_registry = read_source(manifest_dir().join("src/permissions/registry.rs"));
+    let frontend_registry = read_source(
+        repo_root()
+            .join("frontend-school")
+            .join("src/lib/permissions/registry.ts"),
+    );
+    let modules_root = read_source(manifest_dir().join("src/modules.rs"));
+    let main = strip_comments(&read_source(manifest_dir().join("src/main.rs")));
+
+    for required in [
+        "CREATE TABLE calendar_categories",
+        "CREATE TABLE calendar_events",
+        "CREATE TABLE calendar_event_targets",
+        "CREATE TABLE calendar_event_reminders",
+        "days_before INTEGER NOT NULL",
+        "remind_on DATE NOT NULL",
+        "CONSTRAINT calendar_event_targets_single_scope CHECK (grade_level_id IS NULL OR class_room_id IS NULL)",
+        "CREATE UNIQUE INDEX idx_calendar_event_targets_unique_global",
+        "ON calendar_event_targets (event_id, audience_type)",
+        "WHERE grade_level_id IS NULL AND class_room_id IS NULL",
+        "CREATE UNIQUE INDEX idx_calendar_event_targets_unique_grade",
+        "ON calendar_event_targets (event_id, audience_type, grade_level_id)",
+        "WHERE grade_level_id IS NOT NULL AND class_room_id IS NULL",
+        "CREATE UNIQUE INDEX idx_calendar_event_targets_unique_class",
+        "ON calendar_event_targets (event_id, audience_type, class_room_id)",
+        "WHERE class_room_id IS NOT NULL AND grade_level_id IS NULL",
+        "CREATE TRIGGER update_calendar_event_targets_updated_at",
+        "CREATE TRIGGER update_calendar_event_reminders_updated_at",
+        "calendar.read.school",
+        "calendar.manage.school",
+    ] {
+        assert!(
+            migration.contains(required),
+            "calendar migration must contain `{required}`"
+        );
+    }
+
+    for source in [&backend_registry, &frontend_registry] {
+        assert!(source.contains("calendar.read.school"));
+        assert!(source.contains("calendar.manage.school"));
+    }
+
+    assert!(modules_root.contains("pub mod calendar;"));
+    assert!(main.contains(".nest(\"/api/calendar\", modules::calendar::calendar_routes()"));
+    assert!(main.contains("\"/api/me/calendar/events\""));
+    assert!(main.contains("\"/api/parent/students/{student_id}/calendar/events\""));
+    assert!(main.contains("\"/api/public/calendar/events\""));
+    assert!(main.contains("process_due_calendar_reminders_for_all_tenants"));
+}
