@@ -1,6 +1,5 @@
-use backend_admin::{build_app, AppState};
+use backend_admin::{build_app, db::init_admin_pool, AppState};
 use dotenv::dotenv;
-use sqlx::postgres::PgPoolOptions;
 use std::env;
 use tracing::info;
 use tracing_subscriber::EnvFilter;
@@ -18,15 +17,11 @@ async fn main() {
     // Database setup
     let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
 
-    let pool = PgPoolOptions::new()
-        .max_connections(5)
-        .acquire_timeout(std::time::Duration::from_secs(30))
-        .idle_timeout(Some(std::time::Duration::from_secs(600)))
-        .connect(&database_url)
+    let pool = init_admin_pool(&database_url)
         .await
         .expect("Failed to connect to database");
 
-    info!("connected to Neon PostgreSQL");
+    info!("connected to admin PostgreSQL database");
 
     // Run migrations
     sqlx::migrate!("./migrations")

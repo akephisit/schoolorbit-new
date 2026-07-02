@@ -33,7 +33,8 @@ The server will start on `http://localhost:8080`
 ### Available Endpoints
 
 - `GET /` - API information
-- `GET /health` - Health check endpoint
+- `GET /health` - Liveness check endpoint, does not query the database
+- `GET /ready` - Readiness check endpoint, verifies database connectivity
 - `GET /api/hello/:name` - Test endpoint with path parameter
 
 ### Testing the API
@@ -42,8 +43,11 @@ The server will start on `http://localhost:8080`
 # Check API info
 curl http://localhost:8080/
 
-# Health check
+# Liveness check
 curl http://localhost:8080/health
+
+# Readiness check
+curl http://localhost:8080/ready
 
 # Test hello endpoint
 curl http://localhost:8080/api/hello/John

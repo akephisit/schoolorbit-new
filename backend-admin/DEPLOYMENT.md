@@ -100,6 +100,7 @@ docker logs schoolorbit-backend-admin -f
 ### Verify Health
 ```bash
 curl https://your-domain/health
+curl https://your-domain/ready
 ```
 
 ---
@@ -153,10 +154,26 @@ https://portainer.example.com/api/webhooks/01c91c9e-xxxx-xxxx-xxxx-xxxxxxxxxxxx
 GET /health
 ```
 
+`/health` is a container liveness check and does not query PostgreSQL. Use `/ready` when you need to verify database connectivity.
+
 Response:
 ```json
 {
   "status": "healthy",
+  "timestamp": "2025-01-05T10:00:00Z"
+}
+```
+
+### Readiness Check Endpoint
+```bash
+GET /ready
+```
+
+Response when PostgreSQL is reachable:
+```json
+{
+  "status": "ready",
+  "database": "connected",
   "timestamp": "2025-01-05T10:00:00Z"
 }
 ```

@@ -20,6 +20,7 @@ pub fn build_app(state: AppState) -> Router {
             }),
         )
         .route("/health", get(handlers::health::health_check))
+        .route("/ready", get(handlers::health::readiness_check))
         .route("/api/v1/auth/login", post(handlers::auth::login_handler))
         .route("/api/v1/auth/logout", post(handlers::auth::logout_handler))
         .route("/api/v1/auth/me", get(handlers::auth::me_handler))
