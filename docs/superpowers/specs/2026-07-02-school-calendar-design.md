@@ -149,17 +149,18 @@ Fields:
 
 - `id uuid primary key`
 - `event_id uuid not null references calendar_events(id) on delete cascade`
-- `minutes_before integer not null`
-- `scheduled_at timestamptz not null`
+- `days_before integer not null`
+- `remind_on date not null`
 - `sent_at timestamptz`
 - `created_at timestamptz not null default now()`
 
 Rules:
 
 - Multiple reminders are allowed per event.
-- Reminder offsets must be positive.
-- `scheduled_at` is computed from the event start datetime.
-- All-day events use a service-level default start time, initially `08:00` tenant-local time.
+- Reminder offsets are day-based in V1. Examples: 7 days before, 3 days before, 1 day before.
+- Reminder offsets must be positive integer day counts.
+- `remind_on` is computed as `start_date - days_before`.
+- V1 does not support hour/minute-precision reminders.
 - Updating event date/time or reminder offsets replaces pending reminders in the same transaction. Already sent reminders remain sent and should not be resent.
 
 ## API
@@ -215,7 +216,7 @@ Mutation payloads include event fields, target rows, reminder offsets, and notif
     { "audienceType": "student", "gradeLevelId": "grade-id", "classRoomId": null },
     { "audienceType": "parent", "gradeLevelId": "grade-id", "classRoomId": null }
   ],
-  "reminderOffsetsMinutes": [10080, 4320, 1440],
+  "reminderOffsetsDays": [7, 3, 1],
   "notifyAudience": true
 }
 ```
@@ -232,7 +233,7 @@ Behavior:
 
 - Staff users receive events targeted to `all` or `staff`.
 - Student users receive events targeted to `all` or `student`, filtered by their active enrollment when grade/classroom targets are present.
-- Parent users should use the parent child route for child-specific views. A future aggregate parent calendar can union across linked children if needed.
+- Parent users use the parent child route for child-specific views in V1. An aggregate parent calendar across all linked children is out of scope for V1.
 
 ### Parent Child API
 
@@ -307,12 +308,13 @@ Add a calendar reminder scheduled job using the existing scheduler infrastructur
 
 Behavior:
 
-- Run every five minutes.
+- Run once per day in V1, at 07:00 tenant-local time.
 - Iterate active tenant databases through `AdminClient::list_active_schools()` and `PoolManager::get_pool()`, following the existing file-cleaner job pattern.
-- Find due reminders where `scheduled_at <= now()` and `sent_at is null`.
+- Find due reminders where `remind_on <= tenant_current_date` and `sent_at is null`.
 - Resolve target users from the reminder's event and current event targets.
 - Send notifications through `NotificationService`.
 - Mark `sent_at` only after dispatch is attempted, inside a transaction or with idempotent locking to avoid duplicate sends.
+- After creating or updating an event, process due reminders for that event immediately if any `remind_on` date is today or in the past. This avoids missing a reminder when staff create or edit an event after the daily reminder job has already run.
 
 The implementation plan should choose the exact idempotent locking query, but duplicate reminders must be avoided.
 
@@ -377,7 +379,7 @@ Fields:
 - grade level and classroom selectors for student/parent targets
 - public checkbox
 - notify audience checkbox
-- reminder offset editor with multiple offsets
+- reminder offset editor with multiple day-based offsets
 
 The save action is "บันทึกและเผยแพร่" because V1 publishes immediately.
 
@@ -441,7 +443,7 @@ Color rules:
 - Services should include pure helper tests for:
   - date/time validation
   - target validation
-  - reminder schedule calculation
+  - reminder date calculation
   - audience user deduplication
   - parent visibility matching
 
@@ -481,5 +483,5 @@ Repository-level:
 ## Locked Implementation Decisions
 
 - Create/edit uses `Dialog` in V1.
-- The reminder scheduler runs every five minutes in V1.
+- The reminder scheduler runs once per day at 07:00 tenant-local time in V1.
 - Category delete deactivates the category by setting `is_active = false`. Existing events keep their category reference for historical display.
