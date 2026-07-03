@@ -18,6 +18,18 @@ function stripComments(source) {
 		.replace(/\/\/.*$/gm, '');
 }
 
+function interfaceBody(source, name) {
+	const match = source.match(new RegExp(`export interface ${name}\\s*{([\\s\\S]*?)\\n}`));
+	assert.ok(match, `Expected exported interface ${name}`);
+	return match[1];
+}
+
+function functionBody(source, name) {
+	const match = source.match(new RegExp(`function ${name}\\([^)]*\\)\\s*{([\\s\\S]*?)\\n}`));
+	assert.ok(match, `Expected function ${name}`);
+	return match[1];
+}
+
 test('calendar permission registry and routes are wired', async () => {
 	const registry = await readProjectFile('src/lib/permissions/registry.ts');
 	const staffRoute = await readProjectFile('src/routes/(app)/staff/calendar/+page.ts');
@@ -36,16 +48,13 @@ test('calendar permission registry and routes are wired', async () => {
 
 test('calendar frontend uses typed API client and shadcn primitives', async () => {
 	const api = await readProjectFile('src/lib/api/calendar.ts');
-	const staffPage = await readProjectFile('src/routes/(app)/staff/calendar/+page.svelte');
-	const eventDialog = await readProjectFile('src/lib/components/calendar/CalendarEventDialog.svelte');
-	const categoryDialog = await readProjectFile(
-		'src/lib/components/calendar/CalendarCategoryDialog.svelte'
-	);
 
 	for (const name of [
 		'CalendarEvent',
+		'CalendarPublicEvent',
 		'CalendarCategory',
 		'CalendarEventTarget',
+		'CalendarEventTargetInput',
 		'CreateCalendarEventRequest',
 		'listCalendarEvents',
 		'listMyCalendarEvents',
@@ -54,6 +63,40 @@ test('calendar frontend uses typed API client and shadcn primitives', async () =
 	]) {
 		assert.match(api, new RegExp(`\\b${name}\\b`));
 	}
+
+	const target = interfaceBody(api, 'CalendarEventTarget');
+	const targetInput = interfaceBody(api, 'CalendarEventTargetInput');
+	const publicFilters = interfaceBody(api, 'CalendarPublicEventFilters');
+	const publicQuery = functionBody(api, 'publicCalendarQuery');
+
+	assert.match(target, /\bid:\s*string;/);
+	assert.match(target, /\baudienceType:\s*CalendarAudienceType;/);
+	assert.match(target, /\bclassRoomId\?:\s*string \| null;/);
+	assert.doesNotMatch(target, /\baudience:\s*CalendarAudienceType;/);
+	assert.doesNotMatch(target, /\bclassroomId\?:\s*string \| null;/);
+	assert.match(targetInput, /\baudienceType:\s*CalendarAudienceType;/);
+	assert.match(targetInput, /\bclassRoomId\?:\s*string \| null;/);
+	assert.doesNotMatch(targetInput, /\baudience:\s*CalendarAudienceType;/);
+	assert.doesNotMatch(targetInput, /\bclassroomId\?:\s*string \| null;/);
+	assert.doesNotMatch(targetInput, /\bid[?:]?:\s*string;/);
+	assert.match(api, /targets:\s*CalendarEventTargetInput\[];/);
+	assert.match(api, /export interface CalendarPublicEvent\s*{/);
+	assert.doesNotMatch(api, /CalendarPublicEvent\s*=\s*Omit/);
+	assert.match(publicFilters, /categoryId\?:\s*string;/);
+	assert.doesNotMatch(publicFilters, /audience\?:/);
+	assert.doesNotMatch(publicFilters, /visibility\?:/);
+	assert.doesNotMatch(publicQuery, /\baudience\b/);
+	assert.doesNotMatch(publicQuery, /\bvisibility\b/);
+	assert.match(api, /listPublicCalendarEvents[\s\S]*Promise<CalendarPublicEvent\[]>/);
+	assert.match(api, /listPublicCalendarEvents[\s\S]*publicCalendarQuery\(filters\)/);
+
+	const staffPage = await readProjectFile('src/routes/(app)/staff/calendar/+page.svelte');
+	const eventDialog = await readProjectFile(
+		'src/lib/components/calendar/CalendarEventDialog.svelte'
+	);
+	const categoryDialog = await readProjectFile(
+		'src/lib/components/calendar/CalendarCategoryDialog.svelte'
+	);
 
 	assert.match(staffPage, /PageShell/);
 	assert.match(staffPage, /PERMISSIONS\.CALENDAR_MANAGE_SCHOOL/);
