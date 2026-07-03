@@ -30,6 +30,24 @@ function functionBody(source, name) {
 	return match[1];
 }
 
+function svelteFunctionBody(source, name) {
+	const startPattern = new RegExp(`function ${name}\\([^)]*\\)\\s*{`);
+	const match = startPattern.exec(source);
+	assert.ok(match, `Expected function ${name}`);
+	let depth = 1;
+	let index = match.index + match[0].length;
+
+	while (index < source.length && depth > 0) {
+		const char = source[index];
+		if (char === '{') depth += 1;
+		if (char === '}') depth -= 1;
+		index += 1;
+	}
+
+	assert.equal(depth, 0, `Expected balanced function body for ${name}`);
+	return source.slice(match.index + match[0].length, index - 1);
+}
+
 test('calendar API client uses current typed contracts', async () => {
 	const api = await readProjectFile('src/lib/api/calendar.ts');
 
@@ -140,4 +158,50 @@ test('calendar permission registry and routes are wired', async () => {
 	assert.match(staffPage, /PageShell/);
 	assert.match(staffPage, /PERMISSIONS\.CALENDAR_MANAGE_SCHOOL/);
 	assert.doesNotMatch(stripComments(staffPage), /calendar\.(manage|read)\.school/);
+});
+
+test('calendar routes keep staff reads and local state filter-aware', async () => {
+	const staffPage = await readProjectFile('src/routes/(app)/staff/calendar/+page.svelte');
+	const staffSource = stripComments(staffPage);
+
+	assert.doesNotMatch(staffSource, /onMount\(loadCalendar\)/);
+	assert.match(staffSource, /hasAttemptedInitialLoad/);
+	assert.match(
+		staffSource,
+		/\$effect\(\(\) => {[\s\S]*canReadCalendar[\s\S]*hasAttemptedInitialLoad[\s\S]*loadCalendar\(\)/
+	);
+	assert.match(staffSource, /async function ensureManageOptions\(\): Promise<boolean>/);
+	assert.match(staffSource, /manageOptionsPromise/);
+	assert.match(staffSource, /const optionsReady = await ensureManageOptions\(\);/);
+	assert.match(staffSource, /if \(!optionsReady\) return;/);
+	assert.doesNotMatch(staffSource, /function replaceEvent/);
+	assert.match(staffSource, /function eventMatchesCurrentFilters\(event: CalendarEvent\)/);
+	assert.match(staffSource, /function patchSavedEvent\(event: CalendarEvent\)/);
+	assert.match(staffSource, /eventMatchesCurrentFilters\(event\)/);
+	const matcherBody = svelteFunctionBody(staffSource, 'eventMatchesCurrentFilters');
+	assert.match(matcherBody, /event\.title/);
+	assert.match(matcherBody, /event\.description/);
+	assert.match(matcherBody, /event\.location/);
+	assert.doesNotMatch(matcherBody, /event\.categoryName/);
+	assert.match(
+		staffSource,
+		/event\.targets\.some\(\(target\) => target\.audienceType === audience\)/
+	);
+	assert.match(staffSource, /categoryName: savedCategory\.name/);
+	assert.match(staffSource, /categoryColor: savedCategory\.color/);
+	assert.match(staffSource, /categoryId = '';\s*await loadCalendar\(\);/);
+});
+
+test('calendar read-only pages sort selected-day events consistently', async () => {
+	for (const route of [
+		'src/routes/(app)/student/calendar/+page.svelte',
+		'src/routes/(app)/parent/student/[id]/calendar/+page.svelte',
+		'src/routes/(public)/calendar/+page.svelte'
+	]) {
+		const page = await readProjectFile(route);
+		assert.match(
+			page,
+			/events\s*\.filter\(\(event\) => eventOverlapsDate\(event, selectedDate\)\)\s*\.sort\(\(left, right\) => left\.startDate\.localeCompare\(right\.startDate\)\)/
+		);
+	}
 });
