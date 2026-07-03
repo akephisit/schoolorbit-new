@@ -759,10 +759,34 @@ async fn main() {
     })
     .expect("Failed to create cleaner job");
 
+    let admin_client_for_calendar_job = Arc::clone(&state.admin_client);
+    let pool_manager_for_calendar_job = Arc::clone(&state.pool_manager);
+    let notification_channel_for_calendar_job = state.notification_channel.clone();
+
+    let calendar_reminder_job = Job::new_async("0 0 7 * * *", move |_uuid, _l| {
+        let admin_client = Arc::clone(&admin_client_for_calendar_job);
+        let pool_manager = Arc::clone(&pool_manager_for_calendar_job);
+        let notification_channel = notification_channel_for_calendar_job.clone();
+
+        Box::pin(async move {
+            modules::calendar::services::process_due_calendar_reminders_for_all_tenants(
+                admin_client,
+                pool_manager,
+                notification_channel,
+            )
+            .await;
+        })
+    })
+    .expect("Failed to create calendar reminder job");
+
     sched
         .add(cleaner_job)
         .await
         .expect("Failed to add job to scheduler");
+    sched
+        .add(calendar_reminder_job)
+        .await
+        .expect("Failed to add calendar reminder job");
     sched.start().await.expect("Failed to start scheduler");
 
     axum::serve(listener, app).await.expect("Server failed");

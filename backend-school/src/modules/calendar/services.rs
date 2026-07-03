@@ -1,18 +1,48 @@
 use chrono::{Datelike, Duration, Months, NaiveDate, NaiveTime, Utc};
+use sqlx::pool::PoolConnection;
 use sqlx::{PgPool, Postgres, QueryBuilder, Transaction};
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
+use tokio::sync::broadcast;
 use uuid::Uuid;
 
+use crate::db::{admin_client::AdminClient, pool_manager::PoolManager};
 use crate::error::AppError;
 use crate::modules::calendar::models::{
     CalendarAudienceType, CalendarCategory, CalendarEvent, CalendarEventQuery,
     CalendarEventReminder, CalendarEventRow, CalendarEventTarget, CalendarEventTargetInput,
     CalendarVisibility, UpsertCalendarCategoryRequest, UpsertCalendarEventRequest,
 };
+use crate::modules::notification::models::Notification;
+use crate::services::notification::{NotificationService, NotificationType};
 
 const DUPLICATE_CATEGORY_MESSAGE: &str = "มีหมวดหมู่นี้อยู่แล้ว";
 const EVENT_NOT_FOUND_MESSAGE: &str = "ไม่พบกำหนดการ";
 const CATEGORY_NOT_FOUND_MESSAGE: &str = "ไม่พบหมวดหมู่";
+
+const SELECT_DUE_CALENDAR_REMINDER_CANDIDATES_SQL: &str = r#"
+SELECT id, event_id, days_before
+FROM calendar_event_reminders
+WHERE remind_on <= $1
+  AND sent_at IS NULL
+ORDER BY remind_on ASC, created_at ASC
+LIMIT 200
+"#;
+
+const REFETCH_DUE_CALENDAR_REMINDER_AFTER_LOCK_SQL: &str = r#"
+SELECT id, event_id, days_before
+FROM calendar_event_reminders
+WHERE id = $1 AND sent_at IS NULL
+"#;
+
+const MARK_CALENDAR_REMINDER_SENT_SQL: &str = r#"
+UPDATE calendar_event_reminders
+SET sent_at = NOW()
+WHERE id = $1 AND sent_at IS NULL
+"#;
+
+const TRY_CALENDAR_REMINDER_ADVISORY_LOCK_SQL: &str = "SELECT pg_try_advisory_lock($1, $2)";
+const RELEASE_CALENDAR_REMINDER_ADVISORY_LOCK_SQL: &str = "SELECT pg_advisory_unlock($1, $2)";
 
 const EVENT_SELECT_WITH_CATEGORY: &str = r#"
 SELECT
@@ -53,6 +83,33 @@ struct CalendarEventReminderRow {
     days_before: i32,
     remind_on: NaiveDate,
     sent_at: Option<chrono::DateTime<Utc>>,
+}
+
+#[derive(sqlx::FromRow)]
+struct DueCalendarEventReminderRow {
+    id: Uuid,
+    event_id: Uuid,
+    days_before: i32,
+}
+
+#[derive(sqlx::FromRow)]
+struct NotificationRecipientRow {
+    id: Uuid,
+    user_type: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CalendarNotificationKind {
+    Created,
+    Updated,
+    Reminder { days_before: i32 },
+}
+
+#[derive(Debug, Clone)]
+pub struct CalendarEventMutationOutcome {
+    pub event: CalendarEvent,
+    pub notify_audience: bool,
+    pub notification_kind: CalendarNotificationKind,
 }
 
 pub fn validate_event_date_time(
@@ -168,6 +225,190 @@ pub fn dedupe_user_ids(ids: Vec<Uuid>) -> Vec<Uuid> {
     }
 
     deduped
+}
+
+pub async fn resolve_event_recipient_user_ids(
+    pool: &PgPool,
+    event_id: Uuid,
+) -> Result<Vec<Uuid>, AppError> {
+    let ids = sqlx::query_scalar::<_, Uuid>(
+        r#"
+        WITH targets AS (
+            SELECT audience_type, grade_level_id, class_room_id
+            FROM calendar_event_targets
+            WHERE event_id = $1
+        )
+        SELECT users.id
+        FROM users
+        WHERE users.status = 'active'
+          AND users.user_type IN ('staff', 'student', 'parent')
+          AND EXISTS (
+              SELECT 1 FROM targets
+              WHERE targets.audience_type = 'all'
+          )
+
+        UNION ALL
+
+        SELECT users.id
+        FROM users
+        WHERE users.status = 'active'
+          AND users.user_type = 'staff'
+          AND EXISTS (
+              SELECT 1 FROM targets
+              WHERE targets.audience_type = 'staff'
+          )
+
+        UNION ALL
+
+        SELECT users.id
+        FROM users
+        WHERE users.status = 'active'
+          AND users.user_type = 'student'
+          AND EXISTS (
+              SELECT 1 FROM targets
+              WHERE targets.audience_type = 'student'
+                AND targets.grade_level_id IS NULL
+                AND targets.class_room_id IS NULL
+          )
+
+        UNION ALL
+
+        SELECT users.id
+        FROM users
+        JOIN student_class_enrollments enrollments
+          ON enrollments.student_id = users.id
+         AND enrollments.status = 'active'
+        JOIN class_rooms
+          ON class_rooms.id = enrollments.class_room_id
+        JOIN targets
+          ON targets.audience_type = 'student'
+        WHERE users.status = 'active'
+          AND users.user_type = 'student'
+          AND (targets.grade_level_id IS NOT NULL OR targets.class_room_id IS NOT NULL)
+          AND (targets.grade_level_id IS NULL OR class_rooms.grade_level_id = targets.grade_level_id)
+          AND (targets.class_room_id IS NULL OR enrollments.class_room_id = targets.class_room_id)
+
+        UNION ALL
+
+        SELECT parent_users.id
+        FROM users parent_users
+        JOIN student_parents
+          ON student_parents.parent_user_id = parent_users.id
+        WHERE parent_users.status = 'active'
+          AND parent_users.user_type = 'parent'
+          AND EXISTS (
+              SELECT 1 FROM targets
+              WHERE targets.audience_type = 'parent'
+                AND targets.grade_level_id IS NULL
+                AND targets.class_room_id IS NULL
+          )
+
+        UNION ALL
+
+        SELECT parent_users.id
+        FROM users parent_users
+        JOIN student_parents
+          ON student_parents.parent_user_id = parent_users.id
+        JOIN users student_users
+          ON student_users.id = student_parents.student_user_id
+         AND student_users.status = 'active'
+         AND student_users.user_type = 'student'
+        JOIN student_class_enrollments enrollments
+          ON enrollments.student_id = student_users.id
+         AND enrollments.status = 'active'
+        JOIN class_rooms
+          ON class_rooms.id = enrollments.class_room_id
+        JOIN targets
+          ON targets.audience_type = 'parent'
+        WHERE parent_users.status = 'active'
+          AND parent_users.user_type = 'parent'
+          AND (targets.grade_level_id IS NOT NULL OR targets.class_room_id IS NOT NULL)
+          AND (targets.grade_level_id IS NULL OR class_rooms.grade_level_id = targets.grade_level_id)
+          AND (targets.class_room_id IS NULL OR enrollments.class_room_id = targets.class_room_id)
+        "#,
+    )
+    .bind(event_id)
+    .fetch_all(pool)
+    .await?;
+
+    Ok(dedupe_user_ids(ids))
+}
+
+pub async fn send_event_notification(
+    pool: &PgPool,
+    notification_channel: &broadcast::Sender<(Uuid, Notification)>,
+    event: &CalendarEvent,
+    notification_kind: CalendarNotificationKind,
+) -> Result<(), AppError> {
+    let recipient_ids = resolve_event_recipient_user_ids(pool, event.id).await?;
+    if recipient_ids.is_empty() {
+        return Ok(());
+    }
+
+    let recipients = sqlx::query_as::<_, NotificationRecipientRow>(
+        r#"
+        SELECT id, user_type
+        FROM users
+        WHERE id = ANY($1)
+        "#,
+    )
+    .bind(&recipient_ids)
+    .fetch_all(pool)
+    .await?;
+
+    let (title, message) = calendar_notification_text(event, &notification_kind);
+    for recipient in recipients {
+        if let Err(error) = NotificationService::send(
+            pool,
+            notification_channel,
+            recipient.id,
+            &title,
+            &message,
+            NotificationType::Info,
+            calendar_notification_link_for_user_type(&recipient.user_type),
+        )
+        .await
+        {
+            tracing::error!(
+                event_id = %event.id,
+                recipient_user_id = %recipient.id,
+                error = %error,
+                "Calendar event notification failed for recipient"
+            );
+        }
+    }
+
+    Ok(())
+}
+
+fn calendar_notification_text(
+    event: &CalendarEvent,
+    kind: &CalendarNotificationKind,
+) -> (String, String) {
+    match kind {
+        CalendarNotificationKind::Created => (
+            format!("เพิ่มกำหนดการ: {}", event.title),
+            "มีกำหนดการใหม่ในปฏิทินโรงเรียน".to_string(),
+        ),
+        CalendarNotificationKind::Updated => (
+            format!("อัปเดตกำหนดการ: {}", event.title),
+            "มีการเปลี่ยนแปลงกำหนดการในปฏิทินโรงเรียน".to_string(),
+        ),
+        CalendarNotificationKind::Reminder { days_before } => (
+            format!("เตือนล่วงหน้า: {}", event.title),
+            format!("กำหนดการนี้จะเริ่มในอีก {} วัน", days_before),
+        ),
+    }
+}
+
+fn calendar_notification_link_for_user_type(user_type: &str) -> Option<&'static str> {
+    match user_type {
+        "staff" => Some("/staff/calendar"),
+        "student" => Some("/student/calendar"),
+        // V1 falls back to the parent workspace; exact child-specific links need child mapping.
+        "parent" => Some("/parent"),
+        _ => None,
+    }
 }
 
 async fn list_targets_for_events(
@@ -384,7 +625,7 @@ pub async fn create_event(
     pool: &PgPool,
     actor_user_id: Uuid,
     payload: UpsertCalendarEventRequest,
-) -> Result<CalendarEvent, AppError> {
+) -> Result<CalendarEventMutationOutcome, AppError> {
     validate_event_date_time(
         payload.start_date,
         payload.end_date,
@@ -394,6 +635,7 @@ pub async fn create_event(
     )?;
     validate_targets(&payload.targets)?;
     let reminder_pairs = reminder_schedule(payload.start_date, &payload.reminder_offsets_days)?;
+    let notify_audience = payload.notify_audience;
 
     let mut transaction = pool.begin().await?;
     let event_id = sqlx::query_scalar::<_, Uuid>(
@@ -424,7 +666,12 @@ pub async fn create_event(
     replace_pending_event_reminders(&mut transaction, event_id, reminder_pairs).await?;
     transaction.commit().await?;
 
-    get_event_for_response(pool, event_id).await
+    let event = get_event_for_response(pool, event_id).await?;
+    Ok(CalendarEventMutationOutcome {
+        event,
+        notify_audience,
+        notification_kind: CalendarNotificationKind::Created,
+    })
 }
 
 pub async fn update_event(
@@ -432,7 +679,7 @@ pub async fn update_event(
     actor_user_id: Uuid,
     id: Uuid,
     payload: UpsertCalendarEventRequest,
-) -> Result<CalendarEvent, AppError> {
+) -> Result<CalendarEventMutationOutcome, AppError> {
     validate_event_date_time(
         payload.start_date,
         payload.end_date,
@@ -442,6 +689,7 @@ pub async fn update_event(
     )?;
     validate_targets(&payload.targets)?;
     let reminder_pairs = reminder_schedule(payload.start_date, &payload.reminder_offsets_days)?;
+    let notify_audience = payload.notify_audience;
 
     let mut transaction = pool.begin().await?;
     let event_id = sqlx::query_scalar::<_, Uuid>(
@@ -484,7 +732,12 @@ pub async fn update_event(
     replace_pending_event_reminders(&mut transaction, event_id, reminder_pairs).await?;
     transaction.commit().await?;
 
-    get_event_for_response(pool, event_id).await
+    let event = get_event_for_response(pool, event_id).await?;
+    Ok(CalendarEventMutationOutcome {
+        event,
+        notify_audience,
+        notification_kind: CalendarNotificationKind::Updated,
+    })
 }
 
 pub async fn soft_delete_event(
@@ -597,6 +850,219 @@ pub async fn list_public_events(
     Ok(events)
 }
 
+pub async fn process_due_reminders(
+    pool: &PgPool,
+    notification_channel: &broadcast::Sender<(Uuid, Notification)>,
+    tenant_current_date: NaiveDate,
+) -> Result<i64, AppError> {
+    let candidates = sqlx::query_as::<_, DueCalendarEventReminderRow>(
+        select_due_calendar_reminder_candidates_sql(),
+    )
+    .bind(tenant_current_date)
+    .fetch_all(pool)
+    .await?;
+
+    let mut marked_sent_count = 0;
+    for candidate in candidates {
+        if process_due_reminder_candidate(pool, notification_channel, candidate).await? {
+            marked_sent_count += 1;
+        }
+    }
+
+    Ok(marked_sent_count)
+}
+
+async fn process_due_reminder_candidate(
+    pool: &PgPool,
+    notification_channel: &broadcast::Sender<(Uuid, Notification)>,
+    candidate: DueCalendarEventReminderRow,
+) -> Result<bool, AppError> {
+    let lock_keys = calendar_reminder_advisory_lock_keys(candidate.id);
+    let mut connection = pool.acquire().await?;
+
+    let acquired = sqlx::query_scalar::<_, bool>(try_calendar_reminder_advisory_lock_sql())
+        .bind(lock_keys.0)
+        .bind(lock_keys.1)
+        .fetch_one(&mut *connection)
+        .await?;
+
+    if !acquired {
+        return Ok(false);
+    }
+
+    let processing_result =
+        process_advisory_locked_reminder(pool, notification_channel, &mut connection, candidate.id)
+            .await;
+    let release_result =
+        release_calendar_reminder_advisory_lock(&mut connection, candidate.id, lock_keys).await;
+
+    if let Err(error) = release_result {
+        tracing::error!(
+            reminder_id = %candidate.id,
+            error = %error,
+            "Failed to release calendar reminder advisory lock"
+        );
+        if processing_result.is_ok() {
+            return Err(error);
+        }
+    }
+
+    processing_result
+}
+
+async fn process_advisory_locked_reminder(
+    pool: &PgPool,
+    notification_channel: &broadcast::Sender<(Uuid, Notification)>,
+    connection: &mut PoolConnection<Postgres>,
+    reminder_id: Uuid,
+) -> Result<bool, AppError> {
+    // The session-level advisory lock is held on this connection only for one reminder.
+    // No row transaction is kept open while event loading and notification fan-out run.
+    let reminder = sqlx::query_as::<_, DueCalendarEventReminderRow>(
+        refetch_due_calendar_reminder_after_lock_sql(),
+    )
+    .bind(reminder_id)
+    .fetch_optional(&mut **connection)
+    .await?;
+
+    let Some(reminder) = reminder else {
+        return Ok(false);
+    };
+
+    let event = match get_event_for_response(pool, reminder.event_id).await {
+        Ok(event) => event,
+        Err(AppError::NotFound(_)) => {
+            tracing::warn!(
+                reminder_id = %reminder.id,
+                event_id = %reminder.event_id,
+                "Skipping calendar reminder for missing or deleted event"
+            );
+            return mark_calendar_reminder_sent(connection, reminder.id).await;
+        }
+        Err(error) => {
+            tracing::error!(
+                reminder_id = %reminder.id,
+                event_id = %reminder.event_id,
+                error = %error,
+                "Failed to load calendar event for reminder"
+            );
+            return Ok(false);
+        }
+    };
+
+    let send_result = send_event_notification(
+        pool,
+        notification_channel,
+        &event,
+        CalendarNotificationKind::Reminder {
+            days_before: reminder.days_before,
+        },
+    )
+    .await;
+
+    if let Err(error) = send_result {
+        tracing::error!(
+            reminder_id = %reminder.id,
+            event_id = %reminder.event_id,
+            error = %error,
+            "Calendar reminder notification failed"
+        );
+    }
+
+    mark_calendar_reminder_sent(connection, reminder.id).await
+}
+
+async fn mark_calendar_reminder_sent(
+    connection: &mut PoolConnection<Postgres>,
+    reminder_id: Uuid,
+) -> Result<bool, AppError> {
+    let result = sqlx::query(mark_calendar_reminder_sent_sql())
+        .bind(reminder_id)
+        .execute(&mut **connection)
+        .await?;
+
+    Ok(result.rows_affected() > 0)
+}
+
+async fn release_calendar_reminder_advisory_lock(
+    connection: &mut PoolConnection<Postgres>,
+    reminder_id: Uuid,
+    lock_keys: (i32, i32),
+) -> Result<(), AppError> {
+    let released = sqlx::query_scalar::<_, bool>(release_calendar_reminder_advisory_lock_sql())
+        .bind(lock_keys.0)
+        .bind(lock_keys.1)
+        .fetch_one(&mut **connection)
+        .await?;
+
+    if !released {
+        tracing::warn!(
+            reminder_id = %reminder_id,
+            "Calendar reminder advisory lock was not held during release"
+        );
+    }
+
+    Ok(())
+}
+
+fn calendar_reminder_advisory_lock_keys(reminder_id: Uuid) -> (i32, i32) {
+    let bytes = reminder_id.as_bytes();
+    (
+        i32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]),
+        i32::from_be_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]),
+    )
+}
+
+pub async fn process_due_calendar_reminders_for_all_tenants(
+    admin_client: Arc<AdminClient>,
+    pool_manager: Arc<PoolManager>,
+    notification_channel: broadcast::Sender<(Uuid, Notification)>,
+) {
+    let tenant_current_date = tenant_today();
+
+    let schools = match admin_client.list_active_schools().await {
+        Ok(schools) => schools,
+        Err(error) => {
+            tracing::error!("Failed to fetch schools for calendar reminders: {}", error);
+            return;
+        }
+    };
+
+    for school in schools {
+        let Some(db_url) = school
+            .db_connection_string
+            .filter(|value| !value.is_empty())
+        else {
+            tracing::warn!(
+                "Skipping calendar reminders for {}: no database URL",
+                school.subdomain
+            );
+            continue;
+        };
+
+        match pool_manager.get_pool(&db_url, &school.subdomain).await {
+            Ok(pool) => {
+                if let Err(error) =
+                    process_due_reminders(&pool, &notification_channel, tenant_current_date).await
+                {
+                    tracing::error!(
+                        "Calendar reminder processing failed for {}: {}",
+                        school.subdomain,
+                        error
+                    );
+                }
+            }
+            Err(error) => {
+                tracing::error!(
+                    "Failed to open tenant pool for calendar reminders {}: {}",
+                    school.subdomain,
+                    error
+                );
+            }
+        }
+    }
+}
+
 async fn replace_event_targets(
     transaction: &mut Transaction<'_, Postgres>,
     event_id: Uuid,
@@ -662,6 +1128,26 @@ async fn replace_pending_event_reminders(
     builder.build().execute(&mut **transaction).await?;
 
     Ok(())
+}
+
+fn select_due_calendar_reminder_candidates_sql() -> &'static str {
+    SELECT_DUE_CALENDAR_REMINDER_CANDIDATES_SQL
+}
+
+fn refetch_due_calendar_reminder_after_lock_sql() -> &'static str {
+    REFETCH_DUE_CALENDAR_REMINDER_AFTER_LOCK_SQL
+}
+
+fn mark_calendar_reminder_sent_sql() -> &'static str {
+    MARK_CALENDAR_REMINDER_SENT_SQL
+}
+
+fn try_calendar_reminder_advisory_lock_sql() -> &'static str {
+    TRY_CALENDAR_REMINDER_ADVISORY_LOCK_SQL
+}
+
+fn release_calendar_reminder_advisory_lock_sql() -> &'static str {
+    RELEASE_CALENDAR_REMINDER_ADVISORY_LOCK_SQL
 }
 
 fn normalized_event_range(
@@ -1081,5 +1567,116 @@ mod tests {
             calendar_search_pattern(" 100%_activity\\plan "),
             "%100\\%\\_activity\\\\plan%"
         );
+    }
+
+    #[test]
+    fn calendar_notification_text_formats_created_updated_and_reminder_messages() {
+        let event = calendar_event_for_notification("สอบกลางภาค");
+
+        assert_eq!(
+            calendar_notification_text(&event, &CalendarNotificationKind::Created),
+            (
+                "เพิ่มกำหนดการ: สอบกลางภาค".to_string(),
+                "มีกำหนดการใหม่ในปฏิทินโรงเรียน".to_string(),
+            )
+        );
+        assert_eq!(
+            calendar_notification_text(&event, &CalendarNotificationKind::Updated),
+            (
+                "อัปเดตกำหนดการ: สอบกลางภาค".to_string(),
+                "มีการเปลี่ยนแปลงกำหนดการในปฏิทินโรงเรียน".to_string(),
+            )
+        );
+        assert_eq!(
+            calendar_notification_text(
+                &event,
+                &CalendarNotificationKind::Reminder { days_before: 3 },
+            ),
+            (
+                "เตือนล่วงหน้า: สอบกลางภาค".to_string(),
+                "กำหนดการนี้จะเริ่มในอีก 3 วัน".to_string(),
+            )
+        );
+    }
+
+    #[test]
+    fn calendar_notification_link_matches_supported_user_types() {
+        assert_eq!(
+            calendar_notification_link_for_user_type("staff"),
+            Some("/staff/calendar")
+        );
+        assert_eq!(
+            calendar_notification_link_for_user_type("student"),
+            Some("/student/calendar")
+        );
+        assert_eq!(
+            calendar_notification_link_for_user_type("parent"),
+            Some("/parent")
+        );
+        assert_eq!(calendar_notification_link_for_user_type("guest"), None);
+    }
+
+    #[test]
+    fn reminder_advisory_lock_keys_are_stable_from_uuid_bytes() {
+        let reminder_id = Uuid::parse_str("01020304-0506-0708-090a-0b0c0d0e0f10").unwrap();
+
+        assert_eq!(
+            calendar_reminder_advisory_lock_keys(reminder_id),
+            (16_909_060, 84_281_096)
+        );
+    }
+
+    #[test]
+    fn due_reminder_candidate_query_does_not_lock_or_mark_sent() {
+        let sql = select_due_calendar_reminder_candidates_sql();
+
+        assert!(sql.contains("LIMIT 200"));
+        assert!(sql.contains("sent_at IS NULL"));
+        assert!(!sql.contains("FOR UPDATE"));
+        assert!(!sql.contains("SET sent_at"));
+    }
+
+    #[test]
+    fn due_reminder_mark_query_sets_sent_after_attempt() {
+        let sql = mark_calendar_reminder_sent_sql();
+
+        assert!(sql.contains("UPDATE calendar_event_reminders"));
+        assert!(sql.contains("SET sent_at = NOW()"));
+        assert!(sql.contains("WHERE id = $1 AND sent_at IS NULL"));
+    }
+
+    #[test]
+    fn advisory_lock_queries_use_two_integer_keys() {
+        assert!(try_calendar_reminder_advisory_lock_sql().contains("pg_try_advisory_lock($1, $2)"));
+        assert!(
+            release_calendar_reminder_advisory_lock_sql().contains("pg_advisory_unlock($1, $2)")
+        );
+    }
+
+    fn calendar_event_for_notification(title: &str) -> CalendarEvent {
+        let now = Utc::now();
+        let date = NaiveDate::from_ymd_opt(2026, 7, 10).unwrap();
+
+        CalendarEvent {
+            id: Uuid::new_v4(),
+            category_id: None,
+            category_name: None,
+            category_color: None,
+            title: title.to_string(),
+            description: None,
+            location: None,
+            start_date: date,
+            end_date: date,
+            all_day: true,
+            start_time: None,
+            end_time: None,
+            is_public: false,
+            targets: Vec::new(),
+            reminders: Vec::new(),
+            created_by: None,
+            updated_by: None,
+            created_at: now,
+            updated_at: now,
+        }
     }
 }
