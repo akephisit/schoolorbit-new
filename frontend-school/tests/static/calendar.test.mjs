@@ -30,23 +30,7 @@ function functionBody(source, name) {
 	return match[1];
 }
 
-test('calendar permission registry and routes are wired', async () => {
-	const registry = await readProjectFile('src/lib/permissions/registry.ts');
-	const staffRoute = await readProjectFile('src/routes/(app)/staff/calendar/+page.ts');
-	const studentRoute = await readProjectFile('src/routes/(app)/student/calendar/+page.ts');
-	const parentRoute = await readProjectFile(
-		'src/routes/(app)/parent/student/[id]/calendar/+page.ts'
-	);
-
-	assert.match(registry, /CALENDAR:\s*['"]calendar['"]/);
-	assert.match(registry, /CALENDAR_READ_SCHOOL:\s*['"]calendar\.read\.school['"]/);
-	assert.match(registry, /CALENDAR_MANAGE_SCHOOL:\s*['"]calendar\.manage\.school['"]/);
-	assert.match(staffRoute, /permission:\s*PERMISSION_MODULES\.CALENDAR/);
-	assert.match(studentRoute, /user_type:\s*['"]student['"]/);
-	assert.match(parentRoute, /user_type:\s*['"]parent['"]/);
-});
-
-test('calendar frontend uses typed API client and shadcn primitives', async () => {
+test('calendar API client uses current typed contracts', async () => {
 	const api = await readProjectFile('src/lib/api/calendar.ts');
 
 	for (const name of [
@@ -89,8 +73,11 @@ test('calendar frontend uses typed API client and shadcn primitives', async () =
 	assert.doesNotMatch(publicQuery, /\bvisibility\b/);
 	assert.match(api, /listPublicCalendarEvents[\s\S]*Promise<CalendarPublicEvent\[]>/);
 	assert.match(api, /listPublicCalendarEvents[\s\S]*publicCalendarQuery\(filters\)/);
+});
 
-	const staffPage = await readProjectFile('src/routes/(app)/staff/calendar/+page.svelte');
+test('calendar shared components use shadcn primitives', async () => {
+	const monthGrid = await readProjectFile('src/lib/components/calendar/CalendarMonthGrid.svelte');
+	const eventList = await readProjectFile('src/lib/components/calendar/CalendarEventList.svelte');
 	const eventDialog = await readProjectFile(
 		'src/lib/components/calendar/CalendarEventDialog.svelte'
 	);
@@ -98,12 +85,59 @@ test('calendar frontend uses typed API client and shadcn primitives', async () =
 		'src/lib/components/calendar/CalendarCategoryDialog.svelte'
 	);
 
-	assert.match(staffPage, /PageShell/);
-	assert.match(staffPage, /PERMISSIONS\.CALENDAR_MANAGE_SCHOOL/);
-	assert.doesNotMatch(stripComments(staffPage), /calendar\.(manage|read)\.school/);
+	assert.match(monthGrid, /from '\$lib\/components\/ui\/badge'/);
+	assert.match(monthGrid, /buildCalendarMonth/);
+	assert.match(monthGrid, /eventOverlapsDate/);
+	assert.match(monthGrid, /CalendarDisplayEvent/);
+	assert.doesNotMatch(monthGrid, /from '\$lib\/api\/calendar'/);
+	assert.match(eventList, /from '\$lib\/components\/ui\/badge'/);
+	assert.match(eventList, /from '\$lib\/components\/ui\/button'/);
+	assert.match(eventList, /PageState/);
+	assert.match(eventList, /Pencil/);
+	assert.match(eventList, /Trash2/);
+	assert.doesNotMatch(eventList, /from '\$lib\/api\/calendar'/);
 	assert.match(eventDialog, /from '\$lib\/components\/ui\/dialog'/);
 	assert.match(eventDialog, /from '\$lib\/components\/ui\/select'/);
 	assert.match(eventDialog, /from '\$lib\/components\/ui\/checkbox'/);
+	assert.match(eventDialog, /from '\$lib\/components\/ui\/button'/);
+	assert.match(eventDialog, /CalendarEventTargetInput/);
 	assert.match(categoryDialog, /from '\$lib\/components\/ui\/dialog'/);
 	assert.match(categoryDialog, /from '\$lib\/components\/ui\/button'/);
+	assert.match(categoryDialog, /UpsertCalendarCategoryRequest/);
+});
+
+test('calendar event dialog builds backend-safe event payloads', async () => {
+	const eventDialog = await readProjectFile(
+		'src/lib/components/calendar/CalendarEventDialog.svelte'
+	);
+
+	assert.match(eventDialog, /function targetGradeLevelId\(audienceType: CalendarAudienceType\)/);
+	assert.match(eventDialog, /function targetClassRoomId\(audienceType: CalendarAudienceType\)/);
+	assert.match(eventDialog, /selectedClassRoomId \? null : selectedGradeLevelId \|\| null/);
+	assert.match(eventDialog, /selectedClassRoomId \|\| null/);
+	assert.match(
+		eventDialog,
+		/selectedGradeLevelId &&\s*classrooms\.length > 0 &&\s*selectedClassRoomId &&\s*!classrooms\.some\([\s\S]*classroom\.id === selectedClassRoomId &&\s*classroom\.grade_level_id === selectedGradeLevelId[\s\S]*selectedClassRoomId = ''/
+	);
+	assert.match(eventDialog, /notifyAudience = source \? false : true;/);
+});
+
+test('calendar permission registry and routes are wired', async () => {
+	const registry = await readProjectFile('src/lib/permissions/registry.ts');
+	const staffPage = await readProjectFile('src/routes/(app)/staff/calendar/+page.svelte');
+	const staffRoute = await readProjectFile('src/routes/(app)/staff/calendar/+page.ts');
+	const studentRoute = await readProjectFile('src/routes/(app)/student/calendar/+page.ts');
+	const parentRoute = await readProjectFile(
+		'src/routes/(app)/parent/student/[id]/calendar/+page.ts'
+	);
+
+	assert.match(registry, /CALENDAR:\s*['"]calendar['"]/);
+	assert.match(registry, /CALENDAR_READ_SCHOOL:\s*['"]calendar\.read\.school['"]/);
+	assert.match(registry, /CALENDAR_MANAGE_SCHOOL:\s*['"]calendar\.manage\.school['"]/);
+	assert.match(staffRoute, /permission:\s*PERMISSION_MODULES\.CALENDAR/);
+	assert.match(studentRoute, /user_type:\s*['"]student['"]/);
+	assert.match(parentRoute, /user_type:\s*['"]parent['"]/);
+	assert.match(staffPage, /PageShell/);
+	assert.match(staffPage, /PERMISSIONS\.CALENDAR_MANAGE_SCHOOL/);
+	assert.doesNotMatch(stripComments(staffPage), /calendar\.(manage|read)\.school/);
 });
