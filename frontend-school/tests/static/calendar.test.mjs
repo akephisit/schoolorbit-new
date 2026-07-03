@@ -53,6 +53,7 @@ test('calendar API client uses current typed contracts', async () => {
 
 	for (const name of [
 		'CalendarEvent',
+		'CalendarViewerEvent',
 		'CalendarPublicEvent',
 		'CalendarCategory',
 		'CalendarEventTarget',
@@ -68,6 +69,7 @@ test('calendar API client uses current typed contracts', async () => {
 
 	const target = interfaceBody(api, 'CalendarEventTarget');
 	const targetInput = interfaceBody(api, 'CalendarEventTargetInput');
+	const viewerEvent = interfaceBody(api, 'CalendarViewerEvent');
 	const publicFilters = interfaceBody(api, 'CalendarPublicEventFilters');
 	const publicQuery = functionBody(api, 'publicCalendarQuery');
 
@@ -82,6 +84,12 @@ test('calendar API client uses current typed contracts', async () => {
 	assert.doesNotMatch(targetInput, /\bclassroomId\?:\s*string \| null;/);
 	assert.doesNotMatch(targetInput, /\bid[?:]?:\s*string;/);
 	assert.match(api, /targets:\s*CalendarEventTargetInput\[];/);
+	assert.doesNotMatch(viewerEvent, /targets:/);
+	assert.doesNotMatch(viewerEvent, /reminders:/);
+	assert.doesNotMatch(viewerEvent, /createdBy/);
+	assert.doesNotMatch(viewerEvent, /updatedBy/);
+	assert.match(api, /listMyCalendarEvents[\s\S]*Promise<CalendarViewerEvent\[]>/);
+	assert.match(api, /listChildCalendarEvents[\s\S]*Promise<CalendarViewerEvent\[]>/);
 	assert.match(api, /export interface CalendarPublicEvent\s*{/);
 	assert.doesNotMatch(api, /CalendarPublicEvent\s*=\s*Omit/);
 	assert.match(publicFilters, /categoryId\?:\s*string;/);
@@ -138,6 +146,9 @@ test('calendar event dialog builds backend-safe event payloads', async () => {
 		/selectedGradeLevelId &&\s*classrooms\.length > 0 &&\s*selectedClassRoomId &&\s*!classrooms\.some\([\s\S]*classroom\.id === selectedClassRoomId &&\s*classroom\.grade_level_id === selectedGradeLevelId[\s\S]*selectedClassRoomId = ''/
 	);
 	assert.match(eventDialog, /notifyAudience = source \? false : true;/);
+	assert.match(eventDialog, /hasMultipleTargetRows/);
+	assert.match(eventDialog, /disabled=\{hasMultipleTargetRows/);
+	assert.match(eventDialog, /ไม่สามารถแก้ไขกลุ่มผู้ชมหลายรายการ/);
 });
 
 test('calendar permission registry and routes are wired', async () => {

@@ -86,6 +86,7 @@
 		filteredClassrooms.find((classroom) => classroom.id === selectedClassRoomId)?.name ??
 			'ทุกห้องเรียน'
 	);
+	let hasMultipleTargetRows = $derived((event?.targets.length ?? 0) > 1);
 
 	$effect(() => {
 		if (!open) {
@@ -203,6 +204,8 @@
 	}
 
 	function submitForm() {
+		if (hasMultipleTargetRows) return;
+
 		const targets: CalendarEventTargetInput[] = selectedAudiences.map((audienceType) => ({
 			audienceType,
 			gradeLevelId: targetGradeLevelId(audienceType),
@@ -242,6 +245,12 @@
 			}}
 		>
 			<div class="space-y-6">
+				{#if hasMultipleTargetRows}
+					<div class="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+						ไม่สามารถแก้ไขกลุ่มผู้ชมหลายรายการจากฟอร์มนี้ได้ เพื่อป้องกันการบันทึกทับกลุ่มเป้าหมายเดิม
+					</div>
+				{/if}
+
 				<section class="grid gap-4">
 					<div class="grid gap-2">
 						<Label for="calendar-event-title">ชื่อกิจกรรม</Label>
@@ -302,6 +311,7 @@
 								type="button"
 								variant={selectedAudiences.includes(option.value) ? 'default' : 'outline'}
 								class="h-9"
+								disabled={hasMultipleTargetRows}
 								aria-pressed={selectedAudiences.includes(option.value)}
 								onclick={() => toggleAudience(option.value)}
 							>
@@ -390,7 +400,7 @@
 					type="submit"
 					loading={saving}
 					loadingLabel="กำลังบันทึก..."
-					disabled={!title.trim() || !startDate || !endDate}
+					disabled={hasMultipleTargetRows || !title.trim() || !startDate || !endDate}
 					class={cn('min-w-36')}
 				>
 					บันทึกและเผยแพร่

@@ -4,7 +4,7 @@ use uuid::Uuid;
 use crate::error::AppError;
 use crate::modules::academic::models::timetable::TimetableEntry;
 use crate::modules::academic::services::timetable_service::{self, TimetableFilter};
-use crate::modules::calendar::models::{CalendarEvent, CalendarEventQuery};
+use crate::modules::calendar::models::{CalendarEventQuery, CalendarViewerEvent};
 use crate::modules::students::models::{ParentDto, StudentDbRow, StudentProfile};
 use crate::utils::field_encryption;
 
@@ -123,7 +123,7 @@ pub async fn get_child_calendar_events(
     parent_id: Uuid,
     student_id: Uuid,
     query: CalendarEventQuery,
-) -> Result<Vec<CalendarEvent>, AppError> {
+) -> Result<Vec<CalendarViewerEvent>, AppError> {
     ensure_parent_user(pool, parent_id).await?;
     ensure_parent_student_link(pool, parent_id, student_id).await?;
 

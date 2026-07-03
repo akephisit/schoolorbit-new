@@ -7,7 +7,7 @@
 	import { Button } from '$lib/components/ui/button';
 	import CalendarMonthGrid from '$lib/components/calendar/CalendarMonthGrid.svelte';
 	import CalendarEventList from '$lib/components/calendar/CalendarEventList.svelte';
-	import { type CalendarEvent, listMyCalendarEvents } from '$lib/api/calendar';
+	import { type CalendarViewerEvent, listMyCalendarEvents } from '$lib/api/calendar';
 	import {
 		eventOverlapsDate,
 		formatCalendarDate,
@@ -18,7 +18,7 @@
 
 	let { data } = $props();
 
-	let events = $state<CalendarEvent[]>([]);
+	let events = $state<CalendarViewerEvent[]>([]);
 	let loading = $state(true);
 	let error = $state('');
 	let selectedMonth = $state(toIsoDate(new Date()));

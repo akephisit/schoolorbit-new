@@ -11,7 +11,7 @@ use crate::error::AppError;
 use crate::modules::calendar::models::{
     CalendarAudienceType, CalendarCategory, CalendarEvent, CalendarEventQuery,
     CalendarEventReminder, CalendarEventRow, CalendarEventTarget, CalendarEventTargetInput,
-    CalendarPublicEvent, CalendarVisibility, UpsertCalendarCategoryRequest,
+    CalendarPublicEvent, CalendarViewerEvent, CalendarVisibility, UpsertCalendarCategoryRequest,
     UpsertCalendarEventRequest,
 };
 use crate::modules::notification::models::Notification;
@@ -26,6 +26,7 @@ SELECT id, event_id, days_before
 FROM calendar_event_reminders
 WHERE remind_on <= $1
   AND sent_at IS NULL
+  AND NOT (id = ANY($2::uuid[]))
 ORDER BY remind_on ASC, created_at ASC
 LIMIT 200
 "#;
@@ -111,6 +112,19 @@ pub struct CalendarEventMutationOutcome {
     pub event: CalendarEvent,
     pub notify_audience: bool,
     pub notification_kind: CalendarNotificationKind,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CalendarNotificationSendOutcome {
+    pub recipient_count: usize,
+    pub successful_count: usize,
+    pub failed_count: usize,
+}
+
+impl CalendarNotificationSendOutcome {
+    fn should_mark_reminder_sent(self) -> bool {
+        self.recipient_count == 0 || self.successful_count > 0
+    }
 }
 
 pub fn validate_event_date_time(
@@ -341,10 +355,14 @@ pub async fn send_event_notification(
     notification_channel: &broadcast::Sender<(Uuid, Notification)>,
     event: &CalendarEvent,
     notification_kind: CalendarNotificationKind,
-) -> Result<(), AppError> {
+) -> Result<CalendarNotificationSendOutcome, AppError> {
     let recipient_ids = resolve_event_recipient_user_ids(pool, event.id).await?;
     if recipient_ids.is_empty() {
-        return Ok(());
+        return Ok(CalendarNotificationSendOutcome {
+            recipient_count: 0,
+            successful_count: 0,
+            failed_count: 0,
+        });
     }
 
     let recipients = sqlx::query_as::<_, NotificationRecipientRow>(
@@ -359,6 +377,8 @@ pub async fn send_event_notification(
     .await?;
 
     let (title, message) = calendar_notification_text(event, &notification_kind);
+    let mut successful_count = 0;
+    let mut failed_count = 0;
     for recipient in recipients {
         if let Err(error) = NotificationService::send(
             pool,
@@ -377,10 +397,17 @@ pub async fn send_event_notification(
                 error = %error,
                 "Calendar event notification failed for recipient"
             );
+            failed_count += 1;
+        } else {
+            successful_count += 1;
         }
     }
 
-    Ok(())
+    Ok(CalendarNotificationSendOutcome {
+        recipient_count: successful_count + failed_count,
+        successful_count,
+        failed_count,
+    })
 }
 
 fn calendar_notification_text(
@@ -826,7 +853,7 @@ pub async fn list_my_events(
     pool: &PgPool,
     user_id: Uuid,
     query: CalendarEventQuery,
-) -> Result<Vec<CalendarEvent>, AppError> {
+) -> Result<Vec<CalendarViewerEvent>, AppError> {
     let user_type = active_user_type(pool, user_id).await?;
     self_calendar_user_type_access(&user_type)?;
     let (from, to) = normalized_event_range(&query, tenant_today())?;
@@ -843,7 +870,7 @@ pub async fn list_my_events(
         .await?;
     let mut events = hydrate_events(pool, rows).await?;
     retain_visible_targets_for_user_type(&mut events, &user_type);
-    Ok(events)
+    Ok(events.into_iter().map(CalendarViewerEvent::from).collect())
 }
 
 pub async fn list_child_events(
@@ -851,7 +878,7 @@ pub async fn list_child_events(
     parent_id: Uuid,
     student_id: Uuid,
     query: CalendarEventQuery,
-) -> Result<Vec<CalendarEvent>, AppError> {
+) -> Result<Vec<CalendarViewerEvent>, AppError> {
     let (from, to) = normalized_event_range(&query, tenant_today())?;
     let mut builder = QueryBuilder::<Postgres>::new(EVENT_SELECT_WITH_CATEGORY);
     push_base_event_filters(&mut builder, from, to);
@@ -866,7 +893,7 @@ pub async fn list_child_events(
         .await?;
     let mut events = hydrate_events(pool, rows).await?;
     retain_child_visible_targets(&mut events);
-    Ok(events)
+    Ok(events.into_iter().map(CalendarViewerEvent::from).collect())
 }
 
 pub async fn list_public_events(
@@ -900,21 +927,39 @@ pub async fn process_due_reminders(
     notification_channel: &broadcast::Sender<(Uuid, Notification)>,
     tenant_current_date: NaiveDate,
 ) -> Result<i64, AppError> {
-    let candidates = sqlx::query_as::<_, DueCalendarEventReminderRow>(
-        select_due_calendar_reminder_candidates_sql(),
-    )
-    .bind(tenant_current_date)
-    .fetch_all(pool)
-    .await?;
-
     let mut marked_sent_count = 0;
-    for candidate in candidates {
-        if process_due_reminder_candidate(pool, notification_channel, candidate).await? {
-            marked_sent_count += 1;
+    let mut attempted_ids = Vec::new();
+
+    loop {
+        let candidates =
+            fetch_due_reminder_candidates(pool, tenant_current_date, &attempted_ids).await?;
+        if candidates.is_empty() {
+            break;
+        }
+
+        for candidate in candidates {
+            attempted_ids.push(candidate.id);
+            if process_due_reminder_candidate(pool, notification_channel, candidate).await? {
+                marked_sent_count += 1;
+            }
         }
     }
 
     Ok(marked_sent_count)
+}
+
+async fn fetch_due_reminder_candidates(
+    pool: &PgPool,
+    tenant_current_date: NaiveDate,
+    attempted_ids: &[Uuid],
+) -> Result<Vec<DueCalendarEventReminderRow>, AppError> {
+    Ok(sqlx::query_as::<_, DueCalendarEventReminderRow>(
+        select_due_calendar_reminder_candidates_sql(),
+    )
+    .bind(tenant_current_date)
+    .bind(attempted_ids)
+    .fetch_all(pool)
+    .await?)
 }
 
 async fn process_due_reminder_candidate(
@@ -995,7 +1040,7 @@ async fn process_advisory_locked_reminder(
         }
     };
 
-    let send_result = send_event_notification(
+    let send_outcome = match send_event_notification(
         pool,
         notification_channel,
         &event,
@@ -1003,15 +1048,29 @@ async fn process_advisory_locked_reminder(
             days_before: reminder.days_before,
         },
     )
-    .await;
+    .await
+    {
+        Ok(outcome) => outcome,
+        Err(error) => {
+            tracing::error!(
+                reminder_id = %reminder.id,
+                event_id = %reminder.event_id,
+                error = %error,
+                "Calendar reminder notification failed"
+            );
+            return Ok(false);
+        }
+    };
 
-    if let Err(error) = send_result {
-        tracing::error!(
+    if !send_outcome.should_mark_reminder_sent() {
+        tracing::warn!(
             reminder_id = %reminder.id,
             event_id = %reminder.event_id,
-            error = %error,
-            "Calendar reminder notification failed"
+            recipient_count = send_outcome.recipient_count,
+            failed_count = send_outcome.failed_count,
+            "Calendar reminder notification had no successful sends; leaving reminder pending"
         );
+        return Ok(false);
     }
 
     mark_calendar_reminder_sent(connection, reminder.id).await
@@ -1918,8 +1977,17 @@ mod tests {
 
         assert!(sql.contains("LIMIT 200"));
         assert!(sql.contains("sent_at IS NULL"));
+        assert!(sql.contains("$2::uuid[]"));
         assert!(!sql.contains("FOR UPDATE"));
         assert!(!sql.contains("SET sent_at"));
+    }
+
+    #[test]
+    fn due_reminder_candidate_query_excludes_attempted_ids_for_batching() {
+        let sql = select_due_calendar_reminder_candidates_sql();
+
+        assert!(sql.contains("NOT (id = ANY($2::uuid[]))"));
+        assert!(sql.contains("LIMIT 200"));
     }
 
     #[test]
@@ -1929,6 +1997,28 @@ mod tests {
         assert!(sql.contains("UPDATE calendar_event_reminders"));
         assert!(sql.contains("SET sent_at = NOW()"));
         assert!(sql.contains("WHERE id = $1 AND sent_at IS NULL"));
+    }
+
+    #[test]
+    fn notification_outcome_marks_reminders_sent_only_when_none_or_some_success() {
+        assert!(CalendarNotificationSendOutcome {
+            recipient_count: 0,
+            successful_count: 0,
+            failed_count: 0,
+        }
+        .should_mark_reminder_sent());
+        assert!(CalendarNotificationSendOutcome {
+            recipient_count: 2,
+            successful_count: 1,
+            failed_count: 1,
+        }
+        .should_mark_reminder_sent());
+        assert!(!CalendarNotificationSendOutcome {
+            recipient_count: 2,
+            successful_count: 0,
+            failed_count: 2,
+        }
+        .should_mark_reminder_sent());
     }
 
     #[test]

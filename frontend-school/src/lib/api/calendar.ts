@@ -54,6 +54,24 @@ export interface CalendarEvent {
 	updatedAt: string;
 }
 
+export interface CalendarViewerEvent {
+	id: string;
+	categoryId?: string | null;
+	categoryName?: string | null;
+	categoryColor?: string | null;
+	title: string;
+	description?: string | null;
+	location?: string | null;
+	startDate: string;
+	endDate: string;
+	allDay: boolean;
+	startTime?: string | null;
+	endTime?: string | null;
+	isPublic: boolean;
+	createdAt: string;
+	updatedAt: string;
+}
+
 export interface CalendarPublicEvent {
 	id: string;
 	categoryId?: string | null;
@@ -149,8 +167,8 @@ export async function listCalendarEvents(
 
 export async function listMyCalendarEvents(
 	filters: CalendarEventFilters = {}
-): Promise<CalendarEvent[]> {
-	const response = await apiClient.get<CalendarEvent[]>(
+): Promise<CalendarViewerEvent[]> {
+	const response = await apiClient.get<CalendarViewerEvent[]>(
 		`/api/me/calendar/events${calendarQuery(filters)}`
 	);
 	return requireApiData(response, 'ไม่สามารถโหลดปฏิทินของฉันได้');
@@ -159,8 +177,8 @@ export async function listMyCalendarEvents(
 export async function listChildCalendarEvents(
 	studentId: string,
 	filters: CalendarEventFilters = {}
-): Promise<CalendarEvent[]> {
-	const response = await apiClient.get<CalendarEvent[]>(
+): Promise<CalendarViewerEvent[]> {
+	const response = await apiClient.get<CalendarViewerEvent[]>(
 		`/api/parent/students/${encodeURIComponent(studentId)}/calendar/events${calendarQuery(filters)}`
 	);
 	return requireApiData(response, 'ไม่สามารถโหลดปฏิทินนักเรียนได้');
