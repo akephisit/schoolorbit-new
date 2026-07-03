@@ -64,3 +64,22 @@ pub async fn get_child_timetable(
 
     Ok((StatusCode::OK, Json(ApiResponse::ok(entries))))
 }
+
+/// GET /api/parent/students/:student_id/calendar/events
+pub async fn get_child_calendar_events(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(student_id): Path<Uuid>,
+    Query(query): Query<crate::modules::calendar::models::CalendarEventQuery>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context(&state, &headers).await?;
+    let events = parent_service::get_child_calendar_events(
+        &context.tenant.pool,
+        context.actor.user_id,
+        student_id,
+        query,
+    )
+    .await?;
+
+    Ok((StatusCode::OK, Json(ApiResponse::ok(events))))
+}

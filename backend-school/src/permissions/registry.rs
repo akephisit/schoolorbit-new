@@ -55,6 +55,10 @@ pub mod codes {
     // Dashboard permission
     pub const DASHBOARD_READ_OWN: &str = "dashboard.read.own";
 
+    // Calendar permissions
+    pub const CALENDAR_READ_SCHOOL: &str = "calendar.read.school";
+    pub const CALENDAR_MANAGE_SCHOOL: &str = "calendar.manage.school";
+
     // Student permissions
     pub const STUDENT_READ_OWN: &str = "student.read.own";
     pub const STUDENT_READ_ASSIGNED: &str = "student.read.assigned";
@@ -731,6 +735,23 @@ pub const ALL_PERMISSIONS: &[PermissionDef] = &[
         action: "manage",
         scope: "school",
         description: "จัดการโครงสร้างคะแนนและสถานะการส่งของรายวิชาที่เปิดสอนทั้งโรงเรียน",
+    },
+    // Calendar Permissions
+    PermissionDef {
+        code: codes::CALENDAR_READ_SCHOOL,
+        name: "ดูปฏิทินโรงเรียน",
+        module: "calendar",
+        action: "read",
+        scope: "school",
+        description: "ดูปฏิทินและกำหนดการของโรงเรียน",
+    },
+    PermissionDef {
+        code: codes::CALENDAR_MANAGE_SCHOOL,
+        name: "จัดการปฏิทินโรงเรียน",
+        module: "calendar",
+        action: "manage",
+        scope: "school",
+        description: "สร้าง แก้ไข ลบ หมวดหมู่ กลุ่มผู้เห็น และการแจ้งเตือนของปฏิทินโรงเรียน",
     },
     // Facility Permissions
     PermissionDef {

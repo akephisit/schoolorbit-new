@@ -4,6 +4,7 @@ use uuid::Uuid;
 use crate::error::AppError;
 use crate::modules::academic::models::timetable::TimetableEntry;
 use crate::modules::academic::services::timetable_service::{self, TimetableFilter};
+use crate::modules::calendar::models::{CalendarEventQuery, CalendarViewerEvent};
 use crate::modules::students::models::{ParentDto, StudentDbRow, StudentProfile};
 use crate::utils::field_encryption;
 
@@ -117,6 +118,18 @@ pub async fn get_child_timetable(
     .await
 }
 
+pub async fn get_child_calendar_events(
+    pool: &PgPool,
+    parent_id: Uuid,
+    student_id: Uuid,
+    query: CalendarEventQuery,
+) -> Result<Vec<CalendarViewerEvent>, AppError> {
+    ensure_parent_user(pool, parent_id).await?;
+    ensure_parent_student_link(pool, parent_id, student_id).await?;
+
+    crate::modules::calendar::services::list_child_events(pool, parent_id, student_id, query).await
+}
+
 async fn ensure_parent_user(pool: &PgPool, parent_id: Uuid) -> Result<(), AppError> {
     let user_type: Option<String> = sqlx::query_scalar("SELECT user_type FROM users WHERE id = $1")
         .bind(parent_id)
@@ -138,8 +151,13 @@ async fn ensure_parent_student_link(
     let is_linked: bool = sqlx::query_scalar(
         r#"
         SELECT EXISTS(
-            SELECT 1 FROM student_parents
-            WHERE parent_user_id = $1 AND student_user_id = $2
+            SELECT 1
+            FROM student_parents
+            JOIN users u ON u.id = student_parents.student_user_id
+            WHERE student_parents.parent_user_id = $1
+              AND student_parents.student_user_id = $2
+              AND u.user_type = 'student'
+              AND u.status = 'active'
         )
         "#,
     )

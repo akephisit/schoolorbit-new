@@ -138,6 +138,10 @@ async fn main() {
         // Public routes
         .route("/", get(root_handler))
         .route("/health", get(health_check))
+        .route(
+            "/api/public/calendar/events",
+            get(modules::calendar::handlers::list_public_calendar_events),
+        )
         // Auth routes (public)
         .route("/api/auth/login", post(modules::auth::handlers::login))
         .route("/api/auth/logout", post(modules::auth::handlers::logout))
@@ -234,10 +238,20 @@ async fn main() {
             get(modules::parents::handlers::get_child_timetable)
                 .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
         )
+        .route(
+            "/api/parent/students/{student_id}/calendar/events",
+            get(modules::parents::handlers::get_child_calendar_events)
+                .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
+        )
         // Self-service timetable (student/staff ดูตารางตัวเอง)
         .route(
             "/api/me/timetable",
             get(modules::academic::handlers::timetable::get_my_timetable)
+                .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
+        )
+        .route(
+            "/api/me/calendar/events",
+            get(modules::calendar::handlers::list_my_calendar_events)
                 .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
         )
         // Student Management routes (protected - for admin/staff)
@@ -501,6 +515,11 @@ async fn main() {
             modules::academic::academic_routes()
                 .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
         )
+        .nest(
+            "/api/calendar",
+            modules::calendar::calendar_routes()
+                .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
+        )
         // Teaching Supervision routes (Protected)
         .nest(
             "/api/supervision",
@@ -759,10 +778,34 @@ async fn main() {
     })
     .expect("Failed to create cleaner job");
 
+    let admin_client_for_calendar_job = Arc::clone(&state.admin_client);
+    let pool_manager_for_calendar_job = Arc::clone(&state.pool_manager);
+    let notification_channel_for_calendar_job = state.notification_channel.clone();
+
+    let calendar_reminder_job = Job::new_async("0 0 7 * * *", move |_uuid, _l| {
+        let admin_client = Arc::clone(&admin_client_for_calendar_job);
+        let pool_manager = Arc::clone(&pool_manager_for_calendar_job);
+        let notification_channel = notification_channel_for_calendar_job.clone();
+
+        Box::pin(async move {
+            modules::calendar::services::process_due_calendar_reminders_for_all_tenants(
+                admin_client,
+                pool_manager,
+                notification_channel,
+            )
+            .await;
+        })
+    })
+    .expect("Failed to create calendar reminder job");
+
     sched
         .add(cleaner_job)
         .await
         .expect("Failed to add job to scheduler");
+    sched
+        .add(calendar_reminder_job)
+        .await
+        .expect("Failed to add calendar reminder job");
     sched.start().await.expect("Failed to start scheduler");
 
     axum::serve(listener, app).await.expect("Server failed");
