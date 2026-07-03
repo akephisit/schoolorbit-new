@@ -11,7 +11,8 @@ use crate::error::AppError;
 use crate::modules::calendar::models::{
     CalendarAudienceType, CalendarCategory, CalendarEvent, CalendarEventQuery,
     CalendarEventReminder, CalendarEventRow, CalendarEventTarget, CalendarEventTargetInput,
-    CalendarVisibility, UpsertCalendarCategoryRequest, UpsertCalendarEventRequest,
+    CalendarPublicEvent, CalendarVisibility, UpsertCalendarCategoryRequest,
+    UpsertCalendarEventRequest,
 };
 use crate::modules::notification::models::Notification;
 use crate::services::notification::{NotificationService, NotificationType};
@@ -169,6 +170,7 @@ fn reminder_schedule(
     Ok(pairs)
 }
 
+#[cfg(test)]
 pub fn reminder_dates(start_date: NaiveDate, offsets: &[i32]) -> Result<Vec<NaiveDate>, AppError> {
     Ok(reminder_schedule(start_date, offsets)?
         .into_iter()
@@ -800,7 +802,7 @@ pub async fn list_management_events(
         builder.push(")");
     }
 
-    match query.visibility {
+    match query.visibility.as_ref() {
         Some(CalendarVisibility::Public) => {
             builder.push(" AND e.is_public = true");
         }
@@ -820,10 +822,57 @@ pub async fn list_management_events(
     hydrate_events(pool, rows).await
 }
 
+pub async fn list_my_events(
+    pool: &PgPool,
+    user_id: Uuid,
+    query: CalendarEventQuery,
+) -> Result<Vec<CalendarEvent>, AppError> {
+    let user_type = active_user_type(pool, user_id).await?;
+    self_calendar_user_type_access(&user_type)?;
+    let (from, to) = normalized_event_range(&query, tenant_today())?;
+    let mut builder = QueryBuilder::<Postgres>::new(EVENT_SELECT_WITH_CATEGORY);
+    push_base_event_filters(&mut builder, from, to);
+    push_event_query_filters(&mut builder, &query);
+    push_my_event_target_filter(&mut builder, user_id, &user_type, query.audience.as_ref());
+    push_search_filter(&mut builder, query.q.as_deref());
+    push_event_order(&mut builder);
+
+    let rows = builder
+        .build_query_as::<CalendarEventRow>()
+        .fetch_all(pool)
+        .await?;
+    let mut events = hydrate_events(pool, rows).await?;
+    retain_visible_targets_for_user_type(&mut events, &user_type);
+    Ok(events)
+}
+
+pub async fn list_child_events(
+    pool: &PgPool,
+    parent_id: Uuid,
+    student_id: Uuid,
+    query: CalendarEventQuery,
+) -> Result<Vec<CalendarEvent>, AppError> {
+    let (from, to) = normalized_event_range(&query, tenant_today())?;
+    let mut builder = QueryBuilder::<Postgres>::new(EVENT_SELECT_WITH_CATEGORY);
+    push_base_event_filters(&mut builder, from, to);
+    push_event_query_filters(&mut builder, &query);
+    push_child_event_target_filter(&mut builder, parent_id, student_id, query.audience.as_ref());
+    push_search_filter(&mut builder, query.q.as_deref());
+    push_event_order(&mut builder);
+
+    let rows = builder
+        .build_query_as::<CalendarEventRow>()
+        .fetch_all(pool)
+        .await?;
+    let mut events = hydrate_events(pool, rows).await?;
+    retain_child_visible_targets(&mut events);
+    Ok(events)
+}
+
 pub async fn list_public_events(
     pool: &PgPool,
     query: CalendarEventQuery,
-) -> Result<Vec<CalendarEvent>, AppError> {
+) -> Result<Vec<CalendarPublicEvent>, AppError> {
     let (from, to) = normalized_event_range(&query, tenant_today())?;
     let mut builder = QueryBuilder::<Postgres>::new(EVENT_SELECT_WITH_CATEGORY);
     push_base_event_filters(&mut builder, from, to);
@@ -841,13 +890,9 @@ pub async fn list_public_events(
         .build_query_as::<CalendarEventRow>()
         .fetch_all(pool)
         .await?;
-    let mut events = hydrate_events(pool, rows).await?;
-    for event in &mut events {
-        event.targets.clear();
-        event.reminders.clear();
-    }
+    let events = hydrate_events(pool, rows).await?;
 
-    Ok(events)
+    Ok(events.into_iter().map(CalendarPublicEvent::from).collect())
 }
 
 pub async fn process_due_reminders(
@@ -1188,6 +1233,218 @@ fn push_base_event_filters(
     builder.push_bind(from);
 }
 
+fn push_event_query_filters(builder: &mut QueryBuilder<'_, Postgres>, query: &CalendarEventQuery) {
+    if let Some(category_id) = query.category_id {
+        builder.push(" AND e.category_id = ");
+        builder.push_bind(category_id);
+    }
+
+    match query.visibility.as_ref() {
+        Some(CalendarVisibility::Public) => {
+            builder.push(" AND e.is_public = true");
+        }
+        Some(CalendarVisibility::Private) => {
+            builder.push(" AND e.is_public = false");
+        }
+        None => {}
+    }
+}
+
+fn target_visible_to_user_type(audience_type: &str, user_type: &str) -> bool {
+    match user_type {
+        "staff" | "student" => {
+            audience_type == CalendarAudienceType::All.as_str() || audience_type == user_type
+        }
+        _ => false,
+    }
+}
+
+fn target_visible_to_child_view(audience_type: &str) -> bool {
+    audience_type == CalendarAudienceType::All.as_str()
+        || audience_type == CalendarAudienceType::Parent.as_str()
+}
+
+fn retain_visible_targets_for_user_type(events: &mut [CalendarEvent], user_type: &str) {
+    for event in events {
+        event
+            .targets
+            .retain(|target| target_visible_to_user_type(&target.audience_type, user_type));
+    }
+}
+
+fn retain_child_visible_targets(events: &mut [CalendarEvent]) {
+    for event in events {
+        event
+            .targets
+            .retain(|target| target_visible_to_child_view(&target.audience_type));
+    }
+}
+
+fn self_calendar_user_type_access(user_type: &str) -> Result<(), AppError> {
+    match user_type {
+        "staff" | "student" => Ok(()),
+        "parent" => Err(AppError::Forbidden(
+            "ผู้ปกครองต้องดูปฏิทินผ่าน /api/parent/students/{student_id}/calendar/events".to_string(),
+        )),
+        _ => Err(AppError::Forbidden(
+            "ผู้ใช้ประเภทนี้ไม่สามารถดูปฏิทินส่วนตัวได้".to_string(),
+        )),
+    }
+}
+
+async fn active_user_type(pool: &PgPool, user_id: Uuid) -> Result<String, AppError> {
+    let user_type = sqlx::query_scalar::<_, String>(
+        r#"
+        SELECT user_type
+        FROM users
+        WHERE id = $1 AND status = 'active'
+        "#,
+    )
+    .bind(user_id)
+    .fetch_optional(pool)
+    .await?;
+
+    user_type.ok_or_else(|| AppError::AuthError("กรุณาเข้าสู่ระบบ".to_string()))
+}
+
+fn push_target_audience_query_filter(
+    builder: &mut QueryBuilder<'_, Postgres>,
+    audience: Option<&CalendarAudienceType>,
+) {
+    if let Some(audience) = audience {
+        builder.push(" AND target.audience_type = ");
+        builder.push_bind(audience.as_str());
+    }
+}
+
+fn push_my_event_target_filter(
+    builder: &mut QueryBuilder<'_, Postgres>,
+    user_id: Uuid,
+    user_type: &str,
+    audience: Option<&CalendarAudienceType>,
+) {
+    builder.push(
+        " AND EXISTS (
+            SELECT 1
+            FROM calendar_event_targets target
+            WHERE target.event_id = e.id",
+    );
+    push_target_audience_query_filter(builder, audience);
+    builder.push(
+        " AND (
+                target.audience_type = 'all'",
+    );
+
+    match user_type {
+        "staff" => {
+            builder.push(" OR target.audience_type = 'staff'");
+        }
+        "student" => {
+            builder.push(
+                " OR (
+                    target.audience_type = 'student'
+                    AND (
+                        (target.grade_level_id IS NULL AND target.class_room_id IS NULL)
+                        OR EXISTS (
+                            SELECT 1
+                            FROM student_class_enrollments enrollments
+                            JOIN class_rooms
+                              ON class_rooms.id = enrollments.class_room_id
+                            WHERE enrollments.student_id = ",
+            );
+            builder.push_bind(user_id);
+            builder.push(
+                "             AND enrollments.status = 'active'
+                              AND (
+                                  target.grade_level_id IS NULL
+                                  OR class_rooms.grade_level_id = target.grade_level_id
+                              )
+                              AND (
+                                  target.class_room_id IS NULL
+                                  OR enrollments.class_room_id = target.class_room_id
+                              )
+                        )
+                    )
+                )",
+            );
+        }
+        _ => {}
+    }
+
+    builder.push(
+        "
+            )
+        )",
+    );
+}
+
+fn push_child_event_target_filter(
+    builder: &mut QueryBuilder<'_, Postgres>,
+    parent_id: Uuid,
+    student_id: Uuid,
+    audience: Option<&CalendarAudienceType>,
+) {
+    builder.push(
+        " AND EXISTS (
+            SELECT 1
+            FROM student_parents child_links
+            WHERE child_links.parent_user_id = ",
+    );
+    builder.push_bind(parent_id);
+    builder.push(" AND child_links.student_user_id = ");
+    builder.push_bind(student_id);
+    builder.push(")");
+
+    builder.push(
+        " AND EXISTS (
+            SELECT 1
+            FROM calendar_event_targets target
+            WHERE target.event_id = e.id",
+    );
+    push_target_audience_query_filter(builder, audience);
+    builder.push(
+        " AND (
+                target.audience_type = 'all'
+                OR (
+                    target.audience_type = 'parent'
+                    AND EXISTS (
+                        SELECT 1
+                        FROM student_parents parent_links
+                        WHERE parent_links.parent_user_id = ",
+    );
+    builder.push_bind(parent_id);
+    builder.push(" AND parent_links.student_user_id = ");
+    builder.push_bind(student_id);
+    builder.push(
+        "       )
+                    AND (
+                        (target.grade_level_id IS NULL AND target.class_room_id IS NULL)
+                        OR EXISTS (
+                            SELECT 1
+                            FROM student_class_enrollments enrollments
+                            JOIN class_rooms
+                              ON class_rooms.id = enrollments.class_room_id
+                            WHERE enrollments.student_id = ",
+    );
+    builder.push_bind(student_id);
+    builder.push(
+        "                 AND enrollments.status = 'active'
+                              AND (
+                                  target.grade_level_id IS NULL
+                                  OR class_rooms.grade_level_id = target.grade_level_id
+                              )
+                              AND (
+                                  target.class_room_id IS NULL
+                                  OR enrollments.class_room_id = target.class_room_id
+                              )
+                        )
+                    )
+                )
+            )
+        )",
+    );
+}
+
 fn push_search_filter(builder: &mut QueryBuilder<'_, Postgres>, query: Option<&str>) {
     let Some(search) = query.map(str::trim).filter(|value| !value.is_empty()) else {
         return;
@@ -1405,6 +1662,35 @@ mod tests {
 
         assert!(validate_targets(&grade_targets).is_err());
         assert!(validate_targets(&classroom_targets).is_err());
+    }
+
+    #[test]
+    fn target_visible_to_user_type_allows_all_and_matching_user_type_only() {
+        assert!(target_visible_to_user_type("all", "staff"));
+        assert!(target_visible_to_user_type("all", "student"));
+        assert!(!target_visible_to_user_type("all", "parent"));
+        assert!(!target_visible_to_user_type("parent", "parent"));
+        assert!(!target_visible_to_user_type("student", "parent"));
+        assert!(!target_visible_to_user_type("parent", "student"));
+    }
+
+    #[test]
+    fn self_calendar_user_type_access_rejects_parent_users() {
+        assert!(self_calendar_user_type_access("staff").is_ok());
+        assert!(self_calendar_user_type_access("student").is_ok());
+        assert!(matches!(
+            self_calendar_user_type_access("parent"),
+            Err(AppError::Forbidden(message))
+                if message.contains("/api/parent/students/{student_id}/calendar/events")
+        ));
+    }
+
+    #[test]
+    fn target_visible_to_child_view_allows_all_and_parent_only() {
+        assert!(target_visible_to_child_view("all"));
+        assert!(target_visible_to_child_view("parent"));
+        assert!(!target_visible_to_child_view("student"));
+        assert!(!target_visible_to_child_view("staff"));
     }
 
     #[test]

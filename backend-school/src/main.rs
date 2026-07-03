@@ -138,6 +138,10 @@ async fn main() {
         // Public routes
         .route("/", get(root_handler))
         .route("/health", get(health_check))
+        .route(
+            "/api/public/calendar/events",
+            get(modules::calendar::handlers::list_public_calendar_events),
+        )
         // Auth routes (public)
         .route("/api/auth/login", post(modules::auth::handlers::login))
         .route("/api/auth/logout", post(modules::auth::handlers::logout))
@@ -234,10 +238,20 @@ async fn main() {
             get(modules::parents::handlers::get_child_timetable)
                 .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
         )
+        .route(
+            "/api/parent/students/{student_id}/calendar/events",
+            get(modules::parents::handlers::get_child_calendar_events)
+                .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
+        )
         // Self-service timetable (student/staff ดูตารางตัวเอง)
         .route(
             "/api/me/timetable",
             get(modules::academic::handlers::timetable::get_my_timetable)
+                .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
+        )
+        .route(
+            "/api/me/calendar/events",
+            get(modules::calendar::handlers::list_my_calendar_events)
                 .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
         )
         // Student Management routes (protected - for admin/staff)
@@ -499,6 +513,11 @@ async fn main() {
         .nest(
             "/api/academic",
             modules::academic::academic_routes()
+                .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
+        )
+        .nest(
+            "/api/calendar",
+            modules::calendar::calendar_routes()
                 .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
         )
         // Teaching Supervision routes (Protected)

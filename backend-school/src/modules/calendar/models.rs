@@ -101,6 +101,48 @@ pub struct CalendarEvent {
     pub updated_at: DateTime<Utc>,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CalendarPublicEvent {
+    pub id: Uuid,
+    pub category_id: Option<Uuid>,
+    pub category_name: Option<String>,
+    pub category_color: Option<String>,
+    pub title: String,
+    pub description: Option<String>,
+    pub location: Option<String>,
+    pub start_date: NaiveDate,
+    pub end_date: NaiveDate,
+    pub all_day: bool,
+    pub start_time: Option<NaiveTime>,
+    pub end_time: Option<NaiveTime>,
+    pub is_public: bool,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+impl From<CalendarEvent> for CalendarPublicEvent {
+    fn from(event: CalendarEvent) -> Self {
+        Self {
+            id: event.id,
+            category_id: event.category_id,
+            category_name: event.category_name,
+            category_color: event.category_color,
+            title: event.title,
+            description: event.description,
+            location: event.location,
+            start_date: event.start_date,
+            end_date: event.end_date,
+            all_day: event.all_day,
+            start_time: event.start_time,
+            end_time: event.end_time,
+            is_public: event.is_public,
+            created_at: event.created_at,
+            updated_at: event.updated_at,
+        }
+    }
+}
+
 #[derive(Debug, Clone, FromRow)]
 pub struct CalendarEventRow {
     pub id: Uuid,
@@ -183,5 +225,40 @@ mod tests {
         let result = serde_json::from_value::<CalendarEventQuery>(json!({ "visibility": "all" }));
 
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn public_event_serialization_excludes_internal_fields() {
+        let category_id = Uuid::new_v4();
+        let category_id_text = category_id.to_string();
+        let event = CalendarPublicEvent {
+            id: Uuid::new_v4(),
+            category_id: Some(category_id),
+            category_name: Some("Activities".to_string()),
+            category_color: Some("#2563eb".to_string()),
+            title: "Open House".to_string(),
+            description: Some("Public event description".to_string()),
+            location: Some("Main hall".to_string()),
+            start_date: NaiveDate::from_ymd_opt(2026, 7, 10).unwrap(),
+            end_date: NaiveDate::from_ymd_opt(2026, 7, 10).unwrap(),
+            all_day: true,
+            start_time: None,
+            end_time: None,
+            is_public: true,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        };
+
+        let value = serde_json::to_value(event).unwrap();
+
+        assert!(value.get("id").is_some());
+        assert_eq!(
+            value.get("categoryId").and_then(serde_json::Value::as_str),
+            Some(category_id_text.as_str())
+        );
+        assert!(value.get("targets").is_none());
+        assert!(value.get("reminders").is_none());
+        assert!(value.get("createdBy").is_none());
+        assert!(value.get("updatedBy").is_none());
     }
 }
