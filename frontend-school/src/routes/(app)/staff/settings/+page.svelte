@@ -6,6 +6,7 @@
 	import { LoadingButton } from '$lib/components/app-state';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
+	import PushNotificationSettings from '$lib/components/settings/PushNotificationSettings.svelte';
 	import {
 		Card,
 		CardContent,
@@ -13,7 +14,16 @@
 		CardHeader,
 		CardTitle
 	} from '$lib/components/ui/card';
-	import { Lock, Save, Eye, EyeOff, Download, Smartphone, CheckCircle2 } from 'lucide-svelte';
+	import {
+		Lock,
+		Save,
+		Eye,
+		EyeOff,
+		Download,
+		Smartphone,
+		CheckCircle2,
+		BellRing
+	} from 'lucide-svelte';
 	import { toast } from 'svelte-sonner';
 	import { pwaStore } from '$lib/stores/pwa';
 
@@ -26,7 +36,7 @@
 	let saving = $state(false);
 
 	// Active tab
-	let activeTab = $state<'security' | 'app'>('security');
+	let activeTab = $state<'security' | 'app' | 'notifications'>('security');
 
 	// PWA state from store - use $derived to avoid infinite loop
 	let pwaState = $derived($pwaStore);
@@ -136,6 +146,14 @@
 				>
 					<Smartphone class="w-4 h-4 mr-2" />
 					แอพพลิเคชัน
+				</Button>
+				<Button
+					variant={activeTab === 'notifications' ? 'secondary' : 'ghost'}
+					class="w-full justify-start"
+					onclick={() => (activeTab = 'notifications')}
+				>
+					<BellRing class="w-4 h-4 mr-2" />
+					การแจ้งเตือน
 				</Button>
 			</CardContent>
 		</Card>
@@ -299,6 +317,8 @@
 						</div>
 					</CardContent>
 				</Card>
+			{:else if activeTab === 'notifications'}
+				<PushNotificationSettings />
 			{:else if activeTab === 'app'}
 				<!-- PWA Installation -->
 				<Card>

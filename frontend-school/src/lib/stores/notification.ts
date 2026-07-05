@@ -16,6 +16,61 @@ function urlBase64ToUint8Array(base64String: string) {
 	return outputArray;
 }
 
+function arrayBufferToUrlSafeBase64(buffer: ArrayBuffer): string {
+	let binary = '';
+	const bytes = new Uint8Array(buffer);
+	for (let i = 0; i < bytes.byteLength; i++) {
+		binary += String.fromCharCode(bytes[i]);
+	}
+	return window.btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+function isIOSDevice() {
+	const navigatorWithPlatform = navigator as Navigator & { platform?: string };
+	return (
+		/iPad|iPhone|iPod/.test(navigator.userAgent) ||
+		(navigatorWithPlatform.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+	);
+}
+
+function isStandalonePWA() {
+	const standaloneNavigator = navigator as Navigator & { standalone?: boolean };
+	return (
+		window.matchMedia('(display-mode: standalone)').matches ||
+		standaloneNavigator.standalone === true
+	);
+}
+
+function isPushMessagingSupported() {
+	return 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+}
+
+async function getPushRegistration() {
+	await navigator.serviceWorker.register('/service-worker.js');
+	return navigator.serviceWorker.ready;
+}
+
+function subscriptionPayload(subscription: PushSubscription) {
+	const p256dh = subscription.getKey('p256dh');
+	const auth = subscription.getKey('auth');
+
+	if (!p256dh || !auth) return null;
+
+	return {
+		endpoint: subscription.endpoint,
+		p256dh: arrayBufferToUrlSafeBase64(p256dh),
+		auth: arrayBufferToUrlSafeBase64(auth)
+	};
+}
+
+async function syncPushSubscription(subscription: PushSubscription) {
+	const body = subscriptionPayload(subscription);
+	if (!body) return false;
+
+	await apiClient.post<Record<string, never>>('/api/notifications/subscribe', body);
+	return true;
+}
+
 export interface Notification {
 	id: string;
 	title: string;
@@ -30,6 +85,14 @@ export interface NotificationState {
 	notifications: Notification[];
 	unreadCount: number;
 	loading: boolean;
+}
+
+export interface PushNotificationDeviceStatus {
+	supported: boolean;
+	permission: NotificationPermission | 'unsupported';
+	hasSubscription: boolean;
+	isIOS: boolean;
+	isStandalone: boolean;
 }
 
 let eventSource: EventSource | null = null;
@@ -217,20 +280,44 @@ function createNotificationStore() {
 		},
 
 		async subscribeToPush(force = false) {
+			return this.enablePushFromUserAction(force);
+		},
+
+		async syncExistingPushSubscription() {
 			if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
 				console.warn('Push messaging is not supported');
 				return false;
 			}
 
 			try {
-				// Register Standard SvelteKit Service Worker
-				const registration = await navigator.serviceWorker.register('/service-worker.js');
-				await navigator.serviceWorker.ready;
+				const registration = await getPushRegistration();
+				const subscription = await registration.pushManager.getSubscription();
+				if (!subscription) return false;
 
-				// Check existing subscription
+				await syncPushSubscription(subscription);
+
+				console.log('✅ Existing Push Notification Synced to Backend');
+				return true;
+			} catch (err) {
+				console.error('Failed to sync existing push subscription', err);
+				return false;
+			}
+		},
+
+		async enablePushFromUserAction(force = false) {
+			if (!isPushMessagingSupported()) {
+				console.warn('Push messaging is not supported');
+				return false;
+			}
+			if (!PUBLIC_VAPID_KEY) {
+				console.warn('VAPID public key is not configured');
+				return false;
+			}
+
+			try {
+				const registration = await getPushRegistration();
 				let subscription = await registration.pushManager.getSubscription();
 
-				// If force update or no subscription, ensure clean state
 				if (force && subscription) {
 					await subscription.unsubscribe();
 					subscription = null;
@@ -249,29 +336,7 @@ function createNotificationStore() {
 					});
 				}
 
-				// ... (rest same logic to send backend)
-
-				const p256dh = subscription.getKey('p256dh');
-				const auth = subscription.getKey('auth');
-
-				if (!p256dh || !auth) return false;
-
-				function arrayBufferToUrlSafeBase64(buffer: ArrayBuffer): string {
-					let binary = '';
-					const bytes = new Uint8Array(buffer);
-					for (let i = 0; i < bytes.byteLength; i++) {
-						binary += String.fromCharCode(bytes[i]);
-					}
-					return window.btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-				}
-
-				const body = {
-					endpoint: subscription.endpoint,
-					p256dh: arrayBufferToUrlSafeBase64(p256dh),
-					auth: arrayBufferToUrlSafeBase64(auth)
-				};
-
-				await apiClient.post<Record<string, never>>('/api/notifications/subscribe', body);
+				await syncPushSubscription(subscription);
 
 				console.log('✅ Push Notification Subscribed (Synced to Backend)');
 				return true;
@@ -279,6 +344,29 @@ function createNotificationStore() {
 				console.error('Failed to subscribe to push', err);
 				return false;
 			}
+		},
+
+		async getPushStatus(): Promise<PushNotificationDeviceStatus> {
+			const status: PushNotificationDeviceStatus = {
+				supported: isPushMessagingSupported(),
+				permission: isPushMessagingSupported() ? Notification.permission : 'unsupported',
+				hasSubscription: false,
+				isIOS: isIOSDevice(),
+				isStandalone: isStandalonePWA()
+			};
+
+			if (!status.supported) return status;
+
+			try {
+				const registration = await getPushRegistration();
+				const subscription = await registration.pushManager.getSubscription();
+				status.hasSubscription = Boolean(subscription);
+				status.permission = Notification.permission;
+			} catch (err) {
+				console.error('Failed to read push notification status', err);
+			}
+
+			return status;
 		}
 	};
 }

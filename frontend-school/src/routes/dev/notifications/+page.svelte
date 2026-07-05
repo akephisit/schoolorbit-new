@@ -62,7 +62,7 @@
 		loading = true;
 		try {
 			// Force re-subscription to ensure VAPID keys match
-			const success = await notificationStore.subscribeToPush(true);
+			const success = await notificationStore.enablePushFromUserAction(true);
 			if (success) toast.success('เปิดแจ้งเตือนบนมือถือแล้ว (Updated Keys)');
 			else toast.error('ไม่สามารถเปิดแจ้งเตือนได้ Check console.');
 		} finally {

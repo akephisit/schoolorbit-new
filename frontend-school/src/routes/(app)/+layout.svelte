@@ -68,7 +68,7 @@
 		}
 
 		authStatus = 'authenticated';
-		notificationStore.subscribeToPush();
+		notificationStore.syncExistingPushSubscription();
 	});
 
 	$effect(() => {

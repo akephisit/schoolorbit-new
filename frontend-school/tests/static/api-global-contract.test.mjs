@@ -1747,6 +1747,65 @@ test('web push notifications favor fresh visible Android notifications', async (
 	);
 });
 
+test('web push subscription setup stays user gesture safe for iOS', async () => {
+	const notificationStore = await readFile(
+		path.join(repoRoot, 'frontend-school/src/lib/stores/notification.ts'),
+		'utf8'
+	);
+	const appLayout = await readFile(
+		path.join(repoRoot, 'frontend-school/src/routes/(app)/+layout.svelte'),
+		'utf8'
+	);
+	const staffSettings = await readFile(
+		path.join(repoRoot, 'frontend-school/src/routes/(app)/staff/settings/+page.svelte'),
+		'utf8'
+	);
+	const studentSettings = await readFile(
+		path.join(repoRoot, 'frontend-school/src/routes/(app)/student/settings/+page.svelte'),
+		'utf8'
+	);
+	const pushSettingsComponent = await readFile(
+		path.join(
+			repoRoot,
+			'frontend-school/src/lib/components/settings/PushNotificationSettings.svelte'
+		),
+		'utf8'
+	);
+
+	const syncMethod =
+		/async syncExistingPushSubscription\(\)[\s\S]*?\n\t\tasync enablePushFromUserAction/.exec(
+			notificationStore
+		);
+	assert.ok(syncMethod, 'notification store must expose syncExistingPushSubscription');
+	assert.match(syncMethod[0], /getSubscription\(\)/);
+	assert.match(syncMethod[0], /syncPushSubscription\(subscription\)/);
+	assert.doesNotMatch(syncMethod[0], /Notification\.requestPermission\(/);
+	assert.doesNotMatch(syncMethod[0], /pushManager\.subscribe\(/);
+
+	assert.match(notificationStore, /async enablePushFromUserAction\(force = false\)/);
+	assert.match(notificationStore, /Notification\.requestPermission\(\)/);
+	assert.match(notificationStore, /pushManager\.subscribe\(/);
+	assert.match(appLayout, /notificationStore\.syncExistingPushSubscription\(\)/);
+	assert.doesNotMatch(appLayout, /notificationStore\.subscribeToPush\(/);
+
+	for (const settingsPage of [staffSettings, studentSettings]) {
+		assert.match(
+			settingsPage,
+			/import PushNotificationSettings from '\$lib\/components\/settings\/PushNotificationSettings\.svelte'/
+		);
+		assert.match(settingsPage, /activeTab = \$state<'security' \| 'app' \| 'notifications'>/);
+		assert.match(settingsPage, /activeTab === 'notifications'/);
+		assert.match(settingsPage, /<PushNotificationSettings \/>/);
+	}
+
+	assert.match(pushSettingsComponent, /from '\$lib\/components\/ui\/card'/);
+	assert.match(pushSettingsComponent, /from '\$lib\/components\/ui\/badge'/);
+	assert.match(pushSettingsComponent, /from '\$lib\/components\/app-state'/);
+	assert.match(pushSettingsComponent, /notificationStore\.getPushStatus\(\)/);
+	assert.match(pushSettingsComponent, /notificationStore\.enablePushFromUserAction\(true\)/);
+	assert.match(pushSettingsComponent, /เปิด\/ซิงก์การแจ้งเตือน/);
+});
+
 test('frontend API contract avoids unknown endpoint generics and blind envelope casts', async () => {
 	const frontendFiles = await listFiles(path.join(repoRoot, 'frontend-school/src'), (file) =>
 		/\.(svelte|ts)$/.test(file)
