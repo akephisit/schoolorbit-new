@@ -280,3 +280,27 @@ pub struct ExamScheduleReadiness {
     pub can_publish: bool,
     pub blockers: Vec<String>,
 }
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PersonalExamScheduleRound {
+    pub round_id: Uuid,
+    pub round_name: String,
+    pub academic_semester_id: Uuid,
+    pub published_at: Option<DateTime<Utc>>,
+    pub sessions: Vec<PersonalExamSessionView>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PersonalExamSessionView {
+    pub exam_date: NaiveDate,
+    pub starts_at: NaiveTime,
+    pub ends_at: NaiveTime,
+    pub subject_name: String,
+    pub assessment_category_name: String,
+    pub classroom_name: String,
+    pub room_name: String,
+    pub building_name: Option<String>,
+    pub seat_number: Option<String>,
+}

@@ -2,7 +2,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use chrono::{Duration, NaiveDate, NaiveTime};
+use chrono::{DateTime, Duration, NaiveDate, NaiveTime, Utc};
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -11,8 +11,9 @@ use crate::modules::academic::models::exam_schedule::{
     BlockedWindow, BlockedWindowInput, CreateExamRoundRequest, DayRoomAssignmentView, ExamDay,
     ExamDayDetail, ExamDayRoomAssignmentView, ExamInvigilatorView, ExamRound, ExamScheduleItemView,
     ExamScheduleReadiness, ExamScheduleWorkspace, ExamSessionView, GenerateSeatsRequest,
-    ImportExamItemsRequest, ImportExamItemsResult, InvigilatorView, SeatAssignmentView,
-    UpdateExamRoundRequest, UpsertDayRoomAssignmentRequest, UpsertExamDayRequest,
+    ImportExamItemsRequest, ImportExamItemsResult, InvigilatorView, PersonalExamScheduleRound,
+    PersonalExamSessionView, PlaceExamSessionRequest, SeatAssignmentView, UpdateExamRoundRequest,
+    UpsertDayRoomAssignmentRequest, UpsertExamDayRequest,
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -129,9 +130,79 @@ struct SeatAssignmentContext {
     room_capacity: i32,
 }
 
+#[derive(Debug, sqlx::FromRow)]
+struct ExamScheduleItemPlacementContext {
+    id: Uuid,
+    exam_round_id: Uuid,
+    academic_semester_id: Uuid,
+    assessment_category_id: Uuid,
+    assessment_plan_id: Uuid,
+    classroom_course_id: Uuid,
+    classroom_id: Uuid,
+    subject_id: Uuid,
+    grade_level_id: Uuid,
+    duration_minutes: i32,
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct ExamDayPlacementContext {
+    id: Uuid,
+    exam_round_id: Uuid,
+    start_time: NaiveTime,
+    end_time: NaiveTime,
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct DayRoomAssignmentPlacementContext {
+    id: Uuid,
+    room_id: Uuid,
+}
+
+#[derive(Debug, Clone)]
+struct CandidateRoomSession {
+    session_id: Option<Uuid>,
+    room_id: Uuid,
+    exam_day_id: Uuid,
+    starts_at: NaiveTime,
+    ends_at: NaiveTime,
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct PersonalExamSessionRow {
+    round_id: Uuid,
+    round_name: String,
+    academic_semester_id: Uuid,
+    published_at: Option<DateTime<Utc>>,
+    exam_date: NaiveDate,
+    starts_at: NaiveTime,
+    ends_at: NaiveTime,
+    subject_name: String,
+    assessment_category_name: String,
+    classroom_name: String,
+    room_name: String,
+    building_name: Option<String>,
+    seat_number: Option<String>,
+}
+
 struct NormalizedUpdateRoundRequest {
     name: Option<String>,
     description: Option<String>,
+}
+
+impl PersonalExamSessionRow {
+    fn into_session_view(self) -> PersonalExamSessionView {
+        PersonalExamSessionView {
+            exam_date: self.exam_date,
+            starts_at: self.starts_at,
+            ends_at: self.ends_at,
+            subject_name: self.subject_name,
+            assessment_category_name: self.assessment_category_name,
+            classroom_name: self.classroom_name,
+            room_name: self.room_name,
+            building_name: self.building_name,
+            seat_number: self.seat_number,
+        }
+    }
 }
 
 impl ExamDayRoomAssignmentRow {
@@ -237,6 +308,49 @@ pub fn time_ranges_overlap(
     right_end: NaiveTime,
 ) -> bool {
     left_start < right_end && right_start < left_end
+}
+
+#[derive(Debug, Clone)]
+pub struct CandidateSession {
+    pub session_id: Option<Uuid>,
+    pub classroom_id: Uuid,
+    pub exam_day_id: Uuid,
+    pub starts_at: NaiveTime,
+    pub ends_at: NaiveTime,
+}
+
+pub fn has_same_classroom_conflict(
+    candidate: &CandidateSession,
+    existing: &[CandidateSession],
+) -> bool {
+    existing.iter().any(|item| {
+        item.exam_day_id == candidate.exam_day_id
+            && item.classroom_id == candidate.classroom_id
+            && item.session_id != candidate.session_id
+            && time_ranges_overlap(
+                candidate.starts_at,
+                candidate.ends_at,
+                item.starts_at,
+                item.ends_at,
+            )
+    })
+}
+
+fn has_same_room_conflict(
+    candidate: &CandidateRoomSession,
+    existing: &[CandidateRoomSession],
+) -> bool {
+    existing.iter().any(|item| {
+        item.exam_day_id == candidate.exam_day_id
+            && item.room_id == candidate.room_id
+            && item.session_id != candidate.session_id
+            && time_ranges_overlap(
+                candidate.starts_at,
+                candidate.ends_at,
+                item.starts_at,
+                item.ends_at,
+            )
+    })
 }
 
 pub fn validate_session_window(
@@ -1022,6 +1136,302 @@ pub async fn generate_seats_for_assignment(
     Ok(seats)
 }
 
+pub async fn place_exam_session(
+    pool: &PgPool,
+    request: PlaceExamSessionRequest,
+    actor_user_id: Uuid,
+) -> Result<ExamSessionView, AppError> {
+    let mut tx = pool.begin().await?;
+
+    let item = fetch_schedule_item_placement_context(&mut tx, request.exam_schedule_item_id).await?;
+    let day = fetch_exam_day_placement_context(&mut tx, request.exam_day_id).await?;
+    if day.exam_round_id != item.exam_round_id {
+        return Err(AppError::BadRequest(
+            "Exam day belongs to a different exam round".to_string(),
+        ));
+    }
+
+    validate_day_allows_grade_level(&mut tx, day.id, item.grade_level_id).await?;
+    let blocked_windows = fetch_blocked_windows_for_day_for_placement(&mut tx, day.id).await?;
+    let ends_at = validate_session_window(
+        request.starts_at,
+        item.duration_minutes,
+        day.start_time,
+        day.end_time,
+        &blocked_windows,
+    )
+    .map_err(validation_error_to_app_error)?;
+
+    let day_room_assignment =
+        fetch_day_room_assignment_placement_context(&mut tx, day.id, item.classroom_id).await?;
+    let existing_session_id =
+        fetch_existing_session_id_for_item(&mut tx, request.exam_schedule_item_id).await?;
+
+    let candidate = CandidateSession {
+        session_id: existing_session_id,
+        classroom_id: item.classroom_id,
+        exam_day_id: day.id,
+        starts_at: request.starts_at,
+        ends_at,
+    };
+    let existing_classroom_sessions =
+        fetch_candidate_sessions_for_day(&mut tx, day.id).await?;
+    if has_same_classroom_conflict(&candidate, &existing_classroom_sessions) {
+        return Err(AppError::BadRequest(
+            "Classroom already has an exam session during this time".to_string(),
+        ));
+    }
+
+    let room_candidate = CandidateRoomSession {
+        session_id: existing_session_id,
+        room_id: day_room_assignment.room_id,
+        exam_day_id: day.id,
+        starts_at: request.starts_at,
+        ends_at,
+    };
+    let existing_room_sessions =
+        fetch_candidate_room_sessions_for_day(&mut tx, day.id).await?;
+    if has_same_room_conflict(&room_candidate, &existing_room_sessions) {
+        return Err(AppError::BadRequest(
+            "Room already has an exam session during this time".to_string(),
+        ));
+    }
+
+    let session_id: Uuid = sqlx::query_scalar(
+        r#"
+        INSERT INTO academic_exam_sessions (
+            exam_schedule_item_id,
+            exam_round_id,
+            exam_day_id,
+            starts_at,
+            ends_at,
+            created_by,
+            updated_by
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $6)
+        ON CONFLICT (exam_schedule_item_id)
+        DO UPDATE SET
+            exam_round_id = EXCLUDED.exam_round_id,
+            exam_day_id = EXCLUDED.exam_day_id,
+            starts_at = EXCLUDED.starts_at,
+            ends_at = EXCLUDED.ends_at,
+            updated_by = EXCLUDED.updated_by,
+            updated_at = now()
+        RETURNING id
+        "#,
+    )
+    .bind(item.id)
+    .bind(item.exam_round_id)
+    .bind(day.id)
+    .bind(request.starts_at)
+    .bind(ends_at)
+    .bind(actor_user_id)
+    .fetch_one(&mut *tx)
+    .await?;
+
+    mark_round_draft_after_mutation(&mut tx, item.exam_round_id, Some(actor_user_id)).await?;
+    tx.commit().await?;
+
+    fetch_exam_session_view(pool, session_id).await
+}
+
+pub async fn delete_exam_session(
+    pool: &PgPool,
+    session_id: Uuid,
+    actor_user_id: Uuid,
+) -> Result<(), AppError> {
+    let mut tx = pool.begin().await?;
+
+    let round_id: Uuid = sqlx::query_scalar(
+        r#"
+        SELECT exam_round_id
+        FROM academic_exam_sessions
+        WHERE id = $1
+        FOR UPDATE
+        "#,
+    )
+    .bind(session_id)
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or_else(|| AppError::NotFound("Exam session not found".to_string()))?;
+
+    sqlx::query("DELETE FROM academic_exam_sessions WHERE id = $1")
+        .bind(session_id)
+        .execute(&mut *tx)
+        .await?;
+
+    mark_round_draft_after_mutation(&mut tx, round_id, Some(actor_user_id)).await?;
+    tx.commit().await?;
+
+    Ok(())
+}
+
+pub async fn publish_round(
+    pool: &PgPool,
+    round_id: Uuid,
+    actor_user_id: Uuid,
+) -> Result<ExamRound, AppError> {
+    let mut tx = pool.begin().await?;
+
+    let _locked_round_id: Uuid = sqlx::query_scalar(
+        r#"
+        SELECT id
+        FROM academic_exam_rounds
+        WHERE id = $1
+        FOR UPDATE
+        "#,
+    )
+    .bind(round_id)
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or_else(|| AppError::NotFound("Exam round not found".to_string()))?;
+
+    let readiness = build_readiness(fetch_workspace_counts_in_tx(&mut tx, round_id).await?);
+    if !readiness.can_publish {
+        return Err(AppError::BadRequest(format!(
+            "Exam round is not ready to publish: {}",
+            readiness.blockers.join("; ")
+        )));
+    }
+
+    let round = sqlx::query_as::<_, ExamRound>(
+        r#"
+        UPDATE academic_exam_rounds
+        SET status = 'published',
+            published_at = now(),
+            published_by = $2,
+            updated_by = $2,
+            updated_at = now()
+        WHERE id = $1
+        RETURNING id,
+                  academic_semester_id,
+                  name,
+                  description,
+                  status,
+                  published_at,
+                  created_at,
+                  updated_at
+        "#,
+    )
+    .bind(round_id)
+    .bind(actor_user_id)
+    .fetch_one(&mut *tx)
+    .await?;
+
+    tx.commit().await?;
+    Ok(round)
+}
+
+async fn fetch_workspace_counts_in_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    round_id: Uuid,
+) -> Result<WorkspaceCounts, AppError> {
+    let row: (i64, i64, i64, i64, i64) = sqlx::query_as(WORKSPACE_COUNTS_SQL)
+        .bind(round_id)
+        .fetch_one(&mut **tx)
+        .await?;
+
+    Ok(workspace_counts_from_row(row))
+}
+
+fn workspace_counts_from_row(
+    (
+        day_count,
+        item_count,
+        unscheduled_count,
+        missing_room_assignment_count,
+        missing_seat_assignment_count,
+    ): (i64, i64, i64, i64, i64),
+) -> WorkspaceCounts {
+    WorkspaceCounts {
+        day_count,
+        item_count,
+        unscheduled_count,
+        missing_room_assignment_count,
+        missing_seat_assignment_count,
+    }
+}
+
+const WORKSPACE_COUNTS_SQL: &str = r#"
+        SELECT (
+                   SELECT COUNT(*)::BIGINT
+                   FROM academic_exam_days day
+                   WHERE day.exam_round_id = $1
+               ) AS day_count,
+               (
+                   SELECT COUNT(*)::BIGINT
+                   FROM academic_exam_schedule_items item
+                   WHERE item.exam_round_id = $1
+               ) AS item_count,
+               (
+                   SELECT COUNT(*)::BIGINT
+                   FROM academic_exam_schedule_items item
+                   WHERE item.exam_round_id = $1
+                     AND NOT EXISTS (
+                         SELECT 1
+                         FROM academic_exam_sessions session
+                         WHERE session.exam_schedule_item_id = item.id
+                     )
+               ) AS unscheduled_count,
+               (
+                   SELECT COUNT(*)::BIGINT
+                   FROM (
+                       SELECT DISTINCT session.exam_day_id,
+                                       item.classroom_id
+                       FROM academic_exam_sessions session
+                       JOIN academic_exam_schedule_items item
+                         ON item.id = session.exam_schedule_item_id
+                        AND item.exam_round_id = session.exam_round_id
+                       LEFT JOIN academic_exam_day_room_assignments assignment
+                         ON assignment.exam_day_id = session.exam_day_id
+                        AND assignment.classroom_id = item.classroom_id
+                       WHERE session.exam_round_id = $1
+                         AND assignment.id IS NULL
+                   ) missing_room_assignments
+               ) AS missing_room_assignment_count,
+               (
+                   SELECT COUNT(*)::BIGINT
+                   FROM (
+                       SELECT DISTINCT session.exam_day_id,
+                                       item.classroom_id
+                       FROM academic_exam_sessions session
+                       JOIN academic_exam_schedule_items item
+                         ON item.id = session.exam_schedule_item_id
+                        AND item.exam_round_id = session.exam_round_id
+                       LEFT JOIN academic_exam_day_room_assignments assignment
+                         ON assignment.exam_day_id = session.exam_day_id
+                        AND assignment.classroom_id = item.classroom_id
+                       WHERE session.exam_round_id = $1
+                         AND assignment.id IS NOT NULL
+                         AND NOT EXISTS (
+                             SELECT 1
+                             FROM academic_exam_seat_assignments seat
+                             WHERE seat.day_room_assignment_id = assignment.id
+                         )
+                   ) missing_seat_assignments
+               ) AS missing_seat_assignment_count
+        "#;
+
+pub async fn list_my_published_exam_schedule(
+    pool: &PgPool,
+    user_id: Uuid,
+    academic_semester_id: Option<Uuid>,
+) -> Result<Vec<PersonalExamScheduleRound>, AppError> {
+    ensure_active_student_user(pool, user_id).await?;
+    list_published_exam_schedule_for_student(pool, user_id, academic_semester_id).await
+}
+
+pub async fn list_child_published_exam_schedule(
+    pool: &PgPool,
+    parent_user_id: Uuid,
+    student_id: Uuid,
+    academic_semester_id: Option<Uuid>,
+) -> Result<Vec<PersonalExamScheduleRound>, AppError> {
+    ensure_parent_user_for_exam_schedule(pool, parent_user_id).await?;
+    ensure_parent_student_link_for_exam_schedule(pool, parent_user_id, student_id).await?;
+    list_published_exam_schedule_for_student(pool, student_id, academic_semester_id).await
+}
+
 async fn mark_round_draft_after_mutation(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     round_id: Uuid,
@@ -1043,6 +1453,434 @@ async fn mark_round_draft_after_mutation(
     .execute(&mut **tx)
     .await?;
     Ok(())
+}
+
+async fn fetch_schedule_item_placement_context(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    exam_schedule_item_id: Uuid,
+) -> Result<ExamScheduleItemPlacementContext, AppError> {
+    sqlx::query_as::<_, ExamScheduleItemPlacementContext>(
+        r#"
+        SELECT item.id,
+               item.exam_round_id,
+               item.academic_semester_id,
+               item.assessment_category_id,
+               item.assessment_plan_id,
+               item.classroom_course_id,
+               item.classroom_id,
+               item.subject_id,
+               item.grade_level_id,
+               item.duration_minutes
+        FROM academic_exam_schedule_items item
+        JOIN academic_exam_rounds round ON round.id = item.exam_round_id
+        WHERE item.id = $1
+        FOR UPDATE OF item
+        "#,
+    )
+    .bind(exam_schedule_item_id)
+    .fetch_optional(&mut **tx)
+    .await?
+    .ok_or_else(|| AppError::NotFound("Exam schedule item not found".to_string()))
+}
+
+async fn fetch_exam_day_placement_context(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    exam_day_id: Uuid,
+) -> Result<ExamDayPlacementContext, AppError> {
+    sqlx::query_as::<_, ExamDayPlacementContext>(
+        r#"
+        SELECT id,
+               exam_round_id,
+               start_time,
+               end_time
+        FROM academic_exam_days
+        WHERE id = $1
+        FOR UPDATE
+        "#,
+    )
+    .bind(exam_day_id)
+    .fetch_optional(&mut **tx)
+    .await?
+    .ok_or_else(|| AppError::NotFound("Exam day not found".to_string()))
+}
+
+async fn fetch_blocked_windows_for_day_for_placement(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    exam_day_id: Uuid,
+) -> Result<Vec<BlockedWindow>, AppError> {
+    sqlx::query_as::<_, BlockedWindow>(
+        r#"
+        SELECT id,
+               label,
+               start_time,
+               end_time
+        FROM academic_exam_day_blocked_windows
+        WHERE exam_day_id = $1
+        ORDER BY start_time, end_time, label, id
+        "#,
+    )
+    .bind(exam_day_id)
+    .fetch_all(&mut **tx)
+    .await
+    .map_err(AppError::from)
+}
+
+async fn fetch_day_room_assignment_placement_context(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    exam_day_id: Uuid,
+    classroom_id: Uuid,
+) -> Result<DayRoomAssignmentPlacementContext, AppError> {
+    sqlx::query_as::<_, DayRoomAssignmentPlacementContext>(
+        r#"
+        SELECT id,
+               room_id
+        FROM academic_exam_day_room_assignments
+        WHERE exam_day_id = $1
+          AND classroom_id = $2
+        FOR UPDATE
+        "#,
+    )
+    .bind(exam_day_id)
+    .bind(classroom_id)
+    .fetch_optional(&mut **tx)
+    .await?
+    .ok_or_else(|| {
+        AppError::BadRequest(
+            "Assign an exam room for this classroom before placing the session".to_string(),
+        )
+    })
+}
+
+async fn fetch_existing_session_id_for_item(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    exam_schedule_item_id: Uuid,
+) -> Result<Option<Uuid>, AppError> {
+    sqlx::query_scalar(
+        r#"
+        SELECT id
+        FROM academic_exam_sessions
+        WHERE exam_schedule_item_id = $1
+        "#,
+    )
+    .bind(exam_schedule_item_id)
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(AppError::from)
+}
+
+async fn fetch_candidate_sessions_for_day(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    exam_day_id: Uuid,
+) -> Result<Vec<CandidateSession>, AppError> {
+    let rows = sqlx::query_as::<_, (Uuid, Uuid, Uuid, NaiveTime, NaiveTime)>(
+        r#"
+        SELECT session.id,
+               item.classroom_id,
+               session.exam_day_id,
+               session.starts_at,
+               session.ends_at
+        FROM academic_exam_sessions session
+        JOIN academic_exam_schedule_items item
+          ON item.id = session.exam_schedule_item_id
+         AND item.exam_round_id = session.exam_round_id
+        WHERE session.exam_day_id = $1
+        "#,
+    )
+    .bind(exam_day_id)
+    .fetch_all(&mut **tx)
+    .await?;
+
+    Ok(rows
+        .into_iter()
+        .map(
+            |(session_id, classroom_id, exam_day_id, starts_at, ends_at)| CandidateSession {
+                session_id: Some(session_id),
+                classroom_id,
+                exam_day_id,
+                starts_at,
+                ends_at,
+            },
+        )
+        .collect())
+}
+
+async fn fetch_candidate_room_sessions_for_day(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    exam_day_id: Uuid,
+) -> Result<Vec<CandidateRoomSession>, AppError> {
+    let rows = sqlx::query_as::<_, (Uuid, Uuid, Uuid, NaiveTime, NaiveTime)>(
+        r#"
+        SELECT session.id,
+               assignment.room_id,
+               session.exam_day_id,
+               session.starts_at,
+               session.ends_at
+        FROM academic_exam_sessions session
+        JOIN academic_exam_schedule_items item
+          ON item.id = session.exam_schedule_item_id
+         AND item.exam_round_id = session.exam_round_id
+        JOIN academic_exam_day_room_assignments assignment
+          ON assignment.exam_day_id = session.exam_day_id
+         AND assignment.classroom_id = item.classroom_id
+        WHERE session.exam_day_id = $1
+        "#,
+    )
+    .bind(exam_day_id)
+    .fetch_all(&mut **tx)
+    .await?;
+
+    Ok(rows
+        .into_iter()
+        .map(
+            |(session_id, room_id, exam_day_id, starts_at, ends_at)| CandidateRoomSession {
+                session_id: Some(session_id),
+                room_id,
+                exam_day_id,
+                starts_at,
+                ends_at,
+            },
+        )
+        .collect())
+}
+
+async fn fetch_exam_session_view(
+    pool: &PgPool,
+    session_id: Uuid,
+) -> Result<ExamSessionView, AppError> {
+    let rows = sqlx::query_as::<_, ExamSessionRow>(
+        r#"
+        SELECT session.id,
+               session.exam_schedule_item_id,
+               session.exam_round_id,
+               session.exam_day_id,
+               session.starts_at,
+               session.ends_at,
+               item.academic_semester_id,
+               item.assessment_category_id,
+               item.assessment_plan_id,
+               item.classroom_course_id,
+               item.classroom_id,
+               item.subject_id,
+               item.grade_level_id,
+               item.duration_minutes,
+               day.exam_date AS exam_date,
+               category.name AS assessment_category_name,
+               subject.code AS subject_code,
+               subject.name_th AS subject_name_th,
+               subject.name_en AS subject_name_en,
+               classroom.name AS classroom_name,
+               assignment.id AS day_room_assignment_id,
+               assignment.room_id AS room_id,
+               room.name_th AS room_name,
+               building.name_th AS building_name
+        FROM academic_exam_sessions session
+        JOIN academic_exam_schedule_items item
+          ON item.id = session.exam_schedule_item_id
+         AND item.exam_round_id = session.exam_round_id
+        JOIN academic_exam_days day
+          ON day.id = session.exam_day_id
+         AND day.exam_round_id = session.exam_round_id
+        JOIN academic_assessment_categories category
+          ON category.id = item.assessment_category_id
+        JOIN subjects subject ON subject.id = item.subject_id
+        JOIN class_rooms classroom ON classroom.id = item.classroom_id
+        LEFT JOIN academic_exam_day_room_assignments assignment
+          ON assignment.exam_day_id = session.exam_day_id
+         AND assignment.classroom_id = item.classroom_id
+        LEFT JOIN rooms room ON room.id = assignment.room_id
+        LEFT JOIN buildings building ON building.id = room.building_id
+        WHERE session.id = $1
+        "#,
+    )
+    .bind(session_id)
+    .fetch_all(pool)
+    .await?;
+
+    let assignment_ids: Vec<Uuid> = rows
+        .iter()
+        .filter_map(|row| row.day_room_assignment_id)
+        .collect();
+    let invigilators_by_assignment =
+        fetch_invigilators_by_assignment_ids(pool, &assignment_ids).await?;
+
+    rows.into_iter()
+        .map(|row| {
+            let invigilators = invigilators_for_assignment(
+                row.day_room_assignment_id,
+                &invigilators_by_assignment,
+            );
+            row.into_view(invigilators)
+        })
+        .next()
+        .ok_or_else(|| AppError::NotFound("Exam session not found".to_string()))
+}
+
+async fn ensure_active_student_user(pool: &PgPool, user_id: Uuid) -> Result<(), AppError> {
+    let user_row: Option<(String, String)> =
+        sqlx::query_as("SELECT user_type, status FROM users WHERE id = $1")
+            .bind(user_id)
+            .fetch_optional(pool)
+            .await?;
+
+    match user_row.as_ref().map(|(user_type, status)| {
+        (user_type.as_str(), status.as_str())
+    }) {
+        Some(("student", "active")) => Ok(()),
+        Some(_) => Err(AppError::Forbidden(
+            "Only active students can view personal exam schedules".to_string(),
+        )),
+        None => Err(AppError::AuthError("Please sign in".to_string())),
+    }
+}
+
+async fn ensure_parent_user_for_exam_schedule(
+    pool: &PgPool,
+    parent_user_id: Uuid,
+) -> Result<(), AppError> {
+    let user_type: Option<String> = sqlx::query_scalar("SELECT user_type FROM users WHERE id = $1")
+        .bind(parent_user_id)
+        .fetch_optional(pool)
+        .await?;
+
+    match user_type.as_deref() {
+        Some("parent") => Ok(()),
+        Some(_) => Err(AppError::Forbidden("เฉพาะผู้ปกครองเท่านั้น".to_string())),
+        None => Err(AppError::AuthError("กรุณาเข้าสู่ระบบ".to_string())),
+    }
+}
+
+async fn ensure_parent_student_link_for_exam_schedule(
+    pool: &PgPool,
+    parent_user_id: Uuid,
+    student_id: Uuid,
+) -> Result<(), AppError> {
+    let is_linked: bool = sqlx::query_scalar(
+        r#"
+        SELECT EXISTS(
+            SELECT 1
+            FROM student_parents
+            JOIN users user_account ON user_account.id = student_parents.student_user_id
+            WHERE student_parents.parent_user_id = $1
+              AND student_parents.student_user_id = $2
+              AND user_account.user_type = 'student'
+              AND user_account.status = 'active'
+        )
+        "#,
+    )
+    .bind(parent_user_id)
+    .bind(student_id)
+    .fetch_one(pool)
+    .await?;
+
+    if !is_linked {
+        return Err(AppError::Forbidden(
+            "คุณไม่มีสิทธิ์เข้าถึงข้อมูลนักเรียนคนนี้".to_string(),
+        ));
+    }
+
+    Ok(())
+}
+
+async fn list_published_exam_schedule_for_student(
+    pool: &PgPool,
+    student_id: Uuid,
+    academic_semester_id: Option<Uuid>,
+) -> Result<Vec<PersonalExamScheduleRound>, AppError> {
+    let rows = sqlx::query_as::<_, PersonalExamSessionRow>(
+        r#"
+        SELECT round.id AS round_id,
+               round.name AS round_name,
+               round.academic_semester_id,
+               round.published_at,
+               day.exam_date,
+               session.starts_at,
+               session.ends_at,
+               COALESCE(NULLIF(subject.name_th, ''), NULLIF(subject.name_en, ''), subject.code)
+                   AS subject_name,
+               category.name AS assessment_category_name,
+               classroom.name AS classroom_name,
+               room.name_th AS room_name,
+               building.name_th AS building_name,
+               seat.seat_number
+        FROM student_class_enrollments enrollment
+        JOIN users student_user
+          ON student_user.id = enrollment.student_id
+         AND student_user.user_type = 'student'
+         AND student_user.status = 'active'
+        JOIN academic_exam_schedule_items item
+          ON item.classroom_id = enrollment.class_room_id
+        JOIN academic_exam_rounds round
+          ON round.id = item.exam_round_id
+         AND round.academic_semester_id = item.academic_semester_id
+        JOIN academic_exam_sessions session
+          ON session.exam_schedule_item_id = item.id
+         AND session.exam_round_id = item.exam_round_id
+        JOIN academic_exam_days day
+          ON day.id = session.exam_day_id
+         AND day.exam_round_id = session.exam_round_id
+        JOIN academic_assessment_categories category
+          ON category.id = item.assessment_category_id
+        JOIN subjects subject ON subject.id = item.subject_id
+        JOIN class_rooms classroom ON classroom.id = item.classroom_id
+        JOIN academic_exam_day_room_assignments assignment
+          ON assignment.exam_day_id = session.exam_day_id
+         AND assignment.classroom_id = item.classroom_id
+        JOIN rooms room ON room.id = assignment.room_id
+        LEFT JOIN buildings building ON building.id = room.building_id
+        LEFT JOIN academic_exam_seat_assignments seat
+          ON seat.day_room_assignment_id = assignment.id
+         AND seat.student_id = enrollment.student_id
+        WHERE enrollment.student_id = $1
+          AND enrollment.status = 'active'
+          AND round.status = 'published'
+          AND ($2::uuid IS NULL OR round.academic_semester_id = $2)
+        ORDER BY round.published_at DESC NULLS LAST,
+                 round.name,
+                 day.exam_date,
+                 session.starts_at,
+                 classroom.name,
+                 subject.code,
+                 category.display_order,
+                 category.name,
+                 session.id
+        "#,
+    )
+    .bind(student_id)
+    .bind(academic_semester_id)
+    .fetch_all(pool)
+    .await?;
+
+    Ok(group_personal_exam_schedule_rows(rows))
+}
+
+fn group_personal_exam_schedule_rows(
+    rows: Vec<PersonalExamSessionRow>,
+) -> Vec<PersonalExamScheduleRound> {
+    let mut rounds = Vec::new();
+    let mut round_indexes = HashMap::new();
+
+    for row in rows {
+        let round_id = row.round_id;
+        let round_index = match round_indexes.get(&round_id) {
+            Some(index) => *index,
+            None => {
+                let index = rounds.len();
+                rounds.push(PersonalExamScheduleRound {
+                    round_id,
+                    round_name: row.round_name.clone(),
+                    academic_semester_id: row.academic_semester_id,
+                    published_at: row.published_at,
+                    sessions: Vec::new(),
+                });
+                round_indexes.insert(round_id, index);
+                index
+            }
+        };
+
+        rounds[round_index].sessions.push(row.into_session_view());
+    }
+
+    rounds
 }
 
 fn validate_unique_invigilator_staff_ids(ids: Vec<Uuid>) -> Result<Vec<Uuid>, AppError> {
@@ -1907,84 +2745,12 @@ async fn fetch_workspace_counts(
     pool: &PgPool,
     round_id: Uuid,
 ) -> Result<WorkspaceCounts, AppError> {
-    let (
-        day_count,
-        item_count,
-        unscheduled_count,
-        missing_room_assignment_count,
-        missing_seat_assignment_count,
-    ): (i64, i64, i64, i64, i64) = sqlx::query_as(
-        r#"
-        SELECT (
-                   SELECT COUNT(*)::BIGINT
-                   FROM academic_exam_days day
-                   WHERE day.exam_round_id = $1
-               ) AS day_count,
-               (
-                   SELECT COUNT(*)::BIGINT
-                   FROM academic_exam_schedule_items item
-                   WHERE item.exam_round_id = $1
-               ) AS item_count,
-               (
-                   SELECT COUNT(*)::BIGINT
-                   FROM academic_exam_schedule_items item
-                   WHERE item.exam_round_id = $1
-                     AND NOT EXISTS (
-                         SELECT 1
-                         FROM academic_exam_sessions session
-                         WHERE session.exam_schedule_item_id = item.id
-                     )
-               ) AS unscheduled_count,
-               (
-                   SELECT COUNT(*)::BIGINT
-                   FROM (
-                       SELECT DISTINCT session.exam_day_id,
-                                       item.classroom_id
-                       FROM academic_exam_sessions session
-                       JOIN academic_exam_schedule_items item
-                         ON item.id = session.exam_schedule_item_id
-                        AND item.exam_round_id = session.exam_round_id
-                       LEFT JOIN academic_exam_day_room_assignments assignment
-                         ON assignment.exam_day_id = session.exam_day_id
-                        AND assignment.classroom_id = item.classroom_id
-                       WHERE session.exam_round_id = $1
-                         AND assignment.id IS NULL
-                   ) missing_room_assignments
-               ) AS missing_room_assignment_count,
-               (
-                   SELECT COUNT(*)::BIGINT
-                   FROM (
-                       SELECT DISTINCT session.exam_day_id,
-                                       item.classroom_id
-                       FROM academic_exam_sessions session
-                       JOIN academic_exam_schedule_items item
-                         ON item.id = session.exam_schedule_item_id
-                        AND item.exam_round_id = session.exam_round_id
-                       LEFT JOIN academic_exam_day_room_assignments assignment
-                         ON assignment.exam_day_id = session.exam_day_id
-                        AND assignment.classroom_id = item.classroom_id
-                       WHERE session.exam_round_id = $1
-                         AND assignment.id IS NOT NULL
-                         AND NOT EXISTS (
-                             SELECT 1
-                             FROM academic_exam_seat_assignments seat
-                             WHERE seat.day_room_assignment_id = assignment.id
-                         )
-                   ) missing_seat_assignments
-               ) AS missing_seat_assignment_count
-        "#,
-    )
-    .bind(round_id)
-    .fetch_one(pool)
-    .await?;
+    let row: (i64, i64, i64, i64, i64) = sqlx::query_as(WORKSPACE_COUNTS_SQL)
+        .bind(round_id)
+        .fetch_one(pool)
+        .await?;
 
-    Ok(WorkspaceCounts {
-        day_count,
-        item_count,
-        unscheduled_count,
-        missing_room_assignment_count,
-        missing_seat_assignment_count,
-    })
+    Ok(workspace_counts_from_row(row))
 }
 
 #[cfg(test)]
@@ -2039,6 +2805,42 @@ mod tests {
             t("10:00"),
             t("11:00")
         ));
+    }
+
+    #[test]
+    fn detects_classroom_time_conflict() {
+        let candidate = CandidateSession {
+            session_id: None,
+            classroom_id: Uuid::nil(),
+            exam_day_id: Uuid::nil(),
+            starts_at: t("09:00"),
+            ends_at: t("10:00"),
+        };
+        let existing = vec![CandidateSession {
+            session_id: Some(Uuid::max()),
+            classroom_id: Uuid::nil(),
+            exam_day_id: Uuid::nil(),
+            starts_at: t("09:30"),
+            ends_at: t("10:30"),
+        }];
+        assert!(has_same_classroom_conflict(&candidate, &existing));
+    }
+
+    #[test]
+    fn publish_round_locks_round_before_readiness_check() {
+        let source = include_str!("exam_schedule_service.rs");
+        let publish_start = source.find("pub async fn publish_round").unwrap();
+        let publish_body = &source[publish_start..];
+        let tx_position = publish_body.find("let mut tx = pool.begin().await?").unwrap();
+        let lock_position = publish_body.find("FOR UPDATE").unwrap();
+        let readiness_position = publish_body.find("fetch_workspace_counts_in_tx").unwrap();
+        let update_position = publish_body
+            .find("UPDATE academic_exam_rounds")
+            .unwrap();
+
+        assert!(tx_position < lock_position);
+        assert!(lock_position < readiness_position);
+        assert!(readiness_position < update_position);
     }
 
     #[test]
