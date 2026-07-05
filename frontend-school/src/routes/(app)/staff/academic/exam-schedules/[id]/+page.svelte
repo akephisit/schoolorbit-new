@@ -12,13 +12,13 @@
 		generateSeatsForAssignment,
 		getExamScheduleWorkspace,
 		importExamItems,
+		placeExamSession,
 		publishExamRound,
 		upsertDayRoomAssignment,
 		upsertExamDay,
 		type ExamRoundStatus,
-		type ExamScheduleItem,
 		type ExamScheduleWorkspace,
-		type ExamSession,
+		type PlaceExamSessionInput,
 		type UpsertDayRoomAssignmentInput,
 		type UpsertExamDayInput
 	} from '$lib/api/examSchedule';
@@ -26,6 +26,7 @@
 	import { listStaff, type StaffListItem } from '$lib/api/staff';
 	import ExamDaySetupPanel from '$lib/components/academic/exam-schedule/ExamDaySetupPanel.svelte';
 	import ExamRoomAssignmentPanel from '$lib/components/academic/exam-schedule/ExamRoomAssignmentPanel.svelte';
+	import ExamScheduleTimeline from '$lib/components/academic/exam-schedule/ExamScheduleTimeline.svelte';
 	import ReadinessPanel from '$lib/components/academic/exam-schedule/ReadinessPanel.svelte';
 	import { PageShell } from '$lib/components/app-layout';
 	import { LoadingButton, PageSkeleton, PageState } from '$lib/components/app-state';
@@ -62,6 +63,7 @@
 	let deletingDayId = $state<string | null>(null);
 	let savingAssignment = $state(false);
 	let generatingAssignmentId = $state<string | null>(null);
+	let placingItemId = $state<string | null>(null);
 	let requestedRoundId = $state('');
 	let loadedRoundId = $state('');
 	let workspaceRequestToken = 0;
@@ -101,6 +103,7 @@
 		deletingDayId = null;
 		savingAssignment = false;
 		generatingAssignmentId = null;
+		placingItemId = null;
 		loading = !!roundId;
 		refreshing = false;
 	}
@@ -304,24 +307,31 @@
 		}
 	}
 
+	async function handlePlaceExamSession(input: PlaceExamSessionInput): Promise<boolean> {
+		placingItemId = input.examScheduleItemId;
+		try {
+			await placeExamSession({
+				examScheduleItemId: input.examScheduleItemId,
+				examDayId: input.examDayId,
+				startsAt: input.startsAt
+			});
+			toast.success('บันทึกเวลาสอบแล้ว');
+			await refreshWorkspace();
+			return true;
+		} catch (placeError) {
+			toast.error(placeError instanceof Error ? placeError.message : 'บันทึกเวลาสอบไม่สำเร็จ');
+			return false;
+		} finally {
+			placingItemId = null;
+		}
+	}
+
 	function statusLabel(status: ExamRoundStatus): string {
 		return status === 'published' ? 'เผยแพร่แล้ว' : 'ฉบับร่าง';
 	}
 
 	function statusVariant(status: ExamRoundStatus): 'default' | 'secondary' {
 		return status === 'published' ? 'default' : 'secondary';
-	}
-
-	function itemSubject(item: ExamScheduleItem | ExamSession): string {
-		return item.subjectNameTh || item.subjectNameEn || item.subjectCode || '-';
-	}
-
-	function sessionDate(session: ExamSession): string {
-		if (!session.examDate) return '-';
-		return new Date(session.examDate).toLocaleDateString('th-TH', {
-			month: 'short',
-			day: 'numeric'
-		});
 	}
 
 	$effect(() => {
@@ -448,88 +458,12 @@
 					</Tabs.Content>
 
 					<Tabs.Content value="schedule">
-						<section class="overflow-hidden rounded-md border bg-background">
-							<div class="border-b px-4 py-4">
-								<h2 class="font-semibold">รายการสอบ</h2>
-								<p class="text-sm text-muted-foreground">
-									ยังไม่จัด {workspace.unscheduledItems.length} · จัดแล้ว {workspace.scheduledSessions.length}
-								</p>
-							</div>
-							<div class="grid gap-0 lg:grid-cols-2">
-								<div class="min-w-0 border-b lg:border-b-0 lg:border-r">
-									<div class="border-b px-4 py-3 text-sm font-medium">ยังไม่จัดเวลา</div>
-									{#if workspace.unscheduledItems.length === 0}
-										<PageState title="ไม่มีรายการค้างจัด" />
-									{:else}
-										<div class="overflow-x-auto">
-											<Table class="min-w-[560px]">
-												<TableHeader>
-													<TableRow>
-														<TableHead>วิชา</TableHead>
-														<TableHead>ห้องเรียน</TableHead>
-														<TableHead class="w-20 text-right">นาที</TableHead>
-													</TableRow>
-												</TableHeader>
-												<TableBody>
-													{#each workspace.unscheduledItems as item (item.id)}
-														<TableRow>
-															<TableCell>
-																<div class="font-medium">{itemSubject(item)}</div>
-																<div class="text-xs text-muted-foreground">
-																	{item.assessmentCategoryName ?? '-'}
-																</div>
-															</TableCell>
-															<TableCell class="text-sm text-muted-foreground">
-																{item.classroomName ?? '-'}
-															</TableCell>
-															<TableCell class="text-right font-mono text-sm">
-																{item.durationMinutes}
-															</TableCell>
-														</TableRow>
-													{/each}
-												</TableBody>
-											</Table>
-										</div>
-									{/if}
-								</div>
-
-								<div class="min-w-0">
-									<div class="border-b px-4 py-3 text-sm font-medium">จัดเวลาแล้ว</div>
-									{#if workspace.scheduledSessions.length === 0}
-										<PageState title="ยังไม่มีคาบสอบที่จัดเวลาแล้ว" />
-									{:else}
-										<div class="overflow-x-auto">
-											<Table class="min-w-[620px]">
-												<TableHeader>
-													<TableRow>
-														<TableHead>วัน/เวลา</TableHead>
-														<TableHead>วิชา</TableHead>
-														<TableHead>ห้องเรียน</TableHead>
-														<TableHead>ห้องสอบ</TableHead>
-													</TableRow>
-												</TableHeader>
-												<TableBody>
-													{#each workspace.scheduledSessions as session (session.id)}
-														<TableRow>
-															<TableCell class="font-mono text-sm">
-																{sessionDate(session)} {session.startsAt.slice(0, 5)}-{session.endsAt.slice(0, 5)}
-															</TableCell>
-															<TableCell>{itemSubject(session)}</TableCell>
-															<TableCell class="text-sm text-muted-foreground">
-																{session.classroomName ?? '-'}
-															</TableCell>
-															<TableCell class="text-sm text-muted-foreground">
-																{session.roomName ?? '-'}
-															</TableCell>
-														</TableRow>
-													{/each}
-												</TableBody>
-											</Table>
-										</div>
-									{/if}
-								</div>
-							</div>
-						</section>
+						<ExamScheduleTimeline
+							{workspace}
+							readonly={!canManageExamSchedules || workspace.round.status === 'published'}
+							placingItemId={placingItemId}
+							onPlaceSession={handlePlaceExamSession}
+						/>
 					</Tabs.Content>
 
 					<Tabs.Content value="review">

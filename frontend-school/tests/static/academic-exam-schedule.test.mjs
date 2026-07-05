@@ -35,6 +35,9 @@ test('academic exam schedule routes have compile-ready page placeholders', () =>
 	const pageFiles = [
 		'src/routes/(app)/staff/academic/exam-schedules/+page.svelte',
 		'src/routes/(app)/staff/academic/exam-schedules/[id]/+page.svelte',
+		'src/lib/components/academic/exam-schedule/ExamScheduleTimeline.svelte',
+		'src/lib/components/academic/exam-schedule/ExamItemTray.svelte',
+		'src/lib/components/academic/exam-schedule/ExamSessionBlock.svelte',
 		'src/routes/(app)/student/exams/+page.svelte',
 		'src/routes/(app)/parent/student/[id]/exams/+page.svelte'
 	];
@@ -167,8 +170,10 @@ test('staff workspace wires setup, import, room assignment, and publish actions'
 	const expectedWorkspaceWiring = [
 		'ExamDaySetupPanel',
 		'ExamRoomAssignmentPanel',
+		'ExamScheduleTimeline',
 		'ReadinessPanel',
 		'getExamScheduleWorkspace',
+		'placeExamSession',
 		'upsertExamDay',
 		'deleteExamDay',
 		'upsertDayRoomAssignment',
@@ -182,6 +187,53 @@ test('staff workspace wires setup, import, room assignment, and publish actions'
 	for (const expected of expectedWorkspaceWiring) {
 		assert.match(page, new RegExp(escapeRegExp(expected)), `${expected} should be wired`);
 	}
+});
+
+test('staff timeline wires drag drop placement and accessible schedule dialog', () => {
+	const page = readFileSync(
+		projectPath('src/routes/(app)/staff/academic/exam-schedules/[id]/+page.svelte'),
+		'utf8'
+	);
+	const timeline = readFileSync(
+		projectPath('src/lib/components/academic/exam-schedule/ExamScheduleTimeline.svelte'),
+		'utf8'
+	);
+	const tray = readFileSync(
+		projectPath('src/lib/components/academic/exam-schedule/ExamItemTray.svelte'),
+		'utf8'
+	);
+	const block = readFileSync(
+		projectPath('src/lib/components/academic/exam-schedule/ExamSessionBlock.svelte'),
+		'utf8'
+	);
+
+	assert.match(page, /async function handlePlaceExamSession\(/);
+	assert.match(page, /placeExamSession\(\{/);
+	assert.match(page, /await refreshWorkspace\(\)/);
+	assert.match(page, /<ExamScheduleTimeline/);
+	assert.match(page, /onPlaceSession=\{handlePlaceExamSession\}/);
+
+	for (const expected of [
+		'validateExamSessionPlacement',
+		'clientXToTimelineStartTime',
+		'ondrop=',
+		'blocked-window',
+		'--slot-width: 24px',
+		'<Dialog.Root',
+		'onPlaceSession?.('
+	]) {
+		assert.match(timeline, new RegExp(escapeRegExp(expected)), `${expected} should be wired`);
+	}
+
+	assert.match(tray, /unscheduledItems/);
+	assert.match(tray, /scheduledSessions/);
+	assert.match(tray, /validateExamSessionPlacement/);
+	assert.match(tray, /draggable=/);
+	assert.match(tray, /<Dialog.Root/);
+	assert.match(block, /draggable=/);
+	assert.match(block, /session-block/);
+	assert.match(block, /min-height: 2\.25rem/);
+	assert.match(block, /overflow: hidden/);
 });
 
 test('staff workspace reloads by route round id and keeps form input on failed saves', () => {
