@@ -144,10 +144,6 @@
 
 	function selectRoom(value: string) {
 		roomId = value;
-		const room = rooms.find((item) => item.id === value);
-		if (room && !capacityOverride) {
-			capacityOverride = String(room.capacity ?? '');
-		}
 	}
 
 	function toggleInvigilator(option: InvigilatorOption, checked: boolean) {

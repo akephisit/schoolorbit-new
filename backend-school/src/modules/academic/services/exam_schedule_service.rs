@@ -2,8 +2,8 @@
 
 use std::collections::{HashMap, HashSet};
 
-use chrono::{DateTime, Duration, NaiveDate, NaiveTime, Utc};
-use sqlx::PgPool;
+use chrono::{DateTime, Duration, NaiveDate, NaiveTime, Timelike, Utc};
+use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
 use crate::error::AppError;
@@ -22,8 +22,13 @@ pub struct WorkspaceCounts {
     pub item_count: i64,
     pub unscheduled_count: i64,
     pub missing_room_assignment_count: i64,
-    pub missing_seat_assignment_count: i64,
+    pub invalid_session_count: i64,
+    pub missing_seat_student_count: i64,
 }
+
+const EXAM_SESSION_SLOT_MINUTES: u32 = 15;
+const EXAM_SESSION_CLASSROOM_LOCK_NAMESPACE: i64 = 0x4558_5343_4C52_0000;
+const EXAM_SESSION_ROOM_LOCK_NAMESPACE: i64 = 0x4558_5352_4F4D_0000;
 
 #[derive(Debug, sqlx::FromRow)]
 struct ExamDayGradeLevelRow {
@@ -283,6 +288,7 @@ impl InvigilatorViewRow {
 pub enum SessionValidationError {
     InvalidDuration,
     EndTimeOverflow,
+    StartTimeOutsideSlot,
     BeforeDayStart,
     AfterDayEnd,
     BlockedWindow(String),
@@ -308,6 +314,10 @@ pub fn time_ranges_overlap(
     right_end: NaiveTime,
 ) -> bool {
     left_start < right_end && right_start < left_end
+}
+
+fn is_exam_session_start_on_slot(starts_at: NaiveTime) -> bool {
+    starts_at.num_seconds_from_midnight() % (EXAM_SESSION_SLOT_MINUTES * 60) == 0
 }
 
 #[derive(Debug, Clone)]
@@ -353,6 +363,51 @@ fn has_same_room_conflict(
     })
 }
 
+fn exam_session_conflict_lock_key(namespace: i64, exam_day_id: Uuid, resource_id: Uuid) -> i64 {
+    let day_bytes = exam_day_id.as_bytes();
+    let resource_bytes = resource_id.as_bytes();
+    let mut key_bytes = [0_u8; 8];
+    for index in 0..8 {
+        key_bytes[index] = day_bytes[index]
+            ^ day_bytes[index + 8]
+            ^ resource_bytes[index]
+            ^ resource_bytes[index + 8];
+    }
+    i64::from_be_bytes(key_bytes) ^ namespace
+}
+
+fn exam_session_conflict_lock_keys(
+    exam_day_id: Uuid,
+    classroom_id: Uuid,
+    room_id: Uuid,
+) -> [i64; 2] {
+    let mut keys = [
+        exam_session_conflict_lock_key(
+            EXAM_SESSION_CLASSROOM_LOCK_NAMESPACE,
+            exam_day_id,
+            classroom_id,
+        ),
+        exam_session_conflict_lock_key(EXAM_SESSION_ROOM_LOCK_NAMESPACE, exam_day_id, room_id),
+    ];
+    keys.sort_unstable();
+    keys
+}
+
+async fn lock_exam_session_conflict_scope(
+    tx: &mut Transaction<'_, Postgres>,
+    exam_day_id: Uuid,
+    classroom_id: Uuid,
+    room_id: Uuid,
+) -> Result<(), AppError> {
+    for lock_key in exam_session_conflict_lock_keys(exam_day_id, classroom_id, room_id) {
+        sqlx::query("SELECT pg_advisory_xact_lock($1)")
+            .bind(lock_key)
+            .execute(&mut **tx)
+            .await?;
+    }
+    Ok(())
+}
+
 pub fn validate_session_window(
     starts_at: NaiveTime,
     duration_minutes: i32,
@@ -361,6 +416,9 @@ pub fn validate_session_window(
     blocked_windows: &[BlockedWindow],
 ) -> Result<NaiveTime, SessionValidationError> {
     let ends_at = add_minutes(starts_at, duration_minutes)?;
+    if !is_exam_session_start_on_slot(starts_at) {
+        return Err(SessionValidationError::StartTimeOutsideSlot);
+    }
     if starts_at < day_start {
         return Err(SessionValidationError::BeforeDayStart);
     }
@@ -383,6 +441,9 @@ pub fn validation_error_to_app_error(error: SessionValidationError) -> AppError 
         SessionValidationError::EndTimeOverflow => {
             AppError::BadRequest("Exam end time is outside the valid day range".into())
         }
+        SessionValidationError::StartTimeOutsideSlot => AppError::BadRequest(format!(
+            "Exam start time must align to a {EXAM_SESSION_SLOT_MINUTES}-minute slot"
+        )),
         SessionValidationError::BeforeDayStart => {
             AppError::BadRequest("Exam starts before the exam day begins".into())
         }
@@ -415,10 +476,16 @@ pub fn build_readiness(counts: WorkspaceCounts) -> ExamScheduleReadiness {
             counts.missing_room_assignment_count
         ));
     }
-    if counts.missing_seat_assignment_count > 0 {
+    if counts.invalid_session_count > 0 {
         blockers.push(format!(
-            "Generate seats for {} classroom-day group(s)",
-            counts.missing_seat_assignment_count
+            "Fix {} scheduled exam session(s) that no longer fit the exam day",
+            counts.invalid_session_count
+        ));
+    }
+    if counts.missing_seat_student_count > 0 {
+        blockers.push(format!(
+            "Generate seats for {} active student(s) in scheduled classroom-day group(s)",
+            counts.missing_seat_student_count
         ));
     }
     ExamScheduleReadiness {
@@ -1135,7 +1202,8 @@ pub async fn place_exam_session(
 ) -> Result<ExamSessionView, AppError> {
     let mut tx = pool.begin().await?;
 
-    let item = fetch_schedule_item_placement_context(&mut tx, request.exam_schedule_item_id).await?;
+    let item =
+        fetch_schedule_item_placement_context(&mut tx, request.exam_schedule_item_id).await?;
     let day = fetch_exam_day_placement_context(&mut tx, request.exam_day_id).await?;
     if day.exam_round_id != item.exam_round_id {
         return Err(AppError::BadRequest(
@@ -1156,6 +1224,13 @@ pub async fn place_exam_session(
 
     let day_room_assignment =
         fetch_day_room_assignment_placement_context(&mut tx, day.id, item.classroom_id).await?;
+    lock_exam_session_conflict_scope(
+        &mut tx,
+        day.id,
+        item.classroom_id,
+        day_room_assignment.room_id,
+    )
+    .await?;
     let existing_session_id =
         fetch_existing_session_id_for_item(&mut tx, request.exam_schedule_item_id).await?;
 
@@ -1166,8 +1241,7 @@ pub async fn place_exam_session(
         starts_at: request.starts_at,
         ends_at,
     };
-    let existing_classroom_sessions =
-        fetch_candidate_sessions_for_day(&mut tx, day.id).await?;
+    let existing_classroom_sessions = fetch_candidate_sessions_for_day(&mut tx, day.id).await?;
     if has_same_classroom_conflict(&candidate, &existing_classroom_sessions) {
         return Err(AppError::BadRequest(
             "Classroom already has an exam session during this time".to_string(),
@@ -1181,8 +1255,7 @@ pub async fn place_exam_session(
         starts_at: request.starts_at,
         ends_at,
     };
-    let existing_room_sessions =
-        fetch_candidate_room_sessions_for_day(&mut tx, day.id).await?;
+    let existing_room_sessions = fetch_candidate_room_sessions_for_day(&mut tx, day.id).await?;
     if has_same_room_conflict(&room_candidate, &existing_room_sessions) {
         return Err(AppError::BadRequest(
             "Room already has an exam session during this time".to_string(),
@@ -1318,7 +1391,7 @@ async fn fetch_workspace_counts_in_tx(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     round_id: Uuid,
 ) -> Result<WorkspaceCounts, AppError> {
-    let row: (i64, i64, i64, i64, i64) = sqlx::query_as(WORKSPACE_COUNTS_SQL)
+    let row: (i64, i64, i64, i64, i64, i64) = sqlx::query_as(WORKSPACE_COUNTS_SQL)
         .bind(round_id)
         .fetch_one(&mut **tx)
         .await?;
@@ -1332,15 +1405,17 @@ fn workspace_counts_from_row(
         item_count,
         unscheduled_count,
         missing_room_assignment_count,
-        missing_seat_assignment_count,
-    ): (i64, i64, i64, i64, i64),
+        invalid_session_count,
+        missing_seat_student_count,
+    ): (i64, i64, i64, i64, i64, i64),
 ) -> WorkspaceCounts {
     WorkspaceCounts {
         day_count,
         item_count,
         unscheduled_count,
         missing_room_assignment_count,
-        missing_seat_assignment_count,
+        invalid_session_count,
+        missing_seat_student_count,
     }
 }
 
@@ -1384,24 +1459,68 @@ const WORKSPACE_COUNTS_SQL: &str = r#"
                (
                    SELECT COUNT(*)::BIGINT
                    FROM (
-                       SELECT DISTINCT session.exam_day_id,
-                                       item.classroom_id
+                       SELECT session.id
                        FROM academic_exam_sessions session
                        JOIN academic_exam_schedule_items item
                          ON item.id = session.exam_schedule_item_id
                         AND item.exam_round_id = session.exam_round_id
-                       LEFT JOIN academic_exam_day_room_assignments assignment
+                       JOIN academic_exam_days day
+                         ON day.id = session.exam_day_id
+                        AND day.exam_round_id = session.exam_round_id
+                       WHERE session.exam_round_id = $1
+                         AND (
+                             session.starts_at < day.start_time
+                             OR session.ends_at > day.end_time
+                             OR (EXTRACT(EPOCH FROM session.starts_at)::BIGINT % 900) <> 0
+                             OR EXISTS (
+                                 SELECT 1
+                                 FROM academic_exam_day_blocked_windows blocked
+                                 WHERE blocked.exam_day_id = session.exam_day_id
+                                   AND session.starts_at < blocked.end_time
+                                   AND blocked.start_time < session.ends_at
+                             )
+                             OR (
+                                 EXISTS (
+                                     SELECT 1
+                                     FROM academic_exam_day_grade_levels scope
+                                     WHERE scope.exam_day_id = session.exam_day_id
+                                 )
+                                 AND NOT EXISTS (
+                                     SELECT 1
+                                     FROM academic_exam_day_grade_levels scope
+                                     WHERE scope.exam_day_id = session.exam_day_id
+                                       AND scope.grade_level_id = item.grade_level_id
+                                 )
+                             )
+                         )
+                   ) invalid_sessions
+               ) AS invalid_session_count,
+               (
+                   SELECT COUNT(*)::BIGINT
+                   FROM (
+                       SELECT DISTINCT assignment.id AS day_room_assignment_id,
+                                       enrollment.student_id
+                       FROM academic_exam_sessions session
+                       JOIN academic_exam_schedule_items item
+                         ON item.id = session.exam_schedule_item_id
+                        AND item.exam_round_id = session.exam_round_id
+                       JOIN academic_exam_day_room_assignments assignment
                          ON assignment.exam_day_id = session.exam_day_id
                         AND assignment.classroom_id = item.classroom_id
+                       JOIN student_class_enrollments enrollment
+                         ON enrollment.class_room_id = item.classroom_id
+                        AND enrollment.status = 'active'
+                       JOIN users user_account
+                         ON user_account.id = enrollment.student_id
+                        AND user_account.user_type = 'student'
+                        AND user_account.status = 'active'
+                       LEFT JOIN academic_exam_seat_assignments seat
+                         ON seat.day_room_assignment_id = assignment.id
+                        AND seat.student_id = enrollment.student_id
                        WHERE session.exam_round_id = $1
-                         AND assignment.id IS NOT NULL
-                         AND NOT EXISTS (
-                             SELECT 1
-                             FROM academic_exam_seat_assignments seat
-                             WHERE seat.day_room_assignment_id = assignment.id
-                         )
-                   ) missing_seat_assignments
-               ) AS missing_seat_assignment_count
+                         AND seat.student_id IS NULL
+                   ) missing_seat_students
+               ) AS missing_seat_student_count
         "#;
 
 pub async fn list_my_published_exam_schedule(
@@ -1714,9 +1833,10 @@ async fn ensure_active_student_user(pool: &PgPool, user_id: Uuid) -> Result<(), 
             .fetch_optional(pool)
             .await?;
 
-    match user_row.as_ref().map(|(user_type, status)| {
-        (user_type.as_str(), status.as_str())
-    }) {
+    match user_row
+        .as_ref()
+        .map(|(user_type, status)| (user_type.as_str(), status.as_str()))
+    {
         Some(("student", "active")) => Ok(()),
         Some(_) => Err(AppError::Forbidden(
             "Only active students can view personal exam schedules".to_string(),
@@ -1958,27 +2078,28 @@ async fn validate_day_allows_grade_level(
     exam_day_id: Uuid,
     grade_level_id: Uuid,
 ) -> Result<(), AppError> {
-    let allowed: bool = sqlx::query_scalar(
+    let scoped_grade_level_ids: Vec<Uuid> = sqlx::query_scalar(
         r#"
-        SELECT EXISTS (
-            SELECT 1
-            FROM academic_exam_day_grade_levels
-            WHERE exam_day_id = $1
-              AND grade_level_id = $2
-        )
+        SELECT grade_level_id
+        FROM academic_exam_day_grade_levels
+        WHERE exam_day_id = $1
+        ORDER BY grade_level_id
         "#,
     )
     .bind(exam_day_id)
-    .bind(grade_level_id)
-    .fetch_one(&mut **tx)
+    .fetch_all(&mut **tx)
     .await?;
 
-    if !allowed {
+    if !grade_level_allowed_by_day_scope(grade_level_id, &scoped_grade_level_ids) {
         return Err(AppError::BadRequest(
             "Classroom grade level is not allowed on this exam day".to_string(),
         ));
     }
     Ok(())
+}
+
+fn grade_level_allowed_by_day_scope(grade_level_id: Uuid, scoped_grade_level_ids: &[Uuid]) -> bool {
+    scoped_grade_level_ids.is_empty() || scoped_grade_level_ids.contains(&grade_level_id)
 }
 
 async fn count_active_classroom_students(
@@ -2737,7 +2858,7 @@ async fn fetch_workspace_counts(
     pool: &PgPool,
     round_id: Uuid,
 ) -> Result<WorkspaceCounts, AppError> {
-    let row: (i64, i64, i64, i64, i64) = sqlx::query_as(WORKSPACE_COUNTS_SQL)
+    let row: (i64, i64, i64, i64, i64, i64) = sqlx::query_as(WORKSPACE_COUNTS_SQL)
         .bind(round_id)
         .fetch_one(pool)
         .await?;
@@ -2823,16 +2944,50 @@ mod tests {
         let source = include_str!("exam_schedule_service.rs");
         let publish_start = source.find("pub async fn publish_round").unwrap();
         let publish_body = &source[publish_start..];
-        let tx_position = publish_body.find("let mut tx = pool.begin().await?").unwrap();
+        let tx_position = publish_body
+            .find("let mut tx = pool.begin().await?")
+            .unwrap();
         let lock_position = publish_body.find("FOR UPDATE").unwrap();
         let readiness_position = publish_body.find("fetch_workspace_counts_in_tx").unwrap();
-        let update_position = publish_body
-            .find("UPDATE academic_exam_rounds")
-            .unwrap();
+        let update_position = publish_body.find("UPDATE academic_exam_rounds").unwrap();
 
         assert!(tx_position < lock_position);
         assert!(lock_position < readiness_position);
         assert!(readiness_position < update_position);
+    }
+
+    #[test]
+    fn placement_locks_conflict_scope_before_conflict_queries() {
+        let source = include_str!("exam_schedule_service.rs");
+        let placement_start = source.find("pub async fn place_exam_session").unwrap();
+        let placement_body = &source[placement_start..];
+        let lock_position = placement_body
+            .find("lock_exam_session_conflict_scope")
+            .unwrap();
+        let classroom_conflict_query_position = placement_body
+            .find("fetch_candidate_sessions_for_day")
+            .unwrap();
+        let room_conflict_query_position = placement_body
+            .find("fetch_candidate_room_sessions_for_day")
+            .unwrap();
+
+        assert!(lock_position < classroom_conflict_query_position);
+        assert!(lock_position < room_conflict_query_position);
+    }
+
+    #[test]
+    fn exam_session_conflict_lock_keys_are_sorted_and_scoped() {
+        let exam_day_id = Uuid::parse_str("01020304-0506-0708-090a-0b0c0d0e0f10").unwrap();
+        let classroom_id = Uuid::parse_str("11121314-1516-1718-191a-1b1c1d1e1f20").unwrap();
+        let room_id = Uuid::parse_str("21222324-2526-2728-292a-2b2c2d2e2f30").unwrap();
+
+        let keys = exam_session_conflict_lock_keys(exam_day_id, classroom_id, room_id);
+
+        assert_eq!(
+            keys,
+            exam_session_conflict_lock_keys(exam_day_id, classroom_id, room_id)
+        );
+        assert!(keys[0] < keys[1]);
     }
 
     #[test]
@@ -2882,27 +3037,107 @@ mod tests {
     }
 
     #[test]
+    fn rejects_placement_start_time_outside_15_minute_slot() {
+        let outcome = validate_session_window(t("08:37"), 60, t("08:30"), t("16:00"), &[]);
+
+        assert!(outcome.is_err());
+    }
+
+    #[test]
+    fn empty_day_grade_scope_allows_any_grade_level() {
+        assert!(grade_level_allowed_by_day_scope(Uuid::nil(), &[]));
+    }
+
+    #[test]
+    fn explicit_day_grade_scope_rejects_removed_grade_level() {
+        assert!(!grade_level_allowed_by_day_scope(
+            Uuid::from_u128(1),
+            &[Uuid::from_u128(2)]
+        ));
+    }
+
+    #[test]
+    fn readiness_sql_rechecks_sessions_after_day_window_changes() {
+        assert!(WORKSPACE_COUNTS_SQL.contains("invalid_session_count"));
+        assert!(WORKSPACE_COUNTS_SQL.contains("session.starts_at < day.start_time"));
+        assert!(WORKSPACE_COUNTS_SQL.contains("session.ends_at > day.end_time"));
+    }
+
+    #[test]
+    fn readiness_sql_rechecks_sessions_after_blocked_window_changes() {
+        assert!(WORKSPACE_COUNTS_SQL.contains("academic_exam_day_blocked_windows blocked"));
+        assert!(WORKSPACE_COUNTS_SQL.contains("session.starts_at < blocked.end_time"));
+        assert!(WORKSPACE_COUNTS_SQL.contains("blocked.start_time < session.ends_at"));
+    }
+
+    #[test]
+    fn readiness_sql_rechecks_sessions_after_grade_scope_changes() {
+        assert!(WORKSPACE_COUNTS_SQL.contains("academic_exam_day_grade_levels scope"));
+        assert!(WORKSPACE_COUNTS_SQL.contains("scope.grade_level_id = item.grade_level_id"));
+    }
+
+    #[test]
+    fn readiness_sql_requires_seats_for_every_active_student() {
+        assert!(WORKSPACE_COUNTS_SQL.contains("missing_seat_student_count"));
+        assert!(WORKSPACE_COUNTS_SQL.contains("student_class_enrollments enrollment"));
+        assert!(WORKSPACE_COUNTS_SQL.contains("seat.student_id IS NULL"));
+    }
+
+    #[test]
     fn readiness_requires_days_items_rooms_and_sessions() {
         let readiness = build_readiness(WorkspaceCounts {
             day_count: 0,
             item_count: 4,
             unscheduled_count: 4,
             missing_room_assignment_count: 2,
-            missing_seat_assignment_count: 2,
+            invalid_session_count: 0,
+            missing_seat_student_count: 2,
         });
         assert!(!readiness.can_publish);
-        assert!(
-            readiness
-                .blockers
-                .iter()
-                .any(|value| value.contains("exam day"))
-        );
-        assert!(
-            readiness
-                .blockers
-                .iter()
-                .any(|value| value.contains("unscheduled"))
-        );
+        assert!(readiness
+            .blockers
+            .iter()
+            .any(|value| value.contains("exam day")));
+        assert!(readiness
+            .blockers
+            .iter()
+            .any(|value| value.contains("unscheduled")));
+    }
+
+    #[test]
+    fn readiness_reports_missing_active_student_seats() {
+        let readiness = build_readiness(WorkspaceCounts {
+            day_count: 1,
+            item_count: 4,
+            unscheduled_count: 0,
+            missing_room_assignment_count: 0,
+            invalid_session_count: 0,
+            missing_seat_student_count: 3,
+        });
+
+        assert!(!readiness.can_publish);
+        assert!(readiness
+            .blockers
+            .iter()
+            .any(|value| value.contains("active student")));
+    }
+
+    #[test]
+    fn readiness_reports_invalid_scheduled_sessions() {
+        let readiness = build_readiness(WorkspaceCounts {
+            day_count: 1,
+            item_count: 4,
+            unscheduled_count: 0,
+            missing_room_assignment_count: 0,
+            invalid_session_count: 2,
+            missing_seat_student_count: 0,
+        });
+
+        assert!(!readiness.can_publish);
+        assert!(readiness
+            .blockers
+            .iter()
+            .any(|value| value.contains("no longer fit")));
     }
 
     #[test]
