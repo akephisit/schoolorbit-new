@@ -1618,6 +1618,9 @@ test('web push notifications favor fresh visible Android notifications', async (
 		path.join(repoRoot, 'backend-school/src/services/notification.rs'),
 		'utf8'
 	);
+	const notificationBadge = await readFile(
+		path.join(repoRoot, 'frontend-school/static/notification-badge.png')
+	);
 
 	assert.match(backendNotificationService, /"id":\s*notification_id/);
 	assert.doesNotMatch(serviceWorker, /tag:\s*['"]push-notification-v1['"]/);
@@ -1627,8 +1630,10 @@ test('web push notifications favor fresh visible Android notifications', async (
 	assert.match(serviceWorker, /silent:\s*false/);
 	assert.doesNotMatch(serviceWorker, /badge:\s*['"]\/icon-192\.png['"]/);
 	assert.doesNotMatch(serviceWorker, /badge:\s*['"]\/icon-512\.png['"]/);
+	assert.match(serviceWorker, /badge:\s*['"]\/notification-badge\.png['"]/);
 	assert.match(serviceWorker, /actions:\s*\[/);
 	assert.match(serviceWorker, /action:\s*['"]open['"]/);
+	assert.equal(notificationBadge.subarray(1, 4).toString('utf8'), 'PNG');
 });
 
 test('frontend API contract avoids unknown endpoint generics and blind envelope casts', async () => {

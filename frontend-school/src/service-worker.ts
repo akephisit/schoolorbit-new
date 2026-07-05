@@ -133,6 +133,7 @@ sw.addEventListener('push', (event) => {
 			const options: NotificationOptions = {
 				body: data.body,
 				icon: '/icon-192.png',
+				badge: '/notification-badge.png',
 				silent: false,
 				// @ts-expect-error vibrate is not in NotificationOptions typing
 				vibrate: [200, 100, 200, 100, 200],
