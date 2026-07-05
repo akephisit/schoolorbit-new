@@ -31,6 +31,110 @@ function stripComments(source) {
 	return source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
 }
 
+function paethPredictor(left, above, upperLeft) {
+	const estimate = left + above - upperLeft;
+	const leftDistance = Math.abs(estimate - left);
+	const aboveDistance = Math.abs(estimate - above);
+	const upperLeftDistance = Math.abs(estimate - upperLeft);
+
+	if (leftDistance <= aboveDistance && leftDistance <= upperLeftDistance) return left;
+	if (aboveDistance <= upperLeftDistance) return above;
+	return upperLeft;
+}
+
+async function readPngAlphaStats(buffer) {
+	const zlib = await import('node:zlib');
+	const signature = buffer.subarray(0, 8).toString('hex');
+	assert.equal(signature, '89504e470d0a1a0a');
+
+	let offset = 8;
+	let width = 0;
+	let height = 0;
+	let bitDepth = 0;
+	let colorType = 0;
+	let paletteAlpha = [];
+	const idatChunks = [];
+
+	while (offset < buffer.length) {
+		const length = buffer.readUInt32BE(offset);
+		const type = buffer.subarray(offset + 4, offset + 8).toString('ascii');
+		const data = buffer.subarray(offset + 8, offset + 8 + length);
+
+		if (type === 'IHDR') {
+			width = data.readUInt32BE(0);
+			height = data.readUInt32BE(4);
+			bitDepth = data[8];
+			colorType = data[9];
+		} else if (type === 'tRNS') {
+			paletteAlpha = Array.from(data);
+		} else if (type === 'IDAT') {
+			idatChunks.push(data);
+		} else if (type === 'IEND') {
+			break;
+		}
+
+		offset += length + 12;
+	}
+
+	assert.equal(bitDepth, 8, 'notification badge PNG must use 8-bit pixels');
+	assert.ok([3, 4, 6].includes(colorType), 'notification badge PNG must include alpha data');
+
+	const bytesPerPixelByColorType = { 3: 1, 4: 2, 6: 4 };
+	const bytesPerPixel = bytesPerPixelByColorType[colorType];
+	const rowLength = width * bytesPerPixel;
+	const inflated = zlib.inflateSync(Buffer.concat(idatChunks));
+	const rows = [];
+	let cursor = 0;
+
+	for (let y = 0; y < height; y += 1) {
+		const filter = inflated[cursor];
+		cursor += 1;
+		const row = Buffer.from(inflated.subarray(cursor, cursor + rowLength));
+		const previous = rows[y - 1];
+		cursor += rowLength;
+
+		for (let x = 0; x < row.length; x += 1) {
+			const left = x >= bytesPerPixel ? row[x - bytesPerPixel] : 0;
+			const above = previous ? previous[x] : 0;
+			const upperLeft = previous && x >= bytesPerPixel ? previous[x - bytesPerPixel] : 0;
+
+			if (filter === 1) row[x] = (row[x] + left) & 255;
+			else if (filter === 2) row[x] = (row[x] + above) & 255;
+			else if (filter === 3) row[x] = (row[x] + Math.floor((left + above) / 2)) & 255;
+			else if (filter === 4) row[x] = (row[x] + paethPredictor(left, above, upperLeft)) & 255;
+			else assert.equal(filter, 0, `unsupported PNG filter ${filter}`);
+		}
+
+		rows.push(row);
+	}
+
+	let visiblePixels = 0;
+	let opaquePixels = 0;
+	const totalPixels = width * height;
+
+	for (const row of rows) {
+		for (let x = 0; x < width; x += 1) {
+			let alpha = 255;
+			if (colorType === 3) {
+				alpha = paletteAlpha[row[x]] ?? 255;
+			} else if (colorType === 4) {
+				alpha = row[x * 2 + 1];
+			} else if (colorType === 6) {
+				alpha = row[x * 4 + 3];
+			}
+			if (alpha > 5) visiblePixels += 1;
+			if (alpha >= 250) opaquePixels += 1;
+		}
+	}
+
+	return {
+		width,
+		height,
+		visibleRatio: visiblePixels / totalPixels,
+		opaqueRatio: opaquePixels / totalPixels
+	};
+}
+
 function extractJsonResponseBlocks(source) {
 	const markers = ['Json(json!', 'Json(serde_json::json!', 'JsonResponse(serde_json::json!'];
 	const blocks = [];
@@ -1621,6 +1725,7 @@ test('web push notifications favor fresh visible Android notifications', async (
 	const notificationBadge = await readFile(
 		path.join(repoRoot, 'frontend-school/static/notification-badge.png')
 	);
+	const badgeAlphaStats = await readPngAlphaStats(notificationBadge);
 
 	assert.match(backendNotificationService, /"id":\s*notification_id/);
 	assert.doesNotMatch(serviceWorker, /tag:\s*['"]push-notification-v1['"]/);
@@ -1634,6 +1739,12 @@ test('web push notifications favor fresh visible Android notifications', async (
 	assert.match(serviceWorker, /actions:\s*\[/);
 	assert.match(serviceWorker, /action:\s*['"]open['"]/);
 	assert.equal(notificationBadge.subarray(1, 4).toString('utf8'), 'PNG');
+	assert.equal(badgeAlphaStats.width, 96);
+	assert.equal(badgeAlphaStats.height, 96);
+	assert.ok(
+		badgeAlphaStats.visibleRatio > 0.1 && badgeAlphaStats.visibleRatio < 0.55,
+		`notification badge must be a sparse alpha mask, got ${badgeAlphaStats.visibleRatio.toFixed(3)} visible pixels`
+	);
 });
 
 test('frontend API contract avoids unknown endpoint generics and blind envelope casts', async () => {
