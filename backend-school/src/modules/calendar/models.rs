@@ -295,7 +295,7 @@ mod tests {
 
         assert!(value.get("id").is_some());
         assert_eq!(
-            value.get("categoryId").and_then(serde_json::Value::as_str),
+            value.get("categoryId").and_then(|value| value.as_str()),
             Some(category_id_text.as_str())
         );
         assert!(value.get("targets").is_none());
