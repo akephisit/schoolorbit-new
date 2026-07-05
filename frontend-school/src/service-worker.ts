@@ -129,20 +129,24 @@ sw.addEventListener('push', (event) => {
 	if (event.data) {
 		try {
 			const data = event.data.json();
+			const notificationTag = data.id ? `push-notification-${data.id}` : undefined;
 
 			const options: NotificationOptions = {
 				body: data.body,
 				icon: '/icon-192.png',
 				// @ts-expect-error vibrate is not in NotificationOptions typing
 				vibrate: [200, 100, 200, 100, 200],
-				tag: 'push-notification-v1',
-				renotify: true,
 				requireInteraction: true,
 				timestamp: Date.now(),
 				data: {
 					link: data.link || '/'
 				}
 			};
+
+			if (notificationTag) {
+				options.tag = notificationTag;
+				options.renotify = true;
+			}
 
 			event.waitUntil(sw.registration.showNotification(data.title, options));
 		} catch (e) {

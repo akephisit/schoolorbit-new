@@ -59,13 +59,21 @@ impl NotificationService {
 
         // 🚀 Trigger Web Push (Fire-and-forget task)
         let pool_clone = pool.clone();
+        let notification_id = id;
         let title = title.to_string();
         let message = message.to_string();
         let link = link.map(|s| s.to_string());
 
         tokio::spawn(async move {
-            if let Err(e) =
-                Self::send_web_push(&pool_clone, user_id, &title, &message, link.as_deref()).await
+            if let Err(e) = Self::send_web_push(
+                &pool_clone,
+                user_id,
+                notification_id,
+                &title,
+                &message,
+                link.as_deref(),
+            )
+            .await
             {
                 tracing::error!("Web Push Failed for user {}: {}", user_id, e);
             }
@@ -78,6 +86,7 @@ impl NotificationService {
     async fn send_web_push(
         pool: &sqlx::PgPool,
         user_id: Uuid,
+        notification_id: Uuid,
         title: &str,
         message: &str,
         link: Option<&str>,
@@ -109,6 +118,7 @@ impl NotificationService {
 
         // 4. Construct payload
         let payload = serde_json::json!({
+            "id": notification_id,
             "title": title,
             "body": message,
             "link": link,

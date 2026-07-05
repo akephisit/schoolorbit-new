@@ -1609,6 +1609,24 @@ test('frontend application code routes backend API calls through apiClient', asy
 	assert.deepEqual(violations, []);
 });
 
+test('web push notifications avoid replacing every Android notification with one fixed tag', async () => {
+	const serviceWorker = await readFile(
+		path.join(repoRoot, 'frontend-school/src/service-worker.ts'),
+		'utf8'
+	);
+	const backendNotificationService = await readFile(
+		path.join(repoRoot, 'backend-school/src/services/notification.rs'),
+		'utf8'
+	);
+
+	assert.match(backendNotificationService, /"id":\s*notification_id/);
+	assert.doesNotMatch(serviceWorker, /tag:\s*['"]push-notification-v1['"]/);
+	assert.match(serviceWorker, /const notificationTag = data\.id \?/);
+	assert.match(serviceWorker, /if \(notificationTag\) \{/);
+	assert.match(serviceWorker, /options\.tag = notificationTag;/);
+	assert.match(serviceWorker, /options\.renotify = true;/);
+});
+
 test('frontend API contract avoids unknown endpoint generics and blind envelope casts', async () => {
 	const frontendFiles = await listFiles(path.join(repoRoot, 'frontend-school/src'), (file) =>
 		/\.(svelte|ts)$/.test(file)
