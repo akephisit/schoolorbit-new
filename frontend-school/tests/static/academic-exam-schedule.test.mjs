@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -156,4 +156,124 @@ test('academic exam schedule API client maps functions to backend routes and met
 			`${functionName} should call apiClient.${method} with ${routeFragment}`
 		);
 	}
+});
+
+test('staff workspace wires setup, import, room assignment, and publish actions', () => {
+	const page = readFileSync(
+		projectPath('src/routes/(app)/staff/academic/exam-schedules/[id]/+page.svelte'),
+		'utf8'
+	);
+
+	const expectedWorkspaceWiring = [
+		'ExamDaySetupPanel',
+		'ExamRoomAssignmentPanel',
+		'ReadinessPanel',
+		'getExamScheduleWorkspace',
+		'upsertExamDay',
+		'deleteExamDay',
+		'upsertDayRoomAssignment',
+		'generateSeatsForAssignment',
+		'importExamItems',
+		'publishExamRound',
+		'ACADEMIC_EXAM_SCHEDULE_MANAGE_SCHOOL',
+		'ACADEMIC_EXAM_SCHEDULE_PUBLISH_SCHOOL'
+	];
+
+	for (const expected of expectedWorkspaceWiring) {
+		assert.match(page, new RegExp(escapeRegExp(expected)), `${expected} should be wired`);
+	}
+});
+
+test('staff workspace reloads by route round id and keeps form input on failed saves', () => {
+	const page = readFileSync(
+		projectPath('src/routes/(app)/staff/academic/exam-schedules/[id]/+page.svelte'),
+		'utf8'
+	);
+	const listPage = readFileSync(
+		projectPath('src/routes/(app)/staff/academic/exam-schedules/+page.svelte'),
+		'utf8'
+	);
+	const dayPanel = readFileSync(
+		projectPath('src/lib/components/academic/exam-schedule/ExamDaySetupPanel.svelte'),
+		'utf8'
+	);
+	const roomPanel = readFileSync(
+		projectPath('src/lib/components/academic/exam-schedule/ExamRoomAssignmentPanel.svelte'),
+		'utf8'
+	);
+	const roundDialog = readFileSync(
+		projectPath('src/lib/components/academic/exam-schedule/ExamRoundDialog.svelte'),
+		'utf8'
+	);
+
+	assert.match(page, /async function loadWorkspace\(roundId: string,\s*initial = false\)/);
+	assert.match(page, /getExamScheduleWorkspace\(roundId\)/);
+	assert.match(page, /resetWorkspaceForRound\(roundId\)/);
+	assert.match(page, /loadWorkspace\(roundId,\s*true\)/);
+	assert.doesNotMatch(page, /onMount\(\(\) => \{\s*loadWorkspace\(true\)/);
+
+	assert.match(page, /async function handleSaveDay\(input: UpsertExamDayInput\): Promise<boolean>/);
+	assert.match(page, /async function handleSaveAssignment\(/);
+	assert.match(page, /input: UpsertDayRoomAssignmentInput/);
+	assert.match(page, /\): Promise<boolean> \{/);
+	assert.match(listPage, /async function handleCreateRound\(input: CreateExamRoundInput\): Promise<boolean>/);
+
+	assert.match(dayPanel, /onSaveDay\?: \(input: UpsertExamDayInput\) => Promise<boolean> \| boolean/);
+	assert.match(dayPanel, /const saved = await onSaveDay\?\.\(/);
+	assert.match(dayPanel, /if \(saved\) resetForm\(\)/);
+
+	assert.match(
+		roomPanel,
+		/onSaveAssignment\?: \(\s*examDayId: string,\s*input: UpsertDayRoomAssignmentInput\s*\) => Promise<boolean> \| boolean/
+	);
+	assert.match(roomPanel, /const saved = await onSaveAssignment\?\.\(/);
+	assert.match(roomPanel, /if \(saved\) resetForm\(\)/);
+
+	assert.match(
+		roundDialog,
+		/onCreate\?: \(input: CreateExamRoundInput\) => Promise<boolean> \| boolean/
+	);
+	assert.match(roundDialog, /const created = await onCreate\?\.\(/);
+	assert.match(roundDialog, /if \(created\) resetForm\(\)/);
+});
+
+test('exam room invigilator search is server-driven and preserves selected staff options', () => {
+	const page = readFileSync(
+		projectPath('src/routes/(app)/staff/academic/exam-schedules/[id]/+page.svelte'),
+		'utf8'
+	);
+	const roomPanel = readFileSync(
+		projectPath('src/lib/components/academic/exam-schedule/ExamRoomAssignmentPanel.svelte'),
+		'utf8'
+	);
+
+	assert.match(page, /async function searchStaffOptions\(search: string\): Promise<StaffListItem\[]>/);
+	assert.match(page, /listStaff\(\{\s*status: 'active',\s*search:/);
+	assert.match(page, /onSearchStaff=\{searchStaffOptions\}/);
+
+	assert.match(
+		roomPanel,
+		/onSearchStaff\?: \(search: string\) => Promise<StaffListItem\[]>/
+	);
+	assert.match(roomPanel, /setTimeout\(\(\) => \{/);
+	assert.match(roomPanel, /onSearchStaff\(staffSearch\.trim\(\)\)/);
+	assert.match(roomPanel, /selectedInvigilatorOptions/);
+	assert.match(roomPanel, /assignment\.invigilators\.map/);
+	assert.match(roomPanel, /staffOptionsForDisplay/);
+});
+
+test('staff workspace ignores stale management option responses after route changes', () => {
+	const page = readFileSync(
+		projectPath('src/routes/(app)/staff/academic/exam-schedules/[id]/+page.svelte'),
+		'utf8'
+	);
+
+	assert.match(page, /let managementOptionsRequestToken = 0/);
+	assert.match(page, /managementOptionsRequestToken \+= 1/);
+	assert.match(page, /const requestToken = \+\+managementOptionsRequestToken/);
+	assert.match(page, /const roundId = workspace\.round\.id/);
+	assert.match(page, /const semesterId = workspace\.round\.academicSemesterId/);
+	assert.match(page, /const yearId = currentSemester\?\.academic_year_id/);
+	assert.match(page, /isCurrentManagementOptionsRequest\(requestToken,\s*roundId,\s*semesterId,\s*yearId\)/);
+	assert.match(page, /if \(!isCurrentManagementOptionsRequest\(requestToken,\s*roundId,\s*semesterId,\s*yearId\)\) return/);
 });
