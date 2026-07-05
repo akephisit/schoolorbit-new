@@ -56,7 +56,7 @@ pub struct UpsertExamDayRequest {
     pub blocked_windows: Vec<BlockedWindowInput>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
 #[serde(rename_all = "camelCase")]
 pub struct BlockedWindow {
     pub id: Option<Uuid>,
@@ -119,7 +119,7 @@ pub struct ExamDayRoomAssignmentView {
     pub invigilators: Vec<ExamInvigilatorView>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
 #[serde(rename_all = "camelCase")]
 pub struct ExamInvigilatorView {
     pub id: Uuid,
@@ -146,7 +146,7 @@ pub struct ExamScheduleItem {
     pub imported_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
 #[serde(rename_all = "camelCase")]
 pub struct ExamScheduleItemView {
     pub id: Uuid,
