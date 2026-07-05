@@ -1625,7 +1625,8 @@ test('web push notifications favor fresh visible Android notifications', async (
 	assert.doesNotMatch(serviceWorker, /renotify:/);
 	assert.doesNotMatch(serviceWorker, /options\.renotify\s*=/);
 	assert.match(serviceWorker, /silent:\s*false/);
-	assert.match(serviceWorker, /badge:\s*['"]\/icon-192\.png['"]/);
+	assert.doesNotMatch(serviceWorker, /badge:\s*['"]\/icon-192\.png['"]/);
+	assert.doesNotMatch(serviceWorker, /badge:\s*['"]\/icon-512\.png['"]/);
 	assert.match(serviceWorker, /actions:\s*\[/);
 	assert.match(serviceWorker, /action:\s*['"]open['"]/);
 });
