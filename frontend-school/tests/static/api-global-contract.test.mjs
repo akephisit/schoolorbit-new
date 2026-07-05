@@ -1609,7 +1609,7 @@ test('frontend application code routes backend API calls through apiClient', asy
 	assert.deepEqual(violations, []);
 });
 
-test('web push notifications avoid replacing every Android notification with one fixed tag', async () => {
+test('web push notifications favor fresh visible Android notifications', async () => {
 	const serviceWorker = await readFile(
 		path.join(repoRoot, 'frontend-school/src/service-worker.ts'),
 		'utf8'
@@ -1621,10 +1621,13 @@ test('web push notifications avoid replacing every Android notification with one
 
 	assert.match(backendNotificationService, /"id":\s*notification_id/);
 	assert.doesNotMatch(serviceWorker, /tag:\s*['"]push-notification-v1['"]/);
-	assert.match(serviceWorker, /const notificationTag = data\.id \?/);
-	assert.match(serviceWorker, /if \(notificationTag\) \{/);
-	assert.match(serviceWorker, /options\.tag = notificationTag;/);
-	assert.match(serviceWorker, /options\.renotify = true;/);
+	assert.doesNotMatch(serviceWorker, /options\.tag\s*=/);
+	assert.doesNotMatch(serviceWorker, /renotify:/);
+	assert.doesNotMatch(serviceWorker, /options\.renotify\s*=/);
+	assert.match(serviceWorker, /silent:\s*false/);
+	assert.match(serviceWorker, /badge:\s*['"]\/icon-192\.png['"]/);
+	assert.match(serviceWorker, /actions:\s*\[/);
+	assert.match(serviceWorker, /action:\s*['"]open['"]/);
 });
 
 test('frontend API contract avoids unknown endpoint generics and blind envelope casts', async () => {
