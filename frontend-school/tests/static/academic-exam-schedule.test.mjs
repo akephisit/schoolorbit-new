@@ -329,3 +329,80 @@ test('staff workspace ignores stale management option responses after route chan
 	assert.match(page, /isCurrentManagementOptionsRequest\(requestToken,\s*roundId,\s*semesterId,\s*yearId\)/);
 	assert.match(page, /if \(!isCurrentManagementOptionsRequest\(requestToken,\s*roundId,\s*semesterId,\s*yearId\)\) return/);
 });
+
+test('personal exam schedule pages use the published schedule APIs and shared view', () => {
+	const studentPage = readFileSync(
+		projectPath('src/routes/(app)/student/exams/+page.svelte'),
+		'utf8'
+	);
+	const parentPage = readFileSync(
+		projectPath('src/routes/(app)/parent/student/[id]/exams/+page.svelte'),
+		'utf8'
+	);
+
+	assert.match(studentPage, /listMyExamSchedules/);
+	assert.doesNotMatch(studentPage, /listChildExamSchedules/);
+	assert.match(studentPage, /PersonalExamScheduleView/);
+	assert.match(studentPage, /PageSkeleton/);
+	assert.match(studentPage, /PageState/);
+
+	assert.match(parentPage, /listChildExamSchedules\(studentId\)/);
+	assert.doesNotMatch(parentPage, /listMyExamSchedules/);
+	assert.match(parentPage, /PersonalExamScheduleView/);
+	assert.match(parentPage, /PageSkeleton/);
+	assert.match(parentPage, /PageState/);
+	assert.match(parentPage, /data\.studentId/);
+	assert.match(parentPage, /let scheduleRequestToken = 0/);
+	assert.match(parentPage, /\$effect\(\(\) => \{/);
+	assert.match(parentPage, /const requestToken = \+\+scheduleRequestToken/);
+	assert.match(parentPage, /rounds = \[\]/);
+	assert.match(parentPage, /listChildExamSchedules\(studentId\)/);
+	assert.match(parentPage, /requestToken !== scheduleRequestToken/);
+	assert.doesNotMatch(parentPage, /onMount/);
+});
+
+test('personal exam schedule view groups published sessions and hides staff supervision data', () => {
+	const personalViewPath = 'src/lib/components/academic/exam-schedule/PersonalExamScheduleView.svelte';
+	const personalView = readFileSync(projectPath(personalViewPath), 'utf8');
+	const studentPage = readFileSync(
+		projectPath('src/routes/(app)/student/exams/+page.svelte'),
+		'utf8'
+	);
+	const parentPage = readFileSync(
+		projectPath('src/routes/(app)/parent/student/[id]/exams/+page.svelte'),
+		'utf8'
+	);
+	const combinedPersonalSources = [personalView, studentPage, parentPage].join('\n');
+
+	for (const expected of [
+		'PersonalExamScheduleRound',
+		'PersonalExamSessionView',
+		'groupSessionsByDate',
+		'round.sessions',
+		'session.examDate',
+		'session.startsAt',
+		'session.endsAt',
+		'session.subjectName',
+		'session.assessmentCategoryName',
+		'session.classroomName',
+		'session.buildingName',
+		'session.roomName',
+		'session.seatNumber',
+		'ไม่มีตารางสอบที่เผยแพร่'
+	]) {
+		assert.match(personalView, new RegExp(escapeRegExp(expected)), `${expected} should be rendered`);
+	}
+
+	assert.match(personalView, /\{#each dateGroup\.sessions as session\}/);
+	assert.doesNotMatch(personalView, /\{#each dateGroup\.sessions as session \(/);
+	assert.doesNotMatch(personalView, /session\.examDate\}-\$\{session\.startsAt\}-\$\{session\.subjectName/);
+	assert.doesNotMatch(personalView, /สำหรับนักเรียนคนนี้/);
+
+	for (const forbidden of ['invigilator', 'Invigilator', 'กรรมการคุมสอบ']) {
+		assert.doesNotMatch(
+			combinedPersonalSources,
+			new RegExp(escapeRegExp(forbidden)),
+			`${forbidden} should not appear in personal exam schedule sources`
+		);
+	}
+});
