@@ -84,6 +84,60 @@ pub struct UpsertDayRoomAssignmentRequest {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct ImportExamItemsRequest {
+    pub grade_level_ids: Option<Vec<Uuid>>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportExamItemsResult {
+    pub inserted_count: i64,
+    pub skipped_existing_count: i64,
+    pub skipped_missing_duration_count: i64,
+}
+
+#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
+#[serde(rename_all = "camelCase")]
+pub struct DayRoomAssignmentView {
+    pub id: Uuid,
+    pub exam_day_id: Uuid,
+    pub classroom_id: Uuid,
+    pub classroom_name: String,
+    pub room_id: Uuid,
+    pub room_name: String,
+    pub building_name: Option<String>,
+    pub room_capacity: Option<i32>,
+    pub capacity_override: Option<i32>,
+    #[sqlx(default)]
+    pub invigilators: Vec<InvigilatorView>,
+    pub seats_generated: bool,
+}
+
+#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
+#[serde(rename_all = "camelCase")]
+pub struct InvigilatorView {
+    pub staff_id: Uuid,
+    pub display_name: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GenerateSeatsRequest {
+    pub regenerate: bool,
+}
+
+#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
+#[serde(rename_all = "camelCase")]
+pub struct SeatAssignmentView {
+    pub id: Uuid,
+    pub day_room_assignment_id: Uuid,
+    pub student_id: Uuid,
+    pub student_name: String,
+    pub seat_number: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PlaceExamSessionRequest {
     pub exam_schedule_item_id: Uuid,
     pub exam_day_id: Uuid,

@@ -8,10 +8,11 @@ use uuid::Uuid;
 
 use crate::error::AppError;
 use crate::modules::academic::models::exam_schedule::{
-    BlockedWindow, BlockedWindowInput, CreateExamRoundRequest, ExamDay, ExamDayDetail,
-    ExamDayRoomAssignmentView, ExamInvigilatorView, ExamRound, ExamScheduleItemView,
-    ExamScheduleReadiness, ExamScheduleWorkspace, ExamSessionView, UpdateExamRoundRequest,
-    UpsertExamDayRequest,
+    BlockedWindow, BlockedWindowInput, CreateExamRoundRequest, DayRoomAssignmentView, ExamDay,
+    ExamDayDetail, ExamDayRoomAssignmentView, ExamInvigilatorView, ExamRound, ExamScheduleItemView,
+    ExamScheduleReadiness, ExamScheduleWorkspace, ExamSessionView, GenerateSeatsRequest,
+    ImportExamItemsRequest, ImportExamItemsResult, InvigilatorView, SeatAssignmentView,
+    UpdateExamRoundRequest, UpsertDayRoomAssignmentRequest, UpsertExamDayRequest,
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -78,6 +79,56 @@ struct ExamSessionRow {
     building_name: Option<String>,
 }
 
+#[derive(Debug, sqlx::FromRow)]
+struct DayRoomAssignmentViewRow {
+    id: Uuid,
+    exam_day_id: Uuid,
+    classroom_id: Uuid,
+    classroom_name: String,
+    room_id: Uuid,
+    room_name: String,
+    building_name: Option<String>,
+    room_capacity: Option<i32>,
+    capacity_override: Option<i32>,
+    seats_generated: bool,
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct InvigilatorViewRow {
+    day_room_assignment_id: Uuid,
+    staff_id: Uuid,
+    display_name: String,
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct ExamDayContext {
+    exam_round_id: Uuid,
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct ClassroomAssignmentContext {
+    classroom_id: Uuid,
+    classroom_name: String,
+    grade_level_id: Uuid,
+    is_active: Option<bool>,
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct RoomAssignmentContext {
+    room_id: Uuid,
+    capacity: i32,
+    status: String,
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct SeatAssignmentContext {
+    assignment_id: Uuid,
+    exam_round_id: Uuid,
+    classroom_id: Uuid,
+    capacity_override: Option<i32>,
+    room_capacity: i32,
+}
+
 struct NormalizedUpdateRoundRequest {
     name: Option<String>,
     description: Option<String>,
@@ -126,6 +177,33 @@ impl ExamSessionRow {
             room_name: self.room_name,
             building_name: self.building_name,
             invigilators,
+        }
+    }
+}
+
+impl DayRoomAssignmentViewRow {
+    fn into_view(self, invigilators: Vec<InvigilatorView>) -> DayRoomAssignmentView {
+        DayRoomAssignmentView {
+            id: self.id,
+            exam_day_id: self.exam_day_id,
+            classroom_id: self.classroom_id,
+            classroom_name: self.classroom_name,
+            room_id: self.room_id,
+            room_name: self.room_name,
+            building_name: self.building_name,
+            room_capacity: self.room_capacity,
+            capacity_override: self.capacity_override,
+            invigilators,
+            seats_generated: self.seats_generated,
+        }
+    }
+}
+
+impl InvigilatorViewRow {
+    fn into_view(self) -> InvigilatorView {
+        InvigilatorView {
+            staff_id: self.staff_id,
+            display_name: self.display_name,
         }
     }
 }
@@ -233,6 +311,45 @@ pub fn build_readiness(counts: WorkspaceCounts) -> ExamScheduleReadiness {
         can_publish: blockers.is_empty(),
         blockers,
     }
+}
+
+#[derive(Debug, Clone, sqlx::FromRow)]
+pub struct SeatStudent {
+    pub student_id: Uuid,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SeatAssignmentDraft {
+    pub student_id: Uuid,
+    pub seat_number: String,
+}
+
+pub fn build_default_seat_assignments(students: &[SeatStudent]) -> Vec<SeatAssignmentDraft> {
+    students
+        .iter()
+        .enumerate()
+        .map(|(index, student)| SeatAssignmentDraft {
+            student_id: student.student_id,
+            seat_number: format!("{:02}", index + 1),
+        })
+        .collect()
+}
+
+pub fn validate_seat_generation_capacity(
+    active_student_count: usize,
+    effective_capacity: i32,
+) -> Result<(), AppError> {
+    if effective_capacity <= 0 {
+        return Err(AppError::BadRequest(
+            "Room capacity must be greater than zero".to_string(),
+        ));
+    }
+    if active_student_count > effective_capacity as usize {
+        return Err(AppError::BadRequest(format!(
+            "Classroom has {active_student_count} active student(s), which exceeds the room capacity of {effective_capacity}"
+        )));
+    }
+    Ok(())
 }
 
 pub async fn list_rounds(
@@ -525,6 +642,386 @@ pub async fn get_workspace(
     })
 }
 
+pub async fn import_exam_items(
+    pool: &PgPool,
+    round_id: Uuid,
+    request: ImportExamItemsRequest,
+    actor_user_id: Uuid,
+) -> Result<ImportExamItemsResult, AppError> {
+    let grade_level_ids = request.grade_level_ids.map(unique_uuids);
+    let mut tx = pool.begin().await?;
+
+    let round_exists: bool = sqlx::query_scalar(
+        r#"
+        SELECT EXISTS (
+            SELECT 1
+            FROM academic_exam_rounds
+            WHERE id = $1
+        )
+        "#,
+    )
+    .bind(round_id)
+    .fetch_one(&mut *tx)
+    .await?;
+
+    if !round_exists {
+        return Err(AppError::NotFound("Exam round not found".to_string()));
+    }
+
+    let skipped_existing_count: i64 = sqlx::query_scalar(
+        r#"
+        WITH round_context AS (
+          SELECT id AS exam_round_id, academic_semester_id
+          FROM academic_exam_rounds
+          WHERE id = $1
+        ),
+        source_items AS (
+          SELECT
+            rc.exam_round_id,
+            c.id AS assessment_category_id,
+            cr.id AS classroom_id
+          FROM round_context rc
+          JOIN academic_assessment_plans ap
+            ON ap.academic_semester_id = rc.academic_semester_id
+          JOIN academic_assessment_categories c
+            ON c.plan_id = ap.id
+          JOIN classroom_courses cc
+            ON cc.academic_semester_id = rc.academic_semester_id
+           AND cc.subject_id = ap.subject_id
+          JOIN class_rooms cr
+            ON cr.id = cc.classroom_id
+          WHERE c.exam_mode = 'in_timetable'
+            AND c.exam_duration_minutes IS NOT NULL
+            AND cr.is_active = true
+            AND ($2::uuid[] IS NULL OR cr.grade_level_id = ANY($2))
+        )
+        SELECT COUNT(*)::BIGINT
+        FROM source_items source
+        WHERE EXISTS (
+            SELECT 1
+            FROM academic_exam_schedule_items item
+            WHERE item.exam_round_id = source.exam_round_id
+              AND item.assessment_category_id = source.assessment_category_id
+              AND item.classroom_id = source.classroom_id
+        )
+        "#,
+    )
+    .bind(round_id)
+    .bind(grade_level_ids.clone())
+    .fetch_one(&mut *tx)
+    .await?;
+
+    let skipped_missing_duration_count: i64 = sqlx::query_scalar(
+        r#"
+        WITH round_context AS (
+          SELECT id AS exam_round_id, academic_semester_id
+          FROM academic_exam_rounds
+          WHERE id = $1
+        )
+        SELECT COUNT(*)::BIGINT
+        FROM round_context rc
+        JOIN academic_assessment_plans ap
+          ON ap.academic_semester_id = rc.academic_semester_id
+        JOIN academic_assessment_categories c
+          ON c.plan_id = ap.id
+        JOIN classroom_courses cc
+          ON cc.academic_semester_id = rc.academic_semester_id
+         AND cc.subject_id = ap.subject_id
+        JOIN class_rooms cr
+          ON cr.id = cc.classroom_id
+        WHERE c.exam_mode = 'in_timetable'
+          AND c.exam_duration_minutes IS NULL
+          AND cr.is_active = true
+          AND ($2::uuid[] IS NULL OR cr.grade_level_id = ANY($2))
+        "#,
+    )
+    .bind(round_id)
+    .bind(grade_level_ids.clone())
+    .fetch_one(&mut *tx)
+    .await?;
+
+    let insert_result = sqlx::query(
+        r#"
+        WITH round_context AS (
+          SELECT id AS exam_round_id, academic_semester_id
+          FROM academic_exam_rounds
+          WHERE id = $1
+        ),
+        source_items AS (
+          SELECT
+            rc.exam_round_id,
+            rc.academic_semester_id,
+            c.id AS assessment_category_id,
+            ap.id AS assessment_plan_id,
+            cc.id AS classroom_course_id,
+            cr.id AS classroom_id,
+            ap.subject_id,
+            cr.grade_level_id,
+            c.exam_duration_minutes AS duration_minutes
+          FROM round_context rc
+          JOIN academic_assessment_plans ap
+            ON ap.academic_semester_id = rc.academic_semester_id
+          JOIN academic_assessment_categories c
+            ON c.plan_id = ap.id
+          JOIN classroom_courses cc
+            ON cc.academic_semester_id = rc.academic_semester_id
+           AND cc.subject_id = ap.subject_id
+          JOIN class_rooms cr
+            ON cr.id = cc.classroom_id
+          WHERE c.exam_mode = 'in_timetable'
+            AND c.exam_duration_minutes IS NOT NULL
+            AND cr.is_active = true
+            AND ($2::uuid[] IS NULL OR cr.grade_level_id = ANY($2))
+        )
+        INSERT INTO academic_exam_schedule_items (
+          exam_round_id,
+          academic_semester_id,
+          assessment_category_id,
+          assessment_plan_id,
+          classroom_course_id,
+          classroom_id,
+          subject_id,
+          grade_level_id,
+          duration_minutes
+        )
+        SELECT
+          exam_round_id,
+          academic_semester_id,
+          assessment_category_id,
+          assessment_plan_id,
+          classroom_course_id,
+          classroom_id,
+          subject_id,
+          grade_level_id,
+          duration_minutes
+        FROM source_items
+        ON CONFLICT (exam_round_id, assessment_category_id, classroom_id) DO NOTHING
+        "#,
+    )
+    .bind(round_id)
+    .bind(grade_level_ids)
+    .execute(&mut *tx)
+    .await?;
+
+    mark_round_draft_after_mutation(&mut tx, round_id, Some(actor_user_id)).await?;
+    tx.commit().await?;
+
+    Ok(ImportExamItemsResult {
+        inserted_count: insert_result.rows_affected() as i64,
+        skipped_existing_count,
+        skipped_missing_duration_count,
+    })
+}
+
+pub async fn list_day_room_assignments(
+    pool: &PgPool,
+    exam_day_id: Uuid,
+) -> Result<Vec<DayRoomAssignmentView>, AppError> {
+    let day_exists: bool = sqlx::query_scalar(
+        r#"
+        SELECT EXISTS (
+            SELECT 1
+            FROM academic_exam_days
+            WHERE id = $1
+        )
+        "#,
+    )
+    .bind(exam_day_id)
+    .fetch_one(pool)
+    .await?;
+
+    if !day_exists {
+        return Err(AppError::NotFound("Exam day not found".to_string()));
+    }
+
+    fetch_day_room_assignment_views_for_day(pool, exam_day_id).await
+}
+
+pub async fn upsert_day_room_assignment(
+    pool: &PgPool,
+    exam_day_id: Uuid,
+    request: UpsertDayRoomAssignmentRequest,
+    actor_user_id: Uuid,
+) -> Result<DayRoomAssignmentView, AppError> {
+    let invigilator_staff_ids =
+        validate_unique_invigilator_staff_ids(request.invigilator_staff_ids)?;
+    let capacity_override = validate_capacity_override(request.capacity_override)?;
+
+    let mut tx = pool.begin().await?;
+    let day_context = fetch_exam_day_context_for_update(&mut tx, exam_day_id).await?;
+    let classroom = fetch_classroom_assignment_context(&mut tx, request.classroom_id).await?;
+    if classroom.is_active != Some(true) {
+        return Err(AppError::BadRequest(
+            "Classroom must be active before assigning an exam room".to_string(),
+        ));
+    }
+    validate_day_allows_grade_level(&mut tx, exam_day_id, classroom.grade_level_id).await?;
+
+    let room = fetch_room_assignment_context(&mut tx, request.room_id).await?;
+    if room.status != "ACTIVE" {
+        return Err(AppError::BadRequest(
+            "Room must be ACTIVE before assigning it to an exam day".to_string(),
+        ));
+    }
+
+    let effective_capacity = capacity_override.unwrap_or(room.capacity);
+    let active_student_count =
+        count_active_classroom_students(&mut tx, request.classroom_id).await?;
+    if active_student_count > i64::from(effective_capacity) {
+        return Err(AppError::BadRequest(format!(
+            "Classroom has {active_student_count} active student(s), which exceeds the room capacity of {effective_capacity}"
+        )));
+    }
+
+    validate_active_staff_users(&mut tx, &invigilator_staff_ids).await?;
+
+    let assignment_id: Uuid = sqlx::query_scalar(
+        r#"
+        INSERT INTO academic_exam_day_room_assignments (
+            exam_day_id,
+            classroom_id,
+            room_id,
+            capacity_override,
+            created_by,
+            updated_by
+        )
+        VALUES ($1, $2, $3, $4, $5, $5)
+        ON CONFLICT (exam_day_id, classroom_id)
+        DO UPDATE SET
+            room_id = EXCLUDED.room_id,
+            capacity_override = EXCLUDED.capacity_override,
+            updated_by = EXCLUDED.updated_by,
+            updated_at = now()
+        RETURNING id
+        "#,
+    )
+    .bind(exam_day_id)
+    .bind(request.classroom_id)
+    .bind(request.room_id)
+    .bind(capacity_override)
+    .bind(actor_user_id)
+    .fetch_one(&mut *tx)
+    .await
+    .map_err(map_day_room_assignment_write_error)?;
+
+    sqlx::query(
+        r#"
+        DELETE FROM academic_exam_day_invigilators
+        WHERE day_room_assignment_id = $1
+        "#,
+    )
+    .bind(assignment_id)
+    .execute(&mut *tx)
+    .await?;
+
+    if !invigilator_staff_ids.is_empty() {
+        sqlx::query(
+            r#"
+            INSERT INTO academic_exam_day_invigilators (
+                exam_day_id,
+                day_room_assignment_id,
+                staff_id
+            )
+            SELECT $1, $2, staff_id
+            FROM unnest($3::uuid[]) AS staff_id
+            "#,
+        )
+        .bind(exam_day_id)
+        .bind(assignment_id)
+        .bind(&invigilator_staff_ids)
+        .execute(&mut *tx)
+        .await
+        .map_err(map_day_room_assignment_write_error)?;
+    }
+
+    mark_round_draft_after_mutation(&mut tx, day_context.exam_round_id, Some(actor_user_id))
+        .await?;
+    tx.commit().await?;
+
+    fetch_day_room_assignment_view(pool, assignment_id).await
+}
+
+pub async fn generate_seats_for_assignment(
+    pool: &PgPool,
+    assignment_id: Uuid,
+    request: GenerateSeatsRequest,
+    actor_user_id: Uuid,
+) -> Result<Vec<SeatAssignmentView>, AppError> {
+    let mut tx = pool.begin().await?;
+    let assignment_context = fetch_seat_assignment_context(&mut tx, assignment_id).await?;
+
+    let existing_seats = fetch_seat_assignments_for_assignment(&mut tx, assignment_id).await?;
+    if !request.regenerate && !existing_seats.is_empty() {
+        tx.commit().await?;
+        return Ok(existing_seats);
+    }
+
+    let students = fetch_ordered_seat_students(&mut tx, assignment_context.classroom_id).await?;
+    let effective_capacity = assignment_context
+        .capacity_override
+        .unwrap_or(assignment_context.room_capacity);
+    validate_seat_generation_capacity(students.len(), effective_capacity)?;
+
+    let mut wrote_seats = false;
+    if request.regenerate {
+        sqlx::query(
+            r#"
+            DELETE FROM academic_exam_seat_assignments
+            WHERE day_room_assignment_id = $1
+            "#,
+        )
+        .bind(assignment_id)
+        .execute(&mut *tx)
+        .await?;
+        wrote_seats = true;
+    }
+
+    let seat_drafts = build_default_seat_assignments(&students);
+
+    if !seat_drafts.is_empty() {
+        let student_ids: Vec<Uuid> = seat_drafts
+            .iter()
+            .map(|assignment| assignment.student_id)
+            .collect();
+        let seat_numbers: Vec<String> = seat_drafts
+            .iter()
+            .map(|assignment| assignment.seat_number.clone())
+            .collect();
+
+        sqlx::query(
+            r#"
+            INSERT INTO academic_exam_seat_assignments (
+                day_room_assignment_id,
+                student_id,
+                seat_number
+            )
+            SELECT $1, student_id, seat_number
+            FROM unnest($2::uuid[], $3::text[]) AS seat(student_id, seat_number)
+            "#,
+        )
+        .bind(assignment_context.assignment_id)
+        .bind(&student_ids)
+        .bind(&seat_numbers)
+        .execute(&mut *tx)
+        .await?;
+        wrote_seats = true;
+    }
+
+    if wrote_seats {
+        mark_round_draft_after_mutation(
+            &mut tx,
+            assignment_context.exam_round_id,
+            Some(actor_user_id),
+        )
+        .await?;
+    }
+
+    let seats = fetch_seat_assignments_for_assignment(&mut tx, assignment_id).await?;
+    tx.commit().await?;
+
+    Ok(seats)
+}
+
 async fn mark_round_draft_after_mutation(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     round_id: Uuid,
@@ -546,6 +1043,396 @@ async fn mark_round_draft_after_mutation(
     .execute(&mut **tx)
     .await?;
     Ok(())
+}
+
+fn validate_unique_invigilator_staff_ids(ids: Vec<Uuid>) -> Result<Vec<Uuid>, AppError> {
+    let mut seen = HashSet::new();
+    for id in &ids {
+        if !seen.insert(*id) {
+            return Err(AppError::BadRequest(
+                "Duplicate invigilator staff ids are not allowed".to_string(),
+            ));
+        }
+    }
+    Ok(ids)
+}
+
+fn validate_capacity_override(capacity_override: Option<i32>) -> Result<Option<i32>, AppError> {
+    if matches!(capacity_override, Some(value) if value <= 0) {
+        return Err(AppError::BadRequest(
+            "Capacity override must be greater than zero".to_string(),
+        ));
+    }
+    Ok(capacity_override)
+}
+
+async fn fetch_exam_day_context_for_update(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    exam_day_id: Uuid,
+) -> Result<ExamDayContext, AppError> {
+    sqlx::query_as::<_, ExamDayContext>(
+        r#"
+        SELECT exam_round_id
+        FROM academic_exam_days
+        WHERE id = $1
+        FOR UPDATE
+        "#,
+    )
+    .bind(exam_day_id)
+    .fetch_optional(&mut **tx)
+    .await?
+    .ok_or_else(|| AppError::NotFound("Exam day not found".to_string()))
+}
+
+async fn fetch_classroom_assignment_context(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    classroom_id: Uuid,
+) -> Result<ClassroomAssignmentContext, AppError> {
+    sqlx::query_as::<_, ClassroomAssignmentContext>(
+        r#"
+        SELECT id AS classroom_id,
+               name AS classroom_name,
+               grade_level_id,
+               is_active
+        FROM class_rooms
+        WHERE id = $1
+        "#,
+    )
+    .bind(classroom_id)
+    .fetch_optional(&mut **tx)
+    .await?
+    .ok_or_else(|| AppError::NotFound("Classroom not found".to_string()))
+}
+
+async fn fetch_room_assignment_context(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    room_id: Uuid,
+) -> Result<RoomAssignmentContext, AppError> {
+    sqlx::query_as::<_, RoomAssignmentContext>(
+        r#"
+        SELECT id AS room_id,
+               capacity,
+               status
+        FROM rooms
+        WHERE id = $1
+        "#,
+    )
+    .bind(room_id)
+    .fetch_optional(&mut **tx)
+    .await?
+    .ok_or_else(|| AppError::NotFound("Room not found".to_string()))
+}
+
+async fn validate_day_allows_grade_level(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    exam_day_id: Uuid,
+    grade_level_id: Uuid,
+) -> Result<(), AppError> {
+    let allowed: bool = sqlx::query_scalar(
+        r#"
+        SELECT EXISTS (
+            SELECT 1
+            FROM academic_exam_day_grade_levels
+            WHERE exam_day_id = $1
+              AND grade_level_id = $2
+        )
+        "#,
+    )
+    .bind(exam_day_id)
+    .bind(grade_level_id)
+    .fetch_one(&mut **tx)
+    .await?;
+
+    if !allowed {
+        return Err(AppError::BadRequest(
+            "Classroom grade level is not allowed on this exam day".to_string(),
+        ));
+    }
+    Ok(())
+}
+
+async fn count_active_classroom_students(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    classroom_id: Uuid,
+) -> Result<i64, AppError> {
+    sqlx::query_scalar(
+        r#"
+        SELECT COUNT(*)::BIGINT
+        FROM student_class_enrollments enrollment
+        WHERE enrollment.class_room_id = $1
+          AND enrollment.status = 'active'
+        "#,
+    )
+    .bind(classroom_id)
+    .fetch_one(&mut **tx)
+    .await
+    .map_err(AppError::from)
+}
+
+async fn validate_active_staff_users(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    staff_ids: &[Uuid],
+) -> Result<(), AppError> {
+    if staff_ids.is_empty() {
+        return Ok(());
+    }
+
+    let invalid_count: i64 = sqlx::query_scalar(
+        r#"
+        SELECT COUNT(*)::BIGINT
+        FROM unnest($1::uuid[]) AS requested(staff_id)
+        LEFT JOIN users user_account
+          ON user_account.id = requested.staff_id
+         AND user_account.user_type = 'staff'
+         AND user_account.status = 'active'
+        WHERE user_account.id IS NULL
+        "#,
+    )
+    .bind(staff_ids)
+    .fetch_one(&mut **tx)
+    .await?;
+
+    if invalid_count > 0 {
+        return Err(AppError::BadRequest(
+            "Every invigilator must be an active staff user".to_string(),
+        ));
+    }
+    Ok(())
+}
+
+async fn fetch_day_room_assignment_views_for_day(
+    pool: &PgPool,
+    exam_day_id: Uuid,
+) -> Result<Vec<DayRoomAssignmentView>, AppError> {
+    let rows = sqlx::query_as::<_, DayRoomAssignmentViewRow>(
+        r#"
+        SELECT assignment.id,
+               assignment.exam_day_id,
+               assignment.classroom_id,
+               classroom.name AS classroom_name,
+               assignment.room_id,
+               room.name_th AS room_name,
+               building.name_th AS building_name,
+               room.capacity AS room_capacity,
+               assignment.capacity_override,
+               EXISTS (
+                   SELECT 1
+                   FROM academic_exam_seat_assignments seat
+                   WHERE seat.day_room_assignment_id = assignment.id
+               ) AS seats_generated
+        FROM academic_exam_day_room_assignments assignment
+        JOIN class_rooms classroom ON classroom.id = assignment.classroom_id
+        JOIN rooms room ON room.id = assignment.room_id
+        LEFT JOIN buildings building ON building.id = room.building_id
+        WHERE assignment.exam_day_id = $1
+        ORDER BY classroom.name, room.name_th, assignment.id
+        "#,
+    )
+    .bind(exam_day_id)
+    .fetch_all(pool)
+    .await?;
+
+    hydrate_day_room_assignment_views(pool, rows).await
+}
+
+async fn fetch_day_room_assignment_view(
+    pool: &PgPool,
+    assignment_id: Uuid,
+) -> Result<DayRoomAssignmentView, AppError> {
+    let rows = sqlx::query_as::<_, DayRoomAssignmentViewRow>(
+        r#"
+        SELECT assignment.id,
+               assignment.exam_day_id,
+               assignment.classroom_id,
+               classroom.name AS classroom_name,
+               assignment.room_id,
+               room.name_th AS room_name,
+               building.name_th AS building_name,
+               room.capacity AS room_capacity,
+               assignment.capacity_override,
+               EXISTS (
+                   SELECT 1
+                   FROM academic_exam_seat_assignments seat
+                   WHERE seat.day_room_assignment_id = assignment.id
+               ) AS seats_generated
+        FROM academic_exam_day_room_assignments assignment
+        JOIN class_rooms classroom ON classroom.id = assignment.classroom_id
+        JOIN rooms room ON room.id = assignment.room_id
+        LEFT JOIN buildings building ON building.id = room.building_id
+        WHERE assignment.id = $1
+        "#,
+    )
+    .bind(assignment_id)
+    .fetch_all(pool)
+    .await?;
+
+    let mut views = hydrate_day_room_assignment_views(pool, rows).await?;
+    views
+        .pop()
+        .ok_or_else(|| AppError::NotFound("Exam room assignment not found".to_string()))
+}
+
+async fn hydrate_day_room_assignment_views(
+    pool: &PgPool,
+    rows: Vec<DayRoomAssignmentViewRow>,
+) -> Result<Vec<DayRoomAssignmentView>, AppError> {
+    if rows.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let assignment_ids: Vec<Uuid> = rows.iter().map(|row| row.id).collect();
+    let mut invigilators_by_assignment =
+        fetch_invigilator_views_by_assignment_ids(pool, &assignment_ids).await?;
+
+    Ok(rows
+        .into_iter()
+        .map(|row| {
+            let invigilators = invigilators_by_assignment
+                .remove(&row.id)
+                .unwrap_or_default();
+            row.into_view(invigilators)
+        })
+        .collect())
+}
+
+async fn fetch_invigilator_views_by_assignment_ids(
+    pool: &PgPool,
+    assignment_ids: &[Uuid],
+) -> Result<HashMap<Uuid, Vec<InvigilatorView>>, AppError> {
+    let assignment_ids = unique_uuids(assignment_ids.to_vec());
+    if assignment_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    let rows = sqlx::query_as::<_, InvigilatorViewRow>(
+        r#"
+        SELECT invigilator.day_room_assignment_id,
+               invigilator.staff_id,
+               concat_ws(' ', user_account.title, user_account.first_name, user_account.last_name)
+                   AS display_name
+        FROM academic_exam_day_invigilators invigilator
+        JOIN users user_account ON user_account.id = invigilator.staff_id
+        WHERE invigilator.day_room_assignment_id = ANY($1)
+        ORDER BY invigilator.day_room_assignment_id,
+                 user_account.first_name,
+                 user_account.last_name,
+                 invigilator.staff_id
+        "#,
+    )
+    .bind(&assignment_ids)
+    .fetch_all(pool)
+    .await?;
+
+    let mut grouped = HashMap::new();
+    for row in rows {
+        grouped
+            .entry(row.day_room_assignment_id)
+            .or_insert_with(Vec::new)
+            .push(row.into_view());
+    }
+    Ok(grouped)
+}
+
+async fn fetch_seat_assignment_context(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    assignment_id: Uuid,
+) -> Result<SeatAssignmentContext, AppError> {
+    sqlx::query_as::<_, SeatAssignmentContext>(
+        r#"
+        SELECT assignment.id AS assignment_id,
+               exam_day.exam_round_id,
+               assignment.classroom_id,
+               assignment.capacity_override,
+               room.capacity AS room_capacity
+        FROM academic_exam_day_room_assignments assignment
+        JOIN academic_exam_days exam_day ON exam_day.id = assignment.exam_day_id
+        JOIN rooms room ON room.id = assignment.room_id
+        WHERE assignment.id = $1
+        FOR UPDATE OF assignment
+        "#,
+    )
+    .bind(assignment_id)
+    .fetch_optional(&mut **tx)
+    .await?
+    .ok_or_else(|| AppError::NotFound("Exam room assignment not found".to_string()))
+}
+
+async fn fetch_seat_assignments_for_assignment(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    assignment_id: Uuid,
+) -> Result<Vec<SeatAssignmentView>, AppError> {
+    sqlx::query_as::<_, SeatAssignmentView>(
+        r#"
+        SELECT seat.id,
+               seat.day_room_assignment_id,
+               seat.student_id,
+               concat_ws(' ', user_account.title, user_account.first_name, user_account.last_name)
+                   AS student_name,
+               seat.seat_number
+        FROM academic_exam_seat_assignments seat
+        JOIN users user_account ON user_account.id = seat.student_id
+        WHERE seat.day_room_assignment_id = $1
+        ORDER BY length(seat.seat_number), seat.seat_number, seat.id
+        "#,
+    )
+    .bind(assignment_id)
+    .fetch_all(&mut **tx)
+    .await
+    .map_err(AppError::from)
+}
+
+async fn fetch_ordered_seat_students(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    classroom_id: Uuid,
+) -> Result<Vec<SeatStudent>, AppError> {
+    sqlx::query_as::<_, SeatStudent>(
+        r#"
+        SELECT user_account.id AS student_id
+        FROM student_class_enrollments enrollment
+        JOIN users user_account
+          ON user_account.id = enrollment.student_id
+         AND user_account.user_type = 'student'
+         AND user_account.status = 'active'
+        LEFT JOIN student_info ON student_info.user_id = user_account.id
+        WHERE enrollment.class_room_id = $1
+          AND enrollment.status = 'active'
+        ORDER BY enrollment.class_number ASC NULLS LAST,
+                 student_info.student_id ASC NULLS LAST,
+                 user_account.id ASC
+        "#,
+    )
+    .bind(classroom_id)
+    .fetch_all(&mut **tx)
+    .await
+    .map_err(AppError::from)
+}
+
+fn map_day_room_assignment_write_error(error: sqlx::Error) -> AppError {
+    if let sqlx::Error::Database(db_error) = &error {
+        let code = db_error.code().unwrap_or_default();
+        if code == "23505" {
+            let constraint = db_error.constraint().unwrap_or_default();
+            if constraint.contains("exam_day_id_room_id") {
+                return AppError::BadRequest(
+                    "Room is already assigned to another classroom on this exam day".to_string(),
+                );
+            }
+            if constraint.contains("exam_day_id_staff_id") {
+                return AppError::BadRequest(
+                    "Invigilator is already assigned to another room on this exam day".to_string(),
+                );
+            }
+            if constraint.contains("day_room_assignment_id_staff_id") {
+                return AppError::BadRequest(
+                    "Duplicate invigilator for this room assignment".to_string(),
+                );
+            }
+            return AppError::BadRequest(
+                "Exam room assignment conflicts with existing schedule data".to_string(),
+            );
+        }
+    }
+    AppError::from(error)
 }
 
 fn validate_exam_day_window(start_time: NaiveTime, end_time: NaiveTime) -> Result<(), AppError> {
@@ -1210,14 +2097,18 @@ mod tests {
             missing_seat_assignment_count: 2,
         });
         assert!(!readiness.can_publish);
-        assert!(readiness
-            .blockers
-            .iter()
-            .any(|value| value.contains("exam day")));
-        assert!(readiness
-            .blockers
-            .iter()
-            .any(|value| value.contains("unscheduled")));
+        assert!(
+            readiness
+                .blockers
+                .iter()
+                .any(|value| value.contains("exam day"))
+        );
+        assert!(
+            readiness
+                .blockers
+                .iter()
+                .any(|value| value.contains("unscheduled"))
+        );
     }
 
     #[test]
@@ -1273,5 +2164,40 @@ mod tests {
         assert_eq!(first[0].id, invigilator.id);
         assert_eq!(second[0].id, invigilator.id);
         assert!(invigilators_by_assignment.contains_key(&assignment_id));
+    }
+
+    #[test]
+    fn generates_padded_seat_numbers_in_input_order() {
+        let students = vec![
+            SeatStudent {
+                student_id: Uuid::nil(),
+            },
+            SeatStudent {
+                student_id: Uuid::max(),
+            },
+        ];
+        let seats = build_default_seat_assignments(&students);
+        assert_eq!(seats[0].seat_number, "01");
+        assert_eq!(seats[1].seat_number, "02");
+    }
+
+    #[test]
+    fn rejects_seat_generation_when_student_count_exceeds_capacity() {
+        let result = validate_seat_generation_capacity(41, 40);
+
+        assert!(matches!(
+            result,
+            Err(AppError::BadRequest(message)) if message.contains("exceeds")
+        ));
+    }
+
+    #[test]
+    fn rejects_seat_generation_when_effective_capacity_is_not_positive() {
+        let result = validate_seat_generation_capacity(0, 0);
+
+        assert!(matches!(
+            result,
+            Err(AppError::BadRequest(message)) if message.contains("greater than zero")
+        ));
     }
 }
