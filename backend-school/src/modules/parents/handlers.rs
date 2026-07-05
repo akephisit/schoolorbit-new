@@ -43,6 +43,11 @@ pub struct ChildTimetableQuery {
     pub academic_semester_id: Option<Uuid>,
 }
 
+#[derive(Debug, serde::Deserialize)]
+pub struct ChildExamScheduleQuery {
+    pub academic_semester_id: Option<Uuid>,
+}
+
 /// GET /api/parent/students/:student_id/timetable
 /// ผู้ปกครองดูตารางเรียนของบุตรหลาน — verify ownership ผ่าน student_parents
 pub async fn get_child_timetable(
@@ -63,6 +68,28 @@ pub async fn get_child_timetable(
     .await?;
 
     Ok((StatusCode::OK, Json(ApiResponse::ok(entries))))
+}
+
+/// GET /api/parent/students/:student_id/exam-schedules
+/// ผู้ปกครองดูตารางสอบของบุตรหลาน — service verifies ownership ผ่าน student_parents
+pub async fn get_child_exam_schedule(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(student_id): Path<Uuid>,
+    Query(query): Query<ChildExamScheduleQuery>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    let schedule = parent_service::get_child_exam_schedule(
+        &pool,
+        actor.user_id,
+        student_id,
+        query.academic_semester_id,
+    )
+    .await?;
+
+    Ok((StatusCode::OK, Json(ApiResponse::ok(schedule))))
 }
 
 /// GET /api/parent/students/:student_id/calendar/events

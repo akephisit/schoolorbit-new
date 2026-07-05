@@ -4,7 +4,7 @@ pub mod services;
 pub mod websockets;
 
 use crate::AppState;
-use axum::routing::{get, post, put};
+use axum::routing::{delete, get, post, put};
 use axum::Router;
 
 pub fn academic_routes() -> Router<AppState> {
@@ -145,6 +145,49 @@ pub fn academic_routes() -> Router<AppState> {
         .route(
             "/assessments/courses/{course_id}/submit",
             post(handlers::assessment::submit_assessment_plan),
+        )
+        // Exam Schedules
+        .route(
+            "/exam-schedules",
+            get(handlers::exam_schedule::list_rounds).post(handlers::exam_schedule::create_round),
+        )
+        .route(
+            "/exam-schedules/{round_id}",
+            get(handlers::exam_schedule::get_workspace)
+                .patch(handlers::exam_schedule::update_round),
+        )
+        .route(
+            "/exam-schedules/{round_id}/import-items",
+            post(handlers::exam_schedule::import_items),
+        )
+        .route(
+            "/exam-schedules/{round_id}/days",
+            post(handlers::exam_schedule::upsert_day),
+        )
+        .route(
+            "/exam-schedules/days/{exam_day_id}",
+            delete(handlers::exam_schedule::delete_day),
+        )
+        .route(
+            "/exam-schedules/days/{exam_day_id}/room-assignments",
+            get(handlers::exam_schedule::list_day_room_assignments)
+                .post(handlers::exam_schedule::upsert_day_room_assignment),
+        )
+        .route(
+            "/exam-schedules/room-assignments/{assignment_id}/seats",
+            post(handlers::exam_schedule::generate_seats),
+        )
+        .route(
+            "/exam-schedules/sessions",
+            post(handlers::exam_schedule::place_session),
+        )
+        .route(
+            "/exam-schedules/sessions/{session_id}",
+            delete(handlers::exam_schedule::delete_session),
+        )
+        .route(
+            "/exam-schedules/{round_id}/publish",
+            post(handlers::exam_schedule::publish_round),
         )
         // Timetable: Periods
         .route(

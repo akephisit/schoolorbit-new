@@ -737,6 +737,177 @@ fn daily_teaching_overview_endpoint_is_read_only_and_pii_safe() {
 }
 
 #[test]
+fn academic_exam_schedule_routes_are_registered_and_authorized() {
+    fn handler_body<'a>(source: &'a str, handler_name: &str) -> &'a str {
+        let marker = format!("pub async fn {handler_name}");
+        let start = source
+            .find(&marker)
+            .unwrap_or_else(|| panic!("missing handler {handler_name}"));
+        let after_start = &source[start..];
+        let end = after_start[marker.len()..]
+            .find("pub async fn ")
+            .map(|offset| marker.len() + offset)
+            .unwrap_or(after_start.len());
+
+        &after_start[..end]
+    }
+
+    fn main_route_snippet<'a>(source: &'a str, route: &str) -> &'a str {
+        let start = source
+            .find(route)
+            .unwrap_or_else(|| panic!("missing main route {route}"));
+        source[start..]
+            .split("\n        .route(")
+            .next()
+            .unwrap_or_else(|| panic!("missing main route snippet {route}"))
+    }
+
+    fn assert_handler_permission(source: &str, handler_name: &str, permission: &str) {
+        let body = handler_body(source, handler_name);
+        let expected_check = format!("actor.require_permission(codes::{permission})");
+        assert!(
+            body.contains(&expected_check),
+            "{handler_name} must require {permission}"
+        );
+
+        for other_permission in [
+            "ACADEMIC_EXAM_SCHEDULE_READ_SCHOOL",
+            "ACADEMIC_EXAM_SCHEDULE_MANAGE_SCHOOL",
+            "ACADEMIC_EXAM_SCHEDULE_PUBLISH_SCHOOL",
+        ] {
+            if other_permission != permission {
+                assert!(
+                    !body.contains(other_permission),
+                    "{handler_name} must not require {other_permission}"
+                );
+            }
+        }
+    }
+
+    let academic_handler_root = strip_comments(&read_source(
+        manifest_dir().join("src/modules/academic/handlers.rs"),
+    ));
+    let academic_routes =
+        strip_comments(&read_source(manifest_dir().join("src/modules/academic.rs")));
+    let main_routes = strip_comments(&read_source(manifest_dir().join("src/main.rs")));
+    let parent_handlers = strip_comments(&read_source(
+        manifest_dir().join("src/modules/parents/handlers.rs"),
+    ));
+    let parent_services = strip_comments(&read_source(
+        manifest_dir().join("src/modules/parents/services.rs"),
+    ));
+    let exam_handler_path = manifest_dir().join("src/modules/academic/handlers/exam_schedule.rs");
+
+    assert!(
+        academic_handler_root.contains("pub mod exam_schedule;"),
+        "academic handlers root must export the exam_schedule handler module"
+    );
+    assert!(
+        exam_handler_path.exists(),
+        "academic exam schedule handlers must live in src/modules/academic/handlers/exam_schedule.rs"
+    );
+
+    let exam_handler = strip_comments(&read_source(exam_handler_path));
+
+    for route in [
+        "\"/exam-schedules\"",
+        "\"/exam-schedules/{round_id}\"",
+        "\"/exam-schedules/{round_id}/import-items\"",
+        "\"/exam-schedules/{round_id}/days\"",
+        "\"/exam-schedules/days/{exam_day_id}\"",
+        "\"/exam-schedules/days/{exam_day_id}/room-assignments\"",
+        "\"/exam-schedules/room-assignments/{assignment_id}/seats\"",
+        "\"/exam-schedules/sessions\"",
+        "\"/exam-schedules/sessions/{session_id}\"",
+        "\"/exam-schedules/{round_id}/publish\"",
+    ] {
+        assert!(
+            academic_routes.contains(route),
+            "missing academic route {route}"
+        );
+    }
+
+    for handler_ref in [
+        "get(handlers::exam_schedule::list_rounds)",
+        "post(handlers::exam_schedule::create_round)",
+        "get(handlers::exam_schedule::get_workspace)",
+        ".patch(handlers::exam_schedule::update_round)",
+        "post(handlers::exam_schedule::import_items)",
+        "post(handlers::exam_schedule::upsert_day)",
+        "delete(handlers::exam_schedule::delete_day)",
+        "get(handlers::exam_schedule::list_day_room_assignments)",
+        "post(handlers::exam_schedule::upsert_day_room_assignment)",
+        "post(handlers::exam_schedule::generate_seats)",
+        "post(handlers::exam_schedule::place_session)",
+        "delete(handlers::exam_schedule::delete_session)",
+        "post(handlers::exam_schedule::publish_round)",
+    ] {
+        assert!(
+            academic_routes.contains(handler_ref),
+            "missing academic handler registration {handler_ref}"
+        );
+    }
+
+    let self_route = main_route_snippet(&main_routes, "\"/api/me/exam-schedules\"");
+    assert!(self_route.contains("exam_schedule::list_my_exam_schedule"));
+    assert!(self_route.contains("auth_middleware"));
+
+    let parent_route = main_route_snippet(
+        &main_routes,
+        "\"/api/parent/students/{student_id}/exam-schedules\"",
+    );
+    assert!(parent_route.contains("parents::handlers::get_child_exam_schedule"));
+    assert!(parent_route.contains("auth_middleware"));
+
+    for read_handler in [
+        "list_rounds",
+        "get_workspace",
+        "list_day_room_assignments",
+    ] {
+        assert_handler_permission(
+            &exam_handler,
+            read_handler,
+            "ACADEMIC_EXAM_SCHEDULE_READ_SCHOOL",
+        );
+    }
+
+    for manage_handler in [
+        "create_round",
+        "update_round",
+        "import_items",
+        "upsert_day",
+        "delete_day",
+        "upsert_day_room_assignment",
+        "generate_seats",
+        "place_session",
+        "delete_session",
+    ] {
+        assert_handler_permission(
+            &exam_handler,
+            manage_handler,
+            "ACADEMIC_EXAM_SCHEDULE_MANAGE_SCHOOL",
+        );
+    }
+
+    assert_handler_permission(
+        &exam_handler,
+        "publish_round",
+        "ACADEMIC_EXAM_SCHEDULE_PUBLISH_SCHOOL",
+    );
+
+    let self_handler = handler_body(&exam_handler, "list_my_exam_schedule");
+    assert!(self_handler.contains("list_my_published_exam_schedule"));
+    assert!(
+        !self_handler.contains("ACADEMIC_EXAM_SCHEDULE_"),
+        "self exam schedule route must not require academic permissions"
+    );
+
+    assert!(parent_handlers.contains("pub async fn get_child_exam_schedule"));
+    assert!(parent_services.contains("pub async fn get_child_exam_schedule"));
+    assert!(parent_services.contains("list_child_published_exam_schedule"));
+}
+
+#[test]
 fn academic_curriculum_access_uses_resource_policy_tree_resolution() {
     let curriculum_policy = strip_comments(&read_source(
         manifest_dir().join("src/policies/curriculum_access_policy.rs"),

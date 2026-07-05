@@ -2,7 +2,9 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::error::AppError;
+use crate::modules::academic::models::exam_schedule::PersonalExamScheduleRound;
 use crate::modules::academic::models::timetable::TimetableEntry;
+use crate::modules::academic::services::exam_schedule_service;
 use crate::modules::academic::services::timetable_service::{self, TimetableFilter};
 use crate::modules::calendar::models::{CalendarEventQuery, CalendarViewerEvent};
 use crate::modules::students::models::{ParentDto, StudentDbRow, StudentProfile};
@@ -114,6 +116,21 @@ pub async fn get_child_timetable(
             academic_semester_id,
             ..Default::default()
         },
+    )
+    .await
+}
+
+pub async fn get_child_exam_schedule(
+    pool: &PgPool,
+    parent_id: Uuid,
+    student_id: Uuid,
+    academic_semester_id: Option<Uuid>,
+) -> Result<Vec<PersonalExamScheduleRound>, AppError> {
+    exam_schedule_service::list_child_published_exam_schedule(
+        pool,
+        parent_id,
+        student_id,
+        academic_semester_id,
     )
     .await
 }

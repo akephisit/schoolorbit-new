@@ -708,28 +708,20 @@ pub async fn upsert_exam_day(
     fetch_exam_day_detail(pool, day.id).await
 }
 
-pub async fn delete_exam_day(
-    pool: &PgPool,
-    round_id: Uuid,
-    exam_day_id: Uuid,
-) -> Result<(), AppError> {
+pub async fn delete_exam_day(pool: &PgPool, exam_day_id: Uuid) -> Result<(), AppError> {
     let mut tx = pool.begin().await?;
-    let deleted_id: Option<Uuid> = sqlx::query_scalar(
+    let round_id: Option<Uuid> = sqlx::query_scalar(
         r#"
         DELETE FROM academic_exam_days
-        WHERE exam_round_id = $1
-          AND id = $2
-        RETURNING id
+        WHERE id = $1
+        RETURNING exam_round_id
         "#,
     )
-    .bind(round_id)
     .bind(exam_day_id)
     .fetch_optional(&mut *tx)
     .await?;
 
-    if deleted_id.is_none() {
-        return Err(AppError::NotFound("Exam day not found".to_string()));
-    }
+    let round_id = round_id.ok_or_else(|| AppError::NotFound("Exam day not found".to_string()))?;
 
     mark_round_draft_after_mutation(&mut tx, round_id, None).await?;
     tx.commit().await?;

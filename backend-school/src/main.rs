@@ -239,6 +239,11 @@ async fn main() {
                 .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
         )
         .route(
+            "/api/parent/students/{student_id}/exam-schedules",
+            get(modules::parents::handlers::get_child_exam_schedule)
+                .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
+        )
+        .route(
             "/api/parent/students/{student_id}/calendar/events",
             get(modules::parents::handlers::get_child_calendar_events)
                 .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
@@ -247,6 +252,11 @@ async fn main() {
         .route(
             "/api/me/timetable",
             get(modules::academic::handlers::timetable::get_my_timetable)
+                .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
+        )
+        .route(
+            "/api/me/exam-schedules",
+            get(modules::academic::handlers::exam_schedule::list_my_exam_schedule)
                 .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
         )
         .route(
