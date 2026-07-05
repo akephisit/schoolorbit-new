@@ -125,6 +125,13 @@ pub mod codes {
     pub const ACADEMIC_ASSESSMENT_READ_SCHOOL: &str = "academic_assessment.read.school";
     pub const ACADEMIC_ASSESSMENT_MANAGE_SCHOOL: &str = "academic_assessment.manage.school";
 
+    // Academic Exam Schedule
+    pub const ACADEMIC_EXAM_SCHEDULE_READ_SCHOOL: &str = "academic_exam_schedule.read.school";
+    pub const ACADEMIC_EXAM_SCHEDULE_MANAGE_SCHOOL: &str =
+        "academic_exam_schedule.manage.school";
+    pub const ACADEMIC_EXAM_SCHEDULE_PUBLISH_SCHOOL: &str =
+        "academic_exam_schedule.publish.school";
+
     // Facility permissions
     pub const FACILITY_READ_ALL: &str = "facility.read.all";
     pub const FACILITY_CREATE_ALL: &str = "facility.create.all";
@@ -735,6 +742,31 @@ pub const ALL_PERMISSIONS: &[PermissionDef] = &[
         action: "manage",
         scope: "school",
         description: "จัดการโครงสร้างคะแนนและสถานะการส่งของรายวิชาที่เปิดสอนทั้งโรงเรียน",
+    },
+    // Academic Exam Schedule Permissions
+    PermissionDef {
+        code: codes::ACADEMIC_EXAM_SCHEDULE_READ_SCHOOL,
+        name: "ดูตารางสอบวิชาการทั้งโรงเรียน",
+        module: "academic_exam_schedule",
+        action: "read",
+        scope: "school",
+        description: "Read academic exam schedules for the school",
+    },
+    PermissionDef {
+        code: codes::ACADEMIC_EXAM_SCHEDULE_MANAGE_SCHOOL,
+        name: "จัดการตารางสอบวิชาการ",
+        module: "academic_exam_schedule",
+        action: "manage",
+        scope: "school",
+        description: "Create and manage academic exam schedules for the school",
+    },
+    PermissionDef {
+        code: codes::ACADEMIC_EXAM_SCHEDULE_PUBLISH_SCHOOL,
+        name: "ประกาศตารางสอบวิชาการ",
+        module: "academic_exam_schedule",
+        action: "publish",
+        scope: "school",
+        description: "Publish academic exam schedules for the school",
     },
     // Calendar Permissions
     PermissionDef {

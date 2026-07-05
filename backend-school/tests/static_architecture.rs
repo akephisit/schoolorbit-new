@@ -1626,6 +1626,7 @@ fn permission_registry_uses_canonical_action_and_scope_vocabulary() {
         "execute",
         "manage",
         "manage_members",
+        "publish",
         "read",
         "remove",
         "request",
