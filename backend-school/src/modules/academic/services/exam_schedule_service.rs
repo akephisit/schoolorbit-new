@@ -26,6 +26,7 @@ pub struct WorkspaceCounts {
     pub missing_room_assignment_count: i64,
     pub invalid_session_count: i64,
     pub missing_seat_student_count: i64,
+    pub invigilator_conflict_count: i64,
 }
 
 const EXAM_SESSION_SLOT_MINUTES: u32 = 15;
@@ -585,6 +586,12 @@ pub fn build_readiness(counts: WorkspaceCounts) -> ExamScheduleReadiness {
         blockers.push(format!(
             "Generate seats for {} active student(s) in scheduled classroom-day group(s)",
             counts.missing_seat_student_count
+        ));
+    }
+    if counts.invigilator_conflict_count > 0 {
+        blockers.push(format!(
+            "Fix {} overlapping invigilator supervision assignment(s)",
+            counts.invigilator_conflict_count
         ));
     }
     ExamScheduleReadiness {
@@ -1468,6 +1475,20 @@ pub async fn place_exam_session(
         ));
     }
 
+    let invigilator_staff_ids =
+        fetch_invigilator_staff_ids_for_assignment(&mut tx, day_room_assignment.id).await?;
+    lock_exam_invigilator_staff_conflict_scope(&mut tx, day.id, &invigilator_staff_ids).await?;
+    validate_invigilator_candidate_session_conflicts(
+        &mut tx,
+        item.exam_round_id,
+        day_room_assignment.id,
+        day.id,
+        request.starts_at,
+        ends_at,
+        &invigilator_staff_ids,
+    )
+    .await?;
+
     let session_id: Uuid = sqlx::query_scalar(
         r#"
         INSERT INTO academic_exam_sessions (
@@ -1597,7 +1618,7 @@ async fn fetch_workspace_counts_in_tx(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     round_id: Uuid,
 ) -> Result<WorkspaceCounts, AppError> {
-    let row: (i64, i64, i64, i64, i64, i64) = sqlx::query_as(WORKSPACE_COUNTS_SQL)
+    let row: (i64, i64, i64, i64, i64, i64, i64) = sqlx::query_as(WORKSPACE_COUNTS_SQL)
         .bind(round_id)
         .fetch_one(&mut **tx)
         .await?;
@@ -1613,7 +1634,8 @@ fn workspace_counts_from_row(
         missing_room_assignment_count,
         invalid_session_count,
         missing_seat_student_count,
-    ): (i64, i64, i64, i64, i64, i64),
+        invigilator_conflict_count,
+    ): (i64, i64, i64, i64, i64, i64, i64),
 ) -> WorkspaceCounts {
     WorkspaceCounts {
         day_count,
@@ -1622,6 +1644,7 @@ fn workspace_counts_from_row(
         missing_room_assignment_count,
         invalid_session_count,
         missing_seat_student_count,
+        invigilator_conflict_count,
     }
 }
 
@@ -1726,7 +1749,39 @@ const WORKSPACE_COUNTS_SQL: &str = r#"
                        WHERE session.exam_round_id = $1
                          AND seat.student_id IS NULL
                    ) missing_seat_students
-               ) AS missing_seat_student_count
+               ) AS missing_seat_student_count,
+               (
+                   SELECT COUNT(*)::BIGINT
+                   FROM academic_exam_day_invigilators left_invigilator
+                   JOIN academic_exam_day_invigilators right_invigilator
+                     ON right_invigilator.staff_id = left_invigilator.staff_id
+                    AND right_invigilator.exam_day_id = left_invigilator.exam_day_id
+                    AND right_invigilator.day_room_assignment_id <> left_invigilator.day_room_assignment_id
+                    AND right_invigilator.id > left_invigilator.id
+                   JOIN academic_exam_day_room_assignments left_assignment
+                     ON left_assignment.id = left_invigilator.day_room_assignment_id
+                    AND left_assignment.exam_day_id = left_invigilator.exam_day_id
+                   JOIN academic_exam_day_room_assignments right_assignment
+                     ON right_assignment.id = right_invigilator.day_room_assignment_id
+                    AND right_assignment.exam_day_id = right_invigilator.exam_day_id
+                   JOIN academic_exam_days day
+                     ON day.id = left_invigilator.exam_day_id
+                   JOIN academic_exam_sessions left_session
+                     ON left_session.exam_day_id = left_assignment.exam_day_id
+                    AND left_session.exam_round_id = day.exam_round_id
+                   JOIN academic_exam_schedule_items left_item
+                     ON left_item.id = left_session.exam_schedule_item_id
+                    AND left_item.classroom_id = left_assignment.classroom_id
+                   JOIN academic_exam_sessions right_session
+                     ON right_session.exam_day_id = right_assignment.exam_day_id
+                    AND right_session.exam_round_id = day.exam_round_id
+                   JOIN academic_exam_schedule_items right_item
+                     ON right_item.id = right_session.exam_schedule_item_id
+                    AND right_item.classroom_id = right_assignment.classroom_id
+                   WHERE day.exam_round_id = $1
+                     AND left_session.starts_at < right_session.ends_at
+                     AND right_session.starts_at < left_session.ends_at
+               ) AS invigilator_conflict_count
         "#;
 
 pub async fn list_my_published_exam_schedule(
@@ -2479,6 +2534,74 @@ async fn validate_invigilator_time_conflicts(
     Ok(())
 }
 
+fn build_invigilator_candidate_session_windows(
+    assignment_id: Uuid,
+    exam_day_id: Uuid,
+    starts_at: NaiveTime,
+    ends_at: NaiveTime,
+    staff_ids: &[Uuid],
+) -> Vec<InvigilatorSessionWindow> {
+    staff_ids
+        .iter()
+        .map(|staff_id| InvigilatorSessionWindow {
+            assignment_id,
+            exam_day_id,
+            staff_id: *staff_id,
+            starts_at,
+            ends_at,
+        })
+        .collect()
+}
+
+async fn fetch_invigilator_staff_ids_for_assignment(
+    tx: &mut Transaction<'_, Postgres>,
+    assignment_id: Uuid,
+) -> Result<Vec<Uuid>, AppError> {
+    sqlx::query_scalar(
+        r#"
+        SELECT staff_id
+        FROM academic_exam_day_invigilators
+        WHERE day_room_assignment_id = $1
+        ORDER BY staff_id
+        "#,
+    )
+    .bind(assignment_id)
+    .fetch_all(&mut **tx)
+    .await
+    .map_err(AppError::from)
+}
+
+async fn validate_invigilator_candidate_session_conflicts(
+    tx: &mut Transaction<'_, Postgres>,
+    round_id: Uuid,
+    assignment_id: Uuid,
+    exam_day_id: Uuid,
+    starts_at: NaiveTime,
+    ends_at: NaiveTime,
+    staff_ids: &[Uuid],
+) -> Result<(), AppError> {
+    if staff_ids.is_empty() {
+        return Ok(());
+    }
+
+    let candidate_windows = build_invigilator_candidate_session_windows(
+        assignment_id,
+        exam_day_id,
+        starts_at,
+        ends_at,
+        staff_ids,
+    );
+    let existing_windows =
+        fetch_existing_invigilator_session_windows(tx, round_id, staff_ids).await?;
+    if has_invigilator_time_conflict(assignment_id, &candidate_windows, &existing_windows) {
+        return Err(AppError::BadRequest(
+            "Invigilator has an overlapping exam supervision assignment".to_string(),
+        ));
+    }
+
+    Ok(())
+}
+
 async fn fetch_day_room_assignment_views_for_day(
     pool: &PgPool,
     exam_day_id: Uuid,
@@ -2826,11 +2949,6 @@ fn map_day_room_assignment_write_error(error: sqlx::Error) -> AppError {
             if constraint.contains("exam_day_id_room_id") {
                 return AppError::BadRequest(
                     "Room is already assigned to another classroom on this exam day".to_string(),
-                );
-            }
-            if constraint.contains("exam_day_id_staff_id") {
-                return AppError::BadRequest(
-                    "Invigilator is already assigned to another room on this exam day".to_string(),
                 );
             }
             if constraint.contains("day_room_assignment_id_staff_id") {
@@ -3318,7 +3436,7 @@ async fn fetch_workspace_counts(
     pool: &PgPool,
     round_id: Uuid,
 ) -> Result<WorkspaceCounts, AppError> {
-    let row: (i64, i64, i64, i64, i64, i64) = sqlx::query_as(WORKSPACE_COUNTS_SQL)
+    let row: (i64, i64, i64, i64, i64, i64, i64) = sqlx::query_as(WORKSPACE_COUNTS_SQL)
         .bind(round_id)
         .fetch_one(pool)
         .await?;
@@ -3595,6 +3713,61 @@ mod tests {
     }
 
     #[test]
+    fn place_exam_session_locks_and_validates_invigilators_before_insert() {
+        let source = include_str!("exam_schedule_service.rs");
+        let placement_start = source.find("pub async fn place_exam_session").unwrap();
+        let placement_body = &source[placement_start..];
+        let lock_position = placement_body
+            .find("lock_exam_invigilator_staff_conflict_scope")
+            .unwrap();
+        let validation_position = placement_body
+            .find("validate_invigilator_candidate_session_conflicts")
+            .unwrap();
+        let insert_position = placement_body
+            .find("INSERT INTO academic_exam_sessions")
+            .unwrap();
+
+        assert!(lock_position < validation_position);
+        assert!(validation_position < insert_position);
+    }
+
+    #[test]
+    fn builds_invigilator_candidate_session_windows_for_each_staff_member() {
+        let assignment_id = Uuid::from_u128(1);
+        let exam_day_id = Uuid::from_u128(2);
+        let staff_a = Uuid::from_u128(3);
+        let staff_b = Uuid::from_u128(4);
+
+        let windows = build_invigilator_candidate_session_windows(
+            assignment_id,
+            exam_day_id,
+            t("08:30"),
+            t("09:30"),
+            &[staff_a, staff_b],
+        );
+
+        assert_eq!(
+            windows,
+            vec![
+                InvigilatorSessionWindow {
+                    assignment_id,
+                    exam_day_id,
+                    staff_id: staff_a,
+                    starts_at: t("08:30"),
+                    ends_at: t("09:30"),
+                },
+                InvigilatorSessionWindow {
+                    assignment_id,
+                    exam_day_id,
+                    staff_id: staff_b,
+                    starts_at: t("08:30"),
+                    ends_at: t("09:30"),
+                },
+            ]
+        );
+    }
+
+    #[test]
     fn get_invigilator_workspace_checks_round_before_assignment_queries() {
         let source = include_str!("exam_schedule_service.rs");
         let workspace_start = source
@@ -3756,6 +3929,26 @@ mod tests {
     }
 
     #[test]
+    fn readiness_sql_counts_invigilator_live_range_conflicts() {
+        assert!(WORKSPACE_COUNTS_SQL.contains("invigilator_conflict_count"));
+        assert!(WORKSPACE_COUNTS_SQL.contains("academic_exam_day_invigilators"));
+        assert!(WORKSPACE_COUNTS_SQL.contains("left_session.starts_at < right_session.ends_at"));
+        assert!(WORKSPACE_COUNTS_SQL.contains("right_session.starts_at < left_session.ends_at"));
+    }
+
+    #[test]
+    fn day_staff_unique_error_mapping_is_removed_after_live_range_migration() {
+        let source = include_str!("exam_schedule_service.rs");
+        let mapping_start = source
+            .find("fn map_day_room_assignment_write_error")
+            .unwrap();
+        let mapping_body = &source[mapping_start..];
+        let mapping_end = mapping_body.find("fn validate_exam_day_window").unwrap();
+
+        assert!(!mapping_body[..mapping_end].contains("exam_day_id_staff_id"));
+    }
+
+    #[test]
     fn readiness_requires_days_items_rooms_and_sessions() {
         let readiness = build_readiness(WorkspaceCounts {
             day_count: 0,
@@ -3764,6 +3957,7 @@ mod tests {
             missing_room_assignment_count: 2,
             invalid_session_count: 0,
             missing_seat_student_count: 2,
+            invigilator_conflict_count: 0,
         });
         assert!(!readiness.can_publish);
         assert!(readiness
@@ -3785,6 +3979,7 @@ mod tests {
             missing_room_assignment_count: 0,
             invalid_session_count: 0,
             missing_seat_student_count: 3,
+            invigilator_conflict_count: 0,
         });
 
         assert!(!readiness.can_publish);
@@ -3803,6 +3998,7 @@ mod tests {
             missing_room_assignment_count: 0,
             invalid_session_count: 2,
             missing_seat_student_count: 0,
+            invigilator_conflict_count: 0,
         });
 
         assert!(!readiness.can_publish);
@@ -3810,6 +4006,25 @@ mod tests {
             .blockers
             .iter()
             .any(|value| value.contains("no longer fit")));
+    }
+
+    #[test]
+    fn readiness_reports_invigilator_live_range_conflicts() {
+        let readiness = build_readiness(WorkspaceCounts {
+            day_count: 1,
+            item_count: 4,
+            unscheduled_count: 0,
+            missing_room_assignment_count: 0,
+            invalid_session_count: 0,
+            missing_seat_student_count: 0,
+            invigilator_conflict_count: 2,
+        });
+
+        assert!(!readiness.can_publish);
+        assert!(readiness
+            .blockers
+            .iter()
+            .any(|value| value.contains("overlapping invigilator")));
     }
 
     #[test]
