@@ -789,24 +789,21 @@ pub async fn upsert_exam_day(
             exam_date,
             label,
             start_time,
-            end_time,
-            sort_order
+            end_time
         )
-        VALUES ($1, $2, $3, $4, $5, $6)
+        VALUES ($1, $2, $3, $4, $5)
         ON CONFLICT (exam_round_id, exam_date)
         DO UPDATE SET
             label = EXCLUDED.label,
             start_time = EXCLUDED.start_time,
             end_time = EXCLUDED.end_time,
-            sort_order = EXCLUDED.sort_order,
             updated_at = now()
         RETURNING id,
                   exam_round_id,
                   exam_date,
                   label,
                   start_time,
-                  end_time,
-                  sort_order
+                  end_time
         "#,
     )
     .bind(round_id)
@@ -814,7 +811,6 @@ pub async fn upsert_exam_day(
     .bind(request.label)
     .bind(request.start_time)
     .bind(request.end_time)
-    .bind(request.sort_order)
     .fetch_one(&mut *tx)
     .await?;
 
@@ -2767,7 +2763,7 @@ async fn fetch_invigilator_assignment_summaries(
          AND session.exam_round_id = day.exam_round_id
         WHERE day.exam_round_id = $1
         GROUP BY assignment.id, day.id, assignment.classroom_id, classroom.name, assignment.room_id, room.name_th
-        ORDER BY day.sort_order, classroom.name, room.name_th, assignment.id
+        ORDER BY day.exam_date, day.start_time, day.id, classroom.name, room.name_th, assignment.id
         "#,
     )
     .bind(round_id)
@@ -2801,7 +2797,7 @@ async fn fetch_invigilator_staff_workloads(
           ON item.id = session.exam_schedule_item_id
          AND item.classroom_id = assignment.classroom_id
         WHERE day.exam_round_id = $1
-        ORDER BY staff_name, day.sort_order, session.starts_at, assignment.id
+        ORDER BY staff_name, day.exam_date, day.start_time, day.id, session.starts_at, assignment.id
         "#,
     )
     .bind(round_id)
@@ -3126,8 +3122,7 @@ async fn fetch_exam_day_detail(
                exam_date,
                label,
                start_time,
-               end_time,
-               sort_order
+               end_time
         FROM academic_exam_days
         WHERE id = $1
         "#,
@@ -3154,11 +3149,10 @@ async fn fetch_exam_day_details_for_round(
                exam_date,
                label,
                start_time,
-               end_time,
-               sort_order
+               end_time
         FROM academic_exam_days
         WHERE exam_round_id = $1
-        ORDER BY sort_order ASC, exam_date ASC, id ASC
+        ORDER BY exam_date ASC, start_time ASC, id ASC
         "#,
     )
     .bind(round_id)
@@ -3287,7 +3281,6 @@ async fn hydrate_exam_day_details(
                 label: day.label,
                 start_time: day.start_time,
                 end_time: day.end_time,
-                sort_order: day.sort_order,
                 grade_level_ids: grade_ids_by_day.remove(&day_id).unwrap_or_default(),
                 blocked_windows: blocked_windows_by_day.remove(&day_id).unwrap_or_default(),
                 room_assignments: assignments_by_day.remove(&day_id).unwrap_or_default(),
@@ -3457,8 +3450,9 @@ async fn fetch_scheduled_sessions(
         LEFT JOIN rooms room ON room.id = assignment.room_id
         LEFT JOIN buildings building ON building.id = room.building_id
         WHERE session.exam_round_id = $1
-        ORDER BY day.sort_order,
-                 day.exam_date,
+        ORDER BY day.exam_date,
+                 day.start_time,
+                 day.id,
                  session.starts_at,
                  classroom.name,
                  subject.code,

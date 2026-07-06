@@ -16,10 +16,7 @@
 		TableHeader,
 		TableRow
 	} from '$lib/components/ui/table';
-	import {
-		compareExamDaysByDate,
-		nextSortOrderForDate
-	} from '$lib/utils/examScheduleDayOrder';
+	import { compareExamDaysByDate } from '$lib/utils/examScheduleDayOrder';
 	import { Plus, Trash2 } from 'lucide-svelte';
 
 	type BlockedWindowForm = BlockedWindowInput & { localId: string };
@@ -115,7 +112,6 @@
 			label: label.trim() || null,
 			startTime,
 			endTime,
-			sortOrder: nextSortOrderForDate(days, examDate, startTime, selectedDayId || null),
 			gradeLevelIds,
 			blockedWindows: blockedWindows
 				.filter((window) => window.label.trim() && window.startTime && window.endTime)

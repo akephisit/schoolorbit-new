@@ -291,6 +291,44 @@ fn exam_invigilator_conflict_migration_drops_day_staff_unique_constraint() {
 }
 
 #[test]
+fn exam_day_order_migration_drops_sort_order_column() {
+    let migration = read_source(
+        manifest_dir()
+            .join("migrations")
+            .join("021_academic_exam_day_drop_sort_order.sql"),
+    );
+
+    assert!(migration
+        .contains("DROP CONSTRAINT IF EXISTS academic_exam_days_exam_round_id_sort_order_key"));
+    assert!(migration.contains("DROP COLUMN IF EXISTS sort_order"));
+}
+
+#[test]
+fn academic_exam_days_use_date_ordering_without_sort_order_contract() {
+    let model = read_source(
+        manifest_dir()
+            .join("src")
+            .join("modules")
+            .join("academic")
+            .join("models")
+            .join("exam_schedule.rs"),
+    );
+    let service = read_source(
+        manifest_dir()
+            .join("src")
+            .join("modules")
+            .join("academic")
+            .join("services")
+            .join("exam_schedule_service.rs"),
+    );
+
+    assert!(!model.contains("sort_order"));
+    assert!(!service.contains("sort_order"));
+    assert!(service.contains("ORDER BY exam_date ASC, start_time ASC, id ASC"));
+    assert!(service.contains("ORDER BY day.exam_date,"));
+}
+
+#[test]
 fn organization_baseline_migration_defines_canonical_school_structure() {
     let migration_path = active_baseline_migration_path();
     let source = read_source(&migration_path);

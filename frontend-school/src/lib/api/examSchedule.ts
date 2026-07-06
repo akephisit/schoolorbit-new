@@ -22,7 +22,6 @@ export interface ExamDay {
 	label?: string | null;
 	startTime: string;
 	endTime: string;
-	sortOrder: number;
 }
 
 export interface BlockedWindow {
@@ -235,7 +234,6 @@ export interface UpsertExamDayInput {
 	label?: string | null;
 	startTime: string;
 	endTime: string;
-	sortOrder: number;
 	gradeLevelIds: string[];
 	blockedWindows: BlockedWindowInput[];
 }

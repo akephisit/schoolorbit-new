@@ -774,8 +774,9 @@ test('exam day setup uses the shared shadcn date picker for exam date selection'
 	assert.doesNotMatch(dayPanel, /<Input[\s\S]*id="exam-day-date"[\s\S]*type="date"/);
 });
 
-test('exam day setup derives day ordering from exam dates instead of manual input', () => {
+test('exam day setup derives day ordering from exam dates without sort order payloads', () => {
 	const helper = readFileSync(projectPath('src/lib/utils/examScheduleDayOrder.ts'), 'utf8');
+	const api = readFileSync(projectPath('src/lib/api/examSchedule.ts'), 'utf8');
 	const dayPanel = readFileSync(
 		projectPath('src/lib/components/academic/exam-schedule/ExamDaySetupPanel.svelte'),
 		'utf8'
@@ -783,14 +784,18 @@ test('exam day setup derives day ordering from exam dates instead of manual inpu
 
 	assert.match(helper, /export function compareExamDaysByDate/);
 	assert.match(helper, /left\.examDate\.localeCompare\(right\.examDate\)/);
-	assert.match(helper, /export function nextSortOrderForDate/);
+	assert.doesNotMatch(helper, /sortOrder/);
+	assert.doesNotMatch(helper, /nextSortOrderForDate/);
 
 	assert.match(dayPanel, /compareExamDaysByDate/);
-	assert.match(dayPanel, /nextSortOrderForDate\(days,\s*examDate,\s*startTime,\s*selectedDayId \|\| null\)/);
+	assert.doesNotMatch(dayPanel, /nextSortOrderForDate/);
+	assert.doesNotMatch(dayPanel, /sortOrder:/);
 	assert.doesNotMatch(dayPanel, /let sortOrder = \$state/);
 	assert.doesNotMatch(dayPanel, /id="exam-day-order"/);
 	assert.doesNotMatch(dayPanel, /bind:value=\{sortOrder\}/);
 	assert.doesNotMatch(dayPanel, /ลำดับ \{day\.sortOrder\}/);
+
+	assert.doesNotMatch(api, /sortOrder: number/);
 });
 
 test('exam schedule day selectors use the shared date ordering helper consistently', () => {

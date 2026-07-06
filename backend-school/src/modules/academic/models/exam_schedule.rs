@@ -41,7 +41,6 @@ pub struct ExamDay {
     pub label: Option<String>,
     pub start_time: NaiveTime,
     pub end_time: NaiveTime,
-    pub sort_order: i32,
 }
 
 #[derive(Debug, Deserialize)]
@@ -51,7 +50,6 @@ pub struct UpsertExamDayRequest {
     pub label: Option<String>,
     pub start_time: NaiveTime,
     pub end_time: NaiveTime,
-    pub sort_order: i32,
     pub grade_level_ids: Vec<Uuid>,
     pub blocked_windows: Vec<BlockedWindowInput>,
 }
@@ -207,7 +205,6 @@ pub struct ExamDayDetail {
     pub label: Option<String>,
     pub start_time: NaiveTime,
     pub end_time: NaiveTime,
-    pub sort_order: i32,
     pub grade_level_ids: Vec<Uuid>,
     pub blocked_windows: Vec<BlockedWindow>,
     pub room_assignments: Vec<ExamDayRoomAssignmentView>,
