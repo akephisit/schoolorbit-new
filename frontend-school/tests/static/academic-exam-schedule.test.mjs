@@ -31,6 +31,30 @@ function exportedFunctionSource(source, functionName) {
 	return nextFunctionIndex === -1 ? rest : rest.slice(0, nextFunctionIndex);
 }
 
+test('exam schedule refresh uses shared shadcn sheet primitive instead of feature-local drawers', async () => {
+	const sheetIndexPath = 'src/lib/components/ui/sheet/index.ts';
+	assert.equal(existsSync(projectPath(sheetIndexPath)), true, `${sheetIndexPath} should exist`);
+
+	const sheetIndex = await readProjectFile(sheetIndexPath);
+	const requiredExports = [
+		'Content as SheetContent',
+		'Header as SheetHeader',
+		'Footer as SheetFooter',
+		'Title as SheetTitle',
+		'Description as SheetDescription',
+		'Close as SheetClose',
+		'Trigger as SheetTrigger'
+	];
+
+	for (const requiredExport of requiredExports) {
+		assert.match(
+			sheetIndex,
+			new RegExp(escapeRegExp(requiredExport)),
+			`${sheetIndexPath} should export ${requiredExport}`
+		);
+	}
+});
+
 test('academic exam schedule routes have compile-ready page placeholders', () => {
 	const pageFiles = [
 		'src/routes/(app)/staff/academic/exam-schedules/+page.svelte',
