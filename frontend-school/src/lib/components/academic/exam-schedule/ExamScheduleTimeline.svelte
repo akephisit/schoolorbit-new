@@ -15,7 +15,7 @@
 	import {
 		TIMELINE_SLOT_MINUTES,
 		addMinutes,
-		clientXToTimelineStartTime,
+		buildTimelineDragPreview,
 		minutesBetween,
 		timeToMinutes,
 		validateExamSessionPlacement
@@ -32,6 +32,17 @@
 		durationMinutes: number;
 		sourceSessionId?: string;
 		dragOffsetPx?: number;
+	};
+
+	type DragPreviewState = {
+		dayId: string;
+		classroomId: string;
+		leftPx: number;
+		widthPx: number;
+		startTime: string;
+		endTime: string;
+		valid: boolean;
+		reason?: string;
 	};
 
 	let {
@@ -52,6 +63,7 @@
 	let selectedDayId = $state('');
 	let selectedStartTime = $state('08:30');
 	let dialogError = $state('');
+	let dragPreview = $state<DragPreviewState | null>(null);
 
 	const sortedDays = $derived([...workspace.days].sort((a, b) => a.sortOrder - b.sortOrder));
 	const placementDisabled = $derived(readonly || !!placingItemId);
@@ -143,10 +155,64 @@
 		);
 	}
 
-	function handleDragOver(event: DragEvent) {
+	function clearDragPreview() {
+		dragPreview = null;
+	}
+
+	function buildRowDragPreview(event: DragEvent, day: ExamDayDetail, payload: DragPayload) {
+		const target = event.currentTarget as HTMLElement;
+		const rect = target.getBoundingClientRect();
+
+		return buildTimelineDragPreview({
+			day,
+			clientX: event.clientX,
+			trackLeft: rect.left,
+			dragOffsetPx: payload.dragOffsetPx ?? 0,
+			slotWidthPx: SLOT_WIDTH,
+			durationMinutes: payload.durationMinutes,
+			candidate: {
+				examScheduleItemId: payload.examScheduleItemId,
+				classroomId: payload.classroomId,
+				gradeLevelId: payload.gradeLevelId,
+				sourceSessionId: payload.sourceSessionId
+			},
+			scheduledSessions: workspace.scheduledSessions
+		});
+	}
+
+	function handleDragOver(event: DragEvent, day: ExamDayDetail, assignmentClassroomId: string) {
 		if (placementDisabled) return;
+		const payload = dragPayload(event);
+		if (!payload) return;
+
 		event.preventDefault();
 		if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+
+		if (payload.classroomId !== assignmentClassroomId) {
+			clearDragPreview();
+			return;
+		}
+
+		const preview = buildRowDragPreview(event, day, payload);
+		dragPreview = {
+			dayId: day.id,
+			classroomId: assignmentClassroomId,
+			leftPx: preview.leftPx,
+			widthPx: preview.widthPx,
+			startTime: preview.startTime,
+			endTime: preview.endTime,
+			valid: preview.valid,
+			reason: preview.reason
+		};
+	}
+
+	function handleDragLeave(event: DragEvent, day: ExamDayDetail, assignmentClassroomId: string) {
+		const currentTarget = event.currentTarget as HTMLElement;
+		const relatedTarget = event.relatedTarget as Node | null;
+		if (relatedTarget && currentTarget.contains(relatedTarget)) return;
+		if (dragPreview?.dayId === day.id && dragPreview.classroomId === assignmentClassroomId) {
+			clearDragPreview();
+		}
 	}
 
 	async function handleDrop(
@@ -154,28 +220,35 @@
 		day: ExamDayDetail,
 		assignmentClassroomId: string
 	) {
-		if (placementDisabled) return;
+		if (placementDisabled) {
+			clearDragPreview();
+			return;
+		}
 		event.preventDefault();
 		localError = '';
 
 		const payload = dragPayload(event);
-		if (!payload) return;
-
-		if (payload.classroomId !== assignmentClassroomId) {
-			localError = 'รายการสอบต้องวางในแถวห้องเรียนเดียวกัน';
+		if (!payload) {
+			clearDragPreview();
 			return;
 		}
 
-		const target = event.currentTarget as HTMLElement;
-		const rect = target.getBoundingClientRect();
-		const startsAt = clientXToTimelineStartTime({
-			clientX: event.clientX,
-			trackLeft: rect.left,
-			dragOffsetPx: payload.dragOffsetPx ?? 0,
-			dayStartTime: day.startTime,
-			slotWidthPx: SLOT_WIDTH
-		});
-		await placeLocallyValidated(payload, day, startsAt);
+		if (payload.classroomId !== assignmentClassroomId) {
+			localError = 'รายการสอบต้องวางในแถวห้องเรียนเดียวกัน';
+			clearDragPreview();
+			return;
+		}
+
+		const activePreview =
+			dragPreview?.dayId === day.id && dragPreview.classroomId === assignmentClassroomId
+				? dragPreview
+				: null;
+		const startsAt = activePreview?.startTime ?? buildRowDragPreview(event, day, payload).startTime;
+		try {
+			await placeLocallyValidated(payload, day, startsAt);
+		} finally {
+			clearDragPreview();
+		}
 	}
 
 	async function placeLocallyValidated(payload: DragPayload, day: ExamDayDetail, startsAt: string) {
@@ -315,7 +388,10 @@
 												style:width={`${trackWidth(day)}px`}
 												role="group"
 												aria-label={`วางรายการสอบ ${assignment.classroomName ?? assignment.classroomId}`}
-												ondragover={handleDragOver}
+												ondragover={(event) => handleDragOver(event, day, assignment.classroomId)}
+												ondragleave={(event) =>
+													handleDragLeave(event, day, assignment.classroomId)}
+												ondragend={clearDragPreview}
 												ondrop={(event) => handleDrop(event, day, assignment.classroomId)}
 											>
 												<div
@@ -339,6 +415,24 @@
 														</div>
 													</div>
 												{/each}
+
+												{#if dragPreview?.dayId === day.id && dragPreview.classroomId === assignment.classroomId}
+													{@const preview = dragPreview}
+													<div
+														class={`pointer-events-none absolute top-1 rounded border-2 px-2 py-1 text-xs shadow-sm ${
+															preview.valid
+																? 'border-primary bg-primary/10 text-primary'
+																: 'border-destructive bg-destructive/10 text-destructive'
+														}`}
+														style:left={`${preview.leftPx}px`}
+														style:width={`${preview.widthPx}px`}
+													>
+														<div class="truncate font-mono">{preview.startTime}-{preview.endTime}</div>
+														{#if preview.reason}
+															<div class="truncate text-[10px]">{preview.reason}</div>
+														{/if}
+													</div>
+												{/if}
 
 												{#each sessionsForAssignment(day, assignment.classroomId) as session (session.id)}
 													<ExamSessionBlock

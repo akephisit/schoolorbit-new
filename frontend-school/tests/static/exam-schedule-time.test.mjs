@@ -113,6 +113,39 @@ test('drag coordinate helper anchors existing blocks from their left edge', asyn
 	);
 });
 
+test('timeline drag preview reports snapped start end left width and validity', async () => {
+	const { buildTimelineDragPreview } = await importTimeHelpers();
+	const day = {
+		id: 'day-1',
+		startTime: '08:30:00',
+		endTime: '12:00:00',
+		gradeLevelIds: [],
+		blockedWindows: [],
+		roomAssignments: [{ classroomId: 'classroom-1', roomId: 'room-1' }]
+	};
+
+	const preview = buildTimelineDragPreview({
+		day,
+		clientX: 156,
+		trackLeft: 100,
+		dragOffsetPx: 0,
+		slotWidthPx: 24,
+		durationMinutes: 60,
+		candidate: {
+			examScheduleItemId: 'item-1',
+			classroomId: 'classroom-1',
+			gradeLevelId: 'grade-1'
+		},
+		scheduledSessions: []
+	});
+
+	assert.equal(preview.startTime, '09:00');
+	assert.equal(preview.endTime, '10:00');
+	assert.equal(preview.leftPx, 48);
+	assert.equal(preview.widthPx, 96);
+	assert.equal(preview.valid, true);
+});
+
 test('timeline placement rejects manually typed off-grid times', async () => {
 	const { validateTimelinePlacement } = await importTimeHelpers();
 

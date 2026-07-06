@@ -445,7 +445,7 @@ test('staff timeline wires drag drop placement and accessible schedule dialog', 
 
 	for (const expected of [
 		'validateExamSessionPlacement',
-		'clientXToTimelineStartTime',
+		'buildTimelineDragPreview',
 		'ondrop=',
 		'blocked-window',
 		'--slot-width: 24px',
@@ -464,6 +464,19 @@ test('staff timeline wires drag drop placement and accessible schedule dialog', 
 	assert.match(block, /session-block/);
 	assert.match(block, /min-height: 2\.25rem/);
 	assert.match(block, /overflow: hidden/);
+});
+
+test('staff timeline renders duration-aware drag preview states', () => {
+	const timeline = readFileSync(
+		projectPath('src/lib/components/academic/exam-schedule/ExamScheduleTimeline.svelte'),
+		'utf8'
+	);
+
+	assert.match(timeline, /buildTimelineDragPreview/);
+	assert.match(timeline, /dragPreview/);
+	assert.match(timeline, /preview\.valid/);
+	assert.match(timeline, /preview\.startTime/);
+	assert.match(timeline, /preview\.endTime/);
 });
 
 test('staff workspace reloads by route round id and keeps form input on failed saves', () => {

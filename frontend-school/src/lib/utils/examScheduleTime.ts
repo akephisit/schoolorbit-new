@@ -66,6 +66,31 @@ export interface ExamSessionPlacementInput {
 	scheduledSessions?: TimelineScheduledSession[];
 }
 
+export interface TimelineDragPreviewInput {
+	day: TimelineExamDay;
+	clientX: number;
+	trackLeft: number;
+	dragOffsetPx: number;
+	slotWidthPx: number;
+	durationMinutes: number;
+	candidate: {
+		examScheduleItemId: string;
+		classroomId: string;
+		gradeLevelId: string;
+		sourceSessionId?: string;
+	};
+	scheduledSessions: TimelineScheduledSession[];
+}
+
+export interface TimelineDragPreview {
+	startTime: string;
+	endTime: string;
+	leftPx: number;
+	widthPx: number;
+	valid: boolean;
+	reason?: string;
+}
+
 export function timeToMinutes(value: string): number {
 	const [hours = '0', minutes = '0'] = value.slice(0, 5).split(':');
 	return Number(hours) * 60 + Number(minutes);
@@ -212,4 +237,36 @@ export function validateExamSessionPlacement({
 	}
 
 	return { ok: true };
+}
+
+export function buildTimelineDragPreview(input: TimelineDragPreviewInput): TimelineDragPreview {
+	const startTime = clientXToTimelineStartTime({
+		clientX: input.clientX,
+		trackLeft: input.trackLeft,
+		dragOffsetPx: input.dragOffsetPx,
+		dayStartTime: input.day.startTime,
+		slotWidthPx: input.slotWidthPx
+	});
+	const endTime = addMinutes(startTime, input.durationMinutes);
+	const validation = validateExamSessionPlacement({
+		day: input.day,
+		candidate: {
+			...input.candidate,
+			startTime,
+			durationMinutes: input.durationMinutes
+		},
+		scheduledSessions: input.scheduledSessions
+	});
+
+	return {
+		startTime,
+		endTime,
+		leftPx: (minutesBetween(input.day.startTime, startTime) / TIMELINE_SLOT_MINUTES) * input.slotWidthPx,
+		widthPx: Math.max(
+			input.slotWidthPx,
+			(input.durationMinutes / TIMELINE_SLOT_MINUTES) * input.slotWidthPx
+		),
+		valid: validation.ok,
+		reason: validation.reason
+	};
 }
