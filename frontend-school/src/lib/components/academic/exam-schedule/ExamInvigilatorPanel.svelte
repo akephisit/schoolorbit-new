@@ -23,6 +23,7 @@
 		TableHeader,
 		TableRow
 	} from '$lib/components/ui/table';
+	import { compareExamDaysByDate } from '$lib/utils/examScheduleDayOrder';
 	import { Search, UserRoundPlus } from 'lucide-svelte';
 
 	type StaffOption = {
@@ -66,7 +67,7 @@
 	let staffSearchError = $state('');
 	let staffSearchRequestToken = 0;
 
-	const sortedDays = $derived([...days].sort((a, b) => a.sortOrder - b.sortOrder));
+	const sortedDays = $derived([...days].sort(compareExamDaysByDate));
 	const selectedDay = $derived(
 		days.find((day) => day.id === selectedDayId) ?? sortedDays[0] ?? null
 	);

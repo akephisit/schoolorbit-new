@@ -12,6 +12,7 @@
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import * as Select from '$lib/components/ui/select';
+	import { compareExamDaysByDate } from '$lib/utils/examScheduleDayOrder';
 	import { addMinutes, validateExamSessionPlacement } from '$lib/utils/examScheduleTime';
 	import { CalendarPlus, GripVertical } from 'lucide-svelte';
 
@@ -53,7 +54,7 @@
 	let selectedStartTime = $state('08:30');
 	let dialogError = $state('');
 
-	const sortedDays = $derived([...days].sort((a, b) => a.sortOrder - b.sortOrder));
+	const sortedDays = $derived([...days].sort(compareExamDaysByDate));
 	const selectedDay = $derived(days.find((day) => day.id === selectedDayId) ?? sortedDays[0] ?? null);
 
 	function itemSubject(item: ExamScheduleItem): string {

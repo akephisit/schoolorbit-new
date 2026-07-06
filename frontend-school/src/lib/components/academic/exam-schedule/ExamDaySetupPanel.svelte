@@ -16,6 +16,10 @@
 		TableHeader,
 		TableRow
 	} from '$lib/components/ui/table';
+	import {
+		compareExamDaysByDate,
+		nextSortOrderForDate
+	} from '$lib/utils/examScheduleDayOrder';
 	import { Plus, Trash2 } from 'lucide-svelte';
 
 	type BlockedWindowForm = BlockedWindowInput & { localId: string };
@@ -43,12 +47,11 @@
 	let label = $state('');
 	let startTime = $state('08:30');
 	let endTime = $state('16:00');
-	let sortOrder = $state('1');
 	let gradeLevelIds = $state<string[]>([]);
 	let blockedWindows = $state<BlockedWindowForm[]>([]);
 	let nextWindowIndex = 0;
 
-	const sortedDays = $derived([...days].sort((a, b) => a.sortOrder - b.sortOrder));
+	const sortedDays = $derived([...days].sort(compareExamDaysByDate));
 	const formTitle = $derived(selectedDayId ? 'แก้ไขวันสอบ' : 'เพิ่มวันสอบ');
 
 	function newLocalId(): string {
@@ -62,7 +65,6 @@
 		label = '';
 		startTime = '08:30';
 		endTime = '16:00';
-		sortOrder = String(days.length + 1);
 		gradeLevelIds = [];
 		blockedWindows = [];
 	}
@@ -73,7 +75,6 @@
 		label = day.label ?? '';
 		startTime = day.startTime.slice(0, 5);
 		endTime = day.endTime.slice(0, 5);
-		sortOrder = String(day.sortOrder);
 		gradeLevelIds = [...day.gradeLevelIds];
 		blockedWindows = day.blockedWindows.map((window) => ({
 			label: window.label,
@@ -114,7 +115,7 @@
 			label: label.trim() || null,
 			startTime,
 			endTime,
-			sortOrder: Number(sortOrder) || days.length + 1,
+			sortOrder: nextSortOrderForDate(days, examDate, startTime, selectedDayId || null),
 			gradeLevelIds,
 			blockedWindows: blockedWindows
 				.filter((window) => window.label.trim() && window.startTime && window.endTime)
@@ -188,7 +189,9 @@
 								<TableRow>
 									<TableCell>
 										<div class="font-medium">{day.label || formatDayDate(day.examDate)}</div>
-										<div class="text-xs text-muted-foreground">ลำดับ {day.sortOrder}</div>
+										{#if day.label}
+											<div class="text-xs text-muted-foreground">{formatDayDate(day.examDate)}</div>
+										{/if}
 									</TableCell>
 									<TableCell class="font-mono text-sm">
 										{day.startTime.slice(0, 5)}-{day.endTime.slice(0, 5)}
@@ -262,10 +265,6 @@
 								<Label for="exam-day-end">สิ้นสุด</Label>
 								<Input id="exam-day-end" type="time" bind:value={endTime} required />
 							</div>
-						</div>
-						<div class="grid gap-2">
-							<Label for="exam-day-order">ลำดับ</Label>
-							<Input id="exam-day-order" type="number" min="1" step="1" bind:value={sortOrder} />
 						</div>
 					</div>
 

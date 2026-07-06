@@ -20,6 +20,7 @@
 		timeToMinutes,
 		validateExamSessionPlacement
 	} from '$lib/utils/examScheduleTime';
+	import { compareExamDaysByDate } from '$lib/utils/examScheduleDayOrder';
 	import ExamItemTray from './ExamItemTray.svelte';
 	import ExamSessionBlock from './ExamSessionBlock.svelte';
 
@@ -72,7 +73,7 @@
 	let dayDisplayMode = $state<'all' | 'single'>('all');
 	let selectedTimelineDayId = $state('');
 
-	const sortedDays = $derived([...workspace.days].sort((a, b) => a.sortOrder - b.sortOrder));
+	const sortedDays = $derived([...workspace.days].sort(compareExamDaysByDate));
 	const selectedTimelineDay = $derived(
 		sortedDays.find((day) => day.id === selectedTimelineDayId) ?? sortedDays[0] ?? null
 	);

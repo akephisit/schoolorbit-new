@@ -774,6 +774,53 @@ test('exam day setup uses the shared shadcn date picker for exam date selection'
 	assert.doesNotMatch(dayPanel, /<Input[\s\S]*id="exam-day-date"[\s\S]*type="date"/);
 });
 
+test('exam day setup derives day ordering from exam dates instead of manual input', () => {
+	const helper = readFileSync(projectPath('src/lib/utils/examScheduleDayOrder.ts'), 'utf8');
+	const dayPanel = readFileSync(
+		projectPath('src/lib/components/academic/exam-schedule/ExamDaySetupPanel.svelte'),
+		'utf8'
+	);
+
+	assert.match(helper, /export function compareExamDaysByDate/);
+	assert.match(helper, /left\.examDate\.localeCompare\(right\.examDate\)/);
+	assert.match(helper, /export function nextSortOrderForDate/);
+
+	assert.match(dayPanel, /compareExamDaysByDate/);
+	assert.match(dayPanel, /nextSortOrderForDate\(days,\s*examDate,\s*startTime,\s*selectedDayId \|\| null\)/);
+	assert.doesNotMatch(dayPanel, /let sortOrder = \$state/);
+	assert.doesNotMatch(dayPanel, /id="exam-day-order"/);
+	assert.doesNotMatch(dayPanel, /bind:value=\{sortOrder\}/);
+	assert.doesNotMatch(dayPanel, /ลำดับ \{day\.sortOrder\}/);
+});
+
+test('exam schedule day selectors use the shared date ordering helper consistently', () => {
+	const componentPaths = [
+		'src/lib/components/academic/exam-schedule/ExamRoomAssignmentPanel.svelte',
+		'src/lib/components/academic/exam-schedule/ExamScheduleTimeline.svelte',
+		'src/lib/components/academic/exam-schedule/ExamItemTray.svelte',
+		'src/lib/components/academic/exam-schedule/ExamInvigilatorPanel.svelte'
+	];
+
+	for (const componentPath of componentPaths) {
+		const component = readFileSync(projectPath(componentPath), 'utf8');
+		assert.match(
+			component,
+			/from '\$lib\/utils\/examScheduleDayOrder'/,
+			`${componentPath} should import the shared exam day ordering helper`
+		);
+		assert.match(
+			component,
+			/sort\(compareExamDaysByDate\)/,
+			`${componentPath} should sort exam days by date`
+		);
+		assert.doesNotMatch(
+			component,
+			/sort\(\(a, b\) => a\.sortOrder - b\.sortOrder\)/,
+			`${componentPath} should not manually sort days by sortOrder`
+		);
+	}
+});
+
 test('exam room assignment panel leaves invigilator search out of room editing', () => {
 	const roomPanel = readFileSync(
 		projectPath('src/lib/components/academic/exam-schedule/ExamRoomAssignmentPanel.svelte'),

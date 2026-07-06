@@ -21,6 +21,7 @@
 		TableHeader,
 		TableRow
 	} from '$lib/components/ui/table';
+	import { compareExamDaysByDate } from '$lib/utils/examScheduleDayOrder';
 	import { Armchair, Plus } from 'lucide-svelte';
 
 	let {
@@ -53,7 +54,7 @@
 	let editorOpen = $state(false);
 	let editingAssignmentId = $state<string | null>(null);
 
-	const sortedDays = $derived([...days].sort((a, b) => a.sortOrder - b.sortOrder));
+	const sortedDays = $derived([...days].sort(compareExamDaysByDate));
 	const selectedDay = $derived(days.find((day) => day.id === selectedDayId) ?? sortedDays[0] ?? null);
 	const assignments = $derived<ExamDayRoomAssignmentView[]>(selectedDay?.roomAssignments ?? []);
 	const dayLabel = $derived(selectedDay ? formatDayDate(selectedDay.examDate, selectedDay.label) : 'เลือกวันสอบ');
