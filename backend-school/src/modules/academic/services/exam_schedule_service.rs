@@ -329,6 +329,48 @@ pub struct CandidateSession {
     pub ends_at: NaiveTime,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InvigilatorSessionWindow {
+    pub assignment_id: Uuid,
+    pub exam_day_id: Uuid,
+    pub staff_id: Uuid,
+    pub starts_at: NaiveTime,
+    pub ends_at: NaiveTime,
+}
+
+pub fn invigilator_workload_minutes(windows: &[InvigilatorSessionWindow]) -> i32 {
+    windows
+        .iter()
+        .map(|window| minutes_between_times(window.starts_at, window.ends_at))
+        .sum()
+}
+
+fn minutes_between_times(starts_at: NaiveTime, ends_at: NaiveTime) -> i32 {
+    let start_minutes = starts_at.num_seconds_from_midnight() / 60;
+    let end_minutes = ends_at.num_seconds_from_midnight() / 60;
+    end_minutes.saturating_sub(start_minutes) as i32
+}
+
+pub fn has_invigilator_time_conflict(
+    candidate_assignment_id: Uuid,
+    candidate_windows: &[InvigilatorSessionWindow],
+    existing_windows: &[InvigilatorSessionWindow],
+) -> bool {
+    candidate_windows.iter().any(|candidate| {
+        existing_windows.iter().any(|existing| {
+            existing.assignment_id != candidate_assignment_id
+                && existing.staff_id == candidate.staff_id
+                && existing.exam_day_id == candidate.exam_day_id
+                && time_ranges_overlap(
+                    candidate.starts_at,
+                    candidate.ends_at,
+                    existing.starts_at,
+                    existing.ends_at,
+                )
+        })
+    })
+}
+
 pub fn has_same_classroom_conflict(
     candidate: &CandidateSession,
     existing: &[CandidateSession],
@@ -2937,6 +2979,82 @@ mod tests {
             ends_at: t("10:30"),
         }];
         assert!(has_same_classroom_conflict(&candidate, &existing));
+    }
+
+    #[test]
+    fn invigilator_workload_sums_session_minutes_without_gaps() {
+        let assignment_id = Uuid::from_u128(1);
+        let staff_id = Uuid::from_u128(2);
+        let windows = vec![
+            InvigilatorSessionWindow {
+                assignment_id,
+                exam_day_id: Uuid::from_u128(10),
+                staff_id,
+                starts_at: t("08:30"),
+                ends_at: t("09:30"),
+            },
+            InvigilatorSessionWindow {
+                assignment_id,
+                exam_day_id: Uuid::from_u128(10),
+                staff_id,
+                starts_at: t("10:00"),
+                ends_at: t("11:30"),
+            },
+        ];
+
+        let minutes = invigilator_workload_minutes(&windows);
+
+        assert_eq!(minutes, 150);
+    }
+
+    #[test]
+    fn invigilator_conflict_rejects_overlapping_live_session_ranges() {
+        let staff_id = Uuid::from_u128(7);
+        let candidate = vec![InvigilatorSessionWindow {
+            assignment_id: Uuid::from_u128(1),
+            exam_day_id: Uuid::from_u128(10),
+            staff_id,
+            starts_at: t("08:30"),
+            ends_at: t("09:30"),
+        }];
+        let existing = vec![InvigilatorSessionWindow {
+            assignment_id: Uuid::from_u128(2),
+            exam_day_id: Uuid::from_u128(10),
+            staff_id,
+            starts_at: t("09:00"),
+            ends_at: t("10:00"),
+        }];
+
+        assert!(has_invigilator_time_conflict(
+            Uuid::from_u128(1),
+            &candidate,
+            &existing
+        ));
+    }
+
+    #[test]
+    fn invigilator_conflict_allows_non_overlapping_same_day_assignments() {
+        let staff_id = Uuid::from_u128(7);
+        let candidate = vec![InvigilatorSessionWindow {
+            assignment_id: Uuid::from_u128(1),
+            exam_day_id: Uuid::from_u128(10),
+            staff_id,
+            starts_at: t("08:30"),
+            ends_at: t("09:30"),
+        }];
+        let existing = vec![InvigilatorSessionWindow {
+            assignment_id: Uuid::from_u128(2),
+            exam_day_id: Uuid::from_u128(10),
+            staff_id,
+            starts_at: t("09:30"),
+            ends_at: t("10:30"),
+        }];
+
+        assert!(!has_invigilator_time_conflict(
+            Uuid::from_u128(1),
+            &candidate,
+            &existing
+        ));
     }
 
     #[test]
