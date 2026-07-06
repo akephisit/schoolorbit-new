@@ -215,12 +215,27 @@
 		editorOpen = true;
 	}
 
-	function resetStaffSearch() {
+	function cancelStaffSearchRequest() {
 		staffSearchRequestToken += 1;
-		staffSearch = '';
-		staffOptions = staff;
 		staffSearchLoading = false;
-		staffSearchError = '';
+	}
+
+	function syncDefaultStaffOptions() {
+		if (staffOptions !== staff) {
+			staffOptions = staff;
+		}
+		if (staffSearchLoading) {
+			staffSearchLoading = false;
+		}
+		if (staffSearchError) {
+			staffSearchError = '';
+		}
+	}
+
+	function resetStaffSearch() {
+		cancelStaffSearchRequest();
+		staffSearch = '';
+		syncDefaultStaffOptions();
 	}
 
 	function toggleStaff(staffId: string, checked: boolean) {
@@ -278,7 +293,7 @@
 		const search = staffSearch.trim();
 
 		if (!editorOpen || readonly || !onSearchStaff || !search) {
-			resetStaffSearch();
+			syncDefaultStaffOptions();
 			return;
 		}
 
@@ -304,7 +319,12 @@
 			}
 		}, 300);
 
-		return () => clearTimeout(timer);
+		return () => {
+			clearTimeout(timer);
+			if (requestToken === staffSearchRequestToken) {
+				cancelStaffSearchRequest();
+			}
+		};
 	});
 </script>
 

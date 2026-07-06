@@ -341,14 +341,22 @@ test('invigilator staff search invalidates stale requests when reset to default 
 		projectPath('src/lib/components/academic/exam-schedule/ExamInvigilatorPanel.svelte'),
 		'utf8'
 	);
+	const cancelStaffSearchRequest = localFunctionSource(panel, 'cancelStaffSearchRequest');
+	const syncDefaultStaffOptions = localFunctionSource(panel, 'syncDefaultStaffOptions');
 	const resetStaffSearch = localFunctionSource(panel, 'resetStaffSearch');
 	const loadAssignment = localFunctionSource(panel, 'loadAssignment');
 
-	assert.match(resetStaffSearch, /staffSearchRequestToken \+= 1/);
-	assert.match(resetStaffSearch, /staffOptions = staff/);
-	assert.match(resetStaffSearch, /staffSearchLoading = false/);
+	assert.match(cancelStaffSearchRequest, /staffSearchRequestToken \+= 1/);
+	assert.doesNotMatch(syncDefaultStaffOptions, /staffSearchRequestToken/);
+	assert.match(syncDefaultStaffOptions, /staffOptions = staff/);
+	assert.match(syncDefaultStaffOptions, /staffSearchLoading = false/);
+	assert.match(resetStaffSearch, /cancelStaffSearchRequest\(\)/);
+	assert.match(resetStaffSearch, /syncDefaultStaffOptions\(\)/);
 	assert.match(loadAssignment, /resetStaffSearch\(\)/);
-	assert.match(panel, /resetStaffSearch\(\);\s*return;/);
+	assert.match(panel, /syncDefaultStaffOptions\(\);\s*return;/);
+	assert.doesNotMatch(panel, /resetStaffSearch\(\);\s*return;/);
+	assert.match(panel, /return \(\) => \{/);
+	assert.match(panel, /cancelStaffSearchRequest\(\)/);
 	assert.match(panel, /bind:open={editorOpen}/);
 });
 
