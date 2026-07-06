@@ -282,6 +282,24 @@ test('exam room assignment panel keeps setup actions compact and labels rooms pl
 	assert.doesNotMatch(panel, /<div class="p-4">\s*\{#if readonly\}/);
 });
 
+test('exam room assignment panel hides already assigned classrooms and rooms from new selections', async () => {
+	const panel = await readProjectFile(
+		'src/lib/components/academic/exam-schedule/ExamRoomAssignmentPanel.svelte'
+	);
+
+	assert.match(panel, /usedClassroomIds/);
+	assert.match(panel, /usedRoomIds/);
+	assert.match(panel, /assignment\.id !== editingAssignmentId/);
+	assert.match(panel, /availableClassrooms/);
+	assert.match(panel, /availableRooms/);
+	assert.match(panel, /!usedClassroomIds\.has\(classroom\.id\) \|\| classroom\.id === classroomId/);
+	assert.match(panel, /!usedRoomIds\.has\(room\.id\) \|\| room\.id === roomId/);
+	assert.match(panel, /\{#each availableClassrooms as classroom \(classroom\.id\)\}/);
+	assert.match(panel, /\{#each availableRooms as room \(room\.id\)\}/);
+	assert.doesNotMatch(panel, /\{#each filteredClassrooms as classroom \(classroom\.id\)\}/);
+	assert.doesNotMatch(panel, /\{#each rooms as room \(room\.id\)\}/);
+});
+
 test('exam invigilator panel exposes room-first workflow and workload summary', () => {
 	const panelPath = 'src/lib/components/academic/exam-schedule/ExamInvigilatorPanel.svelte';
 	assert.equal(existsSync(projectPath(panelPath)), true, `${panelPath} should exist`);
@@ -518,7 +536,7 @@ test('staff timeline wires drag drop placement and accessible schedule dialog', 
 		'buildTimelineDragPreview',
 		'ondrop=',
 		'blocked-window',
-		'--slot-width: 24px',
+		'--slot-width: 40px',
 		'<Dialog.Root',
 		'onPlaceSession?.('
 	]) {
@@ -534,6 +552,37 @@ test('staff timeline wires drag drop placement and accessible schedule dialog', 
 	assert.match(block, /session-block/);
 	assert.match(block, /min-height: 2\.25rem/);
 	assert.match(block, /overflow: hidden/);
+});
+
+test('staff timeline can switch between all exam days and one selected day', () => {
+	const timeline = readFileSync(
+		projectPath('src/lib/components/academic/exam-schedule/ExamScheduleTimeline.svelte'),
+		'utf8'
+	);
+
+	assert.match(timeline, /let dayDisplayMode = \$state<'all' \| 'single'>\('all'\)/);
+	assert.match(timeline, /let selectedTimelineDayId = \$state\(''\)/);
+	assert.match(timeline, /const visibleDays = \$derived\(/);
+	assert.match(timeline, /dayDisplayMode === 'single'/);
+	assert.match(timeline, /selectedTimelineDayId/);
+	assert.match(timeline, /แสดงทุกวัน/);
+	assert.match(timeline, /เฉพาะวัน/);
+	assert.match(timeline, /bind:value=\{dayDisplayMode\}/);
+	assert.match(timeline, /bind:value=\{selectedTimelineDayId\}/);
+	assert.match(timeline, /\{#each visibleDays as day \(day\.id\)\}/);
+});
+
+test('staff timeline expands horizontal time columns for readable drag placement', () => {
+	const timeline = readFileSync(
+		projectPath('src/lib/components/academic/exam-schedule/ExamScheduleTimeline.svelte'),
+		'utf8'
+	);
+
+	assert.match(timeline, /const SLOT_WIDTH = 40/);
+	assert.match(timeline, /--slot-width: 40px/);
+	assert.match(timeline, /grid-cols-\[12rem_auto\]/);
+	assert.doesNotMatch(timeline, /const SLOT_WIDTH = 24/);
+	assert.doesNotMatch(timeline, /grid-cols-\[12rem_minmax\(0,1fr\)\]/);
 });
 
 test('scheduled exam session blocks show action-specific placement and removal state', () => {
@@ -553,7 +602,10 @@ test('scheduled exam session blocks show action-specific placement and removal s
 	assert.match(timeline, /placingSessionId/);
 	assert.match(timeline, /removing={unschedulingSessionId === session\.id}/);
 	assert.match(timeline, /placing={placingSessionId === session\.id}/);
-	assert.match(timeline, /readonly={placementDisabled && placingSessionId !== session\.id && unschedulingSessionId !== session\.id}/);
+	assert.match(
+		timeline,
+		/readonly=\{placementDisabled &&[\s\S]*placingSessionId !== session\.id &&[\s\S]*unschedulingSessionId !== session\.id\}/
+	);
 	assert.match(block, /placing = false/);
 	assert.match(block, /removing = false/);
 	assert.match(block, /draggable={!disabled}/);

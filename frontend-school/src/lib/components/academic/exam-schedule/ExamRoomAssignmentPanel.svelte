@@ -66,6 +66,28 @@
 				)
 			: classrooms
 	);
+	const usedClassroomIds = $derived(
+		new Set(
+			assignments
+				.filter((assignment) => assignment.id !== editingAssignmentId)
+				.map((assignment) => assignment.classroomId)
+		)
+	);
+	const usedRoomIds = $derived(
+		new Set(
+			assignments
+				.filter((assignment) => assignment.id !== editingAssignmentId)
+				.map((assignment) => assignment.roomId)
+		)
+	);
+	const availableClassrooms = $derived(
+		filteredClassrooms.filter(
+			(classroom) => !usedClassroomIds.has(classroom.id) || classroom.id === classroomId
+		)
+	);
+	const availableRooms = $derived(
+		rooms.filter((room) => !usedRoomIds.has(room.id) || room.id === roomId)
+	);
 	const selectedClassroomLabel = $derived(
 		classroomLabel(classrooms.find((classroom) => classroom.id === classroomId))
 	);
@@ -264,7 +286,7 @@
 							<Select.Root type="single" bind:value={classroomId}>
 								<Select.Trigger class="w-full">{selectedClassroomLabel}</Select.Trigger>
 								<Select.Content>
-									{#each filteredClassrooms as classroom (classroom.id)}
+									{#each availableClassrooms as classroom (classroom.id)}
 										<Select.Item value={classroom.id}>{classroomLabel(classroom)}</Select.Item>
 									{/each}
 								</Select.Content>
@@ -276,7 +298,7 @@
 							<Select.Root type="single" value={roomId} onValueChange={(value) => value && selectRoom(value)}>
 								<Select.Trigger class="w-full">{selectedRoomLabel}</Select.Trigger>
 								<Select.Content>
-									{#each rooms as room (room.id)}
+									{#each availableRooms as room (room.id)}
 										<Select.Item value={room.id}>{roomOptionLabel(room)}</Select.Item>
 									{/each}
 								</Select.Content>

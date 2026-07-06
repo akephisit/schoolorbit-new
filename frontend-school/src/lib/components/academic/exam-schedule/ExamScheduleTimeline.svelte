@@ -23,7 +23,7 @@
 	import ExamItemTray from './ExamItemTray.svelte';
 	import ExamSessionBlock from './ExamSessionBlock.svelte';
 
-	const SLOT_WIDTH = 24;
+	const SLOT_WIDTH = 40;
 
 	type DragPayload = {
 		examScheduleItemId: string;
@@ -69,8 +69,19 @@
 	let dialogError = $state('');
 	let dragPreview = $state<DragPreviewState | null>(null);
 	let activeDragPayload = $state<DragPayload | null>(null);
+	let dayDisplayMode = $state<'all' | 'single'>('all');
+	let selectedTimelineDayId = $state('');
 
 	const sortedDays = $derived([...workspace.days].sort((a, b) => a.sortOrder - b.sortOrder));
+	const selectedTimelineDay = $derived(
+		sortedDays.find((day) => day.id === selectedTimelineDayId) ?? sortedDays[0] ?? null
+	);
+	const selectedTimelineDayLabel = $derived(dayLabel(selectedTimelineDay));
+	const visibleDays = $derived(
+		dayDisplayMode === 'single'
+			? sortedDays.filter((day) => day.id === selectedTimelineDay?.id)
+			: sortedDays
+	);
 	const placementDisabled = $derived(readonly || !!placingItemId || !!unschedulingSessionId);
 	const placingSessionId = $derived(
 		placingItemId
@@ -350,6 +361,15 @@
 		const removed = await onUnscheduleSession?.(selectedSession.id);
 		if (removed) dialogOpen = false;
 	}
+
+	$effect(() => {
+		if (!selectedTimelineDayId && sortedDays[0]) {
+			selectedTimelineDayId = sortedDays[0].id;
+		}
+		if (selectedTimelineDayId && !sortedDays.some((day) => day.id === selectedTimelineDayId)) {
+			selectedTimelineDayId = sortedDays[0]?.id ?? '';
+		}
+	});
 </script>
 
 <section class="overflow-hidden rounded-md border bg-background">
@@ -360,33 +380,54 @@
 				ยังไม่จัด {workspace.unscheduledItems.length} · จัดแล้ว {workspace.scheduledSessions.length}
 			</p>
 		</div>
-		{#if localError}
-			<div class="rounded bg-destructive/10 px-3 py-2 text-sm text-destructive">{localError}</div>
-		{/if}
+		<div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
+			<Select.Root type="single" bind:value={dayDisplayMode}>
+				<Select.Trigger class="w-full sm:w-40">
+					{dayDisplayMode === 'all' ? 'แสดงทุกวัน' : 'เฉพาะวัน'}
+				</Select.Trigger>
+				<Select.Content>
+					<Select.Item value="all">แสดงทุกวัน</Select.Item>
+					<Select.Item value="single">เฉพาะวัน</Select.Item>
+				</Select.Content>
+			</Select.Root>
+			{#if dayDisplayMode === 'single'}
+				<Select.Root type="single" bind:value={selectedTimelineDayId}>
+					<Select.Trigger class="w-full sm:w-56">{selectedTimelineDayLabel}</Select.Trigger>
+					<Select.Content>
+						{#each sortedDays as day (day.id)}
+							<Select.Item value={day.id}>{dayLabel(day)}</Select.Item>
+						{/each}
+					</Select.Content>
+				</Select.Root>
+			{/if}
+			{#if localError}
+				<div class="rounded bg-destructive/10 px-3 py-2 text-sm text-destructive">{localError}</div>
+			{/if}
+		</div>
 	</div>
 
-	<div class="grid min-h-[32rem] lg:grid-cols-[20rem_minmax(0,1fr)]" style="--slot-width: 24px">
+	<div class="grid min-h-[32rem] lg:grid-cols-[20rem_minmax(0,1fr)]" style="--slot-width: 40px">
 		<ExamItemTray
 			unscheduledItems={workspace.unscheduledItems}
 			days={sortedDays}
 			scheduledSessions={workspace.scheduledSessions}
-				readonly={placementDisabled}
-				placingItemId={placingItemId}
-				unschedulingSessionId={unschedulingSessionId}
-				onPlaceSession={onPlaceSession}
-				onUnscheduleSession={onUnscheduleSession}
-				onDragStart={setActiveDragPayload}
-				onDragEnd={clearActiveDrag}
+			readonly={placementDisabled}
+			placingItemId={placingItemId}
+			unschedulingSessionId={unschedulingSessionId}
+			onPlaceSession={onPlaceSession}
+			onUnscheduleSession={onUnscheduleSession}
+			onDragStart={setActiveDragPayload}
+			onDragEnd={clearActiveDrag}
 		/>
 
 		<div class="min-w-0 overflow-auto">
 			{#if sortedDays.length === 0}
 				<PageState title="ยังไม่มีวันสอบ" description="เพิ่มวันสอบในแท็บ Setup ก่อนจัดเวลา" />
-			{:else if sortedDays.every((day) => day.roomAssignments.length === 0)}
+			{:else if visibleDays.every((day) => day.roomAssignments.length === 0)}
 				<PageState title="ยังไม่มีแถวห้องสอบ" description="กำหนดห้องสอบประจำวันในแท็บ Rooms ก่อนจัดเวลา" />
 			{:else}
 				<div class="space-y-6 p-4">
-					{#each sortedDays as day (day.id)}
+					{#each visibleDays as day (day.id)}
 						<section class="min-w-fit">
 							<div class="mb-2 flex items-center justify-between gap-3">
 								<div>
@@ -399,7 +440,7 @@
 							</div>
 
 							<div class="overflow-hidden rounded-md border">
-								<div class="grid grid-cols-[12rem_minmax(0,1fr)] border-b bg-muted/40">
+								<div class="grid grid-cols-[12rem_auto] border-b bg-muted/40">
 									<div class="border-r px-3 py-2 text-xs font-medium text-muted-foreground">
 										ห้องเรียน / ห้องสอบ
 									</div>
@@ -419,7 +460,7 @@
 								</div>
 
 								{#each day.roomAssignments as assignment (assignment.id)}
-									<div class="grid grid-cols-[12rem_minmax(0,1fr)] border-b last:border-b-0">
+									<div class="grid grid-cols-[12rem_auto] border-b last:border-b-0">
 										<div class="border-r px-3 py-3">
 											<div class="truncate text-sm font-medium">
 												{assignment.classroomName ?? assignment.classroomId}
@@ -483,15 +524,17 @@
 
 												{#each sessionsForAssignment(day, assignment.classroomId) as session (session.id)}
 													<ExamSessionBlock
-															{session}
-															leftPx={leftPx(day, session.startsAt)}
-															widthPx={widthPx(session.durationMinutes)}
-															placing={placingSessionId === session.id}
-															removing={unschedulingSessionId === session.id}
-															readonly={placementDisabled && placingSessionId !== session.id && unschedulingSessionId !== session.id}
-															onDragStart={handleSessionDragStart}
-															onOpen={openSessionDialog}
-														/>
+														{session}
+														leftPx={leftPx(day, session.startsAt)}
+														widthPx={widthPx(session.durationMinutes)}
+														placing={placingSessionId === session.id}
+														removing={unschedulingSessionId === session.id}
+														readonly={placementDisabled &&
+															placingSessionId !== session.id &&
+															unschedulingSessionId !== session.id}
+														onDragStart={handleSessionDragStart}
+														onOpen={openSessionDialog}
+													/>
 												{/each}
 											</div>
 										</div>
