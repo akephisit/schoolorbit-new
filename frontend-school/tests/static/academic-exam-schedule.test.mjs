@@ -664,6 +664,18 @@ test('staff workspace reloads by route round id and keeps form input on failed s
 	assert.match(roundDialog, /if \(created\) resetForm\(\)/);
 });
 
+test('exam day setup uses the shared shadcn date picker for exam date selection', () => {
+	const dayPanel = readFileSync(
+		projectPath('src/lib/components/academic/exam-schedule/ExamDaySetupPanel.svelte'),
+		'utf8'
+	);
+
+	assert.match(dayPanel, /from '\$lib\/components\/ui\/date-picker'/);
+	assert.match(dayPanel, /<DatePicker[\s\S]*id="exam-day-date"[\s\S]*bind:value=\{examDate\}/);
+	assert.match(dayPanel, /placeholder="เลือกวันสอบ"/);
+	assert.doesNotMatch(dayPanel, /<Input[\s\S]*id="exam-day-date"[\s\S]*type="date"/);
+});
+
 test('exam room assignment panel leaves invigilator search out of room editing', () => {
 	const roomPanel = readFileSync(
 		projectPath('src/lib/components/academic/exam-schedule/ExamRoomAssignmentPanel.svelte'),

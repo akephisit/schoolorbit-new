@@ -7,6 +7,7 @@
 	import * as Popover from '$lib/components/ui/popover/index.js';
 
 	interface Props {
+		id?: string;
 		value?: string; // ISO date string (YYYY-MM-DD)
 		placeholder?: string;
 		class?: string;
@@ -14,6 +15,7 @@
 	}
 
 	let {
+		id,
 		value = $bindable(),
 		placeholder = 'เลือกวันที่',
 		class: className = '',
@@ -64,6 +66,7 @@
 					className
 				)}
 				{...props}
+				{id}
 			>
 				<CalendarIcon class="me-2 size-4" />
 				{value && dateValue

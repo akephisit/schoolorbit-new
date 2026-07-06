@@ -5,6 +5,7 @@
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import { Checkbox } from '$lib/components/ui/checkbox';
+	import { DatePicker } from '$lib/components/ui/date-picker';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import {
@@ -242,7 +243,11 @@
 					<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
 						<div class="grid gap-2">
 							<Label for="exam-day-date">วันที่</Label>
-							<Input id="exam-day-date" type="date" bind:value={examDate} required />
+							<DatePicker
+								id="exam-day-date"
+								bind:value={examDate}
+								placeholder="เลือกวันสอบ"
+							/>
 						</div>
 						<div class="grid gap-2">
 							<Label for="exam-day-label">ป้ายชื่อ</Label>
