@@ -256,6 +256,41 @@ fn active_migrations_are_clean_sequential_timeline() {
 }
 
 #[test]
+fn exam_invigilator_conflict_migration_drops_day_staff_unique_constraint() {
+    let creation_migration = read_source(
+        manifest_dir()
+            .join("migrations")
+            .join("019_academic_exam_schedule.sql"),
+    );
+    let conflict_migration = read_source(
+        manifest_dir()
+            .join("migrations")
+            .join("020_academic_exam_invigilator_live_range_conflicts.sql"),
+    );
+
+    assert!(
+        creation_migration.contains("UNIQUE (exam_day_id, staff_id)"),
+        "migration 019 should remain immutable and document the original day/staff uniqueness"
+    );
+    assert!(
+        creation_migration.contains("UNIQUE (day_room_assignment_id, staff_id)"),
+        "room-assignment/staff uniqueness must remain part of the original schema"
+    );
+    assert!(conflict_migration.contains(
+        "DROP CONSTRAINT IF EXISTS academic_exam_day_invigilators_exam_day_id_staff_id_key"
+    ));
+    assert!(conflict_migration
+        .contains("CREATE INDEX IF NOT EXISTS idx_academic_exam_day_invigilators_exam_day_staff"));
+    assert!(
+        conflict_migration.contains("ON academic_exam_day_invigilators (exam_day_id, staff_id)")
+    );
+    assert!(
+        !conflict_migration.contains("UNIQUE INDEX"),
+        "staff/day lookup index must not be unique"
+    );
+}
+
+#[test]
 fn organization_baseline_migration_defines_canonical_school_structure() {
     let migration_path = active_baseline_migration_path();
     let source = read_source(&migration_path);

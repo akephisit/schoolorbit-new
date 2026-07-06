@@ -31,6 +31,7 @@ pub struct WorkspaceCounts {
 const EXAM_SESSION_SLOT_MINUTES: u32 = 15;
 const EXAM_SESSION_CLASSROOM_LOCK_NAMESPACE: i64 = 0x4558_5343_4C52_0000;
 const EXAM_SESSION_ROOM_LOCK_NAMESPACE: i64 = 0x4558_5352_4F4D_0000;
+const EXAM_INVIGILATOR_STAFF_LOCK_NAMESPACE: i64 = 0x4558_5349_4E56_0000;
 
 #[derive(Debug, sqlx::FromRow)]
 struct ExamDayGradeLevelRow {
@@ -473,6 +474,39 @@ async fn lock_exam_session_conflict_scope(
     Ok(())
 }
 
+fn exam_invigilator_staff_lock_keys(exam_day_id: Uuid, staff_ids: &[Uuid]) -> Vec<i64> {
+    let mut keys = unique_uuids(staff_ids.to_vec())
+        .into_iter()
+        .map(|staff_id| {
+            exam_session_conflict_lock_key(
+                EXAM_INVIGILATOR_STAFF_LOCK_NAMESPACE,
+                exam_day_id,
+                staff_id,
+            )
+        })
+        .collect::<Vec<_>>();
+    keys.sort_unstable();
+    keys
+}
+
+async fn lock_exam_invigilator_staff_conflict_scope(
+    tx: &mut Transaction<'_, Postgres>,
+    exam_day_id: Uuid,
+    staff_ids: &[Uuid],
+) -> Result<(), AppError> {
+    if staff_ids.is_empty() {
+        return Ok(());
+    }
+
+    for lock_key in exam_invigilator_staff_lock_keys(exam_day_id, staff_ids) {
+        sqlx::query("SELECT pg_advisory_xact_lock($1)")
+            .bind(lock_key)
+            .execute(&mut **tx)
+            .await?;
+    }
+    Ok(())
+}
+
 pub fn validate_session_window(
     starts_at: NaiveTime,
     duration_minutes: i32,
@@ -884,6 +918,7 @@ pub async fn get_invigilator_workspace(
     pool: &PgPool,
     round_id: Uuid,
 ) -> Result<ExamInvigilatorWorkspace, AppError> {
+    fetch_round(pool, round_id).await?;
     let assignments = fetch_invigilator_assignment_summaries(pool, round_id).await?;
     let assignment_ids: Vec<Uuid> = assignments.iter().map(|item| item.assignment_id).collect();
     let mut invigilators_by_assignment =
@@ -1175,6 +1210,8 @@ pub async fn upsert_day_room_assignment(
     .map_err(map_day_room_assignment_write_error)?;
 
     if let Some(invigilator_staff_ids) = invigilator_staff_ids {
+        lock_exam_invigilator_staff_conflict_scope(&mut tx, exam_day_id, &invigilator_staff_ids)
+            .await?;
         validate_invigilator_time_conflicts(
             &mut tx,
             day_context.exam_round_id,
@@ -1216,6 +1253,8 @@ pub async fn update_assignment_invigilators(
     .fetch_one(&mut *tx)
     .await?;
 
+    lock_exam_invigilator_staff_conflict_scope(&mut tx, exam_day_id, &invigilator_staff_ids)
+        .await?;
     validate_invigilator_time_conflicts(
         &mut tx,
         context.exam_round_id,
@@ -3499,6 +3538,77 @@ mod tests {
             &candidate,
             &existing
         ));
+    }
+
+    #[test]
+    fn exam_invigilator_staff_lock_keys_are_sorted_deduped_and_stable() {
+        let exam_day_id = Uuid::parse_str("01020304-0506-0708-090a-0b0c0d0e0f10").unwrap();
+        let staff_a = Uuid::parse_str("11121314-1516-1718-191a-1b1c1d1e1f20").unwrap();
+        let staff_b = Uuid::parse_str("21222324-2526-2728-292a-2b2c2d2e2f30").unwrap();
+
+        let keys = exam_invigilator_staff_lock_keys(exam_day_id, &[staff_b, staff_a, staff_a]);
+
+        assert_eq!(
+            keys,
+            exam_invigilator_staff_lock_keys(exam_day_id, &[staff_a, staff_b])
+        );
+        assert_eq!(keys.len(), 2);
+        assert!(keys[0] < keys[1]);
+    }
+
+    #[test]
+    fn update_assignment_invigilators_locks_staff_scope_before_conflict_validation() {
+        let source = include_str!("exam_schedule_service.rs");
+        let update_start = source
+            .find("pub async fn update_assignment_invigilators")
+            .unwrap();
+        let update_body = &source[update_start..];
+        let lock_position = update_body
+            .find("lock_exam_invigilator_staff_conflict_scope")
+            .unwrap();
+        let validation_position = update_body
+            .find("validate_invigilator_time_conflicts")
+            .unwrap();
+
+        assert!(lock_position < validation_position);
+    }
+
+    #[test]
+    fn upsert_day_room_assignment_locks_optional_invigilator_scope_before_conflict_validation() {
+        let source = include_str!("exam_schedule_service.rs");
+        let upsert_start = source
+            .find("pub async fn upsert_day_room_assignment")
+            .unwrap();
+        let upsert_tail = &source[upsert_start..];
+        let update_start = upsert_tail
+            .find("pub async fn update_assignment_invigilators")
+            .unwrap();
+        let upsert_body = &upsert_tail[..update_start];
+        let lock_position = upsert_body
+            .find("lock_exam_invigilator_staff_conflict_scope")
+            .unwrap();
+        let validation_position = upsert_body
+            .find("validate_invigilator_time_conflicts")
+            .unwrap();
+
+        assert!(lock_position < validation_position);
+    }
+
+    #[test]
+    fn get_invigilator_workspace_checks_round_before_assignment_queries() {
+        let source = include_str!("exam_schedule_service.rs");
+        let workspace_start = source
+            .find("pub async fn get_invigilator_workspace")
+            .unwrap();
+        let workspace_body = &source[workspace_start..];
+        let round_position = workspace_body
+            .find("fetch_round(pool, round_id).await?")
+            .unwrap();
+        let assignments_position = workspace_body
+            .find("fetch_invigilator_assignment_summaries")
+            .unwrap();
+
+        assert!(round_position < assignments_position);
     }
 
     #[test]
