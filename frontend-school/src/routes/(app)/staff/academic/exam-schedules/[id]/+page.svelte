@@ -53,7 +53,10 @@
 	let staff = $state<StaffListItem[]>([]);
 	let invigilatorWorkspace = $state<ExamInvigilatorWorkspace | null>(null);
 	let loadingInvigilators = $state(false);
+	let invigilatorLoadError = $state('');
 	let savingInvigilatorAssignmentId = $state<string | null>(null);
+	let staffLoading = $state(false);
+	let staffRequested = $state(false);
 	let optionsLoading = $state(false);
 	let optionsRequested = $state(false);
 	let importing = $state(false);
@@ -68,7 +71,7 @@
 	let workspaceRequestToken = 0;
 	let managementOptionsRequestToken = 0;
 	let invigilatorWorkspaceRequestToken = 0;
-	let lastInvigilatorLoadRoundId = '';
+	let staffOptionsRequestToken = 0;
 
 	const canManageExamSchedules = $derived(
 		$can.has(PERMISSIONS.ACADEMIC_EXAM_SCHEDULE_MANAGE_SCHOOL)
@@ -98,9 +101,12 @@
 		staff = [];
 		invigilatorWorkspace = null;
 		loadingInvigilators = false;
+		invigilatorLoadError = '';
 		savingInvigilatorAssignmentId = null;
+		staffLoading = false;
+		staffRequested = false;
 		invigilatorWorkspaceRequestToken += 1;
-		lastInvigilatorLoadRoundId = '';
+		staffOptionsRequestToken += 1;
 		optionsRequested = false;
 		optionsLoading = false;
 		importing = false;
@@ -146,10 +152,16 @@
 		}
 	}
 
-	async function refreshWorkspace() {
+	async function refreshWorkspace(refreshInvigilators = false) {
 		const roundId = workspace?.round.id ?? loadedRoundId;
 		if (!roundId) return;
+		const shouldRefreshInvigilators =
+			refreshInvigilators || invigilatorWorkspace !== null || activeTab === 'invigilators';
+
 		await loadWorkspace(roundId, false);
+		if (shouldRefreshInvigilators) {
+			await refreshOrInvalidateInvigilators(roundId);
+		}
 	}
 
 	function isCurrentManagementOptionsRequest(
@@ -182,16 +194,14 @@
 		optionsRequested = true;
 		optionsLoading = true;
 		try {
-			const [classroomResponse, roomResponse, staffResponse] = await Promise.all([
+			const [classroomResponse, roomResponse] = await Promise.all([
 				listClassrooms(yearId ? { year_id: yearId } : undefined),
-				listRooms(),
-				listStaff({ status: 'active', page: 1, page_size: 40 })
+				listRooms()
 			]);
 			if (!isCurrentManagementOptionsRequest(requestToken, roundId, semesterId, yearId)) return;
 
 			classrooms = classroomResponse.data;
 			rooms = roomResponse.data;
-			staff = staffResponse.data;
 		} catch (loadError) {
 			if (!isCurrentManagementOptionsRequest(requestToken, roundId, semesterId, yearId)) return;
 
@@ -203,6 +213,35 @@
 			if (!isCurrentManagementOptionsRequest(requestToken, roundId, semesterId, yearId)) return;
 
 			optionsLoading = false;
+		}
+	}
+
+	function isCurrentStaffOptionsRequest(requestToken: number, roundId: string): boolean {
+		return requestToken === staffOptionsRequestToken && workspace?.round.id === roundId;
+	}
+
+	async function loadInvigilatorStaffOptions() {
+		const roundId = workspace?.round.id ?? loadedRoundId;
+		if (!roundId || staffLoading || staffRequested) return;
+
+		const requestToken = ++staffOptionsRequestToken;
+		staffRequested = true;
+		staffLoading = true;
+		try {
+			const staffResponse = await listStaff({ status: 'active', page: 1, page_size: 40 });
+			if (!isCurrentStaffOptionsRequest(requestToken, roundId)) return;
+
+			staff = staffResponse.data;
+		} catch (loadError) {
+			if (!isCurrentStaffOptionsRequest(requestToken, roundId)) return;
+
+			toast.error(
+				loadError instanceof Error ? loadError.message : 'โหลดรายชื่อครูสำหรับจัดกรรมการไม่สำเร็จ'
+			);
+		} finally {
+			if (isCurrentStaffOptionsRequest(requestToken, roundId)) {
+				staffLoading = false;
+			}
 		}
 	}
 
@@ -221,6 +260,7 @@
 
 		const requestToken = ++invigilatorWorkspaceRequestToken;
 		loadingInvigilators = true;
+		invigilatorLoadError = '';
 		try {
 			const invigilatorData = await getExamInvigilatorWorkspace(roundId);
 			if (requestToken !== invigilatorWorkspaceRequestToken) return;
@@ -229,13 +269,27 @@
 		} catch (loadError) {
 			if (requestToken !== invigilatorWorkspaceRequestToken) return;
 
-			toast.error(
-				loadError instanceof Error ? loadError.message : 'โหลดข้อมูลกรรมการคุมสอบไม่สำเร็จ'
-			);
+			invigilatorWorkspace = null;
+			invigilatorLoadError =
+				loadError instanceof Error ? loadError.message : 'โหลดข้อมูลกรรมการคุมสอบไม่สำเร็จ';
+			toast.error(invigilatorLoadError);
 		} finally {
 			if (requestToken === invigilatorWorkspaceRequestToken) {
 				loadingInvigilators = false;
 			}
+		}
+	}
+
+	async function refreshOrInvalidateInvigilators(roundId = workspace?.round.id ?? loadedRoundId) {
+		if (!roundId) return;
+
+		invigilatorLoadError = '';
+		if (activeTab === 'invigilators') {
+			await loadInvigilators(roundId);
+		} else {
+			invigilatorWorkspaceRequestToken += 1;
+			loadingInvigilators = false;
+			invigilatorWorkspace = null;
 		}
 	}
 
@@ -250,7 +304,7 @@
 			toast.success(
 				`นำเข้า ${result.insertedCount} รายการ ข้ามรายการเดิม ${result.skippedExistingCount}`
 			);
-			await refreshWorkspace();
+			await refreshWorkspace(true);
 		} catch (importError) {
 			toast.error(importError instanceof Error ? importError.message : 'นำเข้ารายการสอบไม่สำเร็จ');
 		} finally {
@@ -266,7 +320,7 @@
 			const round = await publishExamRound(workspace.round.id);
 			workspace = { ...workspace, round };
 			toast.success('เผยแพร่ตารางสอบแล้ว');
-			await refreshWorkspace();
+			await refreshWorkspace(true);
 		} catch (publishError) {
 			toast.error(
 				publishError instanceof Error ? publishError.message : 'เผยแพร่ตารางสอบไม่สำเร็จ'
@@ -284,7 +338,7 @@
 		try {
 			await upsertExamDay(roundId, input);
 			toast.success('บันทึกวันสอบแล้ว');
-			await refreshWorkspace();
+			await refreshWorkspace(true);
 			return true;
 		} catch (saveError) {
 			toast.error(saveError instanceof Error ? saveError.message : 'บันทึกวันสอบไม่สำเร็จ');
@@ -301,7 +355,7 @@
 		try {
 			await deleteExamDay(examDayId);
 			toast.success('ลบวันสอบแล้ว');
-			await refreshWorkspace();
+			await refreshWorkspace(true);
 		} catch (deleteError) {
 			toast.error(deleteError instanceof Error ? deleteError.message : 'ลบวันสอบไม่สำเร็จ');
 		} finally {
@@ -317,7 +371,7 @@
 		try {
 			await upsertDayRoomAssignment(examDayId, input);
 			toast.success('บันทึกห้องสอบแล้ว');
-			await refreshWorkspace();
+			await refreshWorkspace(true);
 			return true;
 		} catch (saveError) {
 			toast.error(saveError instanceof Error ? saveError.message : 'บันทึกห้องสอบไม่สำเร็จ');
@@ -338,7 +392,7 @@
 		try {
 			await updateExamAssignmentInvigilators(assignmentId, { invigilatorStaffIds: staffIds });
 			toast.success('บันทึกกรรมการคุมสอบแล้ว');
-			await Promise.all([refreshWorkspace(), loadInvigilators(roundId)]);
+			await Promise.all([loadWorkspace(roundId, false), loadInvigilators(roundId)]);
 			return true;
 		} catch (saveError) {
 			toast.error(saveError instanceof Error ? saveError.message : 'บันทึกกรรมการคุมสอบไม่สำเร็จ');
@@ -353,7 +407,7 @@
 		try {
 			const seats = await generateSeatsForAssignment(assignmentId, { regenerate: true });
 			toast.success(`สร้างเลขที่นั่ง ${seats.length} รายการ`);
-			await refreshWorkspace();
+			await refreshWorkspace(true);
 		} catch (seatError) {
 			toast.error(seatError instanceof Error ? seatError.message : 'สร้างเลขที่นั่งไม่สำเร็จ');
 		} finally {
@@ -370,7 +424,7 @@
 				startsAt: input.startsAt
 			});
 			toast.success('บันทึกเวลาสอบแล้ว');
-			await refreshWorkspace();
+			await refreshWorkspace(true);
 			return true;
 		} catch (placeError) {
 			toast.error(placeError instanceof Error ? placeError.message : 'บันทึกเวลาสอบไม่สำเร็จ');
@@ -401,10 +455,21 @@
 			roundId &&
 			invigilatorWorkspace === null &&
 			!loadingInvigilators &&
-			lastInvigilatorLoadRoundId !== roundId
+			!invigilatorLoadError
 		) {
-			lastInvigilatorLoadRoundId = roundId;
 			loadInvigilators(roundId);
+		}
+	});
+
+	$effect(() => {
+		if (
+			activeTab === 'invigilators' &&
+			canManageExamSchedules &&
+			workspace?.round.status !== 'published' &&
+			!staffRequested &&
+			!staffLoading
+		) {
+			loadInvigilatorStaffOptions();
 		}
 	});
 
@@ -443,7 +508,7 @@
 					size="sm"
 					loading={refreshing}
 					loadingLabel="กำลังโหลด..."
-					onclick={refreshWorkspace}
+					onclick={() => refreshWorkspace(true)}
 				>
 					<RefreshCw class="h-4 w-4" />
 					รีเฟรช
@@ -550,10 +615,13 @@
 						days={workspace.days}
 						workspace={invigilatorWorkspace}
 						{staff}
+						loading={loadingInvigilators}
+						loadError={invigilatorLoadError}
 						readonly={!canManageExamSchedules || workspace.round.status === 'published'}
 						savingAssignmentId={savingInvigilatorAssignmentId}
 						onSaveInvigilators={handleSaveInvigilators}
 						onSearchStaff={searchStaffOptions}
+						onRetry={() => loadInvigilators()}
 					/>
 				</Tabs.Content>
 			</Tabs.Root>

@@ -35,18 +35,24 @@
 		days = [],
 		workspace,
 		staff = [],
+		loading = false,
+		loadError = '',
 		readonly = false,
 		savingAssignmentId = null,
 		onSaveInvigilators,
-		onSearchStaff
+		onSearchStaff,
+		onRetry
 	}: {
 		days: ExamDayDetail[];
 		workspace: ExamInvigilatorWorkspace | null;
 		staff: StaffListItem[];
+		loading?: boolean;
+		loadError?: string;
 		readonly?: boolean;
 		savingAssignmentId?: string | null;
 		onSaveInvigilators?: (assignmentId: string, staffIds: string[]) => Promise<boolean> | boolean;
 		onSearchStaff?: (search: string) => Promise<StaffListItem[]>;
+		onRetry?: () => Promise<void> | void;
 	} = $props();
 
 	let selectedDayId = $state('');
@@ -205,10 +211,16 @@
 		selectedAssignmentId = assignment.assignmentId;
 		selectedStaffIds = assignment.invigilators.map((invigilator) => invigilator.staffId);
 		selectedStaffCache = staff.filter((staffItem) => selectedStaffIds.includes(staffItem.id));
+		resetStaffSearch();
+		editorOpen = true;
+	}
+
+	function resetStaffSearch() {
+		staffSearchRequestToken += 1;
 		staffSearch = '';
 		staffOptions = staff;
+		staffSearchLoading = false;
 		staffSearchError = '';
-		editorOpen = true;
 	}
 
 	function toggleStaff(staffId: string, checked: boolean) {
@@ -266,9 +278,7 @@
 		const search = staffSearch.trim();
 
 		if (!editorOpen || readonly || !onSearchStaff || !search) {
-			staffOptions = staff;
-			staffSearchLoading = false;
-			staffSearchError = '';
+			resetStaffSearch();
 			return;
 		}
 
@@ -298,10 +308,20 @@
 	});
 </script>
 
-{#if workspace === null}
+{#if loadError}
 	<section class="rounded-md border bg-background">
 		<PageState
-			title="กำลังโหลดข้อมูลกรรมการคุมสอบ"
+			variant="error"
+			title="โหลดข้อมูลกรรมการคุมสอบไม่สำเร็จ"
+			description={loadError}
+			actionLabel="ลองอีกครั้ง"
+			onaction={onRetry}
+		/>
+	</section>
+{:else if workspace === null}
+	<section class="rounded-md border bg-background">
+		<PageState
+			title={loading ? 'กำลังโหลดข้อมูลกรรมการคุมสอบ' : 'ยังไม่มีข้อมูลกรรมการคุมสอบ'}
 			description="ข้อมูลอ้างอิงจากห้องสอบที่กำหนดไว้ในรอบนี้"
 		/>
 	</section>
