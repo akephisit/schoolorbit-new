@@ -49,12 +49,14 @@
 		workspace,
 		readonly = false,
 		placingItemId = null,
-		onPlaceSession
+		onPlaceSession,
+		onUnscheduleSession
 	}: {
 		workspace: ExamScheduleWorkspace;
 		readonly?: boolean;
 		placingItemId?: string | null;
 		onPlaceSession?: (input: PlaceExamSessionInput) => Promise<boolean> | boolean;
+		onUnscheduleSession?: (sessionId: string) => Promise<boolean> | boolean;
 	} = $props();
 
 	let localError = $state('');
@@ -309,6 +311,13 @@
 		if (placed) dialogOpen = false;
 		else dialogError = localError;
 	}
+
+	async function removeSelectedSession() {
+		if (!selectedSession || placementDisabled) return;
+
+		const removed = await onUnscheduleSession?.(selectedSession.id);
+		if (removed) dialogOpen = false;
+	}
 </script>
 
 <section class="overflow-hidden rounded-md border bg-background">
@@ -332,6 +341,7 @@
 			readonly={placementDisabled}
 			placingItemId={placingItemId}
 			onPlaceSession={onPlaceSession}
+			onUnscheduleSession={onUnscheduleSession}
 			onDragEnd={clearDragPreview}
 		/>
 
@@ -502,6 +512,15 @@
 
 		<Dialog.Footer>
 			<Button variant="outline" onclick={() => (dialogOpen = false)}>ยกเลิก</Button>
+			<LoadingButton
+				variant="destructive"
+				loading={placingItemId === selectedSession?.examScheduleItemId}
+				loadingLabel="กำลังเอาออก..."
+				onclick={removeSelectedSession}
+				disabled={!selectedSession || placementDisabled}
+			>
+				เอาออกจากตาราง
+			</LoadingButton>
 			<LoadingButton
 				loading={placingItemId === selectedSession?.examScheduleItemId}
 				loadingLabel="กำลังบันทึก..."

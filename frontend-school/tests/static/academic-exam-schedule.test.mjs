@@ -486,6 +486,28 @@ test('staff timeline renders duration-aware drag preview states', () => {
 	assert.match(tray, /ondragend/);
 });
 
+test('scheduled exam sessions can be removed through dialog and tray drop', () => {
+	const page = readFileSync(
+		projectPath('src/routes/(app)/staff/academic/exam-schedules/[id]/+page.svelte'),
+		'utf8'
+	);
+	const timeline = readFileSync(
+		projectPath('src/lib/components/academic/exam-schedule/ExamScheduleTimeline.svelte'),
+		'utf8'
+	);
+	const tray = readFileSync(
+		projectPath('src/lib/components/academic/exam-schedule/ExamItemTray.svelte'),
+		'utf8'
+	);
+
+	assert.match(tray, /onUnscheduleSession/);
+	assert.match(tray, /ondrop/);
+	assert.match(timeline, /เอาออกจากตาราง/);
+	assert.match(timeline, /onUnscheduleSession/);
+	assert.match(page, /deleteExamSession/);
+	assert.match(page, /handleUnscheduleExamSession/);
+});
+
 test('staff workspace reloads by route round id and keeps form input on failed saves', () => {
 	const page = readFileSync(
 		projectPath('src/routes/(app)/staff/academic/exam-schedules/[id]/+page.svelte'),

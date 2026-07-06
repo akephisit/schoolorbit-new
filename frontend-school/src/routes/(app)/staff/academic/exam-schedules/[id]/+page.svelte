@@ -9,6 +9,7 @@
 	} from '$lib/api/academic';
 	import {
 		deleteExamDay,
+		deleteExamSession,
 		generateSeatsForAssignment,
 		getExamInvigilatorWorkspace,
 		getExamScheduleWorkspace,
@@ -434,6 +435,30 @@
 		}
 	}
 
+	async function handleUnscheduleExamSession(sessionId: string): Promise<boolean> {
+		const session = workspace?.scheduledSessions.find((item) => item.id === sessionId);
+		if (!session || !workspace || !canManageExamSchedules || workspace.round.status === 'published') {
+			return false;
+		}
+
+		placingItemId = session.examScheduleItemId;
+		try {
+			await deleteExamSession(sessionId);
+			toast.success('เอารายการสอบออกจากตารางแล้ว');
+			await refreshWorkspace(true);
+			return true;
+		} catch (deleteError) {
+			toast.error(
+				deleteError instanceof Error
+					? deleteError.message
+					: 'เอารายการสอบออกจากตารางไม่สำเร็จ'
+			);
+			return false;
+		} finally {
+			placingItemId = null;
+		}
+	}
+
 	function statusLabel(status: ExamRoundStatus): string {
 		return status === 'published' ? 'เผยแพร่แล้ว' : 'ฉบับร่าง';
 	}
@@ -607,6 +632,7 @@
 						readonly={!canManageExamSchedules || workspace.round.status === 'published'}
 						{placingItemId}
 						onPlaceSession={handlePlaceExamSession}
+						onUnscheduleSession={handleUnscheduleExamSession}
 					/>
 				</Tabs.Content>
 

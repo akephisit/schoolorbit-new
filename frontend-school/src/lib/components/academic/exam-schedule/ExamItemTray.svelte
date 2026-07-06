@@ -15,6 +15,14 @@
 	import { addMinutes, validateExamSessionPlacement } from '$lib/utils/examScheduleTime';
 	import { CalendarPlus, GripVertical } from 'lucide-svelte';
 
+	type DragPayload = {
+		examScheduleItemId: string;
+		classroomId: string;
+		gradeLevelId: string;
+		durationMinutes: number;
+		sourceSessionId?: string;
+	};
+
 	let {
 		unscheduledItems = [],
 		days = [],
@@ -22,6 +30,7 @@
 		readonly = false,
 		placingItemId = null,
 		onPlaceSession,
+		onUnscheduleSession,
 		onDragEnd
 	}: {
 		unscheduledItems: ExamScheduleItem[];
@@ -30,6 +39,7 @@
 		readonly?: boolean;
 		placingItemId?: string | null;
 		onPlaceSession?: (input: PlaceExamSessionInput) => Promise<boolean> | boolean;
+		onUnscheduleSession?: (sessionId: string) => Promise<boolean> | boolean;
 		onDragEnd?: () => void;
 	} = $props();
 
@@ -81,6 +91,34 @@
 		);
 	}
 
+	function dragPayload(event: DragEvent): DragPayload | null {
+		const payload = event.dataTransfer?.getData('application/x-exam-schedule-item');
+		if (!payload) return null;
+
+		try {
+			return JSON.parse(payload) as DragPayload;
+		} catch {
+			return null;
+		}
+	}
+
+	function handleDragOver(event: DragEvent) {
+		if (readonly) return;
+
+		event.preventDefault();
+		if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+	}
+
+	async function handleDrop(event: DragEvent) {
+		if (readonly) return;
+
+		event.preventDefault();
+		const payload = dragPayload(event);
+		if (!payload?.sourceSessionId) return;
+
+		await onUnscheduleSession?.(payload.sourceSessionId);
+	}
+
 	async function submitPlacement() {
 		if (!selectedItem || !selectedDay) return;
 
@@ -116,12 +154,23 @@
 	});
 </script>
 
-<section class="flex min-h-0 flex-col border-b bg-background lg:border-b-0 lg:border-r">
+<section
+	class="flex min-h-0 flex-col border-b bg-background lg:border-b-0 lg:border-r"
+	role="group"
+	aria-label="ถาดรายการสอบที่ยังไม่จัดเวลา"
+	ondragover={handleDragOver}
+	ondrop={handleDrop}
+>
 	<div class="border-b px-4 py-3">
 		<div class="flex items-center justify-between gap-3">
 			<div>
 				<h2 class="text-sm font-semibold">ยังไม่จัดเวลา</h2>
 				<p class="text-xs text-muted-foreground">{unscheduledItems.length} รายการจาก in_timetable</p>
+				{#if !readonly}
+					<p class="mt-1 text-xs text-muted-foreground">
+						ลากรายการที่จัดแล้วกลับมาที่นี่เพื่อเอาออกจากตาราง
+					</p>
+				{/if}
 			</div>
 			<Badge variant="outline">{unscheduledItems.length}</Badge>
 		</div>
