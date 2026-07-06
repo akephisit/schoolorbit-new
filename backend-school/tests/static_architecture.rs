@@ -855,6 +855,7 @@ fn academic_exam_schedule_routes_are_registered_and_authorized() {
         "\"/exam-schedules/sessions\"",
         "\"/exam-schedules/sessions/{session_id}\"",
         "\"/exam-schedules/{round_id}/invigilators\"",
+        "\"/exam-schedules/{round_id}/invigilator-staff-options\"",
         "\"/exam-schedules/room-assignments/{assignment_id}/invigilators\"",
         "\"/exam-schedules/{round_id}/publish\"",
     ] {
@@ -878,6 +879,7 @@ fn academic_exam_schedule_routes_are_registered_and_authorized() {
         "post(handlers::exam_schedule::place_session)",
         "delete(handlers::exam_schedule::delete_session)",
         "get(handlers::exam_schedule::get_invigilator_workspace)",
+        "get(handlers::exam_schedule::get_invigilator_staff_options)",
         "put(handlers::exam_schedule::update_assignment_invigilators)",
         "post(handlers::exam_schedule::publish_round)",
     ] {
@@ -921,6 +923,7 @@ fn academic_exam_schedule_routes_are_registered_and_authorized() {
         "generate_seats",
         "place_session",
         "delete_session",
+        "get_invigilator_staff_options",
         "update_assignment_invigilators",
     ] {
         assert_handler_permission(
