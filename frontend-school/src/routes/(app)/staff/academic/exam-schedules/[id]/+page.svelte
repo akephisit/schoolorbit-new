@@ -8,6 +8,7 @@
 		type Classroom
 	} from '$lib/api/academic';
 	import {
+		clearMismatchedExamItems,
 		deleteExamDay,
 		deleteExamSession,
 		generateSeatsForAssignment,
@@ -44,7 +45,7 @@
 	import * as Tabs from '$lib/components/ui/tabs';
 	import { PERMISSIONS } from '$lib/permissions/registry';
 	import { can } from '$lib/stores/permissions';
-	import { Download, RefreshCw, Send } from 'lucide-svelte';
+	import { Download, RefreshCw, Send, Trash2 } from 'lucide-svelte';
 
 	let { data }: PageProps = $props();
 
@@ -66,6 +67,7 @@
 	let optionsLoading = $state(false);
 	let optionsRequested = $state(false);
 	let importing = $state(false);
+	let clearingMismatchedItems = $state(false);
 	let publishing = $state(false);
 	let savingDay = $state(false);
 	let deletingDayId = $state<string | null>(null);
@@ -118,6 +120,7 @@
 		optionsRequested = false;
 		optionsLoading = false;
 		importing = false;
+		clearingMismatchedItems = false;
 		publishing = false;
 		savingDay = false;
 		deletingDayId = null;
@@ -322,6 +325,32 @@
 		}
 	}
 
+	async function handleClearMismatchedItems() {
+		if (!workspace) return;
+
+		const kindLabel = examRoundKindLabel(workspace.round.examKind);
+		if (
+			!window.confirm(
+				`ล้างรายการสอบที่ไม่ใช่${kindLabel}? รายการที่เคยจัดตารางไว้ของชุดนั้นจะถูกเอาออกด้วย`
+			)
+		) {
+			return;
+		}
+
+		clearingMismatchedItems = true;
+		try {
+			const result = await clearMismatchedExamItems(workspace.round.id);
+			toast.success(`ล้างรายการไม่ตรงรอบสอบ ${result.deletedCount} รายการ`);
+			await refreshWorkspace(true);
+		} catch (clearError) {
+			toast.error(
+				clearError instanceof Error ? clearError.message : 'ล้างรายการสอบที่ไม่ตรงรอบสอบไม่สำเร็จ'
+			);
+		} finally {
+			clearingMismatchedItems = false;
+		}
+	}
+
 	function isExamRoundKind(value: string): value is ExamRoundKind {
 		return value === 'midterm' || value === 'final';
 	}
@@ -482,7 +511,12 @@
 
 	async function handleUnscheduleExamSession(sessionId: string): Promise<boolean> {
 		const session = workspace?.scheduledSessions.find((item) => item.id === sessionId);
-		if (!session || !workspace || !canManageExamSchedules || workspace.round.status === 'published') {
+		if (
+			!session ||
+			!workspace ||
+			!canManageExamSchedules ||
+			workspace.round.status === 'published'
+		) {
 			return false;
 		}
 
@@ -494,9 +528,7 @@
 			return true;
 		} catch (deleteError) {
 			toast.error(
-				deleteError instanceof Error
-					? deleteError.message
-					: 'เอารายการสอบออกจากตารางไม่สำเร็จ'
+				deleteError instanceof Error ? deleteError.message : 'เอารายการสอบออกจากตารางไม่สำเร็จ'
 			);
 			return false;
 		} finally {
@@ -618,17 +650,6 @@
 							<Select.Item value="final">ปลายภาค</Select.Item>
 						</Select.Content>
 					</Select.Root>
-					<LoadingButton
-						size="sm"
-						variant="outline"
-						loading={importing}
-						loadingLabel="กำลังนำเข้า..."
-						onclick={handleImportItems}
-						disabled={workspace.round.status === 'published'}
-					>
-						<Download class="h-4 w-4" />
-						นำเข้าเฉพาะ {examRoundKindLabel(workspace.round.examKind)}
-					</LoadingButton>
 				{/if}
 				{#if canPublishExamSchedules}
 					<LoadingButton
@@ -694,6 +715,46 @@
 				</Tabs.Content>
 
 				<Tabs.Content value="schedule">
+					{#if canManageExamSchedules && workspace.round.status !== 'published'}
+						<div
+							class="mb-3 flex flex-col gap-3 rounded-md border bg-background p-3 md:flex-row md:items-center md:justify-between"
+						>
+							<div class="min-w-0">
+								<p class="text-sm font-medium text-foreground">
+									รายการสอบสำหรับ{examRoundKindLabel(workspace.round.examKind)}
+								</p>
+								<p class="text-xs text-muted-foreground">
+									นำเข้ารายการตามชนิดรอบสอบ หรือล้างรายการที่หลุดมาจากรอบอื่น
+								</p>
+							</div>
+							<div class="flex flex-wrap items-center gap-2">
+								<LoadingButton
+									size="sm"
+									variant="outline"
+									loading={importing}
+									loadingLabel="กำลังนำเข้า..."
+									onclick={handleImportItems}
+									disabled={clearingMismatchedItems ||
+										placingItemId !== null ||
+										unschedulingSessionId !== null}
+								>
+									<Download class="h-4 w-4" />
+									นำเข้าเฉพาะ {examRoundKindLabel(workspace.round.examKind)}
+								</LoadingButton>
+								<LoadingButton
+									size="sm"
+									variant="destructive"
+									loading={clearingMismatchedItems}
+									loadingLabel="กำลังล้าง..."
+									onclick={handleClearMismatchedItems}
+									disabled={importing || placingItemId !== null || unschedulingSessionId !== null}
+								>
+									<Trash2 class="h-4 w-4" />
+									ล้างรายการไม่ตรงรอบสอบ
+								</LoadingButton>
+							</div>
+						</div>
+					{/if}
 					<ExamScheduleTimeline
 						{workspace}
 						readonly={!canManageExamSchedules || workspace.round.status === 'published'}

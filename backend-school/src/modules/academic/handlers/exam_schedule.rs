@@ -115,6 +115,22 @@ pub async fn import_items(
     Ok(Json(ApiResponse::ok(result)).into_response())
 }
 
+/// POST /api/academic/exam-schedules/{round_id}/clear-mismatched-items
+pub async fn clear_mismatched_items(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(round_id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    actor.require_permission(codes::ACADEMIC_EXAM_SCHEDULE_MANAGE_SCHOOL)?;
+
+    let result =
+        exam_schedule_service::clear_mismatched_exam_items(&pool, round_id, actor.user_id).await?;
+    Ok(Json(ApiResponse::ok(result)).into_response())
+}
+
 /// POST /api/academic/exam-schedules/{round_id}/days
 pub async fn upsert_day(
     State(state): State<AppState>,

@@ -104,6 +104,12 @@ pub struct ImportExamItemsResult {
     pub skipped_missing_duration_count: i64,
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClearMismatchedExamItemsResult {
+    pub deleted_count: i64,
+}
+
 #[derive(Debug, Clone, Serialize, sqlx::FromRow)]
 #[serde(rename_all = "camelCase")]
 pub struct DayRoomAssignmentView {

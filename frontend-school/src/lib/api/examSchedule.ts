@@ -126,6 +126,10 @@ export interface ImportExamItemsResult {
 	skippedMissingDurationCount: number;
 }
 
+export interface ClearMismatchedExamItemsResult {
+	deletedCount: number;
+}
+
 export interface DayRoomAssignmentView {
 	id: string;
 	examDayId: string;
@@ -290,9 +294,7 @@ function apiData<T>(response: ApiResponse<T>, fallbackError: string): T {
 	return requireApiData(response, fallbackError);
 }
 
-export async function listExamRounds(
-	filters: ExamScheduleFilters = {}
-): Promise<ExamRound[]> {
+export async function listExamRounds(filters: ExamScheduleFilters = {}): Promise<ExamRound[]> {
 	const response = await apiClient.get<ExamRound[]>(
 		`/api/academic/exam-schedules${examScheduleQuery(filters)}`
 	);
@@ -315,9 +317,7 @@ export async function updateExamRound(
 	return apiData(response, 'ไม่สามารถบันทึกรอบตารางสอบได้');
 }
 
-export async function getExamScheduleWorkspace(
-	roundId: string
-): Promise<ExamScheduleWorkspace> {
+export async function getExamScheduleWorkspace(roundId: string): Promise<ExamScheduleWorkspace> {
 	const response = await apiClient.get<ExamScheduleWorkspace>(
 		`/api/academic/exam-schedules/${roundId}`
 	);
@@ -354,6 +354,15 @@ export async function importExamItems(
 	return apiData(response, 'ไม่สามารถนำเข้ารายการสอบได้');
 }
 
+export async function clearMismatchedExamItems(
+	roundId: string
+): Promise<ClearMismatchedExamItemsResult> {
+	const response = await apiClient.post<ClearMismatchedExamItemsResult>(
+		`/api/academic/exam-schedules/${roundId}/clear-mismatched-items`
+	);
+	return apiData(response, 'ไม่สามารถล้างรายการสอบที่ไม่ตรงรอบสอบได้');
+}
+
 export async function upsertExamDay(
 	roundId: string,
 	input: UpsertExamDayInput
@@ -372,9 +381,7 @@ export async function deleteExamDay(examDayId: string): Promise<EmptyResponseDat
 	return apiData(response, 'ไม่สามารถลบวันสอบได้');
 }
 
-export async function listDayRoomAssignments(
-	examDayId: string
-): Promise<DayRoomAssignmentView[]> {
+export async function listDayRoomAssignments(examDayId: string): Promise<DayRoomAssignmentView[]> {
 	const response = await apiClient.get<DayRoomAssignmentView[]>(
 		`/api/academic/exam-schedules/days/${examDayId}/room-assignments`
 	);
@@ -415,7 +422,10 @@ export async function generateSeatsForAssignment(
 }
 
 export async function placeExamSession(input: PlaceExamSessionInput): Promise<ExamSession> {
-	const response = await apiClient.post<ExamSession>('/api/academic/exam-schedules/sessions', input);
+	const response = await apiClient.post<ExamSession>(
+		'/api/academic/exam-schedules/sessions',
+		input
+	);
 	return apiData(response, 'ไม่สามารถจัดวางคาบสอบได้');
 }
 

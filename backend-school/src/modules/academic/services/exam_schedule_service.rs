@@ -8,15 +8,15 @@ use uuid::Uuid;
 
 use crate::error::AppError;
 use crate::modules::academic::models::exam_schedule::{
-    BlockedWindow, BlockedWindowInput, CreateExamRoundRequest, DayRoomAssignmentView, ExamDay,
-    ExamDayDetail, ExamDayRoomAssignmentView, ExamInvigilatorAssignmentSummary,
-    ExamInvigilatorDayWorkload, ExamInvigilatorStaffOption, ExamInvigilatorStaffWorkload,
-    ExamInvigilatorView, ExamInvigilatorWorkspace, ExamRound, ExamScheduleItemView,
-    ExamScheduleReadiness, ExamScheduleWorkspace, ExamSessionView, GenerateSeatsRequest,
-    ImportExamItemsRequest, ImportExamItemsResult, InvigilatorView, PersonalExamScheduleRound,
-    PersonalExamSessionView, PlaceExamSessionRequest, SeatAssignmentView,
-    UpdateExamInvigilatorsRequest, UpdateExamRoundRequest, UpsertDayRoomAssignmentRequest,
-    UpsertExamDayRequest,
+    BlockedWindow, BlockedWindowInput, ClearMismatchedExamItemsResult, CreateExamRoundRequest,
+    DayRoomAssignmentView, ExamDay, ExamDayDetail, ExamDayRoomAssignmentView,
+    ExamInvigilatorAssignmentSummary, ExamInvigilatorDayWorkload, ExamInvigilatorStaffOption,
+    ExamInvigilatorStaffWorkload, ExamInvigilatorView, ExamInvigilatorWorkspace, ExamRound,
+    ExamScheduleItemView, ExamScheduleReadiness, ExamScheduleWorkspace, ExamSessionView,
+    GenerateSeatsRequest, ImportExamItemsRequest, ImportExamItemsResult, InvigilatorView,
+    PersonalExamScheduleRound, PersonalExamSessionView, PlaceExamSessionRequest,
+    SeatAssignmentView, UpdateExamInvigilatorsRequest, UpdateExamRoundRequest,
+    UpsertDayRoomAssignmentRequest, UpsertExamDayRequest,
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -1172,6 +1172,52 @@ pub async fn import_exam_items(
         inserted_count: insert_result.rows_affected() as i64,
         skipped_existing_count,
         skipped_missing_duration_count,
+    })
+}
+
+pub async fn clear_mismatched_exam_items(
+    pool: &PgPool,
+    round_id: Uuid,
+    actor_user_id: Uuid,
+) -> Result<ClearMismatchedExamItemsResult, AppError> {
+    let mut tx = pool.begin().await?;
+
+    let _round_status: String = sqlx::query_scalar(
+        r#"
+        SELECT status
+        FROM academic_exam_rounds
+        WHERE id = $1
+        FOR UPDATE
+        "#,
+    )
+    .bind(round_id)
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or_else(|| AppError::NotFound("Exam round not found".to_string()))?;
+
+    let delete_result = sqlx::query(
+        r#"
+        WITH round_context AS (
+          SELECT id AS exam_round_id, exam_kind
+          FROM academic_exam_rounds
+          WHERE id = $1
+        )
+        DELETE FROM academic_exam_schedule_items item
+        USING academic_assessment_categories c, round_context rc
+        WHERE item.exam_round_id = rc.exam_round_id
+          AND item.assessment_category_id = c.id
+          AND c.code IS DISTINCT FROM rc.exam_kind
+        "#,
+    )
+    .bind(round_id)
+    .execute(&mut *tx)
+    .await?;
+
+    mark_round_draft_after_mutation(&mut tx, round_id, Some(actor_user_id)).await?;
+    tx.commit().await?;
+
+    Ok(ClearMismatchedExamItemsResult {
+        deleted_count: delete_result.rows_affected() as i64,
     })
 }
 
@@ -3901,6 +3947,28 @@ mod tests {
             3,
             "existing, missing-duration, and insert source queries must filter by round kind"
         );
+    }
+
+    #[test]
+    fn clear_mismatched_exam_items_deletes_only_items_outside_round_kind() {
+        let source = include_str!("exam_schedule_service.rs");
+        let clear_start = source
+            .find("pub async fn clear_mismatched_exam_items")
+            .unwrap();
+        let clear_tail = &source[clear_start..];
+        let next_function_start = clear_tail
+            .find("pub async fn list_day_room_assignments")
+            .unwrap();
+        let clear_body = &clear_tail[..next_function_start];
+
+        assert!(clear_body.contains("SELECT status"));
+        assert!(clear_body.contains("FOR UPDATE"));
+        assert!(clear_body.contains("DELETE FROM academic_exam_schedule_items"));
+        assert!(clear_body.contains("USING academic_assessment_categories c"));
+        assert!(clear_body.contains("round_context rc"));
+        assert!(clear_body.contains("item.assessment_category_id = c.id"));
+        assert!(clear_body.contains("c.code IS DISTINCT FROM rc.exam_kind"));
+        assert!(clear_body.contains("mark_round_draft_after_mutation"));
     }
 
     #[test]

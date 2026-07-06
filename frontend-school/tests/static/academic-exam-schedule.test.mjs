@@ -159,6 +159,11 @@ test('academic exam schedule API client maps functions to backend routes and met
 			routeFragment: '/import-items'
 		},
 		{
+			functionName: 'clearMismatchedExamItems',
+			method: 'post',
+			routeFragment: '/clear-mismatched-items'
+		},
+		{
 			functionName: 'upsertExamDay',
 			method: 'post',
 			routeFragment: '/${roundId}/days'
@@ -267,6 +272,38 @@ test('exam rounds expose exam kind for midterm and final import filtering', () =
 	assert.match(detailPage, /นำเข้าเฉพาะ/);
 });
 
+test('staff schedule tab can clear imported items that do not match the round kind', () => {
+	const api = readFileSync(projectPath('src/lib/api/examSchedule.ts'), 'utf8');
+	const detailPage = readFileSync(
+		projectPath('src/routes/(app)/staff/academic/exam-schedules/[id]/+page.svelte'),
+		'utf8'
+	);
+	const scheduleTabStart = detailPage.indexOf('<Tabs.Content value="schedule">');
+	assert.notEqual(scheduleTabStart, -1, 'schedule tab should exist');
+	const scheduleTab = detailPage.slice(
+		scheduleTabStart,
+		detailPage.indexOf('<Tabs.Content value="invigilators">')
+	);
+	const handleClearMismatchedItems = localFunctionSource(detailPage, 'handleClearMismatchedItems');
+	const resetWorkspaceForRound = localFunctionSource(detailPage, 'resetWorkspaceForRound');
+
+	assert.match(api, /export interface ClearMismatchedExamItemsResult/);
+	assert.match(api, /deletedCount: number/);
+	assert.match(api, /export async function clearMismatchedExamItems/);
+	assert.match(api, /\/clear-mismatched-items/);
+	assert.match(detailPage, /clearMismatchedExamItems/);
+	assert.match(detailPage, /let clearingMismatchedItems = \$state\(false\)/);
+	assert.match(resetWorkspaceForRound, /clearingMismatchedItems = false/);
+	assert.match(handleClearMismatchedItems, /clearMismatchedExamItems\(workspace\.round\.id\)/);
+	assert.match(handleClearMismatchedItems, /window\.confirm/);
+	assert.match(handleClearMismatchedItems, /deletedCount/);
+	assert.match(handleClearMismatchedItems, /await refreshWorkspace\(true\)/);
+	assert.match(scheduleTab, /onclick=\{handleImportItems\}/);
+	assert.match(scheduleTab, /onclick=\{handleClearMismatchedItems\}/);
+	assert.match(scheduleTab, /ล้างรายการไม่ตรงรอบสอบ/);
+	assert.match(scheduleTab, /<ExamScheduleTimeline/);
+});
+
 test('exam schedule API exposes invigilator workspace and updates separately from room assignment', async () => {
 	const api = await readProjectFile('src/lib/api/examSchedule.ts');
 
@@ -305,7 +342,10 @@ test('exam room assignment panel keeps setup actions compact and labels rooms pl
 	assert.match(panel, /\$\{building\} \/ \$\{name\} \/ \$\{capacity\} ที่นั่ง/);
 	assert.doesNotMatch(panel, /room\.code/);
 	assert.doesNotMatch(panel, /classroom\.grade_level_name \? `\$\{classroom\.grade_level_name\}/);
-	assert.match(panel, /<Select\.Root type="single" bind:value=\{selectedDayId\}>[\s\S]*เพิ่มห้องสอบ/);
+	assert.match(
+		panel,
+		/<Select\.Root type="single" bind:value=\{selectedDayId\}>[\s\S]*เพิ่มห้องสอบ/
+	);
 	assert.doesNotMatch(panel, /xl:grid-cols-\[minmax\(0,1fr\)_24rem\]/);
 	assert.doesNotMatch(panel, /<div class="p-4">\s*\{#if readonly\}/);
 });
@@ -353,7 +393,10 @@ test('exam invigilator staff loading is split from room option loading', () => {
 		'utf8'
 	);
 	const api = readFileSync(projectPath('src/lib/api/examSchedule.ts'), 'utf8');
-	const backendRoutes = readFileSync(projectPath('../backend-school/src/modules/academic.rs'), 'utf8');
+	const backendRoutes = readFileSync(
+		projectPath('../backend-school/src/modules/academic.rs'),
+		'utf8'
+	);
 	const backendHandler = readFileSync(
 		projectPath('../backend-school/src/modules/academic/handlers/exam_schedule.rs'),
 		'utf8'

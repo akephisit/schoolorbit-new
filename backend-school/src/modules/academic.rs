@@ -161,6 +161,10 @@ pub fn academic_routes() -> Router<AppState> {
             post(handlers::exam_schedule::import_items),
         )
         .route(
+            "/exam-schedules/{round_id}/clear-mismatched-items",
+            post(handlers::exam_schedule::clear_mismatched_items),
+        )
+        .route(
             "/exam-schedules/{round_id}/days",
             post(handlers::exam_schedule::upsert_day),
         )
