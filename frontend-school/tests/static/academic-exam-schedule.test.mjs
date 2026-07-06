@@ -209,6 +209,19 @@ test('exam schedule API exposes invigilator workspace and updates separately fro
 	assert.doesNotMatch(roomInput, /invigilatorStaffIds/);
 });
 
+test('exam room assignment panel is room and seat only with sheet editing', async () => {
+	const panel = await readProjectFile(
+		'src/lib/components/academic/exam-schedule/ExamRoomAssignmentPanel.svelte'
+	);
+
+	assert.match(panel, /\$lib\/components\/ui\/sheet/);
+	assert.doesNotMatch(panel, /staffSearch/);
+	assert.doesNotMatch(panel, /selectedInvigilatorIds/);
+	assert.doesNotMatch(panel, /invigilatorStaffIds/);
+	assert.match(panel, /บันทึกห้องสอบ/);
+	assert.match(panel, /sticky|mt-auto/);
+});
+
 test('staff workspace wires setup, import, room assignment, and publish actions', () => {
 	const page = readFileSync(
 		projectPath('src/routes/(app)/staff/academic/exam-schedules/[id]/+page.svelte'),
@@ -358,7 +371,7 @@ test('staff workspace reloads by route round id and keeps form input on failed s
 		/onSaveAssignment\?: \(\s*examDayId: string,\s*input: UpsertDayRoomAssignmentInput\s*\) => Promise<boolean> \| boolean/
 	);
 	assert.match(roomPanel, /const saved = await onSaveAssignment\?\.\(/);
-	assert.match(roomPanel, /if \(saved\) resetForm\(\)/);
+	assert.match(roomPanel, /if \(saved\) \{\s*resetForm\(\);\s*editorOpen = false;\s*\}/);
 
 	assert.match(
 		roundDialog,
@@ -368,29 +381,17 @@ test('staff workspace reloads by route round id and keeps form input on failed s
 	assert.match(roundDialog, /if \(created\) resetForm\(\)/);
 });
 
-test('exam room invigilator search is server-driven and preserves selected staff options', () => {
-	const page = readFileSync(
-		projectPath('src/routes/(app)/staff/academic/exam-schedules/[id]/+page.svelte'),
-		'utf8'
-	);
+test('exam room assignment panel leaves invigilator search out of room editing', () => {
 	const roomPanel = readFileSync(
 		projectPath('src/lib/components/academic/exam-schedule/ExamRoomAssignmentPanel.svelte'),
 		'utf8'
 	);
 
-	assert.match(page, /async function searchStaffOptions\(search: string\): Promise<StaffListItem\[]>/);
-	assert.match(page, /listStaff\(\{\s*status: 'active',\s*search:/);
-	assert.match(page, /onSearchStaff=\{searchStaffOptions\}/);
-
-	assert.match(
-		roomPanel,
-		/onSearchStaff\?: \(search: string\) => Promise<StaffListItem\[]>/
-	);
-	assert.match(roomPanel, /setTimeout\(\(\) => \{/);
-	assert.match(roomPanel, /onSearchStaff\(staffSearch\.trim\(\)\)/);
-	assert.match(roomPanel, /selectedInvigilatorOptions/);
-	assert.match(roomPanel, /assignment\.invigilators\.map/);
-	assert.match(roomPanel, /staffOptionsForDisplay/);
+	assert.doesNotMatch(roomPanel, /StaffListItem/);
+	assert.doesNotMatch(roomPanel, /onSearchStaff/);
+	assert.doesNotMatch(roomPanel, /setTimeout\(\(\) => \{/);
+	assert.doesNotMatch(roomPanel, /assignment\.invigilators\.map/);
+	assert.doesNotMatch(roomPanel, /staffOptionsForDisplay/);
 });
 
 test('staff workspace ignores stale management option responses after route changes', () => {

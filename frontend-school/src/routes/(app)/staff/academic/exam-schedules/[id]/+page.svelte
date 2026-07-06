@@ -23,7 +23,6 @@
 		type UpsertExamDayInput
 	} from '$lib/api/examSchedule';
 	import { listRooms, type Room } from '$lib/api/facility';
-	import { listStaff, type StaffListItem } from '$lib/api/staff';
 	import CompactExamScheduleStatus from '$lib/components/academic/exam-schedule/CompactExamScheduleStatus.svelte';
 	import ExamDaySetupPanel from '$lib/components/academic/exam-schedule/ExamDaySetupPanel.svelte';
 	import ExamRoomAssignmentPanel from '$lib/components/academic/exam-schedule/ExamRoomAssignmentPanel.svelte';
@@ -46,7 +45,6 @@
 	let structure = $state<AcademicStructureData | null>(null);
 	let classrooms = $state<Classroom[]>([]);
 	let rooms = $state<Room[]>([]);
-	let staff = $state<StaffListItem[]>([]);
 	let optionsLoading = $state(false);
 	let optionsRequested = $state(false);
 	let importing = $state(false);
@@ -86,7 +84,6 @@
 		structure = null;
 		classrooms = [];
 		rooms = [];
-		staff = [];
 		optionsRequested = false;
 		optionsLoading = false;
 		importing = false;
@@ -168,16 +165,14 @@
 		optionsRequested = true;
 		optionsLoading = true;
 		try {
-			const [classroomResponse, roomResponse, staffResponse] = await Promise.all([
+			const [classroomResponse, roomResponse] = await Promise.all([
 				listClassrooms(yearId ? { year_id: yearId } : undefined),
-				listRooms(),
-				searchStaffOptions('')
+				listRooms()
 			]);
 			if (!isCurrentManagementOptionsRequest(requestToken, roundId, semesterId, yearId)) return;
 
 			classrooms = classroomResponse.data;
 			rooms = roomResponse.data;
-			staff = staffResponse;
 		} catch (loadError) {
 			if (!isCurrentManagementOptionsRequest(requestToken, roundId, semesterId, yearId)) return;
 
@@ -188,16 +183,6 @@
 
 			optionsLoading = false;
 		}
-	}
-
-	async function searchStaffOptions(search: string): Promise<StaffListItem[]> {
-		const response = await listStaff({
-			status: 'active',
-			search: search.trim() || undefined,
-			page: 1,
-			page_size: 40
-		});
-		return response.data;
 	}
 
 	async function handleImportItems() {
@@ -446,13 +431,11 @@
 						days={workspace.days}
 						classrooms={classrooms}
 						rooms={rooms}
-						staff={staff}
 						readonly={!canManageExamSchedules || workspace.round.status === 'published'}
 						saving={savingAssignment}
 						generatingAssignmentId={generatingAssignmentId}
 						onSaveAssignment={handleSaveAssignment}
 						onGenerateSeats={handleGenerateSeats}
-						onSearchStaff={searchStaffOptions}
 					/>
 				</Tabs.Content>
 

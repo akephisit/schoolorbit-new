@@ -1,7 +1,6 @@
 <script lang="ts">
 	import type { Classroom } from '$lib/api/academic';
 	import type { Room } from '$lib/api/facility';
-	import type { StaffListItem } from '$lib/api/staff';
 	import type {
 		ExamDayDetail,
 		ExamDayRoomAssignmentView,
@@ -10,10 +9,10 @@
 	import { LoadingButton, PageState } from '$lib/components/app-state';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
-	import { Checkbox } from '$lib/components/ui/checkbox';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import * as Select from '$lib/components/ui/select';
+	import * as Sheet from '$lib/components/ui/sheet';
 	import {
 		Table,
 		TableBody,
@@ -22,29 +21,21 @@
 		TableHeader,
 		TableRow
 	} from '$lib/components/ui/table';
-	import { Armchair, Search, Users } from 'lucide-svelte';
-
-	type InvigilatorOption = {
-		id: string;
-		displayName: string;
-	};
+	import { Armchair } from 'lucide-svelte';
 
 	let {
 		days = [],
 		classrooms = [],
 		rooms = [],
-		staff = [],
 		readonly = false,
 		saving = false,
 		generatingAssignmentId = null,
 		onSaveAssignment,
-		onGenerateSeats,
-		onSearchStaff
+		onGenerateSeats
 	}: {
 		days: ExamDayDetail[];
 		classrooms: Classroom[];
 		rooms: Room[];
-		staff: StaffListItem[];
 		readonly?: boolean;
 		saving?: boolean;
 		generatingAssignmentId?: string | null;
@@ -53,21 +44,14 @@
 			input: UpsertDayRoomAssignmentInput
 		) => Promise<boolean> | boolean;
 		onGenerateSeats?: (assignmentId: string) => Promise<void> | void;
-		onSearchStaff?: (search: string) => Promise<StaffListItem[]>;
 	} = $props();
 
 	let selectedDayId = $state('');
 	let classroomId = $state('');
 	let roomId = $state('');
 	let capacityOverride = $state('');
-	let selectedInvigilatorIds = $state<string[]>([]);
-	let selectedInvigilatorOptions = $state<InvigilatorOption[]>([]);
-	let staffOptions = $state<StaffListItem[]>([]);
-	let staffSearch = $state('');
-	let staffSearching = $state(false);
-	let staffSearchError = $state('');
-	let lastStaffSearch = '';
-	let staffSearchRequestToken = 0;
+	let editorOpen = $state(false);
+	let editingAssignmentId = $state<string | null>(null);
 
 	const sortedDays = $derived([...days].sort((a, b) => a.sortOrder - b.sortOrder));
 	const selectedDay = $derived(days.find((day) => day.id === selectedDayId) ?? sortedDays[0] ?? null);
@@ -86,21 +70,6 @@
 		classrooms.find((classroom) => classroom.id === classroomId)?.name ?? 'เลือกห้องเรียน'
 	);
 	const selectedRoomLabel = $derived(roomLabel(rooms.find((room) => room.id === roomId)));
-	const staffOptionsForDisplay = $derived.by(() => {
-		const options = new Map<string, InvigilatorOption>();
-
-		for (const option of selectedInvigilatorOptions) {
-			if (selectedInvigilatorIds.includes(option.id)) {
-				options.set(option.id, option);
-			}
-		}
-
-		for (const item of staffOptions) {
-			options.set(item.id, { id: item.id, displayName: staffName(item) });
-		}
-
-		return Array.from(options.values()).slice(0, 60);
-	});
 
 	function formatDayDate(value: string, label?: string | null): string {
 		const dateLabel = new Date(value).toLocaleDateString('th-TH', {
@@ -118,22 +87,6 @@
 		return `${building}${code}${room.name_th} / ${room.capacity ?? 0} ที่นั่ง`;
 	}
 
-	function staffName(item: StaffListItem): string {
-		return [item.title, item.first_name, item.last_name].filter(Boolean).join(' ').trim();
-	}
-
-	function staffOptionName(option: InvigilatorOption): string {
-		return option.displayName || option.id;
-	}
-
-	function invigilatorNames(assignment: ExamDayRoomAssignmentView): string {
-		if (assignment.invigilators.length === 0) return '-';
-		return assignment.invigilators
-			.map((item) => item.staffName ?? item.staffId)
-			.filter(Boolean)
-			.join(', ');
-	}
-
 	function assignmentCapacity(assignment: ExamDayRoomAssignmentView): string {
 		return String(assignment.capacityOverride ?? assignment.roomCapacity ?? '-');
 	}
@@ -146,35 +99,20 @@
 		roomId = value;
 	}
 
-	function toggleInvigilator(option: InvigilatorOption, checked: boolean) {
-		selectedInvigilatorIds = checked
-			? Array.from(new Set([...selectedInvigilatorIds, option.id]))
-			: selectedInvigilatorIds.filter((id) => id !== option.id);
-
-		selectedInvigilatorOptions = checked
-			? [...selectedInvigilatorOptions.filter((item) => item.id !== option.id), option]
-			: selectedInvigilatorOptions.filter((item) => item.id !== option.id);
-	}
-
 	function loadAssignment(assignment: ExamDayRoomAssignmentView) {
 		selectedDayId = assignment.examDayId;
 		classroomId = assignment.classroomId;
 		roomId = assignment.roomId;
 		capacityOverride = assignment.capacityOverride ? String(assignment.capacityOverride) : '';
-		selectedInvigilatorIds = assignment.invigilators.map((item) => item.staffId);
-		selectedInvigilatorOptions = assignment.invigilators.map((item) => ({
-			id: item.staffId,
-			displayName: item.staffName ?? item.staffId
-		}));
+		editingAssignmentId = assignment.id;
+		editorOpen = true;
 	}
 
 	function resetForm() {
 		classroomId = '';
 		roomId = '';
 		capacityOverride = '';
-		selectedInvigilatorIds = [];
-		selectedInvigilatorOptions = [];
-		staffSearch = '';
+		editingAssignmentId = null;
 	}
 
 	async function submitForm() {
@@ -186,7 +124,10 @@
 			roomId,
 			capacityOverride: capacityOverride ? Number(capacityOverride) : null
 		});
-		if (saved) resetForm();
+		if (saved) {
+			resetForm();
+			editorOpen = false;
+		}
 	}
 
 	$effect(() => {
@@ -198,57 +139,24 @@
 			resetForm();
 		}
 	});
-
-	$effect(() => {
-		staffOptions = staff;
-	});
-
-	$effect(() => {
-		if (!onSearchStaff || readonly) return;
-		if (staffSearch.trim() === lastStaffSearch) return;
-
-		const timeout = setTimeout(() => {
-			const requestToken = ++staffSearchRequestToken;
-			staffSearching = true;
-			staffSearchError = '';
-			lastStaffSearch = staffSearch.trim();
-
-			onSearchStaff(staffSearch.trim())
-				.then((results) => {
-					if (requestToken !== staffSearchRequestToken) return;
-					staffOptions = results;
-				})
-				.catch((error) => {
-					if (requestToken !== staffSearchRequestToken) return;
-					staffSearchError = error instanceof Error ? error.message : 'ค้นหาบุคลากรไม่สำเร็จ';
-				})
-				.finally(() => {
-					if (requestToken !== staffSearchRequestToken) return;
-					staffSearching = false;
-				});
-		}, 300);
-
-		return () => {
-			clearTimeout(timeout);
-			staffSearchRequestToken += 1;
-		};
-	});
 </script>
 
 <section class="overflow-hidden rounded-md border bg-background">
-	<div class="flex flex-col gap-3 border-b px-4 py-4 md:flex-row md:items-center md:justify-between">
+	<div class="flex flex-col gap-3 border-b px-4 py-4 lg:flex-row lg:items-center lg:justify-between">
 		<div>
-			<h2 class="font-semibold">ห้องสอบและกรรมการ</h2>
+			<h2 class="font-semibold">ห้องสอบและที่นั่ง</h2>
 			<p class="text-sm text-muted-foreground">{assignments.length} ห้องในวันที่เลือก</p>
 		</div>
-		<Select.Root type="single" bind:value={selectedDayId}>
-			<Select.Trigger class="w-full md:w-64">{dayLabel}</Select.Trigger>
-			<Select.Content>
-				{#each sortedDays as day (day.id)}
-					<Select.Item value={day.id}>{formatDayDate(day.examDate, day.label)}</Select.Item>
-				{/each}
-			</Select.Content>
-		</Select.Root>
+		<div class="flex flex-col gap-2 sm:flex-row sm:items-center">
+			<Select.Root type="single" bind:value={selectedDayId}>
+				<Select.Trigger class="w-full sm:w-64">{dayLabel}</Select.Trigger>
+				<Select.Content>
+					{#each sortedDays as day (day.id)}
+						<Select.Item value={day.id}>{formatDayDate(day.examDate, day.label)}</Select.Item>
+					{/each}
+				</Select.Content>
+			</Select.Root>
+		</div>
 	</div>
 
 	<div class="grid gap-0 xl:grid-cols-[minmax(0,1fr)_24rem]">
@@ -259,13 +167,12 @@
 				<PageState title="ยังไม่มีห้องสอบในวันนี้" description="ยังไม่พบการกำหนดห้องสอบสำหรับวันสอบที่เลือก" />
 			{:else}
 				<div class="overflow-x-auto">
-					<Table class="min-w-[760px]">
+					<Table class="min-w-[640px]">
 						<TableHeader>
 							<TableRow>
 								<TableHead>ห้องเรียน</TableHead>
 								<TableHead>ห้องสอบ</TableHead>
 								<TableHead class="w-24 text-center">ความจุ</TableHead>
-								<TableHead>กรรมการ</TableHead>
 								<TableHead class="w-36 text-right">ที่นั่ง</TableHead>
 							</TableRow>
 						</TableHeader>
@@ -280,9 +187,6 @@
 									<TableCell class="text-center">
 										<Badge variant="outline">{assignmentCapacity(assignment)}</Badge>
 									</TableCell>
-									<TableCell class="max-w-64 truncate text-sm text-muted-foreground">
-										{invigilatorNames(assignment)}
-									</TableCell>
 									<TableCell class="text-right">
 										<div class="flex justify-end gap-1">
 											{#if !readonly}
@@ -290,7 +194,7 @@
 													แก้ไข
 												</Button>
 												<LoadingButton
-													variant={assignment.invigilators.length > 0 ? 'secondary' : 'outline'}
+													variant="outline"
 													size="icon-sm"
 													loading={generatingAssignmentId === assignment.id}
 													loadingLabel=""
@@ -320,19 +224,37 @@
 					description="ผู้ใช้ปัจจุบันไม่มีสิทธิ์กำหนดห้องสอบ"
 				/>
 			{:else}
+				<Button
+					type="button"
+					class="w-full"
+					disabled={!selectedDay}
+					onclick={() => {
+						resetForm();
+						editorOpen = true;
+					}}
+				>
+					เพิ่มห้องสอบ
+				</Button>
+			{/if}
+		</div>
+	</div>
+
+	{#if !readonly}
+		<Sheet.Root bind:open={editorOpen}>
+			<Sheet.Content side="right" class="sm:max-w-md">
+				<Sheet.Header>
+					<Sheet.Title>{editingAssignmentId ? 'แก้ไขห้องสอบ' : 'เพิ่มห้องสอบ'}</Sheet.Title>
+					<Sheet.Description>กำหนดห้องสอบและความจุสำหรับห้องเรียนในวันที่เลือก</Sheet.Description>
+				</Sheet.Header>
+
 				<form
-					class="space-y-4"
+					class="flex min-h-0 flex-1 flex-col"
 					onsubmit={(event) => {
 						event.preventDefault();
 						submitForm();
 					}}
 				>
-					<div class="flex items-center justify-between gap-2">
-						<h3 class="text-sm font-semibold">กำหนดห้องเรียน</h3>
-						<Button type="button" variant="ghost" size="sm" onclick={resetForm}>ล้างฟอร์ม</Button>
-					</div>
-
-					<div class="grid gap-3">
+					<div class="flex-1 space-y-4 overflow-y-auto py-1 pr-1">
 						<div class="grid gap-2">
 							<Label>ห้องเรียน</Label>
 							<Select.Root type="single" bind:value={classroomId}>
@@ -372,50 +294,19 @@
 						</div>
 					</div>
 
-					<div class="space-y-2">
-						<Label>กรรมการคุมสอบ</Label>
-						<div class="relative">
-							<Search class="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-							<Input class="pl-9" bind:value={staffSearch} placeholder="ค้นหาบุคลากร" />
-						</div>
-						<div class="max-h-56 space-y-2 overflow-y-auto rounded-md border p-3">
-							{#if staffSearching}
-								<div class="py-4 text-center text-sm text-muted-foreground">กำลังค้นหา...</div>
-							{:else if staffSearchError}
-								<div class="text-sm text-destructive">{staffSearchError}</div>
-							{/if}
-
-							{#if !staffSearching && staffOptionsForDisplay.length === 0}
-								<div class="py-4 text-center text-sm text-muted-foreground">ไม่พบบุคลากร</div>
-							{:else if !staffSearching}
-								{#each staffOptionsForDisplay as option (option.id)}
-									<label class="flex items-center gap-2 text-sm">
-										<Checkbox
-											checked={selectedInvigilatorIds.includes(option.id)}
-											onCheckedChange={(checked) => toggleInvigilator(option, checked === true)}
-										/>
-										<span class="min-w-0 truncate">{staffOptionName(option)}</span>
-									</label>
-								{/each}
-							{/if}
-						</div>
-						<div class="flex items-center gap-2 text-xs text-muted-foreground">
-							<Users class="h-3.5 w-3.5" />
-							{selectedInvigilatorIds.length} คน
-						</div>
-					</div>
-
-					<LoadingButton
-						type="submit"
-						loading={saving}
-						loadingLabel="กำลังบันทึก..."
-						disabled={!selectedDay || !classroomId || !roomId}
-						class="w-full"
-					>
-						บันทึกห้องสอบ
-					</LoadingButton>
+					<Sheet.Footer class="sticky bottom-0 -mx-6 -mb-6 border-t bg-background px-6 py-4">
+						<Button type="button" variant="outline" onclick={() => (editorOpen = false)}>ยกเลิก</Button>
+						<LoadingButton
+							type="submit"
+							loading={saving}
+							loadingLabel="กำลังบันทึก..."
+							disabled={!selectedDay || !classroomId || !roomId}
+						>
+							บันทึกห้องสอบ
+						</LoadingButton>
+					</Sheet.Footer>
 				</form>
-			{/if}
-		</div>
-	</div>
+			</Sheet.Content>
+		</Sheet.Root>
+	{/if}
 </section>
