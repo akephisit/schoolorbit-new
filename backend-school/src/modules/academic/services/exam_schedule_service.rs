@@ -220,6 +220,7 @@ struct PersonalExamSessionRow {
 struct NormalizedUpdateRoundRequest {
     name: Option<String>,
     description: Option<String>,
+    exam_kind: Option<String>,
 }
 
 impl PersonalExamSessionRow {
@@ -652,6 +653,7 @@ pub async fn list_rounds(
                academic_semester_id,
                name,
                description,
+               exam_kind,
                status,
                published_at,
                created_at,
@@ -679,6 +681,7 @@ pub async fn create_round(
             "Exam round name is required".to_string(),
         ));
     }
+    let exam_kind = normalize_exam_kind(request.exam_kind.as_deref())?;
 
     let row = sqlx::query_as::<_, ExamRound>(
         r#"
@@ -686,14 +689,16 @@ pub async fn create_round(
             academic_semester_id,
             name,
             description,
+            exam_kind,
             created_by,
             updated_by
         )
-        VALUES ($1, $2, $3, $4, $4)
+        VALUES ($1, $2, $3, $4, $5, $5)
         RETURNING id,
                   academic_semester_id,
                   name,
                   description,
+                  exam_kind,
                   status,
                   published_at,
                   created_at,
@@ -703,6 +708,7 @@ pub async fn create_round(
     .bind(request.academic_semester_id)
     .bind(name)
     .bind(request.description)
+    .bind(exam_kind)
     .bind(actor_user_id)
     .fetch_one(pool)
     .await?;
@@ -726,13 +732,15 @@ pub async fn update_round(
         UPDATE academic_exam_rounds
         SET name = COALESCE($2, name),
             description = COALESCE($3, description),
-            updated_by = $4,
+            exam_kind = COALESCE($4, exam_kind),
+            updated_by = $5,
             updated_at = now()
         WHERE id = $1
         RETURNING id,
                   academic_semester_id,
                   name,
                   description,
+                  exam_kind,
                   status,
                   published_at,
                   created_at,
@@ -742,6 +750,7 @@ pub async fn update_round(
     .bind(round_id)
     .bind(normalized.name)
     .bind(normalized.description)
+    .bind(normalized.exam_kind)
     .bind(actor_user_id)
     .fetch_optional(&mut *tx)
     .await?
@@ -1021,7 +1030,7 @@ pub async fn import_exam_items(
     let skipped_existing_count: i64 = sqlx::query_scalar(
         r#"
         WITH round_context AS (
-          SELECT id AS exam_round_id, academic_semester_id
+          SELECT id AS exam_round_id, academic_semester_id, exam_kind
           FROM academic_exam_rounds
           WHERE id = $1
         ),
@@ -1041,6 +1050,7 @@ pub async fn import_exam_items(
           JOIN class_rooms cr
             ON cr.id = cc.classroom_id
           WHERE c.exam_mode = 'in_timetable'
+            AND c.code = rc.exam_kind
             AND c.exam_duration_minutes IS NOT NULL
             AND cr.is_active = true
             AND ($2::uuid[] IS NULL OR cr.grade_level_id = ANY($2))
@@ -1064,7 +1074,7 @@ pub async fn import_exam_items(
     let skipped_missing_duration_count: i64 = sqlx::query_scalar(
         r#"
         WITH round_context AS (
-          SELECT id AS exam_round_id, academic_semester_id
+          SELECT id AS exam_round_id, academic_semester_id, exam_kind
           FROM academic_exam_rounds
           WHERE id = $1
         )
@@ -1080,6 +1090,7 @@ pub async fn import_exam_items(
         JOIN class_rooms cr
           ON cr.id = cc.classroom_id
         WHERE c.exam_mode = 'in_timetable'
+          AND c.code = rc.exam_kind
           AND c.exam_duration_minutes IS NULL
           AND cr.is_active = true
           AND ($2::uuid[] IS NULL OR cr.grade_level_id = ANY($2))
@@ -1093,7 +1104,7 @@ pub async fn import_exam_items(
     let insert_result = sqlx::query(
         r#"
         WITH round_context AS (
-          SELECT id AS exam_round_id, academic_semester_id
+          SELECT id AS exam_round_id, academic_semester_id, exam_kind
           FROM academic_exam_rounds
           WHERE id = $1
         ),
@@ -1119,6 +1130,7 @@ pub async fn import_exam_items(
           JOIN class_rooms cr
             ON cr.id = cc.classroom_id
           WHERE c.exam_mode = 'in_timetable'
+            AND c.code = rc.exam_kind
             AND c.exam_duration_minutes IS NOT NULL
             AND cr.is_active = true
             AND ($2::uuid[] IS NULL OR cr.grade_level_id = ANY($2))
@@ -1638,6 +1650,7 @@ pub async fn publish_round(
                   academic_semester_id,
                   name,
                   description,
+                  exam_kind,
                   status,
                   published_at,
                   created_at,
@@ -3027,10 +3040,20 @@ fn validate_exam_day_window(start_time: NaiveTime, end_time: NaiveTime) -> Resul
     Ok(())
 }
 
+fn normalize_exam_kind(value: Option<&str>) -> Result<String, AppError> {
+    let normalized = value.unwrap_or("midterm").trim();
+    match normalized {
+        "midterm" | "final" => Ok(normalized.to_string()),
+        _ => Err(AppError::BadRequest(
+            "Exam round kind must be midterm or final".to_string(),
+        )),
+    }
+}
+
 fn normalize_update_round_request(
     request: UpdateExamRoundRequest,
 ) -> Result<NormalizedUpdateRoundRequest, AppError> {
-    if request.name.is_none() && request.description.is_none() {
+    if request.name.is_none() && request.description.is_none() && request.exam_kind.is_none() {
         return Err(AppError::BadRequest("No fields to update".to_string()));
     }
 
@@ -3050,6 +3073,10 @@ fn normalize_update_round_request(
     Ok(NormalizedUpdateRoundRequest {
         name,
         description: request.description,
+        exam_kind: match request.exam_kind {
+            Some(value) => Some(normalize_exam_kind(Some(&value))?),
+            None => None,
+        },
     })
 }
 
@@ -3097,6 +3124,7 @@ async fn fetch_round(pool: &PgPool, round_id: Uuid) -> Result<ExamRound, AppErro
                academic_semester_id,
                name,
                description,
+               exam_kind,
                status,
                published_at,
                created_at,
@@ -3858,6 +3886,24 @@ mod tests {
     }
 
     #[test]
+    fn import_exam_items_filters_source_categories_by_round_kind() {
+        let source = include_str!("exam_schedule_service.rs");
+        let import_start = source.find("pub async fn import_exam_items").unwrap();
+        let import_tail = &source[import_start..];
+        let next_function_start = import_tail
+            .find("pub async fn list_day_room_assignments")
+            .unwrap();
+        let import_body = &import_tail[..next_function_start];
+
+        assert!(import_body.contains("exam_kind"));
+        assert_eq!(
+            import_body.matches("c.code = rc.exam_kind").count(),
+            3,
+            "existing, missing-duration, and insert source queries must filter by round kind"
+        );
+    }
+
+    #[test]
     fn publish_round_locks_round_before_readiness_check() {
         let source = include_str!("exam_schedule_service.rs");
         let publish_start = source.find("pub async fn publish_round").unwrap();
@@ -4105,11 +4151,23 @@ mod tests {
         let result = normalize_update_round_request(UpdateExamRoundRequest {
             name: None,
             description: None,
+            exam_kind: None,
         });
 
         assert!(matches!(
             result,
             Err(AppError::BadRequest(message)) if message.contains("No fields")
+        ));
+    }
+
+    #[test]
+    fn normalizes_supported_exam_round_kinds() {
+        assert_eq!(normalize_exam_kind(None).unwrap(), "midterm");
+        assert_eq!(normalize_exam_kind(Some(" final ")).unwrap(), "final");
+
+        assert!(matches!(
+            normalize_exam_kind(Some("quiz")),
+            Err(AppError::BadRequest(message)) if message.contains("midterm or final")
         ));
     }
 

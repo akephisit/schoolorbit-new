@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { Semester } from '$lib/api/academic';
-	import type { CreateExamRoundInput } from '$lib/api/examSchedule';
+	import type { CreateExamRoundInput, ExamRoundKind } from '$lib/api/examSchedule';
 	import { LoadingButton } from '$lib/components/app-state';
 	import { Button } from '$lib/components/ui/button';
 	import * as Dialog from '$lib/components/ui/dialog';
@@ -25,6 +25,7 @@
 
 	let name = $state('');
 	let academicSemesterId = $state('');
+	let examKind = $state<ExamRoundKind>('midterm');
 	let description = $state('');
 
 	const selectedSemesterLabel = $derived(
@@ -40,6 +41,7 @@
 	function resetForm() {
 		name = '';
 		academicSemesterId = defaultSemesterId;
+		examKind = 'midterm';
 		description = '';
 	}
 
@@ -49,7 +51,8 @@
 		const created = await onCreate?.({
 			academicSemesterId,
 			name: name.trim(),
-			description: description.trim() || null
+			description: description.trim() || null,
+			examKind
 		});
 		if (created) resetForm();
 	}
@@ -88,6 +91,19 @@
 						{#each semesters as semester (semester.id)}
 							<Select.Item value={semester.id}>{semester.name}</Select.Item>
 						{/each}
+					</Select.Content>
+				</Select.Root>
+			</div>
+
+			<div class="grid gap-2">
+				<Label>ชนิดรอบสอบ</Label>
+				<Select.Root type="single" bind:value={examKind}>
+					<Select.Trigger class="w-full">
+						{examKind === 'final' ? 'ปลายภาค' : 'กลางภาค'}
+					</Select.Trigger>
+					<Select.Content>
+						<Select.Item value="midterm">กลางภาค</Select.Item>
+						<Select.Item value="final">ปลายภาค</Select.Item>
 					</Select.Content>
 				</Select.Root>
 			</div>

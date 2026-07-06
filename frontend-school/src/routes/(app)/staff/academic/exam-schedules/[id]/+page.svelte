@@ -17,11 +17,13 @@
 		listExamInvigilatorStaffOptions,
 		placeExamSession,
 		publishExamRound,
+		updateExamRound,
 		updateExamAssignmentInvigilators,
 		upsertDayRoomAssignment,
 		upsertExamDay,
 		type ExamInvigilatorStaffOption,
 		type ExamInvigilatorWorkspace,
+		type ExamRoundKind,
 		type ExamRoundStatus,
 		type ExamScheduleWorkspace,
 		type PlaceExamSessionInput,
@@ -38,6 +40,7 @@
 	import { PageShell } from '$lib/components/app-layout';
 	import { LoadingButton, PageSkeleton, PageState } from '$lib/components/app-state';
 	import { Badge } from '$lib/components/ui/badge';
+	import * as Select from '$lib/components/ui/select';
 	import * as Tabs from '$lib/components/ui/tabs';
 	import { PERMISSIONS } from '$lib/permissions/registry';
 	import { can } from '$lib/stores/permissions';
@@ -76,6 +79,7 @@
 	let managementOptionsRequestToken = 0;
 	let invigilatorWorkspaceRequestToken = 0;
 	let staffOptionsRequestToken = 0;
+	let savingRoundKind = $state(false);
 
 	const canManageExamSchedules = $derived(
 		$can.has(PERMISSIONS.ACADEMIC_EXAM_SCHEDULE_MANAGE_SCHOOL)
@@ -121,6 +125,7 @@
 		generatingAssignmentId = null;
 		placingItemId = null;
 		unschedulingSessionId = null;
+		savingRoundKind = false;
 		loading = !!roundId;
 		refreshing = false;
 	}
@@ -317,6 +322,42 @@
 		}
 	}
 
+	function isExamRoundKind(value: string): value is ExamRoundKind {
+		return value === 'midterm' || value === 'final';
+	}
+
+	async function handleUpdateExamKind(value: string) {
+		if (
+			!workspace ||
+			!isExamRoundKind(value) ||
+			value === workspace.round.examKind ||
+			workspace.round.status === 'published'
+		) {
+			return;
+		}
+
+		const itemCount = workspace.unscheduledItems.length + workspace.scheduledSessions.length;
+		if (
+			itemCount > 0 &&
+			!window.confirm(
+				`เปลี่ยนชนิดรอบสอบเป็น${examRoundKindLabel(value)}? รายการสอบที่นำเข้าไว้ ${itemCount} รายการจะไม่ถูกลบอัตโนมัติ`
+			)
+		) {
+			return;
+		}
+
+		savingRoundKind = true;
+		try {
+			const round = await updateExamRound(workspace.round.id, { examKind: value });
+			workspace = { ...workspace, round };
+			toast.success(`เปลี่ยนชนิดรอบสอบเป็น${examRoundKindLabel(round.examKind)}แล้ว`);
+		} catch (updateError) {
+			toast.error(updateError instanceof Error ? updateError.message : 'บันทึกชนิดรอบสอบไม่สำเร็จ');
+		} finally {
+			savingRoundKind = false;
+		}
+	}
+
 	async function handlePublish() {
 		if (!workspace) return;
 
@@ -471,6 +512,10 @@
 		return status === 'published' ? 'default' : 'secondary';
 	}
 
+	function examRoundKindLabel(kind: ExamRoundKind): string {
+		return kind === 'final' ? 'ปลายภาค' : 'กลางภาค';
+	}
+
 	$effect(() => {
 		if (canManageExamSchedules && workspace && structure && !optionsRequested && !optionsLoading) {
 			loadManagementOptions();
@@ -525,6 +570,7 @@
 >
 	{#snippet meta()}
 		{#if workspace}
+			<Badge variant="outline">{examRoundKindLabel(workspace.round.examKind)}</Badge>
 			<Badge variant={statusVariant(workspace.round.status)}
 				>{statusLabel(workspace.round.status)}</Badge
 			>
@@ -556,6 +602,22 @@
 					invigilatorAssignmentCount={invigilatorWorkspace?.assignments.length ?? undefined}
 				/>
 				{#if canManageExamSchedules}
+					<Select.Root
+						type="single"
+						value={workspace.round.examKind}
+						onValueChange={handleUpdateExamKind}
+					>
+						<Select.Trigger
+							class="h-9 w-36"
+							disabled={workspace.round.status === 'published' || savingRoundKind}
+						>
+							{savingRoundKind ? 'กำลังบันทึก...' : examRoundKindLabel(workspace.round.examKind)}
+						</Select.Trigger>
+						<Select.Content>
+							<Select.Item value="midterm">กลางภาค</Select.Item>
+							<Select.Item value="final">ปลายภาค</Select.Item>
+						</Select.Content>
+					</Select.Root>
 					<LoadingButton
 						size="sm"
 						variant="outline"
@@ -565,7 +627,7 @@
 						disabled={workspace.round.status === 'published'}
 					>
 						<Download class="h-4 w-4" />
-						นำเข้า
+						นำเข้าเฉพาะ {examRoundKindLabel(workspace.round.examKind)}
 					</LoadingButton>
 				{/if}
 				{#if canPublishExamSchedules}

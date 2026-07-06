@@ -15,6 +15,7 @@
 		listExamRounds,
 		type CreateExamRoundInput,
 		type ExamRound,
+		type ExamRoundKind,
 		type ExamRoundStatus
 	} from '$lib/api/examSchedule';
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
@@ -158,6 +159,10 @@
 		return status === 'published' ? 'default' : 'secondary';
 	}
 
+	function examRoundKindLabel(kind: ExamRoundKind): string {
+		return kind === 'final' ? 'ปลายภาค' : 'กลางภาค';
+	}
+
 	function formatDate(value: string | null | undefined): string {
 		if (!value) return '-';
 		return new Date(value).toLocaleDateString('th-TH', {
@@ -257,10 +262,11 @@
 	{:else}
 		<Card.Root class="overflow-hidden p-0">
 			<div class="overflow-x-auto">
-				<Table class="min-w-[760px]">
+				<Table class="min-w-[840px]">
 					<TableHeader>
 						<TableRow>
 							<TableHead>รอบสอบ</TableHead>
+							<TableHead class="w-32">ชนิดรอบ</TableHead>
 							<TableHead class="w-36">สถานะ</TableHead>
 							<TableHead>ภาคเรียน</TableHead>
 							<TableHead class="w-36">เผยแพร่</TableHead>
@@ -285,6 +291,9 @@
 											{/if}
 										</div>
 									</div>
+								</TableCell>
+								<TableCell>
+									<Badge variant="outline">{examRoundKindLabel(round.examKind)}</Badge>
 								</TableCell>
 								<TableCell>
 									<Badge variant={statusVariant(round.status)}>{statusLabel(round.status)}</Badge>

@@ -239,6 +239,34 @@ test('academic exam schedule API client maps functions to backend routes and met
 	}
 });
 
+test('exam rounds expose exam kind for midterm and final import filtering', () => {
+	const api = readFileSync(projectPath('src/lib/api/examSchedule.ts'), 'utf8');
+	const listPage = readFileSync(
+		projectPath('src/routes/(app)/staff/academic/exam-schedules/+page.svelte'),
+		'utf8'
+	);
+	const roundDialog = readFileSync(
+		projectPath('src/lib/components/academic/exam-schedule/ExamRoundDialog.svelte'),
+		'utf8'
+	);
+	const detailPage = readFileSync(
+		projectPath('src/routes/(app)/staff/academic/exam-schedules/[id]/+page.svelte'),
+		'utf8'
+	);
+
+	assert.match(api, /export type ExamRoundKind = 'midterm' \| 'final'/);
+	assert.match(api, /examKind: ExamRoundKind/);
+	assert.match(api, /examKind: ExamRoundKind/);
+	assert.match(roundDialog, /let examKind = \$state<ExamRoundKind>\('midterm'\)/);
+	assert.match(roundDialog, /<Select\.Item value="midterm">กลางภาค<\/Select\.Item>/);
+	assert.match(roundDialog, /<Select\.Item value="final">ปลายภาค<\/Select\.Item>/);
+	assert.match(roundDialog, /examKind/);
+	assert.match(listPage, /function examRoundKindLabel\(kind: ExamRoundKind\): string/);
+	assert.match(listPage, /examRoundKindLabel\(round\.examKind\)/);
+	assert.match(detailPage, /examRoundKindLabel\(workspace\.round\.examKind\)/);
+	assert.match(detailPage, /นำเข้าเฉพาะ/);
+});
+
 test('exam schedule API exposes invigilator workspace and updates separately from room assignment', async () => {
 	const api = await readProjectFile('src/lib/api/examSchedule.ts');
 

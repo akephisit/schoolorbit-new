@@ -304,6 +304,24 @@ fn exam_day_order_migration_drops_sort_order_column() {
 }
 
 #[test]
+fn exam_round_kind_migration_adds_midterm_final_contract() {
+    let migration = read_source(
+        manifest_dir()
+            .join("migrations")
+            .join("022_academic_exam_round_exam_kind.sql"),
+    );
+
+    assert!(
+        migration.contains("ADD COLUMN exam_kind TEXT NOT NULL DEFAULT 'midterm'"),
+        "exam rounds need a non-null default kind for existing tenants"
+    );
+    assert!(
+        migration.contains("exam_kind IN ('midterm', 'final')"),
+        "exam round kind must stay limited to the supported assessment categories"
+    );
+}
+
+#[test]
 fn academic_exam_days_use_date_ordering_without_sort_order_contract() {
     let model = read_source(
         manifest_dir()

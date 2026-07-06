@@ -11,6 +11,7 @@ pub struct ExamRound {
     pub academic_semester_id: Uuid,
     pub name: String,
     pub description: Option<String>,
+    pub exam_kind: String,
     pub status: String,
     pub published_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
@@ -23,6 +24,7 @@ pub struct CreateExamRoundRequest {
     pub academic_semester_id: Uuid,
     pub name: String,
     pub description: Option<String>,
+    pub exam_kind: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -30,6 +32,7 @@ pub struct CreateExamRoundRequest {
 pub struct UpdateExamRoundRequest {
     pub name: Option<String>,
     pub description: Option<String>,
+    pub exam_kind: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, sqlx::FromRow)]

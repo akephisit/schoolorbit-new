@@ -3,12 +3,14 @@ import { apiClient, requireApiData, type ApiResponse } from '$lib/api/client';
 type EmptyResponseData = Record<string, never>;
 
 export type ExamRoundStatus = 'draft' | 'published';
+export type ExamRoundKind = 'midterm' | 'final';
 
 export interface ExamRound {
 	id: string;
 	academicSemesterId: string;
 	name: string;
 	description?: string | null;
+	examKind: ExamRoundKind;
 	status: ExamRoundStatus;
 	publishedAt?: string | null;
 	createdAt: string;
@@ -216,11 +218,13 @@ export interface CreateExamRoundInput {
 	academicSemesterId: string;
 	name: string;
 	description?: string | null;
+	examKind: ExamRoundKind;
 }
 
 export interface UpdateExamRoundInput {
 	name?: string;
 	description?: string | null;
+	examKind?: ExamRoundKind;
 }
 
 export interface BlockedWindowInput {
