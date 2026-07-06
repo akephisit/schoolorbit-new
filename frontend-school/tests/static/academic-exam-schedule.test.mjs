@@ -92,6 +92,48 @@ test('exam schedule refresh uses shared shadcn sheet primitive instead of featur
 	}
 });
 
+test('exam schedule detail uses shadcn alert dialogs for destructive confirmations', async () => {
+	const alertDialogIndexPath = 'src/lib/components/ui/alert-dialog/index.ts';
+	assert.equal(
+		existsSync(projectPath(alertDialogIndexPath)),
+		true,
+		`${alertDialogIndexPath} should exist`
+	);
+
+	const alertDialogIndex = await readProjectFile(alertDialogIndexPath);
+	const page = await readProjectFile(
+		'src/routes/(app)/staff/academic/exam-schedules/[id]/+page.svelte'
+	);
+	const handleUpdateExamKind = localFunctionSource(page, 'handleUpdateExamKind');
+	const handleClearMismatchedItems = localFunctionSource(page, 'handleClearMismatchedItems');
+	const confirmExamKindChange = localFunctionSource(page, 'confirmExamKindChange');
+	const confirmClearMismatchedItems = localFunctionSource(page, 'confirmClearMismatchedItems');
+
+	for (const expectedExport of [
+		'Content as AlertDialogContent',
+		'Action as AlertDialogAction',
+		'Cancel as AlertDialogCancel',
+		'Title as AlertDialogTitle',
+		'Description as AlertDialogDescription'
+	]) {
+		assert.match(alertDialogIndex, new RegExp(escapeRegExp(expectedExport)));
+	}
+
+	assert.match(page, /\$lib\/components\/ui\/alert-dialog/);
+	assert.match(page, /let examKindDialogOpen = \$state\(false\)/);
+	assert.match(page, /let clearMismatchedDialogOpen = \$state\(false\)/);
+	assert.match(page, /<AlertDialog\.Root bind:open=\{examKindDialogOpen\}>/);
+	assert.match(page, /<AlertDialog\.Root bind:open=\{clearMismatchedDialogOpen\}>/);
+	assert.match(page, /ยืนยันการเปลี่ยนชนิดรอบสอบ/);
+	assert.match(page, /ยืนยันการล้างรายการสอบ/);
+	assert.match(handleUpdateExamKind, /examKindDialogOpen = true/);
+	assert.match(handleClearMismatchedItems, /clearMismatchedDialogOpen = true/);
+	assert.match(confirmExamKindChange, /saveExamKind\(nextKind\)/);
+	assert.match(confirmClearMismatchedItems, /clearMismatchedExamItems\(workspace\.round\.id\)/);
+	assert.doesNotMatch(handleUpdateExamKind, /window\.confirm/);
+	assert.doesNotMatch(handleClearMismatchedItems, /window\.confirm/);
+});
+
 test('academic exam schedule routes have compile-ready page placeholders', () => {
 	const pageFiles = [
 		'src/routes/(app)/staff/academic/exam-schedules/+page.svelte',
@@ -294,10 +336,8 @@ test('staff schedule tab can clear imported items that do not match the round ki
 	assert.match(detailPage, /clearMismatchedExamItems/);
 	assert.match(detailPage, /let clearingMismatchedItems = \$state\(false\)/);
 	assert.match(resetWorkspaceForRound, /clearingMismatchedItems = false/);
-	assert.match(handleClearMismatchedItems, /clearMismatchedExamItems\(workspace\.round\.id\)/);
-	assert.match(handleClearMismatchedItems, /window\.confirm/);
-	assert.match(handleClearMismatchedItems, /deletedCount/);
-	assert.match(handleClearMismatchedItems, /await refreshWorkspace\(true\)/);
+	assert.match(handleClearMismatchedItems, /clearMismatchedDialogOpen = true/);
+	assert.doesNotMatch(handleClearMismatchedItems, /window\.confirm/);
 	assert.match(scheduleTab, /onclick=\{handleImportItems\}/);
 	assert.match(scheduleTab, /onclick=\{handleClearMismatchedItems\}/);
 	assert.match(scheduleTab, /ล้างรายการไม่ตรงรอบสอบ/);

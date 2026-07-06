@@ -40,6 +40,7 @@
 	import MobileDragDropPolyfill from '$lib/components/MobileDragDropPolyfill.svelte';
 	import { PageShell } from '$lib/components/app-layout';
 	import { LoadingButton, PageSkeleton, PageState } from '$lib/components/app-state';
+	import * as AlertDialog from '$lib/components/ui/alert-dialog';
 	import { Badge } from '$lib/components/ui/badge';
 	import * as Select from '$lib/components/ui/select';
 	import * as Tabs from '$lib/components/ui/tabs';
@@ -82,6 +83,9 @@
 	let invigilatorWorkspaceRequestToken = 0;
 	let staffOptionsRequestToken = 0;
 	let savingRoundKind = $state(false);
+	let examKindDialogOpen = $state(false);
+	let pendingExamKind = $state<ExamRoundKind | null>(null);
+	let clearMismatchedDialogOpen = $state(false);
 
 	const canManageExamSchedules = $derived(
 		$can.has(PERMISSIONS.ACADEMIC_EXAM_SCHEDULE_MANAGE_SCHOOL)
@@ -96,6 +100,9 @@
 	const gradeLevels = $derived(structure?.levels ?? []);
 	const configuredGradeLevelIds = $derived(
 		Array.from(new Set(workspace?.days.flatMap((day) => day.gradeLevelIds) ?? []))
+	);
+	const examScheduleItemCount = $derived(
+		(workspace?.unscheduledItems.length ?? 0) + (workspace?.scheduledSessions.length ?? 0)
 	);
 
 	function resetWorkspaceForRound(roundId: string) {
@@ -129,6 +136,9 @@
 		placingItemId = null;
 		unschedulingSessionId = null;
 		savingRoundKind = false;
+		examKindDialogOpen = false;
+		pendingExamKind = null;
+		clearMismatchedDialogOpen = false;
 		loading = !!roundId;
 		refreshing = false;
 	}
@@ -325,18 +335,15 @@
 		}
 	}
 
-	async function handleClearMismatchedItems() {
+	function handleClearMismatchedItems() {
+		if (!workspace) return;
+		clearMismatchedDialogOpen = true;
+	}
+
+	async function confirmClearMismatchedItems() {
 		if (!workspace) return;
 
-		const kindLabel = examRoundKindLabel(workspace.round.examKind);
-		if (
-			!window.confirm(
-				`ล้างรายการสอบที่ไม่ใช่${kindLabel}? รายการที่เคยจัดตารางไว้ของชุดนั้นจะถูกเอาออกด้วย`
-			)
-		) {
-			return;
-		}
-
+		clearMismatchedDialogOpen = false;
 		clearingMismatchedItems = true;
 		try {
 			const result = await clearMismatchedExamItems(workspace.round.id);
@@ -365,15 +372,17 @@
 			return;
 		}
 
-		const itemCount = workspace.unscheduledItems.length + workspace.scheduledSessions.length;
-		if (
-			itemCount > 0 &&
-			!window.confirm(
-				`เปลี่ยนชนิดรอบสอบเป็น${examRoundKindLabel(value)}? รายการสอบที่นำเข้าไว้ ${itemCount} รายการจะไม่ถูกลบอัตโนมัติ`
-			)
-		) {
+		if (examScheduleItemCount > 0) {
+			pendingExamKind = value;
+			examKindDialogOpen = true;
 			return;
 		}
+
+		await saveExamKind(value);
+	}
+
+	async function saveExamKind(value: ExamRoundKind) {
+		if (!workspace) return;
 
 		savingRoundKind = true;
 		try {
@@ -385,6 +394,19 @@
 		} finally {
 			savingRoundKind = false;
 		}
+	}
+
+	async function confirmExamKindChange() {
+		const nextKind = pendingExamKind;
+		if (!nextKind) return;
+
+		examKindDialogOpen = false;
+		pendingExamKind = null;
+		await saveExamKind(nextKind);
+	}
+
+	function cancelExamKindChange() {
+		pendingExamKind = null;
 	}
 
 	async function handlePublish() {
@@ -780,6 +802,43 @@
 					/>
 				</Tabs.Content>
 			</Tabs.Root>
+
+			<AlertDialog.Root bind:open={examKindDialogOpen}>
+				<AlertDialog.Content>
+					<AlertDialog.Header>
+						<AlertDialog.Title>ยืนยันการเปลี่ยนชนิดรอบสอบ</AlertDialog.Title>
+						<AlertDialog.Description>
+							เปลี่ยนชนิดรอบสอบเป็น{pendingExamKind
+								? examRoundKindLabel(pendingExamKind)
+								: 'รอบสอบใหม่'}? รายการสอบที่นำเข้าไว้ {examScheduleItemCount} รายการจะไม่ถูกลบอัตโนมัติ
+						</AlertDialog.Description>
+					</AlertDialog.Header>
+					<AlertDialog.Footer>
+						<AlertDialog.Cancel onclick={cancelExamKindChange}>ยกเลิก</AlertDialog.Cancel>
+						<AlertDialog.Action onclick={confirmExamKindChange}
+							>เปลี่ยนชนิดรอบสอบ</AlertDialog.Action
+						>
+					</AlertDialog.Footer>
+				</AlertDialog.Content>
+			</AlertDialog.Root>
+
+			<AlertDialog.Root bind:open={clearMismatchedDialogOpen}>
+				<AlertDialog.Content>
+					<AlertDialog.Header>
+						<AlertDialog.Title>ยืนยันการล้างรายการสอบ</AlertDialog.Title>
+						<AlertDialog.Description>
+							ล้างรายการสอบที่ไม่ใช่{examRoundKindLabel(workspace.round.examKind)}?
+							รายการที่เคยจัดตารางไว้ของชุดนั้นจะถูกเอาออกด้วย
+						</AlertDialog.Description>
+					</AlertDialog.Header>
+					<AlertDialog.Footer>
+						<AlertDialog.Cancel>ยกเลิก</AlertDialog.Cancel>
+						<AlertDialog.Action variant="destructive" onclick={confirmClearMismatchedItems}>
+							ล้างรายการไม่ตรงรอบสอบ
+						</AlertDialog.Action>
+					</AlertDialog.Footer>
+				</AlertDialog.Content>
+			</AlertDialog.Root>
 		</div>
 	{/if}
 </PageShell>
