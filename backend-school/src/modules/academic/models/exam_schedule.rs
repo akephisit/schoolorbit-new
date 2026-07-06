@@ -127,6 +127,46 @@ pub struct InvigilatorView {
     pub display_name: String,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExamInvigilatorAssignmentSummary {
+    pub assignment_id: Uuid,
+    pub exam_day_id: Uuid,
+    pub classroom_id: Uuid,
+    pub classroom_name: String,
+    pub room_id: Uuid,
+    pub room_name: String,
+    pub session_minutes: i32,
+    pub invigilators: Vec<InvigilatorView>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExamInvigilatorDayWorkload {
+    pub exam_day_id: Uuid,
+    pub minutes: i32,
+    pub assignment_count: i32,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExamInvigilatorStaffWorkload {
+    pub staff_id: Uuid,
+    pub staff_name: String,
+    pub total_minutes: i32,
+    pub assigned_day_count: i32,
+    pub assignment_count: i32,
+    pub days: Vec<ExamInvigilatorDayWorkload>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExamInvigilatorWorkspace {
+    pub round_id: Uuid,
+    pub assignments: Vec<ExamInvigilatorAssignmentSummary>,
+    pub staff_workloads: Vec<ExamInvigilatorStaffWorkload>,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GenerateSeatsRequest {

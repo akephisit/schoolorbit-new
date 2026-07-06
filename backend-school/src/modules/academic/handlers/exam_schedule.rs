@@ -2,7 +2,8 @@ use crate::api_response::ApiResponse;
 use crate::error::AppError;
 use crate::modules::academic::models::exam_schedule::{
     CreateExamRoundRequest, GenerateSeatsRequest, ImportExamItemsRequest, PlaceExamSessionRequest,
-    UpdateExamRoundRequest, UpsertDayRoomAssignmentRequest, UpsertExamDayRequest,
+    UpdateExamInvigilatorsRequest, UpdateExamRoundRequest, UpsertDayRoomAssignmentRequest,
+    UpsertExamDayRequest,
 };
 use crate::modules::academic::services::exam_schedule_service;
 use crate::permissions::registry::codes;
@@ -154,6 +155,21 @@ pub async fn list_day_room_assignments(
     Ok(Json(ApiResponse::ok(assignments)).into_response())
 }
 
+/// GET /api/academic/exam-schedules/{round_id}/invigilators
+pub async fn get_invigilator_workspace(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(round_id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    actor.require_permission(codes::ACADEMIC_EXAM_SCHEDULE_READ_SCHOOL)?;
+
+    let workspace = exam_schedule_service::get_invigilator_workspace(&pool, round_id).await?;
+    Ok(Json(ApiResponse::ok(workspace)).into_response())
+}
+
 /// POST /api/academic/exam-schedules/days/{exam_day_id}/room-assignments
 pub async fn upsert_day_room_assignment(
     State(state): State<AppState>,
@@ -169,6 +185,28 @@ pub async fn upsert_day_room_assignment(
     let assignment = exam_schedule_service::upsert_day_room_assignment(
         &pool,
         exam_day_id,
+        payload,
+        actor.user_id,
+    )
+    .await?;
+    Ok(Json(ApiResponse::ok(assignment)).into_response())
+}
+
+/// PUT /api/academic/exam-schedules/room-assignments/{assignment_id}/invigilators
+pub async fn update_assignment_invigilators(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(assignment_id): Path<Uuid>,
+    Json(payload): Json<UpdateExamInvigilatorsRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    actor.require_permission(codes::ACADEMIC_EXAM_SCHEDULE_MANAGE_SCHOOL)?;
+
+    let assignment = exam_schedule_service::update_assignment_invigilators(
+        &pool,
+        assignment_id,
         payload,
         actor.user_id,
     )

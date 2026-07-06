@@ -186,6 +186,14 @@ pub fn academic_routes() -> Router<AppState> {
             delete(handlers::exam_schedule::delete_session),
         )
         .route(
+            "/exam-schedules/{round_id}/invigilators",
+            get(handlers::exam_schedule::get_invigilator_workspace),
+        )
+        .route(
+            "/exam-schedules/room-assignments/{assignment_id}/invigilators",
+            put(handlers::exam_schedule::update_assignment_invigilators),
+        )
+        .route(
             "/exam-schedules/{round_id}/publish",
             post(handlers::exam_schedule::publish_round),
         )
