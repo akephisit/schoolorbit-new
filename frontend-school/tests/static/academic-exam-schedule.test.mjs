@@ -55,6 +55,19 @@ function localFunctionSource(source, functionName) {
 	assert.fail(`${functionName} should have a closed function body`);
 }
 
+function localSnippetSource(source, snippetName) {
+	const startPattern = new RegExp(`\\{#snippet\\s+${snippetName}\\(\\)\\}`);
+	const startMatch = startPattern.exec(source);
+
+	assert.ok(startMatch, `${snippetName} snippet should exist`);
+
+	const rest = source.slice(startMatch.index);
+	const endIndex = rest.indexOf('{/snippet}');
+	assert.notEqual(endIndex, -1, `${snippetName} snippet should be closed`);
+
+	return rest.slice(0, endIndex + '{/snippet}'.length);
+}
+
 test('exam schedule refresh uses shared shadcn sheet primitive instead of feature-local drawers', async () => {
 	const sheetIndexPath = 'src/lib/components/ui/sheet/index.ts';
 	assert.equal(existsSync(projectPath(sheetIndexPath)), true, `${sheetIndexPath} should exist`);
@@ -426,8 +439,13 @@ test('staff exam schedule detail uses compact status and removes large readiness
 		projectPath('src/routes/(app)/staff/academic/exam-schedules/[id]/+page.svelte'),
 		'utf8'
 	);
+	const actionsSnippet = localSnippetSource(page, 'actions');
+	const bodyBeforeTabs = page.slice(page.indexOf('{:else}'), page.indexOf('<Tabs.Root'));
 
 	assert.match(page, /CompactExamScheduleStatus/);
+	assert.match(actionsSnippet, /<CompactExamScheduleStatus/);
+	assert.match(actionsSnippet, /<RefreshCw/);
+	assert.doesNotMatch(bodyBeforeTabs, /<CompactExamScheduleStatus/);
 	assert.doesNotMatch(page, /<aside class="min-w-0 xl:sticky/);
 	assert.doesNotMatch(page, /xl:grid-cols-\[minmax\(0,1fr\)_22rem\]/);
 	assert.doesNotMatch(page, /ReadinessPanel/);
@@ -450,6 +468,9 @@ test('compact exam schedule status derives invigilator counts from room assignme
 	assert.match(statusComponent, /assignment\.invigilators\.length > 0/);
 	assert.match(statusComponent, /invigilatorAssignedCount \?\? invigilatorAssignedFallback/);
 	assert.match(statusComponent, /invigilatorAssignmentCount \?\? invigilatorAssignmentFallback/);
+	assert.doesNotMatch(statusComponent, /<section/);
+	assert.match(statusComponent, /<Sheet\.Root>/);
+	assert.match(statusComponent, /ยังไม่พร้อม \{readiness\.blockers\.length\}/);
 });
 
 test('staff timeline wires drag drop placement and accessible schedule dialog', () => {

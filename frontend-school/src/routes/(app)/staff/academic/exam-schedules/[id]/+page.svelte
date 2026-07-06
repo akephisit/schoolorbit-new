@@ -541,6 +541,17 @@
 					<RefreshCw class="h-4 w-4" />
 					รีเฟรช
 				</LoadingButton>
+				<CompactExamScheduleStatus
+					status={workspace.round.status}
+					readiness={workspace.readiness}
+					days={workspace.days}
+					unscheduledItems={workspace.unscheduledItems}
+					scheduledSessions={workspace.scheduledSessions}
+					invigilatorAssignedCount={invigilatorWorkspace?.assignments.filter(
+						(assignment) => assignment.invigilators.length > 0
+					).length ?? undefined}
+					invigilatorAssignmentCount={invigilatorWorkspace?.assignments.length ?? undefined}
+				/>
 				{#if canManageExamSchedules}
 					<LoadingButton
 						size="sm"
@@ -584,18 +595,6 @@
 		<PageState title="ไม่พบรอบตารางสอบ" description="รายการที่เปิดอาจถูกลบหรือไม่มีสิทธิ์เข้าถึง" />
 	{:else}
 		<div class="space-y-4">
-			<CompactExamScheduleStatus
-				status={workspace.round.status}
-				readiness={workspace.readiness}
-				days={workspace.days}
-				unscheduledItems={workspace.unscheduledItems}
-				scheduledSessions={workspace.scheduledSessions}
-				invigilatorAssignedCount={invigilatorWorkspace?.assignments.filter(
-					(assignment) => assignment.invigilators.length > 0
-				).length ?? undefined}
-				invigilatorAssignmentCount={invigilatorWorkspace?.assignments.length ?? undefined}
-			/>
-
 			<Tabs.Root bind:value={activeTab} class="gap-4">
 				<Tabs.List class="grid w-full grid-cols-4 md:w-fit">
 					<Tabs.Trigger value="setup">Setup</Tabs.Trigger>
