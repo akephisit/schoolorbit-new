@@ -266,6 +266,22 @@ test('exam room assignment panel is room and seat only with sheet editing', asyn
 	assert.match(panel, /sticky|mt-auto/);
 });
 
+test('exam room assignment panel keeps setup actions compact and labels rooms plainly', async () => {
+	const panel = await readProjectFile(
+		'src/lib/components/academic/exam-schedule/ExamRoomAssignmentPanel.svelte'
+	);
+
+	assert.match(panel, /function classroomLabel\(classroom: Classroom \| undefined\): string/);
+	assert.match(panel, /return classroom\?\.name \?\? 'เลือกห้องเรียน'/);
+	assert.match(panel, /function roomOptionLabel\(room: Room \| undefined\): string/);
+	assert.match(panel, /\$\{building\} \/ \$\{name\} \/ \$\{capacity\} ที่นั่ง/);
+	assert.doesNotMatch(panel, /room\.code/);
+	assert.doesNotMatch(panel, /classroom\.grade_level_name \? `\$\{classroom\.grade_level_name\}/);
+	assert.match(panel, /<Select\.Root type="single" bind:value=\{selectedDayId\}>[\s\S]*เพิ่มห้องสอบ/);
+	assert.doesNotMatch(panel, /xl:grid-cols-\[minmax\(0,1fr\)_24rem\]/);
+	assert.doesNotMatch(panel, /<div class="p-4">\s*\{#if readonly\}/);
+});
+
 test('exam invigilator panel exposes room-first workflow and workload summary', () => {
 	const panelPath = 'src/lib/components/academic/exam-schedule/ExamInvigilatorPanel.svelte';
 	assert.equal(existsSync(projectPath(panelPath)), true, `${panelPath} should exist`);
@@ -563,9 +579,39 @@ test('staff timeline renders duration-aware drag preview states', () => {
 	assert.match(timeline, /preview\.valid/);
 	assert.match(timeline, /preview\.startTime/);
 	assert.match(timeline, /preview\.endTime/);
-	assert.match(timeline, /onDragEnd=\{clearDragPreview\}/);
+	assert.match(timeline, /onDragEnd=\{clearActiveDrag\}/);
 	assert.match(tray, /onDragEnd/);
 	assert.match(tray, /ondragend/);
+});
+
+test('exam timeline keeps active drag payload so dragover can allow drops reliably', () => {
+	const timeline = readFileSync(
+		projectPath('src/lib/components/academic/exam-schedule/ExamScheduleTimeline.svelte'),
+		'utf8'
+	);
+	const tray = readFileSync(
+		projectPath('src/lib/components/academic/exam-schedule/ExamItemTray.svelte'),
+		'utf8'
+	);
+	const handleDragOver = localFunctionSource(timeline, 'handleDragOver');
+	const handleDrop = localFunctionSource(timeline, 'handleDrop');
+
+	assert.match(timeline, /let activeDragPayload = \$state<DragPayload \| null>\(null\)/);
+	assert.match(timeline, /function setActiveDragPayload\(payload: DragPayload\)/);
+	assert.match(timeline, /function currentDragPayload\(event: DragEvent\): DragPayload \| null/);
+	assert.match(timeline, /activeDragPayload = payload/);
+	assert.match(timeline, /activeDragPayload = null/);
+	assert.match(timeline, /onDragStart=\{setActiveDragPayload\}/);
+	assert.match(timeline, /onDragEnd=\{clearActiveDrag\}/);
+	assert.match(tray, /onDragStart\?: \(payload: DragPayload\) => void/);
+	assert.match(tray, /onDragStart\?\.\(payload\)/);
+	assert.match(handleDragOver, /currentDragPayload\(event\)/);
+	assert.match(handleDragOver, /event\.preventDefault\(\)/);
+	assert.doesNotMatch(
+		handleDragOver,
+		/const payload = dragPayload\(event\);\s*if \(!payload\) return;\s*event\.preventDefault\(\)/
+	);
+	assert.match(handleDrop, /currentDragPayload\(event\)/);
 });
 
 test('scheduled exam sessions can be removed through dialog and tray drop', () => {

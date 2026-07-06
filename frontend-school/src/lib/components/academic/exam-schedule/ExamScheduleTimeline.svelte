@@ -68,6 +68,7 @@
 	let selectedStartTime = $state('08:30');
 	let dialogError = $state('');
 	let dragPreview = $state<DragPreviewState | null>(null);
+	let activeDragPayload = $state<DragPayload | null>(null);
 
 	const sortedDays = $derived([...workspace.days].sort((a, b) => a.sortOrder - b.sortOrder));
 	const placementDisabled = $derived(readonly || !!placingItemId || !!unschedulingSessionId);
@@ -153,25 +154,41 @@
 		}
 	}
 
+	function setActiveDragPayload(payload: DragPayload) {
+		activeDragPayload = payload;
+	}
+
+	function currentDragPayload(event: DragEvent): DragPayload | null {
+		return dragPayload(event) ?? activeDragPayload;
+	}
+
 	function handleSessionDragStart(event: DragEvent, session: ExamSession, dragOffsetPx: number) {
 		if (placementDisabled || !event.dataTransfer) return;
+
+		const payload = {
+			examScheduleItemId: session.examScheduleItemId,
+			classroomId: session.classroomId,
+			gradeLevelId: session.gradeLevelId,
+			durationMinutes: session.durationMinutes,
+			sourceSessionId: session.id,
+			dragOffsetPx
+		};
+		setActiveDragPayload(payload);
 
 		event.dataTransfer.effectAllowed = 'move';
 		event.dataTransfer.setData(
 			'application/x-exam-schedule-item',
-			JSON.stringify({
-				examScheduleItemId: session.examScheduleItemId,
-				classroomId: session.classroomId,
-				gradeLevelId: session.gradeLevelId,
-				durationMinutes: session.durationMinutes,
-				sourceSessionId: session.id,
-				dragOffsetPx
-			})
+			JSON.stringify(payload)
 		);
 	}
 
 	function clearDragPreview() {
 		dragPreview = null;
+	}
+
+	function clearActiveDrag() {
+		activeDragPayload = null;
+		clearDragPreview();
 	}
 
 	function buildRowDragPreview(event: DragEvent, day: ExamDayDetail, payload: DragPayload) {
@@ -197,7 +214,7 @@
 
 	function handleDragOver(event: DragEvent, day: ExamDayDetail, assignmentClassroomId: string) {
 		if (placementDisabled) return;
-		const payload = dragPayload(event);
+		const payload = currentDragPayload(event);
 		if (!payload) return;
 
 		event.preventDefault();
@@ -238,21 +255,21 @@
 		assignmentClassroomId: string
 	) {
 		if (placementDisabled) {
-			clearDragPreview();
+			clearActiveDrag();
 			return;
 		}
 		event.preventDefault();
 		localError = '';
 
-		const payload = dragPayload(event);
+		const payload = currentDragPayload(event);
 		if (!payload) {
-			clearDragPreview();
+			clearActiveDrag();
 			return;
 		}
 
 		if (payload.classroomId !== assignmentClassroomId) {
 			localError = 'รายการสอบต้องวางในแถวห้องเรียนเดียวกัน';
-			clearDragPreview();
+			clearActiveDrag();
 			return;
 		}
 
@@ -264,7 +281,7 @@
 		try {
 			await placeLocallyValidated(payload, day, startsAt);
 		} finally {
-			clearDragPreview();
+			clearActiveDrag();
 		}
 	}
 
@@ -358,7 +375,8 @@
 				unschedulingSessionId={unschedulingSessionId}
 				onPlaceSession={onPlaceSession}
 				onUnscheduleSession={onUnscheduleSession}
-				onDragEnd={clearDragPreview}
+				onDragStart={setActiveDragPayload}
+				onDragEnd={clearActiveDrag}
 		/>
 
 		<div class="min-w-0 overflow-auto">
@@ -420,7 +438,7 @@
 												ondragover={(event) => handleDragOver(event, day, assignment.classroomId)}
 												ondragleave={(event) =>
 													handleDragLeave(event, day, assignment.classroomId)}
-												ondragend={clearDragPreview}
+												ondragend={clearActiveDrag}
 												ondrop={(event) => handleDrop(event, day, assignment.classroomId)}
 											>
 												<div

@@ -34,6 +34,7 @@
 	import ExamInvigilatorPanel from '$lib/components/academic/exam-schedule/ExamInvigilatorPanel.svelte';
 	import ExamRoomAssignmentPanel from '$lib/components/academic/exam-schedule/ExamRoomAssignmentPanel.svelte';
 	import ExamScheduleTimeline from '$lib/components/academic/exam-schedule/ExamScheduleTimeline.svelte';
+	import MobileDragDropPolyfill from '$lib/components/MobileDragDropPolyfill.svelte';
 	import { PageShell } from '$lib/components/app-layout';
 	import { LoadingButton, PageSkeleton, PageState } from '$lib/components/app-state';
 	import { Badge } from '$lib/components/ui/badge';
@@ -514,6 +515,8 @@
 <svelte:head>
 	<title>{pageTitle}</title>
 </svelte:head>
+
+<MobileDragDropPolyfill />
 
 <PageShell
 	title={pageTitle}

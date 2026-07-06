@@ -32,6 +32,7 @@
 		unschedulingSessionId = null,
 		onPlaceSession,
 		onUnscheduleSession,
+		onDragStart,
 		onDragEnd
 	}: {
 		unscheduledItems: ExamScheduleItem[];
@@ -42,6 +43,7 @@
 		unschedulingSessionId?: string | null;
 		onPlaceSession?: (input: PlaceExamSessionInput) => Promise<boolean> | boolean;
 		onUnscheduleSession?: (sessionId: string) => Promise<boolean> | boolean;
+		onDragStart?: (payload: DragPayload) => void;
 		onDragEnd?: () => void;
 	} = $props();
 
@@ -81,15 +83,18 @@
 	function handleDragStart(event: DragEvent, item: ExamScheduleItem) {
 		if (readonly || placingItemId || unschedulingSessionId || !event.dataTransfer) return;
 
+		const payload = {
+			examScheduleItemId: item.id,
+			classroomId: item.classroomId,
+			gradeLevelId: item.gradeLevelId,
+			durationMinutes: item.durationMinutes
+		};
+		onDragStart?.(payload);
+
 		event.dataTransfer.effectAllowed = 'move';
 		event.dataTransfer.setData(
 			'application/x-exam-schedule-item',
-			JSON.stringify({
-				examScheduleItemId: item.id,
-				classroomId: item.classroomId,
-				gradeLevelId: item.gradeLevelId,
-				durationMinutes: item.durationMinutes
-			})
+			JSON.stringify(payload)
 		);
 	}
 
@@ -184,7 +189,7 @@
 		<div class="max-h-[36rem] space-y-2 overflow-y-auto p-3">
 			{#each unscheduledItems as item (item.id)}
 				<div
-					class="rounded-md border bg-card p-3 shadow-sm"
+					class="cursor-grab rounded-md border bg-card p-3 shadow-sm active:cursor-grabbing"
 					class:opacity-60={placingItemId === item.id || !!unschedulingSessionId}
 					role="listitem"
 					draggable={!readonly && !placingItemId && !unschedulingSessionId}

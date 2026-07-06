@@ -21,7 +21,7 @@
 		TableHeader,
 		TableRow
 	} from '$lib/components/ui/table';
-	import { Armchair } from 'lucide-svelte';
+	import { Armchair, Plus } from 'lucide-svelte';
 
 	let {
 		days = [],
@@ -67,9 +67,9 @@
 			: classrooms
 	);
 	const selectedClassroomLabel = $derived(
-		classrooms.find((classroom) => classroom.id === classroomId)?.name ?? 'เลือกห้องเรียน'
+		classroomLabel(classrooms.find((classroom) => classroom.id === classroomId))
 	);
-	const selectedRoomLabel = $derived(roomLabel(rooms.find((room) => room.id === roomId)));
+	const selectedRoomLabel = $derived(roomOptionLabel(rooms.find((room) => room.id === roomId)));
 
 	function formatDayDate(value: string, label?: string | null): string {
 		const dateLabel = new Date(value).toLocaleDateString('th-TH', {
@@ -80,15 +80,29 @@
 		return label ? `${label} · ${dateLabel}` : dateLabel;
 	}
 
-	function roomLabel(room: Room | undefined): string {
+	function classroomLabel(classroom: Classroom | undefined): string {
+		return classroom?.name ?? 'เลือกห้องเรียน';
+	}
+
+	function roomOptionLabel(room: Room | undefined): string {
 		if (!room) return 'เลือกห้องสอบ';
-		const code = room.code ? `${room.code} · ` : '';
-		const building = room.building_name ? `${room.building_name} / ` : '';
-		return `${building}${code}${room.name_th} / ${room.capacity ?? 0} ที่นั่ง`;
+		const building = room.building_name || 'ไม่ระบุอาคาร';
+		const name = room.name_th || room.name_en || 'ไม่ระบุห้อง';
+		const capacity = room.capacity ?? 0;
+		return `${building} / ${name} / ${capacity} ที่นั่ง`;
 	}
 
 	function assignmentCapacity(assignment: ExamDayRoomAssignmentView): string {
 		return String(assignment.capacityOverride ?? assignment.roomCapacity ?? '-');
+	}
+
+	function assignmentRoomLabel(assignment: ExamDayRoomAssignmentView): string {
+		const room = rooms.find((item) => item.id === assignment.roomId);
+		if (room) return roomOptionLabel(room);
+
+		const name = assignment.roomName ?? '-';
+		const capacity = assignment.roomCapacity ?? 0;
+		return `${name} / ${capacity} ที่นั่ง`;
 	}
 
 	function assignmentRoomMeta(assignment: ExamDayRoomAssignmentView): string {
@@ -147,7 +161,7 @@
 			<h2 class="font-semibold">ห้องสอบและที่นั่ง</h2>
 			<p class="text-sm text-muted-foreground">{assignments.length} ห้องในวันที่เลือก</p>
 		</div>
-		<div class="flex flex-col gap-2 sm:flex-row sm:items-center">
+		<div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
 			<Select.Root type="single" bind:value={selectedDayId}>
 				<Select.Trigger class="w-full sm:w-64">{dayLabel}</Select.Trigger>
 				<Select.Content>
@@ -156,87 +170,77 @@
 					{/each}
 				</Select.Content>
 			</Select.Root>
-		</div>
-	</div>
-
-	<div class="grid gap-0 xl:grid-cols-[minmax(0,1fr)_24rem]">
-		<div class="min-w-0 border-b xl:border-b-0 xl:border-r">
-			{#if !selectedDay}
-				<PageState title="ยังไม่มีวันสอบ" description="ต้องมีวันสอบก่อนกำหนดห้องสอบ" />
-			{:else if assignments.length === 0}
-				<PageState title="ยังไม่มีห้องสอบในวันนี้" description="ยังไม่พบการกำหนดห้องสอบสำหรับวันสอบที่เลือก" />
-			{:else}
-				<div class="overflow-x-auto">
-					<Table class="min-w-[640px]">
-						<TableHeader>
-							<TableRow>
-								<TableHead>ห้องเรียน</TableHead>
-								<TableHead>ห้องสอบ</TableHead>
-								<TableHead class="w-24 text-center">ความจุ</TableHead>
-								<TableHead class="w-36 text-right">ที่นั่ง</TableHead>
-							</TableRow>
-						</TableHeader>
-						<TableBody>
-							{#each assignments as assignment (assignment.id)}
-								<TableRow>
-									<TableCell class="font-medium">{assignment.classroomName ?? '-'}</TableCell>
-									<TableCell>
-										<div class="font-medium">{assignment.roomName ?? '-'}</div>
-										<div class="text-xs text-muted-foreground">{assignmentRoomMeta(assignment)}</div>
-									</TableCell>
-									<TableCell class="text-center">
-										<Badge variant="outline">{assignmentCapacity(assignment)}</Badge>
-									</TableCell>
-									<TableCell class="text-right">
-										<div class="flex justify-end gap-1">
-											{#if !readonly}
-												<Button variant="outline" size="sm" onclick={() => loadAssignment(assignment)}>
-													แก้ไข
-												</Button>
-												<LoadingButton
-													variant="outline"
-													size="icon-sm"
-													loading={generatingAssignmentId === assignment.id}
-													loadingLabel=""
-													onclick={() => onGenerateSeats?.(assignment.id)}
-													aria-label="สร้างเลขที่นั่ง"
-												>
-													<Armchair class="h-4 w-4" />
-												</LoadingButton>
-											{:else}
-												<Badge variant="outline">อ่านอย่างเดียว</Badge>
-											{/if}
-										</div>
-									</TableCell>
-								</TableRow>
-							{/each}
-						</TableBody>
-					</Table>
-				</div>
-			{/if}
-		</div>
-
-		<div class="p-4">
-			{#if readonly}
-				<PageState
-					variant="permission"
-					title="อ่านอย่างเดียว"
-					description="ผู้ใช้ปัจจุบันไม่มีสิทธิ์กำหนดห้องสอบ"
-				/>
-			{:else}
+			{#if !readonly}
 				<Button
 					type="button"
-					class="w-full"
+					size="sm"
 					disabled={!selectedDay}
 					onclick={() => {
 						resetForm();
 						editorOpen = true;
 					}}
 				>
+					<Plus class="h-4 w-4" />
 					เพิ่มห้องสอบ
 				</Button>
 			{/if}
 		</div>
+	</div>
+
+	<div class="min-w-0">
+		{#if !selectedDay}
+			<PageState title="ยังไม่มีวันสอบ" description="ต้องมีวันสอบก่อนกำหนดห้องสอบ" />
+		{:else if assignments.length === 0}
+			<PageState title="ยังไม่มีห้องสอบในวันนี้" description="ยังไม่พบการกำหนดห้องสอบสำหรับวันสอบที่เลือก" />
+		{:else}
+			<div class="overflow-x-auto">
+				<Table class="min-w-[640px]">
+					<TableHeader>
+						<TableRow>
+							<TableHead>ห้องเรียน</TableHead>
+							<TableHead>ห้องสอบ</TableHead>
+							<TableHead class="w-24 text-center">ความจุ</TableHead>
+							<TableHead class="w-36 text-right">ที่นั่ง</TableHead>
+						</TableRow>
+					</TableHeader>
+					<TableBody>
+						{#each assignments as assignment (assignment.id)}
+							<TableRow>
+								<TableCell class="font-medium">{assignment.classroomName ?? '-'}</TableCell>
+								<TableCell>
+									<div class="font-medium">{assignmentRoomLabel(assignment)}</div>
+									<div class="text-xs text-muted-foreground">{assignmentRoomMeta(assignment)}</div>
+								</TableCell>
+								<TableCell class="text-center">
+									<Badge variant="outline">{assignmentCapacity(assignment)}</Badge>
+								</TableCell>
+								<TableCell class="text-right">
+									<div class="flex justify-end gap-1">
+										{#if !readonly}
+											<Button variant="outline" size="sm" onclick={() => loadAssignment(assignment)}>
+												แก้ไข
+											</Button>
+											<LoadingButton
+												variant="outline"
+												size="icon-sm"
+												loading={generatingAssignmentId === assignment.id}
+												loadingLabel=""
+												onclick={() => onGenerateSeats?.(assignment.id)}
+												aria-label="สร้างเลขที่นั่ง"
+											>
+												<Armchair class="h-4 w-4" />
+											</LoadingButton>
+										{:else}
+											<Badge variant="outline">อ่านอย่างเดียว</Badge>
+										{/if}
+									</div>
+								</TableCell>
+							</TableRow>
+						{/each}
+					</TableBody>
+				</Table>
+			</div>
+		{/if}
 	</div>
 
 	{#if !readonly}
@@ -261,9 +265,7 @@
 								<Select.Trigger class="w-full">{selectedClassroomLabel}</Select.Trigger>
 								<Select.Content>
 									{#each filteredClassrooms as classroom (classroom.id)}
-										<Select.Item value={classroom.id}>
-											{classroom.grade_level_name ? `${classroom.grade_level_name} / ` : ''}{classroom.name}
-										</Select.Item>
+										<Select.Item value={classroom.id}>{classroomLabel(classroom)}</Select.Item>
 									{/each}
 								</Select.Content>
 							</Select.Root>
@@ -275,7 +277,7 @@
 								<Select.Trigger class="w-full">{selectedRoomLabel}</Select.Trigger>
 								<Select.Content>
 									{#each rooms as room (room.id)}
-										<Select.Item value={room.id}>{roomLabel(room)}</Select.Item>
+										<Select.Item value={room.id}>{roomOptionLabel(room)}</Select.Item>
 									{/each}
 								</Select.Content>
 							</Select.Root>
