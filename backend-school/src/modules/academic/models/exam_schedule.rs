@@ -79,6 +79,13 @@ pub struct UpsertDayRoomAssignmentRequest {
     pub classroom_id: Uuid,
     pub room_id: Uuid,
     pub capacity_override: Option<i32>,
+    #[serde(default)]
+    pub invigilator_staff_ids: Option<Vec<Uuid>>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateExamInvigilatorsRequest {
     pub invigilator_staff_ids: Vec<Uuid>,
 }
 

@@ -1058,8 +1058,11 @@ pub async fn upsert_day_room_assignment(
     request: UpsertDayRoomAssignmentRequest,
     actor_user_id: Uuid,
 ) -> Result<DayRoomAssignmentView, AppError> {
-    let invigilator_staff_ids =
-        validate_unique_invigilator_staff_ids(request.invigilator_staff_ids)?;
+    let invigilator_staff_ids = request
+        .invigilator_staff_ids
+        .as_ref()
+        .map(|ids| validate_unique_invigilator_staff_ids(ids.clone()))
+        .transpose()?;
     let capacity_override = validate_capacity_override(request.capacity_override)?;
 
     let mut tx = pool.begin().await?;
@@ -1087,8 +1090,6 @@ pub async fn upsert_day_room_assignment(
             "Classroom has {active_student_count} active student(s), which exceeds the room capacity of {effective_capacity}"
         )));
     }
-
-    validate_active_staff_users(&mut tx, &invigilator_staff_ids).await?;
 
     let assignment_id: Uuid = sqlx::query_scalar(
         r#"
@@ -1119,34 +1120,15 @@ pub async fn upsert_day_room_assignment(
     .await
     .map_err(map_day_room_assignment_write_error)?;
 
-    sqlx::query(
-        r#"
-        DELETE FROM academic_exam_day_invigilators
-        WHERE day_room_assignment_id = $1
-        "#,
-    )
-    .bind(assignment_id)
-    .execute(&mut *tx)
-    .await?;
-
-    if !invigilator_staff_ids.is_empty() {
-        sqlx::query(
-            r#"
-            INSERT INTO academic_exam_day_invigilators (
-                exam_day_id,
-                day_room_assignment_id,
-                staff_id
-            )
-            SELECT $1, $2, staff_id
-            FROM unnest($3::uuid[]) AS staff_id
-            "#,
+    if let Some(invigilator_staff_ids) = invigilator_staff_ids {
+        replace_assignment_invigilators_in_tx(
+            &mut tx,
+            day_context.exam_round_id,
+            exam_day_id,
+            assignment_id,
+            &invigilator_staff_ids,
         )
-        .bind(exam_day_id)
-        .bind(assignment_id)
-        .bind(&invigilator_staff_ids)
-        .execute(&mut *tx)
-        .await
-        .map_err(map_day_room_assignment_write_error)?;
+        .await?;
     }
 
     mark_round_draft_after_mutation(&mut tx, day_context.exam_round_id, Some(actor_user_id))
@@ -1154,6 +1136,50 @@ pub async fn upsert_day_room_assignment(
     tx.commit().await?;
 
     fetch_day_room_assignment_view(pool, assignment_id).await
+}
+
+async fn replace_assignment_invigilators_in_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    _round_id: Uuid,
+    exam_day_id: Uuid,
+    assignment_id: Uuid,
+    invigilator_staff_ids: &[Uuid],
+) -> Result<(), AppError> {
+    validate_active_staff_users(tx, invigilator_staff_ids).await?;
+
+    sqlx::query(
+        r#"
+        DELETE FROM academic_exam_day_invigilators
+        WHERE day_room_assignment_id = $1
+        "#,
+    )
+    .bind(assignment_id)
+    .execute(&mut **tx)
+    .await?;
+
+    if invigilator_staff_ids.is_empty() {
+        return Ok(());
+    }
+
+    sqlx::query(
+        r#"
+        INSERT INTO academic_exam_day_invigilators (
+            exam_day_id,
+            day_room_assignment_id,
+            staff_id
+        )
+        SELECT $1, $2, staff_id
+        FROM unnest($3::uuid[]) AS staff_id
+        "#,
+    )
+    .bind(exam_day_id)
+    .bind(assignment_id)
+    .bind(invigilator_staff_ids)
+    .execute(&mut **tx)
+    .await
+    .map_err(map_day_room_assignment_write_error)?;
+
+    Ok(())
 }
 
 pub async fn generate_seats_for_assignment(
@@ -2915,6 +2941,34 @@ mod tests {
 
     fn t(value: &str) -> NaiveTime {
         NaiveTime::parse_from_str(value, "%H:%M").unwrap()
+    }
+
+    #[test]
+    fn room_assignment_payload_without_invigilators_preserves_existing_staff() {
+        let request = serde_json::json!({
+            "classroomId": Uuid::from_u128(1),
+            "roomId": Uuid::from_u128(2),
+            "capacityOverride": null
+        });
+
+        let parsed: UpsertDayRoomAssignmentRequest = serde_json::from_value(request).unwrap();
+
+        assert_eq!(parsed.invigilator_staff_ids, None);
+    }
+
+    #[test]
+    fn room_assignment_payload_with_invigilators_remains_backwards_compatible() {
+        let staff_id = Uuid::from_u128(3);
+        let request = serde_json::json!({
+            "classroomId": Uuid::from_u128(1),
+            "roomId": Uuid::from_u128(2),
+            "capacityOverride": null,
+            "invigilatorStaffIds": [staff_id]
+        });
+
+        let parsed: UpsertDayRoomAssignmentRequest = serde_json::from_value(request).unwrap();
+
+        assert_eq!(parsed.invigilator_staff_ids, Some(vec![staff_id]));
     }
 
     #[test]
