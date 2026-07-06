@@ -186,12 +186,14 @@
 		if (!payload) return;
 
 		event.preventDefault();
-		if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
 
 		if (payload.classroomId !== assignmentClassroomId) {
+			if (event.dataTransfer) event.dataTransfer.dropEffect = 'none';
 			clearDragPreview();
 			return;
 		}
+
+		if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
 
 		const preview = buildRowDragPreview(event, day, payload);
 		dragPreview = {
@@ -330,6 +332,7 @@
 			readonly={placementDisabled}
 			placingItemId={placingItemId}
 			onPlaceSession={onPlaceSession}
+			onDragEnd={clearDragPreview}
 		/>
 
 		<div class="min-w-0 overflow-auto">

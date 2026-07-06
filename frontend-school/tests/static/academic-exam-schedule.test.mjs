@@ -471,12 +471,19 @@ test('staff timeline renders duration-aware drag preview states', () => {
 		projectPath('src/lib/components/academic/exam-schedule/ExamScheduleTimeline.svelte'),
 		'utf8'
 	);
+	const tray = readFileSync(
+		projectPath('src/lib/components/academic/exam-schedule/ExamItemTray.svelte'),
+		'utf8'
+	);
 
 	assert.match(timeline, /buildTimelineDragPreview/);
 	assert.match(timeline, /dragPreview/);
 	assert.match(timeline, /preview\.valid/);
 	assert.match(timeline, /preview\.startTime/);
 	assert.match(timeline, /preview\.endTime/);
+	assert.match(timeline, /onDragEnd=\{clearDragPreview\}/);
+	assert.match(tray, /onDragEnd/);
+	assert.match(tray, /ondragend/);
 });
 
 test('staff workspace reloads by route round id and keeps form input on failed saves', () => {

@@ -21,7 +21,8 @@
 		scheduledSessions = [],
 		readonly = false,
 		placingItemId = null,
-		onPlaceSession
+		onPlaceSession,
+		onDragEnd
 	}: {
 		unscheduledItems: ExamScheduleItem[];
 		days: ExamDayDetail[];
@@ -29,6 +30,7 @@
 		readonly?: boolean;
 		placingItemId?: string | null;
 		onPlaceSession?: (input: PlaceExamSessionInput) => Promise<boolean> | boolean;
+		onDragEnd?: () => void;
 	} = $props();
 
 	let dialogOpen = $state(false);
@@ -136,6 +138,7 @@
 					role="listitem"
 					draggable={!readonly && !placingItemId}
 					ondragstart={(event) => handleDragStart(event, item)}
+					ondragend={onDragEnd}
 				>
 					<div class="flex items-start gap-2">
 						<GripVertical class="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
