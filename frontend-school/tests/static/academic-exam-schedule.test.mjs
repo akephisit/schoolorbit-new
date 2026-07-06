@@ -72,7 +72,9 @@ test('academic exam schedule routes have compile-ready page placeholders', () =>
 });
 
 test('academic exam schedule staff routes are guarded by read-school permission', async () => {
-	const listRoute = await readProjectFile('src/routes/(app)/staff/academic/exam-schedules/+page.ts');
+	const listRoute = await readProjectFile(
+		'src/routes/(app)/staff/academic/exam-schedules/+page.ts'
+	);
 	const detailRoute = await readProjectFile(
 		'src/routes/(app)/staff/academic/exam-schedules/[id]/+page.ts'
 	);
@@ -222,6 +224,25 @@ test('exam room assignment panel is room and seat only with sheet editing', asyn
 	assert.match(panel, /sticky|mt-auto/);
 });
 
+test('exam invigilator panel exposes room-first workflow and workload summary', () => {
+	const panelPath = 'src/lib/components/academic/exam-schedule/ExamInvigilatorPanel.svelte';
+	assert.equal(existsSync(projectPath(panelPath)), true, `${panelPath} should exist`);
+
+	const panel = readFileSync(projectPath(panelPath), 'utf8');
+	const page = readFileSync(
+		projectPath('src/routes/(app)/staff/academic/exam-schedules/[id]/+page.svelte'),
+		'utf8'
+	);
+
+	assert.match(panel, /staffWorkloads/);
+	assert.match(panel, /sessionMinutes/);
+	assert.match(panel, /จัดกรรมการ/);
+	assert.match(panel, /แนะนำ 2 คน/);
+	assert.match(panel, /updateExamAssignmentInvigilators|onSaveInvigilators/);
+	assert.match(page, /getExamInvigilatorWorkspace/);
+	assert.match(page, /<ExamInvigilatorPanel/);
+});
+
 test('staff workspace wires setup, import, room assignment, and publish actions', () => {
 	const page = readFileSync(
 		projectPath('src/routes/(app)/staff/academic/exam-schedules/[id]/+page.svelte'),
@@ -360,9 +381,15 @@ test('staff workspace reloads by route round id and keeps form input on failed s
 	assert.match(page, /async function handleSaveAssignment\(/);
 	assert.match(page, /input: UpsertDayRoomAssignmentInput/);
 	assert.match(page, /\): Promise<boolean> \{/);
-	assert.match(listPage, /async function handleCreateRound\(input: CreateExamRoundInput\): Promise<boolean>/);
+	assert.match(
+		listPage,
+		/async function handleCreateRound\(input: CreateExamRoundInput\): Promise<boolean>/
+	);
 
-	assert.match(dayPanel, /onSaveDay\?: \(input: UpsertExamDayInput\) => Promise<boolean> \| boolean/);
+	assert.match(
+		dayPanel,
+		/onSaveDay\?: \(input: UpsertExamDayInput\) => Promise<boolean> \| boolean/
+	);
 	assert.match(dayPanel, /const saved = await onSaveDay\?\.\(/);
 	assert.match(dayPanel, /if \(saved\) resetForm\(\)/);
 
@@ -406,8 +433,14 @@ test('staff workspace ignores stale management option responses after route chan
 	assert.match(page, /const roundId = workspace\.round\.id/);
 	assert.match(page, /const semesterId = workspace\.round\.academicSemesterId/);
 	assert.match(page, /const yearId = currentSemester\?\.academic_year_id/);
-	assert.match(page, /isCurrentManagementOptionsRequest\(requestToken,\s*roundId,\s*semesterId,\s*yearId\)/);
-	assert.match(page, /if \(!isCurrentManagementOptionsRequest\(requestToken,\s*roundId,\s*semesterId,\s*yearId\)\) return/);
+	assert.match(
+		page,
+		/isCurrentManagementOptionsRequest\(requestToken,\s*roundId,\s*semesterId,\s*yearId\)/
+	);
+	assert.match(
+		page,
+		/if \(!isCurrentManagementOptionsRequest\(requestToken,\s*roundId,\s*semesterId,\s*yearId\)\) return/
+	);
 });
 
 test('personal exam schedule pages use the published schedule APIs and shared view', () => {
@@ -442,7 +475,8 @@ test('personal exam schedule pages use the published schedule APIs and shared vi
 });
 
 test('personal exam schedule view groups published sessions and hides staff supervision data', () => {
-	const personalViewPath = 'src/lib/components/academic/exam-schedule/PersonalExamScheduleView.svelte';
+	const personalViewPath =
+		'src/lib/components/academic/exam-schedule/PersonalExamScheduleView.svelte';
 	const personalView = readFileSync(projectPath(personalViewPath), 'utf8');
 	const studentPage = readFileSync(
 		projectPath('src/routes/(app)/student/exams/+page.svelte'),
@@ -470,12 +504,19 @@ test('personal exam schedule view groups published sessions and hides staff supe
 		'session.seatNumber',
 		'ไม่มีตารางสอบที่เผยแพร่'
 	]) {
-		assert.match(personalView, new RegExp(escapeRegExp(expected)), `${expected} should be rendered`);
+		assert.match(
+			personalView,
+			new RegExp(escapeRegExp(expected)),
+			`${expected} should be rendered`
+		);
 	}
 
 	assert.match(personalView, /\{#each dateGroup\.sessions as session\}/);
 	assert.doesNotMatch(personalView, /\{#each dateGroup\.sessions as session \(/);
-	assert.doesNotMatch(personalView, /session\.examDate\}-\$\{session\.startsAt\}-\$\{session\.subjectName/);
+	assert.doesNotMatch(
+		personalView,
+		/session\.examDate\}-\$\{session\.startsAt\}-\$\{session\.subjectName/
+	);
 	assert.doesNotMatch(personalView, /สำหรับนักเรียนคนนี้/);
 
 	for (const forbidden of ['invigilator', 'Invigilator', 'กรรมการคุมสอบ']) {

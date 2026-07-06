@@ -10,12 +10,15 @@
 	import {
 		deleteExamDay,
 		generateSeatsForAssignment,
+		getExamInvigilatorWorkspace,
 		getExamScheduleWorkspace,
 		importExamItems,
 		placeExamSession,
 		publishExamRound,
+		updateExamAssignmentInvigilators,
 		upsertDayRoomAssignment,
 		upsertExamDay,
+		type ExamInvigilatorWorkspace,
 		type ExamRoundStatus,
 		type ExamScheduleWorkspace,
 		type PlaceExamSessionInput,
@@ -23,8 +26,10 @@
 		type UpsertExamDayInput
 	} from '$lib/api/examSchedule';
 	import { listRooms, type Room } from '$lib/api/facility';
+	import { listStaff, type StaffListItem } from '$lib/api/staff';
 	import CompactExamScheduleStatus from '$lib/components/academic/exam-schedule/CompactExamScheduleStatus.svelte';
 	import ExamDaySetupPanel from '$lib/components/academic/exam-schedule/ExamDaySetupPanel.svelte';
+	import ExamInvigilatorPanel from '$lib/components/academic/exam-schedule/ExamInvigilatorPanel.svelte';
 	import ExamRoomAssignmentPanel from '$lib/components/academic/exam-schedule/ExamRoomAssignmentPanel.svelte';
 	import ExamScheduleTimeline from '$lib/components/academic/exam-schedule/ExamScheduleTimeline.svelte';
 	import { PageShell } from '$lib/components/app-layout';
@@ -45,6 +50,10 @@
 	let structure = $state<AcademicStructureData | null>(null);
 	let classrooms = $state<Classroom[]>([]);
 	let rooms = $state<Room[]>([]);
+	let staff = $state<StaffListItem[]>([]);
+	let invigilatorWorkspace = $state<ExamInvigilatorWorkspace | null>(null);
+	let loadingInvigilators = $state(false);
+	let savingInvigilatorAssignmentId = $state<string | null>(null);
 	let optionsLoading = $state(false);
 	let optionsRequested = $state(false);
 	let importing = $state(false);
@@ -58,6 +67,8 @@
 	let loadedRoundId = $state('');
 	let workspaceRequestToken = 0;
 	let managementOptionsRequestToken = 0;
+	let invigilatorWorkspaceRequestToken = 0;
+	let lastInvigilatorLoadRoundId = '';
 
 	const canManageExamSchedules = $derived(
 		$can.has(PERMISSIONS.ACADEMIC_EXAM_SCHEDULE_MANAGE_SCHOOL)
@@ -84,6 +95,12 @@
 		structure = null;
 		classrooms = [];
 		rooms = [];
+		staff = [];
+		invigilatorWorkspace = null;
+		loadingInvigilators = false;
+		savingInvigilatorAssignmentId = null;
+		invigilatorWorkspaceRequestToken += 1;
+		lastInvigilatorLoadRoundId = '';
 		optionsRequested = false;
 		optionsLoading = false;
 		importing = false;
@@ -165,23 +182,60 @@
 		optionsRequested = true;
 		optionsLoading = true;
 		try {
-			const [classroomResponse, roomResponse] = await Promise.all([
+			const [classroomResponse, roomResponse, staffResponse] = await Promise.all([
 				listClassrooms(yearId ? { year_id: yearId } : undefined),
-				listRooms()
+				listRooms(),
+				listStaff({ status: 'active', page: 1, page_size: 40 })
 			]);
 			if (!isCurrentManagementOptionsRequest(requestToken, roundId, semesterId, yearId)) return;
 
 			classrooms = classroomResponse.data;
 			rooms = roomResponse.data;
+			staff = staffResponse.data;
 		} catch (loadError) {
 			if (!isCurrentManagementOptionsRequest(requestToken, roundId, semesterId, yearId)) return;
 
 			optionsRequested = false;
-			toast.error(loadError instanceof Error ? loadError.message : 'โหลดตัวเลือกสำหรับจัดห้องสอบไม่สำเร็จ');
+			toast.error(
+				loadError instanceof Error ? loadError.message : 'โหลดตัวเลือกสำหรับจัดห้องสอบไม่สำเร็จ'
+			);
 		} finally {
 			if (!isCurrentManagementOptionsRequest(requestToken, roundId, semesterId, yearId)) return;
 
 			optionsLoading = false;
+		}
+	}
+
+	async function searchStaffOptions(search: string): Promise<StaffListItem[]> {
+		const response = await listStaff({
+			status: 'active',
+			search: search.trim() || undefined,
+			page: 1,
+			page_size: 40
+		});
+		return response.data;
+	}
+
+	async function loadInvigilators(roundId = workspace?.round.id ?? loadedRoundId) {
+		if (!roundId) return;
+
+		const requestToken = ++invigilatorWorkspaceRequestToken;
+		loadingInvigilators = true;
+		try {
+			const invigilatorData = await getExamInvigilatorWorkspace(roundId);
+			if (requestToken !== invigilatorWorkspaceRequestToken) return;
+
+			invigilatorWorkspace = invigilatorData;
+		} catch (loadError) {
+			if (requestToken !== invigilatorWorkspaceRequestToken) return;
+
+			toast.error(
+				loadError instanceof Error ? loadError.message : 'โหลดข้อมูลกรรมการคุมสอบไม่สำเร็จ'
+			);
+		} finally {
+			if (requestToken === invigilatorWorkspaceRequestToken) {
+				loadingInvigilators = false;
+			}
 		}
 	}
 
@@ -214,7 +268,9 @@
 			toast.success('เผยแพร่ตารางสอบแล้ว');
 			await refreshWorkspace();
 		} catch (publishError) {
-			toast.error(publishError instanceof Error ? publishError.message : 'เผยแพร่ตารางสอบไม่สำเร็จ');
+			toast.error(
+				publishError instanceof Error ? publishError.message : 'เผยแพร่ตารางสอบไม่สำเร็จ'
+			);
 		} finally {
 			publishing = false;
 		}
@@ -271,6 +327,27 @@
 		}
 	}
 
+	async function handleSaveInvigilators(
+		assignmentId: string,
+		staffIds: string[]
+	): Promise<boolean> {
+		const roundId = workspace?.round.id ?? loadedRoundId;
+		if (!roundId) return false;
+
+		savingInvigilatorAssignmentId = assignmentId;
+		try {
+			await updateExamAssignmentInvigilators(assignmentId, { invigilatorStaffIds: staffIds });
+			toast.success('บันทึกกรรมการคุมสอบแล้ว');
+			await Promise.all([refreshWorkspace(), loadInvigilators(roundId)]);
+			return true;
+		} catch (saveError) {
+			toast.error(saveError instanceof Error ? saveError.message : 'บันทึกกรรมการคุมสอบไม่สำเร็จ');
+			return false;
+		} finally {
+			savingInvigilatorAssignmentId = null;
+		}
+	}
+
 	async function handleGenerateSeats(assignmentId: string) {
 		generatingAssignmentId = assignmentId;
 		try {
@@ -318,6 +395,20 @@
 	});
 
 	$effect(() => {
+		const roundId = workspace?.round.id ?? loadedRoundId;
+		if (
+			activeTab === 'invigilators' &&
+			roundId &&
+			invigilatorWorkspace === null &&
+			!loadingInvigilators &&
+			lastInvigilatorLoadRoundId !== roundId
+		) {
+			lastInvigilatorLoadRoundId = roundId;
+			loadInvigilators(roundId);
+		}
+	});
+
+	$effect(() => {
 		const roundId = data.roundId;
 		if (!roundId || roundId === requestedRoundId) return;
 
@@ -338,7 +429,9 @@
 >
 	{#snippet meta()}
 		{#if workspace}
-			<Badge variant={statusVariant(workspace.round.status)}>{statusLabel(workspace.round.status)}</Badge>
+			<Badge variant={statusVariant(workspace.round.status)}
+				>{statusLabel(workspace.round.status)}</Badge
+			>
 		{/if}
 	{/snippet}
 
@@ -404,6 +497,10 @@
 				days={workspace.days}
 				unscheduledItems={workspace.unscheduledItems}
 				scheduledSessions={workspace.scheduledSessions}
+				invigilatorAssignedCount={invigilatorWorkspace?.assignments.filter(
+					(assignment) => assignment.invigilators.length > 0
+				).length ?? undefined}
+				invigilatorAssignmentCount={invigilatorWorkspace?.assignments.length ?? undefined}
 			/>
 
 			<Tabs.Root bind:value={activeTab} class="gap-4">
@@ -417,10 +514,10 @@
 				<Tabs.Content value="setup">
 					<ExamDaySetupPanel
 						days={workspace.days}
-						gradeLevels={gradeLevels}
+						{gradeLevels}
 						readonly={!canManageExamSchedules || workspace.round.status === 'published'}
 						saving={savingDay}
-						deletingDayId={deletingDayId}
+						{deletingDayId}
 						onSaveDay={handleSaveDay}
 						onDeleteDay={handleDeleteDay}
 					/>
@@ -429,11 +526,11 @@
 				<Tabs.Content value="rooms">
 					<ExamRoomAssignmentPanel
 						days={workspace.days}
-						classrooms={classrooms}
-						rooms={rooms}
+						{classrooms}
+						{rooms}
 						readonly={!canManageExamSchedules || workspace.round.status === 'published'}
 						saving={savingAssignment}
-						generatingAssignmentId={generatingAssignmentId}
+						{generatingAssignmentId}
 						onSaveAssignment={handleSaveAssignment}
 						onGenerateSeats={handleGenerateSeats}
 					/>
@@ -443,13 +540,21 @@
 					<ExamScheduleTimeline
 						{workspace}
 						readonly={!canManageExamSchedules || workspace.round.status === 'published'}
-						placingItemId={placingItemId}
+						{placingItemId}
 						onPlaceSession={handlePlaceExamSession}
 					/>
 				</Tabs.Content>
 
 				<Tabs.Content value="invigilators">
-					<PageState title="ยังไม่ได้เปิดหน้าจัดกรรมการ" description="จะเพิ่มในขั้นถัดไป" />
+					<ExamInvigilatorPanel
+						days={workspace.days}
+						workspace={invigilatorWorkspace}
+						{staff}
+						readonly={!canManageExamSchedules || workspace.round.status === 'published'}
+						savingAssignmentId={savingInvigilatorAssignmentId}
+						onSaveInvigilators={handleSaveInvigilators}
+						onSearchStaff={searchStaffOptions}
+					/>
 				</Tabs.Content>
 			</Tabs.Root>
 		</div>
