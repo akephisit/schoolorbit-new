@@ -536,7 +536,7 @@ test('staff timeline wires drag drop placement and accessible schedule dialog', 
 		'buildTimelineDragPreview',
 		'ondrop=',
 		'blocked-window',
-		'--slot-width: 40px',
+		'timelineGridTemplate(day)',
 		'<Dialog.Root',
 		'onPlaceSession?.('
 	]) {
@@ -572,17 +572,24 @@ test('staff timeline can switch between all exam days and one selected day', () 
 	assert.match(timeline, /\{#each visibleDays as day \(day\.id\)\}/);
 });
 
-test('staff timeline expands horizontal time columns for readable drag placement', () => {
+test('staff timeline expands each day track to available width with per-day slot sizing', () => {
 	const timeline = readFileSync(
 		projectPath('src/lib/components/academic/exam-schedule/ExamScheduleTimeline.svelte'),
 		'utf8'
 	);
 
-	assert.match(timeline, /const SLOT_WIDTH = 40/);
-	assert.match(timeline, /--slot-width: 40px/);
-	assert.match(timeline, /grid-cols-\[12rem_auto\]/);
-	assert.doesNotMatch(timeline, /const SLOT_WIDTH = 24/);
-	assert.doesNotMatch(timeline, /grid-cols-\[12rem_minmax\(0,1fr\)\]/);
+	assert.match(timeline, /const MIN_SLOT_WIDTH = 40/);
+	assert.match(timeline, /let dayTrackWidths = \$state<Record<string, number>>\(\{\}\)/);
+	assert.match(timeline, /new ResizeObserver/);
+	assert.match(timeline, /function trackSlotWidth\(day: ExamDayDetail\): number/);
+	assert.match(timeline, /function timelineGridTemplate\(day: ExamDayDetail\): string/);
+	assert.match(timeline, /minmax\(\$\{MIN_SLOT_WIDTH\}px, 1fr\)/);
+	assert.match(timeline, /slotWidthPx: trackSlotWidth\(day, rect\.width\)/);
+	assert.match(timeline, /leftPx\(day, session\.startsAt\)/);
+	assert.match(timeline, /widthPx\(day, session\.durationMinutes\)/);
+	assert.match(timeline, /style:min-width=\{`\$\{minimumTrackWidth\(day\)\}px`\}/);
+	assert.doesNotMatch(timeline, /const SLOT_WIDTH = 40/);
+	assert.doesNotMatch(timeline, /--slot-width: 40px/);
 });
 
 test('scheduled exam session blocks show action-specific placement and removal state', () => {

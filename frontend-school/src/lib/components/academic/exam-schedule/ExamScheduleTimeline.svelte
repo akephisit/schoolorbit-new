@@ -24,7 +24,7 @@
 	import ExamItemTray from './ExamItemTray.svelte';
 	import ExamSessionBlock from './ExamSessionBlock.svelte';
 
-	const SLOT_WIDTH = 40;
+	const MIN_SLOT_WIDTH = 40;
 
 	type DragPayload = {
 		examScheduleItemId: string;
@@ -72,6 +72,7 @@
 	let activeDragPayload = $state<DragPayload | null>(null);
 	let dayDisplayMode = $state<'all' | 'single'>('all');
 	let selectedTimelineDayId = $state('');
+	let dayTrackWidths = $state<Record<string, number>>({});
 
 	const sortedDays = $derived([...workspace.days].sort(compareExamDaysByDate));
 	const selectedTimelineDay = $derived(
@@ -129,16 +130,73 @@
 		return `${String(hours).padStart(2, '0')}:${String(remainder).padStart(2, '0')}`;
 	}
 
-	function trackWidth(day: ExamDayDetail): number {
-		return timeSlots(day).length * SLOT_WIDTH;
+	function daySlotCount(day: ExamDayDetail): number {
+		return Math.max(1, timeSlots(day).length);
+	}
+
+	function minimumTrackWidth(day: ExamDayDetail): number {
+		return daySlotCount(day) * MIN_SLOT_WIDTH;
+	}
+
+	function trackSlotWidth(day: ExamDayDetail): number;
+	function trackSlotWidth(day: ExamDayDetail, measuredWidth: number): number;
+	function trackSlotWidth(day: ExamDayDetail, measuredWidth = dayTrackWidths[day.id] ?? 0): number {
+		return Math.max(
+			MIN_SLOT_WIDTH,
+			Math.max(measuredWidth, minimumTrackWidth(day)) / daySlotCount(day)
+		);
+	}
+
+	function timelineGridTemplate(day: ExamDayDetail): string {
+		return `repeat(${daySlotCount(day)}, minmax(${MIN_SLOT_WIDTH}px, 1fr))`;
+	}
+
+	function updateDayTrackWidth(dayId: string, width: number) {
+		const roundedWidth = Math.round(width);
+		if (dayTrackWidths[dayId] === roundedWidth) return;
+		dayTrackWidths = { ...dayTrackWidths, [dayId]: roundedWidth };
+	}
+
+	function forgetDayTrackWidth(dayId: string) {
+		if (!(dayId in dayTrackWidths)) return;
+		const nextWidths = { ...dayTrackWidths };
+		delete nextWidths[dayId];
+		dayTrackWidths = nextWidths;
+	}
+
+	function observeDayTrack(node: HTMLElement, dayId: string) {
+		function updateWidth() {
+			updateDayTrackWidth(dayId, node.getBoundingClientRect().width);
+		}
+
+		updateWidth();
+		const observer = new ResizeObserver(updateWidth);
+		observer.observe(node);
+
+		return {
+			update(nextDayId: string) {
+				if (nextDayId !== dayId) {
+					forgetDayTrackWidth(dayId);
+					dayId = nextDayId;
+				}
+				updateWidth();
+			},
+			destroy() {
+				observer.disconnect();
+				forgetDayTrackWidth(dayId);
+			}
+		};
 	}
 
 	function leftPx(day: ExamDayDetail, startsAt: string): number {
-		return (minutesBetween(day.startTime, startsAt) / TIMELINE_SLOT_MINUTES) * SLOT_WIDTH;
+		return (minutesBetween(day.startTime, startsAt) / TIMELINE_SLOT_MINUTES) * trackSlotWidth(day);
 	}
 
-	function widthPx(durationMinutes: number): number {
-		return Math.max(SLOT_WIDTH, (durationMinutes / TIMELINE_SLOT_MINUTES) * SLOT_WIDTH);
+	function widthPx(day: ExamDayDetail, durationMinutes: number): number {
+		return Math.max(
+			trackSlotWidth(day),
+			(durationMinutes / TIMELINE_SLOT_MINUTES) * trackSlotWidth(day)
+		);
 	}
 
 	function sessionsForAssignment(day: ExamDayDetail, classroomId: string): ExamSession[] {
@@ -152,7 +210,7 @@
 	}
 
 	function blockedWidth(day: ExamDayDetail, startTime: string, endTime: string): number {
-		return Math.max(SLOT_WIDTH, widthPx(minutesBetween(startTime, endTime)));
+		return Math.max(trackSlotWidth(day), widthPx(day, minutesBetween(startTime, endTime)));
 	}
 
 	function dragPayload(event: DragEvent): DragPayload | null {
@@ -212,7 +270,7 @@
 			clientX: event.clientX,
 			trackLeft: rect.left,
 			dragOffsetPx: payload.dragOffsetPx ?? 0,
-			slotWidthPx: SLOT_WIDTH,
+			slotWidthPx: trackSlotWidth(day, rect.width),
 			durationMinutes: payload.durationMinutes,
 			candidate: {
 				examScheduleItemId: payload.examScheduleItemId,
@@ -407,7 +465,7 @@
 		</div>
 	</div>
 
-	<div class="grid min-h-[32rem] lg:grid-cols-[20rem_minmax(0,1fr)]" style="--slot-width: 40px">
+	<div class="grid min-h-[32rem] lg:grid-cols-[20rem_minmax(0,1fr)]">
 		<ExamItemTray
 			unscheduledItems={workspace.unscheduledItems}
 			days={sortedDays}
@@ -429,7 +487,7 @@
 			{:else}
 				<div class="space-y-6 p-4">
 					{#each visibleDays as day (day.id)}
-						<section class="min-w-fit">
+						<section class="min-w-0">
 							<div class="mb-2 flex items-center justify-between gap-3">
 								<div>
 									<h3 class="text-sm font-semibold">{dayLabel(day)}</h3>
@@ -440,16 +498,17 @@
 								<Badge variant="outline">{day.roomAssignments.length} ห้องสอบ</Badge>
 							</div>
 
-							<div class="overflow-hidden rounded-md border">
-								<div class="grid grid-cols-[12rem_auto] border-b bg-muted/40">
+							<div class="overflow-x-auto rounded-md border">
+								<div class="grid grid-cols-[12rem_minmax(0,1fr)] border-b bg-muted/40">
 									<div class="border-r px-3 py-2 text-xs font-medium text-muted-foreground">
 										ห้องเรียน / ห้องสอบ
 									</div>
 									<div class="overflow-hidden">
 										<div
-											class="grid h-9"
-											style:grid-template-columns={`repeat(${timeSlots(day).length}, var(--slot-width))`}
-											style:width={`${trackWidth(day)}px`}
+											class="grid h-9 w-full"
+											use:observeDayTrack={day.id}
+											style:grid-template-columns={timelineGridTemplate(day)}
+											style:min-width={`${minimumTrackWidth(day)}px`}
 										>
 											{#each timeSlots(day) as slot, index (slot)}
 												<div class="border-r px-1 py-2 font-mono text-[10px] text-muted-foreground">
@@ -461,7 +520,7 @@
 								</div>
 
 								{#each day.roomAssignments as assignment (assignment.id)}
-									<div class="grid grid-cols-[12rem_auto] border-b last:border-b-0">
+									<div class="grid grid-cols-[12rem_minmax(0,1fr)] border-b last:border-b-0">
 										<div class="border-r px-3 py-3">
 											<div class="truncate text-sm font-medium">
 												{assignment.classroomName ?? assignment.classroomId}
@@ -473,8 +532,8 @@
 
 										<div class="overflow-hidden">
 											<div
-												class="relative h-14 bg-background"
-												style:width={`${trackWidth(day)}px`}
+												class="relative h-14 w-full bg-background"
+												style:min-width={`${minimumTrackWidth(day)}px`}
 												role="group"
 												aria-label={`วางรายการสอบ ${assignment.classroomName ?? assignment.classroomId}`}
 												ondragover={(event) => handleDragOver(event, day, assignment.classroomId)}
@@ -485,7 +544,7 @@
 											>
 												<div
 													class="pointer-events-none absolute inset-0 grid"
-													style:grid-template-columns={`repeat(${timeSlots(day).length}, var(--slot-width))`}
+													style:grid-template-columns={timelineGridTemplate(day)}
 												>
 													{#each timeSlots(day) as slot (slot)}
 														<div class="border-r border-border/70"></div>
@@ -527,7 +586,7 @@
 													<ExamSessionBlock
 														{session}
 														leftPx={leftPx(day, session.startsAt)}
-														widthPx={widthPx(session.durationMinutes)}
+														widthPx={widthPx(day, session.durationMinutes)}
 														placing={placingSessionId === session.id}
 														removing={unschedulingSessionId === session.id}
 														readonly={placementDisabled &&
