@@ -190,6 +190,10 @@ pub fn academic_routes() -> Router<AppState> {
             get(handlers::exam_schedule::get_invigilator_workspace),
         )
         .route(
+            "/exam-schedules/{round_id}/invigilator-staff-options",
+            get(handlers::exam_schedule::get_invigilator_staff_options),
+        )
+        .route(
             "/exam-schedules/room-assignments/{assignment_id}/invigilators",
             put(handlers::exam_schedule::update_assignment_invigilators),
         )

@@ -2,11 +2,11 @@
 	import type {
 		ExamDayDetail,
 		ExamInvigilatorAssignmentSummary,
+		ExamInvigilatorStaffOption,
 		ExamInvigilatorStaffWorkload,
 		ExamInvigilatorWorkspace,
 		InvigilatorView
 	} from '$lib/api/examSchedule';
-	import type { StaffListItem } from '$lib/api/staff';
 	import { LoadingButton, PageState } from '$lib/components/app-state';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
@@ -45,13 +45,13 @@
 	}: {
 		days: ExamDayDetail[];
 		workspace: ExamInvigilatorWorkspace | null;
-		staff: StaffListItem[];
+		staff: ExamInvigilatorStaffOption[];
 		loading?: boolean;
 		loadError?: string;
 		readonly?: boolean;
 		savingAssignmentId?: string | null;
 		onSaveInvigilators?: (assignmentId: string, staffIds: string[]) => Promise<boolean> | boolean;
-		onSearchStaff?: (search: string) => Promise<StaffListItem[]>;
+		onSearchStaff?: (search: string) => Promise<ExamInvigilatorStaffOption[]>;
 		onRetry?: () => Promise<void> | void;
 	} = $props();
 
@@ -60,8 +60,8 @@
 	let selectedAssignmentId = $state<string | null>(null);
 	let selectedStaffIds = $state<string[]>([]);
 	let staffSearch = $state('');
-	let staffOptions = $state<StaffListItem[]>([]);
-	let selectedStaffCache = $state<StaffListItem[]>([]);
+	let staffOptions = $state<ExamInvigilatorStaffOption[]>([]);
+	let selectedStaffCache = $state<ExamInvigilatorStaffOption[]>([]);
 	let staffSearchLoading = $state(false);
 	let staffSearchError = $state('');
 	let staffSearchRequestToken = 0;
@@ -117,17 +117,8 @@
 		return `${hours} ชม. ${remainder} นาที`;
 	}
 
-	function staffDisplayName(staffItem: StaffListItem): string {
-		const name = [staffItem.title, staffItem.first_name, staffItem.last_name]
-			.map((part) => part?.trim())
-			.filter(Boolean)
-			.join(' ');
-		return name || staffItem.id;
-	}
-
-	function staffDetail(staffItem: StaffListItem): string {
-		const parts = [staffItem.username, staffItem.roles.join(', ')].filter(Boolean);
-		return parts.join(' · ');
+	function staffDisplayName(staffItem: ExamInvigilatorStaffOption): string {
+		return staffItem.displayName || staffItem.staffId;
 	}
 
 	function workloadStaffName(workload: ExamInvigilatorStaffWorkload): string {
@@ -155,11 +146,10 @@
 		}
 	}
 
-	function addStaffListItem(options: Map<string, StaffOption>, staffItem: StaffListItem) {
+	function addStaffListItem(options: Map<string, StaffOption>, staffItem: ExamInvigilatorStaffOption) {
 		addStaffOption(options, {
-			id: staffItem.id,
-			displayName: staffDisplayName(staffItem),
-			detail: staffDetail(staffItem)
+			id: staffItem.staffId,
+			displayName: staffDisplayName(staffItem)
 		});
 	}
 
@@ -175,9 +165,9 @@
 
 		for (const staffId of selectedStaffIds) {
 			const cachedStaff =
-				selectedStaffCache.find((item) => item.id === staffId) ??
-				staffOptions.find((item) => item.id === staffId) ??
-				staff.find((item) => item.id === staffId);
+				selectedStaffCache.find((item) => item.staffId === staffId) ??
+				staffOptions.find((item) => item.staffId === staffId) ??
+				staff.find((item) => item.staffId === staffId);
 			const currentInvigilator = selectedAssignment?.invigilators.find(
 				(invigilator) => invigilator.staffId === staffId
 			);
@@ -210,7 +200,7 @@
 	function loadAssignment(assignment: ExamInvigilatorAssignmentSummary) {
 		selectedAssignmentId = assignment.assignmentId;
 		selectedStaffIds = assignment.invigilators.map((invigilator) => invigilator.staffId);
-		selectedStaffCache = staff.filter((staffItem) => selectedStaffIds.includes(staffItem.id));
+		selectedStaffCache = staff.filter((staffItem) => selectedStaffIds.includes(staffItem.staffId));
 		resetStaffSearch();
 		editorOpen = true;
 	}
@@ -247,9 +237,9 @@
 			}
 
 			const staffItem =
-				staffOptions.find((item) => item.id === staffId) ??
-				staff.find((item) => item.id === staffId);
-			if (staffItem && !selectedStaffCache.some((item) => item.id === staffItem.id)) {
+				staffOptions.find((item) => item.staffId === staffId) ??
+				staff.find((item) => item.staffId === staffId);
+			if (staffItem && !selectedStaffCache.some((item) => item.staffId === staffItem.staffId)) {
 				selectedStaffCache = [...selectedStaffCache, staffItem];
 			}
 		} else {
@@ -520,12 +510,12 @@
 							/>
 							<Input
 								id="exam-invigilator-staff-search"
-								type="search"
-								class="pl-9"
-								bind:value={staffSearch}
-								placeholder="ชื่อ หรือ username"
-								disabled={savingAssignmentId === selectedAssignmentId}
-							/>
+									type="search"
+									class="pl-9"
+									bind:value={staffSearch}
+									placeholder="ชื่อครู"
+									disabled={savingAssignmentId === selectedAssignmentId}
+								/>
 						</div>
 						{#if staffSearchLoading}
 							<p class="text-xs text-muted-foreground">กำลังค้นหา...</p>

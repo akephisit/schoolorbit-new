@@ -30,6 +30,12 @@ pub struct PersonalExamScheduleQuery {
     pub academic_semester_id: Option<Uuid>,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct InvigilatorStaffOptionsQuery {
+    pub search: Option<String>,
+    pub limit: Option<i64>,
+}
+
 /// GET /api/academic/exam-schedules
 pub async fn list_rounds(
     State(state): State<AppState>,
@@ -168,6 +174,28 @@ pub async fn get_invigilator_workspace(
 
     let workspace = exam_schedule_service::get_invigilator_workspace(&pool, round_id).await?;
     Ok(Json(ApiResponse::ok(workspace)).into_response())
+}
+
+/// GET /api/academic/exam-schedules/{round_id}/invigilator-staff-options
+pub async fn get_invigilator_staff_options(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(round_id): Path<Uuid>,
+    Query(query): Query<InvigilatorStaffOptionsQuery>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    actor.require_permission(codes::ACADEMIC_EXAM_SCHEDULE_MANAGE_SCHOOL)?;
+
+    let options = exam_schedule_service::list_invigilator_staff_options(
+        &pool,
+        round_id,
+        query.search,
+        query.limit,
+    )
+    .await?;
+    Ok(Json(ApiResponse::ok(options)).into_response())
 }
 
 /// POST /api/academic/exam-schedules/days/{exam_day_id}/room-assignments

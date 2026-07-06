@@ -29,6 +29,7 @@
 		scheduledSessions = [],
 		readonly = false,
 		placingItemId = null,
+		unschedulingSessionId = null,
 		onPlaceSession,
 		onUnscheduleSession,
 		onDragEnd
@@ -38,6 +39,7 @@
 		scheduledSessions?: ExamSession[];
 		readonly?: boolean;
 		placingItemId?: string | null;
+		unschedulingSessionId?: string | null;
 		onPlaceSession?: (input: PlaceExamSessionInput) => Promise<boolean> | boolean;
 		onUnscheduleSession?: (sessionId: string) => Promise<boolean> | boolean;
 		onDragEnd?: () => void;
@@ -67,7 +69,7 @@
 	}
 
 	function openDialog(item: ExamScheduleItem) {
-		if (readonly || placingItemId) return;
+		if (readonly || placingItemId || unschedulingSessionId) return;
 
 		selectedItem = item;
 		selectedDayId = sortedDays[0]?.id ?? '';
@@ -77,7 +79,7 @@
 	}
 
 	function handleDragStart(event: DragEvent, item: ExamScheduleItem) {
-		if (readonly || placingItemId || !event.dataTransfer) return;
+		if (readonly || placingItemId || unschedulingSessionId || !event.dataTransfer) return;
 
 		event.dataTransfer.effectAllowed = 'move';
 		event.dataTransfer.setData(
@@ -103,14 +105,14 @@
 	}
 
 	function handleDragOver(event: DragEvent) {
-		if (readonly) return;
+		if (readonly || placingItemId || unschedulingSessionId) return;
 
 		event.preventDefault();
 		if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
 	}
 
 	async function handleDrop(event: DragEvent) {
-		if (readonly) return;
+		if (readonly || placingItemId || unschedulingSessionId) return;
 
 		event.preventDefault();
 		const payload = dragPayload(event);
@@ -183,9 +185,9 @@
 			{#each unscheduledItems as item (item.id)}
 				<div
 					class="rounded-md border bg-card p-3 shadow-sm"
-					class:opacity-60={placingItemId === item.id}
+					class:opacity-60={placingItemId === item.id || !!unschedulingSessionId}
 					role="listitem"
-					draggable={!readonly && !placingItemId}
+					draggable={!readonly && !placingItemId && !unschedulingSessionId}
 					ondragstart={(event) => handleDragStart(event, item)}
 					ondragend={onDragEnd}
 				>
@@ -203,7 +205,7 @@
 										variant="outline"
 										size="sm"
 										onclick={() => openDialog(item)}
-										disabled={!!placingItemId}
+										disabled={!!placingItemId || !!unschedulingSessionId}
 									>
 										<CalendarPlus class="h-4 w-4" />
 										จัดเวลา

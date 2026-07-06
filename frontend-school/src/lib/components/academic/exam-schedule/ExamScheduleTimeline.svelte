@@ -70,7 +70,14 @@
 	let dragPreview = $state<DragPreviewState | null>(null);
 
 	const sortedDays = $derived([...workspace.days].sort((a, b) => a.sortOrder - b.sortOrder));
-	const placementDisabled = $derived(readonly || !!placingItemId);
+	const placementDisabled = $derived(readonly || !!placingItemId || !!unschedulingSessionId);
+	const placingSessionId = $derived(
+		placingItemId
+			? (workspace.scheduledSessions.find(
+					(session) => session.examScheduleItemId === placingItemId
+				)?.id ?? null)
+			: null
+	);
 	const selectedSessionPlacing = $derived(
 		placingItemId === selectedSession?.examScheduleItemId
 	);
@@ -346,11 +353,12 @@
 			unscheduledItems={workspace.unscheduledItems}
 			days={sortedDays}
 			scheduledSessions={workspace.scheduledSessions}
-			readonly={placementDisabled}
-			placingItemId={placingItemId}
-			onPlaceSession={onPlaceSession}
-			onUnscheduleSession={onUnscheduleSession}
-			onDragEnd={clearDragPreview}
+				readonly={placementDisabled}
+				placingItemId={placingItemId}
+				unschedulingSessionId={unschedulingSessionId}
+				onPlaceSession={onPlaceSession}
+				onUnscheduleSession={onUnscheduleSession}
+				onDragEnd={clearDragPreview}
 		/>
 
 		<div class="min-w-0 overflow-auto">
@@ -457,13 +465,15 @@
 
 												{#each sessionsForAssignment(day, assignment.classroomId) as session (session.id)}
 													<ExamSessionBlock
-														{session}
-														leftPx={leftPx(day, session.startsAt)}
-														widthPx={widthPx(session.durationMinutes)}
-														readonly={placementDisabled}
-														onDragStart={handleSessionDragStart}
-														onOpen={openSessionDialog}
-													/>
+															{session}
+															leftPx={leftPx(day, session.startsAt)}
+															widthPx={widthPx(session.durationMinutes)}
+															placing={placingSessionId === session.id}
+															removing={unschedulingSessionId === session.id}
+															readonly={placementDisabled && placingSessionId !== session.id && unschedulingSessionId !== session.id}
+															onDragStart={handleSessionDragStart}
+															onOpen={openSessionDialog}
+														/>
 												{/each}
 											</div>
 										</div>

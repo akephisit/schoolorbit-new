@@ -167,6 +167,13 @@ pub struct ExamInvigilatorWorkspace {
     pub staff_workloads: Vec<ExamInvigilatorStaffWorkload>,
 }
 
+#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
+#[serde(rename_all = "camelCase")]
+pub struct ExamInvigilatorStaffOption {
+    pub staff_id: Uuid,
+    pub display_name: String,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GenerateSeatsRequest {

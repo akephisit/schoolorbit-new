@@ -136,6 +136,11 @@ test('academic exam schedule API client maps functions to backend routes and met
 			routeFragment: '/api/academic/exam-schedules/${roundId}/invigilators'
 		},
 		{
+			functionName: 'listExamInvigilatorStaffOptions',
+			method: 'get',
+			routeFragment: '/api/academic/exam-schedules/${roundId}/invigilator-staff-options'
+		},
+		{
 			functionName: 'importExamItems',
 			method: 'post',
 			routeFragment: '/import-items'
@@ -272,15 +277,43 @@ test('exam invigilator staff loading is split from room option loading', () => {
 		projectPath('src/routes/(app)/staff/academic/exam-schedules/[id]/+page.svelte'),
 		'utf8'
 	);
+	const api = readFileSync(projectPath('src/lib/api/examSchedule.ts'), 'utf8');
+	const backendRoutes = readFileSync(projectPath('../backend-school/src/modules/academic.rs'), 'utf8');
+	const backendHandler = readFileSync(
+		projectPath('../backend-school/src/modules/academic/handlers/exam_schedule.rs'),
+		'utf8'
+	);
+	const backendModels = readFileSync(
+		projectPath('../backend-school/src/modules/academic/models/exam_schedule.rs'),
+		'utf8'
+	);
 	const loadManagementOptions = localFunctionSource(page, 'loadManagementOptions');
 	const loadInvigilatorStaffOptions = localFunctionSource(page, 'loadInvigilatorStaffOptions');
+	const searchStaffOptions = localFunctionSource(page, 'searchStaffOptions');
 
 	assert.doesNotMatch(loadManagementOptions, /listStaff/);
 	assert.doesNotMatch(loadManagementOptions, /staffResponse/);
 	assert.match(loadManagementOptions, /listClassrooms/);
 	assert.match(loadManagementOptions, /listRooms/);
-	assert.match(loadInvigilatorStaffOptions, /listStaff\(\{\s*status: 'active'/);
-	assert.match(loadInvigilatorStaffOptions, /page_size: 40/);
+	assert.doesNotMatch(page, /\bimport\s+\{\s*listStaff/);
+	assert.doesNotMatch(page, /\blistStaff\(/);
+	assert.match(page, /listExamInvigilatorStaffOptions/);
+	assert.match(loadInvigilatorStaffOptions, /listExamInvigilatorStaffOptions\(roundId/);
+	assert.match(loadInvigilatorStaffOptions, /limit: 40/);
+	assert.match(searchStaffOptions, /listExamInvigilatorStaffOptions\(roundId/);
+	assert.match(searchStaffOptions, /search: search\.trim\(\) \|\| undefined/);
+	assert.match(api, /export interface ExamInvigilatorStaffOption/);
+	assert.match(api, /staffId: string/);
+	assert.match(api, /displayName: string/);
+	assert.doesNotMatch(api, /ExamInvigilatorStaffOption[\s\S]*username/);
+	assert.doesNotMatch(api, /ExamInvigilatorStaffOption[\s\S]*email/);
+	assert.match(api, /listExamInvigilatorStaffOptions/);
+	assert.match(backendRoutes, /\/exam-schedules\/\{round_id\}\/invigilator-staff-options/);
+	assert.match(backendHandler, /get_invigilator_staff_options/);
+	assert.match(backendHandler, /ACADEMIC_EXAM_SCHEDULE_MANAGE_SCHOOL/);
+	assert.match(backendModels, /pub struct ExamInvigilatorStaffOption/);
+	assert.match(backendModels, /pub staff_id: Uuid/);
+	assert.match(backendModels, /pub display_name: String/);
 	assert.match(page, /loadInvigilatorStaffOptions\(\)/);
 });
 
@@ -464,6 +497,34 @@ test('staff timeline wires drag drop placement and accessible schedule dialog', 
 	assert.match(block, /session-block/);
 	assert.match(block, /min-height: 2\.25rem/);
 	assert.match(block, /overflow: hidden/);
+});
+
+test('scheduled exam session blocks show action-specific placement and removal state', () => {
+	const timeline = readFileSync(
+		projectPath('src/lib/components/academic/exam-schedule/ExamScheduleTimeline.svelte'),
+		'utf8'
+	);
+	const block = readFileSync(
+		projectPath('src/lib/components/academic/exam-schedule/ExamSessionBlock.svelte'),
+		'utf8'
+	);
+	const tray = readFileSync(
+		projectPath('src/lib/components/academic/exam-schedule/ExamItemTray.svelte'),
+		'utf8'
+	);
+
+	assert.match(timeline, /placingSessionId/);
+	assert.match(timeline, /removing={unschedulingSessionId === session\.id}/);
+	assert.match(timeline, /placing={placingSessionId === session\.id}/);
+	assert.match(timeline, /readonly={placementDisabled && placingSessionId !== session\.id && unschedulingSessionId !== session\.id}/);
+	assert.match(block, /placing = false/);
+	assert.match(block, /removing = false/);
+	assert.match(block, /draggable={!disabled}/);
+	assert.match(block, /aria-busy={busy}/);
+	assert.match(block, /กำลังเอาออก|กำลังบันทึก/);
+	assert.match(block, /cursor-wait/);
+	assert.match(tray, /unschedulingSessionId/);
+	assert.match(tray, /readonly \|\| placingItemId \|\| unschedulingSessionId/);
 });
 
 test('staff timeline renders duration-aware drag preview states', () => {

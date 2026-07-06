@@ -14,11 +14,13 @@
 		getExamInvigilatorWorkspace,
 		getExamScheduleWorkspace,
 		importExamItems,
+		listExamInvigilatorStaffOptions,
 		placeExamSession,
 		publishExamRound,
 		updateExamAssignmentInvigilators,
 		upsertDayRoomAssignment,
 		upsertExamDay,
+		type ExamInvigilatorStaffOption,
 		type ExamInvigilatorWorkspace,
 		type ExamRoundStatus,
 		type ExamScheduleWorkspace,
@@ -27,7 +29,6 @@
 		type UpsertExamDayInput
 	} from '$lib/api/examSchedule';
 	import { listRooms, type Room } from '$lib/api/facility';
-	import { listStaff, type StaffListItem } from '$lib/api/staff';
 	import CompactExamScheduleStatus from '$lib/components/academic/exam-schedule/CompactExamScheduleStatus.svelte';
 	import ExamDaySetupPanel from '$lib/components/academic/exam-schedule/ExamDaySetupPanel.svelte';
 	import ExamInvigilatorPanel from '$lib/components/academic/exam-schedule/ExamInvigilatorPanel.svelte';
@@ -51,7 +52,7 @@
 	let structure = $state<AcademicStructureData | null>(null);
 	let classrooms = $state<Classroom[]>([]);
 	let rooms = $state<Room[]>([]);
-	let staff = $state<StaffListItem[]>([]);
+	let staff = $state<ExamInvigilatorStaffOption[]>([]);
 	let invigilatorWorkspace = $state<ExamInvigilatorWorkspace | null>(null);
 	let loadingInvigilators = $state(false);
 	let invigilatorLoadError = $state('');
@@ -231,10 +232,10 @@
 		staffRequested = true;
 		staffLoading = true;
 		try {
-			const staffResponse = await listStaff({ status: 'active', page: 1, page_size: 40 });
+			const staffOptions = await listExamInvigilatorStaffOptions(roundId, { limit: 40 });
 			if (!isCurrentStaffOptionsRequest(requestToken, roundId)) return;
 
-			staff = staffResponse.data;
+			staff = staffOptions;
 		} catch (loadError) {
 			if (!isCurrentStaffOptionsRequest(requestToken, roundId)) return;
 
@@ -248,14 +249,14 @@
 		}
 	}
 
-	async function searchStaffOptions(search: string): Promise<StaffListItem[]> {
-		const response = await listStaff({
-			status: 'active',
+	async function searchStaffOptions(search: string): Promise<ExamInvigilatorStaffOption[]> {
+		const roundId = workspace?.round.id ?? loadedRoundId;
+		if (!roundId) return [];
+
+		return listExamInvigilatorStaffOptions(roundId, {
 			search: search.trim() || undefined,
-			page: 1,
-			page_size: 40
+			limit: 40
 		});
-		return response.data;
 	}
 
 	async function loadInvigilators(roundId = workspace?.round.id ?? loadedRoundId) {

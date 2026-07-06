@@ -10,12 +10,13 @@ use crate::error::AppError;
 use crate::modules::academic::models::exam_schedule::{
     BlockedWindow, BlockedWindowInput, CreateExamRoundRequest, DayRoomAssignmentView, ExamDay,
     ExamDayDetail, ExamDayRoomAssignmentView, ExamInvigilatorAssignmentSummary,
-    ExamInvigilatorDayWorkload, ExamInvigilatorStaffWorkload, ExamInvigilatorView,
-    ExamInvigilatorWorkspace, ExamRound, ExamScheduleItemView, ExamScheduleReadiness,
-    ExamScheduleWorkspace, ExamSessionView, GenerateSeatsRequest, ImportExamItemsRequest,
-    ImportExamItemsResult, InvigilatorView, PersonalExamScheduleRound, PersonalExamSessionView,
-    PlaceExamSessionRequest, SeatAssignmentView, UpdateExamInvigilatorsRequest,
-    UpdateExamRoundRequest, UpsertDayRoomAssignmentRequest, UpsertExamDayRequest,
+    ExamInvigilatorDayWorkload, ExamInvigilatorStaffOption, ExamInvigilatorStaffWorkload,
+    ExamInvigilatorView, ExamInvigilatorWorkspace, ExamRound, ExamScheduleItemView,
+    ExamScheduleReadiness, ExamScheduleWorkspace, ExamSessionView, GenerateSeatsRequest,
+    ImportExamItemsRequest, ImportExamItemsResult, InvigilatorView, PersonalExamScheduleRound,
+    PersonalExamSessionView, PlaceExamSessionRequest, SeatAssignmentView,
+    UpdateExamInvigilatorsRequest, UpdateExamRoundRequest, UpsertDayRoomAssignmentRequest,
+    UpsertExamDayRequest,
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -33,6 +34,8 @@ const EXAM_SESSION_SLOT_MINUTES: u32 = 15;
 const EXAM_SESSION_CLASSROOM_LOCK_NAMESPACE: i64 = 0x4558_5343_4C52_0000;
 const EXAM_SESSION_ROOM_LOCK_NAMESPACE: i64 = 0x4558_5352_4F4D_0000;
 const EXAM_INVIGILATOR_STAFF_LOCK_NAMESPACE: i64 = 0x4558_5349_4E56_0000;
+const INVIGILATOR_STAFF_OPTION_DEFAULT_LIMIT: i64 = 40;
+const INVIGILATOR_STAFF_OPTION_MAX_LIMIT: i64 = 100;
 
 #[derive(Debug, sqlx::FromRow)]
 struct ExamDayGradeLevelRow {
@@ -951,6 +954,46 @@ pub async fn get_invigilator_workspace(
             .collect(),
         staff_workloads,
     })
+}
+
+pub async fn list_invigilator_staff_options(
+    pool: &PgPool,
+    round_id: Uuid,
+    search: Option<String>,
+    limit: Option<i64>,
+) -> Result<Vec<ExamInvigilatorStaffOption>, AppError> {
+    fetch_round(pool, round_id).await?;
+    let search_pattern = invigilator_staff_option_search_pattern(search);
+    let limit = invigilator_staff_option_limit(limit);
+
+    sqlx::query_as::<_, ExamInvigilatorStaffOption>(
+        r#"
+        SELECT user_account.id AS staff_id,
+               COALESCE(
+                   NULLIF(
+                       concat_ws(' ', user_account.title, user_account.first_name, user_account.last_name),
+                       ''
+                   ),
+                   user_account.id::TEXT
+               ) AS display_name
+        FROM users user_account
+        WHERE user_account.user_type = 'staff'
+          AND user_account.status = 'active'
+          AND (
+              $1::TEXT IS NULL
+              OR user_account.first_name ILIKE $1
+              OR user_account.last_name ILIKE $1
+              OR concat_ws(' ', user_account.title, user_account.first_name, user_account.last_name) ILIKE $1
+          )
+        ORDER BY user_account.first_name, user_account.last_name, user_account.id
+        LIMIT $2
+        "#,
+    )
+    .bind(search_pattern)
+    .bind(limit)
+    .fetch_all(pool)
+    .await
+    .map_err(AppError::from)
 }
 
 pub async fn import_exam_items(
@@ -2964,6 +3007,21 @@ fn map_day_room_assignment_write_error(error: sqlx::Error) -> AppError {
     AppError::from(error)
 }
 
+fn invigilator_staff_option_limit(limit: Option<i64>) -> i64 {
+    limit
+        .unwrap_or(INVIGILATOR_STAFF_OPTION_DEFAULT_LIMIT)
+        .clamp(1, INVIGILATOR_STAFF_OPTION_MAX_LIMIT)
+}
+
+fn invigilator_staff_option_search_pattern(search: Option<String>) -> Option<String> {
+    let trimmed = search?.trim().to_string();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(format!("%{trimmed}%"))
+    }
+}
+
 fn validate_exam_day_window(start_time: NaiveTime, end_time: NaiveTime) -> Result<(), AppError> {
     if start_time >= end_time {
         return Err(AppError::BadRequest(
@@ -3479,6 +3537,27 @@ mod tests {
         let parsed: UpsertDayRoomAssignmentRequest = serde_json::from_value(request).unwrap();
 
         assert_eq!(parsed.invigilator_staff_ids, Some(vec![staff_id]));
+    }
+
+    #[test]
+    fn invigilator_staff_option_limit_uses_bounded_default() {
+        assert_eq!(invigilator_staff_option_limit(None), 40);
+        assert_eq!(invigilator_staff_option_limit(Some(0)), 1);
+        assert_eq!(invigilator_staff_option_limit(Some(250)), 100);
+        assert_eq!(invigilator_staff_option_limit(Some(24)), 24);
+    }
+
+    #[test]
+    fn invigilator_staff_option_search_pattern_trims_empty_values() {
+        assert_eq!(invigilator_staff_option_search_pattern(None), None);
+        assert_eq!(
+            invigilator_staff_option_search_pattern(Some("   ".to_string())),
+            None
+        );
+        assert_eq!(
+            invigilator_staff_option_search_pattern(Some("  Kru A  ".to_string())),
+            Some("%Kru A%".to_string())
+        );
     }
 
     #[test]

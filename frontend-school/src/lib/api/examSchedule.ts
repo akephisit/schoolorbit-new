@@ -176,6 +176,11 @@ export interface ExamInvigilatorWorkspace {
 	staffWorkloads: ExamInvigilatorStaffWorkload[];
 }
 
+export interface ExamInvigilatorStaffOption {
+	staffId: string;
+	displayName: string;
+}
+
 export interface SeatAssignmentView {
 	id: string;
 	dayRoomAssignmentId: string;
@@ -259,9 +264,22 @@ export interface PlaceExamSessionInput {
 	startsAt: string;
 }
 
+export interface ExamInvigilatorStaffOptionsFilter {
+	search?: string;
+	limit?: number;
+}
+
 function examScheduleQuery(filters: ExamScheduleFilters = {}): string {
 	const params = new URLSearchParams();
 	if (filters.academicSemesterId) params.set('academic_semester_id', filters.academicSemesterId);
+	const query = params.toString();
+	return query ? `?${query}` : '';
+}
+
+function examInvigilatorStaffOptionsQuery(filters: ExamInvigilatorStaffOptionsFilter = {}): string {
+	const params = new URLSearchParams();
+	if (filters.search) params.set('search', filters.search);
+	if (filters.limit) params.set('limit', String(filters.limit));
 	const query = params.toString();
 	return query ? `?${query}` : '';
 }
@@ -311,6 +329,16 @@ export async function getExamInvigilatorWorkspace(
 		`/api/academic/exam-schedules/${roundId}/invigilators`
 	);
 	return apiData(response, 'ไม่สามารถโหลดข้อมูลกรรมการคุมสอบได้');
+}
+
+export async function listExamInvigilatorStaffOptions(
+	roundId: string,
+	filters: ExamInvigilatorStaffOptionsFilter = {}
+): Promise<ExamInvigilatorStaffOption[]> {
+	const response = await apiClient.get<ExamInvigilatorStaffOption[]>(
+		`/api/academic/exam-schedules/${roundId}/invigilator-staff-options${examInvigilatorStaffOptionsQuery(filters)}`
+	);
+	return apiData(response, 'ไม่สามารถโหลดรายชื่อครูสำหรับจัดกรรมการได้');
 }
 
 export async function importExamItems(
