@@ -300,6 +300,10 @@ test('exam rounds expose exam kind for midterm and final import filtering', () =
 		projectPath('src/routes/(app)/staff/academic/exam-schedules/[id]/+page.svelte'),
 		'utf8'
 	);
+	const timeline = readFileSync(
+		projectPath('src/lib/components/academic/exam-schedule/ExamScheduleTimeline.svelte'),
+		'utf8'
+	);
 
 	assert.match(api, /export type ExamRoundKind = 'midterm' \| 'final'/);
 	assert.match(api, /examKind: ExamRoundKind/);
@@ -311,13 +315,18 @@ test('exam rounds expose exam kind for midterm and final import filtering', () =
 	assert.match(listPage, /function examRoundKindLabel\(kind: ExamRoundKind\): string/);
 	assert.match(listPage, /examRoundKindLabel\(round\.examKind\)/);
 	assert.match(detailPage, /examRoundKindLabel\(workspace\.round\.examKind\)/);
-	assert.match(detailPage, /นำเข้าเฉพาะ/);
+	assert.match(detailPage, /examKindLabel=\{examRoundKindLabel\(workspace\.round\.examKind\)\}/);
+	assert.match(timeline, /นำเข้าเฉพาะ \{examKindLabel\}/);
 });
 
 test('staff schedule tab can clear imported items that do not match the round kind', () => {
 	const api = readFileSync(projectPath('src/lib/api/examSchedule.ts'), 'utf8');
 	const detailPage = readFileSync(
 		projectPath('src/routes/(app)/staff/academic/exam-schedules/[id]/+page.svelte'),
+		'utf8'
+	);
+	const timeline = readFileSync(
+		projectPath('src/lib/components/academic/exam-schedule/ExamScheduleTimeline.svelte'),
 		'utf8'
 	);
 	const scheduleTabStart = detailPage.indexOf('<Tabs.Content value="schedule">');
@@ -338,10 +347,20 @@ test('staff schedule tab can clear imported items that do not match the round ki
 	assert.match(resetWorkspaceForRound, /clearingMismatchedItems = false/);
 	assert.match(handleClearMismatchedItems, /clearMismatchedDialogOpen = true/);
 	assert.doesNotMatch(handleClearMismatchedItems, /window\.confirm/);
-	assert.match(scheduleTab, /onclick=\{handleImportItems\}/);
-	assert.match(scheduleTab, /onclick=\{handleClearMismatchedItems\}/);
-	assert.match(scheduleTab, /ล้างรายการไม่ตรงรอบสอบ/);
+	assert.match(scheduleTab, /onImportItems=\{handleImportItems\}/);
+	assert.match(scheduleTab, /onClearMismatchedItems=\{handleClearMismatchedItems\}/);
+	assert.match(
+		scheduleTab,
+		/canManageActions=\{canManageExamSchedules && workspace\.round\.status !== 'published'\}/
+	);
+	assert.doesNotMatch(scheduleTab, /รายการสอบสำหรับ\{examRoundKindLabel/);
 	assert.match(scheduleTab, /<ExamScheduleTimeline/);
+	assert.match(timeline, /onImportItems\?: \(\) => void/);
+	assert.match(timeline, /onClearMismatchedItems\?: \(\) => void/);
+	assert.match(timeline, /onclick=\{onImportItems\}/);
+	assert.match(timeline, /onclick=\{onClearMismatchedItems\}/);
+	assert.match(timeline, /นำเข้าเฉพาะ/);
+	assert.match(timeline, /ล้างรายการไม่ตรงรอบสอบ/);
 });
 
 test('exam schedule API exposes invigilator workspace and updates separately from room assignment', async () => {
@@ -683,13 +702,15 @@ test('staff timeline can switch between all exam days and one selected day', () 
 	assert.match(timeline, /\{#each visibleDays as day \(day\.id\)\}/);
 });
 
-test('staff timeline expands each day track to available width with per-day slot sizing', () => {
+test('staff timeline expands each day track to available width with per-day 5-minute slot sizing', () => {
 	const timeline = readFileSync(
 		projectPath('src/lib/components/academic/exam-schedule/ExamScheduleTimeline.svelte'),
 		'utf8'
 	);
 
-	assert.match(timeline, /const MIN_SLOT_WIDTH = 40/);
+	assert.match(timeline, /const MIN_SLOT_WIDTH = 18/);
+	assert.match(timeline, /const TIME_LABEL_INTERVAL_MINUTES = 60/);
+	assert.match(timeline, /function shouldRenderTimeLabel\(/);
 	assert.match(timeline, /let dayTrackWidths = \$state<Record<string, number>>\(\{\}\)/);
 	assert.match(timeline, /new ResizeObserver/);
 	assert.match(timeline, /function trackSlotWidth\(day: ExamDayDetail\): number/);
@@ -701,6 +722,47 @@ test('staff timeline expands each day track to available width with per-day slot
 	assert.match(timeline, /style:min-width=\{`\$\{minimumTrackWidth\(day\)\}px`\}/);
 	assert.doesNotMatch(timeline, /const SLOT_WIDTH = 40/);
 	assert.doesNotMatch(timeline, /--slot-width: 40px/);
+});
+
+test('exam item tray filters and sorts unscheduled subjects by group grade and type', () => {
+	const api = readFileSync(projectPath('src/lib/api/examSchedule.ts'), 'utf8');
+	const tray = readFileSync(
+		projectPath('src/lib/components/academic/exam-schedule/ExamItemTray.svelte'),
+		'utf8'
+	);
+
+	for (const expectedField of [
+		'subjectGroupId?: string | null',
+		'subjectGroupName?: string | null',
+		'subjectGroupDisplayOrder?: number | null',
+		'subjectType?: string | null',
+		'gradeLevelType?: string | null',
+		'gradeLevelYear?: number | null'
+	]) {
+		assert.match(
+			api,
+			new RegExp(escapeRegExp(expectedField)),
+			`${expectedField} should be exposed`
+		);
+	}
+
+	assert.match(tray, /let subjectGroupFilter = \$state/);
+	assert.match(tray, /let gradeLevelFilter = \$state/);
+	assert.match(tray, /const subjectGroupOptions = \$derived/);
+	assert.match(tray, /const gradeLevelOptions = \$derived/);
+	assert.match(tray, /const filteredSortedItems = \$derived/);
+	assert.match(tray, /function compareExamScheduleItems/);
+	assert.match(tray, /subjectGroupDisplayOrder/);
+	assert.match(tray, /gradeLevelSortValue/);
+	assert.match(tray, /subjectTypeSortValue/);
+	assert.match(tray, /subjectGroupFilter === ALL_FILTER_VALUE/);
+	assert.match(tray, /gradeLevelFilter === ALL_FILTER_VALUE/);
+	assert.match(tray, /ทุกกลุ่มสาระ/);
+	assert.match(tray, /ทุกชั้น/);
+	assert.match(tray, /\{#each filteredSortedItems as item \(item\.id\)\}/);
+	assert.doesNotMatch(tray, /\{#each unscheduledItems as item \(item\.id\)\}/);
+	assert.match(tray, /overflow-y-auto/);
+	assert.match(tray, /min-h-0/);
 });
 
 test('scheduled exam session blocks show action-specific placement and removal state', () => {

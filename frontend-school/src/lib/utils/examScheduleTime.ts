@@ -1,4 +1,4 @@
-export const TIMELINE_SLOT_MINUTES = 15;
+export const TIMELINE_SLOT_MINUTES = 5;
 
 export interface TimelineBlockedWindow {
 	label?: string | null;
@@ -123,10 +123,7 @@ export function rangesOverlap(
 	);
 }
 
-export function snapMinutesToSlot(
-	value: number,
-	slotMinutes = TIMELINE_SLOT_MINUTES
-): number {
+export function snapMinutesToSlot(value: number, slotMinutes = TIMELINE_SLOT_MINUTES): number {
 	return Math.round(value / slotMinutes) * slotMinutes;
 }
 
@@ -167,7 +164,7 @@ export function validateTimelinePlacement({
 	}
 
 	if (!isTimeOnSlot(startTime)) {
-		return { ok: false, reason: 'เวลาเริ่มต้องอยู่บนช่วงเวลา 15 นาที' };
+		return { ok: false, reason: 'เวลาเริ่มต้องอยู่บนช่วงเวลา 5 นาที' };
 	}
 
 	if (startMinutes < timeToMinutes(dayStartTime) || endMinutes > timeToMinutes(dayEndTime)) {
@@ -261,7 +258,8 @@ export function buildTimelineDragPreview(input: TimelineDragPreviewInput): Timel
 	return {
 		startTime,
 		endTime,
-		leftPx: (minutesBetween(input.day.startTime, startTime) / TIMELINE_SLOT_MINUTES) * input.slotWidthPx,
+		leftPx:
+			(minutesBetween(input.day.startTime, startTime) / TIMELINE_SLOT_MINUTES) * input.slotWidthPx,
 		widthPx: Math.max(
 			input.slotWidthPx,
 			(input.durationMinutes / TIMELINE_SLOT_MINUTES) * input.slotWidthPx

@@ -90,12 +90,14 @@ test('timeline placement rejects outside-day and blocked-window overlap', async 
 	);
 });
 
-test('timeline snap helper rounds to 15-minute increments', async () => {
-	const { snapMinutesToSlot } = await importTimeHelpers();
+test('timeline snap helper rounds to 5-minute increments', async () => {
+	const { TIMELINE_SLOT_MINUTES, snapMinutesToSlot } = await importTimeHelpers();
 
+	assert.equal(TIMELINE_SLOT_MINUTES, 5);
 	assert.equal(snapMinutesToSlot(602), 600);
-	assert.equal(snapMinutesToSlot(608), 615);
-	assert.equal(snapMinutesToSlot(622), 615);
+	assert.equal(snapMinutesToSlot(608), 610);
+	assert.equal(snapMinutesToSlot(622), 620);
+	assert.equal(snapMinutesToSlot(623), 625);
 });
 
 test('drag coordinate helper anchors existing blocks from their left edge', async () => {
@@ -109,7 +111,7 @@ test('drag coordinate helper anchors existing blocks from their left edge', asyn
 			dayStartTime: '08:30',
 			slotWidthPx: 24
 		}),
-		'09:30'
+		'08:50'
 	);
 });
 
@@ -139,10 +141,10 @@ test('timeline drag preview reports snapped start end left width and validity', 
 		scheduledSessions: []
 	});
 
-	assert.equal(preview.startTime, '09:00');
-	assert.equal(preview.endTime, '10:00');
+	assert.equal(preview.startTime, '08:40');
+	assert.equal(preview.endTime, '09:40');
 	assert.equal(preview.leftPx, 48);
-	assert.equal(preview.widthPx, 96);
+	assert.equal(preview.widthPx, 288);
 	assert.equal(preview.valid, true);
 });
 
@@ -158,7 +160,7 @@ test('timeline placement rejects manually typed off-grid times', async () => {
 	});
 
 	assert.equal(result.ok, false);
-	assert.match(result.reason ?? '', /15|นาที/);
+	assert.match(result.reason ?? '', /5|นาที/);
 });
 
 test('shared exam session validation rejects same-classroom and same-room conflicts', async () => {

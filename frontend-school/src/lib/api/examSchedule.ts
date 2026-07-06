@@ -76,8 +76,14 @@ export interface ExamScheduleItem {
 	subjectCode?: string | null;
 	subjectNameTh?: string | null;
 	subjectNameEn?: string | null;
+	subjectGroupId?: string | null;
+	subjectGroupName?: string | null;
+	subjectGroupDisplayOrder?: number | null;
+	subjectType?: string | null;
 	classroomName?: string | null;
 	gradeLevelName?: string | null;
+	gradeLevelType?: string | null;
+	gradeLevelYear?: number | null;
 }
 
 export interface ExamSession {

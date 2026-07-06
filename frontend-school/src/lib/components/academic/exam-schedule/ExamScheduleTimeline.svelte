@@ -21,10 +21,12 @@
 		validateExamSessionPlacement
 	} from '$lib/utils/examScheduleTime';
 	import { compareExamDaysByDate } from '$lib/utils/examScheduleDayOrder';
+	import { Download, Trash2 } from 'lucide-svelte';
 	import ExamItemTray from './ExamItemTray.svelte';
 	import ExamSessionBlock from './ExamSessionBlock.svelte';
 
-	const MIN_SLOT_WIDTH = 40;
+	const MIN_SLOT_WIDTH = 18;
+	const TIME_LABEL_INTERVAL_MINUTES = 60;
 
 	type DragPayload = {
 		examScheduleItemId: string;
@@ -51,15 +53,27 @@
 		readonly = false,
 		placingItemId = null,
 		unschedulingSessionId = null,
+		canManageActions = false,
+		importing = false,
+		clearingMismatchedItems = false,
+		examKindLabel = '',
 		onPlaceSession,
-		onUnscheduleSession
+		onUnscheduleSession,
+		onImportItems,
+		onClearMismatchedItems
 	}: {
 		workspace: ExamScheduleWorkspace;
 		readonly?: boolean;
 		placingItemId?: string | null;
 		unschedulingSessionId?: string | null;
+		canManageActions?: boolean;
+		importing?: boolean;
+		clearingMismatchedItems?: boolean;
+		examKindLabel?: string;
 		onPlaceSession?: (input: PlaceExamSessionInput) => Promise<boolean> | boolean;
 		onUnscheduleSession?: (sessionId: string) => Promise<boolean> | boolean;
+		onImportItems?: () => void;
+		onClearMismatchedItems?: () => void;
 	} = $props();
 
 	let localError = $state('');
@@ -85,16 +99,14 @@
 			: sortedDays
 	);
 	const placementDisabled = $derived(readonly || !!placingItemId || !!unschedulingSessionId);
+	const actionPlacementDisabled = $derived(!!placingItemId || !!unschedulingSessionId);
 	const placingSessionId = $derived(
 		placingItemId
-			? (workspace.scheduledSessions.find(
-					(session) => session.examScheduleItemId === placingItemId
-				)?.id ?? null)
+			? (workspace.scheduledSessions.find((session) => session.examScheduleItemId === placingItemId)
+					?.id ?? null)
 			: null
 	);
-	const selectedSessionPlacing = $derived(
-		placingItemId === selectedSession?.examScheduleItemId
-	);
+	const selectedSessionPlacing = $derived(placingItemId === selectedSession?.examScheduleItemId);
 	const selectedSessionUnscheduling = $derived(unschedulingSessionId === selectedSession?.id);
 	const selectedDay = $derived(
 		workspace.days.find((day) => day.id === selectedDayId) ?? sortedDays[0] ?? null
@@ -128,6 +140,10 @@
 		const hours = Math.floor(minutes / 60);
 		const remainder = minutes % 60;
 		return `${String(hours).padStart(2, '0')}:${String(remainder).padStart(2, '0')}`;
+	}
+
+	function shouldRenderTimeLabel(slot: string, index: number): boolean {
+		return index === 0 || timeToMinutes(slot) % TIME_LABEL_INTERVAL_MINUTES === 0;
 	}
 
 	function daySlotCount(day: ExamDayDetail): number {
@@ -246,10 +262,7 @@
 		setActiveDragPayload(payload);
 
 		event.dataTransfer.effectAllowed = 'move';
-		event.dataTransfer.setData(
-			'application/x-exam-schedule-item',
-			JSON.stringify(payload)
-		);
+		event.dataTransfer.setData('application/x-exam-schedule-item', JSON.stringify(payload));
 	}
 
 	function clearDragPreview() {
@@ -319,11 +332,7 @@
 		}
 	}
 
-	async function handleDrop(
-		event: DragEvent,
-		day: ExamDayDetail,
-		assignmentClassroomId: string
-	) {
+	async function handleDrop(event: DragEvent, day: ExamDayDetail, assignmentClassroomId: string) {
 		if (placementDisabled) {
 			clearActiveDrag();
 			return;
@@ -413,7 +422,12 @@
 	}
 
 	async function removeSelectedSession() {
-		if (!selectedSession || placementDisabled || selectedSessionPlacing || selectedSessionUnscheduling) {
+		if (
+			!selectedSession ||
+			placementDisabled ||
+			selectedSessionPlacing ||
+			selectedSessionUnscheduling
+		) {
 			return;
 		}
 
@@ -431,61 +445,94 @@
 	});
 </script>
 
-<section class="overflow-hidden rounded-md border bg-background">
-	<div class="flex flex-col gap-2 border-b px-4 py-4 md:flex-row md:items-center md:justify-between">
+<section
+	class="flex h-[clamp(34rem,calc(100vh-14rem),52rem)] min-h-0 flex-col overflow-hidden rounded-md border bg-background"
+>
+	<div
+		class="flex flex-col gap-2 border-b px-3 py-2 xl:flex-row xl:items-center xl:justify-between"
+	>
 		<div>
 			<h2 class="font-semibold">ไทม์ไลน์ตารางสอบ</h2>
 			<p class="text-sm text-muted-foreground">
 				ยังไม่จัด {workspace.unscheduledItems.length} · จัดแล้ว {workspace.scheduledSessions.length}
 			</p>
 		</div>
-		<div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
-			<Select.Root type="single" bind:value={dayDisplayMode}>
-				<Select.Trigger class="w-full sm:w-40">
-					{dayDisplayMode === 'all' ? 'แสดงทุกวัน' : 'เฉพาะวัน'}
-				</Select.Trigger>
-				<Select.Content>
-					<Select.Item value="all">แสดงทุกวัน</Select.Item>
-					<Select.Item value="single">เฉพาะวัน</Select.Item>
-				</Select.Content>
-			</Select.Root>
-			{#if dayDisplayMode === 'single'}
-				<Select.Root type="single" bind:value={selectedTimelineDayId}>
-					<Select.Trigger class="w-full sm:w-56">{selectedTimelineDayLabel}</Select.Trigger>
+		<div class="flex flex-col gap-2 xl:items-end">
+			<div class="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
+				<Select.Root type="single" bind:value={dayDisplayMode}>
+					<Select.Trigger class="w-full sm:w-36">
+						{dayDisplayMode === 'all' ? 'แสดงทุกวัน' : 'เฉพาะวัน'}
+					</Select.Trigger>
 					<Select.Content>
-						{#each sortedDays as day (day.id)}
-							<Select.Item value={day.id}>{dayLabel(day)}</Select.Item>
-						{/each}
+						<Select.Item value="all">แสดงทุกวัน</Select.Item>
+						<Select.Item value="single">เฉพาะวัน</Select.Item>
 					</Select.Content>
 				</Select.Root>
-			{/if}
+				{#if dayDisplayMode === 'single'}
+					<Select.Root type="single" bind:value={selectedTimelineDayId}>
+						<Select.Trigger class="w-full sm:w-48">{selectedTimelineDayLabel}</Select.Trigger>
+						<Select.Content>
+							{#each sortedDays as day (day.id)}
+								<Select.Item value={day.id}>{dayLabel(day)}</Select.Item>
+							{/each}
+						</Select.Content>
+					</Select.Root>
+				{/if}
+				{#if canManageActions}
+					<LoadingButton
+						size="sm"
+						variant="outline"
+						loading={importing}
+						loadingLabel="กำลังนำเข้า..."
+						onclick={onImportItems}
+						disabled={clearingMismatchedItems || actionPlacementDisabled}
+					>
+						<Download class="h-4 w-4" />
+						นำเข้าเฉพาะ {examKindLabel}
+					</LoadingButton>
+					<LoadingButton
+						size="sm"
+						variant="destructive"
+						loading={clearingMismatchedItems}
+						loadingLabel="กำลังล้าง..."
+						onclick={onClearMismatchedItems}
+						disabled={importing || actionPlacementDisabled}
+					>
+						<Trash2 class="h-4 w-4" />
+						ล้างรายการไม่ตรงรอบสอบ
+					</LoadingButton>
+				{/if}
+			</div>
 			{#if localError}
 				<div class="rounded bg-destructive/10 px-3 py-2 text-sm text-destructive">{localError}</div>
 			{/if}
 		</div>
 	</div>
 
-	<div class="grid min-h-[32rem] lg:grid-cols-[20rem_minmax(0,1fr)]">
+	<div class="grid min-h-0 flex-1 lg:grid-cols-[20rem_minmax(0,1fr)]">
 		<ExamItemTray
 			unscheduledItems={workspace.unscheduledItems}
 			days={sortedDays}
 			scheduledSessions={workspace.scheduledSessions}
 			readonly={placementDisabled}
-			placingItemId={placingItemId}
-			unschedulingSessionId={unschedulingSessionId}
-			onPlaceSession={onPlaceSession}
-			onUnscheduleSession={onUnscheduleSession}
+			{placingItemId}
+			{unschedulingSessionId}
+			{onPlaceSession}
+			{onUnscheduleSession}
 			onDragStart={setActiveDragPayload}
 			onDragEnd={clearActiveDrag}
 		/>
 
-		<div class="min-w-0 overflow-auto">
+		<div class="min-h-0 min-w-0 overflow-auto">
 			{#if sortedDays.length === 0}
 				<PageState title="ยังไม่มีวันสอบ" description="เพิ่มวันสอบในแท็บ Setup ก่อนจัดเวลา" />
 			{:else if visibleDays.every((day) => day.roomAssignments.length === 0)}
-				<PageState title="ยังไม่มีแถวห้องสอบ" description="กำหนดห้องสอบประจำวันในแท็บ Rooms ก่อนจัดเวลา" />
+				<PageState
+					title="ยังไม่มีแถวห้องสอบ"
+					description="กำหนดห้องสอบประจำวันในแท็บ Rooms ก่อนจัดเวลา"
+				/>
 			{:else}
-				<div class="space-y-6 p-4">
+				<div class="space-y-6 p-3">
 					{#each visibleDays as day (day.id)}
 						<section class="min-w-0">
 							<div class="mb-2 flex items-center justify-between gap-3">
@@ -512,7 +559,7 @@
 										>
 											{#each timeSlots(day) as slot, index (slot)}
 												<div class="border-r px-1 py-2 font-mono text-[10px] text-muted-foreground">
-													{index % 4 === 0 ? slot : ''}
+													{shouldRenderTimeLabel(slot, index) ? slot : ''}
 												</div>
 											{/each}
 										</div>
@@ -537,8 +584,7 @@
 												role="group"
 												aria-label={`วางรายการสอบ ${assignment.classroomName ?? assignment.classroomId}`}
 												ondragover={(event) => handleDragOver(event, day, assignment.classroomId)}
-												ondragleave={(event) =>
-													handleDragLeave(event, day, assignment.classroomId)}
+												ondragleave={(event) => handleDragLeave(event, day, assignment.classroomId)}
 												ondragend={clearActiveDrag}
 												ondrop={(event) => handleDrop(event, day, assignment.classroomId)}
 											>
@@ -575,7 +621,9 @@
 														style:left={`${preview.leftPx}px`}
 														style:width={`${preview.widthPx}px`}
 													>
-														<div class="truncate font-mono">{preview.startTime}-{preview.endTime}</div>
+														<div class="truncate font-mono">
+															{preview.startTime}-{preview.endTime}
+														</div>
 														{#if preview.reason}
 															<div class="truncate text-[10px]">{preview.reason}</div>
 														{/if}
@@ -614,7 +662,9 @@
 		<Dialog.Header>
 			<Dialog.Title>ย้ายคาบสอบ</Dialog.Title>
 			<Dialog.Description>
-				{selectedSession ? `${subjectLabel(selectedSession)} · ${selectedSession.classroomName ?? '-'}` : ''}
+				{selectedSession
+					? `${subjectLabel(selectedSession)} · ${selectedSession.classroomName ?? '-'}`
+					: ''}
 			</Dialog.Description>
 		</Dialog.Header>
 
@@ -638,7 +688,12 @@
 			<div class="grid grid-cols-2 gap-3">
 				<div class="space-y-2">
 					<Label for="exam-session-start-time">เริ่ม</Label>
-					<Input id="exam-session-start-time" type="time" step="900" bind:value={selectedStartTime} />
+					<Input
+						id="exam-session-start-time"
+						type="time"
+						step="300"
+						bind:value={selectedStartTime}
+					/>
 				</div>
 				<div class="space-y-2">
 					<Label>สิ้นสุด</Label>
@@ -656,9 +711,10 @@
 				loading={unschedulingSessionId === selectedSession?.id}
 				loadingLabel="กำลังเอาออก..."
 				onclick={removeSelectedSession}
-				disabled={
-					!selectedSession || placementDisabled || selectedSessionPlacing || selectedSessionUnscheduling
-				}
+				disabled={!selectedSession ||
+					placementDisabled ||
+					selectedSessionPlacing ||
+					selectedSessionUnscheduling}
 			>
 				เอาออกจากตาราง
 			</LoadingButton>
@@ -666,7 +722,10 @@
 				loading={placingItemId === selectedSession?.examScheduleItemId}
 				loadingLabel="กำลังบันทึก..."
 				onclick={submitSessionDialog}
-				disabled={!selectedSession || !selectedDay || placementDisabled || selectedSessionUnscheduling}
+				disabled={!selectedSession ||
+					!selectedDay ||
+					placementDisabled ||
+					selectedSessionUnscheduling}
 			>
 				บันทึก
 			</LoadingButton>

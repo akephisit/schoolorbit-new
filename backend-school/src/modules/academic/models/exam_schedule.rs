@@ -278,8 +278,14 @@ pub struct ExamScheduleItemView {
     pub subject_code: Option<String>,
     pub subject_name_th: Option<String>,
     pub subject_name_en: Option<String>,
+    pub subject_group_id: Option<Uuid>,
+    pub subject_group_name: Option<String>,
+    pub subject_group_display_order: Option<i32>,
+    pub subject_type: Option<String>,
     pub classroom_name: Option<String>,
     pub grade_level_name: Option<String>,
+    pub grade_level_type: Option<String>,
+    pub grade_level_year: Option<i32>,
 }
 
 #[derive(Debug, Clone, Serialize, sqlx::FromRow)]

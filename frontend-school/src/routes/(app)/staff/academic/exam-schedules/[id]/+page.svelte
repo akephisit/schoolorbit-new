@@ -46,7 +46,7 @@
 	import * as Tabs from '$lib/components/ui/tabs';
 	import { PERMISSIONS } from '$lib/permissions/registry';
 	import { can } from '$lib/stores/permissions';
-	import { Download, RefreshCw, Send, Trash2 } from 'lucide-svelte';
+	import { RefreshCw, Send } from 'lucide-svelte';
 
 	let { data }: PageProps = $props();
 
@@ -737,53 +737,19 @@
 				</Tabs.Content>
 
 				<Tabs.Content value="schedule">
-					{#if canManageExamSchedules && workspace.round.status !== 'published'}
-						<div
-							class="mb-3 flex flex-col gap-3 rounded-md border bg-background p-3 md:flex-row md:items-center md:justify-between"
-						>
-							<div class="min-w-0">
-								<p class="text-sm font-medium text-foreground">
-									รายการสอบสำหรับ{examRoundKindLabel(workspace.round.examKind)}
-								</p>
-								<p class="text-xs text-muted-foreground">
-									นำเข้ารายการตามชนิดรอบสอบ หรือล้างรายการที่หลุดมาจากรอบอื่น
-								</p>
-							</div>
-							<div class="flex flex-wrap items-center gap-2">
-								<LoadingButton
-									size="sm"
-									variant="outline"
-									loading={importing}
-									loadingLabel="กำลังนำเข้า..."
-									onclick={handleImportItems}
-									disabled={clearingMismatchedItems ||
-										placingItemId !== null ||
-										unschedulingSessionId !== null}
-								>
-									<Download class="h-4 w-4" />
-									นำเข้าเฉพาะ {examRoundKindLabel(workspace.round.examKind)}
-								</LoadingButton>
-								<LoadingButton
-									size="sm"
-									variant="destructive"
-									loading={clearingMismatchedItems}
-									loadingLabel="กำลังล้าง..."
-									onclick={handleClearMismatchedItems}
-									disabled={importing || placingItemId !== null || unschedulingSessionId !== null}
-								>
-									<Trash2 class="h-4 w-4" />
-									ล้างรายการไม่ตรงรอบสอบ
-								</LoadingButton>
-							</div>
-						</div>
-					{/if}
 					<ExamScheduleTimeline
 						{workspace}
 						readonly={!canManageExamSchedules || workspace.round.status === 'published'}
 						{placingItemId}
 						{unschedulingSessionId}
+						canManageActions={canManageExamSchedules && workspace.round.status !== 'published'}
+						{importing}
+						{clearingMismatchedItems}
+						examKindLabel={examRoundKindLabel(workspace.round.examKind)}
 						onPlaceSession={handlePlaceExamSession}
 						onUnscheduleSession={handleUnscheduleExamSession}
+						onImportItems={handleImportItems}
+						onClearMismatchedItems={handleClearMismatchedItems}
 					/>
 				</Tabs.Content>
 

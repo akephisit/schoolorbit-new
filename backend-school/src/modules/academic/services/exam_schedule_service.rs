@@ -30,7 +30,7 @@ pub struct WorkspaceCounts {
     pub invigilator_conflict_count: i64,
 }
 
-const EXAM_SESSION_SLOT_MINUTES: u32 = 15;
+const EXAM_SESSION_SLOT_MINUTES: u32 = 5;
 const EXAM_SESSION_CLASSROOM_LOCK_NAMESPACE: i64 = 0x4558_5343_4C52_0000;
 const EXAM_SESSION_ROOM_LOCK_NAMESPACE: i64 = 0x4558_5352_4F4D_0000;
 const EXAM_INVIGILATOR_STAFF_LOCK_NAMESPACE: i64 = 0x4558_5349_4E56_0000;
@@ -3437,17 +3437,24 @@ async fn fetch_unscheduled_items(
                subject.code AS subject_code,
                subject.name_th AS subject_name_th,
                subject.name_en AS subject_name_en,
+               subject.group_id AS subject_group_id,
+               subject_group.name_th AS subject_group_name,
+               subject_group.display_order AS subject_group_display_order,
+               subject.type AS subject_type,
                classroom.name AS classroom_name,
                CASE grade_level.level_type
                    WHEN 'kindergarten' THEN CONCAT('อ.', grade_level.year)
                    WHEN 'primary' THEN CONCAT('ป.', grade_level.year)
                    WHEN 'secondary' THEN CONCAT('ม.', grade_level.year)
                    ELSE CONCAT('?.', grade_level.year)
-               END AS grade_level_name
+               END AS grade_level_name,
+               grade_level.level_type AS grade_level_type,
+               grade_level.year AS grade_level_year
         FROM academic_exam_schedule_items item
         JOIN academic_assessment_categories category
           ON category.id = item.assessment_category_id
         JOIN subjects subject ON subject.id = item.subject_id
+        LEFT JOIN subject_groups subject_group ON subject_group.id = subject.group_id
         JOIN class_rooms classroom ON classroom.id = item.classroom_id
         JOIN grade_levels grade_level ON grade_level.id = item.grade_level_id
         WHERE item.exam_round_id = $1
@@ -3456,16 +3463,24 @@ async fn fetch_unscheduled_items(
               FROM academic_exam_sessions session
               WHERE session.exam_schedule_item_id = item.id
           )
-        ORDER BY CASE grade_level.level_type
+        ORDER BY subject_group.display_order NULLS LAST,
+                 subject_group.name_th NULLS LAST,
+                 CASE grade_level.level_type
                      WHEN 'kindergarten' THEN 1
                      WHEN 'primary' THEN 2
                      WHEN 'secondary' THEN 3
                      ELSE 4
                  END,
                  grade_level.year,
+                 CASE subject.type
+                     WHEN 'BASIC' THEN 1
+                     WHEN 'ADDITIONAL' THEN 2
+                     WHEN 'ACTIVITY' THEN 3
+                     ELSE 4
+                 END,
+                 subject.code,
                  classroom.room_number NULLS LAST,
                  classroom.name,
-                 subject.code,
                  category.display_order,
                  category.name,
                  item.id
@@ -4069,7 +4084,14 @@ mod tests {
     }
 
     #[test]
-    fn rejects_placement_start_time_outside_15_minute_slot() {
+    fn accepts_placement_start_time_on_5_minute_slot() {
+        let outcome = validate_session_window(t("08:35"), 60, t("08:30"), t("16:00"), &[]);
+
+        assert!(outcome.is_ok());
+    }
+
+    #[test]
+    fn rejects_placement_start_time_outside_5_minute_slot() {
         let outcome = validate_session_window(t("08:37"), 60, t("08:30"), t("16:00"), &[]);
 
         assert!(outcome.is_err());
