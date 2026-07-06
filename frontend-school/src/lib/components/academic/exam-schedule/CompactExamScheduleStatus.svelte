@@ -17,8 +17,8 @@
 		days = [],
 		unscheduledItems = [],
 		scheduledSessions = [],
-		invigilatorAssignedCount = 0,
-		invigilatorAssignmentCount = 0
+		invigilatorAssignedCount,
+		invigilatorAssignmentCount
 	}: {
 		status?: ExamRoundStatus;
 		readiness: ExamScheduleReadiness;
@@ -32,8 +32,23 @@
 	const statusLabel = $derived(status === 'published' ? 'เผยแพร่แล้ว' : 'ฉบับร่าง');
 	const statusVariant = $derived(status === 'published' ? 'default' : 'secondary');
 	const totalItems = $derived(unscheduledItems.length + scheduledSessions.length);
-	const roomAssignmentCount = $derived(
+	const invigilatorAssignmentFallback = $derived(
 		days.reduce((total, day) => total + day.roomAssignments.length, 0)
+	);
+	const invigilatorAssignedFallback = $derived(
+		days.reduce(
+			(total, day) =>
+				total +
+				day.roomAssignments.filter((assignment) => assignment.invigilators.length > 0).length,
+			0
+		)
+	);
+	const roomAssignmentCount = $derived(invigilatorAssignmentFallback);
+	const displayedInvigilatorAssignedCount = $derived(
+		invigilatorAssignedCount ?? invigilatorAssignedFallback
+	);
+	const displayedInvigilatorAssignmentCount = $derived(
+		invigilatorAssignmentCount ?? invigilatorAssignmentFallback
 	);
 </script>
 
@@ -57,7 +72,9 @@
 			</Badge>
 			<Badge variant="outline">ยังไม่จัด {unscheduledItems.length}/{totalItems}</Badge>
 			<Badge variant="outline">ห้องสอบ {roomAssignmentCount}</Badge>
-			<Badge variant="outline">กรรมการ {invigilatorAssignedCount}/{invigilatorAssignmentCount}</Badge>
+			<Badge variant="outline">
+				กรรมการ {displayedInvigilatorAssignedCount}/{displayedInvigilatorAssignmentCount}
+			</Badge>
 		</div>
 
 		<Sheet.Root>

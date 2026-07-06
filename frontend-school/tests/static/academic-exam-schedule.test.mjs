@@ -246,7 +246,26 @@ test('staff exam schedule detail uses compact status and removes large readiness
 	assert.match(page, /CompactExamScheduleStatus/);
 	assert.doesNotMatch(page, /<aside class="min-w-0 xl:sticky/);
 	assert.doesNotMatch(page, /xl:grid-cols-\[minmax\(0,1fr\)_22rem\]/);
+	assert.doesNotMatch(page, /ReadinessPanel/);
+	assert.doesNotMatch(page, /value="review"/);
 	assert.match(page, /value="invigilators"/);
+	assert.match(page, /<Tabs\.Trigger value="invigilators">กรรมการ<\/Tabs\.Trigger>/);
+});
+
+test('compact exam schedule status derives invigilator counts from room assignments by default', () => {
+	const statusComponent = readFileSync(
+		projectPath('src/lib/components/academic/exam-schedule/CompactExamScheduleStatus.svelte'),
+		'utf8'
+	);
+
+	assert.doesNotMatch(statusComponent, /invigilatorAssignedCount = 0/);
+	assert.doesNotMatch(statusComponent, /invigilatorAssignmentCount = 0/);
+	assert.match(statusComponent, /invigilatorAssignmentFallback = \$derived\(/);
+	assert.match(statusComponent, /day\.roomAssignments\.length/);
+	assert.match(statusComponent, /invigilatorAssignedFallback = \$derived\(/);
+	assert.match(statusComponent, /assignment\.invigilators\.length > 0/);
+	assert.match(statusComponent, /invigilatorAssignedCount \?\? invigilatorAssignedFallback/);
+	assert.match(statusComponent, /invigilatorAssignmentCount \?\? invigilatorAssignmentFallback/);
 });
 
 test('staff timeline wires drag drop placement and accessible schedule dialog', () => {

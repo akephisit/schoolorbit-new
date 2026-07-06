@@ -426,7 +426,7 @@
 					<Tabs.Trigger value="setup">Setup</Tabs.Trigger>
 					<Tabs.Trigger value="rooms">Rooms</Tabs.Trigger>
 					<Tabs.Trigger value="schedule">Schedule</Tabs.Trigger>
-					<Tabs.Trigger value="invigilators">Invigilators</Tabs.Trigger>
+					<Tabs.Trigger value="invigilators">กรรมการ</Tabs.Trigger>
 				</Tabs.List>
 
 				<Tabs.Content value="setup">
