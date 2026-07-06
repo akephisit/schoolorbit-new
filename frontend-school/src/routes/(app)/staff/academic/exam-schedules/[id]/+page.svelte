@@ -67,6 +67,7 @@
 	let savingAssignment = $state(false);
 	let generatingAssignmentId = $state<string | null>(null);
 	let placingItemId = $state<string | null>(null);
+	let unschedulingSessionId = $state<string | null>(null);
 	let requestedRoundId = $state('');
 	let loadedRoundId = $state('');
 	let workspaceRequestToken = 0;
@@ -117,6 +118,7 @@
 		savingAssignment = false;
 		generatingAssignmentId = null;
 		placingItemId = null;
+		unschedulingSessionId = null;
 		loading = !!roundId;
 		refreshing = false;
 	}
@@ -441,7 +443,7 @@
 			return false;
 		}
 
-		placingItemId = session.examScheduleItemId;
+		unschedulingSessionId = sessionId;
 		try {
 			await deleteExamSession(sessionId);
 			toast.success('เอารายการสอบออกจากตารางแล้ว');
@@ -455,7 +457,7 @@
 			);
 			return false;
 		} finally {
-			placingItemId = null;
+			unschedulingSessionId = null;
 		}
 	}
 
@@ -631,6 +633,7 @@
 						{workspace}
 						readonly={!canManageExamSchedules || workspace.round.status === 'published'}
 						{placingItemId}
+						{unschedulingSessionId}
 						onPlaceSession={handlePlaceExamSession}
 						onUnscheduleSession={handleUnscheduleExamSession}
 					/>

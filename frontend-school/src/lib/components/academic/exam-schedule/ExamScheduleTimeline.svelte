@@ -49,12 +49,14 @@
 		workspace,
 		readonly = false,
 		placingItemId = null,
+		unschedulingSessionId = null,
 		onPlaceSession,
 		onUnscheduleSession
 	}: {
 		workspace: ExamScheduleWorkspace;
 		readonly?: boolean;
 		placingItemId?: string | null;
+		unschedulingSessionId?: string | null;
 		onPlaceSession?: (input: PlaceExamSessionInput) => Promise<boolean> | boolean;
 		onUnscheduleSession?: (sessionId: string) => Promise<boolean> | boolean;
 	} = $props();
@@ -69,6 +71,10 @@
 
 	const sortedDays = $derived([...workspace.days].sort((a, b) => a.sortOrder - b.sortOrder));
 	const placementDisabled = $derived(readonly || !!placingItemId);
+	const selectedSessionPlacing = $derived(
+		placingItemId === selectedSession?.examScheduleItemId
+	);
+	const selectedSessionUnscheduling = $derived(unschedulingSessionId === selectedSession?.id);
 	const selectedDay = $derived(
 		workspace.days.find((day) => day.id === selectedDayId) ?? sortedDays[0] ?? null
 	);
@@ -313,7 +319,9 @@
 	}
 
 	async function removeSelectedSession() {
-		if (!selectedSession || placementDisabled) return;
+		if (!selectedSession || placementDisabled || selectedSessionPlacing || selectedSessionUnscheduling) {
+			return;
+		}
 
 		const removed = await onUnscheduleSession?.(selectedSession.id);
 		if (removed) dialogOpen = false;
@@ -514,10 +522,12 @@
 			<Button variant="outline" onclick={() => (dialogOpen = false)}>ยกเลิก</Button>
 			<LoadingButton
 				variant="destructive"
-				loading={placingItemId === selectedSession?.examScheduleItemId}
+				loading={unschedulingSessionId === selectedSession?.id}
 				loadingLabel="กำลังเอาออก..."
 				onclick={removeSelectedSession}
-				disabled={!selectedSession || placementDisabled}
+				disabled={
+					!selectedSession || placementDisabled || selectedSessionPlacing || selectedSessionUnscheduling
+				}
 			>
 				เอาออกจากตาราง
 			</LoadingButton>
@@ -525,7 +535,7 @@
 				loading={placingItemId === selectedSession?.examScheduleItemId}
 				loadingLabel="กำลังบันทึก..."
 				onclick={submitSessionDialog}
-				disabled={!selectedSession || !selectedDay || placementDisabled}
+				disabled={!selectedSession || !selectedDay || placementDisabled || selectedSessionUnscheduling}
 			>
 				บันทึก
 			</LoadingButton>

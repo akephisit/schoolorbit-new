@@ -504,8 +504,23 @@ test('scheduled exam sessions can be removed through dialog and tray drop', () =
 	assert.match(tray, /ondrop/);
 	assert.match(timeline, /เอาออกจากตาราง/);
 	assert.match(timeline, /onUnscheduleSession/);
+	assert.match(timeline, /unschedulingSessionId/);
+	assert.match(timeline, /loading=\{unschedulingSessionId === selectedSession\?\.id\}/);
 	assert.match(page, /deleteExamSession/);
 	assert.match(page, /handleUnscheduleExamSession/);
+	assert.match(page, /let unschedulingSessionId = \$state<string \| null>\(null\)/);
+	assert.match(page, /\{unschedulingSessionId\}/);
+
+	const resetWorkspaceForRound = localFunctionSource(page, 'resetWorkspaceForRound');
+	const handleUnscheduleExamSession = localFunctionSource(page, 'handleUnscheduleExamSession');
+
+	assert.match(resetWorkspaceForRound, /unschedulingSessionId = null/);
+	assert.match(handleUnscheduleExamSession, /unschedulingSessionId = sessionId/);
+	assert.match(handleUnscheduleExamSession, /finally \{[\s\S]*unschedulingSessionId = null/);
+	assert.doesNotMatch(handleUnscheduleExamSession, /placingItemId\s*=/);
+	assert.match(handleUnscheduleExamSession, /await refreshWorkspace\(true\)/);
+	assert.match(handleUnscheduleExamSession, /!canManageExamSchedules/);
+	assert.match(handleUnscheduleExamSession, /workspace\.round\.status === 'published'/);
 });
 
 test('staff workspace reloads by route round id and keeps form input on failed saves', () => {
