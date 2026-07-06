@@ -219,7 +219,7 @@ test('staff workspace wires setup, import, room assignment, and publish actions'
 		'ExamDaySetupPanel',
 		'ExamRoomAssignmentPanel',
 		'ExamScheduleTimeline',
-		'ReadinessPanel',
+		'CompactExamScheduleStatus',
 		'getExamScheduleWorkspace',
 		'placeExamSession',
 		'upsertExamDay',
@@ -235,6 +235,18 @@ test('staff workspace wires setup, import, room assignment, and publish actions'
 	for (const expected of expectedWorkspaceWiring) {
 		assert.match(page, new RegExp(escapeRegExp(expected)), `${expected} should be wired`);
 	}
+});
+
+test('staff exam schedule detail uses compact status and removes large readiness aside', () => {
+	const page = readFileSync(
+		projectPath('src/routes/(app)/staff/academic/exam-schedules/[id]/+page.svelte'),
+		'utf8'
+	);
+
+	assert.match(page, /CompactExamScheduleStatus/);
+	assert.doesNotMatch(page, /<aside class="min-w-0 xl:sticky/);
+	assert.doesNotMatch(page, /xl:grid-cols-\[minmax\(0,1fr\)_22rem\]/);
+	assert.match(page, /value="invigilators"/);
 });
 
 test('staff timeline wires drag drop placement and accessible schedule dialog', () => {

@@ -24,22 +24,14 @@
 	} from '$lib/api/examSchedule';
 	import { listRooms, type Room } from '$lib/api/facility';
 	import { listStaff, type StaffListItem } from '$lib/api/staff';
+	import CompactExamScheduleStatus from '$lib/components/academic/exam-schedule/CompactExamScheduleStatus.svelte';
 	import ExamDaySetupPanel from '$lib/components/academic/exam-schedule/ExamDaySetupPanel.svelte';
 	import ExamRoomAssignmentPanel from '$lib/components/academic/exam-schedule/ExamRoomAssignmentPanel.svelte';
 	import ExamScheduleTimeline from '$lib/components/academic/exam-schedule/ExamScheduleTimeline.svelte';
-	import ReadinessPanel from '$lib/components/academic/exam-schedule/ReadinessPanel.svelte';
 	import { PageShell } from '$lib/components/app-layout';
 	import { LoadingButton, PageSkeleton, PageState } from '$lib/components/app-state';
 	import { Badge } from '$lib/components/ui/badge';
 	import * as Tabs from '$lib/components/ui/tabs';
-	import {
-		Table,
-		TableBody,
-		TableCell,
-		TableHead,
-		TableHeader,
-		TableRow
-	} from '$lib/components/ui/table';
 	import { PERMISSIONS } from '$lib/permissions/registry';
 	import { can } from '$lib/stores/permissions';
 	import { Download, RefreshCw, Send } from 'lucide-svelte';
@@ -49,7 +41,7 @@
 	let loading = $state(true);
 	let refreshing = $state(false);
 	let error = $state('');
-	let activeTab = $state<'setup' | 'rooms' | 'schedule' | 'review'>('setup');
+	let activeTab = $state<'setup' | 'rooms' | 'schedule' | 'invigilators'>('setup');
 	let workspace = $state<ExamScheduleWorkspace | null>(null);
 	let structure = $state<AcademicStructureData | null>(null);
 	let classrooms = $state<Classroom[]>([]);
@@ -420,105 +412,63 @@
 	{:else if !workspace}
 		<PageState title="ไม่พบรอบตารางสอบ" description="รายการที่เปิดอาจถูกลบหรือไม่มีสิทธิ์เข้าถึง" />
 	{:else}
-		<div class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_22rem]">
-			<div class="min-w-0">
-				<Tabs.Root bind:value={activeTab} class="gap-4">
-					<Tabs.List class="grid w-full grid-cols-4 md:w-fit">
-						<Tabs.Trigger value="setup">Setup</Tabs.Trigger>
-						<Tabs.Trigger value="rooms">Rooms</Tabs.Trigger>
-						<Tabs.Trigger value="schedule">Schedule</Tabs.Trigger>
-						<Tabs.Trigger value="review">Review</Tabs.Trigger>
-					</Tabs.List>
+		<div class="space-y-4">
+			<CompactExamScheduleStatus
+				status={workspace.round.status}
+				readiness={workspace.readiness}
+				days={workspace.days}
+				unscheduledItems={workspace.unscheduledItems}
+				scheduledSessions={workspace.scheduledSessions}
+			/>
 
-					<Tabs.Content value="setup">
-						<ExamDaySetupPanel
-							days={workspace.days}
-							gradeLevels={gradeLevels}
-							readonly={!canManageExamSchedules || workspace.round.status === 'published'}
-							saving={savingDay}
-							deletingDayId={deletingDayId}
-							onSaveDay={handleSaveDay}
-							onDeleteDay={handleDeleteDay}
-						/>
-					</Tabs.Content>
+			<Tabs.Root bind:value={activeTab} class="gap-4">
+				<Tabs.List class="grid w-full grid-cols-4 md:w-fit">
+					<Tabs.Trigger value="setup">Setup</Tabs.Trigger>
+					<Tabs.Trigger value="rooms">Rooms</Tabs.Trigger>
+					<Tabs.Trigger value="schedule">Schedule</Tabs.Trigger>
+					<Tabs.Trigger value="invigilators">Invigilators</Tabs.Trigger>
+				</Tabs.List>
 
-					<Tabs.Content value="rooms">
-						<ExamRoomAssignmentPanel
-							days={workspace.days}
-							classrooms={classrooms}
-							rooms={rooms}
-							staff={staff}
-							readonly={!canManageExamSchedules || workspace.round.status === 'published'}
-							saving={savingAssignment}
-							generatingAssignmentId={generatingAssignmentId}
-							onSaveAssignment={handleSaveAssignment}
-							onGenerateSeats={handleGenerateSeats}
-							onSearchStaff={searchStaffOptions}
-						/>
-					</Tabs.Content>
+				<Tabs.Content value="setup">
+					<ExamDaySetupPanel
+						days={workspace.days}
+						gradeLevels={gradeLevels}
+						readonly={!canManageExamSchedules || workspace.round.status === 'published'}
+						saving={savingDay}
+						deletingDayId={deletingDayId}
+						onSaveDay={handleSaveDay}
+						onDeleteDay={handleDeleteDay}
+					/>
+				</Tabs.Content>
 
-					<Tabs.Content value="schedule">
-						<ExamScheduleTimeline
-							{workspace}
-							readonly={!canManageExamSchedules || workspace.round.status === 'published'}
-							placingItemId={placingItemId}
-							onPlaceSession={handlePlaceExamSession}
-						/>
-					</Tabs.Content>
+				<Tabs.Content value="rooms">
+					<ExamRoomAssignmentPanel
+						days={workspace.days}
+						classrooms={classrooms}
+						rooms={rooms}
+						staff={staff}
+						readonly={!canManageExamSchedules || workspace.round.status === 'published'}
+						saving={savingAssignment}
+						generatingAssignmentId={generatingAssignmentId}
+						onSaveAssignment={handleSaveAssignment}
+						onGenerateSeats={handleGenerateSeats}
+						onSearchStaff={searchStaffOptions}
+					/>
+				</Tabs.Content>
 
-					<Tabs.Content value="review">
-						<section class="overflow-hidden rounded-md border bg-background">
-							<div class="border-b px-4 py-4">
-								<h2 class="font-semibold">สรุปก่อนเผยแพร่</h2>
-								<p class="text-sm text-muted-foreground">{semester?.name ?? '-'}</p>
-							</div>
-							<div class="overflow-x-auto">
-								<Table class="min-w-[720px]">
-									<TableHeader>
-										<TableRow>
-											<TableHead>วันสอบ</TableHead>
-											<TableHead class="text-center">ระดับชั้น</TableHead>
-											<TableHead class="text-center">ห้องสอบ</TableHead>
-											<TableHead class="text-center">ช่วงปิด</TableHead>
-										</TableRow>
-									</TableHeader>
-									<TableBody>
-										{#each workspace.days as day (day.id)}
-											<TableRow>
-												<TableCell>
-													<div class="font-medium">{day.label || day.examDate}</div>
-													<div class="font-mono text-xs text-muted-foreground">
-														{day.startTime.slice(0, 5)}-{day.endTime.slice(0, 5)}
-													</div>
-												</TableCell>
-												<TableCell class="text-center">
-													<Badge variant="outline">{day.gradeLevelIds.length || 'ทั้งหมด'}</Badge>
-												</TableCell>
-												<TableCell class="text-center">
-													<Badge variant="outline">{day.roomAssignments.length}</Badge>
-												</TableCell>
-												<TableCell class="text-center">
-													<Badge variant="outline">{day.blockedWindows.length}</Badge>
-												</TableCell>
-											</TableRow>
-										{/each}
-									</TableBody>
-								</Table>
-							</div>
-						</section>
-					</Tabs.Content>
-				</Tabs.Root>
-			</div>
+				<Tabs.Content value="schedule">
+					<ExamScheduleTimeline
+						{workspace}
+						readonly={!canManageExamSchedules || workspace.round.status === 'published'}
+						placingItemId={placingItemId}
+						onPlaceSession={handlePlaceExamSession}
+					/>
+				</Tabs.Content>
 
-			<aside class="min-w-0 xl:sticky xl:top-20 xl:self-start">
-				<ReadinessPanel
-					status={workspace.round.status}
-					readiness={workspace.readiness}
-					days={workspace.days}
-					unscheduledItems={workspace.unscheduledItems}
-					scheduledSessions={workspace.scheduledSessions}
-				/>
-			</aside>
+				<Tabs.Content value="invigilators">
+					<PageState title="ยังไม่ได้เปิดหน้าจัดกรรมการ" description="จะเพิ่มในขั้นถัดไป" />
+				</Tabs.Content>
+			</Tabs.Root>
 		</div>
 	{/if}
 </PageShell>
