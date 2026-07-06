@@ -81,6 +81,11 @@ test('academic exam schedule API client maps functions to backend routes and met
 			routeFragment: '/api/academic/exam-schedules/${roundId}'
 		},
 		{
+			functionName: 'getExamInvigilatorWorkspace',
+			method: 'get',
+			routeFragment: '/api/academic/exam-schedules/${roundId}/invigilators'
+		},
+		{
 			functionName: 'importExamItems',
 			method: 'post',
 			routeFragment: '/import-items'
@@ -104,6 +109,11 @@ test('academic exam schedule API client maps functions to backend routes and met
 			functionName: 'upsertDayRoomAssignment',
 			method: 'post',
 			routeFragment: '/days/${examDayId}/room-assignments'
+		},
+		{
+			functionName: 'updateExamAssignmentInvigilators',
+			method: 'put',
+			routeFragment: '/room-assignments/${assignmentId}/invigilators'
 		},
 		{
 			functionName: 'generateSeatsForAssignment',
@@ -159,6 +169,20 @@ test('academic exam schedule API client maps functions to backend routes and met
 			`${functionName} should call apiClient.${method} with ${routeFragment}`
 		);
 	}
+});
+
+test('exam schedule API exposes invigilator workspace and updates separately from room assignment', async () => {
+	const api = await readProjectFile('src/lib/api/examSchedule.ts');
+
+	assert.match(api, /export interface ExamInvigilatorWorkspace/);
+	assert.match(api, /export async function getExamInvigilatorWorkspace/);
+	assert.match(api, /export async function updateExamAssignmentInvigilators/);
+	assert.match(api, /room-assignments\/\$\{assignmentId\}\/invigilators/);
+
+	const roomInputStart = api.indexOf('export interface UpsertDayRoomAssignmentInput');
+	const roomInputEnd = api.indexOf('export interface GenerateSeatsInput');
+	const roomInput = api.slice(roomInputStart, roomInputEnd);
+	assert.doesNotMatch(roomInput, /invigilatorStaffIds/);
 });
 
 test('staff workspace wires setup, import, room assignment, and publish actions', () => {

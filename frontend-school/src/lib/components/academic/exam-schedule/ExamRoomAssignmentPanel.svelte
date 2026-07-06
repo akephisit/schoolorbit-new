@@ -184,8 +184,7 @@
 		const saved = await onSaveAssignment?.(dayId, {
 			classroomId,
 			roomId,
-			capacityOverride: capacityOverride ? Number(capacityOverride) : null,
-			invigilatorStaffIds: selectedInvigilatorIds
+			capacityOverride: capacityOverride ? Number(capacityOverride) : null
 		});
 		if (saved) resetForm();
 	}

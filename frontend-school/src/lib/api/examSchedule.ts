@@ -144,6 +144,38 @@ export interface InvigilatorView {
 	displayName: string;
 }
 
+export interface ExamInvigilatorAssignmentSummary {
+	assignmentId: string;
+	examDayId: string;
+	classroomId: string;
+	classroomName: string;
+	roomId: string;
+	roomName: string;
+	sessionMinutes: number;
+	invigilators: InvigilatorView[];
+}
+
+export interface ExamInvigilatorDayWorkload {
+	examDayId: string;
+	minutes: number;
+	assignmentCount: number;
+}
+
+export interface ExamInvigilatorStaffWorkload {
+	staffId: string;
+	staffName: string;
+	totalMinutes: number;
+	assignedDayCount: number;
+	assignmentCount: number;
+	days: ExamInvigilatorDayWorkload[];
+}
+
+export interface ExamInvigilatorWorkspace {
+	roundId: string;
+	assignments: ExamInvigilatorAssignmentSummary[];
+	staffWorkloads: ExamInvigilatorStaffWorkload[];
+}
+
 export interface SeatAssignmentView {
 	id: string;
 	dayRoomAssignmentId: string;
@@ -211,11 +243,14 @@ export interface UpsertDayRoomAssignmentInput {
 	classroomId: string;
 	roomId: string;
 	capacityOverride?: number | null;
-	invigilatorStaffIds: string[];
 }
 
 export interface GenerateSeatsInput {
 	regenerate: boolean;
+}
+
+export interface UpdateExamInvigilatorsInput {
+	invigilatorStaffIds: string[];
 }
 
 export interface PlaceExamSessionInput {
@@ -269,6 +304,15 @@ export async function getExamScheduleWorkspace(
 	return apiData(response, 'ไม่สามารถโหลดพื้นที่จัดตารางสอบได้');
 }
 
+export async function getExamInvigilatorWorkspace(
+	roundId: string
+): Promise<ExamInvigilatorWorkspace> {
+	const response = await apiClient.get<ExamInvigilatorWorkspace>(
+		`/api/academic/exam-schedules/${roundId}/invigilators`
+	);
+	return apiData(response, 'ไม่สามารถโหลดข้อมูลกรรมการคุมสอบได้');
+}
+
 export async function importExamItems(
 	roundId: string,
 	input: ImportExamItemsInput
@@ -316,6 +360,17 @@ export async function upsertDayRoomAssignment(
 		input
 	);
 	return apiData(response, 'ไม่สามารถบันทึกห้องสอบประจำวันได้');
+}
+
+export async function updateExamAssignmentInvigilators(
+	assignmentId: string,
+	input: UpdateExamInvigilatorsInput
+): Promise<DayRoomAssignmentView> {
+	const response = await apiClient.put<DayRoomAssignmentView>(
+		`/api/academic/exam-schedules/room-assignments/${assignmentId}/invigilators`,
+		input
+	);
+	return apiData(response, 'ไม่สามารถบันทึกกรรมการคุมสอบได้');
 }
 
 export async function generateSeatsForAssignment(
