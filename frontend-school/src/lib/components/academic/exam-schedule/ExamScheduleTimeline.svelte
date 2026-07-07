@@ -296,6 +296,17 @@
 		clearDragPreview();
 	}
 
+	function clearActiveDragForPayload(payload: DragPayload) {
+		if (
+			activeDragPayload?.examScheduleItemId !== payload.examScheduleItemId ||
+			activeDragPayload.sourceSessionId !== payload.sourceSessionId
+		) {
+			return;
+		}
+
+		clearActiveDrag();
+	}
+
 	function buildRowDragPreview(event: DragEvent, day: ExamDayDetail, payload: DragPayload) {
 		const target = event.currentTarget as HTMLElement;
 		const rect = target.getBoundingClientRect();
@@ -379,11 +390,9 @@
 				? dragPreview
 				: null;
 		const startsAt = activePreview?.startTime ?? buildRowDragPreview(event, day, payload).startTime;
-		try {
-			await placeLocallyValidated(payload, day, startsAt);
-		} finally {
-			clearActiveDrag();
-		}
+		const placement = placeLocallyValidated(payload, day, startsAt);
+		clearActiveDragForPayload(payload);
+		await placement;
 	}
 
 	async function placeLocallyValidated(payload: DragPayload, day: ExamDayDetail, startsAt: string) {

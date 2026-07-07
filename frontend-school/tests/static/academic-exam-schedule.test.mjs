@@ -893,6 +893,7 @@ test('exam timeline keeps active drag payload so dragover can allow drops reliab
 	assert.match(timeline, /let activeDragPayload = \$state<DragPayload \| null>\(null\)/);
 	assert.match(timeline, /function setActiveDragPayload\(payload: DragPayload\)/);
 	assert.match(timeline, /function currentDragPayload\(event: DragEvent\): DragPayload \| null/);
+	assert.match(timeline, /function clearActiveDragForPayload\(payload: DragPayload\)/);
 	assert.match(timeline, /activeDragPayload = payload/);
 	assert.match(timeline, /activeDragPayload = null/);
 	assert.match(timeline, /onDragStart=\{setActiveDragPayload\}/);
@@ -906,6 +907,10 @@ test('exam timeline keeps active drag payload so dragover can allow drops reliab
 		/const payload = dragPayload\(event\);\s*if \(!payload\) return;\s*event\.preventDefault\(\)/
 	);
 	assert.match(handleDrop, /currentDragPayload\(event\)/);
+	assert.match(handleDrop, /const placement = placeLocallyValidated\(payload, day, startsAt\)/);
+	assert.match(handleDrop, /clearActiveDragForPayload\(payload\)/);
+	assert.match(handleDrop, /await placement/);
+	assert.doesNotMatch(handleDrop, /finally \{[\s\S]*clearActiveDrag\(\)/);
 });
 
 test('scheduled exam sessions can be removed through dialog and tray drop', () => {
