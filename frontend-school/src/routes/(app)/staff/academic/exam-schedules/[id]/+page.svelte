@@ -50,8 +50,12 @@
 	import * as Tabs from '$lib/components/ui/tabs';
 	import { PERMISSIONS } from '$lib/permissions/registry';
 	import { can } from '$lib/stores/permissions';
+	import {
+		buildExamScheduleExportWorkbook,
+		examScheduleExportFileName
+	} from '$lib/utils/exam-schedule-export';
 	import { addMinutes } from '$lib/utils/examScheduleTime';
-	import { RefreshCw, Send } from 'lucide-svelte';
+	import { Download, RefreshCw, Send } from 'lucide-svelte';
 
 	let { data }: PageProps = $props();
 
@@ -74,6 +78,7 @@
 	let importing = $state(false);
 	let clearingMismatchedItems = $state(false);
 	let publishing = $state(false);
+	let exportingExamSchedule = $state(false);
 	let savingDay = $state(false);
 	let deletingDayId = $state<string | null>(null);
 	let savingAssignment = $state(false);
@@ -138,6 +143,7 @@
 		importing = false;
 		clearingMismatchedItems = false;
 		publishing = false;
+		exportingExamSchedule = false;
 		savingDay = false;
 		deletingDayId = null;
 		savingAssignment = false;
@@ -512,6 +518,67 @@
 		}
 	}
 
+	async function ensureInvigilatorWorkspaceForExport(
+		roundId: string
+	): Promise<ExamInvigilatorWorkspace | null> {
+		if (invigilatorWorkspace?.roundId === roundId) return invigilatorWorkspace;
+
+		const invigilatorData = await getExamInvigilatorWorkspace(roundId);
+		invigilatorWorkspace = invigilatorData;
+		invigilatorLoadError = '';
+		return invigilatorData;
+	}
+
+	async function handleExportExamSchedule() {
+		if (!workspace || exportingExamSchedule) return;
+
+		exportingExamSchedule = true;
+		try {
+			const invigilatorData = await ensureInvigilatorWorkspaceForExport(workspace.round.id);
+			const XLSX = await import('xlsx');
+			const exportWorkbook = buildExamScheduleExportWorkbook(workspace, invigilatorData);
+			const workbook = XLSX.utils.book_new();
+
+			XLSX.utils.book_append_sheet(
+				workbook,
+				XLSX.utils.aoa_to_sheet(exportWorkbook.report),
+				'รายงาน'
+			);
+			XLSX.utils.book_append_sheet(
+				workbook,
+				XLSX.utils.json_to_sheet(exportWorkbook.schedule),
+				'ตารางสอบ'
+			);
+			XLSX.utils.book_append_sheet(
+				workbook,
+				XLSX.utils.json_to_sheet(exportWorkbook.rooms),
+				'ห้องสอบ'
+			);
+			XLSX.utils.book_append_sheet(
+				workbook,
+				XLSX.utils.json_to_sheet(exportWorkbook.invigilators),
+				'กรรมการ'
+			);
+			XLSX.utils.book_append_sheet(
+				workbook,
+				XLSX.utils.json_to_sheet(exportWorkbook.workloads),
+				'ภาระงานกรรมการ'
+			);
+			XLSX.utils.book_append_sheet(
+				workbook,
+				XLSX.utils.json_to_sheet(exportWorkbook.readiness),
+				'ความพร้อม'
+			);
+
+			XLSX.writeFile(workbook, examScheduleExportFileName(workspace.round.name));
+			toast.success('ส่งออกตารางสอบแล้ว');
+		} catch (exportError) {
+			toast.error(exportError instanceof Error ? exportError.message : 'ส่งออกตารางสอบไม่สำเร็จ');
+		} finally {
+			exportingExamSchedule = false;
+		}
+	}
+
 	async function handleImportItems() {
 		if (!workspace) return;
 
@@ -861,6 +928,16 @@
 				>
 					<RefreshCw class="h-4 w-4" />
 					รีเฟรช
+				</LoadingButton>
+				<LoadingButton
+					variant="outline"
+					size="sm"
+					loading={exportingExamSchedule}
+					loadingLabel="กำลังส่งออก..."
+					onclick={handleExportExamSchedule}
+				>
+					<Download class="h-4 w-4" />
+					ส่งออก
 				</LoadingButton>
 				<CompactExamScheduleStatus
 					status={workspace.round.status}

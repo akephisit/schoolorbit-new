@@ -605,6 +605,55 @@ test('staff workspace wires staff-level invigilator drag actions', () => {
 	assert.doesNotMatch(page, /onSearchStaff={searchStaffOptions}/);
 });
 
+test('exam schedule detail exports one editable report workbook', () => {
+	const page = readFileSync(
+		projectPath('src/routes/(app)/staff/academic/exam-schedules/[id]/+page.svelte'),
+		'utf8'
+	);
+	const exportUtilPath = 'src/lib/utils/exam-schedule-export.ts';
+
+	assert.equal(existsSync(projectPath(exportUtilPath)), true, `${exportUtilPath} should exist`);
+
+	const exportUtil = readFileSync(projectPath(exportUtilPath), 'utf8');
+	const handleExport = localFunctionSource(page, 'handleExportExamSchedule');
+	const ensureInvigilatorWorkspace = localFunctionSource(
+		page,
+		'ensureInvigilatorWorkspaceForExport'
+	);
+
+	assert.match(page, /buildExamScheduleExportWorkbook/);
+	assert.match(page, /examScheduleExportFileName/);
+	assert.match(page, /let exportingExamSchedule = \$state\(false\)/);
+	assert.match(page, /import\('xlsx'\)/);
+	assert.match(page, /ส่งออก/);
+	assert.match(handleExport, /buildExamScheduleExportWorkbook\(workspace,\s*invigilatorData\)/);
+	assert.match(handleExport, /XLSX\.utils\.book_new\(\)/);
+	for (const sheetName of [
+		'รายงาน',
+		'ตารางสอบ',
+		'ห้องสอบ',
+		'กรรมการ',
+		'ภาระงานกรรมการ',
+		'ความพร้อม'
+	]) {
+		assert.match(handleExport, new RegExp(escapeRegExp(sheetName)));
+	}
+	assert.match(ensureInvigilatorWorkspace, /getExamInvigilatorWorkspace\(roundId\)/);
+	assert.match(exportUtil, /export function buildExamScheduleExportWorkbook/);
+	assert.match(exportUtil, /export function examScheduleExportFileName/);
+	for (const builderName of [
+		'reportRows',
+		'scheduleRows',
+		'roomRows',
+		'invigilatorRows',
+		'workloadRows',
+		'readinessRows'
+	]) {
+		assert.match(exportUtil, new RegExp(`function ${builderName}\\b`));
+	}
+	assert.doesNotMatch(handleExport + exportUtil, /nationalId|national_id|phone|email|username/);
+});
+
 test('invigilator workspace load exposes recoverable error and retry state', () => {
 	const page = readFileSync(
 		projectPath('src/routes/(app)/staff/academic/exam-schedules/[id]/+page.svelte'),
