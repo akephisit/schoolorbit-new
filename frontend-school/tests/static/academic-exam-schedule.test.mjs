@@ -605,6 +605,7 @@ test('exam schedule detail exports one editable report workbook', () => {
 		'utf8'
 	);
 	const exportUtilPath = 'src/lib/utils/exam-schedule-export.ts';
+	const packageJson = readFileSync(projectPath('package.json'), 'utf8');
 
 	assert.equal(existsSync(projectPath(exportUtilPath)), true, `${exportUtilPath} should exist`);
 
@@ -618,28 +619,35 @@ test('exam schedule detail exports one editable report workbook', () => {
 	assert.match(page, /buildExamScheduleExportWorkbook/);
 	assert.match(page, /examScheduleExportFileName/);
 	assert.match(page, /let exportingExamSchedule = \$state\(false\)/);
-	assert.match(page, /import\('xlsx'\)/);
+	assert.match(page, /import\('exceljs'\)/);
+	assert.match(page, /new ExcelJS\.Workbook\(\)/);
+	assert.match(page, /workbook\.xlsx\.writeBuffer\(\)/);
+	assert.match(page, /saveWorkbookBuffer/);
 	assert.match(page, /ส่งออก/);
+	assert.match(packageJson, /"exceljs"/);
 	assert.match(handleExport, /buildExamScheduleExportWorkbook\(workspace,\s*invigilatorData\)/);
-	assert.match(handleExport, /XLSX\.utils\.book_new\(\)/);
-	assert.match(handleExport, /applyExportSheetLayout\(reportSheet,\s*exportWorkbook\.report\)/);
-	assert.match(page, /function applyExportSheetLayout/);
-	assert.match(page, /sheet\['!merges'\]/);
-	assert.match(page, /sheet\['!cols'\]/);
-	for (const sheetName of [
-		'รายงาน',
-		'ตารางสอบ',
-		'ห้องสอบ',
-		'กรรมการ',
-		'ภาระงานกรรมการ',
-		'ความพร้อม'
-	]) {
+	assert.match(handleExport, /for \(const reportSheet of exportWorkbook\.reportSheets\)/);
+	assert.match(handleExport, /appendReportSheet\(workbook,\s*reportSheet\)/);
+	assert.match(page, /function appendReportSheet/);
+	assert.match(page, /function appendObjectSheet/);
+	assert.match(page, /TH Sarabun New/);
+	assert.match(page, /border/);
+	assert.match(page, /alignment/);
+	for (const sheetName of ['ตารางสอบ', 'ห้องสอบ', 'กรรมการ', 'ภาระงานกรรมการ', 'ความพร้อม']) {
 		assert.match(handleExport, new RegExp(escapeRegExp(sheetName)));
+	}
+	for (const sheetName of ['รายงาน', 'ม.ต้น', 'ม.ปลาย']) {
+		assert.match(exportUtil, new RegExp(escapeRegExp(sheetName)));
 	}
 	assert.match(ensureInvigilatorWorkspace, /getExamInvigilatorWorkspace\(roundId\)/);
 	assert.match(exportUtil, /export function buildExamScheduleExportWorkbook/);
 	assert.match(exportUtil, /export function examScheduleExportFileName/);
 	assert.match(exportUtil, /export type ExamScheduleExportSheet/);
+	assert.match(exportUtil, /reportSheets/);
+	assert.match(exportUtil, /lowerSecondaryReport/);
+	assert.match(exportUtil, /upperSecondaryReport/);
+	assert.match(exportUtil, /function reportClassroomLabel/);
+	assert.match(exportUtil, /function compactClassroomLabels/);
 	assert.match(exportUtil, /function printableReportSheet/);
 	assert.match(exportUtil, /function reportSheetMerges/);
 	assert.match(exportUtil, /วันเดือนปี/);

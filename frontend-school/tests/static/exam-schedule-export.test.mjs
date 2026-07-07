@@ -24,6 +24,59 @@ const baseSession = {
 	invigilators: []
 };
 
+const roomAssignments = [
+	{
+		id: 'room-m1-1',
+		examDayId: 'day-1',
+		classroomId: 'classroom-m1-1',
+		roomId: 'exam-room-1',
+		classroomName: 'ม.1/1',
+		roomName: '313',
+		roomCapacity: 40,
+		invigilators: []
+	},
+	{
+		id: 'room-m1-2',
+		examDayId: 'day-1',
+		classroomId: 'classroom-m1-2',
+		roomId: 'exam-room-2',
+		classroomName: 'ม.1/2',
+		roomName: '314',
+		roomCapacity: 40,
+		invigilators: []
+	},
+	{
+		id: 'room-m4-1',
+		examDayId: 'day-1',
+		classroomId: 'classroom-m4-1',
+		roomId: 'exam-room-3',
+		classroomName: 'ม.4/1',
+		roomName: '411',
+		roomCapacity: 40,
+		invigilators: []
+	},
+	{
+		id: 'room-m4-2',
+		examDayId: 'day-1',
+		classroomId: 'classroom-m4-2',
+		roomId: 'exam-room-4',
+		classroomName: 'ม.4/2',
+		roomName: '412',
+		roomCapacity: 40,
+		invigilators: []
+	},
+	{
+		id: 'room-m4-3',
+		examDayId: 'day-1',
+		classroomId: 'classroom-m4-3',
+		roomId: 'exam-room-5',
+		classroomName: 'ม.4/3',
+		roomName: '413',
+		roomCapacity: 40,
+		invigilators: []
+	}
+];
+
 function scheduledSession(overrides) {
 	return {
 		...baseSession,
@@ -50,9 +103,9 @@ function exportWorkspace(scheduledSessions) {
 				label: null,
 				startTime: '09:00:00',
 				endTime: '15:00:00',
-				gradeLevelIds: ['grade-1', 'grade-2'],
+				gradeLevelIds: ['grade-1', 'grade-4'],
 				blockedWindows: [],
-				roomAssignments: []
+				roomAssignments
 			}
 		],
 		unscheduledItems: [],
@@ -65,48 +118,85 @@ function exportWorkspace(scheduledSessions) {
 }
 
 describe('exam schedule export helpers', () => {
-	it('builds a print-style report sheet grouped by day and exam time', () => {
+	it('builds report sheets with full-grade and partial-classroom labels', () => {
 		const workbook = buildExamScheduleExportWorkbook(
 			exportWorkspace([
 				scheduledSession({
-					id: 'session-m1',
+					id: 'session-m1-1',
 					startsAt: '09:00:00',
 					endsAt: '10:00:00',
 					durationMinutes: 60,
 					classroomName: 'ม.1/1',
+					classroomId: 'classroom-m1-1',
 					gradeLevelName: 'ม.1',
 					gradeLevelYear: 1,
 					subjectNameTh: 'คณิตศาสตร์พื้นฐาน',
 					subjectCode: 'ค21102'
 				}),
 				scheduledSession({
-					id: 'session-m2',
+					id: 'session-m1-2',
 					startsAt: '09:00:00',
 					endsAt: '10:00:00',
 					durationMinutes: 60,
-					classroomId: 'classroom-2',
-					classroomName: 'ม.2/1',
-					gradeLevelId: 'grade-2',
-					gradeLevelName: 'ม.2',
-					gradeLevelYear: 2,
+					classroomName: 'ม.1/2',
+					classroomId: 'classroom-m1-2',
+					gradeLevelName: 'ม.1',
+					gradeLevelYear: 1,
 					subjectNameTh: 'คณิตศาสตร์พื้นฐาน',
-					subjectCode: 'ค22102'
+					subjectCode: 'ค21102'
 				}),
 				scheduledSession({
-					id: 'session-thai',
+					id: 'session-physics',
+					startsAt: '09:00:00',
+					endsAt: '10:00:00',
+					durationMinutes: 60,
+					classroomId: 'classroom-m4-1',
+					classroomName: 'ม.4/1',
+					gradeLevelId: 'grade-4',
+					gradeLevelName: 'ม.4',
+					gradeLevelYear: 4,
+					subjectId: 'subject-physics',
+					subjectNameTh: 'ฟิสิกส์',
+					subjectCode: 'ว30201'
+				}),
+				scheduledSession({
+					id: 'session-chemistry-m4-2',
 					startsAt: '10:00:00',
 					endsAt: '11:00:00',
 					durationMinutes: 60,
-					subjectId: 'subject-2',
-					subjectNameTh: 'ภาษาไทยพื้นฐาน',
-					subjectCode: 'ท21102'
+					classroomId: 'classroom-m4-2',
+					classroomName: 'ม.4/2',
+					gradeLevelId: 'grade-4',
+					gradeLevelName: 'ม.4',
+					gradeLevelYear: 4,
+					subjectId: 'subject-chemistry',
+					subjectNameTh: 'เคมี',
+					subjectCode: 'ว30221'
+				}),
+				scheduledSession({
+					id: 'session-chemistry-m4-3',
+					startsAt: '10:00:00',
+					endsAt: '11:00:00',
+					durationMinutes: 60,
+					classroomId: 'classroom-m4-3',
+					classroomName: 'ม.4/3',
+					gradeLevelId: 'grade-4',
+					gradeLevelName: 'ม.4',
+					gradeLevelYear: 4,
+					subjectId: 'subject-chemistry',
+					subjectNameTh: 'เคมี',
+					subjectCode: 'ว30221'
 				})
 			]),
 			null
 		);
 
+		assert.deepEqual(
+			workbook.reportSheets.map((sheet) => sheet.name),
+			['รายงาน', 'ม.ต้น', 'ม.ปลาย']
+		);
 		assert.equal(workbook.report.rows[0][0], 'ตารางสอบวัดผลกลางภาคเรียนที่ 2 ปีการศึกษา 2568');
-		assert.equal(workbook.report.rows[1][0], 'ระดับชั้นมัธยมศึกษาตอนต้น (ม.1 - ม.2)');
+		assert.equal(workbook.report.rows[1][0], 'ระดับชั้นมัธยมศึกษา (ม.1 - ม.4)');
 		assert.deepEqual(workbook.report.rows[3], [
 			'วันเดือนปี',
 			'เวลา',
@@ -118,7 +208,18 @@ describe('exam schedule export helpers', () => {
 		assert.equal(workbook.report.rows[4][1], '09.00-10.00 น.');
 		assert.equal(workbook.report.rows[4][2], '1 ชม.');
 		assert.equal(workbook.report.rows[4][5], 'ม.1');
-		assert.equal(workbook.report.rows[5][5], 'ม.2');
+		assert.equal(workbook.report.rows[5][3], 'ฟิสิกส์');
+		assert.equal(workbook.report.rows[5][5], 'ม.4/1');
+		assert.equal(workbook.report.rows[6][3], 'เคมี');
+		assert.equal(workbook.report.rows[6][5], 'ม.4/2-3');
+		assert.equal(
+			workbook.lowerSecondaryReport?.rows.some((row) => row.includes('ฟิสิกส์')),
+			false
+		);
+		assert.equal(
+			workbook.upperSecondaryReport?.rows.some((row) => row.includes('ฟิสิกส์')),
+			true
+		);
 		assert.equal(workbook.report['!cols']?.length, 6);
 		assert.deepEqual(workbook.report['!merges'], [
 			{ s: { r: 0, c: 0 }, e: { r: 0, c: 5 } },

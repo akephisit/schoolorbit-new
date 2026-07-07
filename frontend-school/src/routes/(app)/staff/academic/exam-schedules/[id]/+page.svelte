@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { toast } from 'svelte-sonner';
-	import type { WorkSheet } from 'xlsx';
+	import type { Alignment, Borders, Fill, Workbook, Worksheet } from 'exceljs';
 	import type { PageProps } from './$types';
 	import {
 		getAcademicStructure,
@@ -54,6 +54,7 @@
 	import {
 		buildExamScheduleExportWorkbook,
 		examScheduleExportFileName,
+		type ExamScheduleReportSheet,
 		type ExamScheduleExportSheet
 	} from '$lib/utils/exam-schedule-export';
 	import { addMinutes } from '$lib/utils/examScheduleTime';
@@ -531,17 +532,149 @@
 		return invigilatorData;
 	}
 
-	function applyExportSheetLayout(
-		sheet: WorkSheet,
-		exportSheet: ExamScheduleExportSheet
-	): WorkSheet {
-		if (exportSheet['!cols']?.length) {
-			sheet['!cols'] = exportSheet['!cols'];
+	const reportFontName = 'TH Sarabun New';
+	const thinTableBorder: Partial<Borders> = {
+		top: { style: 'thin' },
+		left: { style: 'thin' },
+		bottom: { style: 'thin' },
+		right: { style: 'thin' }
+	};
+	const tableHeaderFill: Fill = {
+		type: 'pattern',
+		pattern: 'solid',
+		fgColor: { argb: 'FFEFEFEF' }
+	};
+	const centeredAlignment: Partial<Alignment> = {
+		horizontal: 'center',
+		vertical: 'middle',
+		wrapText: true
+	};
+	const leftAlignment: Partial<Alignment> = {
+		horizontal: 'left',
+		vertical: 'middle',
+		wrapText: true
+	};
+
+	function applyWorksheetColumns(worksheet: Worksheet, exportSheet: ExamScheduleExportSheet) {
+		for (const [index, column] of exportSheet['!cols']?.entries() ?? []) {
+			worksheet.getColumn(index + 1).width = column.wch;
 		}
-		if (exportSheet['!merges']?.length) {
-			sheet['!merges'] = exportSheet['!merges'];
+	}
+
+	function applyWorksheetMerges(worksheet: Worksheet, exportSheet: ExamScheduleExportSheet) {
+		for (const merge of exportSheet['!merges'] ?? []) {
+			worksheet.mergeCells(merge.s.r + 1, merge.s.c + 1, merge.e.r + 1, merge.e.c + 1);
 		}
-		return sheet;
+	}
+
+	function styleReportSheet(worksheet: Worksheet, reportSheet: ExamScheduleReportSheet) {
+		const columnCount = reportSheet.rows[3]?.length ?? 6;
+		worksheet.pageSetup = {
+			paperSize: 9,
+			orientation: 'portrait',
+			fitToPage: true,
+			fitToWidth: 1,
+			fitToHeight: 0,
+			margins: {
+				left: 0.25,
+				right: 0.25,
+				top: 0.45,
+				bottom: 0.45,
+				header: 0.2,
+				footer: 0.2
+			}
+		};
+		worksheet.views = [{ state: 'frozen', ySplit: 4 }];
+		worksheet.getRow(1).height = 24;
+		worksheet.getRow(2).height = 22;
+		worksheet.getRow(3).height = 6;
+
+		for (let rowNumber = 1; rowNumber <= worksheet.rowCount; rowNumber += 1) {
+			const row = worksheet.getRow(rowNumber);
+			row.font = { name: reportFontName, size: 16 };
+
+			if (rowNumber === 1) {
+				row.font = { name: reportFontName, size: 18, bold: true };
+				row.alignment = centeredAlignment;
+				continue;
+			}
+
+			if (rowNumber === 2) {
+				row.font = { name: reportFontName, size: 16, bold: true };
+				row.alignment = centeredAlignment;
+				continue;
+			}
+
+			if (rowNumber < 4) continue;
+			row.height = 22;
+
+			for (let columnNumber = 1; columnNumber <= columnCount; columnNumber += 1) {
+				const cell = row.getCell(columnNumber);
+				cell.font = { name: reportFontName, size: 16, bold: rowNumber === 4 };
+				cell.border = thinTableBorder;
+				cell.alignment = columnNumber === 4 && rowNumber > 4 ? leftAlignment : centeredAlignment;
+				if (rowNumber === 4) {
+					cell.fill = tableHeaderFill;
+				}
+			}
+		}
+	}
+
+	function styleObjectSheet(worksheet: Worksheet) {
+		worksheet.views = [{ state: 'frozen', ySplit: 1 }];
+		worksheet.eachRow((row, rowNumber) => {
+			row.font = { name: reportFontName, size: 14, bold: rowNumber === 1 };
+			row.alignment = rowNumber === 1 ? centeredAlignment : leftAlignment;
+			row.height = rowNumber === 1 ? 22 : 20;
+			row.eachCell({ includeEmpty: true }, (cell) => {
+				cell.border = thinTableBorder;
+				cell.alignment = rowNumber === 1 ? centeredAlignment : leftAlignment;
+				if (rowNumber === 1) {
+					cell.fill = tableHeaderFill;
+				}
+			});
+		});
+	}
+
+	function appendReportSheet(workbook: Workbook, reportSheet: ExamScheduleReportSheet) {
+		const worksheet = workbook.addWorksheet(reportSheet.name);
+		worksheet.addRows(reportSheet.rows);
+		applyWorksheetColumns(worksheet, reportSheet);
+		applyWorksheetMerges(worksheet, reportSheet);
+		styleReportSheet(worksheet, reportSheet);
+	}
+
+	function appendObjectSheet(
+		workbook: Workbook,
+		name: string,
+		exportSheet: ExamScheduleExportSheet<Record<string, string | number>>
+	) {
+		const worksheet = workbook.addWorksheet(name);
+		const headers = Object.keys(exportSheet.rows[0] ?? {});
+		worksheet.columns = headers.map((header, index) => ({
+			header,
+			key: header,
+			width: exportSheet['!cols']?.[index]?.wch ?? 16
+		}));
+
+		for (const row of exportSheet.rows) {
+			worksheet.addRow(row);
+		}
+		styleObjectSheet(worksheet);
+	}
+
+	function saveWorkbookBuffer(buffer: ArrayBuffer, fileName: string) {
+		const blob = new Blob([buffer], {
+			type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+		});
+		const url = URL.createObjectURL(blob);
+		const link = document.createElement('a');
+		link.href = url;
+		link.download = fileName;
+		document.body.appendChild(link);
+		link.click();
+		link.remove();
+		URL.revokeObjectURL(url);
 	}
 
 	async function handleExportExamSchedule() {
@@ -550,35 +683,26 @@
 		exportingExamSchedule = true;
 		try {
 			const invigilatorData = await ensureInvigilatorWorkspaceForExport(workspace.round.id);
-			const XLSX = await import('xlsx');
+			const ExcelJSModule = await import('exceljs');
+			const ExcelJS = ExcelJSModule.default;
 			const exportWorkbook = buildExamScheduleExportWorkbook(workspace, invigilatorData);
-			const workbook = XLSX.utils.book_new();
+			const workbook = new ExcelJS.Workbook();
+			workbook.creator = 'SchoolOrbit';
+			workbook.created = new Date();
+			workbook.modified = new Date();
 
-			const reportSheet = XLSX.utils.aoa_to_sheet(exportWorkbook.report.rows);
-			applyExportSheetLayout(reportSheet, exportWorkbook.report);
-			XLSX.utils.book_append_sheet(workbook, reportSheet, 'รายงาน');
+			for (const reportSheet of exportWorkbook.reportSheets) {
+				appendReportSheet(workbook, reportSheet);
+			}
 
-			const scheduleSheet = XLSX.utils.json_to_sheet(exportWorkbook.schedule.rows);
-			applyExportSheetLayout(scheduleSheet, exportWorkbook.schedule);
-			XLSX.utils.book_append_sheet(workbook, scheduleSheet, 'ตารางสอบ');
+			appendObjectSheet(workbook, 'ตารางสอบ', exportWorkbook.schedule);
+			appendObjectSheet(workbook, 'ห้องสอบ', exportWorkbook.rooms);
+			appendObjectSheet(workbook, 'กรรมการ', exportWorkbook.invigilators);
+			appendObjectSheet(workbook, 'ภาระงานกรรมการ', exportWorkbook.workloads);
+			appendObjectSheet(workbook, 'ความพร้อม', exportWorkbook.readiness);
 
-			const roomSheet = XLSX.utils.json_to_sheet(exportWorkbook.rooms.rows);
-			applyExportSheetLayout(roomSheet, exportWorkbook.rooms);
-			XLSX.utils.book_append_sheet(workbook, roomSheet, 'ห้องสอบ');
-
-			const invigilatorSheet = XLSX.utils.json_to_sheet(exportWorkbook.invigilators.rows);
-			applyExportSheetLayout(invigilatorSheet, exportWorkbook.invigilators);
-			XLSX.utils.book_append_sheet(workbook, invigilatorSheet, 'กรรมการ');
-
-			const workloadSheet = XLSX.utils.json_to_sheet(exportWorkbook.workloads.rows);
-			applyExportSheetLayout(workloadSheet, exportWorkbook.workloads);
-			XLSX.utils.book_append_sheet(workbook, workloadSheet, 'ภาระงานกรรมการ');
-
-			const readinessSheet = XLSX.utils.json_to_sheet(exportWorkbook.readiness.rows);
-			applyExportSheetLayout(readinessSheet, exportWorkbook.readiness);
-			XLSX.utils.book_append_sheet(workbook, readinessSheet, 'ความพร้อม');
-
-			XLSX.writeFile(workbook, examScheduleExportFileName(workspace.round.name));
+			const buffer = await workbook.xlsx.writeBuffer();
+			saveWorkbookBuffer(buffer, examScheduleExportFileName(workspace.round.name));
 			toast.success('ส่งออกตารางสอบแล้ว');
 		} catch (exportError) {
 			toast.error(exportError instanceof Error ? exportError.message : 'ส่งออกตารางสอบไม่สำเร็จ');

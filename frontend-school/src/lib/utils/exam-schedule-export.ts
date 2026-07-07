@@ -28,13 +28,21 @@ export type ExamScheduleExportColumn = {
 export type ExamScheduleExportSheet<
 	Row extends WorksheetRow | WorksheetObjectRow = WorksheetRow | WorksheetObjectRow
 > = {
+	name?: string;
 	rows: Row[];
 	'!cols'?: ExamScheduleExportColumn[];
 	'!merges'?: ExamScheduleExportMerge[];
 };
 
+export type ExamScheduleReportSheet = ExamScheduleExportSheet<WorksheetRow> & {
+	name: string;
+};
+
 export type ExamScheduleExportWorkbook = {
-	report: ExamScheduleExportSheet<WorksheetRow>;
+	report: ExamScheduleReportSheet;
+	reportSheets: ExamScheduleReportSheet[];
+	lowerSecondaryReport?: ExamScheduleReportSheet;
+	upperSecondaryReport?: ExamScheduleReportSheet;
 	schedule: ExamScheduleExportSheet<WorksheetObjectRow>;
 	rooms: ExamScheduleExportSheet<WorksheetObjectRow>;
 	invigilators: ExamScheduleExportSheet<WorksheetObjectRow>;
@@ -157,10 +165,141 @@ function groupByText<T>(items: T[], keyForItem: (item: T) => string): [string, T
 	return Array.from(groups.entries());
 }
 
+type ParsedClassroomLabel = {
+	gradeLabel: string;
+	roomNumber: number | null;
+	rawLabel: string;
+};
+
+function numericTextValue(value: string): number | null {
+	const normalized = value.replace(/[๐-๙]/g, (digit) => String('๐๑๒๓๔๕๖๗๘๙'.indexOf(digit)));
+	const parsed = Number.parseInt(normalized, 10);
+	return Number.isNaN(parsed) ? null : parsed;
+}
+
+function parseClassroomLabel(value: string | null | undefined): ParsedClassroomLabel | null {
+	const rawLabel = safeText(value);
+	if (!rawLabel) return null;
+	const match = rawLabel.match(/^(.+?[\d๐-๙]+)\/([\d๐-๙]+)$/u);
+	if (!match) {
+		return {
+			gradeLabel: rawLabel,
+			roomNumber: null,
+			rawLabel
+		};
+	}
+
+	return {
+		gradeLabel: match[1].trim(),
+		roomNumber: numericTextValue(match[2]),
+		rawLabel
+	};
+}
+
 function sessionGradeLabel(session: ExamSession): string {
 	return (
 		safeText(session.gradeLevelName) || safeText(session.classroomName).split('/')[0]?.trim() || '-'
 	);
+}
+
+function sessionGradeYear(session: ExamSession): number | null {
+	if (typeof session.gradeLevelYear === 'number') return session.gradeLevelYear;
+	const parsedClassroom = parseClassroomLabel(session.classroomName);
+	if (!parsedClassroom) return null;
+	const gradeMatch = parsedClassroom.gradeLabel.match(/([\d๐-๙]+)$/u);
+	return gradeMatch ? numericTextValue(gradeMatch[1]) : null;
+}
+
+function isLowerSecondarySession(session: ExamSession): boolean {
+	const year = sessionGradeYear(session);
+	return year !== null && year >= 1 && year <= 3 && sessionGradeLabel(session).includes('ม.');
+}
+
+function isUpperSecondarySession(session: ExamSession): boolean {
+	const year = sessionGradeYear(session);
+	return year !== null && year >= 4 && year <= 6 && sessionGradeLabel(session).includes('ม.');
+}
+
+function compactNumberRanges(values: number[]): string {
+	const uniqueValues = Array.from(new Set(values)).sort((a, b) => a - b);
+	const ranges: string[] = [];
+	let rangeStart: number | null = null;
+	let previous: number | null = null;
+
+	for (const value of uniqueValues) {
+		if (rangeStart === null || previous === null) {
+			rangeStart = value;
+			previous = value;
+			continue;
+		}
+
+		if (value === previous + 1) {
+			previous = value;
+			continue;
+		}
+
+		ranges.push(rangeStart === previous ? String(rangeStart) : `${rangeStart}-${previous}`);
+		rangeStart = value;
+		previous = value;
+	}
+
+	if (rangeStart !== null && previous !== null) {
+		ranges.push(rangeStart === previous ? String(rangeStart) : `${rangeStart}-${previous}`);
+	}
+
+	return ranges.join(',');
+}
+
+function compactClassroomLabels(classroomLabels: string[]): string {
+	const labels = Array.from(
+		new Set(classroomLabels.map((label) => safeText(label)).filter(Boolean))
+	);
+	const parsedLabels = labels
+		.map(parseClassroomLabel)
+		.filter((label): label is ParsedClassroomLabel => !!label);
+
+	if (
+		parsedLabels.length !== labels.length ||
+		parsedLabels.some((label) => label.roomNumber === null)
+	) {
+		return labels.sort(compareThaiNatural).join(', ');
+	}
+
+	const gradeLabels = Array.from(new Set(parsedLabels.map((label) => label.gradeLabel)));
+	if (gradeLabels.length !== 1) {
+		return labels.sort(compareThaiNatural).join(', ');
+	}
+
+	const roomNumbers = parsedLabels
+		.map((label) => label.roomNumber)
+		.filter((roomNumber): roomNumber is number => roomNumber !== null);
+	return `${gradeLabels[0]}/${compactNumberRanges(roomNumbers)}`;
+}
+
+function reportClassroomLabel(workspace: ExamScheduleWorkspace, sessions: ExamSession[]): string {
+	const firstSession = sessions[0];
+	if (!firstSession) return '-';
+
+	const gradeLabel = sessionGradeLabel(firstSession);
+	const day = workspace.days.find((item) => item.id === firstSession.examDayId);
+	const assignedClassrooms =
+		day?.roomAssignments.filter((assignment) => {
+			const parsed = parseClassroomLabel(assignment.classroomName);
+			return parsed?.gradeLabel === gradeLabel;
+		}) ?? [];
+	const scheduledClassroomIds = new Set(sessions.map((session) => session.classroomId));
+
+	if (
+		assignedClassrooms.length > 0 &&
+		assignedClassrooms.every((assignment) => scheduledClassroomIds.has(assignment.classroomId))
+	) {
+		return gradeLabel;
+	}
+
+	const classroomLabels = sessions
+		.map((session) => safeText(session.classroomName) || gradeLabel)
+		.filter(Boolean);
+	return compactClassroomLabels(classroomLabels);
 }
 
 function printableReportTitle(workspace: ExamScheduleWorkspace): string {
@@ -168,13 +307,12 @@ function printableReportTitle(workspace: ExamScheduleWorkspace): string {
 	return roundName.includes('ตารางสอบ') ? roundName : `ตารางสอบ${roundName}`;
 }
 
-function printableReportSubtitle(workspace: ExamScheduleWorkspace): string {
-	const sessions = sortedSessions(workspace);
+function printableReportSubtitle(sessions: ExamSession[], fallback = 'ระดับชั้นที่จัดสอบ'): string {
 	const gradeLabels = Array.from(
 		new Set(sessions.map(sessionGradeLabel).filter((label) => label !== '-'))
 	).sort(compareThaiNatural);
 
-	if (gradeLabels.length === 0) return 'ระดับชั้นที่จัดสอบ';
+	if (gradeLabels.length === 0) return fallback;
 	if (gradeLabels.length === 1) return `ระดับชั้น${gradeLabels[0]}`;
 
 	const firstLabel = gradeLabels[0];
@@ -234,6 +372,17 @@ function sameSlotKey(session: ExamSession): string {
 	].join(':');
 }
 
+function reportSessionGroupKey(session: ExamSession): string {
+	return [
+		sameSlotKey(session),
+		safeText(session.subjectId),
+		safeText(session.subjectCode),
+		subjectLabel(session),
+		safeText(session.gradeLevelId),
+		sessionGradeLabel(session)
+	].join(':');
+}
+
 function reportSheetColumns(): ExamScheduleExportColumn[] {
 	return [{ wch: 15 }, { wch: 18 }, { wch: 11 }, { wch: 34 }, { wch: 14 }, { wch: 12 }];
 }
@@ -263,15 +412,18 @@ function reportSheetMerges(
 	return merges;
 }
 
-function printableReportRows(workspace: ExamScheduleWorkspace): {
+function printableReportRows(
+	workspace: ExamScheduleWorkspace,
+	sessions: ExamSession[],
+	fallbackSubtitle = 'ระดับชั้นที่จัดสอบ'
+): {
 	rows: WorksheetRow[];
 	dayRanges: { start: number; end: number }[];
 	slotRanges: { start: number; end: number }[];
 } {
-	const sessions = sortedSessions(workspace);
 	const rows: WorksheetRow[] = [
 		[printableReportTitle(workspace)],
-		[printableReportSubtitle(workspace)],
+		[printableReportSubtitle(sessions, fallbackSubtitle)],
 		[],
 		['วันเดือนปี', 'เวลา', 'เวลาสอบ', 'วิชา', 'รหัสวิชา', 'ชั้น']
 	];
@@ -290,21 +442,27 @@ function printableReportRows(workspace: ExamScheduleWorkspace): {
 
 		for (const [, slotSessions] of slotGroups) {
 			const slotStart = rows.length;
-			const orderedSlotSessions = [...slotSessions].sort(
-				(a, b) =>
-					compareThaiNatural(subjectLabel(a), subjectLabel(b)) ||
-					compareThaiNatural(sessionGradeLabel(a), sessionGradeLabel(b)) ||
-					compareThaiNatural(safeText(a.classroomName), safeText(b.classroomName))
-			);
+			const reportGroups = groupByText(slotSessions, reportSessionGroupKey)
+				.map(([, groupSessions]) => groupSessions)
+				.sort(
+					(a, b) =>
+						compareThaiNatural(subjectLabel(a[0]), subjectLabel(b[0])) ||
+						compareThaiNatural(sessionGradeLabel(a[0]), sessionGradeLabel(b[0])) ||
+						compareThaiNatural(
+							reportClassroomLabel(workspace, a),
+							reportClassroomLabel(workspace, b)
+						)
+				);
 
-			for (const session of orderedSlotSessions) {
+			for (const groupSessions of reportGroups) {
+				const session = groupSessions[0];
 				rows.push([
 					dateLabel(session.examDate),
 					printableTimeRangeLabel(session),
 					minutesLabel(session.durationMinutes),
 					subjectLabel(session),
 					safeText(session.subjectCode, '-'),
-					sessionGradeLabel(session)
+					reportClassroomLabel(workspace, groupSessions)
 				]);
 			}
 
@@ -318,10 +476,14 @@ function printableReportRows(workspace: ExamScheduleWorkspace): {
 }
 
 function printableReportSheet(
-	workspace: ExamScheduleWorkspace
-): ExamScheduleExportSheet<WorksheetRow> {
-	const report = printableReportRows(workspace);
+	workspace: ExamScheduleWorkspace,
+	name: string,
+	sessions: ExamSession[],
+	fallbackSubtitle = 'ระดับชั้นที่จัดสอบ'
+): ExamScheduleReportSheet {
+	const report = printableReportRows(workspace, sessions, fallbackSubtitle);
 	return {
+		name,
 		rows: report.rows,
 		'!cols': reportSheetColumns(),
 		'!merges': reportSheetMerges(report.dayRanges, report.slotRanges)
@@ -493,8 +655,26 @@ export function buildExamScheduleExportWorkbook(
 	workspace: ExamScheduleWorkspace,
 	invigilatorWorkspace: ExamInvigilatorWorkspace | null
 ): ExamScheduleExportWorkbook {
+	const allSessions = sortedSessions(workspace);
+	const report = printableReportSheet(workspace, 'รายงาน', allSessions);
+	const lowerSecondaryReport = printableReportSheet(
+		workspace,
+		'ม.ต้น',
+		allSessions.filter(isLowerSecondarySession),
+		'ระดับชั้นมัธยมศึกษาตอนต้น'
+	);
+	const upperSecondaryReport = printableReportSheet(
+		workspace,
+		'ม.ปลาย',
+		allSessions.filter(isUpperSecondarySession),
+		'ระดับชั้นมัธยมศึกษาตอนปลาย'
+	);
+
 	return {
-		report: printableReportSheet(workspace),
+		report,
+		reportSheets: [report, lowerSecondaryReport, upperSecondaryReport],
+		lowerSecondaryReport,
+		upperSecondaryReport,
 		schedule: objectSheet(scheduleRows(workspace, invigilatorWorkspace), [
 			{ wch: 18 },
 			{ wch: 14 },
