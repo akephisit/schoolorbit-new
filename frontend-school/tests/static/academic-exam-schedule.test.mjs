@@ -286,6 +286,19 @@ test('academic exam schedule API client maps functions to backend routes and met
 	}
 });
 
+test('exam schedule API exposes staff-level invigilator drag actions', () => {
+	const api = readFileSync(projectPath('src/lib/api/examSchedule.ts'), 'utf8');
+
+	assert.match(api, /export async function assignExamAssignmentInvigilator/);
+	assert.match(api, /export async function removeExamAssignmentInvigilator/);
+	assert.match(
+		api,
+		/room-assignments\/\$\{assignmentId\}\/invigilators\/\$\{staffId\}/
+	);
+	assert.match(api, /apiClient\.put<ExamInvigilatorWorkspace>/);
+	assert.match(api, /apiClient\.delete<ExamInvigilatorWorkspace>/);
+});
+
 test('exam rounds expose exam kind for midterm and final import filtering', () => {
 	const api = readFileSync(projectPath('src/lib/api/examSchedule.ts'), 'utf8');
 	const listPage = readFileSync(

@@ -424,6 +424,26 @@ export async function updateExamAssignmentInvigilators(
 	return apiData(response, 'ไม่สามารถบันทึกกรรมการคุมสอบได้');
 }
 
+export async function assignExamAssignmentInvigilator(
+	assignmentId: string,
+	staffId: string
+): Promise<ExamInvigilatorWorkspace> {
+	const response = await apiClient.put<ExamInvigilatorWorkspace>(
+		`/api/academic/exam-schedules/room-assignments/${assignmentId}/invigilators/${staffId}`
+	);
+	return apiData(response, 'ไม่สามารถบันทึกกรรมการคุมสอบได้');
+}
+
+export async function removeExamAssignmentInvigilator(
+	assignmentId: string,
+	staffId: string
+): Promise<ExamInvigilatorWorkspace> {
+	const response = await apiClient.delete<ExamInvigilatorWorkspace>(
+		`/api/academic/exam-schedules/room-assignments/${assignmentId}/invigilators/${staffId}`
+	);
+	return apiData(response, 'ไม่สามารถลบกรรมการคุมสอบได้');
+}
+
 export async function generateSeatsForAssignment(
 	assignmentId: string,
 	input: GenerateSeatsInput
