@@ -172,6 +172,14 @@ struct SeatAssignmentContext {
 }
 
 #[derive(Debug, sqlx::FromRow)]
+struct InvigilatorAssignmentMutationContext {
+    assignment_id: Uuid,
+    exam_day_id: Uuid,
+    exam_round_id: Uuid,
+    round_status: String,
+}
+
+#[derive(Debug, sqlx::FromRow)]
 struct ExamScheduleItemPlacementContext {
     id: Uuid,
     exam_round_id: Uuid,
@@ -1396,6 +1404,69 @@ pub async fn update_assignment_invigilators(
     fetch_day_room_assignment_view(pool, assignment_id).await
 }
 
+pub async fn assign_invigilator_to_assignment(
+    pool: &PgPool,
+    assignment_id: Uuid,
+    staff_id: Uuid,
+    actor_user_id: Uuid,
+) -> Result<ExamInvigilatorWorkspace, AppError> {
+    let mut tx = pool.begin().await?;
+    let context =
+        fetch_invigilator_assignment_mutation_context_for_update(&mut tx, assignment_id).await?;
+    ensure_exam_round_is_mutable(&context.round_status)?;
+
+    let staff_ids = vec![staff_id];
+    lock_exam_invigilator_staff_conflict_scope(&mut tx, context.exam_day_id, &staff_ids).await?;
+    validate_active_staff_users(&mut tx, &staff_ids).await?;
+
+    let removed_count = delete_staff_invigilator_from_other_day_assignments_in_tx(
+        &mut tx,
+        context.exam_day_id,
+        context.assignment_id,
+        staff_id,
+    )
+    .await?;
+    let inserted_count = insert_staff_invigilator_if_missing_in_tx(
+        &mut tx,
+        context.exam_day_id,
+        context.assignment_id,
+        staff_id,
+    )
+    .await?;
+
+    let round_id = context.exam_round_id;
+    if removed_count > 0 || inserted_count > 0 {
+        mark_round_draft_after_mutation(&mut tx, round_id, Some(actor_user_id)).await?;
+    }
+    tx.commit().await?;
+
+    get_invigilator_workspace(pool, round_id).await
+}
+
+pub async fn remove_invigilator_from_assignment(
+    pool: &PgPool,
+    assignment_id: Uuid,
+    staff_id: Uuid,
+    actor_user_id: Uuid,
+) -> Result<ExamInvigilatorWorkspace, AppError> {
+    let mut tx = pool.begin().await?;
+    let context =
+        fetch_invigilator_assignment_mutation_context_for_update(&mut tx, assignment_id).await?;
+    ensure_exam_round_is_mutable(&context.round_status)?;
+
+    let deleted_count =
+        delete_staff_invigilator_from_assignment_in_tx(&mut tx, context.assignment_id, staff_id)
+            .await?;
+
+    let round_id = context.exam_round_id;
+    if deleted_count > 0 {
+        mark_round_draft_after_mutation(&mut tx, round_id, Some(actor_user_id)).await?;
+    }
+    tx.commit().await?;
+
+    get_invigilator_workspace(pool, round_id).await
+}
+
 async fn replace_assignment_invigilators_in_tx(
     tx: &mut Transaction<'_, Postgres>,
     _round_id: Uuid,
@@ -1438,6 +1509,79 @@ async fn replace_assignment_invigilators_in_tx(
     .map_err(map_day_room_assignment_write_error)?;
 
     Ok(())
+}
+
+async fn delete_staff_invigilator_from_other_day_assignments_in_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    exam_day_id: Uuid,
+    target_assignment_id: Uuid,
+    staff_id: Uuid,
+) -> Result<u64, AppError> {
+    let result = sqlx::query(
+        r#"
+        DELETE FROM academic_exam_day_invigilators invigilator
+        USING academic_exam_day_room_assignments assignment
+        WHERE assignment.id = invigilator.day_room_assignment_id
+          AND assignment.exam_day_id = invigilator.exam_day_id
+          AND assignment.exam_day_id = $1
+          AND invigilator.staff_id = $2
+          AND invigilator.day_room_assignment_id <> $3
+        "#,
+    )
+    .bind(exam_day_id)
+    .bind(staff_id)
+    .bind(target_assignment_id)
+    .execute(&mut **tx)
+    .await?;
+
+    Ok(result.rows_affected())
+}
+
+async fn insert_staff_invigilator_if_missing_in_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    exam_day_id: Uuid,
+    assignment_id: Uuid,
+    staff_id: Uuid,
+) -> Result<u64, AppError> {
+    let result = sqlx::query(
+        r#"
+        INSERT INTO academic_exam_day_invigilators (
+            exam_day_id,
+            day_room_assignment_id,
+            staff_id
+        )
+        VALUES ($1, $2, $3)
+        ON CONFLICT (day_room_assignment_id, staff_id) DO NOTHING
+        "#,
+    )
+    .bind(exam_day_id)
+    .bind(assignment_id)
+    .bind(staff_id)
+    .execute(&mut **tx)
+    .await
+    .map_err(map_day_room_assignment_write_error)?;
+
+    Ok(result.rows_affected())
+}
+
+async fn delete_staff_invigilator_from_assignment_in_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    assignment_id: Uuid,
+    staff_id: Uuid,
+) -> Result<u64, AppError> {
+    let result = sqlx::query(
+        r#"
+        DELETE FROM academic_exam_day_invigilators
+        WHERE day_room_assignment_id = $1
+          AND staff_id = $2
+        "#,
+    )
+    .bind(assignment_id)
+    .bind(staff_id)
+    .execute(&mut **tx)
+    .await?;
+
+    Ok(result.rows_affected())
 }
 
 pub async fn generate_seats_for_assignment(
@@ -2397,6 +2541,16 @@ fn validate_unique_invigilator_staff_ids(ids: Vec<Uuid>) -> Result<Vec<Uuid>, Ap
     Ok(ids)
 }
 
+fn ensure_exam_round_is_mutable(status: &str) -> Result<(), AppError> {
+    if status == "published" {
+        return Err(AppError::BadRequest(
+            "Published exam rounds cannot be changed".to_string(),
+        ));
+    }
+
+    Ok(())
+}
+
 fn validate_capacity_override(capacity_override: Option<i32>) -> Result<Option<i32>, AppError> {
     if matches!(capacity_override, Some(value) if value <= 0) {
         return Err(AppError::BadRequest(
@@ -3012,6 +3166,29 @@ async fn fetch_seat_assignment_context(
         JOIN rooms room ON room.id = assignment.room_id
         WHERE assignment.id = $1
         FOR UPDATE OF assignment
+        "#,
+    )
+    .bind(assignment_id)
+    .fetch_optional(&mut **tx)
+    .await?
+    .ok_or_else(|| AppError::NotFound("Exam room assignment not found".to_string()))
+}
+
+async fn fetch_invigilator_assignment_mutation_context_for_update(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    assignment_id: Uuid,
+) -> Result<InvigilatorAssignmentMutationContext, AppError> {
+    sqlx::query_as::<_, InvigilatorAssignmentMutationContext>(
+        r#"
+        SELECT assignment.id AS assignment_id,
+               assignment.exam_day_id,
+               exam_day.exam_round_id,
+               exam_round.status AS round_status
+        FROM academic_exam_day_room_assignments assignment
+        JOIN academic_exam_days exam_day ON exam_day.id = assignment.exam_day_id
+        JOIN academic_exam_rounds exam_round ON exam_round.id = exam_day.exam_round_id
+        WHERE assignment.id = $1
+        FOR UPDATE OF assignment, exam_round
         "#,
     )
     .bind(assignment_id)
@@ -3880,6 +4057,62 @@ mod tests {
         );
         assert_eq!(keys.len(), 2);
         assert!(keys[0] < keys[1]);
+    }
+
+    #[test]
+    fn assign_invigilator_to_assignment_uses_day_level_move_semantics() {
+        let source = include_str!("exam_schedule_service.rs");
+        let start = source
+            .find("pub async fn assign_invigilator_to_assignment")
+            .expect("assign service should exist");
+        let body = &source[start
+            ..source[start..]
+                .find("pub async fn remove_invigilator_from_assignment")
+                .map(|index| start + index)
+                .unwrap_or(source.len())];
+
+        let lock_position = body
+            .find("lock_exam_invigilator_staff_conflict_scope")
+            .expect("assign service should lock staff/day scope");
+        let validate_position = body
+            .find("validate_active_staff_users")
+            .expect("assign service should validate active staff");
+        let delete_position = body
+            .find("delete_staff_invigilator_from_other_day_assignments_in_tx")
+            .expect("assign service should remove staff from other rooms on the same day");
+        let insert_position = body
+            .find("insert_staff_invigilator_if_missing_in_tx")
+            .expect("assign service should insert target staff");
+
+        assert!(lock_position < validate_position);
+        assert!(validate_position < delete_position);
+        assert!(delete_position < insert_position);
+        assert!(body.contains("ensure_exam_round_is_mutable"));
+        assert!(body.contains("get_invigilator_workspace(pool, round_id)"));
+    }
+
+    #[test]
+    fn remove_invigilator_from_assignment_only_deletes_target_assignment() {
+        let source = include_str!("exam_schedule_service.rs");
+        let start = source
+            .find("pub async fn remove_invigilator_from_assignment")
+            .expect("remove service should exist");
+        let body = &source[start
+            ..source[start..]
+                .find("async fn replace_assignment_invigilators_in_tx")
+                .map(|index| start + index)
+                .unwrap_or(source.len())];
+
+        assert!(body.contains("delete_staff_invigilator_from_assignment_in_tx"));
+        assert!(!body.contains("delete_staff_invigilator_from_other_day_assignments_in_tx"));
+        assert!(body.contains("ensure_exam_round_is_mutable"));
+        assert!(body.contains("get_invigilator_workspace(pool, round_id)"));
+    }
+
+    #[test]
+    fn exam_round_mutation_guard_rejects_published_rounds() {
+        assert!(ensure_exam_round_is_mutable("draft").is_ok());
+        assert!(ensure_exam_round_is_mutable("published").is_err());
     }
 
     #[test]
