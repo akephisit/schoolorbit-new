@@ -198,6 +198,11 @@ pub fn academic_routes() -> Router<AppState> {
             get(handlers::exam_schedule::get_invigilator_staff_options),
         )
         .route(
+            "/exam-schedules/room-assignments/{assignment_id}/invigilators/{staff_id}",
+            put(handlers::exam_schedule::assign_assignment_invigilator)
+                .delete(handlers::exam_schedule::remove_assignment_invigilator),
+        )
+        .route(
             "/exam-schedules/room-assignments/{assignment_id}/invigilators",
             put(handlers::exam_schedule::update_assignment_invigilators),
         )

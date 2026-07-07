@@ -258,6 +258,48 @@ pub async fn update_assignment_invigilators(
     Ok(Json(ApiResponse::ok(assignment)).into_response())
 }
 
+/// PUT /api/academic/exam-schedules/room-assignments/{assignment_id}/invigilators/{staff_id}
+pub async fn assign_assignment_invigilator(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((assignment_id, staff_id)): Path<(Uuid, Uuid)>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    actor.require_permission(codes::ACADEMIC_EXAM_SCHEDULE_MANAGE_SCHOOL)?;
+
+    let workspace = exam_schedule_service::assign_invigilator_to_assignment(
+        &pool,
+        assignment_id,
+        staff_id,
+        actor.user_id,
+    )
+    .await?;
+    Ok(Json(ApiResponse::ok(workspace)).into_response())
+}
+
+/// DELETE /api/academic/exam-schedules/room-assignments/{assignment_id}/invigilators/{staff_id}
+pub async fn remove_assignment_invigilator(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((assignment_id, staff_id)): Path<(Uuid, Uuid)>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    actor.require_permission(codes::ACADEMIC_EXAM_SCHEDULE_MANAGE_SCHOOL)?;
+
+    let workspace = exam_schedule_service::remove_invigilator_from_assignment(
+        &pool,
+        assignment_id,
+        staff_id,
+        actor.user_id,
+    )
+    .await?;
+    Ok(Json(ApiResponse::ok(workspace)).into_response())
+}
+
 /// POST /api/academic/exam-schedules/room-assignments/{assignment_id}/seats
 pub async fn generate_seats(
     State(state): State<AppState>,

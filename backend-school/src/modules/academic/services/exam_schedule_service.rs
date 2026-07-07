@@ -4116,6 +4116,27 @@ mod tests {
     }
 
     #[test]
+    fn academic_routes_expose_staff_level_invigilator_actions() {
+        let source = include_str!("../../academic.rs");
+
+        assert!(source
+            .contains("/exam-schedules/room-assignments/{assignment_id}/invigilators/{staff_id}"));
+        assert!(source.contains("assign_assignment_invigilator"));
+        assert!(source.contains("remove_assignment_invigilator"));
+    }
+
+    #[test]
+    fn exam_schedule_handler_uses_staff_level_invigilator_services() {
+        let source = include_str!("../handlers/exam_schedule.rs");
+
+        assert!(source.contains("pub async fn assign_assignment_invigilator"));
+        assert!(source.contains("pub async fn remove_assignment_invigilator"));
+        assert!(source.contains("exam_schedule_service::assign_invigilator_to_assignment"));
+        assert!(source.contains("exam_schedule_service::remove_invigilator_from_assignment"));
+        assert!(source.contains("Path((assignment_id, staff_id)): Path<(Uuid, Uuid)>"));
+    }
+
+    #[test]
     fn update_assignment_invigilators_locks_staff_scope_before_conflict_validation() {
         let source = include_str!("exam_schedule_service.rs");
         let update_start = source
