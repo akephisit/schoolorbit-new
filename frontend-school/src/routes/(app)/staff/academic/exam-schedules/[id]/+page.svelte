@@ -26,7 +26,9 @@
 		type ExamInvigilatorWorkspace,
 		type ExamRoundKind,
 		type ExamRoundStatus,
+		type ExamScheduleItem,
 		type ExamScheduleWorkspace,
+		type ExamSession,
 		type PlaceExamSessionInput,
 		type UpsertDayRoomAssignmentInput,
 		type UpsertExamDayInput
@@ -185,6 +187,64 @@
 		if (shouldRefreshInvigilators) {
 			await refreshOrInvalidateInvigilators(roundId);
 		}
+	}
+
+	function examScheduleItemFromSession(session: ExamSession): ExamScheduleItem {
+		return {
+			id: session.examScheduleItemId,
+			examRoundId: session.examRoundId,
+			academicSemesterId: session.academicSemesterId,
+			assessmentCategoryId: session.assessmentCategoryId,
+			assessmentPlanId: session.assessmentPlanId,
+			classroomCourseId: session.classroomCourseId,
+			classroomId: session.classroomId,
+			subjectId: session.subjectId,
+			gradeLevelId: session.gradeLevelId,
+			durationMinutes: session.durationMinutes,
+			importedAt: session.importedAt,
+			assessmentCategoryName: session.assessmentCategoryName,
+			subjectCode: session.subjectCode,
+			subjectNameTh: session.subjectNameTh,
+			subjectNameEn: session.subjectNameEn,
+			subjectGroupId: session.subjectGroupId,
+			subjectGroupName: session.subjectGroupName,
+			subjectGroupDisplayOrder: session.subjectGroupDisplayOrder,
+			subjectType: session.subjectType,
+			classroomName: session.classroomName,
+			gradeLevelName: session.gradeLevelName,
+			gradeLevelType: session.gradeLevelType,
+			gradeLevelYear: session.gradeLevelYear
+		};
+	}
+
+	function applyPlacedExamSession(session: ExamSession) {
+		if (!workspace) return;
+
+		workspace = {
+			...workspace,
+			unscheduledItems: workspace.unscheduledItems.filter(
+				(item) => item.id !== session.examScheduleItemId
+			),
+			scheduledSessions: [
+				...workspace.scheduledSessions.filter(
+					(item) => item.id !== session.id && item.examScheduleItemId !== session.examScheduleItemId
+				),
+				session
+			]
+		};
+	}
+
+	function applyRemovedExamSession(session: ExamSession) {
+		if (!workspace) return;
+
+		const restoredItem = examScheduleItemFromSession(session);
+		workspace = {
+			...workspace,
+			unscheduledItems: workspace.unscheduledItems.some((item) => item.id === restoredItem.id)
+				? workspace.unscheduledItems
+				: [...workspace.unscheduledItems, restoredItem],
+			scheduledSessions: workspace.scheduledSessions.filter((item) => item.id !== session.id)
+		};
 	}
 
 	function isCurrentManagementOptionsRequest(
@@ -515,13 +575,14 @@
 	async function handlePlaceExamSession(input: PlaceExamSessionInput): Promise<boolean> {
 		placingItemId = input.examScheduleItemId;
 		try {
-			await placeExamSession({
+			const session = await placeExamSession({
 				examScheduleItemId: input.examScheduleItemId,
 				examDayId: input.examDayId,
 				startsAt: input.startsAt
 			});
+			applyPlacedExamSession(session);
+			void refreshOrInvalidateInvigilators(session.examRoundId);
 			toast.success('บันทึกเวลาสอบแล้ว');
-			await refreshWorkspace(true);
 			return true;
 		} catch (placeError) {
 			toast.error(placeError instanceof Error ? placeError.message : 'บันทึกเวลาสอบไม่สำเร็จ');
@@ -545,8 +606,9 @@
 		unschedulingSessionId = sessionId;
 		try {
 			await deleteExamSession(sessionId);
+			applyRemovedExamSession(session);
+			void refreshOrInvalidateInvigilators(session.examRoundId);
 			toast.success('เอารายการสอบออกจากตารางแล้ว');
-			await refreshWorkspace(true);
 			return true;
 		} catch (deleteError) {
 			toast.error(

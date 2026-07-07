@@ -514,12 +514,14 @@ test('staff workspace refreshes or invalidates invigilator workspace after sourc
 		'handleImportItems',
 		'handleSaveDay',
 		'handleDeleteDay',
-		'handleSaveAssignment',
-		'handlePlaceExamSession'
+		'handleSaveAssignment'
 	]) {
 		const handler = localFunctionSource(page, handlerName);
 		assert.match(handler, /refreshWorkspace\(true\)/, `${handlerName} should refresh invigilators`);
 	}
+
+	const handlePlaceExamSession = localFunctionSource(page, 'handlePlaceExamSession');
+	assert.match(handlePlaceExamSession, /refreshOrInvalidateInvigilators\(session\.examRoundId\)/);
 });
 
 test('invigilator workspace load exposes recoverable error and retry state', () => {
@@ -682,6 +684,38 @@ test('staff timeline wires drag drop placement and accessible schedule dialog', 
 	assert.match(block, /session-block/);
 	assert.match(block, /min-height: 2\.25rem/);
 	assert.match(block, /overflow: hidden/);
+});
+
+test('staff schedule placement and unschedule patch local workspace state', () => {
+	const page = readFileSync(
+		projectPath('src/routes/(app)/staff/academic/exam-schedules/[id]/+page.svelte'),
+		'utf8'
+	);
+	const api = readFileSync(projectPath('src/lib/api/examSchedule.ts'), 'utf8');
+
+	const handlePlaceExamSession = localFunctionSource(page, 'handlePlaceExamSession');
+	const handleUnscheduleExamSession = localFunctionSource(page, 'handleUnscheduleExamSession');
+
+	assert.match(page, /function applyPlacedExamSession\(session: ExamSession\)/);
+	assert.match(page, /function applyRemovedExamSession\(session: ExamSession\)/);
+	assert.match(page, /function examScheduleItemFromSession\(session: ExamSession\): ExamScheduleItem/);
+	assert.match(handlePlaceExamSession, /const session = await placeExamSession/);
+	assert.match(handlePlaceExamSession, /applyPlacedExamSession\(session\)/);
+	assert.doesNotMatch(handlePlaceExamSession, /refreshWorkspace\(true\)/);
+	assert.match(handleUnscheduleExamSession, /applyRemovedExamSession\(session\)/);
+	assert.doesNotMatch(handleUnscheduleExamSession, /refreshWorkspace\(true\)/);
+	for (const field of [
+		'importedAt',
+		'subjectGroupId',
+		'subjectGroupName',
+		'subjectGroupDisplayOrder',
+		'subjectType',
+		'gradeLevelName',
+		'gradeLevelType',
+		'gradeLevelYear'
+	]) {
+		assert.match(api, new RegExp(`${field}\\??:`), `ExamSession should expose ${field}`);
+	}
 });
 
 test('staff timeline can switch between all exam days and one selected day', () => {
@@ -885,7 +919,8 @@ test('scheduled exam sessions can be removed through dialog and tray drop', () =
 	assert.match(handleUnscheduleExamSession, /unschedulingSessionId = sessionId/);
 	assert.match(handleUnscheduleExamSession, /finally \{[\s\S]*unschedulingSessionId = null/);
 	assert.doesNotMatch(handleUnscheduleExamSession, /placingItemId\s*=/);
-	assert.match(handleUnscheduleExamSession, /await refreshWorkspace\(true\)/);
+	assert.doesNotMatch(handleUnscheduleExamSession, /refreshWorkspace\(true\)/);
+	assert.match(handleUnscheduleExamSession, /applyRemovedExamSession\(session\)/);
 	assert.match(handleUnscheduleExamSession, /!canManageExamSchedules/);
 	assert.match(handleUnscheduleExamSession, /workspace\.round\.status === 'published'/);
 });

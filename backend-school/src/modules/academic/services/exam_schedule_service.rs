@@ -80,12 +80,20 @@ struct ExamSessionRow {
     subject_id: Uuid,
     grade_level_id: Uuid,
     duration_minutes: i32,
+    imported_at: DateTime<Utc>,
     exam_date: Option<NaiveDate>,
     assessment_category_name: Option<String>,
     subject_code: Option<String>,
     subject_name_th: Option<String>,
     subject_name_en: Option<String>,
+    subject_group_id: Option<Uuid>,
+    subject_group_name: Option<String>,
+    subject_group_display_order: Option<i32>,
+    subject_type: Option<String>,
     classroom_name: Option<String>,
+    grade_level_name: Option<String>,
+    grade_level_type: Option<String>,
+    grade_level_year: Option<i32>,
     day_room_assignment_id: Option<Uuid>,
     room_id: Option<Uuid>,
     room_name: Option<String>,
@@ -272,12 +280,20 @@ impl ExamSessionRow {
             subject_id: self.subject_id,
             grade_level_id: self.grade_level_id,
             duration_minutes: self.duration_minutes,
+            imported_at: self.imported_at,
             exam_date: self.exam_date,
             assessment_category_name: self.assessment_category_name,
             subject_code: self.subject_code,
             subject_name_th: self.subject_name_th,
             subject_name_en: self.subject_name_en,
+            subject_group_id: self.subject_group_id,
+            subject_group_name: self.subject_group_name,
+            subject_group_display_order: self.subject_group_display_order,
+            subject_type: self.subject_type,
             classroom_name: self.classroom_name,
+            grade_level_name: self.grade_level_name,
+            grade_level_type: self.grade_level_type,
+            grade_level_year: self.grade_level_year,
             room_id: self.room_id,
             room_name: self.room_name,
             building_name: self.building_name,
@@ -2133,12 +2149,25 @@ async fn fetch_exam_session_view(
                item.subject_id,
                item.grade_level_id,
                item.duration_minutes,
+               item.imported_at,
                day.exam_date AS exam_date,
                category.name AS assessment_category_name,
                subject.code AS subject_code,
                subject.name_th AS subject_name_th,
                subject.name_en AS subject_name_en,
+               subject.group_id AS subject_group_id,
+               subject_group.name_th AS subject_group_name,
+               subject_group.display_order AS subject_group_display_order,
+               subject.type AS subject_type,
                classroom.name AS classroom_name,
+               CASE grade_level.level_type
+                   WHEN 'kindergarten' THEN CONCAT('อ.', grade_level.year)
+                   WHEN 'primary' THEN CONCAT('ป.', grade_level.year)
+                   WHEN 'secondary' THEN CONCAT('ม.', grade_level.year)
+                   ELSE CONCAT('?.', grade_level.year)
+               END AS grade_level_name,
+               grade_level.level_type AS grade_level_type,
+               grade_level.year AS grade_level_year,
                assignment.id AS day_room_assignment_id,
                assignment.room_id AS room_id,
                room.name_th AS room_name,
@@ -2153,7 +2182,9 @@ async fn fetch_exam_session_view(
         JOIN academic_assessment_categories category
           ON category.id = item.assessment_category_id
         JOIN subjects subject ON subject.id = item.subject_id
+        LEFT JOIN subject_groups subject_group ON subject_group.id = subject.group_id
         JOIN class_rooms classroom ON classroom.id = item.classroom_id
+        JOIN grade_levels grade_level ON grade_level.id = item.grade_level_id
         LEFT JOIN academic_exam_day_room_assignments assignment
           ON assignment.exam_day_id = session.exam_day_id
          AND assignment.classroom_id = item.classroom_id
@@ -3512,12 +3543,25 @@ async fn fetch_scheduled_sessions(
                item.subject_id,
                item.grade_level_id,
                item.duration_minutes,
+               item.imported_at,
                day.exam_date AS exam_date,
                category.name AS assessment_category_name,
                subject.code AS subject_code,
                subject.name_th AS subject_name_th,
                subject.name_en AS subject_name_en,
+               subject.group_id AS subject_group_id,
+               subject_group.name_th AS subject_group_name,
+               subject_group.display_order AS subject_group_display_order,
+               subject.type AS subject_type,
                classroom.name AS classroom_name,
+               CASE grade_level.level_type
+                   WHEN 'kindergarten' THEN CONCAT('อ.', grade_level.year)
+                   WHEN 'primary' THEN CONCAT('ป.', grade_level.year)
+                   WHEN 'secondary' THEN CONCAT('ม.', grade_level.year)
+                   ELSE CONCAT('?.', grade_level.year)
+               END AS grade_level_name,
+               grade_level.level_type AS grade_level_type,
+               grade_level.year AS grade_level_year,
                assignment.id AS day_room_assignment_id,
                assignment.room_id AS room_id,
                room.name_th AS room_name,
@@ -3532,7 +3576,9 @@ async fn fetch_scheduled_sessions(
         JOIN academic_assessment_categories category
           ON category.id = item.assessment_category_id
         JOIN subjects subject ON subject.id = item.subject_id
+        LEFT JOIN subject_groups subject_group ON subject_group.id = subject.group_id
         JOIN class_rooms classroom ON classroom.id = item.classroom_id
+        JOIN grade_levels grade_level ON grade_level.id = item.grade_level_id
         LEFT JOIN academic_exam_day_room_assignments assignment
           ON assignment.exam_day_id = session.exam_day_id
          AND assignment.classroom_id = item.classroom_id
