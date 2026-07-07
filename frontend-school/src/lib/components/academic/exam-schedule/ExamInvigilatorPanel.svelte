@@ -12,10 +12,18 @@
 	import InvigilatorRoomBoard from './InvigilatorRoomBoard.svelte';
 	import InvigilatorStaffList from './InvigilatorStaffList.svelte';
 	import {
+		formatInvigilatorMinutes,
 		staffOptionName,
 		workloadStaffName,
 		type InvigilatorStaffCardView
 	} from './invigilatorDrag';
+
+	type WorkloadSummary = {
+		staffCount: number;
+		assignedTodayCount: number;
+		maxTotalMinutes: number;
+		unassignedAssignmentCount: number;
+	};
 
 	let {
 		days = [],
@@ -51,6 +59,7 @@
 	let localWorkspace = $state<ExamInvigilatorWorkspace | null>(null);
 	let pendingStaffIds = $state<string[]>([]);
 	let pendingAssignmentIds = $state<string[]>([]);
+	let activeDragStaffId = $state<string | null>(null);
 
 	const sortedDays = $derived([...days].sort(compareExamDaysByDate));
 	const selectedDay = $derived(
@@ -71,6 +80,7 @@
 	);
 	const staffCards = $derived(buildStaffCards());
 	const displayedStaffCards = $derived(filterStaffCards(staffCards));
+	const workloadSummary = $derived(buildWorkloadSummary());
 
 	function formatDayDate(value: string, label?: string | null): string {
 		const dateLabel = new Date(value).toLocaleDateString('th-TH', {
@@ -121,7 +131,14 @@
 			}
 		}
 
-		return [...cards.values()].sort((a, b) => a.displayName.localeCompare(b.displayName, 'th'));
+		return [...cards.values()].sort((a, b) => {
+			const totalCompare = a.totalMinutes - b.totalMinutes;
+			if (totalCompare !== 0) return totalCompare;
+			const todayCompare = a.selectedDayMinutes - b.selectedDayMinutes;
+			return todayCompare === 0
+				? a.displayName.localeCompare(b.displayName, 'th')
+				: todayCompare;
+		});
 	}
 
 	function filterStaffCards(cards: InvigilatorStaffCardView[]): InvigilatorStaffCardView[] {
@@ -131,6 +148,18 @@
 			if (!search) return true;
 			return card.displayName.toLowerCase().includes(search);
 		});
+	}
+
+	function buildWorkloadSummary(): WorkloadSummary {
+		const totalMinutes = staffCards.map((card) => card.totalMinutes);
+		return {
+			staffCount: staffCards.length,
+			assignedTodayCount: staffCards.filter((card) => card.selectedDayMinutes > 0).length,
+			maxTotalMinutes: totalMinutes.length ? Math.max(...totalMinutes) : 0,
+			unassignedAssignmentCount: selectedDayAssignments.filter(
+				(assignment) => assignment.invigilators.length === 0
+			).length
+		};
 	}
 
 	function markPending(assignmentId: string, staffId: string) {
@@ -151,6 +180,14 @@
 		localWorkspace = workspaceData;
 	}
 
+	function handleStaffDragStart(staffId: string) {
+		activeDragStaffId = staffId;
+	}
+
+	function handleStaffDragEnd() {
+		activeDragStaffId = null;
+	}
+
 	async function assignInvigilator(assignmentId: string, staffId: string) {
 		if (readonly || !onAssignInvigilator || pendingStaffIds.includes(staffId)) return;
 
@@ -162,6 +199,7 @@
 			// The route-level callback shows the toast and keeps the previous workspace.
 		} finally {
 			clearPending(assignmentId, staffId);
+			activeDragStaffId = null;
 		}
 	}
 
@@ -176,6 +214,7 @@
 			// The route-level callback shows the toast and keeps the previous workspace.
 		} finally {
 			clearPending(assignmentId, staffId);
+			activeDragStaffId = null;
 		}
 	}
 
@@ -191,6 +230,7 @@
 			selectedDayId = sortedDays[0]?.id ?? '';
 			pendingStaffIds = [];
 			pendingAssignmentIds = [];
+			activeDragStaffId = null;
 		}
 	});
 </script>
@@ -213,7 +253,9 @@
 		/>
 	</section>
 {:else}
-	<section class="min-h-[calc(100vh-16rem)] overflow-hidden rounded-md border bg-muted/20">
+	<section
+		class="flex h-[calc(100vh-15rem)] min-h-[36rem] flex-col overflow-hidden rounded-md border bg-muted/20"
+	>
 		<div
 			class="flex flex-col gap-3 border-b bg-background px-4 py-4 lg:flex-row lg:items-center lg:justify-between"
 		>
@@ -245,24 +287,53 @@
 			</div>
 		</div>
 
+		<div class="grid gap-2 border-b bg-background/80 px-4 py-3 sm:grid-cols-2 xl:grid-cols-4">
+			<div class="rounded-md border-l-4 border-l-slate-500 bg-muted/30 px-3 py-2">
+				<p class="text-xs text-muted-foreground">ครูทั้งหมด</p>
+				<p class="mt-1 text-lg font-semibold tabular-nums">{workloadSummary.staffCount}</p>
+			</div>
+			<div class="rounded-md border-l-4 border-l-sky-500 bg-sky-50/60 px-3 py-2">
+				<p class="text-xs text-muted-foreground">คุมวันนี้</p>
+				<p class="mt-1 text-lg font-semibold tabular-nums">
+					{workloadSummary.assignedTodayCount}
+				</p>
+			</div>
+			<div class="rounded-md border-l-4 border-l-rose-500 bg-rose-50/60 px-3 py-2">
+				<p class="text-xs text-muted-foreground">ชั่วโมงรวมสูงสุด</p>
+				<p class="mt-1 text-lg font-semibold tabular-nums">
+					{formatInvigilatorMinutes(workloadSummary.maxTotalMinutes)}
+				</p>
+			</div>
+			<div class="rounded-md border-l-4 border-l-amber-500 bg-amber-50/60 px-3 py-2">
+				<p class="text-xs text-muted-foreground">ห้องยังไม่มีกรรมการ</p>
+				<p class="mt-1 text-lg font-semibold tabular-nums">
+					{workloadSummary.unassignedAssignmentCount}
+				</p>
+			</div>
+		</div>
+
 		{#if !selectedDay}
 			<PageState title="ยังไม่มีวันสอบ" description="ต้องมีวันสอบก่อนจัดกรรมการคุมสอบ" />
 		{:else}
-			<div class="grid min-h-0 gap-3 p-3 xl:grid-cols-[20rem_minmax(0,1fr)]">
+			<div class="grid min-h-0 flex-1 gap-3 p-3 xl:grid-cols-[28rem_minmax(0,1fr)]">
 				<InvigilatorStaffList
 					staffCards={displayedStaffCards}
 					search={staffSearch}
 					{showAvailableOnly}
 					{readonly}
 					{pendingStaffIds}
+					activeDragStaffId={activeDragStaffId}
 					onSearchChange={(value) => (staffSearch = value)}
 					onShowAvailableOnlyChange={(value) => (showAvailableOnly = value)}
+					onStaffDragStart={handleStaffDragStart}
+					onStaffDragEnd={handleStaffDragEnd}
 				/>
 				<InvigilatorRoomBoard
 					assignments={selectedDayAssignments}
 					{readonly}
 					{pendingAssignmentIds}
 					{pendingStaffIds}
+					activeDragStaffId={activeDragStaffId}
 					onAssignInvigilator={assignInvigilator}
 					onRemoveInvigilator={removeInvigilator}
 				/>

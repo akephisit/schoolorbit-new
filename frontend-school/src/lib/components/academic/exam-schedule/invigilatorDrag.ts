@@ -15,12 +15,20 @@ export type InvigilatorStaffCardView = {
 	assignedAssignment: ExamInvigilatorAssignmentSummary | null;
 };
 
+export type InvigilatorWorkloadLevel = 'idle' | 'assigned' | 'heavy';
+
 export function formatInvigilatorMinutes(minutes: number): string {
 	const hours = Math.floor(minutes / 60);
 	const remainder = minutes % 60;
 	if (hours === 0) return `${remainder} นาที`;
 	if (remainder === 0) return `${hours} ชม.`;
 	return `${hours} ชม. ${remainder} นาที`;
+}
+
+export function workloadLevel(staff: InvigilatorStaffCardView): InvigilatorWorkloadLevel {
+	if (staff.totalMinutes >= 240 || staff.selectedDayMinutes >= 180) return 'heavy';
+	if (staff.assignedAssignment || staff.selectedDayMinutes > 0) return 'assigned';
+	return 'idle';
 }
 
 export function workloadStaffName(workload: ExamInvigilatorStaffWorkload): string {

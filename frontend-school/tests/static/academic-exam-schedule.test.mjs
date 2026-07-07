@@ -453,6 +453,8 @@ test('exam invigilator panel exposes room-first workflow and workload summary', 
 	assert.match(panel, /staffWorkloads/);
 	assert.match(panel, /จัดกรรมการ/);
 	assert.match(panel, /selectedDayMinutes/);
+	assert.match(panel, /workloadSummary/);
+	assert.match(panel, /unassignedAssignmentCount/);
 	assert.match(panel, /onAssignInvigilator/);
 	assert.match(panel, /onRemoveInvigilator/);
 	assert.match(panel, /InvigilatorStaffList/);
@@ -486,15 +488,26 @@ test('exam invigilator drag workflow uses teacher cards and room drop targets', 
 
 	assert.match(panel, /<InvigilatorStaffList/);
 	assert.match(panel, /<InvigilatorRoomBoard/);
+	assert.match(panel, /let activeDragStaffId = \$state<string \| null>\(null\)/);
+	assert.match(panel, /function handleStaffDragStart/);
+	assert.match(panel, /function handleStaffDragEnd/);
+	assert.match(panel, /activeDragStaffId={activeDragStaffId}/);
+	assert.match(staffList, /onStaffDragStart/);
+	assert.match(staffList, /onStaffDragEnd/);
 	assert.match(staffList, /draggable=/);
 	assert.match(staffList, /วันนี้/);
 	assert.match(staffList, /รวมรอบนี้/);
+	assert.match(staffList, /TableBody/);
+	assert.doesNotMatch(staffList, /<article/);
 	assert.match(roomBoard, /InvigilatorRoomCard/);
+	assert.match(roomBoard, /activeDragStaffId/);
 	assert.match(roomCard, /ondrop=/);
-	assert.match(roomCard, /dataTransfer\?\.types/);
+	assert.match(roomCard, /activeDragStaffId/);
+	assert.match(roomCard, /text\/plain/);
 	assert.match(roomCard, /กรรมการ \{assignment\.invigilators\.length\} คน/);
 	assert.match(roomCard, /onRemoveInvigilator/);
 	assert.match(dragHelper, /INVIGILATOR_STAFF_DRAG_TYPE/);
+	assert.match(dragHelper, /workloadLevel/);
 	assert.doesNotMatch(panel + staffList + roomBoard + roomCard, /แนะนำ 2 คน|2\/2/);
 });
 

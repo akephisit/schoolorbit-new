@@ -10,6 +10,7 @@
 		readonly = false,
 		pendingAssignmentIds = [],
 		pendingStaffIds = [],
+		activeDragStaffId = null,
 		onAssignInvigilator,
 		onRemoveInvigilator
 	}: {
@@ -17,6 +18,7 @@
 		readonly?: boolean;
 		pendingAssignmentIds?: string[];
 		pendingStaffIds?: string[];
+		activeDragStaffId?: string | null;
 		onAssignInvigilator?: (assignmentId: string, staffId: string) => Promise<void> | void;
 		onRemoveInvigilator?: (assignmentId: string, staffId: string) => Promise<void> | void;
 	} = $props();
@@ -26,11 +28,21 @@
 	const isSaving = $derived(pendingAssignmentIds.includes(assignment.assignmentId));
 
 	function staffIdFromDrag(event: DragEvent): string {
-		return event.dataTransfer?.getData(INVIGILATOR_STAFF_DRAG_TYPE) ?? '';
+		return (
+			activeDragStaffId ||
+			event.dataTransfer?.getData(INVIGILATOR_STAFF_DRAG_TYPE) ||
+			event.dataTransfer?.getData('text/plain') ||
+			''
+		);
 	}
 
 	function hasStaffDragPayload(event: DragEvent): boolean {
-		return event.dataTransfer?.types.includes(INVIGILATOR_STAFF_DRAG_TYPE) ?? false;
+		if (activeDragStaffId) return true;
+		return (
+			event.dataTransfer?.types.includes(INVIGILATOR_STAFF_DRAG_TYPE) ||
+			event.dataTransfer?.types.includes('text/plain') ||
+			false
+		);
 	}
 
 	function handleDragOver(event: DragEvent) {
@@ -44,6 +56,13 @@
 		}
 	}
 
+	function handleDragLeave(event: DragEvent) {
+		const currentTarget = event.currentTarget as HTMLElement;
+		const relatedTarget = event.relatedTarget as Node | null;
+		if (relatedTarget && currentTarget.contains(relatedTarget)) return;
+		dragOver = false;
+	}
+
 	function handleDrop(event: DragEvent) {
 		if (readonly) return;
 		event.preventDefault();
@@ -55,15 +74,26 @@
 
 		void onAssignInvigilator?.(assignment.assignmentId, staffId);
 	}
+
+	function cardToneClass(): string {
+		if (dragOver) return 'border-primary bg-primary/5 ring-2 ring-primary/25';
+		if (assignment.invigilators.length === 0) return 'border-slate-200 bg-slate-50/70';
+		if (assignment.invigilators.length === 1) return 'border-sky-200 bg-sky-50/70';
+		return 'border-emerald-200 bg-emerald-50/70';
+	}
+
+	function countBadgeClass(): string {
+		if (assignment.invigilators.length === 0) return 'border-slate-300 bg-white text-slate-700';
+		if (assignment.invigilators.length === 1) return 'border-sky-200 bg-white text-sky-700';
+		return 'border-emerald-200 bg-white text-emerald-700';
+	}
 </script>
 
 <article
-	class="min-h-36 rounded-md border bg-background p-3 transition {dragOver
-		? 'border-primary ring-2 ring-primary/20'
-		: ''} {isSaving ? 'opacity-70' : ''}"
+	class="min-h-36 rounded-md border p-3 transition {cardToneClass()} {isSaving ? 'opacity-70' : ''}"
 	ondragenter={(event) => handleDragOver(event)}
 	ondragover={handleDragOver}
-	ondragleave={() => (dragOver = false)}
+	ondragleave={handleDragLeave}
 	ondrop={handleDrop}
 >
 	<div class="flex items-start justify-between gap-3">
@@ -71,11 +101,15 @@
 			<h3 class="truncate text-sm font-semibold">{assignment.classroomName || '-'}</h3>
 			<p class="truncate text-xs text-muted-foreground">{assignment.roomName || '-'}</p>
 		</div>
-		<Badge variant="outline">กรรมการ {assignment.invigilators.length} คน</Badge>
+		<Badge variant="outline" class={countBadgeClass()}>
+			กรรมการ {assignment.invigilators.length} คน
+		</Badge>
 	</div>
 
 	<div class="mt-3 flex min-h-16 flex-wrap content-start gap-2 rounded-md border border-dashed p-2">
-		{#if assignment.invigilators.length === 0}
+		{#if dragOver}
+			<p class="text-xs font-medium text-primary">ปล่อยเพื่อเพิ่มครูในห้องนี้</p>
+		{:else if assignment.invigilators.length === 0}
 			<p class="text-xs text-muted-foreground">ลากครูมาวางตรงนี้</p>
 		{:else}
 			{#each assignment.invigilators as invigilator (invigilator.staffId)}
