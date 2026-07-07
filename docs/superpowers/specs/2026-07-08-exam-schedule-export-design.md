@@ -2,13 +2,13 @@
 
 ## Goal
 
-Add a full XLSX export for one exam schedule round from the staff exam schedule detail page. The export should give academic staff a single workbook they can share or review offline, covering scheduled exams, room assignments, invigilator assignments, invigilator workload, and readiness status.
+Add a full XLSX export for one exam schedule round from the staff exam schedule detail page. The export should give academic staff a single editable workbook that also has a print-friendly report sheet, covering scheduled exams, room assignments, invigilator assignments, invigilator workload, and readiness status.
 
 ## UI Design
 
 The staff exam schedule detail page adds a compact `ส่งออก` action in the top action area near the existing status, exam-kind selector, refresh, and publish controls.
 
-The button downloads immediately. It does not need a dialog in the first version because the user selected the full workbook export. The exported filename uses:
+The button downloads immediately. It does not need a dialog in the first version because the user selected the full workbook export. The workbook is one Excel file. The first sheet is a print-friendly report, and the following sheets contain editable detailed data. The exported filename uses:
 
 `ตารางสอบ-{ชื่อรอบสอบ}-{วันที่ส่งออก}.xlsx`
 
@@ -33,6 +33,8 @@ The export does not include sensitive staff/student PII such as national IDs, ph
 
 The XLSX file contains these sheets:
 
+- `รายงาน`: the first sheet, intended for printing.
+  - Content: report title, round name, status, date range, summary counts, readiness summary, schedule grouped by exam day, and invigilator workload summary.
 - `ตารางสอบ`: one row per scheduled exam session.
   - Columns: วันสอบ, วันที่, เวลาเริ่ม, เวลาจบ, ระยะเวลา, ชั้นเรียน, กลุ่มระดับ, วิชา, รหัสวิชา, กลุ่มสาระ, ประเภทวิชา, ห้องสอบ, อาคาร/ห้อง, กรรมการ.
 - `ห้องสอบ`: one row per room assignment.
@@ -44,7 +46,7 @@ The XLSX file contains these sheets:
 - `ความพร้อม`: readiness summary and actionable issues.
   - Columns: ประเภท, รายการ, สถานะ/รายละเอียด.
 
-If a sheet has no data, it still exists with headers and a single explanatory row where useful, so users can tell the export completed.
+If a sheet has no data, it still exists with headers and a single explanatory row where useful, so users can tell the export completed. The export does not try to produce a locked PDF-like layout; users can edit the workbook before printing.
 
 ## Architecture
 
@@ -80,7 +82,7 @@ The UI clears the loading state in `finally`.
 Add static tests covering:
 
 - the exam schedule detail route exposes an export action and dynamic `xlsx` import
-- the export utility exists and defines row builders for all five sheets
+- the export utility exists and defines row builders for the print report sheet and all detailed sheets
 - the route loads invigilator workspace before export when needed
 - the route avoids exporting PII-oriented fields
 
