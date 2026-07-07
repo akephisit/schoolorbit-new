@@ -32,6 +32,7 @@ export type ExamScheduleExportSheet<
 	rows: Row[];
 	'!cols'?: ExamScheduleExportColumn[];
 	'!merges'?: ExamScheduleExportMerge[];
+	'!printTitlesRow'?: string;
 };
 
 export type ExamScheduleReportSheet = ExamScheduleExportSheet<WorksheetRow> & {
@@ -43,6 +44,8 @@ export type ExamScheduleExportWorkbook = {
 	reportSheets: ExamScheduleReportSheet[];
 	lowerSecondaryReport?: ExamScheduleReportSheet;
 	upperSecondaryReport?: ExamScheduleReportSheet;
+	lowerSecondaryClassroomReport?: ExamScheduleReportSheet;
+	upperSecondaryClassroomReport?: ExamScheduleReportSheet;
 	schedule: ExamScheduleExportSheet<WorksheetObjectRow>;
 	rooms: ExamScheduleExportSheet<WorksheetObjectRow>;
 	invigilators: ExamScheduleExportSheet<WorksheetObjectRow>;
@@ -75,9 +78,9 @@ function subjectLabel(session: ExamSession): string {
 function dateLabel(value: string | null | undefined): string {
 	if (!value) return '';
 	return new Date(value).toLocaleDateString('th-TH', {
-		weekday: 'short',
+		weekday: 'long',
 		year: 'numeric',
-		month: 'short',
+		month: 'long',
 		day: 'numeric'
 	});
 }
@@ -389,11 +392,13 @@ function reportSheetColumns(): ExamScheduleExportColumn[] {
 
 function reportSheetMerges(
 	dayRanges: { start: number; end: number }[],
-	slotRanges: { start: number; end: number }[]
+	slotRanges: { start: number; end: number }[],
+	columnCount = 6
 ): ExamScheduleExportMerge[] {
+	const lastColumn = columnCount - 1;
 	const merges: ExamScheduleExportMerge[] = [
-		{ s: { r: 0, c: 0 }, e: { r: 0, c: 5 } },
-		{ s: { r: 1, c: 0 }, e: { r: 1, c: 5 } }
+		{ s: { r: 0, c: 0 }, e: { r: 0, c: lastColumn } },
+		{ s: { r: 1, c: 0 }, e: { r: 1, c: lastColumn } }
 	];
 
 	for (const range of dayRanges) {
@@ -410,6 +415,59 @@ function reportSheetMerges(
 	}
 
 	return merges;
+}
+
+function classroomReportSheetColumns(): ExamScheduleExportColumn[] {
+	return [
+		{ wch: 12 },
+		{ wch: 24 },
+		{ wch: 18 },
+		{ wch: 11 },
+		{ wch: 34 },
+		{ wch: 14 },
+		{ wch: 20 }
+	];
+}
+
+function classroomReportSheetMerges(
+	classroomRanges: { start: number; end: number }[],
+	dayRanges: { start: number; end: number }[],
+	columnCount = 7
+): ExamScheduleExportMerge[] {
+	const lastColumn = columnCount - 1;
+	const merges: ExamScheduleExportMerge[] = [
+		{ s: { r: 0, c: 0 }, e: { r: 0, c: lastColumn } },
+		{ s: { r: 1, c: 0 }, e: { r: 1, c: lastColumn } }
+	];
+
+	for (const range of classroomRanges) {
+		if (range.end > range.start) {
+			merges.push({ s: { r: range.start, c: 0 }, e: { r: range.end, c: 0 } });
+		}
+	}
+
+	for (const range of dayRanges) {
+		if (range.end > range.start) {
+			merges.push({ s: { r: range.start, c: 1 }, e: { r: range.end, c: 1 } });
+		}
+	}
+
+	return merges;
+}
+
+function sessionClassroomLabel(session: ExamSession): string {
+	return safeText(session.classroomName, '-');
+}
+
+function sessionExamRoomLabel(workspace: ExamScheduleWorkspace, session: ExamSession): string {
+	const sessionRoom = buildingRoomLabel(session.buildingName, session.roomName);
+	if (sessionRoom !== '-') return sessionRoom;
+
+	const day = workspace.days.find((item) => item.id === session.examDayId);
+	const assignment = day?.roomAssignments.find(
+		(item) => item.classroomId === session.classroomId
+	);
+	return safeText(assignment?.roomName, '-');
 }
 
 function printableReportRows(
@@ -475,6 +533,72 @@ function printableReportRows(
 	return { rows, dayRanges, slotRanges };
 }
 
+function classroomReportRows(
+	workspace: ExamScheduleWorkspace,
+	sessions: ExamSession[],
+	fallbackSubtitle = 'ระดับชั้นที่จัดสอบ'
+): {
+	rows: WorksheetRow[];
+	classroomRanges: { start: number; end: number }[];
+	dayRanges: { start: number; end: number }[];
+} {
+	const rows: WorksheetRow[] = [
+		[printableReportTitle(workspace)],
+		[printableReportSubtitle(sessions, fallbackSubtitle)],
+		[],
+		['ห้องเรียน', 'วันเดือนปี', 'เวลา', 'เวลาสอบ', 'วิชา', 'รหัสวิชา', 'ห้องสอบ']
+	];
+	const classroomRanges: { start: number; end: number }[] = [];
+	const dayRanges: { start: number; end: number }[] = [];
+
+	if (sessions.length === 0) {
+		rows.push(['-', '-', '-', '-', 'ยังไม่มีรายการสอบที่จัดเวลาแล้ว', '-', '-']);
+		return { rows, classroomRanges, dayRanges };
+	}
+
+	const orderedSessions = [...sessions].sort(
+		(a, b) =>
+			compareThaiNatural(sessionClassroomLabel(a), sessionClassroomLabel(b)) ||
+			safeText(a.examDate).localeCompare(safeText(b.examDate)) ||
+			timeLabel(a.startsAt).localeCompare(timeLabel(b.startsAt)) ||
+			compareThaiNatural(subjectLabel(a), subjectLabel(b))
+	);
+	const sessionsByClassroom = groupByText(orderedSessions, sessionClassroomLabel);
+
+	for (const [, classroomSessions] of sessionsByClassroom) {
+		const classroomStart = rows.length;
+		const sessionsByDate = groupByText(classroomSessions, (session) => safeText(session.examDate));
+
+		for (const [, dateSessions] of sessionsByDate) {
+			const dayStart = rows.length;
+			const daySessions = [...dateSessions].sort(
+				(a, b) =>
+					timeLabel(a.startsAt).localeCompare(timeLabel(b.startsAt)) ||
+					timeLabel(a.endsAt).localeCompare(timeLabel(b.endsAt)) ||
+					compareThaiNatural(subjectLabel(a), subjectLabel(b))
+			);
+
+			for (const session of daySessions) {
+				rows.push([
+					sessionClassroomLabel(session),
+					dateLabel(session.examDate),
+					printableTimeRangeLabel(session),
+					minutesLabel(session.durationMinutes),
+					subjectLabel(session),
+					safeText(session.subjectCode, '-'),
+					sessionExamRoomLabel(workspace, session)
+				]);
+			}
+
+			dayRanges.push({ start: dayStart, end: rows.length - 1 });
+		}
+
+		classroomRanges.push({ start: classroomStart, end: rows.length - 1 });
+	}
+
+	return { rows, classroomRanges, dayRanges };
+}
+
 function printableReportSheet(
 	workspace: ExamScheduleWorkspace,
 	name: string,
@@ -486,7 +610,24 @@ function printableReportSheet(
 		name,
 		rows: report.rows,
 		'!cols': reportSheetColumns(),
-		'!merges': reportSheetMerges(report.dayRanges, report.slotRanges)
+		'!merges': reportSheetMerges(report.dayRanges, report.slotRanges),
+		'!printTitlesRow': '1:4'
+	};
+}
+
+function printableClassroomReportSheet(
+	workspace: ExamScheduleWorkspace,
+	name: string,
+	sessions: ExamSession[],
+	fallbackSubtitle = 'ระดับชั้นที่จัดสอบ'
+): ExamScheduleReportSheet {
+	const report = classroomReportRows(workspace, sessions, fallbackSubtitle);
+	return {
+		name,
+		rows: report.rows,
+		'!cols': classroomReportSheetColumns(),
+		'!merges': classroomReportSheetMerges(report.classroomRanges, report.dayRanges),
+		'!printTitlesRow': '1:4'
 	};
 }
 
@@ -656,25 +797,47 @@ export function buildExamScheduleExportWorkbook(
 	invigilatorWorkspace: ExamInvigilatorWorkspace | null
 ): ExamScheduleExportWorkbook {
 	const allSessions = sortedSessions(workspace);
-	const report = printableReportSheet(workspace, 'รายงาน', allSessions);
+	const lowerSecondarySessions = allSessions.filter(isLowerSecondarySession);
+	const upperSecondarySessions = allSessions.filter(isUpperSecondarySession);
+	const report = printableReportSheet(workspace, 'ตารางสอบรวม', allSessions);
 	const lowerSecondaryReport = printableReportSheet(
 		workspace,
-		'ม.ต้น',
-		allSessions.filter(isLowerSecondarySession),
+		'ตารางสอบ ม.ต้น',
+		lowerSecondarySessions,
 		'ระดับชั้นมัธยมศึกษาตอนต้น'
 	);
 	const upperSecondaryReport = printableReportSheet(
 		workspace,
-		'ม.ปลาย',
-		allSessions.filter(isUpperSecondarySession),
+		'ตารางสอบ ม.ปลาย',
+		upperSecondarySessions,
+		'ระดับชั้นมัธยมศึกษาตอนปลาย'
+	);
+	const lowerSecondaryClassroomReport = printableClassroomReportSheet(
+		workspace,
+		'ตารางสอบแยกห้อง ม.ต้น',
+		lowerSecondarySessions,
+		'ระดับชั้นมัธยมศึกษาตอนต้น'
+	);
+	const upperSecondaryClassroomReport = printableClassroomReportSheet(
+		workspace,
+		'ตารางสอบแยกห้อง ม.ปลาย',
+		upperSecondarySessions,
 		'ระดับชั้นมัธยมศึกษาตอนปลาย'
 	);
 
 	return {
 		report,
-		reportSheets: [report, lowerSecondaryReport, upperSecondaryReport],
+		reportSheets: [
+			report,
+			lowerSecondaryReport,
+			upperSecondaryReport,
+			lowerSecondaryClassroomReport,
+			upperSecondaryClassroomReport
+		],
 		lowerSecondaryReport,
 		upperSecondaryReport,
+		lowerSecondaryClassroomReport,
+		upperSecondaryClassroomReport,
 		schedule: objectSheet(scheduleRows(workspace, invigilatorWorkspace), [
 			{ wch: 18 },
 			{ wch: 14 },

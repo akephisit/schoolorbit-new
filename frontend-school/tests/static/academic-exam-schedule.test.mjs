@@ -633,10 +633,17 @@ test('exam schedule detail exports one editable report workbook', () => {
 	assert.match(page, /TH Sarabun New/);
 	assert.match(page, /border/);
 	assert.match(page, /alignment/);
+	assert.match(page, /printTitlesRow/);
 	for (const sheetName of ['ตารางสอบ', 'ห้องสอบ', 'กรรมการ', 'ภาระงานกรรมการ', 'ความพร้อม']) {
 		assert.match(handleExport, new RegExp(escapeRegExp(sheetName)));
 	}
-	for (const sheetName of ['รายงาน', 'ม.ต้น', 'ม.ปลาย']) {
+	for (const sheetName of [
+		'ตารางสอบรวม',
+		'ตารางสอบ ม.ต้น',
+		'ตารางสอบ ม.ปลาย',
+		'ตารางสอบแยกห้อง ม.ต้น',
+		'ตารางสอบแยกห้อง ม.ปลาย'
+	]) {
 		assert.match(exportUtil, new RegExp(escapeRegExp(sheetName)));
 	}
 	assert.match(ensureInvigilatorWorkspace, /getExamInvigilatorWorkspace\(roundId\)/);
@@ -646,14 +653,23 @@ test('exam schedule detail exports one editable report workbook', () => {
 	assert.match(exportUtil, /reportSheets/);
 	assert.match(exportUtil, /lowerSecondaryReport/);
 	assert.match(exportUtil, /upperSecondaryReport/);
+	assert.match(exportUtil, /lowerSecondaryClassroomReport/);
+	assert.match(exportUtil, /upperSecondaryClassroomReport/);
 	assert.match(exportUtil, /function reportClassroomLabel/);
 	assert.match(exportUtil, /function compactClassroomLabels/);
 	assert.match(exportUtil, /function printableReportSheet/);
+	assert.match(exportUtil, /function printableClassroomReportSheet/);
+	assert.match(exportUtil, /function classroomReportRows/);
 	assert.match(exportUtil, /function reportSheetMerges/);
 	assert.match(exportUtil, /วันเดือนปี/);
 	assert.match(exportUtil, /เวลาสอบ/);
 	assert.match(exportUtil, /รหัสวิชา/);
 	assert.match(exportUtil, /ชั้น/);
+	assert.match(exportUtil, /ห้องเรียน/);
+	assert.match(exportUtil, /ห้องสอบ/);
+	assert.match(exportUtil, /weekday: 'long'/);
+	assert.match(exportUtil, /month: 'long'/);
+	assert.match(exportUtil, /!printTitlesRow/);
 	assert.match(exportUtil, /!merges/);
 	assert.match(exportUtil, /!cols/);
 	for (const builderName of [

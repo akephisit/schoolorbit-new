@@ -193,7 +193,13 @@ describe('exam schedule export helpers', () => {
 
 		assert.deepEqual(
 			workbook.reportSheets.map((sheet) => sheet.name),
-			['รายงาน', 'ม.ต้น', 'ม.ปลาย']
+			[
+				'ตารางสอบรวม',
+				'ตารางสอบ ม.ต้น',
+				'ตารางสอบ ม.ปลาย',
+				'ตารางสอบแยกห้อง ม.ต้น',
+				'ตารางสอบแยกห้อง ม.ปลาย'
+			]
 		);
 		assert.equal(workbook.report.rows[0][0], 'ตารางสอบวัดผลกลางภาคเรียนที่ 2 ปีการศึกษา 2568');
 		assert.equal(workbook.report.rows[1][0], 'ระดับชั้นมัธยมศึกษา (ม.1 - ม.4)');
@@ -205,6 +211,7 @@ describe('exam schedule export helpers', () => {
 			'รหัสวิชา',
 			'ชั้น'
 		]);
+		assert.equal(workbook.report.rows[4][0], 'วันพุธที่ 4 มีนาคม 2569');
 		assert.equal(workbook.report.rows[4][1], '09.00-10.00 น.');
 		assert.equal(workbook.report.rows[4][2], '1 ชม.');
 		assert.equal(workbook.report.rows[4][5], 'ม.1');
@@ -220,6 +227,26 @@ describe('exam schedule export helpers', () => {
 			workbook.upperSecondaryReport?.rows.some((row) => row.includes('ฟิสิกส์')),
 			true
 		);
+		assert.deepEqual(workbook.lowerSecondaryClassroomReport?.rows[3], [
+			'ห้องเรียน',
+			'วันเดือนปี',
+			'เวลา',
+			'เวลาสอบ',
+			'วิชา',
+			'รหัสวิชา',
+			'ห้องสอบ'
+		]);
+		assert.equal(workbook.lowerSecondaryClassroomReport?.rows[4][0], 'ม.1/1');
+		assert.equal(workbook.lowerSecondaryClassroomReport?.rows[4][1], 'วันพุธที่ 4 มีนาคม 2569');
+		assert.equal(workbook.lowerSecondaryClassroomReport?.rows[4][4], 'คณิตศาสตร์พื้นฐาน');
+		assert.equal(workbook.lowerSecondaryClassroomReport?.rows[5][0], 'ม.1/2');
+		assert.equal(workbook.upperSecondaryClassroomReport?.rows[4][0], 'ม.4/1');
+		assert.equal(workbook.upperSecondaryClassroomReport?.rows[4][4], 'ฟิสิกส์');
+		assert.equal(workbook.upperSecondaryClassroomReport?.rows[5][0], 'ม.4/2');
+		assert.equal(workbook.upperSecondaryClassroomReport?.rows[5][4], 'เคมี');
+		assert.equal(workbook.upperSecondaryClassroomReport?.rows[6][0], 'ม.4/3');
+		assert.equal(workbook.report['!printTitlesRow'], '1:4');
+		assert.equal(workbook.lowerSecondaryClassroomReport?.['!printTitlesRow'], '1:4');
 		assert.equal(workbook.report['!cols']?.length, 6);
 		assert.deepEqual(workbook.report['!merges'], [
 			{ s: { r: 0, c: 0 }, e: { r: 0, c: 5 } },

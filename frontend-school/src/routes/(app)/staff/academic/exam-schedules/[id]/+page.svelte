@@ -582,7 +582,8 @@
 				bottom: 0.45,
 				header: 0.2,
 				footer: 0.2
-			}
+			},
+			printTitlesRow: reportSheet['!printTitlesRow'] ?? '1:4'
 		};
 		worksheet.views = [{ state: 'frozen', ySplit: 4 }];
 		worksheet.getRow(1).height = 24;
@@ -610,9 +611,10 @@
 
 			for (let columnNumber = 1; columnNumber <= columnCount; columnNumber += 1) {
 				const cell = row.getCell(columnNumber);
+				const headerText = String(reportSheet.rows[3]?.[columnNumber - 1] ?? '');
 				cell.font = { name: reportFontName, size: 16, bold: rowNumber === 4 };
 				cell.border = thinTableBorder;
-				cell.alignment = columnNumber === 4 && rowNumber > 4 ? leftAlignment : centeredAlignment;
+				cell.alignment = headerText === 'วิชา' && rowNumber > 4 ? leftAlignment : centeredAlignment;
 				if (rowNumber === 4) {
 					cell.fill = tableHeaderFill;
 				}
