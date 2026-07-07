@@ -25,7 +25,9 @@
 	import ExamItemTray from './ExamItemTray.svelte';
 	import ExamSessionBlock from './ExamSessionBlock.svelte';
 
-	const MIN_SLOT_WIDTH = 18;
+	const MIN_SLOT_WIDTH = 8;
+	const ROOM_LABEL_COLUMN_WIDTH = 'minmax(7.5rem, 8.5rem)';
+	const SCHEDULE_ROW_GRID_TEMPLATE = `${ROOM_LABEL_COLUMN_WIDTH} minmax(0, 1fr)`;
 	const TIME_LABEL_INTERVAL_MINUTES = 60;
 
 	type DragPayload = {
@@ -546,8 +548,11 @@
 							</div>
 
 							<div class="overflow-x-auto rounded-md border">
-								<div class="grid grid-cols-[12rem_minmax(0,1fr)] border-b bg-muted/40">
-									<div class="border-r px-3 py-2 text-xs font-medium text-muted-foreground">
+								<div
+									class="grid border-b bg-muted/40"
+									style:grid-template-columns={SCHEDULE_ROW_GRID_TEMPLATE}
+								>
+									<div class="border-r px-2 py-2 text-xs font-medium text-muted-foreground">
 										ห้องเรียน / ห้องสอบ
 									</div>
 									<div class="overflow-hidden">
@@ -567,8 +572,11 @@
 								</div>
 
 								{#each day.roomAssignments as assignment (assignment.id)}
-									<div class="grid grid-cols-[12rem_minmax(0,1fr)] border-b last:border-b-0">
-										<div class="border-r px-3 py-3">
+									<div
+										class="grid border-b last:border-b-0"
+										style:grid-template-columns={SCHEDULE_ROW_GRID_TEMPLATE}
+									>
+										<div class="border-r px-2 py-3">
 											<div class="truncate text-sm font-medium">
 												{assignment.classroomName ?? assignment.classroomId}
 											</div>

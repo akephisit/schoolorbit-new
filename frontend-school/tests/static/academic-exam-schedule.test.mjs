@@ -702,13 +702,18 @@ test('staff timeline can switch between all exam days and one selected day', () 
 	assert.match(timeline, /\{#each visibleDays as day \(day\.id\)\}/);
 });
 
-test('staff timeline expands each day track to available width with per-day 5-minute slot sizing', () => {
+test('staff timeline keeps 5-minute grid compact and room labels narrow', () => {
 	const timeline = readFileSync(
 		projectPath('src/lib/components/academic/exam-schedule/ExamScheduleTimeline.svelte'),
 		'utf8'
 	);
 
-	assert.match(timeline, /const MIN_SLOT_WIDTH = 18/);
+	assert.match(timeline, /const MIN_SLOT_WIDTH = 8/);
+	assert.match(timeline, /const ROOM_LABEL_COLUMN_WIDTH = 'minmax\(7\.5rem, 8\.5rem\)'/);
+	assert.match(
+		timeline,
+		/const SCHEDULE_ROW_GRID_TEMPLATE = `\$\{ROOM_LABEL_COLUMN_WIDTH\} minmax\(0, 1fr\)`/
+	);
 	assert.match(timeline, /const TIME_LABEL_INTERVAL_MINUTES = 60/);
 	assert.match(timeline, /function shouldRenderTimeLabel\(/);
 	assert.match(timeline, /let dayTrackWidths = \$state<Record<string, number>>\(\{\}\)/);
@@ -720,8 +725,10 @@ test('staff timeline expands each day track to available width with per-day 5-mi
 	assert.match(timeline, /leftPx\(day, session\.startsAt\)/);
 	assert.match(timeline, /widthPx\(day, session\.durationMinutes\)/);
 	assert.match(timeline, /style:min-width=\{`\$\{minimumTrackWidth\(day\)\}px`\}/);
+	assert.match(timeline, /style:grid-template-columns=\{SCHEDULE_ROW_GRID_TEMPLATE\}/);
 	assert.doesNotMatch(timeline, /const SLOT_WIDTH = 40/);
 	assert.doesNotMatch(timeline, /--slot-width: 40px/);
+	assert.doesNotMatch(timeline, /grid-cols-\[12rem_minmax\(0,1fr\)\]/);
 });
 
 test('exam item tray filters and sorts unscheduled subjects by group grade and type', () => {
