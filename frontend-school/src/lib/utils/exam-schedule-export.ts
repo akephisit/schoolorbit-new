@@ -11,13 +11,35 @@ type WorksheetCell = string | number;
 type WorksheetRow = WorksheetCell[];
 type WorksheetObjectRow = Record<string, WorksheetCell>;
 
+export type ExamScheduleExportCellAddress = {
+	r: number;
+	c: number;
+};
+
+export type ExamScheduleExportMerge = {
+	s: ExamScheduleExportCellAddress;
+	e: ExamScheduleExportCellAddress;
+};
+
+export type ExamScheduleExportColumn = {
+	wch: number;
+};
+
+export type ExamScheduleExportSheet<
+	Row extends WorksheetRow | WorksheetObjectRow = WorksheetRow | WorksheetObjectRow
+> = {
+	rows: Row[];
+	'!cols'?: ExamScheduleExportColumn[];
+	'!merges'?: ExamScheduleExportMerge[];
+};
+
 export type ExamScheduleExportWorkbook = {
-	report: WorksheetRow[];
-	schedule: WorksheetObjectRow[];
-	rooms: WorksheetObjectRow[];
-	invigilators: WorksheetObjectRow[];
-	workloads: WorksheetObjectRow[];
-	readiness: WorksheetObjectRow[];
+	report: ExamScheduleExportSheet<WorksheetRow>;
+	schedule: ExamScheduleExportSheet<WorksheetObjectRow>;
+	rooms: ExamScheduleExportSheet<WorksheetObjectRow>;
+	invigilators: ExamScheduleExportSheet<WorksheetObjectRow>;
+	workloads: ExamScheduleExportSheet<WorksheetObjectRow>;
+	readiness: ExamScheduleExportSheet<WorksheetObjectRow>;
 };
 
 const thaiNaturalCollator = new Intl.Collator('th', {
@@ -64,11 +86,21 @@ function minutesLabel(minutes: number): string {
 	return `${hours} ชม. ${remainder} นาที`;
 }
 
+function subjectTypeLabel(type: string | null | undefined): string {
+	const normalized = safeText(type).toUpperCase();
+	if (normalized === 'BASIC') return 'พื้นฐาน';
+	if (normalized === 'ADDITIONAL') return 'เพิ่มเติม';
+	return safeText(type);
+}
+
 function dayTitle(day: ExamDayDetail): string {
 	return safeText(day.label) || dateLabel(day.examDate);
 }
 
-function buildingRoomLabel(buildingName: string | null | undefined, roomName: string | null | undefined) {
+function buildingRoomLabel(
+	buildingName: string | null | undefined,
+	roomName: string | null | undefined
+) {
 	const room = safeText(roomName, '-');
 	const building = safeText(buildingName);
 	return building ? `${building} / ${room}` : room;
@@ -111,6 +143,63 @@ function sortedSessions(workspace: ExamScheduleWorkspace): ExamSession[] {
 	});
 }
 
+function groupByText<T>(items: T[], keyForItem: (item: T) => string): [string, T[]][] {
+	const groups = new Map<string, T[]>();
+	for (const item of items) {
+		const key = keyForItem(item);
+		const group = groups.get(key);
+		if (group) {
+			group.push(item);
+		} else {
+			groups.set(key, [item]);
+		}
+	}
+	return Array.from(groups.entries());
+}
+
+function sessionGradeLabel(session: ExamSession): string {
+	return (
+		safeText(session.gradeLevelName) || safeText(session.classroomName).split('/')[0]?.trim() || '-'
+	);
+}
+
+function printableReportTitle(workspace: ExamScheduleWorkspace): string {
+	const roundName = safeText(workspace.round.name, 'ตารางสอบ');
+	return roundName.includes('ตารางสอบ') ? roundName : `ตารางสอบ${roundName}`;
+}
+
+function printableReportSubtitle(workspace: ExamScheduleWorkspace): string {
+	const sessions = sortedSessions(workspace);
+	const gradeLabels = Array.from(
+		new Set(sessions.map(sessionGradeLabel).filter((label) => label !== '-'))
+	).sort(compareThaiNatural);
+
+	if (gradeLabels.length === 0) return 'ระดับชั้นที่จัดสอบ';
+	if (gradeLabels.length === 1) return `ระดับชั้น${gradeLabels[0]}`;
+
+	const firstLabel = gradeLabels[0];
+	const lastLabel = gradeLabels.at(-1) ?? firstLabel;
+	const prefix = firstLabel.match(/^[^\d๐-๙]+/)?.[0]?.trim();
+	const samePrefix = prefix ? gradeLabels.every((label) => label.startsWith(prefix)) : false;
+	const secondaryYears = sessions
+		.map((session) => session.gradeLevelYear)
+		.filter((year): year is number => typeof year === 'number');
+	const minSecondaryYear = secondaryYears.length ? Math.min(...secondaryYears) : null;
+	const maxSecondaryYear = secondaryYears.length ? Math.max(...secondaryYears) : null;
+	const levelGroup =
+		samePrefix && prefix?.includes('ม.') && maxSecondaryYear !== null && maxSecondaryYear <= 3
+			? 'ระดับชั้นมัธยมศึกษาตอนต้น'
+			: samePrefix && prefix?.includes('ม.') && minSecondaryYear !== null && minSecondaryYear >= 4
+				? 'ระดับชั้นมัธยมศึกษาตอนปลาย'
+				: samePrefix && prefix?.includes('ม.')
+					? 'ระดับชั้นมัธยมศึกษา'
+					: samePrefix && prefix?.includes('ป.')
+						? 'ระดับชั้นประถมศึกษา'
+						: 'ระดับชั้น';
+
+	return `${levelGroup} (${firstLabel} - ${lastLabel})`;
+}
+
 function assignmentKey(examDayId: string, classroomId: string): string {
 	return `${examDayId}:${classroomId}`;
 }
@@ -128,78 +217,125 @@ function readinessStatus(readiness: ExamScheduleReadiness): string {
 	return readiness.canPublish ? 'พร้อมเผยแพร่' : 'ยังไม่พร้อมเผยแพร่';
 }
 
-function dateRange(workspace: ExamScheduleWorkspace): string {
-	const days = sortedDays(workspace);
-	const firstDay = days[0];
-	const lastDay = days.at(-1);
-	if (!firstDay || !lastDay) return '';
-	if (firstDay.examDate === lastDay.examDate) return dateLabel(firstDay.examDate);
-	return `${dateLabel(firstDay.examDate)} - ${dateLabel(lastDay.examDate)}`;
+function printableTimeLabel(value: string | null | undefined): string {
+	return timeLabel(value).replace(':', '.');
 }
 
-function reportRows(
-	workspace: ExamScheduleWorkspace,
-	invigilatorWorkspace: ExamInvigilatorWorkspace | null
-): WorksheetRow[] {
-	const days = sortedDays(workspace);
-	const sessions = sortedSessions(workspace);
-	const roomCount = days.reduce((count, day) => count + day.roomAssignments.length, 0);
-	const invigilatorCount = invigilatorWorkspace?.staffWorkloads.length ?? 0;
-	const rows: WorksheetRow[] = [
-		['รายงานตารางสอบ'],
-		['รอบสอบ', workspace.round.name],
-		['สถานะ', workspace.round.status === 'published' ? 'เผยแพร่แล้ว' : 'ฉบับร่าง'],
-		['ช่วงวันที่สอบ', dateRange(workspace)],
-		[],
-		['สรุปภาพรวม'],
-		['วันสอบ', days.length],
-		['รายการสอบที่จัดแล้ว', sessions.length],
-		['รายการสอบที่ยังไม่จัด', workspace.unscheduledItems.length],
-		['ห้องสอบ', roomCount],
-		['กรรมการที่ถูกมอบหมาย', invigilatorCount],
-		['ความพร้อม', readinessStatus(workspace.readiness)],
-		[],
-		['ตารางสอบรวม'],
-		['วันสอบ', 'เวลา', 'ชั้นเรียน', 'วิชา', 'ห้องสอบ', 'กรรมการ']
+function printableTimeRangeLabel(session: ExamSession): string {
+	return `${printableTimeLabel(session.startsAt)}-${printableTimeLabel(session.endsAt)} น.`;
+}
+
+function sameSlotKey(session: ExamSession): string {
+	return [
+		safeText(session.examDate),
+		timeLabel(session.startsAt),
+		timeLabel(session.endsAt),
+		session.durationMinutes
+	].join(':');
+}
+
+function reportSheetColumns(): ExamScheduleExportColumn[] {
+	return [{ wch: 15 }, { wch: 18 }, { wch: 11 }, { wch: 34 }, { wch: 14 }, { wch: 12 }];
+}
+
+function reportSheetMerges(
+	dayRanges: { start: number; end: number }[],
+	slotRanges: { start: number; end: number }[]
+): ExamScheduleExportMerge[] {
+	const merges: ExamScheduleExportMerge[] = [
+		{ s: { r: 0, c: 0 }, e: { r: 0, c: 5 } },
+		{ s: { r: 1, c: 0 }, e: { r: 1, c: 5 } }
 	];
 
-	for (const session of sessions) {
-		rows.push([
-			dateLabel(session.examDate),
-			`${timeLabel(session.startsAt)}-${timeLabel(session.endsAt)}`,
-			safeText(session.classroomName, '-'),
-			subjectLabel(session),
-			buildingRoomLabel(session.buildingName, session.roomName),
-			sessionInvigilatorNames(session) || '-'
-		]);
+	for (const range of dayRanges) {
+		if (range.end > range.start) {
+			merges.push({ s: { r: range.start, c: 0 }, e: { r: range.end, c: 0 } });
+		}
 	}
+
+	for (const range of slotRanges) {
+		if (range.end > range.start) {
+			merges.push({ s: { r: range.start, c: 1 }, e: { r: range.end, c: 1 } });
+			merges.push({ s: { r: range.start, c: 2 }, e: { r: range.end, c: 2 } });
+		}
+	}
+
+	return merges;
+}
+
+function printableReportRows(workspace: ExamScheduleWorkspace): {
+	rows: WorksheetRow[];
+	dayRanges: { start: number; end: number }[];
+	slotRanges: { start: number; end: number }[];
+} {
+	const sessions = sortedSessions(workspace);
+	const rows: WorksheetRow[] = [
+		[printableReportTitle(workspace)],
+		[printableReportSubtitle(workspace)],
+		[],
+		['วันเดือนปี', 'เวลา', 'เวลาสอบ', 'วิชา', 'รหัสวิชา', 'ชั้น']
+	];
+	const dayRanges: { start: number; end: number }[] = [];
+	const slotRanges: { start: number; end: number }[] = [];
 
 	if (sessions.length === 0) {
 		rows.push(['-', '-', '-', 'ยังไม่มีรายการสอบที่จัดเวลาแล้ว', '-', '-']);
+		return { rows, dayRanges, slotRanges };
 	}
 
-	rows.push([], ['ภาระงานกรรมการ'], ['กรรมการ', 'เวลารวม', 'จำนวนวัน', 'จำนวนห้อง']);
-	for (const workload of invigilatorWorkspace?.staffWorkloads ?? []) {
-		rows.push([
-			workload.staffName,
-			minutesLabel(workload.totalMinutes),
-			workload.assignedDayCount,
-			workload.assignmentCount
-		]);
-	}
-	if ((invigilatorWorkspace?.staffWorkloads.length ?? 0) === 0) {
-		rows.push(['ยังไม่มีกรรมการที่ถูกมอบหมาย', '-', '-', '-']);
+	const sessionsByDate = groupByText(sessions, (session) => safeText(session.examDate));
+	for (const [, dateSessions] of sessionsByDate) {
+		const dayStart = rows.length;
+		const slotGroups = groupByText(dateSessions, sameSlotKey);
+
+		for (const [, slotSessions] of slotGroups) {
+			const slotStart = rows.length;
+			const orderedSlotSessions = [...slotSessions].sort(
+				(a, b) =>
+					compareThaiNatural(subjectLabel(a), subjectLabel(b)) ||
+					compareThaiNatural(sessionGradeLabel(a), sessionGradeLabel(b)) ||
+					compareThaiNatural(safeText(a.classroomName), safeText(b.classroomName))
+			);
+
+			for (const session of orderedSlotSessions) {
+				rows.push([
+					dateLabel(session.examDate),
+					printableTimeRangeLabel(session),
+					minutesLabel(session.durationMinutes),
+					subjectLabel(session),
+					safeText(session.subjectCode, '-'),
+					sessionGradeLabel(session)
+				]);
+			}
+
+			slotRanges.push({ start: slotStart, end: rows.length - 1 });
+		}
+
+		dayRanges.push({ start: dayStart, end: rows.length - 1 });
 	}
 
-	rows.push([], ['รายการความพร้อม'], ['สถานะ', readinessStatus(workspace.readiness)]);
-	for (const blocker of workspace.readiness.blockers) {
-		rows.push(['ต้องแก้ไข', blocker]);
-	}
-	if (workspace.readiness.blockers.length === 0) {
-		rows.push(['พร้อม', 'ไม่พบรายการที่ต้องแก้ไข']);
-	}
+	return { rows, dayRanges, slotRanges };
+}
 
-	return rows;
+function printableReportSheet(
+	workspace: ExamScheduleWorkspace
+): ExamScheduleExportSheet<WorksheetRow> {
+	const report = printableReportRows(workspace);
+	return {
+		rows: report.rows,
+		'!cols': reportSheetColumns(),
+		'!merges': reportSheetMerges(report.dayRanges, report.slotRanges)
+	};
+}
+
+function objectSheet<Row extends WorksheetObjectRow>(
+	rows: Row[],
+	columns: ExamScheduleExportColumn[]
+): ExamScheduleExportSheet<Row> {
+	return {
+		rows,
+		'!cols': columns
+	};
 }
 
 function scheduleRows(
@@ -210,7 +346,9 @@ function scheduleRows(
 	return sortedSessions(workspace).map((session) => {
 		const assignment = assignments.get(assignmentKey(session.examDayId, session.classroomId));
 		return {
-			วันสอบ: dayTitle(workspace.days.find((day) => day.id === session.examDayId) ?? ({} as ExamDayDetail)),
+			วันสอบ: dayTitle(
+				workspace.days.find((day) => day.id === session.examDayId) ?? ({} as ExamDayDetail)
+			),
 			วันที่: dateLabel(session.examDate),
 			เวลาเริ่ม: timeLabel(session.startsAt),
 			เวลาจบ: timeLabel(session.endsAt),
@@ -220,7 +358,7 @@ function scheduleRows(
 			วิชา: subjectLabel(session),
 			รหัสวิชา: safeText(session.subjectCode),
 			กลุ่มสาระ: safeText(session.subjectGroupName),
-			ประเภทวิชา: safeText(session.subjectType),
+			ประเภทวิชา: subjectTypeLabel(session.subjectType),
 			ห้องสอบ: safeText(session.roomName, '-'),
 			'อาคาร/ห้อง': buildingRoomLabel(session.buildingName, session.roomName),
 			กรรมการ: assignmentInvigilatorNames(assignment) || sessionInvigilatorNames(session)
@@ -237,9 +375,7 @@ function roomRows(
 		[...day.roomAssignments]
 			.sort((a, b) => compareThaiNatural(safeText(a.classroomName), safeText(b.classroomName)))
 			.map((roomAssignment) => {
-				const assignment = assignments.get(
-					assignmentKey(day.id, roomAssignment.classroomId)
-				);
+				const assignment = assignments.get(assignmentKey(day.id, roomAssignment.classroomId));
 				const effectiveCapacity =
 					roomAssignment.capacityOverride ?? roomAssignment.roomCapacity ?? '';
 				return {
@@ -358,12 +494,53 @@ export function buildExamScheduleExportWorkbook(
 	invigilatorWorkspace: ExamInvigilatorWorkspace | null
 ): ExamScheduleExportWorkbook {
 	return {
-		report: reportRows(workspace, invigilatorWorkspace),
-		schedule: scheduleRows(workspace, invigilatorWorkspace),
-		rooms: roomRows(workspace, invigilatorWorkspace),
-		invigilators: invigilatorRows(workspace, invigilatorWorkspace),
-		workloads: workloadRows(workspace, invigilatorWorkspace),
-		readiness: readinessRows(workspace)
+		report: printableReportSheet(workspace),
+		schedule: objectSheet(scheduleRows(workspace, invigilatorWorkspace), [
+			{ wch: 18 },
+			{ wch: 14 },
+			{ wch: 10 },
+			{ wch: 10 },
+			{ wch: 12 },
+			{ wch: 14 },
+			{ wch: 14 },
+			{ wch: 34 },
+			{ wch: 14 },
+			{ wch: 22 },
+			{ wch: 12 },
+			{ wch: 14 },
+			{ wch: 24 },
+			{ wch: 34 }
+		]),
+		rooms: objectSheet(roomRows(workspace, invigilatorWorkspace), [
+			{ wch: 18 },
+			{ wch: 14 },
+			{ wch: 14 },
+			{ wch: 14 },
+			{ wch: 16 },
+			{ wch: 12 },
+			{ wch: 12 },
+			{ wch: 14 },
+			{ wch: 16 },
+			{ wch: 12 }
+		]),
+		invigilators: objectSheet(invigilatorRows(workspace, invigilatorWorkspace), [
+			{ wch: 18 },
+			{ wch: 14 },
+			{ wch: 14 },
+			{ wch: 14 },
+			{ wch: 28 },
+			{ wch: 12 },
+			{ wch: 18 }
+		]),
+		workloads: objectSheet(workloadRows(workspace, invigilatorWorkspace), [
+			{ wch: 28 },
+			{ wch: 14 },
+			{ wch: 10 },
+			{ wch: 10 },
+			{ wch: 10 },
+			{ wch: 48 }
+		]),
+		readiness: objectSheet(readinessRows(workspace), [{ wch: 14 }, { wch: 40 }, { wch: 28 }])
 	};
 }
 

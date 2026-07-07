@@ -291,10 +291,7 @@ test('exam schedule API exposes staff-level invigilator drag actions', () => {
 
 	assert.match(api, /export async function assignExamAssignmentInvigilator/);
 	assert.match(api, /export async function removeExamAssignmentInvigilator/);
-	assert.match(
-		api,
-		/room-assignments\/\$\{assignmentId\}\/invigilators\/\$\{staffId\}/
-	);
+	assert.match(api, /room-assignments\/\$\{assignmentId\}\/invigilators\/\$\{staffId\}/);
 	assert.match(api, /apiClient\.put<ExamInvigilatorWorkspace>/);
 	assert.match(api, /apiClient\.delete<ExamInvigilatorWorkspace>/);
 });
@@ -469,12 +466,9 @@ test('exam invigilator drag workflow uses teacher cards and room drop targets', 
 		projectPath('src/lib/components/academic/exam-schedule/ExamInvigilatorPanel.svelte'),
 		'utf8'
 	);
-	const staffListPath =
-		'src/lib/components/academic/exam-schedule/InvigilatorStaffList.svelte';
-	const roomBoardPath =
-		'src/lib/components/academic/exam-schedule/InvigilatorRoomBoard.svelte';
-	const roomCardPath =
-		'src/lib/components/academic/exam-schedule/InvigilatorRoomCard.svelte';
+	const staffListPath = 'src/lib/components/academic/exam-schedule/InvigilatorStaffList.svelte';
+	const roomBoardPath = 'src/lib/components/academic/exam-schedule/InvigilatorRoomBoard.svelte';
+	const roomCardPath = 'src/lib/components/academic/exam-schedule/InvigilatorRoomCard.svelte';
 	const dragHelperPath = 'src/lib/components/academic/exam-schedule/invigilatorDrag.ts';
 
 	for (const file of [staffListPath, roomBoardPath, roomCardPath, dragHelperPath]) {
@@ -628,6 +622,10 @@ test('exam schedule detail exports one editable report workbook', () => {
 	assert.match(page, /ส่งออก/);
 	assert.match(handleExport, /buildExamScheduleExportWorkbook\(workspace,\s*invigilatorData\)/);
 	assert.match(handleExport, /XLSX\.utils\.book_new\(\)/);
+	assert.match(handleExport, /applyExportSheetLayout\(reportSheet,\s*exportWorkbook\.report\)/);
+	assert.match(page, /function applyExportSheetLayout/);
+	assert.match(page, /sheet\['!merges'\]/);
+	assert.match(page, /sheet\['!cols'\]/);
 	for (const sheetName of [
 		'รายงาน',
 		'ตารางสอบ',
@@ -641,8 +639,17 @@ test('exam schedule detail exports one editable report workbook', () => {
 	assert.match(ensureInvigilatorWorkspace, /getExamInvigilatorWorkspace\(roundId\)/);
 	assert.match(exportUtil, /export function buildExamScheduleExportWorkbook/);
 	assert.match(exportUtil, /export function examScheduleExportFileName/);
+	assert.match(exportUtil, /export type ExamScheduleExportSheet/);
+	assert.match(exportUtil, /function printableReportSheet/);
+	assert.match(exportUtil, /function reportSheetMerges/);
+	assert.match(exportUtil, /วันเดือนปี/);
+	assert.match(exportUtil, /เวลาสอบ/);
+	assert.match(exportUtil, /รหัสวิชา/);
+	assert.match(exportUtil, /ชั้น/);
+	assert.match(exportUtil, /!merges/);
+	assert.match(exportUtil, /!cols/);
 	for (const builderName of [
-		'reportRows',
+		'printableReportRows',
 		'scheduleRows',
 		'roomRows',
 		'invigilatorRows',
@@ -838,7 +845,10 @@ test('staff schedule placement and unschedule patch local workspace state', () =
 
 	assert.match(page, /function applyPlacedExamSession\(session: ExamSession\)/);
 	assert.match(page, /function applyRemovedExamSession\(session: ExamSession\)/);
-	assert.match(page, /function examScheduleItemFromSession\(session: ExamSession\): ExamScheduleItem/);
+	assert.match(
+		page,
+		/function examScheduleItemFromSession\(session: ExamSession\): ExamScheduleItem/
+	);
 	assert.match(handlePlaceExamSession, /const session = await placeExamSession/);
 	assert.match(handlePlaceExamSession, /applyPlacedExamSession\(session\)/);
 	assert.doesNotMatch(handlePlaceExamSession, /refreshWorkspace\(true\)/);
@@ -1083,7 +1093,10 @@ test('scheduled exam sessions can be removed through dialog and tray drop', () =
 
 	assert.match(resetWorkspaceForRound, /unschedulingSessionIds = \[\]/);
 	assert.match(handleUnscheduleExamSession, /addUnschedulingSessionId\(sessionId\)/);
-	assert.match(handleUnscheduleExamSession, /finally \{[\s\S]*removeUnschedulingSessionId\(sessionId\)/);
+	assert.match(
+		handleUnscheduleExamSession,
+		/finally \{[\s\S]*removeUnschedulingSessionId\(sessionId\)/
+	);
 	assert.doesNotMatch(handleUnscheduleExamSession, /placingItemId\s*=/);
 	assert.doesNotMatch(handleUnscheduleExamSession, /refreshWorkspace\(true\)/);
 	assert.match(handleUnscheduleExamSession, /applyRemovedExamSession\(session\)/);

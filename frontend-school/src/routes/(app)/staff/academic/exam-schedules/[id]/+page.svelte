@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { toast } from 'svelte-sonner';
+	import type { WorkSheet } from 'xlsx';
 	import type { PageProps } from './$types';
 	import {
 		getAcademicStructure,
@@ -52,7 +53,8 @@
 	import { can } from '$lib/stores/permissions';
 	import {
 		buildExamScheduleExportWorkbook,
-		examScheduleExportFileName
+		examScheduleExportFileName,
+		type ExamScheduleExportSheet
 	} from '$lib/utils/exam-schedule-export';
 	import { addMinutes } from '$lib/utils/examScheduleTime';
 	import { Download, RefreshCw, Send } from 'lucide-svelte';
@@ -529,6 +531,19 @@
 		return invigilatorData;
 	}
 
+	function applyExportSheetLayout(
+		sheet: WorkSheet,
+		exportSheet: ExamScheduleExportSheet
+	): WorkSheet {
+		if (exportSheet['!cols']?.length) {
+			sheet['!cols'] = exportSheet['!cols'];
+		}
+		if (exportSheet['!merges']?.length) {
+			sheet['!merges'] = exportSheet['!merges'];
+		}
+		return sheet;
+	}
+
 	async function handleExportExamSchedule() {
 		if (!workspace || exportingExamSchedule) return;
 
@@ -539,36 +554,29 @@
 			const exportWorkbook = buildExamScheduleExportWorkbook(workspace, invigilatorData);
 			const workbook = XLSX.utils.book_new();
 
-			XLSX.utils.book_append_sheet(
-				workbook,
-				XLSX.utils.aoa_to_sheet(exportWorkbook.report),
-				'รายงาน'
-			);
-			XLSX.utils.book_append_sheet(
-				workbook,
-				XLSX.utils.json_to_sheet(exportWorkbook.schedule),
-				'ตารางสอบ'
-			);
-			XLSX.utils.book_append_sheet(
-				workbook,
-				XLSX.utils.json_to_sheet(exportWorkbook.rooms),
-				'ห้องสอบ'
-			);
-			XLSX.utils.book_append_sheet(
-				workbook,
-				XLSX.utils.json_to_sheet(exportWorkbook.invigilators),
-				'กรรมการ'
-			);
-			XLSX.utils.book_append_sheet(
-				workbook,
-				XLSX.utils.json_to_sheet(exportWorkbook.workloads),
-				'ภาระงานกรรมการ'
-			);
-			XLSX.utils.book_append_sheet(
-				workbook,
-				XLSX.utils.json_to_sheet(exportWorkbook.readiness),
-				'ความพร้อม'
-			);
+			const reportSheet = XLSX.utils.aoa_to_sheet(exportWorkbook.report.rows);
+			applyExportSheetLayout(reportSheet, exportWorkbook.report);
+			XLSX.utils.book_append_sheet(workbook, reportSheet, 'รายงาน');
+
+			const scheduleSheet = XLSX.utils.json_to_sheet(exportWorkbook.schedule.rows);
+			applyExportSheetLayout(scheduleSheet, exportWorkbook.schedule);
+			XLSX.utils.book_append_sheet(workbook, scheduleSheet, 'ตารางสอบ');
+
+			const roomSheet = XLSX.utils.json_to_sheet(exportWorkbook.rooms.rows);
+			applyExportSheetLayout(roomSheet, exportWorkbook.rooms);
+			XLSX.utils.book_append_sheet(workbook, roomSheet, 'ห้องสอบ');
+
+			const invigilatorSheet = XLSX.utils.json_to_sheet(exportWorkbook.invigilators.rows);
+			applyExportSheetLayout(invigilatorSheet, exportWorkbook.invigilators);
+			XLSX.utils.book_append_sheet(workbook, invigilatorSheet, 'กรรมการ');
+
+			const workloadSheet = XLSX.utils.json_to_sheet(exportWorkbook.workloads.rows);
+			applyExportSheetLayout(workloadSheet, exportWorkbook.workloads);
+			XLSX.utils.book_append_sheet(workbook, workloadSheet, 'ภาระงานกรรมการ');
+
+			const readinessSheet = XLSX.utils.json_to_sheet(exportWorkbook.readiness.rows);
+			applyExportSheetLayout(readinessSheet, exportWorkbook.readiness);
+			XLSX.utils.book_append_sheet(workbook, readinessSheet, 'ความพร้อม');
 
 			XLSX.writeFile(workbook, examScheduleExportFileName(workspace.round.name));
 			toast.success('ส่งออกตารางสอบแล้ว');
