@@ -53,8 +53,8 @@
 	let {
 		workspace,
 		readonly = false,
-		placingItemId = null,
-		unschedulingSessionId = null,
+		placingItemIds = [],
+		unschedulingSessionIds = [],
 		canManageActions = false,
 		importing = false,
 		clearingMismatchedItems = false,
@@ -66,8 +66,8 @@
 	}: {
 		workspace: ExamScheduleWorkspace;
 		readonly?: boolean;
-		placingItemId?: string | null;
-		unschedulingSessionId?: string | null;
+		placingItemIds?: string[];
+		unschedulingSessionIds?: string[];
 		canManageActions?: boolean;
 		importing?: boolean;
 		clearingMismatchedItems?: boolean;
@@ -100,16 +100,25 @@
 			? sortedDays.filter((day) => day.id === selectedTimelineDay?.id)
 			: sortedDays
 	);
-	const placementDisabled = $derived(readonly || !!placingItemId || !!unschedulingSessionId);
-	const actionPlacementDisabled = $derived(!!placingItemId || !!unschedulingSessionId);
-	const placingSessionId = $derived(
-		placingItemId
-			? (workspace.scheduledSessions.find((session) => session.examScheduleItemId === placingItemId)
-					?.id ?? null)
-			: null
+	const placementDisabled = $derived(readonly);
+	const actionPlacementDisabled = $derived(
+		placingItemIds.length > 0 || unschedulingSessionIds.length > 0
 	);
-	const selectedSessionPlacing = $derived(placingItemId === selectedSession?.examScheduleItemId);
-	const selectedSessionUnscheduling = $derived(unschedulingSessionId === selectedSession?.id);
+	const placingItemIdSet = $derived(new Set(placingItemIds));
+	const unschedulingSessionIdSet = $derived(new Set(unschedulingSessionIds));
+	const placingSessionIds = $derived(
+		new Set(
+			workspace.scheduledSessions
+				.filter((session) => placingItemIdSet.has(session.examScheduleItemId))
+				.map((session) => session.id)
+		)
+	);
+	const selectedSessionPlacing = $derived(
+		selectedSession ? placingItemIdSet.has(selectedSession.examScheduleItemId) : false
+	);
+	const selectedSessionUnscheduling = $derived(
+		selectedSession ? unschedulingSessionIdSet.has(selectedSession.id) : false
+	);
 	const selectedDay = $derived(
 		workspace.days.find((day) => day.id === selectedDayId) ?? sortedDays[0] ?? null
 	);
@@ -250,8 +259,19 @@
 		return dragPayload(event) ?? activeDragPayload;
 	}
 
+	function payloadIsPending(payload: DragPayload): boolean {
+		return (
+			placingItemIdSet.has(payload.examScheduleItemId) ||
+			(!!payload.sourceSessionId && unschedulingSessionIdSet.has(payload.sourceSessionId))
+		);
+	}
+
+	function sessionIsPending(session: ExamSession): boolean {
+		return placingItemIdSet.has(session.examScheduleItemId) || unschedulingSessionIdSet.has(session.id);
+	}
+
 	function handleSessionDragStart(event: DragEvent, session: ExamSession, dragOffsetPx: number) {
-		if (placementDisabled || !event.dataTransfer) return;
+		if (placementDisabled || sessionIsPending(session) || !event.dataTransfer) return;
 
 		const payload = {
 			examScheduleItemId: session.examScheduleItemId,
@@ -300,7 +320,7 @@
 	function handleDragOver(event: DragEvent, day: ExamDayDetail, assignmentClassroomId: string) {
 		if (placementDisabled) return;
 		const payload = currentDragPayload(event);
-		if (!payload) return;
+		if (!payload || payloadIsPending(payload)) return;
 
 		event.preventDefault();
 
@@ -343,7 +363,7 @@
 		localError = '';
 
 		const payload = currentDragPayload(event);
-		if (!payload) {
+		if (!payload || payloadIsPending(payload)) {
 			clearActiveDrag();
 			return;
 		}
@@ -396,7 +416,7 @@
 	}
 
 	function openSessionDialog(session: ExamSession) {
-		if (placementDisabled) return;
+		if (placementDisabled || sessionIsPending(session)) return;
 
 		selectedSession = session;
 		selectedDayId = session.examDayId;
@@ -517,8 +537,8 @@
 			days={sortedDays}
 			scheduledSessions={workspace.scheduledSessions}
 			readonly={placementDisabled}
-			{placingItemId}
-			{unschedulingSessionId}
+			{placingItemIds}
+			{unschedulingSessionIds}
 			{onPlaceSession}
 			{onUnscheduleSession}
 			onDragStart={setActiveDragPayload}
@@ -643,11 +663,9 @@
 														{session}
 														leftPx={leftPx(day, session.startsAt)}
 														widthPx={widthPx(day, session.durationMinutes)}
-														placing={placingSessionId === session.id}
-														removing={unschedulingSessionId === session.id}
-														readonly={placementDisabled &&
-															placingSessionId !== session.id &&
-															unschedulingSessionId !== session.id}
+														placing={placingSessionIds.has(session.id)}
+														removing={unschedulingSessionIdSet.has(session.id)}
+														readonly={placementDisabled}
 														onDragStart={handleSessionDragStart}
 														onOpen={openSessionDialog}
 													/>
@@ -716,7 +734,7 @@
 			<Button variant="outline" onclick={() => (dialogOpen = false)}>ยกเลิก</Button>
 			<LoadingButton
 				variant="destructive"
-				loading={unschedulingSessionId === selectedSession?.id}
+				loading={selectedSessionUnscheduling}
 				loadingLabel="กำลังเอาออก..."
 				onclick={removeSelectedSession}
 				disabled={!selectedSession ||
@@ -727,7 +745,7 @@
 				เอาออกจากตาราง
 			</LoadingButton>
 			<LoadingButton
-				loading={placingItemId === selectedSession?.examScheduleItemId}
+				loading={selectedSessionPlacing}
 				loadingLabel="กำลังบันทึก..."
 				onclick={submitSessionDialog}
 				disabled={!selectedSession ||

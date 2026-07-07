@@ -37,8 +37,8 @@
 		days = [],
 		scheduledSessions = [],
 		readonly = false,
-		placingItemId = null,
-		unschedulingSessionId = null,
+		placingItemIds = [],
+		unschedulingSessionIds = [],
 		onPlaceSession,
 		onUnscheduleSession,
 		onDragStart,
@@ -48,8 +48,8 @@
 		days: ExamDayDetail[];
 		scheduledSessions?: ExamSession[];
 		readonly?: boolean;
-		placingItemId?: string | null;
-		unschedulingSessionId?: string | null;
+		placingItemIds?: string[];
+		unschedulingSessionIds?: string[];
 		onPlaceSession?: (input: PlaceExamSessionInput) => Promise<boolean> | boolean;
 		onUnscheduleSession?: (sessionId: string) => Promise<boolean> | boolean;
 		onDragStart?: (payload: DragPayload) => void;
@@ -68,6 +68,9 @@
 	const selectedDay = $derived(
 		days.find((day) => day.id === selectedDayId) ?? sortedDays[0] ?? null
 	);
+	const placingItemIdSet = $derived(new Set(placingItemIds));
+	const unschedulingSessionIdSet = $derived(new Set(unschedulingSessionIds));
+	const selectedItemPlacing = $derived(selectedItem ? placingItemIdSet.has(selectedItem.id) : false);
 	const subjectGroupOptions = $derived.by(() => {
 		const options = new Map<string, FilterOption>();
 		for (const item of unscheduledItems) {
@@ -184,7 +187,7 @@
 	}
 
 	function openDialog(item: ExamScheduleItem) {
-		if (readonly || placingItemId || unschedulingSessionId) return;
+		if (readonly || placingItemIdSet.has(item.id)) return;
 
 		selectedItem = item;
 		selectedDayId = sortedDays[0]?.id ?? '';
@@ -194,7 +197,7 @@
 	}
 
 	function handleDragStart(event: DragEvent, item: ExamScheduleItem) {
-		if (readonly || placingItemId || unschedulingSessionId || !event.dataTransfer) return;
+		if (readonly || placingItemIdSet.has(item.id) || !event.dataTransfer) return;
 
 		const payload = {
 			examScheduleItemId: item.id,
@@ -220,18 +223,21 @@
 	}
 
 	function handleDragOver(event: DragEvent) {
-		if (readonly || placingItemId || unschedulingSessionId) return;
+		if (readonly) return;
+
+		const payload = dragPayload(event);
+		if (!payload?.sourceSessionId || unschedulingSessionIdSet.has(payload.sourceSessionId)) return;
 
 		event.preventDefault();
 		if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
 	}
 
 	async function handleDrop(event: DragEvent) {
-		if (readonly || placingItemId || unschedulingSessionId) return;
+		if (readonly) return;
 
 		event.preventDefault();
 		const payload = dragPayload(event);
-		if (!payload?.sourceSessionId) return;
+		if (!payload?.sourceSessionId || unschedulingSessionIdSet.has(payload.sourceSessionId)) return;
 
 		await onUnscheduleSession?.(payload.sourceSessionId);
 	}
@@ -342,9 +348,9 @@
 			{#each filteredSortedItems as item (item.id)}
 				<div
 					class="cursor-grab rounded-md border bg-card p-3 shadow-sm active:cursor-grabbing"
-					class:opacity-60={placingItemId === item.id || !!unschedulingSessionId}
+					class:opacity-60={placingItemIdSet.has(item.id)}
 					role="listitem"
-					draggable={!readonly && !placingItemId && !unschedulingSessionId}
+					draggable={!readonly && !placingItemIdSet.has(item.id)}
 					ondragstart={(event) => handleDragStart(event, item)}
 					ondragend={onDragEnd}
 				>
@@ -366,7 +372,7 @@
 										variant="outline"
 										size="sm"
 										onclick={() => openDialog(item)}
-										disabled={!!placingItemId || !!unschedulingSessionId}
+										disabled={placingItemIdSet.has(item.id)}
 									>
 										<CalendarPlus class="h-4 w-4" />
 										จัดเวลา
@@ -424,10 +430,10 @@
 		<Dialog.Footer>
 			<Button variant="outline" onclick={() => (dialogOpen = false)}>ยกเลิก</Button>
 			<LoadingButton
-				loading={placingItemId === selectedItem?.id}
+				loading={selectedItemPlacing}
 				loadingLabel="กำลังบันทึก..."
 				onclick={submitPlacement}
-				disabled={!selectedItem || !selectedDay || readonly || !!placingItemId}
+				disabled={!selectedItem || !selectedDay || readonly || selectedItemPlacing}
 			>
 				บันทึก
 			</LoadingButton>

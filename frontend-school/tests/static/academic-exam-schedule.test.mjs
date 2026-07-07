@@ -807,6 +807,10 @@ test('exam item tray filters and sorts unscheduled subjects by group grade and t
 });
 
 test('scheduled exam session blocks show action-specific placement and removal state', () => {
+	const page = readFileSync(
+		projectPath('src/routes/(app)/staff/academic/exam-schedules/[id]/+page.svelte'),
+		'utf8'
+	);
 	const timeline = readFileSync(
 		projectPath('src/lib/components/academic/exam-schedule/ExamScheduleTimeline.svelte'),
 		'utf8'
@@ -819,22 +823,39 @@ test('scheduled exam session blocks show action-specific placement and removal s
 		projectPath('src/lib/components/academic/exam-schedule/ExamItemTray.svelte'),
 		'utf8'
 	);
+	const timelineHandleDragOver = localFunctionSource(timeline, 'handleDragOver');
+	const timelineHandleDrop = localFunctionSource(timeline, 'handleDrop');
+	const trayHandleDragStart = localFunctionSource(tray, 'handleDragStart');
+	const trayHandleDragOver = localFunctionSource(tray, 'handleDragOver');
+	const trayHandleDrop = localFunctionSource(tray, 'handleDrop');
 
-	assert.match(timeline, /placingSessionId/);
-	assert.match(timeline, /removing={unschedulingSessionId === session\.id}/);
-	assert.match(timeline, /placing={placingSessionId === session\.id}/);
-	assert.match(
-		timeline,
-		/readonly=\{placementDisabled &&[\s\S]*placingSessionId !== session\.id &&[\s\S]*unschedulingSessionId !== session\.id\}/
-	);
+	assert.match(page, /let placingItemIds = \$state<string\[\]>\(\[\]\)/);
+	assert.match(page, /let unschedulingSessionIds = \$state<string\[\]>\(\[\]\)/);
+	assert.match(page, /function applyPendingExamSession\(input: PlaceExamSessionInput\)/);
+	assert.match(page, /function rollbackPendingExamSession\(/);
+	assert.match(timeline, /const placementDisabled = \$derived\(readonly\)/);
+	assert.match(timeline, /placingSessionIds/);
+	assert.match(timeline, /removing={unschedulingSessionIdSet\.has\(session\.id\)}/);
+	assert.match(timeline, /placing={placingSessionIds\.has\(session\.id\)}/);
+	assert.match(timeline, /readonly={placementDisabled}/);
+	assert.match(tray, /const placingItemIdSet = \$derived\(new Set\(placingItemIds\)\)/);
+	assert.match(tray, /draggable={!readonly && !placingItemIdSet\.has\(item\.id\)}/);
+	assert.match(tray, /disabled={placingItemIdSet\.has\(item\.id\)}/);
+	for (const source of [
+		timelineHandleDragOver,
+		timelineHandleDrop,
+		trayHandleDragStart,
+		trayHandleDragOver,
+		trayHandleDrop
+	]) {
+		assert.doesNotMatch(source, /placingItemId\s*\|\|\s*unschedulingSessionId/);
+	}
 	assert.match(block, /placing = false/);
 	assert.match(block, /removing = false/);
 	assert.match(block, /draggable={!disabled}/);
 	assert.match(block, /aria-busy={busy}/);
 	assert.match(block, /กำลังเอาออก|กำลังบันทึก/);
 	assert.match(block, /cursor-wait/);
-	assert.match(tray, /unschedulingSessionId/);
-	assert.match(tray, /readonly \|\| placingItemId \|\| unschedulingSessionId/);
 });
 
 test('staff timeline renders duration-aware drag preview states', () => {
@@ -905,19 +926,19 @@ test('scheduled exam sessions can be removed through dialog and tray drop', () =
 	assert.match(tray, /ondrop/);
 	assert.match(timeline, /เอาออกจากตาราง/);
 	assert.match(timeline, /onUnscheduleSession/);
-	assert.match(timeline, /unschedulingSessionId/);
-	assert.match(timeline, /loading=\{unschedulingSessionId === selectedSession\?\.id\}/);
+	assert.match(timeline, /selectedSessionUnscheduling/);
+	assert.match(timeline, /loading=\{selectedSessionUnscheduling\}/);
 	assert.match(page, /deleteExamSession/);
 	assert.match(page, /handleUnscheduleExamSession/);
-	assert.match(page, /let unschedulingSessionId = \$state<string \| null>\(null\)/);
-	assert.match(page, /\{unschedulingSessionId\}/);
+	assert.match(page, /let unschedulingSessionIds = \$state<string\[\]>\(\[\]\)/);
+	assert.match(page, /\{unschedulingSessionIds\}/);
 
 	const resetWorkspaceForRound = localFunctionSource(page, 'resetWorkspaceForRound');
 	const handleUnscheduleExamSession = localFunctionSource(page, 'handleUnscheduleExamSession');
 
-	assert.match(resetWorkspaceForRound, /unschedulingSessionId = null/);
-	assert.match(handleUnscheduleExamSession, /unschedulingSessionId = sessionId/);
-	assert.match(handleUnscheduleExamSession, /finally \{[\s\S]*unschedulingSessionId = null/);
+	assert.match(resetWorkspaceForRound, /unschedulingSessionIds = \[\]/);
+	assert.match(handleUnscheduleExamSession, /addUnschedulingSessionId\(sessionId\)/);
+	assert.match(handleUnscheduleExamSession, /finally \{[\s\S]*removeUnschedulingSessionId\(sessionId\)/);
 	assert.doesNotMatch(handleUnscheduleExamSession, /placingItemId\s*=/);
 	assert.doesNotMatch(handleUnscheduleExamSession, /refreshWorkspace\(true\)/);
 	assert.match(handleUnscheduleExamSession, /applyRemovedExamSession\(session\)/);

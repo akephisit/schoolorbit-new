@@ -22,6 +22,7 @@
 		updateExamAssignmentInvigilators,
 		upsertDayRoomAssignment,
 		upsertExamDay,
+		type ExamDayDetail,
 		type ExamInvigilatorStaffOption,
 		type ExamInvigilatorWorkspace,
 		type ExamRoundKind,
@@ -48,6 +49,7 @@
 	import * as Tabs from '$lib/components/ui/tabs';
 	import { PERMISSIONS } from '$lib/permissions/registry';
 	import { can } from '$lib/stores/permissions';
+	import { addMinutes } from '$lib/utils/examScheduleTime';
 	import { RefreshCw, Send } from 'lucide-svelte';
 
 	let { data }: PageProps = $props();
@@ -76,8 +78,8 @@
 	let deletingDayId = $state<string | null>(null);
 	let savingAssignment = $state(false);
 	let generatingAssignmentId = $state<string | null>(null);
-	let placingItemId = $state<string | null>(null);
-	let unschedulingSessionId = $state<string | null>(null);
+	let placingItemIds = $state<string[]>([]);
+	let unschedulingSessionIds = $state<string[]>([]);
 	let requestedRoundId = $state('');
 	let loadedRoundId = $state('');
 	let workspaceRequestToken = 0;
@@ -107,6 +109,12 @@
 		(workspace?.unscheduledItems.length ?? 0) + (workspace?.scheduledSessions.length ?? 0)
 	);
 
+	type PendingPlacementRollback = {
+		restoredItem: ExamScheduleItem | null;
+		previousSession: ExamSession | null;
+		pendingSessionId: string;
+	};
+
 	function resetWorkspaceForRound(roundId: string) {
 		workspaceRequestToken += 1;
 		managementOptionsRequestToken += 1;
@@ -135,8 +143,8 @@
 		deletingDayId = null;
 		savingAssignment = false;
 		generatingAssignmentId = null;
-		placingItemId = null;
-		unschedulingSessionId = null;
+		placingItemIds = [];
+		unschedulingSessionIds = [];
 		savingRoundKind = false;
 		examKindDialogOpen = false;
 		pendingExamKind = null;
@@ -217,6 +225,122 @@
 		};
 	}
 
+	function addPlacingItemId(itemId: string): boolean {
+		if (placingItemIds.includes(itemId)) return false;
+		placingItemIds = [...placingItemIds, itemId];
+		return true;
+	}
+
+	function removePlacingItemId(itemId: string) {
+		placingItemIds = placingItemIds.filter((id) => id !== itemId);
+	}
+
+	function addUnschedulingSessionId(sessionId: string): boolean {
+		if (unschedulingSessionIds.includes(sessionId)) return false;
+		unschedulingSessionIds = [...unschedulingSessionIds, sessionId];
+		return true;
+	}
+
+	function removeUnschedulingSessionId(sessionId: string) {
+		unschedulingSessionIds = unschedulingSessionIds.filter((id) => id !== sessionId);
+	}
+
+	function assignmentForDayClassroom(day: ExamDayDetail, classroomId: string) {
+		return day.roomAssignments.find((item) => item.classroomId === classroomId) ?? null;
+	}
+
+	function applyPendingExamSession(input: PlaceExamSessionInput): PendingPlacementRollback | null {
+		if (!workspace) return null;
+
+		const day = workspace.days.find((item) => item.id === input.examDayId);
+		const previousSession =
+			workspace.scheduledSessions.find(
+				(session) => session.examScheduleItemId === input.examScheduleItemId
+			) ?? null;
+		const restoredItem =
+			workspace.unscheduledItems.find((item) => item.id === input.examScheduleItemId) ?? null;
+		const source = previousSession ?? restoredItem;
+		if (!day || !source) return null;
+
+		const assignment = assignmentForDayClassroom(day, source.classroomId);
+		const pendingSession: ExamSession = {
+			id: previousSession?.id ?? `pending-${input.examScheduleItemId}`,
+			examScheduleItemId: input.examScheduleItemId,
+			examRoundId: source.examRoundId,
+			examDayId: day.id,
+			startsAt: input.startsAt,
+			endsAt: addMinutes(input.startsAt, source.durationMinutes),
+			academicSemesterId: source.academicSemesterId,
+			assessmentCategoryId: source.assessmentCategoryId,
+			assessmentPlanId: source.assessmentPlanId,
+			classroomCourseId: source.classroomCourseId,
+			classroomId: source.classroomId,
+			subjectId: source.subjectId,
+			gradeLevelId: source.gradeLevelId,
+			durationMinutes: source.durationMinutes,
+			importedAt: source.importedAt,
+			examDate: day.examDate,
+			assessmentCategoryName: source.assessmentCategoryName,
+			subjectCode: source.subjectCode,
+			subjectNameTh: source.subjectNameTh,
+			subjectNameEn: source.subjectNameEn,
+			subjectGroupId: source.subjectGroupId,
+			subjectGroupName: source.subjectGroupName,
+			subjectGroupDisplayOrder: source.subjectGroupDisplayOrder,
+			subjectType: source.subjectType,
+			classroomName: source.classroomName,
+			gradeLevelName: source.gradeLevelName,
+			gradeLevelType: source.gradeLevelType,
+			gradeLevelYear: source.gradeLevelYear,
+			roomId: assignment?.roomId ?? previousSession?.roomId ?? null,
+			roomName: assignment?.roomName ?? previousSession?.roomName ?? null,
+			buildingName: previousSession?.buildingName ?? null,
+			invigilators: assignment?.invigilators ?? previousSession?.invigilators ?? []
+		};
+
+		workspace = {
+			...workspace,
+			unscheduledItems: restoredItem
+				? workspace.unscheduledItems.filter((item) => item.id !== restoredItem.id)
+				: workspace.unscheduledItems,
+			scheduledSessions: [
+				...workspace.scheduledSessions.filter(
+					(session) => session.examScheduleItemId !== input.examScheduleItemId
+				),
+				pendingSession
+			]
+		};
+
+		return {
+			restoredItem,
+			previousSession,
+			pendingSessionId: pendingSession.id
+		};
+	}
+
+	function rollbackPendingExamSession(rollback: PendingPlacementRollback) {
+		if (!workspace) return;
+
+		const scheduledSessions = workspace.scheduledSessions.filter(
+			(session) =>
+				session.id !== rollback.pendingSessionId &&
+				session.examScheduleItemId !== rollback.previousSession?.examScheduleItemId
+		);
+		if (rollback.previousSession) {
+			scheduledSessions.push(rollback.previousSession);
+		}
+
+		workspace = {
+			...workspace,
+			unscheduledItems:
+				rollback.restoredItem &&
+				!workspace.unscheduledItems.some((item) => item.id === rollback.restoredItem?.id)
+					? [...workspace.unscheduledItems, rollback.restoredItem]
+					: workspace.unscheduledItems,
+			scheduledSessions
+		};
+	}
+
 	function applyPlacedExamSession(session: ExamSession) {
 		if (!workspace) return;
 
@@ -231,6 +355,29 @@
 				),
 				session
 			]
+		};
+	}
+
+	function applyPendingRemovedExamSession(session: ExamSession) {
+		if (!workspace) return;
+
+		workspace = {
+			...workspace,
+			scheduledSessions: workspace.scheduledSessions.filter((item) => item.id !== session.id)
+		};
+	}
+
+	function rollbackPendingRemovedExamSession(session: ExamSession) {
+		if (!workspace) return;
+
+		workspace = {
+			...workspace,
+			unscheduledItems: workspace.unscheduledItems.filter(
+				(item) => item.id !== session.examScheduleItemId
+			),
+			scheduledSessions: workspace.scheduledSessions.some((item) => item.id === session.id)
+				? workspace.scheduledSessions
+				: [...workspace.scheduledSessions, session]
 		};
 	}
 
@@ -573,7 +720,15 @@
 	}
 
 	async function handlePlaceExamSession(input: PlaceExamSessionInput): Promise<boolean> {
-		placingItemId = input.examScheduleItemId;
+		if (!addPlacingItemId(input.examScheduleItemId)) return false;
+
+		const rollback = applyPendingExamSession(input);
+		if (!rollback) {
+			removePlacingItemId(input.examScheduleItemId);
+			toast.error('ไม่พบรายการสอบสำหรับจัดเวลา');
+			return false;
+		}
+
 		try {
 			const session = await placeExamSession({
 				examScheduleItemId: input.examScheduleItemId,
@@ -585,10 +740,11 @@
 			toast.success('บันทึกเวลาสอบแล้ว');
 			return true;
 		} catch (placeError) {
+			rollbackPendingExamSession(rollback);
 			toast.error(placeError instanceof Error ? placeError.message : 'บันทึกเวลาสอบไม่สำเร็จ');
 			return false;
 		} finally {
-			placingItemId = null;
+			removePlacingItemId(input.examScheduleItemId);
 		}
 	}
 
@@ -602,8 +758,9 @@
 		) {
 			return false;
 		}
+		if (!addUnschedulingSessionId(sessionId)) return false;
 
-		unschedulingSessionId = sessionId;
+		applyPendingRemovedExamSession(session);
 		try {
 			await deleteExamSession(sessionId);
 			applyRemovedExamSession(session);
@@ -611,12 +768,13 @@
 			toast.success('เอารายการสอบออกจากตารางแล้ว');
 			return true;
 		} catch (deleteError) {
+			rollbackPendingRemovedExamSession(session);
 			toast.error(
 				deleteError instanceof Error ? deleteError.message : 'เอารายการสอบออกจากตารางไม่สำเร็จ'
 			);
 			return false;
 		} finally {
-			unschedulingSessionId = null;
+			removeUnschedulingSessionId(sessionId);
 		}
 	}
 
@@ -802,8 +960,8 @@
 					<ExamScheduleTimeline
 						{workspace}
 						readonly={!canManageExamSchedules || workspace.round.status === 'published'}
-						{placingItemId}
-						{unschedulingSessionId}
+						{placingItemIds}
+						{unschedulingSessionIds}
 						canManageActions={canManageExamSchedules && workspace.round.status !== 'published'}
 						{importing}
 						{clearingMismatchedItems}
