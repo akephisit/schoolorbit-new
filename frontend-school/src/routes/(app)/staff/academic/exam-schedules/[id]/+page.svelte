@@ -8,6 +8,7 @@
 		type Classroom
 	} from '$lib/api/academic';
 	import {
+		assignExamAssignmentInvigilator,
 		clearMismatchedExamItems,
 		deleteExamDay,
 		deleteExamSession,
@@ -18,8 +19,8 @@
 		listExamInvigilatorStaffOptions,
 		placeExamSession,
 		publishExamRound,
+		removeExamAssignmentInvigilator,
 		updateExamRound,
-		updateExamAssignmentInvigilators,
 		upsertDayRoomAssignment,
 		upsertExamDay,
 		type ExamDayDetail,
@@ -66,7 +67,6 @@
 	let invigilatorWorkspace = $state<ExamInvigilatorWorkspace | null>(null);
 	let loadingInvigilators = $state(false);
 	let invigilatorLoadError = $state('');
-	let savingInvigilatorAssignmentId = $state<string | null>(null);
 	let staffLoading = $state(false);
 	let staffRequested = $state(false);
 	let optionsLoading = $state(false);
@@ -129,7 +129,6 @@
 		invigilatorWorkspace = null;
 		loadingInvigilators = false;
 		invigilatorLoadError = '';
-		savingInvigilatorAssignmentId = null;
 		staffLoading = false;
 		staffRequested = false;
 		invigilatorWorkspaceRequestToken += 1;
@@ -458,7 +457,7 @@
 		staffRequested = true;
 		staffLoading = true;
 		try {
-			const staffOptions = await listExamInvigilatorStaffOptions(roundId, { limit: 40 });
+			const staffOptions = await listExamInvigilatorStaffOptions(roundId, { limit: 500 });
 			if (!isCurrentStaffOptionsRequest(requestToken, roundId)) return;
 
 			staff = staffOptions;
@@ -473,16 +472,6 @@
 				staffLoading = false;
 			}
 		}
-	}
-
-	async function searchStaffOptions(search: string): Promise<ExamInvigilatorStaffOption[]> {
-		const roundId = workspace?.round.id ?? loadedRoundId;
-		if (!roundId) return [];
-
-		return listExamInvigilatorStaffOptions(roundId, {
-			search: search.trim() || undefined,
-			limit: 40
-		});
 	}
 
 	async function loadInvigilators(roundId = workspace?.round.id ?? loadedRoundId) {
@@ -685,24 +674,33 @@
 		}
 	}
 
-	async function handleSaveInvigilators(
+	async function handleAssignInvigilator(
 		assignmentId: string,
-		staffIds: string[]
-	): Promise<boolean> {
-		const roundId = workspace?.round.id ?? loadedRoundId;
-		if (!roundId) return false;
-
-		savingInvigilatorAssignmentId = assignmentId;
+		staffId: string
+	): Promise<ExamInvigilatorWorkspace> {
 		try {
-			await updateExamAssignmentInvigilators(assignmentId, { invigilatorStaffIds: staffIds });
+			const updatedWorkspace = await assignExamAssignmentInvigilator(assignmentId, staffId);
+			invigilatorWorkspace = updatedWorkspace;
 			toast.success('บันทึกกรรมการคุมสอบแล้ว');
-			await Promise.all([loadWorkspace(roundId, false), loadInvigilators(roundId)]);
-			return true;
+			return updatedWorkspace;
 		} catch (saveError) {
 			toast.error(saveError instanceof Error ? saveError.message : 'บันทึกกรรมการคุมสอบไม่สำเร็จ');
-			return false;
-		} finally {
-			savingInvigilatorAssignmentId = null;
+			throw saveError;
+		}
+	}
+
+	async function handleRemoveInvigilator(
+		assignmentId: string,
+		staffId: string
+	): Promise<ExamInvigilatorWorkspace> {
+		try {
+			const updatedWorkspace = await removeExamAssignmentInvigilator(assignmentId, staffId);
+			invigilatorWorkspace = updatedWorkspace;
+			toast.success('ลบกรรมการคุมสอบแล้ว');
+			return updatedWorkspace;
+		} catch (saveError) {
+			toast.error(saveError instanceof Error ? saveError.message : 'ลบกรรมการคุมสอบไม่สำเร็จ');
+			throw saveError;
 		}
 	}
 
@@ -981,9 +979,8 @@
 						loading={loadingInvigilators}
 						loadError={invigilatorLoadError}
 						readonly={!canManageExamSchedules || workspace.round.status === 'published'}
-						savingAssignmentId={savingInvigilatorAssignmentId}
-						onSaveInvigilators={handleSaveInvigilators}
-						onSearchStaff={searchStaffOptions}
+						onAssignInvigilator={handleAssignInvigilator}
+						onRemoveInvigilator={handleRemoveInvigilator}
 						onRetry={() => loadInvigilators()}
 					/>
 				</Tabs.Content>

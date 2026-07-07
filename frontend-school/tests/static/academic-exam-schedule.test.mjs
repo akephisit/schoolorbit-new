@@ -451,12 +451,51 @@ test('exam invigilator panel exposes room-first workflow and workload summary', 
 	);
 
 	assert.match(panel, /staffWorkloads/);
-	assert.match(panel, /sessionMinutes/);
 	assert.match(panel, /จัดกรรมการ/);
-	assert.match(panel, /แนะนำ 2 คน/);
-	assert.match(panel, /updateExamAssignmentInvigilators|onSaveInvigilators/);
+	assert.match(panel, /selectedDayMinutes/);
+	assert.match(panel, /onAssignInvigilator/);
+	assert.match(panel, /onRemoveInvigilator/);
+	assert.match(panel, /InvigilatorStaffList/);
+	assert.match(panel, /InvigilatorRoomBoard/);
+	assert.doesNotMatch(panel, /แนะนำ 2 คน|onSaveInvigilators|updateExamAssignmentInvigilators/);
 	assert.match(page, /getExamInvigilatorWorkspace/);
 	assert.match(page, /<ExamInvigilatorPanel/);
+});
+
+test('exam invigilator drag workflow uses teacher cards and room drop targets', () => {
+	const panel = readFileSync(
+		projectPath('src/lib/components/academic/exam-schedule/ExamInvigilatorPanel.svelte'),
+		'utf8'
+	);
+	const staffListPath =
+		'src/lib/components/academic/exam-schedule/InvigilatorStaffList.svelte';
+	const roomBoardPath =
+		'src/lib/components/academic/exam-schedule/InvigilatorRoomBoard.svelte';
+	const roomCardPath =
+		'src/lib/components/academic/exam-schedule/InvigilatorRoomCard.svelte';
+	const dragHelperPath = 'src/lib/components/academic/exam-schedule/invigilatorDrag.ts';
+
+	for (const file of [staffListPath, roomBoardPath, roomCardPath, dragHelperPath]) {
+		assert.equal(existsSync(projectPath(file)), true, `${file} should exist`);
+	}
+
+	const staffList = readFileSync(projectPath(staffListPath), 'utf8');
+	const roomBoard = readFileSync(projectPath(roomBoardPath), 'utf8');
+	const roomCard = readFileSync(projectPath(roomCardPath), 'utf8');
+	const dragHelper = readFileSync(projectPath(dragHelperPath), 'utf8');
+
+	assert.match(panel, /<InvigilatorStaffList/);
+	assert.match(panel, /<InvigilatorRoomBoard/);
+	assert.match(staffList, /draggable=/);
+	assert.match(staffList, /วันนี้/);
+	assert.match(staffList, /รวมรอบนี้/);
+	assert.match(roomBoard, /InvigilatorRoomCard/);
+	assert.match(roomCard, /ondrop=/);
+	assert.match(roomCard, /dataTransfer\?\.types/);
+	assert.match(roomCard, /กรรมการ \{assignment\.invigilators\.length\} คน/);
+	assert.match(roomCard, /onRemoveInvigilator/);
+	assert.match(dragHelper, /INVIGILATOR_STAFF_DRAG_TYPE/);
+	assert.doesNotMatch(panel + staffList + roomBoard + roomCard, /แนะนำ 2 คน|2\/2/);
 });
 
 test('exam invigilator staff loading is split from room option loading', () => {
@@ -479,7 +518,6 @@ test('exam invigilator staff loading is split from room option loading', () => {
 	);
 	const loadManagementOptions = localFunctionSource(page, 'loadManagementOptions');
 	const loadInvigilatorStaffOptions = localFunctionSource(page, 'loadInvigilatorStaffOptions');
-	const searchStaffOptions = localFunctionSource(page, 'searchStaffOptions');
 
 	assert.doesNotMatch(loadManagementOptions, /listStaff/);
 	assert.doesNotMatch(loadManagementOptions, /staffResponse/);
@@ -489,9 +527,9 @@ test('exam invigilator staff loading is split from room option loading', () => {
 	assert.doesNotMatch(page, /\blistStaff\(/);
 	assert.match(page, /listExamInvigilatorStaffOptions/);
 	assert.match(loadInvigilatorStaffOptions, /listExamInvigilatorStaffOptions\(roundId/);
-	assert.match(loadInvigilatorStaffOptions, /limit: 40/);
-	assert.match(searchStaffOptions, /listExamInvigilatorStaffOptions\(roundId/);
-	assert.match(searchStaffOptions, /search: search\.trim\(\) \|\| undefined/);
+	assert.match(loadInvigilatorStaffOptions, /limit: 500/);
+	assert.doesNotMatch(page, /async function searchStaffOptions/);
+	assert.doesNotMatch(page, /onSearchStaff=/);
 	assert.match(api, /export interface ExamInvigilatorStaffOption/);
 	assert.match(api, /staffId: string/);
 	assert.match(api, /displayName: string/);
@@ -537,6 +575,23 @@ test('staff workspace refreshes or invalidates invigilator workspace after sourc
 	assert.match(handlePlaceExamSession, /refreshOrInvalidateInvigilators\(session\.examRoundId\)/);
 });
 
+test('staff workspace wires staff-level invigilator drag actions', () => {
+	const page = readFileSync(
+		projectPath('src/routes/(app)/staff/academic/exam-schedules/[id]/+page.svelte'),
+		'utf8'
+	);
+
+	assert.match(page, /assignExamAssignmentInvigilator/);
+	assert.match(page, /removeExamAssignmentInvigilator/);
+	assert.match(page, /async function handleAssignInvigilator/);
+	assert.match(page, /async function handleRemoveInvigilator/);
+	assert.match(page, /onAssignInvigilator={handleAssignInvigilator}/);
+	assert.match(page, /onRemoveInvigilator={handleRemoveInvigilator}/);
+	assert.doesNotMatch(page, /savingAssignmentId={savingInvigilatorAssignmentId}/);
+	assert.doesNotMatch(page, /onSaveInvigilators={handleSaveInvigilators}/);
+	assert.doesNotMatch(page, /onSearchStaff={searchStaffOptions}/);
+});
+
 test('invigilator workspace load exposes recoverable error and retry state', () => {
 	const page = readFileSync(
 		projectPath('src/routes/(app)/staff/academic/exam-schedules/[id]/+page.svelte'),
@@ -561,28 +616,24 @@ test('invigilator workspace load exposes recoverable error and retry state', () 
 	assert.match(panel, /onaction={onRetry}/);
 });
 
-test('invigilator staff search invalidates stale requests when reset to default options', () => {
+test('invigilator staff filtering is local to the drag board', () => {
 	const panel = readFileSync(
 		projectPath('src/lib/components/academic/exam-schedule/ExamInvigilatorPanel.svelte'),
 		'utf8'
 	);
-	const cancelStaffSearchRequest = localFunctionSource(panel, 'cancelStaffSearchRequest');
-	const syncDefaultStaffOptions = localFunctionSource(panel, 'syncDefaultStaffOptions');
-	const resetStaffSearch = localFunctionSource(panel, 'resetStaffSearch');
-	const loadAssignment = localFunctionSource(panel, 'loadAssignment');
+	const staffList = readFileSync(
+		projectPath('src/lib/components/academic/exam-schedule/InvigilatorStaffList.svelte'),
+		'utf8'
+	);
+	const filterStaffCards = localFunctionSource(panel, 'filterStaffCards');
 
-	assert.match(cancelStaffSearchRequest, /staffSearchRequestToken \+= 1/);
-	assert.doesNotMatch(syncDefaultStaffOptions, /staffSearchRequestToken/);
-	assert.match(syncDefaultStaffOptions, /staffOptions = staff/);
-	assert.match(syncDefaultStaffOptions, /staffSearchLoading = false/);
-	assert.match(resetStaffSearch, /cancelStaffSearchRequest\(\)/);
-	assert.match(resetStaffSearch, /syncDefaultStaffOptions\(\)/);
-	assert.match(loadAssignment, /resetStaffSearch\(\)/);
-	assert.match(panel, /syncDefaultStaffOptions\(\);\s*return;/);
-	assert.doesNotMatch(panel, /resetStaffSearch\(\);\s*return;/);
-	assert.match(panel, /return \(\) => \{/);
-	assert.match(panel, /cancelStaffSearchRequest\(\)/);
-	assert.match(panel, /bind:open={editorOpen}/);
+	assert.match(panel, /let staffSearch = \$state\(''\)/);
+	assert.match(panel, /let showAvailableOnly = \$state\(false\)/);
+	assert.match(filterStaffCards, /showAvailableOnly && card\.assignedAssignment/);
+	assert.match(filterStaffCards, /card\.displayName\.toLowerCase\(\)\.includes\(search\)/);
+	assert.match(staffList, /onSearchChange/);
+	assert.match(staffList, /onShowAvailableOnlyChange/);
+	assert.doesNotMatch(panel, /staffSearchRequestToken|onSearchStaff|bind:open={editorOpen}/);
 });
 
 test('staff workspace wires setup, import, room assignment, and publish actions', () => {
