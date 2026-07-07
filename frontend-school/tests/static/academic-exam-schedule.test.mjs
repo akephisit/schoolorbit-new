@@ -642,7 +642,8 @@ test('exam schedule detail exports one editable report workbook', () => {
 		'ตารางสอบ ม.ต้น',
 		'ตารางสอบ ม.ปลาย',
 		'ตารางสอบแยกห้อง ม.ต้น',
-		'ตารางสอบแยกห้อง ม.ปลาย'
+		'ตารางสอบแยกห้อง ม.ปลาย',
+		'กรรมการคุมสอบ'
 	]) {
 		assert.match(exportUtil, new RegExp(escapeRegExp(sheetName)));
 	}
@@ -655,11 +656,15 @@ test('exam schedule detail exports one editable report workbook', () => {
 	assert.match(exportUtil, /upperSecondaryReport/);
 	assert.match(exportUtil, /lowerSecondaryClassroomReport/);
 	assert.match(exportUtil, /upperSecondaryClassroomReport/);
+	assert.match(exportUtil, /invigilatorSummary/);
 	assert.match(exportUtil, /function reportClassroomLabel/);
 	assert.match(exportUtil, /function compactClassroomLabels/);
 	assert.match(exportUtil, /function printableReportSheet/);
 	assert.match(exportUtil, /function printableClassroomReportSheet/);
 	assert.match(exportUtil, /function classroomReportRows/);
+	assert.match(exportUtil, /function printableInvigilatorSummarySheet/);
+	assert.match(exportUtil, /function invigilatorSummaryRows/);
+	assert.match(exportUtil, /function invigilatorSummarySheetMerges/);
 	assert.match(exportUtil, /function reportSheetMerges/);
 	assert.match(exportUtil, /วันเดือนปี/);
 	assert.match(exportUtil, /เวลาสอบ/);

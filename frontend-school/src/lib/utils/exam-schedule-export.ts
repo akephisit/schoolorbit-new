@@ -46,6 +46,7 @@ export type ExamScheduleExportWorkbook = {
 	upperSecondaryReport?: ExamScheduleReportSheet;
 	lowerSecondaryClassroomReport?: ExamScheduleReportSheet;
 	upperSecondaryClassroomReport?: ExamScheduleReportSheet;
+	invigilatorSummary: ExamScheduleReportSheet;
 	schedule: ExamScheduleExportSheet<WorksheetObjectRow>;
 	rooms: ExamScheduleExportSheet<WorksheetObjectRow>;
 	invigilators: ExamScheduleExportSheet<WorksheetObjectRow>;
@@ -470,6 +471,27 @@ function sessionExamRoomLabel(workspace: ExamScheduleWorkspace, session: ExamSes
 	return safeText(assignment?.roomName, '-');
 }
 
+function invigilatorSummarySheetColumns(): ExamScheduleExportColumn[] {
+	return [{ wch: 24 }, { wch: 14 }, { wch: 16 }, { wch: 44 }];
+}
+
+function invigilatorSummarySheetMerges(
+	dayRanges: { start: number; end: number }[]
+): ExamScheduleExportMerge[] {
+	const merges: ExamScheduleExportMerge[] = [
+		{ s: { r: 0, c: 0 }, e: { r: 0, c: 3 } },
+		{ s: { r: 1, c: 0 }, e: { r: 1, c: 3 } }
+	];
+
+	for (const range of dayRanges) {
+		if (range.end > range.start) {
+			merges.push({ s: { r: range.start, c: 0 }, e: { r: range.end, c: 0 } });
+		}
+	}
+
+	return merges;
+}
+
 function printableReportRows(
 	workspace: ExamScheduleWorkspace,
 	sessions: ExamSession[],
@@ -599,6 +621,54 @@ function classroomReportRows(
 	return { rows, classroomRanges, dayRanges };
 }
 
+function invigilatorSummaryRows(
+	workspace: ExamScheduleWorkspace,
+	invigilatorWorkspace: ExamInvigilatorWorkspace | null
+): {
+	rows: WorksheetRow[];
+	dayRanges: { start: number; end: number }[];
+} {
+	const dayById = new Map(workspace.days.map((day) => [day.id, day]));
+	const dayOrder = new Map(sortedDays(workspace).map((day, index) => [day.id, index]));
+	const orderedAssignments = [...(invigilatorWorkspace?.assignments ?? [])].sort(
+		(a, b) =>
+			(dayOrder.get(a.examDayId) ?? 0) - (dayOrder.get(b.examDayId) ?? 0) ||
+			compareThaiNatural(safeText(a.classroomName), safeText(b.classroomName))
+	);
+	const rows: WorksheetRow[] = [
+		['สรุปกรรมการคุมสอบ'],
+		[printableReportTitle(workspace)],
+		[],
+		['วันสอบ', 'ห้องเรียน', 'ห้องสอบ', 'กรรมการคุมสอบ']
+	];
+	const dayRanges: { start: number; end: number }[] = [];
+
+	if (orderedAssignments.length === 0) {
+		rows.push(['-', '-', '-', 'ยังไม่มีข้อมูลกรรมการคุมสอบ']);
+		return { rows, dayRanges };
+	}
+
+	const assignmentsByDay = groupByText(orderedAssignments, (assignment) =>
+		safeText(assignment.examDayId)
+	);
+
+	for (const [, dayAssignments] of assignmentsByDay) {
+		const dayStart = rows.length;
+		for (const assignment of dayAssignments) {
+			const day = dayById.get(assignment.examDayId);
+			rows.push([
+				day ? dayTitle(day) : assignment.examDayId,
+				safeText(assignment.classroomName, '-'),
+				safeText(assignment.roomName, '-'),
+				assignmentInvigilatorNames(assignment) || '-'
+			]);
+		}
+		dayRanges.push({ start: dayStart, end: rows.length - 1 });
+	}
+
+	return { rows, dayRanges };
+}
+
 function printableReportSheet(
 	workspace: ExamScheduleWorkspace,
 	name: string,
@@ -627,6 +697,20 @@ function printableClassroomReportSheet(
 		rows: report.rows,
 		'!cols': classroomReportSheetColumns(),
 		'!merges': classroomReportSheetMerges(report.classroomRanges, report.dayRanges),
+		'!printTitlesRow': '1:4'
+	};
+}
+
+function printableInvigilatorSummarySheet(
+	workspace: ExamScheduleWorkspace,
+	invigilatorWorkspace: ExamInvigilatorWorkspace | null
+): ExamScheduleReportSheet {
+	const report = invigilatorSummaryRows(workspace, invigilatorWorkspace);
+	return {
+		name: 'กรรมการคุมสอบ',
+		rows: report.rows,
+		'!cols': invigilatorSummarySheetColumns(),
+		'!merges': invigilatorSummarySheetMerges(report.dayRanges),
 		'!printTitlesRow': '1:4'
 	};
 }
@@ -824,6 +908,7 @@ export function buildExamScheduleExportWorkbook(
 		upperSecondarySessions,
 		'ระดับชั้นมัธยมศึกษาตอนปลาย'
 	);
+	const invigilatorSummary = printableInvigilatorSummarySheet(workspace, invigilatorWorkspace);
 
 	return {
 		report,
@@ -832,12 +917,14 @@ export function buildExamScheduleExportWorkbook(
 			lowerSecondaryReport,
 			upperSecondaryReport,
 			lowerSecondaryClassroomReport,
-			upperSecondaryClassroomReport
+			upperSecondaryClassroomReport,
+			invigilatorSummary
 		],
 		lowerSecondaryReport,
 		upperSecondaryReport,
 		lowerSecondaryClassroomReport,
 		upperSecondaryClassroomReport,
+		invigilatorSummary,
 		schedule: objectSheet(scheduleRows(workspace, invigilatorWorkspace), [
 			{ wch: 18 },
 			{ wch: 14 },

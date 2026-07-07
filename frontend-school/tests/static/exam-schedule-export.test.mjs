@@ -117,6 +117,36 @@ function exportWorkspace(scheduledSessions) {
 	};
 }
 
+const invigilatorWorkspace = {
+	roundId: 'round-1',
+	assignments: [
+		{
+			assignmentId: 'assignment-m1-1',
+			examDayId: 'day-1',
+			classroomId: 'classroom-m1-1',
+			classroomName: 'ม.1/1',
+			roomId: 'exam-room-1',
+			roomName: '313',
+			sessionMinutes: 180,
+			invigilators: [
+				{ staffId: 'staff-a', displayName: 'ครู A' },
+				{ staffId: 'staff-b', displayName: 'ครู B' }
+			]
+		},
+		{
+			assignmentId: 'assignment-m1-2',
+			examDayId: 'day-1',
+			classroomId: 'classroom-m1-2',
+			classroomName: 'ม.1/2',
+			roomId: 'exam-room-2',
+			roomName: '314',
+			sessionMinutes: 180,
+			invigilators: [{ staffId: 'staff-c', displayName: 'ครู C' }]
+		}
+	],
+	staffWorkloads: []
+};
+
 describe('exam schedule export helpers', () => {
 	it('builds report sheets with full-grade and partial-classroom labels', () => {
 		const workbook = buildExamScheduleExportWorkbook(
@@ -198,7 +228,8 @@ describe('exam schedule export helpers', () => {
 				'ตารางสอบ ม.ต้น',
 				'ตารางสอบ ม.ปลาย',
 				'ตารางสอบแยกห้อง ม.ต้น',
-				'ตารางสอบแยกห้อง ม.ปลาย'
+				'ตารางสอบแยกห้อง ม.ปลาย',
+				'กรรมการคุมสอบ'
 			]
 		);
 		assert.equal(workbook.report.rows[0][0], 'ตารางสอบวัดผลกลางภาคเรียนที่ 2 ปีการศึกษา 2568');
@@ -257,5 +288,34 @@ describe('exam schedule export helpers', () => {
 		]);
 		assert.equal(workbook.schedule.rows[0].ประเภทวิชา, 'พื้นฐาน');
 		assert.ok((workbook.schedule['!cols']?.length ?? 0) > 6);
+	});
+
+	it('builds invigilator summary sheet by classroom and merges same exam day cells', () => {
+		const workbook = buildExamScheduleExportWorkbook(exportWorkspace([]), invigilatorWorkspace);
+
+		assert.deepEqual(workbook.invigilatorSummary.rows[3], [
+			'วันสอบ',
+			'ห้องเรียน',
+			'ห้องสอบ',
+			'กรรมการคุมสอบ'
+		]);
+		assert.equal(workbook.invigilatorSummary.rows[4][0], 'วันพุธที่ 4 มีนาคม 2569');
+		assert.equal(workbook.invigilatorSummary.rows[4][1], 'ม.1/1');
+		assert.equal(workbook.invigilatorSummary.rows[4][2], '313');
+		assert.equal(workbook.invigilatorSummary.rows[4][3], 'ครู A, ครู B');
+		assert.equal(workbook.invigilatorSummary.rows[5][0], 'วันพุธที่ 4 มีนาคม 2569');
+		assert.equal(workbook.invigilatorSummary.rows[5][1], 'ม.1/2');
+		assert.equal(workbook.invigilatorSummary.rows[5][2], '314');
+		assert.equal(workbook.invigilatorSummary.rows[5][3], 'ครู C');
+		assert.equal(workbook.invigilatorSummary['!printTitlesRow'], '1:4');
+		assert.deepEqual(workbook.invigilatorSummary['!merges'], [
+			{ s: { r: 0, c: 0 }, e: { r: 0, c: 3 } },
+			{ s: { r: 1, c: 0 }, e: { r: 1, c: 3 } },
+			{ s: { r: 4, c: 0 }, e: { r: 5, c: 0 } }
+		]);
+		assert.equal(
+			workbook.invigilatorSummary.rows[3].includes('จำนวนกรรมการ'),
+			false
+		);
 	});
 });
