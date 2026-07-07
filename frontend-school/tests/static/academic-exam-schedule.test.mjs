@@ -617,7 +617,21 @@ test('staff exam schedule detail uses compact status and removes large readiness
 	assert.doesNotMatch(page, /ReadinessPanel/);
 	assert.doesNotMatch(page, /value="review"/);
 	assert.match(page, /value="invigilators"/);
-	assert.match(page, /<Tabs\.Trigger value="invigilators">กรรมการ<\/Tabs\.Trigger>/);
+	const expectedTabs = new Map([
+		['setup', 'ตั้งค่า'],
+		['rooms', 'ห้องสอบ'],
+		['schedule', 'จัดตาราง'],
+		['invigilators', 'กรรมการ']
+	]);
+
+	for (const [value, label] of expectedTabs) {
+		assert.match(page, new RegExp(`<Tabs\\.Trigger value="${value}">${label}<\\/Tabs\\.Trigger>`));
+	}
+
+	assert.doesNotMatch(
+		page,
+		/<Tabs\.Trigger value="(?:setup|rooms|schedule|invigilators)">(?:Setup|Rooms|Schedule|Invigilators)<\/Tabs\.Trigger>/
+	);
 });
 
 test('compact exam schedule status derives invigilator counts from room assignments by default', () => {

@@ -925,9 +925,9 @@
 		<div class="space-y-4">
 			<Tabs.Root bind:value={activeTab} class="gap-4">
 				<Tabs.List class="grid w-full grid-cols-4 md:w-fit">
-					<Tabs.Trigger value="setup">Setup</Tabs.Trigger>
-					<Tabs.Trigger value="rooms">Rooms</Tabs.Trigger>
-					<Tabs.Trigger value="schedule">Schedule</Tabs.Trigger>
+					<Tabs.Trigger value="setup">ตั้งค่า</Tabs.Trigger>
+					<Tabs.Trigger value="rooms">ห้องสอบ</Tabs.Trigger>
+					<Tabs.Trigger value="schedule">จัดตาราง</Tabs.Trigger>
 					<Tabs.Trigger value="invigilators">กรรมการ</Tabs.Trigger>
 				</Tabs.List>
 
