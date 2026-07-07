@@ -1814,7 +1814,7 @@ const WORKSPACE_COUNTS_SQL: &str = r#"
                          AND (
                              session.starts_at < day.start_time
                              OR session.ends_at > day.end_time
-                             OR (EXTRACT(EPOCH FROM session.starts_at)::BIGINT % 900) <> 0
+                             OR (EXTRACT(EPOCH FROM session.starts_at)::BIGINT % 300) <> 0
                              OR EXISTS (
                                  SELECT 1
                                  FROM academic_exam_day_blocked_windows blocked
@@ -4161,6 +4161,12 @@ mod tests {
         assert!(WORKSPACE_COUNTS_SQL.contains("invalid_session_count"));
         assert!(WORKSPACE_COUNTS_SQL.contains("session.starts_at < day.start_time"));
         assert!(WORKSPACE_COUNTS_SQL.contains("session.ends_at > day.end_time"));
+    }
+
+    #[test]
+    fn readiness_sql_uses_same_five_minute_slot_as_placement_validation() {
+        assert!(WORKSPACE_COUNTS_SQL.contains("% 300"));
+        assert!(!WORKSPACE_COUNTS_SQL.contains("% 900"));
     }
 
     #[test]
