@@ -569,6 +569,7 @@
 
 	function styleReportSheet(worksheet: Worksheet, reportSheet: ExamScheduleReportSheet) {
 		const columnCount = reportSheet.rows[3]?.length ?? 6;
+		const isPaperTransferSheet = reportSheet.name === 'รับส่งข้อสอบ';
 		worksheet.pageSetup = {
 			paperSize: 9,
 			orientation: 'portrait',
@@ -607,14 +608,17 @@
 			}
 
 			if (rowNumber < 4) continue;
-			row.height = 22;
+			row.height = isPaperTransferSheet && rowNumber > 4 ? 30 : 22;
 
 			for (let columnNumber = 1; columnNumber <= columnCount; columnNumber += 1) {
 				const cell = row.getCell(columnNumber);
 				const headerText = String(reportSheet.rows[3]?.[columnNumber - 1] ?? '');
+				const shouldAlignLeft =
+					rowNumber > 4 &&
+					(headerText === 'วิชา' || headerText === 'กรรมการคุมสอบ' || headerText === 'หมายเหตุ');
 				cell.font = { name: reportFontName, size: 16, bold: rowNumber === 4 };
 				cell.border = thinTableBorder;
-				cell.alignment = headerText === 'วิชา' && rowNumber > 4 ? leftAlignment : centeredAlignment;
+				cell.alignment = shouldAlignLeft ? leftAlignment : centeredAlignment;
 				if (rowNumber === 4) {
 					cell.fill = tableHeaderFill;
 				}

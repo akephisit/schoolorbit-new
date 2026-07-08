@@ -247,7 +247,8 @@ describe('exam schedule export helpers', () => {
 				'ตารางสอบ ม.ปลาย',
 				'ตารางสอบแยกห้อง ม.ต้น',
 				'ตารางสอบแยกห้อง ม.ปลาย',
-				'กรรมการคุมสอบ'
+				'กรรมการคุมสอบ',
+				'รับส่งข้อสอบ'
 			]
 		);
 		assert.equal(workbook.report.rows[0][0], 'ตารางสอบวัดผลกลางภาคเรียนที่ 2 ปีการศึกษา 2568');
@@ -349,6 +350,62 @@ describe('exam schedule export helpers', () => {
 			'ชั่วโมงรวม',
 			'จำนวนวัน',
 			'จำนวนห้อง'
+		]);
+	});
+
+	it('builds exam paper transfer sheet for invigilator signatures by subject and classroom', () => {
+		const workbook = buildExamScheduleExportWorkbook(
+			exportWorkspace([
+				scheduledSession({
+					id: 'session-m1-1',
+					startsAt: '09:00:00',
+					endsAt: '10:00:00',
+					durationMinutes: 60,
+					classroomName: 'ม.1/1',
+					classroomId: 'classroom-m1-1',
+					gradeLevelName: 'ม.1',
+					gradeLevelYear: 1,
+					subjectNameTh: 'คณิตศาสตร์พื้นฐาน',
+					subjectCode: 'ค21102'
+				})
+			]),
+			invigilatorWorkspace
+		);
+
+		assert.equal(workbook.paperTransferReport.name, 'รับส่งข้อสอบ');
+		assert.deepEqual(workbook.paperTransferReport.rows[3], [
+			'วันสอบ',
+			'เวลา',
+			'รหัสวิชา',
+			'วิชา',
+			'ชั้น/ห้อง',
+			'ห้องสอบ',
+			'กรรมการคุมสอบ',
+			'ลงชื่อรับข้อสอบ',
+			'เวลารับ',
+			'ลงชื่อส่งข้อสอบ',
+			'เวลาส่ง',
+			'หมายเหตุ'
+		]);
+		assert.deepEqual(workbook.paperTransferReport.rows[4], [
+			'วันพุธที่ 4 มีนาคม 2569',
+			'09.00-10.00 น.',
+			'ค21102',
+			'คณิตศาสตร์พื้นฐาน',
+			'ม.1/1',
+			'อาคารเรียน / 313',
+			'ครู A\nครู B\nครู D',
+			'',
+			'',
+			'',
+			'',
+			''
+		]);
+		assert.equal(workbook.paperTransferReport['!printTitlesRow'], '1:4');
+		assert.equal(workbook.paperTransferReport['!cols']?.length, 12);
+		assert.deepEqual(workbook.paperTransferReport['!merges'], [
+			{ s: { r: 0, c: 0 }, e: { r: 0, c: 11 } },
+			{ s: { r: 1, c: 0 }, e: { r: 1, c: 11 } }
 		]);
 	});
 });

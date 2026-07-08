@@ -690,7 +690,8 @@ test('exam schedule detail exports one editable report workbook', () => {
 		'ตารางสอบ ม.ปลาย',
 		'ตารางสอบแยกห้อง ม.ต้น',
 		'ตารางสอบแยกห้อง ม.ปลาย',
-		'กรรมการคุมสอบ'
+		'กรรมการคุมสอบ',
+		'รับส่งข้อสอบ'
 	]) {
 		assert.match(exportUtil, new RegExp(escapeRegExp(sheetName)));
 	}
@@ -704,6 +705,7 @@ test('exam schedule detail exports one editable report workbook', () => {
 	assert.match(exportUtil, /lowerSecondaryClassroomReport/);
 	assert.match(exportUtil, /upperSecondaryClassroomReport/);
 	assert.match(exportUtil, /invigilatorSummary/);
+	assert.match(exportUtil, /paperTransferReport/);
 	assert.match(exportUtil, /function reportClassroomLabel/);
 	assert.match(exportUtil, /function compactClassroomLabels/);
 	assert.match(exportUtil, /function printableReportSheet/);
@@ -711,12 +713,17 @@ test('exam schedule detail exports one editable report workbook', () => {
 	assert.match(exportUtil, /function classroomReportRows/);
 	assert.match(exportUtil, /function printableInvigilatorSummarySheet/);
 	assert.match(exportUtil, /function invigilatorSummaryRows/);
+	assert.match(exportUtil, /function printablePaperTransferSheet/);
+	assert.match(exportUtil, /function paperTransferRows/);
 	assert.match(exportUtil, /function invigilatorSummarySheetMerges/);
+	assert.match(exportUtil, /function paperTransferSheetMerges/);
 	assert.match(exportUtil, /function reportSheetMerges/);
 	assert.match(exportUtil, /วันเดือนปี/);
 	assert.match(exportUtil, /เวลาสอบ/);
 	assert.match(exportUtil, /รหัสวิชา/);
 	assert.match(exportUtil, /ชั้น/);
+	assert.match(exportUtil, /ลงชื่อรับข้อสอบ/);
+	assert.match(exportUtil, /ลงชื่อส่งข้อสอบ/);
 	assert.match(exportUtil, /ห้องเรียน/);
 	assert.match(exportUtil, /ห้องสอบ/);
 	assert.match(exportUtil, /weekday: 'long'/);
@@ -730,10 +737,13 @@ test('exam schedule detail exports one editable report workbook', () => {
 		'roomRows',
 		'invigilatorRows',
 		'workloadRows',
+		'paperTransferRows',
 		'readinessRows'
 	]) {
 		assert.match(exportUtil, new RegExp(`function ${builderName}\\b`));
 	}
+	assert.match(page, /reportSheet\.name === 'รับส่งข้อสอบ'/);
+	assert.match(page, /headerText === 'กรรมการคุมสอบ'/);
 	assert.doesNotMatch(handleExport + exportUtil, /nationalId|national_id|phone|email|username/);
 });
 

@@ -47,6 +47,7 @@ export type ExamScheduleExportWorkbook = {
 	lowerSecondaryClassroomReport?: ExamScheduleReportSheet;
 	upperSecondaryClassroomReport?: ExamScheduleReportSheet;
 	invigilatorSummary: ExamScheduleReportSheet;
+	paperTransferReport: ExamScheduleReportSheet;
 	schedule: ExamScheduleExportSheet<WorksheetObjectRow>;
 	rooms: ExamScheduleExportSheet<WorksheetObjectRow>;
 	invigilators: ExamScheduleExportSheet<WorksheetObjectRow>;
@@ -119,21 +120,27 @@ function buildingRoomLabel(
 }
 
 function sessionInvigilatorNames(session: ExamSession): string {
-	return session.invigilators
-		.map((invigilator) => safeText(invigilator.staffName))
-		.filter(Boolean)
-		.join(', ');
+	return sessionInvigilatorNameList(session).join(', ');
+}
+
+function sessionInvigilatorNameList(session: ExamSession): string[] {
+	return session.invigilators.map((invigilator) => safeText(invigilator.staffName)).filter(Boolean);
+}
+
+function assignmentInvigilatorNameList(
+	assignment: ExamInvigilatorAssignmentSummary | undefined
+): string[] {
+	return (
+		assignment?.invigilators
+			.map((invigilator) => safeText(invigilator.displayName))
+			.filter(Boolean) ?? []
+	);
 }
 
 function assignmentInvigilatorNames(
 	assignment: ExamInvigilatorAssignmentSummary | undefined
 ): string {
-	return (
-		assignment?.invigilators
-			.map((invigilator) => safeText(invigilator.displayName))
-			.filter(Boolean)
-			.join(', ') ?? ''
-	);
+	return assignmentInvigilatorNameList(assignment).join(', ');
 }
 
 function sortedDays(workspace: ExamScheduleWorkspace): ExamDayDetail[] {
@@ -489,6 +496,30 @@ function invigilatorSummarySheetMerges(): ExamScheduleExportMerge[] {
 	];
 }
 
+function paperTransferSheetColumns(): ExamScheduleExportColumn[] {
+	return [
+		{ wch: 24 },
+		{ wch: 18 },
+		{ wch: 13 },
+		{ wch: 30 },
+		{ wch: 12 },
+		{ wch: 18 },
+		{ wch: 28 },
+		{ wch: 22 },
+		{ wch: 10 },
+		{ wch: 22 },
+		{ wch: 10 },
+		{ wch: 18 }
+	];
+}
+
+function paperTransferSheetMerges(): ExamScheduleExportMerge[] {
+	return [
+		{ s: { r: 0, c: 0 }, e: { r: 0, c: 11 } },
+		{ s: { r: 1, c: 0 }, e: { r: 1, c: 11 } }
+	];
+}
+
 function printableReportRows(
 	workspace: ExamScheduleWorkspace,
 	sessions: ExamSession[],
@@ -668,6 +699,89 @@ function invigilatorSummaryRows(
 	return rows;
 }
 
+function paperTransferDateLabel(workspace: ExamScheduleWorkspace, session: ExamSession): string {
+	const day = workspace.days.find((item) => item.id === session.examDayId);
+	return (
+		dateLabel(session.examDate) ||
+		(day ? dateLabel(day.examDate) : '') ||
+		safeText(session.examDayId, '-')
+	);
+}
+
+function paperTransferInvigilatorNames(
+	assignment: ExamInvigilatorAssignmentSummary | undefined,
+	session: ExamSession
+): string {
+	const names = assignmentInvigilatorNameList(assignment);
+	if (names.length > 0) return names.join('\n');
+	return sessionInvigilatorNameList(session).join('\n');
+}
+
+function paperTransferRows(
+	workspace: ExamScheduleWorkspace,
+	invigilatorWorkspace: ExamInvigilatorWorkspace | null
+): WorksheetRow[] {
+	const assignments = assignmentByDayClassroom(invigilatorWorkspace);
+	const rows: WorksheetRow[] = [
+		['ใบรับส่งข้อสอบ'],
+		[printableReportTitle(workspace)],
+		[],
+		[
+			'วันสอบ',
+			'เวลา',
+			'รหัสวิชา',
+			'วิชา',
+			'ชั้น/ห้อง',
+			'ห้องสอบ',
+			'กรรมการคุมสอบ',
+			'ลงชื่อรับข้อสอบ',
+			'เวลารับ',
+			'ลงชื่อส่งข้อสอบ',
+			'เวลาส่ง',
+			'หมายเหตุ'
+		]
+	];
+
+	const sessions = sortedSessions(workspace);
+	if (sessions.length === 0) {
+		rows.push([
+			'-',
+			'-',
+			'-',
+			'ยังไม่มีรายการสอบที่จัดเวลาแล้ว',
+			'-',
+			'-',
+			'-',
+			'',
+			'',
+			'',
+			'',
+			''
+		]);
+		return rows;
+	}
+
+	for (const session of sessions) {
+		const assignment = assignments.get(assignmentKey(session.examDayId, session.classroomId));
+		rows.push([
+			paperTransferDateLabel(workspace, session),
+			printableTimeRangeLabel(session),
+			safeText(session.subjectCode, '-'),
+			subjectLabel(session),
+			sessionClassroomLabel(session),
+			sessionExamRoomLabel(workspace, session),
+			paperTransferInvigilatorNames(assignment, session),
+			'',
+			'',
+			'',
+			'',
+			''
+		]);
+	}
+
+	return rows;
+}
+
 function printableReportSheet(
 	workspace: ExamScheduleWorkspace,
 	name: string,
@@ -709,6 +823,19 @@ function printableInvigilatorSummarySheet(
 		rows: invigilatorSummaryRows(workspace, invigilatorWorkspace),
 		'!cols': invigilatorSummarySheetColumns(),
 		'!merges': invigilatorSummarySheetMerges(),
+		'!printTitlesRow': '1:4'
+	};
+}
+
+function printablePaperTransferSheet(
+	workspace: ExamScheduleWorkspace,
+	invigilatorWorkspace: ExamInvigilatorWorkspace | null
+): ExamScheduleReportSheet {
+	return {
+		name: 'รับส่งข้อสอบ',
+		rows: paperTransferRows(workspace, invigilatorWorkspace),
+		'!cols': paperTransferSheetColumns(),
+		'!merges': paperTransferSheetMerges(),
 		'!printTitlesRow': '1:4'
 	};
 }
@@ -898,6 +1025,7 @@ export function buildExamScheduleExportWorkbook(
 		'ระดับชั้นมัธยมศึกษาตอนปลาย'
 	);
 	const invigilatorSummary = printableInvigilatorSummarySheet(workspace, invigilatorWorkspace);
+	const paperTransferReport = printablePaperTransferSheet(workspace, invigilatorWorkspace);
 
 	return {
 		report,
@@ -907,13 +1035,15 @@ export function buildExamScheduleExportWorkbook(
 			upperSecondaryReport,
 			lowerSecondaryClassroomReport,
 			upperSecondaryClassroomReport,
-			invigilatorSummary
+			invigilatorSummary,
+			paperTransferReport
 		],
 		lowerSecondaryReport,
 		upperSecondaryReport,
 		lowerSecondaryClassroomReport,
 		upperSecondaryClassroomReport,
 		invigilatorSummary,
+		paperTransferReport,
 		schedule: objectSheet(scheduleRows(workspace, invigilatorWorkspace), [
 			{ wch: 18 },
 			{ wch: 14 },
