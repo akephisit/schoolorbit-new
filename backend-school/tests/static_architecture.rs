@@ -887,6 +887,9 @@ fn academic_exam_schedule_routes_are_registered_and_authorized() {
     let parent_services = strip_comments(&read_source(
         manifest_dir().join("src/modules/parents/services.rs"),
     ));
+    let exam_service = strip_comments(&read_source(
+        manifest_dir().join("src/modules/academic/services/exam_schedule_service.rs"),
+    ));
     let exam_handler_path = manifest_dir().join("src/modules/academic/handlers/exam_schedule.rs");
 
     assert!(
@@ -951,6 +954,10 @@ fn academic_exam_schedule_routes_are_registered_and_authorized() {
     assert!(self_route.contains("exam_schedule::list_my_exam_schedule"));
     assert!(self_route.contains("auth_middleware"));
 
+    let staff_route = main_route_snippet(&main_routes, "\"/api/staff/exam-schedules\"");
+    assert!(staff_route.contains("exam_schedule::list_staff_exam_schedule"));
+    assert!(staff_route.contains("auth_middleware"));
+
     let parent_route = main_route_snippet(
         &main_routes,
         "\"/api/parent/students/{student_id}/exam-schedules\"",
@@ -1004,6 +1011,15 @@ fn academic_exam_schedule_routes_are_registered_and_authorized() {
         !self_handler.contains("ACADEMIC_EXAM_SCHEDULE_"),
         "self exam schedule route must not require academic permissions"
     );
+
+    let staff_handler = handler_body(&exam_handler, "list_staff_exam_schedule");
+    assert!(staff_handler.contains("list_staff_published_exam_schedule"));
+    assert!(
+        !staff_handler.contains("ACADEMIC_EXAM_SCHEDULE_"),
+        "staff published exam schedule route must not require academic permissions"
+    );
+    assert!(exam_service.contains("ensure_active_staff_user_for_exam_schedule"));
+    assert!(exam_service.contains("list_published_exam_schedule_for_staff"));
 
     assert!(parent_handlers.contains("pub async fn get_child_exam_schedule"));
     assert!(parent_services.contains("pub async fn get_child_exam_schedule"));

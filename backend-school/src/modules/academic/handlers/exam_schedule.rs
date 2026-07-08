@@ -383,3 +383,20 @@ pub async fn list_my_exam_schedule(
 
     Ok(Json(ApiResponse::ok(schedule)).into_response())
 }
+
+/// GET /api/staff/exam-schedules
+pub async fn list_staff_exam_schedule(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<PersonalExamScheduleQuery>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = current_user_tenant_context_from_headers(&state, &headers).await?;
+    let schedule = exam_schedule_service::list_staff_published_exam_schedule(
+        &context.tenant.pool,
+        context.user_id,
+        query.academic_semester_id,
+    )
+    .await?;
+
+    Ok(Json(ApiResponse::ok(schedule)).into_response())
+}

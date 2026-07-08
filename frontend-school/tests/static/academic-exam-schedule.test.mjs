@@ -141,6 +141,7 @@ test('academic exam schedule routes have compile-ready page placeholders', () =>
 		'src/lib/components/academic/exam-schedule/ExamScheduleTimeline.svelte',
 		'src/lib/components/academic/exam-schedule/ExamItemTray.svelte',
 		'src/lib/components/academic/exam-schedule/ExamSessionBlock.svelte',
+		'src/routes/(app)/staff/exams/+page.svelte',
 		'src/routes/(app)/student/exams/+page.svelte',
 		'src/routes/(app)/parent/student/[id]/exams/+page.svelte'
 	];
@@ -254,6 +255,11 @@ test('academic exam schedule API client maps functions to backend routes and met
 			functionName: 'listMyExamSchedules',
 			method: 'get',
 			routeFragment: '/api/me/exam-schedules'
+		},
+		{
+			functionName: 'listStaffExamSchedules',
+			method: 'get',
+			routeFragment: '/api/staff/exam-schedules'
 		},
 		{
 			functionName: 'listChildExamSchedules',
@@ -1380,6 +1386,8 @@ test('staff workspace ignores stale management option responses after route chan
 });
 
 test('personal exam schedule pages use the published schedule APIs and shared view', () => {
+	const staffRoute = readFileSync(projectPath('src/routes/(app)/staff/exams/+page.ts'), 'utf8');
+	const staffPage = readFileSync(projectPath('src/routes/(app)/staff/exams/+page.svelte'), 'utf8');
 	const studentPage = readFileSync(
 		projectPath('src/routes/(app)/student/exams/+page.svelte'),
 		'utf8'
@@ -1388,6 +1396,16 @@ test('personal exam schedule pages use the published schedule APIs and shared vi
 		projectPath('src/routes/(app)/parent/student/[id]/exams/+page.svelte'),
 		'utf8'
 	);
+
+	assert.match(staffRoute, /user_type: 'staff'/);
+	assert.doesNotMatch(staffRoute, /permission:/);
+	assert.match(staffPage, /listStaffExamSchedules/);
+	assert.doesNotMatch(staffPage, /listMyExamSchedules/);
+	assert.doesNotMatch(staffPage, /listChildExamSchedules/);
+	assert.match(staffPage, /PersonalExamScheduleView/);
+	assert.match(staffPage, /showSeatNumber=\{false\}/);
+	assert.match(staffPage, /PageSkeleton/);
+	assert.match(staffPage, /PageState/);
 
 	assert.match(studentPage, /listMyExamSchedules/);
 	assert.doesNotMatch(studentPage, /listChildExamSchedules/);
@@ -1422,12 +1440,14 @@ test('personal exam schedule view groups published sessions and hides staff supe
 		projectPath('src/routes/(app)/parent/student/[id]/exams/+page.svelte'),
 		'utf8'
 	);
-	const combinedPersonalSources = [personalView, studentPage, parentPage].join('\n');
+	const staffPage = readFileSync(projectPath('src/routes/(app)/staff/exams/+page.svelte'), 'utf8');
+	const combinedPersonalSources = [personalView, staffPage, studentPage, parentPage].join('\n');
 
 	for (const expected of [
 		'PersonalExamScheduleRound',
 		'PersonalExamSessionView',
 		'groupSessionsByDate',
+		'personalExamSessionKey',
 		'round.sessions',
 		'session.examDate',
 		'session.startsAt',
@@ -1438,6 +1458,7 @@ test('personal exam schedule view groups published sessions and hides staff supe
 		'session.buildingName',
 		'session.roomName',
 		'session.seatNumber',
+		'showSeatNumber',
 		'ไม่มีตารางสอบที่เผยแพร่'
 	]) {
 		assert.match(
@@ -1447,8 +1468,11 @@ test('personal exam schedule view groups published sessions and hides staff supe
 		);
 	}
 
-	assert.match(personalView, /\{#each dateGroup\.sessions as session\}/);
-	assert.doesNotMatch(personalView, /\{#each dateGroup\.sessions as session \(/);
+	assert.match(
+		personalView,
+		/\{#each dateGroup\.sessions as session \(personalExamSessionKey\(session\)\)\}/
+	);
+	assert.match(personalView, /\{#if showSeatNumber\}/);
 	assert.doesNotMatch(
 		personalView,
 		/session\.examDate\}-\$\{session\.startsAt\}-\$\{session\.subjectName/

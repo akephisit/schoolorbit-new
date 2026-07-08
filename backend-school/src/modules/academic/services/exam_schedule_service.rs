@@ -2065,6 +2065,15 @@ pub async fn list_my_published_exam_schedule(
     list_published_exam_schedule_for_student(pool, user_id, academic_semester_id).await
 }
 
+pub async fn list_staff_published_exam_schedule(
+    pool: &PgPool,
+    user_id: Uuid,
+    academic_semester_id: Option<Uuid>,
+) -> Result<Vec<PersonalExamScheduleRound>, AppError> {
+    ensure_active_staff_user_for_exam_schedule(pool, user_id).await?;
+    list_published_exam_schedule_for_staff(pool, academic_semester_id).await
+}
+
 pub async fn list_child_published_exam_schedule(
     pool: &PgPool,
     parent_user_id: Uuid,
@@ -2393,6 +2402,28 @@ async fn ensure_active_student_user(pool: &PgPool, user_id: Uuid) -> Result<(), 
     }
 }
 
+async fn ensure_active_staff_user_for_exam_schedule(
+    pool: &PgPool,
+    user_id: Uuid,
+) -> Result<(), AppError> {
+    let user_row: Option<(String, String)> =
+        sqlx::query_as("SELECT user_type, status FROM users WHERE id = $1")
+            .bind(user_id)
+            .fetch_optional(pool)
+            .await?;
+
+    match user_row
+        .as_ref()
+        .map(|(user_type, status)| (user_type.as_str(), status.as_str()))
+    {
+        Some(("staff", "active")) => Ok(()),
+        Some(_) => Err(AppError::Forbidden(
+            "Only active staff can view published exam schedules".to_string(),
+        )),
+        None => Err(AppError::AuthError("Please sign in".to_string())),
+    }
+}
+
 async fn ensure_parent_user_for_exam_schedule(
     pool: &PgPool,
     parent_user_id: Uuid,
@@ -2506,6 +2537,65 @@ async fn list_published_exam_schedule_for_student(
         "#,
     )
     .bind(student_id)
+    .bind(academic_semester_id)
+    .fetch_all(pool)
+    .await?;
+
+    Ok(group_personal_exam_schedule_rows(rows))
+}
+
+async fn list_published_exam_schedule_for_staff(
+    pool: &PgPool,
+    academic_semester_id: Option<Uuid>,
+) -> Result<Vec<PersonalExamScheduleRound>, AppError> {
+    let rows = sqlx::query_as::<_, PersonalExamSessionRow>(
+        r#"
+        SELECT round.id AS round_id,
+               round.name AS round_name,
+               round.academic_semester_id,
+               round.published_at,
+               day.exam_date,
+               session.starts_at,
+               session.ends_at,
+               COALESCE(NULLIF(subject.name_th, ''), NULLIF(subject.name_en, ''), subject.code)
+                   AS subject_name,
+               category.name AS assessment_category_name,
+               classroom.name AS classroom_name,
+               room.name_th AS room_name,
+               building.name_th AS building_name,
+               NULL::text AS seat_number
+        FROM academic_exam_sessions session
+        JOIN academic_exam_schedule_items item
+          ON item.id = session.exam_schedule_item_id
+         AND item.exam_round_id = session.exam_round_id
+        JOIN academic_exam_rounds round
+          ON round.id = item.exam_round_id
+         AND round.academic_semester_id = item.academic_semester_id
+        JOIN academic_exam_days day
+          ON day.id = session.exam_day_id
+         AND day.exam_round_id = session.exam_round_id
+        JOIN academic_assessment_categories category
+          ON category.id = item.assessment_category_id
+        JOIN subjects subject ON subject.id = item.subject_id
+        JOIN class_rooms classroom ON classroom.id = item.classroom_id
+        JOIN academic_exam_day_room_assignments assignment
+          ON assignment.exam_day_id = session.exam_day_id
+         AND assignment.classroom_id = item.classroom_id
+        JOIN rooms room ON room.id = assignment.room_id
+        LEFT JOIN buildings building ON building.id = room.building_id
+        WHERE round.status = 'published'
+          AND ($1::uuid IS NULL OR round.academic_semester_id = $1)
+        ORDER BY round.published_at DESC NULLS LAST,
+                 round.name,
+                 day.exam_date,
+                 session.starts_at,
+                 classroom.name,
+                 subject.code,
+                 category.display_order,
+                 category.name,
+                 session.id
+        "#,
+    )
     .bind(academic_semester_id)
     .fetch_all(pool)
     .await?;

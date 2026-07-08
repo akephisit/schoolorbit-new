@@ -486,6 +486,15 @@ export async function listMyExamSchedules(
 	return apiData(response, 'ไม่สามารถโหลดตารางสอบได้');
 }
 
+export async function listStaffExamSchedules(
+	filters: ExamScheduleFilters = {}
+): Promise<PersonalExamScheduleRound[]> {
+	const response = await apiClient.get<PersonalExamScheduleRound[]>(
+		`/api/staff/exam-schedules${examScheduleQuery(filters)}`
+	);
+	return apiData(response, 'ไม่สามารถโหลดตารางสอบสำหรับครูได้');
+}
+
 export async function listChildExamSchedules(
 	studentId: string,
 	filters: ExamScheduleFilters = {}

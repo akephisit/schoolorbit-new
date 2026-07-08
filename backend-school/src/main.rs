@@ -260,6 +260,11 @@ async fn main() {
                 .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
         )
         .route(
+            "/api/staff/exam-schedules",
+            get(modules::academic::handlers::exam_schedule::list_staff_exam_schedule)
+                .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
+        )
+        .route(
             "/api/me/calendar/events",
             get(modules::calendar::handlers::list_my_calendar_events)
                 .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
