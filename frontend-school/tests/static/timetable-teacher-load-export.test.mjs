@@ -4,6 +4,9 @@ import { describe, it } from 'node:test';
 
 import {
 	buildTeacherLoadExportRows,
+	calculateTeacherLoadColumnWidths,
+	TEACHER_LOAD_DETAIL_COLUMN_WIDTH_OPTIONS,
+	TEACHER_LOAD_SUMMARY_COLUMN_WIDTH_OPTIONS,
 	teacherLoadCategoryForEntry
 } from '../../src/lib/utils/timetable-teacher-load-export.ts';
 
@@ -294,6 +297,67 @@ describe('timetable teacher load export helpers', () => {
 		assert.equal(rows.detailRows[0].classroomName, 'ม.1/1, ม.1/2');
 	});
 
+	it('calculates compact Excel column widths from sheet content', () => {
+		assert.deepEqual(
+			calculateTeacherLoadColumnWidths(
+				[
+					['ครู', 'จำนวน'],
+					['ครูเอ', 12]
+				],
+				{ minWidths: [8, 6], maxWidths: [20, 8], padding: 2 }
+			),
+			[8, 7]
+		);
+		assert.deepEqual(
+			calculateTeacherLoadColumnWidths([['หัวคอลัมน์ยาวมาก'], ['สั้น']], {
+				minWidths: [6],
+				maxWidths: [10],
+				padding: 2
+			}),
+			[10]
+		);
+	});
+
+	it('uses capped auto-fit widths for teacher load workbook sheets', () => {
+		const exportRows = buildTeacherLoadExportRows([
+			entry({
+				id: 'course-1',
+				instructor_ids: ['teacher-a'],
+				instructor_names: ['ครูเอ'],
+				instructor_subject_group_ids: ['math-group'],
+				instructor_subject_group_names: ['คณิตศาสตร์'],
+				instructor_subject_group_display_orders: [1]
+			}),
+			entry({
+				id: 'manual-activity-1',
+				entry_type: 'ACTIVITY',
+				activity_scheduling_mode: null,
+				title: 'กิจกรรมเพิ่มเองที่มีชื่อค่อนข้างยาวเพื่อทดสอบการจำกัดความกว้าง',
+				subject_code: undefined,
+				subject_name_th: undefined,
+				subject_group_id: undefined,
+				subject_group_name: undefined,
+				instructor_ids: ['teacher-a'],
+				instructor_names: ['ครูเอ']
+			})
+		]);
+
+		const summaryWidths = calculateTeacherLoadColumnWidths(
+			exportRows.summarySheetRows,
+			TEACHER_LOAD_SUMMARY_COLUMN_WIDTH_OPTIONS
+		);
+		const detailWidths = calculateTeacherLoadColumnWidths(
+			exportRows.detailSheetRows,
+			TEACHER_LOAD_DETAIL_COLUMN_WIDTH_OPTIONS
+		);
+
+		assert.equal(summaryWidths.length, 10);
+		assert.equal(detailWidths.length, 9);
+		assert.ok(summaryWidths[1] <= 24);
+		assert.ok(summaryWidths.slice(2, 9).every((width) => width <= 14));
+		assert.ok(detailWidths[8] <= 42);
+	});
+
 	it('exports the teacher load workbook with exceljs and TH Sarabun New', () => {
 		const page = readFileSync(
 			projectFile('src/routes/(app)/staff/academic/timetable/+page.svelte'),
@@ -311,6 +375,9 @@ describe('timetable teacher load export helpers', () => {
 		assert.match(summarySheetFunction, /กิจกรรมไม่ระบุประเภท/);
 		assert.match(summarySheetFunction, /unspecifiedActivityPeriods/);
 		assert.match(summarySheetFunction, /styleTeacherLoadGroupRow\(groupRow, 10\)/);
+		assert.match(page, /calculateTeacherLoadColumnWidths/);
+		assert.match(page, /TEACHER_LOAD_SUMMARY_COLUMN_WIDTH_OPTIONS/);
+		assert.match(page, /TEACHER_LOAD_DETAIL_COLUMN_WIDTH_OPTIONS/);
 		assert.match(page, /TH Sarabun New/);
 		assert.doesNotMatch(exportFunction, /import\('xlsx'\)/);
 		assert.doesNotMatch(exportFunction, /XLSX\.writeFile/);

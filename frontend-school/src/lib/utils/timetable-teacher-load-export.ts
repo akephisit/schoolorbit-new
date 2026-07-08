@@ -112,6 +112,26 @@ export interface TeacherLoadExportRows {
 	detailSheetRows: Array<Array<string | number>>;
 }
 
+export interface TeacherLoadColumnWidthOptions {
+	minWidths?: readonly number[];
+	maxWidths?: readonly number[];
+	padding?: number;
+	defaultMinWidth?: number;
+	defaultMaxWidth?: number;
+}
+
+export const TEACHER_LOAD_SUMMARY_COLUMN_WIDTH_OPTIONS = {
+	minWidths: [12, 14, 8, 8, 8, 8, 8, 8, 8, 8],
+	maxWidths: [20, 24, 14, 14, 14, 14, 14, 14, 14, 10],
+	padding: 2
+} satisfies TeacherLoadColumnWidthOptions;
+
+export const TEACHER_LOAD_DETAIL_COLUMN_WIDTH_OPTIONS = {
+	minWidths: [12, 14, 12, 12, 7, 7, 9, 10, 16],
+	maxWidths: [20, 24, 20, 22, 10, 12, 13, 18, 42],
+	padding: 2
+} satisfies TeacherLoadColumnWidthOptions;
+
 const UNKNOWN_SUBJECT_GROUP_NAME = 'ไม่ระบุกลุ่มสาระ';
 const ACTIVITY_SUBJECT_GROUP_NAME = 'กิจกรรม';
 
@@ -251,6 +271,34 @@ export function buildTeacherLoadExportRows(entries: TeacherLoadEntry[]): Teacher
 		summarySheetRows: buildSummarySheetRows(summaryGroups),
 		detailSheetRows: buildDetailSheetRows(detailGroups)
 	};
+}
+
+export function calculateTeacherLoadColumnWidths(
+	rows: Array<Array<string | number>>,
+	options: TeacherLoadColumnWidthOptions = {}
+): number[] {
+	const columnCount = rows.reduce((max, row) => Math.max(max, row.length), 0);
+	const padding = options.padding ?? 2;
+	const defaultMinWidth = options.defaultMinWidth ?? 8;
+	const defaultMaxWidth = options.defaultMaxWidth ?? 36;
+
+	return Array.from({ length: columnCount }, (_, index) => {
+		const minWidth = options.minWidths?.[index] ?? defaultMinWidth;
+		const maxWidth = options.maxWidths?.[index] ?? defaultMaxWidth;
+		const contentWidth = rows.reduce((max, row) => {
+			const value = row[index];
+			return Math.max(max, teacherLoadCellDisplayWidth(value));
+		}, 0);
+
+		return Math.min(maxWidth, Math.max(minWidth, Math.ceil(contentWidth + padding)));
+	});
+}
+
+function teacherLoadCellDisplayWidth(value: string | number | undefined): number {
+	if (value === undefined) return 0;
+	return String(value)
+		.split(/\r?\n/)
+		.reduce((max, line) => Math.max(max, Array.from(line).length), 0);
 }
 
 function getOrCreateSummary(

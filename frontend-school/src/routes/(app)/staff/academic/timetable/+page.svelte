@@ -89,6 +89,9 @@
 	import { generateTimetablePDF } from '$lib/utils/pdf';
 	import {
 		buildTeacherLoadExportRows,
+		calculateTeacherLoadColumnWidths,
+		TEACHER_LOAD_DETAIL_COLUMN_WIDTH_OPTIONS,
+		TEACHER_LOAD_SUMMARY_COLUMN_WIDTH_OPTIONS,
 		type TeacherLoadExportRows
 	} from '$lib/utils/timetable-teacher-load-export';
 	import { SvelteSet, SvelteMap } from 'svelte/reactivity';
@@ -2446,18 +2449,10 @@
 
 	function appendTeacherLoadSummarySheet(workbook: Workbook, exportRows: TeacherLoadExportRows) {
 		const worksheet = workbook.addWorksheet('สรุปต่อครู');
-		worksheet.columns = [
-			{ width: 26 },
-			{ width: 34 },
-			{ width: 24 },
-			{ width: 24 },
-			{ width: 26 },
-			{ width: 26 },
-			{ width: 24 },
-			{ width: 28 },
-			{ width: 28 },
-			{ width: 14 }
-		];
+		worksheet.columns = calculateTeacherLoadColumnWidths(
+			exportRows.summarySheetRows,
+			TEACHER_LOAD_SUMMARY_COLUMN_WIDTH_OPTIONS
+		).map((width) => ({ width }));
 		styleTeacherLoadWorksheet(worksheet);
 
 		styleTeacherLoadHeaderRow(
@@ -2520,17 +2515,10 @@
 
 	function appendTeacherLoadDetailSheet(workbook: Workbook, exportRows: TeacherLoadExportRows) {
 		const worksheet = workbook.addWorksheet('รายละเอียด');
-		worksheet.columns = [
-			{ width: 26 },
-			{ width: 34 },
-			{ width: 26 },
-			{ width: 28 },
-			{ width: 12 },
-			{ width: 12 },
-			{ width: 14 },
-			{ width: 24 },
-			{ width: 54 }
-		];
+		worksheet.columns = calculateTeacherLoadColumnWidths(
+			exportRows.detailSheetRows,
+			TEACHER_LOAD_DETAIL_COLUMN_WIDTH_OPTIONS
+		).map((width) => ({ width }));
 		styleTeacherLoadWorksheet(worksheet);
 
 		styleTeacherLoadHeaderRow(
