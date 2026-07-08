@@ -135,9 +135,7 @@
 			const totalCompare = a.totalMinutes - b.totalMinutes;
 			if (totalCompare !== 0) return totalCompare;
 			const todayCompare = a.selectedDayMinutes - b.selectedDayMinutes;
-			return todayCompare === 0
-				? a.displayName.localeCompare(b.displayName, 'th')
-				: todayCompare;
+			return todayCompare === 0 ? a.displayName.localeCompare(b.displayName, 'th') : todayCompare;
 		});
 	}
 
@@ -253,9 +251,7 @@
 		/>
 	</section>
 {:else}
-	<section
-		class="flex h-[calc(100vh-15rem)] min-h-[36rem] flex-col overflow-hidden rounded-md border bg-muted/20"
-	>
+	<section class="flex h-full min-h-0 flex-col overflow-hidden rounded-md border bg-muted/20">
 		<div
 			class="flex flex-col gap-3 border-b bg-background px-4 py-4 lg:flex-row lg:items-center lg:justify-between"
 		>
@@ -276,7 +272,7 @@
 					<LoadingButton
 						variant="outline"
 						size="sm"
-						loading={loading}
+						{loading}
 						loadingLabel="กำลังโหลด..."
 						onclick={onRetry}
 					>
@@ -322,7 +318,7 @@
 					{showAvailableOnly}
 					{readonly}
 					{pendingStaffIds}
-					activeDragStaffId={activeDragStaffId}
+					{activeDragStaffId}
 					onSearchChange={(value) => (staffSearch = value)}
 					onShowAvailableOnlyChange={(value) => (showAvailableOnly = value)}
 					onStaffDragStart={handleStaffDragStart}
@@ -333,7 +329,7 @@
 					{readonly}
 					{pendingAssignmentIds}
 					{pendingStaffIds}
-					activeDragStaffId={activeDragStaffId}
+					{activeDragStaffId}
 					onAssignInvigilator={assignInvigilator}
 					onRemoveInvigilator={removeInvigilator}
 				/>

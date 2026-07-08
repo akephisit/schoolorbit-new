@@ -339,11 +339,11 @@ test('staff schedule tab can clear imported items that do not match the round ki
 		projectPath('src/lib/components/academic/exam-schedule/ExamScheduleTimeline.svelte'),
 		'utf8'
 	);
-	const scheduleTabStart = detailPage.indexOf('<Tabs.Content value="schedule">');
+	const scheduleTabStart = detailPage.indexOf('<Tabs.Content value="schedule"');
 	assert.notEqual(scheduleTabStart, -1, 'schedule tab should exist');
 	const scheduleTab = detailPage.slice(
 		scheduleTabStart,
-		detailPage.indexOf('<Tabs.Content value="invigilators">')
+		detailPage.indexOf('<Tabs.Content value="invigilators"')
 	);
 	const handleClearMismatchedItems = localFunctionSource(detailPage, 'handleClearMismatchedItems');
 	const resetWorkspaceForRound = localFunctionSource(detailPage, 'resetWorkspaceForRound');
@@ -371,6 +371,39 @@ test('staff schedule tab can clear imported items that do not match the round ki
 	assert.match(timeline, /onclick=\{onClearMismatchedItems\}/);
 	assert.match(timeline, /นำเข้าเฉพาะ/);
 	assert.match(timeline, /ล้างรายการไม่ตรงรอบสอบ/);
+});
+
+test('exam schedule workspace tabs inherit app content height instead of recalculating viewport height', () => {
+	const detailPage = readFileSync(
+		projectPath('src/routes/(app)/staff/academic/exam-schedules/[id]/+page.svelte'),
+		'utf8'
+	);
+	const timeline = readFileSync(
+		projectPath('src/lib/components/academic/exam-schedule/ExamScheduleTimeline.svelte'),
+		'utf8'
+	);
+	const invigilatorPanel = readFileSync(
+		projectPath('src/lib/components/academic/exam-schedule/ExamInvigilatorPanel.svelte'),
+		'utf8'
+	);
+
+	assert.match(detailPage, /class="flex h-full min-h-0 flex-col"/);
+	assert.match(detailPage, /contentClass="flex min-h-0 flex-1 flex-col"/);
+	assert.match(
+		detailPage,
+		/<Tabs\.Root bind:value=\{activeTab\} class="flex min-h-0 flex-1 flex-col gap-4">/
+	);
+	assert.match(detailPage, /<Tabs\.Content value="schedule" class="min-h-0 flex-1">/);
+	assert.match(detailPage, /<Tabs\.Content value="invigilators" class="min-h-0 flex-1">/);
+
+	for (const [label, component] of [
+		['timeline', timeline],
+		['invigilator panel', invigilatorPanel]
+	]) {
+		assert.match(component, /class="flex h-full min-h-0 flex-col overflow-hidden/);
+		assert.doesNotMatch(component, /100vh/, `${label} should not calculate against full viewport`);
+		assert.doesNotMatch(component, /min-h-\[\d+rem\]/, `${label} should not force page overflow`);
+	}
 });
 
 test('exam schedule API exposes invigilator workspace and updates separately from room assignment', async () => {
@@ -485,7 +518,7 @@ test('exam invigilator drag workflow uses teacher cards and room drop targets', 
 	assert.match(panel, /let activeDragStaffId = \$state<string \| null>\(null\)/);
 	assert.match(panel, /function handleStaffDragStart/);
 	assert.match(panel, /function handleStaffDragEnd/);
-	assert.match(panel, /activeDragStaffId={activeDragStaffId}/);
+	assert.match(panel, /activeDragStaffId=\{activeDragStaffId\}|\{activeDragStaffId\}/);
 	assert.match(staffList, /onStaffDragStart/);
 	assert.match(staffList, /onStaffDragEnd/);
 	assert.match(staffList, /draggable=/);

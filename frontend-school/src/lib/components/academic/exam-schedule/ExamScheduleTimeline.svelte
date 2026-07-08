@@ -267,7 +267,9 @@
 	}
 
 	function sessionIsPending(session: ExamSession): boolean {
-		return placingItemIdSet.has(session.examScheduleItemId) || unschedulingSessionIdSet.has(session.id);
+		return (
+			placingItemIdSet.has(session.examScheduleItemId) || unschedulingSessionIdSet.has(session.id)
+		);
 	}
 
 	function handleSessionDragStart(event: DragEvent, session: ExamSession, dragOffsetPx: number) {
@@ -476,9 +478,7 @@
 	});
 </script>
 
-<section
-	class="flex h-[clamp(34rem,calc(100vh-14rem),52rem)] min-h-0 flex-col overflow-hidden rounded-md border bg-background"
->
+<section class="flex h-full min-h-0 flex-col overflow-hidden rounded-md border bg-background">
 	<div
 		class="flex flex-col gap-2 border-b px-3 py-2 xl:flex-row xl:items-center xl:justify-between"
 	>

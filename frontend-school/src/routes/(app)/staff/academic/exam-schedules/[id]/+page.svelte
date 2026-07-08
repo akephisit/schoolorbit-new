@@ -1040,6 +1040,8 @@
 	title={pageTitle}
 	description={workspace?.round.description ?? semester?.name ?? 'จัดตารางสอบประจำภาคเรียน'}
 	backHref="/staff/academic/exam-schedules"
+	class="flex h-full min-h-0 flex-col"
+	contentClass="flex min-h-0 flex-1 flex-col"
 >
 	{#snippet meta()}
 		{#if workspace}
@@ -1131,8 +1133,8 @@
 	{:else if !workspace}
 		<PageState title="ไม่พบรอบตารางสอบ" description="รายการที่เปิดอาจถูกลบหรือไม่มีสิทธิ์เข้าถึง" />
 	{:else}
-		<div class="space-y-4">
-			<Tabs.Root bind:value={activeTab} class="gap-4">
+		<div class="flex min-h-0 flex-1 flex-col">
+			<Tabs.Root bind:value={activeTab} class="flex min-h-0 flex-1 flex-col gap-4">
 				<Tabs.List class="grid w-full grid-cols-4 md:w-fit">
 					<Tabs.Trigger value="setup">ตั้งค่า</Tabs.Trigger>
 					<Tabs.Trigger value="rooms">ห้องสอบ</Tabs.Trigger>
@@ -1140,7 +1142,7 @@
 					<Tabs.Trigger value="invigilators">กรรมการ</Tabs.Trigger>
 				</Tabs.List>
 
-				<Tabs.Content value="setup">
+				<Tabs.Content value="setup" class="min-h-0 flex-1">
 					<ExamDaySetupPanel
 						days={workspace.days}
 						{gradeLevels}
@@ -1152,7 +1154,7 @@
 					/>
 				</Tabs.Content>
 
-				<Tabs.Content value="rooms">
+				<Tabs.Content value="rooms" class="min-h-0 flex-1">
 					<ExamRoomAssignmentPanel
 						days={workspace.days}
 						{classrooms}
@@ -1165,7 +1167,7 @@
 					/>
 				</Tabs.Content>
 
-				<Tabs.Content value="schedule">
+				<Tabs.Content value="schedule" class="min-h-0 flex-1">
 					<ExamScheduleTimeline
 						{workspace}
 						readonly={!canManageExamSchedules || workspace.round.status === 'published'}
@@ -1182,7 +1184,7 @@
 					/>
 				</Tabs.Content>
 
-				<Tabs.Content value="invigilators">
+				<Tabs.Content value="invigilators" class="min-h-0 flex-1">
 					<ExamInvigilatorPanel
 						days={workspace.days}
 						workspace={invigilatorWorkspace}
