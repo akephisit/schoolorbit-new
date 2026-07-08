@@ -561,6 +561,52 @@
 		}
 	}
 
+	function reportSheetColumnCount(reportSheet: ExamScheduleReportSheet) {
+		return Math.max(
+			reportSheet['!cols']?.length ?? 0,
+			...reportSheet.rows.map((row) => row.length),
+			1
+		);
+	}
+
+	function isPaperTransferSheet(reportSheet: ExamScheduleReportSheet) {
+		return reportSheet.name === 'รับส่งข้อสอบ';
+	}
+
+	function isBlankReportRow(reportSheet: ExamScheduleReportSheet, rowNumber: number) {
+		const row = reportSheet.rows[rowNumber - 1] ?? [];
+		return row.length === 0 || row.every((cell) => String(cell ?? '').trim() === '');
+	}
+
+	function isPaperTransferHeaderRow(reportSheet: ExamScheduleReportSheet, rowNumber: number) {
+		const row = reportSheet.rows[rowNumber - 1] ?? [];
+		return isPaperTransferSheet(reportSheet) && row[0] === 'วิชา' && row[1] === 'รหัสวิชา';
+	}
+
+	function isPaperTransferTimeRow(reportSheet: ExamScheduleReportSheet, rowNumber: number) {
+		const row = reportSheet.rows[rowNumber - 1] ?? [];
+		return isPaperTransferSheet(reportSheet) && String(row[0] ?? '').startsWith('เวลา ');
+	}
+
+	function isPaperTransferDayRow(reportSheet: ExamScheduleReportSheet, rowNumber: number) {
+		const row = reportSheet.rows[rowNumber - 1] ?? [];
+		return (
+			isPaperTransferSheet(reportSheet) &&
+			rowNumber > 3 &&
+			row.length === 1 &&
+			String(row[0] ?? '').trim() !== '' &&
+			!isPaperTransferTimeRow(reportSheet, rowNumber)
+		);
+	}
+
+	function reportHeaderText(reportSheet: ExamScheduleReportSheet, columnIndex: number) {
+		if (isPaperTransferSheet(reportSheet)) {
+			const headerRow = reportSheet.rows.find((row) => row[0] === 'วิชา' && row[1] === 'รหัสวิชา');
+			return String(headerRow?.[columnIndex] ?? '');
+		}
+		return String(reportSheet.rows[3]?.[columnIndex] ?? '');
+	}
+
 	function columnTextWidth(value: string | number | undefined) {
 		return String(value ?? '')
 			.split(/\r?\n/)
@@ -578,6 +624,7 @@
 		}
 		if (headerText === 'ห้องสอบ') return { min: 12, max: 22 };
 		if (headerText === 'กรรมการคุมสอบ') return { min: 18, max: 34 };
+		if (headerText.startsWith('ลงชื่อ')) return { min: 18, max: 24 };
 		if (headerText === 'ลงชื่อรับข้อสอบ' || headerText === 'ลงชื่อส่งข้อสอบ') {
 			return { min: 20, max: 28 };
 		}
@@ -587,9 +634,9 @@
 	}
 
 	function autoFitWorksheetColumns(worksheet: Worksheet, reportSheet: ExamScheduleReportSheet) {
-		const headers = reportSheet.rows[3] ?? [];
-		for (let columnIndex = 0; columnIndex < headers.length; columnIndex += 1) {
-			const headerText = String(headers[columnIndex] ?? '');
+		const columnCount = reportSheetColumnCount(reportSheet);
+		for (let columnIndex = 0; columnIndex < columnCount; columnIndex += 1) {
+			const headerText = reportHeaderText(reportSheet, columnIndex);
 			const { min, max } = reportColumnWidthBounds(headerText);
 			const widest = reportSheet.rows.reduce(
 				(width, row) => Math.max(width, columnTextWidth(row[columnIndex])),
@@ -620,8 +667,8 @@
 	}
 
 	function styleReportSheet(worksheet: Worksheet, reportSheet: ExamScheduleReportSheet) {
-		const columnCount = reportSheet.rows[3]?.length ?? 6;
-		const isPaperTransferSheet = reportSheet.name === 'รับส่งข้อสอบ';
+		const columnCount = reportSheetColumnCount(reportSheet);
+		const reportIsPaperTransferSheet = isPaperTransferSheet(reportSheet);
 		worksheet.pageSetup = {
 			paperSize: 9,
 			orientation: 'portrait',
@@ -638,7 +685,7 @@
 			},
 			printTitlesRow: reportSheet['!printTitlesRow'] ?? '1:4'
 		};
-		worksheet.views = [{ state: 'frozen', ySplit: 4 }];
+		worksheet.views = [{ state: 'frozen', ySplit: reportIsPaperTransferSheet ? 2 : 4 }];
 		worksheet.getRow(1).height = 24;
 		worksheet.getRow(2).height = 22;
 		worksheet.getRow(3).height = 6;
@@ -659,24 +706,45 @@
 				continue;
 			}
 
+			if (isBlankReportRow(reportSheet, rowNumber)) {
+				row.height = 8;
+				continue;
+			}
+
 			if (rowNumber < 4) continue;
-			row.height = isPaperTransferSheet && rowNumber > 4 ? 30 : 22;
+			const isPaperTransferHeader = isPaperTransferHeaderRow(reportSheet, rowNumber);
+			const isPaperTransferTime = isPaperTransferTimeRow(reportSheet, rowNumber);
+			const isPaperTransferDay = isPaperTransferDayRow(reportSheet, rowNumber);
+			row.height =
+				reportIsPaperTransferSheet && rowNumber > 4 && !isPaperTransferTime && !isPaperTransferDay
+					? 30
+					: 22;
+			if (isPaperTransferHeader) row.height = 42;
 
 			for (let columnNumber = 1; columnNumber <= columnCount; columnNumber += 1) {
 				const cell = row.getCell(columnNumber);
-				const headerText = String(reportSheet.rows[3]?.[columnNumber - 1] ?? '');
+				const headerText = reportHeaderText(reportSheet, columnNumber - 1);
 				const isSecondInvigilatorColumn =
 					reportSheet.name === 'กรรมการคุมสอบ' && columnNumber === 5;
+				const isTableHeader =
+					(rowNumber === 4 && !reportIsPaperTransferSheet) || isPaperTransferHeader;
 				const shouldAlignLeft =
-					rowNumber > 4 &&
-					(headerText === 'วิชา' ||
-						headerText === 'กรรมการคุมสอบ' ||
-						headerText === 'หมายเหตุ' ||
-						isSecondInvigilatorColumn);
-				cell.font = { name: reportFontName, size: 16, bold: rowNumber === 4 };
+					isPaperTransferTime ||
+					(!reportIsPaperTransferSheet &&
+						rowNumber > 4 &&
+						(headerText === 'วิชา' ||
+							headerText === 'กรรมการคุมสอบ' ||
+							headerText === 'หมายเหตุ' ||
+							isSecondInvigilatorColumn));
+				cell.font = {
+					name: reportFontName,
+					size: 16,
+					bold: isTableHeader || isPaperTransferDay || isPaperTransferTime,
+					italic: isPaperTransferTime
+				};
 				cell.border = reportCellBorder(reportSheet, rowNumber, columnNumber);
 				cell.alignment = shouldAlignLeft ? leftAlignment : centeredAlignment;
-				if (rowNumber === 4) {
+				if (isTableHeader || isPaperTransferDay || isPaperTransferTime) {
 					cell.fill = tableHeaderFill;
 				}
 			}

@@ -717,14 +717,16 @@ test('exam schedule detail exports one editable report workbook', () => {
 	assert.match(exportUtil, /function paperTransferRows/);
 	assert.match(exportUtil, /function invigilatorSummarySheetMerges/);
 	assert.match(exportUtil, /function paperTransferSheetMerges/);
-	assert.match(exportUtil, /function contiguousTextMerges/);
+	assert.match(exportUtil, /function paperTransferTableHeaderRow/);
 	assert.match(exportUtil, /function reportSheetMerges/);
 	assert.match(exportUtil, /วันเดือนปี/);
 	assert.match(exportUtil, /เวลาสอบ/);
 	assert.match(exportUtil, /รหัสวิชา/);
 	assert.match(exportUtil, /ชั้น/);
-	assert.match(exportUtil, /ลงชื่อรับข้อสอบ/);
-	assert.match(exportUtil, /ลงชื่อส่งข้อสอบ/);
+	assert.match(exportUtil, /ลงชื่อรับ\\n\(กรรมการคุมสอบ\)/);
+	assert.match(exportUtil, /ลงชื่อส่ง\\n\(กรรมการคุมสอบ\)/);
+	assert.match(exportUtil, /ลงชื่อตรวจทาน\\n\(กรรมการกลาง\)/);
+	assert.match(exportUtil, /ลงชื่อรับไปตรวจ\\n\(ครูผู้สอน\)/);
 	assert.match(exportUtil, /ห้องเรียน/);
 	assert.match(exportUtil, /ห้องสอบ/);
 	assert.match(exportUtil, /weekday: 'long'/);
@@ -745,6 +747,9 @@ test('exam schedule detail exports one editable report workbook', () => {
 	}
 	assert.match(page, /reportSheet\.name === 'รับส่งข้อสอบ'/);
 	assert.match(page, /headerText === 'กรรมการคุมสอบ'/);
+	assert.match(page, /function reportSheetColumnCount/);
+	assert.match(page, /function isPaperTransferHeaderRow/);
+	assert.match(page, /function isPaperTransferTimeRow/);
 	assert.match(page, /function autoFitWorksheetColumns/);
 	assert.match(page, /function reportCellBorder/);
 	assert.match(page, /isInvigilatorSummarySheet/);

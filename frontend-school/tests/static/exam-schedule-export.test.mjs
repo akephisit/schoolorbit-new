@@ -374,56 +374,37 @@ describe('exam schedule export helpers', () => {
 		);
 
 		assert.equal(workbook.paperTransferReport.name, 'รับส่งข้อสอบ');
-		assert.deepEqual(workbook.paperTransferReport.rows[3], [
-			'วันสอบ',
-			'เวลา',
-			'รหัสวิชา',
-			'วิชา',
-			'ชั้น/ห้อง',
-			'ห้องสอบ',
-			'กรรมการคุมสอบ',
-			'ลงชื่อรับข้อสอบ',
-			'เวลารับ',
-			'ลงชื่อส่งข้อสอบ',
-			'เวลาส่ง',
-			'หมายเหตุ'
-		]);
+		assert.deepEqual(workbook.paperTransferReport.rows[3], ['วันพุธที่ 4 มีนาคม 2569']);
 		assert.deepEqual(workbook.paperTransferReport.rows[4], [
-			'วันพุธที่ 4 มีนาคม 2569',
-			'09.00-10.00 น.',
-			'ค21102',
+			'วิชา',
+			'รหัสวิชา',
+			'ชั้น',
+			'ลงชื่อรับ\n(กรรมการคุมสอบ)',
+			'ลงชื่อส่ง\n(กรรมการคุมสอบ)',
+			'ลงชื่อตรวจทาน\n(กรรมการกลาง)',
+			'ลงชื่อรับไปตรวจ\n(ครูผู้สอน)'
+		]);
+		assert.deepEqual(workbook.paperTransferReport.rows[5], ['เวลา 09.00-10.00 น.']);
+		assert.deepEqual(workbook.paperTransferReport.rows[6], [
 			'คณิตศาสตร์พื้นฐาน',
+			'ค21102',
 			'ม.1/1',
-			'อาคารเรียน / 313',
-			'ครู A',
-			'',
 			'',
 			'',
 			'',
 			''
 		]);
-		assert.equal(workbook.paperTransferReport.rows[5][6], 'ครู B');
-		assert.equal(workbook.paperTransferReport.rows[6][6], 'ครู D');
-		assert.equal(workbook.paperTransferReport['!printTitlesRow'], '1:4');
-		assert.equal(workbook.paperTransferReport['!cols']?.length, 12);
+		assert.equal(workbook.paperTransferReport['!printTitlesRow'], '1:2');
+		assert.equal(workbook.paperTransferReport['!cols']?.length, 7);
 		assert.deepEqual(workbook.paperTransferReport['!merges'], [
-			{ s: { r: 0, c: 0 }, e: { r: 0, c: 11 } },
-			{ s: { r: 1, c: 0 }, e: { r: 1, c: 11 } },
-			{ s: { r: 4, c: 0 }, e: { r: 6, c: 0 } },
-			{ s: { r: 4, c: 1 }, e: { r: 6, c: 1 } },
-			{ s: { r: 4, c: 2 }, e: { r: 6, c: 2 } },
-			{ s: { r: 4, c: 3 }, e: { r: 6, c: 3 } },
-			{ s: { r: 4, c: 4 }, e: { r: 6, c: 4 } },
-			{ s: { r: 4, c: 5 }, e: { r: 6, c: 5 } },
-			{ s: { r: 4, c: 7 }, e: { r: 6, c: 7 } },
-			{ s: { r: 4, c: 8 }, e: { r: 6, c: 8 } },
-			{ s: { r: 4, c: 9 }, e: { r: 6, c: 9 } },
-			{ s: { r: 4, c: 10 }, e: { r: 6, c: 10 } },
-			{ s: { r: 4, c: 11 }, e: { r: 6, c: 11 } }
+			{ s: { r: 0, c: 0 }, e: { r: 0, c: 6 } },
+			{ s: { r: 1, c: 0 }, e: { r: 1, c: 6 } },
+			{ s: { r: 3, c: 0 }, e: { r: 3, c: 6 } },
+			{ s: { r: 5, c: 0 }, e: { r: 5, c: 6 } }
 		]);
 	});
 
-	it('merges paper transfer subject names only when the subject code also matches', () => {
+	it('keeps same-name subjects with different codes as separate paper transfer rows', () => {
 		const workbook = buildExamScheduleExportWorkbook(
 			exportWorkspace([
 				scheduledSession({
@@ -454,11 +435,27 @@ describe('exam schedule export helpers', () => {
 			invigilatorWorkspace
 		);
 
-		const subjectMerges = workbook.paperTransferReport['!merges']?.filter(
-			(merge) => merge.s.c === 3
+		assert.deepEqual(workbook.paperTransferReport.rows[6], [
+			'ภาษาอังกฤษ',
+			'อ21102',
+			'ม.1/1',
+			'',
+			'',
+			'',
+			''
+		]);
+		assert.deepEqual(workbook.paperTransferReport.rows[7], [
+			'ภาษาอังกฤษ',
+			'อ21202',
+			'ม.1/2',
+			'',
+			'',
+			'',
+			''
+		]);
+		assert.deepEqual(
+			workbook.paperTransferReport['!merges']?.filter((merge) => merge.s.r >= 6),
+			[]
 		);
-		assert.deepEqual(subjectMerges, [{ s: { r: 4, c: 3 }, e: { r: 6, c: 3 } }]);
-		assert.equal(workbook.paperTransferReport.rows[7][2], 'อ21202');
-		assert.equal(workbook.paperTransferReport.rows[7][3], 'ภาษาอังกฤษ');
 	});
 });
