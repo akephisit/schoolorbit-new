@@ -54,6 +54,7 @@
 	import {
 		buildExamScheduleExportWorkbook,
 		examScheduleExportFileName,
+		examScheduleReportColumnWidths,
 		type ExamScheduleReportSheet,
 		type ExamScheduleExportSheet
 	} from '$lib/utils/exam-schedule-export';
@@ -561,16 +562,16 @@
 		}
 	}
 
+	function isPaperTransferSheet(reportSheet: ExamScheduleReportSheet) {
+		return reportSheet.name === 'รับส่งข้อสอบ';
+	}
+
 	function reportSheetColumnCount(reportSheet: ExamScheduleReportSheet) {
 		return Math.max(
 			reportSheet['!cols']?.length ?? 0,
 			...reportSheet.rows.map((row) => row.length),
 			1
 		);
-	}
-
-	function isPaperTransferSheet(reportSheet: ExamScheduleReportSheet) {
-		return reportSheet.name === 'รับส่งข้อสอบ';
 	}
 
 	function isBlankReportRow(reportSheet: ExamScheduleReportSheet, rowNumber: number) {
@@ -607,42 +608,9 @@
 		return String(reportSheet.rows[3]?.[columnIndex] ?? '');
 	}
 
-	function columnTextWidth(value: string | number | undefined) {
-		return String(value ?? '')
-			.split(/\r?\n/)
-			.reduce((width, line) => Math.max(width, line.trim().length), 0);
-	}
-
-	function reportColumnWidthBounds(headerText: string) {
-		if (headerText === 'วันสอบ' || headerText === 'วันเดือนปี') return { min: 20, max: 30 };
-		if (headerText === 'เวลา') return { min: 14, max: 20 };
-		if (headerText === 'เวลาสอบ') return { min: 10, max: 15 };
-		if (headerText === 'รหัสวิชา') return { min: 11, max: 16 };
-		if (headerText === 'วิชา') return { min: 20, max: 44 };
-		if (headerText === 'ชั้น' || headerText === 'ชั้น/ห้อง' || headerText === 'ห้องเรียน') {
-			return { min: 10, max: 16 };
-		}
-		if (headerText === 'ห้องสอบ') return { min: 12, max: 22 };
-		if (headerText === 'กรรมการคุมสอบ') return { min: 18, max: 34 };
-		if (headerText.startsWith('ลงชื่อ')) return { min: 18, max: 24 };
-		if (headerText === 'ลงชื่อรับข้อสอบ' || headerText === 'ลงชื่อส่งข้อสอบ') {
-			return { min: 20, max: 28 };
-		}
-		if (headerText === 'เวลารับ' || headerText === 'เวลาส่ง') return { min: 9, max: 12 };
-		if (headerText === 'หมายเหตุ') return { min: 12, max: 22 };
-		return { min: 8, max: 28 };
-	}
-
 	function autoFitWorksheetColumns(worksheet: Worksheet, reportSheet: ExamScheduleReportSheet) {
-		const columnCount = reportSheetColumnCount(reportSheet);
-		for (let columnIndex = 0; columnIndex < columnCount; columnIndex += 1) {
-			const headerText = reportHeaderText(reportSheet, columnIndex);
-			const { min, max } = reportColumnWidthBounds(headerText);
-			const widest = reportSheet.rows.reduce(
-				(width, row) => Math.max(width, columnTextWidth(row[columnIndex])),
-				columnTextWidth(headerText)
-			);
-			worksheet.getColumn(columnIndex + 1).width = Math.min(max, Math.max(min, widest + 2));
+		for (const [index, column] of examScheduleReportColumnWidths(reportSheet).entries()) {
+			worksheet.getColumn(index + 1).width = column.wch;
 		}
 	}
 

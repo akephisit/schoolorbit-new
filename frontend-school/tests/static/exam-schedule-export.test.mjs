@@ -435,6 +435,15 @@ describe('exam schedule export helpers', () => {
 		]);
 		assert.equal(workbook.paperTransferReport['!printTitlesRow'], '1:2');
 		assert.equal(workbook.paperTransferReport['!cols']?.length, 7);
+		assert.equal(
+			workbook.paperTransferReport['!cols']?.[0]?.wch,
+			'คณิตศาสตร์พื้นฐาน'.length + 2
+		);
+		assert.equal(
+			(workbook.paperTransferReport['!cols']?.[0]?.wch ?? 0) <
+				String(workbook.paperTransferReport.rows[1][0]).length,
+			true
+		);
 		assert.deepEqual(workbook.paperTransferReport['!merges'], [
 			{ s: { r: 0, c: 0 }, e: { r: 0, c: 6 } },
 			{ s: { r: 1, c: 0 }, e: { r: 1, c: 6 } },

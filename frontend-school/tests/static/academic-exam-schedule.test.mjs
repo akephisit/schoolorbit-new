@@ -665,6 +665,7 @@ test('exam schedule detail exports one editable report workbook', () => {
 
 	assert.match(page, /buildExamScheduleExportWorkbook/);
 	assert.match(page, /examScheduleExportFileName/);
+	assert.match(page, /examScheduleReportColumnWidths/);
 	assert.match(page, /let exportingExamSchedule = \$state\(false\)/);
 	assert.match(page, /import\('exceljs'\)/);
 	assert.match(page, /new ExcelJS\.Workbook\(\)/);
@@ -709,6 +710,7 @@ test('exam schedule detail exports one editable report workbook', () => {
 	assert.match(ensureInvigilatorWorkspace, /getExamInvigilatorWorkspace\(roundId\)/);
 	assert.match(exportUtil, /export function buildExamScheduleExportWorkbook/);
 	assert.match(exportUtil, /export function examScheduleExportFileName/);
+	assert.match(exportUtil, /export function examScheduleReportColumnWidths/);
 	assert.match(exportUtil, /export type ExamScheduleExportSheet/);
 	assert.match(exportUtil, /reportSheets/);
 	assert.match(exportUtil, /lowerSecondaryReport/);

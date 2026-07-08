@@ -544,16 +544,85 @@ function invigilatorSummarySheetMerges(dayRanges: RowRange[] = []): ExamSchedule
 	];
 }
 
-function paperTransferSheetColumns(): ExamScheduleExportColumn[] {
-	return [
-		{ wch: 24 },
-		{ wch: 14 },
-		{ wch: 10 },
-		{ wch: 20 },
-		{ wch: 20 },
-		{ wch: 22 },
-		{ wch: 22 }
-	];
+function reportSheetColumnCount(reportSheet: ExamScheduleReportSheet): number {
+	return Math.max(
+		reportSheet['!cols']?.length ?? 0,
+		...reportSheet.rows.map((row) => row.length),
+		1
+	);
+}
+
+function isPaperTransferReportSheet(reportSheet: ExamScheduleReportSheet): boolean {
+	return reportSheet.name === 'รับส่งข้อสอบ';
+}
+
+function reportHeaderText(reportSheet: ExamScheduleReportSheet, columnIndex: number): string {
+	if (isPaperTransferReportSheet(reportSheet)) {
+		const headerRow = reportSheet.rows.find((row) => row[0] === 'วิชา' && row[1] === 'รหัสวิชา');
+		return String(headerRow?.[columnIndex] ?? '');
+	}
+	return String(reportSheet.rows[3]?.[columnIndex] ?? '');
+}
+
+function columnTextWidth(value: string | number | undefined): number {
+	return String(value ?? '')
+		.split(/\r?\n/)
+		.reduce((width, line) => Math.max(width, line.trim().length), 0);
+}
+
+function reportColumnWidthBounds(
+	reportSheet: ExamScheduleReportSheet,
+	headerText: string
+): { min: number; max: number } {
+	if (headerText === 'วันสอบ' || headerText === 'วันเดือนปี') return { min: 20, max: 30 };
+	if (headerText === 'เวลา') return { min: 14, max: 20 };
+	if (headerText === 'เวลาสอบ') return { min: 10, max: 15 };
+	if (headerText === 'รหัสวิชา') return { min: 11, max: 16 };
+	if (headerText === 'วิชา') {
+		return isPaperTransferReportSheet(reportSheet) ? { min: 8, max: 44 } : { min: 20, max: 44 };
+	}
+	if (headerText === 'ชั้น' || headerText === 'ชั้น/ห้อง' || headerText === 'ห้องเรียน') {
+		return { min: 10, max: 16 };
+	}
+	if (headerText === 'ห้องสอบ') return { min: 12, max: 22 };
+	if (headerText === 'กรรมการคุมสอบ') return { min: 18, max: 34 };
+	if (headerText.startsWith('ลงชื่อ')) return { min: 18, max: 24 };
+	if (headerText === 'ลงชื่อรับข้อสอบ' || headerText === 'ลงชื่อส่งข้อสอบ') {
+		return { min: 20, max: 28 };
+	}
+	if (headerText === 'เวลารับ' || headerText === 'เวลาส่ง') return { min: 9, max: 12 };
+	if (headerText === 'หมายเหตุ') return { min: 12, max: 22 };
+	return { min: 8, max: 28 };
+}
+
+function isHorizontallyMergedReportCell(
+	reportSheet: ExamScheduleReportSheet,
+	rowIndex: number,
+	columnIndex: number
+): boolean {
+	return (reportSheet['!merges'] ?? []).some(
+		(merge) =>
+			merge.s.r === rowIndex &&
+			merge.e.r === rowIndex &&
+			merge.e.c > merge.s.c &&
+			columnIndex >= merge.s.c &&
+			columnIndex <= merge.e.c
+	);
+}
+
+export function examScheduleReportColumnWidths(
+	reportSheet: ExamScheduleReportSheet
+): ExamScheduleExportColumn[] {
+	return Array.from({ length: reportSheetColumnCount(reportSheet) }, (_, columnIndex) => {
+		const headerText = reportHeaderText(reportSheet, columnIndex);
+		const { min, max } = reportColumnWidthBounds(reportSheet, headerText);
+		const widest = reportSheet.rows.reduce((width, row, rowIndex) => {
+			if (isHorizontallyMergedReportCell(reportSheet, rowIndex, columnIndex)) return width;
+			return Math.max(width, columnTextWidth(row[columnIndex]));
+		}, columnTextWidth(headerText));
+
+		return { wch: Math.min(max, Math.max(min, widest + 2)) };
+	});
 }
 
 function mergeRangesForColumn(
@@ -933,13 +1002,16 @@ function printablePaperTransferSheet(
 	invigilatorWorkspace: ExamInvigilatorWorkspace | null
 ): ExamScheduleReportSheet {
 	const transfer = paperTransferRows(workspace, invigilatorWorkspace);
-	return {
+	const report: ExamScheduleReportSheet = {
 		name: 'รับส่งข้อสอบ',
 		rows: transfer.rows,
-		'!cols': paperTransferSheetColumns(),
 		'!merges': paperTransferSheetMerges(transfer.mergeRanges),
 		'!printTitlesRow': '1:2',
 		'!rowBreaks': transfer.rowBreaks
+	};
+	return {
+		...report,
+		'!cols': examScheduleReportColumnWidths(report)
 	};
 }
 
