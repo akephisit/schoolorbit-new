@@ -1,4 +1,8 @@
-export type TeacherLoadCategory = 'course' | 'independentActivity' | 'synchronizedActivity';
+export type TeacherLoadCategory =
+	| 'course'
+	| 'independentActivity'
+	| 'synchronizedActivity'
+	| 'unspecifiedActivity';
 
 export type TeacherLoadDetailKind =
 	| 'homeGroupPrimaryCourse'
@@ -6,7 +10,8 @@ export type TeacherLoadDetailKind =
 	| 'sharedPrimaryCourse'
 	| 'sharedSecondaryCourse'
 	| 'independentActivity'
-	| 'synchronizedActivity';
+	| 'synchronizedActivity'
+	| 'unspecifiedActivity';
 
 export interface TeacherLoadEntry {
 	id: string;
@@ -48,6 +53,7 @@ export interface TeacherLoadSummaryRow {
 	sharedSecondaryCoursePeriods: number;
 	independentActivityPeriods: number;
 	synchronizedActivityPeriods: number;
+	unspecifiedActivityPeriods: number;
 	totalPeriods: number;
 }
 
@@ -85,6 +91,7 @@ export interface TeacherLoadSummaryGroup {
 		sharedSecondaryCoursePeriods: number;
 		independentActivityPeriods: number;
 		synchronizedActivityPeriods: number;
+		unspecifiedActivityPeriods: number;
 		totalPeriods: number;
 	};
 }
@@ -114,7 +121,8 @@ const CATEGORY_LABELS: Record<TeacherLoadDetailKind, string> = {
 	sharedPrimaryCourse: 'วิชานอกกลุ่มสาระ (ครูหลัก)',
 	sharedSecondaryCourse: 'วิชานอกกลุ่มสาระ (ครูรอง)',
 	independentActivity: 'กิจกรรม independent',
-	synchronizedActivity: 'กิจกรรม synchronized'
+	synchronizedActivity: 'กิจกรรม synchronized',
+	unspecifiedActivity: 'กิจกรรมไม่ระบุประเภท'
 };
 
 const DETAIL_KIND_ORDER: Record<TeacherLoadDetailKind, number> = {
@@ -123,7 +131,8 @@ const DETAIL_KIND_ORDER: Record<TeacherLoadDetailKind, number> = {
 	sharedPrimaryCourse: 3,
 	sharedSecondaryCourse: 4,
 	independentActivity: 5,
-	synchronizedActivity: 6
+	synchronizedActivity: 6,
+	unspecifiedActivity: 7
 };
 
 const DAY_LABELS: Record<string, string> = {
@@ -149,9 +158,9 @@ const DAY_ORDER: Record<string, number> = {
 export function teacherLoadCategoryForEntry(entry: TeacherLoadEntry): TeacherLoadCategory | null {
 	if (entry.entry_type === 'COURSE') return 'course';
 	if (entry.entry_type !== 'ACTIVITY') return null;
-	return entry.activity_scheduling_mode === 'independent'
-		? 'independentActivity'
-		: 'synchronizedActivity';
+	if (entry.activity_scheduling_mode === 'independent') return 'independentActivity';
+	if (entry.activity_scheduling_mode === 'synchronized') return 'synchronizedActivity';
+	return 'unspecifiedActivity';
 }
 
 export function buildTeacherLoadExportRows(entries: TeacherLoadEntry[]): TeacherLoadExportRows {
@@ -222,7 +231,8 @@ export function buildTeacherLoadExportRows(entries: TeacherLoadEntry[]): Teacher
 				row.sharedPrimaryCoursePeriods +
 				row.sharedSecondaryCoursePeriods +
 				row.independentActivityPeriods +
-				row.synchronizedActivityPeriods
+				row.synchronizedActivityPeriods +
+				row.unspecifiedActivityPeriods
 		}))
 		.sort(compareSummaryRows);
 
@@ -264,6 +274,7 @@ function getOrCreateSummary(
 		sharedSecondaryCoursePeriods: 0,
 		independentActivityPeriods: 0,
 		synchronizedActivityPeriods: 0,
+		unspecifiedActivityPeriods: 0,
 		totalPeriods: 0
 	};
 	summaries.set(teacherId, row);
@@ -276,7 +287,8 @@ function incrementSummary(summary: TeacherLoadSummaryRow, detailKind: TeacherLoa
 	else if (detailKind === 'sharedPrimaryCourse') summary.sharedPrimaryCoursePeriods += 1;
 	else if (detailKind === 'sharedSecondaryCourse') summary.sharedSecondaryCoursePeriods += 1;
 	else if (detailKind === 'independentActivity') summary.independentActivityPeriods += 1;
-	else summary.synchronizedActivityPeriods += 1;
+	else if (detailKind === 'synchronizedActivity') summary.synchronizedActivityPeriods += 1;
+	else summary.unspecifiedActivityPeriods += 1;
 }
 
 function teacherLoadDetailKey(
@@ -284,7 +296,7 @@ function teacherLoadDetailKey(
 	category: TeacherLoadCategory,
 	teacherId: string
 ): string {
-	if (category === 'synchronizedActivity') {
+	if (category === 'synchronizedActivity' || category === 'unspecifiedActivity') {
 		const logicalActivityId = entry.activity_slot_id || entry.id;
 		return [teacherId, category, logicalActivityId, entry.day_of_week, entry.period_id].join('|');
 	}
@@ -299,6 +311,7 @@ function detailKindForEntry(
 ): TeacherLoadDetailKind {
 	if (category === 'independentActivity') return 'independentActivity';
 	if (category === 'synchronizedActivity') return 'synchronizedActivity';
+	if (category === 'unspecifiedActivity') return 'unspecifiedActivity';
 
 	const isHomeGroup =
 		!!entry.subject_group_id &&
@@ -408,6 +421,7 @@ function groupSummaryRows(rows: TeacherLoadSummaryRow[]): TeacherLoadSummaryGrou
 		group.totals.sharedSecondaryCoursePeriods += row.sharedSecondaryCoursePeriods;
 		group.totals.independentActivityPeriods += row.independentActivityPeriods;
 		group.totals.synchronizedActivityPeriods += row.synchronizedActivityPeriods;
+		group.totals.unspecifiedActivityPeriods += row.unspecifiedActivityPeriods;
 		group.totals.totalPeriods += row.totalPeriods;
 		groups.set(key, group);
 	}
@@ -432,6 +446,7 @@ function createSummaryGroup(
 			sharedSecondaryCoursePeriods: 0,
 			independentActivityPeriods: 0,
 			synchronizedActivityPeriods: 0,
+			unspecifiedActivityPeriods: 0,
 			totalPeriods: 0
 		}
 	};
@@ -472,6 +487,7 @@ function buildSummarySheetRows(groups: TeacherLoadSummaryGroup[]): Array<Array<s
 			'วิชานอกกลุ่มสาระ (ครูรอง)',
 			'กิจกรรม independent (คาบ)',
 			'กิจกรรม synchronized (คาบ)',
+			'กิจกรรมไม่ระบุประเภท (คาบ)',
 			'รวม (คาบ)'
 		],
 		...groups.flatMap((group) => [
@@ -484,6 +500,7 @@ function buildSummarySheetRows(groups: TeacherLoadSummaryGroup[]): Array<Array<s
 				group.totals.sharedSecondaryCoursePeriods,
 				group.totals.independentActivityPeriods,
 				group.totals.synchronizedActivityPeriods,
+				group.totals.unspecifiedActivityPeriods,
 				group.totals.totalPeriods
 			],
 			...group.rows.map((row) => [
@@ -495,6 +512,7 @@ function buildSummarySheetRows(groups: TeacherLoadSummaryGroup[]): Array<Array<s
 				row.sharedSecondaryCoursePeriods,
 				row.independentActivityPeriods,
 				row.synchronizedActivityPeriods,
+				row.unspecifiedActivityPeriods,
 				row.totalPeriods
 			])
 		])

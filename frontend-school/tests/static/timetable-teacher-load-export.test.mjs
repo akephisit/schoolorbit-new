@@ -56,6 +56,22 @@ describe('timetable teacher load export helpers', () => {
 			),
 			'synchronizedActivity'
 		);
+		assert.equal(
+			teacherLoadCategoryForEntry(
+				entry({ entry_type: 'ACTIVITY', activity_scheduling_mode: null })
+			),
+			'unspecifiedActivity'
+		);
+		assert.equal(
+			teacherLoadCategoryForEntry(entry({ entry_type: 'ACTIVITY', activity_scheduling_mode: '' })),
+			'unspecifiedActivity'
+		);
+		assert.equal(
+			teacherLoadCategoryForEntry(
+				entry({ entry_type: 'ACTIVITY', activity_scheduling_mode: 'custom' })
+			),
+			'unspecifiedActivity'
+		);
 		assert.equal(teacherLoadCategoryForEntry(entry({ entry_type: 'BREAK' })), null);
 		assert.equal(teacherLoadCategoryForEntry(entry({ entry_type: 'HOMEROOM' })), null);
 		assert.equal(teacherLoadCategoryForEntry(entry({ entry_type: 'ACADEMIC' })), null);
@@ -115,6 +131,7 @@ describe('timetable teacher load export helpers', () => {
 				sharedSecondaryCoursePeriods: 0,
 				independentActivityPeriods: 1,
 				synchronizedActivityPeriods: 0,
+				unspecifiedActivityPeriods: 0,
 				totalPeriods: 2
 			},
 			{
@@ -129,6 +146,7 @@ describe('timetable teacher load export helpers', () => {
 				sharedSecondaryCoursePeriods: 0,
 				independentActivityPeriods: 0,
 				synchronizedActivityPeriods: 0,
+				unspecifiedActivityPeriods: 0,
 				totalPeriods: 1
 			},
 			{
@@ -143,6 +161,7 @@ describe('timetable teacher load export helpers', () => {
 				sharedSecondaryCoursePeriods: 0,
 				independentActivityPeriods: 0,
 				synchronizedActivityPeriods: 0,
+				unspecifiedActivityPeriods: 0,
 				totalPeriods: 1
 			},
 			{
@@ -157,6 +176,7 @@ describe('timetable teacher load export helpers', () => {
 				sharedSecondaryCoursePeriods: 1,
 				independentActivityPeriods: 0,
 				synchronizedActivityPeriods: 0,
+				unspecifiedActivityPeriods: 0,
 				totalPeriods: 1
 			}
 		]);
@@ -193,8 +213,47 @@ describe('timetable teacher load export helpers', () => {
 			'วิชานอกกลุ่มสาระ (ครูรอง)',
 			'กิจกรรม independent (คาบ)',
 			'กิจกรรม synchronized (คาบ)',
+			'กิจกรรมไม่ระบุประเภท (คาบ)',
 			'รวม (คาบ)'
 		]);
+	});
+
+	it('keeps unspecified activity modes separate from synchronized activities', () => {
+		const rows = buildTeacherLoadExportRows([
+			entry({
+				id: 'manual-activity-1',
+				entry_type: 'ACTIVITY',
+				activity_scheduling_mode: null,
+				title: 'กิจกรรมเพิ่มเอง',
+				subject_code: undefined,
+				subject_name_th: undefined,
+				subject_group_id: undefined,
+				subject_group_name: undefined,
+				instructor_ids: ['teacher-a'],
+				instructor_names: ['ครูเอ']
+			}),
+			entry({
+				id: 'club-1',
+				entry_type: 'ACTIVITY',
+				activity_scheduling_mode: 'synchronized',
+				activity_slot_id: 'club-slot',
+				title: 'ชุมนุม',
+				subject_code: undefined,
+				subject_name_th: undefined,
+				subject_group_id: undefined,
+				subject_group_name: undefined,
+				instructor_ids: ['teacher-a'],
+				instructor_names: ['ครูเอ']
+			})
+		]);
+
+		assert.equal(rows.summaryRows[0].synchronizedActivityPeriods, 1);
+		assert.equal(rows.summaryRows[0].unspecifiedActivityPeriods, 1);
+		assert.equal(rows.summaryRows[0].totalPeriods, 2);
+		assert.deepEqual(
+			rows.detailRows.map((row) => row.categoryLabel),
+			['กิจกรรม synchronized', 'กิจกรรมไม่ระบุประเภท']
+		);
 	});
 
 	it('deduplicates synchronized activities across classrooms for the same teacher, slot, day, and period', () => {
@@ -241,10 +300,17 @@ describe('timetable teacher load export helpers', () => {
 			'utf8'
 		);
 		const exportFunction = page.slice(page.indexOf('async function handleExportTeacherLoadXlsx'));
+		const summarySheetFunction = page.slice(
+			page.indexOf('function appendTeacherLoadSummarySheet'),
+			page.indexOf('function appendTeacherLoadDetailSheet')
+		);
 
 		assert.match(exportFunction, /import\('exceljs'\)/);
 		assert.match(exportFunction, /new ExcelJS\.Workbook\(\)/);
 		assert.match(exportFunction, /workbook\.xlsx\.writeBuffer\(\)/);
+		assert.match(summarySheetFunction, /กิจกรรมไม่ระบุประเภท/);
+		assert.match(summarySheetFunction, /unspecifiedActivityPeriods/);
+		assert.match(summarySheetFunction, /styleTeacherLoadGroupRow\(groupRow, 10\)/);
 		assert.match(page, /TH Sarabun New/);
 		assert.doesNotMatch(exportFunction, /import\('xlsx'\)/);
 		assert.doesNotMatch(exportFunction, /XLSX\.writeFile/);

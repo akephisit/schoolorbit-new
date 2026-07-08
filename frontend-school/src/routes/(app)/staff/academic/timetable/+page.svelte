@@ -2455,6 +2455,7 @@
 			{ width: 26 },
 			{ width: 24 },
 			{ width: 28 },
+			{ width: 28 },
 			{ width: 14 }
 		];
 		styleTeacherLoadWorksheet(worksheet);
@@ -2469,6 +2470,7 @@
 				'วิชานอกกลุ่มสาระ (ครูรอง)',
 				'กิจกรรม independent',
 				'กิจกรรม synchronized',
+				'กิจกรรมไม่ระบุประเภท',
 				'รวม'
 			])
 		);
@@ -2483,10 +2485,11 @@
 				group.totals.sharedSecondaryCoursePeriods,
 				group.totals.independentActivityPeriods,
 				group.totals.synchronizedActivityPeriods,
+				group.totals.unspecifiedActivityPeriods,
 				group.totals.totalPeriods
 			]);
 			worksheet.mergeCells(groupRow.number, 1, groupRow.number, 2);
-			styleTeacherLoadGroupRow(groupRow, 9);
+			styleTeacherLoadGroupRow(groupRow, 10);
 
 			for (const row of group.rows) {
 				styleTeacherLoadRow(
@@ -2499,6 +2502,7 @@
 						row.sharedSecondaryCoursePeriods,
 						row.independentActivityPeriods,
 						row.synchronizedActivityPeriods,
+						row.unspecifiedActivityPeriods,
 						row.totalPeriods
 					])
 				);
