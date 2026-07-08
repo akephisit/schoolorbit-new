@@ -672,7 +672,10 @@ test('exam schedule detail exports one editable report workbook', () => {
 	assert.match(page, /saveWorkbookBuffer/);
 	assert.match(page, /ส่งออก/);
 	assert.match(packageJson, /"exceljs"/);
-	assert.match(handleExport, /buildExamScheduleExportWorkbook\(workspace,\s*invigilatorData\)/);
+	assert.match(
+		handleExport,
+		/buildExamScheduleExportWorkbook\(workspace,\s*invigilatorData,\s*\{\s*classrooms\s*\}\)/
+	);
 	assert.match(handleExport, /for \(const reportSheet of exportWorkbook\.reportSheets\)/);
 	assert.match(handleExport, /appendReportSheet\(workbook,\s*reportSheet\)/);
 	assert.match(page, /function appendReportSheet/);

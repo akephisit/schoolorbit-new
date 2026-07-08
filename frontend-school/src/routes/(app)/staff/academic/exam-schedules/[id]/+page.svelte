@@ -831,7 +831,9 @@
 			const invigilatorData = await ensureInvigilatorWorkspaceForExport(workspace.round.id);
 			const ExcelJSModule = await import('exceljs');
 			const ExcelJS = ExcelJSModule.default;
-			const exportWorkbook = buildExamScheduleExportWorkbook(workspace, invigilatorData);
+			const exportWorkbook = buildExamScheduleExportWorkbook(workspace, invigilatorData, {
+				classrooms
+			});
 			const workbook = new ExcelJS.Workbook();
 			workbook.creator = 'SchoolOrbit';
 			workbook.created = new Date();

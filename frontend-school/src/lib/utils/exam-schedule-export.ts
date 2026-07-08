@@ -12,6 +12,19 @@ type WorksheetRow = WorksheetCell[];
 type WorksheetObjectRow = Record<string, WorksheetCell>;
 type RowRange = { start: number; end: number };
 
+export type ExamScheduleExportClassroom = {
+	id: string;
+	name?: string | null;
+	gradeLevelId?: string | null;
+	grade_level_id?: string | null;
+	isActive?: boolean | null;
+	is_active?: boolean | null;
+};
+
+export type ExamScheduleExportOptions = {
+	classrooms?: ExamScheduleExportClassroom[];
+};
+
 export type ExamScheduleExportCellAddress = {
 	r: number;
 	c: number;
@@ -223,6 +236,34 @@ function sessionGradeLabel(session: ExamSession): string {
 	);
 }
 
+function classroomIsActive(classroom: ExamScheduleExportClassroom): boolean {
+	return classroom.isActive ?? classroom.is_active ?? true;
+}
+
+function classroomGradeLevelId(classroom: ExamScheduleExportClassroom): string {
+	return safeText(classroom.gradeLevelId ?? classroom.grade_level_id);
+}
+
+function classroomName(classroom: ExamScheduleExportClassroom): string {
+	return safeText(classroom.name);
+}
+
+function activeClassroomsForSessionGrade(
+	classrooms: ExamScheduleExportClassroom[],
+	session: ExamSession,
+	gradeLabel: string
+): ExamScheduleExportClassroom[] {
+	const gradeLevelId = safeText(session.gradeLevelId);
+
+	return classrooms.filter((classroom) => {
+		if (!classroomIsActive(classroom)) return false;
+		if (gradeLevelId && classroomGradeLevelId(classroom) === gradeLevelId) return true;
+
+		const parsed = parseClassroomLabel(classroomName(classroom));
+		return parsed?.gradeLabel === gradeLabel;
+	});
+}
+
 function sessionGradeYear(session: ExamSession): number | null {
 	if (typeof session.gradeLevelYear === 'number') return session.gradeLevelYear;
 	const parsedClassroom = parseClassroomLabel(session.classroomName);
@@ -297,22 +338,26 @@ function compactClassroomLabels(classroomLabels: string[]): string {
 	return `${gradeLabels[0]}/${compactNumberRanges(roomNumbers)}`;
 }
 
-function reportClassroomLabel(workspace: ExamScheduleWorkspace, sessions: ExamSession[]): string {
+function reportClassroomLabel(
+	sessions: ExamSession[],
+	options: ExamScheduleExportOptions = {}
+): string {
 	const firstSession = sessions[0];
 	if (!firstSession) return '-';
 
 	const gradeLabel = sessionGradeLabel(firstSession);
-	const day = workspace.days.find((item) => item.id === firstSession.examDayId);
-	const assignedClassrooms =
-		day?.roomAssignments.filter((assignment) => {
-			const parsed = parseClassroomLabel(assignment.classroomName);
-			return parsed?.gradeLabel === gradeLabel;
-		}) ?? [];
-	const scheduledClassroomIds = new Set(sessions.map((session) => session.classroomId));
+	const gradeClassrooms = activeClassroomsForSessionGrade(
+		options.classrooms ?? [],
+		firstSession,
+		gradeLabel
+	);
+	const scheduledClassroomIds = new Set(
+		sessions.map((session) => safeText(session.classroomId)).filter(Boolean)
+	);
 
 	if (
-		assignedClassrooms.length > 0 &&
-		assignedClassrooms.every((assignment) => scheduledClassroomIds.has(assignment.classroomId))
+		gradeClassrooms.length > 0 &&
+		gradeClassrooms.every((classroom) => scheduledClassroomIds.has(classroom.id))
 	) {
 		return gradeLabel;
 	}
@@ -578,7 +623,8 @@ function appendPaperTransferTimeHeader(
 function printableReportRows(
 	workspace: ExamScheduleWorkspace,
 	sessions: ExamSession[],
-	fallbackSubtitle = 'ระดับชั้นที่จัดสอบ'
+	fallbackSubtitle = 'ระดับชั้นที่จัดสอบ',
+	options: ExamScheduleExportOptions = {}
 ): {
 	rows: WorksheetRow[];
 	dayRanges: { start: number; end: number }[];
@@ -611,10 +657,7 @@ function printableReportRows(
 					(a, b) =>
 						compareThaiNatural(subjectLabel(a[0]), subjectLabel(b[0])) ||
 						compareThaiNatural(sessionGradeLabel(a[0]), sessionGradeLabel(b[0])) ||
-						compareThaiNatural(
-							reportClassroomLabel(workspace, a),
-							reportClassroomLabel(workspace, b)
-						)
+						compareThaiNatural(reportClassroomLabel(a, options), reportClassroomLabel(b, options))
 				);
 
 			for (const groupSessions of reportGroups) {
@@ -625,7 +668,7 @@ function printableReportRows(
 					minutesLabel(session.durationMinutes),
 					subjectLabel(session),
 					safeText(session.subjectCode, '-'),
-					reportClassroomLabel(workspace, groupSessions)
+					reportClassroomLabel(groupSessions, options)
 				]);
 			}
 
@@ -842,9 +885,10 @@ function printableReportSheet(
 	workspace: ExamScheduleWorkspace,
 	name: string,
 	sessions: ExamSession[],
-	fallbackSubtitle = 'ระดับชั้นที่จัดสอบ'
+	fallbackSubtitle = 'ระดับชั้นที่จัดสอบ',
+	options: ExamScheduleExportOptions = {}
 ): ExamScheduleReportSheet {
-	const report = printableReportRows(workspace, sessions, fallbackSubtitle);
+	const report = printableReportRows(workspace, sessions, fallbackSubtitle, options);
 	return {
 		name,
 		rows: report.rows,
@@ -1053,23 +1097,26 @@ function readinessRows(workspace: ExamScheduleWorkspace): WorksheetObjectRow[] {
 
 export function buildExamScheduleExportWorkbook(
 	workspace: ExamScheduleWorkspace,
-	invigilatorWorkspace: ExamInvigilatorWorkspace | null
+	invigilatorWorkspace: ExamInvigilatorWorkspace | null,
+	options: ExamScheduleExportOptions = {}
 ): ExamScheduleExportWorkbook {
 	const allSessions = sortedSessions(workspace);
 	const lowerSecondarySessions = allSessions.filter(isLowerSecondarySession);
 	const upperSecondarySessions = allSessions.filter(isUpperSecondarySession);
-	const report = printableReportSheet(workspace, 'ตารางสอบรวม', allSessions);
+	const report = printableReportSheet(workspace, 'ตารางสอบรวม', allSessions, undefined, options);
 	const lowerSecondaryReport = printableReportSheet(
 		workspace,
 		'ตารางสอบ ม.ต้น',
 		lowerSecondarySessions,
-		'ระดับชั้นมัธยมศึกษาตอนต้น'
+		'ระดับชั้นมัธยมศึกษาตอนต้น',
+		options
 	);
 	const upperSecondaryReport = printableReportSheet(
 		workspace,
 		'ตารางสอบ ม.ปลาย',
 		upperSecondarySessions,
-		'ระดับชั้นมัธยมศึกษาตอนปลาย'
+		'ระดับชั้นมัธยมศึกษาตอนปลาย',
+		options
 	);
 	const lowerSecondaryClassroomReport = printableClassroomReportSheet(
 		workspace,

@@ -77,6 +77,14 @@ const roomAssignments = [
 	}
 ];
 
+const classroomCatalog = [
+	{ id: 'classroom-m1-1', name: 'ม.1/1', grade_level_id: 'grade-1', is_active: true },
+	{ id: 'classroom-m1-2', name: 'ม.1/2', grade_level_id: 'grade-1', is_active: true },
+	{ id: 'classroom-m4-1', name: 'ม.4/1', grade_level_id: 'grade-4', is_active: true },
+	{ id: 'classroom-m4-2', name: 'ม.4/2', grade_level_id: 'grade-4', is_active: true },
+	{ id: 'classroom-m4-3', name: 'ม.4/3', grade_level_id: 'grade-4', is_active: true }
+];
+
 function scheduledSession(overrides) {
 	return {
 		...baseSession,
@@ -236,7 +244,8 @@ describe('exam schedule export helpers', () => {
 					subjectCode: 'ว30221'
 				})
 			]),
-			null
+			null,
+			{ classrooms: classroomCatalog }
 		);
 
 		assert.deepEqual(
@@ -307,6 +316,36 @@ describe('exam schedule export helpers', () => {
 		]);
 		assert.equal(workbook.schedule.rows[0].ประเภทวิชา, 'พื้นฐาน');
 		assert.ok((workbook.schedule['!cols']?.length ?? 0) > 6);
+	});
+
+	it('does not collapse single-classroom subjects to the full grade label', () => {
+		const workspace = exportWorkspace([
+			scheduledSession({
+				id: 'session-additional-math-m4-1',
+				startsAt: '09:00:00',
+				endsAt: '10:00:00',
+				durationMinutes: 60,
+				classroomId: 'classroom-m4-1',
+				classroomName: 'ม.4/1',
+				gradeLevelId: 'grade-4',
+				gradeLevelName: 'ม.4',
+				gradeLevelYear: 4,
+				subjectId: 'subject-additional-math',
+				subjectNameTh: 'คณิตศาสตร์เพิ่มเติม',
+				subjectCode: 'ค31202',
+				subjectType: 'ADDITIONAL'
+			})
+		]);
+		workspace.days[0].roomAssignments = roomAssignments.filter(
+			(assignment) => assignment.classroomId === 'classroom-m4-1'
+		);
+
+		const workbook = buildExamScheduleExportWorkbook(workspace, null, {
+			classrooms: classroomCatalog
+		});
+
+		assert.equal(workbook.report.rows[4][3], 'คณิตศาสตร์เพิ่มเติม');
+		assert.equal(workbook.report.rows[4][5], 'ม.4/1');
 	});
 
 	it('builds invigilator summary sheet with two aligned invigilator columns', () => {
