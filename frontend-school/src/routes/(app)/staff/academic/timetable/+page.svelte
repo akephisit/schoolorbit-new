@@ -2449,8 +2449,10 @@
 		worksheet.columns = [
 			{ width: 26 },
 			{ width: 34 },
-			{ width: 20 },
-			{ width: 28 },
+			{ width: 24 },
+			{ width: 24 },
+			{ width: 26 },
+			{ width: 26 },
 			{ width: 24 },
 			{ width: 28 },
 			{ width: 14 }
@@ -2461,8 +2463,10 @@
 			worksheet.addRow([
 				'กลุ่มสาระครู',
 				'ครูผู้สอน',
-				'วิชาในกลุ่มสาระ',
-				'วิชานอกกลุ่มสาระ/สอนร่วม',
+				'วิชาในกลุ่มสาระ (ครูหลัก)',
+				'วิชาในกลุ่มสาระ (ครูรอง)',
+				'วิชานอกกลุ่มสาระ (ครูหลัก)',
+				'วิชานอกกลุ่มสาระ (ครูรอง)',
 				'กิจกรรม independent',
 				'กิจกรรม synchronized',
 				'รวม'
@@ -2473,22 +2477,26 @@
 			const groupRow = worksheet.addRow([
 				`กลุ่มสาระ: ${group.subjectGroupName}`,
 				'',
-				group.totals.homeGroupCoursePeriods,
-				group.totals.sharedCoursePeriods,
+				group.totals.homeGroupPrimaryCoursePeriods,
+				group.totals.homeGroupSecondaryCoursePeriods,
+				group.totals.sharedPrimaryCoursePeriods,
+				group.totals.sharedSecondaryCoursePeriods,
 				group.totals.independentActivityPeriods,
 				group.totals.synchronizedActivityPeriods,
 				group.totals.totalPeriods
 			]);
 			worksheet.mergeCells(groupRow.number, 1, groupRow.number, 2);
-			styleTeacherLoadGroupRow(groupRow, 7);
+			styleTeacherLoadGroupRow(groupRow, 9);
 
 			for (const row of group.rows) {
 				styleTeacherLoadRow(
 					worksheet.addRow([
 						row.teacherSubjectGroupName,
 						row.teacherName,
-						row.homeGroupCoursePeriods,
-						row.sharedCoursePeriods,
+						row.homeGroupPrimaryCoursePeriods,
+						row.homeGroupSecondaryCoursePeriods,
+						row.sharedPrimaryCoursePeriods,
+						row.sharedSecondaryCoursePeriods,
 						row.independentActivityPeriods,
 						row.synchronizedActivityPeriods,
 						row.totalPeriods

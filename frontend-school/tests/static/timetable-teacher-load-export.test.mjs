@@ -25,6 +25,7 @@ function entry(overrides) {
 		subject_group_display_order: 1,
 		instructor_ids: ['teacher-a'],
 		instructor_names: ['ครูเอ'],
+		instructor_roles: ['primary'],
 		instructor_subject_group_ids: ['math-group'],
 		instructor_subject_group_names: ['คณิตศาสตร์'],
 		instructor_subject_group_display_orders: [1],
@@ -60,15 +61,26 @@ describe('timetable teacher load export helpers', () => {
 		assert.equal(teacherLoadCategoryForEntry(entry({ entry_type: 'ACADEMIC' })), null);
 	});
 
-	it('splits course periods by teacher subject group and keeps activity counts separate', () => {
+	it('splits course periods by teacher subject group and teacher role', () => {
 		const rows = buildTeacherLoadExportRows([
 			entry({
 				id: 'course-1',
-				instructor_ids: ['teacher-a', 'teacher-b'],
-				instructor_names: ['ครูเอ', 'ครูบี'],
-				instructor_subject_group_ids: ['math-group', 'science-group'],
-				instructor_subject_group_names: ['คณิตศาสตร์', 'วิทยาศาสตร์และเทคโนโลยี'],
-				instructor_subject_group_display_orders: [1, 3]
+				instructor_ids: ['teacher-a', 'teacher-b', 'teacher-c', 'teacher-d'],
+				instructor_names: ['ครูเอ', 'ครูบี', 'ครูซี', 'ครูดี'],
+				instructor_roles: ['primary', 'secondary', 'primary', 'secondary'],
+				instructor_subject_group_ids: [
+					'math-group',
+					'math-group',
+					'science-group',
+					'science-group'
+				],
+				instructor_subject_group_names: [
+					'คณิตศาสตร์',
+					'คณิตศาสตร์',
+					'วิทยาศาสตร์และเทคโนโลยี',
+					'วิทยาศาสตร์และเทคโนโลยี'
+				],
+				instructor_subject_group_display_orders: [1, 1, 3, 3]
 			}),
 			entry({
 				id: 'guidance-1',
@@ -83,6 +95,7 @@ describe('timetable teacher load export helpers', () => {
 				subject_group_display_order: undefined,
 				instructor_ids: ['teacher-a'],
 				instructor_names: ['ครูเอ'],
+				instructor_roles: ['primary'],
 				instructor_subject_group_ids: ['math-group'],
 				instructor_subject_group_names: ['คณิตศาสตร์'],
 				instructor_subject_group_display_orders: [1]
@@ -96,8 +109,10 @@ describe('timetable teacher load export helpers', () => {
 				teacherSubjectGroupId: 'math-group',
 				teacherSubjectGroupName: 'คณิตศาสตร์',
 				teacherSubjectGroupDisplayOrder: 1,
-				homeGroupCoursePeriods: 1,
-				sharedCoursePeriods: 0,
+				homeGroupPrimaryCoursePeriods: 1,
+				homeGroupSecondaryCoursePeriods: 0,
+				sharedPrimaryCoursePeriods: 0,
+				sharedSecondaryCoursePeriods: 0,
 				independentActivityPeriods: 1,
 				synchronizedActivityPeriods: 0,
 				totalPeriods: 2
@@ -105,11 +120,41 @@ describe('timetable teacher load export helpers', () => {
 			{
 				teacherId: 'teacher-b',
 				teacherName: 'ครูบี',
+				teacherSubjectGroupId: 'math-group',
+				teacherSubjectGroupName: 'คณิตศาสตร์',
+				teacherSubjectGroupDisplayOrder: 1,
+				homeGroupPrimaryCoursePeriods: 0,
+				homeGroupSecondaryCoursePeriods: 1,
+				sharedPrimaryCoursePeriods: 0,
+				sharedSecondaryCoursePeriods: 0,
+				independentActivityPeriods: 0,
+				synchronizedActivityPeriods: 0,
+				totalPeriods: 1
+			},
+			{
+				teacherId: 'teacher-c',
+				teacherName: 'ครูซี',
 				teacherSubjectGroupId: 'science-group',
 				teacherSubjectGroupName: 'วิทยาศาสตร์และเทคโนโลยี',
 				teacherSubjectGroupDisplayOrder: 3,
-				homeGroupCoursePeriods: 0,
-				sharedCoursePeriods: 1,
+				homeGroupPrimaryCoursePeriods: 0,
+				homeGroupSecondaryCoursePeriods: 0,
+				sharedPrimaryCoursePeriods: 1,
+				sharedSecondaryCoursePeriods: 0,
+				independentActivityPeriods: 0,
+				synchronizedActivityPeriods: 0,
+				totalPeriods: 1
+			},
+			{
+				teacherId: 'teacher-d',
+				teacherName: 'ครูดี',
+				teacherSubjectGroupId: 'science-group',
+				teacherSubjectGroupName: 'วิทยาศาสตร์และเทคโนโลยี',
+				teacherSubjectGroupDisplayOrder: 3,
+				homeGroupPrimaryCoursePeriods: 0,
+				homeGroupSecondaryCoursePeriods: 0,
+				sharedPrimaryCoursePeriods: 0,
+				sharedSecondaryCoursePeriods: 1,
 				independentActivityPeriods: 0,
 				synchronizedActivityPeriods: 0,
 				totalPeriods: 1
@@ -121,23 +166,31 @@ describe('timetable teacher load export helpers', () => {
 				rows: group.rows.map((row) => row.teacherName)
 			})),
 			[
-				{ name: 'คณิตศาสตร์', rows: ['ครูเอ'] },
-				{ name: 'วิทยาศาสตร์และเทคโนโลยี', rows: ['ครูบี'] }
+				{ name: 'คณิตศาสตร์', rows: ['ครูเอ', 'ครูบี'] },
+				{ name: 'วิทยาศาสตร์และเทคโนโลยี', rows: ['ครูซี', 'ครูดี'] }
 			]
 		);
 		assert.equal(rows.detailRows[0].teacherSubjectGroupName, 'คณิตศาสตร์');
 		assert.equal(rows.detailRows[0].subjectGroupName, 'คณิตศาสตร์');
-		assert.equal(rows.detailRows[0].categoryLabel, 'วิชาในกลุ่มสาระ');
+		assert.equal(rows.detailRows[0].categoryLabel, 'วิชาในกลุ่มสาระ (ครูหลัก)');
 		assert.equal(rows.detailRows[1].teacherSubjectGroupName, 'คณิตศาสตร์');
-		assert.equal(rows.detailRows[1].subjectGroupName, 'กิจกรรม');
-		assert.equal(rows.detailRows[2].teacherSubjectGroupName, 'วิทยาศาสตร์และเทคโนโลยี');
-		assert.equal(rows.detailRows[2].subjectGroupName, 'คณิตศาสตร์');
-		assert.equal(rows.detailRows[2].categoryLabel, 'วิชานอกกลุ่มสาระ/สอนร่วม');
+		assert.equal(rows.detailRows[1].subjectGroupName, 'คณิตศาสตร์');
+		assert.equal(rows.detailRows[1].categoryLabel, 'วิชาในกลุ่มสาระ (ครูรอง)');
+		assert.equal(rows.detailRows[2].teacherSubjectGroupName, 'คณิตศาสตร์');
+		assert.equal(rows.detailRows[2].subjectGroupName, 'กิจกรรม');
+		assert.equal(rows.detailRows[3].teacherSubjectGroupName, 'วิทยาศาสตร์และเทคโนโลยี');
+		assert.equal(rows.detailRows[3].subjectGroupName, 'คณิตศาสตร์');
+		assert.equal(rows.detailRows[3].categoryLabel, 'วิชานอกกลุ่มสาระ (ครูหลัก)');
+		assert.equal(rows.detailRows[4].teacherSubjectGroupName, 'วิทยาศาสตร์และเทคโนโลยี');
+		assert.equal(rows.detailRows[4].subjectGroupName, 'คณิตศาสตร์');
+		assert.equal(rows.detailRows[4].categoryLabel, 'วิชานอกกลุ่มสาระ (ครูรอง)');
 		assert.deepEqual(rows.summarySheetRows[0], [
 			'กลุ่มสาระครู',
 			'ครูผู้สอน',
-			'วิชาในกลุ่มสาระ (คาบ)',
-			'วิชานอกกลุ่มสาระ/สอนร่วม (คาบ)',
+			'วิชาในกลุ่มสาระ (ครูหลัก)',
+			'วิชาในกลุ่มสาระ (ครูรอง)',
+			'วิชานอกกลุ่มสาระ (ครูหลัก)',
+			'วิชานอกกลุ่มสาระ (ครูรอง)',
 			'กิจกรรม independent (คาบ)',
 			'กิจกรรม synchronized (คาบ)',
 			'รวม (คาบ)'
@@ -210,12 +263,15 @@ describe('timetable teacher load export helpers', () => {
 
 		assert.match(frontendApi, /subject_group_id\?: string \| null/);
 		assert.match(frontendApi, /subject_group_name\?: string \| null/);
+		assert.match(frontendApi, /instructor_roles\?: string\[\]/);
 		assert.match(frontendApi, /instructor_subject_group_ids\?: Array<string \| null> \| null/);
 		assert.match(backendModel, /pub subject_group_id: Option<Uuid>/);
 		assert.match(backendModel, /pub subject_group_name: Option<String>/);
+		assert.match(backendModel, /pub instructor_roles: Option<Vec<String>>/);
 		assert.match(backendModel, /pub instructor_subject_group_ids: Option<Vec<Option<Uuid>>>/);
 		assert.match(backendService, /s\.group_id AS subject_group_id/);
 		assert.match(backendService, /sg\.name_th AS subject_group_name/);
+		assert.match(backendService, /AS instructor_roles/);
 		assert.match(backendService, /AS instructor_subject_group_ids/);
 		assert.match(backendService, /organization_members om/);
 	});

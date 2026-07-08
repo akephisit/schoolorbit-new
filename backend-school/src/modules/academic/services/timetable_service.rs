@@ -196,6 +196,9 @@ SELECT
     (SELECT ARRAY_AGG(tei_id.instructor_id ORDER BY tei_id.role, tei_id.created_at, tei_id.instructor_id)
      FROM timetable_entry_instructors tei_id
      WHERE tei_id.entry_id = te.id) AS instructor_ids,
+    (SELECT ARRAY_AGG(tei_role.role ORDER BY tei_role.role, tei_role.created_at, tei_role.instructor_id)
+     FROM timetable_entry_instructors tei_role
+     WHERE tei_role.entry_id = te.id) AS instructor_roles,
     (SELECT ARRAY_AGG(teacher_subject_group.subject_group_id ORDER BY tei_sg.role, tei_sg.created_at, tei_sg.instructor_id)
      FROM timetable_entry_instructors tei_sg
      LEFT JOIN LATERAL (

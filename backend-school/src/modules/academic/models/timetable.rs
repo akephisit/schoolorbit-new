@@ -120,6 +120,9 @@ pub struct TimetableEntry {
     #[sqlx(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub instructor_ids: Option<Vec<Uuid>>,
+    #[sqlx(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub instructor_roles: Option<Vec<String>>,
     /// กลุ่มสาระหลักของครูแต่ละคน — parallel กับ instructor_ids เรียงตาม role+created_at
     #[sqlx(default)]
     #[serde(skip_serializing_if = "Option::is_none")]

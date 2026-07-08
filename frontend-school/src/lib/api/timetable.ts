@@ -75,6 +75,8 @@ export interface TimetableEntry {
 	instructor_names?: string[];
 	/** parallel กับ instructor_names — ใช้ลบ/เพิ่มครูรายคน */
 	instructor_ids?: string[];
+	/** parallel กับ instructor_ids — primary=ครูหลัก, secondary=ครูรอง */
+	instructor_roles?: string[];
 	/** parallel กับ instructor_ids — กลุ่มสาระหลักที่ครูสังกัด */
 	instructor_subject_group_ids?: Array<string | null> | null;
 	instructor_subject_group_names?: Array<string | null> | null;
