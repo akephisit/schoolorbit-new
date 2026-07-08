@@ -81,10 +81,12 @@
 		Zap,
 		Lock,
 		FileStack,
+		FileSpreadsheet,
 		ChevronsUpDown,
 		Check
 	} from 'lucide-svelte';
 	import { generateTimetablePDF } from '$lib/utils/pdf';
+	import { buildTeacherLoadExportRows } from '$lib/utils/timetable-teacher-load-export';
 	import { SvelteSet, SvelteMap } from 'svelte/reactivity';
 
 	import { Checkbox } from '$lib/components/ui/checkbox';
@@ -192,6 +194,7 @@
 	let exportTargetIds = $state<string[]>([]);
 	let exportLayout = $state<'full' | 'portrait-2col'>('full');
 	let isExporting = $state(false);
+	let isTeacherLoadExporting = $state(false);
 
 	// State
 	let timetableEntries = $state<TimetableEntry[]>([]);
@@ -2435,6 +2438,69 @@
 		}
 	}
 
+	async function handleExportTeacherLoadXlsx() {
+		if (!canReadTimetable) return;
+		if (!selectedSemesterId) {
+			toast.error('กรุณาเลือกภาคเรียน');
+			return;
+		}
+
+		try {
+			isTeacherLoadExporting = true;
+			const res = await listTimetableEntries({
+				academic_semester_id: selectedSemesterId
+			});
+			const exportRows = buildTeacherLoadExportRows(res.data);
+
+			if (exportRows.summaryRows.length === 0) {
+				toast.error('ไม่พบคาบสอนสำหรับภาคเรียนนี้');
+				return;
+			}
+
+			const XLSX = await import('xlsx');
+			const workbook = XLSX.utils.book_new();
+			const summaryWorksheet = XLSX.utils.aoa_to_sheet(exportRows.summarySheetRows);
+			summaryWorksheet['!cols'] = [{ wch: 32 }, { wch: 14 }, { wch: 24 }, { wch: 26 }, { wch: 12 }];
+			XLSX.utils.book_append_sheet(workbook, summaryWorksheet, 'สรุปต่อครู');
+
+			const detailWorksheet = XLSX.utils.aoa_to_sheet(exportRows.detailSheetRows);
+			detailWorksheet['!cols'] = [
+				{ wch: 32 },
+				{ wch: 24 },
+				{ wch: 12 },
+				{ wch: 12 },
+				{ wch: 14 },
+				{ wch: 24 },
+				{ wch: 48 }
+			];
+			XLSX.utils.book_append_sheet(workbook, detailWorksheet, 'รายละเอียด');
+
+			const semesterName = semesters.find((s) => s.id === selectedSemesterId)?.term || '';
+			const yearObj = academicYears.find((y) => y.id === selectedYearId);
+			const yearName = (yearObj?.name || '').replace('ปีการศึกษา', '').trim();
+			const fileName = safeFileName(
+				`สรุปคาบสอนครู-ภาคเรียนที่ ${semesterName}-ปีการศึกษา ${yearName}`
+			);
+
+			XLSX.writeFile(workbook, `${fileName}.xlsx`);
+			toast.success(`ดาวน์โหลดสรุปคาบสอน ${exportRows.summaryRows.length} คนแล้ว`);
+		} catch (e: unknown) {
+			console.error(e);
+			toast.error('ส่งออกสรุปคาบสอนไม่สำเร็จ');
+		} finally {
+			isTeacherLoadExporting = false;
+		}
+	}
+
+	function safeFileName(value: string): string {
+		return (
+			value
+				.replace(/[\\/:*?"<>|]/g, '-')
+				.replace(/\s+/g, ' ')
+				.trim() || 'สรุปคาบสอนครู'
+		);
+	}
+
 	let unscheduledCourses = $derived.by(() => {
 		// ในมุมมองครูใช้ rawTeamEntries (รวม ghost) เพื่อให้นับครบทุก cell ของ course
 		// ไม่ได้นับเฉพาะ cell ที่ตัวเองอยู่ใน tei — ป้องกัน drag ซ้ำแล้วเกินคาบ
@@ -3408,6 +3474,19 @@
 		{/if}
 
 		{#if canReadTimetable}
+			<Button
+				variant="outline"
+				onclick={handleExportTeacherLoadXlsx}
+				disabled={isTeacherLoadExporting || !selectedSemesterId}
+			>
+				{#if isTeacherLoadExporting}
+					<Loader2 class="w-4 h-4 mr-2 animate-spin" />
+				{:else}
+					<FileSpreadsheet class="w-4 h-4 mr-2" />
+				{/if}
+				สรุปคาบ XLSX
+			</Button>
+
 			<Button variant="outline" onclick={handleExportPDF} disabled={isExporting}>
 				{#if isExporting}
 					<Loader2 class="w-4 h-4 mr-2 animate-spin" />
