@@ -652,6 +652,12 @@
 		}
 	}
 
+	function applyWorksheetPageBreaks(worksheet: Worksheet, exportSheet: ExamScheduleExportSheet) {
+		for (const rowIndex of exportSheet['!rowBreaks'] ?? []) {
+			worksheet.getRow(rowIndex + 1).addPageBreak();
+		}
+	}
+
 	function reportCellBorder(
 		reportSheet: ExamScheduleReportSheet,
 		rowNumber: number,
@@ -773,6 +779,7 @@
 		applyWorksheetColumns(worksheet, reportSheet);
 		autoFitWorksheetColumns(worksheet, reportSheet);
 		applyWorksheetMerges(worksheet, reportSheet);
+		applyWorksheetPageBreaks(worksheet, reportSheet);
 		styleReportSheet(worksheet, reportSheet);
 	}
 

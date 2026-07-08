@@ -84,7 +84,7 @@ function scheduledSession(overrides) {
 	};
 }
 
-function exportWorkspace(scheduledSessions) {
+function exportWorkspace(scheduledSessions, extraDays = []) {
 	return {
 		round: {
 			id: 'round-1',
@@ -107,7 +107,7 @@ function exportWorkspace(scheduledSessions) {
 				blockedWindows: [],
 				roomAssignments
 			}
-		],
+		].concat(extraDays),
 		unscheduledItems: [],
 		scheduledSessions,
 		readiness: {
@@ -457,5 +457,115 @@ describe('exam schedule export helpers', () => {
 			workbook.paperTransferReport['!merges']?.filter((merge) => merge.s.r >= 6),
 			[]
 		);
+	});
+
+	it('starts each paper transfer exam day on a new printed page', () => {
+		const workbook = buildExamScheduleExportWorkbook(
+			exportWorkspace(
+				[
+					scheduledSession({
+						id: 'session-day-1',
+						startsAt: '09:00:00',
+						endsAt: '10:00:00',
+						durationMinutes: 60,
+						classroomName: 'ม.1/1',
+						classroomId: 'classroom-m1-1',
+						gradeLevelName: 'ม.1',
+						gradeLevelYear: 1,
+						subjectNameTh: 'คณิตศาสตร์พื้นฐาน',
+						subjectCode: 'ค21102'
+					}),
+					scheduledSession({
+						id: 'session-day-2',
+						examDayId: 'day-2',
+						examDate: '2026-03-05',
+						startsAt: '09:00:00',
+						endsAt: '10:00:00',
+						durationMinutes: 60,
+						classroomName: 'ม.1/1',
+						classroomId: 'classroom-m1-1',
+						gradeLevelName: 'ม.1',
+						gradeLevelYear: 1,
+						subjectNameTh: 'ภาษาไทยพื้นฐาน',
+						subjectCode: 'ท21102'
+					})
+				],
+				[
+					{
+						id: 'day-2',
+						examRoundId: 'round-1',
+						examDate: '2026-03-05',
+						label: null,
+						startTime: '09:00:00',
+						endTime: '15:00:00',
+						gradeLevelIds: ['grade-1'],
+						blockedWindows: [],
+						roomAssignments: []
+					}
+				]
+			),
+			invigilatorWorkspace
+		);
+
+		const secondDayIndex = workbook.paperTransferReport.rows.findIndex(
+			(row) => row[0] === 'วันพฤหัสบดีที่ 5 มีนาคม 2569'
+		);
+
+		assert.equal(secondDayIndex > 0, true);
+		assert.deepEqual(workbook.paperTransferReport['!rowBreaks'], [secondDayIndex - 1]);
+		assert.deepEqual(workbook.paperTransferReport.rows[secondDayIndex + 1], [
+			'วิชา',
+			'รหัสวิชา',
+			'ชั้น',
+			'ลงชื่อรับ\n(กรรมการคุมสอบ)',
+			'ลงชื่อส่ง\n(กรรมการคุมสอบ)',
+			'ลงชื่อตรวจทาน\n(กรรมการกลาง)',
+			'ลงชื่อรับไปตรวจ\n(ครูผู้สอน)'
+		]);
+		assert.deepEqual(workbook.paperTransferReport.rows[secondDayIndex + 2], [
+			'เวลา 09.00-10.00 น.'
+		]);
+	});
+
+	it('repeats paper transfer day headers when a day spans multiple printed pages', () => {
+		const workbook = buildExamScheduleExportWorkbook(
+			exportWorkspace(
+				Array.from({ length: 19 }, (_, index) =>
+					scheduledSession({
+						id: `session-long-day-${index + 1}`,
+						startsAt: '09:00:00',
+						endsAt: '10:00:00',
+						durationMinutes: 60,
+						classroomName: `ม.1/${index + 1}`,
+						classroomId: `classroom-m1-${index + 1}`,
+						gradeLevelName: 'ม.1',
+						gradeLevelYear: 1,
+						subjectNameTh: `วิทยาศาสตร์พื้นฐาน ${index + 1}`,
+						subjectCode: `ว21${String(index + 1).padStart(3, '0')}`
+					})
+				)
+			),
+			invigilatorWorkspace
+		);
+
+		const dayHeaderIndexes = workbook.paperTransferReport.rows
+			.map((row, index) => (row[0] === 'วันพุธที่ 4 มีนาคม 2569' ? index : -1))
+			.filter((index) => index >= 0);
+		const repeatedDayIndex = dayHeaderIndexes[1];
+
+		assert.equal(dayHeaderIndexes.length, 2);
+		assert.deepEqual(workbook.paperTransferReport['!rowBreaks'], [repeatedDayIndex - 1]);
+		assert.deepEqual(workbook.paperTransferReport.rows[repeatedDayIndex + 1], [
+			'วิชา',
+			'รหัสวิชา',
+			'ชั้น',
+			'ลงชื่อรับ\n(กรรมการคุมสอบ)',
+			'ลงชื่อส่ง\n(กรรมการคุมสอบ)',
+			'ลงชื่อตรวจทาน\n(กรรมการกลาง)',
+			'ลงชื่อรับไปตรวจ\n(ครูผู้สอน)'
+		]);
+		assert.deepEqual(workbook.paperTransferReport.rows[repeatedDayIndex + 2], [
+			'เวลา 09.00-10.00 น.'
+		]);
 	});
 });

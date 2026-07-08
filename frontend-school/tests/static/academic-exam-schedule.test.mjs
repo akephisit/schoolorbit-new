@@ -675,6 +675,8 @@ test('exam schedule detail exports one editable report workbook', () => {
 	assert.match(page, /border/);
 	assert.match(page, /alignment/);
 	assert.match(page, /printTitlesRow/);
+	assert.match(page, /function applyWorksheetPageBreaks/);
+	assert.match(page, /addPageBreak/);
 	for (const sheetName of ['ห้องสอบ', 'ภาระงานกรรมการ', 'ความพร้อม']) {
 		assert.match(handleExport, new RegExp(escapeRegExp(sheetName)));
 	}
@@ -732,6 +734,7 @@ test('exam schedule detail exports one editable report workbook', () => {
 	assert.match(exportUtil, /weekday: 'long'/);
 	assert.match(exportUtil, /month: 'long'/);
 	assert.match(exportUtil, /!printTitlesRow/);
+	assert.match(exportUtil, /!rowBreaks/);
 	assert.match(exportUtil, /!merges/);
 	assert.match(exportUtil, /!cols/);
 	for (const builderName of [

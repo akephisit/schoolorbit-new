@@ -34,6 +34,7 @@ export type ExamScheduleExportSheet<
 	'!cols'?: ExamScheduleExportColumn[];
 	'!merges'?: ExamScheduleExportMerge[];
 	'!printTitlesRow'?: string;
+	'!rowBreaks'?: number[];
 };
 
 export type ExamScheduleReportSheet = ExamScheduleExportSheet<WorksheetRow> & {
@@ -544,6 +545,36 @@ function paperTransferTableHeaderRow(): WorksheetRow {
 	];
 }
 
+const PAPER_TRANSFER_DETAIL_ROWS_PER_PAGE = 18;
+
+function addRowBreakAfterLastRow(rows: WorksheetRow[], rowBreaks: number[]) {
+	const lastRowIndex = rows.length - 1;
+	if (lastRowIndex >= 0 && rowBreaks.at(-1) !== lastRowIndex) {
+		rowBreaks.push(lastRowIndex);
+	}
+}
+
+function appendPaperTransferDayHeader(
+	rows: WorksheetRow[],
+	mergeRanges: ExamScheduleExportMerge[],
+	dayLabel: string
+) {
+	const dayRowIndex = rows.length;
+	rows.push([dayLabel]);
+	mergeRanges.push(fullWidthPaperTransferMerge(dayRowIndex));
+	rows.push(paperTransferTableHeaderRow());
+}
+
+function appendPaperTransferTimeHeader(
+	rows: WorksheetRow[],
+	mergeRanges: ExamScheduleExportMerge[],
+	timeLabelText: string
+) {
+	const timeRowIndex = rows.length;
+	rows.push([`เวลา ${timeLabelText}`]);
+	mergeRanges.push(fullWidthPaperTransferMerge(timeRowIndex));
+}
+
 function printableReportRows(
 	workspace: ExamScheduleWorkspace,
 	sessions: ExamSession[],
@@ -738,42 +769,58 @@ function paperTransferDateLabel(workspace: ExamScheduleWorkspace, session: ExamS
 function paperTransferRows(
 	workspace: ExamScheduleWorkspace,
 	invigilatorWorkspace: ExamInvigilatorWorkspace | null
-): { rows: WorksheetRow[]; mergeRanges: ExamScheduleExportMerge[] } {
+): { rows: WorksheetRow[]; mergeRanges: ExamScheduleExportMerge[]; rowBreaks: number[] } {
 	void invigilatorWorkspace;
 	const rows: WorksheetRow[] = [['ใบรับส่งข้อสอบ'], [printableReportTitle(workspace)], []];
 	const mergeRanges: ExamScheduleExportMerge[] = [];
+	const rowBreaks: number[] = [];
 
 	const sessions = sortedSessions(workspace);
 	if (sessions.length === 0) {
 		const emptyRowIndex = rows.length;
 		rows.push(['ยังไม่มีรายการสอบที่จัดเวลาแล้ว']);
 		mergeRanges.push(fullWidthPaperTransferMerge(emptyRowIndex));
-		return { rows, mergeRanges };
+		return { rows, mergeRanges, rowBreaks };
 	}
 
 	const sessionsByDay = groupByText(sessions, (session) => safeText(session.examDayId));
 	for (const [dayIndex, [, daySessions]] of sessionsByDay.entries()) {
-		if (dayIndex > 0) rows.push([]);
-
-		const dayRowIndex = rows.length;
-		rows.push([paperTransferDateLabel(workspace, daySessions[0])]);
-		mergeRanges.push(fullWidthPaperTransferMerge(dayRowIndex));
-		rows.push(paperTransferTableHeaderRow());
+		const dayLabelText = paperTransferDateLabel(workspace, daySessions[0]);
+		if (dayIndex > 0) addRowBreakAfterLastRow(rows, rowBreaks);
+		appendPaperTransferDayHeader(rows, mergeRanges, dayLabelText);
+		let detailRowsOnPage = 0;
 
 		const sessionsByTime = groupByText(daySessions, printableTimeRangeLabel);
 		for (const [, timeSessions] of sessionsByTime) {
-			const timeRowIndex = rows.length;
-			rows.push([`เวลา ${printableTimeRangeLabel(timeSessions[0])}`]);
-			mergeRanges.push(fullWidthPaperTransferMerge(timeRowIndex));
-
+			const timeLabelText = printableTimeRangeLabel(timeSessions[0]);
 			const orderedTimeSessions = [...timeSessions].sort(
 				(a, b) =>
 					compareThaiNatural(subjectLabel(a), subjectLabel(b)) ||
 					compareThaiNatural(safeText(a.subjectCode), safeText(b.subjectCode)) ||
 					compareThaiNatural(sessionClassroomLabel(a), sessionClassroomLabel(b))
 			);
+			if (
+				detailRowsOnPage > 0 &&
+				orderedTimeSessions.length <= PAPER_TRANSFER_DETAIL_ROWS_PER_PAGE &&
+				detailRowsOnPage + orderedTimeSessions.length > PAPER_TRANSFER_DETAIL_ROWS_PER_PAGE
+			) {
+				addRowBreakAfterLastRow(rows, rowBreaks);
+				appendPaperTransferDayHeader(rows, mergeRanges, dayLabelText);
+				detailRowsOnPage = 0;
+			}
 
+			let hasTimeHeaderOnPage = false;
 			for (const session of orderedTimeSessions) {
+				if (detailRowsOnPage >= PAPER_TRANSFER_DETAIL_ROWS_PER_PAGE) {
+					addRowBreakAfterLastRow(rows, rowBreaks);
+					appendPaperTransferDayHeader(rows, mergeRanges, dayLabelText);
+					detailRowsOnPage = 0;
+					hasTimeHeaderOnPage = false;
+				}
+				if (!hasTimeHeaderOnPage) {
+					appendPaperTransferTimeHeader(rows, mergeRanges, timeLabelText);
+					hasTimeHeaderOnPage = true;
+				}
 				rows.push([
 					subjectLabel(session),
 					safeText(session.subjectCode, '-'),
@@ -783,11 +830,12 @@ function paperTransferRows(
 					'',
 					''
 				]);
+				detailRowsOnPage += 1;
 			}
 		}
 	}
 
-	return { rows, mergeRanges };
+	return { rows, mergeRanges, rowBreaks };
 }
 
 function printableReportSheet(
@@ -846,7 +894,8 @@ function printablePaperTransferSheet(
 		rows: transfer.rows,
 		'!cols': paperTransferSheetColumns(),
 		'!merges': paperTransferSheetMerges(transfer.mergeRanges),
-		'!printTitlesRow': '1:2'
+		'!printTitlesRow': '1:2',
+		'!rowBreaks': transfer.rowBreaks
 	};
 }
 
