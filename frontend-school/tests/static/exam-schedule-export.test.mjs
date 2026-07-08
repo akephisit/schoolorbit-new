@@ -130,7 +130,8 @@ const invigilatorWorkspace = {
 			sessionMinutes: 180,
 			invigilators: [
 				{ staffId: 'staff-a', displayName: 'ครู A' },
-				{ staffId: 'staff-b', displayName: 'ครู B' }
+				{ staffId: 'staff-b', displayName: 'ครู B' },
+				{ staffId: 'staff-d', displayName: 'ครู D' }
 			]
 		},
 		{
@@ -144,7 +145,24 @@ const invigilatorWorkspace = {
 			invigilators: [{ staffId: 'staff-c', displayName: 'ครู C' }]
 		}
 	],
-	staffWorkloads: []
+	staffWorkloads: [
+		{
+			staffId: 'staff-a',
+			staffName: 'ครู A',
+			totalMinutes: 180,
+			assignedDayCount: 1,
+			assignmentCount: 1,
+			days: [{ examDayId: 'day-1', minutes: 180, assignmentCount: 1 }]
+		},
+		{
+			staffId: 'staff-b',
+			staffName: 'ครู B',
+			totalMinutes: 60,
+			assignedDayCount: 1,
+			assignmentCount: 1,
+			days: [{ examDayId: 'day-1', minutes: 60, assignmentCount: 1 }]
+		}
+	]
 };
 
 describe('exam schedule export helpers', () => {
@@ -290,32 +308,47 @@ describe('exam schedule export helpers', () => {
 		assert.ok((workbook.schedule['!cols']?.length ?? 0) > 6);
 	});
 
-	it('builds invigilator summary sheet by classroom and merges same exam day cells', () => {
+	it('builds invigilator summary sheet with two aligned invigilator columns', () => {
 		const workbook = buildExamScheduleExportWorkbook(exportWorkspace([]), invigilatorWorkspace);
 
 		assert.deepEqual(workbook.invigilatorSummary.rows[3], [
 			'วันสอบ',
 			'ห้องเรียน',
 			'ห้องสอบ',
-			'กรรมการคุมสอบ'
+			'กรรมการคุมสอบ',
+			''
 		]);
 		assert.equal(workbook.invigilatorSummary.rows[4][0], 'วันพุธที่ 4 มีนาคม 2569');
 		assert.equal(workbook.invigilatorSummary.rows[4][1], 'ม.1/1');
 		assert.equal(workbook.invigilatorSummary.rows[4][2], '313');
-		assert.equal(workbook.invigilatorSummary.rows[4][3], 'ครู A, ครู B');
+		assert.equal(workbook.invigilatorSummary.rows[4][3], 'ครู A');
+		assert.equal(workbook.invigilatorSummary.rows[4][4], 'ครู B');
 		assert.equal(workbook.invigilatorSummary.rows[5][0], 'วันพุธที่ 4 มีนาคม 2569');
-		assert.equal(workbook.invigilatorSummary.rows[5][1], 'ม.1/2');
-		assert.equal(workbook.invigilatorSummary.rows[5][2], '314');
-		assert.equal(workbook.invigilatorSummary.rows[5][3], 'ครู C');
+		assert.equal(workbook.invigilatorSummary.rows[5][1], 'ม.1/1');
+		assert.equal(workbook.invigilatorSummary.rows[5][2], '313');
+		assert.equal(workbook.invigilatorSummary.rows[5][3], 'ครู D');
+		assert.equal(workbook.invigilatorSummary.rows[5][4], '');
+		assert.equal(workbook.invigilatorSummary.rows[6][0], 'วันพุธที่ 4 มีนาคม 2569');
+		assert.equal(workbook.invigilatorSummary.rows[6][1], 'ม.1/2');
+		assert.equal(workbook.invigilatorSummary.rows[6][2], '314');
+		assert.equal(workbook.invigilatorSummary.rows[6][3], 'ครู C');
+		assert.equal(workbook.invigilatorSummary.rows[6][4], '');
 		assert.equal(workbook.invigilatorSummary['!printTitlesRow'], '1:4');
 		assert.deepEqual(workbook.invigilatorSummary['!merges'], [
-			{ s: { r: 0, c: 0 }, e: { r: 0, c: 3 } },
-			{ s: { r: 1, c: 0 }, e: { r: 1, c: 3 } },
-			{ s: { r: 4, c: 0 }, e: { r: 5, c: 0 } }
+			{ s: { r: 0, c: 0 }, e: { r: 0, c: 4 } },
+			{ s: { r: 1, c: 0 }, e: { r: 1, c: 4 } },
+			{ s: { r: 3, c: 3 }, e: { r: 3, c: 4 } }
 		]);
-		assert.equal(
-			workbook.invigilatorSummary.rows[3].includes('จำนวนกรรมการ'),
-			false
+		assert.equal(workbook.invigilatorSummary.rows[3].includes('จำนวนกรรมการ'), false);
+		assert.deepEqual(
+			workbook.workloads.rows.map((row) => row.ชื่อกรรมการ),
+			['ครู B', 'ครู A']
 		);
+		assert.deepEqual(Object.keys(workbook.workloads.rows[0]), [
+			'ชื่อกรรมการ',
+			'ชั่วโมงรวม',
+			'จำนวนวัน',
+			'จำนวนห้อง'
+		]);
 	});
 });

@@ -169,6 +169,14 @@ function groupByText<T>(items: T[], keyForItem: (item: T) => string): [string, T
 	return Array.from(groups.entries());
 }
 
+function chunkPairs(values: string[]): [string, string][] {
+	const pairs: [string, string][] = [];
+	for (let index = 0; index < values.length; index += 2) {
+		pairs.push([values[index] ?? '', values[index + 1] ?? '']);
+	}
+	return pairs;
+}
+
 type ParsedClassroomLabel = {
 	gradeLabel: string;
 	roomNumber: number | null;
@@ -465,31 +473,20 @@ function sessionExamRoomLabel(workspace: ExamScheduleWorkspace, session: ExamSes
 	if (sessionRoom !== '-') return sessionRoom;
 
 	const day = workspace.days.find((item) => item.id === session.examDayId);
-	const assignment = day?.roomAssignments.find(
-		(item) => item.classroomId === session.classroomId
-	);
+	const assignment = day?.roomAssignments.find((item) => item.classroomId === session.classroomId);
 	return safeText(assignment?.roomName, '-');
 }
 
 function invigilatorSummarySheetColumns(): ExamScheduleExportColumn[] {
-	return [{ wch: 24 }, { wch: 14 }, { wch: 16 }, { wch: 44 }];
+	return [{ wch: 24 }, { wch: 14 }, { wch: 16 }, { wch: 28 }, { wch: 28 }];
 }
 
-function invigilatorSummarySheetMerges(
-	dayRanges: { start: number; end: number }[]
-): ExamScheduleExportMerge[] {
-	const merges: ExamScheduleExportMerge[] = [
-		{ s: { r: 0, c: 0 }, e: { r: 0, c: 3 } },
-		{ s: { r: 1, c: 0 }, e: { r: 1, c: 3 } }
+function invigilatorSummarySheetMerges(): ExamScheduleExportMerge[] {
+	return [
+		{ s: { r: 0, c: 0 }, e: { r: 0, c: 4 } },
+		{ s: { r: 1, c: 0 }, e: { r: 1, c: 4 } },
+		{ s: { r: 3, c: 3 }, e: { r: 3, c: 4 } }
 	];
-
-	for (const range of dayRanges) {
-		if (range.end > range.start) {
-			merges.push({ s: { r: range.start, c: 0 }, e: { r: range.end, c: 0 } });
-		}
-	}
-
-	return merges;
 }
 
 function printableReportRows(
@@ -624,10 +621,7 @@ function classroomReportRows(
 function invigilatorSummaryRows(
 	workspace: ExamScheduleWorkspace,
 	invigilatorWorkspace: ExamInvigilatorWorkspace | null
-): {
-	rows: WorksheetRow[];
-	dayRanges: { start: number; end: number }[];
-} {
+): WorksheetRow[] {
 	const dayById = new Map(workspace.days.map((day) => [day.id, day]));
 	const dayOrder = new Map(sortedDays(workspace).map((day, index) => [day.id, index]));
 	const orderedAssignments = [...(invigilatorWorkspace?.assignments ?? [])].sort(
@@ -639,13 +633,12 @@ function invigilatorSummaryRows(
 		['สรุปกรรมการคุมสอบ'],
 		[printableReportTitle(workspace)],
 		[],
-		['วันสอบ', 'ห้องเรียน', 'ห้องสอบ', 'กรรมการคุมสอบ']
+		['วันสอบ', 'ห้องเรียน', 'ห้องสอบ', 'กรรมการคุมสอบ', '']
 	];
-	const dayRanges: { start: number; end: number }[] = [];
 
 	if (orderedAssignments.length === 0) {
-		rows.push(['-', '-', '-', 'ยังไม่มีข้อมูลกรรมการคุมสอบ']);
-		return { rows, dayRanges };
+		rows.push(['-', '-', '-', 'ยังไม่มีข้อมูลกรรมการคุมสอบ', '']);
+		return rows;
 	}
 
 	const assignmentsByDay = groupByText(orderedAssignments, (assignment) =>
@@ -653,20 +646,26 @@ function invigilatorSummaryRows(
 	);
 
 	for (const [, dayAssignments] of assignmentsByDay) {
-		const dayStart = rows.length;
 		for (const assignment of dayAssignments) {
 			const day = dayById.get(assignment.examDayId);
-			rows.push([
-				day ? dayTitle(day) : assignment.examDayId,
-				safeText(assignment.classroomName, '-'),
-				safeText(assignment.roomName, '-'),
-				assignmentInvigilatorNames(assignment) || '-'
-			]);
+			const invigilatorNames = assignment.invigilators
+				.map((invigilator) => safeText(invigilator.displayName))
+				.filter(Boolean);
+			const pairs = invigilatorNames.length > 0 ? chunkPairs(invigilatorNames) : [['-', '']];
+
+			for (const pair of pairs) {
+				rows.push([
+					day ? dayTitle(day) : assignment.examDayId,
+					safeText(assignment.classroomName, '-'),
+					safeText(assignment.roomName, '-'),
+					pair[0] ?? '',
+					pair[1] ?? ''
+				]);
+			}
 		}
-		dayRanges.push({ start: dayStart, end: rows.length - 1 });
 	}
 
-	return { rows, dayRanges };
+	return rows;
 }
 
 function printableReportSheet(
@@ -705,12 +704,11 @@ function printableInvigilatorSummarySheet(
 	workspace: ExamScheduleWorkspace,
 	invigilatorWorkspace: ExamInvigilatorWorkspace | null
 ): ExamScheduleReportSheet {
-	const report = invigilatorSummaryRows(workspace, invigilatorWorkspace);
 	return {
 		name: 'กรรมการคุมสอบ',
-		rows: report.rows,
+		rows: invigilatorSummaryRows(workspace, invigilatorWorkspace),
 		'!cols': invigilatorSummarySheetColumns(),
-		'!merges': invigilatorSummarySheetMerges(report.dayRanges),
+		'!merges': invigilatorSummarySheetMerges(),
 		'!printTitlesRow': '1:4'
 	};
 }
@@ -814,28 +812,19 @@ function invigilatorRows(
 	});
 }
 
-function workloadRows(
-	workspace: ExamScheduleWorkspace,
-	invigilatorWorkspace: ExamInvigilatorWorkspace | null
-): WorksheetObjectRow[] {
-	const dayById = new Map(workspace.days.map((day) => [day.id, day]));
-	return (invigilatorWorkspace?.staffWorkloads ?? []).map((workload) => {
-		const dayDetails = workload.days
-			.map((dayWorkload) => {
-				const day = dayById.get(dayWorkload.examDayId);
-				const label = day ? dayTitle(day) : dayWorkload.examDayId;
-				return `${label}: ${minutesLabel(dayWorkload.minutes)} / ${dayWorkload.assignmentCount} ห้อง`;
-			})
-			.join('\n');
-		return {
+function workloadRows(invigilatorWorkspace: ExamInvigilatorWorkspace | null): WorksheetObjectRow[] {
+	return [...(invigilatorWorkspace?.staffWorkloads ?? [])]
+		.sort(
+			(a, b) =>
+				a.totalMinutes - b.totalMinutes ||
+				compareThaiNatural(safeText(a.staffName), safeText(b.staffName))
+		)
+		.map((workload) => ({
 			ชื่อกรรมการ: workload.staffName,
 			ชั่วโมงรวม: minutesLabel(workload.totalMinutes),
-			นาทีรวม: workload.totalMinutes,
 			จำนวนวัน: workload.assignedDayCount,
-			จำนวนห้อง: workload.assignmentCount,
-			รายละเอียดรายวัน: dayDetails
-		};
-	});
+			จำนวนห้อง: workload.assignmentCount
+		}));
 }
 
 function readinessRows(workspace: ExamScheduleWorkspace): WorksheetObjectRow[] {
@@ -962,13 +951,11 @@ export function buildExamScheduleExportWorkbook(
 			{ wch: 12 },
 			{ wch: 18 }
 		]),
-		workloads: objectSheet(workloadRows(workspace, invigilatorWorkspace), [
+		workloads: objectSheet(workloadRows(invigilatorWorkspace), [
 			{ wch: 28 },
 			{ wch: 14 },
 			{ wch: 10 },
-			{ wch: 10 },
-			{ wch: 10 },
-			{ wch: 48 }
+			{ wch: 10 }
 		]),
 		readiness: objectSheet(readinessRows(workspace), [{ wch: 14 }, { wch: 40 }, { wch: 28 }])
 	};

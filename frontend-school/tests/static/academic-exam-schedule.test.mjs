@@ -470,7 +470,7 @@ test('exam room assignment panel hides already assigned classrooms and rooms fro
 	assert.doesNotMatch(panel, /\{#each rooms as room \(room\.id\)\}/);
 });
 
-test('exam invigilator panel exposes room-first workflow and workload summary', () => {
+test('exam invigilator panel exposes room-first workflow without summary cards', () => {
 	const panelPath = 'src/lib/components/academic/exam-schedule/ExamInvigilatorPanel.svelte';
 	assert.equal(existsSync(projectPath(panelPath)), true, `${panelPath} should exist`);
 
@@ -483,12 +483,20 @@ test('exam invigilator panel exposes room-first workflow and workload summary', 
 	assert.match(panel, /staffWorkloads/);
 	assert.match(panel, /จัดกรรมการ/);
 	assert.match(panel, /selectedDayMinutes/);
-	assert.match(panel, /workloadSummary/);
-	assert.match(panel, /unassignedAssignmentCount/);
 	assert.match(panel, /onAssignInvigilator/);
 	assert.match(panel, /onRemoveInvigilator/);
 	assert.match(panel, /InvigilatorStaffList/);
 	assert.match(panel, /InvigilatorRoomBoard/);
+	for (const removedSummaryLabel of [
+		'ครูทั้งหมด',
+		'คุมวันนี้',
+		'ชั่วโมงรวมสูงสุด',
+		'ห้องยังไม่มีกรรมการ'
+	]) {
+		assert.doesNotMatch(panel, new RegExp(escapeRegExp(removedSummaryLabel)));
+	}
+	assert.doesNotMatch(panel, /workloadSummary/);
+	assert.doesNotMatch(panel, /unassignedAssignmentCount/);
 	assert.doesNotMatch(panel, /แนะนำ 2 คน|onSaveInvigilators|updateExamAssignmentInvigilators/);
 	assert.match(page, /getExamInvigilatorWorkspace/);
 	assert.match(page, /<ExamInvigilatorPanel/);
@@ -667,8 +675,14 @@ test('exam schedule detail exports one editable report workbook', () => {
 	assert.match(page, /border/);
 	assert.match(page, /alignment/);
 	assert.match(page, /printTitlesRow/);
-	for (const sheetName of ['ตารางสอบ', 'ห้องสอบ', 'กรรมการ', 'ภาระงานกรรมการ', 'ความพร้อม']) {
+	for (const sheetName of ['ห้องสอบ', 'ภาระงานกรรมการ', 'ความพร้อม']) {
 		assert.match(handleExport, new RegExp(escapeRegExp(sheetName)));
+	}
+	for (const removedSheetName of ['ตารางสอบ', 'กรรมการ']) {
+		assert.doesNotMatch(
+			handleExport,
+			new RegExp(`appendObjectSheet\\(workbook,\\s*'${escapeRegExp(removedSheetName)}'`)
+		);
 	}
 	for (const sheetName of [
 		'ตารางสอบรวม',
@@ -721,6 +735,22 @@ test('exam schedule detail exports one editable report workbook', () => {
 		assert.match(exportUtil, new RegExp(`function ${builderName}\\b`));
 	}
 	assert.doesNotMatch(handleExport + exportUtil, /nationalId|national_id|phone|email|username/);
+});
+
+test('exam invigilator staff names join title and first name without a middle space', () => {
+	const service = readFileSync(
+		projectPath('../backend-school/src/modules/academic/services/exam_schedule_service.rs'),
+		'utf8'
+	);
+
+	assert.match(
+		service,
+		/concat_ws\('',\s*NULLIF\(TRIM\(user_account\.title\), ''\),\s*NULLIF\(TRIM\(user_account\.first_name\), ''\)\)/
+	);
+	assert.doesNotMatch(
+		service,
+		/concat_ws\(' ', user_account\.title, user_account\.first_name, user_account\.last_name\)/
+	);
 });
 
 test('invigilator workspace load exposes recoverable error and retry state', () => {

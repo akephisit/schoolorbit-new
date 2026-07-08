@@ -12,18 +12,10 @@
 	import InvigilatorRoomBoard from './InvigilatorRoomBoard.svelte';
 	import InvigilatorStaffList from './InvigilatorStaffList.svelte';
 	import {
-		formatInvigilatorMinutes,
 		staffOptionName,
 		workloadStaffName,
 		type InvigilatorStaffCardView
 	} from './invigilatorDrag';
-
-	type WorkloadSummary = {
-		staffCount: number;
-		assignedTodayCount: number;
-		maxTotalMinutes: number;
-		unassignedAssignmentCount: number;
-	};
 
 	let {
 		days = [],
@@ -80,7 +72,6 @@
 	);
 	const staffCards = $derived(buildStaffCards());
 	const displayedStaffCards = $derived(filterStaffCards(staffCards));
-	const workloadSummary = $derived(buildWorkloadSummary());
 
 	function formatDayDate(value: string, label?: string | null): string {
 		const dateLabel = new Date(value).toLocaleDateString('th-TH', {
@@ -146,18 +137,6 @@
 			if (!search) return true;
 			return card.displayName.toLowerCase().includes(search);
 		});
-	}
-
-	function buildWorkloadSummary(): WorkloadSummary {
-		const totalMinutes = staffCards.map((card) => card.totalMinutes);
-		return {
-			staffCount: staffCards.length,
-			assignedTodayCount: staffCards.filter((card) => card.selectedDayMinutes > 0).length,
-			maxTotalMinutes: totalMinutes.length ? Math.max(...totalMinutes) : 0,
-			unassignedAssignmentCount: selectedDayAssignments.filter(
-				(assignment) => assignment.invigilators.length === 0
-			).length
-		};
 	}
 
 	function markPending(assignmentId: string, staffId: string) {
@@ -280,31 +259,6 @@
 						รีเฟรช
 					</LoadingButton>
 				{/if}
-			</div>
-		</div>
-
-		<div class="grid gap-2 border-b bg-background/80 px-4 py-3 sm:grid-cols-2 xl:grid-cols-4">
-			<div class="rounded-md border-l-4 border-l-slate-500 bg-muted/30 px-3 py-2">
-				<p class="text-xs text-muted-foreground">ครูทั้งหมด</p>
-				<p class="mt-1 text-lg font-semibold tabular-nums">{workloadSummary.staffCount}</p>
-			</div>
-			<div class="rounded-md border-l-4 border-l-sky-500 bg-sky-50/60 px-3 py-2">
-				<p class="text-xs text-muted-foreground">คุมวันนี้</p>
-				<p class="mt-1 text-lg font-semibold tabular-nums">
-					{workloadSummary.assignedTodayCount}
-				</p>
-			</div>
-			<div class="rounded-md border-l-4 border-l-rose-500 bg-rose-50/60 px-3 py-2">
-				<p class="text-xs text-muted-foreground">ชั่วโมงรวมสูงสุด</p>
-				<p class="mt-1 text-lg font-semibold tabular-nums">
-					{formatInvigilatorMinutes(workloadSummary.maxTotalMinutes)}
-				</p>
-			</div>
-			<div class="rounded-md border-l-4 border-l-amber-500 bg-amber-50/60 px-3 py-2">
-				<p class="text-xs text-muted-foreground">ห้องยังไม่มีกรรมการ</p>
-				<p class="mt-1 text-lg font-semibold tabular-nums">
-					{workloadSummary.unassignedAssignmentCount}
-				</p>
 			</div>
 		</div>
 

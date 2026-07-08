@@ -697,9 +697,7 @@
 				appendReportSheet(workbook, reportSheet);
 			}
 
-			appendObjectSheet(workbook, 'ตารางสอบ', exportWorkbook.schedule);
 			appendObjectSheet(workbook, 'ห้องสอบ', exportWorkbook.rooms);
-			appendObjectSheet(workbook, 'กรรมการ', exportWorkbook.invigilators);
 			appendObjectSheet(workbook, 'ภาระงานกรรมการ', exportWorkbook.workloads);
 			appendObjectSheet(workbook, 'ความพร้อม', exportWorkbook.readiness);
 
