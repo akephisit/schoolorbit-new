@@ -422,4 +422,43 @@ describe('exam schedule export helpers', () => {
 			{ s: { r: 4, c: 11 }, e: { r: 6, c: 11 } }
 		]);
 	});
+
+	it('merges paper transfer subject names only when the subject code also matches', () => {
+		const workbook = buildExamScheduleExportWorkbook(
+			exportWorkspace([
+				scheduledSession({
+					id: 'session-english-code-1',
+					startsAt: '09:00:00',
+					endsAt: '10:00:00',
+					durationMinutes: 60,
+					classroomName: 'ม.1/1',
+					classroomId: 'classroom-m1-1',
+					gradeLevelName: 'ม.1',
+					gradeLevelYear: 1,
+					subjectNameTh: 'ภาษาอังกฤษ',
+					subjectCode: 'อ21102'
+				}),
+				scheduledSession({
+					id: 'session-english-code-2',
+					startsAt: '09:00:00',
+					endsAt: '10:00:00',
+					durationMinutes: 60,
+					classroomName: 'ม.1/2',
+					classroomId: 'classroom-m1-2',
+					gradeLevelName: 'ม.1',
+					gradeLevelYear: 1,
+					subjectNameTh: 'ภาษาอังกฤษ',
+					subjectCode: 'อ21202'
+				})
+			]),
+			invigilatorWorkspace
+		);
+
+		const subjectMerges = workbook.paperTransferReport['!merges']?.filter(
+			(merge) => merge.s.c === 3
+		);
+		assert.deepEqual(subjectMerges, [{ s: { r: 4, c: 3 }, e: { r: 6, c: 3 } }]);
+		assert.equal(workbook.paperTransferReport.rows[7][2], 'อ21202');
+		assert.equal(workbook.paperTransferReport.rows[7][3], 'ภาษาอังกฤษ');
+	});
 });

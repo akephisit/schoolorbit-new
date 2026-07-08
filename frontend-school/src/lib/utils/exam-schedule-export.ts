@@ -531,18 +531,25 @@ function cellText(value: WorksheetCell | undefined): string {
 	return String(value ?? '').trim();
 }
 
-function contiguousTextMerges(
+function rowMergeKey(rows: WorksheetRow[], rowIndex: number, columnIndexes: number[]): string {
+	return columnIndexes.map((columnIndex) => cellText(rows[rowIndex]?.[columnIndex])).join('\u001f');
+}
+
+function contiguousTextMergesByColumns(
 	rows: WorksheetRow[],
 	columnIndex: number,
-	firstDataRow: number
+	firstDataRow: number,
+	keyColumnIndexes: number[]
 ): ExamScheduleExportMerge[] {
 	const merges: ExamScheduleExportMerge[] = [];
 	let rangeStart = firstDataRow;
 	let rangeValue = cellText(rows[firstDataRow]?.[columnIndex]);
+	let rangeKey = rowMergeKey(rows, firstDataRow, keyColumnIndexes);
 
 	for (let rowIndex = firstDataRow + 1; rowIndex < rows.length; rowIndex += 1) {
 		const value = cellText(rows[rowIndex]?.[columnIndex]);
-		if (value && value === rangeValue) continue;
+		const key = rowMergeKey(rows, rowIndex, keyColumnIndexes);
+		if (value && value === rangeValue && key === rangeKey) continue;
 
 		if (rangeValue && rowIndex - 1 > rangeStart) {
 			merges.push({
@@ -553,6 +560,7 @@ function contiguousTextMerges(
 
 		rangeStart = rowIndex;
 		rangeValue = value;
+		rangeKey = key;
 	}
 
 	if (rangeValue && rows.length - 1 > rangeStart) {
@@ -563,6 +571,14 @@ function contiguousTextMerges(
 	}
 
 	return merges;
+}
+
+function contiguousTextMerges(
+	rows: WorksheetRow[],
+	columnIndex: number,
+	firstDataRow: number
+): ExamScheduleExportMerge[] {
+	return contiguousTextMergesByColumns(rows, columnIndex, firstDataRow, [columnIndex]);
 }
 
 function paperTransferSheetMerges(
@@ -850,10 +866,11 @@ function paperTransferRows(
 }
 
 function paperTransferDataMerges(rows: WorksheetRow[], sessionRanges: RowRange[]) {
-	const mergedTextColumns = [0, 1, 2, 3];
+	const mergedTextColumns = [0, 1, 2];
 	const mergedSessionColumns = [4, 5, 7, 8, 9, 10, 11];
 	return [
 		...mergedTextColumns.flatMap((columnIndex) => contiguousTextMerges(rows, columnIndex, 4)),
+		...contiguousTextMergesByColumns(rows, 3, 4, [2, 3]),
 		...mergedSessionColumns.flatMap((columnIndex) =>
 			mergeRangesForColumn(sessionRanges, columnIndex)
 		)
