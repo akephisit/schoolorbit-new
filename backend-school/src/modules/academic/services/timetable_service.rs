@@ -186,18 +186,69 @@ SELECT
     te.*,
     s.code   AS subject_code,
     s.name_th AS subject_name_th,
-    (SELECT ARRAY_AGG(concat(u2.first_name, ' ', u2.last_name) ORDER BY tei2.role, tei2.created_at)
+    s.group_id AS subject_group_id,
+    sg.name_th AS subject_group_name,
+    sg.display_order AS subject_group_display_order,
+    (SELECT ARRAY_AGG(concat(u2.first_name, ' ', u2.last_name) ORDER BY tei2.role, tei2.created_at, tei2.instructor_id)
      FROM timetable_entry_instructors tei2
      JOIN users u2 ON u2.id = tei2.instructor_id
      WHERE tei2.entry_id = te.id) AS instructor_names,
-    (SELECT ARRAY_AGG(tei_id.instructor_id ORDER BY tei_id.role, tei_id.created_at)
+    (SELECT ARRAY_AGG(tei_id.instructor_id ORDER BY tei_id.role, tei_id.created_at, tei_id.instructor_id)
      FROM timetable_entry_instructors tei_id
      WHERE tei_id.entry_id = te.id) AS instructor_ids,
+    (SELECT ARRAY_AGG(teacher_subject_group.subject_group_id ORDER BY tei_sg.role, tei_sg.created_at, tei_sg.instructor_id)
+     FROM timetable_entry_instructors tei_sg
+     LEFT JOIN LATERAL (
+         SELECT teacher_sg.id AS subject_group_id
+         FROM organization_members om
+         JOIN organization_units ou ON ou.id = om.organization_unit_id
+         JOIN subject_groups teacher_sg ON teacher_sg.id = ou.subject_group_id
+         WHERE om.user_id = tei_sg.instructor_id
+           AND om.ended_at IS NULL
+           AND ou.is_active = true
+           AND ou.unit_type = 'subject_group'
+           AND teacher_sg.is_active = true
+         ORDER BY om.is_primary DESC, om.started_at DESC, ou.display_order, ou.name
+         LIMIT 1
+     ) teacher_subject_group ON true
+     WHERE tei_sg.entry_id = te.id) AS instructor_subject_group_ids,
+    (SELECT ARRAY_AGG(teacher_subject_group.name_th ORDER BY tei_sg.role, tei_sg.created_at, tei_sg.instructor_id)
+     FROM timetable_entry_instructors tei_sg
+     LEFT JOIN LATERAL (
+         SELECT teacher_sg.name_th
+         FROM organization_members om
+         JOIN organization_units ou ON ou.id = om.organization_unit_id
+         JOIN subject_groups teacher_sg ON teacher_sg.id = ou.subject_group_id
+         WHERE om.user_id = tei_sg.instructor_id
+           AND om.ended_at IS NULL
+           AND ou.is_active = true
+           AND ou.unit_type = 'subject_group'
+           AND teacher_sg.is_active = true
+         ORDER BY om.is_primary DESC, om.started_at DESC, ou.display_order, ou.name
+         LIMIT 1
+     ) teacher_subject_group ON true
+     WHERE tei_sg.entry_id = te.id) AS instructor_subject_group_names,
+    (SELECT ARRAY_AGG(teacher_subject_group.display_order ORDER BY tei_sg.role, tei_sg.created_at, tei_sg.instructor_id)
+     FROM timetable_entry_instructors tei_sg
+     LEFT JOIN LATERAL (
+         SELECT teacher_sg.display_order
+         FROM organization_members om
+         JOIN organization_units ou ON ou.id = om.organization_unit_id
+         JOIN subject_groups teacher_sg ON teacher_sg.id = ou.subject_group_id
+         WHERE om.user_id = tei_sg.instructor_id
+           AND om.ended_at IS NULL
+           AND ou.is_active = true
+           AND ou.unit_type = 'subject_group'
+           AND teacher_sg.is_active = true
+         ORDER BY om.is_primary DESC, om.started_at DESC, ou.display_order, ou.name
+         LIMIT 1
+     ) teacher_subject_group ON true
+     WHERE tei_sg.entry_id = te.id) AS instructor_subject_group_display_orders,
     (SELECT concat(u3.first_name, ' ', u3.last_name)
      FROM timetable_entry_instructors tei3
      JOIN users u3 ON u3.id = tei3.instructor_id
      WHERE tei3.entry_id = te.id
-     ORDER BY tei3.role, tei3.created_at
+     ORDER BY tei3.role, tei3.created_at, tei3.instructor_id
      LIMIT 1) AS instructor_name,
     cr.name  AS classroom_name,
     r.code   AS room_code,
@@ -211,6 +262,7 @@ SELECT
 FROM academic_timetable_entries te
 LEFT JOIN classroom_courses cc ON te.classroom_course_id = cc.id
 LEFT JOIN subjects s ON cc.subject_id = s.id
+LEFT JOIN subject_groups sg ON sg.id = s.group_id
 LEFT JOIN class_rooms cr ON te.classroom_id = cr.id
 JOIN academic_periods ap ON te.period_id = ap.id
 LEFT JOIN rooms r ON te.room_id = r.id

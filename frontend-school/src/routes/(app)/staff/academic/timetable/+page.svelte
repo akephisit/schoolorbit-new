@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
+	import type { Cell, Row, Workbook, Worksheet } from 'exceljs';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { toast } from 'svelte-sonner';
@@ -86,7 +87,10 @@
 		Check
 	} from 'lucide-svelte';
 	import { generateTimetablePDF } from '$lib/utils/pdf';
-	import { buildTeacherLoadExportRows } from '$lib/utils/timetable-teacher-load-export';
+	import {
+		buildTeacherLoadExportRows,
+		type TeacherLoadExportRows
+	} from '$lib/utils/timetable-teacher-load-export';
 	import { SvelteSet, SvelteMap } from 'svelte/reactivity';
 
 	import { Checkbox } from '$lib/components/ui/checkbox';
@@ -2438,6 +2442,183 @@
 		}
 	}
 
+	const teacherLoadFontName = 'TH Sarabun New';
+
+	function appendTeacherLoadSummarySheet(workbook: Workbook, exportRows: TeacherLoadExportRows) {
+		const worksheet = workbook.addWorksheet('สรุปต่อครู');
+		worksheet.columns = [
+			{ width: 26 },
+			{ width: 34 },
+			{ width: 20 },
+			{ width: 28 },
+			{ width: 24 },
+			{ width: 28 },
+			{ width: 14 }
+		];
+		styleTeacherLoadWorksheet(worksheet);
+
+		styleTeacherLoadHeaderRow(
+			worksheet.addRow([
+				'กลุ่มสาระครู',
+				'ครูผู้สอน',
+				'วิชาในกลุ่มสาระ',
+				'วิชานอกกลุ่มสาระ/สอนร่วม',
+				'กิจกรรม independent',
+				'กิจกรรม synchronized',
+				'รวม'
+			])
+		);
+
+		for (const group of exportRows.summaryGroups) {
+			const groupRow = worksheet.addRow([
+				`กลุ่มสาระ: ${group.subjectGroupName}`,
+				'',
+				group.totals.homeGroupCoursePeriods,
+				group.totals.sharedCoursePeriods,
+				group.totals.independentActivityPeriods,
+				group.totals.synchronizedActivityPeriods,
+				group.totals.totalPeriods
+			]);
+			worksheet.mergeCells(groupRow.number, 1, groupRow.number, 2);
+			styleTeacherLoadGroupRow(groupRow, 7);
+
+			for (const row of group.rows) {
+				styleTeacherLoadRow(
+					worksheet.addRow([
+						row.teacherSubjectGroupName,
+						row.teacherName,
+						row.homeGroupCoursePeriods,
+						row.sharedCoursePeriods,
+						row.independentActivityPeriods,
+						row.synchronizedActivityPeriods,
+						row.totalPeriods
+					])
+				);
+			}
+		}
+
+		worksheet.views = [{ state: 'frozen', ySplit: 1 }];
+		worksheet.pageSetup = {
+			orientation: 'landscape',
+			fitToPage: true,
+			fitToWidth: 1,
+			fitToHeight: 0
+		};
+	}
+
+	function appendTeacherLoadDetailSheet(workbook: Workbook, exportRows: TeacherLoadExportRows) {
+		const worksheet = workbook.addWorksheet('รายละเอียด');
+		worksheet.columns = [
+			{ width: 26 },
+			{ width: 34 },
+			{ width: 26 },
+			{ width: 28 },
+			{ width: 12 },
+			{ width: 12 },
+			{ width: 14 },
+			{ width: 24 },
+			{ width: 54 }
+		];
+		styleTeacherLoadWorksheet(worksheet);
+
+		styleTeacherLoadHeaderRow(
+			worksheet.addRow([
+				'กลุ่มสาระครู',
+				'ครูผู้สอน',
+				'กลุ่มสาระรายการ',
+				'ประเภท',
+				'วัน',
+				'คาบ',
+				'เวลา',
+				'ห้อง',
+				'รายการ'
+			])
+		);
+
+		for (const group of exportRows.detailGroups) {
+			const groupRow = worksheet.addRow([`กลุ่มสาระ: ${group.subjectGroupName}`]);
+			worksheet.mergeCells(groupRow.number, 1, groupRow.number, 9);
+			styleTeacherLoadGroupRow(groupRow, 9);
+
+			for (const row of group.rows) {
+				styleTeacherLoadRow(
+					worksheet.addRow([
+						row.teacherSubjectGroupName,
+						row.teacherName,
+						row.subjectGroupName,
+						row.categoryLabel,
+						row.dayLabel,
+						row.periodName,
+						row.timeLabel,
+						row.classroomName,
+						row.title
+					])
+				);
+			}
+		}
+
+		worksheet.views = [{ state: 'frozen', ySplit: 1 }];
+		worksheet.pageSetup = {
+			orientation: 'landscape',
+			fitToPage: true,
+			fitToWidth: 1,
+			fitToHeight: 0
+		};
+	}
+
+	function styleTeacherLoadWorksheet(worksheet: Worksheet) {
+		worksheet.properties.defaultRowHeight = 24;
+	}
+
+	function styleTeacherLoadRow(row: Row) {
+		row.eachCell((cell) => styleTeacherLoadCell(cell));
+	}
+
+	function styleTeacherLoadCell(cell: Cell) {
+		cell.font = { name: teacherLoadFontName, size: 16 };
+		cell.alignment = { vertical: 'middle', wrapText: true };
+		cell.border = {
+			top: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+			left: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+			bottom: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+			right: { style: 'thin', color: { argb: 'FFE2E8F0' } }
+		};
+	}
+
+	function styleTeacherLoadHeaderRow(row: Row) {
+		row.height = 28;
+		row.eachCell((cell) => {
+			styleTeacherLoadCell(cell);
+			cell.font = { name: teacherLoadFontName, size: 16, bold: true };
+			cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+			cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE2E8F0' } };
+		});
+	}
+
+	function styleTeacherLoadGroupRow(row: Row, columnCount: number) {
+		row.height = 26;
+		for (let columnIndex = 1; columnIndex <= columnCount; columnIndex += 1) {
+			const cell = row.getCell(columnIndex);
+			styleTeacherLoadCell(cell);
+			cell.font = { name: teacherLoadFontName, size: 16, bold: true };
+			cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1F5F9' } };
+		}
+	}
+
+	function saveTeacherLoadWorkbookBuffer(buffer: ArrayBuffer, fileName: string) {
+		const blob = new Blob([buffer], {
+			type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+		});
+		const url = URL.createObjectURL(blob);
+		const link = document.createElement('a');
+		link.href = url;
+		link.download = fileName;
+		document.body.appendChild(link);
+		link.click();
+		link.remove();
+		URL.revokeObjectURL(url);
+	}
+
 	async function handleExportTeacherLoadXlsx() {
 		if (!canReadTimetable) return;
 		if (!selectedSemesterId) {
@@ -2457,23 +2638,14 @@
 				return;
 			}
 
-			const XLSX = await import('xlsx');
-			const workbook = XLSX.utils.book_new();
-			const summaryWorksheet = XLSX.utils.aoa_to_sheet(exportRows.summarySheetRows);
-			summaryWorksheet['!cols'] = [{ wch: 32 }, { wch: 14 }, { wch: 24 }, { wch: 26 }, { wch: 12 }];
-			XLSX.utils.book_append_sheet(workbook, summaryWorksheet, 'สรุปต่อครู');
-
-			const detailWorksheet = XLSX.utils.aoa_to_sheet(exportRows.detailSheetRows);
-			detailWorksheet['!cols'] = [
-				{ wch: 32 },
-				{ wch: 24 },
-				{ wch: 12 },
-				{ wch: 12 },
-				{ wch: 14 },
-				{ wch: 24 },
-				{ wch: 48 }
-			];
-			XLSX.utils.book_append_sheet(workbook, detailWorksheet, 'รายละเอียด');
+			const ExcelJSModule = await import('exceljs');
+			const ExcelJS = ExcelJSModule.default;
+			const workbook = new ExcelJS.Workbook();
+			workbook.creator = 'SchoolOrbit';
+			workbook.created = new Date();
+			workbook.modified = new Date();
+			appendTeacherLoadSummarySheet(workbook, exportRows);
+			appendTeacherLoadDetailSheet(workbook, exportRows);
 
 			const semesterName = semesters.find((s) => s.id === selectedSemesterId)?.term || '';
 			const yearObj = academicYears.find((y) => y.id === selectedYearId);
@@ -2482,7 +2654,8 @@
 				`สรุปคาบสอนครู-ภาคเรียนที่ ${semesterName}-ปีการศึกษา ${yearName}`
 			);
 
-			XLSX.writeFile(workbook, `${fileName}.xlsx`);
+			const buffer = await workbook.xlsx.writeBuffer();
+			saveTeacherLoadWorkbookBuffer(buffer, `${fileName}.xlsx`);
 			toast.success(`ดาวน์โหลดสรุปคาบสอน ${exportRows.summaryRows.length} คนแล้ว`);
 		} catch (e: unknown) {
 			console.error(e);

@@ -1,5 +1,11 @@
 export type TeacherLoadCategory = 'course' | 'independentActivity' | 'synchronizedActivity';
 
+export type TeacherLoadDetailKind =
+	| 'homeGroupCourse'
+	| 'sharedCourse'
+	| 'independentActivity'
+	| 'synchronizedActivity';
+
 export interface TeacherLoadEntry {
 	id: string;
 	entry_type: string;
@@ -12,6 +18,9 @@ export interface TeacherLoadEntry {
 	classroom_name?: string | null;
 	subject_code?: string | null;
 	subject_name_th?: string | null;
+	subject_group_id?: string | null;
+	subject_group_name?: string | null;
+	subject_group_display_order?: number | null;
 	title?: string | null;
 	activity_slot_id?: string | null;
 	activity_slot_name?: string | null;
@@ -19,12 +28,19 @@ export interface TeacherLoadEntry {
 	instructor_ids?: string[] | null;
 	instructor_names?: string[] | null;
 	instructor_name?: string | null;
+	instructor_subject_group_ids?: Array<string | null> | null;
+	instructor_subject_group_names?: Array<string | null> | null;
+	instructor_subject_group_display_orders?: Array<number | null> | null;
 }
 
 export interface TeacherLoadSummaryRow {
 	teacherId: string;
 	teacherName: string;
-	coursePeriods: number;
+	teacherSubjectGroupId: string | null;
+	teacherSubjectGroupName: string;
+	teacherSubjectGroupDisplayOrder: number | null;
+	homeGroupCoursePeriods: number;
+	sharedCoursePeriods: number;
 	independentActivityPeriods: number;
 	synchronizedActivityPeriods: number;
 	totalPeriods: number;
@@ -33,7 +49,14 @@ export interface TeacherLoadSummaryRow {
 export interface TeacherLoadDetailRow {
 	teacherId: string;
 	teacherName: string;
+	teacherSubjectGroupId: string | null;
+	teacherSubjectGroupName: string;
+	teacherSubjectGroupDisplayOrder: number | null;
+	subjectGroupId: string | null;
+	subjectGroupName: string;
+	subjectGroupDisplayOrder: number | null;
 	category: TeacherLoadCategory;
+	detailKind: TeacherLoadDetailKind;
 	categoryLabel: string;
 	dayOfWeek: string;
 	dayLabel: string;
@@ -44,17 +67,51 @@ export interface TeacherLoadDetailRow {
 	title: string;
 }
 
+export interface TeacherLoadSummaryGroup {
+	subjectGroupId: string | null;
+	subjectGroupName: string;
+	subjectGroupDisplayOrder: number | null;
+	rows: TeacherLoadSummaryRow[];
+	totals: {
+		homeGroupCoursePeriods: number;
+		sharedCoursePeriods: number;
+		independentActivityPeriods: number;
+		synchronizedActivityPeriods: number;
+		totalPeriods: number;
+	};
+}
+
+export interface TeacherLoadDetailGroup {
+	subjectGroupId: string | null;
+	subjectGroupName: string;
+	subjectGroupDisplayOrder: number | null;
+	rows: TeacherLoadDetailRow[];
+}
+
 export interface TeacherLoadExportRows {
 	summaryRows: TeacherLoadSummaryRow[];
 	detailRows: TeacherLoadDetailRow[];
+	summaryGroups: TeacherLoadSummaryGroup[];
+	detailGroups: TeacherLoadDetailGroup[];
 	summarySheetRows: Array<Array<string | number>>;
 	detailSheetRows: Array<Array<string | number>>;
 }
 
-const CATEGORY_LABELS: Record<TeacherLoadCategory, string> = {
-	course: 'วิชา',
+const UNKNOWN_SUBJECT_GROUP_NAME = 'ไม่ระบุกลุ่มสาระ';
+const ACTIVITY_SUBJECT_GROUP_NAME = 'กิจกรรม';
+
+const CATEGORY_LABELS: Record<TeacherLoadDetailKind, string> = {
+	homeGroupCourse: 'วิชาในกลุ่มสาระ',
+	sharedCourse: 'วิชานอกกลุ่มสาระ/สอนร่วม',
 	independentActivity: 'กิจกรรม independent',
 	synchronizedActivity: 'กิจกรรม synchronized'
+};
+
+const DETAIL_KIND_ORDER: Record<TeacherLoadDetailKind, number> = {
+	homeGroupCourse: 1,
+	sharedCourse: 2,
+	independentActivity: 3,
+	synchronizedActivity: 4
 };
 
 const DAY_LABELS: Record<string, string> = {
@@ -97,6 +154,8 @@ export function buildTeacherLoadExportRows(entries: TeacherLoadEntry[]): Teacher
 		for (let index = 0; index < instructorIds.length; index += 1) {
 			const teacherId = instructorIds[index];
 			const teacherName = teacherNameForEntry(entry, index, teacherId);
+			const teacherSubjectGroup = teacherSubjectGroupForEntry(entry, index);
+			const detailKind = detailKindForEntry(entry, category, teacherSubjectGroup.id);
 			const detailKey = teacherLoadDetailKey(entry, category, teacherId);
 			const existingDetail = details.get(detailKey);
 
@@ -106,15 +165,23 @@ export function buildTeacherLoadExportRows(entries: TeacherLoadEntry[]): Teacher
 				continue;
 			}
 
-			const summary = getOrCreateSummary(summaries, teacherId, teacherName);
-			incrementSummary(summary, category);
+			const summary = getOrCreateSummary(summaries, teacherId, teacherName, teacherSubjectGroup);
+			incrementSummary(summary, detailKind);
 
+			const itemSubjectGroup = itemSubjectGroupForEntry(entry, category);
 			const classroomNames = uniqueNonEmpty([entry.classroom_name ?? '']);
 			details.set(detailKey, {
 				teacherId,
 				teacherName,
+				teacherSubjectGroupId: teacherSubjectGroup.id,
+				teacherSubjectGroupName: teacherSubjectGroup.name,
+				teacherSubjectGroupDisplayOrder: teacherSubjectGroup.displayOrder,
+				subjectGroupId: itemSubjectGroup.id,
+				subjectGroupName: itemSubjectGroup.name,
+				subjectGroupDisplayOrder: itemSubjectGroup.displayOrder,
 				category,
-				categoryLabel: CATEGORY_LABELS[category],
+				detailKind,
+				categoryLabel: CATEGORY_LABELS[detailKind],
 				dayOfWeek: entry.day_of_week,
 				dayLabel: DAY_LABELS[entry.day_of_week] ?? entry.day_of_week,
 				periodName: entry.period_name ?? '',
@@ -131,7 +198,10 @@ export function buildTeacherLoadExportRows(entries: TeacherLoadEntry[]): Teacher
 		.map((row) => ({
 			...row,
 			totalPeriods:
-				row.coursePeriods + row.independentActivityPeriods + row.synchronizedActivityPeriods
+				row.homeGroupCoursePeriods +
+				row.sharedCoursePeriods +
+				row.independentActivityPeriods +
+				row.synchronizedActivityPeriods
 		}))
 		.sort(compareSummaryRows);
 
@@ -139,18 +209,24 @@ export function buildTeacherLoadExportRows(entries: TeacherLoadEntry[]): Teacher
 		.map(({ classroomNames: _classroomNames, ...row }) => row)
 		.sort(compareDetailRows);
 
+	const summaryGroups = groupSummaryRows(summaryRows);
+	const detailGroups = groupDetailRows(detailRows);
+
 	return {
 		summaryRows,
 		detailRows,
-		summarySheetRows: buildSummarySheetRows(summaryRows),
-		detailSheetRows: buildDetailSheetRows(detailRows)
+		summaryGroups,
+		detailGroups,
+		summarySheetRows: buildSummarySheetRows(summaryGroups),
+		detailSheetRows: buildDetailSheetRows(detailGroups)
 	};
 }
 
 function getOrCreateSummary(
 	summaries: Map<string, TeacherLoadSummaryRow>,
 	teacherId: string,
-	teacherName: string
+	teacherName: string,
+	teacherSubjectGroup: SubjectGroupMeta
 ): TeacherLoadSummaryRow {
 	const existing = summaries.get(teacherId);
 	if (existing) return existing;
@@ -158,7 +234,11 @@ function getOrCreateSummary(
 	const row = {
 		teacherId,
 		teacherName,
-		coursePeriods: 0,
+		teacherSubjectGroupId: teacherSubjectGroup.id,
+		teacherSubjectGroupName: teacherSubjectGroup.name,
+		teacherSubjectGroupDisplayOrder: teacherSubjectGroup.displayOrder,
+		homeGroupCoursePeriods: 0,
+		sharedCoursePeriods: 0,
 		independentActivityPeriods: 0,
 		synchronizedActivityPeriods: 0,
 		totalPeriods: 0
@@ -167,9 +247,10 @@ function getOrCreateSummary(
 	return row;
 }
 
-function incrementSummary(summary: TeacherLoadSummaryRow, category: TeacherLoadCategory) {
-	if (category === 'course') summary.coursePeriods += 1;
-	else if (category === 'independentActivity') summary.independentActivityPeriods += 1;
+function incrementSummary(summary: TeacherLoadSummaryRow, detailKind: TeacherLoadDetailKind) {
+	if (detailKind === 'homeGroupCourse') summary.homeGroupCoursePeriods += 1;
+	else if (detailKind === 'sharedCourse') summary.sharedCoursePeriods += 1;
+	else if (detailKind === 'independentActivity') summary.independentActivityPeriods += 1;
 	else summary.synchronizedActivityPeriods += 1;
 }
 
@@ -183,6 +264,57 @@ function teacherLoadDetailKey(
 		return [teacherId, category, logicalActivityId, entry.day_of_week, entry.period_id].join('|');
 	}
 	return [teacherId, category, entry.id].join('|');
+}
+
+function detailKindForEntry(
+	entry: TeacherLoadEntry,
+	category: TeacherLoadCategory,
+	teacherSubjectGroupId: string | null
+): TeacherLoadDetailKind {
+	if (category === 'independentActivity') return 'independentActivity';
+	if (category === 'synchronizedActivity') return 'synchronizedActivity';
+	return entry.subject_group_id &&
+		teacherSubjectGroupId &&
+		entry.subject_group_id === teacherSubjectGroupId
+		? 'homeGroupCourse'
+		: 'sharedCourse';
+}
+
+interface SubjectGroupMeta {
+	id: string | null;
+	name: string;
+	displayOrder: number | null;
+}
+
+function teacherSubjectGroupForEntry(entry: TeacherLoadEntry, index: number): SubjectGroupMeta {
+	const id = entry.instructor_subject_group_ids?.[index] ?? null;
+	const name = entry.instructor_subject_group_names?.[index] ?? null;
+	const displayOrder = entry.instructor_subject_group_display_orders?.[index] ?? null;
+
+	return {
+		id,
+		name: name || UNKNOWN_SUBJECT_GROUP_NAME,
+		displayOrder
+	};
+}
+
+function itemSubjectGroupForEntry(
+	entry: TeacherLoadEntry,
+	category: TeacherLoadCategory
+): SubjectGroupMeta {
+	if (category !== 'course') {
+		return {
+			id: null,
+			name: ACTIVITY_SUBJECT_GROUP_NAME,
+			displayOrder: null
+		};
+	}
+
+	return {
+		id: entry.subject_group_id ?? null,
+		name: entry.subject_group_name || UNKNOWN_SUBJECT_GROUP_NAME,
+		displayOrder: entry.subject_group_display_order ?? null
+	};
 }
 
 function teacherNameForEntry(entry: TeacherLoadEntry, index: number, teacherId: string): string {
@@ -221,43 +353,146 @@ function appendUnique(values: string[], value: string) {
 	if (value && !values.includes(value)) values.push(value);
 }
 
-function buildSummarySheetRows(rows: TeacherLoadSummaryRow[]): Array<Array<string | number>> {
+function groupSummaryRows(rows: TeacherLoadSummaryRow[]): TeacherLoadSummaryGroup[] {
+	const groups = new Map<string, TeacherLoadSummaryGroup>();
+
+	for (const row of rows) {
+		const key = subjectGroupKey(row.teacherSubjectGroupId, row.teacherSubjectGroupName);
+		const group =
+			groups.get(key) ??
+			createSummaryGroup(
+				row.teacherSubjectGroupId,
+				row.teacherSubjectGroupName,
+				row.teacherSubjectGroupDisplayOrder
+			);
+		group.rows.push(row);
+		group.totals.homeGroupCoursePeriods += row.homeGroupCoursePeriods;
+		group.totals.sharedCoursePeriods += row.sharedCoursePeriods;
+		group.totals.independentActivityPeriods += row.independentActivityPeriods;
+		group.totals.synchronizedActivityPeriods += row.synchronizedActivityPeriods;
+		group.totals.totalPeriods += row.totalPeriods;
+		groups.set(key, group);
+	}
+
+	return Array.from(groups.values()).sort(compareGroups);
+}
+
+function createSummaryGroup(
+	subjectGroupId: string | null,
+	subjectGroupName: string,
+	subjectGroupDisplayOrder: number | null
+): TeacherLoadSummaryGroup {
+	return {
+		subjectGroupId,
+		subjectGroupName,
+		subjectGroupDisplayOrder,
+		rows: [],
+		totals: {
+			homeGroupCoursePeriods: 0,
+			sharedCoursePeriods: 0,
+			independentActivityPeriods: 0,
+			synchronizedActivityPeriods: 0,
+			totalPeriods: 0
+		}
+	};
+}
+
+function groupDetailRows(rows: TeacherLoadDetailRow[]): TeacherLoadDetailGroup[] {
+	const groups = new Map<string, TeacherLoadDetailGroup>();
+
+	for (const row of rows) {
+		const key = subjectGroupKey(row.teacherSubjectGroupId, row.teacherSubjectGroupName);
+		const group =
+			groups.get(key) ??
+			({
+				subjectGroupId: row.teacherSubjectGroupId,
+				subjectGroupName: row.teacherSubjectGroupName,
+				subjectGroupDisplayOrder: row.teacherSubjectGroupDisplayOrder,
+				rows: []
+			} satisfies TeacherLoadDetailGroup);
+		group.rows.push(row);
+		groups.set(key, group);
+	}
+
+	return Array.from(groups.values()).sort(compareGroups);
+}
+
+function subjectGroupKey(subjectGroupId: string | null, subjectGroupName: string): string {
+	return subjectGroupId ?? `missing:${subjectGroupName}`;
+}
+
+function buildSummarySheetRows(groups: TeacherLoadSummaryGroup[]): Array<Array<string | number>> {
 	return [
 		[
+			'กลุ่มสาระครู',
 			'ครูผู้สอน',
-			'วิชา (คาบ)',
+			'วิชาในกลุ่มสาระ (คาบ)',
+			'วิชานอกกลุ่มสาระ/สอนร่วม (คาบ)',
 			'กิจกรรม independent (คาบ)',
 			'กิจกรรม synchronized (คาบ)',
 			'รวม (คาบ)'
 		],
-		...rows.map((row) => [
-			row.teacherName,
-			row.coursePeriods,
-			row.independentActivityPeriods,
-			row.synchronizedActivityPeriods,
-			row.totalPeriods
+		...groups.flatMap((group) => [
+			[
+				`กลุ่มสาระ: ${group.subjectGroupName}`,
+				'',
+				group.totals.homeGroupCoursePeriods,
+				group.totals.sharedCoursePeriods,
+				group.totals.independentActivityPeriods,
+				group.totals.synchronizedActivityPeriods,
+				group.totals.totalPeriods
+			],
+			...group.rows.map((row) => [
+				row.teacherSubjectGroupName,
+				row.teacherName,
+				row.homeGroupCoursePeriods,
+				row.sharedCoursePeriods,
+				row.independentActivityPeriods,
+				row.synchronizedActivityPeriods,
+				row.totalPeriods
+			])
 		])
 	];
 }
 
-function buildDetailSheetRows(rows: TeacherLoadDetailRow[]): Array<Array<string | number>> {
+function buildDetailSheetRows(groups: TeacherLoadDetailGroup[]): Array<Array<string | number>> {
 	return [
-		['ครูผู้สอน', 'ประเภท', 'วัน', 'คาบ', 'เวลา', 'ห้อง', 'รายการ'],
-		...rows.map((row) => [
-			row.teacherName,
-			row.categoryLabel,
-			row.dayLabel,
-			row.periodName,
-			row.timeLabel,
-			row.classroomName,
-			row.title
+		[
+			'กลุ่มสาระครู',
+			'ครูผู้สอน',
+			'กลุ่มสาระรายการ',
+			'ประเภท',
+			'วัน',
+			'คาบ',
+			'เวลา',
+			'ห้อง',
+			'รายการ'
+		],
+		...groups.flatMap((group) => [
+			[`กลุ่มสาระ: ${group.subjectGroupName}`, '', '', '', '', '', '', '', ''],
+			...group.rows.map((row) => [
+				row.teacherSubjectGroupName,
+				row.teacherName,
+				row.subjectGroupName,
+				row.categoryLabel,
+				row.dayLabel,
+				row.periodName,
+				row.timeLabel,
+				row.classroomName,
+				row.title
+			])
 		])
 	];
 }
 
 function compareSummaryRows(a: TeacherLoadSummaryRow, b: TeacherLoadSummaryRow): number {
 	return (
-		b.totalPeriods - a.totalPeriods ||
+		compareSubjectGroupMeta(
+			a.teacherSubjectGroupDisplayOrder,
+			a.teacherSubjectGroupName,
+			b.teacherSubjectGroupDisplayOrder,
+			b.teacherSubjectGroupName
+		) ||
 		a.teacherName.localeCompare(b.teacherName, 'th') ||
 		a.teacherId.localeCompare(b.teacherId)
 	);
@@ -265,10 +500,43 @@ function compareSummaryRows(a: TeacherLoadSummaryRow, b: TeacherLoadSummaryRow):
 
 function compareDetailRows(a: TeacherLoadDetailRow, b: TeacherLoadDetailRow): number {
 	return (
+		compareSubjectGroupMeta(
+			a.teacherSubjectGroupDisplayOrder,
+			a.teacherSubjectGroupName,
+			b.teacherSubjectGroupDisplayOrder,
+			b.teacherSubjectGroupName
+		) ||
 		a.teacherName.localeCompare(b.teacherName, 'th') ||
 		(DAY_ORDER[a.dayOfWeek] ?? 99) - (DAY_ORDER[b.dayOfWeek] ?? 99) ||
 		(a.periodOrderIndex ?? 999) - (b.periodOrderIndex ?? 999) ||
-		a.categoryLabel.localeCompare(b.categoryLabel, 'th') ||
+		DETAIL_KIND_ORDER[a.detailKind] - DETAIL_KIND_ORDER[b.detailKind] ||
 		a.title.localeCompare(b.title, 'th')
 	);
+}
+
+function compareGroups(
+	a: Pick<
+		TeacherLoadSummaryGroup | TeacherLoadDetailGroup,
+		'subjectGroupDisplayOrder' | 'subjectGroupName'
+	>,
+	b: Pick<
+		TeacherLoadSummaryGroup | TeacherLoadDetailGroup,
+		'subjectGroupDisplayOrder' | 'subjectGroupName'
+	>
+): number {
+	return compareSubjectGroupMeta(
+		a.subjectGroupDisplayOrder,
+		a.subjectGroupName,
+		b.subjectGroupDisplayOrder,
+		b.subjectGroupName
+	);
+}
+
+function compareSubjectGroupMeta(
+	aOrder: number | null,
+	aName: string,
+	bOrder: number | null,
+	bName: string
+): number {
+	return (aOrder ?? 9999) - (bOrder ?? 9999) || aName.localeCompare(bName, 'th');
 }

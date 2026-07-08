@@ -68,10 +68,17 @@ export interface TimetableEntry {
 	// Joined fields
 	subject_code?: string;
 	subject_name_th?: string;
+	subject_group_id?: string | null;
+	subject_group_name?: string | null;
+	subject_group_display_order?: number | null;
 	instructor_name?: string;
 	instructor_names?: string[];
 	/** parallel กับ instructor_names — ใช้ลบ/เพิ่มครูรายคน */
 	instructor_ids?: string[];
+	/** parallel กับ instructor_ids — กลุ่มสาระหลักที่ครูสังกัด */
+	instructor_subject_group_ids?: Array<string | null> | null;
+	instructor_subject_group_names?: Array<string | null> | null;
+	instructor_subject_group_display_orders?: Array<number | null> | null;
 	classroom_name?: string;
 	room_code?: string;
 	subject_name_en?: string;

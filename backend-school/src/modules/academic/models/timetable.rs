@@ -106,11 +106,30 @@ pub struct TimetableEntry {
     pub subject_name_th: Option<String>,
     #[sqlx(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub subject_group_id: Option<Uuid>,
+    #[sqlx(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub subject_group_name: Option<String>,
+    #[sqlx(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub subject_group_display_order: Option<i32>,
+    #[sqlx(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub instructor_names: Option<Vec<String>>,
     /// UUID ของครูทุกคนใน cell — parallel กับ instructor_names เรียงตาม role+created_at
     #[sqlx(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub instructor_ids: Option<Vec<Uuid>>,
+    /// กลุ่มสาระหลักของครูแต่ละคน — parallel กับ instructor_ids เรียงตาม role+created_at
+    #[sqlx(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub instructor_subject_group_ids: Option<Vec<Option<Uuid>>>,
+    #[sqlx(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub instructor_subject_group_names: Option<Vec<Option<String>>>,
+    #[sqlx(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub instructor_subject_group_display_orders: Option<Vec<Option<i32>>>,
 
     // Keep for backward-compat UI display (first name). Populated from instructor_names[0].
     #[sqlx(default)]
