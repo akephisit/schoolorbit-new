@@ -734,8 +734,15 @@
 					reportSheet.name === 'กรรมการคุมสอบ' && columnNumber === 5;
 				const isTableHeader =
 					(rowNumber === 4 && !reportIsPaperTransferSheet) || isPaperTransferHeader;
+				const isPaperTransferSubjectCell =
+					reportIsPaperTransferSheet &&
+					!isPaperTransferHeader &&
+					!isPaperTransferDay &&
+					!isPaperTransferTime &&
+					headerText === 'วิชา';
 				const shouldAlignLeft =
 					isPaperTransferTime ||
+					isPaperTransferSubjectCell ||
 					(!reportIsPaperTransferSheet &&
 						rowNumber > 4 &&
 						(headerText === 'วิชา' ||

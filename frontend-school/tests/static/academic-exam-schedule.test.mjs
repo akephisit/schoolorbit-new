@@ -753,6 +753,8 @@ test('exam schedule detail exports one editable report workbook', () => {
 	assert.match(page, /function reportSheetColumnCount/);
 	assert.match(page, /function isPaperTransferHeaderRow/);
 	assert.match(page, /function isPaperTransferTimeRow/);
+	assert.match(page, /isPaperTransferSubjectCell/);
+	assert.match(page, /reportIsPaperTransferSheet[\s\S]*headerText === 'วิชา'/);
 	assert.match(page, /function autoFitWorksheetColumns/);
 	assert.match(page, /function reportCellBorder/);
 	assert.match(page, /isInvigilatorSummarySheet/);
