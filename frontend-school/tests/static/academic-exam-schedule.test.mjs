@@ -717,6 +717,7 @@ test('exam schedule detail exports one editable report workbook', () => {
 	assert.match(exportUtil, /function paperTransferRows/);
 	assert.match(exportUtil, /function invigilatorSummarySheetMerges/);
 	assert.match(exportUtil, /function paperTransferSheetMerges/);
+	assert.match(exportUtil, /function contiguousTextMerges/);
 	assert.match(exportUtil, /function reportSheetMerges/);
 	assert.match(exportUtil, /วันเดือนปี/);
 	assert.match(exportUtil, /เวลาสอบ/);
@@ -744,6 +745,10 @@ test('exam schedule detail exports one editable report workbook', () => {
 	}
 	assert.match(page, /reportSheet\.name === 'รับส่งข้อสอบ'/);
 	assert.match(page, /headerText === 'กรรมการคุมสอบ'/);
+	assert.match(page, /function autoFitWorksheetColumns/);
+	assert.match(page, /function reportCellBorder/);
+	assert.match(page, /isInvigilatorSummarySheet/);
+	assert.match(page, /isSecondInvigilatorColumn/);
 	assert.doesNotMatch(handleExport + exportUtil, /nationalId|national_id|phone|email|username/);
 });
 

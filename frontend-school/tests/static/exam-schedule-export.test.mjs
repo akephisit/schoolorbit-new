@@ -338,7 +338,8 @@ describe('exam schedule export helpers', () => {
 		assert.deepEqual(workbook.invigilatorSummary['!merges'], [
 			{ s: { r: 0, c: 0 }, e: { r: 0, c: 4 } },
 			{ s: { r: 1, c: 0 }, e: { r: 1, c: 4 } },
-			{ s: { r: 3, c: 3 }, e: { r: 3, c: 4 } }
+			{ s: { r: 3, c: 3 }, e: { r: 3, c: 4 } },
+			{ s: { r: 4, c: 0 }, e: { r: 6, c: 0 } }
 		]);
 		assert.equal(workbook.invigilatorSummary.rows[3].includes('จำนวนกรรมการ'), false);
 		assert.deepEqual(
@@ -394,18 +395,31 @@ describe('exam schedule export helpers', () => {
 			'คณิตศาสตร์พื้นฐาน',
 			'ม.1/1',
 			'อาคารเรียน / 313',
-			'ครู A\nครู B\nครู D',
+			'ครู A',
 			'',
 			'',
 			'',
 			'',
 			''
 		]);
+		assert.equal(workbook.paperTransferReport.rows[5][6], 'ครู B');
+		assert.equal(workbook.paperTransferReport.rows[6][6], 'ครู D');
 		assert.equal(workbook.paperTransferReport['!printTitlesRow'], '1:4');
 		assert.equal(workbook.paperTransferReport['!cols']?.length, 12);
 		assert.deepEqual(workbook.paperTransferReport['!merges'], [
 			{ s: { r: 0, c: 0 }, e: { r: 0, c: 11 } },
-			{ s: { r: 1, c: 0 }, e: { r: 1, c: 11 } }
+			{ s: { r: 1, c: 0 }, e: { r: 1, c: 11 } },
+			{ s: { r: 4, c: 0 }, e: { r: 6, c: 0 } },
+			{ s: { r: 4, c: 1 }, e: { r: 6, c: 1 } },
+			{ s: { r: 4, c: 2 }, e: { r: 6, c: 2 } },
+			{ s: { r: 4, c: 3 }, e: { r: 6, c: 3 } },
+			{ s: { r: 4, c: 4 }, e: { r: 6, c: 4 } },
+			{ s: { r: 4, c: 5 }, e: { r: 6, c: 5 } },
+			{ s: { r: 4, c: 7 }, e: { r: 6, c: 7 } },
+			{ s: { r: 4, c: 8 }, e: { r: 6, c: 8 } },
+			{ s: { r: 4, c: 9 }, e: { r: 6, c: 9 } },
+			{ s: { r: 4, c: 10 }, e: { r: 6, c: 10 } },
+			{ s: { r: 4, c: 11 }, e: { r: 6, c: 11 } }
 		]);
 	});
 });

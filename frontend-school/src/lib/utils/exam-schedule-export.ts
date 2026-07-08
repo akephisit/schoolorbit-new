@@ -10,6 +10,7 @@ import type {
 type WorksheetCell = string | number;
 type WorksheetRow = WorksheetCell[];
 type WorksheetObjectRow = Record<string, WorksheetCell>;
+type RowRange = { start: number; end: number };
 
 export type ExamScheduleExportCellAddress = {
 	r: number;
@@ -488,11 +489,12 @@ function invigilatorSummarySheetColumns(): ExamScheduleExportColumn[] {
 	return [{ wch: 24 }, { wch: 14 }, { wch: 16 }, { wch: 28 }, { wch: 28 }];
 }
 
-function invigilatorSummarySheetMerges(): ExamScheduleExportMerge[] {
+function invigilatorSummarySheetMerges(dayRanges: RowRange[] = []): ExamScheduleExportMerge[] {
 	return [
 		{ s: { r: 0, c: 0 }, e: { r: 0, c: 4 } },
 		{ s: { r: 1, c: 0 }, e: { r: 1, c: 4 } },
-		{ s: { r: 3, c: 3 }, e: { r: 3, c: 4 } }
+		{ s: { r: 3, c: 3 }, e: { r: 3, c: 4 } },
+		...mergeRangesForColumn(dayRanges, 0)
 	];
 }
 
@@ -513,10 +515,63 @@ function paperTransferSheetColumns(): ExamScheduleExportColumn[] {
 	];
 }
 
-function paperTransferSheetMerges(): ExamScheduleExportMerge[] {
+function mergeRangesForColumn(
+	rowRanges: RowRange[],
+	columnIndex: number
+): ExamScheduleExportMerge[] {
+	return rowRanges
+		.filter((range) => range.end > range.start)
+		.map((range) => ({
+			s: { r: range.start, c: columnIndex },
+			e: { r: range.end, c: columnIndex }
+		}));
+}
+
+function cellText(value: WorksheetCell | undefined): string {
+	return String(value ?? '').trim();
+}
+
+function contiguousTextMerges(
+	rows: WorksheetRow[],
+	columnIndex: number,
+	firstDataRow: number
+): ExamScheduleExportMerge[] {
+	const merges: ExamScheduleExportMerge[] = [];
+	let rangeStart = firstDataRow;
+	let rangeValue = cellText(rows[firstDataRow]?.[columnIndex]);
+
+	for (let rowIndex = firstDataRow + 1; rowIndex < rows.length; rowIndex += 1) {
+		const value = cellText(rows[rowIndex]?.[columnIndex]);
+		if (value && value === rangeValue) continue;
+
+		if (rangeValue && rowIndex - 1 > rangeStart) {
+			merges.push({
+				s: { r: rangeStart, c: columnIndex },
+				e: { r: rowIndex - 1, c: columnIndex }
+			});
+		}
+
+		rangeStart = rowIndex;
+		rangeValue = value;
+	}
+
+	if (rangeValue && rows.length - 1 > rangeStart) {
+		merges.push({
+			s: { r: rangeStart, c: columnIndex },
+			e: { r: rows.length - 1, c: columnIndex }
+		});
+	}
+
+	return merges;
+}
+
+function paperTransferSheetMerges(
+	dataMerges: ExamScheduleExportMerge[] = []
+): ExamScheduleExportMerge[] {
 	return [
 		{ s: { r: 0, c: 0 }, e: { r: 0, c: 11 } },
-		{ s: { r: 1, c: 0 }, e: { r: 1, c: 11 } }
+		{ s: { r: 1, c: 0 }, e: { r: 1, c: 11 } },
+		...dataMerges
 	];
 }
 
@@ -652,7 +707,7 @@ function classroomReportRows(
 function invigilatorSummaryRows(
 	workspace: ExamScheduleWorkspace,
 	invigilatorWorkspace: ExamInvigilatorWorkspace | null
-): WorksheetRow[] {
+): { rows: WorksheetRow[]; dayRanges: RowRange[] } {
 	const dayById = new Map(workspace.days.map((day) => [day.id, day]));
 	const dayOrder = new Map(sortedDays(workspace).map((day, index) => [day.id, index]));
 	const orderedAssignments = [...(invigilatorWorkspace?.assignments ?? [])].sort(
@@ -666,10 +721,11 @@ function invigilatorSummaryRows(
 		[],
 		['วันสอบ', 'ห้องเรียน', 'ห้องสอบ', 'กรรมการคุมสอบ', '']
 	];
+	const dayRanges: RowRange[] = [];
 
 	if (orderedAssignments.length === 0) {
 		rows.push(['-', '-', '-', 'ยังไม่มีข้อมูลกรรมการคุมสอบ', '']);
-		return rows;
+		return { rows, dayRanges };
 	}
 
 	const assignmentsByDay = groupByText(orderedAssignments, (assignment) =>
@@ -677,6 +733,7 @@ function invigilatorSummaryRows(
 	);
 
 	for (const [, dayAssignments] of assignmentsByDay) {
+		const dayStart = rows.length;
 		for (const assignment of dayAssignments) {
 			const day = dayById.get(assignment.examDayId);
 			const invigilatorNames = assignment.invigilators
@@ -694,9 +751,10 @@ function invigilatorSummaryRows(
 				]);
 			}
 		}
+		dayRanges.push({ start: dayStart, end: rows.length - 1 });
 	}
 
-	return rows;
+	return { rows, dayRanges };
 }
 
 function paperTransferDateLabel(workspace: ExamScheduleWorkspace, session: ExamSession): string {
@@ -708,19 +766,19 @@ function paperTransferDateLabel(workspace: ExamScheduleWorkspace, session: ExamS
 	);
 }
 
-function paperTransferInvigilatorNames(
+function paperTransferInvigilatorNameList(
 	assignment: ExamInvigilatorAssignmentSummary | undefined,
 	session: ExamSession
-): string {
+): string[] {
 	const names = assignmentInvigilatorNameList(assignment);
-	if (names.length > 0) return names.join('\n');
-	return sessionInvigilatorNameList(session).join('\n');
+	if (names.length > 0) return names;
+	return sessionInvigilatorNameList(session);
 }
 
 function paperTransferRows(
 	workspace: ExamScheduleWorkspace,
 	invigilatorWorkspace: ExamInvigilatorWorkspace | null
-): WorksheetRow[] {
+): { rows: WorksheetRow[]; sessionRanges: RowRange[] } {
 	const assignments = assignmentByDayClassroom(invigilatorWorkspace);
 	const rows: WorksheetRow[] = [
 		['ใบรับส่งข้อสอบ'],
@@ -741,6 +799,7 @@ function paperTransferRows(
 			'หมายเหตุ'
 		]
 	];
+	const sessionRanges: RowRange[] = [];
 
 	const sessions = sortedSessions(workspace);
 	if (sessions.length === 0) {
@@ -758,28 +817,47 @@ function paperTransferRows(
 			'',
 			''
 		]);
-		return rows;
+		return { rows, sessionRanges };
 	}
 
 	for (const session of sessions) {
 		const assignment = assignments.get(assignmentKey(session.examDayId, session.classroomId));
-		rows.push([
-			paperTransferDateLabel(workspace, session),
-			printableTimeRangeLabel(session),
-			safeText(session.subjectCode, '-'),
-			subjectLabel(session),
-			sessionClassroomLabel(session),
-			sessionExamRoomLabel(workspace, session),
-			paperTransferInvigilatorNames(assignment, session),
-			'',
-			'',
-			'',
-			'',
-			''
-		]);
+		const invigilatorNames = paperTransferInvigilatorNameList(assignment, session);
+		const rowNames = invigilatorNames.length > 0 ? invigilatorNames : ['-'];
+		const sessionStart = rows.length;
+
+		for (const invigilatorName of rowNames) {
+			rows.push([
+				paperTransferDateLabel(workspace, session),
+				printableTimeRangeLabel(session),
+				safeText(session.subjectCode, '-'),
+				subjectLabel(session),
+				sessionClassroomLabel(session),
+				sessionExamRoomLabel(workspace, session),
+				invigilatorName,
+				'',
+				'',
+				'',
+				'',
+				''
+			]);
+		}
+
+		sessionRanges.push({ start: sessionStart, end: rows.length - 1 });
 	}
 
-	return rows;
+	return { rows, sessionRanges };
+}
+
+function paperTransferDataMerges(rows: WorksheetRow[], sessionRanges: RowRange[]) {
+	const mergedTextColumns = [0, 1, 2, 3];
+	const mergedSessionColumns = [4, 5, 7, 8, 9, 10, 11];
+	return [
+		...mergedTextColumns.flatMap((columnIndex) => contiguousTextMerges(rows, columnIndex, 4)),
+		...mergedSessionColumns.flatMap((columnIndex) =>
+			mergeRangesForColumn(sessionRanges, columnIndex)
+		)
+	];
 }
 
 function printableReportSheet(
@@ -818,11 +896,12 @@ function printableInvigilatorSummarySheet(
 	workspace: ExamScheduleWorkspace,
 	invigilatorWorkspace: ExamInvigilatorWorkspace | null
 ): ExamScheduleReportSheet {
+	const summary = invigilatorSummaryRows(workspace, invigilatorWorkspace);
 	return {
 		name: 'กรรมการคุมสอบ',
-		rows: invigilatorSummaryRows(workspace, invigilatorWorkspace),
+		rows: summary.rows,
 		'!cols': invigilatorSummarySheetColumns(),
-		'!merges': invigilatorSummarySheetMerges(),
+		'!merges': invigilatorSummarySheetMerges(summary.dayRanges),
 		'!printTitlesRow': '1:4'
 	};
 }
@@ -831,11 +910,14 @@ function printablePaperTransferSheet(
 	workspace: ExamScheduleWorkspace,
 	invigilatorWorkspace: ExamInvigilatorWorkspace | null
 ): ExamScheduleReportSheet {
+	const transfer = paperTransferRows(workspace, invigilatorWorkspace);
 	return {
 		name: 'รับส่งข้อสอบ',
-		rows: paperTransferRows(workspace, invigilatorWorkspace),
+		rows: transfer.rows,
 		'!cols': paperTransferSheetColumns(),
-		'!merges': paperTransferSheetMerges(),
+		'!merges': paperTransferSheetMerges(
+			paperTransferDataMerges(transfer.rows, transfer.sessionRanges)
+		),
 		'!printTitlesRow': '1:4'
 	};
 }

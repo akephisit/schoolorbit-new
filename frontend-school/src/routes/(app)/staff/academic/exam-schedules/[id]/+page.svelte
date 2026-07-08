@@ -561,10 +561,62 @@
 		}
 	}
 
+	function columnTextWidth(value: string | number | undefined) {
+		return String(value ?? '')
+			.split(/\r?\n/)
+			.reduce((width, line) => Math.max(width, line.trim().length), 0);
+	}
+
+	function reportColumnWidthBounds(headerText: string) {
+		if (headerText === 'วันสอบ' || headerText === 'วันเดือนปี') return { min: 20, max: 30 };
+		if (headerText === 'เวลา') return { min: 14, max: 20 };
+		if (headerText === 'เวลาสอบ') return { min: 10, max: 15 };
+		if (headerText === 'รหัสวิชา') return { min: 11, max: 16 };
+		if (headerText === 'วิชา') return { min: 20, max: 44 };
+		if (headerText === 'ชั้น' || headerText === 'ชั้น/ห้อง' || headerText === 'ห้องเรียน') {
+			return { min: 10, max: 16 };
+		}
+		if (headerText === 'ห้องสอบ') return { min: 12, max: 22 };
+		if (headerText === 'กรรมการคุมสอบ') return { min: 18, max: 34 };
+		if (headerText === 'ลงชื่อรับข้อสอบ' || headerText === 'ลงชื่อส่งข้อสอบ') {
+			return { min: 20, max: 28 };
+		}
+		if (headerText === 'เวลารับ' || headerText === 'เวลาส่ง') return { min: 9, max: 12 };
+		if (headerText === 'หมายเหตุ') return { min: 12, max: 22 };
+		return { min: 8, max: 28 };
+	}
+
+	function autoFitWorksheetColumns(worksheet: Worksheet, reportSheet: ExamScheduleReportSheet) {
+		const headers = reportSheet.rows[3] ?? [];
+		for (let columnIndex = 0; columnIndex < headers.length; columnIndex += 1) {
+			const headerText = String(headers[columnIndex] ?? '');
+			const { min, max } = reportColumnWidthBounds(headerText);
+			const widest = reportSheet.rows.reduce(
+				(width, row) => Math.max(width, columnTextWidth(row[columnIndex])),
+				columnTextWidth(headerText)
+			);
+			worksheet.getColumn(columnIndex + 1).width = Math.min(max, Math.max(min, widest + 2));
+		}
+	}
+
 	function applyWorksheetMerges(worksheet: Worksheet, exportSheet: ExamScheduleExportSheet) {
 		for (const merge of exportSheet['!merges'] ?? []) {
 			worksheet.mergeCells(merge.s.r + 1, merge.s.c + 1, merge.e.r + 1, merge.e.c + 1);
 		}
+	}
+
+	function reportCellBorder(
+		reportSheet: ExamScheduleReportSheet,
+		rowNumber: number,
+		columnNumber: number
+	): Partial<Borders> {
+		const isInvigilatorSummarySheet = reportSheet.name === 'กรรมการคุมสอบ';
+		if (!isInvigilatorSummarySheet || rowNumber <= 4) return thinTableBorder;
+
+		const border: Partial<Borders> = { ...thinTableBorder };
+		if (columnNumber === 4) delete border.right;
+		if (columnNumber === 5) delete border.left;
+		return border;
 	}
 
 	function styleReportSheet(worksheet: Worksheet, reportSheet: ExamScheduleReportSheet) {
@@ -613,11 +665,16 @@
 			for (let columnNumber = 1; columnNumber <= columnCount; columnNumber += 1) {
 				const cell = row.getCell(columnNumber);
 				const headerText = String(reportSheet.rows[3]?.[columnNumber - 1] ?? '');
+				const isSecondInvigilatorColumn =
+					reportSheet.name === 'กรรมการคุมสอบ' && columnNumber === 5;
 				const shouldAlignLeft =
 					rowNumber > 4 &&
-					(headerText === 'วิชา' || headerText === 'กรรมการคุมสอบ' || headerText === 'หมายเหตุ');
+					(headerText === 'วิชา' ||
+						headerText === 'กรรมการคุมสอบ' ||
+						headerText === 'หมายเหตุ' ||
+						isSecondInvigilatorColumn);
 				cell.font = { name: reportFontName, size: 16, bold: rowNumber === 4 };
-				cell.border = thinTableBorder;
+				cell.border = reportCellBorder(reportSheet, rowNumber, columnNumber);
 				cell.alignment = shouldAlignLeft ? leftAlignment : centeredAlignment;
 				if (rowNumber === 4) {
 					cell.fill = tableHeaderFill;
@@ -646,6 +703,7 @@
 		const worksheet = workbook.addWorksheet(reportSheet.name);
 		worksheet.addRows(reportSheet.rows);
 		applyWorksheetColumns(worksheet, reportSheet);
+		autoFitWorksheetColumns(worksheet, reportSheet);
 		applyWorksheetMerges(worksheet, reportSheet);
 		styleReportSheet(worksheet, reportSheet);
 	}
