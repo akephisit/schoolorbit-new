@@ -8,6 +8,7 @@ export const PERMISSION_MODULES = {
 	ACADEMIC_ENROLLMENT: 'academic_enrollment',
 	ACADEMIC_EXAM_SCHEDULE: 'academic_exam_schedule',
 	ACADEMIC_PROMOTION: 'academic_promotion',
+	ACADEMIC_QUESTION_BANK: 'academic_question_bank',
 	ACADEMIC_STRUCTURE: 'academic_structure',
 	ACADEMIC_TIMETABLE_TODAY: 'academic_timetable_today',
 	ACTIVITY: 'activity',
@@ -56,6 +57,14 @@ export const PERMISSIONS = {
 	ACADEMIC_EXAM_SCHEDULE_READ_SCHOOL: 'academic_exam_schedule.read.school',
 	ACADEMIC_PROMOTION_EXECUTE_ALL: 'academic_promotion.execute.all',
 	ACADEMIC_PROMOTION_READ_ALL: 'academic_promotion.read.all',
+	ACADEMIC_QUESTION_BANK_MANAGE_ASSIGNED: 'academic_question_bank.manage.assigned',
+	ACADEMIC_QUESTION_BANK_MANAGE_ORGANIZATION_UNIT:
+		'academic_question_bank.manage.organization_unit',
+	ACADEMIC_QUESTION_BANK_MANAGE_SCHOOL: 'academic_question_bank.manage.school',
+	ACADEMIC_QUESTION_BANK_READ_ASSIGNED: 'academic_question_bank.read.assigned',
+	ACADEMIC_QUESTION_BANK_READ_ORGANIZATION_UNIT:
+		'academic_question_bank.read.organization_unit',
+	ACADEMIC_QUESTION_BANK_READ_SCHOOL: 'academic_question_bank.read.school',
 	ACADEMIC_STRUCTURE_MANAGE_ALL: 'academic_structure.manage.all',
 	ACADEMIC_STRUCTURE_READ_ALL: 'academic_structure.read.all',
 	ACADEMIC_TIMETABLE_TODAY_READ_SCHOOL: 'academic_timetable_today.read.school',

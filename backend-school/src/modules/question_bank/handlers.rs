@@ -1,0 +1,85 @@
+use axum::{
+    extract::{Path, Query, State},
+    http::{HeaderMap, StatusCode},
+    response::IntoResponse,
+    Json,
+};
+use uuid::Uuid;
+
+use crate::api_response::ApiResponse;
+use crate::error::AppError;
+use crate::modules::question_bank::models::{QuestionBankListQuery, UpsertQuestionRequest};
+use crate::modules::question_bank::services as question_bank_service;
+use crate::utils::request_context::actor_tenant_context;
+use crate::AppState;
+
+pub async fn list_questions(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<QuestionBankListQuery>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context(&state, &headers).await?;
+    let access = question_bank_service::resolve_question_bank_list_access(
+        &context.tenant.pool,
+        &context.actor,
+    )
+    .await?;
+    let questions =
+        question_bank_service::list_questions(&context.tenant.pool, &query, &access).await?;
+    Ok(Json(ApiResponse::ok(questions)).into_response())
+}
+
+pub async fn get_question(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context(&state, &headers).await?;
+    let question =
+        question_bank_service::get_question(&context.tenant.pool, &context.actor, id).await?;
+    Ok(Json(ApiResponse::ok(question)).into_response())
+}
+
+pub async fn create_question(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<UpsertQuestionRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context(&state, &headers).await?;
+    let question = question_bank_service::create_question(
+        &context.tenant.pool,
+        &context.actor,
+        context.actor.user_id,
+        payload,
+    )
+    .await?;
+    Ok((StatusCode::CREATED, Json(ApiResponse::ok(question))).into_response())
+}
+
+pub async fn update_question(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+    Json(payload): Json<UpsertQuestionRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context(&state, &headers).await?;
+    let question = question_bank_service::update_question(
+        &context.tenant.pool,
+        &context.actor,
+        id,
+        context.actor.user_id,
+        payload,
+    )
+    .await?;
+    Ok(Json(ApiResponse::ok(question)).into_response())
+}
+
+pub async fn delete_question(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context(&state, &headers).await?;
+    question_bank_service::delete_question(&context.tenant.pool, &context.actor, id).await?;
+    Ok(Json(ApiResponse::empty()).into_response())
+}

@@ -125,12 +125,21 @@ pub mod codes {
     pub const ACADEMIC_ASSESSMENT_READ_SCHOOL: &str = "academic_assessment.read.school";
     pub const ACADEMIC_ASSESSMENT_MANAGE_SCHOOL: &str = "academic_assessment.manage.school";
 
+    // Academic Question Bank
+    pub const ACADEMIC_QUESTION_BANK_READ_ASSIGNED: &str = "academic_question_bank.read.assigned";
+    pub const ACADEMIC_QUESTION_BANK_READ_ORGANIZATION_UNIT: &str =
+        "academic_question_bank.read.organization_unit";
+    pub const ACADEMIC_QUESTION_BANK_READ_SCHOOL: &str = "academic_question_bank.read.school";
+    pub const ACADEMIC_QUESTION_BANK_MANAGE_ASSIGNED: &str =
+        "academic_question_bank.manage.assigned";
+    pub const ACADEMIC_QUESTION_BANK_MANAGE_ORGANIZATION_UNIT: &str =
+        "academic_question_bank.manage.organization_unit";
+    pub const ACADEMIC_QUESTION_BANK_MANAGE_SCHOOL: &str = "academic_question_bank.manage.school";
+
     // Academic Exam Schedule
     pub const ACADEMIC_EXAM_SCHEDULE_READ_SCHOOL: &str = "academic_exam_schedule.read.school";
-    pub const ACADEMIC_EXAM_SCHEDULE_MANAGE_SCHOOL: &str =
-        "academic_exam_schedule.manage.school";
-    pub const ACADEMIC_EXAM_SCHEDULE_PUBLISH_SCHOOL: &str =
-        "academic_exam_schedule.publish.school";
+    pub const ACADEMIC_EXAM_SCHEDULE_MANAGE_SCHOOL: &str = "academic_exam_schedule.manage.school";
+    pub const ACADEMIC_EXAM_SCHEDULE_PUBLISH_SCHOOL: &str = "academic_exam_schedule.publish.school";
 
     // Facility permissions
     pub const FACILITY_READ_ALL: &str = "facility.read.all";
@@ -742,6 +751,55 @@ pub const ALL_PERMISSIONS: &[PermissionDef] = &[
         action: "manage",
         scope: "school",
         description: "จัดการโครงสร้างคะแนนและสถานะการส่งของรายวิชาที่เปิดสอนทั้งโรงเรียน",
+    },
+    // Academic Question Bank Permissions
+    PermissionDef {
+        code: codes::ACADEMIC_QUESTION_BANK_READ_ASSIGNED,
+        name: "ดูคลังข้อสอบที่รับผิดชอบ",
+        module: "academic_question_bank",
+        action: "read",
+        scope: "assigned",
+        description: "ดูข้อสอบที่ตนเองสร้างหรือเกี่ยวข้องกับรายวิชาที่รับผิดชอบ",
+    },
+    PermissionDef {
+        code: codes::ACADEMIC_QUESTION_BANK_READ_ORGANIZATION_UNIT,
+        name: "ดูคลังข้อสอบในกลุ่มสาระ",
+        module: "academic_question_bank",
+        action: "read",
+        scope: "organization_unit",
+        description: "ดูข้อสอบของรายวิชาในกลุ่มสาระเดียวกัน",
+    },
+    PermissionDef {
+        code: codes::ACADEMIC_QUESTION_BANK_READ_SCHOOL,
+        name: "ดูคลังข้อสอบทั้งโรงเรียน",
+        module: "academic_question_bank",
+        action: "read",
+        scope: "school",
+        description: "ดูข้อสอบในคลังข้อสอบทั้งโรงเรียน",
+    },
+    PermissionDef {
+        code: codes::ACADEMIC_QUESTION_BANK_MANAGE_ASSIGNED,
+        name: "จัดการคลังข้อสอบที่รับผิดชอบ",
+        module: "academic_question_bank",
+        action: "manage",
+        scope: "assigned",
+        description: "สร้างและแก้ไขข้อสอบของตนเอง",
+    },
+    PermissionDef {
+        code: codes::ACADEMIC_QUESTION_BANK_MANAGE_ORGANIZATION_UNIT,
+        name: "จัดการคลังข้อสอบในกลุ่มสาระ",
+        module: "academic_question_bank",
+        action: "manage",
+        scope: "organization_unit",
+        description: "สร้างและแก้ไขข้อสอบของรายวิชาในกลุ่มสาระเดียวกัน",
+    },
+    PermissionDef {
+        code: codes::ACADEMIC_QUESTION_BANK_MANAGE_SCHOOL,
+        name: "จัดการคลังข้อสอบทั้งโรงเรียน",
+        module: "academic_question_bank",
+        action: "manage",
+        scope: "school",
+        description: "สร้าง แก้ไข และลบข้อสอบในคลังข้อสอบทั้งโรงเรียน",
     },
     // Academic Exam Schedule Permissions
     PermissionDef {

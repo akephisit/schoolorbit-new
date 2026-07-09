@@ -146,6 +146,11 @@ pub fn academic_routes() -> Router<AppState> {
             "/assessments/courses/{course_id}/submit",
             post(handlers::assessment::submit_assessment_plan),
         )
+        // Question Bank
+        .nest(
+            "/question-bank",
+            crate::modules::question_bank::question_bank_routes(),
+        )
         // Exam Schedules
         .route(
             "/exam-schedules",

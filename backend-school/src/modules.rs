@@ -10,6 +10,7 @@ pub mod lookup;
 pub mod menu;
 pub mod notification;
 pub mod parents;
+pub mod question_bank;
 pub mod school;
 pub mod staff;
 pub mod students;
