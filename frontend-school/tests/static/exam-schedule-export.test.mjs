@@ -616,4 +616,45 @@ describe('exam schedule export helpers', () => {
 			'เวลา 09.00-10.00 น.'
 		]);
 	});
+
+	it('counts paper transfer time headers when fitting rows onto A4 pages', () => {
+		const workbook = buildExamScheduleExportWorkbook(
+			exportWorkspace(
+				Array.from({ length: 12 }, (_, index) =>
+					scheduledSession({
+						id: `session-many-slots-${index + 1}`,
+						startsAt: `${String(8 + index).padStart(2, '0')}:00:00`,
+						endsAt: `${String(8 + index).padStart(2, '0')}:45:00`,
+						durationMinutes: 45,
+						classroomName: `ม.1/${index + 1}`,
+						classroomId: `classroom-m1-${index + 1}`,
+						gradeLevelName: 'ม.1',
+						gradeLevelYear: 1,
+						subjectNameTh: `วิชาช่วงที่ ${index + 1}`,
+						subjectCode: `วช${String(index + 1).padStart(3, '0')}`
+					})
+				)
+			),
+			invigilatorWorkspace
+		);
+
+		const repeatedDayIndex = workbook.paperTransferReport.rows.findIndex(
+			(row, index) => index > 3 && row[0] === 'วันพุธที่ 4 มีนาคม 2569'
+		);
+
+		assert.equal(repeatedDayIndex > 0, true);
+		assert.deepEqual(workbook.paperTransferReport['!rowBreaks'], [repeatedDayIndex - 1]);
+		assert.deepEqual(workbook.paperTransferReport.rows[repeatedDayIndex + 1], [
+			'วิชา',
+			'รหัสวิชา',
+			'ชั้น',
+			'ลงชื่อรับ\n(กรรมการคุมสอบ)',
+			'ลงชื่อส่ง\n(กรรมการคุมสอบ)',
+			'ลงชื่อตรวจทาน\n(กรรมการกลาง)',
+			'ลงชื่อรับไปตรวจ\n(ครูผู้สอน)'
+		]);
+		assert.deepEqual(workbook.paperTransferReport.rows[repeatedDayIndex + 2], [
+			'เวลา 19.00-19.45 น.'
+		]);
+	});
 });

@@ -659,7 +659,13 @@ function paperTransferTableHeaderRow(): WorksheetRow {
 	];
 }
 
-const PAPER_TRANSFER_DETAIL_ROWS_PER_PAGE = 18;
+const PAPER_TRANSFER_A4_CONTENT_HEIGHT = 650;
+const PAPER_TRANSFER_DAY_HEADER_HEIGHT = 22;
+const PAPER_TRANSFER_TABLE_HEADER_HEIGHT = 42;
+const PAPER_TRANSFER_TIME_HEADER_HEIGHT = 22;
+const PAPER_TRANSFER_DETAIL_ROW_HEIGHT = 30;
+const PAPER_TRANSFER_DAY_TABLE_HEADER_HEIGHT =
+	PAPER_TRANSFER_DAY_HEADER_HEIGHT + PAPER_TRANSFER_TABLE_HEADER_HEIGHT;
 
 function addRowBreakAfterLastRow(rows: WorksheetRow[], rowBreaks: number[]) {
 	const lastRowIndex = rows.length - 1;
@@ -687,6 +693,25 @@ function appendPaperTransferTimeHeader(
 	const timeRowIndex = rows.length;
 	rows.push([`เวลา ${timeLabelText}`]);
 	mergeRanges.push(fullWidthPaperTransferMerge(timeRowIndex));
+}
+
+function appendPaperTransferPageHeader(
+	rows: WorksheetRow[],
+	mergeRanges: ExamScheduleExportMerge[],
+	rowBreaks: number[],
+	dayLabel: string,
+	forcePageBreak: boolean
+): number {
+	if (forcePageBreak) addRowBreakAfterLastRow(rows, rowBreaks);
+	appendPaperTransferDayHeader(rows, mergeRanges, dayLabel);
+	return PAPER_TRANSFER_DAY_TABLE_HEADER_HEIGHT;
+}
+
+function shouldStartNewPaperTransferPage(currentHeight: number, nextHeight: number): boolean {
+	return (
+		currentHeight > PAPER_TRANSFER_DAY_TABLE_HEADER_HEIGHT &&
+		currentHeight + nextHeight > PAPER_TRANSFER_A4_CONTENT_HEIGHT
+	);
 }
 
 function printableReportRows(
@@ -898,9 +923,13 @@ function paperTransferRows(
 	const sessionsByDay = groupByText(sessions, (session) => safeText(session.examDayId));
 	for (const [dayIndex, [, daySessions]] of sessionsByDay.entries()) {
 		const dayLabelText = paperTransferDateLabel(workspace, daySessions[0]);
-		if (dayIndex > 0) addRowBreakAfterLastRow(rows, rowBreaks);
-		appendPaperTransferDayHeader(rows, mergeRanges, dayLabelText);
-		let detailRowsOnPage = 0;
+		let pageContentHeight = appendPaperTransferPageHeader(
+			rows,
+			mergeRanges,
+			rowBreaks,
+			dayLabelText,
+			dayIndex > 0
+		);
 
 		const sessionsByTime = groupByText(daySessions, printableTimeRangeLabel);
 		for (const [, timeSessions] of sessionsByTime) {
@@ -911,26 +940,26 @@ function paperTransferRows(
 					compareThaiNatural(safeText(a.subjectCode), safeText(b.subjectCode)) ||
 					compareThaiNatural(sessionClassroomLabel(a), sessionClassroomLabel(b))
 			);
-			if (
-				detailRowsOnPage > 0 &&
-				orderedTimeSessions.length <= PAPER_TRANSFER_DETAIL_ROWS_PER_PAGE &&
-				detailRowsOnPage + orderedTimeSessions.length > PAPER_TRANSFER_DETAIL_ROWS_PER_PAGE
-			) {
-				addRowBreakAfterLastRow(rows, rowBreaks);
-				appendPaperTransferDayHeader(rows, mergeRanges, dayLabelText);
-				detailRowsOnPage = 0;
-			}
 
 			let hasTimeHeaderOnPage = false;
 			for (const session of orderedTimeSessions) {
-				if (detailRowsOnPage >= PAPER_TRANSFER_DETAIL_ROWS_PER_PAGE) {
-					addRowBreakAfterLastRow(rows, rowBreaks);
-					appendPaperTransferDayHeader(rows, mergeRanges, dayLabelText);
-					detailRowsOnPage = 0;
+				const nextRowHeight =
+					(hasTimeHeaderOnPage ? 0 : PAPER_TRANSFER_TIME_HEADER_HEIGHT) +
+					PAPER_TRANSFER_DETAIL_ROW_HEIGHT;
+				if (shouldStartNewPaperTransferPage(pageContentHeight, nextRowHeight)) {
+					pageContentHeight = appendPaperTransferPageHeader(
+						rows,
+						mergeRanges,
+						rowBreaks,
+						dayLabelText,
+						true
+					);
 					hasTimeHeaderOnPage = false;
 				}
+
 				if (!hasTimeHeaderOnPage) {
 					appendPaperTransferTimeHeader(rows, mergeRanges, timeLabelText);
+					pageContentHeight += PAPER_TRANSFER_TIME_HEADER_HEIGHT;
 					hasTimeHeaderOnPage = true;
 				}
 				rows.push([
@@ -942,7 +971,7 @@ function paperTransferRows(
 					'',
 					''
 				]);
-				detailRowsOnPage += 1;
+				pageContentHeight += PAPER_TRANSFER_DETAIL_ROW_HEIGHT;
 			}
 		}
 	}
