@@ -578,7 +578,7 @@ describe('exam schedule export helpers', () => {
 	it('repeats paper transfer day headers when a day spans multiple printed pages', () => {
 		const workbook = buildExamScheduleExportWorkbook(
 			exportWorkspace(
-				Array.from({ length: 19 }, (_, index) =>
+				Array.from({ length: 22 }, (_, index) =>
 					scheduledSession({
 						id: `session-long-day-${index + 1}`,
 						startsAt: '09:00:00',
@@ -620,7 +620,7 @@ describe('exam schedule export helpers', () => {
 	it('counts paper transfer time headers when fitting rows onto A4 pages', () => {
 		const workbook = buildExamScheduleExportWorkbook(
 			exportWorkspace(
-				Array.from({ length: 12 }, (_, index) =>
+				Array.from({ length: 13 }, (_, index) =>
 					scheduledSession({
 						id: `session-many-slots-${index + 1}`,
 						startsAt: `${String(8 + index).padStart(2, '0')}:00:00`,
@@ -654,7 +654,7 @@ describe('exam schedule export helpers', () => {
 			'ลงชื่อรับไปตรวจ\n(ครูผู้สอน)'
 		]);
 		assert.deepEqual(workbook.paperTransferReport.rows[repeatedDayIndex + 2], [
-			'เวลา 19.00-19.45 น.'
+			'เวลา 20.00-20.45 น.'
 		]);
 	});
 });
