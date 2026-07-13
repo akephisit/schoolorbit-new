@@ -2785,3 +2785,29 @@ fn question_bank_subject_contract_and_temporary_file_lifecycle_are_explicit() {
     assert!(cleaner.contains("clean_expired_temporary_files"));
     assert!(cleaner.contains("is_temporary = true"));
 }
+
+#[test]
+fn question_bank_rich_content_is_versioned_typed_and_searchable() {
+    let migration = read_source(
+        manifest_dir()
+            .join("migrations")
+            .join("025_question_bank_rich_document.sql"),
+    );
+    let models = strip_comments(&read_source(
+        manifest_dir().join("src/modules/question_bank/models.rs"),
+    ));
+    let services = strip_comments(&read_source(
+        manifest_dir().join("src/modules/question_bank/services.rs"),
+    ));
+
+    assert!(models.contains("pub struct RichContent"));
+    assert!(models.contains("pub schema_version: u16"));
+    assert!(models.contains("pub document: RichDocument"));
+    assert!(models.contains("pub stem_content: Json<RichContent>"));
+    assert!(models.contains("pub content: Json<RichContent>"));
+    assert!(!models.contains("serde_json::Value"));
+    assert!(migration.contains("ADD COLUMN search_text TEXT NOT NULL"));
+    assert!(migration.contains("idx_question_bank_questions_search_trgm"));
+    assert!(services.contains("q.search_text ILIKE"));
+    assert!(!services.contains("q.stem_content::text ILIKE"));
+}

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onDestroy, onMount } from 'svelte';
+	import { SvelteMap } from 'svelte/reactivity';
 	import { toast } from 'svelte-sonner';
 	import {
 		createQuestionBankQuestion,
@@ -15,7 +16,6 @@
 		type QuestionSummary,
 		type QuestionType,
 		type RichContent,
-		type RichContentBlock,
 		type UpsertQuestionRequest
 	} from '$lib/api/questionBank';
 	import { deleteFile, uploadFile } from '$lib/api/files';
@@ -31,6 +31,18 @@
 	import { Label } from '$lib/components/ui/label';
 	import * as Select from '$lib/components/ui/select';
 	import { PERMISSIONS } from '$lib/permissions/registry';
+	import {
+		contentHasImage,
+		contentHasMath,
+		emptyEditorRichContent,
+		pendingImageIds,
+		richContentHasBody,
+		richContentPlainText,
+		toEditorRichContent,
+		toPersistedRichContent,
+		type EditorRichContent,
+		type PendingImageReference
+	} from '$lib/question-bank/rich-document';
 	import { can } from '$lib/stores/permissions';
 	import {
 		Edit3,
@@ -51,15 +63,10 @@
 	type DifficultyFilter = QuestionDifficulty | 'all';
 	type StatusFilter = QuestionStatus | 'all';
 	type EditorMode = 'view' | 'create' | 'edit';
+	type PendingImageDraft = PendingImageReference & { file: File };
 	type ContentDraft = {
-		source: RichContent;
-		text: string;
-		latex: string;
-		imageFileId: string;
-		imagePreviewUrl: string;
-		imageFile: File | null;
-		imageAltText: string;
-		imageRemoved: boolean;
+		content: EditorRichContent;
+		pendingImages: PendingImageDraft[];
 	};
 	type ChoiceDraft = {
 		key: string;
@@ -164,14 +171,8 @@
 
 	function emptyContentDraft(): ContentDraft {
 		return {
-			source: { blocks: [] },
-			text: '',
-			latex: '',
-			imageFileId: '',
-			imagePreviewUrl: '',
-			imageFile: null,
-			imageAltText: '',
-			imageRemoved: false
+			content: emptyEditorRichContent(),
+			pendingImages: []
 		};
 	}
 
@@ -204,40 +205,13 @@
 		};
 	}
 
-	function firstBlock(content: RichContent | null | undefined, type: RichContentBlock['type']) {
-		return content?.blocks.find((block) => block.type === type);
-	}
-
-	function textFromContent(content: RichContent | null | undefined) {
-		const block = firstBlock(content, 'paragraph');
-		return block?.type === 'paragraph' ? block.text : '';
-	}
-
-	function latexFromContent(content: RichContent | null | undefined) {
-		const block = firstBlock(content, 'math');
-		return block?.type === 'math' ? block.latex : '';
-	}
-
-	function imageFromContent(content: RichContent | null | undefined) {
-		const block = firstBlock(content, 'image');
-		return block?.type === 'image' ? block : null;
-	}
-
 	function contentDraftFrom(
 		content: RichContent | null | undefined,
 		fileUrls: Map<string, string>
 	): ContentDraft {
-		const source = content ?? { blocks: [] };
-		const image = imageFromContent(source);
 		return {
-			source,
-			text: textFromContent(source),
-			latex: latexFromContent(source),
-			imageFileId: image?.fileId ?? '',
-			imagePreviewUrl: image ? (fileUrls.get(image.fileId) ?? '') : '',
-			imageFile: null,
-			imageAltText: image?.altText ?? '',
-			imageRemoved: false
+			content: toEditorRichContent(content, fileUrls),
+			pendingImages: []
 		};
 	}
 
@@ -277,60 +251,6 @@
 		};
 	}
 
-	function mergeContent(content: ContentDraft): RichContent {
-		const blocks: RichContentBlock[] = [];
-		let paragraphHandled = false;
-		let mathHandled = false;
-		let imageHandled = false;
-
-		for (const block of content.source.blocks) {
-			if (block.type === 'paragraph' && !paragraphHandled) {
-				paragraphHandled = true;
-				if (content.text.trim()) blocks.push({ type: 'paragraph', text: content.text.trim() });
-				continue;
-			}
-			if (block.type === 'math' && !mathHandled) {
-				mathHandled = true;
-				if (content.latex.trim()) {
-					blocks.push({ type: 'math', latex: content.latex.trim(), display: block.display });
-				}
-				continue;
-			}
-			if (block.type === 'image') {
-				if (content.imageRemoved) continue;
-				if (!imageHandled) {
-					imageHandled = true;
-					if (content.imageFileId) {
-						blocks.push({
-							type: 'image',
-							fileId: content.imageFileId,
-							altText: content.imageAltText.trim() || null,
-							caption: block.caption ?? null
-						});
-					}
-					continue;
-				}
-			}
-			blocks.push(block);
-		}
-
-		if (!paragraphHandled && content.text.trim()) {
-			blocks.push({ type: 'paragraph', text: content.text.trim() });
-		}
-		if (!mathHandled && content.latex.trim()) {
-			blocks.push({ type: 'math', latex: content.latex.trim(), display: true });
-		}
-		if (!imageHandled && !content.imageRemoved && content.imageFileId) {
-			blocks.push({
-				type: 'image',
-				fileId: content.imageFileId,
-				altText: content.imageAltText.trim() || null,
-				caption: null
-			});
-		}
-		return { blocks };
-	}
-
 	function tagsFromText(value: string) {
 		const tags: string[] = [];
 		for (const rawTag of value.split(',')) {
@@ -342,9 +262,8 @@
 
 	function questionTitle(question: QuestionSummary) {
 		return (
-			textFromContent(question.stemContent) ||
-			latexFromContent(question.stemContent) ||
-			(imageFromContent(question.stemContent) ? 'โจทย์รูปภาพ' : 'โจทย์')
+			richContentPlainText(question.stemContent) ||
+			(contentHasImage(question.stemContent) ? 'โจทย์รูปภาพ' : 'โจทย์')
 		);
 	}
 
@@ -519,7 +438,9 @@
 
 	function removeChoice(index: number) {
 		if (draft.choices.length <= 2) return;
-		revokeContentObjectUrl(draft.choices[index].content);
+		for (const image of draft.choices[index].content.pendingImages) {
+			URL.revokeObjectURL(image.previewUrl);
+		}
 		draft.choices = draft.choices
 			.filter((_, choiceIndex) => choiceIndex !== index)
 			.map((choice, choiceIndex) => ({ ...choice, sortOrder: choiceIndex + 1 }));
@@ -534,42 +455,29 @@
 		}
 	}
 
-	function selectDraftImage(file: File, target: ContentDraft) {
+	function selectDraftImage(file: File, target: ContentDraft): PendingImageReference | null {
 		if (!file.type.startsWith('image/')) {
 			toast.error('กรุณาเลือกไฟล์รูปภาพ');
-			return;
+			return null;
 		}
 		if (file.size > maxImageBytes) {
 			toast.error('รูปต้องมีขนาดไม่เกิน 10 MB');
-			return;
+			return null;
 		}
 
-		revokeContentObjectUrl(target);
-		target.imageFile = file;
-		target.imageFileId = '';
-		target.imagePreviewUrl = URL.createObjectURL(file);
-		target.imageRemoved = false;
-	}
-
-	function removeDraftImage(target: ContentDraft) {
-		revokeContentObjectUrl(target);
-		target.imageFile = null;
-		target.imageFileId = '';
-		target.imagePreviewUrl = '';
-		target.imageRemoved = true;
-	}
-
-	function revokeContentObjectUrl(content: ContentDraft) {
-		if (content.imageFile && content.imagePreviewUrl.startsWith('blob:')) {
-			URL.revokeObjectURL(content.imagePreviewUrl);
-		}
+		const reference = {
+			pendingId: crypto.randomUUID(),
+			previewUrl: URL.createObjectURL(file)
+		};
+		target.pendingImages = [...target.pendingImages, { ...reference, file }];
+		return reference;
 	}
 
 	function cleanupDraftObjectUrls(value: QuestionDraft) {
-		revokeContentObjectUrl(value.stem);
-		revokeContentObjectUrl(value.explanation);
-		revokeContentObjectUrl(value.rubric);
-		for (const choice of value.choices) revokeContentObjectUrl(choice.content);
+		for (const content of allDraftContents(value)) {
+			for (const image of content.pendingImages) URL.revokeObjectURL(image.previewUrl);
+			content.pendingImages = [];
+		}
 	}
 
 	function validateDraft() {
@@ -597,35 +505,36 @@
 	}
 
 	function contentDraftHasBody(content: ContentDraft) {
-		return Boolean(
-			content.text.trim() || content.latex.trim() || content.imageFile || content.imageFileId
-		);
+		return richContentHasBody(content.content);
 	}
 
-	function pendingImageContents() {
-		const contents = [draft.stem, draft.explanation, draft.rubric];
-		for (const choice of draft.choices) contents.push(choice.content);
-		return contents.filter((content) => content.imageFile);
+	function allDraftContents(value = draft) {
+		return [
+			value.stem,
+			value.explanation,
+			value.rubric,
+			...value.choices.map((choice) => choice.content)
+		];
 	}
 
-	function buildPayload(): UpsertQuestionRequest {
-		const explanationContent = mergeContent(draft.explanation);
-		const rubricContent = mergeContent(draft.rubric);
+	function buildPayload(uploadedFileIds: ReadonlyMap<string, string>): UpsertQuestionRequest {
+		const explanationContent = toPersistedRichContent(draft.explanation.content, uploadedFileIds);
+		const rubricContent = toPersistedRichContent(draft.rubric.content, uploadedFileIds);
 		return {
 			subjectId: draft.subjectId,
 			questionType: draft.questionType,
 			difficulty: draft.difficulty,
 			points: Number(draft.points),
-			stemContent: mergeContent(draft.stem),
-			explanationContent: explanationContent.blocks.length ? explanationContent : null,
-			rubricContent: rubricContent.blocks.length ? rubricContent : null,
+			stemContent: toPersistedRichContent(draft.stem.content, uploadedFileIds),
+			explanationContent: richContentHasBody(explanationContent) ? explanationContent : null,
+			rubricContent: richContentHasBody(rubricContent) ? rubricContent : null,
 			tags: tagsFromText(draft.tagsText),
 			status: draft.status,
 			choices: isChoiceQuestion
 				? draft.choices.map((choice, index) => ({
 						id: choice.id ?? null,
 						label: choice.label.trim(),
-						content: mergeContent(choice.content),
+						content: toPersistedRichContent(choice.content.content, uploadedFileIds),
 						isCorrect: choice.isCorrect,
 						sortOrder: index + 1
 					}))
@@ -642,15 +551,20 @@
 
 		saving = true;
 		const uploadedIds: string[] = [];
+		const uploadedFileIds = new SvelteMap<string, string>();
 		let saveRequestStarted = false;
 		try {
-			for (const content of pendingImageContents()) {
-				if (!content.imageFile) continue;
-				const response = await uploadFile(content.imageFile, 'course_material', true);
-				content.imageFileId = response.file.id;
-				uploadedIds.push(response.file.id);
+			for (const content of allDraftContents()) {
+				const referencedImageIds = pendingImageIds(content.content);
+				for (const image of content.pendingImages.filter((candidate) =>
+					referencedImageIds.has(candidate.pendingId)
+				)) {
+					const response = await uploadFile(image.file, 'course_material', true);
+					uploadedFileIds.set(image.pendingId, response.file.id);
+					uploadedIds.push(response.file.id);
+				}
 			}
-			const payload = buildPayload();
+			const payload = buildPayload(uploadedFileIds);
 			saveRequestStarted = true;
 			if (draft.id) {
 				await updateQuestionBankQuestion(draft.id, payload);
@@ -664,7 +578,6 @@
 			await loadQuestions(draft.id ? currentPage : 1);
 			toast.success('บันทึกข้อสอบแล้ว');
 		} catch (error) {
-			for (const content of pendingImageContents()) content.imageFileId = '';
 			if (!saveRequestStarted) {
 				const cleanupResults = await Promise.allSettled(uploadedIds.map((id) => deleteFile(id)));
 				if (cleanupResults.some((result) => result.status === 'rejected')) {
@@ -881,10 +794,10 @@
 										>
 										<Badge variant="outline">{typeLabel(question.questionType)}</Badge>
 										<Badge variant="secondary">{difficultyLabel(question.difficulty)}</Badge>
-										{#if imageFromContent(question.stemContent)}
+										{#if contentHasImage(question.stemContent)}
 											<Badge variant="outline"><ImageIcon class="h-3 w-3" /> รูป</Badge>
 										{/if}
-										{#if latexFromContent(question.stemContent)}
+										{#if contentHasMath(question.stemContent)}
 											<Badge variant="outline"><Sigma class="h-3 w-3" /> สูตร</Badge>
 										{/if}
 									</div>
@@ -998,13 +911,13 @@
 						{/each}
 					</section>
 				{/if}
-				{#if detail.explanationContent?.blocks.length}
+				{#if detail.explanationContent && richContentHasBody(detail.explanationContent)}
 					<section class="rounded-lg border p-4">
 						<h3 class="mb-2 font-medium">เฉลย/คำอธิบาย</h3>
 						<QuestionContent content={detail.explanationContent} files={detail.files} />
 					</section>
 				{/if}
-				{#if detail.rubricContent?.blocks.length}
+				{#if detail.rubricContent && richContentHasBody(detail.rubricContent)}
 					<section class="rounded-lg border p-4">
 						<h3 class="mb-2 font-medium">เกณฑ์ให้คะแนน</h3>
 						<QuestionContent content={detail.rubricContent} files={detail.files} />
@@ -1101,13 +1014,9 @@
 				<QuestionContentEditor
 					label="โจทย์"
 					required
-					bind:text={draft.stem.text}
-					bind:math={draft.stem.latex}
-					imagePreviewUrl={draft.stem.imagePreviewUrl}
-					bind:imageAltText={draft.stem.imageAltText}
+					bind:content={draft.stem.content}
 					textPlaceholder="พิมพ์โจทย์…"
 					onImageSelected={(file) => selectDraftImage(file, draft.stem)}
-					onImageRemoved={() => removeDraftImage(draft.stem)}
 				/>
 
 				{#if isChoiceQuestion}
@@ -1147,13 +1056,9 @@
 								<QuestionContentEditor
 									label={`เนื้อหาตัวเลือก ${choice.label}`}
 									compact
-									bind:text={choice.content.text}
-									bind:math={choice.content.latex}
-									imagePreviewUrl={choice.content.imagePreviewUrl}
-									bind:imageAltText={choice.content.imageAltText}
+									bind:content={choice.content.content}
 									textPlaceholder="พิมพ์ตัวเลือก…"
 									onImageSelected={(file) => selectDraftImage(file, choice.content)}
-									onImageRemoved={() => removeDraftImage(choice.content)}
 								/>
 							</div>
 						{/each}
@@ -1164,24 +1069,16 @@
 					<QuestionContentEditor
 						label="เฉลย/คำอธิบาย"
 						compact
-						bind:text={draft.explanation.text}
-						bind:math={draft.explanation.latex}
-						imagePreviewUrl={draft.explanation.imagePreviewUrl}
-						bind:imageAltText={draft.explanation.imageAltText}
+						bind:content={draft.explanation.content}
 						textPlaceholder="พิมพ์เฉลยหรือคำอธิบาย…"
 						onImageSelected={(file) => selectDraftImage(file, draft.explanation)}
-						onImageRemoved={() => removeDraftImage(draft.explanation)}
 					/>
 					<QuestionContentEditor
 						label="เกณฑ์ให้คะแนน"
 						compact
-						bind:text={draft.rubric.text}
-						bind:math={draft.rubric.latex}
-						imagePreviewUrl={draft.rubric.imagePreviewUrl}
-						bind:imageAltText={draft.rubric.imageAltText}
+						bind:content={draft.rubric.content}
 						textPlaceholder="พิมพ์เกณฑ์ให้คะแนน…"
 						onImageSelected={(file) => selectDraftImage(file, draft.rubric)}
-						onImageRemoved={() => removeDraftImage(draft.rubric)}
 					/>
 				</div>
 				<div>

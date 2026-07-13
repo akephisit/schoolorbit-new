@@ -4,13 +4,33 @@ export type QuestionType = 'single_choice' | 'multiple_choice' | 'short_answer' 
 export type QuestionDifficulty = 'easy' | 'medium' | 'hard';
 export type QuestionStatus = 'draft' | 'ready' | 'archived';
 
+export type RichTextMark = { type: 'bold' } | { type: 'italic' };
+
+export type RichInlineNode =
+	| { type: 'text'; text: string; marks?: RichTextMark[] }
+	| { type: 'inline_math'; attrs: { latex: string } }
+	| { type: 'hardBreak' };
+
 export type RichContentBlock =
-	| { type: 'paragraph'; text: string }
-	| { type: 'math'; latex: string; display: boolean }
-	| { type: 'image'; fileId: string; altText?: string | null; caption?: string | null };
+	| { type: 'paragraph'; content?: RichInlineNode[] }
+	| { type: 'math_block'; attrs: { latex: string } }
+	| {
+			type: 'image';
+			attrs: {
+				fileId: string;
+				altText: string | null;
+				caption: string | null;
+				alignment: 'left' | 'center' | 'right';
+				widthPercent: number;
+			};
+	  };
 
 export interface RichContent {
-	blocks: RichContentBlock[];
+	schemaVersion: 1;
+	document: {
+		type: 'doc';
+		content: RichContentBlock[];
+	};
 }
 
 export interface QuestionChoice {

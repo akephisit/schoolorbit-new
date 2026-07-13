@@ -31,7 +31,7 @@ test('question bank defers image uploads until save and cleans failed temporary 
 	);
 	const selection = page.slice(
 		page.indexOf('function selectDraftImage'),
-		page.indexOf('function removeDraftImage')
+		page.indexOf('function cleanupDraftObjectUrls')
 	);
 	const save = page.slice(
 		page.indexOf('async function saveQuestion'),
@@ -40,7 +40,8 @@ test('question bank defers image uploads until save and cleans failed temporary 
 
 	assert.match(selection, /URL\.createObjectURL\(file\)/);
 	assert.doesNotMatch(selection, /uploadFile\(/);
-	assert.match(save, /uploadFile\(content\.imageFile, 'course_material', true\)/);
+	assert.match(save, /uploadFile\(image\.file, 'course_material', true\)/);
+	assert.match(save, /uploadedFileIds\.set\(image\.pendingId, response\.file\.id\)/);
 	assert.match(save, /if \(!saveRequestStarted\)/);
 	assert.match(save, /Promise\.allSettled\(uploadedIds\.map\(\(id\) => deleteFile\(id\)\)\)/);
 	assert.match(save, /เก็บกวาดอัตโนมัติภายใน 24 ชั่วโมง/);
@@ -53,26 +54,56 @@ test('question editor offers visual math controls without exposing a LaTeX input
 	const editor = await readProjectFile(
 		'src/lib/components/question-bank/QuestionContentEditor.svelte'
 	);
-	const visualMath = await readProjectFile(
-		'src/lib/components/question-bank/VisualMathEditor.svelte'
-	);
+	const extensions = await readProjectFile('src/lib/question-bank/rich-editor-extensions.ts');
 
 	assert.match(packageJson, /"mathlive":/);
+	assert.match(packageJson, /"@tiptap\/core":/);
 	assert.match(page, /<QuestionContentEditor/);
 	assert.doesNotMatch(page, /สมการ LaTeX|placeholder="LaTeX/);
 	assert.match(editor, />\s*ข้อความ\s*</);
 	assert.match(editor, />\s*สมการ\s*</);
 	assert.match(editor, />\s*รูปภาพ\s*</);
-	assert.match(visualMath, /<math-field/);
-	assert.match(visualMath, /mathfield\.insert/);
-	assert.match(visualMath, /window\.mathVirtualKeyboard\.show/);
-	assert.match(visualMath, /window\.mathVirtualKeyboard\.hide/);
-	assert.match(visualMath, /keyboardVisible \? 'secondary' : 'outline'/);
+	assert.match(extensions, /document\.createElement\('math-field'\)/);
+	assert.match(editor, /field\.insert/);
+	assert.match(editor, /window\.mathVirtualKeyboard\.show/);
+	assert.match(editor, /window\.mathVirtualKeyboard\.hide/);
+	assert.match(editor, /keyboardVisible \? 'secondary' : 'outline'/);
 	assert.match(page, /onInteractOutside=\{handleDialogInteractOutside\}/);
 	assert.match(page, /target\.classList\.contains\('ML__keyboard'\)/);
 	assert.match(page, /if \(fromMathKeyboard\) event\.preventDefault\(\)/);
-	assert.match(visualMath, /เศษส่วน/);
-	assert.match(visualMath, /รากที่สอง/);
+	assert.match(editor, /เศษส่วน/);
+	assert.match(editor, /รากที่สอง/);
+});
+
+test('question content uses a versioned JSON document and strips editor-only image data', async () => {
+	const api = await readProjectFile('src/lib/api/questionBank.ts');
+	const documentHelpers = await readProjectFile('src/lib/question-bank/rich-document.ts');
+	const extensions = await readProjectFile('src/lib/question-bank/rich-editor-extensions.ts');
+	const renderer = await readProjectFile('src/lib/components/question-bank/QuestionContent.svelte');
+
+	assert.match(api, /schemaVersion:\s*1/);
+	assert.match(api, /type:\s*'inline_math'/);
+	assert.match(api, /type:\s*'image'/);
+	assert.match(documentHelpers, /toPersistedRichContent/);
+	assert.match(documentHelpers, /const fileId = block\.attrs\.fileId \?\?/);
+	assert.match(documentHelpers, /attrs:\s*\{\s*fileId,/);
+	assert.match(extensions, /draggable:\s*true/);
+	assert.match(extensions, /insertContentAt\(position, nodes\)/);
+	assert.doesNotMatch(renderer, /\{@html/);
+});
+
+test('question search uses the plain-text projection added by a new migration', async () => {
+	const migration = await readProjectFile(
+		'../backend-school/migrations/025_question_bank_rich_document.sql'
+	);
+	const services = await readProjectFile('../backend-school/src/modules/question_bank/services.rs');
+
+	assert.match(migration, /ADD COLUMN search_text TEXT NOT NULL/);
+	assert.match(migration, /idx_question_bank_questions_search_trgm/);
+	assert.match(migration, /schemaVersion/);
+	assert.match(services, /let stem_search_text = payload\.stem_content\.search_text\(\)/);
+	assert.match(services, /q\.search_text ILIKE/);
+	assert.doesNotMatch(services, /q\.stem_content::text ILIKE/);
 });
 
 test('question bank keeps read-only actions separate and confirms deletion', async () => {

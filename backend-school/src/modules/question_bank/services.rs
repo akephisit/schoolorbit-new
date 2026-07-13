@@ -9,7 +9,7 @@ use crate::middleware::permission::ActorContext;
 use crate::modules::question_bank::models::{
     QuestionBankListQuery, QuestionBankOptions, QuestionBankPage, QuestionBankSubjectOption,
     QuestionBankSummary, QuestionBankSummaryRow, QuestionChoice, QuestionChoiceRow, QuestionDetail,
-    QuestionFile, QuestionRow, QuestionScopeRow, QuestionSummary, RichContent, RichContentBlock,
+    QuestionFile, QuestionRow, QuestionScopeRow, QuestionSummary, RichContent,
     UpsertQuestionChoiceRequest, UpsertQuestionRequest,
 };
 use crate::policies::question_bank_access_policy::{self, QuestionBankAccess};
@@ -205,6 +205,7 @@ pub async fn create_question(
     let image_file_ids = collect_payload_image_file_ids(&payload);
     let temporary_image_file_ids =
         validate_payload_files(pool, actor_id, &image_file_ids, &HashSet::new()).await?;
+    let stem_search_text = payload.stem_content.search_text();
 
     let mut tx = pool.begin().await.map_err(|error| {
         tracing::error!("Failed to start question create transaction: {}", error);
@@ -220,6 +221,7 @@ INSERT INTO academic_question_bank_questions (
     difficulty,
     points,
     stem_content,
+    search_text,
     explanation_content,
     rubric_content,
     tags,
@@ -227,7 +229,7 @@ INSERT INTO academic_question_bank_questions (
     created_by,
     updated_by
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $11)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $12)
 RETURNING id
 "#,
     )
@@ -237,6 +239,7 @@ RETURNING id
     .bind(&payload.difficulty)
     .bind(payload.points)
     .bind(Json(payload.stem_content.clone()))
+    .bind(stem_search_text)
     .bind(payload.explanation_content.clone().map(Json))
     .bind(payload.rubric_content.clone().map(Json))
     .bind(&payload.tags)
@@ -280,6 +283,7 @@ pub async fn update_question(
     let image_file_ids = collect_payload_image_file_ids(&payload);
     let temporary_image_file_ids =
         validate_payload_files(pool, actor_id, &image_file_ids, &existing_file_ids).await?;
+    let stem_search_text = payload.stem_content.search_text();
 
     let mut tx = pool.begin().await.map_err(|error| {
         tracing::error!("Failed to start question update transaction: {}", error);
@@ -296,11 +300,12 @@ SET
     difficulty = $4,
     points = $5,
     stem_content = $6,
-    explanation_content = $7,
-    rubric_content = $8,
-    tags = $9,
-    status = $10,
-    updated_by = $11,
+    search_text = $7,
+    explanation_content = $8,
+    rubric_content = $9,
+    tags = $10,
+    status = $11,
+    updated_by = $12,
     updated_at = NOW()
 WHERE id = $1
   AND deleted_at IS NULL
@@ -312,6 +317,7 @@ WHERE id = $1
     .bind(&payload.difficulty)
     .bind(payload.points)
     .bind(Json(payload.stem_content.clone()))
+    .bind(stem_search_text)
     .bind(payload.explanation_content.clone().map(Json))
     .bind(payload.rubric_content.clone().map(Json))
     .bind(&payload.tags)
@@ -418,8 +424,15 @@ pub fn validate_question_payload(payload: &UpsertQuestionRequest) -> Result<(), 
             "คะแนนต้องเป็นตัวเลขไม่ติดลบและไม่เกินขอบเขตที่รองรับ".to_string(),
         ));
     }
+    validate_rich_content(&payload.stem_content)?;
     if !rich_content_has_body(&payload.stem_content) {
         return Err(AppError::ValidationError("ต้องระบุโจทย์".to_string()));
+    }
+    if let Some(content) = &payload.explanation_content {
+        validate_rich_content(content)?;
+    }
+    if let Some(content) = &payload.rubric_content {
+        validate_rich_content(content)?;
     }
 
     if kind.requires_choices() {
@@ -455,6 +468,7 @@ fn validate_choice_payload(
         if !rich_content_has_body(&choice.content) {
             return Err(AppError::ValidationError("ต้องระบุเนื้อหาตัวเลือก".to_string()));
         }
+        validate_rich_content(&choice.content)?;
         if choice.is_correct {
             correct_count += 1;
         }
@@ -472,11 +486,13 @@ fn validate_choice_payload(
 }
 
 fn rich_content_has_body(content: &RichContent) -> bool {
-    content.blocks.iter().any(|block| match block {
-        RichContentBlock::Paragraph { text } => !text.trim().is_empty(),
-        RichContentBlock::Math { latex, .. } => !latex.trim().is_empty(),
-        RichContentBlock::Image { .. } => true,
-    })
+    content.has_body()
+}
+
+fn validate_rich_content(content: &RichContent) -> Result<(), AppError> {
+    content
+        .validate_shape()
+        .map_err(|message| AppError::ValidationError(message.to_string()))
 }
 
 fn collect_payload_image_file_ids(payload: &UpsertQuestionRequest) -> HashSet<Uuid> {
@@ -908,7 +924,7 @@ fn push_list_filters(
         .filter(|search| !search.is_empty())
     {
         let pattern = format!("%{}%", search);
-        builder.push(" AND (q.stem_content::text ILIKE ");
+        builder.push(" AND (q.search_text ILIKE ");
         builder.push_bind(pattern.clone());
         builder.push(" OR s.code ILIKE ");
         builder.push_bind(pattern.clone());
@@ -1051,22 +1067,55 @@ fn valid_filter_value<'a>(value: Option<&'a str>, valid_values: &[&str]) -> Opti
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::modules::question_bank::models::{
+        ImageAlignment, ImageNodeAttributes, MathNodeAttributes, RichBlockNode, RichDocument,
+        RichInlineNode, RICH_CONTENT_SCHEMA_VERSION,
+    };
 
     fn text_content(text: &str) -> RichContent {
         RichContent {
-            blocks: vec![RichContentBlock::Paragraph {
-                text: text.to_string(),
-            }],
+            schema_version: RICH_CONTENT_SCHEMA_VERSION,
+            document: RichDocument::Doc {
+                content: vec![RichBlockNode::Paragraph {
+                    content: vec![RichInlineNode::Text {
+                        text: text.to_string(),
+                        marks: vec![],
+                    }],
+                }],
+            },
         }
     }
 
     fn math_content(latex: &str) -> RichContent {
         RichContent {
-            blocks: vec![RichContentBlock::Math {
-                latex: latex.to_string(),
-                display: true,
-            }],
+            schema_version: RICH_CONTENT_SCHEMA_VERSION,
+            document: RichDocument::Doc {
+                content: vec![RichBlockNode::Paragraph {
+                    content: vec![RichInlineNode::InlineMath {
+                        attrs: MathNodeAttributes {
+                            latex: latex.to_string(),
+                        },
+                    }],
+                }],
+            },
         }
+    }
+
+    fn image_block(file_id: Uuid) -> RichBlockNode {
+        RichBlockNode::Image {
+            attrs: ImageNodeAttributes {
+                file_id,
+                alt_text: None,
+                caption: None,
+                alignment: ImageAlignment::Center,
+                width_percent: 60,
+            },
+        }
+    }
+
+    fn push_block(content: &mut RichContent, block: RichBlockNode) {
+        let RichDocument::Doc { content } = &mut content.document;
+        content.push(block);
     }
 
     fn valid_choice(label: &str, correct: bool) -> UpsertQuestionChoiceRequest {
@@ -1108,6 +1157,71 @@ mod tests {
     #[test]
     fn rich_content_accepts_math_as_body() {
         assert!(rich_content_has_body(&math_content("\\\\frac{x}{2}")));
+    }
+
+    #[test]
+    fn rich_content_search_text_combines_text_math_and_image_metadata() {
+        let mut content = text_content("จากสมการ");
+        let RichDocument::Doc { content: blocks } = &mut content.document;
+        let RichBlockNode::Paragraph { content: inline } = &mut blocks[0] else {
+            panic!("expected paragraph")
+        };
+        inline.push(RichInlineNode::InlineMath {
+            attrs: MathNodeAttributes {
+                latex: "x=1-2x".to_string(),
+            },
+        });
+        inline.push(RichInlineNode::Text {
+            text: " x มีค่าเท่าใด".to_string(),
+            marks: vec![],
+        });
+        assert_eq!(content.search_text(), "จากสมการ x=1-2x x มีค่าเท่าใด");
+    }
+
+    #[test]
+    fn rich_content_deserializes_the_versioned_editor_contract() {
+        let content: RichContent = serde_json::from_value(serde_json::json!({
+            "schemaVersion": 1,
+            "document": {
+                "type": "doc",
+                "content": [{
+                    "type": "paragraph",
+                    "content": [
+                        { "type": "text", "text": "จากสมการ " },
+                        { "type": "inline_math", "attrs": { "latex": "x=1-2x" } },
+                        { "type": "text", "text": " x มีค่าเท่าใด", "marks": [{ "type": "bold" }] }
+                    ]
+                }]
+            }
+        }))
+        .expect("versioned rich content should deserialize");
+
+        assert!(content.validate_shape().is_ok());
+        assert_eq!(content.search_text(), "จากสมการ x=1-2x x มีค่าเท่าใด");
+    }
+
+    #[test]
+    fn rich_content_rejects_editor_only_image_attributes() {
+        let result = serde_json::from_value::<RichContent>(serde_json::json!({
+            "schemaVersion": 1,
+            "document": {
+                "type": "doc",
+                "content": [{
+                    "type": "image",
+                    "attrs": {
+                        "fileId": Uuid::new_v4(),
+                        "pendingId": "browser-only",
+                        "previewUrl": "blob:browser-only",
+                        "altText": null,
+                        "caption": null,
+                        "alignment": "center",
+                        "widthPercent": 60
+                    }
+                }]
+            }
+        }));
+
+        assert!(result.is_err());
     }
 
     #[test]
@@ -1170,17 +1284,9 @@ mod tests {
         let stem_file_id = Uuid::new_v4();
         let choice_file_id = Uuid::new_v4();
         let mut payload = base_payload("single_choice");
-        payload.stem_content.blocks.push(RichContentBlock::Image {
-            file_id: stem_file_id,
-            alt_text: None,
-            caption: None,
-        });
+        push_block(&mut payload.stem_content, image_block(stem_file_id));
         let mut choice = valid_choice("A", true);
-        choice.content.blocks.push(RichContentBlock::Image {
-            file_id: choice_file_id,
-            alt_text: None,
-            caption: None,
-        });
+        push_block(&mut choice.content, image_block(choice_file_id));
         payload.choices = vec![choice, valid_choice("B", false)];
 
         let ids = collect_payload_image_file_ids(&payload);

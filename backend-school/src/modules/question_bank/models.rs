@@ -3,38 +3,244 @@ use serde::{Deserialize, Serialize};
 use sqlx::types::Json;
 use uuid::Uuid;
 
+pub const RICH_CONTENT_SCHEMA_VERSION: u16 = 1;
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct RichContent {
-    pub blocks: Vec<RichContentBlock>,
+    pub schema_version: u16,
+    pub document: RichDocument,
 }
 
 impl RichContent {
     pub fn image_file_ids(&self) -> impl Iterator<Item = Uuid> + '_ {
-        self.blocks.iter().filter_map(|block| match block {
-            RichContentBlock::Image { file_id, .. } => Some(*file_id),
-            _ => None,
-        })
+        self.document
+            .blocks()
+            .iter()
+            .filter_map(|block| match block {
+                RichBlockNode::Image { attrs } => Some(attrs.file_id),
+                _ => None,
+            })
+    }
+
+    pub fn has_body(&self) -> bool {
+        self.document.blocks().iter().any(RichBlockNode::has_body)
+    }
+
+    pub fn search_text(&self) -> String {
+        let mut parts = Vec::new();
+        for block in self.document.blocks() {
+            match block {
+                RichBlockNode::Paragraph { content } => {
+                    parts.extend(content.iter().filter_map(RichInlineNode::search_text));
+                }
+                RichBlockNode::MathBlock { attrs } => {
+                    if !attrs.latex.trim().is_empty() {
+                        parts.push(attrs.latex.trim());
+                    }
+                }
+                RichBlockNode::Image { attrs } => {
+                    if let Some(alt_text) = attrs.alt_text.as_deref().map(str::trim) {
+                        if !alt_text.is_empty() {
+                            parts.push(alt_text);
+                        }
+                    }
+                    if let Some(caption) = attrs.caption.as_deref().map(str::trim) {
+                        if !caption.is_empty() {
+                            parts.push(caption);
+                        }
+                    }
+                }
+            }
+        }
+        parts.join(" ")
+    }
+
+    pub fn validate_shape(&self) -> Result<(), &'static str> {
+        if self.schema_version != RICH_CONTENT_SCHEMA_VERSION {
+            return Err("ไม่รองรับเวอร์ชันเอกสารข้อสอบนี้");
+        }
+        let blocks = self.document.blocks();
+        if blocks.len() > 500 {
+            return Err("เนื้อหาข้อสอบมีจำนวนส่วนมากเกินไป");
+        }
+        for block in blocks {
+            block.validate_shape()?;
+        }
+        Ok(())
     }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(tag = "type", rename_all = "snake_case")]
-pub enum RichContentBlock {
-    Paragraph {
-        text: String,
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+pub enum RichDocument {
+    Doc {
+        #[serde(default)]
+        content: Vec<RichBlockNode>,
     },
-    Math {
-        latex: String,
-        display: bool,
+}
+
+impl RichDocument {
+    pub fn blocks(&self) -> &[RichBlockNode] {
+        match self {
+            Self::Doc { content } => content,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+pub enum RichBlockNode {
+    Paragraph {
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        content: Vec<RichInlineNode>,
+    },
+    MathBlock {
+        attrs: MathNodeAttributes,
     },
     Image {
-        #[serde(rename = "fileId")]
-        file_id: Uuid,
-        #[serde(rename = "altText")]
-        alt_text: Option<String>,
-        caption: Option<String>,
+        attrs: ImageNodeAttributes,
     },
+}
+
+impl RichBlockNode {
+    fn has_body(&self) -> bool {
+        match self {
+            Self::Paragraph { content } => content.iter().any(RichInlineNode::has_body),
+            Self::MathBlock { attrs } => !attrs.latex.trim().is_empty(),
+            Self::Image { .. } => true,
+        }
+    }
+
+    fn validate_shape(&self) -> Result<(), &'static str> {
+        match self {
+            Self::Paragraph { content } => {
+                if content.len() > 2_000 {
+                    return Err("ย่อหน้ามีจำนวนส่วนมากเกินไป");
+                }
+                for node in content {
+                    node.validate_shape()?;
+                }
+            }
+            Self::MathBlock { attrs } => attrs.validate_shape()?,
+            Self::Image { attrs } => attrs.validate_shape()?,
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+pub enum RichInlineNode {
+    Text {
+        text: String,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        marks: Vec<RichTextMark>,
+    },
+    InlineMath {
+        attrs: MathNodeAttributes,
+    },
+    #[serde(rename = "hardBreak")]
+    HardBreak,
+}
+
+impl RichInlineNode {
+    fn has_body(&self) -> bool {
+        match self {
+            Self::Text { text, .. } => !text.trim().is_empty(),
+            Self::InlineMath { attrs } => !attrs.latex.trim().is_empty(),
+            Self::HardBreak => false,
+        }
+    }
+
+    fn search_text(&self) -> Option<&str> {
+        match self {
+            Self::Text { text, .. } if !text.trim().is_empty() => Some(text.trim()),
+            Self::InlineMath { attrs } if !attrs.latex.trim().is_empty() => {
+                Some(attrs.latex.trim())
+            }
+            _ => None,
+        }
+    }
+
+    fn validate_shape(&self) -> Result<(), &'static str> {
+        match self {
+            Self::Text { text, marks } => {
+                if text.chars().count() > 100_000 {
+                    return Err("ข้อความยาวเกินขอบเขตที่รองรับ");
+                }
+                if marks.len() > 4 {
+                    return Err("รูปแบบข้อความมีจำนวนมากเกินไป");
+                }
+            }
+            Self::InlineMath { attrs } => attrs.validate_shape()?,
+            Self::HardBreak => {}
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+pub enum RichTextMark {
+    Bold,
+    Italic,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct MathNodeAttributes {
+    pub latex: String,
+}
+
+impl MathNodeAttributes {
+    fn validate_shape(&self) -> Result<(), &'static str> {
+        if self.latex.chars().count() > 20_000 {
+            return Err("สมการยาวเกินขอบเขตที่รองรับ");
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ImageNodeAttributes {
+    pub file_id: Uuid,
+    pub alt_text: Option<String>,
+    pub caption: Option<String>,
+    pub alignment: ImageAlignment,
+    pub width_percent: u8,
+}
+
+impl ImageNodeAttributes {
+    fn validate_shape(&self) -> Result<(), &'static str> {
+        if !(10..=100).contains(&self.width_percent) {
+            return Err("ความกว้างรูปต้องอยู่ระหว่าง 10 ถึง 100 เปอร์เซ็นต์");
+        }
+        if self
+            .alt_text
+            .as_ref()
+            .is_some_and(|value| value.chars().count() > 1_000)
+        {
+            return Err("คำอธิบายรูปยาวเกินขอบเขตที่รองรับ");
+        }
+        if self
+            .caption
+            .as_ref()
+            .is_some_and(|value| value.chars().count() > 2_000)
+        {
+            return Err("คำบรรยายรูปยาวเกินขอบเขตที่รองรับ");
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ImageAlignment {
+    Left,
+    Center,
+    Right,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
