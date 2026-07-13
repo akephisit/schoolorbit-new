@@ -1,5 +1,14 @@
 // See https://svelte.dev/docs/kit/types#app.d.ts
 // for information about these interfaces
+import type { MathfieldElementAttributes } from 'mathlive';
+import type { HTMLAttributes } from 'svelte/elements';
+
+declare module 'svelte/elements' {
+	interface SvelteHTMLElements {
+		'math-field': Partial<MathfieldElementAttributes> & HTMLAttributes<HTMLElement>;
+	}
+}
+
 declare global {
 	namespace App {
 		// interface Error {}

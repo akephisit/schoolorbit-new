@@ -22,6 +22,7 @@
 	import { PageShell } from '$lib/components/app-layout';
 	import { LoadingButton, PageSkeleton, PageState } from '$lib/components/app-state';
 	import QuestionContent from '$lib/components/question-bank/QuestionContent.svelte';
+	import QuestionContentEditor from '$lib/components/question-bank/QuestionContentEditor.svelte';
 	import * as AlertDialog from '$lib/components/ui/alert-dialog';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
@@ -29,7 +30,6 @@
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import * as Select from '$lib/components/ui/select';
-	import { Textarea } from '$lib/components/ui/textarea';
 	import { PERMISSIONS } from '$lib/permissions/registry';
 	import { can } from '$lib/stores/permissions';
 	import {
@@ -42,9 +42,7 @@
 		Save,
 		Search,
 		Sigma,
-		Trash2,
-		Upload,
-		X
+		Trash2
 	} from 'lucide-svelte';
 
 	let { data } = $props();
@@ -519,11 +517,7 @@
 		}
 	}
 
-	function selectDraftImage(event: Event, target: ContentDraft) {
-		const input = event.currentTarget as HTMLInputElement;
-		const file = input.files?.[0];
-		input.value = '';
-		if (!file) return;
+	function selectDraftImage(file: File, target: ContentDraft) {
 		if (!file.type.startsWith('image/')) {
 			toast.error('กรุณาเลือกไฟล์รูปภาพ');
 			return;
@@ -1084,51 +1078,17 @@
 					</div>
 				</div>
 
-				<div class="space-y-3 rounded-lg border p-4">
-					<Label for="stem-text">โจทย์ <span class="text-destructive">*</span></Label>
-					<Textarea id="stem-text" class="min-h-28" bind:value={draft.stem.text} />
-					<div>
-						<Label for="stem-latex">สมการ LaTeX</Label>
-						<Input id="stem-latex" class="mt-1 font-mono" bind:value={draft.stem.latex} />
-					</div>
-					<div>
-						<Label for="stem-image">รูปประกอบ</Label>
-						<div class="mt-1 flex flex-wrap items-center gap-2">
-							<Input
-								id="stem-image"
-								class="max-w-sm"
-								type="file"
-								accept="image/*"
-								onchange={(event) => selectDraftImage(event, draft.stem)}
-							/>
-							<Upload class="h-4 w-4 text-muted-foreground" />
-							<span class="text-xs text-muted-foreground">จะอัปโหลดเมื่อกดบันทึกเท่านั้น</span>
-						</div>
-					</div>
-					{#if draft.stem.imagePreviewUrl}
-						<div class="space-y-2">
-							<img
-								src={draft.stem.imagePreviewUrl}
-								alt={draft.stem.imageAltText}
-								class="max-h-64 rounded-md border object-contain"
-							/>
-							<div class="flex gap-2">
-								<Input
-									placeholder="คำอธิบายรูปสำหรับผู้ใช้โปรแกรมอ่านจอ"
-									bind:value={draft.stem.imageAltText}
-								/>
-								<Button
-									variant="outline"
-									size="icon"
-									aria-label="นำรูปโจทย์ออก"
-									onclick={() => removeDraftImage(draft.stem)}
-								>
-									<X class="h-4 w-4" />
-								</Button>
-							</div>
-						</div>
-					{/if}
-				</div>
+				<QuestionContentEditor
+					label="โจทย์"
+					required
+					bind:text={draft.stem.text}
+					bind:math={draft.stem.latex}
+					imagePreviewUrl={draft.stem.imagePreviewUrl}
+					bind:imageAltText={draft.stem.imageAltText}
+					textPlaceholder="พิมพ์โจทย์…"
+					onImageSelected={(file) => selectDraftImage(file, draft.stem)}
+					onImageRemoved={() => removeDraftImage(draft.stem)}
+				/>
 
 				{#if isChoiceQuestion}
 					<div class="space-y-3">
@@ -1164,64 +1124,45 @@
 										<Trash2 class="h-4 w-4" />
 									</Button>
 								</div>
-								<Textarea
-									aria-label={`เนื้อหาตัวเลือก ${choice.label}`}
-									class="min-h-20"
-									bind:value={choice.content.text}
+								<QuestionContentEditor
+									label={`เนื้อหาตัวเลือก ${choice.label}`}
+									compact
+									bind:text={choice.content.text}
+									bind:math={choice.content.latex}
+									imagePreviewUrl={choice.content.imagePreviewUrl}
+									bind:imageAltText={choice.content.imageAltText}
+									textPlaceholder="พิมพ์ตัวเลือก…"
+									onImageSelected={(file) => selectDraftImage(file, choice.content)}
+									onImageRemoved={() => removeDraftImage(choice.content)}
 								/>
-								<Input
-									aria-label={`สมการตัวเลือก ${choice.label}`}
-									class="font-mono"
-									placeholder="LaTeX (ถ้ามี)"
-									bind:value={choice.content.latex}
-								/>
-								<div class="flex flex-wrap items-center gap-2">
-									<Input
-										class="max-w-sm"
-										aria-label={`รูปตัวเลือก ${choice.label}`}
-										type="file"
-										accept="image/*"
-										onchange={(event) => selectDraftImage(event, choice.content)}
-									/>
-									<span class="text-xs text-muted-foreground">อัปโหลดเมื่อกดบันทึก</span>
-								</div>
-								{#if choice.content.imagePreviewUrl}
-									<div class="space-y-2">
-										<img
-											src={choice.content.imagePreviewUrl}
-											alt={choice.content.imageAltText}
-											class="max-h-40 rounded-md border object-contain"
-										/>
-										<div class="flex gap-2">
-											<Input placeholder="คำอธิบายรูป" bind:value={choice.content.imageAltText} />
-											<Button
-												variant="outline"
-												size="icon"
-												aria-label={`นำรูปตัวเลือก ${choice.label} ออก`}
-												onclick={() => removeDraftImage(choice.content)}
-												><X class="h-4 w-4" /></Button
-											>
-										</div>
-									</div>
-								{/if}
 							</div>
 						{/each}
 					</div>
 				{/if}
 
-				<div class="grid gap-3 md:grid-cols-2">
-					<div>
-						<Label for="explanation-text">เฉลย/คำอธิบาย</Label>
-						<Textarea
-							id="explanation-text"
-							class="mt-1 min-h-24"
-							bind:value={draft.explanation.text}
-						/>
-					</div>
-					<div>
-						<Label for="rubric-text">เกณฑ์ให้คะแนน</Label>
-						<Textarea id="rubric-text" class="mt-1 min-h-24" bind:value={draft.rubric.text} />
-					</div>
+				<div class="grid gap-3 xl:grid-cols-2">
+					<QuestionContentEditor
+						label="เฉลย/คำอธิบาย"
+						compact
+						bind:text={draft.explanation.text}
+						bind:math={draft.explanation.latex}
+						imagePreviewUrl={draft.explanation.imagePreviewUrl}
+						bind:imageAltText={draft.explanation.imageAltText}
+						textPlaceholder="พิมพ์เฉลยหรือคำอธิบาย…"
+						onImageSelected={(file) => selectDraftImage(file, draft.explanation)}
+						onImageRemoved={() => removeDraftImage(draft.explanation)}
+					/>
+					<QuestionContentEditor
+						label="เกณฑ์ให้คะแนน"
+						compact
+						bind:text={draft.rubric.text}
+						bind:math={draft.rubric.latex}
+						imagePreviewUrl={draft.rubric.imagePreviewUrl}
+						bind:imageAltText={draft.rubric.imageAltText}
+						textPlaceholder="พิมพ์เกณฑ์ให้คะแนน…"
+						onImageSelected={(file) => selectDraftImage(file, draft.rubric)}
+						onImageRemoved={() => removeDraftImage(draft.rubric)}
+					/>
 				</div>
 				<div>
 					<Label for="tags-text">Tags</Label>

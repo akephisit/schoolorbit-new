@@ -10,8 +10,10 @@ approval workflows, or question collections.
   curriculum/course configuration around that subject.
 - Existing legacy questions with no subject remain readable so authorized staff can open and repair
   them. Saving one requires selecting a subject.
-- Rich content supports paragraph, LaTeX math, and image blocks. The editor changes the first block of
-  each supported type while preserving additional blocks it does not edit.
+- Rich content supports paragraph, math, and image blocks. Teachers write normal text in an
+  article-style editor and build math visually from symbol buttons or the full math keyboard; they do
+  not need to type LaTeX. LaTeX remains only as the internal storage format. The editor changes the
+  first block of each supported type while preserving additional blocks it does not edit.
 
 ## Access
 

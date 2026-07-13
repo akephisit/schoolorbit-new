@@ -26,6 +26,9 @@ test('question bank uses its own subject options and exact subject contract', as
 
 test('question bank defers image uploads until save and cleans failed temporary files', async () => {
 	const page = await readProjectFile('src/routes/(app)/staff/academic/question-bank/+page.svelte');
+	const editor = await readProjectFile(
+		'src/lib/components/question-bank/QuestionContentEditor.svelte'
+	);
 	const selection = page.slice(
 		page.indexOf('function selectDraftImage'),
 		page.indexOf('function removeDraftImage')
@@ -41,7 +44,30 @@ test('question bank defers image uploads until save and cleans failed temporary 
 	assert.match(save, /if \(!saveRequestStarted\)/);
 	assert.match(save, /Promise\.allSettled\(uploadedIds\.map\(\(id\) => deleteFile\(id\)\)\)/);
 	assert.match(save, /เก็บกวาดอัตโนมัติภายใน 24 ชั่วโมง/);
-	assert.match(page, /จะอัปโหลดเมื่อกดบันทึกเท่านั้น/);
+	assert.match(editor, /รูปจะอัปโหลดเมื่อกดบันทึกเท่านั้น/);
+});
+
+test('question editor offers visual math controls without exposing a LaTeX input', async () => {
+	const packageJson = await readProjectFile('package.json');
+	const page = await readProjectFile('src/routes/(app)/staff/academic/question-bank/+page.svelte');
+	const editor = await readProjectFile(
+		'src/lib/components/question-bank/QuestionContentEditor.svelte'
+	);
+	const visualMath = await readProjectFile(
+		'src/lib/components/question-bank/VisualMathEditor.svelte'
+	);
+
+	assert.match(packageJson, /"mathlive":/);
+	assert.match(page, /<QuestionContentEditor/);
+	assert.doesNotMatch(page, /สมการ LaTeX|placeholder="LaTeX/);
+	assert.match(editor, />\s*ข้อความ\s*</);
+	assert.match(editor, />\s*สมการ\s*</);
+	assert.match(editor, />\s*รูปภาพ\s*</);
+	assert.match(visualMath, /<math-field/);
+	assert.match(visualMath, /mathfield\.insert/);
+	assert.match(visualMath, /window\.mathVirtualKeyboard\.show/);
+	assert.match(visualMath, /เศษส่วน/);
+	assert.match(visualMath, /รากที่สอง/);
 });
 
 test('question bank keeps read-only actions separate and confirms deletion', async () => {
