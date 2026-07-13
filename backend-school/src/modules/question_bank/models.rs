@@ -9,6 +9,15 @@ pub struct RichContent {
     pub blocks: Vec<RichContentBlock>,
 }
 
+impl RichContent {
+    pub fn image_file_ids(&self) -> impl Iterator<Item = Uuid> + '_ {
+        self.blocks.iter().filter_map(|block| match block {
+            RichContentBlock::Image { file_id, .. } => Some(*file_id),
+            _ => None,
+        })
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum RichContentBlock {
@@ -32,19 +41,19 @@ pub enum RichContentBlock {
 #[serde(rename_all = "camelCase")]
 pub struct QuestionBankListQuery {
     pub subject_id: Option<Uuid>,
-    pub grade_level_id: Option<Uuid>,
     pub question_type: Option<String>,
     pub difficulty: Option<String>,
     pub status: Option<String>,
     pub tag: Option<String>,
     pub search: Option<String>,
+    pub page: Option<i64>,
+    pub page_size: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UpsertQuestionRequest {
-    pub subject_id: Option<Uuid>,
-    pub grade_level_id: Option<Uuid>,
+    pub subject_id: Uuid,
     pub question_type: String,
     pub difficulty: String,
     pub points: f64,
@@ -81,8 +90,8 @@ pub struct QuestionChoice {
 #[serde(rename_all = "camelCase")]
 pub struct QuestionSummary {
     pub id: Uuid,
+    // Legacy rows created before migration 024 may remain unassigned until repaired.
     pub subject_id: Option<Uuid>,
-    pub grade_level_id: Option<Uuid>,
     pub owner_user_id: Uuid,
     pub question_type: String,
     pub difficulty: String,
@@ -97,8 +106,6 @@ pub struct QuestionSummary {
     pub subject_name_en: Option<String>,
     pub subject_group_id: Option<Uuid>,
     pub subject_group_name: Option<String>,
-    pub grade_level_type: Option<String>,
-    pub grade_level_year: Option<i32>,
     pub choice_count: i64,
     pub correct_choice_count: i64,
     pub can_manage: bool,
@@ -112,13 +119,59 @@ pub struct QuestionDetail {
     #[serde(flatten)]
     pub question: QuestionSummary,
     pub choices: Vec<QuestionChoice>,
+    pub files: Vec<QuestionFile>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QuestionFile {
+    pub id: Uuid,
+    pub url: String,
+    pub thumbnail_url: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QuestionBankSummary {
+    pub total: i64,
+    pub choice: i64,
+    pub written: i64,
+    pub ready: i64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QuestionBankPage {
+    pub items: Vec<QuestionSummary>,
+    pub total: i64,
+    pub page: i64,
+    pub page_size: i64,
+    pub total_pages: i64,
+    pub summary: QuestionBankSummary,
+}
+
+#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
+#[serde(rename_all = "camelCase")]
+pub struct QuestionBankSubjectOption {
+    pub id: Uuid,
+    pub code: String,
+    pub name_th: String,
+    pub name_en: Option<String>,
+    pub subject_group_id: Option<Uuid>,
+    pub subject_group_name: Option<String>,
+    pub can_create: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QuestionBankOptions {
+    pub subjects: Vec<QuestionBankSubjectOption>,
 }
 
 #[derive(Debug, sqlx::FromRow)]
 pub struct QuestionRow {
     pub id: Uuid,
     pub subject_id: Option<Uuid>,
-    pub grade_level_id: Option<Uuid>,
     pub owner_user_id: Uuid,
     pub question_type: String,
     pub difficulty: String,
@@ -133,8 +186,6 @@ pub struct QuestionRow {
     pub subject_name_en: Option<String>,
     pub subject_group_id: Option<Uuid>,
     pub subject_group_name: Option<String>,
-    pub grade_level_type: Option<String>,
-    pub grade_level_year: Option<i32>,
     pub choice_count: i64,
     pub correct_choice_count: i64,
     pub can_manage: bool,
@@ -157,7 +208,6 @@ impl From<QuestionRow> for QuestionSummary {
         Self {
             id: row.id,
             subject_id: row.subject_id,
-            grade_level_id: row.grade_level_id,
             owner_user_id: row.owner_user_id,
             question_type: row.question_type,
             difficulty: row.difficulty,
@@ -172,8 +222,6 @@ impl From<QuestionRow> for QuestionSummary {
             subject_name_en: row.subject_name_en,
             subject_group_id: row.subject_group_id,
             subject_group_name: row.subject_group_name,
-            grade_level_type: row.grade_level_type,
-            grade_level_year: row.grade_level_year,
             choice_count: row.choice_count,
             correct_choice_count: row.correct_choice_count,
             can_manage: row.can_manage,
@@ -201,4 +249,12 @@ pub struct QuestionScopeRow {
     pub owner_user_id: Uuid,
     pub subject_id: Option<Uuid>,
     pub subject_group_id: Option<Uuid>,
+}
+
+#[derive(Debug, sqlx::FromRow)]
+pub struct QuestionBankSummaryRow {
+    pub total: i64,
+    pub choice: i64,
+    pub written: i64,
+    pub ready: i64,
 }

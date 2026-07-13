@@ -25,7 +25,6 @@ export interface QuestionChoice {
 export interface QuestionSummary {
 	id: string;
 	subjectId?: string | null;
-	gradeLevelId?: string | null;
 	ownerUserId: string;
 	questionType: QuestionType;
 	difficulty: QuestionDifficulty;
@@ -40,8 +39,6 @@ export interface QuestionSummary {
 	subjectNameEn?: string | null;
 	subjectGroupId?: string | null;
 	subjectGroupName?: string | null;
-	gradeLevelType?: string | null;
-	gradeLevelYear?: number | null;
 	choiceCount: number;
 	correctChoiceCount: number;
 	canManage: boolean;
@@ -49,8 +46,15 @@ export interface QuestionSummary {
 	updatedAt: string;
 }
 
+export interface QuestionFile {
+	id: string;
+	url: string;
+	thumbnailUrl?: string | null;
+}
+
 export interface QuestionDetail extends QuestionSummary {
 	choices: QuestionChoice[];
+	files: QuestionFile[];
 }
 
 export interface UpsertQuestionChoiceRequest {
@@ -62,8 +66,7 @@ export interface UpsertQuestionChoiceRequest {
 }
 
 export interface UpsertQuestionRequest {
-	subjectId?: string | null;
-	gradeLevelId?: string | null;
+	subjectId: string;
 	questionType: QuestionType;
 	difficulty: QuestionDifficulty;
 	points: number;
@@ -77,38 +80,78 @@ export interface UpsertQuestionRequest {
 
 export interface QuestionBankListQuery {
 	subjectId?: string;
-	gradeLevelId?: string;
 	questionType?: QuestionType | 'all';
 	difficulty?: QuestionDifficulty | 'all';
 	status?: QuestionStatus | 'all';
 	tag?: string;
 	search?: string;
+	page?: number;
+	pageSize?: number;
+}
+
+export interface QuestionBankSummary {
+	total: number;
+	choice: number;
+	written: number;
+	ready: number;
+}
+
+export interface QuestionBankPage {
+	items: QuestionSummary[];
+	total: number;
+	page: number;
+	pageSize: number;
+	totalPages: number;
+	summary: QuestionBankSummary;
+}
+
+export interface QuestionBankSubjectOption {
+	id: string;
+	code: string;
+	nameTh: string;
+	nameEn?: string | null;
+	subjectGroupId?: string | null;
+	subjectGroupName?: string | null;
+	canCreate: boolean;
+}
+
+export interface QuestionBankOptions {
+	subjects: QuestionBankSubjectOption[];
 }
 
 function questionBankQueryString(query: QuestionBankListQuery = {}) {
 	const params = new URLSearchParams();
 	if (query.subjectId) params.set('subjectId', query.subjectId);
-	if (query.gradeLevelId) params.set('gradeLevelId', query.gradeLevelId);
-	if (query.questionType && query.questionType !== 'all') params.set('questionType', query.questionType);
+	if (query.questionType && query.questionType !== 'all')
+		params.set('questionType', query.questionType);
 	if (query.difficulty && query.difficulty !== 'all') params.set('difficulty', query.difficulty);
 	if (query.status && query.status !== 'all') params.set('status', query.status);
 	if (query.tag?.trim()) params.set('tag', query.tag.trim());
 	if (query.search?.trim()) params.set('search', query.search.trim());
+	if (query.page) params.set('page', String(query.page));
+	if (query.pageSize) params.set('pageSize', String(query.pageSize));
 	const value = params.toString();
 	return value ? `?${value}` : '';
 }
 
 export async function listQuestionBankQuestions(
 	query: QuestionBankListQuery = {}
-): Promise<QuestionSummary[]> {
-	const response = await apiClient.get<QuestionSummary[]>(
+): Promise<QuestionBankPage> {
+	const response = await apiClient.get<QuestionBankPage>(
 		`/api/academic/question-bank/questions${questionBankQueryString(query)}`
 	);
 	return requireApiData(response, 'โหลดคลังข้อสอบไม่สำเร็จ');
 }
 
+export async function getQuestionBankOptions(): Promise<QuestionBankOptions> {
+	const response = await apiClient.get<QuestionBankOptions>('/api/academic/question-bank/options');
+	return requireApiData(response, 'โหลดตัวเลือกรายวิชาไม่สำเร็จ');
+}
+
 export async function getQuestionBankQuestion(id: string): Promise<QuestionDetail> {
-	const response = await apiClient.get<QuestionDetail>(`/api/academic/question-bank/questions/${id}`);
+	const response = await apiClient.get<QuestionDetail>(
+		`/api/academic/question-bank/questions/${id}`
+	);
 	return requireApiData(response, 'โหลดข้อสอบไม่สำเร็จ');
 }
 

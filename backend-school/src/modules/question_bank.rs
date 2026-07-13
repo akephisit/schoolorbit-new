@@ -8,6 +8,7 @@ use axum::Router;
 
 pub fn question_bank_routes() -> Router<AppState> {
     Router::new()
+        .route("/options", get(handlers::list_options))
         .route(
             "/questions",
             get(handlers::list_questions).post(handlers::create_question),

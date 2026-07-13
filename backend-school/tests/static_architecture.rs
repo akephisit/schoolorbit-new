@@ -2736,3 +2736,52 @@ fn calendar_handlers_stay_thin_and_services_own_sql() {
     assert!(parent_services.contains("u.user_type = 'student'"));
     assert!(parent_services.contains("u.status = 'active'"));
 }
+
+#[test]
+fn question_bank_authorization_lives_in_policy_and_supports_team_teaching() {
+    let policies_root = strip_comments(&read_source(manifest_dir().join("src/policies.rs")));
+    let policy = strip_comments(&read_source(
+        manifest_dir().join("src/policies/question_bank_access_policy.rs"),
+    ));
+    let handlers = strip_comments(&read_source(
+        manifest_dir().join("src/modules/question_bank/handlers.rs"),
+    ));
+    let services = strip_comments(&read_source(
+        manifest_dir().join("src/modules/question_bank/services.rs"),
+    ));
+
+    assert!(policies_root.contains("pub mod question_bank_access_policy;"));
+    assert!(handlers.contains("question_bank_access_policy::resolve_access"));
+    assert!(services.contains("question_bank_access_policy::require_question_read_access"));
+    assert!(services.contains("question_bank_access_policy::require_question_manage_access"));
+    assert!(services.contains("question_bank_access_policy::require_subject_create_access"));
+    assert!(policy.contains("JOIN classroom_course_instructors"));
+    assert!(!handlers.contains("actor.has_permission("));
+    assert!(!handlers.contains("actor.require_permission("));
+    assert!(!services.contains("actor.has_permission("));
+    assert!(!services.contains("actor.require_permission("));
+}
+
+#[test]
+fn question_bank_subject_contract_and_temporary_file_lifecycle_are_explicit() {
+    let migration = read_source(
+        manifest_dir()
+            .join("migrations")
+            .join("024_question_bank_subject_contract_and_search.sql"),
+    );
+    let file_service = strip_comments(&read_source(
+        manifest_dir().join("src/modules/files/services.rs"),
+    ));
+    let cleaner = strip_comments(&read_source(manifest_dir().join("src/services/cleaner.rs")));
+    let routes = strip_comments(&read_source(
+        manifest_dir().join("src/modules/question_bank.rs"),
+    ));
+
+    assert!(migration.contains("CHECK (subject_id IS NOT NULL) NOT VALID"));
+    assert!(migration.contains("academic_question_bank_questions_subject_id_fkey"));
+    assert!(migration.contains("ON DELETE RESTRICT"));
+    assert!(routes.contains(".route(\"/options\", get(handlers::list_options))"));
+    assert!(file_service.contains("NOW() + INTERVAL '24 hours'"));
+    assert!(cleaner.contains("clean_expired_temporary_files"));
+    assert!(cleaner.contains("is_temporary = true"));
+}

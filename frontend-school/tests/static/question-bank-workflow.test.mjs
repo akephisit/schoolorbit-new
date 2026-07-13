@@ -1,0 +1,66 @@
+import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import test from 'node:test';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const projectRoot = path.resolve(__dirname, '../..');
+
+async function readProjectFile(relativePath) {
+	return readFile(path.join(projectRoot, relativePath), 'utf8');
+}
+
+test('question bank uses its own subject options and exact subject contract', async () => {
+	const api = await readProjectFile('src/lib/api/questionBank.ts');
+	const page = await readProjectFile('src/routes/(app)/staff/academic/question-bank/+page.svelte');
+
+	assert.match(api, /export async function getQuestionBankOptions/);
+	assert.match(api, /\/api\/academic\/question-bank\/options/);
+	assert.match(api, /subjectId:\s*string;/);
+	assert.doesNotMatch(api, /gradeLevelId/);
+	assert.match(page, /getQuestionBankOptions\(\)/);
+	assert.doesNotMatch(page, /getAcademicStructure|listSubjects|gradeLevelId|ปีการศึกษา/);
+	assert.match(page, /ข้อสอบจะผูกกับรายวิชาที่เลือกโดยตรง/);
+});
+
+test('question bank defers image uploads until save and cleans failed temporary files', async () => {
+	const page = await readProjectFile('src/routes/(app)/staff/academic/question-bank/+page.svelte');
+	const selection = page.slice(
+		page.indexOf('function selectDraftImage'),
+		page.indexOf('function removeDraftImage')
+	);
+	const save = page.slice(
+		page.indexOf('async function saveQuestion'),
+		page.indexOf('function requestDelete')
+	);
+
+	assert.match(selection, /URL\.createObjectURL\(file\)/);
+	assert.doesNotMatch(selection, /uploadFile\(/);
+	assert.match(save, /uploadFile\(content\.imageFile, 'course_material', true\)/);
+	assert.match(save, /if \(!saveRequestStarted\)/);
+	assert.match(save, /Promise\.allSettled\(uploadedIds\.map\(\(id\) => deleteFile\(id\)\)\)/);
+	assert.match(save, /เก็บกวาดอัตโนมัติภายใน 24 ชั่วโมง/);
+	assert.match(page, /จะอัปโหลดเมื่อกดบันทึกเท่านั้น/);
+});
+
+test('question bank keeps read-only actions separate and confirms deletion', async () => {
+	const page = await readProjectFile('src/routes/(app)/staff/academic/question-bank/+page.svelte');
+
+	assert.match(page, /openQuestion\(question, 'view'\)/);
+	assert.match(page, /\{#if question\.canManage\}/);
+	assert.match(page, /<AlertDialog\.Root bind:open=\{deleteDialogOpen\}>/);
+	assert.match(page, /ยืนยันการลบข้อสอบ/);
+	assert.match(page, /pageSize/);
+	assert.match(page, /loadQuestions\(currentPage \+ 1\)/);
+});
+
+test('question bank renders formulas through KaTeX with untrusted commands disabled', async () => {
+	const math = await readProjectFile('src/lib/components/question-bank/MathContent.svelte');
+	const content = await readProjectFile('src/lib/components/question-bank/QuestionContent.svelte');
+
+	assert.match(math, /katex\.render/);
+	assert.match(math, /trust:\s*false/);
+	assert.match(math, /throwOnError:\s*false/);
+	assert.match(content, /<MathContent/);
+});

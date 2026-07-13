@@ -7,45 +7,20 @@ use uuid::Uuid;
 use crate::error::AppError;
 use crate::middleware::permission::ActorContext;
 use crate::modules::question_bank::models::{
-    QuestionBankListQuery, QuestionChoice, QuestionChoiceRow, QuestionDetail, QuestionRow,
-    QuestionScopeRow, QuestionSummary, RichContent, RichContentBlock, UpsertQuestionChoiceRequest,
-    UpsertQuestionRequest,
+    QuestionBankListQuery, QuestionBankOptions, QuestionBankPage, QuestionBankSubjectOption,
+    QuestionBankSummary, QuestionBankSummaryRow, QuestionChoice, QuestionChoiceRow, QuestionDetail,
+    QuestionFile, QuestionRow, QuestionScopeRow, QuestionSummary, RichContent, RichContentBlock,
+    UpsertQuestionChoiceRequest, UpsertQuestionRequest,
 };
-use crate::permissions::registry::codes;
-use crate::policies::resource_access_policy::{self, UserResourceListAccess};
+use crate::policies::question_bank_access_policy::{self, QuestionBankAccess};
+use crate::utils::file_url::FileUrlBuilder;
 
 const VALID_QUESTION_TYPES: &[&str] =
     &["single_choice", "multiple_choice", "short_answer", "essay"];
 const VALID_DIFFICULTIES: &[&str] = &["easy", "medium", "hard"];
 const VALID_STATUSES: &[&str] = &["draft", "ready", "archived"];
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct QuestionBankListAccess {
-    pub read_school: bool,
-    pub read_assigned_user_id: Option<Uuid>,
-    pub read_subject_group_ids: Vec<Uuid>,
-    pub manage_school: bool,
-    pub manage_assigned_user_id: Option<Uuid>,
-    pub manage_subject_group_ids: Vec<Uuid>,
-}
-
-impl QuestionBankListAccess {
-    fn scoped(
-        read_assigned_user_id: Option<Uuid>,
-        read_subject_group_ids: Vec<Uuid>,
-        manage_assigned_user_id: Option<Uuid>,
-        manage_subject_group_ids: Vec<Uuid>,
-    ) -> Self {
-        Self {
-            read_school: false,
-            read_assigned_user_id,
-            read_subject_group_ids,
-            manage_school: false,
-            manage_assigned_user_id,
-            manage_subject_group_ids,
-        }
-    }
-}
+const DEFAULT_PAGE_SIZE: i64 = 20;
+const MAX_PAGE_SIZE: i64 = 100;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum QuestionKind {
@@ -71,62 +46,35 @@ impl QuestionKind {
     }
 }
 
-pub async fn resolve_question_bank_list_access(
-    pool: &PgPool,
-    actor: &ActorContext,
-) -> Result<QuestionBankListAccess, AppError> {
-    let can_manage_assigned = can_manage_assigned(actor);
-    let manage_assigned_user_id = can_manage_assigned.then_some(actor.user_id);
-    let manage_subject_group_ids = if can_manage_subject_group(actor) {
-        actor_subject_group_ids(pool, actor.user_id).await?
-    } else {
-        Vec::new()
-    };
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct PageParams {
+    page: i64,
+    page_size: i64,
+    offset: i64,
+}
 
-    if can_read_school(actor) {
-        return Ok(QuestionBankListAccess {
-            read_school: true,
-            read_assigned_user_id: None,
-            read_subject_group_ids: Vec::new(),
-            manage_school: can_manage_school(actor),
-            manage_assigned_user_id,
-            manage_subject_group_ids,
-        });
-    }
-
-    actor.require_any_permission(&[
-        codes::ACADEMIC_QUESTION_BANK_READ_ASSIGNED,
-        codes::ACADEMIC_QUESTION_BANK_READ_ORGANIZATION_UNIT,
-        codes::ACADEMIC_QUESTION_BANK_MANAGE_ASSIGNED,
-        codes::ACADEMIC_QUESTION_BANK_MANAGE_ORGANIZATION_UNIT,
-    ])?;
-
-    let read_assigned_user_id = can_read_assigned(actor).then_some(actor.user_id);
-    let read_subject_group_ids = if can_read_subject_group(actor) {
-        actor_subject_group_ids(pool, actor.user_id).await?
-    } else {
-        Vec::new()
-    };
-
-    Ok(QuestionBankListAccess::scoped(
-        read_assigned_user_id,
-        read_subject_group_ids,
-        manage_assigned_user_id,
-        manage_subject_group_ids,
-    ))
+#[derive(Debug, sqlx::FromRow)]
+struct PayloadFileRow {
+    id: Uuid,
+    user_id: Option<Uuid>,
+    mime_type: String,
+    file_type: String,
+    is_temporary: bool,
 }
 
 pub async fn list_questions(
     pool: &PgPool,
     query: &QuestionBankListQuery,
-    access: &QuestionBankListAccess,
-) -> Result<Vec<QuestionSummary>, AppError> {
+    access: &QuestionBankAccess,
+) -> Result<QuestionBankPage, AppError> {
+    let page_params = normalize_page_params(query.page, query.page_size);
+    let summary = fetch_question_summary(pool, query, access).await?;
+
     let mut builder = QueryBuilder::<Postgres>::new(
         r#"
 SELECT
     q.id,
     q.subject_id,
-    q.grade_level_id,
     q.owner_user_id,
     q.question_type,
     q.difficulty,
@@ -141,8 +89,6 @@ SELECT
     s.name_en AS subject_name_en,
     s.group_id AS subject_group_id,
     sg.name_th AS subject_group_name,
-    gl.level_type AS grade_level_type,
-    gl.year AS grade_level_year,
     COALESCE(choice_stats.choice_count, 0)::BIGINT AS choice_count,
     COALESCE(choice_stats.correct_choice_count, 0)::BIGINT AS correct_choice_count,
 "#,
@@ -155,7 +101,6 @@ SELECT
 FROM academic_question_bank_questions q
 LEFT JOIN subjects s ON s.id = q.subject_id
 LEFT JOIN subject_groups sg ON sg.id = s.group_id
-LEFT JOIN grade_levels gl ON gl.id = q.grade_level_id
 LEFT JOIN LATERAL (
     SELECT
         COUNT(*) AS choice_count,
@@ -167,7 +112,10 @@ WHERE q.deleted_at IS NULL
 "#,
     );
     push_list_filters(&mut builder, query, access);
-    builder.push(" ORDER BY q.updated_at DESC, q.created_at DESC, q.id DESC");
+    builder.push(" ORDER BY q.updated_at DESC, q.created_at DESC, q.id DESC LIMIT ");
+    builder.push_bind(page_params.page_size);
+    builder.push(" OFFSET ");
+    builder.push_bind(page_params.offset);
 
     let rows = builder
         .build_query_as::<QuestionRow>()
@@ -178,7 +126,58 @@ WHERE q.deleted_at IS NULL
             AppError::InternalServerError("ไม่สามารถดึงรายการข้อสอบได้".to_string())
         })?;
 
-    Ok(rows.into_iter().map(QuestionSummary::from).collect())
+    let total_pages = ((summary.total + page_params.page_size - 1) / page_params.page_size).max(1);
+    Ok(QuestionBankPage {
+        items: rows.into_iter().map(QuestionSummary::from).collect(),
+        total: summary.total,
+        page: page_params.page,
+        page_size: page_params.page_size,
+        total_pages,
+        summary,
+    })
+}
+
+pub async fn list_options(
+    pool: &PgPool,
+    access: &QuestionBankAccess,
+) -> Result<QuestionBankOptions, AppError> {
+    let mut builder = QueryBuilder::<Postgres>::new(
+        r#"
+SELECT
+    s.id,
+    s.code,
+    s.name_th,
+    s.name_en,
+    s.group_id AS subject_group_id,
+    sg.name_th AS subject_group_name,
+"#,
+    );
+    push_subject_manage_expression(&mut builder, access);
+    builder.push(
+        r#" AS can_create
+FROM subjects s
+LEFT JOIN subject_groups sg ON sg.id = s.group_id
+WHERE (
+"#,
+    );
+    push_subject_read_expression(&mut builder, access);
+    builder.push(
+        r#"
+)
+ORDER BY s.code ASC, s.name_th ASC, s.start_academic_year_id DESC, s.id ASC
+"#,
+    );
+
+    let subjects = builder
+        .build_query_as::<QuestionBankSubjectOption>()
+        .fetch_all(pool)
+        .await
+        .map_err(|error| {
+            tracing::error!("Failed to list question bank subject options: {}", error);
+            AppError::InternalServerError("ไม่สามารถดึงรายวิชาสำหรับคลังข้อสอบได้".to_string())
+        })?;
+
+    Ok(QuestionBankOptions { subjects })
 }
 
 pub async fn get_question(
@@ -187,8 +186,8 @@ pub async fn get_question(
     question_id: Uuid,
 ) -> Result<QuestionDetail, AppError> {
     let scope = fetch_question_scope(pool, question_id).await?;
-    require_question_read_access(pool, actor, &scope).await?;
-    let access = question_access_for_actor(pool, actor).await?;
+    question_bank_access_policy::require_question_read_access(pool, actor, &scope).await?;
+    let access = question_bank_access_policy::resolve_access(pool, actor).await?;
     fetch_question_detail(pool, question_id, &access).await
 }
 
@@ -200,7 +199,12 @@ pub async fn create_question(
 ) -> Result<QuestionDetail, AppError> {
     normalize_payload(&mut payload);
     validate_question_payload(&payload)?;
-    require_create_access(pool, actor, payload.subject_id).await?;
+    question_bank_access_policy::require_subject_create_access(pool, actor, payload.subject_id)
+        .await?;
+
+    let image_file_ids = collect_payload_image_file_ids(&payload);
+    let temporary_image_file_ids =
+        validate_payload_files(pool, actor_id, &image_file_ids, &HashSet::new()).await?;
 
     let mut tx = pool.begin().await.map_err(|error| {
         tracing::error!("Failed to start question create transaction: {}", error);
@@ -211,7 +215,6 @@ pub async fn create_question(
         r#"
 INSERT INTO academic_question_bank_questions (
     subject_id,
-    grade_level_id,
     owner_user_id,
     question_type,
     difficulty,
@@ -224,12 +227,11 @@ INSERT INTO academic_question_bank_questions (
     created_by,
     updated_by
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $12)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $11)
 RETURNING id
 "#,
     )
     .bind(payload.subject_id)
-    .bind(payload.grade_level_id)
     .bind(actor_id)
     .bind(&payload.question_type)
     .bind(&payload.difficulty)
@@ -248,12 +250,13 @@ RETURNING id
     })?;
 
     insert_choices(&mut tx, question_id, &payload.choices).await?;
+    finalize_temporary_files(&mut tx, actor_id, &temporary_image_file_ids).await?;
     tx.commit().await.map_err(|error| {
         tracing::error!("Failed to commit question create transaction: {}", error);
         AppError::InternalServerError("บันทึกข้อสอบไม่สำเร็จ".to_string())
     })?;
 
-    let access = question_access_for_actor(pool, actor).await?;
+    let access = question_bank_access_policy::resolve_access(pool, actor).await?;
     fetch_question_detail(pool, question_id, &access).await
 }
 
@@ -267,8 +270,16 @@ pub async fn update_question(
     normalize_payload(&mut payload);
     validate_question_payload(&payload)?;
     let scope = fetch_question_scope(pool, question_id).await?;
-    require_question_manage_access(pool, actor, &scope).await?;
-    require_create_access(pool, actor, payload.subject_id).await?;
+    question_bank_access_policy::require_question_manage_access(pool, actor, &scope).await?;
+    if scope.subject_id != Some(payload.subject_id) {
+        question_bank_access_policy::require_subject_create_access(pool, actor, payload.subject_id)
+            .await?;
+    }
+
+    let existing_file_ids = fetch_question_file_ids(pool, question_id).await?;
+    let image_file_ids = collect_payload_image_file_ids(&payload);
+    let temporary_image_file_ids =
+        validate_payload_files(pool, actor_id, &image_file_ids, &existing_file_ids).await?;
 
     let mut tx = pool.begin().await.map_err(|error| {
         tracing::error!("Failed to start question update transaction: {}", error);
@@ -280,16 +291,16 @@ pub async fn update_question(
 UPDATE academic_question_bank_questions
 SET
     subject_id = $2,
-    grade_level_id = $3,
-    question_type = $4,
-    difficulty = $5,
-    points = $6,
-    stem_content = $7,
-    explanation_content = $8,
-    rubric_content = $9,
-    tags = $10,
-    status = $11,
-    updated_by = $12,
+    grade_level_id = NULL,
+    question_type = $3,
+    difficulty = $4,
+    points = $5,
+    stem_content = $6,
+    explanation_content = $7,
+    rubric_content = $8,
+    tags = $9,
+    status = $10,
+    updated_by = $11,
     updated_at = NOW()
 WHERE id = $1
   AND deleted_at IS NULL
@@ -297,7 +308,6 @@ WHERE id = $1
     )
     .bind(question_id)
     .bind(payload.subject_id)
-    .bind(payload.grade_level_id)
     .bind(&payload.question_type)
     .bind(&payload.difficulty)
     .bind(payload.points)
@@ -323,12 +333,13 @@ WHERE id = $1
             AppError::InternalServerError("แก้ไขตัวเลือกไม่สำเร็จ".to_string())
         })?;
     insert_choices(&mut tx, question_id, &payload.choices).await?;
+    finalize_temporary_files(&mut tx, actor_id, &temporary_image_file_ids).await?;
     tx.commit().await.map_err(|error| {
         tracing::error!("Failed to commit question update transaction: {}", error);
         AppError::InternalServerError("แก้ไขข้อสอบไม่สำเร็จ".to_string())
     })?;
 
-    let access = question_access_for_actor(pool, actor).await?;
+    let access = question_bank_access_policy::resolve_access(pool, actor).await?;
     fetch_question_detail(pool, question_id, &access).await
 }
 
@@ -338,7 +349,7 @@ pub async fn delete_question(
     question_id: Uuid,
 ) -> Result<(), AppError> {
     let scope = fetch_question_scope(pool, question_id).await?;
-    require_question_manage_access(pool, actor, &scope).await?;
+    question_bank_access_policy::require_question_manage_access(pool, actor, &scope).await?;
 
     sqlx::query(
         r#"
@@ -357,6 +368,18 @@ WHERE id = $1
     })?;
 
     Ok(())
+}
+
+fn normalize_page_params(page: Option<i64>, page_size: Option<i64>) -> PageParams {
+    let page = page.unwrap_or(1).max(1);
+    let page_size = page_size
+        .unwrap_or(DEFAULT_PAGE_SIZE)
+        .clamp(1, MAX_PAGE_SIZE);
+    PageParams {
+        page,
+        page_size,
+        offset: (page - 1) * page_size,
+    }
 }
 
 fn normalize_payload(payload: &mut UpsertQuestionRequest) {
@@ -456,6 +479,111 @@ fn rich_content_has_body(content: &RichContent) -> bool {
     })
 }
 
+fn collect_payload_image_file_ids(payload: &UpsertQuestionRequest) -> HashSet<Uuid> {
+    let mut ids: HashSet<Uuid> = payload.stem_content.image_file_ids().collect();
+    if let Some(content) = &payload.explanation_content {
+        ids.extend(content.image_file_ids());
+    }
+    if let Some(content) = &payload.rubric_content {
+        ids.extend(content.image_file_ids());
+    }
+    for choice in &payload.choices {
+        ids.extend(choice.content.image_file_ids());
+    }
+    ids
+}
+
+async fn validate_payload_files(
+    pool: &PgPool,
+    actor_id: Uuid,
+    file_ids: &HashSet<Uuid>,
+    existing_file_ids: &HashSet<Uuid>,
+) -> Result<HashSet<Uuid>, AppError> {
+    if file_ids.is_empty() {
+        return Ok(HashSet::new());
+    }
+    let requested: Vec<Uuid> = file_ids.iter().copied().collect();
+    let rows = sqlx::query_as::<_, PayloadFileRow>(
+        r#"
+SELECT id, user_id, mime_type, file_type, is_temporary
+FROM files
+WHERE id = ANY($1)
+  AND deleted_at IS NULL
+  AND (is_temporary = false OR expires_at IS NULL OR expires_at > NOW())
+"#,
+    )
+    .bind(&requested)
+    .fetch_all(pool)
+    .await
+    .map_err(|error| {
+        tracing::error!("Failed to validate question bank files: {}", error);
+        AppError::InternalServerError("ไม่สามารถตรวจสอบรูปข้อสอบได้".to_string())
+    })?;
+
+    if rows.len() != requested.len() {
+        return Err(AppError::ValidationError(
+            "พบรูปข้อสอบที่ไม่มีอยู่หรือถูกลบแล้ว".to_string(),
+        ));
+    }
+    let mut temporary_file_ids = HashSet::new();
+    for row in rows {
+        if !existing_file_ids.contains(&row.id) && row.user_id != Some(actor_id) {
+            return Err(AppError::Forbidden("ไม่มีสิทธิ์ใช้ไฟล์รูปนี้ในข้อสอบ".to_string()));
+        }
+        if !row.mime_type.starts_with("image/") || row.file_type != "course_material" {
+            return Err(AppError::ValidationError(
+                "ไฟล์ประกอบข้อสอบต้องเป็นรูปภาพ".to_string(),
+            ));
+        }
+        if row.is_temporary {
+            if row.user_id != Some(actor_id) {
+                return Err(AppError::Forbidden(
+                    "ไม่สามารถยืนยันไฟล์ชั่วคราวของผู้ใช้อื่นได้".to_string(),
+                ));
+            }
+            temporary_file_ids.insert(row.id);
+        }
+    }
+    Ok(temporary_file_ids)
+}
+
+async fn finalize_temporary_files(
+    tx: &mut sqlx::Transaction<'_, Postgres>,
+    actor_id: Uuid,
+    file_ids: &HashSet<Uuid>,
+) -> Result<(), AppError> {
+    if file_ids.is_empty() {
+        return Ok(());
+    }
+    let file_ids: Vec<Uuid> = file_ids.iter().copied().collect();
+    let result = sqlx::query(
+        r#"
+UPDATE files
+SET is_temporary = false,
+    expires_at = NULL,
+    updated_at = NOW()
+WHERE id = ANY($1)
+  AND user_id = $2
+  AND is_temporary = true
+  AND deleted_at IS NULL
+"#,
+    )
+    .bind(&file_ids)
+    .bind(actor_id)
+    .execute(&mut **tx)
+    .await
+    .map_err(|error| {
+        tracing::error!("Failed to finalize question bank files: {}", error);
+        AppError::InternalServerError("ไม่สามารถยืนยันรูปข้อสอบได้".to_string())
+    })?;
+    if result.rows_affected() != file_ids.len() as u64 {
+        return Err(AppError::ValidationError(
+            "รูปข้อสอบบางไฟล์หมดอายุแล้ว กรุณาเลือกไฟล์ใหม่".to_string(),
+        ));
+    }
+    Ok(())
+}
+
 async fn insert_choices(
     tx: &mut sqlx::Transaction<'_, Postgres>,
     question_id: Uuid,
@@ -490,17 +618,51 @@ INSERT INTO academic_question_bank_choices (
     Ok(())
 }
 
+async fn fetch_question_summary(
+    pool: &PgPool,
+    query: &QuestionBankListQuery,
+    access: &QuestionBankAccess,
+) -> Result<QuestionBankSummary, AppError> {
+    let mut builder = QueryBuilder::<Postgres>::new(
+        r#"
+SELECT
+    COUNT(*)::BIGINT AS total,
+    COUNT(*) FILTER (WHERE q.question_type IN ('single_choice', 'multiple_choice'))::BIGINT AS choice,
+    COUNT(*) FILTER (WHERE q.question_type IN ('short_answer', 'essay'))::BIGINT AS written,
+    COUNT(*) FILTER (WHERE q.status = 'ready')::BIGINT AS ready
+FROM academic_question_bank_questions q
+LEFT JOIN subjects s ON s.id = q.subject_id
+WHERE q.deleted_at IS NULL
+"#,
+    );
+    push_list_filters(&mut builder, query, access);
+
+    let row = builder
+        .build_query_as::<QuestionBankSummaryRow>()
+        .fetch_one(pool)
+        .await
+        .map_err(|error| {
+            tracing::error!("Failed to summarize question bank questions: {}", error);
+            AppError::InternalServerError("ไม่สามารถสรุปคลังข้อสอบได้".to_string())
+        })?;
+    Ok(QuestionBankSummary {
+        total: row.total,
+        choice: row.choice,
+        written: row.written,
+        ready: row.ready,
+    })
+}
+
 async fn fetch_question_detail(
     pool: &PgPool,
     question_id: Uuid,
-    access: &QuestionBankListAccess,
+    access: &QuestionBankAccess,
 ) -> Result<QuestionDetail, AppError> {
     let mut builder = QueryBuilder::<Postgres>::new(
         r#"
 SELECT
     q.id,
     q.subject_id,
-    q.grade_level_id,
     q.owner_user_id,
     q.question_type,
     q.difficulty,
@@ -515,8 +677,6 @@ SELECT
     s.name_en AS subject_name_en,
     s.group_id AS subject_group_id,
     sg.name_th AS subject_group_name,
-    gl.level_type AS grade_level_type,
-    gl.year AS grade_level_year,
     COALESCE(choice_stats.choice_count, 0)::BIGINT AS choice_count,
     COALESCE(choice_stats.correct_choice_count, 0)::BIGINT AS correct_choice_count,
 "#,
@@ -529,7 +689,6 @@ SELECT
 FROM academic_question_bank_questions q
 LEFT JOIN subjects s ON s.id = q.subject_id
 LEFT JOIN subject_groups sg ON sg.id = s.group_id
-LEFT JOIN grade_levels gl ON gl.id = q.grade_level_id
 LEFT JOIN LATERAL (
     SELECT
         COUNT(*) AS choice_count,
@@ -568,9 +727,15 @@ ORDER BY sort_order ASC, label ASC, id ASC
         AppError::InternalServerError("ไม่สามารถดึงตัวเลือกได้".to_string())
     })?;
 
+    let question = QuestionSummary::from(question);
+    let choices: Vec<QuestionChoice> = choices.into_iter().map(QuestionChoice::from).collect();
+    let file_ids = collect_question_file_ids(&question, &choices);
+    let files = fetch_question_files(pool, &file_ids).await?;
+
     Ok(QuestionDetail {
-        question: QuestionSummary::from(question),
-        choices: choices.into_iter().map(QuestionChoice::from).collect(),
+        question,
+        choices,
+        files,
     })
 }
 
@@ -600,89 +765,117 @@ WHERE q.id = $1
     .ok_or_else(|| AppError::NotFound("ไม่พบข้อสอบ".to_string()))
 }
 
-async fn require_create_access(
+async fn fetch_question_file_ids(
     pool: &PgPool,
-    actor: &ActorContext,
-    subject_id: Option<Uuid>,
-) -> Result<(), AppError> {
-    if can_manage_school(actor) || can_manage_assigned(actor) {
-        return Ok(());
-    }
+    question_id: Uuid,
+) -> Result<HashSet<Uuid>, AppError> {
+    let question = sqlx::query_as::<
+        _,
+        (
+            Json<RichContent>,
+            Option<Json<RichContent>>,
+            Option<Json<RichContent>>,
+        ),
+    >(
+        r#"
+SELECT stem_content, explanation_content, rubric_content
+FROM academic_question_bank_questions
+WHERE id = $1 AND deleted_at IS NULL
+"#,
+    )
+    .bind(question_id)
+    .fetch_one(pool)
+    .await
+    .map_err(|error| {
+        tracing::error!("Failed to fetch existing question files: {}", error);
+        AppError::InternalServerError("ไม่สามารถตรวจสอบรูปเดิมของข้อสอบได้".to_string())
+    })?;
+    let choices = sqlx::query_scalar::<_, Json<RichContent>>(
+        "SELECT content FROM academic_question_bank_choices WHERE question_id = $1",
+    )
+    .bind(question_id)
+    .fetch_all(pool)
+    .await
+    .map_err(|error| {
+        tracing::error!("Failed to fetch existing choice files: {}", error);
+        AppError::InternalServerError("ไม่สามารถตรวจสอบรูปเดิมของตัวเลือกได้".to_string())
+    })?;
 
-    actor.require_permission(codes::ACADEMIC_QUESTION_BANK_MANAGE_ORGANIZATION_UNIT)?;
-    let Some(subject_id) = subject_id else {
-        return Err(AppError::Forbidden(
-            "ต้องเลือกรายวิชาสำหรับสิทธิ์ระดับกลุ่มสาระ".to_string(),
-        ));
-    };
-    if subject_is_accessible_by_actor_unit(pool, subject_id, actor.user_id).await? {
-        return Ok(());
+    let mut ids: HashSet<Uuid> = question.0.image_file_ids().collect();
+    if let Some(content) = question.1 {
+        ids.extend(content.0.image_file_ids());
     }
-    Err(AppError::Forbidden(
-        "ไม่มีสิทธิ์จัดการข้อสอบของรายวิชานี้".to_string(),
-    ))
+    if let Some(content) = question.2 {
+        ids.extend(content.0.image_file_ids());
+    }
+    for content in choices {
+        ids.extend(content.0.image_file_ids());
+    }
+    Ok(ids)
 }
 
-async fn require_question_read_access(
-    pool: &PgPool,
-    actor: &ActorContext,
-    scope: &QuestionScopeRow,
-) -> Result<(), AppError> {
-    if can_read_school(actor) {
-        return Ok(());
+fn collect_question_file_ids(
+    question: &QuestionSummary,
+    choices: &[QuestionChoice],
+) -> HashSet<Uuid> {
+    let mut ids: HashSet<Uuid> = question.stem_content.image_file_ids().collect();
+    if let Some(content) = &question.explanation_content {
+        ids.extend(content.image_file_ids());
     }
-    if can_read_assigned(actor)
-        && (scope.owner_user_id == actor.user_id
-            || subject_is_assigned_to_actor(pool, scope.subject_id, actor.user_id).await?)
-    {
-        return Ok(());
+    if let Some(content) = &question.rubric_content {
+        ids.extend(content.image_file_ids());
     }
-    if can_read_subject_group(actor)
-        && subject_group_is_accessible(pool, scope.subject_group_id, actor.user_id).await?
-    {
-        return Ok(());
+    for choice in choices {
+        ids.extend(choice.content.image_file_ids());
     }
-    Err(AppError::Forbidden("ไม่มีสิทธิ์ดูข้อสอบนี้".to_string()))
+    ids
 }
 
-async fn require_question_manage_access(
+async fn fetch_question_files(
     pool: &PgPool,
-    actor: &ActorContext,
-    scope: &QuestionScopeRow,
-) -> Result<(), AppError> {
-    if can_manage_school(actor) {
-        return Ok(());
+    file_ids: &HashSet<Uuid>,
+) -> Result<Vec<QuestionFile>, AppError> {
+    if file_ids.is_empty() {
+        return Ok(Vec::new());
     }
-    if can_manage_assigned(actor) && scope.owner_user_id == actor.user_id {
-        return Ok(());
-    }
-    if can_manage_subject_group(actor)
-        && subject_group_is_accessible(pool, scope.subject_group_id, actor.user_id).await?
-    {
-        return Ok(());
-    }
-    Err(AppError::Forbidden("ไม่มีสิทธิ์จัดการข้อสอบนี้".to_string()))
-}
-
-async fn question_access_for_actor(
-    pool: &PgPool,
-    actor: &ActorContext,
-) -> Result<QuestionBankListAccess, AppError> {
-    resolve_question_bank_list_access(pool, actor).await
+    let file_ids: Vec<Uuid> = file_ids.iter().copied().collect();
+    let rows = sqlx::query_as::<_, (Uuid, String, Option<String>)>(
+        r#"
+SELECT id, storage_path, thumbnail_path
+FROM files
+WHERE id = ANY($1)
+  AND deleted_at IS NULL
+"#,
+    )
+    .bind(&file_ids)
+    .fetch_all(pool)
+    .await
+    .map_err(|error| {
+        tracing::error!("Failed to fetch question file URLs: {}", error);
+        AppError::InternalServerError("ไม่สามารถดึงรูปประกอบข้อสอบได้".to_string())
+    })?;
+    let url_builder = FileUrlBuilder::new().map_err(|error| {
+        tracing::error!("Failed to build question file URLs: {}", error);
+        AppError::InternalServerError("ไม่สามารถสร้าง URL รูปข้อสอบได้".to_string())
+    })?;
+    Ok(rows
+        .into_iter()
+        .map(|(id, storage_path, thumbnail_path)| QuestionFile {
+            id,
+            url: url_builder.build_url(&storage_path),
+            thumbnail_url: thumbnail_path.map(|path| url_builder.build_url(&path)),
+        })
+        .collect())
 }
 
 fn push_list_filters(
     builder: &mut QueryBuilder<'_, Postgres>,
     query: &QuestionBankListQuery,
-    access: &QuestionBankListAccess,
+    access: &QuestionBankAccess,
 ) {
     if let Some(subject_id) = query.subject_id {
         builder.push(" AND q.subject_id = ");
         builder.push_bind(subject_id);
-    }
-    if let Some(grade_level_id) = query.grade_level_id {
-        builder.push(" AND q.grade_level_id = ");
-        builder.push_bind(grade_level_id);
     }
     if let Some(question_type) =
         valid_filter_value(query.question_type.as_deref(), VALID_QUESTION_TYPES)
@@ -733,13 +926,12 @@ fn push_list_filters(
     }
 }
 
-fn push_read_expression(builder: &mut QueryBuilder<'_, Postgres>, access: &QuestionBankListAccess) {
+fn push_read_expression(builder: &mut QueryBuilder<'_, Postgres>, access: &QuestionBankAccess) {
     let mut has_predicate = false;
     if let Some(actor_id) = access.read_assigned_user_id {
-        builder.push("(");
-        builder.push("q.owner_user_id = ");
+        builder.push("(q.owner_user_id = ");
         builder.push_bind(actor_id);
-        builder.push(" OR EXISTS (SELECT 1 FROM classroom_courses cc WHERE cc.subject_id = q.subject_id AND cc.primary_instructor_id = ");
+        builder.push(" OR EXISTS (SELECT 1 FROM classroom_courses cc JOIN classroom_course_instructors cci ON cci.classroom_course_id = cc.id WHERE cc.subject_id = q.subject_id AND cci.instructor_id = ");
         builder.push_bind(actor_id);
         builder.push("))");
         has_predicate = true;
@@ -758,10 +950,7 @@ fn push_read_expression(builder: &mut QueryBuilder<'_, Postgres>, access: &Quest
     }
 }
 
-fn push_manage_expression(
-    builder: &mut QueryBuilder<'_, Postgres>,
-    access: &QuestionBankListAccess,
-) {
+fn push_manage_expression(builder: &mut QueryBuilder<'_, Postgres>, access: &QuestionBankAccess) {
     if access.manage_school {
         builder.push("TRUE");
         return;
@@ -789,142 +978,74 @@ fn push_manage_expression(
     builder.push(")");
 }
 
+fn push_subject_read_expression(
+    builder: &mut QueryBuilder<'_, Postgres>,
+    access: &QuestionBankAccess,
+) {
+    if access.read_school {
+        builder.push("TRUE");
+        return;
+    }
+
+    let mut has_predicate = false;
+    if let Some(actor_id) = access.read_assigned_user_id {
+        builder.push("(EXISTS (SELECT 1 FROM academic_question_bank_questions q WHERE q.subject_id = s.id AND q.owner_user_id = ");
+        builder.push_bind(actor_id);
+        builder.push(" AND q.deleted_at IS NULL) OR EXISTS (SELECT 1 FROM classroom_courses cc JOIN classroom_course_instructors cci ON cci.classroom_course_id = cc.id WHERE cc.subject_id = s.id AND cci.instructor_id = ");
+        builder.push_bind(actor_id);
+        builder.push("))");
+        has_predicate = true;
+    }
+    if !access.read_subject_group_ids.is_empty() {
+        if has_predicate {
+            builder.push(" OR ");
+        }
+        builder.push("s.group_id = ANY(");
+        builder.push_bind(access.read_subject_group_ids.clone());
+        builder.push(")");
+        has_predicate = true;
+    }
+    if !has_predicate {
+        builder.push("FALSE");
+    }
+}
+
+fn push_subject_manage_expression(
+    builder: &mut QueryBuilder<'_, Postgres>,
+    access: &QuestionBankAccess,
+) {
+    if access.manage_school {
+        builder.push("TRUE");
+        return;
+    }
+
+    let mut has_predicate = false;
+    builder.push("(");
+    if let Some(actor_id) = access.manage_assigned_user_id {
+        builder.push("EXISTS (SELECT 1 FROM classroom_courses cc JOIN classroom_course_instructors cci ON cci.classroom_course_id = cc.id WHERE cc.subject_id = s.id AND cci.instructor_id = ");
+        builder.push_bind(actor_id);
+        builder.push(")");
+        has_predicate = true;
+    }
+    if !access.manage_subject_group_ids.is_empty() {
+        if has_predicate {
+            builder.push(" OR ");
+        }
+        builder.push("s.group_id = ANY(");
+        builder.push_bind(access.manage_subject_group_ids.clone());
+        builder.push(")");
+        has_predicate = true;
+    }
+    if !has_predicate {
+        builder.push("FALSE");
+    }
+    builder.push(")");
+}
+
 fn valid_filter_value<'a>(value: Option<&'a str>, valid_values: &[&str]) -> Option<&'a str> {
     value
         .map(str::trim)
         .filter(|value| valid_values.contains(value))
-}
-
-fn can_read_assigned(actor: &ActorContext) -> bool {
-    actor.has_any_permission(&[
-        codes::ACADEMIC_QUESTION_BANK_READ_ASSIGNED,
-        codes::ACADEMIC_QUESTION_BANK_MANAGE_ASSIGNED,
-    ])
-}
-
-fn can_read_subject_group(actor: &ActorContext) -> bool {
-    actor.has_any_permission(&[
-        codes::ACADEMIC_QUESTION_BANK_READ_ORGANIZATION_UNIT,
-        codes::ACADEMIC_QUESTION_BANK_MANAGE_ORGANIZATION_UNIT,
-    ])
-}
-
-fn can_read_school(actor: &ActorContext) -> bool {
-    actor.has_any_permission(&[
-        codes::ACADEMIC_QUESTION_BANK_READ_SCHOOL,
-        codes::ACADEMIC_QUESTION_BANK_MANAGE_SCHOOL,
-    ])
-}
-
-fn can_manage_assigned(actor: &ActorContext) -> bool {
-    actor.has_permission(codes::ACADEMIC_QUESTION_BANK_MANAGE_ASSIGNED)
-}
-
-fn can_manage_subject_group(actor: &ActorContext) -> bool {
-    actor.has_permission(codes::ACADEMIC_QUESTION_BANK_MANAGE_ORGANIZATION_UNIT)
-}
-
-fn can_manage_school(actor: &ActorContext) -> bool {
-    actor.has_permission(codes::ACADEMIC_QUESTION_BANK_MANAGE_SCHOOL)
-}
-
-async fn actor_subject_group_ids(pool: &PgPool, actor_id: Uuid) -> Result<Vec<Uuid>, AppError> {
-    let Some(organization_unit_ids) = resource_access_policy::accessible_organization_unit_ids(
-        pool,
-        UserResourceListAccess::OrganizationUnit(actor_id),
-    )
-    .await?
-    else {
-        return Ok(Vec::new());
-    };
-
-    if organization_unit_ids.is_empty() {
-        return Ok(Vec::new());
-    }
-
-    sqlx::query_scalar(
-        r#"
-SELECT DISTINCT subject_group_id
-FROM organization_units
-WHERE id = ANY($1)
-  AND subject_group_id IS NOT NULL
-  AND is_active = true
-"#,
-    )
-    .bind(&organization_unit_ids)
-    .fetch_all(pool)
-    .await
-    .map_err(|error| {
-        tracing::error!(
-            "Failed to fetch question bank subject group access: {}",
-            error
-        );
-        AppError::InternalServerError("ไม่สามารถตรวจสอบกลุ่มสาระได้".to_string())
-    })
-}
-
-async fn subject_is_accessible_by_actor_unit(
-    pool: &PgPool,
-    subject_id: Uuid,
-    actor_id: Uuid,
-) -> Result<bool, AppError> {
-    let subject_group_id = subject_group_id_for_subject(pool, subject_id).await?;
-    subject_group_is_accessible(pool, subject_group_id, actor_id).await
-}
-
-async fn subject_group_is_accessible(
-    pool: &PgPool,
-    subject_group_id: Option<Uuid>,
-    actor_id: Uuid,
-) -> Result<bool, AppError> {
-    let Some(subject_group_id) = subject_group_id else {
-        return Ok(false);
-    };
-    let subject_group_ids = actor_subject_group_ids(pool, actor_id).await?;
-    Ok(subject_group_ids.contains(&subject_group_id))
-}
-
-async fn subject_group_id_for_subject(
-    pool: &PgPool,
-    subject_id: Uuid,
-) -> Result<Option<Uuid>, AppError> {
-    sqlx::query_scalar("SELECT group_id FROM subjects WHERE id = $1")
-        .bind(subject_id)
-        .fetch_optional(pool)
-        .await
-        .map_err(|error| {
-            tracing::error!("Failed to fetch subject group: {}", error);
-            AppError::InternalServerError("ไม่สามารถตรวจสอบรายวิชาได้".to_string())
-        })
-        .map(|value| value.flatten())
-}
-
-async fn subject_is_assigned_to_actor(
-    pool: &PgPool,
-    subject_id: Option<Uuid>,
-    actor_id: Uuid,
-) -> Result<bool, AppError> {
-    let Some(subject_id) = subject_id else {
-        return Ok(false);
-    };
-    sqlx::query_scalar(
-        r#"
-SELECT EXISTS(
-    SELECT 1
-    FROM classroom_courses cc
-    WHERE cc.subject_id = $1
-      AND cc.primary_instructor_id = $2
-)
-"#,
-    )
-    .bind(subject_id)
-    .bind(actor_id)
-    .fetch_one(pool)
-    .await
-    .map_err(|error| {
-        tracing::error!("Failed to check assigned question subject: {}", error);
-        AppError::InternalServerError("ไม่สามารถตรวจสอบรายวิชาที่รับผิดชอบได้".to_string())
-    })
 }
 
 #[cfg(test)]
@@ -960,8 +1081,7 @@ mod tests {
 
     fn base_payload(question_type: &str) -> UpsertQuestionRequest {
         UpsertQuestionRequest {
-            subject_id: None,
-            grade_level_id: None,
+            subject_id: Uuid::new_v4(),
             question_type: question_type.to_string(),
             difficulty: "medium".to_string(),
             points: 1.0,
@@ -971,6 +1091,17 @@ mod tests {
             tags: vec![],
             status: "draft".to_string(),
             choices: vec![],
+        }
+    }
+
+    fn assigned_access(actor_id: Uuid) -> QuestionBankAccess {
+        QuestionBankAccess {
+            read_school: false,
+            read_assigned_user_id: Some(actor_id),
+            read_subject_group_ids: Vec::new(),
+            manage_school: false,
+            manage_assigned_user_id: Some(actor_id),
+            manage_subject_group_ids: Vec::new(),
         }
     }
 
@@ -1012,5 +1143,48 @@ mod tests {
         let mut payload = base_payload("short_answer");
         payload.stem_content = text_content("   ");
         assert!(validate_question_payload(&payload).is_err());
+    }
+
+    #[test]
+    fn page_params_are_bounded_and_positive() {
+        assert_eq!(
+            normalize_page_params(Some(-4), Some(500)),
+            PageParams {
+                page: 1,
+                page_size: 100,
+                offset: 0,
+            }
+        );
+    }
+
+    #[test]
+    fn assigned_scope_uses_team_teaching_junction() {
+        let mut builder = QueryBuilder::<Postgres>::new("");
+        push_read_expression(&mut builder, &assigned_access(Uuid::new_v4()));
+        assert!(builder.sql().contains("classroom_course_instructors"));
+        assert!(!builder.sql().contains("primary_instructor_id"));
+    }
+
+    #[test]
+    fn payload_collects_images_from_stem_and_choices() {
+        let stem_file_id = Uuid::new_v4();
+        let choice_file_id = Uuid::new_v4();
+        let mut payload = base_payload("single_choice");
+        payload.stem_content.blocks.push(RichContentBlock::Image {
+            file_id: stem_file_id,
+            alt_text: None,
+            caption: None,
+        });
+        let mut choice = valid_choice("A", true);
+        choice.content.blocks.push(RichContentBlock::Image {
+            file_id: choice_file_id,
+            alt_text: None,
+            caption: None,
+        });
+        payload.choices = vec![choice, valid_choice("B", false)];
+
+        let ids = collect_payload_image_file_ids(&payload);
+        assert!(ids.contains(&stem_file_id));
+        assert!(ids.contains(&choice_file_id));
     }
 }

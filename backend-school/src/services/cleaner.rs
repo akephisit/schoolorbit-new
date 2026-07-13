@@ -16,6 +16,8 @@ impl FileCleaner {
     pub async fn clean_orphaned_files(&self) {
         info!("🧹 Starting orphaned file cleanup job (Garbage Collection)...");
 
+        self.clean_expired_temporary_files().await;
+
         // 1. Find Orphaned Profile Images
         // Finds files marked as 'profile_image' that are NOT referenced by any user in `profile_image_url`
         // We assume `users.profile_image_url` stores the storage path (or compatible unique suffix).
@@ -88,5 +90,111 @@ impl FileCleaner {
         }
 
         info!("🧹 Cleanup job finished.");
+    }
+
+    async fn clean_expired_temporary_files(&self) {
+        let rows = match sqlx::query(
+            r#"
+SELECT id, storage_path, thumbnail_path
+FROM files
+WHERE is_temporary = true
+  AND expires_at <= NOW()
+  AND deleted_at IS NULL
+ORDER BY expires_at ASC
+LIMIT 50
+"#,
+        )
+        .fetch_all(&self.db_pool)
+        .await
+        {
+            Ok(rows) => rows,
+            Err(error) => {
+                error!(
+                    "Database error while finding expired temporary files: {}",
+                    error
+                );
+                return;
+            }
+        };
+
+        if rows.is_empty() {
+            info!("✨ No expired temporary files found.");
+            return;
+        }
+
+        info!("Found {} expired temporary files. Deleting...", rows.len());
+        for row in rows {
+            let file_id: uuid::Uuid = row.get("id");
+            let storage_path: String = row.get("storage_path");
+            let thumbnail_path: Option<String> = row.get("thumbnail_path");
+
+            let claimed = match sqlx::query_scalar::<_, uuid::Uuid>(
+                r#"
+UPDATE files
+SET deleted_at = NOW(), updated_at = NOW()
+WHERE id = $1
+  AND is_temporary = true
+  AND expires_at <= NOW()
+  AND deleted_at IS NULL
+RETURNING id
+"#,
+            )
+            .bind(file_id)
+            .fetch_optional(&self.db_pool)
+            .await
+            {
+                Ok(claimed) => claimed.is_some(),
+                Err(error) => {
+                    error!(
+                        "Failed to claim expired temporary file {}: {}",
+                        file_id, error
+                    );
+                    false
+                }
+            };
+            if !claimed {
+                continue;
+            }
+
+            let original_deleted = self.r2_client.delete_file(&storage_path).await;
+            let thumbnail_deleted = match thumbnail_path.as_deref() {
+                Some(path) => self.r2_client.delete_file(path).await,
+                None => Ok(()),
+            };
+
+            if let Err(error) = original_deleted.and(thumbnail_deleted) {
+                error!(
+                    "Failed to delete expired temporary file {}: {}",
+                    file_id, error
+                );
+                if let Err(restore_error) = sqlx::query(
+                    "UPDATE files SET deleted_at = NULL, updated_at = NOW() WHERE id = $1 AND is_temporary = true",
+                )
+                .bind(file_id)
+                .execute(&self.db_pool)
+                .await
+                {
+                    error!(
+                        "Failed to restore temporary file {} after storage cleanup failure: {}",
+                        file_id, restore_error
+                    );
+                }
+                continue;
+            }
+
+            if let Err(error) =
+                sqlx::query("DELETE FROM files WHERE id = $1 AND is_temporary = true")
+                    .bind(file_id)
+                    .execute(&self.db_pool)
+                    .await
+            {
+                error!(
+                    "Failed to delete expired temporary file record {}: {}",
+                    file_id, error
+                );
+            } else {
+                info!("Successfully cleaned expired temporary file: {}", file_id);
+            }
+        }
     }
 }

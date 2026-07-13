@@ -10,6 +10,7 @@ use crate::api_response::ApiResponse;
 use crate::error::AppError;
 use crate::modules::question_bank::models::{QuestionBankListQuery, UpsertQuestionRequest};
 use crate::modules::question_bank::services as question_bank_service;
+use crate::policies::question_bank_access_policy;
 use crate::utils::request_context::actor_tenant_context;
 use crate::AppState;
 
@@ -19,14 +20,22 @@ pub async fn list_questions(
     Query(query): Query<QuestionBankListQuery>,
 ) -> Result<impl IntoResponse, AppError> {
     let context = actor_tenant_context(&state, &headers).await?;
-    let access = question_bank_service::resolve_question_bank_list_access(
-        &context.tenant.pool,
-        &context.actor,
-    )
-    .await?;
+    let access =
+        question_bank_access_policy::resolve_access(&context.tenant.pool, &context.actor).await?;
     let questions =
         question_bank_service::list_questions(&context.tenant.pool, &query, &access).await?;
     Ok(Json(ApiResponse::ok(questions)).into_response())
+}
+
+pub async fn list_options(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context(&state, &headers).await?;
+    let access =
+        question_bank_access_policy::resolve_access(&context.tenant.pool, &context.actor).await?;
+    let options = question_bank_service::list_options(&context.tenant.pool, &access).await?;
+    Ok(Json(ApiResponse::ok(options)).into_response())
 }
 
 pub async fn get_question(

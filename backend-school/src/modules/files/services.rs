@@ -153,9 +153,13 @@ pub async fn upload_file(
             user_id, school_id, filename, original_filename,
             file_size, mime_type, storage_path, file_type,
             width, height, has_thumbnail, thumbnail_path,
-            is_temporary, is_public, checksum, uploaded_by
+            is_temporary, is_public, checksum, uploaded_by, expires_at
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+        VALUES (
+            $1, $2, $3, $4, $5, $6, $7, $8,
+            $9, $10, $11, $12, $13, $14, $15, $16,
+            CASE WHEN $13 THEN NOW() + INTERVAL '24 hours' ELSE NULL END
+        )
         RETURNING *
         "#,
     )
