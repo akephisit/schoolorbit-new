@@ -4,7 +4,7 @@ pub mod services;
 pub mod websockets;
 
 use crate::AppState;
-use axum::routing::{delete, get, post, put};
+use axum::routing::{delete, get, patch, post, put};
 use axum::Router;
 
 pub fn academic_routes() -> Router<AppState> {
@@ -175,7 +175,7 @@ pub fn academic_routes() -> Router<AppState> {
         )
         .route(
             "/exam-schedules/days/{exam_day_id}",
-            delete(handlers::exam_schedule::delete_day),
+            patch(handlers::exam_schedule::update_day).delete(handlers::exam_schedule::delete_day),
         )
         .route(
             "/exam-schedules/days/{exam_day_id}/room-assignments",

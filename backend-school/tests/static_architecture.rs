@@ -933,6 +933,7 @@ fn academic_exam_schedule_routes_are_registered_and_authorized() {
         "post(handlers::exam_schedule::import_items)",
         "post(handlers::exam_schedule::clear_mismatched_items)",
         "post(handlers::exam_schedule::upsert_day)",
+        "patch(handlers::exam_schedule::update_day)",
         "delete(handlers::exam_schedule::delete_day)",
         "get(handlers::exam_schedule::list_day_room_assignments)",
         "post(handlers::exam_schedule::upsert_day_room_assignment)",

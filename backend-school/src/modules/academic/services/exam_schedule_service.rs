@@ -847,9 +847,72 @@ pub async fn upsert_exam_day(
     .fetch_one(&mut *tx)
     .await?;
 
+    replace_exam_day_configuration(&mut tx, day.id, &grade_level_ids, &blocked_windows).await?;
+
+    mark_round_draft_after_mutation(&mut tx, round_id, None).await?;
+    tx.commit().await?;
+
+    fetch_exam_day_detail(pool, day.id).await
+}
+
+pub async fn update_exam_day(
+    pool: &PgPool,
+    exam_day_id: Uuid,
+    request: UpsertExamDayRequest,
+) -> Result<ExamDayDetail, AppError> {
+    validate_exam_day_window(request.start_time, request.end_time)?;
+    let blocked_windows = normalize_blocked_windows(
+        request.start_time,
+        request.end_time,
+        request.blocked_windows,
+    )?;
+    let grade_level_ids = unique_uuids(request.grade_level_ids);
+
+    let mut tx = pool.begin().await?;
+    let day = sqlx::query_as::<_, ExamDay>(
+        r#"
+        UPDATE academic_exam_days
+        SET exam_date = $2,
+            label = $3,
+            start_time = $4,
+            end_time = $5,
+            updated_at = now()
+        WHERE id = $1
+        RETURNING id,
+                  exam_round_id,
+                  exam_date,
+                  label,
+                  start_time,
+                  end_time
+        "#,
+    )
+    .bind(exam_day_id)
+    .bind(request.exam_date)
+    .bind(request.label)
+    .bind(request.start_time)
+    .bind(request.end_time)
+    .fetch_optional(&mut *tx)
+    .await
+    .map_err(map_exam_day_write_error)?
+    .ok_or_else(|| AppError::NotFound("Exam day not found".to_string()))?;
+
+    replace_exam_day_configuration(&mut tx, day.id, &grade_level_ids, &blocked_windows).await?;
+
+    mark_round_draft_after_mutation(&mut tx, day.exam_round_id, None).await?;
+    tx.commit().await?;
+
+    fetch_exam_day_detail(pool, day.id).await
+}
+
+async fn replace_exam_day_configuration(
+    tx: &mut Transaction<'_, Postgres>,
+    exam_day_id: Uuid,
+    grade_level_ids: &[Uuid],
+    blocked_windows: &[BlockedWindowInput],
+) -> Result<(), AppError> {
     sqlx::query("DELETE FROM academic_exam_day_grade_levels WHERE exam_day_id = $1")
-        .bind(day.id)
-        .execute(&mut *tx)
+        .bind(exam_day_id)
+        .execute(&mut **tx)
         .await?;
 
     if !grade_level_ids.is_empty() {
@@ -861,15 +924,15 @@ pub async fn upsert_exam_day(
             ON CONFLICT DO NOTHING
             "#,
         )
-        .bind(day.id)
-        .bind(&grade_level_ids)
-        .execute(&mut *tx)
+        .bind(exam_day_id)
+        .bind(grade_level_ids)
+        .execute(&mut **tx)
         .await?;
     }
 
     sqlx::query("DELETE FROM academic_exam_day_blocked_windows WHERE exam_day_id = $1")
-        .bind(day.id)
-        .execute(&mut *tx)
+        .bind(exam_day_id)
+        .execute(&mut **tx)
         .await?;
 
     if !blocked_windows.is_empty() {
@@ -899,18 +962,15 @@ pub async fn upsert_exam_day(
                 AS blocked_window(label, start_time, end_time)
             "#,
         )
-        .bind(day.id)
+        .bind(exam_day_id)
         .bind(&labels)
         .bind(&start_times)
         .bind(&end_times)
-        .execute(&mut *tx)
+        .execute(&mut **tx)
         .await?;
     }
 
-    mark_round_draft_after_mutation(&mut tx, round_id, None).await?;
-    tx.commit().await?;
-
-    fetch_exam_day_detail(pool, day.id).await
+    Ok(())
 }
 
 pub async fn delete_exam_day(pool: &PgPool, exam_day_id: Uuid) -> Result<(), AppError> {
@@ -3395,6 +3455,15 @@ fn map_day_room_assignment_write_error(error: sqlx::Error) -> AppError {
     AppError::from(error)
 }
 
+fn map_exam_day_write_error(error: sqlx::Error) -> AppError {
+    if let sqlx::Error::Database(database_error) = &error {
+        if database_error.code().as_deref() == Some("23505") {
+            return AppError::BadRequest("วันที่นี้มีวันสอบอยู่แล้ว กรุณาย้ายวันนั้นไปวันที่ว่างก่อน".to_string());
+        }
+    }
+    AppError::from(error)
+}
+
 fn invigilator_staff_option_limit(limit: Option<i64>) -> i64 {
     limit
         .unwrap_or(INVIGILATOR_STAFF_OPTION_DEFAULT_LIMIT)
@@ -4266,6 +4335,33 @@ mod tests {
         assert!(source.contains("exam_schedule_service::assign_invigilator_to_assignment"));
         assert!(source.contains("exam_schedule_service::remove_invigilator_from_assignment"));
         assert!(source.contains("Path((assignment_id, staff_id)): Path<(Uuid, Uuid)>"));
+    }
+
+    #[test]
+    fn exam_day_update_preserves_day_identity_and_child_assignments() {
+        let source = include_str!("exam_schedule_service.rs");
+        let update_start = source.find("pub async fn update_exam_day").unwrap();
+        let update_tail = &source[update_start..];
+        let update_end = update_tail.find("pub async fn delete_exam_day").unwrap();
+        let update_body = &update_tail[..update_end];
+
+        assert!(update_body.contains("UPDATE academic_exam_days"));
+        assert!(update_body.contains("WHERE id = $1"));
+        assert!(update_body.contains("replace_exam_day_configuration"));
+        assert!(update_body.contains("mark_round_draft_after_mutation"));
+        assert!(!update_body.contains("DELETE FROM academic_exam_days"));
+        assert!(!update_body.contains("academic_exam_sessions"));
+        assert!(!update_body.contains("academic_exam_day_room_assignments"));
+        assert!(!update_body.contains("academic_exam_day_invigilators"));
+        assert!(!update_body.contains("academic_exam_seat_assignments"));
+    }
+
+    #[test]
+    fn exam_day_update_maps_occupied_dates_to_actionable_error() {
+        let source = include_str!("exam_schedule_service.rs");
+
+        assert!(source.contains("map_err(map_exam_day_write_error)"));
+        assert!(source.contains("กรุณาย้ายวันนั้นไปวันที่ว่างก่อน"));
     }
 
     #[test]

@@ -388,6 +388,17 @@ export async function upsertExamDay(
 	return apiData(response, 'ไม่สามารถบันทึกวันสอบได้');
 }
 
+export async function updateExamDay(
+	examDayId: string,
+	input: UpsertExamDayInput
+): Promise<ExamDayDetail> {
+	const response = await apiClient.patch<ExamDayDetail>(
+		`/api/academic/exam-schedules/days/${examDayId}`,
+		input
+	);
+	return apiData(response, 'ไม่สามารถแก้ไขวันสอบได้');
+}
+
 export async function deleteExamDay(examDayId: string): Promise<EmptyResponseData> {
 	const response = await apiClient.delete<EmptyResponseData>(
 		`/api/academic/exam-schedules/days/${examDayId}`

@@ -1,7 +1,12 @@
 <script lang="ts">
 	import type { GradeLevel } from '$lib/api/academic';
-	import type { BlockedWindowInput, ExamDayDetail, UpsertExamDayInput } from '$lib/api/examSchedule';
+	import type {
+		BlockedWindowInput,
+		ExamDayDetail,
+		UpsertExamDayInput
+	} from '$lib/api/examSchedule';
 	import { LoadingButton, PageState } from '$lib/components/app-state';
+	import * as AlertDialog from '$lib/components/ui/alert-dialog';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import { Checkbox } from '$lib/components/ui/checkbox';
@@ -35,21 +40,27 @@
 		readonly?: boolean;
 		saving?: boolean;
 		deletingDayId?: string | null;
-		onSaveDay?: (input: UpsertExamDayInput) => Promise<boolean> | boolean;
+		onSaveDay?: (examDayId: string | null, input: UpsertExamDayInput) => Promise<boolean> | boolean;
 		onDeleteDay?: (examDayId: string) => Promise<void> | void;
 	} = $props();
 
 	let selectedDayId = $state('');
+	let originalExamDate = $state('');
 	let examDate = $state('');
 	let label = $state('');
 	let startTime = $state('08:30');
 	let endTime = $state('16:00');
 	let gradeLevelIds = $state<string[]>([]);
 	let blockedWindows = $state<BlockedWindowForm[]>([]);
+	let pendingDayInput = $state<UpsertExamDayInput | null>(null);
+	let moveDayDialogOpen = $state(false);
 	let nextWindowIndex = 0;
 
 	const sortedDays = $derived([...days].sort(compareExamDaysByDate));
 	const formTitle = $derived(selectedDayId ? 'แก้ไขวันสอบ' : 'เพิ่มวันสอบ');
+	const conflictingDay = $derived(
+		days.find((day) => day.id !== selectedDayId && day.examDate === examDate) ?? null
+	);
 
 	function newLocalId(): string {
 		nextWindowIndex += 1;
@@ -58,6 +69,7 @@
 
 	function resetForm() {
 		selectedDayId = '';
+		originalExamDate = '';
 		examDate = '';
 		label = '';
 		startTime = '08:30';
@@ -68,6 +80,7 @@
 
 	function loadDay(day: ExamDayDetail) {
 		selectedDayId = day.id;
+		originalExamDate = day.examDate;
 		examDate = day.examDate;
 		label = day.label ?? '';
 		startTime = day.startTime.slice(0, 5);
@@ -104,10 +117,8 @@
 		blockedWindows = blockedWindows.filter((window) => window.localId !== localId);
 	}
 
-	async function submitForm() {
-		if (!examDate || !startTime || !endTime) return;
-
-		const saved = await onSaveDay?.({
+	function dayInput(): UpsertExamDayInput {
+		return {
 			examDate,
 			label: label.trim() || null,
 			startTime,
@@ -120,8 +131,36 @@
 					startTime: window.startTime,
 					endTime: window.endTime
 				}))
-		});
+		};
+	}
+
+	async function saveDay(input: UpsertExamDayInput) {
+		const saved = await onSaveDay?.(selectedDayId || null, input);
 		if (saved) resetForm();
+	}
+
+	async function submitForm() {
+		if (!examDate || !startTime || !endTime || conflictingDay) return;
+
+		const input = dayInput();
+		if (selectedDayId && examDate !== originalExamDate) {
+			pendingDayInput = input;
+			moveDayDialogOpen = true;
+			return;
+		}
+
+		await saveDay(input);
+	}
+
+	async function confirmMoveDay() {
+		const input = pendingDayInput;
+		pendingDayInput = null;
+		moveDayDialogOpen = false;
+		if (input) await saveDay(input);
+	}
+
+	function cancelMoveDay() {
+		pendingDayInput = null;
 	}
 
 	function formatDayDate(value: string): string {
@@ -149,7 +188,9 @@
 </script>
 
 <section class="overflow-hidden rounded-md border bg-background">
-	<div class="flex flex-col gap-3 border-b px-4 py-4 md:flex-row md:items-center md:justify-between">
+	<div
+		class="flex flex-col gap-3 border-b px-4 py-4 md:flex-row md:items-center md:justify-between"
+	>
 		<div>
 			<h2 class="font-semibold">วันสอบ</h2>
 			<p class="text-sm text-muted-foreground">{days.length} วัน</p>
@@ -199,7 +240,9 @@
 									{#if !readonly}
 										<TableCell class="text-right">
 											<div class="flex justify-end gap-1">
-												<Button variant="outline" size="sm" onclick={() => loadDay(day)}>แก้ไข</Button>
+												<Button variant="outline" size="sm" onclick={() => loadDay(day)}
+													>แก้ไข</Button
+												>
 												<LoadingButton
 													variant="ghost"
 													size="icon-sm"
@@ -242,11 +285,12 @@
 					<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
 						<div class="grid gap-2">
 							<Label for="exam-day-date">วันที่</Label>
-							<DatePicker
-								id="exam-day-date"
-								bind:value={examDate}
-								placeholder="เลือกวันสอบ"
-							/>
+							<DatePicker id="exam-day-date" bind:value={examDate} placeholder="เลือกวันสอบ" />
+							{#if conflictingDay}
+								<p class="text-xs text-destructive">
+									วันที่นี้มีวันสอบอยู่แล้ว กรุณาย้ายวันนั้นไปวันที่ว่างก่อน
+								</p>
+							{/if}
 						</div>
 						<div class="grid gap-2">
 							<Label for="exam-day-label">ป้ายชื่อ</Label>
@@ -334,7 +378,7 @@
 						type="submit"
 						loading={saving}
 						loadingLabel="กำลังบันทึก..."
-						disabled={!examDate || !startTime || !endTime}
+						disabled={!examDate || !startTime || !endTime || Boolean(conflictingDay)}
 						class="w-full"
 					>
 						บันทึกวันสอบ
@@ -344,3 +388,19 @@
 		</div>
 	</div>
 </section>
+
+<AlertDialog.Root bind:open={moveDayDialogOpen}>
+	<AlertDialog.Content>
+		<AlertDialog.Header>
+			<AlertDialog.Title>ยืนยันการย้ายวันสอบ</AlertDialog.Title>
+			<AlertDialog.Description>
+				ย้ายจาก {formatDayDate(originalExamDate)} เป็น {formatDayDate(examDate)}? วิชา ห้องสอบ
+				กรรมการคุมสอบ และเลขที่นั่งของวันนี้จะย้ายตามไปทั้งหมด
+			</AlertDialog.Description>
+		</AlertDialog.Header>
+		<AlertDialog.Footer>
+			<AlertDialog.Cancel onclick={cancelMoveDay}>ยกเลิก</AlertDialog.Cancel>
+			<AlertDialog.Action onclick={confirmMoveDay}>ย้ายวันสอบ</AlertDialog.Action>
+		</AlertDialog.Footer>
+	</AlertDialog.Content>
+</AlertDialog.Root>

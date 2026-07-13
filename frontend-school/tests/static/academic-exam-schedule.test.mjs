@@ -212,6 +212,11 @@ test('academic exam schedule API client maps functions to backend routes and met
 			routeFragment: '/${roundId}/days'
 		},
 		{
+			functionName: 'updateExamDay',
+			method: 'patch',
+			routeFragment: '/days/${examDayId}'
+		},
+		{
 			functionName: 'deleteExamDay',
 			method: 'delete',
 			routeFragment: '/days/${examDayId}'
@@ -1264,7 +1269,11 @@ test('staff workspace reloads by route round id and keeps form input on failed s
 	assert.match(page, /loadWorkspace\(roundId,\s*true\)/);
 	assert.doesNotMatch(page, /onMount\(\(\) => \{\s*loadWorkspace\(true\)/);
 
-	assert.match(page, /async function handleSaveDay\(input: UpsertExamDayInput\): Promise<boolean>/);
+	assert.match(
+		page,
+		/async function handleSaveDay\(\s*examDayId: string \| null,\s*input: UpsertExamDayInput\s*\): Promise<boolean>/
+	);
+	assert.match(page, /await updateExamDay\(examDayId, input\)/);
 	assert.match(page, /async function handleSaveAssignment\(/);
 	assert.match(page, /input: UpsertDayRoomAssignmentInput/);
 	assert.match(page, /\): Promise<boolean> \{/);
@@ -1275,9 +1284,9 @@ test('staff workspace reloads by route round id and keeps form input on failed s
 
 	assert.match(
 		dayPanel,
-		/onSaveDay\?: \(input: UpsertExamDayInput\) => Promise<boolean> \| boolean/
+		/onSaveDay\?: \(\s*examDayId: string \| null,\s*input: UpsertExamDayInput\s*\) => Promise<boolean> \| boolean/
 	);
-	assert.match(dayPanel, /const saved = await onSaveDay\?\.\(/);
+	assert.match(dayPanel, /const saved = await onSaveDay\?\.\(selectedDayId \|\| null, input\)/);
 	assert.match(dayPanel, /if \(saved\) resetForm\(\)/);
 
 	assert.match(
@@ -1293,6 +1302,20 @@ test('staff workspace reloads by route round id and keeps form input on failed s
 	);
 	assert.match(roundDialog, /const created = await onCreate\?\.\(/);
 	assert.match(roundDialog, /if \(created\) resetForm\(\)/);
+});
+
+test('exam day setup moves an existing day by id and guards occupied dates', () => {
+	const dayPanel = readFileSync(
+		projectPath('src/lib/components/academic/exam-schedule/ExamDaySetupPanel.svelte'),
+		'utf8'
+	);
+
+	assert.match(dayPanel, /let originalExamDate = \$state\(''\)/);
+	assert.match(dayPanel, /day\.id !== selectedDayId && day\.examDate === examDate/);
+	assert.match(dayPanel, /examDate !== originalExamDate/);
+	assert.match(dayPanel, /ยืนยันการย้ายวันสอบ/);
+	assert.match(dayPanel, /วิชา ห้องสอบ[\s\S]*กรรมการคุมสอบ[\s\S]*เลขที่นั่ง/);
+	assert.match(dayPanel, /กรุณาย้ายวันนั้นไปวันที่ว่างก่อน/);
 });
 
 test('exam day setup uses the shared shadcn date picker for exam date selection', () => {

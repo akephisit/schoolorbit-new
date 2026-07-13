@@ -21,6 +21,7 @@
 		placeExamSession,
 		publishExamRound,
 		removeExamAssignmentInvigilator,
+		updateExamDay,
 		updateExamRound,
 		upsertDayRoomAssignment,
 		upsertExamDay,
@@ -936,14 +937,22 @@
 		}
 	}
 
-	async function handleSaveDay(input: UpsertExamDayInput): Promise<boolean> {
+	async function handleSaveDay(
+		examDayId: string | null,
+		input: UpsertExamDayInput
+	): Promise<boolean> {
 		if (!workspace) return false;
 
 		const roundId = workspace.round.id;
 		savingDay = true;
 		try {
-			await upsertExamDay(roundId, input);
-			toast.success('บันทึกวันสอบแล้ว');
+			if (examDayId) {
+				await updateExamDay(examDayId, input);
+				toast.success('แก้ไขวันสอบแล้ว');
+			} else {
+				await upsertExamDay(roundId, input);
+				toast.success('เพิ่มวันสอบแล้ว');
+			}
 			await refreshWorkspace(true);
 			return true;
 		} catch (saveError) {

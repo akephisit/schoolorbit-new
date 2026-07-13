@@ -147,6 +147,22 @@ pub async fn upsert_day(
     Ok(Json(ApiResponse::ok(day)).into_response())
 }
 
+/// PATCH /api/academic/exam-schedules/days/{exam_day_id}
+pub async fn update_day(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(exam_day_id): Path<Uuid>,
+    Json(payload): Json<UpsertExamDayRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    actor.require_permission(codes::ACADEMIC_EXAM_SCHEDULE_MANAGE_SCHOOL)?;
+
+    let day = exam_schedule_service::update_exam_day(&pool, exam_day_id, payload).await?;
+    Ok(Json(ApiResponse::ok(day)).into_response())
+}
+
 /// DELETE /api/academic/exam-schedules/days/{exam_day_id}
 pub async fn delete_day(
     State(state): State<AppState>,
