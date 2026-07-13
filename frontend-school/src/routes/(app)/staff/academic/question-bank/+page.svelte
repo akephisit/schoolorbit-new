@@ -149,6 +149,7 @@
 	let tag = $state('');
 	let editorOpen = $state(false);
 	let editorMode = $state<EditorMode>('view');
+	let mathVirtualKeyboardVisible = $state(false);
 	let detail = $state<QuestionDetail | null>(null);
 	let draft = $state<QuestionDraft>(newDraft());
 	let deleteTarget = $state<QuestionSummary | null>(null);
@@ -403,6 +404,24 @@
 		if (typeof window !== 'undefined' && window.mathVirtualKeyboard?.visible) {
 			window.mathVirtualKeyboard.hide({ animate });
 		}
+	}
+
+	function connectMathVirtualKeyboardContainer(node: HTMLElement) {
+		const keyboard = window.mathVirtualKeyboard;
+		const handleKeyboardToggle = () => {
+			mathVirtualKeyboardVisible = keyboard.visible;
+		};
+
+		keyboard.container = node;
+		keyboard.addEventListener('virtual-keyboard-toggle', handleKeyboardToggle);
+		handleKeyboardToggle();
+
+		return () => {
+			keyboard.removeEventListener('virtual-keyboard-toggle', handleKeyboardToggle);
+			if (keyboard.visible) keyboard.hide({ animate: false });
+			keyboard.container = document.body;
+			mathVirtualKeyboardVisible = false;
+		};
 	}
 
 	function handleQuestionTypeChange(value: QuestionType) {
@@ -865,7 +884,7 @@
 
 <Dialog.Root bind:open={editorOpen} onOpenChange={handleDialogOpenChange}>
 	<Dialog.Content
-		class="max-h-[92vh] overflow-y-auto sm:max-w-4xl"
+		class="flex max-h-[92vh] flex-col overflow-hidden sm:max-w-4xl"
 		onInteractOutside={handleDialogInteractOutside}
 	>
 		<Dialog.Header>
@@ -884,11 +903,11 @@
 		</Dialog.Header>
 
 		{#if loadingDetail}
-			<div class="flex min-h-64 items-center justify-center">
+			<div class="flex min-h-64 flex-1 items-center justify-center">
 				<Loader2 class="h-8 w-8 animate-spin" />
 			</div>
 		{:else if editorMode === 'view' && detail}
-			<div class="space-y-5">
+			<div class="min-h-0 flex-1 space-y-5 overflow-y-auto">
 				<div class="flex flex-wrap gap-2">
 					<Badge variant={statusVariant(detail.status)}>{statusLabel(detail.status)}</Badge>
 					<Badge variant="outline">{typeLabel(detail.questionType)}</Badge>
@@ -938,7 +957,7 @@
 				{/if}
 			</div>
 		{:else if editorMode !== 'view'}
-			<div class="space-y-5">
+			<div class="min-h-0 flex-1 space-y-5 overflow-y-auto">
 				<div class="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
 					<div class="md:col-span-2 lg:col-span-3">
 						<Label>รายวิชา <span class="text-destructive">*</span></Label>
@@ -1102,6 +1121,13 @@
 				</Dialog.Footer>
 			</div>
 		{/if}
+		<div
+			class={[
+				'-mt-4 shrink-0 overflow-hidden transition-[height] duration-200',
+				mathVirtualKeyboardVisible ? 'h-[min(22rem,45vh)] border-t' : 'h-0'
+			]}
+			{@attach connectMathVirtualKeyboardContainer}
+		></div>
 	</Dialog.Content>
 </Dialog.Root>
 
