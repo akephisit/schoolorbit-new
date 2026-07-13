@@ -14,22 +14,29 @@ BEGIN
             AND q.stem_content -> 'document' ->> 'type' = 'doc'
             AND jsonb_typeof(q.stem_content -> 'document' -> 'content') = 'array'
         )
-        OR q.explanation_content IS NOT NULL AND NOT (
-            jsonb_typeof(q.explanation_content) = 'object'
-            AND jsonb_typeof(q.explanation_content -> 'schemaVersion') = 'number'
-            AND q.explanation_content ->> 'schemaVersion' = '1'
-            AND jsonb_typeof(q.explanation_content -> 'document') = 'object'
-            AND q.explanation_content -> 'document' ->> 'type' = 'doc'
-            AND jsonb_typeof(q.explanation_content -> 'document' -> 'content') = 'array'
+        OR (
+            q.explanation_content IS NOT NULL
+            AND NOT (
+                jsonb_typeof(q.explanation_content) = 'object'
+                AND jsonb_typeof(q.explanation_content -> 'schemaVersion') = 'number'
+                AND q.explanation_content ->> 'schemaVersion' = '1'
+                AND jsonb_typeof(q.explanation_content -> 'document') = 'object'
+                AND q.explanation_content -> 'document' ->> 'type' = 'doc'
+                AND jsonb_typeof(q.explanation_content -> 'document' -> 'content') = 'array'
+            )
         )
-        OR q.rubric_content IS NOT NULL AND NOT (
-            jsonb_typeof(q.rubric_content) = 'object'
-            AND jsonb_typeof(q.rubric_content -> 'schemaVersion') = 'number'
-            AND q.rubric_content ->> 'schemaVersion' = '1'
-            AND jsonb_typeof(q.rubric_content -> 'document') = 'object'
-            AND q.rubric_content -> 'document' ->> 'type' = 'doc'
-            AND jsonb_typeof(q.rubric_content -> 'document' -> 'content') = 'array'
+        OR (
+            q.rubric_content IS NOT NULL
+            AND NOT (
+                jsonb_typeof(q.rubric_content) = 'object'
+                AND jsonb_typeof(q.rubric_content -> 'schemaVersion') = 'number'
+                AND q.rubric_content ->> 'schemaVersion' = '1'
+                AND jsonb_typeof(q.rubric_content -> 'document') = 'object'
+                AND q.rubric_content -> 'document' ->> 'type' = 'doc'
+                AND jsonb_typeof(q.rubric_content -> 'document' -> 'content') = 'array'
+            )
         )
+    )
         OR EXISTS (
             SELECT 1
             FROM academic_question_bank_choices c
