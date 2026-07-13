@@ -69,8 +69,10 @@ test('question editor offers visual math controls without exposing a LaTeX input
 	assert.match(editor, /window\.mathVirtualKeyboard\.hide/);
 	assert.match(editor, /keyboardVisible \? 'secondary' : 'outline'/);
 	assert.match(page, /onInteractOutside=\{handleDialogInteractOutside\}/);
-	assert.match(page, /target\.classList\.contains\('ML__keyboard'\)/);
+	assert.match(page, /target\.closest\('\.ML__keyboard'\)/);
+	assert.doesNotMatch(page, /event\s*\.composedPath\(\)/);
 	assert.match(page, /if \(fromMathKeyboard\) event\.preventDefault\(\)/);
+	assert.match(extensions, /mathfieldConstructor\.soundsDirectory = null/);
 	assert.match(editor, /เศษส่วน/);
 	assert.match(editor, /รากที่สอง/);
 });

@@ -392,9 +392,10 @@
 	}
 
 	function handleDialogInteractOutside(event: PointerEvent) {
-		const fromMathKeyboard = event
-			.composedPath()
-			.some((target) => target instanceof HTMLElement && target.classList.contains('ML__keyboard'));
+		// Bits UI may proxy an already-prevented PointerEvent and its native methods are then unbound.
+		// Reading the captured target avoids calling composedPath() on that proxy.
+		const target = event.target;
+		const fromMathKeyboard = target instanceof Element && target.closest('.ML__keyboard') !== null;
 		if (fromMathKeyboard) event.preventDefault();
 	}
 

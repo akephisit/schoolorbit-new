@@ -7,6 +7,10 @@ import StarterKit from '@tiptap/starter-kit';
 import type { MathfieldElement } from 'mathlive';
 import type { PendingImageReference } from './rich-document';
 
+type MathfieldElementConstructor = CustomElementConstructor & {
+	soundsDirectory: string | null;
+};
+
 export type MathFocusTarget = {
 	field: MathfieldElement;
 	getPosition: () => number | undefined;
@@ -67,6 +71,12 @@ function createMathNode(name: 'inline_math' | 'math_block', inline: boolean) {
 				const container = document.createElement(inline ? 'span' : 'div');
 				container.className = inline ? 'question-inline-math' : 'question-math-block';
 				container.contentEditable = 'false';
+				const mathfieldConstructor = window.customElements.get('math-field') as
+					| MathfieldElementConstructor
+					| undefined;
+				if (mathfieldConstructor && mathfieldConstructor.soundsDirectory !== null) {
+					mathfieldConstructor.soundsDirectory = null;
+				}
 				const field = document.createElement('math-field') as MathfieldElement;
 				field.className = inline ? 'question-inline-math-field' : 'question-block-math-field';
 				field.value = String(node.attrs.latex ?? '');
