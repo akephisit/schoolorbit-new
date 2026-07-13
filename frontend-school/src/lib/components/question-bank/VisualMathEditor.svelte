@@ -4,7 +4,7 @@
 	import type { MathfieldElement } from 'mathlive';
 	import { on } from 'svelte/events';
 	import { Button } from '$lib/components/ui/button';
-	import { Keyboard, Sigma } from 'lucide-svelte';
+	import { Keyboard, KeyboardOff, Sigma } from 'lucide-svelte';
 
 	interface Props {
 		value?: string;
@@ -20,6 +20,7 @@
 
 	let { value = $bindable(''), label = 'สมการคณิตศาสตร์', compact = false }: Props = $props();
 	let showMoreSymbols = $state(false);
+	let keyboardVisible = $state(false);
 	let mathfield: MathfieldElement | null = null;
 
 	const commonSymbols: MathSymbol[] = [
@@ -65,14 +66,22 @@
 				window.mathVirtualKeyboard.layouts = ['numeric', 'symbols', 'greek'];
 			}
 		});
+		const stopKeyboardToggle = on(window.mathVirtualKeyboard, 'virtual-keyboard-toggle', () => {
+			keyboardVisible = window.mathVirtualKeyboard.visible;
+		});
+		keyboardVisible = window.mathVirtualKeyboard.visible;
 
 		$effect(() => {
 			if (field.value !== value) field.value = value;
 		});
 
 		return () => {
+			if (field.hasFocus() && window.mathVirtualKeyboard.visible) {
+				window.mathVirtualKeyboard.hide({ animate: false });
+			}
 			stopInput();
 			stopFocus();
+			stopKeyboardToggle();
 			if (mathfield === field) mathfield = null;
 		};
 	}
@@ -88,8 +97,12 @@
 		value = mathfield.value;
 	}
 
-	function showVirtualKeyboard() {
+	function toggleVirtualKeyboard() {
 		if (!mathfield || !window.mathVirtualKeyboard) return;
+		if (window.mathVirtualKeyboard.visible) {
+			window.mathVirtualKeyboard.hide({ animate: true });
+			return;
+		}
 		mathfield.focus();
 		window.mathVirtualKeyboard.layouts = ['numeric', 'symbols', 'greek'];
 		window.mathVirtualKeyboard.show({ animate: true });
@@ -153,9 +166,20 @@
 
 	<div class="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
 		<span>พิมพ์ตัวเลขและตัวแปรได้ตามปกติ หรือกดสัญลักษณ์ด้านบน</span>
-		<Button type="button" variant="outline" size="sm" onclick={showVirtualKeyboard}>
-			<Keyboard class="h-4 w-4" />
-			เปิดแป้นสัญลักษณ์ทั้งหมด
+		<Button
+			type="button"
+			variant={keyboardVisible ? 'secondary' : 'outline'}
+			size="sm"
+			aria-pressed={keyboardVisible}
+			onclick={toggleVirtualKeyboard}
+		>
+			{#if keyboardVisible}
+				<KeyboardOff class="h-4 w-4" />
+				ปิดแป้นสัญลักษณ์
+			{:else}
+				<Keyboard class="h-4 w-4" />
+				เปิดแป้นสัญลักษณ์ทั้งหมด
+			{/if}
 		</Button>
 	</div>
 </div>

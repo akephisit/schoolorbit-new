@@ -157,7 +157,10 @@
 		void loadInitialData();
 	});
 
-	onDestroy(() => cleanupDraftObjectUrls(draft));
+	onDestroy(() => {
+		hideMathVirtualKeyboard(false);
+		cleanupDraftObjectUrls(draft);
+	});
 
 	function emptyContentDraft(): ContentDraft {
 		return {
@@ -463,8 +466,22 @@
 	function handleDialogOpenChange(open: boolean) {
 		editorOpen = open;
 		if (!open) {
+			hideMathVirtualKeyboard();
 			cleanupDraftObjectUrls(draft);
 			detail = null;
+		}
+	}
+
+	function handleDialogInteractOutside(event: PointerEvent) {
+		const fromMathKeyboard = event
+			.composedPath()
+			.some((target) => target instanceof HTMLElement && target.classList.contains('ML__keyboard'));
+		if (fromMathKeyboard) event.preventDefault();
+	}
+
+	function hideMathVirtualKeyboard(animate = true) {
+		if (typeof window !== 'undefined' && window.mathVirtualKeyboard?.visible) {
+			window.mathVirtualKeyboard.hide({ animate });
 		}
 	}
 
@@ -933,7 +950,10 @@
 </PageShell>
 
 <Dialog.Root bind:open={editorOpen} onOpenChange={handleDialogOpenChange}>
-	<Dialog.Content class="max-h-[92vh] overflow-y-auto sm:max-w-4xl">
+	<Dialog.Content
+		class="max-h-[92vh] overflow-y-auto sm:max-w-4xl"
+		onInteractOutside={handleDialogInteractOutside}
+	>
 		<Dialog.Header>
 			<Dialog.Title>
 				{editorMode === 'view'
