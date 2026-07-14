@@ -3,6 +3,7 @@ import { describe, it } from 'node:test';
 
 import {
 	buildCalendarMonth,
+	buildCalendarMonthWeeks,
 	calendarGridRange,
 	eventOverlapsDate,
 	formatCalendarDate,
@@ -57,5 +58,70 @@ describe('calendar helpers', () => {
 	it('formats dates with Thai month labels', () => {
 		assert.equal(formatCalendarDate('2026-07-03'), '3 ก.ค. 2026');
 		assert.equal(formatCalendarMonth('2026-07-03'), 'กรกฎาคม 2026');
+	});
+
+	it('splits a multi-day event into continuous weekly segments', () => {
+		const weeks = buildCalendarMonthWeeks('2026-07-01', [
+			{
+				id: 'event-1',
+				title: 'ค่ายวิชาการ',
+				startDate: '2026-07-03',
+				endDate: '2026-07-10',
+				allDay: true
+			}
+		]);
+
+		assert.equal(weeks.length, 6);
+		assert.deepEqual(weeks[0]?.segments[0], {
+			event: {
+				id: 'event-1',
+				title: 'ค่ายวิชาการ',
+				startDate: '2026-07-03',
+				endDate: '2026-07-10',
+				allDay: true
+			},
+			startColumn: 4,
+			span: 3,
+			lane: 0,
+			continuesFromPreviousWeek: false,
+			continuesIntoNextWeek: true
+		});
+		assert.deepEqual(weeks[1]?.segments[0], {
+			event: {
+				id: 'event-1',
+				title: 'ค่ายวิชาการ',
+				startDate: '2026-07-03',
+				endDate: '2026-07-10',
+				allDay: true
+			},
+			startColumn: 0,
+			span: 5,
+			lane: 0,
+			continuesFromPreviousWeek: true,
+			continuesIntoNextWeek: false
+		});
+	});
+
+	it('counts events hidden when all visible lanes are occupied', () => {
+		const [firstWeek] = buildCalendarMonthWeeks(
+			'2026-07-01',
+			[
+				{
+					id: 'event-1',
+					title: 'กิจกรรมต่อเนื่อง',
+					startDate: '2026-07-01',
+					endDate: '2026-07-03'
+				},
+				{
+					id: 'event-2',
+					title: 'กิจกรรมซ้อน',
+					startDate: '2026-07-02',
+					endDate: '2026-07-02'
+				}
+			],
+			1
+		);
+
+		assert.deepEqual(firstWeek?.hiddenEventCounts, [0, 0, 0, 1, 0, 0, 0]);
 	});
 });

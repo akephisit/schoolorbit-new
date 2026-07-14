@@ -111,12 +111,13 @@ test('calendar shared components use shadcn primitives', async () => {
 		'src/lib/components/calendar/CalendarCategoryDialog.svelte'
 	);
 
-	assert.match(monthGrid, /from '\$lib\/components\/ui\/badge'/);
-	assert.match(monthGrid, /buildCalendarMonth/);
+	assert.match(monthGrid, /buildCalendarMonthWeeks/);
 	assert.match(monthGrid, /eventOverlapsDate/);
 	assert.match(monthGrid, /CalendarDisplayEvent/);
-	assert.match(monthGrid, /sm:hidden/);
-	assert.match(monthGrid, /อีก \{dayEvents\.length - 3\} รายการ/);
+	assert.match(monthGrid, /continuesFromPreviousWeek/);
+	assert.match(monthGrid, /continuesIntoNextWeek/);
+	assert.match(monthGrid, /style:grid-column/);
+	assert.match(monthGrid, /hiddenEventCounts/);
 	assert.doesNotMatch(monthGrid, /from '\$lib\/api\/calendar'/);
 	assert.match(eventList, /from '\$lib\/components\/ui\/badge'/);
 	assert.match(eventList, /from '\$lib\/components\/ui\/button'/);
