@@ -46,6 +46,82 @@ const titleFontSize = 40;
 const usablePageWidthPixels = 640;
 const defaultLineSpacing = 360;
 const answerIndent = convertMillimetersToTwip(8);
+const mathMlNamespace = 'http://www.w3.org/1998/Math/MathML';
+const invisibleTimes = '\u2062';
+const functionSpaceWidth = '0.1667em';
+const wordMathFunctionNames = [
+	'arccsch',
+	'arcsech',
+	'arccos',
+	'arcsin',
+	'arctan',
+	'arcosh',
+	'arsinh',
+	'artanh',
+	'arccsc',
+	'arcsec',
+	'cosec',
+	'cosh',
+	'coth',
+	'sinh',
+	'tanh',
+	'arcctg',
+	'arctg',
+	'cotg',
+	'arg',
+	'cos',
+	'cot',
+	'csc',
+	'deg',
+	'dim',
+	'exp',
+	'gcd',
+	'hom',
+	'inf',
+	'ker',
+	'lim',
+	'log',
+	'max',
+	'min',
+	'sec',
+	'sin',
+	'sup',
+	'tan',
+	'ctg',
+	'cth',
+	'ln',
+	'lg',
+	'lb',
+	'sh',
+	'tg',
+	'th',
+	'Pr'
+] as const;
+const wordMathFunctionNameSet = new Set<string>(wordMathFunctionNames);
+const functionScriptElements = new Set([
+	'msub',
+	'msup',
+	'msubsup',
+	'munder',
+	'mover',
+	'munderover'
+]);
+const functionArgumentElements = new Set([
+	'mi',
+	'mn',
+	'mrow',
+	'mfrac',
+	'msqrt',
+	'mroot',
+	'msub',
+	'msup',
+	'msubsup',
+	'munder',
+	'mover',
+	'munderover',
+	'mtable',
+	'menclose'
+]);
 
 export async function exportQuestionBankWord(
 	questions: QuestionDetail[],
@@ -342,16 +418,110 @@ function buildInlineRuns(nodes: RichInlineNode[]): ParagraphChild[] {
 }
 
 function wordFormula(latex: string): ParagraphChild {
-	const mathMl = `<math xmlns="http://www.w3.org/1998/Math/MathML">${convertLatexToMathMl(latex)}</math>`;
+	const mathMl = wordMathMl(latex);
 	const omml = mml2omml(mathMl);
-	const xmlDocument = new DOMParser().parseFromString(omml, 'application/xml');
-	if (xmlDocument.querySelector('parsererror')) {
-		throw new Error('ไม่สามารถแปลงสมการเป็นรูปแบบ Word Math ได้');
-	}
+	const xmlDocument = parseXml(omml, 'ไม่สามารถแปลงสมการเป็นรูปแบบ Word Math ได้');
 
 	// docx accepts imported XML components as paragraph children at runtime, but its public
 	// ParagraphChild union does not include ImportedXmlComponent.
 	return importXmlElement(xmlDocument.documentElement) as unknown as ParagraphChild;
+}
+
+function wordMathMl(latex: string) {
+	const mathMl = `<math xmlns="${mathMlNamespace}">${convertLatexToMathMl(latex)}</math>`;
+	const xmlDocument = parseXml(mathMl, 'ไม่สามารถอ่านสมการคณิตศาสตร์ได้');
+	normalizeWordMathFunctions(xmlDocument);
+	return new XMLSerializer().serializeToString(xmlDocument.documentElement);
+}
+
+function normalizeWordMathFunctions(xmlDocument: XMLDocument) {
+	for (const parent of mathMlSequenceParents(xmlDocument)) {
+		normalizeSplitFunctionNames(parent, xmlDocument);
+	}
+
+	const candidates = ['mo', 'mi', 'mtext'].flatMap((tagName) =>
+		Array.from(xmlDocument.getElementsByTagNameNS(mathMlNamespace, tagName))
+	);
+	for (const element of candidates) {
+		const name = element.textContent?.trim() ?? '';
+		if (!wordMathFunctionNameSet.has(name)) continue;
+		const functionName =
+			element.localName === 'mtext' ? element : replaceWithMathMlText(element, name, xmlDocument);
+		insertFunctionSpace(functionName, xmlDocument);
+	}
+}
+
+function mathMlSequenceParents(xmlDocument: XMLDocument) {
+	return [
+		xmlDocument.documentElement,
+		...Array.from(xmlDocument.getElementsByTagNameNS(mathMlNamespace, 'mrow'))
+	];
+}
+
+function normalizeSplitFunctionNames(parent: Element, xmlDocument: XMLDocument) {
+	let children = Array.from(parent.children);
+	for (let index = 0; index < children.length; index += 1) {
+		const functionName = wordMathFunctionNames.find((name) =>
+			matchesSplitFunction(children, index, name)
+		);
+		if (!functionName) continue;
+
+		const matchedLength = functionName.length * 2 - 1;
+		const matched = children.slice(index, index + matchedLength);
+		const functionElement = xmlDocument.createElementNS(mathMlNamespace, 'mtext');
+		functionElement.textContent = functionName;
+		parent.insertBefore(functionElement, matched[0]);
+		for (const element of matched) element.remove();
+		children = Array.from(parent.children);
+	}
+}
+
+function matchesSplitFunction(children: Element[], start: number, functionName: string) {
+	for (let characterIndex = 0; characterIndex < functionName.length; characterIndex += 1) {
+		const character = children[start + characterIndex * 2];
+		if (character?.localName !== 'mi' || character.textContent !== functionName[characterIndex]) {
+			return false;
+		}
+		if (characterIndex === functionName.length - 1) continue;
+		const separator = children[start + characterIndex * 2 + 1];
+		if (separator?.localName !== 'mo' || separator.textContent !== invisibleTimes) return false;
+	}
+	return true;
+}
+
+function replaceWithMathMlText(element: Element, value: string, xmlDocument: XMLDocument) {
+	const replacement = xmlDocument.createElementNS(mathMlNamespace, 'mtext');
+	replacement.textContent = value;
+	element.replaceWith(replacement);
+	return replacement;
+}
+
+function insertFunctionSpace(functionName: Element, xmlDocument: XMLDocument) {
+	let anchor = functionName;
+	while (
+		anchor.parentElement &&
+		functionScriptElements.has(anchor.parentElement.localName) &&
+		anchor.parentElement.firstElementChild?.contains(anchor)
+	) {
+		anchor = anchor.parentElement;
+	}
+
+	const next = anchor.nextElementSibling;
+	if (!next || next.localName === 'mspace') return;
+	const space = xmlDocument.createElementNS(mathMlNamespace, 'mspace');
+	space.setAttribute('width', functionSpaceWidth);
+	if (next.localName === 'mo' && next.textContent === invisibleTimes) {
+		next.replaceWith(space);
+		return;
+	}
+	if (!functionArgumentElements.has(next.localName)) return;
+	anchor.parentElement?.insertBefore(space, next);
+}
+
+function parseXml(value: string, errorMessage: string) {
+	const xmlDocument = new DOMParser().parseFromString(value, 'application/xml');
+	if (xmlDocument.querySelector('parsererror')) throw new Error(errorMessage);
+	return xmlDocument;
 }
 
 function importXmlElement(element: Element): ImportedXmlComponent {
