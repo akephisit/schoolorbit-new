@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import {
+	CALENDAR_WEEKDAY_LABELS,
 	buildCalendarMonth,
 	buildCalendarMonthWeeks,
 	calendarGridRange,
@@ -21,13 +22,14 @@ describe('calendar helpers', () => {
 		);
 	});
 
-	it('uses Monday-to-Sunday grid boundaries for a month', () => {
+	it('uses Sunday-to-Saturday grid boundaries for a month', () => {
 		const cells = buildCalendarMonth('2026-07-01');
-		assert.equal(cells[0]?.date, '2026-06-29');
-		assert.equal(cells[41]?.date, '2026-08-09');
+		assert.equal(cells[0]?.date, '2026-06-28');
+		assert.equal(cells[41]?.date, '2026-08-08');
 		assert.equal(cells[0]?.inCurrentMonth, false);
-		assert.equal(cells[2]?.date, '2026-07-01');
-		assert.equal(cells[2]?.inCurrentMonth, true);
+		assert.equal(cells[3]?.date, '2026-07-01');
+		assert.equal(cells[3]?.inCurrentMonth, true);
+		assert.deepEqual(CALENDAR_WEEKDAY_LABELS, ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส']);
 	});
 
 	it('detects multi-day event overlap', () => {
@@ -50,8 +52,8 @@ describe('calendar helpers', () => {
 
 	it('returns the full visible grid range for loading adjacent-month events', () => {
 		assert.deepEqual(calendarGridRange('2026-07-15'), {
-			from: '2026-06-29',
-			to: '2026-08-09'
+			from: '2026-06-28',
+			to: '2026-08-08'
 		});
 	});
 
@@ -80,8 +82,8 @@ describe('calendar helpers', () => {
 				endDate: '2026-07-10',
 				allDay: true
 			},
-			startColumn: 4,
-			span: 3,
+			startColumn: 5,
+			span: 2,
 			lane: 0,
 			continuesFromPreviousWeek: false,
 			continuesIntoNextWeek: true
@@ -95,7 +97,7 @@ describe('calendar helpers', () => {
 				allDay: true
 			},
 			startColumn: 0,
-			span: 5,
+			span: 6,
 			lane: 0,
 			continuesFromPreviousWeek: true,
 			continuesIntoNextWeek: false
@@ -122,6 +124,6 @@ describe('calendar helpers', () => {
 			1
 		);
 
-		assert.deepEqual(firstWeek?.hiddenEventCounts, [0, 0, 0, 1, 0, 0, 0]);
+		assert.deepEqual(firstWeek?.hiddenEventCounts, [0, 0, 0, 0, 1, 0, 0]);
 	});
 });

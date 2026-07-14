@@ -13,6 +13,7 @@
 <script lang="ts">
 	import { cn } from '$lib/utils';
 	import {
+		CALENDAR_WEEKDAY_LABELS,
 		buildCalendarMonthWeeks,
 		eventOverlapsDate,
 		formatCalendarDate,
@@ -32,7 +33,6 @@
 		onselect?: (date: string) => void;
 	} = $props();
 
-	const weekDays = ['จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส', 'อา'];
 	const fallbackColor = '#64748b';
 	const todayDate = toIsoDate(new Date());
 
@@ -55,7 +55,7 @@
 	<div
 		class="grid h-10 grid-cols-7 border-b bg-muted/30 text-center text-[11px] font-medium text-muted-foreground sm:text-xs"
 	>
-		{#each weekDays as day (day)}
+		{#each CALENDAR_WEEKDAY_LABELS as day (day)}
 			<div class="flex items-center justify-center px-2">{day}</div>
 		{/each}
 	</div>

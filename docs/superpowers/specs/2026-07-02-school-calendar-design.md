@@ -389,6 +389,7 @@ Primary layout:
 - Header with title, current month, and create button.
 - Filter row: search, month selector, category, audience, public/private.
 - Month grid.
+- Weeks in the month grid run Sunday through Saturday.
 - Event list for the selected month or selected day.
 - Mobile stacks grid and list vertically.
 

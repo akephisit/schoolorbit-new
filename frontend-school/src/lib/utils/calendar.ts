@@ -15,6 +15,8 @@ export interface CalendarMonthCell {
 	inCurrentMonth: boolean;
 }
 
+export const CALENDAR_WEEKDAY_LABELS = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'] as const;
+
 export interface CalendarLayoutEvent {
 	id: string;
 	title: string;
@@ -46,7 +48,7 @@ export function toIsoDate(date: Date): string {
 
 export function buildCalendarMonth(monthDate: string): CalendarMonthCell[] {
 	const monthStart = startOfMonth(parseISO(monthDate));
-	const gridStart = startOfWeek(monthStart, { weekStartsOn: 1 });
+	const gridStart = startOfWeek(monthStart, { weekStartsOn: 0 });
 
 	return Array.from({ length: 42 }, (_, index) => {
 		const date = addDays(gridStart, index);
