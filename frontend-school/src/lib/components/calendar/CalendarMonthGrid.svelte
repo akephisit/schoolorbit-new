@@ -25,16 +25,12 @@
 		monthDate,
 		events = [],
 		selectedDate = '',
-		onselect,
-		fillHeight = false,
-		class: className
+		onselect
 	}: {
 		monthDate: string;
 		events?: CalendarDisplayEvent[];
 		selectedDate?: string;
 		onselect?: (date: string) => void;
-		fillHeight?: boolean;
-		class?: string;
 	} = $props();
 
 	const fallbackColor = '#64748b';
@@ -55,30 +51,23 @@
 	}
 </script>
 
-<div
-	class={cn(
-		'overflow-hidden rounded-xl border bg-card shadow-sm',
-		fillHeight && 'flex h-full min-h-0 flex-col',
-		className
-	)}
->
+<div class="overflow-hidden rounded-xl border bg-card shadow-sm">
 	<div
-		class="grid h-10 shrink-0 grid-cols-7 border-b bg-muted/30 text-center text-[11px] font-medium text-muted-foreground sm:text-xs"
+		class="grid h-10 grid-cols-7 border-b bg-muted/30 text-center text-[11px] font-medium text-muted-foreground sm:text-xs"
 	>
 		{#each CALENDAR_WEEKDAY_LABELS as day (day)}
 			<div class="flex items-center justify-center px-2">{day}</div>
 		{/each}
 	</div>
-	<div class={cn(fillHeight && 'grid min-h-0 flex-1 grid-rows-6')}>
+	<div>
 		{#each weeks as week, weekIndex (week.cells[0]?.date ?? weekIndex)}
-			<div class={cn('relative grid grid-cols-7', fillHeight && 'min-h-0')}>
+			<div class="relative grid grid-cols-7">
 				{#each week.cells as cell, dayIndex (cell.date)}
 					{@const dayEvents = eventsForDate(cell.date)}
 					<button
 						type="button"
 						class={cn(
 							'group relative flex h-20 min-w-0 flex-col border-b border-r p-1.5 text-left transition-colors hover:bg-muted/50 focus-visible:z-20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:h-28 sm:p-2',
-							fillHeight && 'h-full min-h-0 p-2.5',
 							!cell.inCurrentMonth && 'bg-muted/30 text-muted-foreground',
 							selectedDate === cell.date && 'bg-primary/5 ring-2 ring-inset ring-primary'
 						)}
@@ -107,10 +96,7 @@
 				{/each}
 
 				<div
-					class={cn(
-						'pointer-events-none absolute inset-x-0 top-8 z-10 grid auto-rows-[13px] grid-cols-7 gap-y-0.5 sm:top-9 sm:auto-rows-[18px]',
-						fillHeight && 'top-10 auto-rows-[20px]'
-					)}
+					class="pointer-events-none absolute inset-x-0 top-8 z-10 grid auto-rows-[13px] grid-cols-7 gap-y-0.5 sm:top-9 sm:auto-rows-[18px]"
 					aria-hidden="true"
 				>
 					{#each week.segments as segment (`${segment.event.id}-${weekIndex}`)}
@@ -126,10 +112,7 @@
 							title={segmentLabel(segment)}
 						>
 							<span
-								class={cn(
-									'block truncate px-1 text-[8px] font-medium leading-[13px] sm:px-1.5 sm:text-[10px] sm:leading-[18px] xl:text-[11px]',
-									fillHeight && 'px-2 text-[11px] leading-5'
-								)}
+								class="block truncate px-1 text-[8px] font-medium leading-[13px] sm:px-1.5 sm:text-[10px] sm:leading-[18px] xl:text-[11px]"
 							>
 								{segmentLabel(segment)}
 							</span>

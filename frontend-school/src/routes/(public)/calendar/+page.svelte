@@ -77,117 +77,80 @@
 	<title>{data.title}</title>
 </svelte:head>
 
-<main class="flex min-h-svh flex-col bg-background lg:h-svh lg:overflow-hidden">
-	<header
-		class="sticky top-0 z-40 shrink-0 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/85 lg:static lg:flex lg:min-h-16 lg:items-center lg:justify-between"
+<main class="min-h-screen bg-muted/20">
+	<section
+		class="mx-auto flex w-full max-w-7xl flex-col gap-5 px-3 py-4 sm:px-4 sm:py-5 lg:gap-6 lg:px-6 lg:py-6"
 	>
-		<div class="flex min-h-14 items-center gap-3 px-3 sm:px-4 lg:px-5">
-			<div
-				class="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary"
-			>
-				<CalendarDays class="size-5" />
-			</div>
-			<div class="min-w-0">
-				<h1 class="truncate text-lg font-semibold tracking-tight sm:text-xl">ปฏิทินโรงเรียน</h1>
-				<p class="hidden text-xs text-muted-foreground sm:block">
-					กิจกรรมที่โรงเรียนเปิดเผยต่อสาธารณะ
-				</p>
-			</div>
-		</div>
-
-		<div
-			class="flex min-h-12 items-center justify-between gap-2 border-t px-3 sm:px-4 lg:justify-end lg:border-t-0 lg:px-5"
-		>
-			<Button variant="outline" size="sm" onclick={goToToday}>วันนี้</Button>
-			<div class="flex items-center gap-1 sm:gap-2">
-				<Button
-					variant="ghost"
-					size="icon-sm"
-					onclick={() => changeMonth(-1)}
-					aria-label="เดือนก่อนหน้า"
+		<header class="flex flex-col gap-4 border-b pb-5 sm:flex-row sm:items-end sm:justify-between">
+			<div class="flex items-center gap-3">
+				<div
+					class="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary"
 				>
-					<ChevronLeft class="h-4 w-4" />
-				</Button>
-				<div class="min-w-32 text-center text-sm font-semibold sm:min-w-40">{monthLabel}</div>
-				<Button
-					variant="ghost"
-					size="icon-sm"
-					onclick={() => changeMonth(1)}
-					aria-label="เดือนถัดไป"
-				>
-					<ChevronRight class="h-4 w-4" />
-				</Button>
+					<CalendarDays class="size-5" />
+				</div>
+				<div class="min-w-0">
+					<h1 class="text-2xl font-semibold tracking-tight">ปฏิทินโรงเรียน</h1>
+					<p class="text-sm text-muted-foreground">กิจกรรมที่โรงเรียนเปิดเผยต่อสาธารณะ</p>
+				</div>
 			</div>
-		</div>
-	</header>
 
-	<div class="min-h-0 flex-1">
+			<div class="flex flex-wrap items-center justify-between gap-2 sm:justify-end">
+				<Button variant="outline" size="sm" onclick={goToToday}>วันนี้</Button>
+				<div class="flex items-center gap-1 sm:gap-2">
+					<Button
+						variant="outline"
+						size="icon-sm"
+						onclick={() => changeMonth(-1)}
+						aria-label="เดือนก่อนหน้า"
+					>
+						<ChevronLeft class="h-4 w-4" />
+					</Button>
+					<div class="min-w-32 text-center text-sm font-semibold sm:min-w-40">{monthLabel}</div>
+					<Button
+						variant="outline"
+						size="icon-sm"
+						onclick={() => changeMonth(1)}
+						aria-label="เดือนถัดไป"
+					>
+						<ChevronRight class="h-4 w-4" />
+					</Button>
+				</div>
+			</div>
+		</header>
+
 		{#if loading}
-			<div class="h-full overflow-auto p-4 lg:p-6">
-				<PageSkeleton variant="detail" />
-			</div>
+			<PageSkeleton variant="detail" />
 		{:else if error}
-			<div class="p-4 lg:p-6">
-				<PageState
-					variant="error"
-					title="โหลดปฏิทินไม่สำเร็จ"
-					description={error}
-					actionLabel="ลองอีกครั้ง"
-					onaction={loadCalendar}
-				/>
-			</div>
+			<PageState
+				variant="error"
+				title="โหลดปฏิทินไม่สำเร็จ"
+				description={error}
+				actionLabel="ลองอีกครั้ง"
+				onaction={loadCalendar}
+			/>
 		{:else}
-			<div
-				class="hidden h-full min-h-0 grid-cols-[minmax(0,1fr)_22rem] lg:grid xl:grid-cols-[minmax(0,1fr)_25rem]"
-			>
+			<div class="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_24rem]">
 				<CalendarMonthGrid
 					monthDate={selectedMonth}
 					{events}
 					{selectedDate}
 					onselect={(date) => (selectedDate = date)}
-					fillHeight
-					class="rounded-none border-0 shadow-none"
 				/>
-				<aside class="min-h-0 overflow-y-auto border-l bg-muted/15">
-					<div class="sticky top-0 z-20 border-b bg-background/95 px-5 py-4 backdrop-blur">
-						<p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-							วันที่เลือก
-						</p>
-						<div class="mt-1 flex items-baseline justify-between gap-3">
-							<h2 class="text-lg font-semibold">{formatCalendarDate(selectedDate)}</h2>
-							<span class="shrink-0 text-sm text-muted-foreground">
-								{selectedDateEvents.length} รายการ
-							</span>
+				<aside class="space-y-3">
+					<div class="flex items-end justify-between gap-3">
+						<div>
+							<p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+								วันที่เลือก
+							</p>
+							<h2 class="mt-1 text-lg font-semibold">{formatCalendarDate(selectedDate)}</h2>
 						</div>
+						<span class="shrink-0 text-sm text-muted-foreground">
+							{selectedDateEvents.length} รายการ
+						</span>
 					</div>
-					<div class="p-4">
-						<CalendarEventList events={selectedDateEvents} canManage={false} showFullDescription />
-					</div>
+					<CalendarEventList events={selectedDateEvents} canManage={false} showFullDescription />
 				</aside>
 			</div>
-
-			<div class="lg:hidden">
-				<CalendarMonthGrid
-					monthDate={selectedMonth}
-					{events}
-					{selectedDate}
-					onselect={(date) => (selectedDate = date)}
-					class="rounded-none border-x-0 border-t-0 shadow-none"
-				/>
-				<section class="border-t bg-muted/15">
-					<div class="sticky top-26 z-30 border-b bg-background/95 px-4 py-3 backdrop-blur">
-						<div class="flex items-baseline justify-between gap-3">
-							<h2 class="text-base font-semibold">{formatCalendarDate(selectedDate)}</h2>
-							<span class="shrink-0 text-xs text-muted-foreground">
-								{selectedDateEvents.length} รายการ
-							</span>
-						</div>
-					</div>
-					<div class="p-3 sm:p-4">
-						<CalendarEventList events={selectedDateEvents} canManage={false} showFullDescription />
-					</div>
-				</section>
-			</div>
 		{/if}
-	</div>
+	</section>
 </main>
