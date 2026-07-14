@@ -77,13 +77,14 @@ file endpoint, which verifies that the user can read the question and that the f
 referenced by it; export does not depend on cross-origin access to the public storage URL. The export
 dialog can optionally append correct choices, explanations, and scoring rubrics as an answer key.
 
-Normal text remains editable Word text using `TH Sarabun New`. Uploaded images are converted to PNG
-and embedded in the document. KaTeX renders inline and display formulas to transparent PNG at 3x
-resolution before they are embedded, giving formulas a consistent MathType-like printed appearance
-without relying on Word Equation/OMML. This is intentionally a visual export: formulas look stable
-across Word installations but are not editable equation objects inside Word. The exporter and its
-font payload are client-only; the SSR build resolves the module to a small server stub so these large
-browser dependencies are not bundled into the Cloudflare Worker.
+Normal text remains editable Word text using `TH Sarabun New`, and uploaded images are converted to
+PNG and embedded in the document. Formulas are not exported as images: MathLive LaTeX is converted to
+MathML and then to native Office Math Markup Language (OMML). Inline formulas stay in their sentence,
+display formulas remain centered, and users can click and edit both with Word's equation tools. This
+uses Word's native equation model and gives the editable MathType-style result expected in modern
+Word; it does not embed MathType's proprietary OLE object. The exporter and its conversion
+dependencies are client-only; the SSR build resolves the module to a small server stub so they are
+not bundled into the Cloudflare Worker.
 
 ## API
 

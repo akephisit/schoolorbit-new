@@ -3,23 +3,21 @@ import {
 	convertMillimetersToTwip,
 	Document,
 	ImageRun,
+	ImportedXmlComponent,
 	Packer,
 	PageBreak,
 	Paragraph,
 	TextRun,
 	type ParagraphChild
 } from 'docx';
-import { toPng } from 'html-to-image';
-import katex from 'katex';
-import 'katex/dist/katex.min.css';
-import {
-	getQuestionBankQuestionFile,
-	type QuestionDetail,
-	type QuestionFile,
-	type RichContent,
-	type RichInlineNode
+import { convertLatexToMathMl } from 'mathlive/ssr';
+import { mml2omml } from 'mathml2omml';
+import type {
+	QuestionDetail,
+	QuestionFile,
+	RichContent,
+	RichInlineNode
 } from '$lib/api/questionBank';
-import { katexFontEmbedCss } from '$lib/question-bank/katex-fonts';
 
 export interface QuestionBankWordExportOptions {
 	title: string;
@@ -33,7 +31,6 @@ type RasterAsset = {
 };
 
 type ExportContext = {
-	formulaCache: Map<string, Promise<RasterAsset>>;
 	imageCache: Map<string, Promise<RasterAsset>>;
 };
 
@@ -47,7 +44,6 @@ const bodyFont = 'TH Sarabun New';
 const bodyFontSize = 32;
 const titleFontSize = 40;
 const usablePageWidthPixels = 640;
-const formulaFontPixels = (bodyFontSize / 2) * (96 / 72);
 const defaultLineSpacing = 360;
 const answerIndent = convertMillimetersToTwip(8);
 
@@ -68,7 +64,6 @@ export async function buildQuestionBankWordBlob(
 	if (questions.length === 0) throw new Error('ยังไม่ได้เลือกข้อสอบสำหรับส่งออก');
 
 	const context: ExportContext = {
-		formulaCache: new Map(),
 		imageCache: new Map()
 	};
 	const children: Paragraph[] = [
@@ -239,7 +234,7 @@ async function buildContentParagraphs(
 
 	for (const block of content.document.content) {
 		if (block.type === 'paragraph') {
-			const children = await buildInlineRuns(block.content ?? [], context);
+			const children = buildInlineRuns(block.content ?? []);
 			if (prefixPending) {
 				children.unshift(wordText(options.prefix ?? '', { bold: true }));
 				prefixPending = false;
@@ -269,13 +264,12 @@ async function buildContentParagraphs(
 		}
 
 		if (block.type === 'math_block') {
-			const formula = await formulaImage(block.attrs.latex, true, context);
 			paragraphs.push(
 				new Paragraph({
 					alignment: AlignmentType.CENTER,
 					indent,
 					spacing: { before: 40, after: options.spacingAfter ?? 100 },
-					children: [formulaRun(formula, block.attrs.latex)]
+					children: [wordFormula(block.attrs.latex)]
 				})
 			);
 			continue;
@@ -326,10 +320,7 @@ async function buildContentParagraphs(
 	return paragraphs;
 }
 
-async function buildInlineRuns(
-	nodes: RichInlineNode[],
-	context: ExportContext
-): Promise<ParagraphChild[]> {
+function buildInlineRuns(nodes: RichInlineNode[]): ParagraphChild[] {
 	const children: ParagraphChild[] = [];
 	for (const node of nodes) {
 		if (node.type === 'text') {
@@ -345,83 +336,34 @@ async function buildInlineRuns(
 			children.push(wordText('', { break: 1 }));
 			continue;
 		}
-		const formula = await formulaImage(node.attrs.latex, false, context);
-		children.push(formulaRun(formula, node.attrs.latex));
+		children.push(wordFormula(node.attrs.latex));
 	}
 	return children;
 }
 
-function formulaRun(asset: RasterAsset, latex: string) {
-	return new ImageRun({
-		type: 'png',
-		data: asset.data,
-		transformation: { width: asset.width, height: asset.height },
-		altText: {
-			name: 'สมการคณิตศาสตร์',
-			description: latex,
-			title: latex
-		}
-	});
-}
-
-function formulaImage(latex: string, display: boolean, context: ExportContext) {
-	const cacheKey = `${display ? 'display' : 'inline'}:${latex}`;
-	const cached = context.formulaCache.get(cacheKey);
-	if (cached) return cached;
-	const pending = renderFormulaImage(latex, display);
-	context.formulaCache.set(cacheKey, pending);
-	return pending;
-}
-
-async function renderFormulaImage(latex: string, display: boolean): Promise<RasterAsset> {
-	const host = document.createElement('span');
-	host.style.position = 'fixed';
-	host.style.left = '-100000px';
-	host.style.top = '0';
-	host.style.display = 'inline-block';
-	host.style.padding = '2px 3px';
-	host.style.background = 'transparent';
-	host.style.color = '#000000';
-	host.style.fontSize = `${formulaFontPixels}px`;
-	host.style.lineHeight = '1.2';
-	host.style.whiteSpace = 'nowrap';
-	document.body.appendChild(host);
-
-	try {
-		katex.render(latex, host, {
-			displayMode: display,
-			throwOnError: false,
-			strict: 'warn',
-			trust: false,
-			output: 'html'
-		});
-		const displayWrapper = host.querySelector<HTMLElement>('.katex-display');
-		if (displayWrapper) {
-			displayWrapper.style.display = 'inline-block';
-			displayWrapper.style.margin = '0';
-		}
-		const rendered = host.querySelector<HTMLElement>('.katex');
-		if (rendered) {
-			rendered.style.fontSize = '1em';
-			rendered.style.lineHeight = '1.2';
-		}
-		await document.fonts.ready;
-		await nextAnimationFrame();
-		const bounds = host.getBoundingClientRect();
-		const naturalWidth = Math.max(1, Math.ceil(bounds.width));
-		const naturalHeight = Math.max(1, Math.ceil(bounds.height));
-		const displayWidth = Math.min(usablePageWidthPixels, naturalWidth);
-		const displayHeight = Math.max(1, Math.round(naturalHeight * (displayWidth / naturalWidth)));
-		const dataUrl = await toPng(host, {
-			backgroundColor: 'transparent',
-			pixelRatio: 3,
-			preferredFontFormat: 'woff2',
-			fontEmbedCSS: katexFontEmbedCss
-		});
-		return { data: dataUrlBytes(dataUrl), width: displayWidth, height: displayHeight };
-	} finally {
-		host.remove();
+function wordFormula(latex: string): ParagraphChild {
+	const mathMl = `<math xmlns="http://www.w3.org/1998/Math/MathML">${convertLatexToMathMl(latex)}</math>`;
+	const omml = mml2omml(mathMl);
+	const xmlDocument = new DOMParser().parseFromString(omml, 'application/xml');
+	if (xmlDocument.querySelector('parsererror')) {
+		throw new Error('ไม่สามารถแปลงสมการเป็นรูปแบบ Word Math ได้');
 	}
+
+	// docx accepts imported XML components as paragraph children at runtime, but its public
+	// ParagraphChild union does not include ImportedXmlComponent.
+	return importXmlElement(xmlDocument.documentElement) as unknown as ParagraphChild;
+}
+
+function importXmlElement(element: Element): ImportedXmlComponent {
+	const attributes: Record<string, string> = {};
+	for (const attribute of element.attributes) attributes[attribute.name] = attribute.value;
+
+	const component = new ImportedXmlComponent(element.tagName, attributes);
+	for (const child of element.childNodes) {
+		if (child.nodeType === 1) component.push(importXmlElement(child as Element));
+		else if (child.nodeType === 3 && child.nodeValue) component.push(child.nodeValue);
+	}
+	return component;
 }
 
 function questionImage(
@@ -446,6 +388,7 @@ async function renderQuestionImage(
 ): Promise<RasterAsset> {
 	let blob: Blob;
 	try {
+		const { getQuestionBankQuestionFile } = await import('$lib/api/questionBank');
 		blob = await getQuestionBankQuestionFile(questionId, fileId);
 	} catch {
 		throw new Error('ไม่สามารถดาวน์โหลดรูปประกอบเพื่อใส่ในไฟล์ Word ได้');
@@ -573,14 +516,6 @@ function imageAlignment(alignment: 'left' | 'center' | 'right') {
 	return AlignmentType.LEFT;
 }
 
-function dataUrlBytes(dataUrl: string) {
-	const base64 = dataUrl.slice(dataUrl.indexOf(',') + 1);
-	const binary = atob(base64);
-	const bytes = new Uint8Array(binary.length);
-	for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
-	return bytes;
-}
-
 function safeFileName(value: string) {
 	return value
 		.trim()
@@ -599,8 +534,4 @@ function downloadBlob(blob: Blob, fileName: string) {
 	link.remove();
 	// Keep the object URL alive long enough for browsers to begin reading larger DOCX files.
 	window.setTimeout(() => URL.revokeObjectURL(url), 30_000);
-}
-
-function nextAnimationFrame() {
-	return new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
 }

@@ -3,6 +3,8 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
+import { convertLatexToMathMl } from 'mathlive/ssr';
+import { mml2omml } from 'mathml2omml';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(__dirname, '../..');
@@ -142,14 +144,13 @@ test('question bank renders formulas through KaTeX with untrusted commands disab
 	assert.doesNotMatch(page, /questionTitle\(/);
 });
 
-test('question bank exports selected questions to Word with embedded image formulas', async () => {
+test('question bank exports selected questions with editable native Word Math equations', async () => {
 	const packageJson = await readProjectFile('package.json');
 	const page = await readProjectFile('src/routes/(app)/staff/academic/question-bank/+page.svelte');
 	const api = await readProjectFile('src/lib/api/questionBank.ts');
 	const apiClient = await readProjectFile('src/lib/api/client.ts');
 	const exporter = await readProjectFile('src/lib/question-bank/word-export.ts');
 	const serverExporter = await readProjectFile('src/lib/question-bank/word-export.server.ts');
-	const formulaFonts = await readProjectFile('src/lib/question-bank/katex-fonts.ts');
 	const viteConfig = await readProjectFile('vite.config.ts');
 	const backendRoutes = await readProjectFile('../backend-school/src/modules/question_bank.rs');
 	const backendHandlers = await readProjectFile(
@@ -161,7 +162,8 @@ test('question bank exports selected questions to Word with embedded image formu
 	const r2Client = await readProjectFile('../backend-school/src/services/r2_client.rs');
 
 	assert.match(packageJson, /"docx":/);
-	assert.match(packageJson, /"html-to-image":/);
+	assert.match(packageJson, /"mathml2omml":/);
+	assert.doesNotMatch(packageJson, /"html-to-image":/);
 	assert.match(page, /new SvelteSet<string>\(\)/);
 	assert.match(page, /เลือกทั้งหมดในหน้านี้/);
 	assert.match(page, /ส่งออก Word/);
@@ -172,15 +174,21 @@ test('question bank exports selected questions to Word with embedded image formu
 	assert.match(viteConfig, /client-only-word-exporter/);
 	assert.match(viteConfig, /this\.environment\.name === 'ssr'/);
 	assert.match(viteConfig, /word-export\.server\.ts/);
-	assert.doesNotMatch(serverExporter, /from ['"](?:docx|html-to-image|katex)['"]/);
+	assert.doesNotMatch(
+		serverExporter,
+		/from ['"](?:docx|html-to-image|katex|mathlive\/ssr|mathml2omml)['"]/
+	);
 	assert.match(exporter, /Packer\.toBlob\(document\)/);
 	assert.match(exporter, /new ImageRun\(/);
-	assert.match(exporter, /katex\.render\(/);
-	assert.match(exporter, /toPng\(host/);
-	assert.match(exporter, /pixelRatio:\s*3/);
-	assert.match(exporter, /fontEmbedCSS:\s*katexFontEmbedCss/);
-	assert.doesNotMatch(exporter, /getFontEmbedCSS/);
-	assert.match(formulaFonts, /\.woff2\?inline/);
+	assert.match(exporter, /convertLatexToMathMl\(latex\)/);
+	assert.match(exporter, /mml2omml\(mathMl\)/);
+	assert.match(exporter, /new DOMParser\(\)\.parseFromString\(omml, 'application\/xml'\)/);
+	assert.match(exporter, /new ImportedXmlComponent\(element\.tagName, attributes\)/);
+	const formulaExporter = exporter.slice(
+		exporter.indexOf('function wordFormula'),
+		exporter.indexOf('function questionImage')
+	);
+	assert.doesNotMatch(formulaExporter, /ImageRun|toPng|katex\.render/);
 	assert.match(exporter, /getQuestionBankQuestionFile\(questionId, fileId\)/);
 	assert.doesNotMatch(exporter, /\bfetch\s*\(/);
 	assert.match(api, /export async function getQuestionBankQuestionFile/);
@@ -188,11 +196,23 @@ test('question bank exports selected questions to Word with embedded image formu
 	assert.match(apiClient, /async getBlob\(endpoint: string\)/);
 	assert.match(exporter, /includeAnswerKey/);
 	assert.match(exporter, /TH Sarabun New/);
-	assert.doesNotMatch(exporter, /MathRun|MathFraction|MathEquation/);
 	assert.match(backendRoutes, /questions\/\{question_id\}\/files\/\{file_id\}/);
 	assert.match(backendHandlers, /get_question_file_source/);
 	assert.match(backendHandlers, /private, max-age=300/);
 	assert.match(backendServices, /referenced_file_ids\.contains\(&file_id\)/);
 	assert.match(backendServices, /mime_type LIKE 'image\/%'/);
 	assert.match(r2Client, /pub async fn download_file/);
+});
+
+test('question bank Word math conversion preserves structured formulas as OMML', () => {
+	const mathMl = `<math xmlns="http://www.w3.org/1998/Math/MathML">${convertLatexToMathMl(
+		String.raw`\int_0^1 \frac{x^2}{\sqrt{1+x}}\,dx`
+	)}</math>`;
+	const omml = mml2omml(mathMl);
+
+	assert.match(omml, /^<m:oMath\b/);
+	assert.match(omml, /<m:nary>/);
+	assert.match(omml, /<m:f>/);
+	assert.match(omml, /<m:rad>/);
+	assert.doesNotMatch(omml, /<img\b|data:image\//);
 });
