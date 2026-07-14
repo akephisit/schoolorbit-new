@@ -1,7 +1,27 @@
 import tailwindcss from '@tailwindcss/vite';
 import { sveltekit } from '@sveltejs/kit/vite';
-import { defineConfig } from 'vite';
+import { fileURLToPath, URL } from 'node:url';
+import { defineConfig, type Plugin } from 'vite';
 import { scanRoutes } from './scripts/menu-helpers';
+
+const wordExporterModule = fileURLToPath(
+	new URL('./src/lib/question-bank/word-export', import.meta.url)
+);
+const wordExporterServerStub = fileURLToPath(
+	new URL('./src/lib/question-bank/word-export.server.ts', import.meta.url)
+);
+
+function clientOnlyWordExporterPlugin(): Plugin {
+	return {
+		name: 'client-only-word-exporter',
+		enforce: 'pre',
+		resolveId(source) {
+			if (this.environment.name === 'ssr' && source === wordExporterModule) {
+				return wordExporterServerStub;
+			}
+		}
+	};
+}
 
 /**
  * Auto-register menu items during build
@@ -75,7 +95,7 @@ function menuRegistryPlugin() {
 }
 
 export default defineConfig({
-	plugins: [tailwindcss(), sveltekit(), menuRegistryPlugin()],
+	plugins: [clientOnlyWordExporterPlugin(), tailwindcss(), sveltekit(), menuRegistryPlugin()],
 	optimizeDeps: {
 		include: ['html2pdf.js']
 	},

@@ -81,7 +81,9 @@ Normal text remains editable Word text using `TH Sarabun New`. Uploaded images a
 and embedded in the document. KaTeX renders inline and display formulas to transparent PNG at 3x
 resolution before they are embedded, giving formulas a consistent MathType-like printed appearance
 without relying on Word Equation/OMML. This is intentionally a visual export: formulas look stable
-across Word installations but are not editable equation objects inside Word.
+across Word installations but are not editable equation objects inside Word. The exporter and its
+font payload are client-only; the SSR build resolves the module to a small server stub so these large
+browser dependencies are not bundled into the Cloudflare Worker.
 
 ## API
 

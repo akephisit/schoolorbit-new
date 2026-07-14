@@ -148,7 +148,9 @@ test('question bank exports selected questions to Word with embedded image formu
 	const api = await readProjectFile('src/lib/api/questionBank.ts');
 	const apiClient = await readProjectFile('src/lib/api/client.ts');
 	const exporter = await readProjectFile('src/lib/question-bank/word-export.ts');
+	const serverExporter = await readProjectFile('src/lib/question-bank/word-export.server.ts');
 	const formulaFonts = await readProjectFile('src/lib/question-bank/katex-fonts.ts');
+	const viteConfig = await readProjectFile('vite.config.ts');
 	const backendRoutes = await readProjectFile('../backend-school/src/modules/question_bank.rs');
 	const backendHandlers = await readProjectFile(
 		'../backend-school/src/modules/question_bank/handlers.rs'
@@ -166,6 +168,11 @@ test('question bank exports selected questions to Word with embedded image formu
 	assert.match(page, /loadSelectedQuestionDetails/);
 	assert.match(page, /getQuestionBankQuestion\(questionIds\[index\]\)/);
 	assert.match(page, /import\('\$lib\/question-bank\/word-export'\)/);
+	assert.match(page, /const loadWordExporter = browser/);
+	assert.match(viteConfig, /client-only-word-exporter/);
+	assert.match(viteConfig, /this\.environment\.name === 'ssr'/);
+	assert.match(viteConfig, /word-export\.server\.ts/);
+	assert.doesNotMatch(serverExporter, /from ['"](?:docx|html-to-image|katex)['"]/);
 	assert.match(exporter, /Packer\.toBlob\(document\)/);
 	assert.match(exporter, /new ImageRun\(/);
 	assert.match(exporter, /katex\.render\(/);

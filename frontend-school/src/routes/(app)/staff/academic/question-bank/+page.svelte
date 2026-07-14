@@ -2,6 +2,7 @@
 	import { onDestroy, onMount } from 'svelte';
 	import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 	import { toast } from 'svelte-sonner';
+	import { browser } from '$app/environment';
 	import {
 		createQuestionBankQuestion,
 		deleteQuestionBankQuestion,
@@ -110,6 +111,9 @@
 	const emptySummary = { total: 0, choice: 0, written: 0, ready: 0 };
 	const pageSize = 20;
 	const maxImageBytes = 10 * 1024 * 1024;
+	const loadWordExporter = browser
+		? () => import('$lib/question-bank/word-export')
+		: () => Promise.reject(new Error('การส่งออก Word ใช้งานได้เฉพาะในเบราว์เซอร์'));
 
 	const canReadQuestionBank = $derived(
 		$can.hasAny(
@@ -347,7 +351,7 @@
 			const questionIds = [...selectedQuestionIds];
 			const [details, exporter] = await Promise.all([
 				loadSelectedQuestionDetails(questionIds),
-				import('$lib/question-bank/word-export')
+				loadWordExporter()
 			]);
 			const fileName = await exporter.exportQuestionBankWord(details, {
 				title: wordExportTitle,
