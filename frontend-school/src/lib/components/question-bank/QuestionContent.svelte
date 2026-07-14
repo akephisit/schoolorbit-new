@@ -22,10 +22,15 @@
 </script>
 
 {#if content?.document.content.length}
-	<div class:space-y-2={!compact} class="min-w-0">
+	<div
+		class={[
+			'question-content min-w-0',
+			compact ? 'question-content--compact line-clamp-2 leading-7' : 'space-y-2'
+		]}
+	>
 		{#each content.document.content as block, index (`${block.type}-${index}`)}
 			{#if block.type === 'paragraph'}
-				<p class:line-clamp-2={compact} class="whitespace-pre-wrap break-words">
+				<p class={['whitespace-pre-wrap break-words', compact ? 'inline' : 'leading-7']}>
 					{#each block.content ?? [] as node, inlineIndex (`${node.type}-${inlineIndex}`)}
 						{#if node.type === 'text'}
 							{#if hasMark(node, 'bold') && hasMark(node, 'italic')}
@@ -38,32 +43,38 @@
 								{node.text}
 							{/if}
 						{:else if node.type === 'inline_math'}
-							<MathContent latex={node.attrs.latex} class="mx-0.5 inline-block align-middle" />
+							<MathContent latex={node.attrs.latex} class="mx-0.5" />
 						{:else}
 							<br />
 						{/if}
 					{/each}
 				</p>
 			{:else if block.type === 'math_block'}
-				<div class:overflow-x-auto={!compact} class:truncate={compact}>
-					<MathContent latex={block.attrs.latex} display={!compact} />
+				<div class={compact ? 'inline' : 'overflow-x-auto'}>
+					<MathContent
+						latex={block.attrs.latex}
+						display={!compact}
+						class={compact ? 'mx-0.5' : ''}
+					/>
 				</div>
+			{:else if compact}
+				<span class="inline text-muted-foreground">
+					{block.attrs.altText?.trim() || block.attrs.caption?.trim() || 'โจทย์รูปภาพ'}
+				</span>
 			{:else if fileUrls.get(block.attrs.fileId)}
 				<figure
 					class="space-y-1"
 					class:mr-auto={block.attrs.alignment === 'left'}
 					class:mx-auto={block.attrs.alignment === 'center'}
 					class:ml-auto={block.attrs.alignment === 'right'}
-					style:width={compact ? '100%' : `${imageWidth(block.attrs.widthPercent)}%`}
+					style:width={`${imageWidth(block.attrs.widthPercent)}%`}
 				>
 					<img
 						src={fileUrls.get(block.attrs.fileId)}
 						alt={block.attrs.altText ?? ''}
-						class={compact
-							? 'max-h-24 max-w-full rounded-md border object-contain'
-							: 'max-h-96 max-w-full rounded-md border object-contain'}
+						class="max-h-96 max-w-full rounded-md border object-contain"
 					/>
-					{#if block.attrs.caption && !compact}
+					{#if block.attrs.caption}
 						<figcaption class="text-sm text-muted-foreground">{block.attrs.caption}</figcaption>
 					{/if}
 				</figure>
@@ -71,3 +82,9 @@
 		{/each}
 	</div>
 {/if}
+
+<style>
+	.question-content--compact > :not(:first-child) {
+		margin-left: 0.25rem;
+	}
+</style>

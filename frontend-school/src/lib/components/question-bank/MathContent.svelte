@@ -23,4 +23,37 @@
 	}
 </script>
 
-<span class={className} {@attach renderMath(renderOptions)}></span>
+{#if display}
+	<div
+		class={['question-math question-math--display', className]}
+		{@attach renderMath(renderOptions)}
+	></div>
+{:else}
+	<span
+		class={['question-math question-math--inline', className]}
+		{@attach renderMath(renderOptions)}
+	></span>
+{/if}
+
+<style>
+	.question-math--inline {
+		display: inline;
+		line-height: inherit;
+		vertical-align: baseline;
+	}
+
+	.question-math--inline :global(.katex) {
+		font-size: 1em;
+		line-height: inherit;
+	}
+
+	.question-math--display {
+		min-width: 0;
+		overflow-x: auto;
+		overflow-y: hidden;
+	}
+
+	.question-math--display :global(.katex-display) {
+		margin-block: 0.5rem;
+	}
+</style>

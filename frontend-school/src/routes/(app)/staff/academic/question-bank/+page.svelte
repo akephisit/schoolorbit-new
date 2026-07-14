@@ -37,7 +37,6 @@
 		emptyEditorRichContent,
 		pendingImageIds,
 		richContentHasBody,
-		richContentPlainText,
 		toEditorRichContent,
 		toPersistedRichContent,
 		type EditorRichContent,
@@ -259,13 +258,6 @@
 			if (normalized && !tags.includes(normalized)) tags.push(normalized);
 		}
 		return tags;
-	}
-
-	function questionTitle(question: QuestionSummary) {
-		return (
-			richContentPlainText(question.stemContent) ||
-			(contentHasImage(question.stemContent) ? 'โจทย์รูปภาพ' : 'โจทย์')
-		);
 	}
 
 	function subjectLabel(question: QuestionSummary) {
@@ -821,7 +813,9 @@
 											<Badge variant="outline"><Sigma class="h-3 w-3" /> สูตร</Badge>
 										{/if}
 									</div>
-									<h2 class="line-clamp-2 text-base font-medium">{questionTitle(question)}</h2>
+									<div class="text-base font-medium">
+										<QuestionContent content={question.stemContent} compact />
+									</div>
 									<div class="flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground">
 										<span>{subjectLabel(question)}</span>
 										<span>{question.points} คะแนน</span>
@@ -1136,9 +1130,13 @@
 		<AlertDialog.Header>
 			<AlertDialog.Title>ยืนยันการลบข้อสอบ</AlertDialog.Title>
 			<AlertDialog.Description>
-				ลบ “{deleteTarget ? questionTitle(deleteTarget) : ''}” ออกจากคลังข้อสอบหรือไม่?
-				การดำเนินการนี้ย้อนกลับไม่ได้
+				ลบข้อสอบนี้ออกจากคลังข้อสอบหรือไม่? การดำเนินการนี้ย้อนกลับไม่ได้
 			</AlertDialog.Description>
+			{#if deleteTarget}
+				<div class="rounded-md border bg-muted/30 p-3 text-left text-sm">
+					<QuestionContent content={deleteTarget.stemContent} compact />
+				</div>
+			{/if}
 		</AlertDialog.Header>
 		<AlertDialog.Footer>
 			<AlertDialog.Cancel disabled={deleting}>ยกเลิก</AlertDialog.Cancel>

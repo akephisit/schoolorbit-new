@@ -128,9 +128,16 @@ test('question bank keeps read-only actions separate and confirms deletion', asy
 test('question bank renders formulas through KaTeX with untrusted commands disabled', async () => {
 	const math = await readProjectFile('src/lib/components/question-bank/MathContent.svelte');
 	const content = await readProjectFile('src/lib/components/question-bank/QuestionContent.svelte');
+	const page = await readProjectFile('src/routes/(app)/staff/academic/question-bank/+page.svelte');
 
 	assert.match(math, /katex\.render/);
 	assert.match(math, /trust:\s*false/);
 	assert.match(math, /throwOnError:\s*false/);
+	assert.match(math, /question-math--inline/);
+	assert.match(math, /font-size:\s*1em/);
+	assert.match(math, /vertical-align:\s*baseline/);
 	assert.match(content, /<MathContent/);
+	assert.doesNotMatch(content, /align-middle/);
+	assert.match(page, /<QuestionContent content=\{question\.stemContent\} compact \/>/);
+	assert.doesNotMatch(page, /questionTitle\(/);
 });
