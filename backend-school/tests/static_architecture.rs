@@ -2640,6 +2640,7 @@ fn course_instructor_batch_endpoint_accepts_post_body() {
 #[test]
 fn calendar_schema_routes_and_permissions_are_registered() {
     let migration = read_source(manifest_dir().join("migrations/018_school_calendar.sql"));
+    let tags_migration = read_source(manifest_dir().join("migrations/026_calendar_event_tags.sql"));
     let backend_registry = read_source(manifest_dir().join("src/permissions/registry.rs"));
     let frontend_registry = read_source(
         repo_root()
@@ -2690,6 +2691,22 @@ fn calendar_schema_routes_and_permissions_are_registered() {
     assert!(main.contains("\"/api/parent/students/{student_id}/calendar/events\""));
     assert!(main.contains("\"/api/public/calendar/events\""));
     assert!(main_source.contains("process_due_calendar_reminders_for_all_tenants"));
+
+    for required in [
+        "CREATE TABLE calendar_tags",
+        "CREATE TABLE calendar_event_tags",
+        "REFERENCES calendar_events(id) ON DELETE CASCADE",
+        "REFERENCES calendar_tags(id) ON DELETE CASCADE",
+        "PRIMARY KEY (event_id, tag_id)",
+        "idx_calendar_tags_name_unique",
+    ] {
+        assert!(
+            tags_migration.contains(required),
+            "calendar tags migration must contain `{required}`"
+        );
+    }
+
+    assert!(migration.contains("REFERENCES calendar_categories(id) ON DELETE SET NULL"));
 }
 
 #[test]
@@ -2703,6 +2720,7 @@ fn calendar_handlers_stay_thin_and_services_own_sql() {
     let services = strip_comments(&read_source(
         manifest_dir().join("src/modules/calendar/services.rs"),
     ));
+    let routes = strip_comments(&read_source(manifest_dir().join("src/modules/calendar.rs")));
     let parent_handlers = strip_comments(&read_source(
         manifest_dir().join("src/modules/parents/handlers.rs"),
     ));
@@ -2725,6 +2743,11 @@ fn calendar_handlers_stay_thin_and_services_own_sql() {
     assert!(services.contains("CalendarEvent"));
     assert!(services.contains("resolve_event_recipient_user_ids"));
     assert!(services.contains("process_due_reminders"));
+    assert!(services.contains("DELETE FROM calendar_categories WHERE id = $1"));
+    assert!(services.contains("DELETE FROM calendar_tags WHERE id = $1"));
+    assert!(services.contains("replace_event_tags"));
+    assert!(routes.contains("\"/tags\""));
+    assert!(routes.contains("\"/tags/{id}\""));
     assert!(parent_handlers.contains("get_child_calendar_events"));
     assert!(!parent_handlers.contains("sqlx::query"));
     assert!(!parent_handlers.contains(".fetch_"));

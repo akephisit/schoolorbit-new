@@ -14,6 +14,7 @@
 		startTime?: string | null;
 		endTime?: string | null;
 		isPublic: boolean;
+		tags?: { id: string; name: string }[];
 		targets?: { audienceType: string }[];
 	}
 
@@ -77,6 +78,13 @@
 								</Badge>
 							{/if}
 						</div>
+						{#if (event.tags?.length ?? 0) > 0}
+							<div class="flex flex-wrap gap-1.5">
+								{#each event.tags ?? [] as tag (tag.id)}
+									<Badge variant="outline" class="font-normal">#{tag.name}</Badge>
+								{/each}
+							</div>
+						{/if}
 
 						<div class="grid gap-2 text-sm text-muted-foreground">
 							<p class="flex items-start gap-2">

@@ -53,6 +53,28 @@ pub struct UpsertCalendarCategoryRequest {
 
 #[derive(Debug, Clone, Serialize, FromRow)]
 #[serde(rename_all = "camelCase")]
+pub struct CalendarTag {
+    pub id: Uuid,
+    pub name: String,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, FromRow)]
+#[serde(rename_all = "camelCase")]
+pub struct CalendarEventTag {
+    pub id: Uuid,
+    pub name: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpsertCalendarTagRequest {
+    pub name: String,
+}
+
+#[derive(Debug, Clone, Serialize, FromRow)]
+#[serde(rename_all = "camelCase")]
 pub struct CalendarEventTarget {
     pub id: Uuid,
     pub audience_type: String,
@@ -93,6 +115,7 @@ pub struct CalendarEvent {
     pub start_time: Option<NaiveTime>,
     pub end_time: Option<NaiveTime>,
     pub is_public: bool,
+    pub tags: Vec<CalendarEventTag>,
     pub targets: Vec<CalendarEventTarget>,
     pub reminders: Vec<CalendarEventReminder>,
     pub created_by: Option<Uuid>,
@@ -117,6 +140,7 @@ pub struct CalendarPublicEvent {
     pub start_time: Option<NaiveTime>,
     pub end_time: Option<NaiveTime>,
     pub is_public: bool,
+    pub tags: Vec<CalendarEventTag>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -137,6 +161,7 @@ pub struct CalendarViewerEvent {
     pub start_time: Option<NaiveTime>,
     pub end_time: Option<NaiveTime>,
     pub is_public: bool,
+    pub tags: Vec<CalendarEventTag>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -157,6 +182,7 @@ impl From<CalendarEvent> for CalendarViewerEvent {
             start_time: event.start_time,
             end_time: event.end_time,
             is_public: event.is_public,
+            tags: event.tags,
             created_at: event.created_at,
             updated_at: event.updated_at,
         }
@@ -179,6 +205,7 @@ impl From<CalendarEvent> for CalendarPublicEvent {
             start_time: event.start_time,
             end_time: event.end_time,
             is_public: event.is_public,
+            tags: event.tags,
             created_at: event.created_at,
             updated_at: event.updated_at,
         }
@@ -213,6 +240,8 @@ pub struct CalendarEventQuery {
     pub to: Option<NaiveDate>,
     #[serde(alias = "category_id")]
     pub category_id: Option<Uuid>,
+    #[serde(alias = "tag_id")]
+    pub tag_id: Option<Uuid>,
     pub audience: Option<CalendarAudienceType>,
     pub visibility: Option<CalendarVisibility>,
     pub q: Option<String>,
@@ -231,6 +260,8 @@ pub struct UpsertCalendarEventRequest {
     pub start_time: Option<NaiveTime>,
     pub end_time: Option<NaiveTime>,
     pub is_public: bool,
+    #[serde(default)]
+    pub tag_ids: Vec<Uuid>,
     pub targets: Vec<CalendarEventTargetInput>,
     pub reminder_offsets_days: Vec<i32>,
     pub notify_audience: bool,
@@ -249,6 +280,16 @@ mod tests {
             serde_json::from_value(json!({ "category_id": category_id.to_string() })).unwrap();
 
         assert_eq!(query.category_id, Some(category_id));
+    }
+
+    #[test]
+    fn calendar_event_query_accepts_snake_case_tag_id() {
+        let tag_id = Uuid::new_v4();
+
+        let query: CalendarEventQuery =
+            serde_json::from_value(json!({ "tag_id": tag_id.to_string() })).unwrap();
+
+        assert_eq!(query.tag_id, Some(tag_id));
     }
 
     #[test]
@@ -287,6 +328,10 @@ mod tests {
             start_time: None,
             end_time: None,
             is_public: true,
+            tags: vec![CalendarEventTag {
+                id: Uuid::new_v4(),
+                name: "Featured".to_string(),
+            }],
             created_at: Utc::now(),
             updated_at: Utc::now(),
         };
@@ -299,6 +344,7 @@ mod tests {
             Some(category_id_text.as_str())
         );
         assert!(value.get("targets").is_none());
+        assert_eq!(value["tags"][0]["name"], "Featured");
         assert!(value.get("reminders").is_none());
         assert!(value.get("createdBy").is_none());
         assert!(value.get("updatedBy").is_none());
@@ -320,6 +366,7 @@ mod tests {
             start_time: None,
             end_time: None,
             is_public: false,
+            tags: Vec::new(),
             created_at: Utc::now(),
             updated_at: Utc::now(),
         };

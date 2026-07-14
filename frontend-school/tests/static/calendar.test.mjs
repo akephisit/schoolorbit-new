@@ -56,13 +56,19 @@ test('calendar API client uses current typed contracts', async () => {
 		'CalendarViewerEvent',
 		'CalendarPublicEvent',
 		'CalendarCategory',
+		'CalendarTag',
+		'CalendarEventTag',
 		'CalendarEventTarget',
 		'CalendarEventTargetInput',
 		'CreateCalendarEventRequest',
 		'listCalendarEvents',
 		'listMyCalendarEvents',
 		'listChildCalendarEvents',
-		'listPublicCalendarEvents'
+		'listPublicCalendarEvents',
+		'listCalendarTags',
+		'createCalendarTag',
+		'updateCalendarTag',
+		'deleteCalendarTag'
 	]) {
 		assert.match(api, new RegExp(`\\b${name}\\b`));
 	}
@@ -72,6 +78,8 @@ test('calendar API client uses current typed contracts', async () => {
 	const viewerEvent = interfaceBody(api, 'CalendarViewerEvent');
 	const publicFilters = interfaceBody(api, 'CalendarPublicEventFilters');
 	const publicQuery = functionBody(api, 'publicCalendarQuery');
+	const event = interfaceBody(api, 'CalendarEvent');
+	const createEvent = interfaceBody(api, 'CreateCalendarEventRequest');
 
 	assert.match(target, /\bid:\s*string;/);
 	assert.match(target, /\baudienceType:\s*CalendarAudienceType;/);
@@ -84,6 +92,9 @@ test('calendar API client uses current typed contracts', async () => {
 	assert.doesNotMatch(targetInput, /\bclassroomId\?:\s*string \| null;/);
 	assert.doesNotMatch(targetInput, /\bid[?:]?:\s*string;/);
 	assert.match(api, /targets:\s*CalendarEventTargetInput\[];/);
+	assert.match(event, /tags:\s*CalendarEventTag\[];/);
+	assert.match(createEvent, /tagIds:\s*string\[];/);
+	assert.match(viewerEvent, /tags:\s*CalendarEventTag\[];/);
 	assert.doesNotMatch(viewerEvent, /targets:/);
 	assert.doesNotMatch(viewerEvent, /reminders:/);
 	assert.doesNotMatch(viewerEvent, /createdBy/);
@@ -93,6 +104,8 @@ test('calendar API client uses current typed contracts', async () => {
 	assert.match(api, /export interface CalendarPublicEvent\s*{/);
 	assert.doesNotMatch(api, /CalendarPublicEvent\s*=\s*Omit/);
 	assert.match(publicFilters, /categoryId\?:\s*string;/);
+	assert.match(publicFilters, /tagId\?:\s*string;/);
+	assert.match(publicQuery, /params\.set\(['"]tag_id['"], filters\.tagId\)/);
 	assert.doesNotMatch(publicFilters, /audience\?:/);
 	assert.doesNotMatch(publicFilters, /visibility\?:/);
 	assert.doesNotMatch(publicQuery, /\baudience\b/);
@@ -133,6 +146,9 @@ test('calendar shared components use shadcn primitives', async () => {
 	assert.match(categoryDialog, /from '\$lib\/components\/ui\/dialog'/);
 	assert.match(categoryDialog, /from '\$lib\/components\/ui\/button'/);
 	assert.match(categoryDialog, /UpsertCalendarCategoryRequest/);
+	assert.match(categoryDialog, /UpsertCalendarTagRequest/);
+	assert.match(categoryDialog, /from '\$lib\/components\/ui\/tabs'/);
+	assert.match(categoryDialog, /from '\$lib\/components\/ui\/alert-dialog'/);
 });
 
 test('calendar event dialog builds backend-safe event payloads', async () => {
@@ -144,11 +160,12 @@ test('calendar event dialog builds backend-safe event payloads', async () => {
 	assert.match(eventDialog, /function targetClassRoomId\(audienceType: CalendarAudienceType\)/);
 	assert.match(eventDialog, /selectedClassRoomId \? null : selectedGradeLevelId \|\| null/);
 	assert.match(eventDialog, /selectedClassRoomId \|\| null/);
-	assert.match(
-		eventDialog,
-		/selectedGradeLevelId &&\s*classrooms\.length > 0 &&\s*selectedClassRoomId &&\s*!classrooms\.some\([\s\S]*classroom\.id === selectedClassRoomId &&\s*classroom\.grade_level_id === selectedGradeLevelId[\s\S]*selectedClassRoomId = ''/
-	);
+	assert.match(eventDialog, /function changeGradeLevel\(value: string \| undefined\)/);
+	assert.match(eventDialog, /selectedClassRoomId = ''/);
 	assert.match(eventDialog, /notifyAudience = source \? false : true;/);
+	assert.match(eventDialog, /selectedTagIds = source\?\.tags\.map\(\(tag\) => tag\.id\) \?\? \[]/);
+	assert.match(eventDialog, /tagIds: selectedTagIds/);
+	assert.match(eventDialog, /function toggleTag\(tagId: string\)/);
 	assert.match(eventDialog, /hasMultipleTargetRows/);
 	assert.match(eventDialog, /disabled=\{hasMultipleTargetRows/);
 	assert.match(eventDialog, /ไม่สามารถแก้ไขกลุ่มผู้ชมหลายรายการ/);
@@ -185,6 +202,8 @@ test('calendar routes keep staff reads and local state filter-aware', async () =
 	assert.match(staffSource, /function requestDeleteEvent/);
 	assert.match(staffSource, /function confirmDeleteEvent/);
 	assert.match(staffSource, /activeFilterCount/);
+	assert.match(staffSource, /listCalendarTags\(\)/);
+	assert.match(staffSource, /tagId: tagId \|\| undefined/);
 	assert.match(staffSource, /async function ensureManageOptions\(\): Promise<boolean>/);
 	assert.match(staffSource, /manageOptionsPromise/);
 	assert.match(staffSource, /const optionsReady = await ensureManageOptions\(\);/);
@@ -197,6 +216,7 @@ test('calendar routes keep staff reads and local state filter-aware', async () =
 	assert.match(matcherBody, /event\.title/);
 	assert.match(matcherBody, /event\.description/);
 	assert.match(matcherBody, /event\.location/);
+	assert.match(matcherBody, /event\.tags/);
 	assert.doesNotMatch(matcherBody, /event\.categoryName/);
 	assert.match(
 		staffSource,

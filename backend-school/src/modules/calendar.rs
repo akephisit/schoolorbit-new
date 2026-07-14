@@ -24,4 +24,12 @@ pub fn calendar_routes() -> Router<AppState> {
             "/categories/{id}",
             put(handlers::update_calendar_category).delete(handlers::delete_calendar_category),
         )
+        .route(
+            "/tags",
+            get(handlers::list_calendar_tags).post(handlers::create_calendar_tag),
+        )
+        .route(
+            "/tags/{id}",
+            put(handlers::update_calendar_tag).delete(handlers::delete_calendar_tag),
+        )
 }

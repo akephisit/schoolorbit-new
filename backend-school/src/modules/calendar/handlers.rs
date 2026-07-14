@@ -2,6 +2,7 @@ use crate::api_response::ApiResponse;
 use crate::error::AppError;
 use crate::modules::calendar::models::{
     CalendarEventQuery, UpsertCalendarCategoryRequest, UpsertCalendarEventRequest,
+    UpsertCalendarTagRequest,
 };
 use crate::modules::calendar::services as calendar_service;
 use crate::permissions::registry::codes;
@@ -160,7 +161,59 @@ pub async fn delete_calendar_category(
     context
         .actor
         .require_permission(codes::CALENDAR_MANAGE_SCHOOL)?;
-    calendar_service::deactivate_category(&context.tenant.pool, id).await?;
+    calendar_service::hard_delete_category(&context.tenant.pool, id).await?;
+    Ok(Json(ApiResponse::empty()))
+}
+
+pub async fn list_calendar_tags(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context(&state, &headers).await?;
+    context
+        .actor
+        .require_permission(codes::CALENDAR_READ_SCHOOL)?;
+    let tags = calendar_service::list_tags(&context.tenant.pool).await?;
+    Ok(Json(ApiResponse::ok(tags)))
+}
+
+pub async fn create_calendar_tag(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<UpsertCalendarTagRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context(&state, &headers).await?;
+    context
+        .actor
+        .require_permission(codes::CALENDAR_MANAGE_SCHOOL)?;
+    let tag = calendar_service::create_tag(&context.tenant.pool, payload).await?;
+    Ok((StatusCode::CREATED, Json(ApiResponse::ok(tag))))
+}
+
+pub async fn update_calendar_tag(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+    Json(payload): Json<UpsertCalendarTagRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context(&state, &headers).await?;
+    context
+        .actor
+        .require_permission(codes::CALENDAR_MANAGE_SCHOOL)?;
+    let tag = calendar_service::update_tag(&context.tenant.pool, id, payload).await?;
+    Ok(Json(ApiResponse::ok(tag)))
+}
+
+pub async fn delete_calendar_tag(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context(&state, &headers).await?;
+    context
+        .actor
+        .require_permission(codes::CALENDAR_MANAGE_SCHOOL)?;
+    calendar_service::hard_delete_tag(&context.tenant.pool, id).await?;
     Ok(Json(ApiResponse::empty()))
 }
 

@@ -12,6 +12,18 @@ export interface CalendarCategory {
 	updatedAt: string;
 }
 
+export interface CalendarTag {
+	id: string;
+	name: string;
+	createdAt: string;
+	updatedAt: string;
+}
+
+export interface CalendarEventTag {
+	id: string;
+	name: string;
+}
+
 export interface CalendarEventTarget {
 	id: string;
 	audienceType: CalendarAudienceType;
@@ -46,6 +58,7 @@ export interface CalendarEvent {
 	startTime?: string | null;
 	endTime?: string | null;
 	isPublic: boolean;
+	tags: CalendarEventTag[];
 	targets: CalendarEventTarget[];
 	reminders: CalendarEventReminder[];
 	createdBy?: string | null;
@@ -68,6 +81,7 @@ export interface CalendarViewerEvent {
 	startTime?: string | null;
 	endTime?: string | null;
 	isPublic: boolean;
+	tags: CalendarEventTag[];
 	createdAt: string;
 	updatedAt: string;
 }
@@ -86,6 +100,7 @@ export interface CalendarPublicEvent {
 	startTime?: string | null;
 	endTime?: string | null;
 	isPublic: boolean;
+	tags: CalendarEventTag[];
 	createdAt: string;
 	updatedAt: string;
 }
@@ -94,6 +109,7 @@ interface CalendarEventBaseFilters {
 	from?: string;
 	to?: string;
 	categoryId?: string;
+	tagId?: string;
 	q?: string;
 }
 
@@ -106,6 +122,7 @@ export interface CalendarPublicEventFilters {
 	from?: string;
 	to?: string;
 	categoryId?: string;
+	tagId?: string;
 	q?: string;
 }
 
@@ -120,6 +137,7 @@ export interface CreateCalendarEventRequest {
 	startTime?: string | null;
 	endTime?: string | null;
 	isPublic: boolean;
+	tagIds: string[];
 	targets: CalendarEventTargetInput[];
 	reminderOffsetsDays: number[];
 	notifyAudience: boolean;
@@ -134,11 +152,16 @@ export interface UpsertCalendarCategoryRequest {
 	isActive?: boolean;
 }
 
+export interface UpsertCalendarTagRequest {
+	name: string;
+}
+
 function calendarQuery(filters: CalendarEventFilters = {}) {
 	const params = new URLSearchParams();
 	if (filters.from) params.set('from', filters.from);
 	if (filters.to) params.set('to', filters.to);
 	if (filters.categoryId) params.set('category_id', filters.categoryId);
+	if (filters.tagId) params.set('tag_id', filters.tagId);
 	if (filters.audience) params.set('audience', filters.audience);
 	if (filters.visibility) params.set('visibility', filters.visibility);
 	if (filters.q) params.set('q', filters.q);
@@ -151,6 +174,7 @@ function publicCalendarQuery(filters: CalendarPublicEventFilters = {}) {
 	if (filters.from) params.set('from', filters.from);
 	if (filters.to) params.set('to', filters.to);
 	if (filters.categoryId) params.set('category_id', filters.categoryId);
+	if (filters.tagId) params.set('tag_id', filters.tagId);
 	if (filters.q) params.set('q', filters.q);
 	const query = params.toString();
 	return query ? `?${query}` : '';
@@ -246,4 +270,32 @@ export async function deleteCalendarCategory(id: string): Promise<Record<string,
 		`/api/calendar/categories/${encodeURIComponent(id)}`
 	);
 	return requireApiData(response, 'ไม่สามารถลบหมวดหมู่ปฏิทินได้');
+}
+
+export async function listCalendarTags(): Promise<CalendarTag[]> {
+	const response = await apiClient.get<CalendarTag[]>('/api/calendar/tags');
+	return requireApiData(response, 'ไม่สามารถโหลดแท็กปฏิทินได้');
+}
+
+export async function createCalendarTag(payload: UpsertCalendarTagRequest): Promise<CalendarTag> {
+	const response = await apiClient.post<CalendarTag>('/api/calendar/tags', payload);
+	return requireApiData(response, 'ไม่สามารถสร้างแท็กปฏิทินได้');
+}
+
+export async function updateCalendarTag(
+	id: string,
+	payload: UpsertCalendarTagRequest
+): Promise<CalendarTag> {
+	const response = await apiClient.put<CalendarTag>(
+		`/api/calendar/tags/${encodeURIComponent(id)}`,
+		payload
+	);
+	return requireApiData(response, 'ไม่สามารถบันทึกแท็กปฏิทินได้');
+}
+
+export async function deleteCalendarTag(id: string): Promise<Record<string, never>> {
+	const response = await apiClient.delete<Record<string, never>>(
+		`/api/calendar/tags/${encodeURIComponent(id)}`
+	);
+	return requireApiData(response, 'ไม่สามารถลบแท็กปฏิทินได้');
 }

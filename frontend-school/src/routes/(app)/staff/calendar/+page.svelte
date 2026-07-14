@@ -18,16 +18,22 @@
 		type CalendarAudienceType,
 		type CalendarCategory,
 		type CalendarEvent,
+		type CalendarTag,
 		type CreateCalendarEventRequest,
 		type UpsertCalendarCategoryRequest,
+		type UpsertCalendarTagRequest,
 		createCalendarCategory,
 		createCalendarEvent,
+		createCalendarTag,
 		deleteCalendarCategory,
 		deleteCalendarEvent,
+		deleteCalendarTag,
 		listCalendarCategories,
 		listCalendarEvents,
+		listCalendarTags,
 		updateCalendarCategory,
-		updateCalendarEvent
+		updateCalendarEvent,
+		updateCalendarTag
 	} from '$lib/api/calendar';
 	import { getAcademicStructure, listClassrooms } from '$lib/api/academic';
 	import { PERMISSIONS } from '$lib/permissions/registry';
@@ -62,11 +68,13 @@
 
 	let events = $state.raw<CalendarEvent[]>([]);
 	let categories = $state.raw<CalendarCategory[]>([]);
+	let tags = $state.raw<CalendarTag[]>([]);
 	let loading = $state(true);
 	let selectedMonth = $state(todayDate);
 	let selectedDate = $state(todayDate);
 	let search = $state('');
 	let categoryId = $state('');
+	let tagId = $state('');
 	let audience = $state<AudienceFilter>('');
 	let visibility = $state<VisibilityFilter>('');
 	let eventDialogOpen = $state(false);
@@ -117,12 +125,13 @@
 	});
 	const publicEventCount = $derived(selectedMonthEvents.filter((event) => event.isPublic).length);
 	const activeFilterCount = $derived(
-		[search.trim(), categoryId, audience, visibility].filter(Boolean).length
+		[search.trim(), categoryId, tagId, audience, visibility].filter(Boolean).length
 	);
 	const isTodaySelected = $derived(selectedDate === todayDate);
 	const categoryLabel = $derived(
 		activeCategories.find((category) => category.id === categoryId)?.name ?? 'ทุกหมวดหมู่'
 	);
+	const tagLabel = $derived(tags.find((tag) => tag.id === tagId)?.name ?? 'ทุกแท็ก');
 	const audienceLabel = $derived(
 		audienceOptions.find((option) => option.value === audience)?.label
 	);
@@ -143,20 +152,23 @@
 
 		try {
 			const range = calendarGridRange(selectedMonth);
-			const [nextEvents, nextCategories] = await Promise.all([
+			const [nextEvents, nextCategories, nextTags] = await Promise.all([
 				listCalendarEvents({
 					...range,
 					categoryId: categoryId || undefined,
+					tagId: tagId || undefined,
 					audience: audience || undefined,
 					visibility: visibility || undefined,
 					q: search.trim() || undefined
 				}),
-				listCalendarCategories()
+				listCalendarCategories(),
+				listCalendarTags()
 			]);
 
 			if (requestSequence !== calendarLoadSequence) return;
 			events = nextEvents;
 			categories = nextCategories;
+			tags = nextTags;
 		} catch (loadError: unknown) {
 			if (requestSequence !== calendarLoadSequence) return;
 			error =
@@ -173,7 +185,9 @@
 	function sortCalendarEvents(items: CalendarEvent[]) {
 		return [...items].sort(
 			(left, right) =>
-				left.startDate.localeCompare(right.startDate) || left.title.localeCompare(right.title)
+				left.startDate.localeCompare(right.startDate) ||
+				(left.startTime ?? '').localeCompare(right.startTime ?? '') ||
+				left.title.localeCompare(right.title)
 		);
 	}
 
@@ -181,6 +195,7 @@
 		const range = calendarGridRange(selectedMonth);
 		if (event.startDate > range.to || event.endDate < range.from) return false;
 		if (categoryId && event.categoryId !== categoryId) return false;
+		if (tagId && !event.tags.some((tag) => tag.id === tagId)) return false;
 		if (visibility === 'public' && !event.isPublic) return false;
 		if (visibility === 'private' && event.isPublic) return false;
 		if (audience && !event.targets.some((target) => target.audienceType === audience)) {
@@ -189,7 +204,12 @@
 
 		const query = search.trim().toLowerCase();
 		if (query) {
-			const searchableText = [event.title, event.description ?? '', event.location ?? '']
+			const searchableText = [
+				event.title,
+				event.description ?? '',
+				event.location ?? '',
+				...event.tags.map((tag) => tag.name)
+			]
 				.join(' ')
 				.toLowerCase();
 			if (!searchableText.includes(query)) return false;
@@ -265,7 +285,10 @@
 		}
 	}
 
-	async function saveCategory(id: string | null, payload: UpsertCalendarCategoryRequest) {
+	async function saveCategory(
+		id: string | null,
+		payload: UpsertCalendarCategoryRequest
+	): Promise<boolean> {
 		saving = true;
 		try {
 			const savedCategory = id
@@ -289,37 +312,97 @@
 					)
 					.filter(eventMatchesCurrentFilters)
 			);
-			categoryDialogOpen = false;
 			toast.success('บันทึกหมวดหมู่แล้ว');
+			return true;
 		} catch (saveError: unknown) {
 			toast.error(
 				(saveError instanceof Error ? saveError.message : String(saveError)) ||
 					'บันทึกหมวดหมู่ไม่สำเร็จ'
 			);
+			return false;
 		} finally {
 			saving = false;
 		}
 	}
 
-	async function deactivateCategory(category: CalendarCategory) {
-		if (!canManageCalendar) return;
+	async function deleteCategory(category: CalendarCategory): Promise<boolean> {
+		if (!canManageCalendar) return false;
 
 		saving = true;
 		try {
 			await deleteCalendarCategory(category.id);
-			categories = categories.map((item) =>
-				item.id === category.id ? { ...item, isActive: false } : item
+			categories = categories.filter((item) => item.id !== category.id);
+			events = events.map((event) =>
+				event.categoryId === category.id
+					? { ...event, categoryId: null, categoryName: null, categoryColor: null }
+					: event
 			);
 			if (categoryId === category.id) {
 				categoryId = '';
 				await loadCalendar();
 			}
-			toast.success('ปิดใช้งานหมวดหมู่แล้ว');
+			toast.success('ลบหมวดหมู่แล้ว กิจกรรมเดิมยังอยู่ครบ');
+			return true;
 		} catch (deleteError: unknown) {
 			toast.error(
 				(deleteError instanceof Error ? deleteError.message : String(deleteError)) ||
-					'ปิดใช้งานหมวดหมู่ไม่สำเร็จ'
+					'ลบหมวดหมู่ไม่สำเร็จ'
 			);
+			return false;
+		} finally {
+			saving = false;
+		}
+	}
+
+	async function saveTag(id: string | null, payload: UpsertCalendarTagRequest): Promise<boolean> {
+		saving = true;
+		try {
+			const savedTag = id ? await updateCalendarTag(id, payload) : await createCalendarTag(payload);
+			tags = tags.some((tag) => tag.id === savedTag.id)
+				? tags.map((tag) => (tag.id === savedTag.id ? savedTag : tag))
+				: [...tags, savedTag].sort((left, right) => left.name.localeCompare(right.name, 'th'));
+			events = events.map((event) => ({
+				...event,
+				tags: event.tags.map((tag) =>
+					tag.id === savedTag.id ? { id: savedTag.id, name: savedTag.name } : tag
+				)
+			}));
+			toast.success('บันทึกแท็กแล้ว');
+			return true;
+		} catch (saveError: unknown) {
+			toast.error(
+				(saveError instanceof Error ? saveError.message : String(saveError)) ||
+					'บันทึกแท็กไม่สำเร็จ'
+			);
+			return false;
+		} finally {
+			saving = false;
+		}
+	}
+
+	async function deleteTag(tag: CalendarTag): Promise<boolean> {
+		if (!canManageCalendar) return false;
+
+		saving = true;
+		try {
+			await deleteCalendarTag(tag.id);
+			tags = tags.filter((item) => item.id !== tag.id);
+			events = events.map((event) => ({
+				...event,
+				tags: event.tags.filter((item) => item.id !== tag.id)
+			}));
+			if (tagId === tag.id) {
+				tagId = '';
+				await loadCalendar();
+			}
+			toast.success('ลบแท็กแล้ว กิจกรรมเดิมยังอยู่ครบ');
+			return true;
+		} catch (deleteError: unknown) {
+			toast.error(
+				(deleteError instanceof Error ? deleteError.message : String(deleteError)) ||
+					'ลบแท็กไม่สำเร็จ'
+			);
+			return false;
 		} finally {
 			saving = false;
 		}
@@ -401,6 +484,7 @@
 	async function resetFilters() {
 		search = '';
 		categoryId = '';
+		tagId = '';
 		audience = '';
 		visibility = '';
 		await loadCalendar();
@@ -421,7 +505,7 @@
 			{#if canManageCalendar}
 				<Button variant="outline" onclick={openCategoryDialog}>
 					<FolderPlus class="h-4 w-4" />
-					หมวดหมู่
+					หมวดหมู่และแท็ก
 				</Button>
 				<Button onclick={() => openEventDialog()} disabled={manageOptionsLoading}>
 					<Plus class="h-4 w-4" />
@@ -481,7 +565,7 @@
 			<Separator />
 
 			<form
-				class="grid gap-3 p-3 sm:grid-cols-2 sm:p-4 xl:grid-cols-[minmax(240px,1fr)_180px_180px_180px_auto]"
+				class="grid gap-3 p-3 sm:grid-cols-2 sm:p-4 xl:grid-cols-[minmax(220px,1fr)_160px_160px_160px_160px_auto]"
 				onsubmit={(submitEvent) => {
 					submitEvent.preventDefault();
 					loadCalendar();
@@ -489,7 +573,11 @@
 			>
 				<div class="relative sm:col-span-2 xl:col-span-1">
 					<Search class="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-					<Input class="pl-9" placeholder="ค้นหาชื่อ รายละเอียด หรือสถานที่" bind:value={search} />
+					<Input
+						class="pl-9"
+						placeholder="ค้นหาชื่อ รายละเอียด สถานที่ หรือแท็ก"
+						bind:value={search}
+					/>
 				</div>
 				<Select.Root type="single" bind:value={categoryId}>
 					<Select.Trigger class="w-full">{categoryLabel}</Select.Trigger>
@@ -497,6 +585,15 @@
 						<Select.Item value="">ทุกหมวดหมู่</Select.Item>
 						{#each activeCategories as category (category.id)}
 							<Select.Item value={category.id}>{category.name}</Select.Item>
+						{/each}
+					</Select.Content>
+				</Select.Root>
+				<Select.Root type="single" bind:value={tagId}>
+					<Select.Trigger class="w-full">{tagLabel}</Select.Trigger>
+					<Select.Content>
+						<Select.Item value="">ทุกแท็ก</Select.Item>
+						{#each tags as tag (tag.id)}
+							<Select.Item value={tag.id}>{tag.name}</Select.Item>
 						{/each}
 					</Select.Content>
 				</Select.Root>
@@ -623,6 +720,7 @@
 	<CalendarEventDialog
 		bind:open={eventDialogOpen}
 		{categories}
+		{tags}
 		{gradeLevels}
 		{classrooms}
 		event={editingEvent}
@@ -632,8 +730,11 @@
 	<CalendarCategoryDialog
 		bind:open={categoryDialogOpen}
 		{categories}
+		{tags}
 		{saving}
-		onsave={saveCategory}
-		ondeactivate={deactivateCategory}
+		onsavecategory={saveCategory}
+		ondeletecategory={deleteCategory}
+		onsavetag={saveTag}
+		ondeletetag={deleteTag}
 	/>
 </PageShell>

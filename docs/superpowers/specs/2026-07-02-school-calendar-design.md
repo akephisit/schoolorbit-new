@@ -21,6 +21,7 @@ User decisions:
 - Public calendar is supported, but public visibility is never automatic. Staff must mark an event public.
 - V1 views are month calendar plus event list.
 - Event categories are school-managed with name, color, and order.
+- Each event has at most one primary category for calendar color and may have multiple reusable tags.
 - Notifications are in scope: notify on create/update and multiple reminders per event.
 - Calendar events do not affect timetable, attendance, check-in, or workflow behavior in V1.
 - UI must use local shadcn-svelte primitives and semantic color carefully while keeping the interface clean.
@@ -163,6 +164,17 @@ Rules:
 - V1 does not support hour/minute-precision reminders.
 - Updating event date/time or reminder offsets replaces pending reminders in the same transaction. Already sent reminders remain sent and should not be resent.
 
+### `calendar_tags` and `calendar_event_tags`
+
+Tags extend the original V1 category model without changing its color semantics:
+
+- `calendar_tags` contains a case-insensitively unique `name` (maximum 80 characters).
+- `calendar_event_tags` is a many-to-many junction with `(event_id, tag_id)` as its primary key.
+- An event keeps zero or one primary `category_id` and can additionally reference any number of tags.
+- Deleting a category is a hard delete. The existing `calendar_events.category_id ... ON DELETE SET NULL` constraint preserves every event and changes affected events to “no category”.
+- Deleting a tag is a hard delete. `calendar_event_tags.tag_id ... ON DELETE CASCADE` removes only tag associations; events remain unchanged.
+- Deleting an event cascades its tag associations.
+
 ## API
 
 Use the standard API envelope for all JSON responses.
@@ -178,6 +190,10 @@ GET    /api/calendar/categories
 POST   /api/calendar/categories
 PUT    /api/calendar/categories/{id}
 DELETE /api/calendar/categories/{id}
+GET    /api/calendar/tags
+POST   /api/calendar/tags
+PUT    /api/calendar/tags/{id}
+DELETE /api/calendar/tags/{id}
 ```
 
 Authorization:
@@ -191,6 +207,7 @@ List query:
 from=YYYY-MM-DD
 to=YYYY-MM-DD
 category_id=<uuid>
+tag_id=<uuid>
 audience=staff|student|parent|all
 visibility=public|private
 q=<search text>
@@ -206,6 +223,7 @@ Mutation payloads include event fields, target rows, reminder offsets, and notif
   "description": "รายละเอียด",
   "location": "อาคาร 1",
   "categoryId": "category-id",
+  "tagIds": ["tag-id-1", "tag-id-2"],
   "startDate": "2026-07-03",
   "endDate": "2026-07-05",
   "allDay": true,
@@ -224,7 +242,7 @@ Mutation payloads include event fields, target rows, reminder offsets, and notif
 ### Authenticated Viewer API
 
 ```http
-GET /api/me/calendar/events?from=YYYY-MM-DD&to=YYYY-MM-DD&category_id=<uuid>
+GET /api/me/calendar/events?from=YYYY-MM-DD&to=YYYY-MM-DD&category_id=<uuid>&tag_id=<uuid>
 ```
 
 This endpoint is for authenticated self-view and does not require calendar management permission.
@@ -238,7 +256,7 @@ Behavior:
 ### Parent Child API
 
 ```http
-GET /api/parent/students/{student_id}/calendar/events?from=YYYY-MM-DD&to=YYYY-MM-DD&category_id=<uuid>
+GET /api/parent/students/{student_id}/calendar/events?from=YYYY-MM-DD&to=YYYY-MM-DD&category_id=<uuid>&tag_id=<uuid>
 ```
 
 Behavior:
@@ -251,7 +269,7 @@ Behavior:
 ### Public API
 
 ```http
-GET /api/public/calendar/events?from=YYYY-MM-DD&to=YYYY-MM-DD&category_id=<uuid>
+GET /api/public/calendar/events?from=YYYY-MM-DD&to=YYYY-MM-DD&category_id=<uuid>&tag_id=<uuid>
 ```
 
 Behavior:

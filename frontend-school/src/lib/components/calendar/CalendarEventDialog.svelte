@@ -13,6 +13,7 @@
 		CalendarCategory,
 		CalendarEvent,
 		CalendarEventTargetInput,
+		CalendarTag,
 		CreateCalendarEventRequest
 	} from '$lib/api/calendar';
 	import { cn } from '$lib/utils';
@@ -24,6 +25,7 @@
 		open = $bindable(false),
 		event = null,
 		categories = [],
+		tags = [],
 		gradeLevels = [],
 		classrooms = [],
 		saving = false,
@@ -32,6 +34,7 @@
 		open: boolean;
 		event?: CalendarEvent | null;
 		categories?: CalendarCategory[];
+		tags?: CalendarTag[];
 		gradeLevels?: GradeLevelOption[];
 		classrooms?: ClassroomOption[];
 		saving?: boolean;
@@ -51,6 +54,7 @@
 	let description = $state('');
 	let location = $state('');
 	let categoryId = $state('');
+	let selectedTagIds = $state<string[]>([]);
 	let startDate = $state('');
 	let endDate = $state('');
 	let allDay = $state(true);
@@ -65,7 +69,6 @@
 	let reminder3Days = $state(false);
 	let reminder7Days = $state(false);
 	let customReminderDays = $state('');
-	let loadedEventId = $state<string | null | undefined>(undefined);
 
 	let activeCategories = $derived(categories.filter((category) => category.isActive));
 	let selectedCategoryLabel = $derived(
@@ -88,38 +91,12 @@
 	);
 	let hasMultipleTargetRows = $derived((event?.targets.length ?? 0) > 1);
 
-	$effect(() => {
-		if (!open) {
-			loadedEventId = undefined;
-			return;
-		}
-
-		const nextEventId = event?.id ?? null;
-		if (loadedEventId !== nextEventId) {
-			loadEvent(event);
-			loadedEventId = nextEventId;
-		}
-	});
-
-	$effect(() => {
-		if (
-			selectedGradeLevelId &&
-			classrooms.length > 0 &&
-			selectedClassRoomId &&
-			!classrooms.some(
-				(classroom) =>
-					classroom.id === selectedClassRoomId && classroom.grade_level_id === selectedGradeLevelId
-			)
-		) {
-			selectedClassRoomId = '';
-		}
-	});
-
 	function loadEvent(source: CalendarEvent | null | undefined) {
 		title = source?.title ?? '';
 		description = source?.description ?? '';
 		location = source?.location ?? '';
 		categoryId = source?.categoryId ?? '';
+		selectedTagIds = source?.tags.map((tag) => tag.id) ?? [];
 		startDate = source?.startDate ?? '';
 		endDate = source?.endDate ?? '';
 		allDay = source?.allDay ?? true;
@@ -140,6 +117,30 @@
 		reminder7Days = reminderDays.includes(7);
 		customReminderDays =
 			reminderDays.find((daysBefore) => !fixedReminderDays.includes(daysBefore))?.toString() ?? '';
+	}
+
+	function handleOpenChange(nextOpen: boolean) {
+		if (nextOpen) loadEvent(event);
+	}
+
+	function toggleTag(tagId: string) {
+		selectedTagIds = selectedTagIds.includes(tagId)
+			? selectedTagIds.filter((id) => id !== tagId)
+			: [...selectedTagIds, tagId];
+	}
+
+	function changeGradeLevel(value: string | undefined) {
+		selectedGradeLevelId = value ?? '';
+		if (
+			selectedClassRoomId &&
+			!classrooms.some(
+				(classroom) =>
+					classroom.id === selectedClassRoomId &&
+					(!selectedGradeLevelId || classroom.grade_level_id === selectedGradeLevelId)
+			)
+		) {
+			selectedClassRoomId = '';
+		}
 	}
 
 	function toggleAudience(audienceType: CalendarAudienceType) {
@@ -223,6 +224,7 @@
 			startTime: allDay ? null : startTime || null,
 			endTime: allDay ? null : endTime || null,
 			isPublic,
+			tagIds: selectedTagIds,
 			targets,
 			reminderOffsetsDays: reminderOffsetsDays(),
 			notifyAudience
@@ -230,7 +232,7 @@
 	}
 </script>
 
-<Dialog.Root bind:open>
+<Dialog.Root bind:open onOpenChange={handleOpenChange}>
 	<Dialog.Content class="flex max-h-[92vh] flex-col p-0 sm:max-w-3xl">
 		<Dialog.Header class="border-b px-6 py-5">
 			<Dialog.Title>{event ? 'แก้ไขกิจกรรมปฏิทิน' : 'สร้างกิจกรรมปฏิทิน'}</Dialog.Title>
@@ -247,7 +249,8 @@
 			<div class="space-y-6">
 				{#if hasMultipleTargetRows}
 					<div class="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-						ไม่สามารถแก้ไขกลุ่มผู้ชมหลายรายการจากฟอร์มนี้ได้ เพื่อป้องกันการบันทึกทับกลุ่มเป้าหมายเดิม
+						ไม่สามารถแก้ไขกลุ่มผู้ชมหลายรายการจากฟอร์มนี้ได้
+						เพื่อป้องกันการบันทึกทับกลุ่มเป้าหมายเดิม
 					</div>
 				{/if}
 
@@ -275,6 +278,30 @@
 								{/each}
 							</Select.Content>
 						</Select.Root>
+					</div>
+					<div class="grid gap-2">
+						<div>
+							<Label>แท็ก</Label>
+							<p class="mt-1 text-xs text-muted-foreground">เลือกได้หลายแท็ก</p>
+						</div>
+						<div class="flex min-h-11 flex-wrap gap-2 rounded-md border p-2">
+							{#each tags as tag (tag.id)}
+								<Button
+									type="button"
+									size="sm"
+									variant={selectedTagIds.includes(tag.id) ? 'default' : 'outline'}
+									aria-pressed={selectedTagIds.includes(tag.id)}
+									onclick={() => toggleTag(tag.id)}
+								>
+									{tag.name}
+								</Button>
+							{/each}
+							{#if tags.length === 0}
+								<p class="self-center px-1 text-sm text-muted-foreground">
+									ยังไม่มีแท็ก สามารถสร้างได้จากเมนูจัดการหมวดหมู่และแท็ก
+								</p>
+							{/if}
+						</div>
 					</div>
 				</section>
 
@@ -323,7 +350,11 @@
 						<div class="grid gap-4 rounded-md border bg-muted/20 p-4 md:grid-cols-2">
 							<div class="grid gap-2">
 								<Label>ระดับชั้น</Label>
-								<Select.Root type="single" bind:value={selectedGradeLevelId}>
+								<Select.Root
+									type="single"
+									value={selectedGradeLevelId}
+									onValueChange={changeGradeLevel}
+								>
 									<Select.Trigger class="w-full">{selectedGradeLevelLabel}</Select.Trigger>
 									<Select.Content>
 										<Select.Item value="">ทุกระดับชั้น</Select.Item>

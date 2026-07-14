@@ -10,16 +10,20 @@ use crate::db::{admin_client::AdminClient, pool_manager::PoolManager};
 use crate::error::AppError;
 use crate::modules::calendar::models::{
     CalendarAudienceType, CalendarCategory, CalendarEvent, CalendarEventQuery,
-    CalendarEventReminder, CalendarEventRow, CalendarEventTarget, CalendarEventTargetInput,
-    CalendarPublicEvent, CalendarViewerEvent, CalendarVisibility, UpsertCalendarCategoryRequest,
-    UpsertCalendarEventRequest,
+    CalendarEventReminder, CalendarEventRow, CalendarEventTag, CalendarEventTarget,
+    CalendarEventTargetInput, CalendarPublicEvent, CalendarTag, CalendarViewerEvent,
+    CalendarVisibility, UpsertCalendarCategoryRequest, UpsertCalendarEventRequest,
+    UpsertCalendarTagRequest,
 };
 use crate::modules::notification::models::Notification;
 use crate::services::notification::{NotificationService, NotificationType};
 
 const DUPLICATE_CATEGORY_MESSAGE: &str = "มีหมวดหมู่นี้อยู่แล้ว";
+const DUPLICATE_TAG_MESSAGE: &str = "มีแท็กนี้อยู่แล้ว";
 const EVENT_NOT_FOUND_MESSAGE: &str = "ไม่พบกำหนดการ";
 const CATEGORY_NOT_FOUND_MESSAGE: &str = "ไม่พบหมวดหมู่";
+const TAG_NOT_FOUND_MESSAGE: &str = "ไม่พบแท็ก";
+const INVALID_TAGS_MESSAGE: &str = "มีแท็กที่ไม่ถูกต้อง กรุณาเลือกแท็กใหม่";
 
 const SELECT_DUE_CALENDAR_REMINDER_CANDIDATES_SQL: &str = r#"
 SELECT id, event_id, days_before
@@ -85,6 +89,13 @@ struct CalendarEventReminderRow {
     days_before: i32,
     remind_on: NaiveDate,
     sent_at: Option<chrono::DateTime<Utc>>,
+}
+
+#[derive(sqlx::FromRow)]
+struct CalendarEventTagRow {
+    event_id: Uuid,
+    id: Uuid,
+    name: String,
 }
 
 #[derive(sqlx::FromRow)]
@@ -241,6 +252,11 @@ pub fn dedupe_user_ids(ids: Vec<Uuid>) -> Vec<Uuid> {
     }
 
     deduped
+}
+
+fn dedupe_uuid_ids(ids: &[Uuid]) -> Vec<Uuid> {
+    let mut seen = HashSet::new();
+    ids.iter().copied().filter(|id| seen.insert(*id)).collect()
 }
 
 pub async fn resolve_event_recipient_user_ids(
@@ -512,6 +528,40 @@ async fn list_reminders_for_events(
     Ok(reminders)
 }
 
+async fn list_tags_for_events(
+    pool: &PgPool,
+    event_ids: &[Uuid],
+) -> Result<HashMap<Uuid, Vec<CalendarEventTag>>, AppError> {
+    if event_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    let rows = sqlx::query_as::<_, CalendarEventTagRow>(
+        r#"
+        SELECT event_tags.event_id, tags.id, tags.name
+        FROM calendar_event_tags event_tags
+        JOIN calendar_tags tags ON tags.id = event_tags.tag_id
+        WHERE event_tags.event_id = ANY($1)
+        ORDER BY event_tags.event_id, LOWER(tags.name), tags.id
+        "#,
+    )
+    .bind(event_ids)
+    .fetch_all(pool)
+    .await?;
+
+    let mut tags = HashMap::new();
+    for row in rows {
+        tags.entry(row.event_id)
+            .or_insert_with(Vec::new)
+            .push(CalendarEventTag {
+                id: row.id,
+                name: row.name,
+            });
+    }
+
+    Ok(tags)
+}
+
 async fn hydrate_events(
     pool: &PgPool,
     rows: Vec<CalendarEventRow>,
@@ -519,6 +569,7 @@ async fn hydrate_events(
     let event_ids: Vec<Uuid> = rows.iter().map(|row| row.id).collect();
     let targets = list_targets_for_events(pool, &event_ids).await?;
     let reminders = list_reminders_for_events(pool, &event_ids).await?;
+    let tags = list_tags_for_events(pool, &event_ids).await?;
 
     Ok(rows
         .into_iter()
@@ -536,6 +587,7 @@ async fn hydrate_events(
             start_time: row.start_time,
             end_time: row.end_time,
             is_public: row.is_public,
+            tags: tags.get(&row.id).cloned().unwrap_or_default(),
             targets: targets.get(&row.id).cloned().unwrap_or_default(),
             reminders: reminders.get(&row.id).cloned().unwrap_or_default(),
             created_by: row.created_by,
@@ -631,20 +683,81 @@ pub async fn update_category(
     category.ok_or_else(|| AppError::NotFound(CATEGORY_NOT_FOUND_MESSAGE.to_string()))
 }
 
-pub async fn deactivate_category(pool: &PgPool, id: Uuid) -> Result<(), AppError> {
-    let result = sqlx::query(
-        r#"
-        UPDATE calendar_categories
-        SET is_active = false
-        WHERE id = $1 AND is_active = true
-        "#,
-    )
-    .bind(id)
-    .execute(pool)
-    .await?;
+pub async fn hard_delete_category(pool: &PgPool, id: Uuid) -> Result<(), AppError> {
+    let result = sqlx::query("DELETE FROM calendar_categories WHERE id = $1")
+        .bind(id)
+        .execute(pool)
+        .await?;
 
     if result.rows_affected() == 0 {
         return Err(AppError::NotFound(CATEGORY_NOT_FOUND_MESSAGE.to_string()));
+    }
+
+    Ok(())
+}
+
+pub async fn list_tags(pool: &PgPool) -> Result<Vec<CalendarTag>, AppError> {
+    sqlx::query_as::<_, CalendarTag>(
+        r#"
+        SELECT id, name, created_at, updated_at
+        FROM calendar_tags
+        ORDER BY LOWER(name), id
+        "#,
+    )
+    .fetch_all(pool)
+    .await
+    .map_err(AppError::from)
+}
+
+pub async fn create_tag(
+    pool: &PgPool,
+    payload: UpsertCalendarTagRequest,
+) -> Result<CalendarTag, AppError> {
+    let name = normalized_tag_name(payload.name)?;
+    sqlx::query_as::<_, CalendarTag>(
+        r#"
+        INSERT INTO calendar_tags (name)
+        VALUES ($1)
+        RETURNING id, name, created_at, updated_at
+        "#,
+    )
+    .bind(name)
+    .fetch_one(pool)
+    .await
+    .map_err(map_tag_write_error)
+}
+
+pub async fn update_tag(
+    pool: &PgPool,
+    id: Uuid,
+    payload: UpsertCalendarTagRequest,
+) -> Result<CalendarTag, AppError> {
+    let name = normalized_tag_name(payload.name)?;
+    let tag = sqlx::query_as::<_, CalendarTag>(
+        r#"
+        UPDATE calendar_tags
+        SET name = $1
+        WHERE id = $2
+        RETURNING id, name, created_at, updated_at
+        "#,
+    )
+    .bind(name)
+    .bind(id)
+    .fetch_optional(pool)
+    .await
+    .map_err(map_tag_write_error)?;
+
+    tag.ok_or_else(|| AppError::NotFound(TAG_NOT_FOUND_MESSAGE.to_string()))
+}
+
+pub async fn hard_delete_tag(pool: &PgPool, id: Uuid) -> Result<(), AppError> {
+    let result = sqlx::query("DELETE FROM calendar_tags WHERE id = $1")
+        .bind(id)
+        .execute(pool)
+        .await?;
+
+    if result.rows_affected() == 0 {
+        return Err(AppError::NotFound(TAG_NOT_FOUND_MESSAGE.to_string()));
     }
 
     Ok(())
@@ -664,6 +777,7 @@ pub async fn create_event(
     )?;
     validate_targets(&payload.targets)?;
     let reminder_pairs = reminder_schedule(payload.start_date, &payload.reminder_offsets_days)?;
+    let tag_ids = dedupe_uuid_ids(&payload.tag_ids);
     let notify_audience = payload.notify_audience;
 
     let mut transaction = pool.begin().await?;
@@ -692,6 +806,7 @@ pub async fn create_event(
     .await?;
 
     replace_event_targets(&mut transaction, event_id, &payload.targets).await?;
+    replace_event_tags(&mut transaction, event_id, &tag_ids).await?;
     replace_pending_event_reminders(&mut transaction, event_id, reminder_pairs).await?;
     transaction.commit().await?;
 
@@ -718,6 +833,7 @@ pub async fn update_event(
     )?;
     validate_targets(&payload.targets)?;
     let reminder_pairs = reminder_schedule(payload.start_date, &payload.reminder_offsets_days)?;
+    let tag_ids = dedupe_uuid_ids(&payload.tag_ids);
     let notify_audience = payload.notify_audience;
 
     let mut transaction = pool.begin().await?;
@@ -758,6 +874,7 @@ pub async fn update_event(
     let event_id =
         event_id.ok_or_else(|| AppError::NotFound(EVENT_NOT_FOUND_MESSAGE.to_string()))?;
     replace_event_targets(&mut transaction, event_id, &payload.targets).await?;
+    replace_event_tags(&mut transaction, event_id, &tag_ids).await?;
     replace_pending_event_reminders(&mut transaction, event_id, reminder_pairs).await?;
     transaction.commit().await?;
 
@@ -813,11 +930,7 @@ pub async fn list_management_events(
     let (from, to) = normalized_event_range(&query, tenant_today())?;
     let mut builder = QueryBuilder::<Postgres>::new(EVENT_SELECT_WITH_CATEGORY);
     push_base_event_filters(&mut builder, from, to);
-
-    if let Some(category_id) = query.category_id {
-        builder.push(" AND e.category_id = ");
-        builder.push_bind(category_id);
-    }
+    push_event_query_filters(&mut builder, &query);
 
     if let Some(audience) = &query.audience {
         builder.push(
@@ -827,16 +940,6 @@ pub async fn list_management_events(
         );
         builder.push_bind(audience.as_str());
         builder.push(")");
-    }
-
-    match query.visibility.as_ref() {
-        Some(CalendarVisibility::Public) => {
-            builder.push(" AND e.is_public = true");
-        }
-        Some(CalendarVisibility::Private) => {
-            builder.push(" AND e.is_public = false");
-        }
-        None => {}
     }
 
     push_search_filter(&mut builder, query.q.as_deref());
@@ -904,11 +1007,7 @@ pub async fn list_public_events(
     let mut builder = QueryBuilder::<Postgres>::new(EVENT_SELECT_WITH_CATEGORY);
     push_base_event_filters(&mut builder, from, to);
     builder.push(" AND e.is_public = true");
-
-    if let Some(category_id) = query.category_id {
-        builder.push(" AND e.category_id = ");
-        builder.push_bind(category_id);
-    }
+    push_category_and_tag_query_filters(&mut builder, &query);
 
     push_search_filter(&mut builder, query.q.as_deref());
     push_event_order(&mut builder);
@@ -1195,6 +1294,40 @@ async fn replace_event_targets(
     Ok(())
 }
 
+async fn replace_event_tags(
+    transaction: &mut Transaction<'_, Postgres>,
+    event_id: Uuid,
+    tag_ids: &[Uuid],
+) -> Result<(), AppError> {
+    sqlx::query("DELETE FROM calendar_event_tags WHERE event_id = $1")
+        .bind(event_id)
+        .execute(&mut **transaction)
+        .await?;
+
+    if tag_ids.is_empty() {
+        return Ok(());
+    }
+
+    let result = sqlx::query(
+        r#"
+        INSERT INTO calendar_event_tags (event_id, tag_id)
+        SELECT $1, tags.id
+        FROM calendar_tags tags
+        WHERE tags.id = ANY($2::uuid[])
+        "#,
+    )
+    .bind(event_id)
+    .bind(tag_ids)
+    .execute(&mut **transaction)
+    .await?;
+
+    if result.rows_affected() != tag_ids.len() as u64 {
+        return Err(AppError::BadRequest(INVALID_TAGS_MESSAGE.to_string()));
+    }
+
+    Ok(())
+}
+
 async fn replace_pending_event_reminders(
     transaction: &mut Transaction<'_, Postgres>,
     event_id: Uuid,
@@ -1293,10 +1426,7 @@ fn push_base_event_filters(
 }
 
 fn push_event_query_filters(builder: &mut QueryBuilder<'_, Postgres>, query: &CalendarEventQuery) {
-    if let Some(category_id) = query.category_id {
-        builder.push(" AND e.category_id = ");
-        builder.push_bind(category_id);
-    }
+    push_category_and_tag_query_filters(builder, query);
 
     match query.visibility.as_ref() {
         Some(CalendarVisibility::Public) => {
@@ -1306,6 +1436,26 @@ fn push_event_query_filters(builder: &mut QueryBuilder<'_, Postgres>, query: &Ca
             builder.push(" AND e.is_public = false");
         }
         None => {}
+    }
+}
+
+fn push_category_and_tag_query_filters(
+    builder: &mut QueryBuilder<'_, Postgres>,
+    query: &CalendarEventQuery,
+) {
+    if let Some(category_id) = query.category_id {
+        builder.push(" AND e.category_id = ");
+        builder.push_bind(category_id);
+    }
+
+    if let Some(tag_id) = query.tag_id {
+        builder.push(
+            " AND EXISTS (
+                SELECT 1 FROM calendar_event_tags event_tags
+                WHERE event_tags.event_id = e.id AND event_tags.tag_id = ",
+        );
+        builder.push_bind(tag_id);
+        builder.push(")");
     }
 }
 
@@ -1515,8 +1665,16 @@ fn push_search_filter(builder: &mut QueryBuilder<'_, Postgres>, query: Option<&s
     builder.push(" ESCAPE '\\' OR e.location ILIKE ");
     builder.push_bind(pattern.clone());
     builder.push(" ESCAPE '\\' OR e.description ILIKE ");
+    builder.push_bind(pattern.clone());
+    builder.push(
+        " ESCAPE '\\' OR EXISTS (
+            SELECT 1
+            FROM calendar_event_tags event_tags
+            JOIN calendar_tags tags ON tags.id = event_tags.tag_id
+            WHERE event_tags.event_id = e.id AND tags.name ILIKE ",
+    );
     builder.push_bind(pattern);
-    builder.push(" ESCAPE '\\')");
+    builder.push(" ESCAPE '\\'))");
 }
 
 fn calendar_search_pattern(search: &str) -> String {
@@ -1549,7 +1707,31 @@ fn map_category_write_error(error: sqlx::Error) -> AppError {
     }
 }
 
+fn normalized_tag_name(name: String) -> Result<String, AppError> {
+    let normalized = name.trim();
+    if normalized.is_empty() {
+        return Err(AppError::BadRequest("กรุณาระบุชื่อแท็ก".to_string()));
+    }
+    if normalized.chars().count() > 80 {
+        return Err(AppError::BadRequest("ชื่อแท็กต้องไม่เกิน 80 ตัวอักษร".to_string()));
+    }
+
+    Ok(normalized.to_string())
+}
+
+fn map_tag_write_error(error: sqlx::Error) -> AppError {
+    if is_unique_violation_for_constraint(&error, "idx_calendar_tags_name_unique") {
+        AppError::BadRequest(DUPLICATE_TAG_MESSAGE.to_string())
+    } else {
+        AppError::from(error)
+    }
+}
+
 fn is_duplicate_active_category_name(error: &sqlx::Error) -> bool {
+    is_unique_violation_for_constraint(error, "idx_calendar_categories_active_name_unique")
+}
+
+fn is_unique_violation_for_constraint(error: &sqlx::Error, constraint_name: &str) -> bool {
     let sqlx::Error::Database(database_error) = error else {
         return false;
     };
@@ -1560,11 +1742,9 @@ fn is_duplicate_active_category_name(error: &sqlx::Error) -> bool {
 
     let constraint_matches = database_error
         .constraint()
-        .map(|constraint| constraint == "idx_calendar_categories_active_name_unique")
+        .map(|constraint| constraint == constraint_name)
         .unwrap_or(false);
-    let message_matches = database_error
-        .message()
-        .contains("idx_calendar_categories_active_name_unique");
+    let message_matches = database_error.message().contains(constraint_name);
 
     constraint_matches || message_matches
 }
@@ -1828,6 +2008,26 @@ mod tests {
     }
 
     #[test]
+    fn dedupe_uuid_ids_keeps_each_tag_once_in_selection_order() {
+        let first = Uuid::new_v4();
+        let second = Uuid::new_v4();
+
+        assert_eq!(
+            dedupe_uuid_ids(&[first, second, first]),
+            vec![first, second]
+        );
+    }
+
+    #[test]
+    fn normalized_tag_name_trims_and_rejects_blank_values() {
+        assert_eq!(
+            normalized_tag_name("  กิจกรรมเด่น  ".to_string()).unwrap(),
+            "กิจกรรมเด่น"
+        );
+        assert!(normalized_tag_name("   ".to_string()).is_err());
+    }
+
+    #[test]
     fn normalized_event_range_uses_complete_query_range() {
         let from = NaiveDate::from_ymd_opt(2026, 5, 2).unwrap();
         let to = NaiveDate::from_ymd_opt(2026, 5, 6).unwrap();
@@ -1836,6 +2036,7 @@ mod tests {
             from: Some(from),
             to: Some(to),
             category_id: None,
+            tag_id: None,
             audience: None,
             visibility: None,
             q: None,
@@ -1853,6 +2054,7 @@ mod tests {
             from: Some(from),
             to: Some(to),
             category_id: None,
+            tag_id: None,
             audience: None,
             visibility: None,
             q: None,
@@ -1871,6 +2073,7 @@ mod tests {
             from: Some(NaiveDate::from_ymd_opt(2026, 1, 5).unwrap()),
             to: None,
             category_id: None,
+            tag_id: None,
             audience: None,
             visibility: None,
             q: None,
@@ -1892,6 +2095,7 @@ mod tests {
             from: None,
             to: None,
             category_id: None,
+            tag_id: None,
             audience: None,
             visibility: None,
             q: None,
@@ -2047,6 +2251,7 @@ mod tests {
             start_time: None,
             end_time: None,
             is_public: false,
+            tags: Vec::new(),
             targets: Vec::new(),
             reminders: Vec::new(),
             created_by: None,
