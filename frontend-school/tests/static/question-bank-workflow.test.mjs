@@ -77,6 +77,8 @@ test('question editor offers visual math controls without exposing a LaTeX input
 	assert.match(page, /keyboard\.container = document\.body/);
 	assert.doesNotMatch(page, /trapFocus=\{false\}/);
 	assert.match(extensions, /mathfieldConstructor\.soundsDirectory = null/);
+	assert.match(editor, /import \{ untrack \} from 'svelte'/);
+	assert.match(editor, /function connectEditor[\s\S]*return untrack\(\(\) => \{/);
 	assert.match(editor, /เศษส่วน/);
 	assert.match(editor, /รากที่สอง/);
 });

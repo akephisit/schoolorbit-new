@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { Editor, type JSONContent } from '@tiptap/core';
 	import {
 		Bold as BoldIcon,
@@ -79,51 +80,53 @@
 	];
 
 	function connectEditor(node: HTMLElement) {
-		const instance = new Editor({
-			element: node,
-			extensions: createQuestionEditorExtensions({
-				onImageFile: registerImage,
-				placeholder: textPlaceholder,
-				onMathFocus: (target) => {
-					activeMath = target;
+		return untrack(() => {
+			const instance = new Editor({
+				element: node,
+				extensions: createQuestionEditorExtensions({
+					onImageFile: registerImage,
+					placeholder: textPlaceholder,
+					onMathFocus: (target) => {
+						activeMath = target;
+						editorRevision += 1;
+					}
+				}),
+				content: content.document as JSONContent,
+				editorProps: {
+					attributes: {
+						class: compact ? 'question-rich-editor compact' : 'question-rich-editor',
+						role: 'textbox',
+						'aria-multiline': 'true',
+						'aria-label': label,
+						'data-placeholder': textPlaceholder
+					}
+				},
+				onUpdate: ({ editor: updatedEditor }) => {
+					content = {
+						schemaVersion: 1,
+						document: updatedEditor.getJSON() as EditorRichContent['document']
+					};
+					editorRevision += 1;
+				},
+				onSelectionUpdate: () => {
 					editorRevision += 1;
 				}
-			}),
-			content: content.document as JSONContent,
-			editorProps: {
-				attributes: {
-					class: compact ? 'question-rich-editor compact' : 'question-rich-editor',
-					role: 'textbox',
-					'aria-multiline': 'true',
-					'aria-label': label,
-					'data-placeholder': textPlaceholder
-				}
-			},
-			onUpdate: ({ editor: updatedEditor }) => {
-				content = {
-					schemaVersion: 1,
-					document: updatedEditor.getJSON() as EditorRichContent['document']
-				};
-				editorRevision += 1;
-			},
-			onSelectionUpdate: () => {
-				editorRevision += 1;
-			}
-		});
-		editor = instance;
-		const keyboard = window.mathVirtualKeyboard;
-		const handleKeyboardToggle = () => {
+			});
+			editor = instance;
+			const keyboard = window.mathVirtualKeyboard;
+			const handleKeyboardToggle = () => {
+				keyboardVisible = keyboard.visible;
+			};
+			keyboard.addEventListener('virtual-keyboard-toggle', handleKeyboardToggle);
 			keyboardVisible = keyboard.visible;
-		};
-		keyboard.addEventListener('virtual-keyboard-toggle', handleKeyboardToggle);
-		keyboardVisible = keyboard.visible;
 
-		return () => {
-			keyboard.removeEventListener('virtual-keyboard-toggle', handleKeyboardToggle);
-			if (activeMath?.field.hasFocus() && keyboard.visible) keyboard.hide({ animate: false });
-			instance.destroy();
-			if (editor === instance) editor = null;
-		};
+			return () => {
+				keyboard.removeEventListener('virtual-keyboard-toggle', handleKeyboardToggle);
+				if (activeMath?.field.hasFocus() && keyboard.visible) keyboard.hide({ animate: false });
+				instance.destroy();
+				if (editor === instance) editor = null;
+			};
+		});
 	}
 
 	function registerImage(file: File): PendingImageReference | null {
