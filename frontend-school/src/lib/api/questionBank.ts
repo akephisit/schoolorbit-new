@@ -175,6 +175,16 @@ export async function getQuestionBankQuestion(id: string): Promise<QuestionDetai
 	return requireApiData(response, 'โหลดข้อสอบไม่สำเร็จ');
 }
 
+export async function getQuestionBankQuestionFile(
+	questionId: string,
+	fileId: string
+): Promise<Blob> {
+	const response = await apiClient.getBlob(
+		`/api/academic/question-bank/questions/${encodeURIComponent(questionId)}/files/${encodeURIComponent(fileId)}`
+	);
+	return requireApiData(response, 'ดาวน์โหลดรูปประกอบข้อสอบไม่สำเร็จ');
+}
+
 export async function createQuestionBankQuestion(
 	payload: UpsertQuestionRequest
 ): Promise<QuestionDetail> {

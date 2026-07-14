@@ -68,11 +68,27 @@ new images are uploaded as temporary `course_material` files, pending IDs are re
 atomically. Temporary uploads expire after 24 hours, and the scheduled file cleaner removes expired
 objects and metadata.
 
+## Word export
+
+Teachers can select questions across result pages and export them as an A4 `.docx` document. The
+browser loads the full details of the selected questions before building the file, so choices and
+every referenced image are included. Image bytes are read through the authenticated question-bank
+file endpoint, which verifies that the user can read the question and that the file is actually
+referenced by it; export does not depend on cross-origin access to the public storage URL. The export
+dialog can optionally append correct choices, explanations, and scoring rubrics as an answer key.
+
+Normal text remains editable Word text using `TH Sarabun New`. Uploaded images are converted to PNG
+and embedded in the document. KaTeX renders inline and display formulas to transparent PNG at 3x
+resolution before they are embedded, giving formulas a consistent MathType-like printed appearance
+without relying on Word Equation/OMML. This is intentionally a visual export: formulas look stable
+across Word installations but are not editable equation objects inside Word.
+
 ## API
 
 - `GET /api/academic/question-bank/options`
 - `GET /api/academic/question-bank/questions` (search, filters, and pagination)
 - `GET /api/academic/question-bank/questions/{id}`
+- `GET /api/academic/question-bank/questions/{question_id}/files/{file_id}`
 - `POST /api/academic/question-bank/questions`
 - `PUT /api/academic/question-bank/questions/{id}`
 - `DELETE /api/academic/question-bank/questions/{id}`

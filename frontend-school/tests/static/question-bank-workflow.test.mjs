@@ -141,3 +141,51 @@ test('question bank renders formulas through KaTeX with untrusted commands disab
 	assert.match(page, /<QuestionContent content=\{question\.stemContent\} compact \/>/);
 	assert.doesNotMatch(page, /questionTitle\(/);
 });
+
+test('question bank exports selected questions to Word with embedded image formulas', async () => {
+	const packageJson = await readProjectFile('package.json');
+	const page = await readProjectFile('src/routes/(app)/staff/academic/question-bank/+page.svelte');
+	const api = await readProjectFile('src/lib/api/questionBank.ts');
+	const apiClient = await readProjectFile('src/lib/api/client.ts');
+	const exporter = await readProjectFile('src/lib/question-bank/word-export.ts');
+	const formulaFonts = await readProjectFile('src/lib/question-bank/katex-fonts.ts');
+	const backendRoutes = await readProjectFile('../backend-school/src/modules/question_bank.rs');
+	const backendHandlers = await readProjectFile(
+		'../backend-school/src/modules/question_bank/handlers.rs'
+	);
+	const backendServices = await readProjectFile(
+		'../backend-school/src/modules/question_bank/services.rs'
+	);
+	const r2Client = await readProjectFile('../backend-school/src/services/r2_client.rs');
+
+	assert.match(packageJson, /"docx":/);
+	assert.match(packageJson, /"html-to-image":/);
+	assert.match(page, /new SvelteSet<string>\(\)/);
+	assert.match(page, /เลือกทั้งหมดในหน้านี้/);
+	assert.match(page, /ส่งออก Word/);
+	assert.match(page, /loadSelectedQuestionDetails/);
+	assert.match(page, /getQuestionBankQuestion\(questionIds\[index\]\)/);
+	assert.match(page, /import\('\$lib\/question-bank\/word-export'\)/);
+	assert.match(exporter, /Packer\.toBlob\(document\)/);
+	assert.match(exporter, /new ImageRun\(/);
+	assert.match(exporter, /katex\.render\(/);
+	assert.match(exporter, /toPng\(host/);
+	assert.match(exporter, /pixelRatio:\s*3/);
+	assert.match(exporter, /fontEmbedCSS:\s*katexFontEmbedCss/);
+	assert.doesNotMatch(exporter, /getFontEmbedCSS/);
+	assert.match(formulaFonts, /\.woff2\?inline/);
+	assert.match(exporter, /getQuestionBankQuestionFile\(questionId, fileId\)/);
+	assert.doesNotMatch(exporter, /\bfetch\s*\(/);
+	assert.match(api, /export async function getQuestionBankQuestionFile/);
+	assert.match(api, /apiClient\.getBlob/);
+	assert.match(apiClient, /async getBlob\(endpoint: string\)/);
+	assert.match(exporter, /includeAnswerKey/);
+	assert.match(exporter, /TH Sarabun New/);
+	assert.doesNotMatch(exporter, /MathRun|MathFraction|MathEquation/);
+	assert.match(backendRoutes, /questions\/\{question_id\}\/files\/\{file_id\}/);
+	assert.match(backendHandlers, /get_question_file_source/);
+	assert.match(backendHandlers, /private, max-age=300/);
+	assert.match(backendServices, /referenced_file_ids\.contains\(&file_id\)/);
+	assert.match(backendServices, /mime_type LIKE 'image\/%'/);
+	assert.match(r2Client, /pub async fn download_file/);
+});

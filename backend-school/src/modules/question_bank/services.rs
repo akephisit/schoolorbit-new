@@ -62,6 +62,12 @@ struct PayloadFileRow {
     is_temporary: bool,
 }
 
+#[derive(Debug, Clone, sqlx::FromRow)]
+pub struct QuestionFileSource {
+    pub storage_path: String,
+    pub mime_type: String,
+}
+
 pub async fn list_questions(
     pool: &PgPool,
     query: &QuestionBankListQuery,
@@ -189,6 +195,38 @@ pub async fn get_question(
     question_bank_access_policy::require_question_read_access(pool, actor, &scope).await?;
     let access = question_bank_access_policy::resolve_access(pool, actor).await?;
     fetch_question_detail(pool, question_id, &access).await
+}
+
+pub async fn get_question_file_source(
+    pool: &PgPool,
+    actor: &ActorContext,
+    question_id: Uuid,
+    file_id: Uuid,
+) -> Result<QuestionFileSource, AppError> {
+    let scope = fetch_question_scope(pool, question_id).await?;
+    question_bank_access_policy::require_question_read_access(pool, actor, &scope).await?;
+    let referenced_file_ids = fetch_question_file_ids(pool, question_id).await?;
+    if !referenced_file_ids.contains(&file_id) {
+        return Err(AppError::NotFound("ไม่พบรูปประกอบในข้อสอบนี้".to_string()));
+    }
+
+    sqlx::query_as::<_, QuestionFileSource>(
+        r#"
+SELECT storage_path, mime_type
+FROM files
+WHERE id = $1
+  AND mime_type LIKE 'image/%'
+  AND deleted_at IS NULL
+"#,
+    )
+    .bind(file_id)
+    .fetch_optional(pool)
+    .await
+    .map_err(|error| {
+        tracing::error!("Failed to fetch question image source: {}", error);
+        AppError::InternalServerError("ไม่สามารถดึงรูปประกอบข้อสอบได้".to_string())
+    })?
+    .ok_or_else(|| AppError::NotFound("ไม่พบรูปประกอบในข้อสอบนี้".to_string()))
 }
 
 pub async fn create_question(

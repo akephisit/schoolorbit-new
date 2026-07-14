@@ -161,6 +161,27 @@ class APIClient {
 		return this.request<T>(endpoint, { method: 'GET' });
 	}
 
+	async getBlob(endpoint: string): Promise<ApiResponse<Blob>> {
+		const url = `${this.baseURL}${endpoint}`;
+		const headers = new Headers();
+		this.applyTenantHeader(headers);
+		const response = await fetch(url, {
+			method: 'GET',
+			credentials: 'include',
+			headers
+		});
+		if (response.ok) return { success: true, data: await response.blob() };
+
+		const data = await this.parseResponse(response);
+		const normalized = normalizeApiResponse<Blob>(data);
+		if (response.status === 401) this.handleUnauthorized();
+		return {
+			success: false,
+			error: normalized.error ?? this.errorMessage(data),
+			message: normalized.message
+		};
+	}
+
 	async post<T>(endpoint: string, body?: unknown): Promise<ApiResponse<T>> {
 		return this.request<T>(endpoint, {
 			method: 'POST',

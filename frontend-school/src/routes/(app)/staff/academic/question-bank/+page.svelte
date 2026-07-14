@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onDestroy, onMount } from 'svelte';
-	import { SvelteMap } from 'svelte/reactivity';
+	import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 	import { toast } from 'svelte-sonner';
 	import {
 		createQuestionBankQuestion,
@@ -26,6 +26,7 @@
 	import * as AlertDialog from '$lib/components/ui/alert-dialog';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
+	import { Checkbox } from '$lib/components/ui/checkbox';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
@@ -46,6 +47,7 @@
 	import {
 		Edit3,
 		Eye,
+		FileDown,
 		Image as ImageIcon,
 		Loader2,
 		Plus,
@@ -134,6 +136,7 @@
 	let loadingDetail = $state(false);
 	let saving = $state(false);
 	let deleting = $state(false);
+	let exportingWord = $state(false);
 	let subjects = $state<QuestionBankSubjectOption[]>([]);
 	let questions = $state<QuestionSummary[]>([]);
 	let summary = $state({ ...emptySummary });
@@ -153,11 +156,22 @@
 	let draft = $state<QuestionDraft>(newDraft());
 	let deleteTarget = $state<QuestionSummary | null>(null);
 	let deleteDialogOpen = $state(false);
+	let wordExportDialogOpen = $state(false);
+	let wordExportTitle = $state('ชุดข้อสอบ');
+	let includeAnswerKey = $state(false);
+	const selectedQuestionIds = new SvelteSet<string>();
 
 	const creatableSubjects = $derived(subjects.filter((subject) => subject.canCreate));
 	const canCreateQuestion = $derived(hasManagePermission && creatableSubjects.length > 0);
 	const isChoiceQuestion = $derived(
 		draft.questionType === 'single_choice' || draft.questionType === 'multiple_choice'
+	);
+	const selectedQuestionCount = $derived(selectedQuestionIds.size);
+	const allVisibleQuestionsSelected = $derived(
+		questions.length > 0 && questions.every((question) => selectedQuestionIds.has(question.id))
+	);
+	const someVisibleQuestionsSelected = $derived(
+		questions.some((question) => selectedQuestionIds.has(question.id))
 	);
 
 	onMount(() => {
@@ -288,6 +302,64 @@
 		if (value === 'ready') return 'default';
 		if (value === 'archived') return 'secondary';
 		return 'outline';
+	}
+
+	function toggleQuestionSelection(questionId: string, selected: boolean) {
+		if (selected) selectedQuestionIds.add(questionId);
+		else selectedQuestionIds.delete(questionId);
+	}
+
+	function toggleVisibleQuestionSelection(selected: boolean) {
+		for (const question of questions) toggleQuestionSelection(question.id, selected);
+	}
+
+	function openWordExportDialog() {
+		if (selectedQuestionIds.size === 0) return;
+		const subject = subjects.find((item) => item.id === selectedSubjectId);
+		wordExportTitle = subject ? `ชุดข้อสอบ ${subject.code} ${subject.nameTh}` : 'ชุดข้อสอบ';
+		includeAnswerKey = false;
+		wordExportDialogOpen = true;
+	}
+
+	async function loadSelectedQuestionDetails(questionIds: string[]) {
+		const details = new Array<QuestionDetail>(questionIds.length);
+		let nextIndex = 0;
+		async function loadNext() {
+			while (nextIndex < questionIds.length) {
+				const index = nextIndex;
+				nextIndex += 1;
+				details[index] = await getQuestionBankQuestion(questionIds[index]);
+			}
+		}
+		await Promise.all(Array.from({ length: Math.min(4, questionIds.length) }, () => loadNext()));
+		return details;
+	}
+
+	async function confirmWordExport() {
+		if (exportingWord || selectedQuestionIds.size === 0) return;
+		if (!wordExportTitle.trim()) {
+			toast.error('กรุณาระบุชื่อเอกสาร');
+			return;
+		}
+
+		exportingWord = true;
+		try {
+			const questionIds = [...selectedQuestionIds];
+			const [details, exporter] = await Promise.all([
+				loadSelectedQuestionDetails(questionIds),
+				import('$lib/question-bank/word-export')
+			]);
+			const fileName = await exporter.exportQuestionBankWord(details, {
+				title: wordExportTitle,
+				includeAnswerKey
+			});
+			wordExportDialogOpen = false;
+			toast.success(`ส่งออก ${fileName} แล้ว`);
+		} catch (error) {
+			toast.error(error instanceof Error ? error.message : 'ส่งออกไฟล์ Word ไม่สำเร็จ');
+		} finally {
+			exportingWord = false;
+		}
 	}
 
 	async function loadInitialData() {
@@ -615,6 +687,7 @@
 		deleting = true;
 		try {
 			await deleteQuestionBankQuestion(deleteTarget.id);
+			selectedQuestionIds.delete(deleteTarget.id);
 			deleteDialogOpen = false;
 			deleteTarget = null;
 			await loadQuestions(
@@ -631,7 +704,19 @@
 
 <PageShell title={data.title} description="คลังกลางสำหรับเก็บและค้นหาข้อสอบตามรายวิชา">
 	{#snippet actions()}
-		<div class="flex items-center gap-2">
+		<div class="flex flex-wrap items-center gap-2">
+			<Button
+				variant="outline"
+				onclick={openWordExportDialog}
+				disabled={selectedQuestionCount === 0 || exportingWord}
+			>
+				{#if exportingWord}
+					<Loader2 class="h-4 w-4 animate-spin" />
+				{:else}
+					<FileDown class="h-4 w-4" />
+				{/if}
+				ส่งออก Word{selectedQuestionCount ? ` (${selectedQuestionCount})` : ''}
+			</Button>
 			<Button
 				variant="outline"
 				onclick={() => loadQuestions(currentPage)}
@@ -796,37 +881,66 @@
 				/>
 			{:else}
 				<div class="overflow-hidden rounded-lg border bg-card">
-					{#each questions as question (question.id)}
+					<div
+						class="flex flex-wrap items-center justify-between gap-3 border-b bg-muted/20 px-4 py-3"
+					>
+						<label class="flex cursor-pointer items-center gap-2 text-sm">
+							<Checkbox
+								checked={allVisibleQuestionsSelected}
+								indeterminate={someVisibleQuestionsSelected && !allVisibleQuestionsSelected}
+								onCheckedChange={(checked) => toggleVisibleQuestionSelection(checked === true)}
+							/>
+							<span>เลือกทั้งหมดในหน้านี้</span>
+						</label>
+						{#if selectedQuestionCount}
+							<div class="flex items-center gap-2 text-sm">
+								<span class="text-muted-foreground">เลือกแล้ว {selectedQuestionCount} ข้อ</span>
+								<Button variant="ghost" size="sm" onclick={() => selectedQuestionIds.clear()}
+									>ล้างที่เลือก</Button
+								>
+							</div>
+						{/if}
+					</div>
+					{#each questions as question, questionIndex (question.id)}
 						<article class="border-b p-4 last:border-b-0">
 							<div class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-								<div class="min-w-0 space-y-2">
-									<div class="flex flex-wrap items-center gap-2">
-										<Badge variant={statusVariant(question.status)}
-											>{statusLabel(question.status)}</Badge
-										>
-										<Badge variant="outline">{typeLabel(question.questionType)}</Badge>
-										<Badge variant="secondary">{difficultyLabel(question.difficulty)}</Badge>
-										{#if contentHasImage(question.stemContent)}
-											<Badge variant="outline"><ImageIcon class="h-3 w-3" /> รูป</Badge>
-										{/if}
-										{#if contentHasMath(question.stemContent)}
-											<Badge variant="outline"><Sigma class="h-3 w-3" /> สูตร</Badge>
-										{/if}
-									</div>
-									<div class="text-base font-medium">
-										<QuestionContent content={question.stemContent} compact />
-									</div>
-									<div class="flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground">
-										<span>{subjectLabel(question)}</span>
-										<span>{question.points} คะแนน</span>
-										{#if question.choiceCount}<span>{question.choiceCount} ตัวเลือก</span>{/if}
-									</div>
-									{#if question.tags.length}
-										<div class="flex flex-wrap gap-1">
-											{#each question.tags as item (item)}<Badge variant="outline">{item}</Badge
-												>{/each}
+								<div class="flex min-w-0 gap-3">
+									<Checkbox
+										class="mt-1"
+										aria-label={`เลือกข้อสอบลำดับ ${questionIndex + 1}`}
+										checked={selectedQuestionIds.has(question.id)}
+										onCheckedChange={(checked) =>
+											toggleQuestionSelection(question.id, checked === true)}
+									/>
+									<div class="min-w-0 space-y-2">
+										<div class="flex flex-wrap items-center gap-2">
+											<Badge variant={statusVariant(question.status)}
+												>{statusLabel(question.status)}</Badge
+											>
+											<Badge variant="outline">{typeLabel(question.questionType)}</Badge>
+											<Badge variant="secondary">{difficultyLabel(question.difficulty)}</Badge>
+											{#if contentHasImage(question.stemContent)}
+												<Badge variant="outline"><ImageIcon class="h-3 w-3" /> รูป</Badge>
+											{/if}
+											{#if contentHasMath(question.stemContent)}
+												<Badge variant="outline"><Sigma class="h-3 w-3" /> สูตร</Badge>
+											{/if}
 										</div>
-									{/if}
+										<div class="text-base font-medium">
+											<QuestionContent content={question.stemContent} compact />
+										</div>
+										<div class="flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground">
+											<span>{subjectLabel(question)}</span>
+											<span>{question.points} คะแนน</span>
+											{#if question.choiceCount}<span>{question.choiceCount} ตัวเลือก</span>{/if}
+										</div>
+										{#if question.tags.length}
+											<div class="flex flex-wrap gap-1">
+												{#each question.tags as item (item)}<Badge variant="outline">{item}</Badge
+													>{/each}
+											</div>
+										{/if}
+									</div>
 								</div>
 								<div class="flex shrink-0 gap-2">
 									<Button
@@ -1122,6 +1236,56 @@
 			]}
 			{@attach connectMathVirtualKeyboardContainer}
 		></div>
+	</Dialog.Content>
+</Dialog.Root>
+
+<Dialog.Root bind:open={wordExportDialogOpen}>
+	<Dialog.Content class="sm:max-w-lg">
+		<Dialog.Header>
+			<Dialog.Title>ส่งออกข้อสอบเป็น Word</Dialog.Title>
+			<Dialog.Description>
+				เลือกแล้ว {selectedQuestionCount} ข้อ ระบบจะเรียงตามลำดับที่เลือก
+			</Dialog.Description>
+		</Dialog.Header>
+		<div class="space-y-4">
+			<div class="space-y-2">
+				<Label for="word-export-title">ชื่อเอกสาร</Label>
+				<Input id="word-export-title" bind:value={wordExportTitle} disabled={exportingWord} />
+			</div>
+			<label class="flex cursor-pointer items-start gap-3 rounded-lg border p-3">
+				<Checkbox
+					class="mt-1"
+					checked={includeAnswerKey}
+					onCheckedChange={(checked) => (includeAnswerKey = checked === true)}
+					disabled={exportingWord}
+				/>
+				<span>
+					<span class="block text-sm font-medium">แนบเฉลยท้ายเอกสาร</span>
+					<span class="mt-1 block text-sm text-muted-foreground">
+						เพิ่มคำตอบที่ถูก คำอธิบาย และเกณฑ์ให้คะแนนในหน้าท้าย
+					</span>
+				</span>
+			</label>
+			<div class="rounded-lg border bg-muted/30 p-3 text-sm text-muted-foreground">
+				ข้อความยังแก้ไขใน Word ได้ รูปประกอบจะฝังอยู่ในไฟล์ และสูตรจะเป็นภาพ PNG ความละเอียดสูงจาก
+				KaTeX เพื่อให้หน้าตาเหมือนเอกสารคณิตศาสตร์ โดยไม่ใช้ Word Equation
+			</div>
+		</div>
+		<Dialog.Footer>
+			<Button
+				variant="outline"
+				onclick={() => (wordExportDialogOpen = false)}
+				disabled={exportingWord}>ยกเลิก</Button
+			>
+			<LoadingButton
+				loading={exportingWord}
+				loadingLabel="กำลังสร้างไฟล์..."
+				onclick={confirmWordExport}
+				disabled={!wordExportTitle.trim() || selectedQuestionCount === 0}
+			>
+				<FileDown class="h-4 w-4" /> สร้างไฟล์ Word
+			</LoadingButton>
+		</Dialog.Footer>
 	</Dialog.Content>
 </Dialog.Root>
 

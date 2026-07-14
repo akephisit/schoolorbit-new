@@ -19,4 +19,8 @@ pub fn question_bank_routes() -> Router<AppState> {
                 .put(handlers::update_question)
                 .delete(handlers::delete_question),
         )
+        .route(
+            "/questions/{question_id}/files/{file_id}",
+            get(handlers::get_question_file),
+        )
 }

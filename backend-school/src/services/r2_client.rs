@@ -118,6 +118,26 @@ impl R2Client {
         Ok(())
     }
 
+    /// Download a file from R2 by its storage key.
+    pub async fn download_file(&self, key: &str) -> Result<Vec<u8>, String> {
+        let output = self
+            .client
+            .get_object()
+            .bucket(&self.config.bucket_name)
+            .key(key)
+            .send()
+            .await
+            .map_err(|error| {
+                error!("Failed to download file from R2: {}", error);
+                format!("Failed to download file: {}", error)
+            })?;
+        let data = output.body.collect().await.map_err(|error| {
+            error!("Failed to read downloaded R2 file: {}", error);
+            format!("Failed to read downloaded file: {}", error)
+        })?;
+        Ok(data.into_bytes().to_vec())
+    }
+
     /// Delete a file from R2
     ///
     /// # Arguments
