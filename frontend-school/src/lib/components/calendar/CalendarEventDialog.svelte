@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import * as Select from '$lib/components/ui/select';
 	import { Button } from '$lib/components/ui/button';
@@ -119,9 +120,7 @@
 			reminderDays.find((daysBefore) => !fixedReminderDays.includes(daysBefore))?.toString() ?? '';
 	}
 
-	function handleOpenChange(nextOpen: boolean) {
-		if (nextOpen) loadEvent(event);
-	}
+	loadEvent(untrack(() => event));
 
 	function toggleTag(tagId: string) {
 		selectedTagIds = selectedTagIds.includes(tagId)
@@ -232,7 +231,7 @@
 	}
 </script>
 
-<Dialog.Root bind:open onOpenChange={handleOpenChange}>
+<Dialog.Root bind:open>
 	<Dialog.Content class="flex max-h-[92vh] flex-col p-0 sm:max-w-3xl">
 		<Dialog.Header class="border-b px-6 py-5">
 			<Dialog.Title>{event ? 'แก้ไขกิจกรรมปฏิทิน' : 'สร้างกิจกรรมปฏิทิน'}</Dialog.Title>

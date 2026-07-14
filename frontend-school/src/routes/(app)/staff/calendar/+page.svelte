@@ -78,6 +78,7 @@
 	let audience = $state<AudienceFilter>('');
 	let visibility = $state<VisibilityFilter>('');
 	let eventDialogOpen = $state(false);
+	let eventDialogSession = $state(0);
 	let categoryDialogOpen = $state(false);
 	let editingEvent = $state<CalendarEvent | null>(null);
 	let saving = $state(false);
@@ -457,6 +458,7 @@
 		if (!optionsReady) return;
 
 		editingEvent = event ? (events.find((item) => item.id === event.id) ?? null) : null;
+		eventDialogSession += 1;
 		eventDialogOpen = true;
 	}
 
@@ -717,16 +719,18 @@
 		</AlertDialog.Content>
 	</AlertDialog.Root>
 
-	<CalendarEventDialog
-		bind:open={eventDialogOpen}
-		{categories}
-		{tags}
-		{gradeLevels}
-		{classrooms}
-		event={editingEvent}
-		{saving}
-		onsave={saveEvent}
-	/>
+	{#key eventDialogSession}
+		<CalendarEventDialog
+			bind:open={eventDialogOpen}
+			{categories}
+			{tags}
+			{gradeLevels}
+			{classrooms}
+			event={editingEvent}
+			{saving}
+			onsave={saveEvent}
+		/>
+	{/key}
 	<CalendarCategoryDialog
 		bind:open={categoryDialogOpen}
 		{categories}

@@ -166,6 +166,8 @@ test('calendar event dialog builds backend-safe event payloads', async () => {
 	assert.match(eventDialog, /selectedTagIds = source\?\.tags\.map\(\(tag\) => tag\.id\) \?\? \[]/);
 	assert.match(eventDialog, /tagIds: selectedTagIds/);
 	assert.match(eventDialog, /function toggleTag\(tagId: string\)/);
+	assert.match(eventDialog, /loadEvent\(untrack\(\(\) => event\)\);/);
+	assert.doesNotMatch(eventDialog, /onOpenChange=\{handleOpenChange\}/);
 	assert.match(eventDialog, /hasMultipleTargetRows/);
 	assert.match(eventDialog, /disabled=\{hasMultipleTargetRows/);
 	assert.match(eventDialog, /ไม่สามารถแก้ไขกลุ่มผู้ชมหลายรายการ/);
@@ -206,6 +208,9 @@ test('calendar routes keep staff reads and local state filter-aware', async () =
 	assert.match(staffSource, /tagId: tagId \|\| undefined/);
 	assert.match(staffSource, /async function ensureManageOptions\(\): Promise<boolean>/);
 	assert.match(staffSource, /manageOptionsPromise/);
+	assert.match(staffSource, /let eventDialogSession = \$state\(0\);/);
+	assert.match(staffSource, /eventDialogSession \+= 1;\s*eventDialogOpen = true;/);
+	assert.match(staffSource, /\{#key eventDialogSession\}[\s\S]*<CalendarEventDialog/);
 	assert.match(staffSource, /const optionsReady = await ensureManageOptions\(\);/);
 	assert.match(staffSource, /if \(!optionsReady\) return;/);
 	assert.doesNotMatch(staffSource, /function replaceEvent/);
