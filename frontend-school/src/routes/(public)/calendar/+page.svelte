@@ -77,20 +77,24 @@
 	<title>{data.title}</title>
 </svelte:head>
 
-<main class="min-h-screen bg-muted/20">
+<main class="h-dvh overflow-hidden bg-muted/20">
 	<section
-		class="mx-auto flex w-full max-w-screen-2xl flex-col gap-5 px-3 py-4 sm:px-4 sm:py-5 lg:gap-6 lg:px-8 lg:py-6 2xl:px-10"
+		class="mx-auto flex h-full w-full max-w-screen-2xl flex-col gap-3 px-3 py-3 sm:px-4 lg:gap-4 lg:px-8 lg:py-4 2xl:px-10"
 	>
-		<header class="flex flex-col gap-4 border-b pb-5 sm:flex-row sm:items-end sm:justify-between">
+		<header
+			class="flex shrink-0 flex-col gap-2 border-b pb-3 sm:flex-row sm:items-end sm:justify-between"
+		>
 			<div class="flex items-center gap-3">
 				<div
-					class="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary"
+					class="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary sm:size-10"
 				>
 					<CalendarDays class="size-5" />
 				</div>
 				<div class="min-w-0">
-					<h1 class="text-2xl font-semibold tracking-tight">ปฏิทินโรงเรียน</h1>
-					<p class="text-sm text-muted-foreground">กิจกรรมที่โรงเรียนเปิดเผยต่อสาธารณะ</p>
+					<h1 class="text-lg font-semibold tracking-tight sm:text-2xl">ปฏิทินโรงเรียน</h1>
+					<p class="hidden text-sm text-muted-foreground sm:block">
+						กิจกรรมที่โรงเรียนเปิดเผยต่อสาธารณะ
+					</p>
 				</div>
 			</div>
 
@@ -119,27 +123,32 @@
 		</header>
 
 		{#if loading}
-			<PageSkeleton variant="detail" />
+			<div class="min-h-0 flex-1 overflow-hidden">
+				<PageSkeleton variant="detail" />
+			</div>
 		{:else if error}
-			<PageState
-				variant="error"
-				title="โหลดปฏิทินไม่สำเร็จ"
-				description={error}
-				actionLabel="ลองอีกครั้ง"
-				onaction={loadCalendar}
-			/>
+			<div class="min-h-0 flex-1 overflow-y-auto">
+				<PageState
+					variant="error"
+					title="โหลดปฏิทินไม่สำเร็จ"
+					description={error}
+					actionLabel="ลองอีกครั้ง"
+					onaction={loadCalendar}
+				/>
+			</div>
 		{:else}
 			<div
-				class="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_22rem] xl:grid-cols-[minmax(0,1fr)_24rem]"
+				class="grid min-h-0 flex-1 grid-rows-[minmax(0,2fr)_minmax(10rem,1fr)] gap-3 lg:grid-cols-[minmax(0,1fr)_22rem] lg:grid-rows-1 lg:gap-5 xl:grid-cols-[minmax(0,1fr)_24rem]"
 			>
 				<CalendarMonthGrid
 					monthDate={selectedMonth}
 					{events}
 					{selectedDate}
 					onselect={(date) => (selectedDate = date)}
+					fillHeight
 				/>
-				<aside class="space-y-3">
-					<div class="flex items-end justify-between gap-3">
+				<aside class="flex min-h-0 flex-col overflow-hidden rounded-xl border bg-card shadow-sm">
+					<div class="flex shrink-0 items-end justify-between gap-3 border-b px-3 py-2.5 sm:px-4">
 						<div>
 							<p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">
 								วันที่เลือก
@@ -150,7 +159,9 @@
 							{selectedDateEvents.length} รายการ
 						</span>
 					</div>
-					<CalendarEventList events={selectedDateEvents} canManage={false} showFullDescription />
+					<div class="min-h-0 flex-1 overflow-y-auto p-3 sm:p-4">
+						<CalendarEventList events={selectedDateEvents} canManage={false} showFullDescription />
+					</div>
 				</aside>
 			</div>
 		{/if}
