@@ -9,8 +9,10 @@
 	import CalendarEventList from '$lib/components/calendar/CalendarEventList.svelte';
 	import { type CalendarViewerEvent, listMyCalendarEvents } from '$lib/api/calendar';
 	import {
+		calendarGridRange,
 		eventOverlapsDate,
 		formatCalendarDate,
+		formatCalendarMonth,
 		monthRange,
 		toIsoDate
 	} from '$lib/utils/calendar';
@@ -18,13 +20,13 @@
 
 	let { data } = $props();
 
-	let events = $state<CalendarViewerEvent[]>([]);
+	let events = $state.raw<CalendarViewerEvent[]>([]);
 	let loading = $state(true);
 	let error = $state('');
 	let selectedMonth = $state(toIsoDate(new Date()));
 	let selectedDate = $state(toIsoDate(new Date()));
 
-	const monthLabel = $derived(formatCalendarDate(monthRange(selectedMonth).from));
+	const monthLabel = $derived(formatCalendarMonth(selectedMonth));
 	const selectedDateEvents = $derived(
 		events
 			.filter((event) => eventOverlapsDate(event, selectedDate))
@@ -35,7 +37,7 @@
 		loading = true;
 		error = '';
 		try {
-			events = await listMyCalendarEvents({ ...monthRange(selectedMonth) });
+			events = await listMyCalendarEvents({ ...calendarGridRange(selectedMonth) });
 		} catch (loadError: unknown) {
 			error =
 				(loadError instanceof Error ? loadError.message : String(loadError)) ||
@@ -56,7 +58,9 @@
 		await loadCalendar();
 	}
 
-	onMount(loadCalendar);
+	onMount(() => {
+		void loadCalendar();
+	});
 </script>
 
 <svelte:head>

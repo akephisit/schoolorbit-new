@@ -41,6 +41,18 @@ export function monthRange(monthDate: string): { from: string; to: string } {
 	};
 }
 
+export function calendarGridRange(monthDate: string): { from: string; to: string } {
+	const cells = buildCalendarMonth(monthDate);
+	return {
+		from: cells[0]?.date ?? monthRange(monthDate).from,
+		to: cells.at(-1)?.date ?? monthRange(monthDate).to
+	};
+}
+
+export function formatCalendarMonth(value: string): string {
+	return format(parseISO(value), 'MMMM yyyy', { locale: th });
+}
+
 export function formatCalendarDate(value: string): string {
 	return format(parseISO(value), 'd MMM yyyy', { locale: th });
 }

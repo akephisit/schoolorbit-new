@@ -3,7 +3,7 @@
 	import { Button } from '$lib/components/ui/button';
 	import { PageState } from '$lib/components/app-state';
 	import { formatCalendarDate } from '$lib/utils/calendar';
-	import { Pencil, Trash2 } from 'lucide-svelte';
+	import { CalendarRange, Clock3, Globe2, MapPin, Pencil, Trash2, Users } from 'lucide-svelte';
 	import type { CalendarDisplayEvent } from './CalendarMonthGrid.svelte';
 
 	interface CalendarListEvent extends CalendarDisplayEvent {
@@ -14,6 +14,7 @@
 		startTime?: string | null;
 		endTime?: string | null;
 		isPublic: boolean;
+		targets?: { audienceType: string }[];
 	}
 
 	let {
@@ -29,10 +30,27 @@
 	} = $props();
 
 	const fallbackColor = '#64748b';
+	const audienceLabels: Record<string, string> = {
+		all: 'ทุกคน',
+		staff: 'บุคลากร',
+		student: 'นักเรียน',
+		parent: 'ผู้ปกครอง'
+	};
 
 	function timeLabel(event: CalendarListEvent) {
 		if (event.allDay || !event.startTime || !event.endTime) return '';
 		return `${event.startTime.slice(0, 5)}-${event.endTime.slice(0, 5)}`;
+	}
+
+	function audienceLabel(event: CalendarListEvent) {
+		const labels = [
+			...new Set(
+				(event.targets ?? []).map(
+					(target) => audienceLabels[target.audienceType] ?? target.audienceType
+				)
+			)
+		];
+		return labels.join(', ');
 	}
 </script>
 
@@ -41,31 +59,59 @@
 {:else}
 	<div class="space-y-3">
 		{#each events as event (event.id)}
-			<article class="rounded-md border bg-background p-4">
+			<article
+				class="rounded-xl border border-l-4 bg-card p-4 shadow-sm transition-shadow hover:shadow-md"
+				style:border-left-color={event.categoryColor ?? fallbackColor}
+			>
 				<div class="flex items-start justify-between gap-3">
-					<div class="min-w-0 flex-1 space-y-2">
+					<div class="min-w-0 flex-1 space-y-3">
 						<div class="flex min-w-0 flex-wrap items-center gap-2">
-							<span
-								class="size-3 shrink-0 rounded-full"
-								style={`background-color: ${event.categoryColor ?? fallbackColor}`}
-								aria-hidden="true"
-							></span>
-							<h3 class="min-w-0 truncate font-medium">{event.title}</h3>
+							<h3 class="min-w-0 flex-1 text-base font-semibold leading-snug">{event.title}</h3>
+							{#if event.categoryName}
+								<Badge variant="secondary" class="font-normal">{event.categoryName}</Badge>
+							{/if}
 							{#if event.isPublic}
-								<Badge variant="outline">สาธารณะ</Badge>
+								<Badge variant="outline" class="gap-1 font-normal">
+									<Globe2 class="size-3" />
+									สาธารณะ
+								</Badge>
 							{/if}
 						</div>
-						<p class="text-sm text-muted-foreground">
-							{formatCalendarDate(event.startDate)}
-							{#if event.endDate !== event.startDate}
-								- {formatCalendarDate(event.endDate)}
+
+						<div class="grid gap-2 text-sm text-muted-foreground">
+							<p class="flex items-start gap-2">
+								<CalendarRange class="mt-0.5 size-4 shrink-0" />
+								<span>
+									{formatCalendarDate(event.startDate)}
+									{#if event.endDate !== event.startDate}
+										– {formatCalendarDate(event.endDate)}
+									{/if}
+								</span>
+							</p>
+							<p class="flex items-center gap-2">
+								<Clock3 class="size-4 shrink-0" />
+								<span>{event.allDay ? 'ทั้งวัน' : timeLabel(event)}</span>
+							</p>
+							{#if event.location}
+								<p class="flex items-start gap-2">
+									<MapPin class="mt-0.5 size-4 shrink-0" />
+									<span>{event.location}</span>
+								</p>
 							{/if}
-							{#if timeLabel(event)}
-								<span class="mx-1">·</span>{timeLabel(event)}
+							{#if audienceLabel(event)}
+								<p class="flex items-start gap-2">
+									<Users class="mt-0.5 size-4 shrink-0" />
+									<span>{audienceLabel(event)}</span>
+								</p>
 							{/if}
-						</p>
-						{#if event.location}
-							<p class="truncate text-sm text-muted-foreground">{event.location}</p>
+						</div>
+
+						{#if event.description}
+							<p
+								class="line-clamp-3 whitespace-pre-line text-sm leading-relaxed text-foreground/80"
+							>
+								{event.description}
+							</p>
 						{/if}
 					</div>
 					{#if canManage}

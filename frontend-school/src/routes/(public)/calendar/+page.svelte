@@ -7,8 +7,10 @@
 	import CalendarEventList from '$lib/components/calendar/CalendarEventList.svelte';
 	import { type CalendarPublicEvent, listPublicCalendarEvents } from '$lib/api/calendar';
 	import {
+		calendarGridRange,
 		eventOverlapsDate,
 		formatCalendarDate,
+		formatCalendarMonth,
 		monthRange,
 		toIsoDate
 	} from '$lib/utils/calendar';
@@ -16,13 +18,13 @@
 
 	let { data } = $props();
 
-	let events = $state<CalendarPublicEvent[]>([]);
+	let events = $state.raw<CalendarPublicEvent[]>([]);
 	let loading = $state(true);
 	let error = $state('');
 	let selectedMonth = $state(toIsoDate(new Date()));
 	let selectedDate = $state(toIsoDate(new Date()));
 
-	const monthLabel = $derived(formatCalendarDate(monthRange(selectedMonth).from));
+	const monthLabel = $derived(formatCalendarMonth(selectedMonth));
 	const selectedDateEvents = $derived(
 		events
 			.filter((event) => eventOverlapsDate(event, selectedDate))
@@ -33,7 +35,7 @@
 		loading = true;
 		error = '';
 		try {
-			events = await listPublicCalendarEvents({ ...monthRange(selectedMonth) });
+			events = await listPublicCalendarEvents({ ...calendarGridRange(selectedMonth) });
 		} catch (loadError: unknown) {
 			error =
 				(loadError instanceof Error ? loadError.message : String(loadError)) ||
@@ -53,7 +55,9 @@
 		await loadCalendar();
 	}
 
-	onMount(loadCalendar);
+	onMount(() => {
+		void loadCalendar();
+	});
 </script>
 
 <svelte:head>
@@ -103,7 +107,7 @@
 				onaction={loadCalendar}
 			/>
 		{:else}
-			<div class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_380px]">
+			<div class="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_380px]">
 				<CalendarMonthGrid
 					monthDate={selectedMonth}
 					{events}

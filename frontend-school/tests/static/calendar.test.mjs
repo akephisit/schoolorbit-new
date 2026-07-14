@@ -115,6 +115,8 @@ test('calendar shared components use shadcn primitives', async () => {
 	assert.match(monthGrid, /buildCalendarMonth/);
 	assert.match(monthGrid, /eventOverlapsDate/);
 	assert.match(monthGrid, /CalendarDisplayEvent/);
+	assert.match(monthGrid, /sm:hidden/);
+	assert.match(monthGrid, /อีก \{dayEvents\.length - 3\} รายการ/);
 	assert.doesNotMatch(monthGrid, /from '\$lib\/api\/calendar'/);
 	assert.match(eventList, /from '\$lib\/components\/ui\/badge'/);
 	assert.match(eventList, /from '\$lib\/components\/ui\/button'/);
@@ -175,12 +177,13 @@ test('calendar routes keep staff reads and local state filter-aware', async () =
 	const staffPage = await readProjectFile('src/routes/(app)/staff/calendar/+page.svelte');
 	const staffSource = stripComments(staffPage);
 
-	assert.doesNotMatch(staffSource, /onMount\(loadCalendar\)/);
-	assert.match(staffSource, /hasAttemptedInitialLoad/);
-	assert.match(
-		staffSource,
-		/\$effect\(\(\) => {[\s\S]*canReadCalendar[\s\S]*hasAttemptedInitialLoad[\s\S]*loadCalendar\(\)/
-	);
+	assert.match(staffSource, /onMount\(\(\) => {[\s\S]*loadCalendar\(\)/);
+	assert.doesNotMatch(staffSource, /hasAttemptedInitialLoad/);
+	assert.match(staffSource, /calendarGridRange\(selectedMonth\)/);
+	assert.match(staffSource, /from '\$lib\/components\/ui\/alert-dialog'/);
+	assert.match(staffSource, /function requestDeleteEvent/);
+	assert.match(staffSource, /function confirmDeleteEvent/);
+	assert.match(staffSource, /activeFilterCount/);
 	assert.match(staffSource, /async function ensureManageOptions\(\): Promise<boolean>/);
 	assert.match(staffSource, /manageOptionsPromise/);
 	assert.match(staffSource, /const optionsReady = await ensureManageOptions\(\);/);

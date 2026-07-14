@@ -3,8 +3,10 @@ import { describe, it } from 'node:test';
 
 import {
 	buildCalendarMonth,
+	calendarGridRange,
 	eventOverlapsDate,
 	formatCalendarDate,
+	formatCalendarMonth,
 	monthRange
 } from '../../src/lib/utils/calendar.ts';
 
@@ -45,7 +47,15 @@ describe('calendar helpers', () => {
 		});
 	});
 
+	it('returns the full visible grid range for loading adjacent-month events', () => {
+		assert.deepEqual(calendarGridRange('2026-07-15'), {
+			from: '2026-06-29',
+			to: '2026-08-09'
+		});
+	});
+
 	it('formats dates with Thai month labels', () => {
 		assert.equal(formatCalendarDate('2026-07-03'), '3 ก.ค. 2026');
+		assert.equal(formatCalendarMonth('2026-07-03'), 'กรกฎาคม 2026');
 	});
 });
