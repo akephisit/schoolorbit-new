@@ -57,9 +57,9 @@ describe('calendar helpers', () => {
 		});
 	});
 
-	it('formats dates with Thai month labels', () => {
-		assert.equal(formatCalendarDate('2026-07-03'), '3 ก.ค. 2026');
-		assert.equal(formatCalendarMonth('2026-07-03'), 'กรกฎาคม 2026');
+	it('formats dates with Thai month labels and Buddhist years', () => {
+		assert.equal(formatCalendarDate('2026-07-03'), '3 ก.ค. 2569');
+		assert.equal(formatCalendarMonth('2026-07-03'), 'กรกฎาคม 2569');
 	});
 
 	it('splits a multi-day event into continuous weekly segments', () => {

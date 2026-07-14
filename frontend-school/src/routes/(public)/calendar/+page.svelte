@@ -79,7 +79,7 @@
 
 <main class="min-h-screen bg-muted/20">
 	<section
-		class="mx-auto flex w-full max-w-7xl flex-col gap-5 px-3 py-4 sm:px-4 sm:py-5 lg:gap-6 lg:px-6 lg:py-6"
+		class="mx-auto flex w-full max-w-screen-2xl flex-col gap-5 px-3 py-4 sm:px-4 sm:py-5 lg:gap-6 lg:px-8 lg:py-6 2xl:px-10"
 	>
 		<header class="flex flex-col gap-4 border-b pb-5 sm:flex-row sm:items-end sm:justify-between">
 			<div class="flex items-center gap-3">
@@ -129,7 +129,9 @@
 				onaction={loadCalendar}
 			/>
 		{:else}
-			<div class="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_24rem]">
+			<div
+				class="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_22rem] xl:grid-cols-[minmax(0,1fr)_24rem]"
+			>
 				<CalendarMonthGrid
 					monthDate={selectedMonth}
 					{events}

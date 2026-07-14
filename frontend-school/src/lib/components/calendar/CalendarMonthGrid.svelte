@@ -109,10 +109,13 @@
 							style:grid-column={`${segment.startColumn + 1} / span ${segment.span}`}
 							style:grid-row={`${segment.lane + 1}`}
 							style:background-color={segment.event.categoryColor ?? fallbackColor}
-							title={segmentLabel(segment)}
+							title={segment.event.title}
 						>
+							<span class="block truncate px-1 text-[8px] font-medium leading-[13px] sm:hidden">
+								{segment.event.title}
+							</span>
 							<span
-								class="block truncate px-1 text-[8px] font-medium leading-[13px] sm:px-1.5 sm:text-[10px] sm:leading-[18px] xl:text-[11px]"
+								class="hidden truncate px-1.5 text-[10px] font-medium leading-[18px] sm:block xl:text-[11px]"
 							>
 								{segmentLabel(segment)}
 							</span>

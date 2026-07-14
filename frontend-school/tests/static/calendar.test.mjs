@@ -132,6 +132,8 @@ test('calendar shared components use shadcn primitives', async () => {
 	assert.match(monthGrid, /style:grid-column/);
 	assert.match(monthGrid, /hiddenEventCounts/);
 	assert.match(monthGrid, /auto-rows-\[13px\]/);
+	assert.match(monthGrid, /sm:hidden[\s\S]*segment\.event\.title/);
+	assert.match(monthGrid, /hidden truncate[\s\S]*sm:block[\s\S]*segmentLabel\(segment\)/);
 	assert.doesNotMatch(monthGrid, /from '\$lib\/api\/calendar'/);
 	assert.match(eventList, /from '\$lib\/components\/ui\/badge'/);
 	assert.match(eventList, /from '\$lib\/components\/ui\/button'/);
@@ -257,9 +259,10 @@ test('calendar read-only pages sort selected-day events consistently', async () 
 test('public calendar uses a balanced responsive layout with readable mobile details', async () => {
 	const publicPage = await readProjectFile('src/routes/(public)/calendar/+page.svelte');
 
-	assert.match(publicPage, /max-w-7xl/);
+	assert.match(publicPage, /max-w-screen-2xl/);
 	assert.doesNotMatch(publicPage, /lg:h-svh/);
 	assert.doesNotMatch(publicPage, /fillHeight/);
+	assert.match(publicPage, /lg:grid-cols-\[minmax\(0,1fr\)_22rem\]/);
 	assert.match(publicPage, /xl:grid-cols-\[minmax\(0,1fr\)_24rem\]/);
 	assert.match(publicPage, /showFullDescription/);
 	assert.match(publicPage, /function goToToday\(\)/);

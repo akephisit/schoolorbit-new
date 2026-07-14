@@ -16,6 +16,7 @@ export interface CalendarMonthCell {
 }
 
 export const CALENDAR_WEEKDAY_LABELS = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'] as const;
+const BUDDHIST_YEAR_OFFSET = 543;
 
 export interface CalendarLayoutEvent {
 	id: string;
@@ -77,11 +78,13 @@ export function calendarGridRange(monthDate: string): { from: string; to: string
 }
 
 export function formatCalendarMonth(value: string): string {
-	return format(parseISO(value), 'MMMM yyyy', { locale: th });
+	const date = parseISO(value);
+	return `${format(date, 'MMMM', { locale: th })} ${date.getFullYear() + BUDDHIST_YEAR_OFFSET}`;
 }
 
 export function formatCalendarDate(value: string): string {
-	return format(parseISO(value), 'd MMM yyyy', { locale: th });
+	const date = parseISO(value);
+	return `${format(date, 'd MMM', { locale: th })} ${date.getFullYear() + BUDDHIST_YEAR_OFFSET}`;
 }
 
 export function eventOverlapsDate(
