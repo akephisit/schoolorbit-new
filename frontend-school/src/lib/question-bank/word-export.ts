@@ -439,14 +439,14 @@ function normalizeWordMathFunctions(xmlDocument: XMLDocument) {
 		normalizeSplitFunctionNames(parent, xmlDocument);
 	}
 
-	const candidates = ['mo', 'mi', 'mtext'].flatMap((tagName) =>
+	const candidates = ['mo', 'mi'].flatMap((tagName) =>
 		Array.from(xmlDocument.getElementsByTagNameNS(mathMlNamespace, tagName))
 	);
 	for (const element of candidates) {
 		const name = element.textContent?.trim() ?? '';
 		if (!wordMathFunctionNameSet.has(name)) continue;
-		const functionName =
-			element.localName === 'mtext' ? element : replaceWithMathMlText(element, name, xmlDocument);
+		const functionName = createWordMathFunction(name, xmlDocument);
+		element.replaceWith(functionName);
 		insertFunctionSpace(functionName, xmlDocument);
 	}
 }
@@ -468,8 +468,7 @@ function normalizeSplitFunctionNames(parent: Element, xmlDocument: XMLDocument) 
 
 		const matchedLength = functionName.length * 2 - 1;
 		const matched = children.slice(index, index + matchedLength);
-		const functionElement = xmlDocument.createElementNS(mathMlNamespace, 'mtext');
-		functionElement.textContent = functionName;
+		const functionElement = createWordMathFunction(functionName, xmlDocument);
 		parent.insertBefore(functionElement, matched[0]);
 		for (const element of matched) element.remove();
 		children = Array.from(parent.children);
@@ -489,11 +488,11 @@ function matchesSplitFunction(children: Element[], start: number, functionName: 
 	return true;
 }
 
-function replaceWithMathMlText(element: Element, value: string, xmlDocument: XMLDocument) {
-	const replacement = xmlDocument.createElementNS(mathMlNamespace, 'mtext');
-	replacement.textContent = value;
-	element.replaceWith(replacement);
-	return replacement;
+function createWordMathFunction(value: string, xmlDocument: XMLDocument) {
+	const functionName = xmlDocument.createElementNS(mathMlNamespace, 'mi');
+	functionName.setAttribute('fontstyle', 'normal');
+	functionName.textContent = value;
+	return functionName;
 }
 
 function insertFunctionSpace(functionName: Element, xmlDocument: XMLDocument) {

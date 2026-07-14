@@ -184,7 +184,8 @@ test('question bank exports selected questions with editable native Word Math eq
 	assert.match(exporter, /mml2omml\(mathMl\)/);
 	assert.match(exporter, /normalizeWordMathFunctions\(xmlDocument\)/);
 	assert.match(exporter, /wordMathFunctionNames/);
-	assert.match(exporter, /createElementNS\(mathMlNamespace, 'mtext'\)/);
+	assert.match(exporter, /createElementNS\(mathMlNamespace, 'mi'\)/);
+	assert.match(exporter, /setAttribute\('fontstyle', 'normal'\)/);
 	assert.match(exporter, /createElementNS\(mathMlNamespace, 'mspace'\)/);
 	assert.match(exporter, /parseXml\(omml, 'ไม่สามารถแปลงสมการเป็นรูปแบบ Word Math ได้'\)/);
 	assert.match(exporter, /new ImportedXmlComponent\(element\.tagName, attributes\)/);
@@ -224,11 +225,12 @@ test('question bank Word math conversion preserves structured formulas as OMML',
 test('question bank Word math keeps function names upright and separated from variables', () => {
 	const mathMl =
 		'<math xmlns="http://www.w3.org/1998/Math/MathML"><mrow>' +
-		'<mtext>sin</mtext><mspace width="0.1667em"/><mi>x</mi>' +
+		'<mi fontstyle="normal">sin</mi><mspace width="0.1667em"/><mi>x</mi>' +
 		'</mrow></math>';
 	const omml = mml2omml(mathMl);
 
-	assert.match(omml, /<m:rPr><m:nor\/><\/m:rPr><m:t xml:space="preserve">sin<\/m:t>/);
+	assert.match(omml, /<m:rPr><m:sty m:val="p"\/><\/m:rPr><m:t xml:space="preserve">sin<\/m:t>/);
+	assert.doesNotMatch(omml, /<m:nor\/>/);
 	assert.match(omml, /<m:t xml:space="preserve"> <\/m:t>/);
 	assert.match(omml, /<m:r><m:t xml:space="preserve">x<\/m:t><\/m:r>/);
 });

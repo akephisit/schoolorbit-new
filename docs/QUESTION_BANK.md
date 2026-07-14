@@ -85,8 +85,8 @@ uses Word's native equation model and gives the editable MathType-style result e
 Word; it does not embed MathType's proprietary OLE object. The exporter and its conversion
 dependencies are client-only; the SSR build resolves the module to a small server stub so they are
 not bundled into the Cloudflare Worker. Standard function names such as `sin`, `cos`, `tan`, `log`,
-and `ln` are exported as upright function names followed by correctly spaced italic variables, even
-when a teacher types a compact form such as `sinx` in the math field.
+and `ln` remain in the equation's Cambria Math font but use its upright/plain style, followed by
+correctly spaced italic variables. Compact input such as `sinx` is normalized the same way.
 
 ## API
 
