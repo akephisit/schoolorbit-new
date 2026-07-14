@@ -131,12 +131,15 @@ test('calendar shared components use shadcn primitives', async () => {
 	assert.match(monthGrid, /continuesIntoNextWeek/);
 	assert.match(monthGrid, /style:grid-column/);
 	assert.match(monthGrid, /hiddenEventCounts/);
+	assert.match(monthGrid, /fillHeight/);
+	assert.match(monthGrid, /auto-rows-\[13px\]/);
 	assert.doesNotMatch(monthGrid, /from '\$lib\/api\/calendar'/);
 	assert.match(eventList, /from '\$lib\/components\/ui\/badge'/);
 	assert.match(eventList, /from '\$lib\/components\/ui\/button'/);
 	assert.match(eventList, /PageState/);
 	assert.match(eventList, /Pencil/);
 	assert.match(eventList, /Trash2/);
+	assert.match(eventList, /showFullDescription/);
 	assert.doesNotMatch(eventList, /from '\$lib\/api\/calendar'/);
 	assert.match(eventDialog, /from '\$lib\/components\/ui\/dialog'/);
 	assert.match(eventDialog, /from '\$lib\/components\/ui\/select'/);
@@ -235,8 +238,7 @@ test('calendar routes keep staff reads and local state filter-aware', async () =
 test('calendar read-only pages sort selected-day events consistently', async () => {
 	for (const route of [
 		'src/routes/(app)/student/calendar/+page.svelte',
-		'src/routes/(app)/parent/student/[id]/calendar/+page.svelte',
-		'src/routes/(public)/calendar/+page.svelte'
+		'src/routes/(app)/parent/student/[id]/calendar/+page.svelte'
 	]) {
 		const page = await readProjectFile(route);
 		assert.match(
@@ -244,4 +246,22 @@ test('calendar read-only pages sort selected-day events consistently', async () 
 			/events\s*\.filter\(\(event\) => eventOverlapsDate\(event, selectedDate\)\)\s*\.sort\(\(left, right\) => left\.startDate\.localeCompare\(right\.startDate\)\)/
 		);
 	}
+
+	const publicPage = await readProjectFile('src/routes/(public)/calendar/+page.svelte');
+	assert.match(publicPage, /Number\(right\.allDay\) - Number\(left\.allDay\)/);
+	assert.match(
+		publicPage,
+		/\(left\.startTime \?\? ''\)\.localeCompare\(right\.startTime \?\? ''\)/
+	);
+});
+
+test('public calendar uses a full-viewport desktop workspace and readable mobile details', async () => {
+	const publicPage = await readProjectFile('src/routes/(public)/calendar/+page.svelte');
+
+	assert.match(publicPage, /lg:h-svh/);
+	assert.doesNotMatch(publicPage, /max-w-7xl/);
+	assert.match(publicPage, /fillHeight/);
+	assert.match(publicPage, /class="lg:hidden"/);
+	assert.match(publicPage, /showFullDescription/);
+	assert.match(publicPage, /function goToToday\(\)/);
 });

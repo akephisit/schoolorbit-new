@@ -2,6 +2,7 @@
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import { PageState } from '$lib/components/app-state';
+	import { cn } from '$lib/utils';
 	import { formatCalendarDate } from '$lib/utils/calendar';
 	import { CalendarRange, Clock3, Globe2, MapPin, Pencil, Trash2, Users } from 'lucide-svelte';
 	import type { CalendarDisplayEvent } from './CalendarMonthGrid.svelte';
@@ -21,11 +22,13 @@
 	let {
 		events = [],
 		canManage = false,
+		showFullDescription = false,
 		onedit,
 		ondelete
 	}: {
 		events?: CalendarListEvent[];
 		canManage?: boolean;
+		showFullDescription?: boolean;
 		onedit?: (event: CalendarListEvent) => void;
 		ondelete?: (event: CalendarListEvent) => void;
 	} = $props();
@@ -116,7 +119,10 @@
 
 						{#if event.description}
 							<p
-								class="line-clamp-3 whitespace-pre-line text-sm leading-relaxed text-foreground/80"
+								class={cn(
+									'whitespace-pre-line text-sm leading-relaxed text-foreground/80',
+									!showFullDescription && 'line-clamp-3'
+								)}
 							>
 								{event.description}
 							</p>
