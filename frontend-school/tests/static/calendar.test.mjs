@@ -257,16 +257,28 @@ test('calendar read-only pages sort selected-day events consistently', async () 
 	);
 });
 
-test('public calendar uses a balanced responsive layout with readable mobile details', async () => {
+test('public calendar fills mobile viewport and opens selected days in a timeline dialog', async () => {
 	const publicPage = await readProjectFile('src/routes/(public)/calendar/+page.svelte');
+	const timelineDialog = await readProjectFile(
+		'src/lib/components/calendar/CalendarDayTimelineDialog.svelte'
+	);
 
 	assert.match(publicPage, /max-w-screen-2xl/);
 	assert.match(publicPage, /h-dvh overflow-hidden/);
-	assert.match(publicPage, /grid-rows-\[minmax\(0,2fr\)_minmax\(10rem,1fr\)\]/);
 	assert.match(publicPage, /fillHeight/);
-	assert.match(publicPage, /min-h-0 flex-1 overflow-y-auto/);
+	assert.match(publicPage, /CalendarDayTimelineDialog/);
+	assert.match(publicPage, /function selectDate\(date: string\)/);
+	assert.match(publicPage, /window\.matchMedia\('\(max-width: 1023px\)'\)/);
+	assert.match(publicPage, /hidden min-h-0[\s\S]*lg:flex/);
+	assert.doesNotMatch(publicPage, /grid-rows-\[minmax\(0,2fr\)/);
 	assert.match(publicPage, /lg:grid-cols-\[minmax\(0,1fr\)_22rem\]/);
 	assert.match(publicPage, /xl:grid-cols-\[minmax\(0,1fr\)_24rem\]/);
 	assert.match(publicPage, /showFullDescription/);
 	assert.match(publicPage, /function goToToday\(\)/);
+
+	assert.match(timelineDialog, /from '\$lib\/components\/ui\/dialog'/);
+	assert.match(timelineDialog, /bind:open/);
+	assert.match(timelineDialog, /allDayEvents/);
+	assert.match(timelineDialog, /timedEvents/);
+	assert.match(timelineDialog, /overflow-y-auto/);
 });

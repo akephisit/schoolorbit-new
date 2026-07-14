@@ -3,6 +3,7 @@
 	import { addMonths } from 'date-fns';
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import { Button } from '$lib/components/ui/button';
+	import CalendarDayTimelineDialog from '$lib/components/calendar/CalendarDayTimelineDialog.svelte';
 	import CalendarMonthGrid from '$lib/components/calendar/CalendarMonthGrid.svelte';
 	import CalendarEventList from '$lib/components/calendar/CalendarEventList.svelte';
 	import { type CalendarPublicEvent, listPublicCalendarEvents } from '$lib/api/calendar';
@@ -23,6 +24,7 @@
 	let error = $state('');
 	let selectedMonth = $state(toIsoDate(new Date()));
 	let selectedDate = $state(toIsoDate(new Date()));
+	let dayDialogOpen = $state(false);
 
 	const monthLabel = $derived(formatCalendarMonth(selectedMonth));
 	const selectedDateEvents = $derived(
@@ -66,6 +68,13 @@
 		selectedMonth = monthRange(today).from;
 		selectedDate = today;
 		await loadCalendar();
+	}
+
+	function selectDate(date: string) {
+		selectedDate = date;
+		if (window.matchMedia('(max-width: 1023px)').matches) {
+			dayDialogOpen = true;
+		}
 	}
 
 	onMount(() => {
@@ -138,16 +147,18 @@
 			</div>
 		{:else}
 			<div
-				class="grid min-h-0 flex-1 grid-rows-[minmax(0,2fr)_minmax(10rem,1fr)] gap-3 lg:grid-cols-[minmax(0,1fr)_22rem] lg:grid-rows-1 lg:gap-5 xl:grid-cols-[minmax(0,1fr)_24rem]"
+				class="grid min-h-0 flex-1 lg:grid-cols-[minmax(0,1fr)_22rem] lg:gap-5 xl:grid-cols-[minmax(0,1fr)_24rem]"
 			>
 				<CalendarMonthGrid
 					monthDate={selectedMonth}
 					{events}
 					{selectedDate}
-					onselect={(date) => (selectedDate = date)}
+					onselect={selectDate}
 					fillHeight
 				/>
-				<aside class="flex min-h-0 flex-col overflow-hidden rounded-xl border bg-card shadow-sm">
+				<aside
+					class="hidden min-h-0 flex-col overflow-hidden rounded-xl border bg-card shadow-sm lg:flex"
+				>
 					<div class="flex shrink-0 items-end justify-between gap-3 border-b px-3 py-2.5 sm:px-4">
 						<div>
 							<p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">
@@ -167,3 +178,9 @@
 		{/if}
 	</section>
 </main>
+
+<CalendarDayTimelineDialog
+	bind:open={dayDialogOpen}
+	date={selectedDate}
+	events={selectedDateEvents}
+/>
