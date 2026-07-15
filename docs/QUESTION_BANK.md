@@ -86,7 +86,10 @@ Word; it does not embed MathType's proprietary OLE object. The exporter and its 
 dependencies are client-only; the SSR build resolves the module to a small server stub so they are
 not bundled into the Cloudflare Worker. Standard function names such as `sin`, `cos`, `tan`, `log`,
 and `ln` remain in the equation's Cambria Math font but use its upright/plain style, followed by
-correctly spaced italic variables. Compact input such as `sinx` is normalized the same way.
+compact mathematical function spacing and italic variables. Compact input such as `sinx` is
+normalized the same way. Exported paragraphs use single line spacing while still allowing Word to
+expand a line for tall fractions or roots, and every equation run is normalized to regular (non-bold)
+weight.
 
 ## API
 

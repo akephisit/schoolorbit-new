@@ -4,6 +4,7 @@ import {
 	Document,
 	ImageRun,
 	ImportedXmlComponent,
+	LineRuleType,
 	Packer,
 	PageBreak,
 	Paragraph,
@@ -44,11 +45,27 @@ const bodyFont = 'TH Sarabun New';
 const bodyFontSize = 32;
 const titleFontSize = 40;
 const usablePageWidthPixels = 640;
-const defaultLineSpacing = 360;
+const defaultLineSpacing = 240;
 const answerIndent = convertMillimetersToTwip(8);
 const mathMlNamespace = 'http://www.w3.org/1998/Math/MathML';
+const officeMathNamespace = 'http://schemas.openxmlformats.org/officeDocument/2006/math';
+const wordprocessingNamespace = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 const invisibleTimes = '\u2062';
-const functionSpaceWidth = '0.1667em';
+const applyFunction = '\u2061';
+const boldMathCharacterRanges = [
+	[0x1d400, 0x1d433],
+	[0x1d468, 0x1d49b],
+	[0x1d4d0, 0x1d503],
+	[0x1d56c, 0x1d59f],
+	[0x1d5d4, 0x1d607],
+	[0x1d63c, 0x1d66f],
+	[0x1d6a8, 0x1d6e1],
+	[0x1d71c, 0x1d755],
+	[0x1d756, 0x1d78f],
+	[0x1d790, 0x1d7c9],
+	[0x1d7ce, 0x1d7d7],
+	[0x1d7ec, 0x1d7f5]
+] as const;
 const wordMathFunctionNames = [
 	'arccsch',
 	'arcsech',
@@ -177,7 +194,7 @@ export async function buildQuestionBankWordBlob(
 						color: '000000'
 					},
 					paragraph: {
-						spacing: { line: defaultLineSpacing, after: 80 }
+						spacing: { line: defaultLineSpacing, lineRule: LineRuleType.AUTO, after: 0 }
 					}
 				}
 			}
@@ -321,6 +338,7 @@ async function buildContentParagraphs(
 					indent,
 					spacing: {
 						line: defaultLineSpacing,
+						lineRule: LineRuleType.AUTO,
 						after: options.spacingAfter ?? 80
 					}
 				})
@@ -421,6 +439,7 @@ function wordFormula(latex: string): ParagraphChild {
 	const mathMl = wordMathMl(latex);
 	const omml = mml2omml(mathMl);
 	const xmlDocument = parseXml(omml, 'ไม่สามารถแปลงสมการเป็นรูปแบบ Word Math ได้');
+	normalizeWordMathWeight(xmlDocument);
 
 	// docx accepts imported XML components as paragraph children at runtime, but its public
 	// ParagraphChild union does not include ImportedXmlComponent.
@@ -430,6 +449,7 @@ function wordFormula(latex: string): ParagraphChild {
 function wordMathMl(latex: string) {
 	const mathMl = `<math xmlns="${mathMlNamespace}">${convertLatexToMathMl(latex)}</math>`;
 	const xmlDocument = parseXml(mathMl, 'ไม่สามารถอ่านสมการคณิตศาสตร์ได้');
+	normalizeMathMlWeight(xmlDocument);
 	normalizeWordMathFunctions(xmlDocument);
 	return new XMLSerializer().serializeToString(xmlDocument.documentElement);
 }
@@ -447,7 +467,7 @@ function normalizeWordMathFunctions(xmlDocument: XMLDocument) {
 		if (!wordMathFunctionNameSet.has(name)) continue;
 		const functionName = createWordMathFunction(name, xmlDocument);
 		element.replaceWith(functionName);
-		insertFunctionSpace(functionName, xmlDocument);
+		insertFunctionApplication(functionName, xmlDocument);
 	}
 }
 
@@ -495,7 +515,7 @@ function createWordMathFunction(value: string, xmlDocument: XMLDocument) {
 	return functionName;
 }
 
-function insertFunctionSpace(functionName: Element, xmlDocument: XMLDocument) {
+function insertFunctionApplication(functionName: Element, xmlDocument: XMLDocument) {
 	let anchor = functionName;
 	while (
 		anchor.parentElement &&
@@ -507,14 +527,71 @@ function insertFunctionSpace(functionName: Element, xmlDocument: XMLDocument) {
 
 	const next = anchor.nextElementSibling;
 	if (!next || next.localName === 'mspace') return;
-	const space = xmlDocument.createElementNS(mathMlNamespace, 'mspace');
-	space.setAttribute('width', functionSpaceWidth);
+	const application = xmlDocument.createElementNS(mathMlNamespace, 'mo');
+	application.textContent = applyFunction;
 	if (next.localName === 'mo' && next.textContent === invisibleTimes) {
-		next.replaceWith(space);
+		next.replaceWith(application);
 		return;
 	}
 	if (!functionArgumentElements.has(next.localName)) return;
-	anchor.parentElement?.insertBefore(space, next);
+	anchor.parentElement?.insertBefore(application, next);
+}
+
+function normalizeMathMlWeight(xmlDocument: XMLDocument) {
+	for (const element of Array.from(xmlDocument.getElementsByTagName('*'))) {
+		if (element.hasAttribute('fontweight')) element.setAttribute('fontweight', 'normal');
+
+		const variant = element.getAttribute('mathvariant');
+		if (variant) {
+			const thinVariant = thinMathVariant(variant);
+			if (thinVariant) element.setAttribute('mathvariant', thinVariant);
+			else element.removeAttribute('mathvariant');
+		}
+
+		for (const child of element.childNodes) {
+			if (child.nodeType === Node.TEXT_NODE && child.nodeValue) {
+				child.nodeValue = thinMathCharacters(child.nodeValue);
+			}
+		}
+	}
+}
+
+function normalizeWordMathWeight(xmlDocument: XMLDocument) {
+	for (const tagName of ['b', 'bCs']) {
+		for (const element of Array.from(
+			xmlDocument.getElementsByTagNameNS(wordprocessingNamespace, tagName)
+		)) {
+			element.remove();
+		}
+	}
+
+	for (const style of Array.from(xmlDocument.getElementsByTagNameNS(officeMathNamespace, 'sty'))) {
+		const value = style.getAttributeNS(officeMathNamespace, 'val');
+		if (value === 'b') style.setAttributeNS(officeMathNamespace, 'm:val', 'p');
+		if (value === 'bi') style.setAttributeNS(officeMathNamespace, 'm:val', 'i');
+	}
+
+	for (const text of Array.from(xmlDocument.getElementsByTagNameNS(officeMathNamespace, 't'))) {
+		if (text.textContent) text.textContent = thinMathCharacters(text.textContent);
+	}
+}
+
+function thinMathVariant(variant: string) {
+	if (!variant.includes('bold') && variant !== 'b-i') return variant;
+	return variant.includes('italic') || variant === 'b-i' ? 'italic' : null;
+}
+
+function thinMathCharacters(value: string) {
+	return Array.from(value, (character) => {
+		const codePoint = character.codePointAt(0);
+		if (
+			codePoint === undefined ||
+			!boldMathCharacterRanges.some(([start, end]) => codePoint >= start && codePoint <= end)
+		) {
+			return character;
+		}
+		return character.normalize('NFKC');
+	}).join('');
 }
 
 function parseXml(value: string, errorMessage: string) {
