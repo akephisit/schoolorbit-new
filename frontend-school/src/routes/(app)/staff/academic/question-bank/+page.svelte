@@ -216,7 +216,7 @@
 	}
 
 	function defaultChoices() {
-		return ['A', 'B', 'C', 'D'].map((label, index) => newChoice(label, index));
+		return ['ก', 'ข', 'ค', 'ง'].map((label, index) => newChoice(label, index));
 	}
 
 	function newDraft(subjectId = ''): QuestionDraft {
@@ -225,7 +225,7 @@
 			questionType: 'single_choice',
 			difficulty: 'medium',
 			points: 1,
-			status: 'draft',
+			status: 'ready',
 			stem: emptyContentDraft(),
 			explanation: emptyContentDraft(),
 			rubric: emptyContentDraft(),

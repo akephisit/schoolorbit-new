@@ -24,6 +24,9 @@ test('question bank uses its own subject options and exact subject contract', as
 	assert.match(page, /getQuestionBankOptions\(\)/);
 	assert.doesNotMatch(page, /getAcademicStructure|listSubjects|gradeLevelId|ปีการศึกษา/);
 	assert.match(page, /ข้อสอบจะผูกกับรายวิชาที่เลือกโดยตรง/);
+	assert.match(page, /return \['ก', 'ข', 'ค', 'ง'\]\.map/);
+	assert.doesNotMatch(page, /return \['A', 'B', 'C', 'D'\]\.map/);
+	assert.match(page, /function newDraft[\s\S]*status: 'ready'/);
 });
 
 test('question bank defers image uploads until save and cleans failed temporary files', async () => {
