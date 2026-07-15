@@ -191,6 +191,15 @@ test('question bank exports selected questions with editable native Word Math eq
 	assert.match(exporter, /const applyFunction = '\\u2061'/);
 	assert.match(exporter, /normalizeMathMlWeight\(xmlDocument\)/);
 	assert.match(exporter, /normalizeWordMathWeight\(xmlDocument\)/);
+	assert.doesNotMatch(exporter, /spacingAfter/);
+	const paragraphAfterValues = [...exporter.matchAll(/\bafter:\s*(\d+)/g)].map((match) =>
+		Number(match[1])
+	);
+	assert.ok(paragraphAfterValues.length > 0);
+	assert.ok(paragraphAfterValues.every((value) => value === 0));
+	assert.match(exporter, /children\.unshift\(wordText\(options\.prefix \?\? ''\)\)/);
+	assert.doesNotMatch(exporter, /wordText\(options\.prefix \?\? '', \{ bold: true \}\)/);
+	assert.doesNotMatch(exporter, /wordText\(`ข้อ \$\{index \+ 1\}`, \{ bold: true \}\)/);
 	assert.match(exporter, /parseXml\(omml, 'ไม่สามารถแปลงสมการเป็นรูปแบบ Word Math ได้'\)/);
 	assert.match(exporter, /new ImportedXmlComponent\(element\.tagName, attributes\)/);
 	const formulaExporter = exporter.slice(

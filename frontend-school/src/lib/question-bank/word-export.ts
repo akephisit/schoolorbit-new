@@ -38,7 +38,6 @@ type ExportContext = {
 type ContentParagraphOptions = {
 	prefix?: string;
 	indent?: number;
-	spacingAfter?: number;
 };
 
 const bodyFont = 'TH Sarabun New';
@@ -162,12 +161,12 @@ export async function buildQuestionBankWordBlob(
 	const children: Paragraph[] = [
 		new Paragraph({
 			alignment: AlignmentType.CENTER,
-			spacing: { after: 120 },
+			spacing: { after: 0 },
 			children: [wordText(options.title.trim() || 'ชุดข้อสอบ', { bold: true, size: titleFontSize })]
 		}),
 		new Paragraph({
 			alignment: AlignmentType.CENTER,
-			spacing: { after: 320 },
+			spacing: { after: 0 },
 			children: [wordText(`จำนวน ${questions.length} ข้อ`)]
 		})
 	];
@@ -235,8 +234,7 @@ async function buildQuestion(
 		files,
 		context,
 		{
-			prefix: `${index + 1}. `,
-			spacingAfter: question.choices.length ? 40 : 160
+			prefix: `${index + 1}. `
 		}
 	);
 
@@ -244,13 +242,11 @@ async function buildQuestion(
 		paragraphs.push(
 			...(await buildContentParagraphs(question.id, choice.content, files, context, {
 				prefix: `${choice.label}. `,
-				indent: answerIndent,
-				spacingAfter: 40
+				indent: answerIndent
 			}))
 		);
 	}
 
-	paragraphs.push(new Paragraph({ spacing: { after: 120 }, children: [] }));
 	return paragraphs;
 }
 
@@ -262,7 +258,7 @@ async function buildAnswerKey(
 		new Paragraph({ children: [new PageBreak()] }),
 		new Paragraph({
 			alignment: AlignmentType.CENTER,
-			spacing: { after: 240 },
+			spacing: { after: 0 },
 			children: [wordText('เฉลย', { bold: true, size: titleFontSize })]
 		})
 	];
@@ -274,9 +270,9 @@ async function buildAnswerKey(
 			.join(', ');
 		paragraphs.push(
 			new Paragraph({
-				spacing: { before: 80, after: 40 },
+				spacing: { before: 0, after: 0 },
 				children: [
-					wordText(`ข้อ ${index + 1}`, { bold: true }),
+					wordText(`ข้อ ${index + 1}`),
 					...(correctChoices ? [wordText(`: ${correctChoices}`)] : [])
 				]
 			})
@@ -287,12 +283,11 @@ async function buildAnswerKey(
 			paragraphs.push(
 				new Paragraph({
 					indent: { left: answerIndent },
-					spacing: { after: 20 },
+					spacing: { after: 0 },
 					children: [wordText('คำอธิบาย', { bold: true })]
 				}),
 				...(await buildContentParagraphs(question.id, question.explanationContent, files, context, {
-					indent: answerIndent,
-					spacingAfter: 40
+					indent: answerIndent
 				}))
 			);
 		}
@@ -300,12 +295,11 @@ async function buildAnswerKey(
 			paragraphs.push(
 				new Paragraph({
 					indent: { left: answerIndent },
-					spacing: { after: 20 },
+					spacing: { after: 0 },
 					children: [wordText('เกณฑ์ให้คะแนน', { bold: true })]
 				}),
 				...(await buildContentParagraphs(question.id, question.rubricContent, files, context, {
-					indent: answerIndent,
-					spacingAfter: 40
+					indent: answerIndent
 				}))
 			);
 		}
@@ -329,7 +323,7 @@ async function buildContentParagraphs(
 		if (block.type === 'paragraph') {
 			const children = buildInlineRuns(block.content ?? []);
 			if (prefixPending) {
-				children.unshift(wordText(options.prefix ?? '', { bold: true }));
+				children.unshift(wordText(options.prefix ?? ''));
 				prefixPending = false;
 			}
 			paragraphs.push(
@@ -339,7 +333,7 @@ async function buildContentParagraphs(
 					spacing: {
 						line: defaultLineSpacing,
 						lineRule: LineRuleType.AUTO,
-						after: options.spacingAfter ?? 80
+						after: 0
 					}
 				})
 			);
@@ -350,8 +344,8 @@ async function buildContentParagraphs(
 			paragraphs.push(
 				new Paragraph({
 					indent,
-					spacing: { after: 40 },
-					children: [wordText(options.prefix ?? '', { bold: true })]
+					spacing: { after: 0 },
+					children: [wordText(options.prefix ?? '')]
 				})
 			);
 			prefixPending = false;
@@ -362,7 +356,7 @@ async function buildContentParagraphs(
 				new Paragraph({
 					alignment: AlignmentType.CENTER,
 					indent,
-					spacing: { before: 40, after: options.spacingAfter ?? 100 },
+					spacing: { before: 0, after: 0 },
 					children: [wordFormula(block.attrs.latex)]
 				})
 			);
@@ -376,7 +370,7 @@ async function buildContentParagraphs(
 			new Paragraph({
 				alignment: imageAlignment(block.attrs.alignment),
 				indent,
-				spacing: { before: 60, after: block.attrs.caption ? 20 : (options.spacingAfter ?? 100) },
+				spacing: { before: 0, after: 0 },
 				children: [
 					new ImageRun({
 						type: 'png',
@@ -395,7 +389,7 @@ async function buildContentParagraphs(
 				new Paragraph({
 					alignment: imageAlignment(block.attrs.alignment),
 					indent,
-					spacing: { after: options.spacingAfter ?? 100 },
+					spacing: { after: 0 },
 					children: [wordText(block.attrs.caption, { italics: true, size: 28 })]
 				})
 			);
@@ -406,8 +400,8 @@ async function buildContentParagraphs(
 		paragraphs.push(
 			new Paragraph({
 				indent,
-				spacing: { after: options.spacingAfter ?? 80 },
-				children: [wordText(options.prefix ?? '', { bold: true })]
+				spacing: { after: 0 },
+				children: [wordText(options.prefix ?? '')]
 			})
 		);
 	}

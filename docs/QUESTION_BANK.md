@@ -89,7 +89,8 @@ and `ln` remain in the equation's Cambria Math font but use its upright/plain st
 compact mathematical function spacing and italic variables. Compact input such as `sinx` is
 normalized the same way. Exported paragraphs use single line spacing while still allowing Word to
 expand a line for tall fractions or roots, and every equation run is normalized to regular (non-bold)
-weight.
+weight. Paragraph spacing after is zero throughout the exported document, and question numbers and
+choice labels use the same regular weight as their surrounding text.
 
 ## API
 
