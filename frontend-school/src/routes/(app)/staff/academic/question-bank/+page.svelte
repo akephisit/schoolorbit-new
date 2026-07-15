@@ -46,9 +46,12 @@
 	} from '$lib/question-bank/rich-document';
 	import { can } from '$lib/stores/permissions';
 	import {
+		ArrowDown,
+		ArrowUp,
 		Edit3,
 		Eye,
 		FileDown,
+		GripVertical,
 		Image as ImageIcon,
 		Loader2,
 		Plus,
@@ -163,7 +166,11 @@
 	let wordExportDialogOpen = $state(false);
 	let wordExportTitle = $state('ชุดข้อสอบ');
 	let includeAnswerKey = $state(false);
+	let exportQuestionIds = $state.raw<string[]>([]);
+	let originalExportQuestionIds = $state.raw<string[]>([]);
+	let draggedExportQuestionId = $state<string | null>(null);
 	const selectedQuestionIds = new SvelteSet<string>();
+	const selectedQuestionSummaries = new SvelteMap<string, QuestionSummary>();
 
 	const creatableSubjects = $derived(subjects.filter((subject) => subject.canCreate));
 	const canCreateQuestion = $derived(hasManagePermission && creatableSubjects.length > 0);
@@ -171,6 +178,10 @@
 		draft.questionType === 'single_choice' || draft.questionType === 'multiple_choice'
 	);
 	const selectedQuestionCount = $derived(selectedQuestionIds.size);
+	const exportOrderChanged = $derived(
+		exportQuestionIds.length !== originalExportQuestionIds.length ||
+			exportQuestionIds.some((questionId, index) => questionId !== originalExportQuestionIds[index])
+	);
 	const allVisibleQuestionsSelected = $derived(
 		questions.length > 0 && questions.every((question) => selectedQuestionIds.has(question.id))
 	);
@@ -308,13 +319,23 @@
 		return 'outline';
 	}
 
-	function toggleQuestionSelection(questionId: string, selected: boolean) {
-		if (selected) selectedQuestionIds.add(questionId);
-		else selectedQuestionIds.delete(questionId);
+	function toggleQuestionSelection(question: QuestionSummary, selected: boolean) {
+		if (selected) {
+			selectedQuestionIds.add(question.id);
+			selectedQuestionSummaries.set(question.id, question);
+		} else {
+			selectedQuestionIds.delete(question.id);
+			selectedQuestionSummaries.delete(question.id);
+		}
 	}
 
 	function toggleVisibleQuestionSelection(selected: boolean) {
-		for (const question of questions) toggleQuestionSelection(question.id, selected);
+		for (const question of questions) toggleQuestionSelection(question, selected);
+	}
+
+	function clearQuestionSelection() {
+		selectedQuestionIds.clear();
+		selectedQuestionSummaries.clear();
 	}
 
 	function openWordExportDialog() {
@@ -322,7 +343,57 @@
 		const subject = subjects.find((item) => item.id === selectedSubjectId);
 		wordExportTitle = subject ? `ชุดข้อสอบ ${subject.code} ${subject.nameTh}` : 'ชุดข้อสอบ';
 		includeAnswerKey = false;
+		exportQuestionIds = [...selectedQuestionIds];
+		originalExportQuestionIds = [...exportQuestionIds];
+		draggedExportQuestionId = null;
 		wordExportDialogOpen = true;
+	}
+
+	function reorderExportQuestion(sourceId: string, targetId: string) {
+		if (sourceId === targetId) return;
+		const sourceIndex = exportQuestionIds.indexOf(sourceId);
+		const targetIndex = exportQuestionIds.indexOf(targetId);
+		if (sourceIndex === -1 || targetIndex === -1) return;
+
+		const next = [...exportQuestionIds];
+		const [movedQuestionId] = next.splice(sourceIndex, 1);
+		next.splice(targetIndex, 0, movedQuestionId);
+		exportQuestionIds = next;
+	}
+
+	function moveExportQuestion(questionId: string, offset: -1 | 1) {
+		const sourceIndex = exportQuestionIds.indexOf(questionId);
+		const targetId = exportQuestionIds[sourceIndex + offset];
+		if (sourceIndex === -1 || !targetId) return;
+		reorderExportQuestion(questionId, targetId);
+	}
+
+	function handleExportDragStart(event: DragEvent, questionId: string) {
+		if (exportingWord) return;
+		draggedExportQuestionId = questionId;
+		if (!event.dataTransfer) return;
+		event.dataTransfer.effectAllowed = 'move';
+		event.dataTransfer.setData('text/plain', questionId);
+	}
+
+	function handleExportDragOver(event: DragEvent) {
+		if (exportingWord || !draggedExportQuestionId) return;
+		event.preventDefault();
+		if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+	}
+
+	function handleExportDragEnter(targetId: string) {
+		if (exportingWord || !draggedExportQuestionId) return;
+		reorderExportQuestion(draggedExportQuestionId, targetId);
+	}
+
+	function handleExportDragEnd() {
+		draggedExportQuestionId = null;
+	}
+
+	function resetExportQuestionOrder() {
+		exportQuestionIds = [...originalExportQuestionIds];
+		draggedExportQuestionId = null;
 	}
 
 	async function loadSelectedQuestionDetails(questionIds: string[]) {
@@ -340,7 +411,7 @@
 	}
 
 	async function confirmWordExport() {
-		if (exportingWord || selectedQuestionIds.size === 0) return;
+		if (exportingWord || exportQuestionIds.length === 0) return;
 		if (!wordExportTitle.trim()) {
 			toast.error('กรุณาระบุชื่อเอกสาร');
 			return;
@@ -348,7 +419,7 @@
 
 		exportingWord = true;
 		try {
-			const questionIds = [...selectedQuestionIds];
+			const questionIds = [...exportQuestionIds];
 			const [details, exporter] = await Promise.all([
 				loadSelectedQuestionDetails(questionIds),
 				loadWordExporter()
@@ -389,6 +460,11 @@
 
 	function applyPage(pageResponse: Awaited<ReturnType<typeof listQuestionBankQuestions>>) {
 		questions = pageResponse.items;
+		for (const question of questions) {
+			if (selectedQuestionIds.has(question.id)) {
+				selectedQuestionSummaries.set(question.id, question);
+			}
+		}
 		summary = pageResponse.summary;
 		currentPage = pageResponse.page;
 		totalPages = pageResponse.totalPages;
@@ -692,6 +768,7 @@
 		try {
 			await deleteQuestionBankQuestion(deleteTarget.id);
 			selectedQuestionIds.delete(deleteTarget.id);
+			selectedQuestionSummaries.delete(deleteTarget.id);
 			deleteDialogOpen = false;
 			deleteTarget = null;
 			await loadQuestions(
@@ -899,7 +976,7 @@
 						{#if selectedQuestionCount}
 							<div class="flex items-center gap-2 text-sm">
 								<span class="text-muted-foreground">เลือกแล้ว {selectedQuestionCount} ข้อ</span>
-								<Button variant="ghost" size="sm" onclick={() => selectedQuestionIds.clear()}
+								<Button variant="ghost" size="sm" onclick={clearQuestionSelection}
 									>ล้างที่เลือก</Button
 								>
 							</div>
@@ -914,7 +991,7 @@
 										aria-label={`เลือกข้อสอบลำดับ ${questionIndex + 1}`}
 										checked={selectedQuestionIds.has(question.id)}
 										onCheckedChange={(checked) =>
-											toggleQuestionSelection(question.id, checked === true)}
+											toggleQuestionSelection(question, checked === true)}
 									/>
 									<div class="min-w-0 space-y-2">
 										<div class="flex flex-wrap items-center gap-2">
@@ -1244,18 +1321,90 @@
 </Dialog.Root>
 
 <Dialog.Root bind:open={wordExportDialogOpen}>
-	<Dialog.Content class="sm:max-w-lg">
+	<Dialog.Content class="flex max-h-[90vh] flex-col overflow-hidden sm:max-w-2xl">
 		<Dialog.Header>
 			<Dialog.Title>ส่งออกข้อสอบเป็น Word</Dialog.Title>
 			<Dialog.Description>
-				เลือกแล้ว {selectedQuestionCount} ข้อ ระบบจะเรียงตามลำดับที่เลือก
+				เลือกแล้ว {selectedQuestionCount} ข้อ ลากรายการหรือใช้ปุ่มขึ้นลงเพื่อจัดลำดับก่อนส่งออก
 			</Dialog.Description>
 		</Dialog.Header>
-		<div class="space-y-4">
+		<div class="min-h-0 flex-1 space-y-4 overflow-y-auto pr-1">
 			<div class="space-y-2">
 				<Label for="word-export-title">ชื่อเอกสาร</Label>
 				<Input id="word-export-title" bind:value={wordExportTitle} disabled={exportingWord} />
 			</div>
+			<section class="space-y-2" aria-labelledby="word-export-order-label">
+				<div class="flex items-center justify-between gap-3">
+					<div>
+						<h3 id="word-export-order-label" class="text-sm font-medium">ลำดับข้อสอบ</h3>
+						<p class="text-xs text-muted-foreground">เลขลำดับนี้จะเป็นเลขข้อในไฟล์ Word</p>
+					</div>
+					<Button
+						variant="ghost"
+						size="sm"
+						onclick={resetExportQuestionOrder}
+						disabled={exportingWord || !exportOrderChanged}
+					>
+						คืนลำดับเดิม
+					</Button>
+				</div>
+				<div class="max-h-72 divide-y overflow-y-auto rounded-lg border" role="list">
+					{#each exportQuestionIds as questionId, index (questionId)}
+						{@const question = selectedQuestionSummaries.get(questionId)}
+						<div
+							role="listitem"
+							draggable={!exportingWord}
+							ondragstart={(event) => handleExportDragStart(event, questionId)}
+							ondragover={handleExportDragOver}
+							ondragenter={() => handleExportDragEnter(questionId)}
+							ondragend={handleExportDragEnd}
+							class={[
+								'flex items-center gap-2 bg-background p-2 transition-opacity',
+								draggedExportQuestionId === questionId && 'opacity-40'
+							]}
+						>
+							<GripVertical
+								class="h-5 w-5 shrink-0 cursor-grab text-muted-foreground active:cursor-grabbing"
+							/>
+							<Badge variant="secondary" class="w-9 shrink-0 justify-center">{index + 1}</Badge>
+							<div class="min-w-0 flex-1">
+								{#if question}
+									<div class="line-clamp-2 text-sm">
+										<QuestionContent content={question.stemContent} compact />
+									</div>
+									<p class="truncate text-xs text-muted-foreground">
+										{subjectLabel(question)} · {difficultyLabel(question.difficulty)}
+									</p>
+								{:else}
+									<p class="text-sm text-muted-foreground">ข้อสอบที่เลือก</p>
+								{/if}
+							</div>
+							<div class="flex shrink-0 gap-1">
+								<Button
+									variant="ghost"
+									size="icon"
+									class="h-8 w-8"
+									aria-label={`เลื่อนข้อ ${index + 1} ขึ้น`}
+									onclick={() => moveExportQuestion(questionId, -1)}
+									disabled={exportingWord || index === 0}
+								>
+									<ArrowUp class="h-4 w-4" />
+								</Button>
+								<Button
+									variant="ghost"
+									size="icon"
+									class="h-8 w-8"
+									aria-label={`เลื่อนข้อ ${index + 1} ลง`}
+									onclick={() => moveExportQuestion(questionId, 1)}
+									disabled={exportingWord || index === exportQuestionIds.length - 1}
+								>
+									<ArrowDown class="h-4 w-4" />
+								</Button>
+							</div>
+						</div>
+					{/each}
+				</div>
+			</section>
 			<label class="flex cursor-pointer items-start gap-3 rounded-lg border p-3">
 				<Checkbox
 					class="mt-1"
@@ -1271,8 +1420,8 @@
 				</span>
 			</label>
 			<div class="rounded-lg border bg-muted/30 p-3 text-sm text-muted-foreground">
-				ข้อความยังแก้ไขใน Word ได้ รูปประกอบจะฝังอยู่ในไฟล์ และสูตรจะเป็นภาพ PNG ความละเอียดสูงจาก
-				KaTeX เพื่อให้หน้าตาเหมือนเอกสารคณิตศาสตร์ โดยไม่ใช้ Word Equation
+				ข้อความยังแก้ไขใน Word ได้ รูปประกอบจะฝังอยู่ในไฟล์ และสูตรจะเป็นสมการ Word แบบคมชัด
+				พร้อมจัดแนวกับข้อความโดยอัตโนมัติ
 			</div>
 		</div>
 		<Dialog.Footer>
@@ -1285,7 +1434,7 @@
 				loading={exportingWord}
 				loadingLabel="กำลังสร้างไฟล์..."
 				onclick={confirmWordExport}
-				disabled={!wordExportTitle.trim() || selectedQuestionCount === 0}
+				disabled={!wordExportTitle.trim() || exportQuestionIds.length === 0}
 			>
 				<FileDown class="h-4 w-4" /> สร้างไฟล์ Word
 			</LoadingButton>

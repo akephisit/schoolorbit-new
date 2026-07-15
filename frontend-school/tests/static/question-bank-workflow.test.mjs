@@ -169,6 +169,19 @@ test('question bank exports selected questions with editable native Word Math eq
 	assert.match(page, /ส่งออก Word/);
 	assert.match(page, /loadSelectedQuestionDetails/);
 	assert.match(page, /getQuestionBankQuestion\(questionIds\[index\]\)/);
+	assert.match(
+		page,
+		/const selectedQuestionSummaries = new SvelteMap<string, QuestionSummary>\(\)/
+	);
+	assert.match(page, /let exportQuestionIds = \$state\.raw<string\[\]>\(\[\]\)/);
+	assert.match(page, /exportQuestionIds = \[\.\.\.selectedQuestionIds\]/);
+	assert.match(page, /const questionIds = \[\.\.\.exportQuestionIds\]/);
+	assert.match(page, /reorderExportQuestion/);
+	assert.match(page, /moveExportQuestion/);
+	assert.match(page, /draggable=\{!exportingWord\}/);
+	assert.match(page, /ลากรายการหรือใช้ปุ่มขึ้นลงเพื่อจัดลำดับก่อนส่งออก/);
+	assert.match(page, /aria-label=\{`เลื่อนข้อ \$\{index \+ 1\} ขึ้น`\}/);
+	assert.match(page, /aria-label=\{`เลื่อนข้อ \$\{index \+ 1\} ลง`\}/);
 	assert.match(page, /import\('\$lib\/question-bank\/word-export'\)/);
 	assert.match(page, /const loadWordExporter = browser/);
 	assert.match(viteConfig, /client-only-word-exporter/);
@@ -214,6 +227,7 @@ test('question bank exports selected questions with editable native Word Math eq
 	assert.match(apiClient, /async getBlob\(endpoint: string\)/);
 	assert.match(exporter, /includeAnswerKey/);
 	assert.match(exporter, /TH Sarabun New/);
+	assert.doesNotMatch(page, /สูตรจะเป็นภาพ PNG/);
 	assert.match(backendRoutes, /questions\/\{question_id\}\/files\/\{file_id\}/);
 	assert.match(backendHandlers, /get_question_file_source/);
 	assert.match(backendHandlers, /private, max-age=300/);

@@ -71,11 +71,13 @@ objects and metadata.
 ## Word export
 
 Teachers can select questions across result pages and export them as an A4 `.docx` document. The
-browser loads the full details of the selected questions before building the file, so choices and
-every referenced image are included. Image bytes are read through the authenticated question-bank
-file endpoint, which verifies that the user can read the question and that the file is actually
-referenced by it; export does not depend on cross-origin access to the public storage URL. The export
-dialog can optionally append correct choices, explanations, and scoring rubrics as an answer key.
+export dialog keeps the selection order across result pages and lets teachers reorder questions by
+dragging or by using accessible up/down buttons before building the file. The browser then loads the
+full details in that exact order, so the generated question numbers, choices, and every referenced
+image follow the arranged list. Image bytes are read through the authenticated question-bank file
+endpoint, which verifies that the user can read the question and that the file is actually referenced
+by it; export does not depend on cross-origin access to the public storage URL. The export dialog can
+optionally append correct choices, explanations, and scoring rubrics as an answer key.
 
 Normal text remains editable Word text using `TH Sarabun New`, and uploaded images are converted to
 PNG and embedded in the document. Formulas are not exported as images: MathLive LaTeX is converted to
