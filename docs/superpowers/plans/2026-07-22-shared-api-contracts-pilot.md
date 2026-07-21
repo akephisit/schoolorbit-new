@@ -54,7 +54,7 @@
 
 - Consumes: `ApiResponse<T>`, `ApiErrorResponse`, `UserResponse`, and `modules::auth::handlers::me`.
 - Produces: `school_api_value() -> Result<serde_json::Value, serde_json::Error>` and `render_school_api() -> Result<String, serde_json::Error>`.
-- Produces CLI: `cargo run --quiet --manifest-path backend-school/Cargo.toml -- export-openapi`; stdout contains JSON only.
+- Produces CLI: `cargo run --quiet --manifest-path backend-school/Cargo.toml --bin backend-school -- export-openapi`; stdout contains JSON only.
 
 - [ ] **Step 1: Declare the module and write failing tests**
 
@@ -258,8 +258,8 @@ Run:
 cd backend-school
 cargo fmt --all
 cargo test api_contract::tests --bin backend-school
-env -i PATH="$PATH" cargo run --quiet -- export-openapi > /tmp/schoolorbit-openapi.json
-jq -e '.openapi == "3.1.0" and .paths["/api/auth/me"].get.operationId == "getCurrentUser"' /tmp/schoolorbit-openapi.json
+env -i PATH="$PATH" HOME="$HOME" cargo run --quiet --bin backend-school -- export-openapi > /tmp/schoolorbit-openapi.json
+node -e "const fs=require('node:fs');const d=JSON.parse(fs.readFileSync('/tmp/schoolorbit-openapi.json','utf8'));if(d.openapi!=='3.1.0'||d.paths?.['/api/auth/me']?.get?.operationId!=='getCurrentUser')process.exit(1)"
 cargo check --bin backend-school
 ```
 
@@ -438,7 +438,7 @@ async function readIfPresent(filePath) {
 }
 ```
 
-Export the Rust document using `execFileAsync('cargo', ['run', '--quiet', '--manifest-path', path.join(repositoryRoot, 'backend-school/Cargo.toml'), '--', 'export-openapi'])`, `cwd: repositoryRoot`, and a 16 MiB max buffer. Parse stdout as JSON.
+Export the Rust document using `execFileAsync('cargo', ['run', '--quiet', '--manifest-path', path.join(repositoryRoot, 'backend-school/Cargo.toml'), '--bin', 'backend-school', '--', 'export-openapi'])`, `cwd: repositoryRoot`, and a 16 MiB max buffer. Parse stdout as JSON.
 
 Generate TypeScript only in `mkdtemp()` using the pinned executable at `frontend-school/node_modules/.bin/openapi-typescript` (append `.cmd` on Windows), with arguments `[inputPath, '--output', outputPath, '--alphabetize']`. Always remove the temporary directory in `finally`.
 

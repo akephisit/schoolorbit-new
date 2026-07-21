@@ -2,6 +2,7 @@ use crate::utils::file_url::get_file_url_from_string;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
+use utoipa::ToSchema;
 use uuid::Uuid;
 
 // User model (from database)
@@ -84,28 +85,34 @@ pub struct ChangePasswordRequest {
 }
 
 // User response (without sensitive data)
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct UserResponse {
     pub id: Uuid,
     pub username: String, // Added field
+    #[schema(required = true)]
     pub national_id: Option<String>,
+    #[schema(required = true)]
     pub email: Option<String>,
     pub first_name: String,
     pub last_name: String,
     pub user_type: String,
+    #[schema(required = true)]
     pub phone: Option<String>,
     pub status: String,
     pub created_at: DateTime<Utc>,
 
     // Primary role name from roles table (if exists)
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = String)]
     pub primary_role_name: Option<String>,
 
+    #[schema(required = true)]
     pub profile_image_url: Option<String>,
 
     // User permissions
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = Vec<String>)]
     pub permissions: Option<Vec<String>>,
 }
 

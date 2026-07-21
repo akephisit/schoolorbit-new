@@ -3,7 +3,7 @@ use super::models::{
     UserResponse,
 };
 use super::services;
-use crate::api_response::ApiResponse;
+use crate::api_response::{ApiErrorResponse, ApiResponse};
 use crate::error::AppError;
 use crate::middleware::permission::get_cached_user_permissions;
 use crate::utils::file_url::get_file_url_from_string;
@@ -128,6 +128,24 @@ pub async fn logout(cookies: Cookies) -> Result<impl IntoResponse, AppError> {
 }
 
 /// Get current user handler (protected)
+#[utoipa::path(
+    get,
+    path = "/api/auth/me",
+    operation_id = "getCurrentUser",
+    tag = "auth",
+    responses(
+        (
+            status = 200,
+            description = "Current authenticated user",
+            body = ApiResponse<UserResponse>
+        ),
+        (
+            status = 401,
+            description = "Authentication required or invalid",
+            body = ApiErrorResponse
+        )
+    )
+)]
 pub async fn me(
     State(state): State<AppState>,
     headers: HeaderMap,

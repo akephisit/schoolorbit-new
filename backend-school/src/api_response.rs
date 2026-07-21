@@ -1,11 +1,13 @@
 use serde::Serialize;
+use utoipa::ToSchema;
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ApiResponse<T> {
     pub success: bool,
     pub data: T,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = String)]
     pub message: Option<String>,
 }
 
@@ -51,12 +53,13 @@ impl<T> IdData<T> {
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ApiErrorResponse {
     pub success: bool,
     pub error: String,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = String)]
     pub message: Option<String>,
 }
 

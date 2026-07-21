@@ -1,3 +1,4 @@
+pub mod api_contract;
 pub mod api_response;
 mod db;
 pub mod error;
@@ -71,6 +72,29 @@ impl AppState {
 
 #[tokio::main]
 async fn main() {
+    let command_args = env::args().skip(1).collect::<Vec<_>>();
+    if command_args.first().map(String::as_str) == Some("export-openapi") {
+        if command_args.len() != 1 {
+            eprintln!("usage: backend-school export-openapi");
+            std::process::exit(2);
+        }
+
+        match api_contract::render_school_api() {
+            Ok(document) => {
+                use std::io::Write;
+                if let Err(error) = std::io::stdout().write_all(document.as_bytes()) {
+                    eprintln!("failed to write OpenAPI document: {error}");
+                    std::process::exit(1);
+                }
+            }
+            Err(error) => {
+                eprintln!("failed to render OpenAPI document: {error}");
+                std::process::exit(1);
+            }
+        }
+        return;
+    }
+
     dotenv().ok();
 
     // Default to readable local logs; set LOG_FORMAT=json for structured production logs.
