@@ -155,10 +155,19 @@ export function createTimetableSocketRuntime<Timer>(
 			dependencies.onMessage(event.data);
 		};
 
-		nextSocket.onclose = () => {
+		nextSocket.onclose = (event) => {
 			if (!ownsSocket(nextSocket, generation)) return;
 			retireSocket(nextSocket, false);
 			dependencies.onClose();
+			if (event.code === 1008) {
+				shouldReconnect = false;
+				desiredParams = null;
+				clearReconnectTimer();
+				clearConnectionDebounceTimer();
+				clearOnlineListener();
+				reconnectAttempt = 0;
+				return;
+			}
 			scheduleReconnect();
 		};
 

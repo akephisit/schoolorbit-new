@@ -27,9 +27,9 @@ class FakeSocket {
 		this.onmessage?.({ data });
 	}
 
-	closeFromServer() {
+	closeFromServer(code = 1006) {
 		this.readyState = 3;
-		this.onclose?.({ type: 'close' });
+		this.onclose?.({ type: 'close', code });
 	}
 
 	close() {
@@ -285,4 +285,24 @@ test('explicit disconnect cancels pending reconnect timers and the online listen
 	offlineRetry.environment.goOnline();
 	offlineRetry.environment.advanceBy(5000);
 	assert.equal(offlineRetry.environment.sockets.length, 1);
+});
+
+test('policy close suspends automatic reconnect until an explicit connect', () => {
+	const { environment, notifications, runtime } = createHarness();
+
+	runtime.connect(semesterA);
+	environment.advanceBy(50);
+	environment.sockets[0].open();
+	environment.sockets[0].closeFromServer(1008);
+
+	assert.equal(notifications.closes, 1);
+	assert.equal(environment.timers.size, 0);
+	assert.equal(environment.onlineListeners.size, 0);
+	environment.advanceBy(60_000);
+	assert.equal(environment.sockets.length, 1);
+
+	runtime.connect(semesterA);
+	assert.equal(environment.nextDelay(), 50);
+	environment.advanceBy(50);
+	assert.equal(environment.sockets.length, 2);
 });

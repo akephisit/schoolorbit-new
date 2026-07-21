@@ -2510,6 +2510,52 @@ fn timetable_websocket_identity_is_server_owned() {
     assert!(socket_loop.contains("sanitize_client_event("));
     assert!(socket_loop.contains("permission_event_receiver.recv()"));
     assert!(socket_loop.contains("permission_event_decision("));
+
+    let queued_permission_drain = socket_loop
+        .find("initialize_socket_if_permissions_current(")
+        .expect("queued permission changes must be drained through the production initializer");
+    for operation in [
+        "get_or_create_room(",
+        "join_room(",
+        "get_state_snapshot(",
+        "TimetableEvent::StateSync",
+        "TimetableEvent::UserJoined",
+    ] {
+        let operation_offset = socket_loop
+            .find(operation)
+            .unwrap_or_else(|| panic!("missing socket initialization operation: {operation}"));
+        assert!(
+            queued_permission_drain < operation_offset,
+            "queued permission drain must precede {operation}"
+        );
+    }
+
+    let select = socket_loop
+        .find("tokio::select!")
+        .expect("socket lifecycle must use one select loop");
+    let biased = socket_loop[select..]
+        .find("biased;")
+        .map(|offset| select + offset)
+        .expect("permission revocation must win when multiple socket branches are ready");
+    let permission_branch = socket_loop[select..]
+        .find("permission_change = permission_event_receiver.recv()")
+        .map(|offset| select + offset)
+        .expect("select loop must receive permission changes");
+    let incoming_branch = socket_loop[select..]
+        .find("incoming = socket.next()")
+        .map(|offset| select + offset)
+        .expect("select loop must receive client frames");
+    let room_broadcast_branch = socket_loop[select..]
+        .find("broadcast = rx.recv()")
+        .map(|offset| select + offset)
+        .expect("select loop must receive room events");
+    assert!(
+        select < biased
+            && biased < permission_branch
+            && permission_branch < incoming_branch
+            && incoming_branch < room_broadcast_branch,
+        "biased select must prioritize permission revocation before socket and room input"
+    );
 }
 
 #[test]
@@ -2601,6 +2647,9 @@ fn permission_cache_and_process_events_are_tenant_explicit() {
     let main = read_source(manifest_dir().join("src/main.rs"));
 
     assert!(cache.contains("TenantUserKey"));
+    assert!(cache.contains("PermissionCacheRevision"));
+    assert!(cache.contains("snapshot_revision"));
+    assert!(cache.contains("fill_if_current"));
     assert!(
         Regex::new(r"invalidate_user\s*\(\s*&self,\s*tenant:\s*&str")
             .unwrap()
@@ -2622,6 +2671,26 @@ fn permission_cache_and_process_events_are_tenant_explicit() {
         Regex::new(r"notify_work_items_changed\s*\(\s*&self,\s*tenant:\s*&str")
             .unwrap()
             .is_match(&main)
+    );
+
+    let permission_middleware = read_source(manifest_dir().join("src/middleware/permission.rs"));
+    let load = extract_braced_block(
+        &permission_middleware,
+        "pub async fn get_cached_user_permissions",
+        false,
+    );
+    let revision_snapshot = load
+        .find("cache.snapshot_revision(tenant, user_id)")
+        .expect("permission load must snapshot cache revision before fetching");
+    let database_fetch = load
+        .find("fetch_user_permissions(user_id, pool).await")
+        .expect("permission load must fetch permissions on a cache miss");
+    let guarded_fill = load
+        .find("cache.fill_if_current(")
+        .expect("permission load must conditionally fill only the captured revision");
+    assert!(
+        revision_snapshot < database_fetch && database_fetch < guarded_fill,
+        "revision snapshot must surround the in-flight permission fetch"
     );
 }
 

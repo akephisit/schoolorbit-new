@@ -662,6 +662,52 @@ fn permission_event_decision(
     }
 }
 
+fn drain_queued_permission_events(
+    receiver: &mut broadcast::Receiver<PermissionChangeEvent>,
+    tenant: &str,
+    user_id: Uuid,
+) -> SocketPermissionDecision {
+    loop {
+        match receiver.try_recv() {
+            Ok(event) if event.applies_to(tenant, user_id) => {
+                return SocketPermissionDecision::Disconnect;
+            }
+            Ok(_) => continue,
+            Err(broadcast::error::TryRecvError::Empty) => {
+                return SocketPermissionDecision::Continue;
+            }
+            Err(broadcast::error::TryRecvError::Lagged(missed_events)) => {
+                tracing::warn!(
+                    missed_events,
+                    "Timetable WebSocket queued permission receiver lagged; closing session"
+                );
+                return SocketPermissionDecision::Disconnect;
+            }
+            Err(broadcast::error::TryRecvError::Closed) => {
+                tracing::warn!(
+                    "Timetable WebSocket queued permission channel closed; closing session"
+                );
+                return SocketPermissionDecision::Disconnect;
+            }
+        }
+    }
+}
+
+fn initialize_socket_if_permissions_current<T>(
+    receiver: &mut broadcast::Receiver<PermissionChangeEvent>,
+    tenant: &str,
+    user_id: Uuid,
+    initialize: impl FnOnce() -> T,
+) -> Option<T> {
+    if drain_queued_permission_events(receiver, tenant, user_id)
+        == SocketPermissionDecision::Disconnect
+    {
+        return None;
+    }
+
+    Some(initialize())
+}
+
 fn sanitize_client_event(
     event: TimetableEvent,
     authenticated_user_id: Uuid,
@@ -905,30 +951,55 @@ async fn handle_socket(
         context: None,
     };
 
-    let tx = state
-        .websocket_manager
-        .get_or_create_room(tenant.clone(), semester_id);
-    let mut rx = tx.subscribe();
-    let is_first_tab =
-        state
-            .websocket_manager
-            .join_room(tenant.clone(), semester_id, user_presence.clone());
+    let initialization = initialize_socket_if_permissions_current(
+        &mut permission_event_receiver,
+        &tenant,
+        user_id,
+        || {
+            let tx = state
+                .websocket_manager
+                .get_or_create_room(tenant.clone(), semester_id);
+            let rx = tx.subscribe();
+            let is_first_tab = state.websocket_manager.join_room(
+                tenant.clone(),
+                semester_id,
+                user_presence.clone(),
+            );
 
-    let (users, drags, activities) = state
-        .websocket_manager
-        .get_state_snapshot(tenant.clone(), semester_id);
-    let current_seq = state
-        .websocket_manager
-        .current_seq(tenant.clone(), semester_id);
-    let sync_event = SeqEvent {
-        seq: None,
-        event: TimetableEvent::StateSync {
-            users,
-            drags,
-            activities,
-            current_seq,
+            let (users, drags, activities) = state
+                .websocket_manager
+                .get_state_snapshot(tenant.clone(), semester_id);
+            let current_seq = state
+                .websocket_manager
+                .current_seq(tenant.clone(), semester_id);
+            let sync_event = SeqEvent {
+                seq: None,
+                event: TimetableEvent::StateSync {
+                    users,
+                    drags,
+                    activities,
+                    current_seq,
+                },
+            };
+
+            (tx, rx, is_first_tab, sync_event)
         },
+    );
+
+    let Some((tx, mut rx, is_first_tab, sync_event)) = initialization else {
+        if socket
+            .send(Message::Close(Some(CloseFrame {
+                code: 1008,
+                reason: "Permission changed".into(),
+            })))
+            .await
+            .is_err()
+        {
+            tracing::debug!("Failed to send queued timetable WebSocket permission close");
+        }
+        return;
     };
+
     let socket_ready = match serde_json::to_string(&sync_event) {
         Ok(json) => socket.send(Message::Text(json.into())).await.is_ok(),
         Err(_) => {
@@ -956,6 +1027,26 @@ async fn handle_socket(
 
         loop {
             tokio::select! {
+                biased;
+                permission_change = permission_event_receiver.recv() => {
+                    if permission_event_decision(permission_change, &tenant, user_id)
+                        == SocketPermissionDecision::Disconnect
+                    {
+                        if socket
+                            .send(Message::Close(Some(CloseFrame {
+                                code: 1008,
+                                reason: "Permission changed".into(),
+                            })))
+                            .await
+                            .is_err()
+                        {
+                            tracing::debug!(
+                                "Failed to send timetable WebSocket permission close"
+                            );
+                        }
+                        break;
+                    }
+                },
                 incoming = socket.next() => match incoming {
                     Some(Ok(Message::Text(text))) => {
                         last_inbound = Instant::now();
@@ -1001,25 +1092,6 @@ async fn handle_socket(
                 },
                 broadcast = rx.recv() => {
                     if send_broadcast_event(&mut socket, broadcast).await.is_err() {
-                        break;
-                    }
-                },
-                permission_change = permission_event_receiver.recv() => {
-                    if permission_event_decision(permission_change, &tenant, user_id)
-                        == SocketPermissionDecision::Disconnect
-                    {
-                        if socket
-                            .send(Message::Close(Some(CloseFrame {
-                                code: 1008,
-                                reason: "Permission changed".into(),
-                            })))
-                            .await
-                            .is_err()
-                        {
-                            tracing::debug!(
-                                "Failed to send timetable WebSocket permission close"
-                            );
-                        }
                         break;
                     }
                 },
@@ -1265,5 +1337,101 @@ mod security_tests {
             permission_event_decision(received, "tenant-a", user_id),
             SocketPermissionDecision::Disconnect
         );
+    }
+
+    #[test]
+    fn queued_unrelated_permission_events_are_drained_before_initialization() {
+        let (sender, mut receiver) = permission_channel(4);
+        let user_id = Uuid::new_v4();
+        sender
+            .send(PermissionChangeEvent::for_user("tenant-b", user_id))
+            .unwrap();
+        sender
+            .send(PermissionChangeEvent::for_user("tenant-a", Uuid::new_v4()))
+            .unwrap();
+        let mut initialization_count = 0;
+
+        let initialized =
+            initialize_socket_if_permissions_current(&mut receiver, "tenant-a", user_id, || {
+                initialization_count += 1
+            });
+
+        assert!(initialized.is_some());
+        assert_eq!(initialization_count, 1);
+        assert!(matches!(
+            receiver.try_recv(),
+            Err(broadcast::error::TryRecvError::Empty)
+        ));
+    }
+
+    #[test]
+    fn queued_matching_permission_event_prevents_room_initialization() {
+        let (sender, mut receiver) = permission_channel(4);
+        let manager = WebSocketManager::new();
+        let semester_id = Uuid::new_v4();
+        let user_id = Uuid::new_v4();
+        sender
+            .send(PermissionChangeEvent::for_user("tenant-b", user_id))
+            .unwrap();
+        sender
+            .send(PermissionChangeEvent::for_user("tenant-a", user_id))
+            .unwrap();
+        let mut initialization_invoked = false;
+
+        let initialized =
+            initialize_socket_if_permissions_current(&mut receiver, "tenant-a", user_id, || {
+                initialization_invoked = true;
+                let tx = manager.get_or_create_room("tenant-a".into(), semester_id);
+                let mut presence = UserPresence {
+                    user_id,
+                    name: "Teacher".into(),
+                    color: "#112233".into(),
+                    context: None,
+                };
+                manager.join_room("tenant-a".into(), semester_id, presence.clone());
+                manager.get_state_snapshot("tenant-a".into(), semester_id);
+                relay_client_event(
+                    &manager,
+                    &tx,
+                    "tenant-a",
+                    semester_id,
+                    &mut presence,
+                    TimetableEvent::CursorMove {
+                        user_id,
+                        x: 1.0,
+                        y: 2.0,
+                        context: None,
+                    },
+                );
+            });
+
+        assert!(initialized.is_none());
+        assert!(!initialization_invoked);
+        assert!(manager.rooms.is_empty());
+        assert!(manager.room_users.is_empty());
+    }
+
+    #[test]
+    fn queued_permission_lag_prevents_room_initialization() {
+        let (sender, mut receiver) = permission_channel(1);
+        let manager = WebSocketManager::new();
+        let user_id = Uuid::new_v4();
+        sender
+            .send(PermissionChangeEvent::for_user("tenant-b", Uuid::new_v4()))
+            .unwrap();
+        sender
+            .send(PermissionChangeEvent::for_user("tenant-b", Uuid::new_v4()))
+            .unwrap();
+        let mut initialization_invoked = false;
+
+        let initialized =
+            initialize_socket_if_permissions_current(&mut receiver, "tenant-a", user_id, || {
+                initialization_invoked = true;
+                manager.get_or_create_room("tenant-a".into(), Uuid::new_v4());
+            });
+
+        assert!(initialized.is_none());
+        assert!(!initialization_invoked);
+        assert!(manager.rooms.is_empty());
     }
 }

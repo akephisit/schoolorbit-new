@@ -79,8 +79,15 @@ pub async fn get_cached_user_permissions(
         return Ok(permissions);
     }
 
+    let revision = cache.snapshot_revision(tenant, user_id);
     let permissions = fetch_user_permissions(user_id, pool).await?;
-    cache.set(tenant, user_id, permissions.clone());
+    if !cache.fill_if_current(tenant, user_id, revision, permissions.clone()) {
+        tracing::debug!(
+            tenant,
+            user_id = %user_id,
+            "Skipped stale permission cache fill after invalidation"
+        );
+    }
     Ok(permissions)
 }
 
