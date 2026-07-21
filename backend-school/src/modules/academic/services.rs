@@ -11,6 +11,7 @@ pub mod scheduling_config_service;
 pub mod scheduling_service;
 pub mod study_plan_service;
 pub mod subject_service;
+pub mod timetable_realtime_service;
 pub mod timetable_service;
 pub mod timetable_template_service;
 
