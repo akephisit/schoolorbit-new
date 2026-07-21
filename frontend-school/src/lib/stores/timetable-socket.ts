@@ -1,6 +1,7 @@
 import { writable, type Writable } from 'svelte/store';
 import { apiClient, BACKEND_WS_URL } from '$lib/api/client';
 import type { TimetableEntry } from '$lib/api/timetable';
+import { reconnectDelayMs } from '$lib/utils/timetable-reconnect';
 
 // Types matching backend
 export interface UserContext {
@@ -465,13 +466,47 @@ let currentUserId: string | null = null;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 let connectionDebounceTimer: ReturnType<typeof setTimeout> | null = null; // New timer for debouncing initial connection
 let shouldReconnect = false;
-let lastParams: { semester_id: string; user_id: string; name: string } | null = null;
+let reconnectAttempt = 0;
+let waitingForOnline = false;
 
-export function connectTimetableSocket(params: {
+type TimetableSocketParams = {
 	semester_id: string;
-	user_id: string;
-	name: string;
-}) {
+	current_user_id: string;
+};
+
+let lastParams: TimetableSocketParams | null = null;
+
+function clearOnlineListener() {
+	if (waitingForOnline && typeof window !== 'undefined') {
+		window.removeEventListener('online', handleOnline);
+		waitingForOnline = false;
+	}
+}
+
+function handleOnline() {
+	clearOnlineListener();
+	if (shouldReconnect && lastParams) connectTimetableSocket(lastParams);
+}
+
+function scheduleReconnect() {
+	if (!shouldReconnect || !lastParams || typeof window === 'undefined') return;
+	if (!navigator.onLine) {
+		if (!waitingForOnline) {
+			waitingForOnline = true;
+			window.addEventListener('online', handleOnline, { once: true });
+		}
+		return;
+	}
+
+	const delay = reconnectDelayMs(reconnectAttempt);
+	reconnectAttempt += 1;
+	reconnectTimer = setTimeout(() => {
+		reconnectTimer = null;
+		if (shouldReconnect && lastParams) connectTimetableSocket(lastParams);
+	}, delay);
+}
+
+export function connectTimetableSocket(params: TimetableSocketParams) {
 	// Check duplicate connection (Immediate check)
 	if (
 		socket &&
@@ -480,7 +515,7 @@ export function connectTimetableSocket(params: {
 		if (
 			lastParams &&
 			String(lastParams.semester_id) === String(params.semester_id) &&
-			String(lastParams.user_id) === String(params.user_id)
+			String(lastParams.current_user_id) === String(params.current_user_id)
 		) {
 			// Same params, already connected/connecting
 			// If there is a pending debounce for a NEW connection, we should probably clear it because we are happy with current?
@@ -491,8 +526,14 @@ export function connectTimetableSocket(params: {
 	}
 
 	// Clear any pending reconnect or debounce
-	if (reconnectTimer) clearTimeout(reconnectTimer);
-	if (connectionDebounceTimer) clearTimeout(connectionDebounceTimer);
+	if (reconnectTimer) {
+		clearTimeout(reconnectTimer);
+		reconnectTimer = null;
+	}
+	if (connectionDebounceTimer) {
+		clearTimeout(connectionDebounceTimer);
+		connectionDebounceTimer = null;
+	}
 
 	shouldReconnect = true;
 	lastParams = params;
@@ -501,6 +542,7 @@ export function connectTimetableSocket(params: {
 	// This allows rapid destroy/create cycles (e.g. quick navigation) to cancel out
 	// before the socket is actually created.
 	connectionDebounceTimer = setTimeout(() => {
+		connectionDebounceTimer = null;
 		if (!shouldReconnect) return; // If disconnected in the meantime
 
 		if (socket) {
@@ -509,36 +551,25 @@ export function connectTimetableSocket(params: {
 			socket.onerror = null;
 			socket.close();
 		}
-		currentUserId = params.user_id;
+		currentUserId = params.current_user_id;
 
-		// Auto-detect school_key from hostname
-		let schoolKey = 'default';
-		if (typeof window !== 'undefined') {
-			const parts = window.location.hostname.split('.');
-			if (parts.length >= 3) {
-				schoolKey = parts[0];
-			}
-		}
-
-		// Ensure semester_id/user_id are strings
-		const safeParams = {
-			...params,
-			semester_id: String(params.semester_id),
-			user_id: String(params.user_id),
-			school_key: schoolKey
-		};
-
-		const qs = new URLSearchParams(safeParams).toString();
+		const qs = new URLSearchParams({
+			semester_id: String(params.semester_id)
+		}).toString();
 		const url = `${BACKEND_WS_URL}/ws/timetable?${qs}`;
 
-		console.log('Connecting to WS:', url);
 		socket = new WebSocket(url);
 
 		socket.onopen = () => {
 			console.log('WS Connected');
 			isConnected.set(true);
+			reconnectAttempt = 0;
+			clearOnlineListener();
 			// Clear reconnect timer if any (redundant but safe)
-			if (reconnectTimer) clearTimeout(reconnectTimer);
+			if (reconnectTimer) {
+				clearTimeout(reconnectTimer);
+				reconnectTimer = null;
+			}
 		};
 
 		socket.onmessage = (event) => {
@@ -560,15 +591,7 @@ export function connectTimetableSocket(params: {
 			dragPositions.set({});
 			remoteActivities.set({});
 
-			// Auto Reconnect
-			if (shouldReconnect) {
-				console.log('Attempting to reconnect in 3s...');
-				reconnectTimer = setTimeout(() => {
-					if (shouldReconnect && lastParams) {
-						connectTimetableSocket(lastParams);
-					}
-				}, 3000);
-			}
+			scheduleReconnect();
 		};
 
 		socket.onerror = (err) => {
@@ -580,8 +603,24 @@ export function connectTimetableSocket(params: {
 
 export function disconnectTimetableSocket() {
 	shouldReconnect = false;
-	if (reconnectTimer) clearTimeout(reconnectTimer);
-	if (connectionDebounceTimer) clearTimeout(connectionDebounceTimer); // Cancel pending connection
+	if (reconnectTimer) {
+		clearTimeout(reconnectTimer);
+		reconnectTimer = null;
+	}
+	if (connectionDebounceTimer) {
+		clearTimeout(connectionDebounceTimer);
+		connectionDebounceTimer = null;
+	}
+	clearOnlineListener();
+	reconnectAttempt = 0;
+	currentUserId = null;
+	lastParams = null;
+	isConnected.set(false);
+	activeUsers.set([]);
+	remoteCursors.set({});
+	userDrags.set({});
+	dragPositions.set({});
+	remoteActivities.set({});
 
 	if (socket) {
 		// Prevent any pending callbacks

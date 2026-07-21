@@ -3106,8 +3106,7 @@
 			const user = $authStore.user;
 			connectTimetableSocket({
 				semester_id: selectedSemesterId,
-				user_id: user.id,
-				name: `${user.firstName} ${user.lastName}`
+				current_user_id: user.id
 			});
 		}
 	});

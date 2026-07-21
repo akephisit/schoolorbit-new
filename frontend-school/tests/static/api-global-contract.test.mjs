@@ -378,14 +378,15 @@ test('backend auth middleware and login validation errors use the response envel
 		path.join(repoRoot, 'backend-school/src/middleware/auth.rs'),
 		'utf8'
 	);
+	const appError = await readFile(path.join(repoRoot, 'backend-school/src/error.rs'), 'utf8');
 	const loginHandler = await readFile(
 		path.join(repoRoot, 'backend-school/src/modules/auth/handlers.rs'),
 		'utf8'
 	);
 
-	assert.match(middleware, /ApiErrorResponse::new\("No authentication token found"\)/);
-	assert.match(middleware, /ApiErrorResponse::new\(format!\("Invalid token:/);
+	assert.match(middleware, /Err\(error\)\s*=>\s*return error\.into_response\(\)/);
 	assert.equal(middleware.includes('Json(json!'), false);
+	assert.match(appError, /Json\(ApiErrorResponse::new\(error_message\)\)/);
 
 	assert.match(loginHandler, /Result<Json<LoginRequest>, JsonRejection>/);
 	assert.match(loginHandler, /AppError::ValidationError\(rejection\.body_text\(\)\)/);
