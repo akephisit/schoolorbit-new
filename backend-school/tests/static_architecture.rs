@@ -1869,12 +1869,12 @@ fn structured_logging_violations(file_name: &str, source: &str) -> Vec<String> {
     let structural = lexical_mask(&source, false).structural;
     let mut violations = Vec::new();
 
-    for pattern in ["println!", "eprintln!"] {
-        let invocation = Regex::new(&format!(r"\b{}\s*\(", regex::escape(pattern)))
+    for macro_name in ["println", "eprintln"] {
+        let invocation = Regex::new(&format!(r"\b{}\s*!\s*\(", regex::escape(macro_name)))
             .expect("plain output macro pattern should compile");
         if invocation.is_match(&structural) {
             violations.push(format!(
-                "{file_name}: use tracing macros instead of {pattern} in runtime code"
+                "{file_name}: use tracing macros instead of {macro_name}! in runtime code"
             ));
         }
     }
@@ -2587,6 +2587,24 @@ fn structured_logging_guard_ignores_cli_marker_decoys() {
     assert_eq!(
         structured_logging_violations("src/main.rs", source),
         vec!["src/main.rs: use tracing macros instead of eprintln! in runtime code".to_string()]
+    );
+}
+
+#[test]
+fn structured_logging_guard_detects_spaced_macro_tokens() {
+    let source = r#"
+        async fn main() {
+            println ! ("runtime stdout");
+            eprintln /* diagnostic */ ! ("runtime stderr");
+        }
+    "#;
+
+    assert_eq!(
+        structured_logging_violations("src/main.rs", source),
+        vec![
+            "src/main.rs: use tracing macros instead of println! in runtime code".to_string(),
+            "src/main.rs: use tracing macros instead of eprintln! in runtime code".to_string(),
+        ]
     );
 }
 

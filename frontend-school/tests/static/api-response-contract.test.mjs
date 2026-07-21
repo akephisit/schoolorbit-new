@@ -23,7 +23,7 @@ async function listRepoFiles(relativeDir, predicate) {
 function extractObjectBlock(source, marker) {
 	const markerStart = source.indexOf(marker);
 	assert.notEqual(markerStart, -1, `missing generated block marker: ${marker}`);
-	const opening = source.indexOf('{', markerStart + marker.length);
+	const opening = source.indexOf('{', markerStart);
 	assert.notEqual(opening, -1, `missing opening brace after: ${marker}`);
 	let depth = 0;
 	for (let index = opening; index < source.length; index += 1) {
@@ -32,6 +32,13 @@ function extractObjectBlock(source, marker) {
 		if (depth === 0) return source.slice(opening, index + 1);
 	}
 	assert.fail(`unterminated generated block: ${marker}`);
+}
+
+function extractGeneratedSchemaBlock(source, schemaName) {
+	const escapedName = schemaName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+	const property = new RegExp(`^[\\t ]*${escapedName}:\\s*\\{`, 'm').exec(source);
+	assert.ok(property, `missing generated schema property: ${schemaName}`);
+	return extractObjectBlock(source, property[0]);
 }
 
 test('project rules require a single JSON API response envelope', async () => {
@@ -91,8 +98,8 @@ test('frontend auth consumes the shared envelope through apiClient', async () =>
 
 test('generated current-user schemas keep concrete envelope and payload types', async () => {
 	const generated = await readRepoFile('frontend-school/src/lib/api/generated/school-api.ts');
-	const userResponse = extractObjectBlock(generated, 'UserResponse:');
-	const successEnvelope = extractObjectBlock(generated, 'ApiResponse_UserResponse:');
+	const userResponse = extractGeneratedSchemaBlock(generated, 'UserResponse');
+	const successEnvelope = extractGeneratedSchemaBlock(generated, 'ApiResponse_UserResponse');
 
 	for (const block of [userResponse, successEnvelope]) {
 		assert.doesNotMatch(block, /\b(?:any|unknown)\b/);
@@ -104,6 +111,19 @@ test('generated current-user schemas keep concrete envelope and payload types', 
 		/'application\/json':\s*components\['schemas'\]\['ApiResponse_UserResponse'\]/
 	);
 	assert.match(generated, /'application\/json':\s*components\['schemas'\]\['ApiErrorResponse'\]/);
+});
+
+test('generated schema lookup uses the complete property name', () => {
+	const source = `
+		ApiResponse_UserResponse: {
+			data: unknown;
+		};
+		UserResponse: {
+			id: string;
+		};`;
+
+	assert.match(extractGeneratedSchemaBlock(source, 'UserResponse'), /id:\s*string/);
+	assert.doesNotMatch(extractGeneratedSchemaBlock(source, 'UserResponse'), /data:\s*unknown/);
 });
 
 test('project rules document generated API contract ownership', async () => {
