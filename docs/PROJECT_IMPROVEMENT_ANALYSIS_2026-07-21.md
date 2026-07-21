@@ -414,6 +414,12 @@ Deploy
 
 ## 11. Shared contracts และ developer flexibility
 
+อัปเดตสถานะ 21 กรกฎาคม 2026: permission registry มี
+`contracts/permissions.json` เป็น source of truth แล้ว และ generate Rust/TypeScript
+registry พร้อม lock, parity tests และ focused CI โดยอัตโนมัติ งานนี้ลด drift ของ permission
+ระหว่าง backend/frontend เท่านั้น ส่วน API request/response contracts และ client generation
+ทั่วไปยังเป็นงานอนาคตตามข้อเสนอด้านล่าง
+
 ควรมี canonical API contract เพื่อลด Rust/TypeScript drift:
 
 - OpenAPI หรือ JSON Schema เป็น source of truth
@@ -532,6 +538,7 @@ DB-backed tests, sandbox smoke และ Playwright E2E ไม่ได้รั
 ### Sprint 3 — Developer flexibility
 
 - แยก timetable, supervision และ exam-schedule modules
+- [x] generate permission registry ร่วมกันระหว่าง Rust/TypeScript พร้อม drift CI
 - OpenAPI-generated contracts
 - frontend resource controllers และ request cancellation
 - bundle budgets

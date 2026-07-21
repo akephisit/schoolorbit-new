@@ -577,6 +577,54 @@ test('permission registry wrappers use generated contract', async () => {
 	assert.doesNotMatch(frontendWrapper, /export const PERMISSION_MODULES\s*=/);
 });
 
+test('permission contract developer workflow is complete and non-deploying', async () => {
+	const packageJson = JSON.parse(
+		await readFile(path.join(repoRoot, 'frontend-school/package.json'), 'utf8')
+	);
+	assert.deepEqual(
+		{
+			'generate:permissions': packageJson.scripts['generate:permissions'],
+			'check:permissions': packageJson.scripts['check:permissions'],
+			'test:permissions': packageJson.scripts['test:permissions']
+		},
+		{
+			'generate:permissions': 'node ../scripts/generate-permissions.mjs',
+			'check:permissions': 'node ../scripts/generate-permissions.mjs --check',
+			'test:permissions': 'node --test ../scripts/tests/generate-permissions.test.mjs'
+		}
+	);
+
+	const workflow = await readFile(
+		path.join(repoRoot, '.github/workflows/permission-contract.yml'),
+		'utf8'
+	);
+	for (const required of [
+		'actions/checkout@v6',
+		'actions/setup-node@v6',
+		'node scripts/generate-permissions.mjs --check',
+		'node --test scripts/tests/generate-permissions.test.mjs',
+		'cargo fmt --all -- --check',
+		'cargo check --bin backend-school',
+		'cargo test --test static_architecture',
+		'npm ci',
+		'npm run test:static',
+		'npm run check'
+	]) {
+		assert.ok(workflow.includes(required), `permission workflow must contain: ${required}`);
+	}
+
+	assert.match(workflow, /pull_request:\s*\n\s*paths:/);
+	assert.match(workflow, /push:\s*\n\s*branches:\s*\n\s*- main/);
+	assert.match(workflow, /contracts\/permissions\*\.json/);
+	assert.match(workflow, /permissions:\s*\n\s*contents:\s*read/);
+	assert.match(workflow, /PUBLIC_BACKEND_URL:/);
+	assert.match(workflow, /PUBLIC_VAPID_KEY:/);
+	assert.doesNotMatch(
+		workflow,
+		/(?:docker|git)\s+push|\bdeploy\b|\bssh\b|\bpsql\b|sqlx\s+(?:database|migrate)|\bDATABASE_URL\b/i
+	);
+});
+
 test('daily teaching overview permission is registered across backend and frontend', async () => {
 	const backendRegistry = await readFile(
 		path.join(repoRoot, 'backend-school/src/permissions/registry_generated.rs'),

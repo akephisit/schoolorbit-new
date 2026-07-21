@@ -49,6 +49,30 @@ cargo check
 
 Existing backend warnings are tracked separately. Do not run `cargo fix` as part of unrelated work.
 
+## Permission Contract
+
+`contracts/permissions.json` is the only handwritten registry for backend and frontend
+permission definitions. After adding a permission or changing its display metadata, run:
+
+```bash
+cd frontend-school
+npm run generate:permissions
+npm run check:permissions
+npm run test:permissions
+npm run test:static
+PUBLIC_BACKEND_URL=http://localhost:3000 PUBLIC_VAPID_KEY=test npm run check
+```
+
+Commit `contracts/permissions.lock.json`,
+`backend-school/src/permissions/registry_generated.rs`, and
+`frontend-school/src/lib/permissions/registry.generated.ts` with the contract change.
+Never edit either generated registry directly.
+
+The lock permits additions and metadata updates but rejects removed or renamed permission
+codes. Version 1 intentionally has no removal bypass: an intentional removal or rename
+requires a separately reviewed contract-version and migration plan.
+`npm run check:permissions` is read-only and fails when any generated artifact is stale.
+
 ## Migration Safety
 
 Never edit a migration that may already have been applied, even for comments. `sqlx` stores migration checksums and tenant startup will fail if an applied migration file changes.

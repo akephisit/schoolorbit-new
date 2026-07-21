@@ -1,0 +1,86 @@
+name: Permission Contract
+
+on:
+  pull_request:
+    paths:
+      - "contracts/permissions*.json"
+      - "scripts/generate-permissions.mjs"
+      - "scripts/tests/generate-permissions.test.mjs"
+      - "backend-school/src/permissions/registry*.rs"
+      - "backend-school/tests/static_architecture.rs"
+      - "frontend-school/src/lib/permissions/registry*.ts"
+      - "frontend-school/tests/static/**"
+      - "frontend-school/package.json"
+      - "frontend-school/package-lock.json"
+      - ".github/workflows/permission-contract.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "contracts/permissions*.json"
+      - "scripts/generate-permissions.mjs"
+      - "scripts/tests/generate-permissions.test.mjs"
+      - "backend-school/src/permissions/registry*.rs"
+      - "backend-school/tests/static_architecture.rs"
+      - "frontend-school/src/lib/permissions/registry*.ts"
+      - "frontend-school/tests/static/**"
+      - "frontend-school/package.json"
+      - "frontend-school/package-lock.json"
+      - ".github/workflows/permission-contract.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+      PUBLIC_BACKEND_URL: http://localhost:3000
+      PUBLIC_VAPID_KEY: test
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend-school/package-lock.json
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - name: Check generated permission artifacts
+        run: node scripts/generate-permissions.mjs --check
+
+      - name: Test permission generator
+        run: node --test scripts/tests/generate-permissions.test.mjs
+
+      - name: Check backend formatting
+        working-directory: backend-school
+        run: cargo fmt --all -- --check
+
+      - name: Check backend
+        working-directory: backend-school
+        run: cargo check --bin backend-school
+
+      - name: Test backend architecture
+        working-directory: backend-school
+        run: cargo test --test static_architecture
+
+      - name: Install frontend dependencies
+        working-directory: frontend-school
+        run: npm ci
+
+      - name: Test frontend static contracts
+        working-directory: frontend-school
+        run: npm run test:static
+
+      - name: Check frontend
+        working-directory: frontend-school
+        run: npm run check
