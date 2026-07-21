@@ -241,6 +241,7 @@ function extractPermissionRegistry(source) {
 	const constants = new Map();
 	const allPermissionConstantNames = new Set();
 	const modules = new Set();
+	const metadataByCode = new Map();
 
 	for (const match of source.matchAll(/pub const ([A-Z0-9_]+): &str =\s*"([^"]+)";/g)) {
 		constants.set(match[1], match[2]);
@@ -254,6 +255,23 @@ function extractPermissionRegistry(source) {
 		modules.add(match[1]);
 	}
 
+	for (const match of source.matchAll(/^\s*PermissionDef\s*\{([\s\S]*?)^\s*\},/gm)) {
+		const block = match[1];
+		const constant = /code:\s*codes::([A-Z0-9_]+)/.exec(block)?.[1];
+		if (!constant || !constants.has(constant)) continue;
+		const field = (name) => {
+			const value = new RegExp(`${name}:\\s*"((?:\\\\.|[^"])*)"`).exec(block)?.[1];
+			return value === undefined ? undefined : JSON.parse(`"${value}"`);
+		};
+		metadataByCode.set(constants.get(constant), {
+			name: field('name'),
+			module: field('module'),
+			action: field('action'),
+			scope: field('scope'),
+			description: field('description')
+		});
+	}
+
 	const allPermissionCodes = new Set(
 		[...allPermissionConstantNames].map((name) => constants.get(name)).filter(Boolean)
 	);
@@ -262,8 +280,40 @@ function extractPermissionRegistry(source) {
 		constants,
 		allPermissionConstantNames,
 		allPermissionCodes,
-		modules
+		modules,
+		metadataByCode
 	};
+}
+
+function permissionConstant(permission) {
+	return permission.kind === 'wildcard'
+		? 'WILDCARD'
+		: `${permission.module}_${permission.action}_${permission.scope}`.toUpperCase();
+}
+
+function permissionCode(permission) {
+	return permission.kind === 'wildcard'
+		? '*'
+		: `${permission.module}.${permission.action}.${permission.scope}`;
+}
+
+function contractProjection(contract) {
+	const constants = new Map();
+	const metadataByCode = new Map();
+	const modules = new Set();
+	for (const permission of contract.permissions) {
+		const code = permissionCode(permission);
+		constants.set(permissionConstant(permission), code);
+		modules.add(permission.module);
+		metadataByCode.set(code, {
+			name: permission.name,
+			module: permission.module,
+			action: permission.action,
+			scope: permission.scope,
+			description: permission.description
+		});
+	}
+	return { constants, metadataByCode, modules };
 }
 
 function extractConstObjectValues(source, objectName) {
@@ -475,6 +525,38 @@ test('permission registry covers backend and frontend permission references', as
 	}
 
 	assert.deepEqual(violations, []);
+});
+
+test('permission contract preserves legacy registries exactly', async () => {
+	const contract = JSON.parse(
+		await readFile(path.join(repoRoot, 'contracts/permissions.json'), 'utf8')
+	);
+	const contractData = contractProjection(contract);
+	const backendSource = await readFile(
+		path.join(repoRoot, 'backend-school/src/permissions/registry.rs'),
+		'utf8'
+	);
+	const backendData = extractPermissionRegistry(backendSource);
+	const frontendSource = await readFile(
+		path.join(repoRoot, 'frontend-school/src/lib/permissions/registry.ts'),
+		'utf8'
+	);
+	const frontendPermissions = extractConstObjectValues(frontendSource, 'PERMISSIONS');
+	const frontendModules = extractConstObjectValues(frontendSource, 'PERMISSION_MODULES');
+	const contractFrontendPermissions = new Map(
+		[...contractData.constants].filter(([constant]) => constant !== 'WILDCARD')
+	);
+	const contractFrontendModules = new Map(
+		[...contractData.modules].sort().map((moduleName) => [moduleName.toUpperCase(), moduleName])
+	);
+
+	assert.deepEqual(contractData.constants, backendData.constants);
+	assert.deepEqual(new Set(contractData.constants.values()), backendData.allPermissionCodes);
+	assert.deepEqual(contractData.modules, backendData.modules);
+	assert.deepEqual(contractData.metadataByCode, backendData.metadataByCode);
+	assert.deepEqual(contractFrontendPermissions, frontendPermissions);
+	assert.deepEqual(contractFrontendModules, frontendModules);
+	assert.match(frontendSource, /export const WILDCARD_PERMISSION = ['"]\*['"] as const/);
 });
 
 test('daily teaching overview permission is registered across backend and frontend', async () => {

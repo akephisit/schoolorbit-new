@@ -1,0 +1,769 @@
+{
+  "schema_version": 1,
+  "permissions": [
+    {
+      "module": "system",
+      "action": "all",
+      "scope": "global",
+      "name": "Super Admin Access",
+      "description": "สิทธิ์ระดับสูงสุด (เข้าถึงทุกส่วน)",
+      "kind": "wildcard"
+    },
+    {
+      "module": "staff",
+      "action": "read",
+      "scope": "all",
+      "name": "ดูบุคลากรทั้งหมด",
+      "description": "ดูข้อมูลบุคลากรทั้งหมด"
+    },
+    {
+      "module": "staff",
+      "action": "create",
+      "scope": "all",
+      "name": "เพิ่มบุคลากร",
+      "description": "สร้างบุคลากรใหม่"
+    },
+    {
+      "module": "staff",
+      "action": "update",
+      "scope": "all",
+      "name": "แก้ไขบุคลากร",
+      "description": "แก้ไขข้อมูลบุคลากร"
+    },
+    {
+      "module": "staff",
+      "action": "delete",
+      "scope": "all",
+      "name": "ลบบุคลากร",
+      "description": "ลบบุคลากร"
+    },
+    {
+      "module": "staff_profile",
+      "action": "read",
+      "scope": "own",
+      "name": "ดูโปรไฟล์บุคลากรของตนเอง",
+      "description": "ดูข้อมูลโปรไฟล์บุคลากรของตนเอง"
+    },
+    {
+      "module": "staff_profile",
+      "action": "read",
+      "scope": "organization_unit",
+      "name": "ดูโปรไฟล์บุคลากรในหน่วยงาน",
+      "description": "ดูข้อมูลโปรไฟล์บุคลากรที่อยู่ในหน่วยงานเดียวกัน"
+    },
+    {
+      "module": "staff_profile",
+      "action": "read",
+      "scope": "organization_tree",
+      "name": "ดูโปรไฟล์บุคลากรในสายงาน",
+      "description": "ดูข้อมูลโปรไฟล์บุคลากรในหน่วยงานของตนเองและหน่วยงานย่อย"
+    },
+    {
+      "module": "staff_profile",
+      "action": "read",
+      "scope": "school",
+      "name": "ดูโปรไฟล์บุคลากรทั้งโรงเรียน",
+      "description": "ดูข้อมูลโปรไฟล์บุคลากรทั้งโรงเรียน"
+    },
+    {
+      "module": "staff_pii",
+      "action": "read",
+      "scope": "own",
+      "name": "ดูข้อมูลอ่อนไหวบุคลากรของตนเอง",
+      "description": "ดูข้อมูลอ่อนไหวของบุคลากรเฉพาะของตนเอง"
+    },
+    {
+      "module": "staff_pii",
+      "action": "read",
+      "scope": "school",
+      "name": "ดูข้อมูลอ่อนไหวบุคลากรทั้งโรงเรียน",
+      "description": "ดูข้อมูลอ่อนไหวของบุคลากรทั้งโรงเรียน"
+    },
+    {
+      "module": "roles",
+      "action": "read",
+      "scope": "all",
+      "name": "ดูบทบาท",
+      "description": "ดูข้อมูลบทบาทและฝ่ายทั้งหมด"
+    },
+    {
+      "module": "roles",
+      "action": "create",
+      "scope": "all",
+      "name": "สร้างบทบาท",
+      "description": "สร้างบทบาทและฝ่ายใหม่"
+    },
+    {
+      "module": "roles",
+      "action": "update",
+      "scope": "all",
+      "name": "แก้ไขบทบาท",
+      "description": "แก้ไขบทบาทและฝ่าย"
+    },
+    {
+      "module": "roles",
+      "action": "delete",
+      "scope": "all",
+      "name": "ลบบทบาท",
+      "description": "ลบบทบาทและฝ่าย"
+    },
+    {
+      "module": "roles",
+      "action": "assign",
+      "scope": "all",
+      "name": "มอบหมายบทบาท",
+      "description": "มอบหมายบทบาทให้ผู้ใช้"
+    },
+    {
+      "module": "roles",
+      "action": "remove",
+      "scope": "all",
+      "name": "ถอนบทบาท",
+      "description": "ถอนบทบาทจากผู้ใช้"
+    },
+    {
+      "module": "menu",
+      "action": "read",
+      "scope": "all",
+      "name": "ดูเมนู",
+      "description": "ดูเมนูทั้งหมด"
+    },
+    {
+      "module": "menu",
+      "action": "create",
+      "scope": "all",
+      "name": "สร้างเมนู",
+      "description": "สร้างเมนูใหม่"
+    },
+    {
+      "module": "menu",
+      "action": "update",
+      "scope": "all",
+      "name": "แก้ไขเมนู",
+      "description": "แก้ไขเมนู"
+    },
+    {
+      "module": "menu",
+      "action": "delete",
+      "scope": "all",
+      "name": "ลบเมนู",
+      "description": "ลบเมนู"
+    },
+    {
+      "module": "settings",
+      "action": "read",
+      "scope": "all",
+      "name": "ดูการตั้งค่า",
+      "description": "ดูการตั้งค่าระบบ"
+    },
+    {
+      "module": "settings",
+      "action": "update",
+      "scope": "all",
+      "name": "แก้ไขการตั้งค่า",
+      "description": "แก้ไขการตั้งค่าระบบ"
+    },
+    {
+      "module": "features",
+      "action": "read",
+      "scope": "all",
+      "name": "ดูฟีเจอร์",
+      "description": "ดูการตั้งค่าฟีเจอร์"
+    },
+    {
+      "module": "features",
+      "action": "update",
+      "scope": "all",
+      "name": "แก้ไขฟีเจอร์",
+      "description": "แก้ไขการตั้งค่าฟีเจอร์"
+    },
+    {
+      "module": "dashboard",
+      "action": "read",
+      "scope": "own",
+      "name": "แดชบอร์ด",
+      "description": "ดูหน้าแดชบอร์ด"
+    },
+    {
+      "module": "student",
+      "action": "read",
+      "scope": "own",
+      "name": "ดูข้อมูลตนเอง",
+      "description": "นักเรียนดูข้อมูลตนเอง"
+    },
+    {
+      "module": "student",
+      "action": "read",
+      "scope": "assigned",
+      "name": "ดูนักเรียนที่รับผิดชอบ",
+      "description": "ดูข้อมูลนักเรียนที่อยู่ในห้อง/งานที่ได้รับมอบหมาย"
+    },
+    {
+      "module": "student",
+      "action": "update",
+      "scope": "own",
+      "name": "แก้ไขข้อมูลตนเอง",
+      "description": "นักเรียนแก้ไขข้อมูลตนเอง (จำกัดฟิลด์)"
+    },
+    {
+      "module": "student",
+      "action": "read",
+      "scope": "school",
+      "name": "ดูนักเรียนทั้งโรงเรียน",
+      "description": "ดูข้อมูลนักเรียนทั้งโรงเรียน"
+    },
+    {
+      "module": "student",
+      "action": "create",
+      "scope": "all",
+      "name": "เพิ่มนักเรียน",
+      "description": "สร้างนักเรียนใหม่"
+    },
+    {
+      "module": "student",
+      "action": "update",
+      "scope": "all",
+      "name": "แก้ไขนักเรียน",
+      "description": "แก้ไขข้อมูลนักเรียนทั้งหมด"
+    },
+    {
+      "module": "student",
+      "action": "delete",
+      "scope": "all",
+      "name": "ลบนักเรียน",
+      "description": "ลบนักเรียน"
+    },
+    {
+      "module": "student_pii",
+      "action": "read",
+      "scope": "own",
+      "name": "ดูข้อมูลอ่อนไหวนักเรียนของตนเอง",
+      "description": "ดูข้อมูลอ่อนไหวของนักเรียนเฉพาะของตนเอง"
+    },
+    {
+      "module": "student_pii",
+      "action": "read",
+      "scope": "assigned",
+      "name": "ดูข้อมูลอ่อนไหวนักเรียนที่รับผิดชอบ",
+      "description": "ดูข้อมูลอ่อนไหวของนักเรียนที่อยู่ในห้อง/งานที่ได้รับมอบหมาย"
+    },
+    {
+      "module": "student_pii",
+      "action": "read",
+      "scope": "school",
+      "name": "ดูข้อมูลอ่อนไหวนักเรียนทั้งโรงเรียน",
+      "description": "ดูข้อมูลอ่อนไหวของนักเรียนทั้งโรงเรียน"
+    },
+    {
+      "module": "achievement",
+      "action": "read",
+      "scope": "own",
+      "name": "ดูผลงานตนเอง",
+      "description": "ดูรายการผลงานของตนเอง"
+    },
+    {
+      "module": "achievement",
+      "action": "read",
+      "scope": "all",
+      "name": "ดูผลงานทั้งหมด",
+      "description": "ดูรายการผลงานของบุคคลากรทั้งหมด"
+    },
+    {
+      "module": "achievement",
+      "action": "create",
+      "scope": "own",
+      "name": "เพิ่มผลงานตนเอง",
+      "description": "บันทึกผลงานของตนเอง"
+    },
+    {
+      "module": "achievement",
+      "action": "create",
+      "scope": "all",
+      "name": "เพิ่มผลงานให้ผู้อื่น",
+      "description": "บันทึกผลงานแทนบุคคลากรอื่น"
+    },
+    {
+      "module": "achievement",
+      "action": "update",
+      "scope": "own",
+      "name": "แก้ไขผลงานตนเอง",
+      "description": "แก้ไขผลงานของตนเอง"
+    },
+    {
+      "module": "achievement",
+      "action": "update",
+      "scope": "all",
+      "name": "แก้ไขผลงานผู้อื่น",
+      "description": "แก้ไขผลงานของบุคคลากรอื่น"
+    },
+    {
+      "module": "achievement",
+      "action": "delete",
+      "scope": "own",
+      "name": "ลบผลงานตนเอง",
+      "description": "ลบผลงานของตนเอง"
+    },
+    {
+      "module": "achievement",
+      "action": "delete",
+      "scope": "all",
+      "name": "ลบผลงานผู้อื่น",
+      "description": "ลบผลงานของบุคคลากรอื่น"
+    },
+    {
+      "module": "academic_structure",
+      "action": "read",
+      "scope": "all",
+      "name": "ดูโครงสร้างวิชาการ",
+      "description": "ดูโครงสร้างวิชาการ (ปีการศึกษา, ห้องเรียน, ระดับชั้น)"
+    },
+    {
+      "module": "academic_structure",
+      "action": "manage",
+      "scope": "all",
+      "name": "จัดการโครงสร้างวิชาการ",
+      "description": "สร้าง/แก้ไข/ลบ โครงสร้างวิชาการ"
+    },
+    {
+      "module": "academic_classroom",
+      "action": "read",
+      "scope": "all",
+      "name": "ดูข้อมูลห้องเรียน",
+      "description": "ดูรายชื่อห้องเรียนและนักเรียนในห้อง"
+    },
+    {
+      "module": "academic_classroom",
+      "action": "create",
+      "scope": "all",
+      "name": "สร้างห้องเรียน",
+      "description": "สร้างห้องเรียนใหม่"
+    },
+    {
+      "module": "academic_classroom",
+      "action": "update",
+      "scope": "all",
+      "name": "แก้ไขห้องเรียน",
+      "description": "แก้ไขข้อมูลห้อง/ครูประจำชั้น"
+    },
+    {
+      "module": "academic_classroom",
+      "action": "delete",
+      "scope": "all",
+      "name": "ลบห้องเรียน",
+      "description": "ลบห้องเรียน"
+    },
+    {
+      "module": "academic_enrollment",
+      "action": "read",
+      "scope": "all",
+      "name": "ดูข้อมูลการเข้าห้องเรียน",
+      "description": "ดูรายชื่อนักเรียนในห้องเรียน"
+    },
+    {
+      "module": "academic_enrollment",
+      "action": "update",
+      "scope": "all",
+      "name": "จัดการนักเรียนในห้อง",
+      "description": "ย้ายนักเรียนเข้า/ออก ห้องเรียน"
+    },
+    {
+      "module": "academic_promotion",
+      "action": "read",
+      "scope": "all",
+      "name": "ดูการเลื่อนชั้น",
+      "description": "ดูสถานะการเลื่อนชั้นเรียนประจำปี"
+    },
+    {
+      "module": "academic_promotion",
+      "action": "execute",
+      "scope": "all",
+      "name": "ดำเนินการเลื่อนชั้น",
+      "description": "ประมวลผลการเลื่อนชั้นเรียน (End of Year)"
+    },
+    {
+      "module": "academic_curriculum",
+      "action": "read",
+      "scope": "all",
+      "name": "ดูหลักสูตร/รายวิชา",
+      "description": "ดูข้อมูลรายวิชาและหลักสูตรทั้งหมด"
+    },
+    {
+      "module": "academic_curriculum",
+      "action": "read",
+      "scope": "organization_tree",
+      "name": "ดูหลักสูตร/รายวิชาในสายงาน",
+      "description": "ดูข้อมูลรายวิชาในหน่วยงานของตนเองและหน่วยงานย่อย"
+    },
+    {
+      "module": "academic_curriculum",
+      "action": "manage",
+      "scope": "organization_unit",
+      "name": "จัดการรายวิชากลุ่มสาระตัวเอง",
+      "description": "เพิ่ม/แก้ไข/ลบ รายวิชาเฉพาะกลุ่มสาระที่ตัวเองสังกัด"
+    },
+    {
+      "module": "academic_curriculum",
+      "action": "manage",
+      "scope": "organization_tree",
+      "name": "จัดการรายวิชาในสายงาน",
+      "description": "เพิ่ม/แก้ไข/ลบ รายวิชาในหน่วยงานของตนเองและหน่วยงานย่อย"
+    },
+    {
+      "module": "academic_curriculum",
+      "action": "create",
+      "scope": "all",
+      "name": "สร้างรายวิชา",
+      "description": "สร้างรายวิชาใหม่ในระบบ"
+    },
+    {
+      "module": "academic_curriculum",
+      "action": "update",
+      "scope": "all",
+      "name": "แก้ไขรายวิชา",
+      "description": "แก้ไขรายละเอียดรายวิชา"
+    },
+    {
+      "module": "academic_curriculum",
+      "action": "delete",
+      "scope": "all",
+      "name": "ลบรายวิชา",
+      "description": "ลบรายวิชาออกจากระบบ"
+    },
+    {
+      "module": "academic_course_plan",
+      "action": "read",
+      "scope": "all",
+      "name": "ดูแผนการเรียนรายห้อง",
+      "description": "ดูวิชาที่เปิดสอนในแต่ละห้องเรียน"
+    },
+    {
+      "module": "academic_course_plan",
+      "action": "manage",
+      "scope": "all",
+      "name": "จัดแผนการเรียน",
+      "description": "เพิ่ม/ลบ/แก้ไข วิชาที่เปิดสอนในห้องเรียน"
+    },
+    {
+      "module": "academic_timetable_today",
+      "action": "read",
+      "scope": "school",
+      "name": "ดูตารางสอนวันนี้ทั้งโรงเรียน",
+      "description": "ดูภาพรวมตารางสอนรายวันของครูทั้งโรงเรียนแบบอ่านอย่างเดียว"
+    },
+    {
+      "module": "academic_assessment",
+      "action": "read",
+      "scope": "assigned",
+      "name": "ดูโครงสร้างคะแนนรายวิชาที่รับผิดชอบ",
+      "description": "ดูโครงสร้างคะแนนของรายวิชาที่ตนเองเป็นครูผู้สอน"
+    },
+    {
+      "module": "academic_assessment",
+      "action": "read",
+      "scope": "organization_unit",
+      "name": "ดูโครงสร้างคะแนนในกลุ่มสาระ",
+      "description": "ดูโครงสร้างคะแนนของรายวิชาในกลุ่มสาระเดียวกันแบบอ่านอย่างเดียว"
+    },
+    {
+      "module": "academic_assessment",
+      "action": "manage",
+      "scope": "assigned",
+      "name": "จัดโครงสร้างคะแนนรายวิชาที่รับผิดชอบ",
+      "description": "เพิ่ม/แก้ไข/ส่งโครงสร้างคะแนนของรายวิชาที่ตนเองเป็นครูผู้สอน"
+    },
+    {
+      "module": "academic_assessment",
+      "action": "read",
+      "scope": "school",
+      "name": "ดูภาพรวมโครงสร้างคะแนนทั้งโรงเรียน",
+      "description": "ดูภาพรวมโครงสร้างคะแนนและรูปแบบการสอบของรายวิชาที่เปิดสอนทั้งโรงเรียน"
+    },
+    {
+      "module": "academic_assessment",
+      "action": "manage",
+      "scope": "school",
+      "name": "จัดการโครงสร้างคะแนนทั้งโรงเรียน",
+      "description": "จัดการโครงสร้างคะแนนและสถานะการส่งของรายวิชาที่เปิดสอนทั้งโรงเรียน"
+    },
+    {
+      "module": "academic_question_bank",
+      "action": "read",
+      "scope": "assigned",
+      "name": "ดูคลังข้อสอบที่รับผิดชอบ",
+      "description": "ดูข้อสอบที่ตนเองสร้างหรือเกี่ยวข้องกับรายวิชาที่รับผิดชอบ"
+    },
+    {
+      "module": "academic_question_bank",
+      "action": "read",
+      "scope": "organization_unit",
+      "name": "ดูคลังข้อสอบในกลุ่มสาระ",
+      "description": "ดูข้อสอบของรายวิชาในกลุ่มสาระเดียวกัน"
+    },
+    {
+      "module": "academic_question_bank",
+      "action": "read",
+      "scope": "school",
+      "name": "ดูคลังข้อสอบทั้งโรงเรียน",
+      "description": "ดูข้อสอบในคลังข้อสอบทั้งโรงเรียน"
+    },
+    {
+      "module": "academic_question_bank",
+      "action": "manage",
+      "scope": "assigned",
+      "name": "จัดการคลังข้อสอบที่รับผิดชอบ",
+      "description": "สร้างและแก้ไขข้อสอบของตนเอง"
+    },
+    {
+      "module": "academic_question_bank",
+      "action": "manage",
+      "scope": "organization_unit",
+      "name": "จัดการคลังข้อสอบในกลุ่มสาระ",
+      "description": "สร้างและแก้ไขข้อสอบของรายวิชาในกลุ่มสาระเดียวกัน"
+    },
+    {
+      "module": "academic_question_bank",
+      "action": "manage",
+      "scope": "school",
+      "name": "จัดการคลังข้อสอบทั้งโรงเรียน",
+      "description": "สร้าง แก้ไข และลบข้อสอบในคลังข้อสอบทั้งโรงเรียน"
+    },
+    {
+      "module": "academic_exam_schedule",
+      "action": "read",
+      "scope": "school",
+      "name": "ดูตารางสอบวิชาการทั้งโรงเรียน",
+      "description": "Read academic exam schedules for the school"
+    },
+    {
+      "module": "academic_exam_schedule",
+      "action": "manage",
+      "scope": "school",
+      "name": "จัดการตารางสอบวิชาการ",
+      "description": "Create and manage academic exam schedules for the school"
+    },
+    {
+      "module": "academic_exam_schedule",
+      "action": "publish",
+      "scope": "school",
+      "name": "ประกาศตารางสอบวิชาการ",
+      "description": "Publish academic exam schedules for the school"
+    },
+    {
+      "module": "calendar",
+      "action": "read",
+      "scope": "school",
+      "name": "ดูปฏิทินโรงเรียน",
+      "description": "ดูปฏิทินและกำหนดการของโรงเรียน"
+    },
+    {
+      "module": "calendar",
+      "action": "manage",
+      "scope": "school",
+      "name": "จัดการปฏิทินโรงเรียน",
+      "description": "สร้าง แก้ไข ลบ หมวดหมู่ กลุ่มผู้เห็น และการแจ้งเตือนของปฏิทินโรงเรียน"
+    },
+    {
+      "module": "facility",
+      "action": "read",
+      "scope": "all",
+      "name": "ดูข้อมูลอาคารสถานที่",
+      "description": "ดูรายชื่ออาคารและห้อง"
+    },
+    {
+      "module": "facility",
+      "action": "create",
+      "scope": "all",
+      "name": "สร้างอาคารสถานที่",
+      "description": "เพิ่มข้อมูลอาคารและห้องใหม่"
+    },
+    {
+      "module": "facility",
+      "action": "update",
+      "scope": "all",
+      "name": "แก้ไขอาคารสถานที่",
+      "description": "แก้ไขข้อมูลอาคารและห้อง"
+    },
+    {
+      "module": "facility",
+      "action": "delete",
+      "scope": "all",
+      "name": "ลบอาคารสถานที่",
+      "description": "ลบข้อมูลอาคารและห้อง"
+    },
+    {
+      "module": "organization_work",
+      "action": "read",
+      "scope": "own",
+      "name": "ดูงานของตนเอง",
+      "description": "ดูรายการงานที่ตนเองรับผิดชอบ"
+    },
+    {
+      "module": "organization_work",
+      "action": "read",
+      "scope": "organization_unit",
+      "name": "ดูงานในหน่วยงาน",
+      "description": "ดูรายการงานทั้งหมดในหน่วยงานที่สังกัด"
+    },
+    {
+      "module": "organization_work",
+      "action": "create",
+      "scope": "own",
+      "name": "สร้าง/ส่งงาน",
+      "description": "ส่งงานหรือสร้างบันทึกงานใหม่"
+    },
+    {
+      "module": "organization_work",
+      "action": "update",
+      "scope": "own",
+      "name": "แก้ไขงานตนเอง",
+      "description": "แก้ไขรายละเอียดงานของตนเอง"
+    },
+    {
+      "module": "organization_work",
+      "action": "approve",
+      "scope": "organization_unit",
+      "name": "อนุมัติงานในหน่วยงาน",
+      "description": "อนุมัติหรือตรวจสอบงานของสมาชิกในหน่วยงาน"
+    },
+    {
+      "module": "activity",
+      "action": "read",
+      "scope": "all",
+      "name": "ดูกิจกรรมพัฒนาผู้เรียน",
+      "description": "ดูข้อมูลกิจกรรมพัฒนาผู้เรียนทั้งหมด"
+    },
+    {
+      "module": "activity",
+      "action": "manage",
+      "scope": "all",
+      "name": "จัดการกิจกรรมพัฒนาผู้เรียน",
+      "description": "สร้าง/แก้ไข/ลบ และจัดการกิจกรรมพัฒนาผู้เรียนทั้งหมด"
+    },
+    {
+      "module": "activity",
+      "action": "manage",
+      "scope": "own",
+      "name": "จัดการกิจกรรมของตนเอง",
+      "description": "ครูจัดการกิจกรรมพัฒนาผู้เรียนที่ตนเองรับผิดชอบ"
+    },
+    {
+      "module": "activity",
+      "action": "manage_members",
+      "scope": "all",
+      "name": "จัดการสมาชิกกิจกรรม",
+      "description": "จัดการสมาชิกในกิจกรรมพัฒนาผู้เรียน"
+    },
+    {
+      "module": "admission",
+      "action": "read",
+      "scope": "all",
+      "name": "ดูข้อมูลรับสมัคร",
+      "description": "ดูรายชื่อผู้สมัคร, ผล, คะแนน"
+    },
+    {
+      "module": "admission",
+      "action": "manage",
+      "scope": "all",
+      "name": "จัดการรับสมัคร",
+      "description": "สร้าง/แก้ไข รอบรับสมัคร, สายการเรียน, วิชาสอบ"
+    },
+    {
+      "module": "admission",
+      "action": "verify",
+      "scope": "all",
+      "name": "ตรวจสอบใบสมัคร",
+      "description": "ยืนยัน/ปฏิเสธใบสมัครของผู้สมัคร"
+    },
+    {
+      "module": "admission",
+      "action": "scores",
+      "scope": "all",
+      "name": "กรอกคะแนนและจัดห้อง",
+      "description": "กรอกคะแนนสอบ, เรียงคะแนน, จัดห้องเรียน"
+    },
+    {
+      "module": "admission",
+      "action": "enroll",
+      "scope": "all",
+      "name": "รับมอบตัว",
+      "description": "รับมอบตัวและสร้าง account นักเรียนในระบบ"
+    },
+    {
+      "module": "supervision",
+      "action": "read",
+      "scope": "own",
+      "name": "ดูผลนิเทศของตนเอง",
+      "description": "ดูรายการและผลนิเทศการสอนของตนเอง"
+    },
+    {
+      "module": "supervision",
+      "action": "read",
+      "scope": "assigned",
+      "name": "ดูรายการนิเทศที่ได้รับมอบหมาย",
+      "description": "ดูรายการนิเทศการสอนที่ได้รับมอบหมายให้ประเมิน"
+    },
+    {
+      "module": "supervision",
+      "action": "read",
+      "scope": "organization_unit",
+      "name": "ดูนิเทศในหน่วยงาน",
+      "description": "ดูรายการนิเทศการสอนของบุคลากรในหน่วยงานเดียวกัน"
+    },
+    {
+      "module": "supervision",
+      "action": "read",
+      "scope": "organization_tree",
+      "name": "ดูนิเทศในสายงาน",
+      "description": "ดูรายการนิเทศการสอนในหน่วยงานของตนเองและหน่วยงานย่อย"
+    },
+    {
+      "module": "supervision",
+      "action": "read",
+      "scope": "school",
+      "name": "ดูนิเทศทั้งโรงเรียน",
+      "description": "ดูรายการนิเทศการสอนและรายงานทั้งโรงเรียน"
+    },
+    {
+      "module": "supervision",
+      "action": "request",
+      "scope": "own",
+      "name": "จองคาบนิเทศของตนเอง",
+      "description": "ส่งคำขอจองคาบเพื่อรับการนิเทศการสอนของตนเอง"
+    },
+    {
+      "module": "supervision",
+      "action": "manage",
+      "scope": "organization_unit",
+      "name": "จัดการนิเทศในหน่วยงาน",
+      "description": "อนุมัติคำขอและจัดการรายการนิเทศของบุคลากรในหน่วยงานเดียวกัน"
+    },
+    {
+      "module": "supervision",
+      "action": "manage",
+      "scope": "organization_tree",
+      "name": "จัดการนิเทศในสายงาน",
+      "description": "อนุมัติคำขอและจัดการรายการนิเทศในหน่วยงานของตนเองและหน่วยงานย่อย"
+    },
+    {
+      "module": "supervision",
+      "action": "manage",
+      "scope": "school",
+      "name": "จัดการระบบนิเทศทั้งโรงเรียน",
+      "description": "จัดการรอบนิเทศ แบบประเมิน เป้าหมาย คำขอ และผู้ประเมินทั้งโรงเรียน"
+    },
+    {
+      "module": "supervision",
+      "action": "evaluate",
+      "scope": "assigned",
+      "name": "ประเมินรายการนิเทศที่ได้รับมอบหมาย",
+      "description": "กรอกและส่งผลประเมินรายการนิเทศที่ตนเองได้รับมอบหมาย"
+    },
+    {
+      "module": "supervision",
+      "action": "approve",
+      "scope": "school",
+      "name": "อนุมัติผลนิเทศทั้งโรงเรียน",
+      "description": "ตรวจสอบและอนุมัติผลนิเทศการสอนทั้งโรงเรียนก่อนให้ครูรับทราบผล"
+    }
+  ]
+}
