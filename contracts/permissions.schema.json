@@ -1,0 +1,116 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schoolorbit.app/contracts/permissions.schema.json",
+  "title": "SchoolOrbit permission contract",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "permissions"],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "permissions": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "oneOf": [
+          {
+            "$ref": "#/$defs/permission"
+          },
+          {
+            "$ref": "#/$defs/wildcard"
+          }
+        ]
+      }
+    }
+  },
+  "$defs": {
+    "component": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$"
+    },
+    "action": {
+      "enum": [
+        "all",
+        "approve",
+        "assign",
+        "create",
+        "delete",
+        "enroll",
+        "evaluate",
+        "execute",
+        "manage",
+        "manage_members",
+        "publish",
+        "read",
+        "remove",
+        "request",
+        "scores",
+        "update",
+        "verify"
+      ]
+    },
+    "scope": {
+      "enum": [
+        "all",
+        "assigned",
+        "global",
+        "organization_tree",
+        "organization_unit",
+        "own",
+        "school"
+      ]
+    },
+    "displayText": {
+      "type": "string",
+      "minLength": 1
+    },
+    "permission": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["module", "action", "scope", "name", "description"],
+      "properties": {
+        "module": {
+          "$ref": "#/$defs/component"
+        },
+        "action": {
+          "$ref": "#/$defs/action"
+        },
+        "scope": {
+          "$ref": "#/$defs/scope"
+        },
+        "name": {
+          "$ref": "#/$defs/displayText"
+        },
+        "description": {
+          "$ref": "#/$defs/displayText"
+        }
+      }
+    },
+    "wildcard": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "module", "action", "scope", "name", "description"],
+      "properties": {
+        "kind": {
+          "const": "wildcard"
+        },
+        "module": {
+          "const": "system"
+        },
+        "action": {
+          "const": "all"
+        },
+        "scope": {
+          "const": "global"
+        },
+        "name": {
+          "$ref": "#/$defs/displayText"
+        },
+        "description": {
+          "$ref": "#/$defs/displayText"
+        }
+      }
+    }
+  }
+}
