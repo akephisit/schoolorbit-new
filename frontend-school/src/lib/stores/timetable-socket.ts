@@ -1,7 +1,10 @@
 import { writable, type Writable } from 'svelte/store';
 import { apiClient, BACKEND_WS_URL } from '$lib/api/client';
 import type { TimetableEntry } from '$lib/api/timetable';
-import { reconnectDelayMs } from '$lib/utils/timetable-reconnect';
+import {
+	createTimetableSocketRuntime,
+	type TimetableSocketParams
+} from '$lib/utils/timetable-socket-runtime';
 
 // Types matching backend
 export interface UserContext {
@@ -461,180 +464,66 @@ function applyPatchFromSeqEvent(seqEvent: SeqEvent) {
 	}
 }
 
-let socket: WebSocket | null = null;
 let currentUserId: string | null = null;
-let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-let connectionDebounceTimer: ReturnType<typeof setTimeout> | null = null; // New timer for debouncing initial connection
-let shouldReconnect = false;
-let reconnectAttempt = 0;
-let waitingForOnline = false;
+let currentSemesterId: string | null = null;
 
-type TimetableSocketParams = {
-	semester_id: string;
-	current_user_id: string;
-};
-
-let lastParams: TimetableSocketParams | null = null;
-
-function clearOnlineListener() {
-	if (waitingForOnline && typeof window !== 'undefined') {
-		window.removeEventListener('online', handleOnline);
-		waitingForOnline = false;
-	}
-}
-
-function handleOnline() {
-	clearOnlineListener();
-	if (shouldReconnect && lastParams) connectTimetableSocket(lastParams);
-}
-
-function scheduleReconnect() {
-	if (!shouldReconnect || !lastParams || typeof window === 'undefined') return;
-	if (!navigator.onLine) {
-		if (!waitingForOnline) {
-			waitingForOnline = true;
-			window.addEventListener('online', handleOnline, { once: true });
-		}
-		return;
-	}
-
-	const delay = reconnectDelayMs(reconnectAttempt);
-	reconnectAttempt += 1;
-	reconnectTimer = setTimeout(() => {
-		reconnectTimer = null;
-		if (shouldReconnect && lastParams) connectTimetableSocket(lastParams);
-	}, delay);
-}
-
-export function connectTimetableSocket(params: TimetableSocketParams) {
-	// Check duplicate connection (Immediate check)
-	if (
-		socket &&
-		(socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)
-	) {
-		if (
-			lastParams &&
-			String(lastParams.semester_id) === String(params.semester_id) &&
-			String(lastParams.current_user_id) === String(params.current_user_id)
-		) {
-			// Same params, already connected/connecting
-			// If there is a pending debounce for a NEW connection, we should probably clear it because we are happy with current?
-			// But if we are here, socket exists.
-			if (connectionDebounceTimer) clearTimeout(connectionDebounceTimer);
-			return;
-		}
-	}
-
-	// Clear any pending reconnect or debounce
-	if (reconnectTimer) {
-		clearTimeout(reconnectTimer);
-		reconnectTimer = null;
-	}
-	if (connectionDebounceTimer) {
-		clearTimeout(connectionDebounceTimer);
-		connectionDebounceTimer = null;
-	}
-
-	shouldReconnect = true;
-	lastParams = params;
-
-	// Debounce the actual connection creation by 50ms
-	// This allows rapid destroy/create cycles (e.g. quick navigation) to cancel out
-	// before the socket is actually created.
-	connectionDebounceTimer = setTimeout(() => {
-		connectionDebounceTimer = null;
-		if (!shouldReconnect) return; // If disconnected in the meantime
-
-		if (socket) {
-			// Prevent old socket from triggering reconnect
-			socket.onclose = null;
-			socket.onerror = null;
-			socket.close();
-		}
-		currentUserId = params.current_user_id;
-
-		const qs = new URLSearchParams({
-			semester_id: String(params.semester_id)
-		}).toString();
-		const url = `${BACKEND_WS_URL}/ws/timetable?${qs}`;
-
-		socket = new WebSocket(url);
-
-		socket.onopen = () => {
-			console.log('WS Connected');
-			isConnected.set(true);
-			reconnectAttempt = 0;
-			clearOnlineListener();
-			// Clear reconnect timer if any (redundant but safe)
-			if (reconnectTimer) {
-				clearTimeout(reconnectTimer);
-				reconnectTimer = null;
-			}
-		};
-
-		socket.onmessage = (event) => {
-			try {
-				const msg = JSON.parse(event.data);
-				handleMessage(msg);
-			} catch (e) {
-				console.error('WS Parse Error', e);
-			}
-		};
-
-		socket.onclose = () => {
-			console.log('WS Disconnected');
-			isConnected.set(false);
-			// Clear state
-			activeUsers.set([]);
-			remoteCursors.set({});
-			userDrags.set({});
-			dragPositions.set({});
-			remoteActivities.set({});
-
-			scheduleReconnect();
-		};
-
-		socket.onerror = (err) => {
-			console.error('WS Error', err);
-			// On error, onclose usually fires too, but just in case
-		};
-	}, 50); // 50ms delay
-}
-
-export function disconnectTimetableSocket() {
-	shouldReconnect = false;
-	if (reconnectTimer) {
-		clearTimeout(reconnectTimer);
-		reconnectTimer = null;
-	}
-	if (connectionDebounceTimer) {
-		clearTimeout(connectionDebounceTimer);
-		connectionDebounceTimer = null;
-	}
-	clearOnlineListener();
-	reconnectAttempt = 0;
-	currentUserId = null;
-	lastParams = null;
+function clearRealtimeState() {
 	isConnected.set(false);
 	activeUsers.set([]);
 	remoteCursors.set({});
 	userDrags.set({});
 	dragPositions.set({});
 	remoteActivities.set({});
+}
 
-	if (socket) {
-		// Prevent any pending callbacks
-		socket.onclose = null;
-		socket.onerror = null;
-		socket.close();
-		socket = null;
+const timetableSocketRuntime = createTimetableSocketRuntime({
+	createSocket: (params) => {
+		currentUserId = params.current_user_id;
+		currentSemesterId = params.semester_id;
+		const qs = new URLSearchParams({
+			semester_id: String(params.semester_id)
+		}).toString();
+		const url = `${BACKEND_WS_URL}/ws/timetable?${qs}`;
+		return new WebSocket(url);
+	},
+	setTimer: (callback, delay) => setTimeout(callback, delay),
+	clearTimer: (timer) => clearTimeout(timer),
+	isOnline: () => navigator.onLine,
+	addOnlineListener: (listener) => window.addEventListener('online', listener),
+	removeOnlineListener: (listener) => window.removeEventListener('online', listener),
+	onOpen: () => {
+		console.log('WS Connected');
+		isConnected.set(true);
+	},
+	onMessage: (data) => {
+		try {
+			handleMessage(JSON.parse(String(data)));
+		} catch (error) {
+			console.error('WS Parse Error', error);
+		}
+	},
+	onClose: () => {
+		console.log('WS Disconnected');
+		clearRealtimeState();
+	},
+	onError: (error) => {
+		console.error('WS Error', error);
 	}
+});
+
+export function connectTimetableSocket(params: TimetableSocketParams) {
+	timetableSocketRuntime.connect(params);
+}
+
+export function disconnectTimetableSocket() {
+	currentUserId = null;
+	currentSemesterId = null;
+	timetableSocketRuntime.disconnect();
+	clearRealtimeState();
 }
 
 export function sendTimetableEvent(event: TimetableEvent) {
-	if (socket && socket.readyState === WebSocket.OPEN) {
-		socket.send(JSON.stringify(event));
-	}
+	timetableSocketRuntime.send(JSON.stringify(event));
 }
 
 export function sendUserActivity(activityType: string, target?: unknown) {
@@ -723,7 +612,7 @@ function handleMessage(msg: SeqEvent & { seq?: number }) {
 		}
 		if (seq > lastSeq + 1 && lastSeq > 0) {
 			// Gap detected — reconcile
-			const semId = lastParams?.semester_id;
+			const semId = currentSemesterId;
 			if (semId) triggerReconcile(semId);
 			return;
 		}
@@ -759,7 +648,7 @@ function handleMessage(msg: SeqEvent & { seq?: number }) {
 					refreshTrigger.update((n) => n + 1);
 				} else if (current_seq > lastSeq) {
 					// Gap — events หายช่วง disconnect หรือระหว่าง API→WS → replay
-					const semId = lastParams?.semester_id;
+					const semId = currentSemesterId;
 					if (semId) {
 						console.log('[WS] Gap detected on StateSync:', lastSeq, '->', current_seq);
 						triggerReconcile(semId);

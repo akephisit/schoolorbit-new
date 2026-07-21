@@ -10,13 +10,13 @@ const page = readFileSync(
 	new URL('../../src/routes/(app)/staff/academic/timetable/+page.svelte', import.meta.url),
 	'utf8'
 );
-const connectionContract = store.slice(
-	store.indexOf('type TimetableSocketParams'),
-	store.indexOf('export function disconnectTimetableSocket')
+const runtime = readFileSync(
+	new URL('../../src/lib/utils/timetable-socket-runtime.ts', import.meta.url),
+	'utf8'
 );
-const disconnectContract = store.slice(
-	store.indexOf('export function disconnectTimetableSocket'),
-	store.indexOf('export function sendTimetableEvent')
+const connectionContract = store.slice(
+	store.indexOf('const timetableSocketRuntime'),
+	store.indexOf('export function sendUserActivity')
 );
 
 test('timetable socket URL contains only semester identity', () => {
@@ -31,10 +31,10 @@ test('timetable socket URL contains only semester identity', () => {
 	assert.doesNotMatch(connectionContract, /\btoken\b/i);
 	assert.doesNotMatch(connectionContract, /(?:localStorage|sessionStorage)/);
 	assert.doesNotMatch(connectionContract, /console\.(?:log|info|debug|warn|error)\([^)]*\burl\b/);
-	assert.match(connectionContract, /new WebSocket\(url\)/);
+	assert.match(connectionContract, /return new WebSocket\(url\)/);
 });
 
-test('reconnect is exponential, capped, jittered, offline aware, and explicitly cancellable', async () => {
+test('reconnect delay remains exponential, capped, and jittered', async () => {
 	const { reconnectDelayMs } = await import('../../src/lib/utils/timetable-reconnect.ts');
 
 	assert.deepEqual(
@@ -53,15 +53,15 @@ test('reconnect is exponential, capped, jittered, offline aware, and explicitly 
 		reconnectDelayMs(0, () => 1),
 		1200
 	);
-	assert.match(store, /window\.addEventListener\('online'/);
-	assert.match(store, /window\.removeEventListener\('online'/);
-	assert.match(store, /if\s*\(!waitingForOnline\)/);
-	assert.match(store, /reconnectAttempt\s*=\s*0/);
-	assert.match(disconnectContract, /clearOnlineListener\(\)/);
-	assert.match(disconnectContract, /isConnected\.set\(false\)/);
-	assert.match(disconnectContract, /activeUsers\.set\(\[\]\)/);
-	assert.match(disconnectContract, /currentUserId\s*=\s*null/);
-	assert.match(disconnectContract, /lastParams\s*=\s*null/);
+});
+
+test('store delegates socket ownership, timers, and network listeners to the runtime', () => {
+	assert.match(store, /createTimetableSocketRuntime\(\{/);
+	assert.match(connectionContract, /timetableSocketRuntime\.connect\(params\)/);
+	assert.match(connectionContract, /timetableSocketRuntime\.disconnect\(\)/);
+	assert.match(connectionContract, /timetableSocketRuntime\.send\(JSON\.stringify\(event\)\)/);
+	assert.match(runtime, /socketGeneration/);
+	assert.match(runtime, /detachSocketHandlers/);
 });
 
 test('page passes server query and local-only current user identity', () => {
