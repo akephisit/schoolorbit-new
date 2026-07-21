@@ -31,6 +31,27 @@ Add the new handler to the router configuration.
 *   **File:** `src/routes.rs` (or `main.rs` depending on setup).
 *   **Permission:** Load the actor context in the handler and call `actor.require_*` if the endpoint is protected.
 
+## Generated API contracts
+
+Rust request/response DTOs and OpenAPI handler metadata are the source of truth.
+`contracts/openapi/school-api.json` and files under
+`frontend-school/src/lib/api/generated/` are generated files; do not edit them
+directly.
+
+After changing a documented DTO or endpoint:
+
+```bash
+cd frontend-school
+npm run generate:api-contracts
+npm run check:api-contracts
+npm run test:api-contracts
+```
+
+Commit Rust source, OpenAPI, generated TypeScript, and focused tests together.
+Frontend API modules import generated wire DTOs and may map them to separate
+domain/view models. Generation must not require database credentials or start
+the backend server.
+
 ## Error Handling
 *   Use the custom `AppError` type (if available) to map errors to HTTP status codes.
 *   Internal DB errors should generally result in `500 Internal Server Error`, while validation failures result in `400 Bad Request`.
@@ -73,14 +94,11 @@ pub async fn my_protected_handler(
 Use `tenant_context(&state, &headers).await?` or `tenant_pool(&state, &headers).await?` for public tenant routes that do not need an actor. Do not call `resolve_tenant_pool`, `load_actor_context`, `pool_manager.get_pool`, or local `get_pool` helpers from feature handlers; those lower-level APIs are wrapped by `utils::request_context`.
 
 ### Defining New Permissions
-1.  **Code Registry:** Add the permission constant and `PermissionDef` to `src/permissions/registry.rs` using the canonical `module.action.scope` shape.
-    ```rust
-    // src/permissions/registry.rs
-    pub const MY_FEATURE_READ_ALL: &str = "my_feature.read.all";
-    ```
-2.  **Frontend Registry:** Add the matching constant to `frontend-school/src/lib/permissions/registry.ts`.
-3.  **Database Baseline / Migration:** For active clean-baseline work, add new permissions through a new sequential migration after `001_baseline.sql`; do not edit an already-applied migration.
-4.  **Usage:** load `ActorContext` once through `actor_tenant_context(...)`, then call `actor.require_permission(codes::MY_FEATURE_READ_ALL)` or `actor.require_any_permission(&[...])`.
+1.  **Source Registry:** Add the permission to `contracts/permissions.json` using the canonical `module.action.scope` shape.
+2.  **Generate Registries:** From `frontend-school`, run `npm run generate:permissions`, `npm run check:permissions`, and `npm run test:permissions`.
+3.  **Commit Generated Artifacts:** Commit the permission contract, lock file, backend registry, and frontend registry together. Never edit `backend-school/src/permissions/registry_generated.rs` or `frontend-school/src/lib/permissions/registry.generated.ts` directly.
+4.  **Database Migration:** Add new database permission rows through a new sequential migration after `001_baseline.sql`; do not edit an already-applied migration.
+5.  **Usage:** load `ActorContext` once through `actor_tenant_context(...)`, then call `actor.require_permission(codes::MY_FEATURE_READ_ALL)` or `actor.require_any_permission(&[...])`.
 
 ## Logging
 

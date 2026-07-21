@@ -49,6 +49,27 @@ cargo check
 
 Existing backend warnings are tracked separately. Do not run `cargo fix` as part of unrelated work.
 
+## Generated API contracts
+
+Rust request/response DTOs and OpenAPI handler metadata are the source of truth.
+`contracts/openapi/school-api.json` and files under
+`frontend-school/src/lib/api/generated/` are generated files; do not edit them
+directly.
+
+After changing a documented DTO or endpoint:
+
+```bash
+cd frontend-school
+npm run generate:api-contracts
+npm run check:api-contracts
+npm run test:api-contracts
+```
+
+Commit Rust source, OpenAPI, generated TypeScript, and focused tests together.
+Frontend API modules import generated wire DTOs and may map them to separate
+domain/view models. Generation must not require database credentials or start
+the backend server.
+
 ## Permission Contract
 
 `contracts/permissions.json` is the only handwritten registry for backend and frontend

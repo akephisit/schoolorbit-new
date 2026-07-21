@@ -75,6 +75,19 @@ test('frontend auth consumes the shared envelope through apiClient', async () =>
 	assert.match(source, /\.data\?\.user/);
 });
 
+test('project rules document generated API contract ownership', async () => {
+	const rules = await readRepoFile('.rules');
+	const testing = await readRepoFile('docs/TESTING.md');
+	const guide = await readRepoFile('docs/backend-school/API_DEVELOPMENT.md');
+
+	for (const source of [rules, testing, guide]) {
+		assert.match(source, /generate:api-contracts/);
+		assert.match(source, /check:api-contracts/);
+		assert.match(source, /contracts\/openapi\/school-api\.json/);
+		assert.match(source, /generated files?[^\n]*do not edit|do not edit[^\n]*generated files?/i);
+	}
+});
+
 test('user role assignment API contract stays aligned across backend and frontend', async () => {
 	const backendModels = await readRepoFile('backend-school/src/modules/staff/models.rs');
 	const backendService = await readRepoFile(

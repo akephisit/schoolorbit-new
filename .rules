@@ -121,6 +121,28 @@ If adding "User Profile Edit" feature:
   * **Lookup Contract:** `/api/lookup/*` endpoints are for minimal reference data only. They may return stable identifiers and display labels such as `id`, `name`, `code`, simple category/type, parent id, and ordering fields. Do not expose usernames, national IDs, phone numbers, emails, addresses, full profiles, documents, or workflow-specific detail through generic lookup. If a page needs richer cross-module data, add a workflow-specific options endpoint authorized by that workflow permission.
   * When changing an API response shape, update the static contract checks that guard backend and frontend alignment.
   * Do not `fetch` directly in components if possible; use Loaders.
+
+### Generated API contracts
+
+Rust request/response DTOs and OpenAPI handler metadata are the source of truth.
+`contracts/openapi/school-api.json` and files under
+`frontend-school/src/lib/api/generated/` are generated files; do not edit them
+directly.
+
+After changing a documented DTO or endpoint:
+
+```bash
+cd frontend-school
+npm run generate:api-contracts
+npm run check:api-contracts
+npm run test:api-contracts
+```
+
+Commit Rust source, OpenAPI, generated TypeScript, and focused tests together.
+Frontend API modules import generated wire DTOs and may map them to separate
+domain/view models. Generation must not require database credentials or start
+the backend server.
+
   * **Permission UI:** Current-user permissions come only from `/api/auth/me` via `authStore.setUser()` and `src/lib/stores/permissions.ts`. UI permission checks should use the `can` store (`$can.has`, `$can.hasAny`, `$can.hasAll`, `$can.hasModule`) or the route-access helper; do not call a separate current-user permission endpoint, reintroduce `loadUserPermissions`, or check `authStore.user.permissions.includes(...)` directly in app UI. Permission changes are pushed through the existing SSE stream as a `permission_changed` event; the frontend must refresh `/api/auth/me` silently and must not use Web Push or SSE permission snapshots as the source of truth.
   * **Permission Constants:** Frontend permission strings must come from `frontend-school/src/lib/permissions/registry.ts`. Do not hardcode permission literals in `_meta.menu.permission`, `$can.has(...)`, `$can.hasAny(...)`, `$can.hasAll(...)`, route guards, or app UI. To add or change a permission, edit `contracts/permissions.json`, run `npm run generate:permissions` from `frontend-school`, commit the contract lock and both generated registries, and run `npm run check:permissions`. Never edit `registry_generated.rs` or `registry.generated.ts` directly.
   * **Frontend Permission UX:** Staff/admin workspaces should be read-first module screens: users with the module read permission can enter and inspect the workspace, then action controls, panels, tabs, columns, and workflows appear only when the exact capability permission is present (`create`, `update`, `delete`, `approve`, `export`, etc.). Do not create duplicate pages per role just to hide buttons; split routes only when the workflow, data scope, or backend policy genuinely differs.

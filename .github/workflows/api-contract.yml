@@ -1,0 +1,100 @@
+name: API Contract
+
+on:
+  pull_request:
+    paths:
+      - "contracts/openapi/**"
+      - "scripts/generate-api-contracts.mjs"
+      - "scripts/tests/generate-api-contracts.test.mjs"
+      - "backend-school/Cargo.toml"
+      - "backend-school/Cargo.lock"
+      - "backend-school/src/api_contract.rs"
+      - "backend-school/src/api_response.rs"
+      - "backend-school/src/modules/**"
+      - "frontend-school/src/lib/api/**"
+      - "frontend-school/tests/static/api-response-contract.test.mjs"
+      - "frontend-school/package.json"
+      - "frontend-school/package-lock.json"
+      - ".rules"
+      - "docs/TESTING.md"
+      - "docs/backend-school/API_DEVELOPMENT.md"
+      - ".github/workflows/api-contract.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "contracts/openapi/**"
+      - "scripts/generate-api-contracts.mjs"
+      - "scripts/tests/generate-api-contracts.test.mjs"
+      - "backend-school/Cargo.toml"
+      - "backend-school/Cargo.lock"
+      - "backend-school/src/api_contract.rs"
+      - "backend-school/src/api_response.rs"
+      - "backend-school/src/modules/**"
+      - "frontend-school/src/lib/api/**"
+      - "frontend-school/tests/static/api-response-contract.test.mjs"
+      - "frontend-school/package.json"
+      - "frontend-school/package-lock.json"
+      - ".rules"
+      - "docs/TESTING.md"
+      - "docs/backend-school/API_DEVELOPMENT.md"
+      - ".github/workflows/api-contract.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+      PUBLIC_BACKEND_URL: http://localhost:3000
+      PUBLIC_VAPID_KEY: test
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend-school/package-lock.json
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - name: Install frontend dependencies
+        working-directory: frontend-school
+        run: npm ci
+
+      - name: Test API contract generator
+        working-directory: frontend-school
+        run: npm run test:api-contracts
+
+      - name: Check generated API contract artifacts
+        working-directory: frontend-school
+        run: npm run check:api-contracts
+
+      - name: Check backend formatting
+        working-directory: backend-school
+        run: cargo fmt --all -- --check
+
+      - name: Test backend API contract
+        working-directory: backend-school
+        run: cargo test api_contract::tests --bin backend-school
+
+      - name: Check backend
+        working-directory: backend-school
+        run: cargo check --bin backend-school
+
+      - name: Test frontend API contract
+        working-directory: frontend-school
+        run: node --test tests/static/api-response-contract.test.mjs
+
+      - name: Check frontend
+        working-directory: frontend-school
+        run: npm run check
