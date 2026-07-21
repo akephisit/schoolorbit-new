@@ -145,6 +145,7 @@ pub async fn me(
     let pool = context.tenant.pool;
 
     let user = services::find_user_by_id(&pool, context.user_id).await?;
+    services::ensure_active_user_status(&user.status)?;
     let primary_role_name = services::get_primary_role_name(&pool, user.id).await?;
 
     let permissions =

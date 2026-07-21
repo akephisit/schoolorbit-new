@@ -2589,6 +2589,29 @@ fn timetable_websocket_authorization_authenticates_active_user_before_permission
 }
 
 #[test]
+fn auth_me_rejects_inactive_users_before_loading_roles_or_permissions() {
+    let handler_source = read_source(manifest_dir().join("src/modules/auth/handlers.rs"));
+    let handler = extract_braced_block(&handler_source, "pub async fn me", false);
+    let load_user = handler
+        .find("services::find_user_by_id(&pool, context.user_id).await?")
+        .expect("auth me must load the current user");
+    let verify_active = handler
+        .find("services::ensure_active_user_status(&user.status)?")
+        .expect("auth me must reject a non-active current user");
+    let load_role = handler
+        .find("services::get_primary_role_name(&pool, user.id).await?")
+        .expect("auth me must preserve the primary role response");
+    let load_permissions = handler
+        .find("get_cached_user_permissions(")
+        .expect("auth me must preserve the permission response");
+
+    assert!(
+        load_user < verify_active && verify_active < load_role && verify_active < load_permissions,
+        "auth me must reject an inactive user before loading roles or permissions"
+    );
+}
+
+#[test]
 fn deleting_staff_revokes_cached_and_active_permissions_after_soft_delete() {
     let source = read_source(manifest_dir().join("src/modules/staff/handlers/staff.rs"));
     let handler = extract_braced_block(&source, "pub async fn delete_staff", false);

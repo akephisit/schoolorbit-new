@@ -59,6 +59,8 @@ export function createTimetableSocketRuntime<Timer>(
 	let reconnectAttempt = 0;
 	let waitingForOnline = false;
 	let socketGeneration = 0;
+	let connectionIntentGeneration = 0;
+	let desiredIntentGeneration = 0;
 
 	function clearReconnectTimer() {
 		if (reconnectTimer === null) return;
@@ -125,7 +127,22 @@ export function createTimetableSocketRuntime<Timer>(
 		}, delay);
 	}
 
-	function openSocket(params: TimetableSocketParams) {
+	function scheduleConnection(params: TimetableSocketParams, intentGeneration: number) {
+		clearConnectionDebounceTimer();
+		connectionDebounceTimer = dependencies.setTimer(() => {
+			connectionDebounceTimer = null;
+			if (
+				!shouldReconnect ||
+				desiredIntentGeneration !== intentGeneration ||
+				!sameParams(desiredParams, params)
+			) {
+				return;
+			}
+			openSocket(params, intentGeneration);
+		}, CONNECTION_DEBOUNCE_MS);
+	}
+
+	function openSocket(params: TimetableSocketParams, intentGeneration: number) {
 		if (socket) retireSocket(socket, true);
 
 		let nextSocket: TimetableSocketLike;
@@ -160,6 +177,12 @@ export function createTimetableSocketRuntime<Timer>(
 			retireSocket(nextSocket, false);
 			dependencies.onClose();
 			if (event.code === 1008) {
+				if (shouldReconnect && desiredParams && desiredIntentGeneration > intentGeneration) {
+					clearReconnectTimer();
+					clearOnlineListener();
+					scheduleConnection(desiredParams, desiredIntentGeneration);
+					return;
+				}
 				shouldReconnect = false;
 				desiredParams = null;
 				clearReconnectTimer();
@@ -179,8 +202,10 @@ export function createTimetableSocketRuntime<Timer>(
 
 	function connect(params: TimetableSocketParams) {
 		const nextParams = { ...params };
+		connectionIntentGeneration += 1;
 		shouldReconnect = true;
 		desiredParams = nextParams;
+		desiredIntentGeneration = connectionIntentGeneration;
 		clearReconnectTimer();
 		clearOnlineListener();
 
@@ -193,12 +218,7 @@ export function createTimetableSocketRuntime<Timer>(
 			return;
 		}
 
-		clearConnectionDebounceTimer();
-		connectionDebounceTimer = dependencies.setTimer(() => {
-			connectionDebounceTimer = null;
-			if (!shouldReconnect || !sameParams(desiredParams, nextParams)) return;
-			openSocket(nextParams);
-		}, CONNECTION_DEBOUNCE_MS);
+		scheduleConnection(nextParams, desiredIntentGeneration);
 	}
 
 	function disconnect() {

@@ -80,6 +80,14 @@ pub async fn find_user_by_id(pool: &PgPool, user_id: Uuid) -> Result<User, AppEr
     Ok(user)
 }
 
+pub fn ensure_active_user_status(status: &str) -> Result<(), AppError> {
+    if status == "active" {
+        return Ok(());
+    }
+
+    Err(AppError::AuthError("บัญชีผู้ใช้ถูกระงับ".to_string()))
+}
+
 pub async fn get_primary_role_name(
     pool: &PgPool,
     user_id: Uuid,
@@ -201,6 +209,18 @@ mod tests {
         let parsed = parse_profile_date(Some("2026-06-06"));
 
         assert_eq!(parsed, chrono::NaiveDate::from_ymd_opt(2026, 6, 6));
+    }
+
+    #[test]
+    fn active_user_status_is_accepted_for_current_session() {
+        assert!(ensure_active_user_status("active").is_ok());
+    }
+
+    #[test]
+    fn inactive_user_status_is_rejected_for_current_session() {
+        let result = ensure_active_user_status("inactive");
+
+        assert!(matches!(result, Err(AppError::AuthError(_))));
     }
 
     #[test]

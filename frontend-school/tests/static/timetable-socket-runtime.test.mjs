@@ -306,3 +306,25 @@ test('policy close suspends automatic reconnect until an explicit connect', () =
 	environment.advanceBy(50);
 	assert.equal(environment.sockets.length, 2);
 });
+
+test('same-params refresh intent survives a later policy close exactly once', () => {
+	const { environment, runtime } = createHarness();
+
+	runtime.connect(semesterA);
+	environment.advanceBy(50);
+	const originalSocket = environment.sockets[0];
+	originalSocket.open();
+
+	// A permission-refresh event can request the same connection before the
+	// backend policy close from the previous authorization reaches the browser.
+	runtime.connect(semesterA);
+	originalSocket.closeFromServer(1008);
+
+	assert.equal(environment.nextDelay(), 50);
+	environment.advanceBy(50);
+	assert.equal(environment.sockets.length, 2);
+	assert.deepEqual(environment.sockets[1].params, semesterA);
+
+	environment.advanceBy(60_000);
+	assert.equal(environment.sockets.length, 2);
+});
