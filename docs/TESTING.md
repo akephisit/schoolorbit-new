@@ -209,7 +209,7 @@ Run it from Actions with `run_authenticated=true` to test login and authenticate
 3. Set `E2E_SEMESTER_ID` to a sandbox semester UUID. Verify `/ws/timetable?semester_id=$E2E_SEMESTER_ID` returns `401` without the HttpOnly cookie, `403` for an authenticated user without read/manage permission, and `404` when the value is changed to a valid UUID that is absent from that tenant.
 4. Open two authorized tabs and verify one joined presence, no leave event until the final tab closes, cursor collaboration for readers, and edit collaboration only for managers.
 5. Disable the network, restore it, and verify one reconnect attempt resumes with no reconnect loop after page teardown.
-6. Confirm logs contain no JWT, password, national ID, database URL, or malformed WebSocket payload.
+6. Confirm logs contain no JWT, password, national ID, database URL, malformed WebSocket payload, or legacy query identity (`user_id`, `name`, `school_key`).
 
 The `frontend-school` app has a minimal Playwright test for the live sandbox login flow.
 

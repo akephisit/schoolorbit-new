@@ -103,6 +103,107 @@ fn strip_comments(source: &str) -> String {
     stripped
 }
 
+fn extract_braced_block<'a>(source: &'a str, marker: &str) -> &'a str {
+    let start = source
+        .find(marker)
+        .unwrap_or_else(|| panic!("missing block marker: {marker}"));
+    let block_source = &source[start..];
+    let mut depth = 0_u32;
+    let mut saw_opening_brace = false;
+
+    for (offset, character) in block_source.char_indices() {
+        match character {
+            '{' => {
+                saw_opening_brace = true;
+                depth += 1;
+            }
+            '}' if saw_opening_brace => {
+                depth -= 1;
+                if depth == 0 {
+                    return &block_source[..=offset];
+                }
+            }
+            _ => {}
+        }
+    }
+
+    panic!("unterminated block marker: {marker}");
+}
+
+fn single_line_call_arguments(line: &str, method: &str) -> Option<Vec<String>> {
+    let marker = format!(".{method}(");
+    let arguments_start = line.find(&marker)? + marker.len();
+    let arguments_end = line[arguments_start..].find(')')? + arguments_start;
+
+    Some(
+        line[arguments_start..arguments_end]
+            .split(',')
+            .map(|argument| {
+                argument
+                    .chars()
+                    .filter(|character| !character.is_whitespace())
+                    .collect::<String>()
+            })
+            .collect(),
+    )
+}
+
+fn following_lines_have_matching_call(
+    lines: &[&str],
+    index: usize,
+    method: &str,
+    expected_arguments: &[String],
+) -> bool {
+    lines
+        .iter()
+        .skip(index + 1)
+        .take(3)
+        .filter_map(|line| single_line_call_arguments(line, method))
+        .any(|arguments| arguments == expected_arguments)
+}
+
+fn permission_invalidation_violations(relative_path: &str, source: &str) -> Vec<String> {
+    let source = strip_comments(source);
+    let lines = source.lines().collect::<Vec<_>>();
+    let mut violations = Vec::new();
+
+    for (index, line) in lines.iter().enumerate() {
+        if let Some(arguments) = single_line_call_arguments(line, "invalidate_tenant") {
+            if following_lines_have_matching_call(
+                &lines,
+                index,
+                "notify_all_permissions_changed",
+                &arguments,
+            ) {
+                continue;
+            }
+
+            violations.push(format!(
+                "{relative_path}:{}: tenant invalidation must emit tenant permission_changed with matching tenant",
+                index + 1
+            ));
+        }
+
+        if let Some(arguments) = single_line_call_arguments(line, "invalidate_user") {
+            if following_lines_have_matching_call(
+                &lines,
+                index,
+                "notify_permission_changed",
+                &arguments,
+            ) {
+                continue;
+            }
+
+            violations.push(format!(
+                "{relative_path}:{}: user invalidation must emit tenant permission_changed with matching tenant and user",
+                index + 1
+            ));
+        }
+    }
+
+    violations
+}
+
 fn backend_rs_files() -> Vec<PathBuf> {
     list_files(manifest_dir().join("src"), |path| {
         path.extension().is_some_and(|ext| ext == "rs")
@@ -2085,9 +2186,49 @@ fn timetable_websocket_identity_is_server_owned() {
     assert!(!params.contains("user_id"));
     assert!(!params.contains("name:"));
     assert!(!params.contains("school_key"));
-    assert!(source.contains("actor_tenant_context(&state, &headers)"));
-    assert!(source.contains("authorize_socket("));
-    assert!(source.contains("sanitize_client_event("));
+
+    let handler_start = source
+        .find("pub async fn timetable_websocket_handler")
+        .unwrap();
+    let handle_socket_start = source[handler_start..]
+        .find("async fn handle_socket")
+        .unwrap();
+    let handler = &source[handler_start..handler_start + handle_socket_start];
+    assert!(handler.contains("actor_tenant_context(&state, &headers)"));
+    assert!(handler.contains("authorize_socket("));
+
+    let socket_loop_start = handler_start + handle_socket_start;
+    let socket_loop_end = source[socket_loop_start..].find("#[cfg(test)]").unwrap();
+    let socket_loop = &source[socket_loop_start..socket_loop_start + socket_loop_end];
+    assert!(socket_loop.contains("sanitize_client_event("));
+}
+
+#[test]
+fn timetable_websocket_proxy_does_not_log_query_identity() {
+    let nginx = read_source(repo_root().join("nginx-configs/school-api.schoolorbit.app.conf"));
+    let websocket_location = extract_braced_block(&nginx, "location /ws/ {");
+    let access_log_directives = websocket_location
+        .lines()
+        .map(str::trim)
+        .filter(|line| line.starts_with("access_log "))
+        .collect::<Vec<_>>();
+
+    assert_eq!(access_log_directives, vec!["access_log off;"]);
+    for forbidden in ["$request", "$args", "$query_string", "$request_uri"] {
+        assert!(
+            !websocket_location.contains(forbidden),
+            "WebSocket access logging must not include {forbidden}"
+        );
+    }
+
+    let testing = read_source(repo_root().join("docs/TESTING.md"));
+    assert!(testing.contains("legacy query identity"));
+    for legacy_identity in ["`user_id`", "`name`", "`school_key`"] {
+        assert!(
+            testing.contains(legacy_identity),
+            "rollout log checklist must name {legacy_identity}"
+        );
+    }
 }
 
 #[test]
@@ -2140,41 +2281,36 @@ fn permission_cache_invalidations_notify_active_clients() {
     let mut violations = Vec::new();
 
     for file in backend_rs_files() {
-        let source = strip_comments(&read_source(&file));
-        let lines = source.lines().collect::<Vec<_>>();
-
-        for (index, line) in lines.iter().enumerate() {
-            let next_lines = lines
-                .iter()
-                .skip(index + 1)
-                .take(3)
-                .copied()
-                .collect::<Vec<_>>()
-                .join("\n");
-
-            if line.contains("permission_cache.invalidate_tenant(")
-                && !next_lines.contains("notify_all_permissions_changed(")
-            {
-                violations.push(format!(
-                    "{}:{}: tenant invalidation must emit tenant permission_changed",
-                    relative(&file),
-                    index + 1
-                ));
-            }
-
-            if line.contains("permission_cache.invalidate_user(")
-                && !next_lines.contains("notify_permission_changed(")
-            {
-                violations.push(format!(
-                    "{}:{}: user invalidation must emit tenant permission_changed",
-                    relative(&file),
-                    index + 1
-                ));
-            }
+        if relative(&file) == "src/db/permission_cache.rs" {
+            continue;
         }
+
+        violations.extend(permission_invalidation_violations(
+            &relative(&file),
+            &read_source(&file),
+        ));
     }
 
     assert_eq!(violations, Vec::<String>::new());
+}
+
+#[test]
+fn permission_invalidation_guard_rejects_mismatched_notification_arguments() {
+    let violations = permission_invalidation_violations(
+        "src/modules/example.rs",
+        r#"
+            alternate_cache.invalidate_user(&tenant_a, user_a);
+            state.notify_permission_changed(&tenant_b, user_a);
+
+            alternate_cache.invalidate_user(&tenant_a, user_a);
+            state.notify_permission_changed(&tenant_a, user_b);
+
+            alternate_cache.invalidate_tenant(&tenant_a);
+            state.notify_all_permissions_changed(&tenant_b);
+        "#,
+    );
+
+    assert_eq!(violations.len(), 3, "violations: {violations:#?}");
 }
 
 #[test]
