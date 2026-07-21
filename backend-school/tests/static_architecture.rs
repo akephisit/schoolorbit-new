@@ -2421,6 +2421,51 @@ fn permissions_do_not_use_legacy_user_permissions_resolver() {
 }
 
 #[test]
+fn authorization_handlers_are_registered_in_the_openapi_document() {
+    let contract = read_source(manifest_dir().join("src/api_contract.rs"));
+    let handlers = [
+        "auth::handlers::login",
+        "auth::handlers::logout",
+        "auth::handlers::me",
+        "auth::handlers::get_profile",
+        "auth::handlers::update_profile",
+        "auth::handlers::change_password",
+        "handlers::roles::list_roles",
+        "handlers::roles::get_role",
+        "handlers::roles::create_role",
+        "handlers::roles::update_role",
+        "handlers::permissions::list_permissions",
+        "handlers::permissions::list_permissions_by_module",
+        "handlers::user_roles::get_user_roles",
+        "handlers::user_roles::assign_user_role",
+        "handlers::user_roles::remove_user_role",
+        "handlers::user_roles::get_user_permissions",
+        "handlers::roles::list_organization_units",
+        "handlers::roles::get_organization_unit",
+        "handlers::roles::create_organization_unit",
+        "handlers::roles::update_organization_unit",
+        "handlers::organization_permissions::get_organization_permissions",
+        "handlers::organization_permissions::update_organization_permissions",
+        "handlers::organization_delegations::list_delegatable_permissions",
+        "handlers::organization_delegations::list_delegations",
+        "handlers::organization_delegations::create_delegation",
+        "handlers::organization_delegations::revoke_delegation",
+        "handlers::organization_members::list_members",
+        "handlers::organization_members::add_member",
+        "handlers::organization_members::update_member",
+        "handlers::organization_members::remove_member",
+    ];
+
+    let missing = handlers
+        .iter()
+        .filter(|handler| !contract.contains(*handler))
+        .copied()
+        .collect::<Vec<_>>();
+
+    assert_eq!(missing, Vec::<&str>::new());
+}
+
+#[test]
 fn module_handlers_use_actor_context_instead_of_raw_permission_lists() {
     let raw_permission_lookup =
         Regex::new(r"\bget_cached_user_permissions\b|\bpermission_matches\s*\(")

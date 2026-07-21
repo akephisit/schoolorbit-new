@@ -6,16 +6,19 @@ use axum::{
 };
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
 use uuid::Uuid;
 
-use crate::api_response::{ApiErrorResponse, ApiResponse};
+use crate::api_response::{ApiErrorResponse, ApiResponse, EmptyData};
 use crate::error::AppError;
-use crate::modules::staff::services::organization_delegation_service;
+use crate::modules::staff::services::organization_delegation_service::{
+    self, DelegatablePermission,
+};
 use crate::policies::organization_access_policy;
 use crate::utils::request_context::actor_tenant_context;
 use crate::AppState;
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct DelegationItem {
     pub id: Uuid,
     pub from_user_id: Uuid,
@@ -25,12 +28,14 @@ pub struct DelegationItem {
     pub permission_id: Uuid,
     pub permission_code: String,
     pub permission_name: String,
+    #[schema(required = true)]
     pub reason: Option<String>,
     pub started_at: DateTime<Utc>,
+    #[schema(required = true)]
     pub expires_at: Option<DateTime<Utc>>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 pub struct CreateDelegationRequest {
     pub to_user_id: Uuid,
     pub permission_id: Uuid,
@@ -38,11 +43,23 @@ pub struct CreateDelegationRequest {
     pub expires_at: Option<DateTime<Utc>>,
 }
 
-#[derive(Serialize)]
-struct DelegationIdData {
-    delegation_id: Uuid,
+#[derive(Serialize, ToSchema)]
+pub struct DelegationIdData {
+    pub delegation_id: Uuid,
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/organization/units/{id}/delegatable-permissions",
+    operation_id = "listDelegatablePermissions",
+    tag = "organization",
+    params(("id" = Uuid, Path, description = "Organization unit ID")),
+    responses(
+        (status = 200, description = "Permissions this unit may delegate", body = ApiResponse<Vec<DelegatablePermission>>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Organization approval access required", body = ApiErrorResponse)
+    )
+)]
 pub async fn list_delegatable_permissions(
     State(state): State<AppState>,
     Path(organization_unit_id): Path<Uuid>,
@@ -60,6 +77,18 @@ pub async fn list_delegatable_permissions(
     Ok(Json(ApiResponse::ok(perms)).into_response())
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/organization/units/{id}/delegations",
+    operation_id = "listOrganizationDelegations",
+    tag = "organization",
+    params(("id" = Uuid, Path, description = "Organization unit ID")),
+    responses(
+        (status = 200, description = "Active organization delegations", body = ApiResponse<Vec<DelegationItem>>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Organization approval access required", body = ApiErrorResponse)
+    )
+)]
 pub async fn list_delegations(
     State(state): State<AppState>,
     Path(organization_unit_id): Path<Uuid>,
@@ -76,6 +105,20 @@ pub async fn list_delegations(
     Ok(Json(ApiResponse::ok(delegations)).into_response())
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/organization/units/{id}/delegations",
+    operation_id = "createOrganizationDelegation",
+    tag = "organization",
+    params(("id" = Uuid, Path, description = "Organization unit ID")),
+    request_body = CreateDelegationRequest,
+    responses(
+        (status = 200, description = "Delegation created", body = ApiResponse<DelegationIdData>),
+        (status = 400, description = "Invalid delegation target or permission", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Organization approval access required", body = ApiErrorResponse)
+    )
+)]
 pub async fn create_delegation(
     State(state): State<AppState>,
     Path(organization_unit_id): Path<Uuid>,
@@ -135,6 +178,19 @@ pub async fn create_delegation(
     Ok(Json(ApiResponse::ok(DelegationIdData { delegation_id: id })).into_response())
 }
 
+#[utoipa::path(
+    delete,
+    path = "/api/organization/delegations/{id}",
+    operation_id = "revokeOrganizationDelegation",
+    tag = "organization",
+    params(("id" = Uuid, Path, description = "Delegation ID")),
+    responses(
+        (status = 200, description = "Delegation revoked", body = ApiResponse<EmptyData>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Delegation ownership required", body = ApiErrorResponse),
+        (status = 404, description = "Delegation not found", body = ApiErrorResponse)
+    )
+)]
 pub async fn revoke_delegation(
     State(state): State<AppState>,
     Path(delegation_id): Path<Uuid>,

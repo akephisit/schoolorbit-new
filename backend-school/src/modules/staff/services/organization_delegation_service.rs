@@ -2,11 +2,12 @@ use crate::error::AppError;
 use chrono::{DateTime, Utc};
 use serde::Serialize;
 use sqlx::{PgPool, Row};
+use utoipa::ToSchema;
 use uuid::Uuid;
 
 use crate::modules::staff::handlers::organization_delegations::DelegationItem;
 
-#[derive(Serialize, sqlx::FromRow)]
+#[derive(Serialize, sqlx::FromRow, ToSchema)]
 pub struct DelegatablePermission {
     pub id: Uuid,
     pub code: String,
