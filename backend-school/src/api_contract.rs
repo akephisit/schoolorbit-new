@@ -71,10 +71,33 @@ mod tests {
     fn documents_current_user_operation_and_envelopes() {
         let document = school_api_value().expect("document should serialize");
         let operation = &document["paths"]["/api/auth/me"]["get"];
+        let success_response =
+            &operation["responses"]["200"]["content"]["application/json"]["schema"];
+        let error_response =
+            &operation["responses"]["401"]["content"]["application/json"]["schema"];
 
         assert_eq!(operation["operationId"], "getCurrentUser");
-        assert!(operation["responses"]["200"]["content"]["application/json"]["schema"].is_object());
-        assert!(operation["responses"]["401"]["content"]["application/json"]["schema"].is_object());
+        assert_eq!(
+            success_response["$ref"],
+            "#/components/schemas/ApiResponse_UserResponse"
+        );
+        assert_eq!(
+            error_response["$ref"],
+            "#/components/schemas/ApiErrorResponse"
+        );
+
+        let success_schema = &document["components"]["schemas"]["ApiResponse_UserResponse"];
+        assert_eq!(required(success_schema), vec!["data", "success"]);
+        assert_eq!(success_schema["properties"]["success"]["type"], "boolean");
+        assert_eq!(
+            success_schema["properties"]["data"],
+            document["components"]["schemas"]["UserResponse"]
+        );
+
+        let error_schema = &document["components"]["schemas"]["ApiErrorResponse"];
+        assert_eq!(required(error_schema), vec!["error", "success"]);
+        assert_eq!(error_schema["properties"]["success"]["type"], "boolean");
+        assert_eq!(error_schema["properties"]["error"]["type"], "string");
     }
 
     #[test]

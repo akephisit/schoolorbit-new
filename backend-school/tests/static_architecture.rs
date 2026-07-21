@@ -1833,10 +1833,12 @@ fn module_service_logic_has_focused_unit_tests() {
 
 fn mask_export_openapi_cli_block(source: &str) -> String {
     let marker = r#"if command_args.first().map(String::as_str) == Some("export-openapi")"#;
-    let Some(start) = source.find(marker) else {
+    let lexical = lexical_mask(source, false);
+    let Some(start) = source.match_indices(marker).find_map(|(start, _)| {
+        (!lexical.comments[start] && !lexical.literals[start]).then_some(start)
+    }) else {
         return source.to_owned();
     };
-    let lexical = lexical_mask(source, false);
     let opening = lexical.structural[start..]
         .find('{')
         .map(|offset| start + offset)
@@ -1864,11 +1866,13 @@ fn structured_logging_violations(file_name: &str, source: &str) -> Vec<String> {
     } else {
         source.to_owned()
     };
-    let source = strip_comments(&source);
+    let structural = lexical_mask(&source, false).structural;
     let mut violations = Vec::new();
 
     for pattern in ["println!", "eprintln!"] {
-        if source.contains(pattern) {
+        let invocation = Regex::new(&format!(r"\b{}\s*\(", regex::escape(pattern)))
+            .expect("plain output macro pattern should compile");
+        if invocation.is_match(&structural) {
             violations.push(format!(
                 "{file_name}: use tracing macros instead of {pattern} in runtime code"
             ));
@@ -2561,6 +2565,28 @@ fn structured_logging_guard_scopes_the_main_cli_exception() {
             "src/main.rs: use tracing macros instead of println! in runtime code".to_string(),
             "src/main.rs: use tracing macros instead of eprintln! in runtime code".to_string(),
         ]
+    );
+}
+
+#[test]
+fn structured_logging_guard_ignores_cli_marker_decoys() {
+    let source = r##"
+        async fn main() {
+            // if command_args.first().map(String::as_str) == Some("export-openapi") {
+            let _decoy = r#"if command_args.first().map(String::as_str) == Some("export-openapi") {"#;
+            eprintln!("runtime stderr must remain visible to the guard");
+
+            let command_args = env::args().skip(1).collect::<Vec<_>>();
+            if command_args.first().map(String::as_str) == Some("export-openapi") {
+                eprintln!("allowed CLI diagnostic");
+                return;
+            }
+        }
+    "##;
+
+    assert_eq!(
+        structured_logging_violations("src/main.rs", source),
+        vec!["src/main.rs: use tracing macros instead of eprintln! in runtime code".to_string()]
     );
 }
 

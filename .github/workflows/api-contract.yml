@@ -10,7 +10,9 @@ on:
       - "backend-school/Cargo.lock"
       - "backend-school/src/api_contract.rs"
       - "backend-school/src/api_response.rs"
+      - "backend-school/src/main.rs"
       - "backend-school/src/modules/**"
+      - "backend-school/tests/static_architecture.rs"
       - "frontend-school/src/lib/api/**"
       - "frontend-school/tests/static/api-response-contract.test.mjs"
       - "frontend-school/package.json"
@@ -30,7 +32,9 @@ on:
       - "backend-school/Cargo.lock"
       - "backend-school/src/api_contract.rs"
       - "backend-school/src/api_response.rs"
+      - "backend-school/src/main.rs"
       - "backend-school/src/modules/**"
+      - "backend-school/tests/static_architecture.rs"
       - "frontend-school/src/lib/api/**"
       - "frontend-school/tests/static/api-response-contract.test.mjs"
       - "frontend-school/package.json"
@@ -86,6 +90,16 @@ jobs:
       - name: Test backend API contract
         working-directory: backend-school
         run: cargo test api_contract::tests --bin backend-school
+
+      - name: Test offline OpenAPI export
+        working-directory: backend-school
+        run: |
+          env -i PATH="$PATH" HOME="$HOME" cargo run --quiet --bin backend-school -- export-openapi > /tmp/school-api.json
+          node -e "JSON.parse(require('node:fs').readFileSync('/tmp/school-api.json', 'utf8'))"
+
+      - name: Test exporter logging boundary
+        working-directory: backend-school
+        run: cargo test structured_logging --test static_architecture
 
       - name: Check backend
         working-directory: backend-school

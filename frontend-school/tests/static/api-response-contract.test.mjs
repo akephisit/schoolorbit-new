@@ -20,6 +20,20 @@ async function listRepoFiles(relativeDir, predicate) {
 		.sort();
 }
 
+function extractObjectBlock(source, marker) {
+	const markerStart = source.indexOf(marker);
+	assert.notEqual(markerStart, -1, `missing generated block marker: ${marker}`);
+	const opening = source.indexOf('{', markerStart + marker.length);
+	assert.notEqual(opening, -1, `missing opening brace after: ${marker}`);
+	let depth = 0;
+	for (let index = opening; index < source.length; index += 1) {
+		if (source[index] === '{') depth += 1;
+		if (source[index] === '}') depth -= 1;
+		if (depth === 0) return source.slice(opening, index + 1);
+	}
+	assert.fail(`unterminated generated block: ${marker}`);
+}
+
 test('project rules require a single JSON API response envelope', async () => {
 	const source = await readRepoFile('.rules');
 
@@ -75,6 +89,23 @@ test('frontend auth consumes the shared envelope through apiClient', async () =>
 	assert.match(source, /\.data\?\.user/);
 });
 
+test('generated current-user schemas keep concrete envelope and payload types', async () => {
+	const generated = await readRepoFile('frontend-school/src/lib/api/generated/school-api.ts');
+	const userResponse = extractObjectBlock(generated, 'UserResponse:');
+	const successEnvelope = extractObjectBlock(generated, 'ApiResponse_UserResponse:');
+
+	for (const block of [userResponse, successEnvelope]) {
+		assert.doesNotMatch(block, /\b(?:any|unknown)\b/);
+	}
+	assert.match(successEnvelope, /data:\s*\{/);
+	assert.match(successEnvelope, /success:\s*boolean/);
+	assert.match(
+		generated,
+		/'application\/json':\s*components\['schemas'\]\['ApiResponse_UserResponse'\]/
+	);
+	assert.match(generated, /'application\/json':\s*components\['schemas'\]\['ApiErrorResponse'\]/);
+});
+
 test('project rules document generated API contract ownership', async () => {
 	const rules = await readRepoFile('.rules');
 	const testing = await readRepoFile('docs/TESTING.md');
@@ -86,6 +117,16 @@ test('project rules document generated API contract ownership', async () => {
 		assert.match(source, /contracts\/openapi\/school-api\.json/);
 		assert.match(source, /generated files?[^\n]*do not edit|do not edit[^\n]*generated files?/i);
 	}
+});
+
+test('API contract CI protects the offline exporter boundary', async () => {
+	const workflow = await readRepoFile('.github/workflows/api-contract.yml');
+
+	assert.match(workflow, /backend-school\/src\/main\.rs/);
+	assert.match(workflow, /backend-school\/tests\/static_architecture\.rs/);
+	assert.match(workflow, /cargo test structured_logging --test static_architecture/);
+	assert.match(workflow, /env -i PATH="\$PATH" HOME="\$HOME"[\s\S]*export-openapi/);
+	assert.match(workflow, /JSON\.parse/);
 });
 
 test('user role assignment API contract stays aligned across backend and frontend', async () => {

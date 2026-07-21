@@ -1,5 +1,13 @@
 import { execFile } from "node:child_process";
-import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import {
+  mkdtemp,
+  mkdir,
+  readFile,
+  rename,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -116,6 +124,82 @@ async function defaultGenerateSchoolTypes(repositoryRoot, document) {
   }
 }
 
+export async function commitGeneratedOutputs(
+  outputs,
+  { renameFile = rename } = {},
+) {
+  const transactionId = randomUUID();
+  const entries = outputs.map(([filePath, output], index) => ({
+    filePath,
+    output,
+    stagedPath: `${filePath}.api-contract-${transactionId}-${index}.tmp`,
+    backupPath: `${filePath}.api-contract-${transactionId}-${index}.bak`,
+    hasStage: false,
+    hasBackup: false,
+    installed: false,
+  }));
+
+  try {
+    for (const entry of entries) {
+      await mkdir(path.dirname(entry.filePath), { recursive: true });
+      entry.hasStage = true;
+      await writeFile(entry.stagedPath, entry.output, { flag: "wx" });
+    }
+
+    for (const entry of entries) {
+      if ((await readIfPresent(entry.filePath)) !== null) {
+        await renameFile(entry.filePath, entry.backupPath);
+        entry.hasBackup = true;
+      }
+
+      await renameFile(entry.stagedPath, entry.filePath);
+      entry.hasStage = false;
+      entry.installed = true;
+    }
+  } catch (error) {
+    const rollbackErrors = [];
+    for (const entry of entries.toReversed()) {
+      if (entry.installed) {
+        try {
+          await rm(entry.filePath, { force: true });
+          entry.installed = false;
+        } catch (rollbackError) {
+          rollbackErrors.push(rollbackError);
+        }
+      }
+      if (entry.hasBackup) {
+        try {
+          await renameFile(entry.backupPath, entry.filePath);
+          entry.hasBackup = false;
+        } catch (rollbackError) {
+          rollbackErrors.push(rollbackError);
+        }
+      }
+      if (entry.hasStage) {
+        try {
+          await rm(entry.stagedPath, { force: true });
+          entry.hasStage = false;
+        } catch (rollbackError) {
+          rollbackErrors.push(rollbackError);
+        }
+      }
+    }
+
+    if (rollbackErrors.length > 0) {
+      throw new AggregateError(
+        [error, ...rollbackErrors],
+        "API contract output replacement and rollback failed",
+      );
+    }
+    throw error;
+  }
+
+  for (const entry of entries) {
+    if (entry.hasBackup) await rm(entry.backupPath, { force: true });
+    if (entry.hasStage) await rm(entry.stagedPath, { force: true });
+  }
+}
+
 export async function generateApiContracts({
   repositoryRoot = defaultRepositoryRoot,
   check = false,
@@ -155,12 +239,7 @@ export async function generateApiContracts({
     return;
   }
 
-  for (const [filePath] of outputs) {
-    await mkdir(path.dirname(filePath), { recursive: true });
-  }
-  for (const [filePath, output] of outputs) {
-    await writeFile(filePath, output);
-  }
+  await commitGeneratedOutputs(outputs);
 }
 
 const invokedDirectly =
