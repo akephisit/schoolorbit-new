@@ -444,7 +444,7 @@ test('backend auth middleware and login validation errors use the response envel
 
 test('permission registry covers backend and frontend permission references', async () => {
 	const registrySource = await readFile(
-		path.join(repoRoot, 'backend-school/src/permissions/registry.rs'),
+		path.join(repoRoot, 'backend-school/src/permissions/registry_generated.rs'),
 		'utf8'
 	);
 	const { constants, allPermissionConstantNames, allPermissionCodes, modules } =
@@ -464,7 +464,7 @@ test('permission registry covers backend and frontend permission references', as
 	}
 
 	const frontendRegistrySource = await readFile(
-		path.join(repoRoot, 'frontend-school/src/lib/permissions/registry.ts'),
+		path.join(repoRoot, 'frontend-school/src/lib/permissions/registry.generated.ts'),
 		'utf8'
 	);
 	const frontendPermissions = extractConstObjectValues(frontendRegistrySource, 'PERMISSIONS');
@@ -527,18 +527,18 @@ test('permission registry covers backend and frontend permission references', as
 	assert.deepEqual(violations, []);
 });
 
-test('permission contract preserves legacy registries exactly', async () => {
+test('permission contract matches generated registries exactly', async () => {
 	const contract = JSON.parse(
 		await readFile(path.join(repoRoot, 'contracts/permissions.json'), 'utf8')
 	);
 	const contractData = contractProjection(contract);
 	const backendSource = await readFile(
-		path.join(repoRoot, 'backend-school/src/permissions/registry.rs'),
+		path.join(repoRoot, 'backend-school/src/permissions/registry_generated.rs'),
 		'utf8'
 	);
 	const backendData = extractPermissionRegistry(backendSource);
 	const frontendSource = await readFile(
-		path.join(repoRoot, 'frontend-school/src/lib/permissions/registry.ts'),
+		path.join(repoRoot, 'frontend-school/src/lib/permissions/registry.generated.ts'),
 		'utf8'
 	);
 	const frontendPermissions = extractConstObjectValues(frontendSource, 'PERMISSIONS');
@@ -559,13 +559,31 @@ test('permission contract preserves legacy registries exactly', async () => {
 	assert.match(frontendSource, /export const WILDCARD_PERMISSION = ['"]\*['"] as const/);
 });
 
-test('daily teaching overview permission is registered across backend and frontend', async () => {
-	const backendRegistry = await readFile(
+test('permission registry wrappers use generated contract', async () => {
+	const backendWrapper = await readFile(
 		path.join(repoRoot, 'backend-school/src/permissions/registry.rs'),
 		'utf8'
 	);
-	const frontendRegistry = await readFile(
+	const frontendWrapper = await readFile(
 		path.join(repoRoot, 'frontend-school/src/lib/permissions/registry.ts'),
+		'utf8'
+	);
+
+	assert.match(backendWrapper, /include!\("registry_generated\.rs"\)/);
+	assert.doesNotMatch(backendWrapper, /pub mod codes\s*\{/);
+	assert.doesNotMatch(backendWrapper, /pub const ALL_PERMISSIONS/);
+	assert.match(frontendWrapper, /from ['"]\.\/registry\.generated['"]/);
+	assert.doesNotMatch(frontendWrapper, /export const PERMISSIONS\s*=/);
+	assert.doesNotMatch(frontendWrapper, /export const PERMISSION_MODULES\s*=/);
+});
+
+test('daily teaching overview permission is registered across backend and frontend', async () => {
+	const backendRegistry = await readFile(
+		path.join(repoRoot, 'backend-school/src/permissions/registry_generated.rs'),
+		'utf8'
+	);
+	const frontendRegistry = await readFile(
+		path.join(repoRoot, 'frontend-school/src/lib/permissions/registry.generated.ts'),
 		'utf8'
 	);
 	const migration = await readFile(
@@ -598,7 +616,7 @@ test('frontend app route metadata uses permission registry constants', async () 
 
 test('frontend permission registry exposes module rollout constants', async () => {
 	const frontendRegistrySource = await readFile(
-		path.join(repoRoot, 'frontend-school/src/lib/permissions/registry.ts'),
+		path.join(repoRoot, 'frontend-school/src/lib/permissions/registry.generated.ts'),
 		'utf8'
 	);
 	const frontendPermissions = extractConstObjectValues(frontendRegistrySource, 'PERMISSIONS');

@@ -107,7 +107,7 @@ test('organization member picker is a searchable combobox with browsable initial
 
 test('organization delegation tab follows backend school-wide authorization policy', async () => {
 	const source = await readProjectFile('src/routes/(app)/staff/organization/[id]/+page.svelte');
-	const registry = await readProjectFile('src/lib/permissions/registry.ts');
+	const registry = await readProjectFile('src/lib/permissions/registry.generated.ts');
 
 	assert.match(registry, /ROLES_UPDATE_ALL:\s*['"]roles\.update\.all['"]/);
 	assert.match(source, /canManageDelegations/);

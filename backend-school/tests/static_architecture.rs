@@ -797,11 +797,12 @@ fn effective_permissions_do_not_inherit_child_organization_grants() {
 
 #[test]
 fn academic_curriculum_tree_scope_is_explicitly_registered() {
-    let backend_registry = read_source(manifest_dir().join("src/permissions/registry.rs"));
+    let backend_registry =
+        read_source(manifest_dir().join("src/permissions/registry_generated.rs"));
     let frontend_registry = read_source(
         repo_root()
             .join("frontend-school")
-            .join("src/lib/permissions/registry.ts"),
+            .join("src/lib/permissions/registry.generated.ts"),
     );
     let migration_path = active_baseline_migration_path();
     let migration = read_source(&migration_path);
@@ -870,7 +871,7 @@ fn academic_assessment_supports_subject_group_read_scope() {
         manifest_dir().join("src/modules/academic/models/assessment.rs"),
     ));
     let backend_registry = strip_comments(&read_source(
-        manifest_dir().join("src/permissions/registry.rs"),
+        manifest_dir().join("src/permissions/registry_generated.rs"),
     ));
 
     for source in [&backend_registry, &migration] {
@@ -1146,7 +1147,7 @@ fn daily_teaching_overview_endpoint_is_read_only_and_pii_safe() {
     let service = strip_comments(&read_source(
         manifest_dir().join("src/modules/academic/services/daily_teaching_service.rs"),
     ));
-    let registry = read_source(manifest_dir().join("src/permissions/registry.rs"));
+    let registry = read_source(manifest_dir().join("src/permissions/registry_generated.rs"));
     let daily_handler = handler
         .split("pub async fn daily_teaching_overview")
         .nth(1)
@@ -1541,11 +1542,12 @@ fn student_profile_access_uses_resource_policy_and_separate_pii_scope() {
     let student_service = strip_comments(&read_source(
         manifest_dir().join("src/modules/students/services.rs"),
     ));
-    let backend_registry = read_source(manifest_dir().join("src/permissions/registry.rs"));
+    let backend_registry =
+        read_source(manifest_dir().join("src/permissions/registry_generated.rs"));
     let frontend_registry = read_source(
         repo_root()
             .join("frontend-school")
-            .join("src/lib/permissions/registry.ts"),
+            .join("src/lib/permissions/registry.generated.ts"),
     );
 
     assert!(policies_root.contains("pub mod student_access_policy;"));
@@ -2207,8 +2209,17 @@ fn permission_checks_use_registry_constants() {
 }
 
 #[test]
+fn permission_registry_wraps_generated_contract() {
+    let wrapper = read_source(manifest_dir().join("src/permissions/registry.rs"));
+
+    assert!(wrapper.contains("include!(\"registry_generated.rs\")"));
+    assert!(!wrapper.contains("pub const STAFF_READ_ALL"));
+    assert!(!wrapper.contains("pub const ALL_PERMISSIONS"));
+}
+
+#[test]
 fn permission_registry_codes_match_declared_module_action_scope() {
-    let registry = read_source(manifest_dir().join("src/permissions/registry.rs"));
+    let registry = read_source(manifest_dir().join("src/permissions/registry_generated.rs"));
     let permission_const_pattern =
         Regex::new(r#"pub const (?P<constant>[A-Z0-9_]+):\s*&str\s*=\s*"(?P<code>[^"]+)";"#)
             .expect("valid regex");
@@ -2274,7 +2285,7 @@ fn permission_registry_codes_match_declared_module_action_scope() {
 
 #[test]
 fn permission_registry_uses_canonical_action_and_scope_vocabulary() {
-    let registry = read_source(manifest_dir().join("src/permissions/registry.rs"));
+    let registry = read_source(manifest_dir().join("src/permissions/registry_generated.rs"));
     let permission_def_pattern = Regex::new(
         r#"(?s)PermissionDef\s*\{.*?code:\s*codes::(?P<constant>[A-Z0-9_]+).*?action:\s*"(?P<action>[^"]+)".*?scope:\s*"(?P<scope>[^"]+)""#,
     )
@@ -2915,7 +2926,7 @@ fn work_change_sse_supports_work_item_and_window_refresh_signals() {
 
 #[test]
 fn teaching_supervision_registry_and_module_are_registered() {
-    let registry = read_source(manifest_dir().join("src/permissions/registry.rs"));
+    let registry = read_source(manifest_dir().join("src/permissions/registry_generated.rs"));
     let modules = read_source(manifest_dir().join("src/modules.rs"));
 
     for expected in [
@@ -3370,11 +3381,12 @@ fn course_instructor_batch_endpoint_accepts_post_body() {
 fn calendar_schema_routes_and_permissions_are_registered() {
     let migration = read_source(manifest_dir().join("migrations/018_school_calendar.sql"));
     let tags_migration = read_source(manifest_dir().join("migrations/026_calendar_event_tags.sql"));
-    let backend_registry = read_source(manifest_dir().join("src/permissions/registry.rs"));
+    let backend_registry =
+        read_source(manifest_dir().join("src/permissions/registry_generated.rs"));
     let frontend_registry = read_source(
         repo_root()
             .join("frontend-school")
-            .join("src/lib/permissions/registry.ts"),
+            .join("src/lib/permissions/registry.generated.ts"),
     );
     let modules_root = read_source(manifest_dir().join("src/modules.rs"));
     let main_source = read_source(manifest_dir().join("src/main.rs"));

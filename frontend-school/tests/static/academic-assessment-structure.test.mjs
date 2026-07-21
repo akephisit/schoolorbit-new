@@ -17,7 +17,7 @@ async function readRepoFile(relativePath) {
 }
 
 test('academic assessment permissions are registered for teachers and academic office', async () => {
-	const registry = await readProjectFile('src/lib/permissions/registry.ts');
+	const registry = await readProjectFile('src/lib/permissions/registry.generated.ts');
 
 	assert.match(registry, /ACADEMIC_ASSESSMENT:\s*['"]academic_assessment['"]/);
 	assert.match(
@@ -196,7 +196,9 @@ test('academic assessment exposes subject-group read access while keeping row ed
 	const service = await readRepoFile(
 		'backend-school/src/modules/academic/services/assessment_service.rs'
 	);
-	const backendRegistry = await readRepoFile('backend-school/src/permissions/registry.rs');
+	const backendRegistry = await readRepoFile(
+		'backend-school/src/permissions/registry_generated.rs'
+	);
 	const migration = await readRepoFile(
 		'backend-school/migrations/015_academic_assessment_subject_group_read.sql'
 	);

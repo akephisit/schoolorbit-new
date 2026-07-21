@@ -179,7 +179,7 @@ test('calendar event dialog builds backend-safe event payloads', async () => {
 });
 
 test('calendar permission registry and routes are wired', async () => {
-	const registry = await readProjectFile('src/lib/permissions/registry.ts');
+	const registry = await readProjectFile('src/lib/permissions/registry.generated.ts');
 	const staffPage = await readProjectFile('src/routes/(app)/staff/calendar/+page.svelte');
 	const staffRoute = await readProjectFile('src/routes/(app)/staff/calendar/+page.ts');
 	const studentRoute = await readProjectFile('src/routes/(app)/student/calendar/+page.ts');
