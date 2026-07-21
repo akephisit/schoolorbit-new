@@ -206,10 +206,10 @@
 	function sortedAssessmentExportPlans(sourcePlans: AssessmentPlanSummary[]) {
 		return [...sourcePlans].sort((left, right) => {
 			return (
-				compareNullableNumber(left.subjectGroupDisplayOrder, right.subjectGroupDisplayOrder) ||
-				compareExportText(left.subjectGroupName, right.subjectGroupName) ||
 				compareNullableNumber(left.gradeLevelSort, right.gradeLevelSort) ||
 				compareNullableNumber(left.gradeYear, right.gradeYear) ||
+				compareNullableNumber(left.subjectGroupDisplayOrder, right.subjectGroupDisplayOrder) ||
+				compareExportText(left.subjectGroupName, right.subjectGroupName) ||
 				compareExportText(left.classroomRoomNumber, right.classroomRoomNumber) ||
 				compareExportText(left.subjectCode, right.subjectCode) ||
 				compareExportText(courseTitle(left), courseTitle(right))

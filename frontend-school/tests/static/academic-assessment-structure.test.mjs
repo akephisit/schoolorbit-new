@@ -379,7 +379,7 @@ test('academic assessment plans are grouped by subject and capture exam duration
 	assert.doesNotMatch(page, /\{#each plans as plan \(plan\.classroomCourseId\)\}/);
 });
 
-test('academic assessment export sorts by subject group then grade level', async () => {
+test('academic assessment export sorts by grade level before subject group', async () => {
 	const api = await readProjectFile('src/lib/api/academicAssessments.ts');
 	const page = await readProjectFile('src/routes/(app)/staff/academic/assessments/+page.svelte');
 	const model = await readRepoFile('backend-school/src/modules/academic/models/assessment.rs');
@@ -412,4 +412,26 @@ test('academic assessment export sorts by subject group then grade level', async
 	assert.match(page, /const rows = sortedAssessmentExportPlans\(plans\)/);
 	assert.match(page, /กลุ่มสาระ:\s*plan\.subjectGroupName/);
 	assert.match(page, /ระดับชั้น:\s*gradeLevelLabel\(plan\)/);
+
+	const exportSortHelper = page.slice(
+		page.indexOf('function sortedAssessmentExportPlans'),
+		page.indexOf('function assessmentPlanKey')
+	);
+	const gradeLevelSortIndex = exportSortHelper.indexOf(
+		'compareNullableNumber(left.gradeLevelSort, right.gradeLevelSort)'
+	);
+	const gradeYearIndex = exportSortHelper.indexOf(
+		'compareNullableNumber(left.gradeYear, right.gradeYear)'
+	);
+	const subjectGroupOrderIndex = exportSortHelper.indexOf(
+		'compareNullableNumber(left.subjectGroupDisplayOrder, right.subjectGroupDisplayOrder)'
+	);
+	const subjectGroupNameIndex = exportSortHelper.indexOf(
+		'compareExportText(left.subjectGroupName, right.subjectGroupName)'
+	);
+
+	assert.ok(gradeLevelSortIndex >= 0);
+	assert.ok(gradeYearIndex > gradeLevelSortIndex);
+	assert.ok(subjectGroupOrderIndex > gradeYearIndex);
+	assert.ok(subjectGroupNameIndex > subjectGroupOrderIndex);
 });
