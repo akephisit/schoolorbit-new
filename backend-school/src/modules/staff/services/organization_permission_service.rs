@@ -4,11 +4,13 @@ use serde::Serialize;
 use std::collections::HashSet;
 
 use sqlx::{PgPool, Row};
+use utoipa::ToSchema;
 use uuid::Uuid;
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct OrganizationPermissionGrant {
     pub permission_id: Uuid,
+    #[schema(required = true)]
     pub position_code: Option<String>,
 }
 

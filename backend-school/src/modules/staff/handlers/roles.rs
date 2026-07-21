@@ -143,6 +143,17 @@ pub async fn update_role(
 // Organization Units
 // ============================================
 
+#[utoipa::path(
+    get,
+    path = "/api/organization/units",
+    operation_id = "listOrganizationUnits",
+    tag = "organization",
+    responses(
+        (status = 200, description = "Organization units", body = ApiResponse<Vec<OrganizationUnit>>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Permission denied", body = ApiErrorResponse)
+    )
+)]
 pub async fn list_organization_units(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -156,6 +167,19 @@ pub async fn list_organization_units(
     Ok(Json(ApiResponse::ok(units)).into_response())
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/organization/units/{id}",
+    operation_id = "getOrganizationUnit",
+    tag = "organization",
+    params(("id" = Uuid, Path, description = "Organization unit ID")),
+    responses(
+        (status = 200, description = "Organization unit", body = ApiResponse<OrganizationUnit>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Organization unit not found", body = ApiErrorResponse)
+    )
+)]
 pub async fn get_organization_unit(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -170,6 +194,20 @@ pub async fn get_organization_unit(
     Ok(Json(ApiResponse::ok(unit)).into_response())
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/organization/units",
+    operation_id = "createOrganizationUnit",
+    tag = "organization",
+    request_body = CreateOrganizationUnitRequest,
+    responses(
+        (status = 201, description = "Organization unit created", body = ApiResponse<UuidIdData>),
+        (status = 400, description = "Invalid organization unit", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Permission denied", body = ApiErrorResponse),
+        (status = 409, description = "Organization unit code conflict", body = ApiErrorResponse)
+    )
+)]
 pub async fn create_organization_unit(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -191,6 +229,21 @@ pub async fn create_organization_unit(
         .into_response())
 }
 
+#[utoipa::path(
+    put,
+    path = "/api/organization/units/{id}",
+    operation_id = "updateOrganizationUnit",
+    tag = "organization",
+    params(("id" = Uuid, Path, description = "Organization unit ID")),
+    request_body = UpdateOrganizationUnitRequest,
+    responses(
+        (status = 200, description = "Organization unit updated", body = ApiResponse<EmptyData>),
+        (status = 400, description = "Invalid organization unit", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Organization unit not found", body = ApiErrorResponse)
+    )
+)]
 pub async fn update_organization_unit(
     State(state): State<AppState>,
     headers: HeaderMap,

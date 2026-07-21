@@ -1,7 +1,9 @@
-use crate::api_response::ApiResponse;
+use crate::api_response::{ApiErrorResponse, ApiResponse, EmptyData};
 use crate::error::AppError;
 use crate::modules::staff::models::UpdateOrganizationPermissionsRequest;
-use crate::modules::staff::services::organization_permission_service;
+use crate::modules::staff::services::organization_permission_service::{
+    self, OrganizationPermissionGrant,
+};
 use crate::permissions::registry::codes;
 use crate::utils::request_context::actor_tenant_context;
 use crate::AppState;
@@ -15,6 +17,18 @@ use axum::{
 use uuid::Uuid;
 
 // GET /api/organization/units/{id}/permissions
+#[utoipa::path(
+    get,
+    path = "/api/organization/units/{id}/permissions",
+    operation_id = "getOrganizationPermissions",
+    tag = "organization",
+    params(("id" = Uuid, Path, description = "Organization unit ID")),
+    responses(
+        (status = 200, description = "Organization permission grants", body = ApiResponse<Vec<OrganizationPermissionGrant>>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Permission denied", body = ApiErrorResponse)
+    )
+)]
 pub async fn get_organization_permissions(
     State(state): State<AppState>,
     Path(organization_unit_id): Path<Uuid>,
@@ -35,6 +49,21 @@ pub async fn get_organization_permissions(
 }
 
 // PUT /api/organization/units/{id}/permissions
+#[utoipa::path(
+    put,
+    path = "/api/organization/units/{id}/permissions",
+    operation_id = "updateOrganizationPermissions",
+    tag = "organization",
+    params(("id" = Uuid, Path, description = "Organization unit ID")),
+    request_body = UpdateOrganizationPermissionsRequest,
+    responses(
+        (status = 200, description = "Organization permission grants replaced", body = ApiResponse<EmptyData>),
+        (status = 400, description = "Invalid permission grants", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Organization unit not found", body = ApiErrorResponse)
+    )
+)]
 pub async fn update_organization_permissions(
     State(state): State<AppState>,
     Path(organization_unit_id): Path<Uuid>,

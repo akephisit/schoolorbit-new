@@ -73,27 +73,34 @@ pub struct UserRoleAssignmentResponse {
 // Organization Unit (หน่วยงาน/กลุ่ม/ฝ่าย/กลุ่มสาระ)
 // ===================================================================
 
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow, ToSchema)]
 pub struct OrganizationUnit {
     pub id: Uuid,
     pub code: String,
     pub name: String,
+    #[schema(required = true)]
     pub name_en: Option<String>,
+    #[schema(required = true)]
     pub description: Option<String>,
+    #[schema(required = true)]
     pub parent_unit_id: Option<Uuid>,
+    #[schema(required = true)]
     pub phone: Option<String>,
+    #[schema(required = true)]
     pub email: Option<String>,
+    #[schema(required = true)]
     pub location: Option<String>,
     pub is_active: bool,
     pub display_order: i32,
     pub category: String,
     pub unit_type: String,
+    #[schema(required = true)]
     pub subject_group_id: Option<Uuid>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct CreateOrganizationUnitRequest {
     pub code: String,
     pub name: String,
@@ -108,7 +115,7 @@ pub struct CreateOrganizationUnitRequest {
     pub subject_group_id: Option<Uuid>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct UpdateOrganizationUnitRequest {
     pub name: Option<String>,
     pub name_en: Option<String>,
@@ -356,13 +363,13 @@ pub struct Permission {
 // ===================================================================
 
 // ===================================================================
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct OrganizationPermissionGrantInput {
     pub permission_id: Uuid,
     pub position_code: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct UpdateOrganizationPermissionsRequest {
     pub grants: Vec<OrganizationPermissionGrantInput>,
 }

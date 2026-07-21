@@ -4,9 +4,12 @@ use crate::modules::auth::models::{
     UserResponse,
 };
 use crate::modules::staff::models::{
-    AssignRoleRequest, CreateRoleRequest, Permission, Role, UpdateRoleRequest,
+    AssignRoleRequest, CreateOrganizationUnitRequest, CreateRoleRequest,
+    OrganizationPermissionGrantInput, OrganizationUnit, Permission, Role,
+    UpdateOrganizationPermissionsRequest, UpdateOrganizationUnitRequest, UpdateRoleRequest,
     UserRoleAssignmentResponse,
 };
+use crate::modules::staff::services::organization_permission_service::OrganizationPermissionGrant;
 use serde_json::Value;
 use utoipa::OpenApi;
 
@@ -28,7 +31,13 @@ use utoipa::OpenApi;
         crate::modules::staff::handlers::user_roles::get_user_roles,
         crate::modules::staff::handlers::user_roles::assign_user_role,
         crate::modules::staff::handlers::user_roles::remove_user_role,
-        crate::modules::staff::handlers::user_roles::get_user_permissions
+        crate::modules::staff::handlers::user_roles::get_user_permissions,
+        crate::modules::staff::handlers::roles::list_organization_units,
+        crate::modules::staff::handlers::roles::get_organization_unit,
+        crate::modules::staff::handlers::roles::create_organization_unit,
+        crate::modules::staff::handlers::roles::update_organization_unit,
+        crate::modules::staff::handlers::organization_permissions::get_organization_permissions,
+        crate::modules::staff::handlers::organization_permissions::update_organization_permissions
     ),
     components(schemas(
         UserResponse,
@@ -56,12 +65,22 @@ use utoipa::OpenApi;
         ApiResponse<std::collections::HashMap<String, Vec<Permission>>>,
         ApiResponse<Vec<UserRoleAssignmentResponse>>,
         ApiResponse<Vec<String>>,
+        OrganizationUnit,
+        CreateOrganizationUnitRequest,
+        UpdateOrganizationUnitRequest,
+        OrganizationPermissionGrantInput,
+        UpdateOrganizationPermissionsRequest,
+        OrganizationPermissionGrant,
+        ApiResponse<Vec<OrganizationUnit>>,
+        ApiResponse<OrganizationUnit>,
+        ApiResponse<Vec<OrganizationPermissionGrant>>,
         ApiErrorResponse
     )),
     tags(
         (name = "auth", description = "Authentication and current-user operations"),
         (name = "roles", description = "Role assignment and role administration"),
-        (name = "permissions", description = "Permission discovery and effective permissions")
+        (name = "permissions", description = "Permission discovery and effective permissions"),
+        (name = "organization", description = "Organization units and scoped access")
     )
 )]
 struct SchoolApiDoc;
@@ -354,5 +373,59 @@ mod tests {
                 ["application/json"]["schema"]
                 .is_object()
         );
+    }
+
+    #[test]
+    fn documents_organization_unit_and_permission_grant_operations() {
+        let document = school_api_value().expect("document should serialize");
+        assert_operations(
+            &document,
+            &[
+                ("/api/organization/units", "get", "listOrganizationUnits"),
+                ("/api/organization/units/{id}", "get", "getOrganizationUnit"),
+                ("/api/organization/units", "post", "createOrganizationUnit"),
+                (
+                    "/api/organization/units/{id}",
+                    "put",
+                    "updateOrganizationUnit",
+                ),
+                (
+                    "/api/organization/units/{id}/permissions",
+                    "get",
+                    "getOrganizationPermissions",
+                ),
+                (
+                    "/api/organization/units/{id}/permissions",
+                    "put",
+                    "updateOrganizationPermissions",
+                ),
+            ],
+        );
+
+        assert!(document["paths"]["/api/organization/units/{id}"]["delete"].is_null());
+        assert_eq!(
+            document["paths"]["/api/organization/units"]["post"]["responses"]["201"]["content"]
+                ["application/json"]["schema"]["$ref"],
+            "#/components/schemas/ApiResponse_UuidIdData"
+        );
+
+        let schemas = &document["components"]["schemas"];
+        let unit = &schemas["OrganizationUnit"];
+        for field in [
+            "name_en",
+            "description",
+            "parent_unit_id",
+            "phone",
+            "email",
+            "location",
+            "subject_group_id",
+        ] {
+            assert!(required(unit).contains(&field));
+            assert!(contains_null(&unit["properties"][field]));
+        }
+
+        let grant = &schemas["OrganizationPermissionGrant"];
+        assert!(required(grant).contains(&"position_code"));
+        assert!(contains_null(&grant["properties"]["position_code"]));
     }
 }
