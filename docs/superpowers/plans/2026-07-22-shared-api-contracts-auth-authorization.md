@@ -49,11 +49,11 @@ Two frontend-only calls are explicitly outside this contract because no backend 
 
 **Interfaces:**
 - Consumes: `ApiResponse<T>`, `ApiErrorResponse`, `EmptyData`, and `IdData<T>`.
-- Produces: `ToSchema` implementations for empty and identifier envelopes plus reusable test helpers for later operation inventory checks.
+- Produces: `ToSchema` implementations for empty responses and the concrete `UuidIdData` contract schema plus reusable test helpers for later operation inventory checks.
 
 - [ ] **Step 1: Write failing shared-envelope tests**
 
-Add exact schema assertions for `ApiResponse_EmptyData` and `ApiResponse_IdData_Uuid`. Add reusable helpers that accept an expected `(path, method, operationId)` slice and assert each operation exists.
+Add exact schema assertions for `ApiResponse_EmptyData` and `ApiResponse_UuidIdData`. Add reusable helpers that accept an expected `(path, method, operationId)` slice and assert each operation exists.
 
 - [ ] **Step 2: Prove the tests fail before implementation**
 
@@ -63,15 +63,15 @@ Expected: FAIL because the empty/id component schemas are absent.
 
 - [ ] **Step 3: Make envelope DTOs schema-capable**
 
-Change the existing derives without changing serialization:
+Change the empty derive and add a concrete documentation DTO without changing runtime serialization:
 
 ```rust
 #[derive(Debug, Default, Serialize, ToSchema)]
 pub struct EmptyData {}
 
 #[derive(Debug, Serialize, ToSchema)]
-pub struct IdData<T> {
-    pub id: T,
+pub struct UuidIdData {
+    pub id: uuid::Uuid,
 }
 ```
 
@@ -155,7 +155,7 @@ git commit -m "feat(api): export auth contracts"
 
 - [ ] **Step 1: Add failing assertions for the ten operations**
 
-Assert path parameters are UUID strings, role create returns HTTP 201 with `ApiResponse_IdData_Uuid`, mutation success uses `ApiResponse_EmptyData`, assign-role documents 201/400/404, and list-by-module uses an object with permission-array values.
+Assert path parameters are UUID strings, role create returns HTTP 201 with `ApiResponse_UuidIdData`, mutation success uses `ApiResponse_EmptyData`, assign-role documents 201/400/404, and list-by-module uses an object with permission-array values.
 
 - [ ] **Step 2: Run RED test**
 
@@ -174,12 +174,12 @@ Register these operation IDs and success bodies:
 ```text
 listRoles -> ApiResponse<Vec<Role>>
 getRole -> ApiResponse<Role>
-createRole -> 201 ApiResponse<IdData<Uuid>>
+createRole -> 201 ApiResponse<UuidIdData>
 updateRole -> ApiResponse<EmptyData>
 listPermissions -> ApiResponse<Vec<Permission>>
 listPermissionsByModule -> ApiResponse<HashMap<String, Vec<Permission>>>
 getUserRoles -> ApiResponse<Vec<UserRoleAssignmentResponse>>
-assignUserRole -> 201 ApiResponse<IdData<Uuid>>
+assignUserRole -> 201 ApiResponse<UuidIdData>
 removeUserRole -> ApiResponse<EmptyData>
 getUserPermissions -> ApiResponse<Vec<String>>
 ```

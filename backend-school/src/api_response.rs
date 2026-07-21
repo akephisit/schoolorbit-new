@@ -29,7 +29,7 @@ impl<T> ApiResponse<T> {
     }
 }
 
-#[derive(Debug, Default, Serialize)]
+#[derive(Debug, Default, Serialize, ToSchema)]
 pub struct EmptyData {}
 
 impl ApiResponse<EmptyData> {
@@ -45,6 +45,12 @@ impl ApiResponse<EmptyData> {
 #[derive(Debug, Serialize)]
 pub struct IdData<T> {
     pub id: T,
+}
+
+/// OpenAPI transport schema for the UUID identifier payload emitted by `IdData<Uuid>`.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct UuidIdData {
+    pub id: uuid::Uuid,
 }
 
 impl<T> IdData<T> {

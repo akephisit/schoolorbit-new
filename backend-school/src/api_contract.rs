@@ -1,4 +1,4 @@
-use crate::api_response::{ApiErrorResponse, ApiResponse};
+use crate::api_response::{ApiErrorResponse, ApiResponse, EmptyData, UuidIdData};
 use crate::modules::auth::models::UserResponse;
 use serde_json::Value;
 use utoipa::OpenApi;
@@ -9,6 +9,10 @@ use utoipa::OpenApi;
     components(schemas(
         UserResponse,
         ApiResponse<UserResponse>,
+        EmptyData,
+        ApiResponse<EmptyData>,
+        UuidIdData,
+        ApiResponse<UuidIdData>,
         ApiErrorResponse
     )),
     tags((name = "auth", description = "Authentication and current-user operations"))
@@ -151,5 +155,24 @@ mod tests {
 
         assert_eq!(first, second);
         assert!(first.ends_with('\n'));
+    }
+
+    #[test]
+    fn documents_shared_empty_and_uuid_identifier_envelopes() {
+        let document = school_api_value().expect("document should serialize");
+        let schemas = &document["components"]["schemas"];
+
+        let empty_envelope = &schemas["ApiResponse_EmptyData"];
+        assert_eq!(required(empty_envelope), vec!["data", "success"]);
+        assert_eq!(empty_envelope["properties"]["data"], schemas["EmptyData"]);
+        assert_eq!(
+            schemas["EmptyData"]["type"], "object",
+            "empty responses must generate an object DTO"
+        );
+
+        let id_envelope = &schemas["ApiResponse_UuidIdData"];
+        assert_eq!(required(id_envelope), vec!["data", "success"]);
+        assert_eq!(required(&schemas["UuidIdData"]), vec!["id"]);
+        assert_eq!(schemas["UuidIdData"]["properties"]["id"]["format"], "uuid");
     }
 }
