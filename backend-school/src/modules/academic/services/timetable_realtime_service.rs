@@ -55,7 +55,6 @@ pub async fn authorize_socket(
     actor: &ActorContext,
     semester_id: Uuid,
 ) -> Result<TimetableSocketAccess, AppError> {
-    let can_manage = socket_permission(actor)?;
     let user = sqlx::query_as::<_, RealtimeUser>(
         "SELECT COALESCE(username, '') AS username, title, first_name, last_name FROM users WHERE id = $1 AND status = 'active'",
     )
@@ -64,6 +63,7 @@ pub async fn authorize_socket(
     .await?
     .ok_or_else(|| AppError::AuthError("ไม่พบผู้ใช้งานที่เปิดใช้งาน".to_string()))?;
 
+    let can_manage = socket_permission(actor)?;
     let semester_exists = sqlx::query_scalar::<_, bool>(
         "SELECT EXISTS(SELECT 1 FROM academic_semesters WHERE id = $1)",
     )

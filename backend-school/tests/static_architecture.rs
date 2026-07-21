@@ -2491,9 +2491,79 @@ fn timetable_websocket_identity_is_server_owned() {
     let handler = extract_braced_block(&source, "pub async fn timetable_websocket_handler", false);
     assert!(handler.contains("actor_tenant_context(&state, &headers)"));
     assert!(handler.contains("authorize_socket("));
+    let subscribe = handler
+        .find("permission_event_channel.subscribe()")
+        .expect("WebSocket must subscribe to permission changes before authentication");
+    let authenticate = handler
+        .find("actor_tenant_context(&state, &headers)")
+        .expect("WebSocket must authenticate through the central tenant context");
+    let authorize = handler
+        .find("authorize_socket(")
+        .expect("WebSocket must authorize timetable access before upgrade");
+    assert!(
+        subscribe < authenticate && authenticate < authorize,
+        "permission subscription must precede authentication and authorization"
+    );
+    assert!(handler.contains("permission_event_receiver"));
 
     let socket_loop = extract_braced_block(&source, "async fn handle_socket", false);
     assert!(socket_loop.contains("sanitize_client_event("));
+    assert!(socket_loop.contains("permission_event_receiver.recv()"));
+    assert!(socket_loop.contains("permission_event_decision("));
+}
+
+#[test]
+fn timetable_websocket_authorization_authenticates_active_user_before_permissions() {
+    let service = read_source(
+        manifest_dir().join("src/modules/academic/services/timetable_realtime_service.rs"),
+    );
+    let authorize = extract_braced_block(&service, "pub async fn authorize_socket", false);
+    let active_user_lookup = authorize
+        .find("sqlx::query_as::<_, RealtimeUser>")
+        .expect("socket authorization must authenticate an active user");
+    let permission_check = authorize
+        .find("socket_permission(actor)")
+        .expect("socket authorization must evaluate timetable permissions");
+    let semester_lookup = authorize
+        .find("sqlx::query_scalar::<_, bool>")
+        .expect("socket authorization must verify the selected semester");
+    assert!(service.contains("FROM users WHERE id = $1 AND status = 'active'"));
+    assert!(service.contains("FROM academic_semesters WHERE id = $1"));
+
+    assert!(
+        active_user_lookup < permission_check && permission_check < semester_lookup,
+        "active-user authentication must precede permission and semester authorization"
+    );
+
+    let main = read_source(manifest_dir().join("src/main.rs"));
+    assert!(!main.contains("WebSocket Route (No standard middleware auth, uses Query Params)"));
+    assert!(
+        main.contains("WebSocket authentication runs in the handler; query selects semester only")
+    );
+}
+
+#[test]
+fn deleting_staff_revokes_cached_and_active_permissions_after_soft_delete() {
+    let source = read_source(manifest_dir().join("src/modules/staff/handlers/staff.rs"));
+    let handler = extract_braced_block(&source, "pub async fn delete_staff", false);
+    let tenant = handler
+        .find("let tenant = context.tenant.subdomain.clone()")
+        .expect("delete_staff must retain the tenant before moving the pool");
+    let pool = handler
+        .find("let pool = context.tenant.pool")
+        .expect("delete_staff must use the resolved tenant pool");
+    let soft_delete = handler
+        .find("staff_service::soft_delete_staff(&pool, staff_id).await?")
+        .expect("delete_staff must soft-delete the user");
+    let invalidate = handler
+        .find("state.permission_cache.invalidate_user(&tenant, staff_id)")
+        .expect("delete_staff must invalidate the deleted user's cached permissions");
+    let notify = handler
+        .find("state.notify_permission_changed(&tenant, staff_id)")
+        .expect("delete_staff must revoke the deleted user's active permission sessions");
+
+    assert!(tenant < pool);
+    assert!(soft_delete < invalidate && invalidate < notify);
 }
 
 #[test]

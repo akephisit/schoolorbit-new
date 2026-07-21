@@ -137,11 +137,15 @@ pub async fn delete_staff(
     Path(staff_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
     let context = actor_tenant_context(&state, &headers).await?;
+    let tenant = context.tenant.subdomain.clone();
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::STAFF_DELETE_ALL)?;
 
     staff_service::soft_delete_staff(&pool, staff_id).await?;
+    state.permission_cache.invalidate_user(&tenant, staff_id);
+    state.notify_permission_changed(&tenant, staff_id);
+
     Ok((
         StatusCode::OK,
         Json(ApiResponse::empty_with_message("ลบบุคลากรสำเร็จ")),

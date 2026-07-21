@@ -3108,6 +3108,8 @@
 				semester_id: selectedSemesterId,
 				current_user_id: user.id
 			});
+		} else {
+			disconnectTimetableSocket();
 		}
 	});
 

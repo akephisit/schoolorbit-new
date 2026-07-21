@@ -2,6 +2,7 @@ use crate::error::AppError;
 use crate::modules::academic::services::timetable_realtime_service::{
     authorize_socket, TimetableSocketAccess,
 };
+use crate::modules::notification::events::PermissionChangeEvent;
 use crate::utils::request_context::actor_tenant_context;
 use crate::AppState;
 use axum::{
@@ -633,6 +634,34 @@ fn heartbeat_timed_out(last_inbound: Instant, now: Instant) -> bool {
     now.duration_since(last_inbound) >= SILENCE_TIMEOUT
 }
 
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+enum SocketPermissionDecision {
+    Continue,
+    Disconnect,
+}
+
+fn permission_event_decision(
+    event: Result<PermissionChangeEvent, broadcast::error::RecvError>,
+    tenant: &str,
+    user_id: Uuid,
+) -> SocketPermissionDecision {
+    match event {
+        Ok(event) if event.applies_to(tenant, user_id) => SocketPermissionDecision::Disconnect,
+        Ok(_) => SocketPermissionDecision::Continue,
+        Err(broadcast::error::RecvError::Lagged(missed_events)) => {
+            tracing::warn!(
+                missed_events,
+                "Timetable WebSocket permission receiver lagged; closing session"
+            );
+            SocketPermissionDecision::Disconnect
+        }
+        Err(broadcast::error::RecvError::Closed) => {
+            tracing::warn!("Timetable WebSocket permission channel closed; closing session");
+            SocketPermissionDecision::Disconnect
+        }
+    }
+}
+
 fn sanitize_client_event(
     event: TimetableEvent,
     authenticated_user_id: Uuid,
@@ -839,12 +868,21 @@ pub async fn timetable_websocket_handler(
     Query(params): Query<WsParams>,
     ws: WebSocketUpgrade,
 ) -> Result<Response, AppError> {
+    let permission_event_receiver = state.permission_event_channel.subscribe();
     let context = actor_tenant_context(&state, &headers).await?;
     let access = authorize_socket(&context.tenant.pool, &context.actor, params.semester_id).await?;
     let tenant = context.tenant.subdomain;
 
-    Ok(ws
-        .on_upgrade(move |socket| handle_socket(socket, state, params.semester_id, tenant, access)))
+    Ok(ws.on_upgrade(move |socket| {
+        handle_socket(
+            socket,
+            state,
+            params.semester_id,
+            tenant,
+            access,
+            permission_event_receiver,
+        )
+    }))
 }
 
 async fn handle_socket(
@@ -853,6 +891,7 @@ async fn handle_socket(
     semester_id: Uuid,
     tenant: String,
     access: TimetableSocketAccess,
+    mut permission_event_receiver: broadcast::Receiver<PermissionChangeEvent>,
 ) {
     let TimetableSocketAccess {
         user_id,
@@ -965,6 +1004,25 @@ async fn handle_socket(
                         break;
                     }
                 },
+                permission_change = permission_event_receiver.recv() => {
+                    if permission_event_decision(permission_change, &tenant, user_id)
+                        == SocketPermissionDecision::Disconnect
+                    {
+                        if socket
+                            .send(Message::Close(Some(CloseFrame {
+                                code: 1008,
+                                reason: "Permission changed".into(),
+                            })))
+                            .await
+                            .is_err()
+                        {
+                            tracing::debug!(
+                                "Failed to send timetable WebSocket permission close"
+                            );
+                        }
+                        break;
+                    }
+                },
                 _ = heartbeat.tick() => {
                     if heartbeat_timed_out(last_inbound, Instant::now()) {
                         break;
@@ -1006,6 +1064,28 @@ fn generate_color_from_uuid(id: &Uuid) -> String {
 #[cfg(test)]
 mod security_tests {
     use super::*;
+    use crate::modules::notification::events::PermissionChangeEvent;
+
+    fn permission_channel(
+        capacity: usize,
+    ) -> (
+        broadcast::Sender<PermissionChangeEvent>,
+        broadcast::Receiver<PermissionChangeEvent>,
+    ) {
+        let (sender, receiver) = broadcast::channel(capacity);
+        (sender, receiver)
+    }
+
+    async fn receive_permission_decision(
+        sender: &broadcast::Sender<PermissionChangeEvent>,
+        receiver: &mut broadcast::Receiver<PermissionChangeEvent>,
+        event: PermissionChangeEvent,
+        tenant: &str,
+        user_id: Uuid,
+    ) -> SocketPermissionDecision {
+        sender.send(event).unwrap();
+        permission_event_decision(receiver.recv().await, tenant, user_id)
+    }
 
     #[test]
     fn legacy_query_identity_is_ignored() {
@@ -1095,5 +1175,95 @@ mod security_tests {
         assert!(!manager.join_room(tenant.clone(), semester, presence));
         assert!(!manager.leave_room(tenant.clone(), semester, user_id));
         assert!(manager.leave_room(tenant, semester, user_id));
+    }
+
+    #[tokio::test]
+    async fn targeted_permission_event_disconnects_exact_tenant_user() {
+        let (sender, mut receiver) = permission_channel(4);
+        let user_id = Uuid::new_v4();
+
+        let decision = receive_permission_decision(
+            &sender,
+            &mut receiver,
+            PermissionChangeEvent::for_user("tenant-a", user_id),
+            "tenant-a",
+            user_id,
+        )
+        .await;
+
+        assert_eq!(decision, SocketPermissionDecision::Disconnect);
+    }
+
+    #[tokio::test]
+    async fn tenant_wide_permission_event_disconnects_user_in_that_tenant() {
+        let (sender, mut receiver) = permission_channel(4);
+        let user_id = Uuid::new_v4();
+
+        let decision = receive_permission_decision(
+            &sender,
+            &mut receiver,
+            PermissionChangeEvent::for_all_users("tenant-a"),
+            "tenant-a",
+            user_id,
+        )
+        .await;
+
+        assert_eq!(decision, SocketPermissionDecision::Disconnect);
+    }
+
+    #[tokio::test]
+    async fn permission_event_for_wrong_tenant_keeps_socket_open() {
+        let (sender, mut receiver) = permission_channel(4);
+        let user_id = Uuid::new_v4();
+
+        let decision = receive_permission_decision(
+            &sender,
+            &mut receiver,
+            PermissionChangeEvent::for_user("tenant-b", user_id),
+            "tenant-a",
+            user_id,
+        )
+        .await;
+
+        assert_eq!(decision, SocketPermissionDecision::Continue);
+    }
+
+    #[tokio::test]
+    async fn permission_event_for_wrong_user_keeps_socket_open() {
+        let (sender, mut receiver) = permission_channel(4);
+        let user_id = Uuid::new_v4();
+
+        let decision = receive_permission_decision(
+            &sender,
+            &mut receiver,
+            PermissionChangeEvent::for_user("tenant-a", Uuid::new_v4()),
+            "tenant-a",
+            user_id,
+        )
+        .await;
+
+        assert_eq!(decision, SocketPermissionDecision::Continue);
+    }
+
+    #[tokio::test]
+    async fn lagged_permission_receiver_disconnects_fail_closed() {
+        let (sender, mut receiver) = permission_channel(1);
+        let user_id = Uuid::new_v4();
+        sender
+            .send(PermissionChangeEvent::for_user("tenant-b", Uuid::new_v4()))
+            .unwrap();
+        sender
+            .send(PermissionChangeEvent::for_user("tenant-b", Uuid::new_v4()))
+            .unwrap();
+
+        let received = receiver.recv().await;
+        assert!(matches!(
+            &received,
+            Err(broadcast::error::RecvError::Lagged(_))
+        ));
+        assert_eq!(
+            permission_event_decision(received, "tenant-a", user_id),
+            SocketPermissionDecision::Disconnect
+        );
     }
 }

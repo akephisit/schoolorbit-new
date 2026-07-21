@@ -664,7 +664,7 @@ async fn main() {
             "/api/admin/routes/register",
             post(modules::system::handlers::register_routes::register_routes),
         )
-        // WebSocket Route (No standard middleware auth, uses Query Params)
+        // WebSocket authentication runs in the handler; query selects semester only
         .route(
             "/ws/timetable",
             get(modules::academic::websockets::timetable_websocket_handler),

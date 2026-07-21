@@ -18,6 +18,10 @@ const connectionContract = store.slice(
 	store.indexOf('const timetableSocketRuntime'),
 	store.indexOf('export function sendUserActivity')
 );
+const pageConnectionEffect = page.slice(
+	page.indexOf('// WebSocket Connection'),
+	page.indexOf('onDestroy(() =>')
+);
 
 test('timetable socket URL contains only semester identity', () => {
 	assert.match(
@@ -65,6 +69,13 @@ test('store delegates socket ownership, timers, and network listeners to the run
 });
 
 test('page passes server query and local-only current user identity', () => {
-	assert.match(page, /connectTimetableSocket\(\{\s*semester_id:[\s\S]*current_user_id:/);
-	assert.doesNotMatch(page, /connectTimetableSocket\(\{[\s\S]{0,180}name:/);
+	assert.match(
+		pageConnectionEffect,
+		/connectTimetableSocket\(\{\s*semester_id:[\s\S]*current_user_id:/
+	);
+	assert.doesNotMatch(pageConnectionEffect, /connectTimetableSocket\(\{[\s\S]{0,180}name:/);
+	assert.match(
+		pageConnectionEffect,
+		/if \(canReadTimetable && selectedSemesterId && \$authStore\.user\) \{[\s\S]*\} else \{\s*disconnectTimetableSocket\(\);\s*\}/
+	);
 });
