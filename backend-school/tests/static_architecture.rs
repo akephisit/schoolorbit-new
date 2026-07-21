@@ -103,100 +103,372 @@ fn strip_comments(source: &str) -> String {
     stripped
 }
 
-fn extract_braced_block<'a>(source: &'a str, marker: &str) -> &'a str {
-    let start = source
+struct LexicalMask {
+    structural: String,
+    comments: Vec<bool>,
+    literals: Vec<bool>,
+}
+
+fn mark_non_structural(structural: &mut [u8], mask: &mut [bool], start: usize, end: usize) {
+    for index in start..end {
+        mask[index] = true;
+        if structural[index] != b'\n' {
+            structural[index] = b' ';
+        }
+    }
+}
+
+fn raw_string_opening(bytes: &[u8], start: usize) -> Option<(usize, usize)> {
+    if start > 0 && (bytes[start - 1].is_ascii_alphanumeric() || bytes[start - 1] == b'_') {
+        return None;
+    }
+
+    let mut cursor = if bytes.get(start) == Some(&b'r') {
+        start + 1
+    } else if bytes.get(start) == Some(&b'b') && bytes.get(start + 1) == Some(&b'r') {
+        start + 2
+    } else {
+        return None;
+    };
+    let mut hashes = 0;
+    while bytes.get(cursor) == Some(&b'#') {
+        hashes += 1;
+        cursor += 1;
+    }
+
+    (bytes.get(cursor) == Some(&b'"')).then_some((cursor, hashes))
+}
+
+fn raw_string_end(bytes: &[u8], quote: usize, hashes: usize) -> usize {
+    let mut cursor = quote + 1;
+    while cursor < bytes.len() {
+        if bytes[cursor] == b'"'
+            && cursor + hashes < bytes.len()
+            && bytes[cursor + 1..=cursor + hashes]
+                .iter()
+                .all(|byte| *byte == b'#')
+        {
+            return cursor + hashes + 1;
+        }
+        cursor += 1;
+    }
+    bytes.len()
+}
+
+fn quoted_string_opening(bytes: &[u8], start: usize) -> Option<usize> {
+    if bytes.get(start) == Some(&b'"') {
+        return Some(start);
+    }
+    if matches!(bytes.get(start), Some(b'b' | b'c')) && bytes.get(start + 1) == Some(&b'"') {
+        return Some(start + 1);
+    }
+    None
+}
+
+fn quoted_string_end(bytes: &[u8], quote: usize) -> usize {
+    let mut cursor = quote + 1;
+    while cursor < bytes.len() {
+        match bytes[cursor] {
+            b'\\' => cursor = (cursor + 2).min(bytes.len()),
+            b'"' => return cursor + 1,
+            _ => cursor += 1,
+        }
+    }
+    bytes.len()
+}
+
+fn character_literal_end(source: &str, start: usize) -> Option<usize> {
+    let bytes = source.as_bytes();
+    if bytes.get(start) != Some(&b'\'') {
+        return None;
+    }
+
+    let mut cursor = start + 1;
+    if bytes.get(cursor) == Some(&b'\\') {
+        cursor += 1;
+        match bytes.get(cursor) {
+            Some(b'u') if bytes.get(cursor + 1) == Some(&b'{') => {
+                cursor += 2;
+                cursor += bytes[cursor..].iter().position(|byte| *byte == b'}')? + 1;
+            }
+            Some(b'x') => cursor = (cursor + 3).min(bytes.len()),
+            Some(_) => cursor += 1,
+            None => return None,
+        }
+    } else {
+        let character = source[cursor..].chars().next()?;
+        if character == '\n' || character == '\r' || character == '\'' {
+            return None;
+        }
+        cursor += character.len_utf8();
+    }
+
+    (bytes.get(cursor) == Some(&b'\'')).then_some(cursor + 1)
+}
+
+fn lexical_mask(source: &str, hash_line_comments: bool) -> LexicalMask {
+    let bytes = source.as_bytes();
+    let mut structural = bytes.to_vec();
+    let mut comments = vec![false; bytes.len()];
+    let mut literals = vec![false; bytes.len()];
+    let mut cursor = 0;
+
+    while cursor < bytes.len() {
+        if bytes.get(cursor) == Some(&b'/') && bytes.get(cursor + 1) == Some(&b'/') {
+            let end = bytes[cursor..]
+                .iter()
+                .position(|byte| *byte == b'\n')
+                .map_or(bytes.len(), |offset| cursor + offset);
+            mark_non_structural(&mut structural, &mut comments, cursor, end);
+            cursor = end;
+            continue;
+        }
+
+        if hash_line_comments && bytes.get(cursor) == Some(&b'#') {
+            let end = bytes[cursor..]
+                .iter()
+                .position(|byte| *byte == b'\n')
+                .map_or(bytes.len(), |offset| cursor + offset);
+            mark_non_structural(&mut structural, &mut comments, cursor, end);
+            cursor = end;
+            continue;
+        }
+
+        if bytes.get(cursor) == Some(&b'/') && bytes.get(cursor + 1) == Some(&b'*') {
+            let mut end = cursor + 2;
+            let mut depth = 1_u32;
+            while end < bytes.len() && depth > 0 {
+                if bytes.get(end) == Some(&b'/') && bytes.get(end + 1) == Some(&b'*') {
+                    depth += 1;
+                    end += 2;
+                } else if bytes.get(end) == Some(&b'*') && bytes.get(end + 1) == Some(&b'/') {
+                    depth -= 1;
+                    end += 2;
+                } else {
+                    end += 1;
+                }
+            }
+            mark_non_structural(&mut structural, &mut comments, cursor, end);
+            cursor = end;
+            continue;
+        }
+
+        if let Some((quote, hashes)) = raw_string_opening(bytes, cursor) {
+            let end = raw_string_end(bytes, quote, hashes);
+            mark_non_structural(&mut structural, &mut literals, cursor, end);
+            cursor = end;
+            continue;
+        }
+
+        if let Some(quote) = quoted_string_opening(bytes, cursor) {
+            let end = quoted_string_end(bytes, quote);
+            mark_non_structural(&mut structural, &mut literals, cursor, end);
+            cursor = end;
+            continue;
+        }
+
+        if let Some(end) = character_literal_end(source, cursor) {
+            mark_non_structural(&mut structural, &mut literals, cursor, end);
+            cursor = end;
+            continue;
+        }
+
+        cursor += 1;
+    }
+
+    LexicalMask {
+        structural: String::from_utf8(structural).expect("masked source remains UTF-8"),
+        comments,
+        literals,
+    }
+}
+
+fn balanced_delimiter_end(
+    structural: &str,
+    opening: usize,
+    opening_delimiter: u8,
+    closing_delimiter: u8,
+) -> Option<usize> {
+    let mut depth = 0_u32;
+    for (offset, byte) in structural.as_bytes()[opening..].iter().enumerate() {
+        if *byte == opening_delimiter {
+            depth += 1;
+        } else if *byte == closing_delimiter {
+            depth -= 1;
+            if depth == 0 {
+                return Some(opening + offset);
+            }
+        }
+    }
+    None
+}
+
+fn extract_braced_block(source: &str, marker: &str, hash_line_comments: bool) -> String {
+    let lexical = lexical_mask(source, hash_line_comments);
+    let start = lexical
+        .structural
         .find(marker)
         .unwrap_or_else(|| panic!("missing block marker: {marker}"));
-    let block_source = &source[start..];
-    let mut depth = 0_u32;
-    let mut saw_opening_brace = false;
+    let opening = lexical.structural[start..]
+        .find('{')
+        .map(|offset| start + offset)
+        .unwrap_or_else(|| panic!("missing opening brace after marker: {marker}"));
+    let closing = balanced_delimiter_end(&lexical.structural, opening, b'{', b'}')
+        .unwrap_or_else(|| panic!("unterminated block marker: {marker}"));
 
-    for (offset, character) in block_source.char_indices() {
-        match character {
-            '{' => {
-                saw_opening_brace = true;
-                depth += 1;
-            }
-            '}' if saw_opening_brace => {
-                depth -= 1;
-                if depth == 0 {
-                    return &block_source[..=offset];
+    lexical.structural[start..=closing].to_string()
+}
+
+#[derive(Debug)]
+struct MethodInvocation {
+    arguments: Vec<String>,
+    start_offset: usize,
+    end_offset: usize,
+    start_line: usize,
+    end_line: usize,
+}
+
+fn source_line_at(source: &str, offset: usize) -> usize {
+    source.as_bytes()[..offset]
+        .iter()
+        .filter(|byte| **byte == b'\n')
+        .count()
+        + 1
+}
+
+fn normalize_rust_expression(
+    source: &str,
+    lexical: &LexicalMask,
+    start: usize,
+    end: usize,
+) -> String {
+    let bytes = source.as_bytes();
+    let mut normalized = Vec::with_capacity(end - start);
+
+    for (index, byte) in bytes.iter().enumerate().take(end).skip(start) {
+        if lexical.comments[index] {
+            continue;
+        }
+        if lexical.literals[index] || !byte.is_ascii_whitespace() {
+            normalized.push(*byte);
+        }
+    }
+
+    String::from_utf8(normalized).expect("normalized Rust expression remains UTF-8")
+}
+
+fn split_invocation_arguments(
+    source: &str,
+    lexical: &LexicalMask,
+    start: usize,
+    end: usize,
+) -> Vec<String> {
+    let structural = lexical.structural.as_bytes();
+    let mut arguments = Vec::new();
+    let mut argument_start = start;
+    let mut parentheses = 0_u32;
+    let mut brackets = 0_u32;
+    let mut braces = 0_u32;
+
+    for (index, byte) in structural.iter().enumerate().take(end).skip(start) {
+        match *byte {
+            b'(' => parentheses += 1,
+            b')' => parentheses = parentheses.saturating_sub(1),
+            b'[' => brackets += 1,
+            b']' => brackets = brackets.saturating_sub(1),
+            b'{' => braces += 1,
+            b'}' => braces = braces.saturating_sub(1),
+            b',' if parentheses == 0 && brackets == 0 && braces == 0 => {
+                let argument = normalize_rust_expression(source, lexical, argument_start, index);
+                if !argument.is_empty() {
+                    arguments.push(argument);
                 }
+                argument_start = index + 1;
             }
             _ => {}
         }
     }
 
-    panic!("unterminated block marker: {marker}");
+    let argument = normalize_rust_expression(source, lexical, argument_start, end);
+    if !argument.is_empty() {
+        arguments.push(argument);
+    }
+    arguments
 }
 
-fn single_line_call_arguments(line: &str, method: &str) -> Option<Vec<String>> {
-    let marker = format!(".{method}(");
-    let arguments_start = line.find(&marker)? + marker.len();
-    let arguments_end = line[arguments_start..].find(')')? + arguments_start;
-
-    Some(
-        line[arguments_start..arguments_end]
-            .split(',')
-            .map(|argument| {
-                argument
-                    .chars()
-                    .filter(|character| !character.is_whitespace())
-                    .collect::<String>()
-            })
-            .collect(),
-    )
-}
-
-fn following_lines_have_matching_call(
-    lines: &[&str],
-    index: usize,
+fn extract_method_invocations(
+    source: &str,
+    lexical: &LexicalMask,
     method: &str,
-    expected_arguments: &[String],
+) -> Vec<MethodInvocation> {
+    let marker = format!(".{method}");
+    let structural = lexical.structural.as_bytes();
+    let mut invocations = Vec::new();
+    let mut search_offset = 0;
+
+    while let Some(relative_start) = lexical.structural[search_offset..].find(&marker) {
+        let start = search_offset + relative_start;
+        let mut opening = start + marker.len();
+        while structural
+            .get(opening)
+            .is_some_and(|byte| byte.is_ascii_whitespace())
+        {
+            opening += 1;
+        }
+        if structural.get(opening) != Some(&b'(') {
+            search_offset = start + marker.len();
+            continue;
+        }
+
+        let Some(closing) = balanced_delimiter_end(&lexical.structural, opening, b'(', b')') else {
+            break;
+        };
+        invocations.push(MethodInvocation {
+            arguments: split_invocation_arguments(source, lexical, opening + 1, closing),
+            start_offset: start,
+            end_offset: closing,
+            start_line: source_line_at(source, start),
+            end_line: source_line_at(source, closing),
+        });
+        search_offset = closing + 1;
+    }
+
+    invocations
+}
+
+fn has_matching_following_invocation(
+    invalidation: &MethodInvocation,
+    notifications: &[MethodInvocation],
 ) -> bool {
-    lines
-        .iter()
-        .skip(index + 1)
-        .take(3)
-        .filter_map(|line| single_line_call_arguments(line, method))
-        .any(|arguments| arguments == expected_arguments)
+    notifications.iter().any(|notification| {
+        notification.start_offset > invalidation.end_offset
+            && notification.start_line <= invalidation.end_line + 3
+            && notification.arguments == invalidation.arguments
+    })
 }
 
 fn permission_invalidation_violations(relative_path: &str, source: &str) -> Vec<String> {
-    let source = strip_comments(source);
-    let lines = source.lines().collect::<Vec<_>>();
+    let lexical = lexical_mask(source, false);
+    let user_notifications =
+        extract_method_invocations(source, &lexical, "notify_permission_changed");
+    let tenant_notifications =
+        extract_method_invocations(source, &lexical, "notify_all_permissions_changed");
     let mut violations = Vec::new();
 
-    for (index, line) in lines.iter().enumerate() {
-        if let Some(arguments) = single_line_call_arguments(line, "invalidate_tenant") {
-            if following_lines_have_matching_call(
-                &lines,
-                index,
-                "notify_all_permissions_changed",
-                &arguments,
-            ) {
-                continue;
-            }
-
+    for invalidation in extract_method_invocations(source, &lexical, "invalidate_tenant") {
+        if !has_matching_following_invocation(&invalidation, &tenant_notifications) {
             violations.push(format!(
                 "{relative_path}:{}: tenant invalidation must emit tenant permission_changed with matching tenant",
-                index + 1
+                invalidation.start_line
             ));
         }
+    }
 
-        if let Some(arguments) = single_line_call_arguments(line, "invalidate_user") {
-            if following_lines_have_matching_call(
-                &lines,
-                index,
-                "notify_permission_changed",
-                &arguments,
-            ) {
-                continue;
-            }
-
+    for invalidation in extract_method_invocations(source, &lexical, "invalidate_user") {
+        if !has_matching_following_invocation(&invalidation, &user_notifications) {
             violations.push(format!(
                 "{relative_path}:{}: user invalidation must emit tenant permission_changed with matching tenant and user",
-                index + 1
+                invalidation.start_line
             ));
         }
     }
@@ -2174,39 +2446,60 @@ fn menu_workspace_contract_is_explicit_and_permission_based() {
 }
 
 #[test]
+fn braced_block_extractor_ignores_comment_contents() {
+    let source = r#"
+        fn guarded() {
+            // forbidden_call(); }
+            actual_call();
+        }
+
+        fn after_guarded() { forbidden_call(); }
+    "#;
+    let block = extract_braced_block(source, "fn guarded()", false);
+
+    assert!(block.contains("actual_call();"), "block: {block}");
+    assert!(!block.contains("forbidden_call();"), "block: {block}");
+}
+
+#[test]
+fn braced_block_extractor_ignores_string_contents_and_excludes_following_code() {
+    let source = r#"
+        fn guarded() {
+            let fake = "forbidden_call(); }";
+            let raw = r"forbidden_call(); }";
+            actual_call();
+        }
+
+        fn after_guarded() { forbidden_call(); }
+    "#;
+    let block = extract_braced_block(source, "fn guarded()", false);
+
+    assert!(block.contains("actual_call();"), "block: {block}");
+    assert!(!block.contains("forbidden_call();"), "block: {block}");
+}
+
+#[test]
 fn timetable_websocket_identity_is_server_owned() {
     let source = read_source(manifest_dir().join("src/modules/academic/websockets.rs"));
-    let params_start = source.find("pub struct WsParams").unwrap();
-    let params_end = source[params_start..]
-        .find("// ==========================================\n// State Manager")
-        .unwrap();
-    let params = &source[params_start..params_start + params_end];
+    let params = extract_braced_block(&source, "pub struct WsParams", false);
 
     assert!(params.contains("pub semester_id: Uuid"));
     assert!(!params.contains("user_id"));
     assert!(!params.contains("name:"));
     assert!(!params.contains("school_key"));
 
-    let handler_start = source
-        .find("pub async fn timetable_websocket_handler")
-        .unwrap();
-    let handle_socket_start = source[handler_start..]
-        .find("async fn handle_socket")
-        .unwrap();
-    let handler = &source[handler_start..handler_start + handle_socket_start];
+    let handler = extract_braced_block(&source, "pub async fn timetable_websocket_handler", false);
     assert!(handler.contains("actor_tenant_context(&state, &headers)"));
     assert!(handler.contains("authorize_socket("));
 
-    let socket_loop_start = handler_start + handle_socket_start;
-    let socket_loop_end = source[socket_loop_start..].find("#[cfg(test)]").unwrap();
-    let socket_loop = &source[socket_loop_start..socket_loop_start + socket_loop_end];
+    let socket_loop = extract_braced_block(&source, "async fn handle_socket", false);
     assert!(socket_loop.contains("sanitize_client_event("));
 }
 
 #[test]
 fn timetable_websocket_proxy_does_not_log_query_identity() {
     let nginx = read_source(repo_root().join("nginx-configs/school-api.schoolorbit.app.conf"));
-    let websocket_location = extract_braced_block(&nginx, "location /ws/ {");
+    let websocket_location = extract_braced_block(&nginx, "location /ws/ {", true);
     let access_log_directives = websocket_location
         .lines()
         .map(str::trim)
@@ -2311,6 +2604,70 @@ fn permission_invalidation_guard_rejects_mismatched_notification_arguments() {
     );
 
     assert_eq!(violations.len(), 3, "violations: {violations:#?}");
+}
+
+#[test]
+fn permission_invalidation_guard_parses_multiline_and_nested_arguments() {
+    let mismatched = permission_invalidation_violations(
+        "src/modules/multiline_mismatch.rs",
+        r#"
+            alternate_cache.invalidate_user(
+                tenant_for(&tenant_a, region("north,west")),
+                user_for((user_a, fallback(user_b, user_c))),
+            );
+            state.notify_permission_changed(
+                tenant_for(&tenant_b, region("north,west")),
+                user_for((user_a, fallback(user_b, user_c))),
+            );
+
+            alternate_cache.invalidate_user(
+                tenant_for(&tenant_a, region("north,west")),
+                user_for((user_a, fallback(user_b, user_c))),
+            );
+            state.notify_permission_changed(
+                tenant_for(&tenant_a, region("north,west")),
+                user_for((user_b, fallback(user_a, user_c))),
+            );
+        "#,
+    );
+    assert_eq!(mismatched.len(), 2, "violations: {mismatched:#?}");
+
+    let matching = permission_invalidation_violations(
+        "src/modules/multiline_match.rs",
+        r#"
+            alternate_cache.invalidate_user(
+                tenant_for(&tenant_a, region("north,west")),
+                user_for((user_a, fallback(user_b, user_c))),
+            );
+            state.notify_permission_changed(
+                tenant_for(&tenant_a, region("north,west")),
+                user_for((user_a, fallback(user_b, user_c))),
+            );
+
+            alternate_cache.invalidate_tenant(
+                tenant_for(&tenant_a, region("north,west")),
+            );
+            state.notify_all_permissions_changed(
+                tenant_for(&tenant_a, region("north,west")),
+            );
+        "#,
+    );
+    assert!(matching.is_empty(), "violations: {matching:#?}");
+}
+
+#[test]
+fn permission_invalidation_guard_ignores_comment_and_string_decoys() {
+    let violations = permission_invalidation_violations(
+        "src/modules/decoys.rs",
+        r##"
+            let normal = ".invalidate_user(&tenant_a, user_a);";
+            let raw = r#".invalidate_tenant(&tenant_a);"#;
+            // alternate_cache.invalidate_user(&tenant_a, user_a);
+            /* alternate_cache.invalidate_tenant(&tenant_a); */
+        "##,
+    );
+
+    assert!(violations.is_empty(), "violations: {violations:#?}");
 }
 
 #[test]
