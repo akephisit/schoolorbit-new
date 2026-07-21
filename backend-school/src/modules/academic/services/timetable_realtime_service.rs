@@ -39,7 +39,12 @@ fn display_name(title: Option<&str>, first_name: &str, last_name: &str, username
         .collect::<Vec<_>>()
         .join(" ");
     if full_name.is_empty() {
-        username.trim().to_string()
+        let username = username.trim();
+        if username.is_empty() {
+            "ผู้ใช้งาน".to_string()
+        } else {
+            username.to_string()
+        }
     } else {
         full_name
     }
@@ -121,5 +126,10 @@ mod tests {
             "นายสมชาย ใจดี"
         );
         assert_eq!(display_name(None, "", "", "staff1"), "staff1");
+    }
+
+    #[test]
+    fn display_name_uses_non_empty_generic_fallback_when_all_identity_fields_are_blank() {
+        assert_eq!(display_name(Some(" \t"), " ", "\n", " \t"), "ผู้ใช้งาน");
     }
 }
