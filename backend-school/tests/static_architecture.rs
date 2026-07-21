@@ -2073,6 +2073,69 @@ fn menu_workspace_contract_is_explicit_and_permission_based() {
 }
 
 #[test]
+fn timetable_websocket_identity_is_server_owned() {
+    let source = read_source(manifest_dir().join("src/modules/academic/websockets.rs"));
+    let params_start = source.find("pub struct WsParams").unwrap();
+    let params_end = source[params_start..]
+        .find("// ==========================================\n// State Manager")
+        .unwrap();
+    let params = &source[params_start..params_start + params_end];
+
+    assert!(params.contains("pub semester_id: Uuid"));
+    assert!(!params.contains("user_id"));
+    assert!(!params.contains("name:"));
+    assert!(!params.contains("school_key"));
+    assert!(source.contains("actor_tenant_context(&state, &headers)"));
+    assert!(source.contains("authorize_socket("));
+    assert!(source.contains("sanitize_client_event("));
+}
+
+#[test]
+fn permission_cache_and_process_events_are_tenant_explicit() {
+    let cache = read_source(manifest_dir().join("src/db/permission_cache.rs"));
+    let events = read_source(manifest_dir().join("src/modules/notification/events.rs"));
+    let main = read_source(manifest_dir().join("src/main.rs"));
+
+    assert!(cache.contains("TenantUserKey"));
+    assert!(
+        Regex::new(r"invalidate_user\s*\(\s*&self,\s*tenant:\s*&str")
+            .unwrap()
+            .is_match(&cache)
+    );
+    assert!(
+        Regex::new(r"invalidate_tenant\s*\(\s*&self,\s*tenant:\s*&str")
+            .unwrap()
+            .is_match(&cache)
+    );
+    assert!(!cache.contains("clear_all"));
+    assert!(events.contains("pub tenant: String"));
+    assert!(
+        Regex::new(r"notify_permission_changed\s*\(\s*&self,\s*tenant:\s*&str")
+            .unwrap()
+            .is_match(&main)
+    );
+    assert!(
+        Regex::new(r"notify_work_items_changed\s*\(\s*&self,\s*tenant:\s*&str")
+            .unwrap()
+            .is_match(&main)
+    );
+}
+
+#[test]
+fn feature_modules_do_not_parse_jwt_directly() {
+    for path in list_files(manifest_dir().join("src/modules"), |path| {
+        path.extension().and_then(|extension| extension.to_str()) == Some("rs")
+    }) {
+        let source = read_source(&path);
+        assert!(
+            !source.contains("JwtService::verify_token"),
+            "duplicate JWT verification in {}",
+            relative(&path)
+        );
+    }
+}
+
+#[test]
 fn permission_cache_invalidations_notify_active_clients() {
     let mut violations = Vec::new();
 
@@ -2089,21 +2152,21 @@ fn permission_cache_invalidations_notify_active_clients() {
                 .collect::<Vec<_>>()
                 .join("\n");
 
-            if line.contains("permission_cache.clear_all()")
-                && !next_lines.contains("notify_all_permissions_changed()")
+            if line.contains("permission_cache.invalidate_tenant(")
+                && !next_lines.contains("notify_all_permissions_changed(")
             {
                 violations.push(format!(
-                    "{}:{}: clear_all must emit permission_changed",
+                    "{}:{}: tenant invalidation must emit tenant permission_changed",
                     relative(&file),
                     index + 1
                 ));
             }
 
-            if line.contains("permission_cache.invalidate(")
+            if line.contains("permission_cache.invalidate_user(")
                 && !next_lines.contains("notify_permission_changed(")
             {
                 violations.push(format!(
-                    "{}:{}: invalidate must emit permission_changed",
+                    "{}:{}: user invalidation must emit tenant permission_changed",
                     relative(&file),
                     index + 1
                 ));
@@ -2179,12 +2242,16 @@ fn work_change_sse_supports_work_item_and_window_refresh_signals() {
         );
     }
 
-    for expected in [
-        "notify_work_items_changed(&self, tenant: &str)",
-        "notify_workflow_window_changed(&self, tenant: &str)",
-    ] {
-        assert!(app_state.contains(expected), "missing {expected}");
-    }
+    assert!(
+        Regex::new(r"notify_work_items_changed\s*\(\s*&self,\s*tenant:\s*&str")
+            .unwrap()
+            .is_match(&app_state)
+    );
+    assert!(
+        Regex::new(r"notify_workflow_window_changed\s*\(\s*&self,\s*tenant:\s*&str")
+            .unwrap()
+            .is_match(&app_state)
+    );
 
     assert!(work_handler.contains("state.notify_work_items_changed(&context.tenant.subdomain)"));
     assert!(workflow_handler
