@@ -181,7 +181,7 @@ listPermissionsByModule -> ApiResponse<HashMap<String, Vec<Permission>>>
 getUserRoles -> ApiResponse<Vec<UserRoleAssignmentResponse>>
 assignUserRole -> 201 ApiResponse<UuidIdData>
 removeUserRole -> ApiResponse<EmptyData>
-getUserPermissions -> ApiResponse<Vec<String>>
+listUserEffectivePermissions -> ApiResponse<Vec<String>>
 ```
 
 Document 401/403 for protected operations and the already implemented 400/404 outcomes. Do not add `deleteRole`.

@@ -1,14 +1,17 @@
 use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
+use utoipa::ToSchema;
 use uuid::Uuid;
 
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow, ToSchema)]
 pub struct Role {
     pub id: Uuid,
     pub code: String,
     pub name: String,
+    #[schema(required = true)]
     pub name_en: Option<String>,
+    #[schema(required = true)]
     pub description: Option<String>,
     pub user_type: String, // Changed from category to user_type
     pub level: i32,
@@ -18,7 +21,7 @@ pub struct Role {
     pub updated_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct CreateRoleRequest {
     pub code: String,
     pub name: String,
@@ -29,7 +32,7 @@ pub struct CreateRoleRequest {
     pub permissions: Option<Vec<String>>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct UpdateRoleRequest {
     pub name: Option<String>,
     pub name_en: Option<String>,
@@ -40,7 +43,7 @@ pub struct UpdateRoleRequest {
     pub is_active: Option<bool>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct AssignRoleRequest {
     pub role_id: Uuid,
     pub is_primary: Option<bool>,
@@ -48,16 +51,19 @@ pub struct AssignRoleRequest {
     pub notes: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct UserRoleAssignmentResponse {
     pub id: Uuid,
     pub user_id: Uuid,
     pub role_id: Uuid,
+    #[schema(required = true)]
     pub organization_unit_id: Option<Uuid>,
     pub role: Role,
     pub is_primary: bool,
     pub started_at: NaiveDate,
+    #[schema(required = true)]
     pub ended_at: Option<NaiveDate>,
+    #[schema(required = true)]
     pub notes: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -334,7 +340,7 @@ pub struct StaffListItem {
 // Permission (สิทธิ์การใช้งาน)
 // ===================================================================
 
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow, ToSchema)]
 pub struct Permission {
     pub id: Uuid,
     pub code: String,
@@ -342,6 +348,7 @@ pub struct Permission {
     pub module: String,
     pub action: String,
     pub scope: String,
+    #[schema(required = true)]
     pub description: Option<String>,
     pub created_at: DateTime<Utc>,
 }

@@ -3,6 +3,10 @@ use crate::modules::auth::models::{
     ChangePasswordRequest, LoginData, LoginRequest, ProfileResponse, UpdateProfileRequest,
     UserResponse,
 };
+use crate::modules::staff::models::{
+    AssignRoleRequest, CreateRoleRequest, Permission, Role, UpdateRoleRequest,
+    UserRoleAssignmentResponse,
+};
 use serde_json::Value;
 use utoipa::OpenApi;
 
@@ -14,7 +18,17 @@ use utoipa::OpenApi;
         crate::modules::auth::handlers::me,
         crate::modules::auth::handlers::get_profile,
         crate::modules::auth::handlers::update_profile,
-        crate::modules::auth::handlers::change_password
+        crate::modules::auth::handlers::change_password,
+        crate::modules::staff::handlers::roles::list_roles,
+        crate::modules::staff::handlers::roles::get_role,
+        crate::modules::staff::handlers::roles::create_role,
+        crate::modules::staff::handlers::roles::update_role,
+        crate::modules::staff::handlers::permissions::list_permissions,
+        crate::modules::staff::handlers::permissions::list_permissions_by_module,
+        crate::modules::staff::handlers::user_roles::get_user_roles,
+        crate::modules::staff::handlers::user_roles::assign_user_role,
+        crate::modules::staff::handlers::user_roles::remove_user_role,
+        crate::modules::staff::handlers::user_roles::get_user_permissions
     ),
     components(schemas(
         UserResponse,
@@ -30,9 +44,25 @@ use utoipa::OpenApi;
         ApiResponse<EmptyData>,
         UuidIdData,
         ApiResponse<UuidIdData>,
+        Role,
+        CreateRoleRequest,
+        UpdateRoleRequest,
+        Permission,
+        AssignRoleRequest,
+        UserRoleAssignmentResponse,
+        ApiResponse<Vec<Role>>,
+        ApiResponse<Role>,
+        ApiResponse<Vec<Permission>>,
+        ApiResponse<std::collections::HashMap<String, Vec<Permission>>>,
+        ApiResponse<Vec<UserRoleAssignmentResponse>>,
+        ApiResponse<Vec<String>>,
         ApiErrorResponse
     )),
-    tags((name = "auth", description = "Authentication and current-user operations"))
+    tags(
+        (name = "auth", description = "Authentication and current-user operations"),
+        (name = "roles", description = "Role assignment and role administration"),
+        (name = "permissions", description = "Permission discovery and effective permissions")
+    )
 )]
 struct SchoolApiDoc;
 
@@ -265,5 +295,64 @@ mod tests {
         assert!(update.get("profileImageUrl").is_some());
         let change = &schemas["ChangePasswordRequest"];
         assert_eq!(required(change), vec!["currentPassword", "newPassword"]);
+    }
+
+    #[test]
+    fn documents_role_permission_and_user_role_operations() {
+        let document = school_api_value().expect("document should serialize");
+        assert_operations(
+            &document,
+            &[
+                ("/api/roles", "get", "listRoles"),
+                ("/api/roles/{id}", "get", "getRole"),
+                ("/api/roles", "post", "createRole"),
+                ("/api/roles/{id}", "put", "updateRole"),
+                ("/api/permissions", "get", "listPermissions"),
+                ("/api/permissions/modules", "get", "listPermissionsByModule"),
+                ("/api/users/{id}/roles", "get", "getUserRoles"),
+                ("/api/users/{id}/roles", "post", "assignUserRole"),
+                (
+                    "/api/users/{id}/roles/{role_id}",
+                    "delete",
+                    "removeUserRole",
+                ),
+                (
+                    "/api/users/{id}/permissions",
+                    "get",
+                    "listUserEffectivePermissions",
+                ),
+            ],
+        );
+
+        assert!(document["paths"]["/api/roles/{id}"]["delete"].is_null());
+        assert_eq!(
+            document["paths"]["/api/roles"]["post"]["responses"]["201"]["content"]
+                ["application/json"]["schema"]["$ref"],
+            "#/components/schemas/ApiResponse_UuidIdData"
+        );
+        assert_eq!(
+            document["paths"]["/api/roles/{id}"]["put"]["responses"]["200"]["content"]
+                ["application/json"]["schema"]["$ref"],
+            "#/components/schemas/ApiResponse_EmptyData"
+        );
+
+        let schemas = &document["components"]["schemas"];
+        let role = &schemas["Role"];
+        for field in ["name_en", "description"] {
+            assert!(required(role).contains(&field));
+            assert!(contains_null(&role["properties"][field]));
+        }
+        assert_eq!(schemas["Permission"]["properties"]["id"]["format"], "uuid");
+
+        let assignment = &schemas["UserRoleAssignmentResponse"];
+        for field in ["organization_unit_id", "ended_at", "notes"] {
+            assert!(required(assignment).contains(&field));
+            assert!(contains_null(&assignment["properties"][field]));
+        }
+        assert!(
+            document["paths"]["/api/permissions/modules"]["get"]["responses"]["200"]["content"]
+                ["application/json"]["schema"]
+                .is_object()
+        );
     }
 }

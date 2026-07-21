@@ -6,7 +6,7 @@ use axum::{
 };
 use uuid::Uuid;
 
-use crate::api_response::{ApiErrorResponse, ApiResponse, IdData};
+use crate::api_response::{ApiErrorResponse, ApiResponse, EmptyData, IdData, UuidIdData};
 use crate::error::AppError;
 use crate::modules::staff::models::*;
 use crate::modules::staff::services::user_role_service::{self, AssignRoleOutcome};
@@ -14,6 +14,18 @@ use crate::permissions::registry::codes;
 use crate::utils::request_context::actor_tenant_context;
 use crate::AppState;
 
+#[utoipa::path(
+    get,
+    path = "/api/users/{id}/roles",
+    operation_id = "getUserRoles",
+    tag = "roles",
+    params(("id" = Uuid, Path, description = "User ID")),
+    responses(
+        (status = 200, description = "User role assignments", body = ApiResponse<Vec<UserRoleAssignmentResponse>>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Permission denied", body = ApiErrorResponse)
+    )
+)]
 pub async fn get_user_roles(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -31,6 +43,21 @@ pub async fn get_user_roles(
     )
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/users/{id}/roles",
+    operation_id = "assignUserRole",
+    tag = "roles",
+    params(("id" = Uuid, Path, description = "User ID")),
+    request_body = AssignRoleRequest,
+    responses(
+        (status = 201, description = "Role assigned", body = ApiResponse<UuidIdData>),
+        (status = 400, description = "Role cannot be assigned", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Permission denied", body = ApiErrorResponse),
+        (status = 404, description = "User or role not found", body = ApiErrorResponse)
+    )
+)]
 pub async fn assign_user_role(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -85,6 +112,22 @@ pub async fn assign_user_role(
     )
 }
 
+#[utoipa::path(
+    delete,
+    path = "/api/users/{id}/roles/{role_id}",
+    operation_id = "removeUserRole",
+    tag = "roles",
+    params(
+        ("id" = Uuid, Path, description = "User ID"),
+        ("role_id" = Uuid, Path, description = "Role ID")
+    ),
+    responses(
+        (status = 200, description = "Role assignment removed", body = ApiResponse<EmptyData>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Role assignment not found", body = ApiErrorResponse)
+    )
+)]
 pub async fn remove_user_role(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -117,6 +160,18 @@ pub async fn remove_user_role(
     )
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/users/{id}/permissions",
+    operation_id = "listUserEffectivePermissions",
+    tag = "permissions",
+    params(("id" = Uuid, Path, description = "User ID")),
+    responses(
+        (status = 200, description = "Effective permission codes", body = ApiResponse<Vec<String>>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Permission denied", body = ApiErrorResponse)
+    )
+)]
 pub async fn get_user_permissions(
     State(state): State<AppState>,
     headers: HeaderMap,
