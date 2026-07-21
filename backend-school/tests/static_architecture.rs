@@ -1831,25 +1831,63 @@ fn module_service_logic_has_focused_unit_tests() {
     assert_eq!(violations, Vec::<String>::new());
 }
 
+fn mask_export_openapi_cli_block(source: &str) -> String {
+    let marker = r#"if command_args.first().map(String::as_str) == Some("export-openapi")"#;
+    let Some(start) = source.find(marker) else {
+        return source.to_owned();
+    };
+    let lexical = lexical_mask(source, false);
+    let opening = lexical.structural[start..]
+        .find('{')
+        .map(|offset| start + offset)
+        .unwrap_or_else(|| panic!("missing opening brace after {marker}"));
+    let closing = balanced_delimiter_end(&lexical.structural, opening, b'{', b'}')
+        .unwrap_or_else(|| panic!("unterminated {marker} block"));
+    let mut masked = source.as_bytes().to_vec();
+
+    for byte in &mut masked[start..=closing] {
+        if *byte != b'\n' {
+            *byte = b' ';
+        }
+    }
+
+    String::from_utf8(masked).expect("masked Rust source remains UTF-8")
+}
+
+fn structured_logging_violations(file_name: &str, source: &str) -> Vec<String> {
+    if file_name.starts_with("src/bin/") {
+        return Vec::new();
+    }
+
+    let source = if file_name == "src/main.rs" {
+        mask_export_openapi_cli_block(source)
+    } else {
+        source.to_owned()
+    };
+    let source = strip_comments(&source);
+    let mut violations = Vec::new();
+
+    for pattern in ["println!", "eprintln!"] {
+        if source.contains(pattern) {
+            violations.push(format!(
+                "{file_name}: use tracing macros instead of {pattern} in runtime code"
+            ));
+        }
+    }
+
+    violations
+}
+
 #[test]
 fn backend_runtime_uses_structured_logging_instead_of_plain_stdout_stderr() {
     let mut violations = Vec::new();
 
     for file in backend_rs_files() {
         let file_name = relative(&file);
-        if file_name.starts_with("src/bin/") {
-            continue;
-        }
-
-        let source = strip_comments(&read_source(&file));
-        for pattern in ["println!", "eprintln!"] {
-            if source.contains(pattern) {
-                violations.push(format!(
-                    "{}: use tracing macros instead of {pattern} in runtime code",
-                    file_name
-                ));
-            }
-        }
+        violations.extend(structured_logging_violations(
+            &file_name,
+            &read_source(&file),
+        ));
     }
 
     assert_eq!(violations, Vec::<String>::new());
@@ -2487,6 +2525,43 @@ fn braced_block_extractor_ignores_string_contents_and_excludes_following_code() 
 
     assert!(block.contains("actual_call();"), "block: {block}");
     assert!(!block.contains("forbidden_call();"), "block: {block}");
+}
+
+#[test]
+fn structured_logging_guard_scopes_the_main_cli_exception() {
+    let cli_only = r#"
+        async fn main() {
+            let command_args = env::args().skip(1).collect::<Vec<_>>();
+            if command_args.first().map(String::as_str) == Some("export-openapi") {
+                eprintln!("allowed CLI diagnostic");
+                return;
+            }
+        }
+    "#;
+    let source = r#"
+        async fn main() {
+            let command_args = env::args().skip(1).collect::<Vec<_>>();
+            if command_args.first().map(String::as_str) == Some("export-openapi") {
+                eprintln!("allowed CLI diagnostic");
+                return;
+            }
+
+            println!("runtime stdout");
+            eprintln!("runtime stderr");
+        }
+    "#;
+
+    assert_eq!(
+        structured_logging_violations("src/main.rs", cli_only),
+        Vec::<String>::new()
+    );
+    assert_eq!(
+        structured_logging_violations("src/main.rs", source),
+        vec![
+            "src/main.rs: use tracing macros instead of println! in runtime code".to_string(),
+            "src/main.rs: use tracing macros instead of eprintln! in runtime code".to_string(),
+        ]
+    );
 }
 
 #[test]
