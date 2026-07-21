@@ -1,13 +1,30 @@
 use crate::api_response::{ApiErrorResponse, ApiResponse, EmptyData, UuidIdData};
-use crate::modules::auth::models::UserResponse;
+use crate::modules::auth::models::{
+    ChangePasswordRequest, LoginData, LoginRequest, ProfileResponse, UpdateProfileRequest,
+    UserResponse,
+};
 use serde_json::Value;
 use utoipa::OpenApi;
 
 #[derive(OpenApi)]
 #[openapi(
-    paths(crate::modules::auth::handlers::me),
+    paths(
+        crate::modules::auth::handlers::login,
+        crate::modules::auth::handlers::logout,
+        crate::modules::auth::handlers::me,
+        crate::modules::auth::handlers::get_profile,
+        crate::modules::auth::handlers::update_profile,
+        crate::modules::auth::handlers::change_password
+    ),
     components(schemas(
         UserResponse,
+        LoginRequest,
+        LoginData,
+        ProfileResponse,
+        UpdateProfileRequest,
+        ChangePasswordRequest,
+        ApiResponse<LoginData>,
+        ApiResponse<ProfileResponse>,
         ApiResponse<UserResponse>,
         EmptyData,
         ApiResponse<EmptyData>,
@@ -68,6 +85,15 @@ mod tests {
             Value::Array(values) => values.iter().any(contains_null),
             Value::Object(values) => values.values().any(contains_null),
             _ => false,
+        }
+    }
+
+    fn assert_operations(document: &Value, expected: &[(&str, &str, &str)]) {
+        for (path, method, operation_id) in expected {
+            assert_eq!(
+                document["paths"][path][method]["operationId"], *operation_id,
+                "missing or incorrect {method} {path}"
+            );
         }
     }
 
@@ -174,5 +200,70 @@ mod tests {
         assert_eq!(required(id_envelope), vec!["data", "success"]);
         assert_eq!(required(&schemas["UuidIdData"]), vec!["id"]);
         assert_eq!(schemas["UuidIdData"]["properties"]["id"]["format"], "uuid");
+    }
+
+    #[test]
+    fn documents_auth_operations_and_transport_shapes() {
+        let document = school_api_value().expect("document should serialize");
+        assert_operations(
+            &document,
+            &[
+                ("/api/auth/login", "post", "login"),
+                ("/api/auth/logout", "post", "logout"),
+                ("/api/auth/me", "get", "getCurrentUser"),
+                ("/api/auth/me/profile", "get", "getCurrentUserProfile"),
+                ("/api/auth/me/profile", "put", "updateCurrentUserProfile"),
+                (
+                    "/api/auth/me/change-password",
+                    "post",
+                    "changeCurrentUserPassword",
+                ),
+            ],
+        );
+
+        let schemas = &document["components"]["schemas"];
+        let login = &schemas["LoginRequest"];
+        assert_eq!(required(login), vec!["password", "username"]);
+        assert!(login["properties"].get("rememberMe").is_some());
+        assert!(login["properties"].get("remember_me").is_none());
+        assert_eq!(
+            document["paths"]["/api/auth/login"]["post"]["responses"]["200"]["content"]
+                ["application/json"]["schema"]["$ref"],
+            "#/components/schemas/ApiResponse_LoginData"
+        );
+
+        let profile = &schemas["ProfileResponse"];
+        for field in [
+            "nationalId",
+            "title",
+            "nickname",
+            "email",
+            "phone",
+            "emergencyContact",
+            "lineId",
+            "dateOfBirth",
+            "gender",
+            "address",
+            "profileImageUrl",
+            "hiredDate",
+        ] {
+            assert!(
+                required(profile).contains(&field),
+                "{field} must be required"
+            );
+            assert!(
+                contains_null(&profile["properties"][field]),
+                "{field} must accept null"
+            );
+        }
+        assert!(!required(profile).contains(&"primaryRoleName"));
+        assert!(!contains_null(&profile["properties"]["primaryRoleName"]));
+
+        let update = &schemas["UpdateProfileRequest"]["properties"];
+        assert!(update.get("emergencyContact").is_some());
+        assert!(update.get("dateOfBirth").is_some());
+        assert!(update.get("profileImageUrl").is_some());
+        let change = &schemas["ChangePasswordRequest"];
+        assert_eq!(required(change), vec!["currentPassword", "newPassword"]);
     }
 }

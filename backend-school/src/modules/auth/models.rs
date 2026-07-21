@@ -52,7 +52,7 @@ pub struct LoginUser {
 }
 
 // Login request
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct LoginRequest {
     pub username: String, // PROMOTED: login with username
@@ -61,7 +61,7 @@ pub struct LoginRequest {
 }
 
 // Update profile request (editable fields only)
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateProfileRequest {
     pub title: Option<String>,
@@ -77,7 +77,7 @@ pub struct UpdateProfileRequest {
 }
 
 // Change password request
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ChangePasswordRequest {
     pub current_password: String,
@@ -137,12 +137,13 @@ impl From<User> for UserResponse {
 }
 
 // Full profile response (for /me/profile endpoint)
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ProfileResponse {
     // Basic info (read-only)
     pub id: Uuid,
     pub username: String, // Added field
+    #[schema(required = true)]
     pub national_id: Option<String>,
     pub first_name: String,
     pub last_name: String,
@@ -153,19 +154,31 @@ pub struct ProfileResponse {
 
     // Primary role (read-only)
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = String)]
     pub primary_role_name: Option<String>,
 
     // Editable fields
+    #[schema(required = true)]
     pub title: Option<String>,
+    #[schema(required = true)]
     pub nickname: Option<String>,
+    #[schema(required = true)]
     pub email: Option<String>,
+    #[schema(required = true)]
     pub phone: Option<String>,
+    #[schema(required = true)]
     pub emergency_contact: Option<String>,
+    #[schema(required = true)]
     pub line_id: Option<String>,
+    #[schema(required = true)]
     pub date_of_birth: Option<chrono::NaiveDate>,
+    #[schema(required = true)]
     pub gender: Option<String>,
+    #[schema(required = true)]
     pub address: Option<String>,
+    #[schema(required = true)]
     pub profile_image_url: Option<String>,
+    #[schema(required = true)]
     pub hired_date: Option<chrono::NaiveDate>,
 }
 
@@ -198,7 +211,7 @@ impl From<User> for ProfileResponse {
 }
 
 // Login response data
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct LoginData {
     pub user: UserResponse,

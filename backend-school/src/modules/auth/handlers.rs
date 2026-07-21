@@ -3,7 +3,7 @@ use super::models::{
     UserResponse,
 };
 use super::services;
-use crate::api_response::{ApiErrorResponse, ApiResponse};
+use crate::api_response::{ApiErrorResponse, ApiResponse, EmptyData};
 use crate::error::AppError;
 use crate::middleware::permission::get_cached_user_permissions;
 use crate::utils::file_url::get_file_url_from_string;
@@ -22,6 +22,18 @@ use axum::{
 use tower_cookies::{Cookie, Cookies};
 
 /// Login handler
+#[utoipa::path(
+    post,
+    path = "/api/auth/login",
+    operation_id = "login",
+    tag = "auth",
+    request_body = LoginRequest,
+    responses(
+        (status = 200, description = "Authenticated user", body = ApiResponse<LoginData>),
+        (status = 400, description = "Invalid request", body = ApiErrorResponse),
+        (status = 401, description = "Invalid credentials", body = ApiErrorResponse)
+    )
+)]
 pub async fn login(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -113,6 +125,15 @@ pub async fn login(
 }
 
 /// Logout handler
+#[utoipa::path(
+    post,
+    path = "/api/auth/logout",
+    operation_id = "logout",
+    tag = "auth",
+    responses(
+        (status = 200, description = "Authentication cookie cleared", body = ApiResponse<EmptyData>)
+    )
+)]
 pub async fn logout(cookies: Cookies) -> Result<impl IntoResponse, AppError> {
     // Remove auth token cookie
     let mut cookie = Cookie::new("auth_token", "");
@@ -186,6 +207,17 @@ pub async fn me(
 /// Returns complete user profile with all fields
 /// Get full profile handler (GET /me/profile)
 /// Returns complete user profile with all fields
+#[utoipa::path(
+    get,
+    path = "/api/auth/me/profile",
+    operation_id = "getCurrentUserProfile",
+    tag = "auth",
+    responses(
+        (status = 200, description = "Current user's full profile", body = ApiResponse<ProfileResponse>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 404, description = "User not found", body = ApiErrorResponse)
+    )
+)]
 pub async fn get_profile(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -217,6 +249,19 @@ pub async fn get_profile(
 /// Updates user's editable fields only
 /// Update profile handler (PUT /me/profile)
 /// Updates user's editable fields only
+#[utoipa::path(
+    put,
+    path = "/api/auth/me/profile",
+    operation_id = "updateCurrentUserProfile",
+    tag = "auth",
+    request_body = UpdateProfileRequest,
+    responses(
+        (status = 200, description = "Updated current-user profile", body = ApiResponse<ProfileResponse>),
+        (status = 400, description = "Invalid profile data", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 404, description = "User not found", body = ApiErrorResponse)
+    )
+)]
 pub async fn update_profile(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -240,6 +285,18 @@ pub async fn update_profile(
 /// Changes user's password after verifying current password
 /// Change password handler (POST /me/change-password)
 /// Changes user's password after verifying current password
+#[utoipa::path(
+    post,
+    path = "/api/auth/me/change-password",
+    operation_id = "changeCurrentUserPassword",
+    tag = "auth",
+    request_body = ChangePasswordRequest,
+    responses(
+        (status = 200, description = "Password changed", body = ApiResponse<EmptyData>),
+        (status = 400, description = "Invalid password data", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required or current password invalid", body = ApiErrorResponse)
+    )
+)]
 pub async fn change_password(
     State(state): State<AppState>,
     headers: HeaderMap,
