@@ -2,7 +2,7 @@
 
 **Date:** 2026-07-22
 
-**Status:** Approved in conversation; written review pending
+**Status:** Approved
 
 **Scope:** Backend-first OpenAPI generation, beginning with `/api/auth/me` and expanding in verified phases to all application JSON HTTP APIs
 
