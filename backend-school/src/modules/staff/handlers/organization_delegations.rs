@@ -83,6 +83,7 @@ pub async fn create_delegation(
     Json(body): Json<CreateDelegationRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let context = actor_tenant_context(&state, &headers).await?;
+    let tenant = context.tenant.subdomain.clone();
     let pool = context.tenant.pool;
     let actor = context.actor;
     organization_access_policy::can_approve_organization_work(&pool, &actor, organization_unit_id)
@@ -127,8 +128,9 @@ pub async fn create_delegation(
     )
     .await?;
 
-    state.permission_cache.invalidate(&body.to_user_id);
-    state.notify_permission_changed(body.to_user_id);
+    let user_id = body.to_user_id;
+    state.permission_cache.invalidate_user(&tenant, user_id);
+    state.notify_permission_changed(user_id);
 
     Ok(Json(ApiResponse::ok(DelegationIdData { delegation_id: id })).into_response())
 }
@@ -139,6 +141,7 @@ pub async fn revoke_delegation(
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, AppError> {
     let context = actor_tenant_context(&state, &headers).await?;
+    let tenant = context.tenant.subdomain.clone();
     let pool = context.tenant.pool;
     let actor = context.actor;
 
@@ -163,7 +166,7 @@ pub async fn revoke_delegation(
     }
 
     organization_delegation_service::revoke_delegation(&pool, delegation_id).await?;
-    state.permission_cache.invalidate(&to_user_id);
+    state.permission_cache.invalidate_user(&tenant, to_user_id);
     state.notify_permission_changed(to_user_id);
 
     Ok(Json(ApiResponse::empty()).into_response())

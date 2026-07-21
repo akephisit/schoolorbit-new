@@ -72,6 +72,7 @@ pub async fn update_role(
     Json(payload): Json<UpdateRoleRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let context = actor_tenant_context(&state, &headers).await?;
+    let tenant = context.tenant.subdomain.clone();
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ROLES_UPDATE_ALL)?;
@@ -79,7 +80,7 @@ pub async fn update_role(
     role_service::update_role(&pool, role_id, payload).await?;
 
     // Role permissions changed — every user with this role has stale cache
-    state.permission_cache.clear_all();
+    state.permission_cache.invalidate_tenant(&tenant);
     state.notify_all_permissions_changed();
 
     Ok(Json(ApiResponse::empty_with_message("อัปเดตบทบาทสำเร็จ")).into_response())

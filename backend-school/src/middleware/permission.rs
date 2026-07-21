@@ -1,7 +1,9 @@
 use crate::db::permission_cache::PermissionCache;
 use crate::error::AppError;
 use crate::permissions::registry::codes;
-use axum::http::{header, HeaderMap};
+use crate::utils::jwt::authenticate_for_tenant;
+use axum::http::HeaderMap;
+use sqlx::PgPool;
 use uuid::Uuid;
 
 #[derive(Clone, Debug)]
@@ -67,47 +69,18 @@ impl ActorContext {
     }
 }
 
-fn extract_actor_user_id(headers: &HeaderMap) -> Result<Uuid, AppError> {
-    let auth_header = headers
-        .get(header::AUTHORIZATION)
-        .and_then(|h| h.to_str().ok());
-
-    let token_from_header = auth_header.and_then(|h| h.strip_prefix("Bearer ").map(str::to_string));
-
-    let token_from_cookie = headers
-        .get(header::COOKIE)
-        .and_then(|h| h.to_str().ok())
-        .and_then(|cookie| crate::utils::jwt::JwtService::extract_token_from_cookie(Some(cookie)));
-
-    let token = match token_from_header.or(token_from_cookie) {
-        Some(t) => t,
-        None => return Err(AppError::AuthError("กรุณาเข้าสู่ระบบ".to_string())),
-    };
-
-    let claims = match crate::utils::jwt::JwtService::verify_token(&token) {
-        Ok(c) => c,
-        Err(_) => return Err(AppError::AuthError("Token ไม่ถูกต้อง".to_string())),
-    };
-
-    let user_id = match Uuid::parse_str(&claims.sub) {
-        Ok(id) => id,
-        Err(_) => return Err(AppError::AuthError("Token ไม่ถูกต้อง".to_string())),
-    };
-
-    Ok(user_id)
-}
-
 pub async fn get_cached_user_permissions(
+    tenant: &str,
     user_id: Uuid,
-    pool: &sqlx::PgPool,
+    pool: &PgPool,
     cache: &PermissionCache,
 ) -> Result<Vec<String>, sqlx::Error> {
-    if let Some(permissions) = cache.get(&user_id) {
+    if let Some(permissions) = cache.get(tenant, user_id) {
         return Ok(permissions);
     }
 
     let permissions = fetch_user_permissions(user_id, pool).await?;
-    cache.set(user_id, permissions.clone());
+    cache.set(tenant, user_id, permissions.clone());
     Ok(permissions)
 }
 
@@ -184,11 +157,12 @@ async fn fetch_user_permissions(
 /// Returns Err(401 Response) on auth failure only.
 pub async fn load_actor_context(
     headers: &HeaderMap,
-    pool: &sqlx::PgPool,
+    tenant: &str,
+    pool: &PgPool,
     cache: &PermissionCache,
 ) -> Result<ActorContext, AppError> {
-    let user_id = extract_actor_user_id(headers)?;
-    let permissions = get_cached_user_permissions(user_id, pool, cache)
+    let user_id = authenticate_for_tenant(headers, tenant)?.user_id;
+    let permissions = get_cached_user_permissions(tenant, user_id, pool, cache)
         .await
         .map_err(|_| AppError::InternalServerError("ไม่สามารถตรวจสอบสิทธิ์ได้".to_string()))?;
 
@@ -200,10 +174,11 @@ pub async fn load_actor_context(
 
 pub async fn load_actor_context_or_error(
     headers: &HeaderMap,
-    pool: &sqlx::PgPool,
+    tenant: &str,
+    pool: &PgPool,
     cache: &PermissionCache,
 ) -> Result<ActorContext, AppError> {
-    load_actor_context(headers, pool, cache).await
+    load_actor_context(headers, tenant, pool, cache).await
 }
 
 #[cfg(test)]

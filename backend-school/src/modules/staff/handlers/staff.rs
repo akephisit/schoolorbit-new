@@ -113,6 +113,7 @@ pub async fn update_staff(
     Json(payload): Json<UpdateStaffRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let context = actor_tenant_context(&state, &headers).await?;
+    let tenant = context.tenant.subdomain.clone();
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::STAFF_UPDATE_ALL)?;
@@ -120,7 +121,7 @@ pub async fn update_staff(
     staff_service::update_staff(&pool, staff_id, payload).await?;
 
     // Roles/organization memberships may have changed — invalidate this user's permission cache
-    state.permission_cache.invalidate(&staff_id);
+    state.permission_cache.invalidate_user(&tenant, staff_id);
     state.notify_permission_changed(staff_id);
 
     Ok((

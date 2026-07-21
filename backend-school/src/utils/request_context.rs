@@ -80,7 +80,13 @@ pub async fn actor_tenant_context(
     headers: &HeaderMap,
 ) -> Result<ActorTenantContext, AppError> {
     let tenant = tenant_context(state, headers).await?;
-    let actor = load_actor_context_or_error(headers, &tenant.pool, &state.permission_cache).await?;
+    let actor = load_actor_context_or_error(
+        headers,
+        &tenant.subdomain,
+        &tenant.pool,
+        &state.permission_cache,
+    )
+    .await?;
 
     Ok(ActorTenantContext { tenant, actor })
 }

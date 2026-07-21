@@ -60,12 +60,13 @@ pub async fn login(
 
     let primary_role_name = services::get_primary_role_name(&pool, user.id).await?;
 
-    let permissions = get_cached_user_permissions(user.id, &pool, &state.permission_cache)
-        .await
-        .map_err(|e| {
-            tracing::error!("Failed to fetch login permissions: {}", e);
-            AppError::InternalServerError("ไม่สามารถดึงสิทธิ์ผู้ใช้ได้".to_string())
-        })?;
+    let permissions =
+        get_cached_user_permissions(&subdomain, user.id, &pool, &state.permission_cache)
+            .await
+            .map_err(|e| {
+                tracing::error!("Failed to fetch login permissions: {}", e);
+                AppError::InternalServerError("ไม่สามารถดึงสิทธิ์ผู้ใช้ได้".to_string())
+            })?;
 
     // Create user response manually (LoginUser doesn't implement From)
     let user_response = UserResponse {
@@ -140,17 +141,19 @@ pub async fn me(
         .clone();
 
     let context = current_user_tenant_context_from_claims(&state, &headers, &claims).await?;
+    let subdomain = context.tenant.subdomain.clone();
     let pool = context.tenant.pool;
 
     let user = services::find_user_by_id(&pool, context.user_id).await?;
     let primary_role_name = services::get_primary_role_name(&pool, user.id).await?;
 
-    let permissions = get_cached_user_permissions(user.id, &pool, &state.permission_cache)
-        .await
-        .map_err(|e| {
-            tracing::error!("Failed to fetch current user permissions: {}", e);
-            AppError::InternalServerError("ไม่สามารถดึงสิทธิ์ผู้ใช้ได้".to_string())
-        })?;
+    let permissions =
+        get_cached_user_permissions(&subdomain, user.id, &pool, &state.permission_cache)
+            .await
+            .map_err(|e| {
+                tracing::error!("Failed to fetch current user permissions: {}", e);
+                AppError::InternalServerError("ไม่สามารถดึงสิทธิ์ผู้ใช้ได้".to_string())
+            })?;
 
     // Create response with primary role name and permissions
     let mut user_response = UserResponse::from(user);

@@ -38,6 +38,7 @@ pub async fn assign_user_role(
     Json(payload): Json<AssignRoleRequest>,
 ) -> Result<Response, AppError> {
     let context = actor_tenant_context(&state, &headers).await?;
+    let tenant = context.tenant.subdomain.clone();
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ROLES_ASSIGN_ALL)?;
@@ -45,7 +46,7 @@ pub async fn assign_user_role(
     Ok(
         match user_role_service::assign_user_role(&pool, user_id, payload).await {
             Ok(AssignRoleOutcome::Created(id)) => {
-                state.permission_cache.invalidate(&user_id);
+                state.permission_cache.invalidate_user(&tenant, user_id);
                 state.notify_permission_changed(user_id);
                 (
                     StatusCode::CREATED,
@@ -90,6 +91,7 @@ pub async fn remove_user_role(
     Path((user_id, role_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Response, AppError> {
     let context = actor_tenant_context(&state, &headers).await?;
+    let tenant = context.tenant.subdomain.clone();
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ROLES_REMOVE_ALL)?;
@@ -97,7 +99,7 @@ pub async fn remove_user_role(
     Ok(
         match user_role_service::remove_user_role(&pool, user_id, role_id).await {
             Ok(true) => {
-                state.permission_cache.invalidate(&user_id);
+                state.permission_cache.invalidate_user(&tenant, user_id);
                 state.notify_permission_changed(user_id);
                 (
                     StatusCode::OK,

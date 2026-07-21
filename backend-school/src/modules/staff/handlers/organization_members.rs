@@ -75,6 +75,7 @@ pub async fn add_member(
     Json(body): Json<AddMemberRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let context = actor_tenant_context(&state, &headers).await?;
+    let tenant = context.tenant.subdomain.clone();
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ROLES_ASSIGN_ALL)?;
@@ -100,8 +101,9 @@ pub async fn add_member(
     )
     .await?;
 
-    state.permission_cache.invalidate(&body.user_id);
-    state.notify_permission_changed(body.user_id);
+    let user_id = body.user_id;
+    state.permission_cache.invalidate_user(&tenant, user_id);
+    state.notify_permission_changed(user_id);
     Ok(Json(ApiResponse::empty()).into_response())
 }
 
@@ -112,6 +114,7 @@ pub async fn update_member(
     Json(body): Json<UpdateMemberRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let context = actor_tenant_context(&state, &headers).await?;
+    let tenant = context.tenant.subdomain.clone();
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ROLES_ASSIGN_ALL)?;
@@ -141,7 +144,7 @@ pub async fn update_member(
             .into_response());
     }
 
-    state.permission_cache.invalidate(&user_id);
+    state.permission_cache.invalidate_user(&tenant, user_id);
     state.notify_permission_changed(user_id);
     Ok(Json(ApiResponse::empty()).into_response())
 }
@@ -152,11 +155,12 @@ pub async fn remove_member(
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, AppError> {
     let context = actor_tenant_context(&state, &headers).await?;
+    let tenant = context.tenant.subdomain.clone();
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ROLES_ASSIGN_ALL)?;
     organization_member_service::remove_member(&pool, organization_unit_id, user_id).await?;
-    state.permission_cache.invalidate(&user_id);
+    state.permission_cache.invalidate_user(&tenant, user_id);
     state.notify_permission_changed(user_id);
     Ok(Json(ApiResponse::empty()).into_response())
 }
