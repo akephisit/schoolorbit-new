@@ -56,6 +56,20 @@ test('frontend auth consumes the shared envelope through apiClient', async () =>
 	const source = await readRepoFile('frontend-school/src/lib/api/auth.ts');
 
 	assert.match(source, /import\s+\{[^}]*\bapiClient\b[^}]*\}\s+from\s+['"]\$lib\/api\/client['"]/);
+	assert.match(
+		source,
+		/import\s+type\s+\{\s*components\s*\}\s+from\s+['"]\$lib\/api\/generated\/school-api['"]/
+	);
+	assert.match(
+		source,
+		/export\s+type\s+CurrentUserDto\s*=\s*components\['schemas'\]\['UserResponse'\]/
+	);
+	assert.match(source, /function\s+normalizeCurrentUser\(userData:\s*CurrentUserDto\):\s*User/);
+	assert.doesNotMatch(source, /interface\s+BackendUser/);
+	assert.doesNotMatch(source, /userData\.user_type/);
+	assert.doesNotMatch(source, /\.\.\.userData/);
+	assert.match(source, /nationalId:\s*userData\.nationalId\s*\?\?\s*undefined/);
+	assert.match(source, /profileImageUrl:\s*userData\.profileImageUrl\s*\?\?\s*undefined/);
 	assert.doesNotMatch(source, /\bfetch\s*\(/);
 	assert.doesNotMatch(source, /\b(getRaw|postRaw|putRaw)\b/);
 	assert.match(source, /\.data\?\.user/);

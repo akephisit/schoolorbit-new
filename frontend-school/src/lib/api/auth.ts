@@ -1,4 +1,5 @@
 import { apiClient, requireApiData } from '$lib/api/client';
+import type { components } from '$lib/api/generated/school-api';
 import { authStore, type User } from '$lib/stores/auth';
 import { toast } from 'svelte-sonner';
 
@@ -35,23 +36,28 @@ export interface ProfileResponse {
 	hiredDate?: string;
 }
 
-interface BackendUser extends Omit<User, 'role' | 'user_type'> {
-	role?: string;
-	userType?: string;
-	user_type?: string;
-}
+export type CurrentUserDto = components['schemas']['UserResponse'];
 
 interface LoginData {
-	user: BackendUser;
+	user: CurrentUserDto;
 }
 
-function normalizeUser(userData: BackendUser): User {
-	const userType = userData.userType || userData.user_type;
-
+function normalizeCurrentUser(userData: CurrentUserDto): User {
 	return {
-		...userData,
-		role: userData.role || userData.primaryRoleName || userType || '',
-		user_type: userType
+		id: userData.id,
+		username: userData.username,
+		nationalId: userData.nationalId ?? undefined,
+		email: userData.email ?? undefined,
+		firstName: userData.firstName,
+		lastName: userData.lastName,
+		role: userData.primaryRoleName ?? userData.userType,
+		user_type: userData.userType,
+		phone: userData.phone ?? undefined,
+		status: userData.status,
+		createdAt: userData.createdAt,
+		primaryRoleName: userData.primaryRoleName,
+		profileImageUrl: userData.profileImageUrl ?? undefined,
+		permissions: userData.permissions
 	};
 }
 
@@ -67,7 +73,7 @@ class AuthAPI {
 			if (!response.success || !response.data?.user) {
 				throw new Error(response.error || 'เกิดข้อผิดพลาดในการเข้าสู่ระบบ');
 			}
-			const user = normalizeUser(response.data.user);
+			const user = normalizeCurrentUser(response.data.user);
 
 			authStore.setUser(user);
 			toast.success(response.message || 'เข้าสู่ระบบสำเร็จ');
@@ -109,9 +115,9 @@ class AuthAPI {
 		const silent = options.silent ?? true;
 		if (!silent) authStore.setLoading(true);
 		try {
-			const response = await apiClient.get<BackendUser>('/api/auth/me');
+			const response = await apiClient.get<CurrentUserDto>('/api/auth/me');
 			const userData = requireApiData(response, 'Failed to check auth');
-			const user = normalizeUser(userData);
+			const user = normalizeCurrentUser(userData);
 
 			authStore.setUser(user);
 			return true;
