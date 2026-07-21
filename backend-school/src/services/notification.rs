@@ -6,6 +6,31 @@ use web_push::*;
 
 pub struct NotificationService;
 
+pub struct TenantNotificationPublisher<'a> {
+    tenant: &'a str,
+    notification_tx: &'a broadcast::Sender<TenantNotificationEvent>,
+}
+
+impl<'a> TenantNotificationPublisher<'a> {
+    pub fn new(
+        tenant: &'a str,
+        notification_tx: &'a broadcast::Sender<TenantNotificationEvent>,
+    ) -> Self {
+        Self {
+            tenant,
+            notification_tx,
+        }
+    }
+
+    fn publish(&self, user_id: Uuid, notification: Notification) {
+        drop(self.notification_tx.send(TenantNotificationEvent::new(
+            self.tenant,
+            user_id,
+            notification,
+        )));
+    }
+}
+
 #[derive(Debug)]
 pub enum NotificationType {
     Info,
@@ -30,8 +55,7 @@ impl NotificationService {
     /// This handles database insertion, real-time broadcasting via SSE, AND Web Push.
     pub async fn send(
         pool: &sqlx::PgPool,
-        notification_tx: &broadcast::Sender<TenantNotificationEvent>,
-        tenant: &str,
+        publisher: &TenantNotificationPublisher<'_>,
         user_id: Uuid,
         title: &str,
         message: &str,
@@ -56,7 +80,7 @@ impl NotificationService {
         let id = notification.id;
 
         // Broadcast to SSE (Real-time)
-        let _ = notification_tx.send(TenantNotificationEvent::new(tenant, user_id, notification));
+        publisher.publish(user_id, notification);
 
         // 🚀 Trigger Web Push (Fire-and-forget task)
         let pool_clone = pool.clone();
@@ -175,5 +199,36 @@ impl NotificationService {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::Utc;
+
+    #[test]
+    fn tenant_publisher_emits_supplied_tenant_and_user() {
+        let (notification_tx, mut notification_rx) = broadcast::channel(1);
+        let tenant = "tenant-a";
+        let user_id = Uuid::new_v4();
+        let publisher = TenantNotificationPublisher::new(tenant, &notification_tx);
+        let notification = Notification {
+            id: Uuid::new_v4(),
+            title: "Test".to_string(),
+            message: "Message".to_string(),
+            type_: "info".to_string(),
+            link: None,
+            read_at: None,
+            created_at: Utc::now(),
+        };
+
+        publisher.publish(user_id, notification);
+
+        let event = notification_rx
+            .try_recv()
+            .expect("tenant notification event should be published");
+        assert_eq!(event.tenant, tenant);
+        assert_eq!(event.user_id, user_id);
     }
 }

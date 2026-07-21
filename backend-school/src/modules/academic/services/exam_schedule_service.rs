@@ -370,7 +370,9 @@ pub fn time_ranges_overlap(
 }
 
 fn is_exam_session_start_on_slot(starts_at: NaiveTime) -> bool {
-    starts_at.num_seconds_from_midnight() % (EXAM_SESSION_SLOT_MINUTES * 60) == 0
+    starts_at
+        .num_seconds_from_midnight()
+        .is_multiple_of(EXAM_SESSION_SLOT_MINUTES * 60)
 }
 
 #[derive(Debug, Clone)]

@@ -369,16 +369,19 @@ fn normalize_evaluator_replacement(
         ));
     }
 
-    if normalized
-        .iter()
-        .all(|evaluator| evaluator.is_required.unwrap_or(true) == false)
-    {
+    if !has_required_evaluator(&normalized) {
         return Err(AppError::ValidationError(
             "ต้องมีผู้ประเมินหลักอย่างน้อย 1 คน".to_string(),
         ));
     }
 
     Ok(normalized)
+}
+
+fn has_required_evaluator(evaluators: &[EvaluatorAssignmentInput]) -> bool {
+    evaluators
+        .iter()
+        .any(|evaluator| evaluator.is_required.unwrap_or(true))
 }
 
 pub fn average_submitted_evaluator_rating(inputs: &[EvaluatorRatingInput]) -> Option<f64> {
@@ -1437,11 +1440,7 @@ pub async fn approve_observation_request(
     observation_id: Uuid,
     input: ApproveObservationRequest,
 ) -> Result<SupervisionObservation, AppError> {
-    if input
-        .evaluators
-        .iter()
-        .all(|evaluator| evaluator.is_required.unwrap_or(true) == false)
-    {
+    if !has_required_evaluator(&input.evaluators) {
         return Err(AppError::ValidationError(
             "ต้องมีผู้ประเมินหลักอย่างน้อย 1 คน".to_string(),
         ));
@@ -3811,6 +3810,35 @@ mod tests {
         assert!(!manager_can_edit_observation(
             SupervisionObservationStatus::Cancelled
         ));
+    }
+
+    #[test]
+    fn explicitly_optional_evaluators_have_no_required_member() {
+        let evaluators = vec![
+            EvaluatorAssignmentInput {
+                evaluator_user_id: Uuid::new_v4(),
+                role_label: None,
+                is_required: Some(false),
+            },
+            EvaluatorAssignmentInput {
+                evaluator_user_id: Uuid::new_v4(),
+                role_label: None,
+                is_required: Some(false),
+            },
+        ];
+
+        assert!(!has_required_evaluator(&evaluators));
+    }
+
+    #[test]
+    fn unspecified_evaluator_requirement_defaults_to_required() {
+        let evaluators = vec![EvaluatorAssignmentInput {
+            evaluator_user_id: Uuid::new_v4(),
+            role_label: None,
+            is_required: None,
+        }];
+
+        assert!(has_required_evaluator(&evaluators));
     }
 
     #[test]

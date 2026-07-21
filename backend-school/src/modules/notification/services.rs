@@ -4,7 +4,9 @@ use uuid::Uuid;
 
 use crate::error::AppError;
 use crate::modules::notification::events::TenantNotificationEvent;
-use crate::services::notification::{NotificationService, NotificationType};
+use crate::services::notification::{
+    NotificationService, NotificationType, TenantNotificationPublisher,
+};
 
 use super::models::{
     CreateNotificationRequest, ListNotificationsQuery, ListNotificationsResponse, Notification,
@@ -101,11 +103,11 @@ pub async fn create_notification(
 ) -> Result<(), AppError> {
     let notification_type = notification_type_from_str(&payload.type_);
     let target_user_id = notification_target_user_id(payload.user_id, actor_user_id);
+    let publisher = TenantNotificationPublisher::new(tenant, notification_channel);
 
     NotificationService::send(
         pool,
-        notification_channel,
-        tenant,
+        &publisher,
         target_user_id,
         &payload.title,
         &payload.message,

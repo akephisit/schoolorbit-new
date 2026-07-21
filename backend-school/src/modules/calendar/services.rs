@@ -16,7 +16,9 @@ use crate::modules::calendar::models::{
     UpsertCalendarTagRequest,
 };
 use crate::modules::notification::events::TenantNotificationEvent;
-use crate::services::notification::{NotificationService, NotificationType};
+use crate::services::notification::{
+    NotificationService, NotificationType, TenantNotificationPublisher,
+};
 
 const DUPLICATE_CATEGORY_MESSAGE: &str = "มีหมวดหมู่นี้อยู่แล้ว";
 const DUPLICATE_TAG_MESSAGE: &str = "มีแท็กนี้อยู่แล้ว";
@@ -394,13 +396,13 @@ pub async fn send_event_notification(
     .await?;
 
     let (title, message) = calendar_notification_text(event, &notification_kind);
+    let publisher = TenantNotificationPublisher::new(tenant, notification_channel);
     let mut successful_count = 0;
     let mut failed_count = 0;
     for recipient in recipients {
         if let Err(error) = NotificationService::send(
             pool,
-            notification_channel,
-            tenant,
+            &publisher,
             recipient.id,
             &title,
             &message,

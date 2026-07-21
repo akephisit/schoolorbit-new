@@ -143,7 +143,7 @@ fn route_user_type(user_type: Option<&str>) -> &str {
 }
 
 fn route_workspace_code<'a>(workspace: Option<&'a str>, group: &'a str) -> &'a str {
-    workspace.unwrap_or_else(|| match group {
+    workspace.unwrap_or(match group {
         "main" => "home",
         "academic" => "academic",
         "personnel" => "personnel",
