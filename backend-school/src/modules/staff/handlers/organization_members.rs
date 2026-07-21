@@ -103,7 +103,7 @@ pub async fn add_member(
 
     let user_id = body.user_id;
     state.permission_cache.invalidate_user(&tenant, user_id);
-    state.notify_permission_changed(user_id);
+    state.notify_permission_changed(&tenant, user_id);
     Ok(Json(ApiResponse::empty()).into_response())
 }
 
@@ -145,7 +145,7 @@ pub async fn update_member(
     }
 
     state.permission_cache.invalidate_user(&tenant, user_id);
-    state.notify_permission_changed(user_id);
+    state.notify_permission_changed(&tenant, user_id);
     Ok(Json(ApiResponse::empty()).into_response())
 }
 
@@ -161,6 +161,6 @@ pub async fn remove_member(
     actor.require_permission(codes::ROLES_ASSIGN_ALL)?;
     organization_member_service::remove_member(&pool, organization_unit_id, user_id).await?;
     state.permission_cache.invalidate_user(&tenant, user_id);
-    state.notify_permission_changed(user_id);
+    state.notify_permission_changed(&tenant, user_id);
     Ok(Json(ApiResponse::empty()).into_response())
 }

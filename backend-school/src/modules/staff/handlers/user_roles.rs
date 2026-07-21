@@ -47,7 +47,7 @@ pub async fn assign_user_role(
         match user_role_service::assign_user_role(&pool, user_id, payload).await {
             Ok(AssignRoleOutcome::Created(id)) => {
                 state.permission_cache.invalidate_user(&tenant, user_id);
-                state.notify_permission_changed(user_id);
+                state.notify_permission_changed(&tenant, user_id);
                 (
                     StatusCode::CREATED,
                     Json(ApiResponse::with_message(
@@ -100,7 +100,7 @@ pub async fn remove_user_role(
         match user_role_service::remove_user_role(&pool, user_id, role_id).await {
             Ok(true) => {
                 state.permission_cache.invalidate_user(&tenant, user_id);
-                state.notify_permission_changed(user_id);
+                state.notify_permission_changed(&tenant, user_id);
                 (
                     StatusCode::OK,
                     Json(ApiResponse::empty_with_message("ลบบทบาทสำเร็จ")),

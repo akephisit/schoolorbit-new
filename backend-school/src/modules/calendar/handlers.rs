@@ -49,6 +49,7 @@ pub async fn create_calendar_event(
         if let Err(error) = calendar_service::send_event_notification(
             &context.tenant.pool,
             &state.notification_channel,
+            &context.tenant.subdomain,
             &event,
             outcome.notification_kind,
         )
@@ -84,6 +85,7 @@ pub async fn update_calendar_event(
         if let Err(error) = calendar_service::send_event_notification(
             &context.tenant.pool,
             &state.notification_channel,
+            &context.tenant.subdomain,
             &event,
             outcome.notification_kind,
         )

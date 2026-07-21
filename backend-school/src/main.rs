@@ -11,9 +11,8 @@ mod utils;
 #[cfg(test)]
 mod test_helpers;
 
-use crate::modules::notification::{
-    events::{PermissionChangeEvent, WorkChangeEvent},
-    models::Notification,
+use crate::modules::notification::events::{
+    PermissionChangeEvent, TenantNotificationEvent, WorkChangeEvent,
 };
 use axum::{
     middleware as axum_middleware,
@@ -38,35 +37,35 @@ pub struct AppState {
     pub admin_client: Arc<AdminClient>, // HTTP client to backend-admin (for school mapping)
     pub pool_manager: Arc<PoolManager>,
     pub websocket_manager: Arc<modules::academic::websockets::WebSocketManager>,
-    pub notification_channel: broadcast::Sender<(Uuid, Notification)>, // (User ID, Notification)
+    pub notification_channel: broadcast::Sender<TenantNotificationEvent>,
     pub permission_event_channel: broadcast::Sender<PermissionChangeEvent>,
     pub work_event_channel: broadcast::Sender<WorkChangeEvent>,
     pub permission_cache: Arc<PermissionCache>,
 }
 
 impl AppState {
-    pub fn notify_permission_changed(&self, target_user_id: Uuid) {
+    pub fn notify_permission_changed(&self, tenant: &str, target_user_id: Uuid) {
         let _ = self
             .permission_event_channel
-            .send(PermissionChangeEvent::for_user(target_user_id));
+            .send(PermissionChangeEvent::for_user(tenant, target_user_id));
     }
 
-    pub fn notify_all_permissions_changed(&self) {
+    pub fn notify_all_permissions_changed(&self, tenant: &str) {
         let _ = self
             .permission_event_channel
-            .send(PermissionChangeEvent::for_all_users());
+            .send(PermissionChangeEvent::for_all_users(tenant));
     }
 
-    pub fn notify_work_items_changed(&self) {
+    pub fn notify_work_items_changed(&self, tenant: &str) {
         let _ = self
             .work_event_channel
-            .send(WorkChangeEvent::work_items_changed());
+            .send(WorkChangeEvent::work_items_changed(tenant));
     }
 
-    pub fn notify_workflow_window_changed(&self) {
+    pub fn notify_workflow_window_changed(&self, tenant: &str) {
         let _ = self
             .work_event_channel
-            .send(WorkChangeEvent::workflow_window_changed());
+            .send(WorkChangeEvent::workflow_window_changed(tenant));
     }
 }
 

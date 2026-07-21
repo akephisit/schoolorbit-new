@@ -1,4 +1,4 @@
-use crate::modules::notification::models::Notification;
+use crate::modules::notification::{events::TenantNotificationEvent, models::Notification};
 use std::env;
 use tokio::sync::broadcast;
 use uuid::Uuid;
@@ -30,7 +30,8 @@ impl NotificationService {
     /// This handles database insertion, real-time broadcasting via SSE, AND Web Push.
     pub async fn send(
         pool: &sqlx::PgPool,
-        notification_tx: &broadcast::Sender<(Uuid, Notification)>,
+        notification_tx: &broadcast::Sender<TenantNotificationEvent>,
+        tenant: &str,
         user_id: Uuid,
         title: &str,
         message: &str,
@@ -55,7 +56,7 @@ impl NotificationService {
         let id = notification.id;
 
         // Broadcast to SSE (Real-time)
-        let _ = notification_tx.send((user_id, notification));
+        let _ = notification_tx.send(TenantNotificationEvent::new(tenant, user_id, notification));
 
         // 🚀 Trigger Web Push (Fire-and-forget task)
         let pool_clone = pool.clone();

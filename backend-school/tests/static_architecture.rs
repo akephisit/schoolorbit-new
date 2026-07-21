@@ -2122,16 +2122,16 @@ fn permission_change_sse_supports_user_targeted_and_broadcast_invalidation() {
     let app_state = read_source(manifest_dir().join("src/main.rs"));
 
     for expected in [
-        "pub fn for_user(user_id: Uuid)",
-        "pub fn for_all_users()",
-        "pub fn applies_to(&self, user_id: Uuid) -> bool",
+        "pub fn for_user(tenant: &str, user_id: Uuid)",
+        "pub fn for_all_users(tenant: &str)",
+        "pub fn applies_to(&self, tenant: &str, user_id: Uuid) -> bool",
     ] {
         assert!(event_source.contains(expected), "missing {expected}");
     }
 
     for expected in [
         "permission_event_channel.subscribe()",
-        "event.applies_to(user_id)",
+        "event.applies_to(&tenant, user_id)",
         ".event(\"permission_changed\")",
     ] {
         assert!(
@@ -2140,8 +2140,10 @@ fn permission_change_sse_supports_user_targeted_and_broadcast_invalidation() {
         );
     }
 
-    assert!(app_state.contains("notify_permission_changed(&self, target_user_id: Uuid)"));
-    assert!(app_state.contains("notify_all_permissions_changed(&self)"));
+    assert!(
+        app_state.contains("notify_permission_changed(&self, tenant: &str, target_user_id: Uuid)")
+    );
+    assert!(app_state.contains("notify_all_permissions_changed(&self, tenant: &str)"));
 }
 
 #[test]
@@ -2158,12 +2160,16 @@ fn work_change_sse_supports_work_item_and_window_refresh_signals() {
         "WorkItemsChanged",
         "WorkflowWindowChanged",
         "pub struct WorkChangeEvent",
+        "pub fn work_items_changed(tenant: &str)",
+        "pub fn workflow_window_changed(tenant: &str)",
+        "pub fn applies_to(&self, tenant: &str) -> bool",
     ] {
         assert!(event_source.contains(expected), "missing {expected}");
     }
 
     for expected in [
         "work_event_channel.subscribe()",
+        "event.applies_to(&tenant)",
         "event.event_name()",
         ".event(event.event_name())",
     ] {
@@ -2174,14 +2180,15 @@ fn work_change_sse_supports_work_item_and_window_refresh_signals() {
     }
 
     for expected in [
-        "notify_work_items_changed(&self)",
-        "notify_workflow_window_changed(&self)",
+        "notify_work_items_changed(&self, tenant: &str)",
+        "notify_workflow_window_changed(&self, tenant: &str)",
     ] {
         assert!(app_state.contains(expected), "missing {expected}");
     }
 
-    assert!(work_handler.contains("state.notify_work_items_changed()"));
-    assert!(workflow_handler.contains("state.notify_workflow_window_changed()"));
+    assert!(work_handler.contains("state.notify_work_items_changed(&context.tenant.subdomain)"));
+    assert!(workflow_handler
+        .contains("state.notify_workflow_window_changed(&context.tenant.subdomain)"));
 }
 
 #[test]

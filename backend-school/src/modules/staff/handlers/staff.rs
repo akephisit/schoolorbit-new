@@ -122,7 +122,7 @@ pub async fn update_staff(
 
     // Roles/organization memberships may have changed — invalidate this user's permission cache
     state.permission_cache.invalidate_user(&tenant, staff_id);
-    state.notify_permission_changed(staff_id);
+    state.notify_permission_changed(&tenant, staff_id);
 
     Ok((
         StatusCode::OK,

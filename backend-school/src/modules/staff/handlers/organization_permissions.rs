@@ -56,7 +56,7 @@ pub async fn update_organization_permissions(
 
     // Organization permission grants changed; all cached effective permissions are stale.
     state.permission_cache.invalidate_tenant(&tenant);
-    state.notify_all_permissions_changed();
+    state.notify_all_permissions_changed(&tenant);
 
     Ok(Json(ApiResponse::empty_with_message(
         "Update organization permissions successfully",

@@ -3,6 +3,7 @@ use tokio::sync::broadcast;
 use uuid::Uuid;
 
 use crate::error::AppError;
+use crate::modules::notification::events::TenantNotificationEvent;
 use crate::services::notification::{NotificationService, NotificationType};
 
 use super::models::{
@@ -93,7 +94,8 @@ pub async fn mark_all_as_read(pool: &PgPool, user_id: Uuid) -> Result<(), AppErr
 
 pub async fn create_notification(
     pool: &PgPool,
-    notification_channel: &broadcast::Sender<(Uuid, Notification)>,
+    notification_channel: &broadcast::Sender<TenantNotificationEvent>,
+    tenant: &str,
     actor_user_id: Uuid,
     payload: CreateNotificationRequest,
 ) -> Result<(), AppError> {
@@ -103,6 +105,7 @@ pub async fn create_notification(
     NotificationService::send(
         pool,
         notification_channel,
+        tenant,
         target_user_id,
         &payload.title,
         &payload.message,

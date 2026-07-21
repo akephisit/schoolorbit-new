@@ -68,6 +68,7 @@ pub async fn stream_notifications(
 ) -> Result<Sse<impl Stream<Item = Result<Event, Infallible>>>, AppError> {
     let context = current_user_tenant_context_from_headers(&state, &headers).await?;
     let user_id = context.user_id;
+    let tenant = context.tenant.subdomain;
 
     let mut notification_rx = state.notification_channel.subscribe();
     let mut permission_rx = state.permission_event_channel.subscribe();
@@ -78,13 +79,12 @@ pub async fn stream_notifications(
             tokio::select! {
                 notification_result = notification_rx.recv() => {
                     match notification_result {
-                        Ok((target_user_id, notification)) => {
-                            if target_user_id == user_id {
-                                if let Ok(data) = serde_json::to_string(&notification) {
-                                    yield Ok(Event::default().data(data));
-                                }
+                        Ok(event) if event.applies_to(&tenant, user_id) => {
+                            if let Ok(data) = serde_json::to_string(&event.notification) {
+                                yield Ok(Event::default().data(data));
                             }
                         }
+                        Ok(_) => {}
                         Err(broadcast::error::RecvError::Lagged(_)) => {}
                         Err(broadcast::error::RecvError::Closed) => {
                             break;
@@ -93,14 +93,11 @@ pub async fn stream_notifications(
                 }
                 permission_result = permission_rx.recv() => {
                     match permission_result {
-                        Ok(event) => {
-                            if event.applies_to(user_id) {
-                                yield Ok(Event::default().event("permission_changed").data("{}"));
-                            }
-                        }
-                        Err(broadcast::error::RecvError::Lagged(_)) => {
+                        Ok(event) if event.applies_to(&tenant, user_id) => {
                             yield Ok(Event::default().event("permission_changed").data("{}"));
                         }
+                        Ok(_) => {}
+                        Err(broadcast::error::RecvError::Lagged(_)) => {}
                         Err(broadcast::error::RecvError::Closed) => {
                             break;
                         }
@@ -108,12 +105,11 @@ pub async fn stream_notifications(
                 }
                 work_result = work_rx.recv() => {
                     match work_result {
-                        Ok(event) => {
+                        Ok(event) if event.applies_to(&tenant) => {
                             yield Ok(Event::default().event(event.event_name()).data("{}"));
                         }
-                        Err(broadcast::error::RecvError::Lagged(_)) => {
-                            yield Ok(Event::default().event("work_items_changed").data("{}"));
-                        }
+                        Ok(_) => {}
+                        Err(broadcast::error::RecvError::Lagged(_)) => {}
                         Err(broadcast::error::RecvError::Closed) => {
                             break;
                         }
@@ -136,6 +132,7 @@ pub async fn create_notification(
     notification_service::create_notification(
         &context.tenant.pool,
         &state.notification_channel,
+        &context.tenant.subdomain,
         context.user_id,
         payload,
     )

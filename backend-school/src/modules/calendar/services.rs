@@ -15,7 +15,7 @@ use crate::modules::calendar::models::{
     CalendarVisibility, UpsertCalendarCategoryRequest, UpsertCalendarEventRequest,
     UpsertCalendarTagRequest,
 };
-use crate::modules::notification::models::Notification;
+use crate::modules::notification::events::TenantNotificationEvent;
 use crate::services::notification::{NotificationService, NotificationType};
 
 const DUPLICATE_CATEGORY_MESSAGE: &str = "มีหมวดหมู่นี้อยู่แล้ว";
@@ -368,7 +368,8 @@ pub async fn resolve_event_recipient_user_ids(
 
 pub async fn send_event_notification(
     pool: &PgPool,
-    notification_channel: &broadcast::Sender<(Uuid, Notification)>,
+    notification_channel: &broadcast::Sender<TenantNotificationEvent>,
+    tenant: &str,
     event: &CalendarEvent,
     notification_kind: CalendarNotificationKind,
 ) -> Result<CalendarNotificationSendOutcome, AppError> {
@@ -399,6 +400,7 @@ pub async fn send_event_notification(
         if let Err(error) = NotificationService::send(
             pool,
             notification_channel,
+            tenant,
             recipient.id,
             &title,
             &message,
@@ -1023,7 +1025,8 @@ pub async fn list_public_events(
 
 pub async fn process_due_reminders(
     pool: &PgPool,
-    notification_channel: &broadcast::Sender<(Uuid, Notification)>,
+    notification_channel: &broadcast::Sender<TenantNotificationEvent>,
+    tenant: &str,
     tenant_current_date: NaiveDate,
 ) -> Result<i64, AppError> {
     let mut marked_sent_count = 0;
@@ -1038,7 +1041,8 @@ pub async fn process_due_reminders(
 
         for candidate in candidates {
             attempted_ids.push(candidate.id);
-            if process_due_reminder_candidate(pool, notification_channel, candidate).await? {
+            if process_due_reminder_candidate(pool, notification_channel, tenant, candidate).await?
+            {
                 marked_sent_count += 1;
             }
         }
@@ -1063,7 +1067,8 @@ async fn fetch_due_reminder_candidates(
 
 async fn process_due_reminder_candidate(
     pool: &PgPool,
-    notification_channel: &broadcast::Sender<(Uuid, Notification)>,
+    notification_channel: &broadcast::Sender<TenantNotificationEvent>,
+    tenant: &str,
     candidate: DueCalendarEventReminderRow,
 ) -> Result<bool, AppError> {
     let lock_keys = calendar_reminder_advisory_lock_keys(candidate.id);
@@ -1079,9 +1084,14 @@ async fn process_due_reminder_candidate(
         return Ok(false);
     }
 
-    let processing_result =
-        process_advisory_locked_reminder(pool, notification_channel, &mut connection, candidate.id)
-            .await;
+    let processing_result = process_advisory_locked_reminder(
+        pool,
+        notification_channel,
+        tenant,
+        &mut connection,
+        candidate.id,
+    )
+    .await;
     let release_result =
         release_calendar_reminder_advisory_lock(&mut connection, candidate.id, lock_keys).await;
 
@@ -1101,7 +1111,8 @@ async fn process_due_reminder_candidate(
 
 async fn process_advisory_locked_reminder(
     pool: &PgPool,
-    notification_channel: &broadcast::Sender<(Uuid, Notification)>,
+    notification_channel: &broadcast::Sender<TenantNotificationEvent>,
+    tenant: &str,
     connection: &mut PoolConnection<Postgres>,
     reminder_id: Uuid,
 ) -> Result<bool, AppError> {
@@ -1142,6 +1153,7 @@ async fn process_advisory_locked_reminder(
     let send_outcome = match send_event_notification(
         pool,
         notification_channel,
+        tenant,
         &event,
         CalendarNotificationKind::Reminder {
             days_before: reminder.days_before,
@@ -1219,7 +1231,7 @@ fn calendar_reminder_advisory_lock_keys(reminder_id: Uuid) -> (i32, i32) {
 pub async fn process_due_calendar_reminders_for_all_tenants(
     admin_client: Arc<AdminClient>,
     pool_manager: Arc<PoolManager>,
-    notification_channel: broadcast::Sender<(Uuid, Notification)>,
+    notification_channel: broadcast::Sender<TenantNotificationEvent>,
 ) {
     let tenant_current_date = tenant_today();
 
@@ -1245,8 +1257,13 @@ pub async fn process_due_calendar_reminders_for_all_tenants(
 
         match pool_manager.get_pool(&db_url, &school.subdomain).await {
             Ok(pool) => {
-                if let Err(error) =
-                    process_due_reminders(&pool, &notification_channel, tenant_current_date).await
+                if let Err(error) = process_due_reminders(
+                    &pool,
+                    &notification_channel,
+                    &school.subdomain,
+                    tenant_current_date,
+                )
+                .await
                 {
                     tracing::error!(
                         "Calendar reminder processing failed for {}: {}",

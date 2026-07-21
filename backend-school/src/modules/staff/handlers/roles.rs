@@ -81,7 +81,7 @@ pub async fn update_role(
 
     // Role permissions changed — every user with this role has stale cache
     state.permission_cache.invalidate_tenant(&tenant);
-    state.notify_all_permissions_changed();
+    state.notify_all_permissions_changed(&tenant);
 
     Ok(Json(ApiResponse::empty_with_message("อัปเดตบทบาทสำเร็จ")).into_response())
 }

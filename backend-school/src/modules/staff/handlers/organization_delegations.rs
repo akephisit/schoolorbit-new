@@ -130,7 +130,7 @@ pub async fn create_delegation(
 
     let user_id = body.to_user_id;
     state.permission_cache.invalidate_user(&tenant, user_id);
-    state.notify_permission_changed(user_id);
+    state.notify_permission_changed(&tenant, user_id);
 
     Ok(Json(ApiResponse::ok(DelegationIdData { delegation_id: id })).into_response())
 }
@@ -167,7 +167,7 @@ pub async fn revoke_delegation(
 
     organization_delegation_service::revoke_delegation(&pool, delegation_id).await?;
     state.permission_cache.invalidate_user(&tenant, to_user_id);
-    state.notify_permission_changed(to_user_id);
+    state.notify_permission_changed(&tenant, to_user_id);
 
     Ok(Json(ApiResponse::empty()).into_response())
 }

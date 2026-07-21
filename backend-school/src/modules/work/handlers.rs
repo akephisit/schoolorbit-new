@@ -114,7 +114,7 @@ pub async fn create_work_item(
         },
     )
     .await?;
-    state.notify_work_items_changed();
+    state.notify_work_items_changed(&context.tenant.subdomain);
 
     Ok((
         StatusCode::CREATED,
