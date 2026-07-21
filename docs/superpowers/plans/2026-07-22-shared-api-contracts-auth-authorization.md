@@ -49,17 +49,17 @@ Two frontend-only calls are explicitly outside this contract because no backend 
 
 **Interfaces:**
 - Consumes: `ApiResponse<T>`, `ApiErrorResponse`, `EmptyData`, and `IdData<T>`.
-- Produces: `ToSchema` implementations for empty and identifier envelopes plus tests that require the complete 30-operation auth/authorization inventory and unique operation IDs.
+- Produces: `ToSchema` implementations for empty and identifier envelopes plus reusable test helpers for later operation inventory checks.
 
-- [ ] **Step 1: Write failing contract inventory tests**
+- [ ] **Step 1: Write failing shared-envelope tests**
 
-Add an expected `(path, method, operationId)` table to `api_contract.rs` tests. Iterate each entry and assert that the operation exists, and collect every exported `operationId` into a `HashSet` to prove uniqueness. Add exact schema assertions for `ApiResponse_EmptyData` and `ApiResponse_IdData_Uuid`.
+Add exact schema assertions for `ApiResponse_EmptyData` and `ApiResponse_IdData_Uuid`. Add reusable helpers that accept an expected `(path, method, operationId)` slice and assert each operation exists.
 
 - [ ] **Step 2: Prove the tests fail before implementation**
 
 Run: `cd backend-school && cargo test api_contract::tests -- --nocapture`
 
-Expected: FAIL because the 29 new operations and empty/id component schemas are absent.
+Expected: FAIL because the empty/id component schemas are absent.
 
 - [ ] **Step 3: Make envelope DTOs schema-capable**
 
@@ -75,13 +75,13 @@ pub struct IdData<T> {
 }
 ```
 
-Add a static architecture assertion that every handler registered in the auth/authorization inventory appears in `SchoolApiDoc`.
+Do not add the complete inventory assertion yet; each later task adds and satisfies its own operation slice before committing.
 
 - [ ] **Step 4: Run focused tests**
 
 Run: `cd backend-school && cargo test api_contract::tests -- --nocapture && cargo test --test static_architecture`
 
-Expected: inventory test still fails only for operations not yet registered; envelope schema assertions pass.
+Expected: shared envelope schema assertions PASS.
 
 - [ ] **Step 5: Commit**
 
@@ -133,7 +133,7 @@ Declare current runtime error envelopes with `ApiErrorResponse`, then add all fi
 
 Run: `cd backend-school && cargo fmt --all -- --check && cargo test api_contract::tests -- --nocapture`
 
-Expected: all auth assertions PASS while the global inventory remains red only for later tasks.
+Expected: all auth assertions PASS.
 
 ```bash
 git add backend-school/src/modules/auth backend-school/src/api_contract.rs
@@ -251,9 +251,9 @@ git commit -m "feat(api): export organization unit contracts"
 - Consumes: policy checks and cache invalidation unchanged.
 - Produces: delegation/member request, query, response schemas; eight registered operations.
 
-- [ ] **Step 1: Add failing path/query/body assertions**
+- [ ] **Step 1: Add failing final-inventory and path/query/body assertions**
 
-Assert `include_children` is an optional boolean query, all IDs are UUID path/body properties, delegation timestamps are RFC 3339 date-time strings, member `started_at` is a date, and each mutation has the current empty/id envelope.
+Add the complete expected 30-operation `(path, method, operationId)` table, prove every operation exists, and prove operation IDs are unique with a `HashSet`. Assert `include_children` is an optional boolean query, all IDs are UUID path/body properties, delegation timestamps are RFC 3339 date-time strings, member `started_at` is a date, and each mutation has the current empty/id envelope. Add a static architecture assertion that every auth/authorization handler registered in the router appears in `SchoolApiDoc`.
 
 - [ ] **Step 2: Run RED test**
 
