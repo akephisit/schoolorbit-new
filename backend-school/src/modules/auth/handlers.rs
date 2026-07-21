@@ -47,8 +47,13 @@ pub async fn login(
     }
 
     // Generate JWT token
-    let token = JwtService::generate_token(&user.id.to_string(), &user.username, &user.user_type)
-        .map_err(|e| {
+    let token = JwtService::generate_token(
+        &user.id.to_string(),
+        &user.username,
+        &user.user_type,
+        &subdomain,
+    )
+    .map_err(|e| {
         tracing::error!("Failed to generate token: {}", e);
         AppError::InternalServerError("ไม่สามารถสร้าง token ได้".to_string())
     })?;

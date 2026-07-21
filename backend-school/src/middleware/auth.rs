@@ -1,60 +1,24 @@
-use crate::api_response::ApiErrorResponse;
 use crate::error::AppError;
 use crate::modules::auth::models::User;
 use crate::utils::field_encryption;
-use crate::utils::jwt::JwtService;
+use crate::utils::jwt::authenticate_request;
 use axum::{
     extract::Request,
-    http::{header, HeaderMap, StatusCode},
+    http::HeaderMap,
     middleware::Next,
     response::{IntoResponse, Response},
-    Json,
 };
 
 /// Middleware to verify JWT token and inject user claims
 /// Supports both Authorization header (Bearer token) and Cookie
 pub async fn auth_middleware(mut req: Request, next: Next) -> Response {
-    // Try to extract token from Authorization header first (for cross-origin requests)
-    let auth_header = req
-        .headers()
-        .get(header::AUTHORIZATION)
-        .and_then(|h| h.to_str().ok());
-
-    let token_from_header = auth_header.and_then(|h| h.strip_prefix("Bearer ").map(str::to_string));
-
-    // Fallback to cookie (for same-origin requests)
-    let token_from_cookie = req
-        .headers()
-        .get(header::COOKIE)
-        .and_then(|h| h.to_str().ok())
-        .and_then(|cookie| JwtService::extract_token_from_cookie(Some(cookie)));
-
-    // Use Authorization header first, then cookie
-    let token = match token_from_header.or(token_from_cookie) {
-        Some(t) => t,
-        None => {
-            return (
-                StatusCode::UNAUTHORIZED,
-                Json(ApiErrorResponse::new("No authentication token found")),
-            )
-                .into_response();
-        }
-    };
-
-    // Verify token
-    let claims = match JwtService::verify_token(&token) {
-        Ok(c) => c,
-        Err(e) => {
-            return (
-                StatusCode::UNAUTHORIZED,
-                Json(ApiErrorResponse::new(format!("Invalid token: {}", e))),
-            )
-                .into_response();
-        }
+    let authenticated = match authenticate_request(req.headers()) {
+        Ok(authenticated) => authenticated,
+        Err(error) => return error.into_response(),
     };
 
     // Insert claims into request extensions
-    req.extensions_mut().insert(claims);
+    req.extensions_mut().insert(authenticated.claims);
 
     next.run(req).await
 }
@@ -64,28 +28,9 @@ pub async fn extract_user_id(
     headers: &HeaderMap,
     _pool: &sqlx::PgPool,
 ) -> Result<uuid::Uuid, String> {
-    // Try to extract token from Authorization header first
-    let auth_header = headers
-        .get(header::AUTHORIZATION)
-        .and_then(|h| h.to_str().ok());
-
-    let token_from_header = auth_header.and_then(|h| h.strip_prefix("Bearer ").map(str::to_string));
-
-    // Fallback to cookie
-    let token_from_cookie = headers
-        .get(header::COOKIE)
-        .and_then(|h| h.to_str().ok())
-        .and_then(|cookie| JwtService::extract_token_from_cookie(Some(cookie)));
-
-    // Use Authorization header first, then cookie
-    let token = token_from_header
-        .or(token_from_cookie)
-        .ok_or("No authentication token found".to_string())?;
-
-    // Verify token and extract user ID
-    let claims = JwtService::verify_token(&token).map_err(|e| format!("Invalid token: {}", e))?;
-
-    uuid::Uuid::parse_str(&claims.sub).map_err(|e| format!("Invalid user ID in token: {}", e))
+    authenticate_request(headers)
+        .map(|authenticated| authenticated.user_id)
+        .map_err(|_| "Invalid user authentication".to_string())
 }
 
 /// Helper function to get current user info with database query

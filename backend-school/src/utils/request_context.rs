@@ -6,6 +6,7 @@ use crate::error::AppError;
 use crate::middleware::auth::extract_user_id;
 use crate::middleware::permission::{load_actor_context_or_error, ActorContext};
 use crate::modules::auth::models::Claims;
+use crate::utils::jwt::authenticate_for_tenant;
 use crate::utils::tenant::{
     resolve_tenant_context, resolve_tenant_context_by_subdomain, TenantContext,
 };
@@ -55,6 +56,11 @@ pub async fn current_user_tenant_context_from_claims(
     claims: &Claims,
 ) -> Result<CurrentUserTenantContext, AppError> {
     let tenant = tenant_context(state, headers).await?;
+    if claims.tenant != tenant.subdomain {
+        return Err(AppError::AuthError(
+            "Invalid user authentication".to_string(),
+        ));
+    }
     let user_id = user_id_from_claims(claims)?;
 
     Ok(CurrentUserTenantContext { tenant, user_id })
@@ -65,11 +71,12 @@ pub async fn current_user_tenant_context_from_headers(
     headers: &HeaderMap,
 ) -> Result<CurrentUserTenantContext, AppError> {
     let tenant = tenant_context(state, headers).await?;
-    let user_id = extract_user_id(headers, &tenant.pool)
-        .await
-        .map_err(AppError::AuthError)?;
+    let authenticated = authenticate_for_tenant(headers, &tenant.subdomain)?;
 
-    Ok(CurrentUserTenantContext { tenant, user_id })
+    Ok(CurrentUserTenantContext {
+        tenant,
+        user_id: authenticated.user_id,
+    })
 }
 
 pub async fn optional_user_id_from_headers(headers: &HeaderMap, pool: &PgPool) -> Option<Uuid> {

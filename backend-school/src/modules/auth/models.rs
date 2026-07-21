@@ -200,9 +200,13 @@ pub struct LoginData {
 // JWT Claims
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Claims {
-    pub sub: String,      // user_id
-    pub username: String, // Changed from national_id
+    pub sub: String,
+    pub username: String,
     pub user_type: String,
-    pub exp: i64, // Expiry timestamp
-    pub iat: i64, // Issued at timestamp
+    pub tenant: String,
+    pub iss: String,
+    pub aud: String,
+    pub token_version: u8,
+    pub exp: i64,
+    pub iat: i64,
 }
