@@ -1,13 +1,19 @@
+use crate::error::AppError;
+use crate::modules::academic::services::timetable_realtime_service::{
+    authorize_socket, TimetableSocketAccess,
+};
+use crate::utils::request_context::actor_tenant_context;
 use crate::AppState;
 use axum::{
     extract::{
-        ws::{Message, WebSocket, WebSocketUpgrade},
+        ws::{CloseFrame, Message, WebSocket, WebSocketUpgrade},
         Query, State,
     },
-    response::IntoResponse,
+    http::HeaderMap,
+    response::Response,
 };
 use dashmap::DashMap;
-use futures::{sink::SinkExt, stream::StreamExt};
+use futures::stream::StreamExt;
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -25,6 +31,10 @@ const ROOM_IDLE_TTL: Duration = Duration::from_secs(600); // 10 นาที
 
 /// interval ของ cleanup task
 const ROOM_CLEANUP_INTERVAL: Duration = Duration::from_secs(60); // ตรวจทุก 1 นาที
+
+const MAX_TEXT_FRAME_BYTES: usize = 64 * 1024;
+const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(30);
+const SILENCE_TIMEOUT: Duration = Duration::from_secs(90);
 
 // ==========================================
 // Data Structures
@@ -255,9 +265,6 @@ pub struct DragState {
 #[derive(Debug, Deserialize)]
 pub struct WsParams {
     pub semester_id: Uuid,
-    pub user_id: Uuid,
-    pub name: String,
-    pub school_key: Option<String>,
 }
 
 // ==========================================
@@ -618,74 +625,262 @@ impl WebSocketManager {
 // Handler
 // ==========================================
 
-pub async fn timetable_websocket_handler(
-    State(state): State<AppState>,
-    headers: axum::http::HeaderMap,
-    Query(params): Query<WsParams>,
-    ws: WebSocketUpgrade,
-) -> impl IntoResponse {
-    // 1. Resolve Subdomain from Host
-    let host = headers
-        .get("host")
-        .and_then(|h| h.to_str().ok())
-        .unwrap_or("localhost");
-
-    // Simple subdomain extraction (excludes port)
-    let domain = host.split(':').next().unwrap_or(host);
-    let parts: Vec<&str> = domain.split('.').collect();
-
-    // Logic: if "school.orbit.com", subdomain is "school".
-    // If localhost, maybe "default" or handled differently.
-    let subdomain = if parts.len() >= 3 {
-        parts[0]
-    } else {
-        // Fallback for localhost or dev environments
-        "default"
-    };
-
-    // Priority: Query Param > Host Header
-    // This fixes the issue where Socket connects to API domain (school-api) but App is on Subdomain (snwsb)
-    let school_key = if let Some(key) = params.school_key.clone() {
-        key
-    } else {
-        subdomain.to_string()
-    };
-
-    ws.on_upgrade(move |socket| handle_socket(socket, state, params, school_key))
+fn text_frame_too_large(bytes: usize) -> bool {
+    bytes > MAX_TEXT_FRAME_BYTES
 }
 
-async fn handle_socket(socket: WebSocket, state: AppState, params: WsParams, school_key: String) {
-    let (mut sender, mut receiver) = socket.split();
+fn heartbeat_timed_out(last_inbound: Instant, now: Instant) -> bool {
+    now.duration_since(last_inbound) >= SILENCE_TIMEOUT
+}
 
-    // Assign a random color
-    let color = generate_color_from_uuid(&params.user_id);
+fn sanitize_client_event(
+    event: TimetableEvent,
+    authenticated_user_id: Uuid,
+    can_manage: bool,
+) -> Option<TimetableEvent> {
+    match event {
+        TimetableEvent::CursorMove { x, y, context, .. } => Some(TimetableEvent::CursorMove {
+            user_id: authenticated_user_id,
+            x,
+            y,
+            context,
+        }),
+        TimetableEvent::DragStart {
+            course_id,
+            entry_id,
+            info,
+            ..
+        } if can_manage => Some(TimetableEvent::DragStart {
+            user_id: authenticated_user_id,
+            course_id,
+            entry_id,
+            info,
+        }),
+        TimetableEvent::DragEnd { .. } if can_manage => Some(TimetableEvent::DragEnd {
+            user_id: authenticated_user_id,
+        }),
+        TimetableEvent::DragMove {
+            x,
+            y,
+            target_day,
+            target_period_id,
+            ..
+        } if can_manage => Some(TimetableEvent::DragMove {
+            user_id: authenticated_user_id,
+            x,
+            y,
+            target_day,
+            target_period_id,
+        }),
+        TimetableEvent::UserActivity {
+            activity_type,
+            target,
+            ..
+        } if can_manage => Some(TimetableEvent::UserActivity {
+            user_id: authenticated_user_id,
+            activity_type,
+            target,
+        }),
+        TimetableEvent::UserActivityEnd { .. } if can_manage => {
+            Some(TimetableEvent::UserActivityEnd {
+                user_id: authenticated_user_id,
+            })
+        }
+        TimetableEvent::TableRefresh { .. } if can_manage => Some(TimetableEvent::TableRefresh {
+            user_id: authenticated_user_id,
+        }),
+        TimetableEvent::DropIntent {
+            kind,
+            entry_id,
+            day_of_week,
+            period_id,
+            room_id,
+            swap_partner_id,
+            swap_partner_day,
+            swap_partner_period_id,
+            new_classroom_course_id,
+            new_activity_slot_id,
+            new_classroom_id,
+            ..
+        } if can_manage => Some(TimetableEvent::DropIntent {
+            user_id: authenticated_user_id,
+            kind,
+            entry_id,
+            day_of_week,
+            period_id,
+            room_id,
+            swap_partner_id,
+            swap_partner_day,
+            swap_partner_period_id,
+            new_classroom_course_id,
+            new_activity_slot_id,
+            new_classroom_id,
+        }),
+        TimetableEvent::EntryIntent {
+            temp_id,
+            classroom_id,
+            classroom_course_id,
+            activity_slot_id,
+            day_of_week,
+            period_id,
+            room_id,
+            title,
+            entry_type,
+            ..
+        } if can_manage => Some(TimetableEvent::EntryIntent {
+            user_id: authenticated_user_id,
+            temp_id,
+            classroom_id,
+            classroom_course_id,
+            activity_slot_id,
+            day_of_week,
+            period_id,
+            room_id,
+            title,
+            entry_type,
+        }),
+        _ => None,
+    }
+}
 
+fn relay_client_event(
+    manager: &WebSocketManager,
+    tx: &broadcast::Sender<SeqEvent>,
+    tenant: &str,
+    semester_id: Uuid,
+    user_presence: &mut UserPresence,
+    event: TimetableEvent,
+) {
+    let user_id = user_presence.user_id;
+    match &event {
+        TimetableEvent::CursorMove { context, .. } => {
+            if user_presence.context != *context {
+                manager.update_context(tenant.to_string(), semester_id, user_id, context.clone());
+                user_presence.context = context.clone();
+            }
+        }
+        TimetableEvent::DragStart {
+            course_id,
+            entry_id,
+            info,
+            ..
+        } => manager.update_drag(
+            tenant.to_string(),
+            semester_id,
+            user_id,
+            Some(DragState {
+                course_id: course_id.clone(),
+                entry_id: entry_id.clone(),
+                info: info.clone(),
+            }),
+        ),
+        TimetableEvent::DragEnd { .. } => {
+            manager.update_drag(tenant.to_string(), semester_id, user_id, None);
+        }
+        TimetableEvent::UserActivity {
+            activity_type,
+            target,
+            ..
+        } => manager.update_activity(
+            tenant.to_string(),
+            semester_id,
+            user_id,
+            Some(ActivityState {
+                activity_type: activity_type.clone(),
+                target: target.clone(),
+            }),
+        ),
+        TimetableEvent::UserActivityEnd { .. } => {
+            manager.update_activity(tenant.to_string(), semester_id, user_id, None);
+        }
+        _ => {}
+    }
+
+    if event.is_mutation() {
+        manager.broadcast_mutation(tenant.to_string(), semester_id, event);
+    } else if tx.send(SeqEvent { seq: None, event }).is_err() {
+        tracing::debug!("Timetable WebSocket room has no event receivers");
+    }
+}
+
+async fn send_broadcast_event(
+    socket: &mut WebSocket,
+    broadcast: Result<SeqEvent, broadcast::error::RecvError>,
+) -> Result<(), ()> {
+    let event = match broadcast {
+        Ok(event) => event,
+        Err(broadcast::error::RecvError::Lagged(missed_events)) => {
+            tracing::warn!(
+                missed_events,
+                "Timetable WebSocket client lagged; forcing full refresh"
+            );
+            SeqEvent {
+                seq: None,
+                event: TimetableEvent::TableRefresh {
+                    user_id: Uuid::nil(),
+                },
+            }
+        }
+        Err(broadcast::error::RecvError::Closed) => return Err(()),
+    };
+
+    let json = serde_json::to_string(&event).map_err(|_| {
+        tracing::warn!("Failed to serialize timetable WebSocket event");
+    })?;
+    socket
+        .send(Message::Text(json.into()))
+        .await
+        .map_err(|_| ())
+}
+
+pub async fn timetable_websocket_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(params): Query<WsParams>,
+    ws: WebSocketUpgrade,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context(&state, &headers).await?;
+    let access = authorize_socket(&context.tenant.pool, &context.actor, params.semester_id).await?;
+    let tenant = context.tenant.subdomain;
+
+    Ok(ws
+        .on_upgrade(move |socket| handle_socket(socket, state, params.semester_id, tenant, access)))
+}
+
+async fn handle_socket(
+    mut socket: WebSocket,
+    state: AppState,
+    semester_id: Uuid,
+    tenant: String,
+    access: TimetableSocketAccess,
+) {
+    let TimetableSocketAccess {
+        user_id,
+        display_name,
+        can_manage,
+    } = access;
     let mut user_presence = UserPresence {
-        user_id: params.user_id,
-        name: params.name.clone(),
-        color,
+        user_id,
+        name: display_name,
+        color: generate_color_from_uuid(&user_id),
         context: None,
     };
 
-    // 1. Join Room & Store Presence
     let tx = state
         .websocket_manager
-        .get_or_create_room(school_key.clone(), params.semester_id);
+        .get_or_create_room(tenant.clone(), semester_id);
     let mut rx = tx.subscribe();
+    let is_first_tab =
+        state
+            .websocket_manager
+            .join_room(tenant.clone(), semester_id, user_presence.clone());
 
-    let is_first_tab = state.websocket_manager.join_room(
-        school_key.clone(),
-        params.semester_id,
-        user_presence.clone(),
-    );
-
-    // 2. Send Initial State (with current_seq — client ใช้เป็นจุดเริ่ม tracking)
     let (users, drags, activities) = state
         .websocket_manager
-        .get_state_snapshot(school_key.clone(), params.semester_id);
+        .get_state_snapshot(tenant.clone(), semester_id);
     let current_seq = state
         .websocket_manager
-        .current_seq(school_key.clone(), params.semester_id);
+        .current_seq(tenant.clone(), semester_id);
     let sync_event = SeqEvent {
         seq: None,
         event: TimetableEvent::StateSync {
@@ -695,264 +890,106 @@ async fn handle_socket(socket: WebSocket, state: AppState, params: WsParams, sch
             current_seq,
         },
     };
-    if let Ok(json) = serde_json::to_string(&sync_event) {
-        let _ = sender.send(Message::Text(json.into())).await;
+    let socket_ready = match serde_json::to_string(&sync_event) {
+        Ok(json) => socket.send(Message::Text(json.into())).await.is_ok(),
+        Err(_) => {
+            tracing::warn!("Failed to serialize timetable WebSocket state sync");
+            false
+        }
+    };
+
+    if is_first_tab
+        && tx
+            .send(SeqEvent {
+                seq: None,
+                event: TimetableEvent::UserJoined(user_presence.clone()),
+            })
+            .is_err()
+    {
+        tracing::debug!("Timetable WebSocket room has no presence receivers");
     }
 
-    // 3. Broadcast UserJoined เฉพาะถ้าเป็น tab แรกของ user (tab ที่ 2+ ไม่ส่ง — user เดิม)
-    if is_first_tab {
-        let _ = tx.send(SeqEvent {
-            seq: None,
-            event: TimetableEvent::UserJoined(user_presence.clone()),
-        });
-    }
+    if socket_ready {
+        let mut heartbeat = tokio::time::interval(HEARTBEAT_INTERVAL);
+        heartbeat.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        heartbeat.tick().await;
+        let mut last_inbound = Instant::now();
 
-    // Spawn a task to handle incoming messages from this client (Broadcast Listener)
-    let send_task = tokio::spawn(async move {
         loop {
-            match rx.recv().await {
-                Ok(msg) => {
-                    if let Ok(json) = serde_json::to_string(&msg) {
-                        if sender.send(Message::Text(json.into())).await.is_err() {
+            tokio::select! {
+                incoming = socket.next() => match incoming {
+                    Some(Ok(Message::Text(text))) => {
+                        last_inbound = Instant::now();
+                        if text_frame_too_large(text.len()) {
+                            if socket
+                                .send(Message::Close(Some(CloseFrame {
+                                    code: 1009,
+                                    reason: "Message too large".into(),
+                                })))
+                                .await
+                                .is_err()
+                            {
+                                tracing::debug!("Failed to send timetable WebSocket frame-limit close");
+                            }
+                            break;
+                        }
+                        if let Ok(event) = serde_json::from_str::<TimetableEvent>(&text) {
+                            if let Some(event) = sanitize_client_event(event, user_id, can_manage) {
+                                relay_client_event(
+                                    &state.websocket_manager,
+                                    &tx,
+                                    &tenant,
+                                    semester_id,
+                                    &mut user_presence,
+                                    event,
+                                );
+                            }
+                        }
+                    }
+                    Some(Ok(Message::Pong(_))) => {
+                        last_inbound = Instant::now();
+                    }
+                    Some(Ok(Message::Ping(payload))) => {
+                        last_inbound = Instant::now();
+                        if socket.send(Message::Pong(payload)).await.is_err() {
                             break;
                         }
                     }
-                }
-                Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
-                    // Client ตามไม่ทัน → miss n events — ส่ง TableRefresh ให้ full-refetch
-                    tracing::error!(
-                        "[WS] client lagged, missed {} events — forcing full refresh",
-                        n
-                    );
-                    let refresh = SeqEvent {
-                        seq: None,
-                        event: TimetableEvent::TableRefresh {
-                            user_id: Uuid::nil(),
-                        },
-                    };
-                    if let Ok(json) = serde_json::to_string(&refresh) {
-                        if sender.send(Message::Text(json.into())).await.is_err() {
-                            break;
-                        }
+                    Some(Ok(Message::Close(_))) | Some(Err(_)) | None => break,
+                    Some(Ok(_)) => {
+                        last_inbound = Instant::now();
                     }
-                }
-                Err(tokio::sync::broadcast::error::RecvError::Closed) => {
-                    break;
-                }
-            }
-        }
-    });
-
-    // Handle incoming messages from the client
-    while let Some(Ok(msg)) = receiver.next().await {
-        if let Message::Text(text) = msg {
-            if let Ok(event) = serde_json::from_str::<TimetableEvent>(&text) {
-                let mut valid_event = None;
-
-                match &event {
-                    TimetableEvent::CursorMove { x, y, context, .. } => {
-                        // Update Context in memory if changed
-                        if user_presence.context != *context {
-                            state.websocket_manager.update_context(
-                                school_key.clone(),
-                                params.semester_id,
-                                params.user_id,
-                                context.clone(),
-                            );
-                            user_presence.context = context.clone();
-                        }
-
-                        valid_event = Some(TimetableEvent::CursorMove {
-                            user_id: params.user_id,
-                            x: *x,
-                            y: *y,
-                            context: context.clone(),
-                        });
+                },
+                broadcast = rx.recv() => {
+                    if send_broadcast_event(&mut socket, broadcast).await.is_err() {
+                        break;
                     }
-                    TimetableEvent::DragStart {
-                        course_id,
-                        entry_id,
-                        info,
-                        ..
-                    } => {
-                        // Update Drag in memory
-                        let drag_state = DragState {
-                            course_id: course_id.clone(),
-                            entry_id: entry_id.clone(),
-                            info: info.clone(),
-                        };
-                        state.websocket_manager.update_drag(
-                            school_key.clone(),
-                            params.semester_id,
-                            params.user_id,
-                            Some(drag_state),
-                        );
-
-                        valid_event = Some(TimetableEvent::DragStart {
-                            user_id: params.user_id,
-                            course_id: course_id.clone(),
-                            entry_id: entry_id.clone(),
-                            info: info.clone(),
-                        });
+                },
+                _ = heartbeat.tick() => {
+                    if heartbeat_timed_out(last_inbound, Instant::now()) {
+                        break;
                     }
-                    TimetableEvent::DragEnd { .. } => {
-                        // Clear Drag
-                        state.websocket_manager.update_drag(
-                            school_key.clone(),
-                            params.semester_id,
-                            params.user_id,
-                            None,
-                        );
-
-                        valid_event = Some(TimetableEvent::DragEnd {
-                            user_id: params.user_id,
-                        });
+                    if socket.send(Message::Ping(Vec::new().into())).await.is_err() {
+                        break;
                     }
-                    TimetableEvent::DragMove {
-                        x,
-                        y,
-                        target_day,
-                        target_period_id,
-                        ..
-                    } => {
-                        // Relay drag position — no state storage needed (ephemeral)
-                        valid_event = Some(TimetableEvent::DragMove {
-                            user_id: params.user_id,
-                            x: *x,
-                            y: *y,
-                            target_day: target_day.clone(),
-                            target_period_id: target_period_id.clone(),
-                        });
-                    }
-                    TimetableEvent::TableRefresh { .. } => {
-                        valid_event = Some(TimetableEvent::TableRefresh {
-                            user_id: params.user_id,
-                        });
-                    }
-                    TimetableEvent::UserActivity {
-                        activity_type,
-                        target,
-                        ..
-                    } => {
-                        state.websocket_manager.update_activity(
-                            school_key.clone(),
-                            params.semester_id,
-                            params.user_id,
-                            Some(ActivityState {
-                                activity_type: activity_type.clone(),
-                                target: target.clone(),
-                            }),
-                        );
-                        valid_event = Some(TimetableEvent::UserActivity {
-                            user_id: params.user_id,
-                            activity_type: activity_type.clone(),
-                            target: target.clone(),
-                        });
-                    }
-                    TimetableEvent::UserActivityEnd { .. } => {
-                        state.websocket_manager.update_activity(
-                            school_key.clone(),
-                            params.semester_id,
-                            params.user_id,
-                            None,
-                        );
-                        valid_event = Some(TimetableEvent::UserActivityEnd {
-                            user_id: params.user_id,
-                        });
-                    }
-                    // Phase 2: client broadcast optimistic drop intent
-                    TimetableEvent::DropIntent {
-                        kind,
-                        entry_id,
-                        day_of_week,
-                        period_id,
-                        room_id,
-                        swap_partner_id,
-                        swap_partner_day,
-                        swap_partner_period_id,
-                        new_classroom_course_id,
-                        new_activity_slot_id,
-                        new_classroom_id,
-                        ..
-                    } => {
-                        valid_event = Some(TimetableEvent::DropIntent {
-                            user_id: params.user_id,
-                            kind: kind.clone(),
-                            entry_id: *entry_id,
-                            day_of_week: day_of_week.clone(),
-                            period_id: *period_id,
-                            room_id: *room_id,
-                            swap_partner_id: *swap_partner_id,
-                            swap_partner_day: swap_partner_day.clone(),
-                            swap_partner_period_id: *swap_partner_period_id,
-                            new_classroom_course_id: *new_classroom_course_id,
-                            new_activity_slot_id: *new_activity_slot_id,
-                            new_classroom_id: *new_classroom_id,
-                        });
-                    }
-                    // Phase 2: client broadcast optimistic create intent (NEW drop on empty)
-                    TimetableEvent::EntryIntent {
-                        temp_id,
-                        classroom_id,
-                        classroom_course_id,
-                        activity_slot_id,
-                        day_of_week,
-                        period_id,
-                        room_id,
-                        title,
-                        entry_type,
-                        ..
-                    } => {
-                        valid_event = Some(TimetableEvent::EntryIntent {
-                            user_id: params.user_id,
-                            temp_id: temp_id.clone(),
-                            classroom_id: *classroom_id,
-                            classroom_course_id: *classroom_course_id,
-                            activity_slot_id: *activity_slot_id,
-                            day_of_week: day_of_week.clone(),
-                            period_id: *period_id,
-                            room_id: *room_id,
-                            title: title.clone(),
-                            entry_type: entry_type.clone(),
-                        });
-                    }
-                    _ => {}
-                }
-
-                if let Some(evt) = valid_event {
-                    // Relayed client events: TableRefresh = mutation (ต้อง seq + buffer),
-                    // อื่นๆ (CursorMove, DragStart/End/Move) = ephemeral
-                    if evt.is_mutation() {
-                        state.websocket_manager.broadcast_mutation(
-                            school_key.clone(),
-                            params.semester_id,
-                            evt,
-                        );
-                    } else {
-                        let _ = tx.send(SeqEvent {
-                            seq: None,
-                            event: evt,
-                        });
-                    }
-                }
+                },
             }
         }
     }
 
-    // Cleanup
-    send_task.abort();
-    let is_last_tab =
-        state
-            .websocket_manager
-            .leave_room(school_key.clone(), params.semester_id, params.user_id);
-    // Broadcast UserLeft เฉพาะถ้าเป็น tab สุดท้ายของ user
-    if is_last_tab {
-        let _ = tx.send(SeqEvent {
-            seq: None,
-            event: TimetableEvent::UserLeft {
-                user_id: params.user_id,
-            },
-        });
+    drop(rx);
+    let is_last_tab = state
+        .websocket_manager
+        .leave_room(tenant.clone(), semester_id, user_id);
+    if is_last_tab
+        && tx
+            .send(SeqEvent {
+                seq: None,
+                event: TimetableEvent::UserLeft { user_id },
+            })
+            .is_err()
+    {
+        tracing::debug!("Timetable WebSocket room has no presence receivers");
     }
 }
 
@@ -964,4 +1001,99 @@ fn generate_color_from_uuid(id: &Uuid) -> String {
     let g = ((hash >> 8) & 0xFF) as u8;
     let b = ((hash >> 16) & 0xFF) as u8;
     format!("#{:02X}{:02X}{:02X}", r, g, b)
+}
+
+#[cfg(test)]
+mod security_tests {
+    use super::*;
+
+    #[test]
+    fn legacy_query_identity_is_ignored() {
+        let params: WsParams = serde_json::from_value(serde_json::json!({
+            "semester_id": "8b391685-4a1c-4f25-a544-b1c5bd0d457e",
+            "user_id": "eb22ab8e-4382-4ddb-bcbb-8833b788e362",
+            "name": "attacker",
+            "school_key": "other"
+        }))
+        .unwrap();
+        assert_eq!(
+            params.semester_id.to_string(),
+            "8b391685-4a1c-4f25-a544-b1c5bd0d457e"
+        );
+    }
+
+    #[test]
+    fn reader_can_move_cursor_but_cannot_relay_edit_intent() {
+        let actor = Uuid::new_v4();
+        let forged = Uuid::new_v4();
+        let cursor = TimetableEvent::CursorMove {
+            user_id: forged,
+            x: 1.0,
+            y: 2.0,
+            context: None,
+        };
+        assert!(matches!(
+            sanitize_client_event(cursor, actor, false),
+            Some(TimetableEvent::CursorMove { user_id, .. }) if user_id == actor
+        ));
+        let refresh = TimetableEvent::TableRefresh { user_id: forged };
+        assert!(sanitize_client_event(refresh, actor, false).is_none());
+    }
+
+    #[test]
+    fn manager_identity_replaces_forged_payload_identity() {
+        let actor = Uuid::new_v4();
+        let drag = TimetableEvent::DragEnd {
+            user_id: Uuid::new_v4(),
+        };
+        assert!(matches!(
+            sanitize_client_event(drag, actor, true),
+            Some(TimetableEvent::DragEnd { user_id }) if user_id == actor
+        ));
+    }
+
+    #[test]
+    fn server_only_events_are_never_accepted_from_clients() {
+        let event = TimetableEvent::UserLeft {
+            user_id: Uuid::new_v4(),
+        };
+        assert!(sanitize_client_event(event, Uuid::new_v4(), true).is_none());
+    }
+
+    #[test]
+    fn room_key_uses_server_tenant() {
+        let semester = Uuid::new_v4();
+        assert_eq!(
+            WebSocketManager::get_room_key("tenant-a".to_string(), semester),
+            format!("tenant-a:{semester}")
+        );
+    }
+
+    #[test]
+    fn frame_limit_and_heartbeat_deadline_are_exact() {
+        assert!(!text_frame_too_large(64 * 1024));
+        assert!(text_frame_too_large(64 * 1024 + 1));
+        let last = Instant::now();
+        assert!(!heartbeat_timed_out(last, last + Duration::from_secs(89)));
+        assert!(heartbeat_timed_out(last, last + Duration::from_secs(90)));
+    }
+
+    #[test]
+    fn multi_tab_presence_joins_and_leaves_once() {
+        let manager = WebSocketManager::new();
+        let semester = Uuid::new_v4();
+        let tenant = "tenant-a".to_string();
+        let user_id = Uuid::new_v4();
+        manager.get_or_create_room(tenant.clone(), semester);
+        let presence = UserPresence {
+            user_id,
+            name: "Teacher".into(),
+            color: "#112233".into(),
+            context: None,
+        };
+        assert!(manager.join_room(tenant.clone(), semester, presence.clone()));
+        assert!(!manager.join_room(tenant.clone(), semester, presence));
+        assert!(!manager.leave_room(tenant.clone(), semester, user_id));
+        assert!(manager.leave_room(tenant, semester, user_id));
+    }
 }
