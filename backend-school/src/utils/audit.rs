@@ -5,7 +5,7 @@
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
-use sqlx::PgPool;
+use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -130,7 +130,7 @@ impl AuditLogBuilder {
                 user_id, user_email, user_name, action, entity_type, entity_id, entity_name,
                 old_values, new_values, changes, ip_address, user_agent, request_path, request_method,
                 description, metadata
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::inet, $12, $13, $14, $15, $16)
             RETURNING id",
         )
         .bind(self.user_id)
@@ -150,6 +150,40 @@ impl AuditLogBuilder {
         .bind(&self.description)
         .bind(&self.metadata)
         .fetch_one(pool)
+        .await?;
+
+        Ok(id)
+    }
+
+    pub async fn save_in_transaction(
+        self,
+        tx: &mut Transaction<'_, Postgres>,
+    ) -> Result<Uuid, sqlx::Error> {
+        let id: Uuid = sqlx::query_scalar(
+            "INSERT INTO audit_logs (
+                user_id, user_email, user_name, action, entity_type, entity_id, entity_name,
+                old_values, new_values, changes, ip_address, user_agent, request_path, request_method,
+                description, metadata
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::inet, $12, $13, $14, $15, $16)
+            RETURNING id",
+        )
+        .bind(self.user_id)
+        .bind(&self.user_email)
+        .bind(&self.user_name)
+        .bind(&self.action)
+        .bind(&self.entity_type)
+        .bind(self.entity_id)
+        .bind(&self.entity_name)
+        .bind(&self.old_values)
+        .bind(&self.new_values)
+        .bind(&self.changes)
+        .bind(&self.ip_address)
+        .bind(&self.user_agent)
+        .bind(&self.request_path)
+        .bind(&self.request_method)
+        .bind(&self.description)
+        .bind(&self.metadata)
+        .fetch_one(&mut **tx)
         .await?;
 
         Ok(id)

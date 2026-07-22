@@ -1,8 +1,11 @@
 use crate::db::permission_cache::PermissionCache;
+use crate::error::AppError;
 use crate::middleware::permission::get_cached_user_permissions;
 use crate::test_helpers::{create_test_pool, create_test_user, run_test_migrations};
 use sqlx::PgPool;
 use uuid::Uuid;
+
+use super::{role_service, StatusTransitionOutcome};
 
 async fn permission_id(pool: &PgPool, code: &str) -> Uuid {
     sqlx::query_scalar("SELECT id FROM permissions WHERE code = $1")
@@ -193,4 +196,120 @@ async fn inactive_authorization_sources_stop_granting_permissions() {
     ] {
         assert_has_permission(&reactivated_permissions, code);
     }
+}
+
+#[tokio::test]
+async fn role_status_transitions_are_protected_idempotent_and_audited() {
+    let pool = create_test_pool().await;
+    run_test_migrations(&pool).await;
+
+    let fixture = Uuid::new_v4().simple().to_string();
+    let actor_user_id = create_test_user(
+        &pool,
+        &format!("status-actor-{}@example.test", &fixture[..8]),
+        "Test1234!",
+    )
+    .await
+    .expect("actor test user should be created");
+    let role_id: Uuid = sqlx::query_scalar(
+        "INSERT INTO roles (code, name, user_type, level)
+         VALUES ($1, $2, 'staff', 1)
+         RETURNING id",
+    )
+    .bind(format!("TROLE{}", &fixture[..8]))
+    .bind(format!("test transition role {}", &fixture[..8]))
+    .fetch_one(&pool)
+    .await
+    .expect("test role should be created");
+
+    let first_deactivation = role_service::set_role_active(&pool, role_id, false, actor_user_id)
+        .await
+        .expect("custom role should deactivate");
+    assert_eq!(
+        first_deactivation,
+        StatusTransitionOutcome::Changed { is_active: false }
+    );
+    assert!(
+        !sqlx::query_scalar::<_, bool>("SELECT is_active FROM roles WHERE id = $1")
+            .bind(role_id)
+            .fetch_one(&pool)
+            .await
+            .expect("role status should load")
+    );
+
+    let first_audit: (
+        String,
+        Option<Uuid>,
+        Option<serde_json::Value>,
+        Option<serde_json::Value>,
+    ) = sqlx::query_as(
+        "SELECT action, user_id, old_values, new_values
+             FROM audit_logs
+             WHERE entity_type = 'role' AND entity_id = $1",
+    )
+    .bind(role_id)
+    .fetch_one(&pool)
+    .await
+    .expect("deactivation audit should exist");
+    assert_eq!(first_audit.0, "deactivate");
+    assert_eq!(first_audit.1, Some(actor_user_id));
+    assert_eq!(
+        first_audit.2,
+        Some(serde_json::json!({ "is_active": true }))
+    );
+    assert_eq!(
+        first_audit.3,
+        Some(serde_json::json!({ "is_active": false }))
+    );
+
+    let repeated_deactivation = role_service::set_role_active(&pool, role_id, false, actor_user_id)
+        .await
+        .expect("repeated deactivation should be idempotent");
+    assert_eq!(repeated_deactivation, StatusTransitionOutcome::Unchanged);
+    let audit_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM audit_logs WHERE entity_type = 'role' AND entity_id = $1",
+    )
+    .bind(role_id)
+    .fetch_one(&pool)
+    .await
+    .expect("audit count should load");
+    assert_eq!(audit_count, 1);
+
+    let admin_id: Uuid = sqlx::query_scalar("SELECT id FROM roles WHERE code = 'ADMIN'")
+        .fetch_one(&pool)
+        .await
+        .expect("ADMIN role should exist");
+    let protected_result =
+        role_service::set_role_active(&pool, admin_id, false, actor_user_id).await;
+    assert!(matches!(protected_result, Err(AppError::Conflict(_))));
+    assert!(
+        sqlx::query_scalar::<_, bool>("SELECT is_active FROM roles WHERE id = $1")
+            .bind(admin_id)
+            .fetch_one(&pool)
+            .await
+            .expect("ADMIN role status should load")
+    );
+
+    let reactivation = role_service::set_role_active(&pool, role_id, true, actor_user_id)
+        .await
+        .expect("custom role should reactivate");
+    assert_eq!(
+        reactivation,
+        StatusTransitionOutcome::Changed { is_active: true }
+    );
+    let audits: Vec<(String, Option<serde_json::Value>, Option<serde_json::Value>)> =
+        sqlx::query_as(
+            "SELECT action, old_values, new_values
+             FROM audit_logs
+             WHERE entity_type = 'role' AND entity_id = $1
+             ORDER BY created_at, id",
+        )
+        .bind(role_id)
+        .fetch_all(&pool)
+        .await
+        .expect("role audits should load");
+    assert_eq!(audits.len(), 2);
+    assert_eq!(audits[1].0, "reactivate");
+    assert_eq!(audits[1].1, Some(serde_json::json!({ "is_active": false })));
+    assert_eq!(audits[1].2, Some(serde_json::json!({ "is_active": true })));
 }

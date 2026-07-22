@@ -1,7 +1,11 @@
 use crate::error::AppError;
 use crate::modules::staff::models::{CreateRoleRequest, Role, UpdateRoleRequest};
-use sqlx::PgPool;
+use crate::utils::audit::AuditLogBuilder;
+use serde_json::json;
+use sqlx::{FromRow, PgPool, Postgres, Transaction};
 use uuid::Uuid;
+
+use super::StatusTransitionOutcome;
 
 const ROLE_SELECT_WITH_PERMISSIONS: &str = r#"
 SELECT r.*,
@@ -41,10 +45,15 @@ async fn insert_role_permissions(
     Ok(())
 }
 
-pub async fn list_roles(pool: &PgPool) -> Result<Vec<Role>, AppError> {
+pub async fn list_roles(pool: &PgPool, include_inactive: bool) -> Result<Vec<Role>, AppError> {
+    let active_filter = if include_inactive {
+        ""
+    } else {
+        "WHERE r.is_active = true"
+    };
     let sql = format!(
-        "{} WHERE r.is_active = true GROUP BY r.id ORDER BY r.level DESC, r.name",
-        ROLE_SELECT_WITH_PERMISSIONS
+        "{} {} GROUP BY r.id ORDER BY r.level DESC, r.name",
+        ROLE_SELECT_WITH_PERMISSIONS, active_filter
     );
     sqlx::query_as::<_, Role>(&sql)
         .fetch_all(pool)
@@ -132,11 +141,18 @@ pub async fn update_role(
     pool: &PgPool,
     role_id: Uuid,
     payload: UpdateRoleRequest,
-) -> Result<(), AppError> {
+    actor_user_id: Uuid,
+) -> Result<StatusTransitionOutcome, AppError> {
     let mut tx = pool.begin().await.map_err(|e| {
         tracing::error!("❌ Failed to start transaction: {}", e);
         AppError::InternalServerError("ไม่สามารถเริ่มต้น Transaction ได้".to_string())
     })?;
+
+    let status_outcome = if let Some(is_active) = payload.is_active {
+        transition_role_status(&mut tx, role_id, is_active, actor_user_id).await?
+    } else {
+        StatusTransitionOutcome::Unchanged
+    };
 
     let query_result = sqlx::query(
         "UPDATE roles
@@ -146,7 +162,6 @@ pub async fn update_role(
             description = COALESCE($4, description),
             user_type = COALESCE($5, user_type),
             level = COALESCE($6, level),
-            is_active = COALESCE($7, is_active),
             updated_at = NOW()
          WHERE id = $1",
     )
@@ -156,7 +171,6 @@ pub async fn update_role(
     .bind(&payload.description)
     .bind(&payload.user_type)
     .bind(payload.level)
-    .bind(payload.is_active)
     .execute(&mut *tx)
     .await
     .map_err(|e| {
@@ -207,7 +221,109 @@ pub async fn update_role(
         AppError::InternalServerError("ไม่สามารถบันทึกข้อมูลได้".to_string())
     })?;
 
-    Ok(())
+    Ok(status_outcome)
+}
+
+#[derive(Debug, FromRow)]
+struct RoleStatusRow {
+    name: String,
+    is_active: bool,
+    is_system: bool,
+}
+
+async fn transition_role_status(
+    tx: &mut Transaction<'_, Postgres>,
+    role_id: Uuid,
+    is_active: bool,
+    actor_user_id: Uuid,
+) -> Result<StatusTransitionOutcome, AppError> {
+    let role = sqlx::query_as::<_, RoleStatusRow>(
+        "SELECT name, is_active, is_system
+         FROM roles
+         WHERE id = $1
+         FOR UPDATE",
+    )
+    .bind(role_id)
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(|error| {
+        tracing::error!(%role_id, %error, "failed to lock role for status transition");
+        AppError::InternalServerError("ไม่สามารถตรวจสอบสถานะบทบาทได้".to_string())
+    })?
+    .ok_or_else(|| AppError::NotFound("ไม่พบบทบาท".to_string()))?;
+
+    if !is_active && role.is_system {
+        return Err(AppError::Conflict("ไม่สามารถปิดใช้งานบทบาทระบบได้".to_string()));
+    }
+
+    if role.is_active == is_active {
+        return Ok(StatusTransitionOutcome::Unchanged);
+    }
+
+    sqlx::query(
+        "UPDATE roles
+         SET is_active = $2, updated_at = NOW()
+         WHERE id = $1",
+    )
+    .bind(role_id)
+    .bind(is_active)
+    .execute(&mut **tx)
+    .await
+    .map_err(|error| {
+        tracing::error!(%role_id, %error, "failed to update role status");
+        AppError::InternalServerError("ไม่สามารถเปลี่ยนสถานะบทบาทได้".to_string())
+    })?;
+
+    let action = if is_active {
+        "reactivate"
+    } else {
+        "deactivate"
+    };
+    AuditLogBuilder::new(action, "role")
+        .user(actor_user_id, None, None)
+        .entity(role_id, Some(role.name))
+        .old_values(json!({ "is_active": role.is_active }))
+        .new_values(json!({ "is_active": is_active }))
+        .changes(json!({
+            "is_active": {
+                "from": role.is_active,
+                "to": is_active
+            }
+        }))
+        .description(if is_active {
+            "เปิดใช้งานบทบาท"
+        } else {
+            "ปิดใช้งานบทบาท"
+        })
+        .save_in_transaction(tx)
+        .await
+        .map_err(|error| {
+            tracing::error!(%role_id, %error, "failed to save role status audit");
+            AppError::InternalServerError("ไม่สามารถบันทึกประวัติการเปลี่ยนสถานะได้".to_string())
+        })?;
+
+    Ok(StatusTransitionOutcome::Changed { is_active })
+}
+
+pub async fn set_role_active(
+    pool: &PgPool,
+    role_id: Uuid,
+    is_active: bool,
+    actor_user_id: Uuid,
+) -> Result<StatusTransitionOutcome, AppError> {
+    let mut tx = pool.begin().await.map_err(|error| {
+        tracing::error!(%role_id, %error, "failed to start role status transaction");
+        AppError::InternalServerError("ไม่สามารถเริ่มต้น Transaction ได้".to_string())
+    })?;
+
+    let outcome = transition_role_status(&mut tx, role_id, is_active, actor_user_id).await?;
+
+    tx.commit().await.map_err(|error| {
+        tracing::error!(%role_id, %error, "failed to commit role status transaction");
+        AppError::InternalServerError("ไม่สามารถบันทึกสถานะบทบาทได้".to_string())
+    })?;
+
+    Ok(outcome)
 }
 
 fn role_level_or_default(level: Option<i32>) -> i32 {

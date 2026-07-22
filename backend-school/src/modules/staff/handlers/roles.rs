@@ -37,7 +37,7 @@ pub async fn list_roles(
     let actor = context.actor;
     actor.require_permission(codes::ROLES_READ_ALL)?;
 
-    let roles = role_service::list_roles(&pool).await?;
+    let roles = role_service::list_roles(&pool, false).await?;
     Ok(Json(ApiResponse::ok(roles)).into_response())
 }
 
@@ -129,7 +129,7 @@ pub async fn update_role(
     let actor = context.actor;
     actor.require_permission(codes::ROLES_UPDATE_ALL)?;
 
-    role_service::update_role(&pool, role_id, payload).await?;
+    role_service::update_role(&pool, role_id, payload, actor.user_id).await?;
 
     // Role permissions changed — every user with this role has stale cache
     state.permission_cache.invalidate_tenant(&tenant);
