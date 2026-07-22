@@ -29,6 +29,9 @@ pub enum AppError {
     #[error("Bad request: {0}")]
     BadRequest(String),
 
+    #[error("Conflict: {0}")]
+    Conflict(String),
+
     #[error("Configuration error: {0}")]
     ConfigError(String),
 }
@@ -71,6 +74,7 @@ impl IntoResponse for AppError {
             AppError::NotFound(msg) => (StatusCode::NOT_FOUND, msg.clone()),
             AppError::ValidationError(msg) => (StatusCode::UNPROCESSABLE_ENTITY, msg.clone()),
             AppError::BadRequest(msg) => (StatusCode::BAD_REQUEST, msg.clone()),
+            AppError::Conflict(msg) => (StatusCode::CONFLICT, msg.clone()),
             AppError::ConfigError(msg) => {
                 tracing::error!("Configuration error: {}", msg);
                 (
@@ -90,5 +94,18 @@ impl IntoResponse for AppError {
         let body = Json(ApiErrorResponse::new(error_message));
 
         (status, body).into_response()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn conflict_error_returns_standard_409_envelope() {
+        let response =
+            AppError::Conflict("สถานะทรัพยากรขัดแย้ง".to_string()).into_response();
+
+        assert_eq!(response.status(), StatusCode::CONFLICT);
     }
 }

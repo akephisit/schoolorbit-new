@@ -17,6 +17,7 @@ pub struct Role {
     pub level: i32,
     pub permissions: Vec<String>, // Changed from serde_json::Value to Vec<String>
     pub is_active: bool,
+    pub is_system: bool,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -91,6 +92,7 @@ pub struct OrganizationUnit {
     #[schema(required = true)]
     pub location: Option<String>,
     pub is_active: bool,
+    pub is_system: bool,
     pub display_order: i32,
     pub category: String,
     pub unit_type: String,

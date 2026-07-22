@@ -24,6 +24,7 @@ struct UserRoleAssignmentRow {
     role_level: i32,
     role_permissions: Vec<String>,
     role_is_active: bool,
+    role_is_system: bool,
     role_created_at: DateTime<Utc>,
     role_updated_at: DateTime<Utc>,
 }
@@ -55,6 +56,7 @@ pub async fn get_user_roles(
                 '{}'
             ) AS role_permissions,
             r.is_active AS role_is_active,
+            r.is_system AS role_is_system,
             r.created_at AS role_created_at,
             r.updated_at AS role_updated_at
          FROM user_roles ur
@@ -90,6 +92,7 @@ pub async fn get_user_roles(
                 level: row.role_level,
                 permissions: row.role_permissions,
                 is_active: row.role_is_active,
+                is_system: row.role_is_system,
                 created_at: row.role_created_at,
                 updated_at: row.role_updated_at,
             },

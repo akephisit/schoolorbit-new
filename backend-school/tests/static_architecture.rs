@@ -3918,3 +3918,40 @@ fn question_bank_rich_content_is_versioned_typed_and_searchable() {
     assert!(services.contains("q.search_text ILIKE"));
     assert!(!services.contains("q.stem_content::text ILIKE"));
 }
+
+#[test]
+fn role_and_organization_system_flags_are_migration_owned() {
+    let migration = read_source(
+        manifest_dir()
+            .join("migrations")
+            .join("027_role_organization_system_flags.sql"),
+    );
+    let normalized = migration.split_whitespace().collect::<Vec<_>>().join(" ");
+
+    assert!(normalized.contains("ALTER TABLE roles ADD COLUMN is_system"));
+    assert!(normalized.contains("ALTER TABLE organization_units ADD COLUMN is_system"));
+    assert!(normalized.contains("WHERE code = 'ADMIN'"));
+    assert!(normalized.contains("WHERE code = 'SCHOOL'"));
+
+    let models = read_source(manifest_dir().join("src/modules/staff/models.rs"));
+    for response_model in ["pub struct Role {", "pub struct OrganizationUnit {"] {
+        let definition = extract_braced_block(&models, response_model, false);
+        assert!(
+            definition.contains("pub is_system: bool"),
+            "{response_model} must expose the protected-record flag"
+        );
+    }
+
+    for request_model in [
+        "pub struct CreateRoleRequest {",
+        "pub struct UpdateRoleRequest {",
+        "pub struct CreateOrganizationUnitRequest {",
+        "pub struct UpdateOrganizationUnitRequest {",
+    ] {
+        let definition = extract_braced_block(&models, request_model, false);
+        assert!(
+            !definition.contains("is_system"),
+            "{request_model} must not allow clients to change the protected-record flag"
+        );
+    }
+}
