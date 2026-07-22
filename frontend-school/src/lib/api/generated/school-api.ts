@@ -5,6 +5,38 @@
  */
 
 export interface paths {
+	'/api/achievements': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listAchievements'];
+		put?: never;
+		post: operations['createAchievement'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/achievements/{id}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put: operations['updateAchievement'];
+		post?: never;
+		delete: operations['deleteAchievement'];
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/api/admin/features': {
 		parameters: {
 			query?: never;
@@ -853,7 +885,7 @@ export interface paths {
 		};
 		get: operations['listStaff'];
 		put?: never;
-		post?: never;
+		post: operations['createStaff'];
 		delete?: never;
 		options?: never;
 		head?: never;
@@ -868,9 +900,9 @@ export interface paths {
 			cookie?: never;
 		};
 		get: operations['getStaffProfile'];
-		put?: never;
+		put: operations['updateStaff'];
 		post?: never;
-		delete?: never;
+		delete: operations['deleteStaff'];
 		options?: never;
 		head?: never;
 		patch?: never;
@@ -935,9 +967,79 @@ export interface paths {
 		};
 		/** GET /api/student/profile - นักเรียนดูข้อมูลตนเอง */
 		get: operations['getStudentProfile'];
-		put?: never;
+		/** PUT /api/student/profile - นักเรียนแก้ไขข้อมูลตนเอง (จำกัดฟิลด์) */
+		put: operations['updateStudentProfile'];
 		post?: never;
 		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/students': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		/** POST /api/students - เพิ่มนักเรียนใหม่ */
+		post: operations['createStudent'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/students/{id}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		/** PUT /api/students/:id - แก้ไขข้อมูลนักเรียน */
+		put: operations['updateStudent'];
+		post?: never;
+		/** DELETE /api/students/:id - ลบนักเรียน (soft delete) */
+		delete: operations['deleteStudent'];
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/students/{id}/parents': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		/** POST /api/students/:id/parents - เพิ่มผู้ปกครองให้นักเรียนที่มีอยู่ */
+		post: operations['addStudentParent'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/students/{id}/parents/{parent_id}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post?: never;
+		/** DELETE /api/students/:id/parents/:parentId - ลบความสัมพันธ์ผู้ปกครอง */
+		delete: operations['removeStudentParent'];
 		options?: never;
 		head?: never;
 		patch?: never;
@@ -1004,6 +1106,34 @@ export interface components {
 			/** Format: int32 */
 			year: number;
 		};
+		Achievement: {
+			/** Format: date */
+			achievement_date: string;
+			/** Format: date-time */
+			created_at: string;
+			/** Format: uuid */
+			created_by: string | null;
+			description: string | null;
+			/** Format: uuid */
+			id: string;
+			image_path: string | null;
+			title: string;
+			/** Format: date-time */
+			updated_at: string;
+			user_first_name: string | null;
+			/** Format: uuid */
+			user_id: string;
+			user_last_name: string | null;
+			user_profile_image_url: string | null;
+		};
+		AchievementListFilter: {
+			/** Format: date */
+			end_date?: string | null;
+			/** Format: date */
+			start_date?: string | null;
+			/** Format: uuid */
+			user_id?: string | null;
+		};
 		AddMemberRequest: {
 			is_primary?: boolean | null;
 			position_code: string;
@@ -1025,6 +1155,39 @@ export interface components {
 		};
 		ApiErrorResponse: {
 			error: string;
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_Achievement: {
+			data: {
+				/** Format: date */
+				achievement_date: string;
+				/** Format: date-time */
+				created_at: string;
+				/** Format: uuid */
+				created_by: string | null;
+				description: string | null;
+				/** Format: uuid */
+				id: string;
+				image_path: string | null;
+				title: string;
+				/** Format: date-time */
+				updated_at: string;
+				user_first_name: string | null;
+				/** Format: uuid */
+				user_id: string;
+				user_last_name: string | null;
+				user_profile_image_url: string | null;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_CreateStudentResponse: {
+			data: {
+				/** Format: uuid */
+				id: string;
+				username: string;
+			};
 			message?: string;
 			success: boolean;
 		};
@@ -1359,6 +1522,30 @@ export interface components {
 				name: string;
 				/** Format: int32 */
 				year: number;
+			}[];
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_Vec_Achievement: {
+			data: {
+				/** Format: date */
+				achievement_date: string;
+				/** Format: date-time */
+				created_at: string;
+				/** Format: uuid */
+				created_by: string | null;
+				description: string | null;
+				/** Format: uuid */
+				id: string;
+				image_path: string | null;
+				title: string;
+				/** Format: date-time */
+				updated_at: string;
+				user_first_name: string | null;
+				/** Format: uuid */
+				user_id: string;
+				user_last_name: string | null;
+				user_profile_image_url: string | null;
 			}[];
 			message?: string;
 			success: boolean;
@@ -2026,6 +2213,15 @@ export interface components {
 			id: string;
 			name: string;
 		};
+		CreateAchievementRequest: {
+			/** Format: date */
+			achievement_date: string;
+			description?: string | null;
+			image_path?: string | null;
+			title: string;
+			/** Format: uuid */
+			user_id?: string | null;
+		};
 		CreateDelegationRequest: {
 			/** Format: date-time */
 			expires_at?: string | null;
@@ -2050,6 +2246,15 @@ export interface components {
 			subject_group_id?: string | null;
 			unit_type?: string | null;
 		};
+		CreateParentRequest: {
+			email?: string | null;
+			first_name: string;
+			last_name: string;
+			national_id?: string | null;
+			phone: string;
+			relationship: string;
+			title?: string | null;
+		};
 		CreateRoleRequest: {
 			code: string;
 			description?: string | null;
@@ -2059,6 +2264,59 @@ export interface components {
 			name_en?: string | null;
 			permissions?: string[] | null;
 			user_type: string;
+		};
+		CreateStaffInfoRequest: {
+			education_level?: string | null;
+			major?: string | null;
+			/** Format: date */
+			teaching_license_expiry?: string | null;
+			teaching_license_number?: string | null;
+			university?: string | null;
+		};
+		CreateStaffRequest: {
+			address?: string | null;
+			/** Format: date */
+			date_of_birth?: string | null;
+			email?: string | null;
+			emergency_contact?: string | null;
+			first_name: string;
+			gender?: string | null;
+			/** Format: date */
+			hired_date?: string | null;
+			last_name: string;
+			line_id?: string | null;
+			national_id?: string | null;
+			nickname?: string | null;
+			organization_assignments?: components['schemas']['OrganizationAssignment'][] | null;
+			password: string;
+			phone?: string | null;
+			/** Format: uuid */
+			primary_role_id?: string | null;
+			profile_image_url?: string | null;
+			role_ids: string[];
+			staff_info?: null | components['schemas']['CreateStaffInfoRequest'];
+			title?: string | null;
+			username?: string | null;
+		};
+		CreateStudentRequest: {
+			date_of_birth?: string | null;
+			email?: string | null;
+			first_name: string;
+			gender?: string | null;
+			last_name: string;
+			national_id?: string | null;
+			parents?: components['schemas']['CreateParentRequest'][] | null;
+			password: string;
+			student_id: string;
+			/** Format: int32 */
+			student_number?: number | null;
+			title?: string | null;
+			username?: string | null;
+		};
+		CreateStudentResponse: {
+			/** Format: uuid */
+			id: string;
+			username: string;
 		};
 		DelegatablePermission: {
 			code: string;
@@ -2207,6 +2465,14 @@ export interface components {
 			read_at: string | null;
 			title: string;
 			type: string;
+		};
+		OrganizationAssignment: {
+			is_primary?: boolean | null;
+			/** Format: uuid */
+			organization_unit_id: string;
+			position_code: string;
+			position_title?: string | null;
+			responsibilities?: string | null;
 		};
 		OrganizationMemberItem: {
 			is_primary: boolean;
@@ -2665,6 +2931,13 @@ export interface components {
 			current_seq: number;
 			items: components['schemas']['TimetableEntry'][];
 		};
+		UpdateAchievementRequest: {
+			/** Format: date */
+			achievement_date?: string | null;
+			description?: string | null;
+			image_path?: string | null;
+			title?: string | null;
+		};
 		UpdateMemberRequest: {
 			is_primary?: boolean | null;
 			/** Format: uuid */
@@ -2691,6 +2964,11 @@ export interface components {
 			subject_group_id?: string | null;
 			unit_type?: string | null;
 		};
+		UpdateOwnProfileRequest: {
+			address?: string | null;
+			nickname?: string | null;
+			phone?: string | null;
+		};
 		UpdateProfileRequest: {
 			address?: string | null;
 			dateOfBirth?: string | null;
@@ -2712,6 +2990,38 @@ export interface components {
 			name_en?: string | null;
 			permissions?: string[] | null;
 			user_type?: string | null;
+		};
+		UpdateStaffRequest: {
+			address?: string | null;
+			/** Format: date */
+			date_of_birth?: string | null;
+			email?: string | null;
+			emergency_contact?: string | null;
+			first_name?: string | null;
+			gender?: string | null;
+			/** Format: date */
+			hired_date?: string | null;
+			last_name?: string | null;
+			line_id?: string | null;
+			nickname?: string | null;
+			organization_assignments?: components['schemas']['OrganizationAssignment'][] | null;
+			phone?: string | null;
+			/** Format: uuid */
+			primary_role_id?: string | null;
+			profile_image_url?: string | null;
+			role_ids?: string[] | null;
+			staff_info?: null | components['schemas']['CreateStaffInfoRequest'];
+			status?: string | null;
+			title?: string | null;
+		};
+		UpdateStudentRequest: {
+			address?: string | null;
+			email?: string | null;
+			first_name?: string | null;
+			last_name?: string | null;
+			phone?: string | null;
+			/** Format: int32 */
+			student_number?: number | null;
 		};
 		UserMenuData: {
 			groups: components['schemas']['MenuGroupResponse'][];
@@ -2768,6 +3078,194 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+	listAchievements: {
+		parameters: {
+			query?: {
+				end_date?: string;
+				start_date?: string;
+				user_id?: string;
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Scoped achievement list */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_Achievement'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Achievement read permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	createAchievement: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['CreateAchievementRequest'];
+			};
+		};
+		responses: {
+			/** @description Achievement created */
+			201: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Achievement'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Achievement creation permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	updateAchievement: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Achievement ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['UpdateAchievementRequest'];
+			};
+		};
+		responses: {
+			/** @description Achievement updated */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Achievement'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Achievement update permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Achievement not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	deleteAchievement: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Achievement ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Achievement deleted */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_EmptyData'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Achievement deletion permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Achievement not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
 	listFeatures: {
 		parameters: {
 			query?: never;
@@ -5415,6 +5913,57 @@ export interface operations {
 			};
 		};
 	};
+	createStaff: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['CreateStaffRequest'];
+			};
+		};
+		responses: {
+			/** @description Staff member created */
+			201: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_UuidIdData'];
+				};
+			};
+			/** @description Invalid staff data */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Staff creation permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
 	getStaffProfile: {
 		parameters: {
 			query?: never;
@@ -5446,6 +5995,119 @@ export interface operations {
 				};
 			};
 			/** @description Staff profile permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Staff member not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	updateStaff: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Staff user ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['UpdateStaffRequest'];
+			};
+		};
+		responses: {
+			/** @description Staff member updated */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_EmptyData'];
+				};
+			};
+			/** @description Invalid staff data */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Staff update permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Staff member not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	deleteStaff: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Staff user ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Staff member deactivated */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_EmptyData'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Staff deletion permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -5621,6 +6283,309 @@ export interface operations {
 				};
 			};
 			/** @description Student profile not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	updateStudentProfile: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['UpdateOwnProfileRequest'];
+			};
+		};
+		responses: {
+			/** @description Current student profile updated */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_EmptyData'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Student profile access denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	createStudent: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['CreateStudentRequest'];
+			};
+		};
+		responses: {
+			/** @description Student created */
+			201: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_CreateStudentResponse'];
+				};
+			};
+			/** @description Invalid or duplicate student data */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Student creation permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	updateStudent: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Student user ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['UpdateStudentRequest'];
+			};
+		};
+		responses: {
+			/** @description Student updated */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_EmptyData'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Student update permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Student not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	deleteStudent: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Student user ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Student deactivated */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_EmptyData'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Student deletion permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Student not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	addStudentParent: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Student user ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['CreateParentRequest'];
+			};
+		};
+		responses: {
+			/** @description Parent linked to student */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_EmptyData'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Student update permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Student not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	removeStudentParent: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Student user ID */
+				id: string;
+				/** @description Parent user ID */
+				parent_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Parent link removed */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_EmptyData'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Student update permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Parent relationship not found */
 			404: {
 				headers: {
 					[name: string]: unknown;

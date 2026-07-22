@@ -1,35 +1,8 @@
-export interface Achievement {
-	id: string;
-	user_id: string;
-	title: string;
-	description?: string;
-	achievement_date: string;
-	image_path?: string;
-	created_by?: string;
-	created_at: string;
-	updated_at: string;
-	user_first_name?: string;
-	user_last_name?: string;
-	user_profile_image_url?: string;
-}
+import type { components } from '$lib/api/generated/school-api';
 
-export interface CreateAchievementRequest {
-	user_id?: string;
-	title: string;
-	description?: string;
-	achievement_date: string;
-	image_path?: string;
-}
+type Schemas = components['schemas'];
 
-export interface UpdateAchievementRequest {
-	title?: string;
-	description?: string;
-	achievement_date?: string;
-	image_path?: string;
-}
-
-export interface AchievementListFilter {
-	user_id?: string;
-	start_date?: string;
-	end_date?: string;
-}
+export type Achievement = Schemas['Achievement'];
+export type CreateAchievementRequest = Schemas['CreateAchievementRequest'];
+export type UpdateAchievementRequest = Schemas['UpdateAchievementRequest'];
+export type AchievementListFilter = Schemas['AchievementListFilter'];

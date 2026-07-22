@@ -32,73 +32,8 @@ export type PublicStaffRoleResponse = Schemas['PublicStaffRole'];
 export type PublicStaffOrganizationUnitResponse = Schemas['PublicStaffOrganizationUnit'];
 export type PublicStaffProfileResponse = Schemas['PublicStaffProfile'];
 
-export interface CreateStaffRequest {
-	username?: string;
-	national_id?: string;
-	email?: string;
-	password: string;
-	title?: string;
-	first_name: string;
-	last_name: string;
-	nickname?: string;
-	phone?: string;
-	emergency_contact?: string;
-	line_id?: string;
-	date_of_birth?: string;
-	gender?: string;
-	address?: string;
-	hired_date?: string;
-	staff_info?: {
-		education_level?: string;
-		major?: string;
-		university?: string;
-		teaching_license_number?: string;
-		teaching_license_expiry?: string;
-	};
-	profile_image_url?: string;
-	role_ids: string[];
-	primary_role_id?: string;
-	organization_assignments?: Array<{
-		organization_unit_id: string;
-		position_code: string;
-		position_title?: string;
-		is_primary?: boolean;
-		responsibilities?: string;
-	}>;
-}
-
-export interface UpdateStaffRequest {
-	title?: string;
-	first_name?: string;
-	last_name?: string;
-	nickname?: string;
-	email?: string;
-	phone?: string;
-	emergency_contact?: string;
-	line_id?: string;
-	date_of_birth?: string;
-	gender?: string;
-	address?: string;
-	hired_date?: string;
-	status?: string;
-	profile_image_url?: string;
-	staff_info?: {
-		education_level?: string;
-		major?: string;
-		university?: string;
-		teaching_license_number?: string;
-		teaching_license_expiry?: string;
-	};
-	role_ids?: string[];
-	primary_role_id?: string;
-	organization_assignments?: Array<{
-		organization_unit_id: string;
-		position_code: string;
-		position_title?: string;
-		is_primary?: boolean;
-		responsibilities?: string;
-	}>;
-}
+export type CreateStaffRequest = Schemas['CreateStaffRequest'];
+export type UpdateStaffRequest = Schemas['UpdateStaffRequest'];
 
 export type Role = Schemas['Role'];
 export type OrganizationUnit = Schemas['OrganizationUnit'];
@@ -155,19 +90,19 @@ export async function getPublicStaffProfile(
 	return apiClient.get<PublicStaffProfileResponse>(`/api/staff/${staffId}/public-profile`);
 }
 
-export async function createStaff(data: CreateStaffRequest): Promise<ApiResponse<{ id: string }>> {
-	return apiClient.post<{ id: string }>('/api/staff', data);
+export async function createStaff(data: CreateStaffRequest): Promise<ApiResponse<UuidIdData>> {
+	return apiClient.post<UuidIdData>('/api/staff', data);
 }
 
 export async function updateStaff(
 	staffId: string,
 	data: UpdateStaffRequest
-): Promise<ApiResponse<Record<string, never>>> {
-	return apiClient.put<Record<string, never>>(`/api/staff/${staffId}`, data);
+): Promise<ApiResponse<EmptyData>> {
+	return apiClient.put<EmptyData>(`/api/staff/${staffId}`, data);
 }
 
-export async function deleteStaff(staffId: string): Promise<ApiResponse<Record<string, never>>> {
-	return apiClient.delete<Record<string, never>>(`/api/staff/${staffId}`);
+export async function deleteStaff(staffId: string): Promise<ApiResponse<EmptyData>> {
+	return apiClient.delete<EmptyData>(`/api/staff/${staffId}`);
 }
 
 // ===================================================================

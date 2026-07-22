@@ -5,6 +5,10 @@ import type {
 	AchievementListFilter
 } from '$lib/types/achievement';
 import { apiClient, type ApiResponse } from '$lib/api/client';
+import type { components } from '$lib/api/generated/school-api';
+
+type Schemas = components['schemas'];
+type EmptyData = Schemas['EmptyData'];
 
 export async function getAchievements(
 	filter?: AchievementListFilter
@@ -45,9 +49,9 @@ export async function updateAchievement(
 	}
 }
 
-export async function deleteAchievement(id: string): Promise<ApiResponse<Record<string, never>>> {
+export async function deleteAchievement(id: string): Promise<ApiResponse<EmptyData>> {
 	try {
-		return await apiClient.delete<Record<string, never>>(`/api/achievements/${id}`);
+		return await apiClient.delete<EmptyData>(`/api/achievements/${id}`);
 	} catch (e) {
 		console.error('Delete achievement error:', e);
 		return { success: false, error: 'Network error' };

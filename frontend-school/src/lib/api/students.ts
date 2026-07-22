@@ -40,45 +40,12 @@ export interface ListStudentsResponse {
 	total_pages?: number;
 }
 
-export interface CreateStudentRequest {
-	username?: string;
-	national_id?: string;
-	email?: string;
-	password: string;
-	first_name: string;
-	last_name: string;
-	title?: string;
-	student_id: string;
-	student_number?: number;
-	date_of_birth?: string;
-	gender?: string;
-	parent?: CreateParentRequest;
-}
-
-export interface CreateParentRequest {
-	title?: string;
-	first_name: string;
-	last_name: string;
-	phone: string;
-	relationship: string;
-	national_id?: string;
-	email?: string;
-}
-
-export interface UpdateStudentRequest {
-	email?: string;
-	first_name?: string;
-	last_name?: string;
-	phone?: string;
-	address?: string;
-	student_number?: number;
-}
-
-export interface UpdateOwnProfileRequest {
-	phone?: string;
-	address?: string;
-	nickname?: string;
-}
+export type CreateStudentRequest = Schemas['CreateStudentRequest'];
+export type CreateParentRequest = Schemas['CreateParentRequest'];
+export type UpdateStudentRequest = Schemas['UpdateStudentRequest'];
+export type UpdateOwnProfileRequest = Schemas['UpdateOwnProfileRequest'];
+type CreateStudentResponse = Schemas['CreateStudentResponse'];
+type EmptyData = Schemas['EmptyData'];
 
 /**
  * List all students (Admin)
@@ -125,7 +92,7 @@ export async function getStudent(id: string): Promise<{ success: boolean; data: 
 export async function createStudent(
 	data: CreateStudentRequest
 ): Promise<{ success: boolean; id: string }> {
-	const response = await apiClient.post<{ id: string; username?: string }>('/api/students', data);
+	const response = await apiClient.post<CreateStudentResponse>('/api/students', data);
 	const result = requireApiData(response, 'Failed to create student');
 	return { success: true, id: result.id };
 }
@@ -137,7 +104,7 @@ export async function updateStudent(
 	id: string,
 	data: UpdateStudentRequest
 ): Promise<{ success: boolean }> {
-	const response = await apiClient.put<Record<string, never>>(`/api/students/${id}`, data);
+	const response = await apiClient.put<EmptyData>(`/api/students/${id}`, data);
 	if (!response.success) throw new Error(response.error || 'Failed to update student');
 	return { success: true };
 }
@@ -146,7 +113,7 @@ export async function updateStudent(
  * Delete student (Admin)
  */
 export async function deleteStudent(id: string): Promise<{ success: boolean }> {
-	const response = await apiClient.delete<Record<string, never>>(`/api/students/${id}`);
+	const response = await apiClient.delete<EmptyData>(`/api/students/${id}`);
 	if (!response.success) throw new Error(response.error || 'Failed to delete student');
 	return { success: true };
 }
@@ -166,7 +133,7 @@ export async function getOwnProfile(): Promise<{ success: boolean; data: Student
 export async function updateOwnProfile(
 	data: UpdateOwnProfileRequest
 ): Promise<{ success: boolean }> {
-	const response = await apiClient.put<Record<string, never>>('/api/student/profile', data);
+	const response = await apiClient.put<EmptyData>('/api/student/profile', data);
 	if (!response.success) throw new Error(response.error || 'Failed to update profile');
 	return { success: true };
 }
@@ -178,10 +145,7 @@ export async function addParentToStudent(
 	studentId: string,
 	data: CreateParentRequest
 ): Promise<{ success: boolean; message: string }> {
-	const response = await apiClient.post<Record<string, never>>(
-		`/api/students/${studentId}/parents`,
-		data
-	);
+	const response = await apiClient.post<EmptyData>(`/api/students/${studentId}/parents`, data);
 	if (!response.success) throw new Error(response.error || 'Failed to add parent');
 	return { success: true, message: response.message || 'เพิ่มผู้ปกครองสำเร็จ' };
 }
@@ -193,7 +157,7 @@ export async function removeParentFromStudent(
 	studentId: string,
 	parentId: string
 ): Promise<{ success: boolean; message: string }> {
-	const response = await apiClient.delete<Record<string, never>>(
+	const response = await apiClient.delete<EmptyData>(
 		`/api/students/${studentId}/parents/${parentId}`
 	);
 	if (!response.success) throw new Error(response.error || 'Failed to remove parent');

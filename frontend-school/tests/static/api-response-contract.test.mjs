@@ -195,6 +195,22 @@ test('generated authorization contracts cover implemented routes and frontend DT
 	);
 });
 
+test('migrated people mutation wrappers use the generated empty response DTO', async () => {
+	const staffApi = await readRepoFile('frontend-school/src/lib/api/staff.ts');
+	const studentsApi = await readRepoFile('frontend-school/src/lib/api/students.ts');
+	const achievementApi = await readRepoFile('frontend-school/src/lib/api/achievement.ts');
+
+	for (const source of [staffApi, studentsApi, achievementApi]) {
+		assert.match(source, /type\s+EmptyData\s*=\s*Schemas\['EmptyData'\]/);
+	}
+	assert.doesNotMatch(staffApi, /(?:updateStaff|deleteStaff)[\s\S]{0,180}Record<string, never>/);
+	assert.doesNotMatch(
+		studentsApi,
+		/(?:updateStudent|deleteStudent|updateOwnProfile|addParentToStudent|removeParentFromStudent)[\s\S]{0,220}Record<string, never>/
+	);
+	assert.doesNotMatch(achievementApi, /deleteAchievement[\s\S]{0,180}Record<string, never>/);
+});
+
 test('generated schema lookup uses the complete property name', () => {
 	const source = `
 		ApiResponse_UserResponse: {
