@@ -2440,16 +2440,95 @@ fn authorization_handlers_from_router(router: &str) -> Vec<String> {
     handlers
 }
 
-fn authorization_handlers_missing_from_contract(router: &str, contract: &str) -> Vec<String> {
+fn openapi_path_registry(contract: &str) -> &str {
     let paths_start = contract
         .find("paths(")
         .expect("OpenAPI contract must declare paths");
     let components_offset = contract[paths_start..]
         .find("components(schemas(")
         .expect("OpenAPI paths must precede component schemas");
-    let path_registry = &contract[paths_start..paths_start + components_offset];
+    &contract[paths_start..paths_start + components_offset]
+}
+
+fn authorization_handlers_missing_from_contract(router: &str, contract: &str) -> Vec<String> {
+    let path_registry = openapi_path_registry(contract);
 
     authorization_handlers_from_router(router)
+        .into_iter()
+        .filter(|handler| !path_registry.contains(handler))
+        .collect()
+}
+
+fn direct_route_path_before_handler(source: &str, handler_offset: usize) -> Option<&str> {
+    let route_start = source[..handler_offset].rfind(".route(")?;
+    let route_prefix = &source[route_start..handler_offset];
+    let quote_start = route_prefix.find('"')? + 1;
+    let path_tail = &route_prefix[quote_start..];
+    let quote_end = path_tail.find('"')?;
+    Some(&path_tail[..quote_end])
+}
+
+fn is_read_oriented_direct_path(path: &str) -> bool {
+    path == "/api/menu/user"
+        || path.starts_with("/api/admin/features")
+        || path.starts_with("/api/admin/menu/")
+        || path.starts_with("/api/lookup/")
+        || path == "/api/staff"
+        || path.starts_with("/api/staff/")
+        || path == "/api/student/profile"
+        || path.starts_with("/api/parent/")
+        || path.starts_with("/api/me/")
+        || path == "/api/public/calendar/events"
+        || path.starts_with("/api/school/")
+        || (path.starts_with("/api/notifications") && path != "/api/notifications/stream")
+}
+
+fn read_oriented_handlers_from_routers(main_router: &str, calendar_router: &str) -> Vec<String> {
+    let direct_handler_pattern =
+        Regex::new(r"\bget\(\s*modules::(?P<handler>[A-Za-z_][A-Za-z0-9_:]*)\s*\)")
+            .expect("valid direct GET handler regex");
+    let nested_calendar_pattern =
+        Regex::new(r"\bget\(\s*handlers::(?P<handler>[A-Za-z_][A-Za-z0-9_]*)\s*\)")
+            .expect("valid nested calendar GET handler regex");
+    let main_router = strip_comments(main_router);
+    let calendar_router = strip_comments(calendar_router);
+
+    let mut handlers = direct_handler_pattern
+        .captures_iter(&main_router)
+        .filter_map(|captures| {
+            let matched = captures.get(0).expect("direct handler match");
+            let path = direct_route_path_before_handler(&main_router, matched.start())?;
+            if !is_read_oriented_direct_path(path) {
+                return None;
+            }
+            Some(format!(
+                "crate::modules::{}",
+                captures.name("handler").expect("handler capture").as_str()
+            ))
+        })
+        .chain(
+            nested_calendar_pattern
+                .captures_iter(&calendar_router)
+                .map(|captures| {
+                    format!(
+                        "crate::modules::calendar::handlers::{}",
+                        captures.name("handler").expect("handler capture").as_str()
+                    )
+                }),
+        )
+        .collect::<Vec<_>>();
+    handlers.sort();
+    handlers.dedup();
+    handlers
+}
+
+fn read_oriented_handlers_missing_from_contract(
+    main_router: &str,
+    calendar_router: &str,
+    contract: &str,
+) -> Vec<String> {
+    let path_registry = openapi_path_registry(contract);
+    read_oriented_handlers_from_routers(main_router, calendar_router)
         .into_iter()
         .filter(|handler| !path_registry.contains(handler))
         .collect()
@@ -2487,6 +2566,34 @@ fn authorization_openapi_guard_detects_a_new_router_handler() {
     assert_eq!(
         authorization_handlers_missing_from_contract(router, contract),
         vec!["crate::modules::auth::handlers::refresh".to_string()]
+    );
+}
+
+#[test]
+fn read_oriented_openapi_guard_detects_direct_and_nested_router_handlers() {
+    let main_router = r#"
+        .route(
+            "/api/lookup/staff",
+            get(modules::lookup::handlers::lookup_staff),
+        )
+        .nest("/api/calendar", modules::calendar::calendar_routes())
+    "#;
+    let calendar_router = r#"
+        Router::new().route(
+            "/events",
+            get(handlers::list_calendar_events).post(handlers::create_calendar_event),
+        )
+    "#;
+    let contract = r#"
+        #[openapi(
+            paths(crate::modules::lookup::handlers::lookup_staff),
+            components(schemas(ApiErrorResponse))
+        )]
+    "#;
+
+    assert_eq!(
+        read_oriented_handlers_missing_from_contract(main_router, calendar_router, contract),
+        vec!["crate::modules::calendar::handlers::list_calendar_events".to_string()]
     );
 }
 
