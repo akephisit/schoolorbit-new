@@ -478,20 +478,29 @@ fn permission_invalidation_violations(relative_path: &str, source: &str) -> Vec<
 
 fn backend_rs_files() -> Vec<PathBuf> {
     list_files(manifest_dir().join("src"), |path| {
-        path.extension().is_some_and(|ext| ext == "rs")
+        path.extension().is_some_and(|ext| ext == "rs") && !is_rust_test_module(path)
     })
 }
 
 fn module_rs_files() -> Vec<PathBuf> {
     list_files(manifest_dir().join("src/modules"), |path| {
-        path.extension().is_some_and(|ext| ext == "rs")
+        path.extension().is_some_and(|ext| ext == "rs") && !is_rust_test_module(path)
     })
+}
+
+fn is_rust_test_module(path: &Path) -> bool {
+    path.file_stem()
+        .and_then(|stem| stem.to_str())
+        .is_some_and(|stem| stem == "tests" || stem.ends_with("_tests"))
 }
 
 fn module_handler_files() -> Vec<PathBuf> {
     let modules_dir = manifest_dir().join("src/modules");
     list_files(&modules_dir, |path| {
         if path.extension().is_none_or(|ext| ext != "rs") {
+            return false;
+        }
+        if is_rust_test_module(path) {
             return false;
         }
 
@@ -508,6 +517,9 @@ fn module_service_files() -> Vec<PathBuf> {
     let modules_dir = manifest_dir().join("src/modules");
     list_files(&modules_dir, |path| {
         if path.extension().is_none_or(|ext| ext != "rs") {
+            return false;
+        }
+        if is_rust_test_module(path) {
             return false;
         }
 
@@ -2540,9 +2552,20 @@ fn authorization_handlers_are_registered_in_the_openapi_document() {
     let contract = read_source(manifest_dir().join("src/api_contract.rs"));
 
     assert!(
-        authorization_handlers_from_router(&router).len() >= 30,
+        authorization_handlers_from_router(&router).len() >= 32,
         "authorization router parser must find the current phase inventory"
     );
+
+    let handlers = authorization_handlers_from_router(&router);
+    for handler in [
+        "crate::modules::staff::handlers::roles::deactivate_role",
+        "crate::modules::staff::handlers::roles::deactivate_organization_unit",
+    ] {
+        assert!(
+            handlers.iter().any(|registered| registered == handler),
+            "missing runtime deactivation handler: {handler}"
+        );
+    }
 
     assert_eq!(
         authorization_handlers_missing_from_contract(&router, &contract),

@@ -101,6 +101,7 @@ use utoipa::OpenApi;
         crate::modules::staff::handlers::roles::get_role,
         crate::modules::staff::handlers::roles::create_role,
         crate::modules::staff::handlers::roles::update_role,
+        crate::modules::staff::handlers::roles::deactivate_role,
         crate::modules::staff::handlers::permissions::list_permissions,
         crate::modules::staff::handlers::permissions::list_permissions_by_module,
         crate::modules::staff::handlers::user_roles::get_user_roles,
@@ -111,6 +112,7 @@ use utoipa::OpenApi;
         crate::modules::staff::handlers::roles::get_organization_unit,
         crate::modules::staff::handlers::roles::create_organization_unit,
         crate::modules::staff::handlers::roles::update_organization_unit,
+        crate::modules::staff::handlers::roles::deactivate_organization_unit,
         crate::modules::staff::handlers::organization_permissions::get_organization_permissions,
         crate::modules::staff::handlers::organization_permissions::update_organization_permissions,
         crate::modules::staff::handlers::organization_delegations::list_delegatable_permissions,
@@ -526,6 +528,7 @@ mod tests {
                 ("/api/roles/{id}", "get", "getRole"),
                 ("/api/roles", "post", "createRole"),
                 ("/api/roles/{id}", "put", "updateRole"),
+                ("/api/roles/{id}", "delete", "deleteRole"),
                 ("/api/permissions", "get", "listPermissions"),
                 ("/api/permissions/modules", "get", "listPermissionsByModule"),
                 ("/api/users/{id}/roles", "get", "getUserRoles"),
@@ -543,7 +546,17 @@ mod tests {
             ],
         );
 
-        assert!(document["paths"]["/api/roles/{id}"]["delete"].is_null());
+        let role_delete = &document["paths"]["/api/roles/{id}"]["delete"];
+        assert_eq!(
+            role_delete["responses"]["200"]["content"]["application/json"]["schema"]["$ref"],
+            "#/components/schemas/ApiResponse_EmptyData"
+        );
+        for status in ["401", "403", "404", "409"] {
+            assert_eq!(
+                role_delete["responses"][status]["content"]["application/json"]["schema"]["$ref"],
+                "#/components/schemas/ApiErrorResponse"
+            );
+        }
         assert_eq!(
             document["paths"]["/api/roles"]["post"]["responses"]["201"]["content"]
                 ["application/json"]["schema"]["$ref"],
@@ -560,9 +573,22 @@ mod tests {
                 ["application/json"]["schema"]["$ref"],
             "#/components/schemas/ApiResponse_EmptyData"
         );
+        assert!(document["paths"]["/api/roles/{id}"]["put"]["responses"]["409"].is_object());
+
+        let include_inactive = document["paths"]["/api/roles"]["get"]["parameters"]
+            .as_array()
+            .expect("role list parameters")
+            .iter()
+            .find(|parameter| parameter["name"] == "include_inactive")
+            .expect("include_inactive role query parameter");
+        assert_eq!(include_inactive["in"], "query");
+        assert_eq!(include_inactive["required"], false);
+        assert_eq!(include_inactive["schema"]["type"], "boolean");
 
         let schemas = &document["components"]["schemas"];
         let role = &schemas["Role"];
+        assert!(required(role).contains(&"is_system"));
+        assert_eq!(role["properties"]["is_system"]["type"], "boolean");
         for field in ["name_en", "description"] {
             assert!(required(role).contains(&field));
             assert!(contains_null(&role["properties"][field]));
@@ -596,6 +622,11 @@ mod tests {
                     "updateOrganizationUnit",
                 ),
                 (
+                    "/api/organization/units/{id}",
+                    "delete",
+                    "deactivateOrganizationUnit",
+                ),
+                (
                     "/api/organization/units/{id}/permissions",
                     "get",
                     "getOrganizationPermissions",
@@ -608,7 +639,17 @@ mod tests {
             ],
         );
 
-        assert!(document["paths"]["/api/organization/units/{id}"]["delete"].is_null());
+        let unit_delete = &document["paths"]["/api/organization/units/{id}"]["delete"];
+        assert_eq!(
+            unit_delete["responses"]["200"]["content"]["application/json"]["schema"]["$ref"],
+            "#/components/schemas/ApiResponse_EmptyData"
+        );
+        for status in ["401", "403", "404", "409"] {
+            assert_eq!(
+                unit_delete["responses"][status]["content"]["application/json"]["schema"]["$ref"],
+                "#/components/schemas/ApiErrorResponse"
+            );
+        }
         assert_eq!(
             document["paths"]["/api/organization/units"]["post"]["responses"]["201"]["content"]
                 ["application/json"]["schema"]["$ref"],
@@ -621,6 +662,10 @@ mod tests {
         );
         assert!(document["paths"]["/api/organization/units"]["post"]["responses"]["409"].is_null());
         assert!(
+            document["paths"]["/api/organization/units/{id}"]["put"]["responses"]["409"]
+                .is_object()
+        );
+        assert!(
             document["paths"]["/api/organization/units/{id}/permissions"]["put"]["responses"]
                 ["404"]
                 .is_null()
@@ -628,6 +673,8 @@ mod tests {
 
         let schemas = &document["components"]["schemas"];
         let unit = &schemas["OrganizationUnit"];
+        assert!(required(unit).contains(&"is_system"));
+        assert_eq!(unit["properties"]["is_system"]["type"], "boolean");
         for field in [
             "name_en",
             "description",
@@ -640,6 +687,16 @@ mod tests {
             assert!(required(unit).contains(&field));
             assert!(contains_null(&unit["properties"][field]));
         }
+
+        let include_inactive = document["paths"]["/api/organization/units"]["get"]["parameters"]
+            .as_array()
+            .expect("organization unit list parameters")
+            .iter()
+            .find(|parameter| parameter["name"] == "include_inactive")
+            .expect("include_inactive organization unit query parameter");
+        assert_eq!(include_inactive["in"], "query");
+        assert_eq!(include_inactive["required"], false);
+        assert_eq!(include_inactive["schema"]["type"], "boolean");
 
         let grant = &schemas["OrganizationPermissionGrant"];
         assert!(required(grant).contains(&"position_code"));
@@ -1002,6 +1059,7 @@ mod tests {
             ("/api/roles/{id}", "get", "getRole"),
             ("/api/roles", "post", "createRole"),
             ("/api/roles/{id}", "put", "updateRole"),
+            ("/api/roles/{id}", "delete", "deleteRole"),
             ("/api/permissions", "get", "listPermissions"),
             ("/api/permissions/modules", "get", "listPermissionsByModule"),
             ("/api/users/{id}/roles", "get", "getUserRoles"),
@@ -1023,6 +1081,11 @@ mod tests {
                 "/api/organization/units/{id}",
                 "put",
                 "updateOrganizationUnit",
+            ),
+            (
+                "/api/organization/units/{id}",
+                "delete",
+                "deactivateOrganizationUnit",
             ),
             (
                 "/api/organization/units/{id}/permissions",
@@ -1075,7 +1138,7 @@ mod tests {
                 "removeOrganizationMember",
             ),
         ];
-        assert_eq!(expected.len(), 30);
+        assert_eq!(expected.len(), 32);
         assert_operations(&document, &expected);
 
         let mut operation_ids = HashSet::new();
@@ -1097,7 +1160,7 @@ mod tests {
                 }
             }
         }
-        assert_eq!(operation_ids.len(), 66);
+        assert_eq!(operation_ids.len(), 68);
 
         let schemas = &document["components"]["schemas"];
         let delegation = &schemas["DelegationItem"];

@@ -348,6 +348,7 @@ async fn main() {
         .route(
             "/api/roles/{id}",
             axum::routing::put(modules::staff::handlers::roles::update_role)
+                .delete(modules::staff::handlers::roles::deactivate_role)
                 .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
         )
         // Organization Unit Management routes (protected)
@@ -369,6 +370,7 @@ async fn main() {
         .route(
             "/api/organization/units/{id}",
             axum::routing::put(modules::staff::handlers::roles::update_organization_unit)
+                .delete(modules::staff::handlers::roles::deactivate_organization_unit)
                 .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
         )
         .route(
