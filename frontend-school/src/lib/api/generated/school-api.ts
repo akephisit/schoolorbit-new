@@ -549,6 +549,134 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/api/academic/planning/classrooms/{classroom_id}/activities': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listClassroomActivities'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/planning/classrooms/{classroom_id}/activities/{slot_id}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post?: never;
+		delete: operations['removeClassroomFromActivitySlot'];
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/planning/courses': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listClassroomCourses'];
+		put?: never;
+		post: operations['assignCourses'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/planning/courses/{id}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put: operations['updateClassroomCourse'];
+		post?: never;
+		delete: operations['removeClassroomCourse'];
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/planning/courses/{id}/instructors': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listCourseInstructors'];
+		put?: never;
+		post: operations['addCourseInstructor'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/planning/courses/{id}/instructors/{uid}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put: operations['updateCourseInstructorRole'];
+		post?: never;
+		delete: operations['removeCourseInstructor'];
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/planning/courses/instructors': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['batchListCourseInstructorsFromQuery'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/planning/courses/instructors/batch': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['batchListCourseInstructors'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/api/academic/planning/generate-from-plan': {
 		parameters: {
 			query?: never;
@@ -2205,6 +2333,11 @@ export interface components {
 			instructor_id: string;
 			role?: null | components['schemas']['CurriculumInstructorRole'];
 		};
+		AddCourseInstructorRequest: {
+			/** Format: uuid */
+			instructor_id: string;
+			role?: null | components['schemas']['CourseInstructorRole'];
+		};
 		AddMemberRequest: {
 			is_primary?: boolean | null;
 			position_code: string;
@@ -2462,6 +2595,14 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
+		ApiResponse_CourseAssignedCountData: {
+			data: {
+				/** Format: int64 */
+				assigned: number;
+			};
+			message?: string;
+			success: boolean;
+		};
 		ApiResponse_CreateStudentResponse: {
 			data: {
 				/** Format: uuid */
@@ -2533,6 +2674,24 @@ export interface components {
 				short_name: string;
 				/** Format: int32 */
 				year: number;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_HashMap_String_Vec_CourseInstructor: {
+			data: {
+				[key: string]: {
+					/** Format: uuid */
+					classroom_course_id: string;
+					/** Format: date-time */
+					created_at: string;
+					/** Format: uuid */
+					id: string;
+					/** Format: uuid */
+					instructor_id: string;
+					instructor_name?: string | null;
+					role: components['schemas']['CourseInstructorRole'];
+				}[];
 			};
 			message?: string;
 			success: boolean;
@@ -3310,6 +3469,49 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
+		ApiResponse_Vec_ClassroomActivity: {
+			data: {
+				/** Format: uuid */
+				activity_catalog_id: string;
+				activity_type: string;
+				is_active: boolean;
+				name: string;
+				/** Format: int32 */
+				periods_per_week: number;
+				scheduling_mode: string;
+				/** Format: uuid */
+				slot_id: string;
+			}[];
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_Vec_ClassroomCourse: {
+			data: {
+				/** Format: uuid */
+				academic_semester_id: string;
+				/** Format: uuid */
+				classroom_id: string;
+				classroom_name?: string | null;
+				/** Format: uuid */
+				id: string;
+				instructor_name?: string | null;
+				/** Format: uuid */
+				primary_instructor_id?: string | null;
+				settings: unknown;
+				subject_code?: string | null;
+				/** Format: double */
+				subject_credit?: number | null;
+				/** Format: int32 */
+				subject_hours?: number | null;
+				/** Format: uuid */
+				subject_id: string;
+				subject_name_en?: string | null;
+				subject_name_th?: string | null;
+				subject_type?: string | null;
+			}[];
+			message?: string;
+			success: boolean;
+		};
 		ApiResponse_Vec_ClassroomLookupItem: {
 			data: {
 				grade_level?: string;
@@ -3318,6 +3520,22 @@ export interface components {
 				/** Format: uuid */
 				id: string;
 				name: string;
+			}[];
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_Vec_CourseInstructor: {
+			data: {
+				/** Format: uuid */
+				classroom_course_id: string;
+				/** Format: date-time */
+				created_at: string;
+				/** Format: uuid */
+				id: string;
+				/** Format: uuid */
+				instructor_id: string;
+				instructor_name?: string | null;
+				role: components['schemas']['CourseInstructorRole'];
 			}[];
 			message?: string;
 			success: boolean;
@@ -3930,6 +4148,13 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
+		AssignCoursesRequest: {
+			/** Format: uuid */
+			academic_semester_id: string;
+			/** Format: uuid */
+			classroom_id: string;
+			subject_ids: string[];
+		};
 		AssignRoleRequest: {
 			is_primary?: boolean | null;
 			notes?: string | null;
@@ -3940,6 +4165,12 @@ export interface components {
 		};
 		AutoAssignClassNumbersRequest: {
 			sort_by: string;
+		};
+		BatchListCourseInstructorsQuery: {
+			course_ids: string;
+		};
+		BatchListCourseInstructorsRequest: {
+			course_ids: string[];
 		};
 		BatchUpsertSlotClassroomAssignmentsRequest: {
 			assignments: components['schemas']['UpsertSlotClassroomAssignmentRequest'][];
@@ -4122,6 +4353,22 @@ export interface components {
 			/** Format: uuid */
 			study_plan_version_id?: string | null;
 		};
+		ClassroomActivity: {
+			/** Format: uuid */
+			activity_catalog_id: string;
+			activity_type: string;
+			is_active: boolean;
+			name: string;
+			/** Format: int32 */
+			periods_per_week: number;
+			scheduling_mode: string;
+			/** Format: uuid */
+			slot_id: string;
+		};
+		ClassroomActivityQuery: {
+			/** Format: uuid */
+			semester_id: string;
+		};
 		ClassroomAdvisor: {
 			name: string;
 			role: components['schemas']['ClassroomAdvisorRole'];
@@ -4135,6 +4382,29 @@ export interface components {
 		};
 		/** @enum {string} */
 		ClassroomAdvisorRole: 'primary' | 'secondary';
+		ClassroomCourse: {
+			/** Format: uuid */
+			academic_semester_id: string;
+			/** Format: uuid */
+			classroom_id: string;
+			classroom_name?: string | null;
+			/** Format: uuid */
+			id: string;
+			instructor_name?: string | null;
+			/** Format: uuid */
+			primary_instructor_id?: string | null;
+			settings: unknown;
+			subject_code?: string | null;
+			/** Format: double */
+			subject_credit?: number | null;
+			/** Format: int32 */
+			subject_hours?: number | null;
+			/** Format: uuid */
+			subject_id: string;
+			subject_name_en?: string | null;
+			subject_name_th?: string | null;
+			subject_type?: string | null;
+		};
 		/** @description Classroom lookup item */
 		ClassroomLookupItem: {
 			grade_level?: string;
@@ -4147,6 +4417,24 @@ export interface components {
 		CountData_usize: {
 			count: number;
 		};
+		CourseAssignedCountData: {
+			/** Format: int64 */
+			assigned: number;
+		};
+		CourseInstructor: {
+			/** Format: uuid */
+			classroom_course_id: string;
+			/** Format: date-time */
+			created_at: string;
+			/** Format: uuid */
+			id: string;
+			/** Format: uuid */
+			instructor_id: string;
+			instructor_name?: string | null;
+			role: components['schemas']['CourseInstructorRole'];
+		};
+		/** @enum {string} */
+		CourseInstructorRole: 'primary' | 'secondary';
 		CreateAcademicYearRequest: {
 			/** Format: date */
 			end_date: string;
@@ -4761,6 +5049,16 @@ export interface components {
 			startsAt: string;
 			subjectName: string;
 		};
+		PlanQuery: {
+			/** Format: uuid */
+			academic_semester_id?: string | null;
+			/** Format: uuid */
+			classroom_id?: string | null;
+			/** Format: uuid */
+			instructor_id?: string | null;
+			/** Format: uuid */
+			subject_id?: string | null;
+		};
 		ProfileResponse: {
 			address: string | null;
 			/** Format: date-time */
@@ -5350,6 +5648,14 @@ export interface components {
 			room_number?: string | null;
 			/** Format: uuid */
 			study_plan_version_id?: string | null;
+		};
+		UpdateCourseInstructorRoleRequest: {
+			role: components['schemas']['CourseInstructorRole'];
+		};
+		UpdateCourseRequest: {
+			/** Format: uuid */
+			primary_instructor_id?: string | null;
+			settings?: unknown;
 		};
 		UpdateEnrollmentNumberRequest: {
 			/** Format: int32 */
@@ -8507,6 +8813,737 @@ export interface operations {
 				};
 			};
 			/** @description Grade level could not be deleted */
+			500: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	listClassroomActivities: {
+		parameters: {
+			query: {
+				semester_id: string;
+			};
+			header?: never;
+			path: {
+				/** @description Classroom ID */
+				classroom_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Classroom activities */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_ClassroomActivity'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Course-plan read permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Classroom or semester not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Classroom activities could not be loaded */
+			500: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	removeClassroomFromActivitySlot: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Classroom ID */
+				classroom_id: string;
+				/** @description Activity slot ID */
+				slot_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Classroom removed from activity slot */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_EmptyData'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Course-plan management permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Classroom activity assignment not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Classroom could not be removed from activity slot */
+			500: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	listClassroomCourses: {
+		parameters: {
+			query?: {
+				academic_semester_id?: string;
+				classroom_id?: string;
+				instructor_id?: string;
+				subject_id?: string;
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Classroom courses */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_ClassroomCourse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Course-plan read permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Classroom courses could not be loaded */
+			500: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	assignCourses: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['AssignCoursesRequest'];
+			};
+		};
+		responses: {
+			/** @description Courses assigned */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_CourseAssignedCountData'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Course-plan management permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Classroom, semester, or subject not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Courses could not be assigned */
+			500: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	updateClassroomCourse: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Classroom course ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['UpdateCourseRequest'];
+			};
+		};
+		responses: {
+			/** @description Classroom course updated */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_EmptyData'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Course-plan management permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Classroom course or instructor not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Classroom course could not be updated */
+			500: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	removeClassroomCourse: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Classroom course ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Classroom course removed */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_EmptyData'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Course-plan management permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Classroom course not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Classroom course could not be removed */
+			500: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	listCourseInstructors: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Classroom course ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Course instructors */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_CourseInstructor'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Course-plan read permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Classroom course not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Course instructors could not be loaded */
+			500: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	addCourseInstructor: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Classroom course ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['AddCourseInstructorRequest'];
+			};
+		};
+		responses: {
+			/** @description Course instructor added */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_EmptyData'];
+				};
+			};
+			/** @description Instructor role is invalid */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Course-plan management permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Classroom course or instructor not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Course instructor could not be added */
+			500: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	updateCourseInstructorRole: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Classroom course ID */
+				id: string;
+				/** @description Instructor user ID */
+				uid: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['UpdateCourseInstructorRoleRequest'];
+			};
+		};
+		responses: {
+			/** @description Course instructor role updated */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_EmptyData'];
+				};
+			};
+			/** @description Instructor role is invalid */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Course-plan management permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Classroom course or instructor assignment not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Course instructor role could not be updated */
+			500: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	removeCourseInstructor: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Classroom course ID */
+				id: string;
+				/** @description Instructor user ID */
+				uid: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Course instructor removed */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_EmptyData'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Course-plan management permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Classroom course or instructor assignment not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Course instructor could not be removed */
+			500: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	batchListCourseInstructorsFromQuery: {
+		parameters: {
+			query: {
+				course_ids: string;
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Course instructors grouped by course */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_HashMap_String_Vec_CourseInstructor'];
+				};
+			};
+			/** @description course_ids contains a malformed UUID */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Course-plan read permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Course instructors could not be loaded */
+			500: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	batchListCourseInstructors: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['BatchListCourseInstructorsRequest'];
+			};
+		};
+		responses: {
+			/** @description Course instructors grouped by course */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_HashMap_String_Vec_CourseInstructor'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Course-plan read permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Course instructors could not be loaded */
 			500: {
 				headers: {
 					[name: string]: unknown;

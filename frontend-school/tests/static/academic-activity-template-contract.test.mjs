@@ -67,8 +67,8 @@ test('generated activity template contract owns all batch operations and wire DT
 	const operationIds = Object.values(contract.paths).flatMap((pathItem) =>
 		Object.values(pathItem).flatMap((operation) => operation.operationId ?? [])
 	);
-	assert.equal(operationIds.length, 165);
-	assert.equal(new Set(operationIds).size, 165);
+	assert.equal(operationIds.length, 177);
+	assert.equal(new Set(operationIds).size, 177);
 
 	for (const [alias, schema] of [
 		['ActivitySlot', 'ActivitySlot'],

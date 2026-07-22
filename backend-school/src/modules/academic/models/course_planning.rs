@@ -1,6 +1,14 @@
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
+use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum CourseInstructorRole {
+    Primary,
+    Secondary,
+}
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub enum OptionalUuidPatch {
@@ -22,7 +30,7 @@ impl<'de> Deserialize<'de> for OptionalUuidPatch {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Serialize, Deserialize, FromRow, ToSchema)]
 pub struct ClassroomCourse {
     pub id: Uuid,
     pub classroom_id: Uuid,
@@ -52,7 +60,8 @@ pub struct ClassroomCourse {
     pub classroom_name: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema, IntoParams)]
+#[into_params(parameter_in = Query)]
 pub struct PlanQuery {
     pub classroom_id: Option<Uuid>,
     pub instructor_id: Option<Uuid>,
@@ -60,16 +69,17 @@ pub struct PlanQuery {
     pub subject_id: Option<Uuid>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct AssignCoursesRequest {
     pub classroom_id: Uuid,
     pub academic_semester_id: Uuid,
     pub subject_ids: Vec<Uuid>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct UpdateCourseRequest {
     #[serde(default)]
+    #[schema(value_type = Option<Uuid>, nullable = true)]
     pub primary_instructor_id: OptionalUuidPatch,
     pub settings: Option<serde_json::Value>,
 }
@@ -78,11 +88,12 @@ pub struct UpdateCourseRequest {
 // Classroom Course Instructors (team teaching)
 // ==========================================
 
-#[derive(Debug, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Serialize, Deserialize, sqlx::FromRow, ToSchema)]
 pub struct CourseInstructor {
     pub id: Uuid,
     pub classroom_course_id: Uuid,
     pub instructor_id: Uuid,
+    #[schema(value_type = CourseInstructorRole)]
     pub role: String,
     pub created_at: chrono::DateTime<chrono::Utc>,
 
@@ -91,18 +102,32 @@ pub struct CourseInstructor {
     pub instructor_name: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct AddCourseInstructorRequest {
     pub instructor_id: Uuid,
+    #[schema(value_type = Option<CourseInstructorRole>)]
     pub role: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct BatchListCourseInstructorsRequest {
     pub course_ids: Vec<Uuid>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct UpdateCourseInstructorRoleRequest {
+    #[schema(value_type = CourseInstructorRole)]
     pub role: String,
+}
+
+#[derive(Debug, Deserialize, ToSchema, IntoParams)]
+#[into_params(parameter_in = Query)]
+pub struct BatchListCourseInstructorsQuery {
+    pub course_ids: String,
+}
+
+#[derive(Debug, Deserialize, ToSchema, IntoParams)]
+#[into_params(parameter_in = Query)]
+pub struct ClassroomActivityQuery {
+    pub semester_id: Uuid,
 }

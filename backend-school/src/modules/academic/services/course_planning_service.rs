@@ -6,7 +6,7 @@ use crate::modules::academic::models::course_planning::{
 use sqlx::PgPool;
 use uuid::Uuid;
 
-#[derive(serde::Serialize, sqlx::FromRow)]
+#[derive(serde::Serialize, sqlx::FromRow, utoipa::ToSchema)]
 pub struct ClassroomActivity {
     pub slot_id: Uuid,
     pub activity_catalog_id: Uuid,

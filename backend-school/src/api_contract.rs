@@ -4,6 +4,7 @@ use crate::modules::academic::handlers::activity::{
     ActivityProcessedCountData, AddSlotInstructorRequest, AddSlotInstructorsBatchRequest,
     InstructorRoleRequest,
 };
+use crate::modules::academic::handlers::course_planning::CourseAssignedCountData;
 use crate::modules::academic::handlers::study_plans::{CountData, GenerateCoursesData};
 use crate::modules::academic::handlers::timetable::TimetableItemsData;
 use crate::modules::academic::models::activity::{
@@ -12,6 +13,11 @@ use crate::modules::academic::models::activity::{
     AddMembersRequest, BatchUpsertSlotClassroomAssignmentsRequest, CreateActivityGroupRequest,
     SlotClassroomAssignment, UpdateActivityGroupRequest, UpdateActivitySlotRequest,
     UpdateMemberResultRequest, UpsertSlotClassroomAssignmentRequest,
+};
+use crate::modules::academic::models::course_planning::{
+    AddCourseInstructorRequest, AssignCoursesRequest, BatchListCourseInstructorsQuery,
+    BatchListCourseInstructorsRequest, ClassroomActivityQuery, ClassroomCourse, CourseInstructor,
+    CourseInstructorRole, PlanQuery, UpdateCourseInstructorRoleRequest, UpdateCourseRequest,
 };
 use crate::modules::academic::models::curriculum::{
     AddSubjectDefaultInstructorRequest, CreateSubjectRequest, CurriculumInstructorRole,
@@ -41,6 +47,7 @@ use crate::modules::academic::models::{
 };
 use crate::modules::academic::services::academic_structure_service::AcademicStructure;
 use crate::modules::academic::services::activity_service::{InstructorInfo, SlotInstructorInfo};
+use crate::modules::academic::services::course_planning_service::ClassroomActivity;
 use crate::modules::academic::services::study_plan_service::GenerateActivitiesFromPlanOutcome;
 use crate::modules::achievement::models::{
     Achievement, AchievementListFilter, CreateAchievementRequest, UpdateAchievementRequest,
@@ -95,6 +102,7 @@ use crate::modules::system::handlers::feature_toggles::{
     FeatureListResponse, FeatureToggleResponse,
 };
 use serde_json::Value;
+use std::collections::HashMap;
 use utoipa::OpenApi;
 
 #[derive(OpenApi)]
@@ -231,6 +239,18 @@ use utoipa::OpenApi;
         crate::modules::academic::handlers::activity::my_enrollments,
         crate::modules::academic::handlers::activity::self_enroll,
         crate::modules::academic::handlers::activity::self_unenroll,
+        crate::modules::academic::handlers::course_planning::list_classroom_courses,
+        crate::modules::academic::handlers::course_planning::assign_courses,
+        crate::modules::academic::handlers::course_planning::update_course,
+        crate::modules::academic::handlers::course_planning::remove_course,
+        crate::modules::academic::handlers::course_planning::batch_list_course_instructors,
+        crate::modules::academic::handlers::course_planning::batch_list_course_instructors_from_query,
+        crate::modules::academic::handlers::course_planning::list_course_instructors,
+        crate::modules::academic::handlers::course_planning::add_course_instructor,
+        crate::modules::academic::handlers::course_planning::update_course_instructor_role,
+        crate::modules::academic::handlers::course_planning::remove_course_instructor,
+        crate::modules::academic::handlers::course_planning::list_classroom_activities,
+        crate::modules::academic::handlers::course_planning::remove_classroom_from_slot,
         crate::modules::calendar::handlers::list_my_calendar_events,
         crate::modules::calendar::handlers::list_public_calendar_events,
         crate::modules::calendar::handlers::list_calendar_events,
@@ -440,6 +460,24 @@ use utoipa::OpenApi;
         ApiResponse<Vec<StudyPlanSubject>>,
         ApiResponse<CountData<usize>>,
         ApiResponse<GenerateCoursesData>,
+        CourseInstructorRole,
+        ClassroomCourse,
+        PlanQuery,
+        AssignCoursesRequest,
+        UpdateCourseRequest,
+        CourseInstructor,
+        AddCourseInstructorRequest,
+        BatchListCourseInstructorsRequest,
+        BatchListCourseInstructorsQuery,
+        UpdateCourseInstructorRoleRequest,
+        ClassroomActivityQuery,
+        ClassroomActivity,
+        CourseAssignedCountData,
+        ApiResponse<Vec<ClassroomCourse>>,
+        ApiResponse<Vec<CourseInstructor>>,
+        ApiResponse<HashMap<String, Vec<CourseInstructor>>>,
+        ApiResponse<Vec<ClassroomActivity>>,
+        ApiResponse<CourseAssignedCountData>,
         ActivityCatalogType,
         ActivitySchedulingMode,
         StudyPlanVersionActivity,
@@ -1232,7 +1270,7 @@ mod tests {
             .flat_map(|path| path.as_object().expect("path item").values())
             .filter(|operation| operation.get("operationId").is_some())
             .count();
-        assert_eq!(operation_count, 165);
+        assert_eq!(operation_count, 177);
     }
 
     #[test]
@@ -1378,7 +1416,7 @@ mod tests {
             .flat_map(|path| path.as_object().expect("path item").values())
             .filter(|operation| operation.get("operationId").is_some())
             .count();
-        assert_eq!(operation_count, 165);
+        assert_eq!(operation_count, 177);
     }
 
     #[test]
@@ -1560,7 +1598,7 @@ mod tests {
             .flat_map(|path| path.as_object().expect("path item").values())
             .filter(|operation| operation.get("operationId").is_some())
             .count();
-        assert_eq!(operation_count, 165);
+        assert_eq!(operation_count, 177);
     }
 
     #[test]
@@ -1833,7 +1871,152 @@ mod tests {
             .flat_map(|path| path.as_object().expect("path item").values())
             .filter(|operation| operation.get("operationId").is_some())
             .count();
-        assert_eq!(operation_count, 165);
+        assert_eq!(operation_count, 177);
+    }
+
+    #[test]
+    fn academic_course_planning_contracts() {
+        let document = school_api_value().expect("document should serialize");
+        assert_operations(
+            &document,
+            &[
+                (
+                    "/api/academic/planning/courses",
+                    "get",
+                    "listClassroomCourses",
+                ),
+                ("/api/academic/planning/courses", "post", "assignCourses"),
+                (
+                    "/api/academic/planning/courses/{id}",
+                    "put",
+                    "updateClassroomCourse",
+                ),
+                (
+                    "/api/academic/planning/courses/{id}",
+                    "delete",
+                    "removeClassroomCourse",
+                ),
+                (
+                    "/api/academic/planning/courses/instructors/batch",
+                    "post",
+                    "batchListCourseInstructors",
+                ),
+                (
+                    "/api/academic/planning/courses/instructors",
+                    "get",
+                    "batchListCourseInstructorsFromQuery",
+                ),
+                (
+                    "/api/academic/planning/courses/{id}/instructors",
+                    "get",
+                    "listCourseInstructors",
+                ),
+                (
+                    "/api/academic/planning/courses/{id}/instructors",
+                    "post",
+                    "addCourseInstructor",
+                ),
+                (
+                    "/api/academic/planning/courses/{id}/instructors/{uid}",
+                    "put",
+                    "updateCourseInstructorRole",
+                ),
+                (
+                    "/api/academic/planning/courses/{id}/instructors/{uid}",
+                    "delete",
+                    "removeCourseInstructor",
+                ),
+                (
+                    "/api/academic/planning/classrooms/{classroom_id}/activities",
+                    "get",
+                    "listClassroomActivities",
+                ),
+                (
+                    "/api/academic/planning/classrooms/{classroom_id}/activities/{slot_id}",
+                    "delete",
+                    "removeClassroomFromActivitySlot",
+                ),
+            ],
+        );
+
+        let operation_ids: Vec<&str> = document["paths"]
+            .as_object()
+            .expect("paths must be an object")
+            .values()
+            .flat_map(|path| path.as_object().expect("path item").values())
+            .filter_map(|operation| operation["operationId"].as_str())
+            .collect();
+        assert_eq!(operation_ids.len(), 177);
+        assert_eq!(
+            operation_ids.iter().copied().collect::<HashSet<_>>().len(),
+            177
+        );
+
+        for (path, method, request_schema) in [
+            (
+                "/api/academic/planning/courses",
+                "post",
+                "AssignCoursesRequest",
+            ),
+            (
+                "/api/academic/planning/courses/{id}",
+                "put",
+                "UpdateCourseRequest",
+            ),
+            (
+                "/api/academic/planning/courses/instructors/batch",
+                "post",
+                "BatchListCourseInstructorsRequest",
+            ),
+            (
+                "/api/academic/planning/courses/{id}/instructors",
+                "post",
+                "AddCourseInstructorRequest",
+            ),
+            (
+                "/api/academic/planning/courses/{id}/instructors/{uid}",
+                "put",
+                "UpdateCourseInstructorRoleRequest",
+            ),
+        ] {
+            assert_eq!(
+                document["paths"][path][method]["requestBody"]["content"]["application/json"]
+                    ["schema"]["$ref"],
+                format!("#/components/schemas/{request_schema}"),
+                "incorrect request schema for {method} {path}"
+            );
+        }
+
+        assert_eq!(
+            document["paths"]["/api/academic/planning/courses"]["post"]["responses"]["200"]
+                ["content"]["application/json"]["schema"]["$ref"],
+            "#/components/schemas/ApiResponse_CourseAssignedCountData"
+        );
+        assert_eq!(
+            document["paths"]["/api/academic/planning/courses/instructors"]["get"]["responses"]
+                ["400"]["content"]["application/json"]["schema"]["$ref"],
+            "#/components/schemas/ApiErrorResponse"
+        );
+
+        let schemas = &document["components"]["schemas"];
+        let primary_instructor =
+            &schemas["UpdateCourseRequest"]["properties"]["primary_instructor_id"];
+        assert!(
+            primary_instructor.to_string().contains("null"),
+            "primary_instructor_id must document explicit null clearing"
+        );
+        assert!(
+            primary_instructor.to_string().contains("uuid"),
+            "primary_instructor_id must remain UUID-typed"
+        );
+        assert_eq!(
+            schemas["CourseInstructor"]["properties"]["role"]["$ref"],
+            "#/components/schemas/CourseInstructorRole"
+        );
+        assert_eq!(
+            schemas["CourseInstructorRole"]["enum"],
+            serde_json::json!(["primary", "secondary"])
+        );
     }
 
     #[test]
@@ -2389,7 +2572,7 @@ mod tests {
                 }
             }
         }
-        assert_eq!(operation_ids.len(), 165);
+        assert_eq!(operation_ids.len(), 177);
 
         let schemas = &document["components"]["schemas"];
         let delegation = &schemas["DelegationItem"];
