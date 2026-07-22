@@ -709,7 +709,13 @@ git commit -m "feat(internal): bound backend-admin requests"
 
 - [ ] **Step 1: Write failing handler-mapping and route-registration tests**
 
-Create `modules/system/handlers/health.rs` with tests first and declarations that intentionally do not yet have implementations:
+Export the test target from `modules/system/handlers.rs` first:
+
+```rust
+pub mod health;
+```
+
+Then create `modules/system/handlers/health.rs` with tests first and declarations that intentionally do not yet have implementations:
 
 ```rust
 #[cfg(test)]
@@ -758,9 +764,11 @@ fn backend_school_registers_separate_liveness_and_readiness_routes() {
     let health = read_source(
         repo_root().join("backend-school/src/modules/system/handlers/health.rs"),
     );
+    let health_route = Regex::new(r#"\.route\(\s*\"/health\""#).expect("valid health regex");
+    let ready_route = Regex::new(r#"\.route\(\s*\"/ready\""#).expect("valid ready regex");
 
-    assert!(main.contains(".route(\"/health\""));
-    assert!(main.contains(".route(\"/ready\""));
+    assert!(health_route.is_match(&main));
+    assert!(ready_route.is_match(&main));
     assert!(main.contains("handlers::health::health_check"));
     assert!(main.contains("handlers::health::readiness_check"));
     assert!(health.contains("check_readiness().await"));
@@ -779,7 +787,7 @@ cargo test modules::system::handlers::health::tests --bin backend-school
 cargo test backend_school_registers_separate_liveness_and_readiness_routes --test static_architecture
 ```
 
-Expected: the handler module is not exported/implemented and `/ready` is not registered.
+Expected: the binary unit-test command fails to compile because `liveness_response()` and `readiness_response()` are missing. The separate integration-test command builds the normal binary without the `#[cfg(test)]` block and fails its route assertion because `/ready` is not registered.
 
 - [ ] **Step 3: Implement typed liveness/readiness handlers and route registration**
 
@@ -853,11 +861,7 @@ pub async fn readiness_check(State(state): State<AppState>) -> impl IntoResponse
 }
 ```
 
-Export it in `modules/system/handlers.rs`:
-
-```rust
-pub mod health;
-```
+Keep the `pub mod health;` export added during RED.
 
 In `main.rs`, replace the old route and add readiness:
 
@@ -1094,10 +1098,39 @@ Expected: both commands exit zero with no warnings.
 
 - [ ] **Step 2: Run the complete backend suite against supported PostgreSQL**
 
-Start a disposable PostgreSQL 17 database, create `uuid-ossp` and `pg_trgm` in `public`, export `TEST_DATABASE_URL`, and run:
+Start a disposable PostgreSQL 17 database, create `uuid-ossp` and `pg_trgm` in `public`, export `TEST_DATABASE_URL`, and run the full suite with automatic cleanup:
 
 ```bash
-cargo test --all-targets --all-features -- --test-threads=1
+verification_container="schoolorbit-reliability-verification-$$"
+cleanup_verification_db() {
+  docker rm -f "$verification_container" >/dev/null 2>&1 || true
+}
+trap cleanup_verification_db EXIT
+
+docker run -d --name "$verification_container" \
+  -e POSTGRES_PASSWORD=postgres \
+  -e POSTGRES_DB=schoolorbit_test \
+  -p 127.0.0.1::5432 \
+  postgres:17-alpine >/dev/null
+
+for attempt in $(seq 1 30); do
+  if docker exec "$verification_container" \
+    pg_isready -U postgres -d schoolorbit_test >/dev/null 2>&1; then
+    break
+  fi
+  if [ "$attempt" -eq 30 ]; then
+    exit 1
+  fi
+  sleep 1
+done
+
+docker exec "$verification_container" psql -v ON_ERROR_STOP=1 \
+  -U postgres -d schoolorbit_test \
+  -c 'CREATE EXTENSION IF NOT EXISTS "uuid-ossp" WITH SCHEMA public; CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA public;'
+
+verification_port=$(docker port "$verification_container" 5432/tcp | sed 's/.*://')
+TEST_DATABASE_URL="postgres://postgres:postgres@127.0.0.1:${verification_port}/schoolorbit_test" \
+  cargo test --all-targets --all-features -- --test-threads=1
 ```
 
 Expected current suite shape: the main binary tests, OpenAPI exporter tests, logging tests, and static architecture tests all pass; exact counts may increase with Tasks 1-4.
@@ -1124,7 +1157,7 @@ rg -n 'creation_locks|get_or_create_pool_with|entry\.touch' backend-school/src/d
 rg -n 'BACKEND_ADMIN_REQUEST_TIMEOUT_MS|BACKEND_ADMIN_RETRY_MAX_ATTEMPTS|BACKEND_ADMIN_RETRY_BASE_DELAY_MS|check_readiness|get_with_retry' backend-school/src/db/admin_client.rs
 rg -n 'route\("/health"|route\("/ready"|handlers::health' backend-school/src/main.rs
 rg -n 'localhost:808[01]/ready|127\.0\.0\.1:808[01]/ready' docker-compose.yml podman-compose.yml .github/workflows/deploy-backend-*.yml
-git diff --name-only HEAD~4..HEAD -- backend-school/migrations frontend-school
+git diff --name-only 4a734312..HEAD -- backend-school/migrations frontend-school
 ```
 
 Expected: reliability symbols and readiness consumers are present; the final command prints no migration or frontend path.
