@@ -1,6 +1,10 @@
 import { apiClient } from '$lib/api/client';
 import type { components } from '$lib/api/generated/school-api';
-import type { TimetableEntry } from './timetable';
+import {
+	timetableEntryFromDto,
+	type TimetableEntry,
+	type TimetableEntryDto
+} from './timetable';
 import type { Student } from './students';
 
 type LoadedApiResponse<T> = { success: true; data: T };
@@ -42,11 +46,11 @@ export async function getChildTimetable(
 	if (academicSemesterId) params.append('academic_semester_id', academicSemesterId);
 	const qs = params.toString() ? `?${params.toString()}` : '';
 
-	const response = await apiClient.get<TimetableEntry[]>(
+	const response = await apiClient.get<TimetableEntryDto[]>(
 		`/api/parent/students/${studentId}/timetable${qs}`
 	);
 	if (!response.success || !response.data) {
 		throw new Error(response.error || 'Failed to get child timetable');
 	}
-	return { success: true, data: response.data };
+	return { success: true, data: response.data.map(timetableEntryFromDto) };
 }

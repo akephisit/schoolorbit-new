@@ -1,6 +1,7 @@
 use chrono::{DateTime, NaiveDate, NaiveTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
+use utoipa::ToSchema;
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -60,7 +61,7 @@ pub struct CalendarTag {
     pub updated_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone, Serialize, FromRow)]
+#[derive(Debug, Clone, Serialize, FromRow, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CalendarEventTag {
     pub id: Uuid,
@@ -145,20 +146,27 @@ pub struct CalendarPublicEvent {
     pub updated_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CalendarViewerEvent {
     pub id: Uuid,
+    #[schema(required = true)]
     pub category_id: Option<Uuid>,
+    #[schema(required = true)]
     pub category_name: Option<String>,
+    #[schema(required = true)]
     pub category_color: Option<String>,
     pub title: String,
+    #[schema(required = true)]
     pub description: Option<String>,
+    #[schema(required = true)]
     pub location: Option<String>,
     pub start_date: NaiveDate,
     pub end_date: NaiveDate,
     pub all_day: bool,
+    #[schema(required = true)]
     pub start_time: Option<NaiveTime>,
+    #[schema(required = true)]
     pub end_time: Option<NaiveTime>,
     pub is_public: bool,
     pub tags: Vec<CalendarEventTag>,

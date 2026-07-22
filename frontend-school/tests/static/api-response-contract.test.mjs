@@ -279,6 +279,68 @@ test('generated staff, student, and parent profile contracts own read transport 
 	assert.doesNotMatch(parentApi, /export\s+interface\s+(?:ChildDto|ParentProfile)\b/);
 });
 
+test('generated self-service schedule contracts own timetable, exam, and calendar wire DTOs', async () => {
+	const contract = JSON.parse(await readRepoFile('contracts/openapi/school-api.json'));
+	const generated = await readRepoFile('frontend-school/src/lib/api/generated/school-api.ts');
+	const timetableApi = await readRepoFile('frontend-school/src/lib/api/timetable.ts');
+	const examApi = await readRepoFile('frontend-school/src/lib/api/examSchedule.ts');
+	const calendarApi = await readRepoFile('frontend-school/src/lib/api/calendar.ts');
+	const expected = [
+		['/api/parent/students/{student_id}/timetable', 'get', 'getParentChildTimetable'],
+		['/api/parent/students/{student_id}/exam-schedules', 'get', 'getParentChildExamSchedule'],
+		['/api/parent/students/{student_id}/calendar/events', 'get', 'getParentChildCalendarEvents'],
+		['/api/me/timetable', 'get', 'getMyTimetable'],
+		['/api/me/exam-schedules', 'get', 'listMyExamSchedules'],
+		['/api/staff/exam-schedules', 'get', 'listStaffExamSchedules'],
+		['/api/me/calendar/events', 'get', 'listMyCalendarEvents']
+	];
+
+	for (const [route, method, operationId] of expected) {
+		assert.equal(contract.paths?.[route]?.[method]?.operationId, operationId, `${method} ${route}`);
+	}
+
+	assert.match(
+		timetableApi,
+		/export\s+type\s+TimetableEntryDto\s*=\s*Schemas\['TimetableEntry'\]/
+	);
+	assert.match(timetableApi, /export\s+type\s+TimetableEntry\s*=\s*Omit<TimetableEntryDto,/);
+	assert.match(
+		timetableApi,
+		/type\s+TimetableItemsData\s*=\s*Schemas\['TimetableItemsData'\]/
+	);
+	assert.doesNotMatch(timetableApi, /export\s+interface\s+TimetableEntry\b/);
+
+	for (const schemaName of ['PersonalExamScheduleRound', 'PersonalExamSessionView']) {
+		assert.match(
+			examApi,
+			new RegExp(`export\\s+type\\s+${schemaName}\\s*=\\s*Schemas\\['${schemaName}'\\]`)
+		);
+		assert.doesNotMatch(examApi, new RegExp(`export\\s+interface\\s+${schemaName}\\b`));
+	}
+
+	assert.match(
+		calendarApi,
+		/export\s+type\s+CalendarViewerEvent\s*=\s*Schemas\['CalendarViewerEvent'\]/
+	);
+	assert.match(
+		calendarApi,
+		/export\s+type\s+CalendarEventTag\s*=\s*Schemas\['CalendarEventTag'\]/
+	);
+	assert.doesNotMatch(calendarApi, /export\s+interface\s+CalendarViewerEvent\b/);
+	assert.doesNotMatch(calendarApi, /export\s+interface\s+CalendarEventTag\b/);
+
+	for (const schemaName of [
+		'TimetableEntry',
+		'TimetableItemsData',
+		'PersonalExamScheduleRound',
+		'PersonalExamSessionView',
+		'CalendarViewerEvent',
+		'CalendarEventTag'
+	]) {
+		assert.doesNotMatch(extractGeneratedSchemaBlock(generated, schemaName), /\b(?:any|unknown)\b/);
+	}
+});
+
 test('project rules document generated API contract ownership', async () => {
 	const rules = await readRepoFile('.rules');
 	const testing = await readRepoFile('docs/TESTING.md');
@@ -1094,6 +1156,7 @@ test('facility API returns typed loaded envelope data without helper casts', asy
 
 test('timetable API exposes typed loaded responses and conflict unions without response casts', async () => {
 	const timetableApi = await readRepoFile('frontend-school/src/lib/api/timetable.ts');
+	const generated = await readRepoFile('frontend-school/src/lib/api/generated/school-api.ts');
 	const timetableService = await readRepoFile(
 		'backend-school/src/modules/academic/services/timetable_service.rs'
 	);
@@ -1105,10 +1168,11 @@ test('timetable API exposes typed loaded responses and conflict unions without r
 	assert.match(timetableApi, /Promise<LoadedApiResponse<T>>/);
 	assert.match(timetableApi, /interface\s+TimetableConflictResponse/);
 	assert.match(timetableApi, /type\s+TimetableMutationResponse/);
-	assert.match(timetableApi, /apiClient\.post<TimetableEntry \| ConflictPayload>/);
-	assert.match(timetableApi, /apiClient\.put<TimetableEntry \| ConflictPayload>/);
+	assert.match(timetableApi, /apiClient\.post<TimetableEntryDto \| ConflictPayload>/);
+	assert.match(timetableApi, /apiClient\.put<TimetableEntryDto \| ConflictPayload>/);
+	assert.match(timetableApi, /timetableEntryFromDto\(entry\)/);
 	assert.match(timetableApi, /fetchApi<AcademicPeriod\[\]>/);
-	assert.match(timetableApi, /period_order_index\?:\s*number/);
+	assert.match(extractGeneratedSchemaBlock(generated, 'TimetableEntry'), /period_order_index\?:\s*number/);
 	assert.match(timetableApi, /fetchApi<MoveValidityCell\[\]>/);
 	assert.match(timetableApi, /fetchApi<OccupancyEntry\[\]>/);
 	assert.match(timetableApi, /interface\s+MyActivityForEntry/);

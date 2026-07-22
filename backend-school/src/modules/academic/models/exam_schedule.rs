@@ -2,6 +2,7 @@
 
 use chrono::{DateTime, NaiveDate, NaiveTime, Utc};
 use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, sqlx::FromRow)]
@@ -355,17 +356,18 @@ pub struct ExamScheduleReadiness {
     pub blockers: Vec<String>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct PersonalExamScheduleRound {
     pub round_id: Uuid,
     pub round_name: String,
     pub academic_semester_id: Uuid,
+    #[schema(required = true)]
     pub published_at: Option<DateTime<Utc>>,
     pub sessions: Vec<PersonalExamSessionView>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct PersonalExamSessionView {
     pub exam_date: NaiveDate,
@@ -375,6 +377,8 @@ pub struct PersonalExamSessionView {
     pub assessment_category_name: String,
     pub classroom_name: String,
     pub room_name: String,
+    #[schema(required = true)]
     pub building_name: Option<String>,
+    #[schema(required = true)]
     pub seat_number: Option<String>,
 }

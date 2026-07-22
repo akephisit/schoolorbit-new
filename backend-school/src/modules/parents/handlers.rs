@@ -64,18 +64,35 @@ pub async fn get_child_profile(
     Ok((StatusCode::OK, Json(ApiResponse::ok(student))))
 }
 
-#[derive(Debug, serde::Deserialize)]
+#[derive(Debug, serde::Deserialize, utoipa::IntoParams)]
+#[into_params(parameter_in = Query)]
 pub struct ChildTimetableQuery {
     pub academic_semester_id: Option<Uuid>,
 }
 
-#[derive(Debug, serde::Deserialize)]
+#[derive(Debug, serde::Deserialize, utoipa::IntoParams)]
+#[into_params(parameter_in = Query)]
 pub struct ChildExamScheduleQuery {
     pub academic_semester_id: Option<Uuid>,
 }
 
 /// GET /api/parent/students/:student_id/timetable
 /// ผู้ปกครองดูตารางเรียนของบุตรหลาน — verify ownership ผ่าน student_parents
+#[utoipa::path(
+    get,
+    path = "/api/parent/students/{student_id}/timetable",
+    operation_id = "getParentChildTimetable",
+    tag = "parent",
+    params(
+        ("student_id" = Uuid, Path, description = "Linked student user ID"),
+        ChildTimetableQuery
+    ),
+    responses(
+        (status = 200, description = "Linked child's timetable entries", body = ApiResponse<Vec<crate::modules::academic::models::timetable::TimetableEntry>>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Parent-child access denied", body = ApiErrorResponse)
+    )
+)]
 pub async fn get_child_timetable(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -98,6 +115,21 @@ pub async fn get_child_timetable(
 
 /// GET /api/parent/students/:student_id/exam-schedules
 /// ผู้ปกครองดูตารางสอบของบุตรหลาน — service verifies ownership ผ่าน student_parents
+#[utoipa::path(
+    get,
+    path = "/api/parent/students/{student_id}/exam-schedules",
+    operation_id = "getParentChildExamSchedule",
+    tag = "parent",
+    params(
+        ("student_id" = Uuid, Path, description = "Linked student user ID"),
+        ChildExamScheduleQuery
+    ),
+    responses(
+        (status = 200, description = "Linked child's published exam schedule", body = ApiResponse<Vec<crate::modules::academic::models::exam_schedule::PersonalExamScheduleRound>>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Parent-child access denied", body = ApiErrorResponse)
+    )
+)]
 pub async fn get_child_exam_schedule(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -119,6 +151,28 @@ pub async fn get_child_exam_schedule(
 }
 
 /// GET /api/parent/students/:student_id/calendar/events
+#[utoipa::path(
+    get,
+    path = "/api/parent/students/{student_id}/calendar/events",
+    operation_id = "getParentChildCalendarEvents",
+    tag = "parent",
+    params(
+        ("student_id" = Uuid, Path, description = "Linked student user ID"),
+        ("from" = Option<chrono::NaiveDate>, Query, description = "Inclusive range start"),
+        ("to" = Option<chrono::NaiveDate>, Query, description = "Inclusive range end"),
+        ("category_id" = Option<Uuid>, Query, description = "Calendar category ID"),
+        ("tag_id" = Option<Uuid>, Query, description = "Calendar tag ID"),
+        ("audience" = Option<String>, Query, description = "Audience: all, staff, student, or parent"),
+        ("visibility" = Option<String>, Query, description = "Visibility: public or private"),
+        ("q" = Option<String>, Query, description = "Title or description search")
+    ),
+    responses(
+        (status = 200, description = "Calendar events visible for the linked child", body = ApiResponse<Vec<crate::modules::calendar::models::CalendarViewerEvent>>),
+        (status = 400, description = "Invalid date range", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Parent-child access denied", body = ApiErrorResponse)
+    )
+)]
 pub async fn get_child_calendar_events(
     State(state): State<AppState>,
     headers: HeaderMap,

@@ -1,4 +1,4 @@
-use crate::api_response::ApiResponse;
+use crate::api_response::{ApiErrorResponse, ApiResponse};
 use crate::error::AppError;
 use crate::modules::calendar::models::{
     CalendarEventQuery, UpsertCalendarCategoryRequest, UpsertCalendarEventRequest,
@@ -219,6 +219,27 @@ pub async fn delete_calendar_tag(
     Ok(Json(ApiResponse::empty()))
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/me/calendar/events",
+    operation_id = "listMyCalendarEvents",
+    tag = "calendar",
+    params(
+        ("from" = Option<chrono::NaiveDate>, Query, description = "Inclusive range start"),
+        ("to" = Option<chrono::NaiveDate>, Query, description = "Inclusive range end"),
+        ("category_id" = Option<Uuid>, Query, description = "Calendar category ID"),
+        ("tag_id" = Option<Uuid>, Query, description = "Calendar tag ID"),
+        ("audience" = Option<String>, Query, description = "Audience: all, staff, student, or parent"),
+        ("visibility" = Option<String>, Query, description = "Visibility: public or private"),
+        ("q" = Option<String>, Query, description = "Title or description search")
+    ),
+    responses(
+        (status = 200, description = "Calendar events visible to the current student or staff member", body = ApiResponse<Vec<crate::modules::calendar::models::CalendarViewerEvent>>),
+        (status = 400, description = "Invalid date range", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Student or staff account required", body = ApiErrorResponse)
+    )
+)]
 pub async fn list_my_calendar_events(
     State(state): State<AppState>,
     headers: HeaderMap,

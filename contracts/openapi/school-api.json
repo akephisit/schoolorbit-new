@@ -1132,6 +1132,41 @@
         ],
         "type": "object"
       },
+      "ApiResponse_TimetableItemsData": {
+        "properties": {
+          "data": {
+            "properties": {
+              "current_seq": {
+                "format": "int64",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "items": {
+                "items": {
+                  "$ref": "#/components/schemas/TimetableEntry"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "items",
+              "current_seq"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
       "ApiResponse_UserMenuData": {
         "properties": {
           "data": {
@@ -1304,6 +1339,125 @@
                 "name",
                 "year",
                 "is_current"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_Vec_CalendarViewerEvent": {
+        "properties": {
+          "data": {
+            "items": {
+              "properties": {
+                "allDay": {
+                  "type": "boolean"
+                },
+                "categoryColor": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "categoryId": {
+                  "format": "uuid",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "categoryName": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "createdAt": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "description": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "endDate": {
+                  "format": "date",
+                  "type": "string"
+                },
+                "endTime": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "isPublic": {
+                  "type": "boolean"
+                },
+                "location": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "startDate": {
+                  "format": "date",
+                  "type": "string"
+                },
+                "startTime": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "tags": {
+                  "items": {
+                    "$ref": "#/components/schemas/CalendarEventTag"
+                  },
+                  "type": "array"
+                },
+                "title": {
+                  "type": "string"
+                },
+                "updatedAt": {
+                  "format": "date-time",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "categoryId",
+                "categoryName",
+                "categoryColor",
+                "title",
+                "description",
+                "location",
+                "startDate",
+                "endDate",
+                "allDay",
+                "startTime",
+                "endTime",
+                "isPublic",
+                "tags",
+                "createdAt",
+                "updatedAt"
               ],
               "type": "object"
             },
@@ -2095,6 +2249,60 @@
         ],
         "type": "object"
       },
+      "ApiResponse_Vec_PersonalExamScheduleRound": {
+        "properties": {
+          "data": {
+            "items": {
+              "properties": {
+                "academicSemesterId": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "publishedAt": {
+                  "format": "date-time",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "roundId": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "roundName": {
+                  "type": "string"
+                },
+                "sessions": {
+                  "items": {
+                    "$ref": "#/components/schemas/PersonalExamSessionView"
+                  },
+                  "type": "array"
+                }
+              },
+              "required": [
+                "roundId",
+                "roundName",
+                "academicSemesterId",
+                "publishedAt",
+                "sessions"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
       "ApiResponse_Vec_Role": {
         "properties": {
           "data": {
@@ -2424,6 +2632,229 @@
         ],
         "type": "object"
       },
+      "ApiResponse_Vec_TimetableEntry": {
+        "properties": {
+          "data": {
+            "items": {
+              "properties": {
+                "academic_semester_id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "activity_scheduling_mode": {
+                  "type": "string"
+                },
+                "activity_slot_id": {
+                  "format": "uuid",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "activity_slot_name": {
+                  "type": "string"
+                },
+                "activity_type": {
+                  "type": "string"
+                },
+                "batch_id": {
+                  "description": "UUID ของ batch ที่สร้าง entry นี้; NULL = สร้างแยก",
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "classroom_course_id": {
+                  "format": "uuid",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "classroom_id": {
+                  "format": "uuid",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "classroom_name": {
+                  "type": "string"
+                },
+                "created_at": {
+                  "type": "string"
+                },
+                "created_by": {
+                  "format": "uuid",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "day_of_week": {
+                  "type": "string"
+                },
+                "end_time": {
+                  "type": "string"
+                },
+                "entry_type": {
+                  "type": "string"
+                },
+                "id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "instructor_ids": {
+                  "description": "UUID ของครูทุกคนใน cell — parallel กับ instructor_names เรียงตาม role+created_at",
+                  "items": {
+                    "format": "uuid",
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "instructor_name": {
+                  "type": "string"
+                },
+                "instructor_names": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "instructor_roles": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "instructor_subject_group_display_orders": {
+                  "items": {
+                    "format": "int32",
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  },
+                  "type": "array"
+                },
+                "instructor_subject_group_ids": {
+                  "description": "กลุ่มสาระหลักของครูแต่ละคน — parallel กับ instructor_ids เรียงตาม role+created_at",
+                  "items": {
+                    "format": "uuid",
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "type": "array"
+                },
+                "instructor_subject_group_names": {
+                  "items": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "type": "array"
+                },
+                "is_active": {
+                  "type": "boolean"
+                },
+                "note": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "period_id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "period_name": {
+                  "type": "string"
+                },
+                "period_order_index": {
+                  "format": "int32",
+                  "type": "integer"
+                },
+                "room_code": {
+                  "type": "string"
+                },
+                "room_id": {
+                  "format": "uuid",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "start_time": {
+                  "type": "string"
+                },
+                "subject_code": {
+                  "type": "string"
+                },
+                "subject_group_display_order": {
+                  "format": "int32",
+                  "type": "integer"
+                },
+                "subject_group_id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "subject_group_name": {
+                  "type": "string"
+                },
+                "subject_name_th": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "updated_at": {
+                  "type": "string"
+                },
+                "updated_by": {
+                  "format": "uuid",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "classroom_course_id",
+                "day_of_week",
+                "period_id",
+                "room_id",
+                "note",
+                "entry_type",
+                "title",
+                "classroom_id",
+                "academic_semester_id",
+                "activity_slot_id",
+                "is_active",
+                "created_by",
+                "updated_by"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
       "ApiResponse_Vec_UserRoleAssignmentResponse": {
         "properties": {
           "data": {
@@ -2538,6 +2969,123 @@
         },
         "required": [
           "role_id"
+        ],
+        "type": "object"
+      },
+      "CalendarEventTag": {
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "type": "object"
+      },
+      "CalendarViewerEvent": {
+        "properties": {
+          "allDay": {
+            "type": "boolean"
+          },
+          "categoryColor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "categoryId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "categoryName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "endDate": {
+            "format": "date",
+            "type": "string"
+          },
+          "endTime": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "isPublic": {
+            "type": "boolean"
+          },
+          "location": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "startDate": {
+            "format": "date",
+            "type": "string"
+          },
+          "startTime": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tags": {
+            "items": {
+              "$ref": "#/components/schemas/CalendarEventTag"
+            },
+            "type": "array"
+          },
+          "title": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "categoryId",
+          "categoryName",
+          "categoryColor",
+          "title",
+          "description",
+          "location",
+          "startDate",
+          "endDate",
+          "allDay",
+          "startTime",
+          "endTime",
+          "isPublic",
+          "tags",
+          "createdAt",
+          "updatedAt"
         ],
         "type": "object"
       },
@@ -3709,6 +4257,92 @@
         ],
         "type": "object"
       },
+      "PersonalExamScheduleRound": {
+        "properties": {
+          "academicSemesterId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "publishedAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "roundId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "roundName": {
+            "type": "string"
+          },
+          "sessions": {
+            "items": {
+              "$ref": "#/components/schemas/PersonalExamSessionView"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "roundId",
+          "roundName",
+          "academicSemesterId",
+          "publishedAt",
+          "sessions"
+        ],
+        "type": "object"
+      },
+      "PersonalExamSessionView": {
+        "properties": {
+          "assessmentCategoryName": {
+            "type": "string"
+          },
+          "buildingName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "classroomName": {
+            "type": "string"
+          },
+          "endsAt": {
+            "type": "string"
+          },
+          "examDate": {
+            "format": "date",
+            "type": "string"
+          },
+          "roomName": {
+            "type": "string"
+          },
+          "seatNumber": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "startsAt": {
+            "type": "string"
+          },
+          "subjectName": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "examDate",
+          "startsAt",
+          "endsAt",
+          "subjectName",
+          "assessmentCategoryName",
+          "classroomName",
+          "roomName",
+          "buildingName",
+          "seatNumber"
+        ],
+        "type": "object"
+      },
       "ProfileResponse": {
         "properties": {
           "address": {
@@ -4758,6 +5392,231 @@
           "academic_year_label",
           "term",
           "role"
+        ],
+        "type": "object"
+      },
+      "TimetableEntry": {
+        "properties": {
+          "academic_semester_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "activity_scheduling_mode": {
+            "type": "string"
+          },
+          "activity_slot_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "activity_slot_name": {
+            "type": "string"
+          },
+          "activity_type": {
+            "type": "string"
+          },
+          "batch_id": {
+            "description": "UUID ของ batch ที่สร้าง entry นี้; NULL = สร้างแยก",
+            "format": "uuid",
+            "type": "string"
+          },
+          "classroom_course_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "classroom_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "classroom_name": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "created_by": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "day_of_week": {
+            "type": "string"
+          },
+          "end_time": {
+            "type": "string"
+          },
+          "entry_type": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "instructor_ids": {
+            "description": "UUID ของครูทุกคนใน cell — parallel กับ instructor_names เรียงตาม role+created_at",
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "instructor_name": {
+            "type": "string"
+          },
+          "instructor_names": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "instructor_roles": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "instructor_subject_group_display_orders": {
+            "items": {
+              "format": "int32",
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "type": "array"
+          },
+          "instructor_subject_group_ids": {
+            "description": "กลุ่มสาระหลักของครูแต่ละคน — parallel กับ instructor_ids เรียงตาม role+created_at",
+            "items": {
+              "format": "uuid",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "type": "array"
+          },
+          "instructor_subject_group_names": {
+            "items": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "type": "array"
+          },
+          "is_active": {
+            "type": "boolean"
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "period_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "period_name": {
+            "type": "string"
+          },
+          "period_order_index": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "room_code": {
+            "type": "string"
+          },
+          "room_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "start_time": {
+            "type": "string"
+          },
+          "subject_code": {
+            "type": "string"
+          },
+          "subject_group_display_order": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "subject_group_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "subject_group_name": {
+            "type": "string"
+          },
+          "subject_name_th": {
+            "type": "string"
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "updated_at": {
+            "type": "string"
+          },
+          "updated_by": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "classroom_course_id",
+          "day_of_week",
+          "period_id",
+          "room_id",
+          "note",
+          "entry_type",
+          "title",
+          "classroom_id",
+          "academic_semester_id",
+          "activity_slot_id",
+          "is_active",
+          "created_by",
+          "updated_by"
+        ],
+        "type": "object"
+      },
+      "TimetableItemsData": {
+        "properties": {
+          "current_seq": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/TimetableEntry"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "items",
+          "current_seq"
         ],
         "type": "object"
       },
@@ -6540,6 +7399,255 @@
         ]
       }
     },
+    "/api/me/calendar/events": {
+      "get": {
+        "operationId": "listMyCalendarEvents",
+        "parameters": [
+          {
+            "description": "Inclusive range start",
+            "in": "query",
+            "name": "from",
+            "required": false,
+            "schema": {
+              "format": "date",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Inclusive range end",
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "schema": {
+              "format": "date",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Calendar category ID",
+            "in": "query",
+            "name": "category_id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Calendar tag ID",
+            "in": "query",
+            "name": "tag_id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Audience: all, staff, student, or parent",
+            "in": "query",
+            "name": "audience",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Visibility: public or private",
+            "in": "query",
+            "name": "visibility",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Title or description search",
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_CalendarViewerEvent"
+                }
+              }
+            },
+            "description": "Calendar events visible to the current student or staff member"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid date range"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Student or staff account required"
+          }
+        },
+        "tags": [
+          "calendar"
+        ]
+      }
+    },
+    "/api/me/exam-schedules": {
+      "get": {
+        "operationId": "listMyExamSchedules",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "academic_semester_id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_PersonalExamScheduleRound"
+                }
+              }
+            },
+            "description": "Current student's published exam schedules"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Active student account required"
+          }
+        },
+        "summary": "GET /api/me/exam-schedules",
+        "tags": [
+          "academic"
+        ]
+      }
+    },
+    "/api/me/timetable": {
+      "get": {
+        "operationId": "getMyTimetable",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "academic_semester_id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "day_of_week",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "include_team_ghosts",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_TimetableItemsData"
+                }
+              }
+            },
+            "description": "Current student's or staff member's timetable"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Parent accounts must use the parent timetable route"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Unsupported user type"
+          }
+        },
+        "summary": "GET /api/me/timetable — ผู้ใช้ดูตารางของตัวเอง (student/staff)\n- student: filter ตาม student_class_enrollments\n- staff: filter ตาม timetable_entry_instructors (+ team ghosts ถ้าเลือก)\n- parent: ใช้ /api/parent/students/{id}/timetable แทน",
+        "tags": [
+          "academic"
+        ]
+      }
+    },
     "/api/menu/user": {
       "get": {
         "operationId": "getUserMenu",
@@ -7555,6 +8663,260 @@
         ]
       }
     },
+    "/api/parent/students/{student_id}/calendar/events": {
+      "get": {
+        "operationId": "getParentChildCalendarEvents",
+        "parameters": [
+          {
+            "description": "Linked student user ID",
+            "in": "path",
+            "name": "student_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Inclusive range start",
+            "in": "query",
+            "name": "from",
+            "required": false,
+            "schema": {
+              "format": "date",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Inclusive range end",
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "schema": {
+              "format": "date",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Calendar category ID",
+            "in": "query",
+            "name": "category_id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Calendar tag ID",
+            "in": "query",
+            "name": "tag_id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Audience: all, staff, student, or parent",
+            "in": "query",
+            "name": "audience",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Visibility: public or private",
+            "in": "query",
+            "name": "visibility",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Title or description search",
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_CalendarViewerEvent"
+                }
+              }
+            },
+            "description": "Calendar events visible for the linked child"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid date range"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Parent-child access denied"
+          }
+        },
+        "summary": "GET /api/parent/students/:student_id/calendar/events",
+        "tags": [
+          "parent"
+        ]
+      }
+    },
+    "/api/parent/students/{student_id}/exam-schedules": {
+      "get": {
+        "operationId": "getParentChildExamSchedule",
+        "parameters": [
+          {
+            "description": "Linked student user ID",
+            "in": "path",
+            "name": "student_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "academic_semester_id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_PersonalExamScheduleRound"
+                }
+              }
+            },
+            "description": "Linked child's published exam schedule"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Parent-child access denied"
+          }
+        },
+        "summary": "GET /api/parent/students/:student_id/exam-schedules\nผู้ปกครองดูตารางสอบของบุตรหลาน — service verifies ownership ผ่าน student_parents",
+        "tags": [
+          "parent"
+        ]
+      }
+    },
+    "/api/parent/students/{student_id}/timetable": {
+      "get": {
+        "operationId": "getParentChildTimetable",
+        "parameters": [
+          {
+            "description": "Linked student user ID",
+            "in": "path",
+            "name": "student_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "academic_semester_id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_TimetableEntry"
+                }
+              }
+            },
+            "description": "Linked child's timetable entries"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Parent-child access denied"
+          }
+        },
+        "summary": "GET /api/parent/students/:student_id/timetable\nผู้ปกครองดูตารางเรียนของบุตรหลาน — verify ownership ผ่าน student_parents",
+        "tags": [
+          "parent"
+        ]
+      }
+    },
     "/api/permissions": {
       "get": {
         "operationId": "listPermissions",
@@ -8132,6 +9494,58 @@
         ]
       }
     },
+    "/api/staff/exam-schedules": {
+      "get": {
+        "operationId": "listStaffExamSchedules",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "academic_semester_id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_PersonalExamScheduleRound"
+                }
+              }
+            },
+            "description": "Published school exam schedules for staff"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Active staff account required"
+          }
+        },
+        "summary": "GET /api/staff/exam-schedules",
+        "tags": [
+          "academic"
+        ]
+      }
+    },
     "/api/student/profile": {
       "get": {
         "operationId": "getStudentProfile",
@@ -8480,6 +9894,14 @@
     {
       "description": "Parent self-service reads",
       "name": "parent"
+    },
+    {
+      "description": "Academic self-service reads",
+      "name": "academic"
+    },
+    {
+      "description": "Calendar reads",
+      "name": "calendar"
     }
   ]
 }

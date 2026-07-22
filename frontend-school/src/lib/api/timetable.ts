@@ -1,7 +1,9 @@
 import { apiClient, requireApiData, type ApiResponse } from '$lib/api/client';
+import type { components } from '$lib/api/generated/school-api';
 
 type EmptyResponseData = Record<string, never>;
 type LoadedApiResponse<T> = ApiResponse<T> & { success: true; data: T };
+type Schemas = components['schemas'];
 
 // Helper for authenticated requests
 async function fetchApi<T = EmptyResponseData>(
@@ -46,52 +48,80 @@ export interface AcademicPeriod {
 	updated_at?: string;
 }
 
-export interface TimetableEntry {
-	id: string;
+export type TimetableEntryDto = Schemas['TimetableEntry'];
+
+type OptimisticTimetableNullableField =
+	| 'classroom_course_id'
+	| 'room_id'
+	| 'note'
+	| 'title'
+	| 'classroom_id'
+	| 'activity_slot_id'
+	| 'created_by'
+	| 'updated_by'
+	| 'day_of_week'
+	| 'entry_type';
+
+type TimetableDay = 'MON' | 'TUE' | 'WED' | 'THU' | 'FRI' | 'SAT' | 'SUN';
+type TimetableEntryType = 'COURSE' | 'BREAK' | 'ACTIVITY' | 'HOMEROOM' | 'ACADEMIC';
+
+/**
+ * UI view model for server entries and optimistic drag/drop previews.
+ * The wire payload remains owned by TimetableEntryDto; only values unavailable
+ * before server confirmation are relaxed here.
+ */
+export type TimetableEntry = Omit<TimetableEntryDto, OptimisticTimetableNullableField> & {
 	classroom_course_id?: string;
-	day_of_week: 'MON' | 'TUE' | 'WED' | 'THU' | 'FRI' | 'SAT' | 'SUN';
-	period_id: string;
 	room_id?: string;
 	note?: string;
-	is_active: boolean;
-
-	// New fields
-	entry_type: 'COURSE' | 'BREAK' | 'ACTIVITY' | 'HOMEROOM' | 'ACADEMIC';
 	title?: string;
 	classroom_id?: string;
-	academic_semester_id: string;
-
-	// Activity slot link
 	activity_slot_id?: string;
-	activity_scheduling_mode?: string;
-
-	// Joined fields
-	subject_code?: string;
-	subject_name_th?: string;
-	subject_group_id?: string | null;
-	subject_group_name?: string | null;
-	subject_group_display_order?: number | null;
-	instructor_name?: string;
-	instructor_names?: string[];
-	/** parallel กับ instructor_names — ใช้ลบ/เพิ่มครูรายคน */
-	instructor_ids?: string[];
-	/** parallel กับ instructor_ids — primary=ครูหลัก, secondary=ครูรอง */
-	instructor_roles?: string[];
-	/** parallel กับ instructor_ids — กลุ่มสาระหลักที่ครูสังกัด */
-	instructor_subject_group_ids?: Array<string | null> | null;
-	instructor_subject_group_names?: Array<string | null> | null;
-	instructor_subject_group_display_orders?: Array<number | null> | null;
-	classroom_name?: string;
-	room_code?: string;
+	created_by?: string;
+	updated_by?: string;
+	day_of_week: TimetableDay;
+	entry_type: TimetableEntryType;
 	subject_name_en?: string;
-	period_name?: string;
-	period_order_index?: number;
-	start_time?: string;
-	end_time?: string;
-	activity_slot_name?: string;
-	activity_type?: string;
-	/** UUID ของ batch ที่สร้าง entry นี้ (ถ้าสร้างจาก /timetable/batch); NULL = สร้างเดี่ยว */
-	batch_id?: string;
+};
+
+const timetableDays = new Set<TimetableDay>(['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN']);
+const timetableEntryTypes = new Set<TimetableEntryType>([
+	'COURSE',
+	'BREAK',
+	'ACTIVITY',
+	'HOMEROOM',
+	'ACADEMIC'
+]);
+
+function isTimetableDay(value: string): value is TimetableDay {
+	return timetableDays.has(value as TimetableDay);
+}
+
+function isTimetableEntryType(value: string): value is TimetableEntryType {
+	return timetableEntryTypes.has(value as TimetableEntryType);
+}
+
+export function timetableEntryFromDto(dto: TimetableEntryDto): TimetableEntry {
+	if (!isTimetableDay(dto.day_of_week)) {
+		throw new Error(`Unsupported timetable day: ${dto.day_of_week}`);
+	}
+	if (!isTimetableEntryType(dto.entry_type)) {
+		throw new Error(`Unsupported timetable entry type: ${dto.entry_type}`);
+	}
+
+	return {
+		...dto,
+		day_of_week: dto.day_of_week,
+		entry_type: dto.entry_type,
+		classroom_course_id: dto.classroom_course_id ?? undefined,
+		room_id: dto.room_id ?? undefined,
+		note: dto.note ?? undefined,
+		title: dto.title ?? undefined,
+		classroom_id: dto.classroom_id ?? undefined,
+		activity_slot_id: dto.activity_slot_id ?? undefined,
+		created_by: dto.created_by ?? undefined,
+		updated_by: dto.updated_by ?? undefined
+	};
 }
 
 export interface DailyTeachingPeriod {
@@ -232,20 +262,17 @@ export interface TimetableValidationResponse {
 	conflicts: ConflictInfo[];
 }
 
-interface TimetableListData {
-	items?: TimetableEntry[];
-	current_seq?: number;
-}
+type TimetableItemsData = Schemas['TimetableItemsData'];
 
 function normalizeTimetableListResponse(
-	response: ApiResponse<TimetableEntry[] | TimetableListData>
+	response: ApiResponse<TimetableEntryDto[] | TimetableItemsData>
 ): { data: TimetableEntry[]; current_seq?: number } {
 	const payload = requireApiData(response, 'ไม่สามารถโหลดตารางสอนได้');
 	if (Array.isArray(payload)) {
-		return { data: payload };
+		return { data: payload.map(timetableEntryFromDto) };
 	}
 	return {
-		data: payload.items ?? [],
+		data: payload.items.map(timetableEntryFromDto),
 		current_seq: payload.current_seq
 	};
 }
@@ -263,13 +290,13 @@ export interface TimetableConflictResponse {
 type TimetableMutationResponse = LoadedApiResponse<TimetableEntry> | TimetableConflictResponse;
 
 function isConflictPayload(
-	data: TimetableEntry | ConflictPayload | undefined
+	data: TimetableEntryDto | ConflictPayload | undefined
 ): data is ConflictPayload {
 	return !!data && typeof data === 'object' && 'conflicts' in data;
 }
 
 function normalizeConflictResponse(
-	response: ApiResponse<TimetableEntry | ConflictPayload>
+	response: ApiResponse<TimetableEntryDto | ConflictPayload>
 ): TimetableConflictResponse {
 	const payload = response.data;
 	return {
@@ -368,7 +395,7 @@ export const listTimetableEntries = async (
 	if (filters.include_team_ghosts) params.append('include_team_ghosts', 'true');
 
 	const queryString = params.toString() ? `?${params.toString()}` : '';
-	const response = await apiClient.get<TimetableEntry[] | TimetableListData>(
+	const response = await apiClient.get<TimetableEntryDto[] | TimetableItemsData>(
 		`/api/academic/timetable${queryString}`
 	);
 	return normalizeTimetableListResponse(response);
@@ -416,10 +443,12 @@ export const getMyTimetable = async (
 	if (filters.include_team_ghosts) params.append('include_team_ghosts', 'true');
 
 	const queryString = params.toString() ? `?${params.toString()}` : '';
-	const response = await apiClient.get<TimetableEntry[] | TimetableListData>(
-		`/api/me/timetable${queryString}`
-	);
-	return normalizeTimetableListResponse(response);
+	const response = await apiClient.get<TimetableItemsData>(`/api/me/timetable${queryString}`);
+	const payload = requireApiData(response, 'ไม่สามารถโหลดตารางสอนได้');
+	return {
+		data: payload.items.map(timetableEntryFromDto),
+		current_seq: payload.current_seq
+	};
 };
 
 export interface BatchSkippedCell {
@@ -543,28 +572,28 @@ export const getTimetableOccupancy = async (
 export const createTimetableEntry = async (
 	data: CreateTimetableEntryRequest
 ): Promise<TimetableMutationResponse> => {
-	const response = await apiClient.post<TimetableEntry | ConflictPayload>(
+	const response = await apiClient.post<TimetableEntryDto | ConflictPayload>(
 		'/api/academic/timetable',
 		data
 	);
 	if (!response.success) return normalizeConflictResponse(response);
 	const entry = requireApiData(response, 'Request failed');
 	if (isConflictPayload(entry)) return normalizeConflictResponse({ ...response, success: false });
-	return { success: true, data: entry, message: response.message };
+	return { success: true, data: timetableEntryFromDto(entry), message: response.message };
 };
 
 export const updateTimetableEntry = async (
 	id: string,
 	data: UpdateTimetableEntryRequest
 ): Promise<TimetableMutationResponse> => {
-	const response = await apiClient.put<TimetableEntry | ConflictPayload>(
+	const response = await apiClient.put<TimetableEntryDto | ConflictPayload>(
 		`/api/academic/timetable/${id}`,
 		data
 	);
 	if (!response.success) return normalizeConflictResponse(response);
 	const entry = requireApiData(response, 'Request failed');
 	if (isConflictPayload(entry)) return normalizeConflictResponse({ ...response, success: false });
-	return { success: true, data: entry, message: response.message };
+	return { success: true, data: timetableEntryFromDto(entry), message: response.message };
 };
 
 export const deleteTimetableEntry = async (id: string) => {

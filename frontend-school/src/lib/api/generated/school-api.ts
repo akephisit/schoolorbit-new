@@ -372,6 +372,61 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/api/me/calendar/events': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listMyCalendarEvents'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/me/exam-schedules': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		/** GET /api/me/exam-schedules */
+		get: operations['listMyExamSchedules'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/me/timetable': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		/**
+		 * GET /api/me/timetable — ผู้ใช้ดูตารางของตัวเอง (student/staff)
+		 *     - student: filter ตาม student_class_enrollments
+		 *     - staff: filter ตาม timetable_entry_instructors (+ team ghosts ถ้าเลือก)
+		 *     - parent: ใช้ /api/parent/students/{id}/timetable แทน
+		 */
+		get: operations['getMyTimetable'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/api/menu/user': {
 		parameters: {
 			query?: never;
@@ -550,6 +605,63 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/api/parent/students/{student_id}/calendar/events': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		/** GET /api/parent/students/:student_id/calendar/events */
+		get: operations['getParentChildCalendarEvents'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/parent/students/{student_id}/exam-schedules': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		/**
+		 * GET /api/parent/students/:student_id/exam-schedules
+		 *     ผู้ปกครองดูตารางสอบของบุตรหลาน — service verifies ownership ผ่าน student_parents
+		 */
+		get: operations['getParentChildExamSchedule'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/parent/students/{student_id}/timetable': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		/**
+		 * GET /api/parent/students/:student_id/timetable
+		 *     ผู้ปกครองดูตารางเรียนของบุตรหลาน — verify ownership ผ่าน student_parents
+		 */
+		get: operations['getParentChildTimetable'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/api/permissions': {
 		parameters: {
 			query?: never;
@@ -671,6 +783,23 @@ export interface paths {
 			cookie?: never;
 		};
 		get: operations['getStaffDashboard'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/staff/exam-schedules': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		/** GET /api/staff/exam-schedules */
+		get: operations['listStaffExamSchedules'];
 		put?: never;
 		post?: never;
 		delete?: never;
@@ -1025,6 +1154,15 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
+		ApiResponse_TimetableItemsData: {
+			data: {
+				/** Format: int64 */
+				current_seq: number;
+				items: components['schemas']['TimetableEntry'][];
+			};
+			message?: string;
+			success: boolean;
+		};
 		ApiResponse_UserMenuData: {
 			data: {
 				groups: components['schemas']['MenuGroupResponse'][];
@@ -1070,6 +1208,34 @@ export interface components {
 				name: string;
 				/** Format: int32 */
 				year: number;
+			}[];
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_Vec_CalendarViewerEvent: {
+			data: {
+				allDay: boolean;
+				categoryColor: string | null;
+				/** Format: uuid */
+				categoryId: string | null;
+				categoryName: string | null;
+				/** Format: date-time */
+				createdAt: string;
+				description: string | null;
+				/** Format: date */
+				endDate: string;
+				endTime: string | null;
+				/** Format: uuid */
+				id: string;
+				isPublic: boolean;
+				location: string | null;
+				/** Format: date */
+				startDate: string;
+				startTime: string | null;
+				tags: components['schemas']['CalendarEventTag'][];
+				title: string;
+				/** Format: date-time */
+				updatedAt: string;
 			}[];
 			message?: string;
 			success: boolean;
@@ -1274,6 +1440,20 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
+		ApiResponse_Vec_PersonalExamScheduleRound: {
+			data: {
+				/** Format: uuid */
+				academicSemesterId: string;
+				/** Format: date-time */
+				publishedAt: string | null;
+				/** Format: uuid */
+				roundId: string;
+				roundName: string;
+				sessions: components['schemas']['PersonalExamSessionView'][];
+			}[];
+			message?: string;
+			success: boolean;
+		};
 		ApiResponse_Vec_Role: {
 			data: {
 				code: string;
@@ -1358,6 +1538,68 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
+		ApiResponse_Vec_TimetableEntry: {
+			data: {
+				/** Format: uuid */
+				academic_semester_id: string;
+				activity_scheduling_mode?: string;
+				/** Format: uuid */
+				activity_slot_id: string | null;
+				activity_slot_name?: string;
+				activity_type?: string;
+				/**
+				 * Format: uuid
+				 * @description UUID ของ batch ที่สร้าง entry นี้; NULL = สร้างแยก
+				 */
+				batch_id?: string;
+				/** Format: uuid */
+				classroom_course_id: string | null;
+				/** Format: uuid */
+				classroom_id: string | null;
+				classroom_name?: string;
+				created_at?: string;
+				/** Format: uuid */
+				created_by: string | null;
+				day_of_week: string;
+				end_time?: string;
+				entry_type: string;
+				/** Format: uuid */
+				id: string;
+				/** @description UUID ของครูทุกคนใน cell — parallel กับ instructor_names เรียงตาม role+created_at */
+				instructor_ids?: string[];
+				instructor_name?: string;
+				instructor_names?: string[];
+				instructor_roles?: string[];
+				instructor_subject_group_display_orders?: (number | null)[];
+				/** @description กลุ่มสาระหลักของครูแต่ละคน — parallel กับ instructor_ids เรียงตาม role+created_at */
+				instructor_subject_group_ids?: (string | null)[];
+				instructor_subject_group_names?: (string | null)[];
+				is_active: boolean;
+				note: string | null;
+				/** Format: uuid */
+				period_id: string;
+				period_name?: string;
+				/** Format: int32 */
+				period_order_index?: number;
+				room_code?: string;
+				/** Format: uuid */
+				room_id: string | null;
+				start_time?: string;
+				subject_code?: string;
+				/** Format: int32 */
+				subject_group_display_order?: number;
+				/** Format: uuid */
+				subject_group_id?: string;
+				subject_group_name?: string;
+				subject_name_th?: string;
+				title: string | null;
+				updated_at?: string;
+				/** Format: uuid */
+				updated_by: string | null;
+			}[];
+			message?: string;
+			success: boolean;
+		};
 		ApiResponse_Vec_UserRoleAssignmentResponse: {
 			data: {
 				/** Format: date-time */
@@ -1390,6 +1632,35 @@ export interface components {
 			role_id: string;
 			/** Format: date */
 			started_at?: string | null;
+		};
+		CalendarEventTag: {
+			/** Format: uuid */
+			id: string;
+			name: string;
+		};
+		CalendarViewerEvent: {
+			allDay: boolean;
+			categoryColor: string | null;
+			/** Format: uuid */
+			categoryId: string | null;
+			categoryName: string | null;
+			/** Format: date-time */
+			createdAt: string;
+			description: string | null;
+			/** Format: date */
+			endDate: string;
+			endTime: string | null;
+			/** Format: uuid */
+			id: string;
+			isPublic: boolean;
+			location: string | null;
+			/** Format: date */
+			startDate: string;
+			startTime: string | null;
+			tags: components['schemas']['CalendarEventTag'][];
+			title: string;
+			/** Format: date-time */
+			updatedAt: string;
 		};
 		ChangePasswordRequest: {
 			currentPassword: string;
@@ -1691,6 +1962,28 @@ export interface components {
 			name: string;
 			scope: string;
 		};
+		PersonalExamScheduleRound: {
+			/** Format: uuid */
+			academicSemesterId: string;
+			/** Format: date-time */
+			publishedAt: string | null;
+			/** Format: uuid */
+			roundId: string;
+			roundName: string;
+			sessions: components['schemas']['PersonalExamSessionView'][];
+		};
+		PersonalExamSessionView: {
+			assessmentCategoryName: string;
+			buildingName: string | null;
+			classroomName: string;
+			endsAt: string;
+			/** Format: date */
+			examDate: string;
+			roomName: string;
+			seatNumber: string | null;
+			startsAt: string;
+			subjectName: string;
+		};
 		ProfileResponse: {
 			address: string | null;
 			/** Format: date-time */
@@ -1935,6 +2228,69 @@ export interface components {
 			subject_code: string;
 			subject_name: string;
 			term: string;
+		};
+		TimetableEntry: {
+			/** Format: uuid */
+			academic_semester_id: string;
+			activity_scheduling_mode?: string;
+			/** Format: uuid */
+			activity_slot_id: string | null;
+			activity_slot_name?: string;
+			activity_type?: string;
+			/**
+			 * Format: uuid
+			 * @description UUID ของ batch ที่สร้าง entry นี้; NULL = สร้างแยก
+			 */
+			batch_id?: string;
+			/** Format: uuid */
+			classroom_course_id: string | null;
+			/** Format: uuid */
+			classroom_id: string | null;
+			classroom_name?: string;
+			created_at?: string;
+			/** Format: uuid */
+			created_by: string | null;
+			day_of_week: string;
+			end_time?: string;
+			entry_type: string;
+			/** Format: uuid */
+			id: string;
+			/** @description UUID ของครูทุกคนใน cell — parallel กับ instructor_names เรียงตาม role+created_at */
+			instructor_ids?: string[];
+			instructor_name?: string;
+			instructor_names?: string[];
+			instructor_roles?: string[];
+			instructor_subject_group_display_orders?: (number | null)[];
+			/** @description กลุ่มสาระหลักของครูแต่ละคน — parallel กับ instructor_ids เรียงตาม role+created_at */
+			instructor_subject_group_ids?: (string | null)[];
+			instructor_subject_group_names?: (string | null)[];
+			is_active: boolean;
+			note: string | null;
+			/** Format: uuid */
+			period_id: string;
+			period_name?: string;
+			/** Format: int32 */
+			period_order_index?: number;
+			room_code?: string;
+			/** Format: uuid */
+			room_id: string | null;
+			start_time?: string;
+			subject_code?: string;
+			/** Format: int32 */
+			subject_group_display_order?: number;
+			/** Format: uuid */
+			subject_group_id?: string;
+			subject_group_name?: string;
+			subject_name_th?: string;
+			title: string | null;
+			updated_at?: string;
+			/** Format: uuid */
+			updated_by: string | null;
+		};
+		TimetableItemsData: {
+			/** Format: int64 */
+			current_seq: number;
+			items: components['schemas']['TimetableEntry'][];
 		};
 		UpdateMemberRequest: {
 			is_primary?: boolean | null;
@@ -2839,6 +3195,159 @@ export interface operations {
 			};
 		};
 	};
+	listMyCalendarEvents: {
+		parameters: {
+			query?: {
+				/** @description Audience: all, staff, student, or parent */
+				audience?: string;
+				/** @description Calendar category ID */
+				category_id?: string;
+				/** @description Inclusive range start */
+				from?: string;
+				/** @description Title or description search */
+				q?: string;
+				/** @description Calendar tag ID */
+				tag_id?: string;
+				/** @description Inclusive range end */
+				to?: string;
+				/** @description Visibility: public or private */
+				visibility?: string;
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Calendar events visible to the current student or staff member */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_CalendarViewerEvent'];
+				};
+			};
+			/** @description Invalid date range */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Student or staff account required */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	listMyExamSchedules: {
+		parameters: {
+			query?: {
+				academic_semester_id?: string;
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Current student's published exam schedules */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_PersonalExamScheduleRound'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Active student account required */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getMyTimetable: {
+		parameters: {
+			query?: {
+				academic_semester_id?: string;
+				day_of_week?: string;
+				include_team_ghosts?: boolean;
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Current student's or staff member's timetable */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_TimetableItemsData'];
+				};
+			};
+			/** @description Parent accounts must use the parent timetable route */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Unsupported user type */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
 	getUserMenu: {
 		parameters: {
 			query?: never;
@@ -3645,6 +4154,157 @@ export interface operations {
 			};
 		};
 	};
+	getParentChildCalendarEvents: {
+		parameters: {
+			query?: {
+				/** @description Audience: all, staff, student, or parent */
+				audience?: string;
+				/** @description Calendar category ID */
+				category_id?: string;
+				/** @description Inclusive range start */
+				from?: string;
+				/** @description Title or description search */
+				q?: string;
+				/** @description Calendar tag ID */
+				tag_id?: string;
+				/** @description Inclusive range end */
+				to?: string;
+				/** @description Visibility: public or private */
+				visibility?: string;
+			};
+			header?: never;
+			path: {
+				/** @description Linked student user ID */
+				student_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Calendar events visible for the linked child */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_CalendarViewerEvent'];
+				};
+			};
+			/** @description Invalid date range */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Parent-child access denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getParentChildExamSchedule: {
+		parameters: {
+			query?: {
+				academic_semester_id?: string;
+			};
+			header?: never;
+			path: {
+				/** @description Linked student user ID */
+				student_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Linked child's published exam schedule */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_PersonalExamScheduleRound'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Parent-child access denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getParentChildTimetable: {
+		parameters: {
+			query?: {
+				academic_semester_id?: string;
+			};
+			header?: never;
+			path: {
+				/** @description Linked student user ID */
+				student_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Linked child's timetable entries */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_TimetableEntry'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Parent-child access denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
 	listPermissions: {
 		parameters: {
 			query?: never;
@@ -4076,6 +4736,46 @@ export interface operations {
 				};
 				content: {
 					'application/json': components['schemas']['ApiResponse_StaffDashboardOverview'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Active staff account required */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	listStaffExamSchedules: {
+		parameters: {
+			query?: {
+				academic_semester_id?: string;
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Published school exam schedules for staff */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_PersonalExamScheduleRound'];
 				};
 			};
 			/** @description Authentication required */

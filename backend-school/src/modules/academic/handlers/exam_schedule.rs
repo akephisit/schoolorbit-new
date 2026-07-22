@@ -1,4 +1,4 @@
-use crate::api_response::ApiResponse;
+use crate::api_response::{ApiErrorResponse, ApiResponse};
 use crate::error::AppError;
 use crate::modules::academic::models::exam_schedule::{
     CreateExamRoundRequest, GenerateSeatsRequest, ImportExamItemsRequest, PlaceExamSessionRequest,
@@ -18,6 +18,7 @@ use axum::{
     Json,
 };
 use serde::Deserialize;
+use utoipa::IntoParams;
 use uuid::Uuid;
 
 #[derive(Debug, Deserialize)]
@@ -25,7 +26,8 @@ pub struct ExamRoundQuery {
     pub academic_semester_id: Option<Uuid>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
 pub struct PersonalExamScheduleQuery {
     pub academic_semester_id: Option<Uuid>,
 }
@@ -384,6 +386,18 @@ pub async fn publish_round(
 }
 
 /// GET /api/me/exam-schedules
+#[utoipa::path(
+    get,
+    path = "/api/me/exam-schedules",
+    operation_id = "listMyExamSchedules",
+    tag = "academic",
+    params(PersonalExamScheduleQuery),
+    responses(
+        (status = 200, description = "Current student's published exam schedules", body = ApiResponse<Vec<crate::modules::academic::models::exam_schedule::PersonalExamScheduleRound>>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Active student account required", body = ApiErrorResponse)
+    )
+)]
 pub async fn list_my_exam_schedule(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -401,6 +415,18 @@ pub async fn list_my_exam_schedule(
 }
 
 /// GET /api/staff/exam-schedules
+#[utoipa::path(
+    get,
+    path = "/api/staff/exam-schedules",
+    operation_id = "listStaffExamSchedules",
+    tag = "academic",
+    params(PersonalExamScheduleQuery),
+    responses(
+        (status = 200, description = "Published school exam schedules for staff", body = ApiResponse<Vec<crate::modules::academic::models::exam_schedule::PersonalExamScheduleRound>>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Active staff account required", body = ApiErrorResponse)
+    )
+)]
 pub async fn list_staff_exam_schedule(
     State(state): State<AppState>,
     headers: HeaderMap,

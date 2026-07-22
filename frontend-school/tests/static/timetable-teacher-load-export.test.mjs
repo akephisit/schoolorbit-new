@@ -385,6 +385,10 @@ describe('timetable teacher load export helpers', () => {
 
 	it('keeps teacher load subject-group fields aligned across backend and frontend', () => {
 		const frontendApi = readFileSync(projectFile('src/lib/api/timetable.ts'), 'utf8');
+		const generated = readFileSync(
+			projectFile('src/lib/api/generated/school-api.ts'),
+			'utf8'
+		);
 		const backendModel = readFileSync(
 			workspaceFile('backend-school/src/modules/academic/models/timetable.rs'),
 			'utf8'
@@ -394,10 +398,11 @@ describe('timetable teacher load export helpers', () => {
 			'utf8'
 		);
 
-		assert.match(frontendApi, /subject_group_id\?: string \| null/);
-		assert.match(frontendApi, /subject_group_name\?: string \| null/);
-		assert.match(frontendApi, /instructor_roles\?: string\[\]/);
-		assert.match(frontendApi, /instructor_subject_group_ids\?: Array<string \| null> \| null/);
+		assert.match(frontendApi, /export type TimetableEntryDto = Schemas\['TimetableEntry'\]/);
+		assert.match(generated, /subject_group_id\?: string;/);
+		assert.match(generated, /subject_group_name\?: string;/);
+		assert.match(generated, /instructor_roles\?: string\[\];/);
+		assert.match(generated, /instructor_subject_group_ids\?: \(string \| null\)\[];/);
 		assert.match(backendModel, /pub subject_group_id: Option<Uuid>/);
 		assert.match(backendModel, /pub subject_group_name: Option<String>/);
 		assert.match(backendModel, /pub instructor_roles: Option<Vec<String>>/);

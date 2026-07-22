@@ -24,6 +24,19 @@ function interfaceBody(source, name) {
 	return match[1];
 }
 
+function generatedSchemaBody(source, name) {
+	const marker = new RegExp(`^[\\t ]*${name}:\\s*\\{`, 'm').exec(source);
+	assert.ok(marker, `Expected generated schema ${name}`);
+	const opening = source.indexOf('{', marker.index);
+	let depth = 0;
+	for (let index = opening; index < source.length; index += 1) {
+		if (source[index] === '{') depth += 1;
+		if (source[index] === '}') depth -= 1;
+		if (depth === 0) return source.slice(opening + 1, index);
+	}
+	assert.fail(`Expected balanced generated schema ${name}`);
+}
+
 function functionBody(source, name) {
 	const match = source.match(new RegExp(`function ${name}\\([^)]*\\)\\s*{([\\s\\S]*?)\\n}`));
 	assert.ok(match, `Expected function ${name}`);
@@ -50,6 +63,7 @@ function svelteFunctionBody(source, name) {
 
 test('calendar API client uses current typed contracts', async () => {
 	const api = await readProjectFile('src/lib/api/calendar.ts');
+	const generated = await readProjectFile('src/lib/api/generated/school-api.ts');
 
 	for (const name of [
 		'CalendarEvent',
@@ -75,7 +89,7 @@ test('calendar API client uses current typed contracts', async () => {
 
 	const target = interfaceBody(api, 'CalendarEventTarget');
 	const targetInput = interfaceBody(api, 'CalendarEventTargetInput');
-	const viewerEvent = interfaceBody(api, 'CalendarViewerEvent');
+	const viewerEvent = generatedSchemaBody(generated, 'CalendarViewerEvent');
 	const publicFilters = interfaceBody(api, 'CalendarPublicEventFilters');
 	const publicQuery = functionBody(api, 'publicCalendarQuery');
 	const event = interfaceBody(api, 'CalendarEvent');
@@ -94,7 +108,12 @@ test('calendar API client uses current typed contracts', async () => {
 	assert.match(api, /targets:\s*CalendarEventTargetInput\[];/);
 	assert.match(event, /tags:\s*CalendarEventTag\[];/);
 	assert.match(createEvent, /tagIds:\s*string\[];/);
-	assert.match(viewerEvent, /tags:\s*CalendarEventTag\[];/);
+	assert.match(
+		api,
+		/export\s+type\s+CalendarViewerEvent\s*=\s*Schemas\['CalendarViewerEvent'\]/
+	);
+	assert.match(api, /export\s+type\s+CalendarEventTag\s*=\s*Schemas\['CalendarEventTag'\]/);
+	assert.match(viewerEvent, /tags:\s*components\['schemas'\]\['CalendarEventTag'\]\[];/);
 	assert.doesNotMatch(viewerEvent, /targets:/);
 	assert.doesNotMatch(viewerEvent, /reminders:/);
 	assert.doesNotMatch(viewerEvent, /createdBy/);

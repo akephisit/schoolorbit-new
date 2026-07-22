@@ -1,8 +1,14 @@
 use crate::api_response::{ApiErrorResponse, ApiResponse, EmptyData, UuidIdData};
+use crate::modules::academic::handlers::timetable::TimetableItemsData;
+use crate::modules::academic::models::exam_schedule::{
+    PersonalExamScheduleRound, PersonalExamSessionView,
+};
+use crate::modules::academic::models::timetable::TimetableEntry;
 use crate::modules::auth::models::{
     ChangePasswordRequest, LoginData, LoginRequest, ProfileResponse, UpdateProfileRequest,
     UserResponse,
 };
+use crate::modules::calendar::models::{CalendarEventTag, CalendarViewerEvent};
 use crate::modules::facility::models::Room;
 use crate::modules::lookup::models::{
     AcademicYearLookupItem, ClassroomLookupItem, GradeLevelLookupItem, LookupItem,
@@ -71,6 +77,13 @@ use utoipa::OpenApi;
         crate::modules::students::handlers::get_own_profile,
         crate::modules::parents::handlers::get_own_parent_profile,
         crate::modules::parents::handlers::get_child_profile,
+        crate::modules::parents::handlers::get_child_timetable,
+        crate::modules::parents::handlers::get_child_exam_schedule,
+        crate::modules::parents::handlers::get_child_calendar_events,
+        crate::modules::academic::handlers::timetable::get_my_timetable,
+        crate::modules::academic::handlers::exam_schedule::list_my_exam_schedule,
+        crate::modules::academic::handlers::exam_schedule::list_staff_exam_schedule,
+        crate::modules::calendar::handlers::list_my_calendar_events,
         crate::modules::staff::handlers::roles::list_roles,
         crate::modules::staff::handlers::roles::get_role,
         crate::modules::staff::handlers::roles::create_role,
@@ -196,6 +209,16 @@ use utoipa::OpenApi;
         ParentProfile,
         ApiResponse<StudentProfile>,
         ApiResponse<ParentProfile>,
+        TimetableEntry,
+        TimetableItemsData,
+        ApiResponse<Vec<TimetableEntry>>,
+        ApiResponse<TimetableItemsData>,
+        PersonalExamScheduleRound,
+        PersonalExamSessionView,
+        ApiResponse<Vec<PersonalExamScheduleRound>>,
+        CalendarEventTag,
+        CalendarViewerEvent,
+        ApiResponse<Vec<CalendarViewerEvent>>,
         ApiErrorResponse
     )),
     tags(
@@ -208,7 +231,9 @@ use utoipa::OpenApi;
         (name = "system", description = "System feature reads"),
         (name = "staff", description = "Staff directory and profiles"),
         (name = "student", description = "Student self-service reads"),
-        (name = "parent", description = "Parent self-service reads")
+        (name = "parent", description = "Parent self-service reads"),
+        (name = "academic", description = "Academic self-service reads"),
+        (name = "calendar", description = "Calendar reads")
     )
 )]
 struct SchoolApiDoc;
@@ -718,6 +743,120 @@ mod tests {
     }
 
     #[test]
+    fn documents_self_service_timetable_exam_and_calendar_reads() {
+        let document = school_api_value().expect("document should serialize");
+        assert_operations(
+            &document,
+            &[
+                (
+                    "/api/parent/students/{student_id}/timetable",
+                    "get",
+                    "getParentChildTimetable",
+                ),
+                (
+                    "/api/parent/students/{student_id}/exam-schedules",
+                    "get",
+                    "getParentChildExamSchedule",
+                ),
+                (
+                    "/api/parent/students/{student_id}/calendar/events",
+                    "get",
+                    "getParentChildCalendarEvents",
+                ),
+                ("/api/me/timetable", "get", "getMyTimetable"),
+                ("/api/me/exam-schedules", "get", "listMyExamSchedules"),
+                ("/api/staff/exam-schedules", "get", "listStaffExamSchedules"),
+                ("/api/me/calendar/events", "get", "listMyCalendarEvents"),
+            ],
+        );
+
+        assert_eq!(
+            document["paths"]["/api/me/timetable"]["get"]["responses"]["200"]["content"]
+                ["application/json"]["schema"]["$ref"],
+            "#/components/schemas/ApiResponse_TimetableItemsData"
+        );
+        assert_eq!(
+            document["paths"]["/api/parent/students/{student_id}/exam-schedules"]["get"]
+                ["responses"]["200"]["content"]["application/json"]["schema"]["$ref"],
+            "#/components/schemas/ApiResponse_Vec_PersonalExamScheduleRound"
+        );
+
+        let parent_calendar_parameters = document["paths"]
+            ["/api/parent/students/{student_id}/calendar/events"]["get"]["parameters"]
+            .as_array()
+            .expect("parent calendar parameters must be an array");
+        for (name, location) in [
+            ("student_id", "path"),
+            ("from", "query"),
+            ("to", "query"),
+            ("category_id", "query"),
+            ("tag_id", "query"),
+            ("audience", "query"),
+            ("visibility", "query"),
+            ("q", "query"),
+        ] {
+            assert!(parent_calendar_parameters
+                .iter()
+                .any(|parameter| parameter["name"] == name && parameter["in"] == location));
+        }
+
+        let my_timetable_parameters = document["paths"]["/api/me/timetable"]["get"]["parameters"]
+            .as_array()
+            .expect("my timetable parameters must be an array");
+        for name in ["academic_semester_id", "day_of_week", "include_team_ghosts"] {
+            assert!(my_timetable_parameters
+                .iter()
+                .any(|parameter| parameter["name"] == name && parameter["in"] == "query"));
+        }
+
+        let schemas = &document["components"]["schemas"];
+        let timetable = &schemas["TimetableEntry"];
+        for field in [
+            "classroom_course_id",
+            "room_id",
+            "note",
+            "title",
+            "classroom_id",
+            "activity_slot_id",
+            "created_by",
+            "updated_by",
+        ] {
+            assert!(required(timetable).contains(&field));
+            assert!(contains_null(&timetable["properties"][field]));
+        }
+        for field in ["batch_id", "subject_code", "instructor_ids", "start_time"] {
+            assert!(!required(timetable).contains(&field));
+            assert!(!contains_null(&timetable["properties"][field]));
+        }
+        assert!(contains_null(
+            &timetable["properties"]["instructor_subject_group_ids"]["items"]
+        ));
+
+        let exam_round = &schemas["PersonalExamScheduleRound"];
+        assert!(required(exam_round).contains(&"publishedAt"));
+        assert!(contains_null(&exam_round["properties"]["publishedAt"]));
+        let exam_session = &schemas["PersonalExamSessionView"];
+        for field in ["buildingName", "seatNumber"] {
+            assert!(required(exam_session).contains(&field));
+            assert!(contains_null(&exam_session["properties"][field]));
+        }
+
+        let calendar_event = &schemas["CalendarViewerEvent"];
+        for field in [
+            "categoryId",
+            "categoryName",
+            "categoryColor",
+            "description",
+            "location",
+            "startTime",
+            "endTime",
+        ] {
+            assert!(required(calendar_event).contains(&field));
+            assert!(contains_null(&calendar_event["properties"][field]));
+        }
+    }
+
+    #[test]
     fn documents_delegation_member_and_complete_authorization_inventory() {
         let document = school_api_value().expect("document should serialize");
         let expected = [
@@ -830,7 +969,7 @@ mod tests {
                 }
             }
         }
-        assert_eq!(operation_ids.len(), 52);
+        assert_eq!(operation_ids.len(), 59);
 
         let schemas = &document["components"]["schemas"];
         let delegation = &schemas["DelegationItem"];

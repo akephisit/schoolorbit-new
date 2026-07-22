@@ -1,6 +1,8 @@
 import { apiClient, requireApiData, type ApiResponse } from '$lib/api/client';
+import type { components } from '$lib/api/generated/school-api';
 
 type EmptyResponseData = Record<string, never>;
+type Schemas = components['schemas'];
 
 export type ExamRoundStatus = 'draft' | 'published';
 export type ExamRoundKind = 'midterm' | 'final';
@@ -208,25 +210,8 @@ export interface SeatAssignmentView {
 	seatNumber: string;
 }
 
-export interface PersonalExamScheduleRound {
-	roundId: string;
-	roundName: string;
-	academicSemesterId: string;
-	publishedAt?: string | null;
-	sessions: PersonalExamSessionView[];
-}
-
-export interface PersonalExamSessionView {
-	examDate: string;
-	startsAt: string;
-	endsAt: string;
-	subjectName: string;
-	assessmentCategoryName: string;
-	classroomName: string;
-	roomName: string;
-	buildingName?: string | null;
-	seatNumber?: string | null;
-}
+export type PersonalExamScheduleRound = Schemas['PersonalExamScheduleRound'];
+export type PersonalExamSessionView = Schemas['PersonalExamSessionView'];
 
 export interface ExamScheduleFilters {
 	academicSemesterId?: string;

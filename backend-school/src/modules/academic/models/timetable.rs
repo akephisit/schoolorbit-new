@@ -1,6 +1,7 @@
 use chrono::NaiveTime;
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
+use utoipa::ToSchema;
 use uuid::Uuid;
 
 // ============================================
@@ -70,100 +71,132 @@ pub struct PeriodQuery {
 // Timetable Entries (ตารางสอน)
 // ============================================
 
-#[derive(Debug, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Serialize, Deserialize, FromRow, ToSchema)]
 pub struct TimetableEntry {
     pub id: Uuid,
+    #[schema(required = true)]
     pub classroom_course_id: Option<Uuid>,
     pub day_of_week: String,
     pub period_id: Uuid,
+    #[schema(required = true)]
     pub room_id: Option<Uuid>,
+    #[schema(required = true)]
     pub note: Option<String>,
 
     pub entry_type: String, // COURSE, BREAK, ACTIVITY, HOMEROOM, ACADEMIC
+    #[schema(required = true)]
     pub title: Option<String>,
+    #[schema(required = true)]
     pub classroom_id: Option<Uuid>,
     pub academic_semester_id: Uuid,
+    #[schema(required = true)]
     pub activity_slot_id: Option<Uuid>,
     /// UUID ของ batch ที่สร้าง entry นี้; NULL = สร้างแยก
     #[sqlx(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = Uuid)]
     pub batch_id: Option<Uuid>,
 
     pub is_active: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = String)]
     pub created_at: Option<chrono::DateTime<chrono::Utc>>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = String)]
     pub updated_at: Option<chrono::DateTime<chrono::Utc>>,
+    #[schema(required = true)]
     pub created_by: Option<Uuid>,
+    #[schema(required = true)]
     pub updated_by: Option<Uuid>,
 
     // Joined fields (for display)
     #[sqlx(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = String)]
     pub subject_code: Option<String>,
     #[sqlx(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = String)]
     pub subject_name_th: Option<String>,
     #[sqlx(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = Uuid)]
     pub subject_group_id: Option<Uuid>,
     #[sqlx(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = String)]
     pub subject_group_name: Option<String>,
     #[sqlx(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = i32)]
     pub subject_group_display_order: Option<i32>,
     #[sqlx(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = Vec<String>)]
     pub instructor_names: Option<Vec<String>>,
     /// UUID ของครูทุกคนใน cell — parallel กับ instructor_names เรียงตาม role+created_at
     #[sqlx(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = Vec<Uuid>)]
     pub instructor_ids: Option<Vec<Uuid>>,
     #[sqlx(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = Vec<String>)]
     pub instructor_roles: Option<Vec<String>>,
     /// กลุ่มสาระหลักของครูแต่ละคน — parallel กับ instructor_ids เรียงตาม role+created_at
     #[sqlx(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = Vec<Option<Uuid>>)]
     pub instructor_subject_group_ids: Option<Vec<Option<Uuid>>>,
     #[sqlx(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = Vec<Option<String>>)]
     pub instructor_subject_group_names: Option<Vec<Option<String>>>,
     #[sqlx(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = Vec<Option<i32>>)]
     pub instructor_subject_group_display_orders: Option<Vec<Option<i32>>>,
 
     // Keep for backward-compat UI display (first name). Populated from instructor_names[0].
     #[sqlx(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = String)]
     pub instructor_name: Option<String>,
     #[sqlx(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = String)]
     pub classroom_name: Option<String>,
     #[sqlx(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = String)]
     pub room_code: Option<String>,
     #[sqlx(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = String)]
     pub period_name: Option<String>,
     #[sqlx(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = i32)]
     pub period_order_index: Option<i32>,
     #[sqlx(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = String)]
     pub activity_slot_name: Option<String>,
     #[sqlx(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = String)]
     pub activity_type: Option<String>,
     #[sqlx(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = String)]
     pub activity_scheduling_mode: Option<String>,
     #[sqlx(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = String)]
     pub start_time: Option<NaiveTime>,
     #[sqlx(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = String)]
     pub end_time: Option<NaiveTime>,
 }
 

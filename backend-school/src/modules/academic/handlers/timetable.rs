@@ -1,4 +1,4 @@
-use crate::api_response::{ApiErrorResponseWithData, ApiResponse};
+use crate::api_response::{ApiErrorResponse, ApiErrorResponseWithData, ApiResponse};
 use crate::error::AppError;
 use crate::modules::academic::models::timetable::*;
 use crate::modules::academic::services::{
@@ -18,6 +18,7 @@ use axum::{
     Json,
 };
 use serde::Serialize;
+use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
 #[derive(Serialize)]
@@ -40,10 +41,10 @@ struct InsertedData<T> {
     inserted: T,
 }
 
-#[derive(Serialize)]
-struct TimetableItemsData<T> {
-    items: T,
-    current_seq: u64,
+#[derive(Serialize, ToSchema)]
+pub struct TimetableItemsData {
+    pub items: Vec<TimetableEntry>,
+    pub current_seq: u64,
 }
 
 #[derive(Serialize)]
@@ -260,7 +261,8 @@ pub async fn replay_events(
     }
 }
 
-#[derive(Debug, serde::Deserialize)]
+#[derive(Debug, serde::Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
 pub struct MyTimetableQuery {
     pub academic_semester_id: Option<Uuid>,
     pub day_of_week: Option<String>,
@@ -271,6 +273,19 @@ pub struct MyTimetableQuery {
 /// - student: filter ตาม student_class_enrollments
 /// - staff: filter ตาม timetable_entry_instructors (+ team ghosts ถ้าเลือก)
 /// - parent: ใช้ /api/parent/students/{id}/timetable แทน
+#[utoipa::path(
+    get,
+    path = "/api/me/timetable",
+    operation_id = "getMyTimetable",
+    tag = "academic",
+    params(MyTimetableQuery),
+    responses(
+        (status = 200, description = "Current student's or staff member's timetable", body = ApiResponse<TimetableItemsData>),
+        (status = 400, description = "Parent accounts must use the parent timetable route", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Unsupported user type", body = ApiErrorResponse)
+    )
+)]
 pub async fn get_my_timetable(
     State(state): State<AppState>,
     headers: HeaderMap,

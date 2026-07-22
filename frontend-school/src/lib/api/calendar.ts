@@ -1,4 +1,7 @@
 import { apiClient, requireApiData } from '$lib/api/client';
+import type { components } from '$lib/api/generated/school-api';
+
+type Schemas = components['schemas'];
 
 export type CalendarAudienceType = 'all' | 'staff' | 'student' | 'parent';
 
@@ -19,10 +22,7 @@ export interface CalendarTag {
 	updatedAt: string;
 }
 
-export interface CalendarEventTag {
-	id: string;
-	name: string;
-}
+export type CalendarEventTag = Schemas['CalendarEventTag'];
 
 export interface CalendarEventTarget {
 	id: string;
@@ -67,24 +67,7 @@ export interface CalendarEvent {
 	updatedAt: string;
 }
 
-export interface CalendarViewerEvent {
-	id: string;
-	categoryId?: string | null;
-	categoryName?: string | null;
-	categoryColor?: string | null;
-	title: string;
-	description?: string | null;
-	location?: string | null;
-	startDate: string;
-	endDate: string;
-	allDay: boolean;
-	startTime?: string | null;
-	endTime?: string | null;
-	isPublic: boolean;
-	tags: CalendarEventTag[];
-	createdAt: string;
-	updatedAt: string;
-}
+export type CalendarViewerEvent = Schemas['CalendarViewerEvent'];
 
 export interface CalendarPublicEvent {
 	id: string;
