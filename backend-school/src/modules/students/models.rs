@@ -94,20 +94,20 @@ pub struct StudentListResponse {
     pub page_size: i64,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct CreateStudentResponse {
     pub id: Uuid,
     pub username: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct UpdateOwnProfileRequest {
     pub phone: Option<String>,
     pub address: Option<String>,
     pub nickname: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct CreateStudentRequest {
     pub national_id: Option<String>,
     pub username: Option<String>, // Optional, will be generated if not provided
@@ -123,7 +123,7 @@ pub struct CreateStudentRequest {
     pub parents: Option<Vec<CreateParentRequest>>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct CreateParentRequest {
     pub title: Option<String>,
     pub first_name: String,
@@ -134,7 +134,7 @@ pub struct CreateParentRequest {
     pub email: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct UpdateStudentRequest {
     pub email: Option<String>,
     pub first_name: Option<String>,

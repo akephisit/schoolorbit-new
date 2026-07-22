@@ -6,7 +6,7 @@ use axum::{
 };
 use uuid::Uuid;
 
-use crate::api_response::ApiResponse;
+use crate::api_response::{ApiErrorResponse, ApiResponse};
 use crate::error::AppError;
 use crate::modules::students::services as student_service;
 use crate::permissions::registry::codes;
@@ -20,6 +20,20 @@ use super::models::CreateParentRequest;
 // -----------------------------------------------------------------------------
 
 /// POST /api/students/:id/parents - เพิ่มผู้ปกครองให้นักเรียนที่มีอยู่
+#[utoipa::path(
+    post,
+    path = "/api/students/{id}/parents",
+    operation_id = "addStudentParent",
+    tag = "student",
+    params(("id" = Uuid, Path, description = "Student user ID")),
+    request_body = CreateParentRequest,
+    responses(
+        (status = 200, description = "Parent linked to student", body = ApiResponse<crate::api_response::EmptyData>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Student update permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Student not found", body = ApiErrorResponse)
+    )
+)]
 pub async fn add_parent_to_student(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -41,6 +55,22 @@ pub async fn add_parent_to_student(
 }
 
 /// DELETE /api/students/:id/parents/:parentId - ลบความสัมพันธ์ผู้ปกครอง
+#[utoipa::path(
+    delete,
+    path = "/api/students/{id}/parents/{parent_id}",
+    operation_id = "removeStudentParent",
+    tag = "student",
+    params(
+        ("id" = Uuid, Path, description = "Student user ID"),
+        ("parent_id" = Uuid, Path, description = "Parent user ID")
+    ),
+    responses(
+        (status = 200, description = "Parent link removed", body = ApiResponse<crate::api_response::EmptyData>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Student update permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Parent relationship not found", body = ApiErrorResponse)
+    )
+)]
 pub async fn remove_parent_from_student(
     State(state): State<AppState>,
     headers: HeaderMap,

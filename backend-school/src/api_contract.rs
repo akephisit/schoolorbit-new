@@ -46,7 +46,10 @@ use crate::modules::staff::services::organization_permission_service::Organizati
 use crate::modules::staff::services::staff_service::{
     PublicStaffOrganizationUnit, PublicStaffProfile, PublicStaffRole,
 };
-use crate::modules::students::models::{ParentDto, StudentDbRow, StudentProfile};
+use crate::modules::students::models::{
+    CreateParentRequest, CreateStudentRequest, CreateStudentResponse, ParentDto, StudentDbRow,
+    StudentProfile, UpdateOwnProfileRequest, UpdateStudentRequest,
+};
 use crate::modules::system::handlers::feature_toggles::{
     FeatureListResponse, FeatureToggleResponse,
 };
@@ -85,6 +88,12 @@ use utoipa::OpenApi;
         crate::modules::staff::handlers::staff::update_staff,
         crate::modules::staff::handlers::staff::delete_staff,
         crate::modules::students::handlers::get_own_profile,
+        crate::modules::students::handlers::update_own_profile,
+        crate::modules::students::handlers::create_student,
+        crate::modules::students::handlers::update_student,
+        crate::modules::students::handlers::delete_student,
+        crate::modules::students::handlers_parents::add_parent_to_student,
+        crate::modules::students::handlers_parents::remove_parent_from_student,
         crate::modules::parents::handlers::get_own_parent_profile,
         crate::modules::parents::handlers::get_child_profile,
         crate::modules::parents::handlers::get_child_timetable,
@@ -228,6 +237,11 @@ use utoipa::OpenApi;
         ParentDto,
         StudentDbRow,
         StudentProfile,
+        UpdateOwnProfileRequest,
+        CreateStudentRequest,
+        CreateParentRequest,
+        UpdateStudentRequest,
+        CreateStudentResponse,
         ChildDto,
         ParentProfile,
         ApiResponse<StudentProfile>,
@@ -680,6 +694,69 @@ mod tests {
         assert_eq!(id_parameter["in"], "path");
         assert_eq!(id_parameter["required"], true);
         assert_eq!(id_parameter["schema"]["format"], "uuid");
+    }
+
+    #[test]
+    fn people_student_mutation_contracts() {
+        let document = school_api_value().expect("document should serialize");
+        assert_operations(
+            &document,
+            &[
+                ("/api/student/profile", "put", "updateStudentProfile"),
+                ("/api/students", "post", "createStudent"),
+                ("/api/students/{id}", "put", "updateStudent"),
+                ("/api/students/{id}", "delete", "deleteStudent"),
+                ("/api/students/{id}/parents", "post", "addStudentParent"),
+                (
+                    "/api/students/{id}/parents/{parent_id}",
+                    "delete",
+                    "removeStudentParent",
+                ),
+            ],
+        );
+
+        let schemas = &document["components"]["schemas"];
+        let create_request = &schemas["CreateStudentRequest"];
+        assert!(required(create_request).contains(&"password"));
+        assert!(!required(create_request).contains(&"parents"));
+        assert!(create_request["properties"]["parents"]["type"]
+            .as_array()
+            .expect("optional parents must have nullable array types")
+            .iter()
+            .any(|value| value == "array"));
+        assert_eq!(
+            create_request["properties"]["parents"]["items"]["$ref"],
+            "#/components/schemas/CreateParentRequest"
+        );
+        let national_id = &create_request["properties"]["national_id"];
+        assert!(national_id.get("example").is_none());
+        assert!(national_id.get("default").is_none());
+        assert!(schemas["UpdateStudentRequest"]["properties"]
+            .get("password")
+            .is_none());
+        assert!(schemas["UpdateOwnProfileRequest"]["properties"]
+            .get("password")
+            .is_none());
+
+        let create = &document["paths"]["/api/students"]["post"];
+        assert_eq!(
+            create["responses"]["201"]["content"]["application/json"]["schema"]["$ref"],
+            "#/components/schemas/ApiResponse_CreateStudentResponse"
+        );
+        for (path, method) in [
+            ("/api/student/profile", "put"),
+            ("/api/students/{id}", "put"),
+            ("/api/students/{id}", "delete"),
+            ("/api/students/{id}/parents", "post"),
+            ("/api/students/{id}/parents/{parent_id}", "delete"),
+        ] {
+            assert_eq!(
+                document["paths"][path][method]["responses"]["200"]["content"]["application/json"]
+                    ["schema"]["$ref"],
+                "#/components/schemas/ApiResponse_EmptyData",
+                "incorrect success envelope for {method} {path}"
+            );
+        }
     }
 
     #[test]
@@ -1235,7 +1312,7 @@ mod tests {
                 }
             }
         }
-        assert_eq!(operation_ids.len(), 71);
+        assert_eq!(operation_ids.len(), 77);
 
         let schemas = &document["components"]["schemas"];
         let delegation = &schemas["DelegationItem"];

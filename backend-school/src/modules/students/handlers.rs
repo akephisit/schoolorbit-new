@@ -47,6 +47,18 @@ pub async fn get_own_profile(
 }
 
 /// PUT /api/student/profile - นักเรียนแก้ไขข้อมูลตนเอง (จำกัดฟิลด์)
+#[utoipa::path(
+    put,
+    path = "/api/student/profile",
+    operation_id = "updateStudentProfile",
+    tag = "student",
+    request_body = UpdateOwnProfileRequest,
+    responses(
+        (status = 200, description = "Current student profile updated", body = ApiResponse<crate::api_response::EmptyData>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Student profile access denied", body = ApiErrorResponse)
+    )
+)]
 pub async fn update_own_profile(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -80,6 +92,19 @@ pub async fn list_students(
 }
 
 /// POST /api/students - เพิ่มนักเรียนใหม่
+#[utoipa::path(
+    post,
+    path = "/api/students",
+    operation_id = "createStudent",
+    tag = "student",
+    request_body = CreateStudentRequest,
+    responses(
+        (status = 201, description = "Student created", body = ApiResponse<crate::modules::students::models::CreateStudentResponse>),
+        (status = 400, description = "Invalid or duplicate student data", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Student creation permission denied", body = ApiErrorResponse)
+    )
+)]
 pub async fn create_student(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -117,6 +142,20 @@ pub async fn get_student(
 }
 
 /// PUT /api/students/:id - แก้ไขข้อมูลนักเรียน
+#[utoipa::path(
+    put,
+    path = "/api/students/{id}",
+    operation_id = "updateStudent",
+    tag = "student",
+    params(("id" = Uuid, Path, description = "Student user ID")),
+    request_body = UpdateStudentRequest,
+    responses(
+        (status = 200, description = "Student updated", body = ApiResponse<crate::api_response::EmptyData>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Student update permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Student not found", body = ApiErrorResponse)
+    )
+)]
 pub async fn update_student(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -137,6 +176,19 @@ pub async fn update_student(
 }
 
 /// DELETE /api/students/:id - ลบนักเรียน (soft delete)
+#[utoipa::path(
+    delete,
+    path = "/api/students/{id}",
+    operation_id = "deleteStudent",
+    tag = "student",
+    params(("id" = Uuid, Path, description = "Student user ID")),
+    responses(
+        (status = 200, description = "Student deactivated", body = ApiResponse<crate::api_response::EmptyData>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Student deletion permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Student not found", body = ApiErrorResponse)
+    )
+)]
 pub async fn delete_student(
     State(state): State<AppState>,
     headers: HeaderMap,
