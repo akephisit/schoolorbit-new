@@ -4,7 +4,7 @@ use crate::modules::academic::models::activity::*;
 use crate::policies::activity_access_policy;
 use crate::policies::resource_access_policy::UserResourceListAccess;
 use chrono::{DateTime, Utc};
-use sqlx::{types::Json, FromRow, PgPool};
+use sqlx::{types::Json, FromRow, PgPool, Postgres, Transaction};
 use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
 
@@ -38,7 +38,7 @@ fn unique_activity_student_ids(student_ids: &[Uuid]) -> Vec<Uuid> {
 }
 
 async fn bulk_insert_activity_group_members(
-    pool: &PgPool,
+    tx: &mut Transaction<'_, Postgres>,
     group_id: Uuid,
     student_ids: &[Uuid],
 ) -> Result<usize, AppError> {
@@ -54,11 +54,101 @@ async fn bulk_insert_activity_group_members(
     )
     .bind(group_id)
     .bind(student_ids)
-    .execute(pool)
+    .execute(&mut **tx)
     .await
     .map_err(|e| AppError::InternalServerError(e.to_string()))?;
 
     Ok(result.rows_affected() as usize)
+}
+
+async fn ensure_activity_slot_exists(pool: &PgPool, slot_id: Uuid) -> Result<(), AppError> {
+    let exists: bool =
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM activity_slots WHERE id = $1)")
+            .bind(slot_id)
+            .fetch_one(pool)
+            .await
+            .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+    if exists {
+        Ok(())
+    } else {
+        Err(AppError::NotFound("ไม่พบช่องกิจกรรม".to_string()))
+    }
+}
+
+async fn ensure_activity_group_exists(pool: &PgPool, group_id: Uuid) -> Result<(), AppError> {
+    let exists: bool =
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM activity_groups WHERE id = $1)")
+            .bind(group_id)
+            .fetch_one(pool)
+            .await
+            .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+    if exists {
+        Ok(())
+    } else {
+        Err(AppError::NotFound("ไม่พบกลุ่มกิจกรรม".to_string()))
+    }
+}
+
+async fn ensure_users_exist(pool: &PgPool, user_ids: &[Uuid]) -> Result<(), AppError> {
+    if user_ids.is_empty() {
+        return Ok(());
+    }
+
+    let all_exist: bool = sqlx::query_scalar(
+        r#"SELECT NOT EXISTS(
+               SELECT 1
+               FROM UNNEST($1::uuid[]) AS requested(id)
+               LEFT JOIN users u ON u.id = requested.id
+               WHERE u.id IS NULL
+           )"#,
+    )
+    .bind(user_ids)
+    .fetch_one(pool)
+    .await
+    .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+    if all_exist {
+        Ok(())
+    } else {
+        Err(AppError::NotFound("ไม่พบผู้ใช้ที่ระบุ".to_string()))
+    }
+}
+
+async fn ensure_classrooms_exist(pool: &PgPool, classroom_ids: &[Uuid]) -> Result<(), AppError> {
+    if classroom_ids.is_empty() {
+        return Ok(());
+    }
+
+    let all_exist: bool = sqlx::query_scalar(
+        r#"SELECT NOT EXISTS(
+               SELECT 1
+               FROM UNNEST($1::uuid[]) AS requested(id)
+               LEFT JOIN class_rooms cr ON cr.id = requested.id
+               WHERE cr.id IS NULL
+           )"#,
+    )
+    .bind(classroom_ids)
+    .fetch_one(pool)
+    .await
+    .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+    if all_exist {
+        Ok(())
+    } else {
+        Err(AppError::NotFound("ไม่พบห้องเรียนที่ระบุ".to_string()))
+    }
+}
+
+fn validate_group_instructor_role(role: &str) -> Result<(), AppError> {
+    if matches!(role, "primary" | "assistant") {
+        Ok(())
+    } else {
+        Err(AppError::BadRequest(
+            "role ต้องเป็น primary หรือ assistant".to_string(),
+        ))
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -339,17 +429,18 @@ pub async fn update_slot(
     .bind(activity_datetime_from_rfc3339(body.student_reg_start.as_deref()))
     .bind(activity_datetime_from_rfc3339(body.student_reg_end.as_deref()))
     .bind(body.is_active)
-    .fetch_one(pool)
+    .fetch_optional(pool)
     .await
     .map_err(|e| {
         tracing::error!("update_activity_slot error: {e}");
-        AppError::NotFound("ไม่พบช่องกิจกรรม".to_string())
-    })
+        AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
+    })?
     .map(ActivitySlot::from)
+    .ok_or_else(|| AppError::NotFound("ไม่พบช่องกิจกรรม".to_string()))
 }
 
 pub async fn delete_slot(pool: &PgPool, id: Uuid) -> Result<(), AppError> {
-    sqlx::query("DELETE FROM activity_slots WHERE id = $1")
+    let result = sqlx::query("DELETE FROM activity_slots WHERE id = $1")
         .bind(id)
         .execute(pool)
         .await
@@ -357,7 +448,11 @@ pub async fn delete_slot(pool: &PgPool, id: Uuid) -> Result<(), AppError> {
             tracing::error!("delete_activity_slot error: {e}");
             AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
         })?;
-    Ok(())
+    if result.rows_affected() == 0 {
+        Err(AppError::NotFound("ไม่พบช่องกิจกรรม".to_string()))
+    } else {
+        Ok(())
+    }
 }
 
 // ============================================
@@ -504,6 +599,13 @@ pub async fn create_group(
         _ => {}
     }
 
+    if let Some(instructor_id) = effective_instructor_id {
+        ensure_users_exist(pool, &[instructor_id]).await?;
+    }
+    if let Some(classroom_ids) = body.allowed_classroom_ids.as_deref() {
+        ensure_classrooms_exist(pool, classroom_ids).await?;
+    }
+
     // Instructor must be in slot (ยกเว้น admin)
     if let Some(instructor_id) = effective_instructor_id {
         if !has_manage_all {
@@ -560,6 +662,12 @@ pub async fn update_group(
             activity_access_policy::can_create_activity_group_for(actor, instructor_id)?;
         }
     }
+    if let Some(instructor_id) = body.instructor_id {
+        ensure_users_exist(pool, &[instructor_id]).await?;
+    }
+    if let Some(classroom_ids) = body.allowed_classroom_ids.as_deref() {
+        ensure_classrooms_exist(pool, classroom_ids).await?;
+    }
 
     let allowed = optional_uuid_list_json(body.allowed_classroom_ids.as_deref());
 
@@ -596,7 +704,7 @@ pub async fn update_group(
 
 pub async fn delete_group(pool: &PgPool, actor: &ActorContext, id: Uuid) -> Result<(), AppError> {
     activity_access_policy::can_manage_activity_group(pool, actor, id).await?;
-    sqlx::query("DELETE FROM activity_groups WHERE id = $1")
+    let result = sqlx::query("DELETE FROM activity_groups WHERE id = $1")
         .bind(id)
         .execute(pool)
         .await
@@ -604,7 +712,11 @@ pub async fn delete_group(pool: &PgPool, actor: &ActorContext, id: Uuid) -> Resu
             tracing::error!("delete_activity_group error: {e}");
             AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
         })?;
-    Ok(())
+    if result.rows_affected() == 0 {
+        Err(AppError::NotFound("ไม่พบกลุ่มกิจกรรม".to_string()))
+    } else {
+        Ok(())
+    }
 }
 
 // ============================================
@@ -615,6 +727,7 @@ pub async fn list_members(
     pool: &PgPool,
     group_id: Uuid,
 ) -> Result<Vec<ActivityGroupMember>, AppError> {
+    ensure_activity_group_exists(pool, group_id).await?;
     sqlx::query_as(
         r#"SELECT
             agm.*,
@@ -656,29 +769,55 @@ pub async fn add_members(
     group_id: Uuid,
     student_ids: Vec<Uuid>,
 ) -> Result<AddMembersOutcome, AppError> {
-    let (current_count,): (i64,) =
-        sqlx::query_as("SELECT COUNT(*) FROM activity_group_members WHERE activity_group_id = $1")
+    let student_ids = unique_activity_student_ids(&student_ids);
+    ensure_users_exist(pool, &student_ids).await?;
+
+    let mut tx = pool
+        .begin()
+        .await
+        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+    let group: Option<(Option<i32>,)> =
+        sqlx::query_as("SELECT max_capacity FROM activity_groups WHERE id = $1 FOR UPDATE")
             .bind(group_id)
-            .fetch_one(pool)
+            .fetch_optional(&mut *tx)
             .await
             .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+    let (max_cap,) = group.ok_or_else(|| AppError::NotFound("ไม่พบกลุ่มกิจกรรม".to_string()))?;
 
-    let (max_cap,): (Option<i32>,) =
-        sqlx::query_as("SELECT max_capacity FROM activity_groups WHERE id = $1")
-            .bind(group_id)
-            .fetch_one(pool)
-            .await
-            .map_err(|_| AppError::NotFound("ไม่พบกลุ่มกิจกรรม".to_string()))?;
+    let current_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM activity_group_members WHERE activity_group_id = $1",
+    )
+    .bind(group_id)
+    .fetch_one(&mut *tx)
+    .await
+    .map_err(|e| AppError::InternalServerError(e.to_string()))?;
 
-    let student_ids = unique_activity_student_ids(&student_ids);
+    let already_present: i64 = if student_ids.is_empty() {
+        0
+    } else {
+        sqlx::query_scalar(
+            "SELECT COUNT(*) FROM activity_group_members
+             WHERE activity_group_id = $1 AND student_id = ANY($2)",
+        )
+        .bind(group_id)
+        .bind(&student_ids)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(|e| AppError::InternalServerError(e.to_string()))?
+    };
+    let additional_count = student_ids.len() as i64 - already_present;
 
     if let Some(cap) = max_cap {
-        if current_count + student_ids.len() as i64 > cap as i64 {
+        if current_count + additional_count > cap as i64 {
             return Ok(AddMembersOutcome::OverCapacity(cap));
         }
     }
 
-    let inserted = bulk_insert_activity_group_members(pool, group_id, &student_ids).await?;
+    let inserted = bulk_insert_activity_group_members(&mut tx, group_id, &student_ids).await?;
+    tx.commit()
+        .await
+        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
     Ok(AddMembersOutcome::Inserted(inserted))
 }
 
@@ -705,14 +844,21 @@ pub async fn self_enroll(
     group_id: Uuid,
     user_id: Uuid,
 ) -> Result<SelfEnrollOutcome, AppError> {
+    let mut tx = pool
+        .begin()
+        .await
+        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
     let row: Option<(bool, Option<i32>, String)> = sqlx::query_as(
-        r#"SELECT s.student_reg_open, ag.max_capacity, s.registration_type
+        r#"SELECT (s.student_reg_open AND ag.registration_open),
+                  ag.max_capacity, s.registration_type
            FROM activity_groups ag
            JOIN activity_slots s ON s.id = ag.slot_id
-           WHERE ag.id = $1 AND ag.is_active = true"#,
+           WHERE ag.id = $1 AND ag.is_active = true
+           FOR UPDATE OF ag"#,
     )
     .bind(group_id)
-    .fetch_optional(pool)
+    .fetch_optional(&mut *tx)
     .await
     .map_err(|e| AppError::InternalServerError(e.to_string()))?;
 
@@ -731,7 +877,7 @@ pub async fn self_enroll(
             "SELECT COUNT(*) FROM activity_group_members WHERE activity_group_id = $1",
         )
         .bind(group_id)
-        .fetch_one(pool)
+        .fetch_one(&mut *tx)
         .await
         .map_err(|e| AppError::InternalServerError(e.to_string()))?;
         if count >= max as i64 {
@@ -745,33 +891,33 @@ pub async fn self_enroll(
            LIMIT 1"#,
     )
     .bind(user_id)
-    .fetch_optional(pool)
+    .fetch_optional(&mut *tx)
     .await
     .map_err(|e| AppError::InternalServerError(e.to_string()))?;
 
-    if let Some(classroom_id) = student_classroom {
-        let is_allowed: bool = sqlx::query_scalar(
-            r#"SELECT CASE
-                   WHEN ag.allowed_classroom_ids IS NOT NULL
-                     THEN ag.allowed_classroom_ids ? $2::text
-                   ELSE EXISTS(
-                     SELECT 1 FROM activity_slot_classrooms asc2
-                     WHERE asc2.slot_id = ag.slot_id AND asc2.classroom_id = $2
-                   )
-               END
-               FROM activity_groups ag
-               WHERE ag.id = $1"#,
-        )
-        .bind(group_id)
-        .bind(classroom_id)
-        .fetch_optional(pool)
-        .await
-        .map_err(|e| AppError::InternalServerError(e.to_string()))?
-        .unwrap_or(false);
+    let classroom_id = student_classroom
+        .ok_or_else(|| AppError::BadRequest("ไม่พบการลงทะเบียนห้องเรียนที่ใช้งานอยู่".to_string()))?;
+    let is_allowed: bool = sqlx::query_scalar(
+        r#"SELECT CASE
+               WHEN ag.allowed_classroom_ids IS NOT NULL
+                 THEN ag.allowed_classroom_ids ? $2::text
+               ELSE EXISTS(
+                 SELECT 1 FROM activity_slot_classrooms asc2
+                 WHERE asc2.slot_id = ag.slot_id AND asc2.classroom_id = $2
+               )
+           END
+           FROM activity_groups ag
+           WHERE ag.id = $1"#,
+    )
+    .bind(group_id)
+    .bind(classroom_id)
+    .fetch_optional(&mut *tx)
+    .await
+    .map_err(|e| AppError::InternalServerError(e.to_string()))?
+    .unwrap_or(false);
 
-        if !is_allowed {
-            return Ok(SelfEnrollOutcome::ClassroomNotAllowed);
-        }
+    if !is_allowed {
+        return Ok(SelfEnrollOutcome::ClassroomNotAllowed);
     }
 
     let result = sqlx::query(
@@ -781,9 +927,13 @@ pub async fn self_enroll(
     .bind(group_id)
     .bind(user_id)
     .bind(user_id)
-    .execute(pool)
+    .execute(&mut *tx)
     .await
     .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+    tx.commit()
+        .await
+        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
 
     if result.rows_affected() > 0 {
         Ok(SelfEnrollOutcome::Enrolled)
@@ -793,7 +943,7 @@ pub async fn self_enroll(
 }
 
 pub async fn self_unenroll(pool: &PgPool, group_id: Uuid, user_id: Uuid) -> Result<(), AppError> {
-    sqlx::query(
+    let result = sqlx::query(
         "DELETE FROM activity_group_members WHERE activity_group_id = $1 AND student_id = $2",
     )
     .bind(group_id)
@@ -801,7 +951,11 @@ pub async fn self_unenroll(pool: &PgPool, group_id: Uuid, user_id: Uuid) -> Resu
     .execute(pool)
     .await
     .map_err(|e| AppError::InternalServerError(e.to_string()))?;
-    Ok(())
+    if result.rows_affected() == 0 {
+        Err(AppError::NotFound("ไม่พบการลงทะเบียนกิจกรรม".to_string()))
+    } else {
+        Ok(())
+    }
 }
 
 pub async fn remove_member(
@@ -809,7 +963,7 @@ pub async fn remove_member(
     group_id: Uuid,
     student_id: Uuid,
 ) -> Result<(), AppError> {
-    sqlx::query(
+    let result = sqlx::query(
         "DELETE FROM activity_group_members WHERE activity_group_id = $1 AND student_id = $2",
     )
     .bind(group_id)
@@ -817,7 +971,11 @@ pub async fn remove_member(
     .execute(pool)
     .await
     .map_err(|e| AppError::InternalServerError(e.to_string()))?;
-    Ok(())
+    if result.rows_affected() == 0 {
+        Err(AppError::NotFound("ไม่พบสมาชิกกิจกรรม".to_string()))
+    } else {
+        Ok(())
+    }
 }
 
 pub async fn update_member_result(
@@ -830,13 +988,17 @@ pub async fn update_member_result(
             "result ต้องเป็น pass หรือ fail".to_string(),
         ));
     }
-    sqlx::query("UPDATE activity_group_members SET result = $1 WHERE id = $2")
+    let update = sqlx::query("UPDATE activity_group_members SET result = $1 WHERE id = $2")
         .bind(result)
         .bind(member_id)
         .execute(pool)
         .await
         .map_err(|e| AppError::InternalServerError(e.to_string()))?;
-    Ok(())
+    if update.rows_affected() == 0 {
+        Err(AppError::NotFound("ไม่พบสมาชิกกิจกรรม".to_string()))
+    } else {
+        Ok(())
+    }
 }
 
 // ============================================
@@ -855,6 +1017,7 @@ pub async fn list_group_instructors(
     pool: &PgPool,
     group_id: Uuid,
 ) -> Result<Vec<InstructorInfo>, AppError> {
+    ensure_activity_group_exists(pool, group_id).await?;
     sqlx::query_as(
         r#"SELECT agi.id, agi.instructor_id, agi.role,
                   u.first_name || ' ' || u.last_name AS instructor_name
@@ -876,7 +1039,9 @@ pub async fn add_group_instructor(
     instructor_id: Uuid,
     role: &str,
 ) -> Result<(), AppError> {
+    validate_group_instructor_role(role)?;
     activity_access_policy::can_manage_activity_group(pool, actor, group_id).await?;
+    ensure_users_exist(pool, &[instructor_id]).await?;
 
     sqlx::query(
         "INSERT INTO activity_group_instructors (activity_group_id, instructor_id, role)
@@ -899,7 +1064,7 @@ pub async fn remove_group_instructor(
 ) -> Result<(), AppError> {
     activity_access_policy::can_manage_activity_group(pool, actor, group_id).await?;
 
-    sqlx::query(
+    let result = sqlx::query(
         "DELETE FROM activity_group_instructors WHERE activity_group_id = $1 AND instructor_id = $2",
     )
     .bind(group_id)
@@ -907,7 +1072,11 @@ pub async fn remove_group_instructor(
     .execute(pool)
     .await
     .map_err(|e| AppError::InternalServerError(e.to_string()))?;
-    Ok(())
+    if result.rows_affected() == 0 {
+        Err(AppError::NotFound("ไม่พบผู้สอนในกลุ่มกิจกรรม".to_string()))
+    } else {
+        Ok(())
+    }
 }
 
 // ============================================
@@ -925,6 +1094,7 @@ pub async fn list_slot_instructors(
     pool: &PgPool,
     slot_id: Uuid,
 ) -> Result<Vec<SlotInstructorInfo>, AppError> {
+    ensure_activity_slot_exists(pool, slot_id).await?;
     sqlx::query_as(
         r#"SELECT asi.id, asi.user_id,
                   u.first_name || ' ' || u.last_name AS instructor_name
@@ -945,6 +1115,9 @@ pub async fn add_slot_instructor(
     slot_id: Uuid,
     user_id: Uuid,
 ) -> Result<(), AppError> {
+    ensure_activity_slot_exists(pool, slot_id).await?;
+    ensure_users_exist(pool, &[user_id]).await?;
+
     let mut tx = pool
         .begin()
         .await
@@ -991,6 +1164,9 @@ pub async fn add_slot_instructors_batch(
     slot_id: Uuid,
     user_ids: Vec<Uuid>,
 ) -> Result<usize, AppError> {
+    ensure_activity_slot_exists(pool, slot_id).await?;
+    let user_ids = unique_activity_student_ids(&user_ids);
+    ensure_users_exist(pool, &user_ids).await?;
     if user_ids.is_empty() {
         return Ok(0);
     }
@@ -1000,7 +1176,7 @@ pub async fn add_slot_instructors_batch(
         .await
         .map_err(|e| AppError::InternalServerError(e.to_string()))?;
 
-    sqlx::query(
+    let insert = sqlx::query(
         r#"INSERT INTO activity_slot_instructors (slot_id, user_id)
            SELECT $1, u.id FROM UNNEST($2::uuid[]) AS u(id)
            ON CONFLICT DO NOTHING"#,
@@ -1036,7 +1212,7 @@ pub async fn add_slot_instructors_batch(
     tx.commit()
         .await
         .map_err(|e| AppError::InternalServerError(e.to_string()))?;
-    Ok(user_ids.len())
+    Ok(insert.rows_affected() as usize)
 }
 
 pub async fn remove_slot_instructor(
@@ -1044,17 +1220,24 @@ pub async fn remove_slot_instructor(
     slot_id: Uuid,
     user_id: Uuid,
 ) -> Result<(), AppError> {
+    ensure_activity_slot_exists(pool, slot_id).await?;
+
     let mut tx = pool
         .begin()
         .await
         .map_err(|e| AppError::InternalServerError(e.to_string()))?;
 
-    sqlx::query("DELETE FROM activity_slot_instructors WHERE slot_id = $1 AND user_id = $2")
-        .bind(slot_id)
-        .bind(user_id)
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+    let result =
+        sqlx::query("DELETE FROM activity_slot_instructors WHERE slot_id = $1 AND user_id = $2")
+            .bind(slot_id)
+            .bind(user_id)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+    if result.rows_affected() == 0 {
+        return Err(AppError::NotFound("ไม่พบผู้สอนในช่องกิจกรรม".to_string()));
+    }
 
     sqlx::query(
         r#"DELETE FROM timetable_entry_instructors tei
@@ -1076,6 +1259,7 @@ pub async fn remove_slot_instructor(
 }
 
 pub async fn delete_slot_timetable_entries(pool: &PgPool, slot_id: Uuid) -> Result<u64, AppError> {
+    ensure_activity_slot_exists(pool, slot_id).await?;
     let result = sqlx::query("DELETE FROM academic_timetable_entries WHERE activity_slot_id = $1")
         .bind(slot_id)
         .execute(pool)
@@ -1085,6 +1269,7 @@ pub async fn delete_slot_timetable_entries(pool: &PgPool, slot_id: Uuid) -> Resu
 }
 
 pub async fn delete_all_slot_groups(pool: &PgPool, slot_id: Uuid) -> Result<u64, AppError> {
+    ensure_activity_slot_exists(pool, slot_id).await?;
     let result = sqlx::query("DELETE FROM activity_groups WHERE slot_id = $1")
         .bind(slot_id)
         .execute(pool)
@@ -1094,6 +1279,8 @@ pub async fn delete_all_slot_groups(pool: &PgPool, slot_id: Uuid) -> Result<u64,
 }
 
 pub async fn remove_all_slot_instructors(pool: &PgPool, slot_id: Uuid) -> Result<u64, AppError> {
+    ensure_activity_slot_exists(pool, slot_id).await?;
+
     let mut tx = pool
         .begin()
         .await
@@ -1130,6 +1317,7 @@ pub async fn list_slot_classroom_assignments(
     pool: &PgPool,
     slot_id: Uuid,
 ) -> Result<Vec<SlotClassroomAssignment>, AppError> {
+    ensure_activity_slot_exists(pool, slot_id).await?;
     sqlx::query_as::<_, SlotClassroomAssignment>(
         r#"SELECT asca.*, cr.name AS classroom_name,
                   concat(u.first_name, ' ', u.last_name) AS instructor_name
@@ -1153,6 +1341,7 @@ pub async fn batch_upsert_slot_classroom_assignments(
     slot_id: Uuid,
     body: BatchUpsertSlotClassroomAssignmentsRequest,
 ) -> Result<usize, AppError> {
+    ensure_activity_slot_exists(pool, slot_id).await?;
     let assignment_rows = slot_classroom_assignment_bulk_rows(&body.assignments);
     if assignment_rows.is_empty() {
         return Ok(0);
@@ -1166,6 +1355,8 @@ pub async fn batch_upsert_slot_classroom_assignments(
         .iter()
         .map(|assignment| assignment.instructor_id)
         .collect();
+    ensure_classrooms_exist(pool, &classroom_ids).await?;
+    ensure_users_exist(pool, &instructor_ids).await?;
 
     let mut tx = pool
         .begin()
@@ -1231,6 +1422,8 @@ pub async fn delete_all_slot_classroom_assignments(
     pool: &PgPool,
     slot_id: Uuid,
 ) -> Result<u64, AppError> {
+    ensure_activity_slot_exists(pool, slot_id).await?;
+
     let mut tx = pool
         .begin()
         .await
@@ -1264,6 +1457,8 @@ pub async fn delete_slot_classroom_assignment(
     slot_id: Uuid,
     assignment_id: Uuid,
 ) -> Result<(), AppError> {
+    ensure_activity_slot_exists(pool, slot_id).await?;
+
     let mut tx = pool
         .begin()
         .await
@@ -1278,20 +1473,20 @@ pub async fn delete_slot_classroom_assignment(
     .await
     .map_err(|e| AppError::InternalServerError(e.to_string()))?;
 
-    if let Some(cls_id) = classroom_id {
-        sqlx::query(
-            r#"DELETE FROM timetable_entry_instructors tei
-               USING academic_timetable_entries te
-               WHERE tei.entry_id = te.id
-                 AND te.activity_slot_id = $1
-                 AND te.classroom_id = $2"#,
-        )
-        .bind(slot_id)
-        .bind(cls_id)
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
-    }
+    let classroom_id =
+        classroom_id.ok_or_else(|| AppError::NotFound("ไม่พบการมอบหมายห้องเรียน".to_string()))?;
+    sqlx::query(
+        r#"DELETE FROM timetable_entry_instructors tei
+           USING academic_timetable_entries te
+           WHERE tei.entry_id = te.id
+             AND te.activity_slot_id = $1
+             AND te.classroom_id = $2"#,
+    )
+    .bind(slot_id)
+    .bind(classroom_id)
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| AppError::InternalServerError(e.to_string()))?;
 
     tx.commit()
         .await
