@@ -186,6 +186,26 @@ pub async fn list_cc_preferred_rooms(
     pool: &PgPool,
     cc_id: Uuid,
 ) -> Result<Vec<CcPreferredRoomView>, AppError> {
+    let year_id = get_active_year_id(pool).await?;
+    let belongs_to_active_year: bool = sqlx::query_scalar(
+        r#"SELECT EXISTS (
+               SELECT 1
+               FROM classroom_courses cc
+               JOIN academic_semesters sem ON sem.id = cc.academic_semester_id
+               WHERE cc.id = $1 AND sem.academic_year_id = $2
+           )"#,
+    )
+    .bind(cc_id)
+    .bind(year_id)
+    .fetch_one(pool)
+    .await
+    .map_err(|error| AppError::InternalServerError(error.to_string()))?;
+    if !belongs_to_active_year {
+        return Err(AppError::NotFound(
+            "Classroom course was not found in the active academic year".to_string(),
+        ));
+    }
+
     sqlx::query_as::<_, CcPreferredRoomView>(
         r#"SELECT pr.id, pr.classroom_course_id, pr.room_id,
                   r.code AS room_code, r.name_th AS room_name,
@@ -293,6 +313,13 @@ struct SubjectConstraintState {
 }
 
 #[derive(sqlx::FromRow)]
+struct SubjectValidationRow {
+    id: Uuid,
+    min_consecutive_periods: Option<i32>,
+    max_consecutive_periods: Option<i32>,
+}
+
+#[derive(sqlx::FromRow)]
 struct ClassroomCourseConstraintState {
     consecutive_pattern: Option<Json<Vec<i32>>>,
     same_day_unique: bool,
@@ -382,7 +409,7 @@ fn effective_periods_per_week(
     })
 }
 
-async fn validate_reference_count(
+async fn validate_and_lock_reference_ids(
     tx: &mut Transaction<'_, Postgres>,
     sql: &str,
     ids: &[Uuid],
@@ -391,12 +418,12 @@ async fn validate_reference_count(
     if ids.is_empty() {
         return Ok(());
     }
-    let count: i64 = sqlx::query_scalar(sql)
+    let found_ids: Vec<Uuid> = sqlx::query_scalar(sql)
         .bind(ids)
-        .fetch_one(&mut **tx)
+        .fetch_all(&mut **tx)
         .await
         .map_err(|error| AppError::InternalServerError(error.to_string()))?;
-    if count != ids.len() as i64 {
+    if found_ids.len() != ids.len() {
         return Err(AppError::NotFound(format!(
             "One or more active {label} targets were not found"
         )));
@@ -513,40 +540,82 @@ async fn validate_configuration_request(
     }
 
     let instructor_ids: Vec<_> = instructor_ids.into_iter().collect();
-    validate_reference_count(
+    validate_and_lock_reference_ids(
         tx,
-        "SELECT COUNT(DISTINCT id) FROM users WHERE id = ANY($1) AND user_type = 'staff' AND status = 'active'",
+        "SELECT id FROM users WHERE id = ANY($1) AND user_type = 'staff' AND status = 'active' FOR SHARE",
         &instructor_ids,
         "instructor",
     )
     .await?;
     let subject_ids: Vec<_> = request.subjects.iter().map(|patch| patch.id).collect();
-    validate_reference_count(
-        tx,
-        "SELECT COUNT(DISTINCT id) FROM subjects WHERE id = ANY($1) AND is_active = true",
-        &subject_ids,
-        "subject",
-    )
-    .await?;
+    let subject_rows = if subject_ids.is_empty() {
+        Vec::new()
+    } else {
+        sqlx::query_as::<_, SubjectValidationRow>(
+            r#"SELECT id, min_consecutive_periods, max_consecutive_periods
+               FROM subjects
+               WHERE id = ANY($1) AND is_active = true
+               FOR SHARE"#,
+        )
+        .bind(&subject_ids)
+        .fetch_all(&mut **tx)
+        .await
+        .map_err(|error| AppError::InternalServerError(error.to_string()))?
+    };
+    if subject_rows.len() != subject_ids.len() {
+        return Err(AppError::NotFound(
+            "One or more active subject targets were not found".to_string(),
+        ));
+    }
+    let subject_limits: HashMap<_, _> = subject_rows
+        .into_iter()
+        .map(|row| {
+            (
+                row.id,
+                (row.min_consecutive_periods, row.max_consecutive_periods),
+            )
+        })
+        .collect();
+    for patch in &request.subjects {
+        let (current_min, current_max) = subject_limits
+            .get(&patch.id)
+            .copied()
+            .ok_or_else(|| AppError::NotFound("Active subject target was not found".to_string()))?;
+        let effective_min = match patch.min_consecutive_periods {
+            Patch::Unchanged => current_min.unwrap_or(1),
+            Patch::Clear => 1,
+            Patch::Set(value) => value,
+        };
+        let effective_max = match patch.max_consecutive_periods {
+            Patch::Unchanged => current_max,
+            Patch::Clear => None,
+            Patch::Set(value) => Some(value),
+        };
+        if effective_max.is_some_and(|maximum| effective_min > maximum) {
+            return Err(AppError::BadRequest(
+                "min_consecutive_periods must not exceed max_consecutive_periods".to_string(),
+            ));
+        }
+    }
     let room_ids: Vec<_> = room_ids.into_iter().collect();
-    validate_reference_count(
+    validate_and_lock_reference_ids(
         tx,
-        "SELECT COUNT(DISTINCT id) FROM rooms WHERE id = ANY($1) AND status = 'ACTIVE'",
+        "SELECT id FROM rooms WHERE id = ANY($1) AND status = 'ACTIVE' FOR SHARE",
         &room_ids,
         "room",
     )
     .await?;
     let period_ids: Vec<_> = period_ids.into_iter().collect();
     if !period_ids.is_empty() {
-        let count: i64 = sqlx::query_scalar(
-            "SELECT COUNT(DISTINCT id) FROM academic_periods WHERE id = ANY($1) AND academic_year_id = $2",
+        let found_ids: Vec<Uuid> = sqlx::query_scalar(
+            "SELECT id FROM academic_periods WHERE id = ANY($1) AND academic_year_id = $2 FOR SHARE",
         )
         .bind(&period_ids)
         .bind(academic_year_id)
-        .fetch_one(&mut **tx)
+        .fetch_all(&mut **tx)
         .await
         .map_err(|error| AppError::InternalServerError(error.to_string()))?;
-        if count != period_ids.len() as i64 {
+        if found_ids.len() != period_ids.len() {
             return Err(AppError::NotFound(
                 "One or more periods do not belong to the active academic year".to_string(),
             ));
@@ -573,7 +642,8 @@ async fn validate_configuration_request(
                FROM classroom_courses cc
                JOIN academic_semesters sem ON sem.id = cc.academic_semester_id
                JOIN subjects s ON s.id = cc.subject_id
-               WHERE cc.id = ANY($1) AND sem.academic_year_id = $2"#,
+               WHERE cc.id = ANY($1) AND sem.academic_year_id = $2
+               FOR SHARE OF cc, sem, s"#,
         )
         .bind(&classroom_course_ids)
         .bind(academic_year_id)
@@ -615,10 +685,10 @@ async fn validate_configuration_request(
 fn patched_json_vec<T: Clone>(
     patch: &Patch<Vec<T>>,
     current: Option<Json<Vec<T>>>,
-    default: Vec<T>,
+    default_for_missing_row: Option<Vec<T>>,
 ) -> Option<Json<Vec<T>>> {
     match patch {
-        Patch::Unchanged => current.or_else(|| Some(Json(default))),
+        Patch::Unchanged => current.or_else(|| default_for_missing_row.map(Json)),
         Patch::Clear => Some(Json(Vec::new())),
         Patch::Set(values) => Some(Json(values.clone())),
     }
@@ -687,17 +757,21 @@ pub async fn save_scheduling_configuration(
             .await
             .map_err(write_error)?
             .rows_affected() as usize;
-            for (index, instructor_id) in instructor_ids.iter().enumerate() {
+            if !instructor_ids.is_empty() {
+                let priorities: Vec<i32> = (1..=instructor_ids.len() as i32).collect();
                 result.instructor_order_updated += sqlx::query(
-                    r#"INSERT INTO instructor_preferences (instructor_id, academic_year_id, priority)
-                       VALUES ($1, $2, $3)
+                    r#"INSERT INTO instructor_preferences
+                           (instructor_id, academic_year_id, priority)
+                       SELECT instructor_id, $2, priority
+                       FROM UNNEST($1::uuid[], $3::int[])
+                           AS ordered(instructor_id, priority)
                        ON CONFLICT (instructor_id, academic_year_id) DO UPDATE
                        SET priority = EXCLUDED.priority, updated_at = NOW()
                        WHERE instructor_preferences.priority IS DISTINCT FROM EXCLUDED.priority"#,
                 )
-                .bind(instructor_id)
+                .bind(instructor_ids)
                 .bind(academic_year_id)
-                .bind((index + 1) as i32)
+                .bind(priorities)
                 .execute(&mut *tx)
                 .await
                 .map_err(write_error)?
@@ -730,15 +804,19 @@ pub async fn save_scheduling_configuration(
             let hard_unavailable_slots = patched_json_vec(
                 &patch.hard_unavailable_slots,
                 current.hard_unavailable_slots,
-                Vec::new(),
+                (!existed).then(Vec::new),
             );
             let max_periods_per_day = match patch.max_periods_per_day {
-                Patch::Unchanged => current.max_periods_per_day.or(Some(7)),
+                Patch::Unchanged if existed => current.max_periods_per_day,
+                Patch::Unchanged => Some(7),
                 Patch::Clear => Some(7),
                 Patch::Set(value) => Some(value),
             };
-            let preferred_slots =
-                patched_json_vec(&patch.preferred_slots, current.preferred_slots, Vec::new());
+            let preferred_slots = patched_json_vec(
+                &patch.preferred_slots,
+                current.preferred_slots,
+                (!existed).then(Vec::new),
+            );
             let changed = sqlx::query(
                 r#"INSERT INTO instructor_preferences (
                        instructor_id, academic_year_id, hard_unavailable_slots,
@@ -889,7 +967,7 @@ pub async fn save_scheduling_configuration(
         let hard_unavailable_slots = patched_json_vec(
             &patch.hard_unavailable_slots,
             current.hard_unavailable_slots,
-            Vec::new(),
+            None,
         );
         result.classroom_course_constraints_updated += sqlx::query(
             r#"UPDATE classroom_courses SET consecutive_pattern = $2,

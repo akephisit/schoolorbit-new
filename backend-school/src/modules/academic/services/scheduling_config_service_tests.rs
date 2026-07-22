@@ -24,6 +24,13 @@ struct Fixture {
     period_id: Uuid,
 }
 
+#[derive(sqlx::FromRow)]
+struct InstructorPreferenceNullState {
+    hard_unavailable_slots: Option<Json<Vec<TimeSlot>>>,
+    max_periods_per_day: Option<i32>,
+    preferred_slots: Option<Json<Vec<TimeSlot>>>,
+}
+
 async fn migrated_pool() -> sqlx::PgPool {
     let pool = create_test_pool().await;
     run_test_migrations(&pool).await;
@@ -408,4 +415,346 @@ async fn duplicate_targets_are_rejected_before_settings_change() {
     .await
     .unwrap();
     assert_eq!(setting.0, 4);
+}
+
+#[tokio::test]
+async fn inactive_and_cross_year_targets_return_not_found() {
+    let pool = migrated_pool().await;
+    let fixture = insert_fixture(&pool).await;
+
+    sqlx::query("UPDATE users SET status = 'inactive' WHERE id = $1")
+        .bind(fixture.instructor_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert!(matches!(
+        scheduling_config_service::save_scheduling_configuration(
+            &pool,
+            SaveSchedulingConfigurationRequest {
+                instructors: vec![InstructorConstraintPatch {
+                    id: fixture.instructor_id,
+                    ..Default::default()
+                }],
+                ..Default::default()
+            },
+        )
+        .await,
+        Err(AppError::NotFound(_))
+    ));
+    sqlx::query("UPDATE users SET status = 'active' WHERE id = $1")
+        .bind(fixture.instructor_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    sqlx::query("UPDATE subjects SET is_active = false WHERE id = $1")
+        .bind(fixture.subject_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert!(matches!(
+        scheduling_config_service::save_scheduling_configuration(
+            &pool,
+            SaveSchedulingConfigurationRequest {
+                subjects: vec![SubjectConstraintPatch {
+                    id: fixture.subject_id,
+                    ..Default::default()
+                }],
+                ..Default::default()
+            },
+        )
+        .await,
+        Err(AppError::NotFound(_))
+    ));
+    sqlx::query("UPDATE subjects SET is_active = true WHERE id = $1")
+        .bind(fixture.subject_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    sqlx::query("UPDATE rooms SET status = 'INACTIVE' WHERE id = $1")
+        .bind(fixture.room_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert!(matches!(
+        scheduling_config_service::save_scheduling_configuration(
+            &pool,
+            SaveSchedulingConfigurationRequest {
+                preferred_rooms: vec![ClassroomCoursePreferredRoomsPatch {
+                    classroom_course_id: fixture.classroom_course_id,
+                    rooms: vec![PreferredRoomInput {
+                        room_id: fixture.room_id,
+                        rank: 1,
+                        is_required: false,
+                    }],
+                }],
+                ..Default::default()
+            },
+        )
+        .await,
+        Err(AppError::NotFound(_))
+    ));
+    sqlx::query("UPDATE rooms SET status = 'ACTIVE' WHERE id = $1")
+        .bind(fixture.room_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let other_year_id = Uuid::new_v4();
+    let other_semester_id = Uuid::new_v4();
+    let other_period_id = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO academic_years (id, year, name, start_date, end_date, is_active)
+         VALUES ($1, 19000, 'Other Scheduling Year', '9700-01-01', '9700-12-31', false)",
+    )
+    .bind(other_year_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO academic_periods
+            (id, academic_year_id, name, start_time, end_time, order_index)
+         VALUES ($1, $2, 'Other Period', '09:00', '09:50', 1)",
+    )
+    .bind(other_period_id)
+    .bind(other_year_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    assert!(matches!(
+        scheduling_config_service::save_scheduling_configuration(
+            &pool,
+            SaveSchedulingConfigurationRequest {
+                instructors: vec![InstructorConstraintPatch {
+                    id: fixture.instructor_id,
+                    hard_unavailable_slots: Patch::Set(vec![slot(other_period_id)]),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            },
+        )
+        .await,
+        Err(AppError::NotFound(_))
+    ));
+
+    sqlx::query(
+        "INSERT INTO academic_semesters
+            (id, academic_year_id, term, name, start_date, end_date)
+         VALUES ($1, $2, '1', 'Other Semester', '9700-01-01', '9700-06-30')",
+    )
+    .bind(other_semester_id)
+    .bind(other_year_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query("UPDATE classroom_courses SET academic_semester_id = $2 WHERE id = $1")
+        .bind(fixture.classroom_course_id)
+        .bind(other_semester_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert!(matches!(
+        scheduling_config_service::save_scheduling_configuration(
+            &pool,
+            SaveSchedulingConfigurationRequest {
+                classroom_courses: vec![ClassroomCourseConstraintPatch {
+                    id: fixture.classroom_course_id,
+                    same_day_unique: Patch::Set(false),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            },
+        )
+        .await,
+        Err(AppError::NotFound(_))
+    ));
+}
+
+#[tokio::test]
+async fn semantic_validation_errors_write_nothing() {
+    let pool = migrated_pool().await;
+    let fixture = insert_fixture(&pool).await;
+    let invalid_day = SaveSchedulingConfigurationRequest {
+        scheduler_settings: Some(SchedulerSettingsPatch {
+            default_max_consecutive: Patch::Set(9),
+        }),
+        instructors: vec![InstructorConstraintPatch {
+            id: fixture.instructor_id,
+            hard_unavailable_slots: Patch::Set(vec![TimeSlot {
+                day: "FUNDAY".to_string(),
+                period_id: fixture.period_id,
+            }]),
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+    assert!(matches!(
+        scheduling_config_service::save_scheduling_configuration(&pool, invalid_day).await,
+        Err(AppError::BadRequest(_))
+    ));
+
+    let duplicate_room = SaveSchedulingConfigurationRequest {
+        preferred_rooms: vec![ClassroomCoursePreferredRoomsPatch {
+            classroom_course_id: fixture.classroom_course_id,
+            rooms: vec![
+                PreferredRoomInput {
+                    room_id: fixture.room_id,
+                    rank: 1,
+                    is_required: false,
+                },
+                PreferredRoomInput {
+                    room_id: fixture.room_id,
+                    rank: 2,
+                    is_required: true,
+                },
+            ],
+        }],
+        ..Default::default()
+    };
+    assert!(matches!(
+        scheduling_config_service::save_scheduling_configuration(&pool, duplicate_room).await,
+        Err(AppError::BadRequest(_))
+    ));
+
+    let inconsistent_pattern = SaveSchedulingConfigurationRequest {
+        classroom_courses: vec![ClassroomCourseConstraintPatch {
+            id: fixture.classroom_course_id,
+            consecutive_pattern: Patch::Set(vec![1]),
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+    assert!(matches!(
+        scheduling_config_service::save_scheduling_configuration(&pool, inconsistent_pattern).await,
+        Err(AppError::BadRequest(_))
+    ));
+
+    let setting: Json<i32> = sqlx::query_scalar(
+        "SELECT value FROM scheduler_settings WHERE key = 'default_max_consecutive'",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(setting.0, 4);
+}
+
+#[tokio::test]
+async fn preferred_rooms_read_requires_an_active_year_classroom_course() {
+    let pool = migrated_pool().await;
+    let fixture = insert_fixture(&pool).await;
+
+    assert!(
+        scheduling_config_service::list_cc_preferred_rooms(&pool, fixture.classroom_course_id)
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    assert!(matches!(
+        scheduling_config_service::list_cc_preferred_rooms(&pool, Uuid::new_v4()).await,
+        Err(AppError::NotFound(_))
+    ));
+
+    let other_year_id = Uuid::new_v4();
+    let other_semester_id = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO academic_years (id, year, name, start_date, end_date, is_active)
+         VALUES ($1, 19001, 'Preferred Room Other Year', '9699-01-01', '9699-12-31', false)",
+    )
+    .bind(other_year_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO academic_semesters
+            (id, academic_year_id, term, name, start_date, end_date)
+         VALUES ($1, $2, '1', 'Other Semester', '9699-01-01', '9699-06-30')",
+    )
+    .bind(other_semester_id)
+    .bind(other_year_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query("UPDATE classroom_courses SET academic_semester_id = $2 WHERE id = $1")
+        .bind(fixture.classroom_course_id)
+        .bind(other_semester_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    assert!(matches!(
+        scheduling_config_service::list_cc_preferred_rooms(&pool, fixture.classroom_course_id)
+            .await,
+        Err(AppError::NotFound(_))
+    ));
+}
+
+#[tokio::test]
+async fn partial_patches_preserve_sql_nulls_and_reject_inconsistent_subject_limits() {
+    let pool = migrated_pool().await;
+    let fixture = insert_fixture(&pool).await;
+
+    sqlx::query(
+        "INSERT INTO instructor_preferences
+            (instructor_id, academic_year_id, hard_unavailable_slots,
+             max_periods_per_day, preferred_slots)
+         VALUES ($1, $2, NULL, NULL, NULL)",
+    )
+    .bind(fixture.instructor_id)
+    .bind(fixture.academic_year_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let result = scheduling_config_service::save_scheduling_configuration(
+        &pool,
+        SaveSchedulingConfigurationRequest {
+            instructors: vec![InstructorConstraintPatch {
+                id: fixture.instructor_id,
+                max_periods_per_day: Patch::Set(5),
+                ..Default::default()
+            }],
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(result.instructor_constraints_updated, 1);
+    let preference = sqlx::query_as::<_, InstructorPreferenceNullState>(
+        "SELECT hard_unavailable_slots, max_periods_per_day, preferred_slots
+         FROM instructor_preferences
+         WHERE instructor_id = $1 AND academic_year_id = $2",
+    )
+    .bind(fixture.instructor_id)
+    .bind(fixture.academic_year_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert!(preference.hard_unavailable_slots.is_none());
+    assert_eq!(preference.max_periods_per_day, Some(5));
+    assert!(preference.preferred_slots.is_none());
+
+    assert!(matches!(
+        scheduling_config_service::save_scheduling_configuration(
+            &pool,
+            SaveSchedulingConfigurationRequest {
+                subjects: vec![SubjectConstraintPatch {
+                    id: fixture.subject_id,
+                    min_consecutive_periods: Patch::Set(3),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            },
+        )
+        .await,
+        Err(AppError::BadRequest(_))
+    ));
+    let limits: (Option<i32>, Option<i32>) = sqlx::query_as(
+        "SELECT min_consecutive_periods, max_consecutive_periods
+         FROM subjects WHERE id = $1",
+    )
+    .bind(fixture.subject_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(limits, (Some(1), Some(2)));
 }
