@@ -70,12 +70,13 @@ Frontend API modules import generated wire DTOs and may map them to separate
 domain/view models. Generation must not require database credentials or start
 the backend server.
 
-The generated document currently contains 124 unique operations: 32
+The generated document currently contains 137 unique operations: 32
 auth/authorization operations, 36 read-oriented JSON operations from the prior
 checkpoint, the completed Phase 1 people batch (12 mutations plus the dependent
 achievement list read), and the first Phase 2 academic structure batch (15
-mutations plus four dependent reads), and the Phase 2 curriculum core batch (15
-mutations plus nine dependent reads). The people operations are:
+mutations plus four dependent reads), the Phase 2 curriculum core batch (15
+mutations plus nine dependent reads), and the Phase 2 activity-template batch
+(10 mutations plus three dependent reads). The people operations are:
 
 - staff: `createStaff`, `updateStaff`, `deleteStaff`
 - student/parent-link: `updateStudentProfile`, `createStudent`, `updateStudent`,
@@ -102,11 +103,20 @@ The curriculum core operations are `listSubjectGroups`,
 `addSubjectsToStudyPlanVersion`, `deleteStudyPlanSubject`, and
 `generateCoursesFromStudyPlan`.
 
+The activity-template operations are `listStudyPlanActivities`,
+`addStudyPlanActivity`, `updateStudyPlanActivity`, `deleteStudyPlanActivity`,
+`generateActivitiesFromStudyPlan`, `listActivityCatalog`,
+`createActivityCatalog`, `updateActivityCatalog`, `deleteActivityCatalog`,
+`listActivityCatalogDefaultInstructors`,
+`addActivityCatalogDefaultInstructor`,
+`removeActivityCatalogDefaultInstructor`, and
+`updateActivityCatalogDefaultInstructorRole`.
+
 This is the current Phase 4 mutation-contract rollout checkpoint. The next
-Phase 2 batch is study-plan activities and the activity catalog. The document tracks
-implemented backend routes only; frontend-only helpers are not exported. SSE,
-WebSocket, health/readiness, and file/binary endpoints remain explicitly outside
-this OpenAPI contract.
+Phase 2 batch is the activity workspace: slots, groups, instructors, classroom
+assignments, and members. The document tracks implemented backend routes only;
+frontend-only helpers are not exported. SSE, WebSocket, health/readiness, and
+file/binary endpoints remain explicitly outside this OpenAPI contract.
 
 Authorization regression tests require effective permissions to be empty when
 `users.status != 'active'`. Student soft deletion invalidates that user's
@@ -129,6 +139,15 @@ and plan-subject rows return not-found. They also verify that a missing
 instructor assignment does not demote the current primary instructor, the path
 version owns the plan-subject query scope, and add-subject counts report rows
 actually inserted.
+
+Activity-template authorization tests require every study-plan activity,
+activity-catalog, and default-instructor handler to load `actor_tenant_context`
+and enforce the matching curriculum policy. Activity generation additionally
+requires `ACTIVITY_MANAGE_ALL` plus curriculum read access. Database-backed tests
+verify missing study-plan versions, semesters, catalogs, grade levels,
+instructors, plan-activity rows, and default-instructor assignments return
+not-found, and that updating a missing assignment cannot demote the current
+primary instructor.
 
 `DELETE /api/roles/{id}` and `DELETE /api/organization/units/{id}` are implemented
 as reversible deactivation (`is_active = false`), never physical deletion. They
