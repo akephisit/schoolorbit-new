@@ -7,3 +7,6 @@ pub mod permission_service;
 pub mod role_service;
 pub mod staff_service;
 pub mod user_role_service;
+
+#[cfg(test)]
+mod status_tests;

@@ -368,6 +368,9 @@ fn push_staff_list_access_filter(
                     r#" AND EXISTS (
                         SELECT 1
                         FROM organization_members actor_member
+                        JOIN organization_units active_actor_unit
+                          ON active_actor_unit.id = actor_member.organization_unit_id
+                         AND active_actor_unit.is_active = true
                         JOIN organization_members target_member
                           ON target_member.organization_unit_id = actor_member.organization_unit_id
                         WHERE actor_member.user_id = "#,
@@ -385,14 +388,17 @@ fn push_staff_list_access_filter(
                 .push(
                     r#" AND EXISTS (
                         WITH RECURSIVE actor_roots AS (
-                            SELECT organization_unit_id
-                            FROM organization_members
-                            WHERE user_id = "#,
+                            SELECT actor_member.organization_unit_id
+                            FROM organization_members actor_member
+                            JOIN organization_units active_root
+                              ON active_root.id = actor_member.organization_unit_id
+                             AND active_root.is_active = true
+                            WHERE actor_member.user_id = "#,
                 )
                 .push_bind(actor_user_id)
                 .push(
                     r#"
-                              AND (ended_at IS NULL OR ended_at > CURRENT_DATE)
+                              AND (actor_member.ended_at IS NULL OR actor_member.ended_at > CURRENT_DATE)
                         ),
                         organization_tree AS (
                             SELECT organization_unit_id

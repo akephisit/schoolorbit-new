@@ -103,8 +103,7 @@ mod tests {
 
     #[test]
     fn conflict_error_returns_standard_409_envelope() {
-        let response =
-            AppError::Conflict("สถานะทรัพยากรขัดแย้ง".to_string()).into_response();
+        let response = AppError::Conflict("สถานะทรัพยากรขัดแย้ง".to_string()).into_response();
 
         assert_eq!(response.status(), StatusCode::CONFLICT);
     }

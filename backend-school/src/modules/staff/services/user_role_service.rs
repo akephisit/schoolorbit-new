@@ -209,7 +209,8 @@ pub async fn get_user_permissions(pool: &PgPool, user_id: Uuid) -> Result<Vec<St
     sqlx::query_scalar(
         "SELECT DISTINCT p.code
          FROM user_roles ur
-         JOIN role_permissions rp ON ur.role_id = rp.role_id
+         JOIN roles r ON ur.role_id = r.id AND r.is_active = true
+         JOIN role_permissions rp ON r.id = rp.role_id
          JOIN permissions p ON rp.permission_id = p.id
          WHERE ur.user_id = $1 AND ur.ended_at IS NULL
          ORDER BY p.code",

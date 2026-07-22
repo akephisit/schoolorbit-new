@@ -191,10 +191,13 @@ async fn actor_active_organization_unit_ids(
 ) -> Result<Vec<Uuid>, AppError> {
     sqlx::query_scalar(
         r#"
-        SELECT organization_unit_id
-        FROM organization_members
-        WHERE user_id = $1
-          AND (ended_at IS NULL OR ended_at > CURRENT_DATE)
+        SELECT om.organization_unit_id
+        FROM organization_members om
+        JOIN organization_units active_unit
+          ON active_unit.id = om.organization_unit_id
+         AND active_unit.is_active = true
+        WHERE om.user_id = $1
+          AND (om.ended_at IS NULL OR om.ended_at > CURRENT_DATE)
         "#,
     )
     .bind(actor_user_id)
@@ -213,10 +216,13 @@ async fn actor_organization_tree_unit_ids(
     sqlx::query_scalar(
         r#"
         WITH RECURSIVE actor_roots AS (
-            SELECT organization_unit_id
-            FROM organization_members
-            WHERE user_id = $1
-              AND (ended_at IS NULL OR ended_at > CURRENT_DATE)
+            SELECT om.organization_unit_id
+            FROM organization_members om
+            JOIN organization_units active_unit
+              ON active_unit.id = om.organization_unit_id
+             AND active_unit.is_active = true
+            WHERE om.user_id = $1
+              AND (om.ended_at IS NULL OR om.ended_at > CURRENT_DATE)
         ),
         organization_tree AS (
             SELECT organization_unit_id
@@ -247,10 +253,13 @@ async fn user_resource_target(
 ) -> Result<ResourceAccessTarget, AppError> {
     let organization_unit_ids = sqlx::query_scalar(
         r#"
-        SELECT organization_unit_id
-        FROM organization_members
-        WHERE user_id = $1
-          AND (ended_at IS NULL OR ended_at > CURRENT_DATE)
+        SELECT om.organization_unit_id
+        FROM organization_members om
+        JOIN organization_units active_unit
+          ON active_unit.id = om.organization_unit_id
+         AND active_unit.is_active = true
+        WHERE om.user_id = $1
+          AND (om.ended_at IS NULL OR om.ended_at > CURRENT_DATE)
         "#,
     )
     .bind(target_user_id)
@@ -277,10 +286,13 @@ async fn actor_is_member_of_any_organization_unit(
         r#"
         SELECT EXISTS (
             SELECT 1
-            FROM organization_members
-            WHERE user_id = $1
-              AND organization_unit_id = ANY($2)
-              AND (ended_at IS NULL OR ended_at > CURRENT_DATE)
+            FROM organization_members om
+            JOIN organization_units active_unit
+              ON active_unit.id = om.organization_unit_id
+             AND active_unit.is_active = true
+            WHERE om.user_id = $1
+              AND om.organization_unit_id = ANY($2)
+              AND (om.ended_at IS NULL OR om.ended_at > CURRENT_DATE)
         )
         "#,
     )
@@ -305,10 +317,13 @@ async fn actor_organization_tree_contains_any(
     sqlx::query_scalar(
         r#"
         WITH RECURSIVE actor_roots AS (
-            SELECT organization_unit_id
-            FROM organization_members
-            WHERE user_id = $1
-              AND (ended_at IS NULL OR ended_at > CURRENT_DATE)
+            SELECT om.organization_unit_id
+            FROM organization_members om
+            JOIN organization_units active_unit
+              ON active_unit.id = om.organization_unit_id
+             AND active_unit.is_active = true
+            WHERE om.user_id = $1
+              AND (om.ended_at IS NULL OR om.ended_at > CURRENT_DATE)
         ),
         organization_tree AS (
             SELECT organization_unit_id

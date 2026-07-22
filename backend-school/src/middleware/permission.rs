@@ -123,7 +123,8 @@ async fn fetch_user_permissions(
             -- 1. Role-based permissions
             SELECT p.code
             FROM user_roles ur
-            JOIN role_permissions rp ON ur.role_id = rp.role_id
+            JOIN roles r ON ur.role_id = r.id AND r.is_active = true
+            JOIN role_permissions rp ON r.id = rp.role_id
             JOIN permissions p ON rp.permission_id = p.id
             WHERE ur.user_id = $1 AND ur.ended_at IS NULL
 
@@ -134,8 +135,10 @@ async fn fetch_user_permissions(
             --    opg.position_code = om.position_code → applies to that specific position only
             SELECT p.code
             FROM organization_members om
+            JOIN organization_units ou
+              ON om.organization_unit_id = ou.id AND ou.is_active = true
             JOIN organization_permission_grants opg
-              ON om.organization_unit_id = opg.organization_unit_id
+              ON ou.id = opg.organization_unit_id
             JOIN permissions p ON opg.permission_id = p.id
             WHERE om.user_id = $1
               AND (om.ended_at IS NULL OR om.ended_at > CURRENT_DATE)
@@ -146,10 +149,13 @@ async fn fetch_user_permissions(
             -- 3. Delegated permissions (from organization leader → this user)
             SELECT p.code
             FROM organization_permission_delegations opd
+            LEFT JOIN organization_units delegated_ou
+              ON delegated_ou.id = opd.organization_unit_id
             JOIN permissions p ON opd.permission_id = p.id
             WHERE opd.to_user_id = $1
               AND opd.revoked_at IS NULL
               AND (opd.expires_at IS NULL OR opd.expires_at > NOW())
+              AND (opd.organization_unit_id IS NULL OR delegated_ou.is_active = true)
         ) AS perms
         ORDER BY code
         "#,

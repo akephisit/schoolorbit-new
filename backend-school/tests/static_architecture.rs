@@ -3955,3 +3955,45 @@ fn role_and_organization_system_flags_are_migration_owned() {
         );
     }
 }
+
+#[test]
+fn inactive_authorization_sources_are_filtered() {
+    let permissions = read_source(manifest_dir().join("src/middleware/permission.rs"));
+    let normalized_permissions = permissions.split_whitespace().collect::<Vec<_>>().join(" ");
+    assert!(
+        normalized_permissions.contains("JOIN roles r ON ur.role_id = r.id AND r.is_active = true")
+    );
+    assert!(normalized_permissions.contains(
+        "JOIN organization_units ou ON om.organization_unit_id = ou.id AND ou.is_active = true"
+    ));
+    assert!(normalized_permissions.contains(
+        "LEFT JOIN organization_units delegated_ou ON delegated_ou.id = opd.organization_unit_id"
+    ));
+    assert!(normalized_permissions
+        .contains("opd.organization_unit_id IS NULL OR delegated_ou.is_active = true"));
+
+    let auth = read_source(manifest_dir().join("src/modules/auth/services.rs"));
+    let normalized_auth = auth.split_whitespace().collect::<Vec<_>>().join(" ");
+    assert!(normalized_auth.contains("AND r.is_active = true"));
+
+    let user_roles =
+        read_source(manifest_dir().join("src/modules/staff/services/user_role_service.rs"));
+    let normalized_user_roles = user_roles.split_whitespace().collect::<Vec<_>>().join(" ");
+    assert!(normalized_user_roles.contains(
+        "JOIN roles r ON ur.role_id = r.id AND r.is_active = true JOIN role_permissions"
+    ));
+
+    let resource_policy =
+        read_source(manifest_dir().join("src/policies/resource_access_policy.rs"));
+    assert!(
+        resource_policy
+            .matches("active_unit.is_active = true")
+            .count()
+            >= 4
+    );
+
+    let staff_service =
+        read_source(manifest_dir().join("src/modules/staff/services/staff_service.rs"));
+    assert!(staff_service.contains("active_actor_unit.is_active = true"));
+    assert!(staff_service.contains("active_root.is_active = true"));
+}

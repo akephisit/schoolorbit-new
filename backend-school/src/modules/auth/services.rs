@@ -99,6 +99,7 @@ pub async fn get_primary_role_name(
          WHERE ur.user_id = $1 
            AND ur.is_primary = true 
            AND ur.ended_at IS NULL
+           AND r.is_active = true
          LIMIT 1",
     )
     .bind(user_id)
