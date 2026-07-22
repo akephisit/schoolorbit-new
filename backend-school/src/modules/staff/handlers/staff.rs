@@ -122,6 +122,19 @@ pub async fn get_staff_profile(
     Ok((StatusCode::OK, Json(ApiResponse::ok(profile))).into_response())
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/staff",
+    operation_id = "createStaff",
+    tag = "staff",
+    request_body = CreateStaffRequest,
+    responses(
+        (status = 201, description = "Staff member created", body = ApiResponse<crate::api_response::UuidIdData>),
+        (status = 400, description = "Invalid staff data", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Staff creation permission denied", body = ApiErrorResponse)
+    )
+)]
 pub async fn create_staff(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -143,6 +156,21 @@ pub async fn create_staff(
         .into_response())
 }
 
+#[utoipa::path(
+    put,
+    path = "/api/staff/{id}",
+    operation_id = "updateStaff",
+    tag = "staff",
+    params(("id" = Uuid, Path, description = "Staff user ID")),
+    request_body = UpdateStaffRequest,
+    responses(
+        (status = 200, description = "Staff member updated", body = ApiResponse<crate::api_response::EmptyData>),
+        (status = 400, description = "Invalid staff data", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Staff update permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Staff member not found", body = ApiErrorResponse)
+    )
+)]
 pub async fn update_staff(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -168,6 +196,19 @@ pub async fn update_staff(
         .into_response())
 }
 
+#[utoipa::path(
+    delete,
+    path = "/api/staff/{id}",
+    operation_id = "deleteStaff",
+    tag = "staff",
+    params(("id" = Uuid, Path, description = "Staff user ID")),
+    responses(
+        (status = 200, description = "Staff member deactivated", body = ApiResponse<crate::api_response::EmptyData>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Staff deletion permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Staff member not found", body = ApiErrorResponse)
+    )
+)]
 pub async fn delete_staff(
     State(state): State<AppState>,
     headers: HeaderMap,

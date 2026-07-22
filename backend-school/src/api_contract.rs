@@ -34,10 +34,11 @@ use crate::modules::staff::handlers::organization_members::{
 use crate::modules::staff::handlers::staff::StaffListData;
 use crate::modules::staff::models::{
     AdvisorClassroomItem, AssignRoleRequest, CreateOrganizationUnitRequest, CreateRoleRequest,
+    CreateStaffInfoRequest, CreateStaffRequest, OrganizationAssignment,
     OrganizationPermissionGrantInput, OrganizationUnit, OrganizationUnitResponse, Permission, Role,
     RoleResponse, StaffInfoResponse, StaffListItem, StaffProfileResponse, TeachingCourseItem,
     UpdateOrganizationPermissionsRequest, UpdateOrganizationUnitRequest, UpdateRoleRequest,
-    UserRoleAssignmentResponse,
+    UpdateStaffRequest, UserRoleAssignmentResponse,
 };
 use crate::modules::staff::services::dashboard_service::StaffDashboardOverview;
 use crate::modules::staff::services::organization_delegation_service::DelegatablePermission;
@@ -80,6 +81,9 @@ use utoipa::OpenApi;
         crate::modules::staff::handlers::staff::get_staff_dashboard,
         crate::modules::staff::handlers::staff::get_staff_profile,
         crate::modules::staff::handlers::staff::get_public_staff_profile,
+        crate::modules::staff::handlers::staff::create_staff,
+        crate::modules::staff::handlers::staff::update_staff,
+        crate::modules::staff::handlers::staff::delete_staff,
         crate::modules::students::handlers::get_own_profile,
         crate::modules::parents::handlers::get_own_parent_profile,
         crate::modules::parents::handlers::get_child_profile,
@@ -210,6 +214,10 @@ use utoipa::OpenApi;
         AdvisorClassroomItem,
         StaffInfoResponse,
         StaffProfileResponse,
+        CreateStaffInfoRequest,
+        CreateStaffRequest,
+        OrganizationAssignment,
+        UpdateStaffRequest,
         PublicStaffRole,
         PublicStaffOrganizationUnit,
         PublicStaffProfile,
@@ -605,6 +613,73 @@ mod tests {
                 ["application/json"]["schema"]
                 .is_object()
         );
+    }
+
+    #[test]
+    fn documents_people_staff_mutation_contracts() {
+        let document = school_api_value().expect("document should serialize");
+        assert_operations(
+            &document,
+            &[
+                ("/api/staff", "post", "createStaff"),
+                ("/api/staff/{id}", "put", "updateStaff"),
+                ("/api/staff/{id}", "delete", "deleteStaff"),
+            ],
+        );
+
+        let create = &document["paths"]["/api/staff"]["post"];
+        assert_eq!(
+            create["requestBody"]["content"]["application/json"]["schema"]["$ref"],
+            "#/components/schemas/CreateStaffRequest"
+        );
+        assert_eq!(
+            create["responses"]["201"]["content"]["application/json"]["schema"]["$ref"],
+            "#/components/schemas/ApiResponse_UuidIdData"
+        );
+        for status in ["400", "401", "403"] {
+            assert_eq!(
+                create["responses"][status]["content"]["application/json"]["schema"]["$ref"],
+                "#/components/schemas/ApiErrorResponse"
+            );
+        }
+
+        let update = &document["paths"]["/api/staff/{id}"]["put"];
+        assert_eq!(
+            update["requestBody"]["content"]["application/json"]["schema"]["$ref"],
+            "#/components/schemas/UpdateStaffRequest"
+        );
+        assert_eq!(
+            update["responses"]["200"]["content"]["application/json"]["schema"]["$ref"],
+            "#/components/schemas/ApiResponse_EmptyData"
+        );
+        for status in ["400", "401", "403", "404"] {
+            assert_eq!(
+                update["responses"][status]["content"]["application/json"]["schema"]["$ref"],
+                "#/components/schemas/ApiErrorResponse"
+            );
+        }
+
+        let delete = &document["paths"]["/api/staff/{id}"]["delete"];
+        assert_eq!(
+            delete["responses"]["200"]["content"]["application/json"]["schema"]["$ref"],
+            "#/components/schemas/ApiResponse_EmptyData"
+        );
+        for status in ["401", "403", "404"] {
+            assert_eq!(
+                delete["responses"][status]["content"]["application/json"]["schema"]["$ref"],
+                "#/components/schemas/ApiErrorResponse"
+            );
+        }
+
+        let id_parameter = update["parameters"]
+            .as_array()
+            .expect("staff update path parameters")
+            .iter()
+            .find(|parameter| parameter["name"] == "id")
+            .expect("staff ID path parameter");
+        assert_eq!(id_parameter["in"], "path");
+        assert_eq!(id_parameter["required"], true);
+        assert_eq!(id_parameter["schema"]["format"], "uuid");
     }
 
     #[test]
@@ -1160,7 +1235,7 @@ mod tests {
                 }
             }
         }
-        assert_eq!(operation_ids.len(), 68);
+        assert_eq!(operation_ids.len(), 71);
 
         let schemas = &document["components"]["schemas"];
         let delegation = &schemas["DelegationItem"];

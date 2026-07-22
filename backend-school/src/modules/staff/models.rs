@@ -132,7 +132,7 @@ pub struct UpdateOrganizationUnitRequest {
     pub subject_group_id: Option<Uuid>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct CreateStaffInfoRequest {
     pub education_level: Option<String>,
     pub major: Option<String>,
@@ -274,7 +274,7 @@ pub struct StaffInfoResponse {
 // Create Staff Request
 // ===================================================================
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct CreateStaffRequest {
     // Basic User Info
     pub username: Option<String>,
@@ -305,7 +305,7 @@ pub struct CreateStaffRequest {
     pub organization_assignments: Option<Vec<OrganizationAssignment>>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct OrganizationAssignment {
     pub organization_unit_id: Uuid,
     pub position_code: String,
@@ -318,7 +318,7 @@ pub struct OrganizationAssignment {
 // Update Staff Request
 // ===================================================================
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct UpdateStaffRequest {
     pub title: Option<String>,
     pub first_name: Option<String>,
