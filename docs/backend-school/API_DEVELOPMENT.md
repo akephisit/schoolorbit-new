@@ -52,13 +52,14 @@ Frontend API modules import generated wire DTOs and may map them to separate
 domain/view models. Generation must not require database credentials or start
 the backend server.
 
-The current checkpoint contains 137 unique operations: 32 auth/authorization
+The current checkpoint contains 165 unique operations: 32 auth/authorization
 operations, 36 read-oriented JSON operations from the prior checkpoint, the
 completed Phase 1 people batch (12 mutations plus the dependent achievement
 list read), and the first Phase 2 academic structure batch (15 mutations plus
 four dependent reads), the Phase 2 curriculum core batch (15 mutations plus
-nine dependent reads), and the Phase 2 activity-template batch (10 mutations
-plus three dependent reads). The people operations are:
+nine dependent reads), the Phase 2 activity-template batch (10 mutations plus
+three dependent reads), and the Phase 2 activity workspace batch (21 mutations
+plus seven dependent reads). The people operations are:
 
 - staff: `createStaff`, `updateStaff`, `deleteStaff`
 - student/parent-link: `updateStudentProfile`, `createStudent`, `updateStudent`,
@@ -94,9 +95,31 @@ The activity-template operations are `listStudyPlanActivities`,
 `removeActivityCatalogDefaultInstructor`, and
 `updateActivityCatalogDefaultInstructorRole`.
 
+The activity workspace operations are `listActivitySlots`, `updateActivitySlot`,
+`deleteActivitySlot`, `listActivitySlotInstructors`, `addActivitySlotInstructor`,
+`addActivitySlotInstructorsBatch`, `removeActivitySlotInstructor`,
+`removeAllActivitySlotInstructors`, `deleteAllActivitySlotGroups`,
+`deleteActivitySlotTimetableEntries`, `listActivitySlotClassroomAssignments`,
+`upsertActivitySlotClassroomAssignments`,
+`deleteAllActivitySlotClassroomAssignments`,
+`deleteActivitySlotClassroomAssignment`, `listActivityGroups`,
+`createActivityGroup`, `updateActivityGroup`, `deleteActivityGroup`,
+`listActivityGroupMembers`, `addActivityGroupMembers`,
+`removeActivityGroupMember`, `updateActivityGroupMemberResult`,
+`listActivityGroupInstructors`, `addActivityGroupInstructor`,
+`removeActivityGroupInstructor`, `listMyActivityEnrollments`,
+`selfEnrollActivityGroup`, and `selfUnenrollActivityGroup`.
+
+Activity workspace handlers use school-wide permissions for slot administration,
+resource-aware policies for group ownership/read access, member-management
+permission for roster changes, and authenticated self-service for enrollment.
+Missing parents and mutation targets return not-found, bounded role/result values
+are validated, bulk counts report actual writes, and capacity-sensitive writes
+are transactional.
+
 This is the current Phase 4 mutation-contract rollout checkpoint. The next
-Phase 2 batch is the activity workspace: slots, groups, instructors, classroom
-assignments, and members. The OpenAPI document describes implemented backend
+Phase 2 batch is course planning, teaching assignments, and scheduling
+configuration. The OpenAPI document describes implemented backend
 routes only; a frontend helper or UI call is not evidence that a backend route
 exists. SSE, WebSocket, health/readiness, and file/binary endpoints remain
 explicitly outside this OpenAPI contract.
