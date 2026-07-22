@@ -43,9 +43,31 @@ export type SubjectInPlan = Schemas['SubjectInPlan'];
 export type GenerateCoursesFromPlanRequest = Schemas['GenerateCoursesFromPlanRequest'];
 export type GenerateCoursesFromPlanResponse = Schemas['GenerateCoursesData'];
 export type ActivitySlot = Schemas['ActivitySlot'];
+export type ActivitySlotFilter = Schemas['ActivitySlotFilter'];
+export type UpdateActivitySlotRequest = Schemas['UpdateActivitySlotRequest'];
+export type ActivityRegistrationType = Schemas['ActivityRegistrationType'];
+export type AddSlotInstructorRequest = Schemas['AddSlotInstructorRequest'];
+export type AddSlotInstructorsBatchRequest = Schemas['AddSlotInstructorsBatchRequest'];
 export type ActivityGroup = Schemas['ActivityGroup'];
+export type ActivityGroupFilter = Schemas['ActivityGroupFilter'];
+export type CreateActivityGroupRequest = Schemas['CreateActivityGroupRequest'];
+export type UpdateActivityGroupRequest = Schemas['UpdateActivityGroupRequest'];
+export type ActivityGroupMember = Schemas['ActivityGroupMember'];
+export type ActivityMemberResult = Schemas['ActivityMemberResult'];
+export type AddMembersRequest = Schemas['AddMembersRequest'];
+export type UpdateMemberResultRequest = Schemas['UpdateMemberResultRequest'];
+export type ActivityInstructor = Schemas['InstructorInfo'];
+export type ActivityGroupInstructorRole = Schemas['ActivityGroupInstructorRole'];
+export type InstructorRoleRequest = Schemas['InstructorRoleRequest'];
 export type SlotInstructor = Schemas['SlotInstructorInfo'];
 export type SlotClassroomAssignment = Schemas['SlotClassroomAssignment'];
+export type UpsertSlotClassroomAssignmentRequest = Schemas['UpsertSlotClassroomAssignmentRequest'];
+export type BatchUpsertSlotClassroomAssignmentsRequest =
+	Schemas['BatchUpsertSlotClassroomAssignmentsRequest'];
+export type ActivityInsertedCountData = Schemas['ActivityInsertedCountData'];
+export type ActivityAddedCountData = Schemas['ActivityAddedCountData'];
+export type ActivityDeletedCountData = Schemas['ActivityDeletedCountData'];
+export type ActivityProcessedCountData = Schemas['ActivityProcessedCountData'];
 export type StudyPlanVersionActivity = Schemas['StudyPlanVersionActivity'];
 export type CreatePlanActivityRequest = Schemas['CreatePlanActivityRequest'];
 export type UpdatePlanActivityRequest = Schemas['UpdatePlanActivityRequest'];
@@ -536,12 +558,7 @@ export function getActivityTypeLabel(activityType?: string | null): string {
 }
 
 export const listActivitySlots = async (
-	filter: {
-		semester_id?: string;
-		activity_type?: string;
-		teacher_reg_open?: boolean;
-		student_reg_open?: boolean;
-	} = {}
+	filter: ActivitySlotFilter = {}
 ): Promise<{ data: ActivitySlot[] }> => {
 	const params = new URLSearchParams();
 	if (filter.semester_id) params.set('semester_id', filter.semester_id);
@@ -555,17 +572,7 @@ export const listActivitySlots = async (
 
 // Slots must come from plan via generate_courses_from_plan — no standalone creation.
 // Only semester-specific fields can be updated (template fields live in activity_catalog).
-export const updateActivitySlot = async (
-	id: string,
-	data: {
-		registration_type?: string;
-		teacher_reg_open?: boolean;
-		student_reg_open?: boolean;
-		student_reg_start?: string;
-		student_reg_end?: string;
-		is_active?: boolean;
-	}
-) => {
+export const updateActivitySlot = async (id: string, data: UpdateActivitySlotRequest) => {
 	return await fetchApi<ActivitySlot>(`/api/academic/activity-slots/${id}`, {
 		method: 'PUT',
 		body: JSON.stringify(data)
@@ -582,18 +589,20 @@ export const listSlotInstructors = async (slotId: string): Promise<{ data: SlotI
 };
 
 export const addSlotInstructor = async (slotId: string, userId: string) => {
+	const data: AddSlotInstructorRequest = { user_id: userId };
 	return await fetchApi(`/api/academic/activity-slots/${slotId}/instructors`, {
 		method: 'POST',
-		body: JSON.stringify({ user_id: userId })
+		body: JSON.stringify(data)
 	});
 };
 
 export const addSlotInstructorsBatch = async (slotId: string, userIds: string[]) => {
-	return await fetchApi<{ added: number }>(
+	const data: AddSlotInstructorsBatchRequest = { user_ids: userIds };
+	return await fetchApi<ActivityAddedCountData>(
 		`/api/academic/activity-slots/${slotId}/instructors/batch`,
 		{
 			method: 'POST',
-			body: JSON.stringify({ user_ids: userIds })
+			body: JSON.stringify(data)
 		}
 	);
 };
@@ -605,7 +614,7 @@ export const removeSlotInstructor = async (slotId: string, userId: string) => {
 };
 
 export const removeAllSlotInstructors = async (slotId: string) => {
-	return await fetchApi<{ deleted_count: number }>(
+	return await fetchApi<ActivityDeletedCountData>(
 		`/api/academic/activity-slots/${slotId}/instructors/all`,
 		{
 			method: 'DELETE'
@@ -614,16 +623,13 @@ export const removeAllSlotInstructors = async (slotId: string) => {
 };
 
 export const deleteAllSlotGroups = async (slotId: string) => {
-	return await fetchApi<{ deleted_count: number }>(
-		`/api/academic/activity-slots/${slotId}/groups`,
-		{
-			method: 'DELETE'
-		}
-	);
+	return await fetchApi<ActivityDeletedCountData>(`/api/academic/activity-slots/${slotId}/groups`, {
+		method: 'DELETE'
+	});
 };
 
 export const deleteSlotTimetableEntries = async (slotId: string) => {
-	return await fetchApi<{ deleted_count: number }>(
+	return await fetchApi<ActivityDeletedCountData>(
 		`/api/academic/activity-slots/${slotId}/timetable-entries`,
 		{
 			method: 'DELETE'
@@ -645,13 +651,14 @@ export const listSlotClassroomAssignments = async (
 
 export const batchUpsertSlotClassroomAssignments = async (
 	slotId: string,
-	assignments: { classroom_id: string; instructor_id: string }[]
+	assignments: UpsertSlotClassroomAssignmentRequest[]
 ) => {
-	return await fetchApi<{ count: number }>(
+	const data: BatchUpsertSlotClassroomAssignmentsRequest = { assignments };
+	return await fetchApi<ActivityProcessedCountData>(
 		`/api/academic/activity-slots/${slotId}/classroom-assignments`,
 		{
 			method: 'POST',
-			body: JSON.stringify({ assignments })
+			body: JSON.stringify(data)
 		}
 	);
 };
@@ -664,7 +671,7 @@ export const deleteSlotClassroomAssignment = async (slotId: string, assignmentId
 };
 
 export const deleteAllSlotClassroomAssignments = async (slotId: string) => {
-	return await fetchApi<{ deleted_count: number }>(
+	return await fetchApi<ActivityDeletedCountData>(
 		`/api/academic/activity-slots/${slotId}/classroom-assignments/all`,
 		{
 			method: 'DELETE'
@@ -676,28 +683,8 @@ export const deleteAllSlotClassroomAssignments = async (slotId: string) => {
 // Activity Groups (กิจกรรมจริง ภายใต้ slot)
 // ==========================================
 
-export interface ActivityGroupMember {
-	id: string;
-	activity_group_id: string;
-	student_id: string;
-	result?: 'pass' | 'fail';
-	enrolled_at: string;
-	// joined
-	student_name?: string;
-	student_code?: string;
-	classroom_name?: string;
-	grade_level_name?: string;
-}
-
 export const listActivityGroups = async (
-	filter: {
-		slot_id?: string;
-		semester_id?: string;
-		activity_type?: string;
-		instructor_id?: string;
-		registration_open?: boolean;
-		search?: string;
-	} = {}
+	filter: ActivityGroupFilter = {}
 ): Promise<{ data: ActivityGroup[] }> => {
 	const params = new URLSearchParams();
 	if (filter.slot_id) params.set('slot_id', filter.slot_id);
@@ -710,21 +697,14 @@ export const listActivityGroups = async (
 	return await fetchApi<ActivityGroup[]>(`/api/academic/activities?${params}`);
 };
 
-export const createActivityGroup = async (data: {
-	slot_id: string;
-	name: string;
-	description?: string;
-	instructor_id?: string;
-	max_capacity?: number;
-	allowed_classroom_ids?: string[];
-}) => {
+export const createActivityGroup = async (data: CreateActivityGroupRequest) => {
 	return await fetchApi<ActivityGroup>('/api/academic/activities', {
 		method: 'POST',
 		body: JSON.stringify(data)
 	});
 };
 
-export const updateActivityGroup = async (id: string, data: Partial<ActivityGroup>) => {
+export const updateActivityGroup = async (id: string, data: UpdateActivityGroupRequest) => {
 	return await fetchApi<ActivityGroup>(`/api/academic/activities/${id}`, {
 		method: 'PUT',
 		body: JSON.stringify(data)
@@ -742,9 +722,10 @@ export const listActivityMembers = async (
 };
 
 export const addActivityMembers = async (groupId: string, studentIds: string[]) => {
-	return await fetchApi(`/api/academic/activities/${groupId}/members`, {
+	const data: AddMembersRequest = { student_ids: studentIds };
+	return await fetchApi<ActivityInsertedCountData>(`/api/academic/activities/${groupId}/members`, {
 		method: 'POST',
-		body: JSON.stringify({ student_ids: studentIds })
+		body: JSON.stringify(data)
 	});
 };
 
@@ -754,19 +735,14 @@ export const removeActivityMember = async (groupId: string, studentId: string) =
 	});
 };
 
-export const updateMemberResult = async (memberId: string, result: 'pass' | 'fail') => {
+export const updateMemberResult = async (memberId: string, result: string) => {
+	if (result !== 'pass' && result !== 'fail') throw new Error('Invalid activity member result');
+	const data: UpdateMemberResultRequest = { result };
 	return await fetchApi(`/api/academic/activities/members/${memberId}/result`, {
 		method: 'PUT',
-		body: JSON.stringify({ result })
+		body: JSON.stringify(data)
 	});
 };
-
-export interface ActivityInstructor {
-	id: string;
-	instructor_id: string;
-	role: 'primary' | 'assistant';
-	instructor_name?: string;
-}
 
 export const listActivityInstructors = async (
 	groupId: string
@@ -777,11 +753,12 @@ export const listActivityInstructors = async (
 export const addActivityInstructor = async (
 	groupId: string,
 	instructorId: string,
-	role: 'primary' | 'assistant'
+	role: ActivityGroupInstructorRole
 ) => {
+	const data: InstructorRoleRequest = { instructor_id: instructorId, role };
 	return await fetchApi(`/api/academic/activities/${groupId}/instructors`, {
 		method: 'POST',
-		body: JSON.stringify({ instructor_id: instructorId, role })
+		body: JSON.stringify(data)
 	});
 };
 
@@ -924,10 +901,7 @@ export const listPlanActivities = async (
 	);
 };
 
-export const addPlanActivity = async (
-	versionId: string,
-	data: CreatePlanActivityRequest
-) => {
+export const addPlanActivity = async (versionId: string, data: CreatePlanActivityRequest) => {
 	return await fetchApi<StudyPlanVersionActivity>(
 		`/api/academic/study-plan-versions/${versionId}/activities`,
 		{
@@ -937,10 +911,7 @@ export const addPlanActivity = async (
 	);
 };
 
-export const updatePlanActivity = async (
-	id: string,
-	data: UpdatePlanActivityRequest
-) => {
+export const updatePlanActivity = async (id: string, data: UpdatePlanActivityRequest) => {
 	return await fetchApi<StudyPlanVersionActivity>(`/api/academic/study-plan-activities/${id}`, {
 		method: 'PUT',
 		body: JSON.stringify(data)

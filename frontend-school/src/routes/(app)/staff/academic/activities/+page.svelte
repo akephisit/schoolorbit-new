@@ -17,6 +17,7 @@
 		getActivityTypeLabel,
 		type SlotInstructor,
 		type ActivitySlot,
+		type ActivityRegistrationType,
 		type ActivityGroup,
 		type AcademicStructureData,
 		type Classroom,
@@ -111,7 +112,7 @@
 	let slotName = $state('');
 	let slotDescription = $state('');
 	let slotActivityType = $state('club');
-	let slotRegistrationType = $state('assigned');
+	let slotRegistrationType = $state<ActivityRegistrationType>('assigned');
 	let slotPeriodsPerWeek = $state(1);
 	let slotSchedulingMode = $state<'synchronized' | 'independent'>('synchronized');
 	let slotAllowedGradeLevelIds = $state<string[]>([]);
