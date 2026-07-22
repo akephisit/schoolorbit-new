@@ -1,69 +1,27 @@
 import { apiClient, type ApiResponse } from '$lib/api/client';
+import type { components } from '$lib/api/generated/school-api';
 import type { JsonValue } from './types';
 
+type Schemas = components['schemas'];
 type LoadedApiResponse<T> = ApiResponse<T> & { success: true; data: T };
-type EmptyResponseData = Record<string, never>;
+type EmptyResponseData = Schemas['EmptyData'];
 
 // Types
-export interface AcademicYear {
-	id: string;
-	year: number;
-	name: string;
-	start_date: string;
-	end_date: string;
-	is_active: boolean;
-	school_days: string;
-	created_at: string;
-}
-
-export interface Semester {
-	id: string;
-	academic_year_id: string;
-	term: string;
-	name: string;
-	start_date: string;
-	end_date: string;
-	is_active: boolean;
-}
-
-export interface GradeLevel {
-	id: string;
-	level_type: 'kindergarten' | 'primary' | 'secondary'; // Type of education level
-	year: number; // Year within the level (1, 2, 3...)
-	code: string; // Computed: K1, P1, M1
-	name: string; // Computed: อนุบาลศึกษาปีที่ 1, ประถมศึกษาปีที่ 1, etc.
-	short_name: string; // Computed: อ.1, ป.1, ม.1
-	is_active: boolean;
-}
-
-export interface AcademicStructureData {
-	years: AcademicYear[];
-	semesters: Semester[];
-	levels: GradeLevel[];
-}
-
-export interface ClassroomAdvisor {
-	user_id: string;
-	role: 'primary' | 'secondary';
-	name: string;
-}
-
-export interface Classroom {
-	id: string;
-	code: string;
-	name: string;
-	academic_year_id: string;
-	grade_level_id: string;
-	room_number: string;
-	study_plan_version_id?: string; // Required - ห้องเรียนทุกห้องต้องใช้หลักสูตร
-	capacity?: number;
-	is_active: boolean;
-	grade_level_name?: string;
-	academic_year_label?: string;
-	student_count?: number;
-	advisors: ClassroomAdvisor[];
-	year?: number; // Optional year for grade levels
-}
+export type AcademicYear = Schemas['AcademicYear'];
+export type Semester = Schemas['Semester'];
+export type GradeLevel = Schemas['GradeLevelResponse'];
+export type AcademicStructureData = Schemas['AcademicStructure'];
+export type ClassroomAdvisor = Schemas['ClassroomAdvisor'];
+export type Classroom = Schemas['Classroom'];
+export type StudentEnrollment = Schemas['StudentEnrollment'];
+export type CreateAcademicYearRequest = Schemas['CreateAcademicYearRequest'];
+export type UpdateAcademicYearRequest = Schemas['UpdateAcademicYearRequest'];
+export type CreateSemesterRequest = Schemas['CreateSemesterRequest'];
+export type UpdateSemesterRequest = Schemas['UpdateSemesterRequest'];
+export type CreateGradeLevelRequest = Schemas['CreateGradeLevelRequest'];
+export type CreateClassroomRequest = Schemas['CreateClassroomRequest'];
+export type UpdateClassroomRequest = Schemas['UpdateClassroomRequest'];
+export type EnrollStudentRequest = Schemas['EnrollStudentRequest'];
 
 // Lookup Types
 export interface LookupItem {
@@ -107,20 +65,14 @@ export const getAcademicStructure = async (): Promise<{ data: AcademicStructureD
 	return await fetchApi<AcademicStructureData>('/api/academic/structure');
 };
 
-export const createAcademicYear = async (data: {
-	year: number;
-	name: string;
-	start_date: string;
-	end_date: string;
-	is_active: boolean;
-}) => {
+export const createAcademicYear = async (data: CreateAcademicYearRequest) => {
 	return await fetchApi<AcademicYear>('/api/academic/years', {
 		method: 'POST',
 		body: JSON.stringify(data)
 	});
 };
 
-export const updateAcademicYear = async (id: string, data: Partial<AcademicYear>) => {
+export const updateAcademicYear = async (id: string, data: UpdateAcademicYearRequest) => {
 	return await fetchApi<AcademicYear>(`/api/academic/years/${id}`, {
 		method: 'PUT',
 		body: JSON.stringify(data)
@@ -133,30 +85,14 @@ export const toggleActiveYear = async (id: string) => {
 	});
 };
 
-export const createSemester = async (data: {
-	academic_year_id: string;
-	term: string;
-	name: string;
-	start_date: string;
-	end_date: string;
-	is_active?: boolean;
-}) => {
+export const createSemester = async (data: CreateSemesterRequest) => {
 	return await fetchApi<Semester>('/api/academic/semesters', {
 		method: 'POST',
 		body: JSON.stringify(data)
 	});
 };
 
-export const updateSemester = async (
-	id: string,
-	data: {
-		term?: string;
-		name?: string;
-		start_date?: string;
-		end_date?: string;
-		is_active?: boolean;
-	}
-) => {
+export const updateSemester = async (id: string, data: UpdateSemesterRequest) => {
 	return await fetchApi<Semester>(`/api/academic/semesters/${id}`, {
 		method: 'PUT',
 		body: JSON.stringify(data)
@@ -169,11 +105,7 @@ export const deleteSemester = async (id: string) => {
 	});
 };
 
-export const createGradeLevel = async (data: {
-	level_type: 'kindergarten' | 'primary' | 'secondary';
-	year: number;
-	next_grade_level_id?: string;
-}) => {
+export const createGradeLevel = async (data: CreateGradeLevelRequest) => {
 	return await fetchApi<GradeLevel>('/api/academic/levels', {
 		method: 'POST',
 		body: JSON.stringify(data)
@@ -196,59 +128,25 @@ export const listClassrooms = async (filters?: {
 	return await fetchApi<Classroom[]>(`/api/academic/classrooms${queryString}`);
 };
 
-export const createClassroom = async (data: {
-	academic_year_id: string;
-	grade_level_id: string;
-	room_number: string;
-	capacity?: number;
-	study_plan_version_id?: string;
-	advisors?: { user_id: string; role: 'primary' | 'secondary' }[];
-}) => {
+export const createClassroom = async (data: CreateClassroomRequest) => {
 	return await fetchApi<Classroom>('/api/academic/classrooms', {
 		method: 'POST',
 		body: JSON.stringify(data)
 	});
 };
 
-export const updateClassroom = async (
-	id: string,
-	data: {
-		room_number?: string;
-		study_plan_version_id?: string;
-		capacity?: number;
-		is_active?: boolean;
-		/** ส่ง [] = ลบทั้งหมด; ไม่ส่ง = คงเดิม */
-		advisors?: { user_id: string; role: 'primary' | 'secondary' }[];
-	}
-) => {
+export const updateClassroom = async (id: string, data: UpdateClassroomRequest) => {
 	return await fetchApi<Classroom>(`/api/academic/classrooms/${id}`, {
 		method: 'PUT',
 		body: JSON.stringify(data)
 	});
 };
 
-export interface StudentEnrollment {
-	id: string;
-	student_id: string;
-	class_room_id: string;
-	enrollment_date: string;
-	status: string;
-	class_number?: number | null;
-	student_name?: string;
-	class_name?: string;
-	student_code?: string;
-}
-
 export const getEnrollments = async (classId: string): Promise<{ data: StudentEnrollment[] }> => {
 	return await fetchApi<StudentEnrollment[]>(`/api/academic/enrollments/class/${classId}`);
 };
 
-export const enrollStudents = async (data: {
-	student_ids: string[];
-	class_room_id: string;
-	enrollment_date?: string;
-	numbering_method?: 'append' | 'student_code' | 'name' | 'gender_name';
-}) => {
+export const enrollStudents = async (data: EnrollStudentRequest) => {
 	return await fetchApi('/api/academic/enrollments', {
 		method: 'POST',
 		body: JSON.stringify(data)

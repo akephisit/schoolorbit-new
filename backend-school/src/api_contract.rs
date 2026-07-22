@@ -5,10 +5,11 @@ use crate::modules::academic::models::exam_schedule::{
 };
 use crate::modules::academic::models::timetable::TimetableEntry;
 use crate::modules::academic::models::{
-    AcademicYear, Classroom, ClassroomAdvisor, ClassroomAdvisorInput, CreateAcademicYearRequest,
-    CreateClassroomRequest, CreateGradeLevelRequest, CreateSemesterRequest, EnrollStudentRequest,
-    GradeLevelResponse, Semester, StudentEnrollment, UpdateAcademicYearRequest,
-    UpdateClassroomRequest, UpdateSemesterRequest, UpdateYearLevelsRequest,
+    AcademicYear, Classroom, ClassroomAdvisor, ClassroomAdvisorInput, ClassroomAdvisorRole,
+    CreateAcademicYearRequest, CreateClassroomRequest, CreateGradeLevelRequest,
+    CreateSemesterRequest, EnrollStudentRequest, GradeLevelResponse, GradeLevelType, Semester,
+    StudentEnrollment, UpdateAcademicYearRequest, UpdateClassroomRequest, UpdateSemesterRequest,
+    UpdateYearLevelsRequest,
 };
 use crate::modules::academic::services::academic_structure_service::AcademicStructure;
 use crate::modules::achievement::models::{
@@ -293,6 +294,8 @@ use utoipa::OpenApi;
         Classroom,
         ClassroomAdvisor,
         ClassroomAdvisorInput,
+        ClassroomAdvisorRole,
+        GradeLevelType,
         CreateClassroomRequest,
         UpdateClassroomRequest,
         StudentEnrollment,
@@ -1021,6 +1024,14 @@ mod tests {
         assert_eq!(
             schemas["Classroom"]["properties"]["advisors"]["items"]["$ref"],
             "#/components/schemas/ClassroomAdvisor"
+        );
+        assert_eq!(
+            schemas["GradeLevelResponse"]["properties"]["level_type"]["$ref"],
+            "#/components/schemas/GradeLevelType"
+        );
+        assert_eq!(
+            schemas["ClassroomAdvisor"]["properties"]["role"]["$ref"],
+            "#/components/schemas/ClassroomAdvisorRole"
         );
         assert_eq!(
             schemas["StudentEnrollment"]["properties"]["enrollment_date"]["format"],

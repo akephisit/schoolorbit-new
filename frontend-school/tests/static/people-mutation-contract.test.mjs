@@ -42,7 +42,11 @@ test('generated people mutation contract owns all migrated operations and DTOs',
 	const operationIds = Object.values(contract.paths).flatMap((pathItem) =>
 		Object.values(pathItem).flatMap((operation) => operation.operationId ?? [])
 	);
-	assert.equal(new Set(operationIds).size, 81);
+	assert.equal(
+		new Set(operationIds).size,
+		operationIds.length,
+		'people operations must remain part of a globally unique operation inventory'
+	);
 
 	for (const [source, names] of [
 		[staffApi, ['CreateStaffRequest', 'UpdateStaffRequest']],

@@ -96,6 +96,14 @@ pub struct UpdateSemesterRequest {
 // Grade Level Models
 // ==========================================
 
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum GradeLevelType {
+    Kindergarten,
+    Primary,
+    Secondary,
+}
+
 #[derive(Debug, Serialize, Deserialize, FromRow)]
 pub struct GradeLevel {
     pub id: Uuid,
@@ -144,6 +152,7 @@ impl GradeLevel {
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct GradeLevelResponse {
     pub id: Uuid,
+    #[schema(value_type = GradeLevelType)]
     pub level_type: String,
     pub year: i32,
     pub code: String,
@@ -170,8 +179,9 @@ impl From<GradeLevel> for GradeLevelResponse {
 
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct CreateGradeLevelRequest {
+    #[schema(value_type = GradeLevelType)]
     pub level_type: String, // "kindergarten", "primary", "secondary"
-    pub year: i32,          // 1, 2, 3...
+    pub year: i32, // 1, 2, 3...
     pub next_grade_level_id: Option<Uuid>,
     pub is_active: Option<bool>,
 }
@@ -179,6 +189,13 @@ pub struct CreateGradeLevelRequest {
 // ==========================================
 // Classroom Models
 // ==========================================
+
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum ClassroomAdvisorRole {
+    Primary,
+    Secondary,
+}
 
 #[derive(Debug, Serialize, Deserialize, FromRow, ToSchema)]
 pub struct Classroom {
@@ -213,6 +230,7 @@ pub struct ClassroomQuery {
 #[derive(Debug, Serialize, Deserialize, Clone, Default, ToSchema)]
 pub struct ClassroomAdvisor {
     pub user_id: Uuid,
+    #[schema(value_type = ClassroomAdvisorRole)]
     pub role: String,
     pub name: String,
 }
@@ -220,6 +238,7 @@ pub struct ClassroomAdvisor {
 #[derive(Debug, Deserialize, Clone, ToSchema)]
 pub struct ClassroomAdvisorInput {
     pub user_id: Uuid,
+    #[schema(value_type = ClassroomAdvisorRole)]
     pub role: String, // 'primary' | 'secondary'
 }
 

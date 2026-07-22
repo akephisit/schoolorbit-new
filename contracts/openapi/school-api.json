@@ -1,6 +1,84 @@
 {
   "components": {
     "schemas": {
+      "AcademicStructure": {
+        "properties": {
+          "levels": {
+            "items": {
+              "$ref": "#/components/schemas/GradeLevelResponse"
+            },
+            "type": "array"
+          },
+          "semesters": {
+            "items": {
+              "$ref": "#/components/schemas/Semester"
+            },
+            "type": "array"
+          },
+          "years": {
+            "items": {
+              "$ref": "#/components/schemas/AcademicYear"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "years",
+          "semesters",
+          "levels"
+        ],
+        "type": "object"
+      },
+      "AcademicYear": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "end_date": {
+            "format": "date",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "is_active": {
+            "type": "boolean"
+          },
+          "metadata": {},
+          "name": {
+            "type": "string"
+          },
+          "school_days": {
+            "type": "string"
+          },
+          "start_date": {
+            "format": "date",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "year": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "year",
+          "name",
+          "start_date",
+          "end_date",
+          "is_active",
+          "school_days",
+          "created_at",
+          "updated_at"
+        ],
+        "type": "object"
+      },
       "AcademicYearLookupItem": {
         "description": "Academic year lookup item",
         "properties": {
@@ -218,6 +296,114 @@
         ],
         "type": "object"
       },
+      "ApiResponse_AcademicStructure": {
+        "properties": {
+          "data": {
+            "properties": {
+              "levels": {
+                "items": {
+                  "$ref": "#/components/schemas/GradeLevelResponse"
+                },
+                "type": "array"
+              },
+              "semesters": {
+                "items": {
+                  "$ref": "#/components/schemas/Semester"
+                },
+                "type": "array"
+              },
+              "years": {
+                "items": {
+                  "$ref": "#/components/schemas/AcademicYear"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "years",
+              "semesters",
+              "levels"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_AcademicYear": {
+        "properties": {
+          "data": {
+            "properties": {
+              "created_at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "end_date": {
+                "format": "date",
+                "type": "string"
+              },
+              "id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "is_active": {
+                "type": "boolean"
+              },
+              "metadata": {},
+              "name": {
+                "type": "string"
+              },
+              "school_days": {
+                "type": "string"
+              },
+              "start_date": {
+                "format": "date",
+                "type": "string"
+              },
+              "updated_at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "year": {
+                "format": "int32",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "id",
+              "year",
+              "name",
+              "start_date",
+              "end_date",
+              "is_active",
+              "school_days",
+              "created_at",
+              "updated_at"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
       "ApiResponse_Achievement": {
         "properties": {
           "data": {
@@ -312,6 +498,99 @@
         ],
         "type": "object"
       },
+      "ApiResponse_Classroom": {
+        "properties": {
+          "data": {
+            "properties": {
+              "academic_year_id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "academic_year_label": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "advisors": {
+                "description": "Advisors aggregated from classroom_advisors junction (1 primary + N secondary)",
+                "items": {
+                  "$ref": "#/components/schemas/ClassroomAdvisor"
+                },
+                "type": "array"
+              },
+              "capacity": {
+                "format": "int32",
+                "type": "integer"
+              },
+              "code": {
+                "type": "string"
+              },
+              "grade_level_id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "grade_level_name": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "is_active": {
+                "type": "boolean"
+              },
+              "name": {
+                "type": "string"
+              },
+              "room_number": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "student_count": {
+                "format": "int64",
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "study_plan_version_id": {
+                "format": "uuid",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "code",
+              "name",
+              "academic_year_id",
+              "grade_level_id",
+              "capacity",
+              "is_active"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
       "ApiResponse_CreateStudentResponse": {
         "properties": {
           "data": {
@@ -373,6 +652,66 @@
       "ApiResponse_EmptyData": {
         "properties": {
           "data": {
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_GradeLevelResponse": {
+        "properties": {
+          "data": {
+            "description": "Serializable version with computed fields for API responses",
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "is_active": {
+                "type": "boolean"
+              },
+              "level_type": {
+                "$ref": "#/components/schemas/GradeLevelType"
+              },
+              "name": {
+                "type": "string"
+              },
+              "next_grade_level_id": {
+                "format": "uuid",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "short_name": {
+                "type": "string"
+              },
+              "year": {
+                "format": "int32",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "id",
+              "level_type",
+              "year",
+              "code",
+              "name",
+              "short_name",
+              "is_active"
+            ],
             "type": "object"
           },
           "message": {
@@ -1173,6 +1512,61 @@
             "required": [
               "logoUrl",
               "logoFileId"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_Semester": {
+        "properties": {
+          "data": {
+            "properties": {
+              "academic_year_id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "end_date": {
+                "format": "date",
+                "type": "string"
+              },
+              "id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "is_active": {
+                "type": "boolean"
+              },
+              "metadata": {},
+              "name": {
+                "type": "string"
+              },
+              "start_date": {
+                "format": "date",
+                "type": "string"
+              },
+              "term": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "academic_year_id",
+              "term",
+              "name",
+              "start_date",
+              "end_date",
+              "is_active"
             ],
             "type": "object"
           },
@@ -2280,6 +2674,102 @@
                 "tags",
                 "createdAt",
                 "updatedAt"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_Vec_Classroom": {
+        "properties": {
+          "data": {
+            "items": {
+              "properties": {
+                "academic_year_id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "academic_year_label": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "advisors": {
+                  "description": "Advisors aggregated from classroom_advisors junction (1 primary + N secondary)",
+                  "items": {
+                    "$ref": "#/components/schemas/ClassroomAdvisor"
+                  },
+                  "type": "array"
+                },
+                "capacity": {
+                  "format": "int32",
+                  "type": "integer"
+                },
+                "code": {
+                  "type": "string"
+                },
+                "grade_level_id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "grade_level_name": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "is_active": {
+                  "type": "boolean"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "room_number": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "student_count": {
+                  "format": "int64",
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "study_plan_version_id": {
+                  "format": "uuid",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "code",
+                "name",
+                "academic_year_id",
+                "grade_level_id",
+                "capacity",
+                "is_active"
               ],
               "type": "object"
             },
@@ -3418,6 +3908,80 @@
         ],
         "type": "object"
       },
+      "ApiResponse_Vec_StudentEnrollment": {
+        "properties": {
+          "data": {
+            "items": {
+              "properties": {
+                "class_name": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "class_number": {
+                  "format": "int32",
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "class_room_id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "enrollment_date": {
+                  "format": "date",
+                  "type": "string"
+                },
+                "id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "status": {
+                  "type": "string"
+                },
+                "student_code": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "student_id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "student_name": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "student_id",
+                "class_room_id",
+                "enrollment_date",
+                "status"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
       "ApiResponse_Vec_StudentLookupItem": {
         "properties": {
           "data": {
@@ -3799,6 +4363,17 @@
         },
         "required": [
           "role_id"
+        ],
+        "type": "object"
+      },
+      "AutoAssignClassNumbersRequest": {
+        "properties": {
+          "sort_by": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "sort_by"
         ],
         "type": "object"
       },
@@ -4345,6 +4920,127 @@
         ],
         "type": "object"
       },
+      "Classroom": {
+        "properties": {
+          "academic_year_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "academic_year_label": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "advisors": {
+            "description": "Advisors aggregated from classroom_advisors junction (1 primary + N secondary)",
+            "items": {
+              "$ref": "#/components/schemas/ClassroomAdvisor"
+            },
+            "type": "array"
+          },
+          "capacity": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "code": {
+            "type": "string"
+          },
+          "grade_level_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "grade_level_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "is_active": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "room_number": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "student_count": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "study_plan_version_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "name",
+          "academic_year_id",
+          "grade_level_id",
+          "capacity",
+          "is_active"
+        ],
+        "type": "object"
+      },
+      "ClassroomAdvisor": {
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "role": {
+            "$ref": "#/components/schemas/ClassroomAdvisorRole"
+          },
+          "user_id": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_id",
+          "role",
+          "name"
+        ],
+        "type": "object"
+      },
+      "ClassroomAdvisorInput": {
+        "properties": {
+          "role": {
+            "$ref": "#/components/schemas/ClassroomAdvisorRole"
+          },
+          "user_id": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_id",
+          "role"
+        ],
+        "type": "object"
+      },
+      "ClassroomAdvisorRole": {
+        "enum": [
+          "primary",
+          "secondary"
+        ],
+        "type": "string"
+      },
       "ClassroomLookupItem": {
         "description": "Classroom lookup item",
         "properties": {
@@ -4366,6 +5062,44 @@
         "required": [
           "id",
           "name"
+        ],
+        "type": "object"
+      },
+      "CreateAcademicYearRequest": {
+        "properties": {
+          "end_date": {
+            "format": "date",
+            "type": "string"
+          },
+          "is_active": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "school_days": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "start_date": {
+            "format": "date",
+            "type": "string"
+          },
+          "year": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "year",
+          "name",
+          "start_date",
+          "end_date"
         ],
         "type": "object"
       },
@@ -4404,6 +5138,48 @@
         ],
         "type": "object"
       },
+      "CreateClassroomRequest": {
+        "properties": {
+          "academic_year_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "advisors": {
+            "items": {
+              "$ref": "#/components/schemas/ClassroomAdvisorInput"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "capacity": {
+            "format": "int32",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "grade_level_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "room_number": {
+            "type": "string"
+          },
+          "study_plan_version_id": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "academic_year_id",
+          "grade_level_id",
+          "room_number",
+          "study_plan_version_id"
+        ],
+        "type": "object"
+      },
       "CreateDelegationRequest": {
         "properties": {
           "expires_at": {
@@ -4431,6 +5207,35 @@
         "required": [
           "to_user_id",
           "permission_id"
+        ],
+        "type": "object"
+      },
+      "CreateGradeLevelRequest": {
+        "properties": {
+          "is_active": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "level_type": {
+            "$ref": "#/components/schemas/GradeLevelType"
+          },
+          "next_grade_level_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "year": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "level_type",
+          "year"
         ],
         "type": "object"
       },
@@ -4590,6 +5395,42 @@
           "code",
           "name",
           "user_type"
+        ],
+        "type": "object"
+      },
+      "CreateSemesterRequest": {
+        "properties": {
+          "academic_year_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "end_date": {
+            "format": "date",
+            "type": "string"
+          },
+          "is_active": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "start_date": {
+            "format": "date",
+            "type": "string"
+          },
+          "term": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "academic_year_id",
+          "term",
+          "name",
+          "start_date",
+          "end_date"
         ],
         "type": "object"
       },
@@ -4951,6 +5792,39 @@
       "EmptyData": {
         "type": "object"
       },
+      "EnrollStudentRequest": {
+        "properties": {
+          "class_room_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "enrollment_date": {
+            "format": "date",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "numbering_method": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "student_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "student_ids",
+          "class_room_id"
+        ],
+        "type": "object"
+      },
       "FeatureListResponse": {
         "properties": {
           "data": {
@@ -5073,6 +5947,59 @@
           "level_order"
         ],
         "type": "object"
+      },
+      "GradeLevelResponse": {
+        "description": "Serializable version with computed fields for API responses",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "is_active": {
+            "type": "boolean"
+          },
+          "level_type": {
+            "$ref": "#/components/schemas/GradeLevelType"
+          },
+          "name": {
+            "type": "string"
+          },
+          "next_grade_level_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "short_name": {
+            "type": "string"
+          },
+          "year": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "level_type",
+          "year",
+          "code",
+          "name",
+          "short_name",
+          "is_active"
+        ],
+        "type": "object"
+      },
+      "GradeLevelType": {
+        "enum": [
+          "kindergarten",
+          "primary",
+          "secondary"
+        ],
+        "type": "string"
       },
       "ListMembersQuery": {
         "properties": {
@@ -6521,6 +7448,46 @@
         ],
         "type": "object"
       },
+      "Semester": {
+        "properties": {
+          "academic_year_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "end_date": {
+            "format": "date",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "is_active": {
+            "type": "boolean"
+          },
+          "metadata": {},
+          "name": {
+            "type": "string"
+          },
+          "start_date": {
+            "format": "date",
+            "type": "string"
+          },
+          "term": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "academic_year_id",
+          "term",
+          "name",
+          "start_date",
+          "end_date",
+          "is_active"
+        ],
+        "type": "object"
+      },
       "StaffDashboardOverview": {
         "properties": {
           "activeClassrooms": {
@@ -6978,6 +7945,62 @@
         ],
         "type": "object"
       },
+      "StudentEnrollment": {
+        "properties": {
+          "class_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "class_number": {
+            "format": "int32",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "class_room_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "enrollment_date": {
+            "format": "date",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "student_code": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "student_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "student_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "student_id",
+          "class_room_id",
+          "enrollment_date",
+          "status"
+        ],
+        "type": "object"
+      },
       "StudentLookupItem": {
         "description": "Student lookup item with student_id and class_room for enrollment",
         "properties": {
@@ -7304,6 +8327,50 @@
         ],
         "type": "object"
       },
+      "UpdateAcademicYearRequest": {
+        "properties": {
+          "end_date": {
+            "format": "date",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "is_active": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "school_days": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "start_date": {
+            "format": "date",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "year": {
+            "format": "int32",
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
       "UpdateAchievementRequest": {
         "properties": {
           "achievement_date": {
@@ -7328,6 +8395,59 @@
           "title": {
             "type": [
               "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "UpdateClassroomRequest": {
+        "properties": {
+          "advisors": {
+            "description": "If provided, replace advisor list entirely (atomic DELETE + INSERT)",
+            "items": {
+              "$ref": "#/components/schemas/ClassroomAdvisorInput"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "capacity": {
+            "format": "int32",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "is_active": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "room_number": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "study_plan_version_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "UpdateEnrollmentNumberRequest": {
+        "properties": {
+          "class_number": {
+            "format": "int32",
+            "type": [
+              "integer",
               "null"
             ]
           }
@@ -7596,6 +8716,43 @@
         },
         "type": "object"
       },
+      "UpdateSemesterRequest": {
+        "properties": {
+          "end_date": {
+            "format": "date",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "is_active": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "start_date": {
+            "format": "date",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "term": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
       "UpdateStaffRequest": {
         "properties": {
           "address": {
@@ -7763,6 +8920,21 @@
             ]
           }
         },
+        "type": "object"
+      },
+      "UpdateYearLevelsRequest": {
+        "properties": {
+          "grade_level_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "grade_level_ids"
+        ],
         "type": "object"
       },
       "UserMenuData": {
@@ -7946,6 +9118,1546 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/academic/classrooms": {
+      "get": {
+        "operationId": "listClassrooms",
+        "parameters": [
+          {
+            "description": "Filter by academic year",
+            "in": "query",
+            "name": "year_id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_Classroom"
+                }
+              }
+            },
+            "description": "Classrooms"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Classroom read permission denied"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Classrooms could not be loaded"
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      },
+      "post": {
+        "operationId": "createClassroom",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateClassroomRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Classroom"
+                }
+              }
+            },
+            "description": "Classroom created"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid classroom"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Classroom creation permission denied"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Classroom already exists"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Classroom could not be created"
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
+    "/api/academic/classrooms/{id}": {
+      "put": {
+        "operationId": "updateClassroom",
+        "parameters": [
+          {
+            "description": "Classroom ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateClassroomRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Classroom"
+                }
+              }
+            },
+            "description": "Classroom updated"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid classroom"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Classroom update permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Classroom not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Classroom conflicts with an existing classroom"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Classroom could not be updated"
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
+    "/api/academic/enrollments": {
+      "post": {
+        "operationId": "enrollStudents",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EnrollStudentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_EmptyData"
+                }
+              }
+            },
+            "description": "Students enrolled"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid enrollment"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Enrollment update permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Classroom not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Enrollment conflicts with existing data"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Students could not be enrolled"
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
+    "/api/academic/enrollments/{id}": {
+      "delete": {
+        "operationId": "removeEnrollment",
+        "parameters": [
+          {
+            "description": "Enrollment ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_EmptyData"
+                }
+              }
+            },
+            "description": "Enrollment removed"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Enrollment update permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Enrollment not found"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Enrollment could not be removed"
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
+    "/api/academic/enrollments/{id}/number": {
+      "put": {
+        "operationId": "updateEnrollmentNumber",
+        "parameters": [
+          {
+            "description": "Enrollment ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateEnrollmentNumberRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_EmptyData"
+                }
+              }
+            },
+            "description": "Enrollment number updated"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid enrollment number"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Enrollment update permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Enrollment not found"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Enrollment number could not be updated"
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
+    "/api/academic/enrollments/class/{id}": {
+      "get": {
+        "operationId": "listClassEnrollments",
+        "parameters": [
+          {
+            "description": "Classroom ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_StudentEnrollment"
+                }
+              }
+            },
+            "description": "Class enrollments"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Enrollment read permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Classroom not found"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Class enrollments could not be loaded"
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
+    "/api/academic/enrollments/class/{id}/auto-number": {
+      "post": {
+        "operationId": "autoAssignClassNumbers",
+        "parameters": [
+          {
+            "description": "Classroom ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AutoAssignClassNumbersRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_EmptyData"
+                }
+              }
+            },
+            "description": "Class numbers assigned"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid numbering method"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Enrollment update permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Classroom not found"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Class numbers could not be assigned"
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
+    "/api/academic/levels": {
+      "post": {
+        "operationId": "createGradeLevel",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateGradeLevelRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_GradeLevelResponse"
+                }
+              }
+            },
+            "description": "Grade level created"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid or duplicate grade level"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Academic structure management permission denied"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Grade level could not be created"
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
+    "/api/academic/levels/{id}": {
+      "delete": {
+        "operationId": "deleteGradeLevel",
+        "parameters": [
+          {
+            "description": "Grade level ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_EmptyData"
+                }
+              }
+            },
+            "description": "Grade level deleted"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Grade level is in use"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Academic structure management permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Grade level not found"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Grade level could not be deleted"
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
+    "/api/academic/semesters": {
+      "post": {
+        "operationId": "createSemester",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateSemesterRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Semester"
+                }
+              }
+            },
+            "description": "Semester created"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid semester"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Academic structure management permission denied"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Semester already exists"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Semester could not be created"
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
+    "/api/academic/semesters/{id}": {
+      "delete": {
+        "operationId": "deleteSemester",
+        "parameters": [
+          {
+            "description": "Semester ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_EmptyData"
+                }
+              }
+            },
+            "description": "Semester deleted"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Semester is in use"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Academic structure management permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Semester not found"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Semester could not be deleted"
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      },
+      "put": {
+        "operationId": "updateSemester",
+        "parameters": [
+          {
+            "description": "Semester ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateSemesterRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Semester"
+                }
+              }
+            },
+            "description": "Semester updated"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid semester"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Academic structure management permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Semester not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Semester conflicts with an existing semester"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Semester could not be updated"
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
+    "/api/academic/structure": {
+      "get": {
+        "operationId": "getAcademicStructure",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_AcademicStructure"
+                }
+              }
+            },
+            "description": "Academic structure"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Academic structure read permission denied"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Academic structure could not be loaded"
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
+    "/api/academic/years": {
+      "post": {
+        "operationId": "createAcademicYear",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateAcademicYearRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_AcademicYear"
+                }
+              }
+            },
+            "description": "Academic year created"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid academic year"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Academic structure management permission denied"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Academic year already exists"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Academic year could not be created"
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
+    "/api/academic/years/{id}": {
+      "put": {
+        "operationId": "updateAcademicYear",
+        "parameters": [
+          {
+            "description": "Academic year ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateAcademicYearRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_AcademicYear"
+                }
+              }
+            },
+            "description": "Academic year updated"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid academic year"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Academic structure management permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Academic year not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Academic year conflicts with an existing year"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Academic year could not be updated"
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
+    "/api/academic/years/{id}/active": {
+      "put": {
+        "operationId": "setActiveAcademicYear",
+        "parameters": [
+          {
+            "description": "Academic year ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_EmptyData"
+                }
+              }
+            },
+            "description": "Active academic year updated"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Academic structure management permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Academic year not found"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Active academic year could not be updated"
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
+    "/api/academic/years/{id}/levels": {
+      "get": {
+        "operationId": "getAcademicYearLevels",
+        "parameters": [
+          {
+            "description": "Academic year ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_String"
+                }
+              }
+            },
+            "description": "Grade level IDs enabled for the academic year"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Academic structure read permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Academic year not found"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Academic year levels could not be loaded"
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      },
+      "put": {
+        "operationId": "updateAcademicYearLevels",
+        "parameters": [
+          {
+            "description": "Academic year ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateYearLevelsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_EmptyData"
+                }
+              }
+            },
+            "description": "Academic year levels updated"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid grade level selection"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Academic structure management permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Academic year not found"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Academic year levels could not be updated"
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
     "/api/achievements": {
       "get": {
         "operationId": "listAchievements",
@@ -13238,7 +15950,7 @@
       "name": "parent"
     },
     {
-      "description": "Academic self-service reads",
+      "description": "Academic structure administration and self-service reads",
       "name": "academic"
     },
     {
