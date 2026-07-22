@@ -5,10 +5,6 @@ pub mod course_planning_service;
 pub mod daily_teaching_service;
 pub mod exam_schedule_service;
 pub mod period_service;
-pub mod scheduler;
-pub mod scheduler_data;
-pub mod scheduling_config_service;
-pub mod scheduling_service;
 pub mod study_plan_service;
 pub mod subject_service;
 pub mod timetable_realtime_service;
@@ -29,9 +25,3 @@ mod activity_service_tests;
 
 #[cfg(test)]
 mod course_planning_service_tests;
-
-#[cfg(test)]
-mod scheduling_config_service_tests;
-
-// Re-export main types for convenience
-pub use scheduler::{types::SchedulingAlgorithm, SchedulerBuilder};

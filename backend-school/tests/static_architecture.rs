@@ -4387,55 +4387,54 @@ fn inactive_authorization_sources_are_filtered() {
 }
 
 #[test]
-fn scheduling_configuration_routes_permissions_and_boundaries_are_explicit() {
+fn auto_scheduler_backend_and_schema_are_removed_without_deleting_timetable_entries() {
     let router = read_source(manifest_dir().join("src/modules/academic.rs"));
-    for expected in [
-        "get(handlers::scheduling_config::list_instructor_constraints)",
-        "get(handlers::scheduling_config::list_subject_constraints)",
-        "get(handlers::scheduling_config::get_scheduler_settings)",
-        "get(handlers::scheduling_config::list_classroom_course_constraints)",
-        "get(handlers::scheduling_config::list_cc_preferred_rooms)",
-        "get(handlers::scheduling_config::list_all_rooms)",
-        "put(handlers::scheduling_config::save_scheduling_configuration)",
-    ] {
-        assert!(router.contains(expected), "missing route: {expected}");
-    }
     for removed in [
-        "reorder_instructor_priority",
-        "update_instructor_constraints",
-        "update_subject_constraints",
-        "update_scheduler_settings",
-        "update_classroom_course_constraints",
-        "set_cc_preferred_rooms",
+        "/scheduling/auto-schedule",
+        "/scheduling/jobs",
+        "/instructor-preferences",
+        "/instructor-rooms",
+        "/timetable/locked-slots",
+        "/scheduling/instructors",
+        "/scheduling/subjects",
+        "/scheduling/settings",
+        "/scheduling/classroom-courses",
+        "/scheduling/rooms",
+        "/scheduling/configuration",
     ] {
         assert!(
             !router.contains(removed),
-            "removed scheduling mutation must not remain routed: {removed}"
+            "removed auto-scheduler route must not remain: {removed}"
         );
     }
 
-    let handlers = strip_comments(&read_source(
-        manifest_dir().join("src/modules/academic/handlers/scheduling_config.rs"),
-    ));
-    assert!(handlers.contains(
-        "payload_result: Result<Json<SaveSchedulingConfigurationRequest>, JsonRejection>"
-    ));
-    assert_eq!(
-        handlers
-            .matches("require_permission(codes::ACADEMIC_COURSE_PLAN_READ_ALL)")
-            .count(),
-        6
-    );
-    assert_eq!(
-        handlers
-            .matches("require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL)")
-            .count(),
-        1
-    );
-    for forbidden_db_call in ["sqlx::query", ".execute(", ".fetch_"] {
+    for removed in [
+        "src/modules/academic/handlers/scheduling.rs",
+        "src/modules/academic/handlers/scheduling_config.rs",
+        "src/modules/academic/models/scheduling.rs",
+        "src/modules/academic/models/scheduling_config.rs",
+        "src/modules/academic/services/scheduler.rs",
+        "src/modules/academic/services/scheduler",
+        "src/modules/academic/services/scheduler_data.rs",
+        "src/modules/academic/services/scheduling_service.rs",
+        "src/modules/academic/services/scheduling_config_service.rs",
+        "src/modules/academic/services/scheduling_config_service_tests.rs",
+    ] {
         assert!(
-            !handlers.contains(forbidden_db_call),
-            "scheduling handlers must delegate database work to the service layer"
+            !manifest_dir().join(removed).exists(),
+            "removed auto-scheduler module must not remain: {removed}"
         );
     }
+
+    let migration = read_source(manifest_dir().join("migrations/028_remove_auto_scheduler.sql"));
+    let normalized = migration
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_ascii_lowercase();
+    assert!(normalized.contains("drop column scheduler_job_id"));
+    assert!(normalized.contains("drop table timetable_scheduling_jobs"));
+    assert!(!normalized.contains("delete from academic_timetable_entries"));
+    assert!(!normalized.contains("truncate academic_timetable_entries"));
+    assert!(!normalized.contains("drop table academic_timetable_entries"));
 }
