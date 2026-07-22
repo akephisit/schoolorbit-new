@@ -430,7 +430,10 @@
 		if (!canReadCoursePlan || !selectedClassroomId || !selectedTermId) return;
 		try {
 			loading = true;
-			const res = await listClassroomCourses(selectedClassroomId, selectedTermId);
+			const res = await listClassroomCourses({
+				classroomId: selectedClassroomId,
+				semesterId: selectedTermId
+			});
 			courses = res.data;
 		} catch (e) {
 			console.error(e);

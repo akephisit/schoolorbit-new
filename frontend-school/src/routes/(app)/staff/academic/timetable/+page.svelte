@@ -135,13 +135,13 @@
 		title?: string;
 		title_en?: string;
 		classroom_id?: string;
-		primary_instructor_id?: string;
-		subject_code?: string;
-		subject_name_th?: string;
+		primary_instructor_id?: string | null;
+		subject_code?: string | null;
+		subject_name_th?: string | null;
 		classroom_course_id?: string;
 		room_id?: string;
-		instructor_name?: string;
-		classroom_name?: string;
+		instructor_name?: string | null;
+		classroom_name?: string | null;
 		color?: string;
 	}
 
@@ -730,9 +730,9 @@
 			entry_type: args.entryType,
 			title: args.title ?? activitySlot?.name ?? undefined,
 			is_active: true,
-			subject_code: courseInfo?.subject_code,
-			subject_name_th: courseInfo?.subject_name_th,
-			subject_name_en: courseInfo?.subject_name_en,
+			subject_code: courseInfo?.subject_code ?? undefined,
+			subject_name_th: courseInfo?.subject_name_th ?? undefined,
+			subject_name_en: courseInfo?.subject_name_en ?? undefined,
 			instructor_ids: instructorIds,
 			instructor_names: instructorNames,
 			classroom_name: classroom?.name,
@@ -782,9 +782,9 @@
 				classroom_course_id: args.newCourseId,
 				activity_slot_id: undefined,
 				entry_type: 'COURSE',
-				subject_code: course?.subject_code,
-				subject_name_th: course?.subject_name_th,
-				subject_name_en: course?.subject_name_en,
+				subject_code: course?.subject_code ?? undefined,
+				subject_name_th: course?.subject_name_th ?? undefined,
+				subject_name_en: course?.subject_name_en ?? undefined,
 				title: undefined,
 				activity_scheduling_mode: undefined,
 				classroom_id: args.newClassroomId ?? course?.classroom_id,
@@ -2716,7 +2716,7 @@
 			.filter((c) => !c.is_completed)
 			.sort((a, b) => {
 				// Sort by code?
-				return a.subject_code.localeCompare(b.subject_code);
+				return (a.subject_code ?? '').localeCompare(b.subject_code ?? '');
 			});
 	});
 
@@ -3849,12 +3849,12 @@
 									: 'cursor-default'} {lockedBy ? 'opacity-50 pointer-events-none' : ''}"
 								style="background-color: {getSubjectColor(
 									viewMode === 'INSTRUCTOR'
-										? course.classroom_name || course.subject_code
-										: course.subject_code
+										? course.classroom_name || course.subject_code || ''
+										: course.subject_code || ''
 								)}; border-color: {getSubjectBorderColor(
 									viewMode === 'INSTRUCTOR'
-										? course.classroom_name || course.subject_code
-										: course.subject_code
+										? course.classroom_name || course.subject_code || ''
+										: course.subject_code || ''
 								)};"
 								draggable={canManageTimetable && !lockedBy}
 								ondragstart={(e) => handleDragStart(e, course, 'NEW')}

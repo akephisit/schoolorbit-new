@@ -1489,14 +1489,18 @@ test('academic API uses typed loaded responses and unwraps generate-plan payload
 
 test('academic course instructor batch API sends ids in POST body', async () => {
 	const academicApi = await readRepoFile('frontend-school/src/lib/api/academic.ts');
+	const batchWrapper = academicApi.slice(
+		academicApi.indexOf('export const batchListCourseInstructors = async'),
+		academicApi.indexOf('export const batchListCourseInstructorsFromQuery = async')
+	);
 
 	assert.match(
-		academicApi,
-		/batchListCourseInstructors[\s\S]*?fetchApi<Record<string,\s*CourseInstructor\[\]>>\(\s*['"]\/api\/academic\/planning\/courses\/instructors\/batch['"][\s\S]*?method:\s*['"]POST['"][\s\S]*?body:\s*JSON\.stringify\(\{\s*course_ids:\s*courseIds\s*\}\)/
+		batchWrapper,
+		/const data: BatchListCourseInstructorsRequest = \{ course_ids: courseIds \}[\s\S]*?fetchApi<Record<string,\s*CourseInstructor\[\]>>\(\s*['"]\/api\/academic\/planning\/courses\/instructors\/batch['"][\s\S]*?method:\s*['"]POST['"][\s\S]*?body:\s*JSON\.stringify\(data\)/
 	);
 	assert.doesNotMatch(
-		academicApi,
-		/batchListCourseInstructors[\s\S]*?new URLSearchParams\(\{\s*course_ids:\s*courseIds\.join\(['"],['"]\)\s*\}\)/
+		batchWrapper,
+		/new URLSearchParams\(\{\s*course_ids:\s*courseIds\.join\(['"],['"]\)\s*\}\)/
 	);
 });
 

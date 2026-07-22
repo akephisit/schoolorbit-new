@@ -1,6 +1,5 @@
 import { apiClient, type ApiResponse } from '$lib/api/client';
 import type { components } from '$lib/api/generated/school-api';
-import type { JsonValue } from './types';
 
 type Schemas = components['schemas'];
 type LoadedApiResponse<T> = ApiResponse<T> & { success: true; data: T };
@@ -83,6 +82,23 @@ export type UpdateCatalogRequest = Schemas['UpdateCatalogRequest'];
 export type AddCatalogDefaultInstructorRequest = Schemas['AddCatalogDefaultInstructorRequest'];
 export type UpdateCatalogDefaultInstructorRoleRequest =
 	Schemas['UpdateCatalogDefaultInstructorRoleRequest'];
+export type ClassroomCourse = Schemas['ClassroomCourse'];
+export type CourseInstructor = Schemas['CourseInstructor'];
+export type CourseInstructorRole = Schemas['CourseInstructorRole'];
+export type AssignCoursesRequest = Schemas['AssignCoursesRequest'];
+export type UpdateCourseRequest = Schemas['UpdateCourseRequest'];
+export type AddCourseInstructorRequest = Schemas['AddCourseInstructorRequest'];
+export type BatchListCourseInstructorsRequest = Schemas['BatchListCourseInstructorsRequest'];
+export type UpdateCourseInstructorRoleRequest = Schemas['UpdateCourseInstructorRoleRequest'];
+export type ClassroomActivity = Schemas['ClassroomActivity'];
+export type CourseAssignedCountData = Schemas['CourseAssignedCountData'];
+
+export interface ClassroomCourseFilters {
+	classroomId?: string;
+	instructorId?: string;
+	semesterId?: string;
+	subjectId?: string;
+}
 
 // Lookup Types
 export interface LookupItem {
@@ -319,60 +335,22 @@ export const saveYearLevelConfig = async (yearId: string, gradeLevelIds: string[
 	});
 };
 
-export interface ClassroomCourse {
-	id: string;
-	classroom_id: string;
-	subject_id: string;
-	academic_semester_id: string;
-	primary_instructor_id?: string;
-	settings: ClassroomCourseSettings;
-	subject_code: string;
-	subject_name_th: string;
-	subject_name_en?: string;
-	subject_credit?: number;
-	subject_hours?: number;
-	subject_type?: string;
-	instructor_name?: string;
-	classroom_name?: string;
-}
-
-export interface ClassroomCourseSettings {
-	[key: string]: JsonValue | undefined;
-}
-
-// Supports both old signature (string, string?) and new signature (object) for backward compatibility if needed,
-// but here we will change to object based to support instructorId
 export const listClassroomCourses = async (
-	param1:
-		| string
-		| { classroomId?: string; instructorId?: string; semesterId?: string; subjectId?: string },
-	param2?: string
+	filters: ClassroomCourseFilters = {}
 ): Promise<{ data: ClassroomCourse[] }> => {
 	const url = '/api/academic/planning/courses';
 	const params = new URLSearchParams();
-
-	if (typeof param1 === 'string') {
-		// Old usage: listClassroomCourses(classroomId, semesterId)
-		params.append('classroom_id', param1);
-		if (param2) params.append('academic_semester_id', param2);
-	} else {
-		// New usage: object
-		if (param1.classroomId) params.append('classroom_id', param1.classroomId);
-		if (param1.instructorId) params.append('instructor_id', param1.instructorId);
-		if (param1.semesterId) params.append('academic_semester_id', param1.semesterId);
-		if (param1.subjectId) params.append('subject_id', param1.subjectId);
-	}
+	if (filters.classroomId) params.append('classroom_id', filters.classroomId);
+	if (filters.instructorId) params.append('instructor_id', filters.instructorId);
+	if (filters.semesterId) params.append('academic_semester_id', filters.semesterId);
+	if (filters.subjectId) params.append('subject_id', filters.subjectId);
 
 	const queryString = params.toString() ? `?${params.toString()}` : '';
 	return await fetchApi<ClassroomCourse[]>(url + queryString);
 };
 
-export const assignCourses = async (data: {
-	classroom_id: string;
-	academic_semester_id: string;
-	subject_ids: string[];
-}) => {
-	return await fetchApi('/api/academic/planning/courses', {
+export const assignCourses = async (data: AssignCoursesRequest) => {
+	return await fetchApi<CourseAssignedCountData>('/api/academic/planning/courses', {
 		method: 'POST',
 		body: JSON.stringify(data)
 	});
@@ -384,10 +362,7 @@ export const removeCourse = async (id: string) => {
 
 export const updateCourse = async (
 	id: string,
-	data: {
-		primary_instructor_id?: string | null;
-		settings?: ClassroomCourseSettings;
-	}
+	data: UpdateCourseRequest
 ) => {
 	return await fetchApi(`/api/academic/planning/courses/${id}`, {
 		method: 'PUT',
@@ -781,14 +756,6 @@ export const getMyActivityEnrollments = async (): Promise<{ data: string[] }> =>
 	return await fetchApi<string[]>('/api/academic/activities/my-enrollments');
 };
 
-export interface CourseInstructor {
-	id: string;
-	classroom_course_id: string;
-	instructor_id: string;
-	role: 'primary' | 'secondary';
-	instructor_name?: string;
-}
-
 export const listCourseInstructors = async (
 	courseId: string
 ): Promise<{ data: CourseInstructor[] }> => {
@@ -801,23 +768,35 @@ export const batchListCourseInstructors = async (
 	courseIds: string[]
 ): Promise<{ data: Record<string, CourseInstructor[]> }> => {
 	if (courseIds.length === 0) return { data: {} };
+	const data: BatchListCourseInstructorsRequest = { course_ids: courseIds };
 	return await fetchApi<Record<string, CourseInstructor[]>>(
 		'/api/academic/planning/courses/instructors/batch',
 		{
 			method: 'POST',
-			body: JSON.stringify({ course_ids: courseIds })
+			body: JSON.stringify(data)
 		}
+	);
+};
+
+export const batchListCourseInstructorsFromQuery = async (
+	courseIds: string[]
+): Promise<{ data: Record<string, CourseInstructor[]> }> => {
+	if (courseIds.length === 0) return { data: {} };
+	const params = new URLSearchParams({ course_ids: courseIds.join(',') });
+	return await fetchApi<Record<string, CourseInstructor[]>>(
+		`/api/academic/planning/courses/instructors?${params}`
 	);
 };
 
 export const addCourseInstructor = async (
 	courseId: string,
 	instructorId: string,
-	role: 'primary' | 'secondary' = 'secondary'
+	role: CourseInstructorRole = 'secondary'
 ) => {
+	const data: AddCourseInstructorRequest = { instructor_id: instructorId, role };
 	return await fetchApi(`/api/academic/planning/courses/${courseId}/instructors`, {
 		method: 'POST',
-		body: JSON.stringify({ instructor_id: instructorId, role })
+		body: JSON.stringify(data)
 	});
 };
 
@@ -830,11 +809,12 @@ export const removeCourseInstructor = async (courseId: string, instructorId: str
 export const updateCourseInstructorRole = async (
 	courseId: string,
 	instructorId: string,
-	role: 'primary' | 'secondary'
+	role: CourseInstructorRole
 ) => {
+	const data: UpdateCourseInstructorRoleRequest = { role };
 	return await fetchApi(`/api/academic/planning/courses/${courseId}/instructors/${instructorId}`, {
 		method: 'PUT',
-		body: JSON.stringify({ role })
+		body: JSON.stringify(data)
 	});
 };
 
@@ -1024,16 +1004,6 @@ export const generateActivitiesFromPlan = async (
 // Classroom Activities (junction-backed)
 // หน้า Course Planning = source of truth ต่อห้อง
 // ==========================================
-
-export interface ClassroomActivity {
-	slot_id: string;
-	activity_catalog_id: string;
-	name: string;
-	activity_type: 'scout' | 'club' | 'guidance' | 'social' | 'other';
-	periods_per_week: number;
-	scheduling_mode: 'synchronized' | 'independent';
-	is_active: boolean;
-}
 
 export const listClassroomActivities = async (
 	classroomId: string,
