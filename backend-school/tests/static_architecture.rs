@@ -2575,13 +2575,44 @@ fn read_oriented_handlers_are_registered_in_the_openapi_document() {
     let calendar_router = read_source(manifest_dir().join("src/modules/calendar.rs"));
     let contract = read_source(manifest_dir().join("src/api_contract.rs"));
 
-    assert!(
-        read_oriented_handlers_from_routers(&main_router, &calendar_router).len() >= 35,
-        "read-oriented router parser must find the current phase inventory"
+    assert_eq!(
+        read_oriented_handlers_from_routers(&main_router, &calendar_router).len(),
+        36,
+        "read-oriented router inventory must stay aligned with the 36-operation rollout"
     );
     assert_eq!(
         read_oriented_handlers_missing_from_contract(&main_router, &calendar_router, &contract),
         Vec::<String>::new()
+    );
+}
+
+#[test]
+fn read_oriented_openapi_guard_detects_a_removed_router_registration() {
+    let complete_router = r#"
+        .route(
+            "/api/lookup/staff",
+            get(modules::lookup::handlers::lookup_staff),
+        )
+        .route(
+            "/api/lookup/students",
+            get(modules::lookup::handlers::lookup_students),
+        )
+    "#;
+    let missing_route_router = r#"
+        .route(
+            "/api/lookup/staff",
+            get(modules::lookup::handlers::lookup_staff),
+        )
+    "#;
+
+    assert_eq!(
+        read_oriented_handlers_from_routers(complete_router, "").len(),
+        2
+    );
+    assert_eq!(
+        read_oriented_handlers_from_routers(missing_route_router, "").len(),
+        1,
+        "removing a registered read route must reduce the derived inventory"
     );
 }
 
