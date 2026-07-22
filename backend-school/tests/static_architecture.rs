@@ -1350,6 +1350,72 @@ fn academic_core_study_plan_handlers_enforce_curriculum_permission_contract() {
 }
 
 #[test]
+fn academic_activity_template_handlers_enforce_permission_contract() {
+    let handlers = strip_comments(&read_source(
+        manifest_dir().join("src/modules/academic/handlers/study_plans.rs"),
+    ));
+    let cases = [
+        ("list_plan_activities", "ensure_curriculum_read"),
+        ("add_plan_activity", "ensure_curriculum_update"),
+        ("update_plan_activity", "ensure_curriculum_update"),
+        ("delete_plan_activity", "ensure_curriculum_delete"),
+        ("list_activity_catalog", "ensure_curriculum_read"),
+        ("create_activity_catalog", "ensure_curriculum_create"),
+        ("update_activity_catalog", "ensure_curriculum_update"),
+        ("delete_activity_catalog", "ensure_curriculum_delete"),
+        ("list_catalog_default_instructors", "ensure_curriculum_read"),
+        ("add_catalog_default_instructor", "ensure_curriculum_update"),
+        (
+            "remove_catalog_default_instructor",
+            "ensure_curriculum_update",
+        ),
+        (
+            "update_catalog_default_instructor_role",
+            "ensure_curriculum_update",
+        ),
+    ];
+
+    for (handler_name, policy_helper) in cases {
+        let marker = format!("pub async fn {handler_name}");
+        let handler_tail = handlers
+            .split_once(&marker)
+            .unwrap_or_else(|| panic!("missing activity-template handler `{handler_name}`"))
+            .1;
+        let handler = handler_tail
+            .split("pub async fn ")
+            .next()
+            .unwrap_or(handler_tail);
+
+        assert!(
+            handler.contains("actor_tenant_context(&state, &headers).await?"),
+            "{handler_name} must load the authenticated actor and tenant together"
+        );
+        assert!(
+            handler.contains(&format!(
+                "curriculum_access_policy::{policy_helper}(&actor)?"
+            )),
+            "{handler_name} must use {policy_helper}"
+        );
+        assert!(!handler.contains("tenant_pool(&state, &headers)"));
+        assert!(!handler.contains("optional_user_id_from_headers"));
+    }
+
+    let generate_handler = handlers
+        .split_once("pub async fn generate_activities_from_plan")
+        .expect("missing generate_activities_from_plan handler")
+        .1
+        .split("pub async fn ")
+        .next()
+        .unwrap_or("");
+    assert!(generate_handler.contains("actor_tenant_context(&state, &headers).await?"));
+    assert!(generate_handler.contains("curriculum_access_policy::ensure_curriculum_read(&actor)?"));
+    assert!(generate_handler.contains("actor.require_permission(codes::ACTIVITY_MANAGE_ALL)?"));
+    assert!(generate_handler.contains("Some(actor.user_id)"));
+    assert!(!generate_handler.contains("tenant_pool(&state, &headers)"));
+    assert!(!generate_handler.contains("optional_user_id_from_headers"));
+}
+
+#[test]
 fn academic_exam_schedule_routes_are_registered_and_authorized() {
     fn handler_body<'a>(source: &'a str, handler_name: &str) -> &'a str {
         let marker = format!("pub async fn {handler_name}");

@@ -3,9 +3,7 @@ use crate::error::AppError;
 use crate::modules::academic::services::study_plan_service;
 use crate::permissions::registry::codes;
 use crate::policies::curriculum_access_policy;
-use crate::utils::request_context::{
-    actor_tenant_context, optional_user_id_from_headers, tenant_pool,
-};
+use crate::utils::request_context::actor_tenant_context;
 use crate::AppState;
 
 use axum::{
@@ -481,7 +479,10 @@ pub async fn list_plan_activities(
     headers: HeaderMap,
     Path(version_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = tenant_pool(&state, &headers).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    curriculum_access_policy::ensure_curriculum_read(&actor)?;
     let rows = study_plan_service::list_plan_activities(&pool, version_id).await?;
     Ok(Json(ApiResponse::ok(rows)))
 }
@@ -492,7 +493,10 @@ pub async fn add_plan_activity(
     Path(version_id): Path<Uuid>,
     Json(req): Json<CreatePlanActivityRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = tenant_pool(&state, &headers).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    curriculum_access_policy::ensure_curriculum_update(&actor)?;
     let row = study_plan_service::add_plan_activity(&pool, version_id, req).await?;
     Ok((StatusCode::CREATED, Json(ApiResponse::ok(row))))
 }
@@ -503,7 +507,10 @@ pub async fn update_plan_activity(
     Path(id): Path<Uuid>,
     Json(req): Json<UpdatePlanActivityRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = tenant_pool(&state, &headers).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    curriculum_access_policy::ensure_curriculum_update(&actor)?;
     let row = study_plan_service::update_plan_activity(&pool, id, req).await?;
     Ok(Json(ApiResponse::ok(row)))
 }
@@ -513,7 +520,10 @@ pub async fn delete_plan_activity(
     headers: HeaderMap,
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = tenant_pool(&state, &headers).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    curriculum_access_policy::ensure_curriculum_delete(&actor)?;
     study_plan_service::delete_plan_activity(&pool, id).await?;
     Ok(Json(ApiResponse::empty()))
 }
@@ -523,9 +533,13 @@ pub async fn generate_activities_from_plan(
     headers: HeaderMap,
     Json(req): Json<GenerateActivitiesFromPlanRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = tenant_pool(&state, &headers).await?;
-    let user_id = optional_user_id_from_headers(&headers, &pool).await;
-    let result = study_plan_service::generate_activities_from_plan(&pool, req, user_id).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    curriculum_access_policy::ensure_curriculum_read(&actor)?;
+    actor.require_permission(codes::ACTIVITY_MANAGE_ALL)?;
+    let result =
+        study_plan_service::generate_activities_from_plan(&pool, req, Some(actor.user_id)).await?;
     Ok(Json(ApiResponse::ok(result)))
 }
 
@@ -538,7 +552,10 @@ pub async fn list_activity_catalog(
     headers: HeaderMap,
     Query(filter): Query<study_plan_service::ActivityCatalogFilter>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = tenant_pool(&state, &headers).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    curriculum_access_policy::ensure_curriculum_read(&actor)?;
     let latest_only = filter.latest_only.unwrap_or(true);
     let rows = study_plan_service::list_activity_catalog(&pool, latest_only).await?;
     Ok(Json(ApiResponse::ok(rows)))
@@ -549,7 +566,10 @@ pub async fn create_activity_catalog(
     headers: HeaderMap,
     Json(req): Json<CreateCatalogRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = tenant_pool(&state, &headers).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    curriculum_access_policy::ensure_curriculum_create(&actor)?;
     let row = study_plan_service::create_activity_catalog(&pool, req).await?;
     Ok((StatusCode::CREATED, Json(ApiResponse::ok(row))))
 }
@@ -560,7 +580,10 @@ pub async fn update_activity_catalog(
     Path(id): Path<Uuid>,
     Json(req): Json<UpdateCatalogRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = tenant_pool(&state, &headers).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    curriculum_access_policy::ensure_curriculum_update(&actor)?;
     let row = study_plan_service::update_activity_catalog(&pool, id, req).await?;
     Ok(Json(ApiResponse::ok(row)))
 }
@@ -570,7 +593,10 @@ pub async fn delete_activity_catalog(
     headers: HeaderMap,
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = tenant_pool(&state, &headers).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    curriculum_access_policy::ensure_curriculum_delete(&actor)?;
     study_plan_service::delete_activity_catalog(&pool, id).await?;
     Ok(Json(ApiResponse::empty()))
 }
@@ -584,7 +610,10 @@ pub async fn list_catalog_default_instructors(
     headers: HeaderMap,
     Path(catalog_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = tenant_pool(&state, &headers).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    curriculum_access_policy::ensure_curriculum_read(&actor)?;
     let rows = study_plan_service::list_catalog_default_instructors(&pool, catalog_id).await?;
     Ok(Json(ApiResponse::ok(rows)))
 }
@@ -595,7 +624,10 @@ pub async fn add_catalog_default_instructor(
     Path(catalog_id): Path<Uuid>,
     Json(body): Json<AddCatalogDefaultInstructorRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = tenant_pool(&state, &headers).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    curriculum_access_policy::ensure_curriculum_update(&actor)?;
     let role = body.role.unwrap_or_else(|| "secondary".to_string());
     study_plan_service::add_catalog_default_instructor(
         &pool,
@@ -612,7 +644,10 @@ pub async fn remove_catalog_default_instructor(
     headers: HeaderMap,
     Path((catalog_id, instructor_id)): Path<(Uuid, Uuid)>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = tenant_pool(&state, &headers).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    curriculum_access_policy::ensure_curriculum_update(&actor)?;
     study_plan_service::remove_catalog_default_instructor(&pool, catalog_id, instructor_id).await?;
     Ok(Json(ApiResponse::empty()))
 }
@@ -623,7 +658,10 @@ pub async fn update_catalog_default_instructor_role(
     Path((catalog_id, instructor_id)): Path<(Uuid, Uuid)>,
     Json(body): Json<UpdateCatalogDefaultInstructorRoleRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = tenant_pool(&state, &headers).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    curriculum_access_policy::ensure_curriculum_update(&actor)?;
     study_plan_service::update_catalog_default_instructor_role(
         &pool,
         catalog_id,

@@ -60,8 +60,17 @@
 	const canManageActivity = $derived($can.has(PERMISSIONS.ACTIVITY_MANAGE_ALL));
 	const canManageOwnActivity = $derived($can.has(PERMISSIONS.ACTIVITY_MANAGE_OWN));
 	const canManageActivityMembers = $derived($can.has(PERMISSIONS.ACTIVITY_MANAGE_MEMBERS_ALL));
+	const canReadCurriculumForGeneration = $derived(
+		$can.hasAny(
+			PERMISSIONS.ACADEMIC_CURRICULUM_READ_ALL,
+			PERMISSIONS.ACADEMIC_CURRICULUM_READ_ORGANIZATION_TREE,
+			PERMISSIONS.ACADEMIC_CURRICULUM_MANAGE_ORGANIZATION_UNIT,
+			PERMISSIONS.ACADEMIC_CURRICULUM_MANAGE_ORGANIZATION_TREE
+		)
+	);
 	const canListActivity = $derived(canReadActivity || canManageActivity || canManageOwnActivity);
 	const canManageActivityGroups = $derived(canManageActivity || canManageOwnActivity);
+	const canGenerateFromPlan = $derived(canManageActivity && canReadCurriculumForGeneration);
 	const canCleanActivityTimetable = $derived(
 		canManageActivity && $can.has(PERMISSIONS.ACADEMIC_COURSE_PLAN_MANAGE_ALL)
 	);
@@ -370,7 +379,7 @@
 
 	// ── Generate from Plan ────────────────────────────
 	async function openGenerateDialog() {
-		if (!canManageActivity) {
+		if (!canGenerateFromPlan) {
 			toast.error('ไม่มีสิทธิ์สร้างกิจกรรมจากหลักสูตร');
 			return;
 		}
@@ -385,7 +394,7 @@
 	}
 
 	async function handleGenerate() {
-		if (!canManageActivity) {
+		if (!canGenerateFromPlan) {
 			toast.error('ไม่มีสิทธิ์สร้างกิจกรรมจากหลักสูตร');
 			return;
 		}
@@ -793,7 +802,7 @@
 				</Select.Content>
 			</Select.Root>
 
-			{#if canManageActivity}
+			{#if canGenerateFromPlan}
 				<div class="ml-auto">
 					<Button variant="outline" onclick={openGenerateDialog} disabled={!filterSemesterId}>
 						<FolderInput class="w-4 h-4 mr-1" />
@@ -1372,7 +1381,7 @@
 {/if}
 
 <!-- Generate from Plan Dialog -->
-{#if canManageActivity}
+{#if canGenerateFromPlan}
 	<Dialog.Root bind:open={showGenerateDialog}>
 		<Dialog.Content class="max-w-md">
 			<Dialog.Header>

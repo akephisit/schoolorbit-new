@@ -3,7 +3,6 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::error::AppError;
-use crate::middleware::auth::extract_user_id;
 use crate::middleware::permission::{load_actor_context_or_error, ActorContext};
 use crate::modules::auth::models::Claims;
 use crate::utils::jwt::{authenticate_for_tenant, AuthenticatedRequest};
@@ -111,10 +110,6 @@ pub async fn current_user_tenant_context_from_headers(
         tenant,
         CurrentUserIdentity::HeaderAuthentication(&authenticated),
     )
-}
-
-pub async fn optional_user_id_from_headers(headers: &HeaderMap, pool: &PgPool) -> Option<Uuid> {
-    extract_user_id(headers, pool).await.ok()
 }
 
 pub fn user_id_from_claims(claims: &Claims) -> Result<Uuid, AppError> {
