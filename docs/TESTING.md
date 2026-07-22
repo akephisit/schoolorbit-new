@@ -70,14 +70,16 @@ Frontend API modules import generated wire DTOs and may map them to separate
 domain/view models. Generation must not require database credentials or start
 the backend server.
 
-The generated document currently contains 165 unique operations: 32
+The generated document currently contains 177 unique operations: 32
 auth/authorization operations, 36 read-oriented JSON operations from the prior
 checkpoint, the completed Phase 1 people batch (12 mutations plus the dependent
 achievement list read), and the first Phase 2 academic structure batch (15
 mutations plus four dependent reads), the Phase 2 curriculum core batch (15
 mutations plus nine dependent reads), the Phase 2 activity-template batch
-(10 mutations plus three dependent reads), and the Phase 2 activity workspace
-batch (21 mutations plus seven dependent reads). The people operations are:
+(10 mutations plus three dependent reads), the Phase 2 activity workspace
+batch (21 mutations plus seven dependent reads), and the Phase 2 course
+planning batch (seven mutations plus five dependent reads). The people
+operations are:
 
 - staff: `createStaff`, `updateStaff`, `deleteStaff`
 - student/parent-link: `updateStudentProfile`, `createStudent`, `updateStudent`,
@@ -128,16 +130,30 @@ The activity workspace operations are `listActivitySlots`, `updateActivitySlot`,
 `removeActivityGroupInstructor`, `listMyActivityEnrollments`,
 `selfEnrollActivityGroup`, and `selfUnenrollActivityGroup`.
 
+The course planning operations are `listClassroomCourses`, `assignCourses`,
+`updateClassroomCourse`, `removeClassroomCourse`,
+`batchListCourseInstructors`, `batchListCourseInstructorsFromQuery`,
+`listCourseInstructors`, `addCourseInstructor`,
+`updateCourseInstructorRole`, `removeCourseInstructor`,
+`listClassroomActivities`, and `removeClassroomFromActivitySlot`.
+
 Activity workspace tests require frontend/backend permission scopes to match,
 missing parents and mutation targets to return not-found, bounded role/result
 values to be validated, bulk counts to report actual writes, and group capacity
 checks plus enrollment writes to share a transaction.
 
+Course planning reads use `ACADEMIC_COURSE_PLAN_READ_ALL`; mutations use
+`ACADEMIC_COURSE_PLAN_MANAGE_ALL`. Missing parents and mutation targets return
+not-found, instructor roles are limited to `primary`/`secondary`, and assignment
+counts report actual inserts. In `UpdateCourseRequest`, an omitted
+`primary_instructor_id` leaves the team unchanged while explicit `null` clears
+the primary team assignment and derived timetable-entry instructors.
+
 This is the current Phase 4 mutation-contract rollout checkpoint. The next
-Phase 2 batch is course planning, teaching assignments, and scheduling
-configuration. The document tracks implemented backend routes only;
-frontend-only helpers are not exported. SSE, WebSocket, health/readiness, and
-file/binary endpoints remain explicitly outside this OpenAPI contract.
+Phase 2 batch is scheduling configuration. The document tracks implemented
+backend routes only; frontend-only helpers are not exported. SSE, WebSocket,
+health/readiness, and file/binary endpoints remain explicitly outside this
+OpenAPI contract.
 
 Authorization regression tests require effective permissions to be empty when
 `users.status != 'active'`. Student soft deletion invalidates that user's
