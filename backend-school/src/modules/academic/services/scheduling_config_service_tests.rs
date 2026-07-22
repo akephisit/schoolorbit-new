@@ -270,6 +270,19 @@ async fn aggregate_save_is_idempotent_and_clear_resets_values() {
             .unwrap();
     assert!(!repeated.changed);
 
+    sqlx::query(
+        "INSERT INTO instructor_room_assignments
+            (instructor_id, academic_year_id, room_id, subject_id, is_required)
+         VALUES ($1, $2, $3, $4, true)",
+    )
+    .bind(fixture.instructor_id)
+    .bind(fixture.academic_year_id)
+    .bind(fixture.room_id)
+    .bind(fixture.subject_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+
     let clear_request: SaveSchedulingConfigurationRequest = serde_json::from_str(&format!(
         r#"{{
             "scheduler_settings":{{"default_max_consecutive":null}},
@@ -325,7 +338,7 @@ async fn aggregate_save_is_idempotent_and_clear_resets_values() {
     assert_eq!(max_periods, Some(7));
     assert_eq!(priority, 100);
     let assigned_room_count: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM instructor_room_assignments WHERE instructor_id = $1 AND academic_year_id = $2 AND is_required = true",
+        "SELECT COUNT(*) FROM instructor_room_assignments WHERE instructor_id = $1 AND academic_year_id = $2 AND is_required = true AND subject_id IS NULL",
     )
     .bind(fixture.instructor_id)
     .bind(fixture.academic_year_id)
@@ -333,6 +346,16 @@ async fn aggregate_save_is_idempotent_and_clear_resets_values() {
     .await
     .unwrap();
     assert_eq!(assigned_room_count, 0);
+    let subject_room_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM instructor_room_assignments WHERE instructor_id = $1 AND academic_year_id = $2 AND is_required = true AND subject_id = $3",
+    )
+    .bind(fixture.instructor_id)
+    .bind(fixture.academic_year_id)
+    .bind(fixture.subject_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(subject_room_count, 1);
     let preferred_room_count: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM classroom_course_preferred_rooms WHERE classroom_course_id = $1",
     )

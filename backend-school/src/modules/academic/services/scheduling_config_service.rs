@@ -230,7 +230,7 @@ pub async fn list_instructor_constraints(
                COALESCE(pc.cnt, 0) AS primary_course_count
         FROM users u
         LEFT JOIN instructor_preferences ip ON u.id = ip.instructor_id AND ip.academic_year_id = $1
-        LEFT JOIN instructor_room_assignments ra ON u.id = ra.instructor_id AND ra.academic_year_id = $1 AND ra.is_required = true
+        LEFT JOIN instructor_room_assignments ra ON u.id = ra.instructor_id AND ra.academic_year_id = $1 AND ra.is_required = true AND ra.subject_id IS NULL
         LEFT JOIN rooms r ON ra.room_id = r.id
         LEFT JOIN primary_counts pc ON pc.instructor_id = u.id
         WHERE u.user_type = 'staff' AND u.status = 'active'
@@ -767,7 +767,7 @@ pub async fn save_scheduling_configuration(
 
         if !matches!(patch.assigned_room_id, Patch::Unchanged) {
             let current_rooms: Vec<Uuid> = sqlx::query_scalar(
-                "SELECT room_id FROM instructor_room_assignments WHERE instructor_id = $1 AND academic_year_id = $2 AND is_required = true ORDER BY room_id",
+                "SELECT room_id FROM instructor_room_assignments WHERE instructor_id = $1 AND academic_year_id = $2 AND is_required = true AND subject_id IS NULL ORDER BY room_id",
             )
             .bind(patch.id)
             .bind(academic_year_id)
@@ -785,7 +785,7 @@ pub async fn save_scheduling_configuration(
             };
             if !already_matches {
                 sqlx::query(
-                    "DELETE FROM instructor_room_assignments WHERE instructor_id = $1 AND academic_year_id = $2 AND is_required = true",
+                    "DELETE FROM instructor_room_assignments WHERE instructor_id = $1 AND academic_year_id = $2 AND is_required = true AND subject_id IS NULL",
                 )
                 .bind(patch.id)
                 .bind(academic_year_id)
