@@ -52,11 +52,12 @@ Frontend API modules import generated wire DTOs and may map them to separate
 domain/view models. Generation must not require database credentials or start
 the backend server.
 
-The current checkpoint contains 100 unique operations: 32 auth/authorization
+The current checkpoint contains 124 unique operations: 32 auth/authorization
 operations, 36 read-oriented JSON operations from the prior checkpoint, the
 completed Phase 1 people batch (12 mutations plus the dependent achievement
 list read), and the first Phase 2 academic structure batch (15 mutations plus
-four dependent reads). The people operations are:
+four dependent reads), and the Phase 2 curriculum core batch (15 mutations plus
+nine dependent reads). The people operations are:
 
 - staff: `createStaff`, `updateStaff`, `deleteStaff`
 - student/parent-link: `updateStudentProfile`, `createStudent`, `updateStudent`,
@@ -72,8 +73,19 @@ The academic structure operations are `getAcademicStructure`,
 `enrollStudents`, `listClassEnrollments`, `removeEnrollment`,
 `updateEnrollmentNumber`, and `autoAssignClassNumbers`.
 
+The curriculum core operations are `listSubjectGroups`,
+`batchListSubjectDefaultInstructors`, `listSubjects`, `createSubject`,
+`updateSubject`, `deleteSubject`, `listSubjectDefaultInstructors`,
+`addSubjectDefaultInstructor`, `removeSubjectDefaultInstructor`,
+`updateSubjectDefaultInstructorRole`, `listStudyPlans`, `createStudyPlan`,
+`getStudyPlan`, `updateStudyPlan`, `deleteStudyPlan`, `listStudyPlanVersions`,
+`createStudyPlanVersion`, `getStudyPlanVersion`, `updateStudyPlanVersion`,
+`deleteStudyPlanVersion`, `listStudyPlanSubjects`,
+`addSubjectsToStudyPlanVersion`, `deleteStudyPlanSubject`, and
+`generateCoursesFromStudyPlan`.
+
 This is the current Phase 4 mutation-contract rollout checkpoint. The next
-Phase 2 batch is curriculum and study plans. The OpenAPI document
+Phase 2 batch is study-plan activities and the activity catalog. The OpenAPI document
 describes implemented backend routes only; a frontend helper or UI call is not
 evidence that a backend route exists. SSE, WebSocket, health/readiness, and
 file/binary endpoints remain explicitly outside this OpenAPI contract.
@@ -90,6 +102,15 @@ Academic structure, classroom, and enrollment handlers load one
 service call. Missing academic years, semesters, grade levels, classrooms, and
 enrollments return not-found. Setting a missing academic year active leaves the
 current active year unchanged.
+
+Curriculum subject and study-plan handlers enforce the same generated permission
+policy consumed by the frontend. Study-plan CRUD permits the matching all-scope
+or organization-scope curriculum permission, while course generation requires
+`ACADEMIC_COURSE_PLAN_MANAGE_ALL`. Missing subjects, instructor assignments,
+study plans, versions, and plan-subject rows return not-found. A path
+`version_id` is authoritative for plan-subject listing, the add-subject response
+counts rows actually inserted, and an update to a missing instructor assignment
+cannot demote the existing primary instructor.
 
 For a new documented endpoint:
 

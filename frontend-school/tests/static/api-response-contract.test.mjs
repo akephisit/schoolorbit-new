@@ -436,7 +436,7 @@ test('project rules document generated API contract ownership', async () => {
 	}
 });
 
-test('project docs record the 100-operation academic structure checkpoint and next mutation phase', async () => {
+test('project docs record the 124-operation curriculum core checkpoint and next mutation phase', async () => {
 	const sources = await Promise.all([
 		readRepoFile('.rules'),
 		readRepoFile('docs/TESTING.md'),
@@ -445,7 +445,7 @@ test('project docs record the 100-operation academic structure checkpoint and ne
 	]);
 
 	for (const source of sources) {
-		assert.match(source, /100 unique operations/i);
+		assert.match(source, /124 unique operations/i);
 		assert.match(source, /32[\s\S]{0,30}auth\/authorization/i);
 		assert.match(source, /36 read-oriented/i);
 		assert.match(source, /12\s+mutations/i);
@@ -454,7 +454,8 @@ test('project docs record the 100-operation academic structure checkpoint and ne
 		assert.match(source, /Phase 2[\s\S]{0,120}academic structure/i);
 		assert.match(source, /15\s+mutations/i);
 		assert.match(source, /four dependent reads|4 dependent reads/i);
-		assert.match(source, /curriculum[\s\S]{0,40}study plans|study-plan/i);
+		assert.match(source, /nine dependent reads|9 dependent reads/i);
+		assert.match(source, /study-plan activities[\s\S]{0,40}activity catalog/i);
 		for (const operationId of [
 			'createStaff',
 			'updateStaff',
@@ -469,6 +470,34 @@ test('project docs record the 100-operation academic structure checkpoint and ne
 			'createAchievement',
 			'updateAchievement',
 			'deleteAchievement'
+		]) {
+			assert.match(source, new RegExp(`\\b${operationId}\\b`));
+		}
+		for (const operationId of [
+			'listSubjectGroups',
+			'batchListSubjectDefaultInstructors',
+			'listSubjects',
+			'createSubject',
+			'updateSubject',
+			'deleteSubject',
+			'listSubjectDefaultInstructors',
+			'addSubjectDefaultInstructor',
+			'removeSubjectDefaultInstructor',
+			'updateSubjectDefaultInstructorRole',
+			'listStudyPlans',
+			'createStudyPlan',
+			'getStudyPlan',
+			'updateStudyPlan',
+			'deleteStudyPlan',
+			'listStudyPlanVersions',
+			'createStudyPlanVersion',
+			'getStudyPlanVersion',
+			'updateStudyPlanVersion',
+			'deleteStudyPlanVersion',
+			'listStudyPlanSubjects',
+			'addSubjectsToStudyPlanVersion',
+			'deleteStudyPlanSubject',
+			'generateCoursesFromStudyPlan'
 		]) {
 			assert.match(source, new RegExp(`\\b${operationId}\\b`));
 		}
@@ -513,7 +542,7 @@ test('API docs record implemented reversible role and organization deactivation'
 	const improvements = await readRepoFile('IMPROVEMENT_PLAN.md');
 
 	for (const source of [guide, testing]) {
-		assert.match(source, /100 unique operations/);
+		assert.match(source, /124 unique operations/);
 		assert.match(source, /32[\s\S]{0,50}auth\/authorization[\s\S]{0,30}operations/);
 		assert.match(source, /implemented\s+backend\s+routes\s+only/i);
 	}

@@ -70,11 +70,12 @@ Frontend API modules import generated wire DTOs and may map them to separate
 domain/view models. Generation must not require database credentials or start
 the backend server.
 
-The generated document currently contains 100 unique operations: 32
+The generated document currently contains 124 unique operations: 32
 auth/authorization operations, 36 read-oriented JSON operations from the prior
 checkpoint, the completed Phase 1 people batch (12 mutations plus the dependent
 achievement list read), and the first Phase 2 academic structure batch (15
-mutations plus four dependent reads). The people operations are:
+mutations plus four dependent reads), and the Phase 2 curriculum core batch (15
+mutations plus nine dependent reads). The people operations are:
 
 - staff: `createStaff`, `updateStaff`, `deleteStaff`
 - student/parent-link: `updateStudentProfile`, `createStudent`, `updateStudent`,
@@ -90,8 +91,19 @@ The academic structure operations are `getAcademicStructure`,
 `enrollStudents`, `listClassEnrollments`, `removeEnrollment`,
 `updateEnrollmentNumber`, and `autoAssignClassNumbers`.
 
+The curriculum core operations are `listSubjectGroups`,
+`batchListSubjectDefaultInstructors`, `listSubjects`, `createSubject`,
+`updateSubject`, `deleteSubject`, `listSubjectDefaultInstructors`,
+`addSubjectDefaultInstructor`, `removeSubjectDefaultInstructor`,
+`updateSubjectDefaultInstructorRole`, `listStudyPlans`, `createStudyPlan`,
+`getStudyPlan`, `updateStudyPlan`, `deleteStudyPlan`, `listStudyPlanVersions`,
+`createStudyPlanVersion`, `getStudyPlanVersion`, `updateStudyPlanVersion`,
+`deleteStudyPlanVersion`, `listStudyPlanSubjects`,
+`addSubjectsToStudyPlanVersion`, `deleteStudyPlanSubject`, and
+`generateCoursesFromStudyPlan`.
+
 This is the current Phase 4 mutation-contract rollout checkpoint. The next
-Phase 2 batch is curriculum and study plans. The document tracks
+Phase 2 batch is study-plan activities and the activity catalog. The document tracks
 implemented backend routes only; frontend-only helpers are not exported. SSE,
 WebSocket, health/readiness, and file/binary endpoints remain explicitly outside
 this OpenAPI contract.
@@ -107,6 +119,16 @@ backend permission. Database-backed
 tests verify missing academic years, semesters, grade levels, classrooms, and
 enrollments return not-found, and a missing active-year target does not
 deactivate the current year.
+
+Curriculum-core authorization tests require subject and study-plan handlers to
+enforce the same generated permission policy used by the frontend. Study-plan
+CRUD accepts the matching all-scope or organization-scope curriculum permission;
+course generation requires `ACADEMIC_COURSE_PLAN_MANAGE_ALL`. Database-backed
+tests verify missing subjects, instructor assignments, study plans, versions,
+and plan-subject rows return not-found. They also verify that a missing
+instructor assignment does not demote the current primary instructor, the path
+version owns the plan-subject query scope, and add-subject counts report rows
+actually inserted.
 
 `DELETE /api/roles/{id}` and `DELETE /api/organization/units/{id}` are implemented
 as reversible deactivation (`is_active = false`), never physical deletion. They
