@@ -171,7 +171,14 @@ async fn main() {
     let app = Router::new()
         // Public routes
         .route("/", get(root_handler))
-        .route("/health", get(health_check))
+        .route(
+            "/health",
+            get(modules::system::handlers::health::health_check),
+        )
+        .route(
+            "/ready",
+            get(modules::system::handlers::health::readiness_check),
+        )
         .route(
             "/api/public/calendar/events",
             get(modules::calendar::handlers::list_public_calendar_events),
@@ -869,12 +876,5 @@ async fn root_handler() -> Json<serde_json::Value> {
         "version": "0.2.0",
         "status": "running",
         "architecture": "multi-tenant with dynamic connection pools"
-    }))
-}
-
-async fn health_check() -> Json<serde_json::Value> {
-    Json(json!({
-        "status": "healthy",
-        "timestamp": chrono::Utc::now().to_rfc3339()
     }))
 }

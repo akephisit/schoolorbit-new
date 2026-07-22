@@ -3943,6 +3943,23 @@ fn module_handlers_resolve_tenant_pools_through_the_central_resolver() {
 }
 
 #[test]
+fn backend_school_registers_separate_liveness_and_readiness_routes() {
+    let main = read_source(repo_root().join("backend-school/src/main.rs"));
+    let health =
+        read_source(repo_root().join("backend-school/src/modules/system/handlers/health.rs"));
+    let health_route = Regex::new(r#"\.route\(\s*"/health","#).expect("valid health regex");
+    let ready_route = Regex::new(r#"\.route\(\s*"/ready","#).expect("valid ready regex");
+
+    assert!(health_route.is_match(&main));
+    assert!(ready_route.is_match(&main));
+    assert!(main.contains("handlers::health::health_check"));
+    assert!(main.contains("handlers::health::readiness_check"));
+    assert!(health.contains("check_readiness().await"));
+    assert!(!health.contains("get_pool("));
+    assert!(!health.contains("PgPool"));
+}
+
+#[test]
 fn course_instructor_batch_endpoint_accepts_post_body() {
     let routes = read_source(manifest_dir().join("src/modules/academic.rs"));
     let handler =
