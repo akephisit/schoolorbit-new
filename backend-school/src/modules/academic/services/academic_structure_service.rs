@@ -3,9 +3,10 @@ use crate::modules::academic::models::*;
 use serde::Serialize;
 use sqlx::{PgPool, Postgres, Transaction};
 use std::collections::HashSet;
+use utoipa::ToSchema;
 use uuid::Uuid;
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct AcademicStructure {
     pub years: Vec<AcademicYear>,
     pub semesters: Vec<Semester>,

@@ -4,6 +4,13 @@ use crate::modules::academic::models::exam_schedule::{
     PersonalExamScheduleRound, PersonalExamSessionView,
 };
 use crate::modules::academic::models::timetable::TimetableEntry;
+use crate::modules::academic::models::{
+    AcademicYear, Classroom, ClassroomAdvisor, ClassroomAdvisorInput, CreateAcademicYearRequest,
+    CreateClassroomRequest, CreateGradeLevelRequest, CreateSemesterRequest, EnrollStudentRequest,
+    GradeLevelResponse, Semester, StudentEnrollment, UpdateAcademicYearRequest,
+    UpdateClassroomRequest, UpdateSemesterRequest, UpdateYearLevelsRequest,
+};
+use crate::modules::academic::services::academic_structure_service::AcademicStructure;
 use crate::modules::achievement::models::{
     Achievement, AchievementListFilter, CreateAchievementRequest, UpdateAchievementRequest,
 };
@@ -109,6 +116,25 @@ use utoipa::OpenApi;
         crate::modules::academic::handlers::timetable::get_my_timetable,
         crate::modules::academic::handlers::exam_schedule::list_my_exam_schedule,
         crate::modules::academic::handlers::exam_schedule::list_staff_exam_schedule,
+        crate::modules::academic::handlers::list_academic_structure,
+        crate::modules::academic::handlers::create_grade_level,
+        crate::modules::academic::handlers::delete_grade_level,
+        crate::modules::academic::handlers::create_academic_year,
+        crate::modules::academic::handlers::update_academic_year,
+        crate::modules::academic::handlers::toggle_active_year,
+        crate::modules::academic::handlers::get_year_levels,
+        crate::modules::academic::handlers::update_year_levels,
+        crate::modules::academic::handlers::create_semester,
+        crate::modules::academic::handlers::update_semester,
+        crate::modules::academic::handlers::delete_semester,
+        crate::modules::academic::handlers::list_classrooms,
+        crate::modules::academic::handlers::create_classroom,
+        crate::modules::academic::handlers::update_classroom,
+        crate::modules::academic::handlers::enroll_students,
+        crate::modules::academic::handlers::get_class_enrollments,
+        crate::modules::academic::handlers::remove_enrollment,
+        crate::modules::academic::handlers::update_enrollment_number,
+        crate::modules::academic::handlers::auto_assign_class_numbers,
         crate::modules::calendar::handlers::list_my_calendar_events,
         crate::modules::calendar::handlers::list_public_calendar_events,
         crate::modules::calendar::handlers::list_calendar_events,
@@ -255,6 +281,32 @@ use utoipa::OpenApi;
         UpdateAchievementRequest,
         ApiResponse<Vec<Achievement>>,
         ApiResponse<Achievement>,
+        AcademicStructure,
+        AcademicYear,
+        CreateAcademicYearRequest,
+        UpdateAcademicYearRequest,
+        Semester,
+        CreateSemesterRequest,
+        UpdateSemesterRequest,
+        GradeLevelResponse,
+        CreateGradeLevelRequest,
+        Classroom,
+        ClassroomAdvisor,
+        ClassroomAdvisorInput,
+        CreateClassroomRequest,
+        UpdateClassroomRequest,
+        StudentEnrollment,
+        EnrollStudentRequest,
+        UpdateYearLevelsRequest,
+        crate::modules::academic::handlers::UpdateEnrollmentNumberRequest,
+        crate::modules::academic::handlers::AutoAssignClassNumbersRequest,
+        ApiResponse<AcademicStructure>,
+        ApiResponse<AcademicYear>,
+        ApiResponse<Semester>,
+        ApiResponse<GradeLevelResponse>,
+        ApiResponse<Vec<Classroom>>,
+        ApiResponse<Classroom>,
+        ApiResponse<Vec<StudentEnrollment>>,
         ChildDto,
         ParentProfile,
         ApiResponse<StudentProfile>,
@@ -299,7 +351,7 @@ use utoipa::OpenApi;
         (name = "staff", description = "Staff directory and profiles"),
         (name = "student", description = "Student self-service reads"),
         (name = "parent", description = "Parent self-service reads"),
-        (name = "academic", description = "Academic self-service reads"),
+        (name = "academic", description = "Academic structure administration and self-service reads"),
         (name = "calendar", description = "Calendar reads"),
         (name = "school", description = "School settings and public branding reads"),
         (name = "notifications", description = "Current-user notification reads"),
@@ -859,6 +911,133 @@ mod tests {
     }
 
     #[test]
+    fn academic_structure_mutation_contracts() {
+        let document = school_api_value().expect("document should serialize");
+        assert_operations(
+            &document,
+            &[
+                ("/api/academic/structure", "get", "getAcademicStructure"),
+                ("/api/academic/levels", "post", "createGradeLevel"),
+                ("/api/academic/levels/{id}", "delete", "deleteGradeLevel"),
+                ("/api/academic/years", "post", "createAcademicYear"),
+                ("/api/academic/years/{id}", "put", "updateAcademicYear"),
+                (
+                    "/api/academic/years/{id}/active",
+                    "put",
+                    "setActiveAcademicYear",
+                ),
+                (
+                    "/api/academic/years/{id}/levels",
+                    "get",
+                    "getAcademicYearLevels",
+                ),
+                (
+                    "/api/academic/years/{id}/levels",
+                    "put",
+                    "updateAcademicYearLevels",
+                ),
+                ("/api/academic/semesters", "post", "createSemester"),
+                ("/api/academic/semesters/{id}", "put", "updateSemester"),
+                ("/api/academic/semesters/{id}", "delete", "deleteSemester"),
+                ("/api/academic/classrooms", "get", "listClassrooms"),
+                ("/api/academic/classrooms", "post", "createClassroom"),
+                ("/api/academic/classrooms/{id}", "put", "updateClassroom"),
+                ("/api/academic/enrollments", "post", "enrollStudents"),
+                (
+                    "/api/academic/enrollments/class/{id}",
+                    "get",
+                    "listClassEnrollments",
+                ),
+                (
+                    "/api/academic/enrollments/{id}",
+                    "delete",
+                    "removeEnrollment",
+                ),
+                (
+                    "/api/academic/enrollments/{id}/number",
+                    "put",
+                    "updateEnrollmentNumber",
+                ),
+                (
+                    "/api/academic/enrollments/class/{id}/auto-number",
+                    "post",
+                    "autoAssignClassNumbers",
+                ),
+            ],
+        );
+
+        let create_year = &document["paths"]["/api/academic/years"]["post"];
+        assert_eq!(
+            create_year["requestBody"]["content"]["application/json"]["schema"]["$ref"],
+            "#/components/schemas/CreateAcademicYearRequest"
+        );
+        assert_eq!(
+            create_year["responses"]["201"]["content"]["application/json"]["schema"]["$ref"],
+            "#/components/schemas/ApiResponse_AcademicYear"
+        );
+
+        let create_classroom = &document["paths"]["/api/academic/classrooms"]["post"];
+        assert_eq!(
+            create_classroom["requestBody"]["content"]["application/json"]["schema"]["$ref"],
+            "#/components/schemas/CreateClassroomRequest"
+        );
+        assert_eq!(
+            create_classroom["responses"]["201"]["content"]["application/json"]["schema"]["$ref"],
+            "#/components/schemas/ApiResponse_Classroom"
+        );
+
+        let enroll = &document["paths"]["/api/academic/enrollments"]["post"];
+        assert_eq!(
+            enroll["requestBody"]["content"]["application/json"]["schema"]["$ref"],
+            "#/components/schemas/EnrollStudentRequest"
+        );
+        for (path, method) in [
+            ("/api/academic/levels/{id}", "delete"),
+            ("/api/academic/years/{id}/active", "put"),
+            ("/api/academic/years/{id}/levels", "put"),
+            ("/api/academic/semesters/{id}", "delete"),
+            ("/api/academic/enrollments", "post"),
+            ("/api/academic/enrollments/{id}", "delete"),
+            ("/api/academic/enrollments/{id}/number", "put"),
+            ("/api/academic/enrollments/class/{id}/auto-number", "post"),
+        ] {
+            assert_eq!(
+                document["paths"][path][method]["responses"]["200"]["content"]["application/json"]
+                    ["schema"]["$ref"],
+                "#/components/schemas/ApiResponse_EmptyData",
+                "incorrect empty success envelope for {method} {path}"
+            );
+        }
+
+        let schemas = &document["components"]["schemas"];
+        assert_eq!(
+            schemas["AcademicYear"]["properties"]["id"]["format"],
+            "uuid"
+        );
+        assert_eq!(
+            schemas["AcademicYear"]["properties"]["start_date"]["format"],
+            "date"
+        );
+        assert_eq!(
+            schemas["Classroom"]["properties"]["advisors"]["items"]["$ref"],
+            "#/components/schemas/ClassroomAdvisor"
+        );
+        assert_eq!(
+            schemas["StudentEnrollment"]["properties"]["enrollment_date"]["format"],
+            "date"
+        );
+
+        let operation_count = document["paths"]
+            .as_object()
+            .expect("paths must be an object")
+            .values()
+            .flat_map(|path| path.as_object().expect("path item").values())
+            .filter(|operation| operation.get("operationId").is_some())
+            .count();
+        assert_eq!(operation_count, 100);
+    }
+
+    #[test]
     fn documents_organization_unit_and_permission_grant_operations() {
         let document = school_api_value().expect("document should serialize");
         assert_operations(
@@ -1411,7 +1590,7 @@ mod tests {
                 }
             }
         }
-        assert_eq!(operation_ids.len(), 81);
+        assert_eq!(operation_ids.len(), 100);
 
         let schemas = &document["components"]["schemas"];
         let delegation = &schemas["DelegationItem"];

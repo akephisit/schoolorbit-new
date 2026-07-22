@@ -2,6 +2,7 @@ use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
 use sqlx::types::Json;
 use sqlx::FromRow;
+use utoipa::ToSchema;
 use uuid::Uuid;
 
 // ==========================================
@@ -20,7 +21,7 @@ pub mod timetable;
 // Academic Year Models
 // ==========================================
 
-#[derive(Debug, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Serialize, Deserialize, FromRow, ToSchema)]
 pub struct AcademicYear {
     pub id: Uuid,
     pub year: i32,
@@ -35,7 +36,7 @@ pub struct AcademicYear {
     pub updated_at: chrono::DateTime<chrono::Utc>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct CreateAcademicYearRequest {
     pub year: i32,
     pub name: String,
@@ -45,7 +46,7 @@ pub struct CreateAcademicYearRequest {
     pub school_days: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct UpdateAcademicYearRequest {
     pub year: Option<i32>,
     pub name: Option<String>,
@@ -59,7 +60,7 @@ pub struct UpdateAcademicYearRequest {
 // Semester Models
 // ==========================================
 
-#[derive(Debug, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Serialize, Deserialize, FromRow, ToSchema)]
 pub struct Semester {
     pub id: Uuid,
     pub academic_year_id: Uuid,
@@ -72,7 +73,7 @@ pub struct Semester {
     pub metadata: Option<serde_json::Value>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct CreateSemesterRequest {
     pub academic_year_id: Uuid,
     pub term: String,
@@ -82,7 +83,7 @@ pub struct CreateSemesterRequest {
     pub is_active: Option<bool>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct UpdateSemesterRequest {
     pub term: Option<String>,
     pub name: Option<String>,
@@ -140,7 +141,7 @@ impl GradeLevel {
 }
 
 /// Serializable version with computed fields for API responses
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct GradeLevelResponse {
     pub id: Uuid,
     pub level_type: String,
@@ -167,7 +168,7 @@ impl From<GradeLevel> for GradeLevelResponse {
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct CreateGradeLevelRequest {
     pub level_type: String, // "kindergarten", "primary", "secondary"
     pub year: i32,          // 1, 2, 3...
@@ -179,7 +180,7 @@ pub struct CreateGradeLevelRequest {
 // Classroom Models
 // ==========================================
 
-#[derive(Debug, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Serialize, Deserialize, FromRow, ToSchema)]
 pub struct Classroom {
     pub id: Uuid,
     pub code: String,
@@ -200,6 +201,7 @@ pub struct Classroom {
     /// Advisors aggregated from classroom_advisors junction (1 primary + N secondary)
     #[sqlx(default)]
     #[serde(default)]
+    #[schema(value_type = Vec<ClassroomAdvisor>)]
     pub advisors: Json<Vec<ClassroomAdvisor>>,
 }
 
@@ -208,20 +210,20 @@ pub struct ClassroomQuery {
     pub year_id: Option<Uuid>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+#[derive(Debug, Serialize, Deserialize, Clone, Default, ToSchema)]
 pub struct ClassroomAdvisor {
     pub user_id: Uuid,
     pub role: String,
     pub name: String,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Clone, ToSchema)]
 pub struct ClassroomAdvisorInput {
     pub user_id: Uuid,
     pub role: String, // 'primary' | 'secondary'
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct CreateClassroomRequest {
     pub academic_year_id: Uuid,
     pub grade_level_id: Uuid,
@@ -231,7 +233,7 @@ pub struct CreateClassroomRequest {
     pub advisors: Option<Vec<ClassroomAdvisorInput>>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct UpdateClassroomRequest {
     pub room_number: Option<String>,
     pub study_plan_version_id: Option<Uuid>,
@@ -245,7 +247,7 @@ pub struct UpdateClassroomRequest {
 // Enrollment Models
 // ==========================================
 
-#[derive(Debug, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Serialize, Deserialize, FromRow, ToSchema)]
 pub struct StudentEnrollment {
     pub id: Uuid,
     pub student_id: Uuid,
@@ -262,7 +264,7 @@ pub struct StudentEnrollment {
     pub student_code: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct EnrollStudentRequest {
     pub student_ids: Vec<Uuid>,
     pub class_room_id: Uuid,
@@ -274,7 +276,7 @@ pub struct EnrollStudentRequest {
 // Year-Level Configuration Models
 // ==========================================
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct UpdateYearLevelsRequest {
     pub grade_level_ids: Vec<Uuid>,
 }
