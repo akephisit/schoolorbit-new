@@ -5,6 +5,40 @@
  */
 
 export interface paths {
+	'/api/auth/login': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		/** Login handler */
+		post: operations['login'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/auth/logout': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		/** Logout handler */
+		post: operations['logout'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/api/auth/me': {
 		parameters: {
 			query?: never;
@@ -22,12 +56,431 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/api/auth/me/change-password': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		/**
+		 * Change password handler (POST /me/change-password)
+		 *     Changes user's password after verifying current password
+		 *     Change password handler (POST /me/change-password)
+		 *     Changes user's password after verifying current password
+		 */
+		post: operations['changeCurrentUserPassword'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/auth/me/profile': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		/**
+		 * Get full profile handler (GET /me/profile)
+		 *     Returns complete user profile with all fields
+		 *     Get full profile handler (GET /me/profile)
+		 *     Returns complete user profile with all fields
+		 */
+		get: operations['getCurrentUserProfile'];
+		/**
+		 * Update profile handler (PUT /me/profile)
+		 *     Updates user's editable fields only
+		 *     Update profile handler (PUT /me/profile)
+		 *     Updates user's editable fields only
+		 *     Update profile handler (PUT /me/profile)
+		 *     Updates user's editable fields only
+		 */
+		put: operations['updateCurrentUserProfile'];
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/organization/delegations/{id}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post?: never;
+		delete: operations['revokeOrganizationDelegation'];
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/organization/units': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listOrganizationUnits'];
+		put?: never;
+		post: operations['createOrganizationUnit'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/organization/units/{id}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getOrganizationUnit'];
+		put: operations['updateOrganizationUnit'];
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/organization/units/{id}/delegatable-permissions': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listDelegatablePermissions'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/organization/units/{id}/delegations': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listOrganizationDelegations'];
+		put?: never;
+		post: operations['createOrganizationDelegation'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/organization/units/{id}/members': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listOrganizationMembers'];
+		put?: never;
+		post: operations['addOrganizationMember'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/organization/units/{id}/members/{user_id}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put: operations['updateOrganizationMember'];
+		post?: never;
+		delete: operations['removeOrganizationMember'];
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/organization/units/{id}/permissions': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getOrganizationPermissions'];
+		put: operations['updateOrganizationPermissions'];
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/permissions': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listPermissions'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/permissions/modules': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listPermissionsByModule'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/roles': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listRoles'];
+		put?: never;
+		post: operations['createRole'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/roles/{id}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getRole'];
+		put: operations['updateRole'];
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/users/{id}/permissions': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listUserEffectivePermissions'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/users/{id}/roles': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getUserRoles'];
+		put?: never;
+		post: operations['assignUserRole'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/users/{id}/roles/{role_id}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post?: never;
+		delete: operations['removeUserRole'];
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 }
 export type webhooks = Record<string, never>;
 export interface components {
 	schemas: {
+		AddMemberRequest: {
+			is_primary?: boolean | null;
+			position_code: string;
+			position_title?: string | null;
+			responsibilities?: string | null;
+			/** Format: uuid */
+			user_id: string;
+		};
 		ApiErrorResponse: {
 			error: string;
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_DelegationIdData: {
+			data: {
+				/** Format: uuid */
+				delegation_id: string;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_EmptyData: {
+			data: Record<string, never>;
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_HashMap_String_Vec_Permission: {
+			data: {
+				[key: string]: {
+					action: string;
+					code: string;
+					/** Format: date-time */
+					created_at: string;
+					description: string | null;
+					/** Format: uuid */
+					id: string;
+					module: string;
+					name: string;
+					scope: string;
+				}[];
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_LoginData: {
+			data: {
+				user: components['schemas']['UserResponse'];
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_OrganizationUnit: {
+			data: {
+				category: string;
+				code: string;
+				/** Format: date-time */
+				created_at: string;
+				description: string | null;
+				/** Format: int32 */
+				display_order: number;
+				email: string | null;
+				/** Format: uuid */
+				id: string;
+				is_active: boolean;
+				location: string | null;
+				name: string;
+				name_en: string | null;
+				/** Format: uuid */
+				parent_unit_id: string | null;
+				phone: string | null;
+				/** Format: uuid */
+				subject_group_id: string | null;
+				unit_type: string;
+				/** Format: date-time */
+				updated_at: string;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_ProfileResponse: {
+			data: {
+				address: string | null;
+				/** Format: date-time */
+				createdAt: string;
+				/** Format: date */
+				dateOfBirth: string | null;
+				email: string | null;
+				emergencyContact: string | null;
+				firstName: string;
+				gender: string | null;
+				/** Format: date */
+				hiredDate: string | null;
+				/** Format: uuid */
+				id: string;
+				lastName: string;
+				lineId: string | null;
+				nationalId: string | null;
+				nickname: string | null;
+				phone: string | null;
+				primaryRoleName?: string;
+				profileImageUrl: string | null;
+				status: string;
+				title: string | null;
+				/** Format: date-time */
+				updatedAt: string;
+				username: string;
+				userType: string;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_Role: {
+			data: {
+				code: string;
+				/** Format: date-time */
+				created_at: string;
+				description: string | null;
+				/** Format: uuid */
+				id: string;
+				is_active: boolean;
+				/** Format: int32 */
+				level: number;
+				name: string;
+				name_en: string | null;
+				permissions: string[];
+				/** Format: date-time */
+				updated_at: string;
+				user_type: string;
+			};
 			message?: string;
 			success: boolean;
 		};
@@ -52,6 +505,412 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
+		ApiResponse_UuidIdData: {
+			/** @description OpenAPI transport schema for the UUID identifier payload emitted by `IdData<Uuid>`. */
+			data: {
+				/** Format: uuid */
+				id: string;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_Vec_DelegatablePermission: {
+			data: {
+				code: string;
+				/** Format: uuid */
+				id: string;
+				name: string;
+			}[];
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_Vec_DelegationItem: {
+			data: {
+				/** Format: date-time */
+				expires_at: string | null;
+				/** Format: uuid */
+				from_user_id: string;
+				from_user_name: string;
+				/** Format: uuid */
+				id: string;
+				permission_code: string;
+				/** Format: uuid */
+				permission_id: string;
+				permission_name: string;
+				reason: string | null;
+				/** Format: date-time */
+				started_at: string;
+				/** Format: uuid */
+				to_user_id: string;
+				to_user_name: string;
+			}[];
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_Vec_OrganizationMemberItem: {
+			data: {
+				is_primary: boolean;
+				name: string;
+				/** Format: uuid */
+				organization_unit_id: string;
+				organization_unit_name: string;
+				position_code: string;
+				position_title: string | null;
+				responsibilities: string | null;
+				/** Format: date */
+				started_at: string;
+				title: string;
+				/** Format: uuid */
+				user_id: string;
+			}[];
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_Vec_OrganizationPermissionGrant: {
+			data: {
+				/** Format: uuid */
+				permission_id: string;
+				position_code: string | null;
+			}[];
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_Vec_OrganizationUnit: {
+			data: {
+				category: string;
+				code: string;
+				/** Format: date-time */
+				created_at: string;
+				description: string | null;
+				/** Format: int32 */
+				display_order: number;
+				email: string | null;
+				/** Format: uuid */
+				id: string;
+				is_active: boolean;
+				location: string | null;
+				name: string;
+				name_en: string | null;
+				/** Format: uuid */
+				parent_unit_id: string | null;
+				phone: string | null;
+				/** Format: uuid */
+				subject_group_id: string | null;
+				unit_type: string;
+				/** Format: date-time */
+				updated_at: string;
+			}[];
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_Vec_Permission: {
+			data: {
+				action: string;
+				code: string;
+				/** Format: date-time */
+				created_at: string;
+				description: string | null;
+				/** Format: uuid */
+				id: string;
+				module: string;
+				name: string;
+				scope: string;
+			}[];
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_Vec_Role: {
+			data: {
+				code: string;
+				/** Format: date-time */
+				created_at: string;
+				description: string | null;
+				/** Format: uuid */
+				id: string;
+				is_active: boolean;
+				/** Format: int32 */
+				level: number;
+				name: string;
+				name_en: string | null;
+				permissions: string[];
+				/** Format: date-time */
+				updated_at: string;
+				user_type: string;
+			}[];
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_Vec_String: {
+			data: string[];
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_Vec_UserRoleAssignmentResponse: {
+			data: {
+				/** Format: date-time */
+				created_at: string;
+				/** Format: date */
+				ended_at: string | null;
+				/** Format: uuid */
+				id: string;
+				is_primary: boolean;
+				notes: string | null;
+				/** Format: uuid */
+				organization_unit_id: string | null;
+				role: components['schemas']['Role'];
+				/** Format: uuid */
+				role_id: string;
+				/** Format: date */
+				started_at: string;
+				/** Format: date-time */
+				updated_at: string;
+				/** Format: uuid */
+				user_id: string;
+			}[];
+			message?: string;
+			success: boolean;
+		};
+		AssignRoleRequest: {
+			is_primary?: boolean | null;
+			notes?: string | null;
+			/** Format: uuid */
+			role_id: string;
+			/** Format: date */
+			started_at?: string | null;
+		};
+		ChangePasswordRequest: {
+			currentPassword: string;
+			newPassword: string;
+		};
+		CreateDelegationRequest: {
+			/** Format: date-time */
+			expires_at?: string | null;
+			/** Format: uuid */
+			permission_id: string;
+			reason?: string | null;
+			/** Format: uuid */
+			to_user_id: string;
+		};
+		CreateOrganizationUnitRequest: {
+			category?: string | null;
+			code: string;
+			description?: string | null;
+			email?: string | null;
+			location?: string | null;
+			name: string;
+			name_en?: string | null;
+			/** Format: uuid */
+			parent_unit_id?: string | null;
+			phone?: string | null;
+			/** Format: uuid */
+			subject_group_id?: string | null;
+			unit_type?: string | null;
+		};
+		CreateRoleRequest: {
+			code: string;
+			description?: string | null;
+			/** Format: int32 */
+			level?: number | null;
+			name: string;
+			name_en?: string | null;
+			permissions?: string[] | null;
+			user_type: string;
+		};
+		DelegatablePermission: {
+			code: string;
+			/** Format: uuid */
+			id: string;
+			name: string;
+		};
+		DelegationIdData: {
+			/** Format: uuid */
+			delegation_id: string;
+		};
+		DelegationItem: {
+			/** Format: date-time */
+			expires_at: string | null;
+			/** Format: uuid */
+			from_user_id: string;
+			from_user_name: string;
+			/** Format: uuid */
+			id: string;
+			permission_code: string;
+			/** Format: uuid */
+			permission_id: string;
+			permission_name: string;
+			reason: string | null;
+			/** Format: date-time */
+			started_at: string;
+			/** Format: uuid */
+			to_user_id: string;
+			to_user_name: string;
+		};
+		EmptyData: Record<string, never>;
+		ListMembersQuery: {
+			include_children?: boolean | null;
+		};
+		LoginData: {
+			user: components['schemas']['UserResponse'];
+		};
+		LoginRequest: {
+			password: string;
+			rememberMe?: boolean | null;
+			username: string;
+		};
+		OrganizationMemberItem: {
+			is_primary: boolean;
+			name: string;
+			/** Format: uuid */
+			organization_unit_id: string;
+			organization_unit_name: string;
+			position_code: string;
+			position_title: string | null;
+			responsibilities: string | null;
+			/** Format: date */
+			started_at: string;
+			title: string;
+			/** Format: uuid */
+			user_id: string;
+		};
+		OrganizationPermissionGrant: {
+			/** Format: uuid */
+			permission_id: string;
+			position_code: string | null;
+		};
+		OrganizationPermissionGrantInput: {
+			/** Format: uuid */
+			permission_id: string;
+			position_code?: string | null;
+		};
+		OrganizationUnit: {
+			category: string;
+			code: string;
+			/** Format: date-time */
+			created_at: string;
+			description: string | null;
+			/** Format: int32 */
+			display_order: number;
+			email: string | null;
+			/** Format: uuid */
+			id: string;
+			is_active: boolean;
+			location: string | null;
+			name: string;
+			name_en: string | null;
+			/** Format: uuid */
+			parent_unit_id: string | null;
+			phone: string | null;
+			/** Format: uuid */
+			subject_group_id: string | null;
+			unit_type: string;
+			/** Format: date-time */
+			updated_at: string;
+		};
+		Permission: {
+			action: string;
+			code: string;
+			/** Format: date-time */
+			created_at: string;
+			description: string | null;
+			/** Format: uuid */
+			id: string;
+			module: string;
+			name: string;
+			scope: string;
+		};
+		ProfileResponse: {
+			address: string | null;
+			/** Format: date-time */
+			createdAt: string;
+			/** Format: date */
+			dateOfBirth: string | null;
+			email: string | null;
+			emergencyContact: string | null;
+			firstName: string;
+			gender: string | null;
+			/** Format: date */
+			hiredDate: string | null;
+			/** Format: uuid */
+			id: string;
+			lastName: string;
+			lineId: string | null;
+			nationalId: string | null;
+			nickname: string | null;
+			phone: string | null;
+			primaryRoleName?: string;
+			profileImageUrl: string | null;
+			status: string;
+			title: string | null;
+			/** Format: date-time */
+			updatedAt: string;
+			username: string;
+			userType: string;
+		};
+		Role: {
+			code: string;
+			/** Format: date-time */
+			created_at: string;
+			description: string | null;
+			/** Format: uuid */
+			id: string;
+			is_active: boolean;
+			/** Format: int32 */
+			level: number;
+			name: string;
+			name_en: string | null;
+			permissions: string[];
+			/** Format: date-time */
+			updated_at: string;
+			user_type: string;
+		};
+		UpdateMemberRequest: {
+			is_primary?: boolean | null;
+			/** Format: uuid */
+			new_organization_unit_id?: string | null;
+			position_code: string;
+			position_title?: string | null;
+			responsibilities?: string | null;
+		};
+		UpdateOrganizationPermissionsRequest: {
+			grants: components['schemas']['OrganizationPermissionGrantInput'][];
+		};
+		UpdateOrganizationUnitRequest: {
+			category?: string | null;
+			description?: string | null;
+			email?: string | null;
+			is_active?: boolean | null;
+			location?: string | null;
+			name?: string | null;
+			name_en?: string | null;
+			/** Format: uuid */
+			parent_unit_id?: string | null;
+			phone?: string | null;
+			/** Format: uuid */
+			subject_group_id?: string | null;
+			unit_type?: string | null;
+		};
+		UpdateProfileRequest: {
+			address?: string | null;
+			dateOfBirth?: string | null;
+			email?: string | null;
+			emergencyContact?: string | null;
+			gender?: string | null;
+			lineId?: string | null;
+			nickname?: string | null;
+			phone?: string | null;
+			profileImageUrl?: string | null;
+			title?: string | null;
+		};
+		UpdateRoleRequest: {
+			description?: string | null;
+			is_active?: boolean | null;
+			/** Format: int32 */
+			level?: number | null;
+			name?: string | null;
+			name_en?: string | null;
+			permissions?: string[] | null;
+			user_type?: string | null;
+		};
 		UserResponse: {
 			/** Format: date-time */
 			createdAt: string;
@@ -69,6 +928,32 @@ export interface components {
 			username: string;
 			userType: string;
 		};
+		UserRoleAssignmentResponse: {
+			/** Format: date-time */
+			created_at: string;
+			/** Format: date */
+			ended_at: string | null;
+			/** Format: uuid */
+			id: string;
+			is_primary: boolean;
+			notes: string | null;
+			/** Format: uuid */
+			organization_unit_id: string | null;
+			role: components['schemas']['Role'];
+			/** Format: uuid */
+			role_id: string;
+			/** Format: date */
+			started_at: string;
+			/** Format: date-time */
+			updated_at: string;
+			/** Format: uuid */
+			user_id: string;
+		};
+		/** @description OpenAPI transport schema for the UUID identifier payload emitted by `IdData<Uuid>`. */
+		UuidIdData: {
+			/** Format: uuid */
+			id: string;
+		};
 	};
 	responses: never;
 	parameters: never;
@@ -78,6 +963,68 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+	login: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['LoginRequest'];
+			};
+		};
+		responses: {
+			/** @description Authenticated user */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_LoginData'];
+				};
+			};
+			/** @description Invalid request */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Invalid credentials */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	logout: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Authentication cookie cleared */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_EmptyData'];
+				};
+			};
+		};
+	};
 	getCurrentUser: {
 		parameters: {
 			query?: never;
@@ -98,6 +1045,1319 @@ export interface operations {
 			};
 			/** @description Authentication required or invalid */
 			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	changeCurrentUserPassword: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['ChangePasswordRequest'];
+			};
+		};
+		responses: {
+			/** @description Password changed */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_EmptyData'];
+				};
+			};
+			/** @description Invalid password data */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required or current password invalid */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getCurrentUserProfile: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Current user's full profile */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_ProfileResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description User not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	updateCurrentUserProfile: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['UpdateProfileRequest'];
+			};
+		};
+		responses: {
+			/** @description Updated current-user profile */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_ProfileResponse'];
+				};
+			};
+			/** @description Invalid profile data */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description User not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	revokeOrganizationDelegation: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Delegation ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Delegation revoked */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_EmptyData'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Delegation ownership required */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Delegation not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	listOrganizationUnits: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Organization units */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_OrganizationUnit'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	createOrganizationUnit: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['CreateOrganizationUnitRequest'];
+			};
+		};
+		responses: {
+			/** @description Organization unit created */
+			201: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_UuidIdData'];
+				};
+			};
+			/** @description Invalid organization unit */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Organization unit code conflict */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getOrganizationUnit: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Organization unit ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Organization unit */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_OrganizationUnit'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Organization unit not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	updateOrganizationUnit: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Organization unit ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['UpdateOrganizationUnitRequest'];
+			};
+		};
+		responses: {
+			/** @description Organization unit updated */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_EmptyData'];
+				};
+			};
+			/** @description Invalid organization unit */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Organization unit not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	listDelegatablePermissions: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Organization unit ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Permissions this unit may delegate */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_DelegatablePermission'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Organization approval access required */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	listOrganizationDelegations: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Organization unit ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Active organization delegations */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_DelegationItem'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Organization approval access required */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	createOrganizationDelegation: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Organization unit ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['CreateDelegationRequest'];
+			};
+		};
+		responses: {
+			/** @description Delegation created */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_DelegationIdData'];
+				};
+			};
+			/** @description Invalid delegation target or permission */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Organization approval access required */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	listOrganizationMembers: {
+		parameters: {
+			query?: {
+				/** @description Include direct child units */
+				include_children?: boolean;
+			};
+			header?: never;
+			path: {
+				/** @description Organization unit ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Organization members */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_OrganizationMemberItem'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	addOrganizationMember: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Organization unit ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['AddMemberRequest'];
+			};
+		};
+		responses: {
+			/** @description Organization member added */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_EmptyData'];
+				};
+			};
+			/** @description User is already a member */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	updateOrganizationMember: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Organization unit ID */
+				id: string;
+				/** @description User ID */
+				user_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['UpdateMemberRequest'];
+			};
+		};
+		responses: {
+			/** @description Organization member updated */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_EmptyData'];
+				};
+			};
+			/** @description Invalid membership */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Membership not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	removeOrganizationMember: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Organization unit ID */
+				id: string;
+				/** @description User ID */
+				user_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Organization member removed */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_EmptyData'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getOrganizationPermissions: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Organization unit ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Organization permission grants */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_OrganizationPermissionGrant'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	updateOrganizationPermissions: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Organization unit ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['UpdateOrganizationPermissionsRequest'];
+			};
+		};
+		responses: {
+			/** @description Organization permission grants replaced */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_EmptyData'];
+				};
+			};
+			/** @description Invalid permission grants */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Organization unit not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	listPermissions: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Permissions */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_Permission'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	listPermissionsByModule: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Permissions grouped by module */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_HashMap_String_Vec_Permission'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	listRoles: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Roles */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_Role'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	createRole: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['CreateRoleRequest'];
+			};
+		};
+		responses: {
+			/** @description Role created */
+			201: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_UuidIdData'];
+				};
+			};
+			/** @description Invalid role */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Role code conflict */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getRole: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Role ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Role */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Role'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Role not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	updateRole: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Role ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['UpdateRoleRequest'];
+			};
+		};
+		responses: {
+			/** @description Role updated */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_EmptyData'];
+				};
+			};
+			/** @description Invalid role */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Role not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	listUserEffectivePermissions: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description User ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Effective permission codes */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_String'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getUserRoles: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description User ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description User role assignments */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_UserRoleAssignmentResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	assignUserRole: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description User ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['AssignRoleRequest'];
+			};
+		};
+		responses: {
+			/** @description Role assigned */
+			201: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_UuidIdData'];
+				};
+			};
+			/** @description Role cannot be assigned */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description User or role not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	removeUserRole: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description User ID */
+				id: string;
+				/** @description Role ID */
+				role_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Role assignment removed */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_EmptyData'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Role assignment not found */
+			404: {
 				headers: {
 					[name: string]: unknown;
 				};

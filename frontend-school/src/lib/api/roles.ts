@@ -1,50 +1,18 @@
 // Role & Permission API Client
 import { apiClient } from './client';
+import type { components } from './generated/school-api';
 import type { ApiResponse } from './types';
 
-// Types
-export interface Role {
-	id: string;
-	code: string;
-	name: string;
-	name_en?: string;
-	description?: string;
-	user_type: string; // Changed from category to user_type
-	level: number;
-	permissions: string[];
-	is_active: boolean;
-	created_at: string;
-	updated_at?: string;
-}
-
-export interface Permission {
-	id: string;
-	code: string;
-	name: string;
-	module: string;
-	action: string;
-	scope: string;
-	description?: string;
-	created_at: string;
-}
-
-export interface UserRoleAssignment {
-	id: string;
-	user_id: string;
-	role_id: string;
-	organization_unit_id: string | null;
-	role: Role;
-	is_primary: boolean;
-	started_at: string;
-	ended_at: string | null;
-	notes: string | null;
-	created_at: string;
-	updated_at: string;
-}
-
-export interface PermissionsByModule {
-	[module: string]: Permission[];
-}
+type Schemas = components['schemas'];
+export type Role = Schemas['Role'];
+export type Permission = Schemas['Permission'];
+export type UserRoleAssignment = Schemas['UserRoleAssignmentResponse'];
+export type PermissionsByModule = Schemas['ApiResponse_HashMap_String_Vec_Permission']['data'];
+type CreateRoleRequest = Schemas['CreateRoleRequest'];
+type UpdateRoleRequest = Schemas['UpdateRoleRequest'];
+type AssignRoleRequest = Schemas['AssignRoleRequest'];
+type UuidIdData = Schemas['UuidIdData'];
+type EmptyData = Schemas['EmptyData'];
 
 // Role Management API
 export const roleAPI = {
@@ -59,32 +27,13 @@ export const roleAPI = {
 	},
 
 	// Create role
-	async createRole(data: {
-		code: string;
-		name: string;
-		name_en?: string;
-		description?: string;
-		user_type: string; // Changed from category to user_type
-		level?: number;
-		permissions?: string[];
-	}): Promise<ApiResponse<{ id: string }>> {
-		return apiClient.post<{ id: string }>('/api/roles', data);
+	async createRole(data: CreateRoleRequest): Promise<ApiResponse<UuidIdData>> {
+		return apiClient.post<UuidIdData>('/api/roles', data);
 	},
 
 	// Update role
-	async updateRole(
-		roleId: string,
-		data: {
-			name?: string;
-			name_en?: string;
-			description?: string;
-			user_type?: string; // Changed from category to user_type
-			level?: number;
-			permissions?: string[];
-			is_active?: boolean;
-		}
-	): Promise<ApiResponse<Record<string, never>>> {
-		return apiClient.put<Record<string, never>>(`/api/roles/${roleId}`, data);
+	async updateRole(roleId: string, data: UpdateRoleRequest): Promise<ApiResponse<EmptyData>> {
+		return apiClient.put<EmptyData>(`/api/roles/${roleId}`, data);
 	},
 
 	// Delete role
@@ -114,20 +63,13 @@ export const userRoleAPI = {
 	},
 
 	// Assign role to user
-	async assignRole(
-		userId: string,
-		data: {
-			role_id: string;
-			is_primary?: boolean;
-			started_at?: string;
-		}
-	): Promise<ApiResponse<{ id: string }>> {
-		return apiClient.post<{ id: string }>(`/api/users/${userId}/roles`, data);
+	async assignRole(userId: string, data: AssignRoleRequest): Promise<ApiResponse<UuidIdData>> {
+		return apiClient.post<UuidIdData>(`/api/users/${userId}/roles`, data);
 	},
 
 	// Remove role from user
-	async removeRole(userId: string, roleId: string): Promise<ApiResponse<Record<string, never>>> {
-		return apiClient.delete<Record<string, never>>(`/api/users/${userId}/roles/${roleId}`);
+	async removeRole(userId: string, roleId: string): Promise<ApiResponse<EmptyData>> {
+		return apiClient.delete<EmptyData>(`/api/users/${userId}/roles/${roleId}`);
 	},
 
 	// Get user's effective permissions

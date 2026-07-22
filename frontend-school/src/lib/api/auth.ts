@@ -3,44 +3,14 @@ import type { components } from '$lib/api/generated/school-api';
 import { authStore, type User } from '$lib/stores/auth';
 import { toast } from 'svelte-sonner';
 
-export interface LoginRequest {
-	username: string;
-	password: string;
-	rememberMe?: boolean;
-}
-
-export interface ProfileResponse {
-	// Read-only fields
-	id: string;
-	username?: string;
-	nationalId?: string;
-	firstName: string;
-	lastName: string;
-	userType: string;
-	status: string;
-	createdAt: string;
-	updatedAt: string;
-	primaryRoleName?: string;
-
-	// Editable fields
-	title?: string;
-	nickname?: string;
-	email?: string;
-	phone?: string;
-	emergencyContact?: string;
-	lineId?: string;
-	dateOfBirth?: string;
-	gender?: string;
-	address?: string;
-	profileImageUrl?: string;
-	hiredDate?: string;
-}
-
-export type CurrentUserDto = components['schemas']['UserResponse'];
-
-interface LoginData {
-	user: CurrentUserDto;
-}
+type Schemas = components['schemas'];
+export type LoginRequest = Schemas['LoginRequest'];
+export type ProfileResponse = Schemas['ProfileResponse'];
+export type CurrentUserDto = Schemas['UserResponse'];
+type LoginData = Schemas['LoginData'];
+type UpdateProfileRequestDto = Schemas['UpdateProfileRequest'];
+type ChangePasswordRequestDto = Schemas['ChangePasswordRequest'];
+type EmptyData = Schemas['EmptyData'];
 
 function normalizeCurrentUser(userData: CurrentUserDto): User {
 	return {
@@ -94,7 +64,7 @@ class AuthAPI {
 	 */
 	async logout(): Promise<void> {
 		try {
-			const response = await apiClient.post<Record<string, never>>('/api/auth/logout');
+			const response = await apiClient.post<EmptyData>('/api/auth/logout');
 			if (!response.success) throw new Error(response.error || 'ออกจากระบบไม่สำเร็จ');
 			toast.success(response.message || 'ออกจากระบบสำเร็จ');
 		} catch (error) {
@@ -143,18 +113,7 @@ class AuthAPI {
 	/**
 	 * Update user profile
 	 */
-	async updateProfile(data: {
-		title?: string;
-		nickname?: string;
-		email?: string;
-		phone?: string;
-		emergencyContact?: string;
-		lineId?: string;
-		dateOfBirth?: string;
-		gender?: string;
-		address?: string;
-		profileImageUrl?: string;
-	}): Promise<ProfileResponse> {
+	async updateProfile(data: UpdateProfileRequestDto): Promise<ProfileResponse> {
 		const response = await apiClient.put<ProfileResponse>('/api/auth/me/profile', data);
 		return requireApiData(response, 'ไม่สามารถบันทึกข้อมูลได้');
 	}
@@ -162,14 +121,10 @@ class AuthAPI {
 	/**
 	 * Change password
 	 */
-	async changePassword(data: {
-		currentPassword: string;
-		newPassword: string;
-	}): Promise<{ success: boolean; message: string }> {
-		const response = await apiClient.post<Record<string, never>>(
-			'/api/auth/me/change-password',
-			data
-		);
+	async changePassword(
+		data: ChangePasswordRequestDto
+	): Promise<{ success: boolean; message: string }> {
+		const response = await apiClient.post<EmptyData>('/api/auth/me/change-password', data);
 		if (!response.success) throw new Error(response.error || 'ไม่สามารถเปลี่ยนรหัสผ่านได้');
 
 		return {

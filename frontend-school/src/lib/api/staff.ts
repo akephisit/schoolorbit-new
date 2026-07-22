@@ -2,6 +2,9 @@
 // ติดต่อกับ backend-school service
 
 import { apiClient, requireApiData, type ApiResponse } from '$lib/api/client';
+import type { components } from '$lib/api/generated/school-api';
+
+type Schemas = components['schemas'];
 
 export interface StaffListItem {
 	id: string;
@@ -210,38 +213,8 @@ export interface UpdateStaffRequest {
 	}>;
 }
 
-export interface Role {
-	id: string;
-	code: string;
-	name: string;
-	name_en?: string;
-	description?: string;
-	user_type: string; // Changed from category to user_type
-	level: number;
-	permissions: string[];
-	is_active: boolean;
-	created_at: string;
-	updated_at: string;
-}
-
-export interface OrganizationUnit {
-	id: string;
-	code: string;
-	name: string;
-	name_en?: string;
-	description?: string;
-	parent_unit_id?: string;
-	category?: string;
-	unit_type?: string;
-	subject_group_id?: string;
-	phone?: string;
-	email?: string;
-	location?: string;
-	is_active: boolean;
-	display_order: number;
-	created_at: string;
-	updated_at: string;
-}
+export type Role = Schemas['Role'];
+export type OrganizationUnit = Schemas['OrganizationUnit'];
 
 interface StaffFilter {
 	user_type?: string;
@@ -355,48 +328,22 @@ export async function getOrganizationUnit(unitId: string): Promise<ApiResponse<O
 	return apiClient.get<OrganizationUnit>(`/api/organization/units/${unitId}`);
 }
 
-export interface CreateOrganizationUnitRequest {
-	code: string;
-	name: string;
-	name_en?: string;
-	description?: string;
-	parent_unit_id?: string;
-	category?: string;
-	unit_type?: string;
-	subject_group_id?: string;
-	phone?: string;
-	email?: string;
-	location?: string;
-	is_active?: boolean;
-	display_order?: number;
-}
-
-export interface UpdateOrganizationUnitRequest {
-	name?: string;
-	name_en?: string;
-	description?: string;
-	parent_unit_id?: string;
-	category?: string;
-	unit_type?: string;
-	subject_group_id?: string;
-	phone?: string;
-	email?: string;
-	location?: string;
-	is_active?: boolean;
-	display_order?: number;
-}
+export type CreateOrganizationUnitRequest = Schemas['CreateOrganizationUnitRequest'];
+export type UpdateOrganizationUnitRequest = Schemas['UpdateOrganizationUnitRequest'];
+type UuidIdData = Schemas['UuidIdData'];
+type EmptyData = Schemas['EmptyData'];
 
 export async function createOrganizationUnit(
 	data: CreateOrganizationUnitRequest
-): Promise<ApiResponse<{ id: string }>> {
-	return apiClient.post<{ id: string }>('/api/organization/units', data);
+): Promise<ApiResponse<UuidIdData>> {
+	return apiClient.post<UuidIdData>('/api/organization/units', data);
 }
 
 export async function updateOrganizationUnit(
 	unitId: string,
 	data: UpdateOrganizationUnitRequest
-): Promise<ApiResponse<Record<string, never>>> {
-	return apiClient.put<Record<string, never>>(`/api/organization/units/${unitId}`, data);
+): Promise<ApiResponse<EmptyData>> {
+	return apiClient.put<EmptyData>(`/api/organization/units/${unitId}`, data);
 }
 
 export async function deleteOrganizationUnit(
@@ -409,10 +356,8 @@ export async function deleteOrganizationUnit(
 // Organization Permission APIs
 // ===================================================================
 
-export interface OrganizationPermissionGrant {
-	permission_id: string;
-	position_code?: string | null;
-}
+export type OrganizationPermissionGrant = Schemas['OrganizationPermissionGrant'];
+type OrganizationPermissionGrantInput = Schemas['OrganizationPermissionGrantInput'];
 
 export async function getOrganizationPermissions(
 	unitId: string
@@ -425,9 +370,9 @@ export async function getOrganizationPermissions(
 
 export async function updateOrganizationPermissions(
 	unitId: string,
-	grants: OrganizationPermissionGrant[]
-): Promise<ApiResponse<Record<string, never>>> {
-	return apiClient.put<Record<string, never>>(`/api/organization/units/${unitId}/permissions`, {
+	grants: OrganizationPermissionGrantInput[]
+): Promise<ApiResponse<EmptyData>> {
+	return apiClient.put<EmptyData>(`/api/organization/units/${unitId}/permissions`, {
 		grants
 	});
 }
@@ -436,32 +381,9 @@ export async function updateOrganizationPermissions(
 // Delegation APIs
 // ===================================================================
 
-export interface DelegationItem {
-	id: string;
-	from_user_id: string;
-	from_user_name: string;
-	to_user_id: string;
-	to_user_name: string;
-	permission_id: string;
-	permission_code: string;
-	permission_name: string;
-	reason: string | null;
-	started_at: string;
-	expires_at: string | null;
-}
-
-export interface CreateDelegationBody {
-	to_user_id: string;
-	permission_id: string;
-	reason?: string;
-	expires_at?: string;
-}
-
-export interface DelegatablePermission {
-	id: string;
-	code: string;
-	name: string;
-}
+export type DelegationItem = Schemas['DelegationItem'];
+export type CreateDelegationBody = Schemas['CreateDelegationRequest'];
+export type DelegatablePermission = Schemas['DelegatablePermission'];
 
 export async function listDelegatablePermissions(
 	organizationUnitId: string
@@ -482,55 +404,28 @@ export async function listDelegations(
 export async function createDelegation(
 	organizationUnitId: string,
 	body: CreateDelegationBody
-): Promise<ApiResponse<{ delegation_id: string }>> {
-	return apiClient.post<{ delegation_id: string }>(
+): Promise<ApiResponse<Schemas['DelegationIdData']>> {
+	return apiClient.post<Schemas['DelegationIdData']>(
 		`/api/organization/units/${organizationUnitId}/delegations`,
 		body
 	);
 }
 
-export async function revokeDelegation(
-	delegationId: string
-): Promise<ApiResponse<Record<string, never>>> {
-	return apiClient.delete<Record<string, never>>(`/api/organization/delegations/${delegationId}`);
+export async function revokeDelegation(delegationId: string): Promise<ApiResponse<EmptyData>> {
+	return apiClient.delete<EmptyData>(`/api/organization/delegations/${delegationId}`);
 }
 
 // ===================================================================
 // Organization Member Management APIs
 // ===================================================================
 
-export interface OrganizationMemberItem {
-	user_id: string;
-	organization_unit_id: string;
-	organization_unit_name: string;
-	name: string;
-	title: string;
-	position_code: string;
-	position_title?: string | null;
-	is_primary: boolean;
-	responsibilities: string | null;
-	started_at: string;
-}
-
-export interface AddMemberBody {
-	user_id: string;
-	position_code: string;
-	position_title?: string;
-	is_primary?: boolean;
-	responsibilities?: string;
-}
-
-export interface UpdateMemberBody {
-	position_code: string;
-	position_title?: string;
-	is_primary?: boolean;
-	responsibilities?: string;
-	new_organization_unit_id?: string;
-}
+export type OrganizationMemberItem = Schemas['OrganizationMemberItem'];
+export type AddMemberBody = Schemas['AddMemberRequest'];
+export type UpdateMemberBody = Schemas['UpdateMemberRequest'];
 
 export async function listOrganizationMembers(
 	unitId: string,
-	options?: { include_children?: boolean }
+	options?: Schemas['ListMembersQuery']
 ): Promise<ApiResponse<OrganizationMemberItem[]>> {
 	const params = options?.include_children ? '?include_children=true' : '';
 	return apiClient.get<OrganizationMemberItem[]>(
@@ -541,26 +436,21 @@ export async function listOrganizationMembers(
 export async function addOrganizationMember(
 	unitId: string,
 	body: AddMemberBody
-): Promise<ApiResponse<Record<string, never>>> {
-	return apiClient.post<Record<string, never>>(`/api/organization/units/${unitId}/members`, body);
+): Promise<ApiResponse<EmptyData>> {
+	return apiClient.post<EmptyData>(`/api/organization/units/${unitId}/members`, body);
 }
 
 export async function updateOrganizationMember(
 	unitId: string,
 	userId: string,
 	body: UpdateMemberBody
-): Promise<ApiResponse<Record<string, never>>> {
-	return apiClient.put<Record<string, never>>(
-		`/api/organization/units/${unitId}/members/${userId}`,
-		body
-	);
+): Promise<ApiResponse<EmptyData>> {
+	return apiClient.put<EmptyData>(`/api/organization/units/${unitId}/members/${userId}`, body);
 }
 
 export async function removeOrganizationMember(
 	unitId: string,
 	userId: string
-): Promise<ApiResponse<Record<string, never>>> {
-	return apiClient.delete<Record<string, never>>(
-		`/api/organization/units/${unitId}/members/${userId}`
-	);
+): Promise<ApiResponse<EmptyData>> {
+	return apiClient.delete<EmptyData>(`/api/organization/units/${unitId}/members/${userId}`);
 }

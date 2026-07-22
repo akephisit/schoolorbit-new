@@ -51,12 +51,14 @@ test('organization permission matrix keeps header and row checkboxes aligned', a
 test('permission assignment UI explains action and resource scope', async () => {
 	const registry = await readProjectFile('src/lib/permissions/registry.ts');
 	const rolesApi = await readProjectFile('src/lib/api/roles.ts');
+	const generatedApi = await readProjectFile('src/lib/api/generated/school-api.ts');
 	const organizationDialog = await readProjectFile(
 		'src/lib/components/staff/OrganizationPermissionDialog.svelte'
 	);
 	const roleEditor = await readProjectFile('src/routes/(app)/staff/roles/[id]/+page.svelte');
 
-	assert.match(rolesApi, /scope:\s*string/);
+	assert.match(rolesApi, /export\s+type\s+Permission\s*=\s*Schemas\['Permission'\]/);
+	assert.match(generatedApi, /\n\s*Permission:\s*\{[\s\S]*?\n\s*scope:\s*string;/);
 	assert.match(registry, /permissionScopeMeta/);
 	assert.match(registry, /permissionActionLabel/);
 	assert.match(registry, /permissionScopeToneClass/);

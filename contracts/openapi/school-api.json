@@ -1,6 +1,40 @@
 {
   "components": {
     "schemas": {
+      "AddMemberRequest": {
+        "properties": {
+          "is_primary": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "position_code": {
+            "type": "string"
+          },
+          "position_title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "responsibilities": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "user_id": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_id",
+          "position_code"
+        ],
+        "type": "object"
+      },
       "ApiErrorResponse": {
         "properties": {
           "error": {
@@ -16,6 +50,483 @@
         "required": [
           "success",
           "error"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_DelegationIdData": {
+        "properties": {
+          "data": {
+            "properties": {
+              "delegation_id": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "delegation_id"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_EmptyData": {
+        "properties": {
+          "data": {
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_HashMap_String_Vec_Permission": {
+        "properties": {
+          "data": {
+            "additionalProperties": {
+              "items": {
+                "properties": {
+                  "action": {
+                    "type": "string"
+                  },
+                  "code": {
+                    "type": "string"
+                  },
+                  "created_at": {
+                    "format": "date-time",
+                    "type": "string"
+                  },
+                  "description": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "id": {
+                    "format": "uuid",
+                    "type": "string"
+                  },
+                  "module": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "scope": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "code",
+                  "name",
+                  "module",
+                  "action",
+                  "scope",
+                  "description",
+                  "created_at"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_LoginData": {
+        "properties": {
+          "data": {
+            "properties": {
+              "user": {
+                "$ref": "#/components/schemas/UserResponse"
+              }
+            },
+            "required": [
+              "user"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_OrganizationUnit": {
+        "properties": {
+          "data": {
+            "properties": {
+              "category": {
+                "type": "string"
+              },
+              "code": {
+                "type": "string"
+              },
+              "created_at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "description": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "display_order": {
+                "format": "int32",
+                "type": "integer"
+              },
+              "email": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "is_active": {
+                "type": "boolean"
+              },
+              "location": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "name": {
+                "type": "string"
+              },
+              "name_en": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "parent_unit_id": {
+                "format": "uuid",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "phone": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "subject_group_id": {
+                "format": "uuid",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "unit_type": {
+                "type": "string"
+              },
+              "updated_at": {
+                "format": "date-time",
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "code",
+              "name",
+              "name_en",
+              "description",
+              "parent_unit_id",
+              "phone",
+              "email",
+              "location",
+              "is_active",
+              "display_order",
+              "category",
+              "unit_type",
+              "subject_group_id",
+              "created_at",
+              "updated_at"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_ProfileResponse": {
+        "properties": {
+          "data": {
+            "properties": {
+              "address": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "createdAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "dateOfBirth": {
+                "format": "date",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "email": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "emergencyContact": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "firstName": {
+                "type": "string"
+              },
+              "gender": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "hiredDate": {
+                "format": "date",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "lastName": {
+                "type": "string"
+              },
+              "lineId": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "nationalId": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "nickname": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "phone": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "primaryRoleName": {
+                "type": "string"
+              },
+              "profileImageUrl": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "status": {
+                "type": "string"
+              },
+              "title": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "updatedAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "username": {
+                "type": "string"
+              },
+              "userType": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "username",
+              "nationalId",
+              "firstName",
+              "lastName",
+              "userType",
+              "status",
+              "createdAt",
+              "updatedAt",
+              "title",
+              "nickname",
+              "email",
+              "phone",
+              "emergencyContact",
+              "lineId",
+              "dateOfBirth",
+              "gender",
+              "address",
+              "profileImageUrl",
+              "hiredDate"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_Role": {
+        "properties": {
+          "data": {
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "created_at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "description": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "is_active": {
+                "type": "boolean"
+              },
+              "level": {
+                "format": "int32",
+                "type": "integer"
+              },
+              "name": {
+                "type": "string"
+              },
+              "name_en": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "permissions": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "updated_at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "user_type": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "code",
+              "name",
+              "name_en",
+              "description",
+              "user_type",
+              "level",
+              "permissions",
+              "is_active",
+              "created_at",
+              "updated_at"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
         ],
         "type": "object"
       },
@@ -108,6 +619,1635 @@
         ],
         "type": "object"
       },
+      "ApiResponse_UuidIdData": {
+        "properties": {
+          "data": {
+            "description": "OpenAPI transport schema for the UUID identifier payload emitted by `IdData<Uuid>`.",
+            "properties": {
+              "id": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "id"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_Vec_DelegatablePermission": {
+        "properties": {
+          "data": {
+            "items": {
+              "properties": {
+                "code": {
+                  "type": "string"
+                },
+                "id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "code",
+                "name"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_Vec_DelegationItem": {
+        "properties": {
+          "data": {
+            "items": {
+              "properties": {
+                "expires_at": {
+                  "format": "date-time",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "from_user_id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "from_user_name": {
+                  "type": "string"
+                },
+                "id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "permission_code": {
+                  "type": "string"
+                },
+                "permission_id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "permission_name": {
+                  "type": "string"
+                },
+                "reason": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "started_at": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "to_user_id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "to_user_name": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "from_user_id",
+                "from_user_name",
+                "to_user_id",
+                "to_user_name",
+                "permission_id",
+                "permission_code",
+                "permission_name",
+                "reason",
+                "started_at",
+                "expires_at"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_Vec_OrganizationMemberItem": {
+        "properties": {
+          "data": {
+            "items": {
+              "properties": {
+                "is_primary": {
+                  "type": "boolean"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "organization_unit_id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "organization_unit_name": {
+                  "type": "string"
+                },
+                "position_code": {
+                  "type": "string"
+                },
+                "position_title": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "responsibilities": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "started_at": {
+                  "format": "date",
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string"
+                },
+                "user_id": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "user_id",
+                "organization_unit_id",
+                "organization_unit_name",
+                "name",
+                "title",
+                "position_code",
+                "position_title",
+                "is_primary",
+                "responsibilities",
+                "started_at"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_Vec_OrganizationPermissionGrant": {
+        "properties": {
+          "data": {
+            "items": {
+              "properties": {
+                "permission_id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "position_code": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "permission_id",
+                "position_code"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_Vec_OrganizationUnit": {
+        "properties": {
+          "data": {
+            "items": {
+              "properties": {
+                "category": {
+                  "type": "string"
+                },
+                "code": {
+                  "type": "string"
+                },
+                "created_at": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "description": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "display_order": {
+                  "format": "int32",
+                  "type": "integer"
+                },
+                "email": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "is_active": {
+                  "type": "boolean"
+                },
+                "location": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "name": {
+                  "type": "string"
+                },
+                "name_en": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "parent_unit_id": {
+                  "format": "uuid",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "phone": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "subject_group_id": {
+                  "format": "uuid",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "unit_type": {
+                  "type": "string"
+                },
+                "updated_at": {
+                  "format": "date-time",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "code",
+                "name",
+                "name_en",
+                "description",
+                "parent_unit_id",
+                "phone",
+                "email",
+                "location",
+                "is_active",
+                "display_order",
+                "category",
+                "unit_type",
+                "subject_group_id",
+                "created_at",
+                "updated_at"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_Vec_Permission": {
+        "properties": {
+          "data": {
+            "items": {
+              "properties": {
+                "action": {
+                  "type": "string"
+                },
+                "code": {
+                  "type": "string"
+                },
+                "created_at": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "description": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "module": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "scope": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "code",
+                "name",
+                "module",
+                "action",
+                "scope",
+                "description",
+                "created_at"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_Vec_Role": {
+        "properties": {
+          "data": {
+            "items": {
+              "properties": {
+                "code": {
+                  "type": "string"
+                },
+                "created_at": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "description": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "is_active": {
+                  "type": "boolean"
+                },
+                "level": {
+                  "format": "int32",
+                  "type": "integer"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "name_en": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "permissions": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "updated_at": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "user_type": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "code",
+                "name",
+                "name_en",
+                "description",
+                "user_type",
+                "level",
+                "permissions",
+                "is_active",
+                "created_at",
+                "updated_at"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_Vec_String": {
+        "properties": {
+          "data": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_Vec_UserRoleAssignmentResponse": {
+        "properties": {
+          "data": {
+            "items": {
+              "properties": {
+                "created_at": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "ended_at": {
+                  "format": "date",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "is_primary": {
+                  "type": "boolean"
+                },
+                "notes": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "organization_unit_id": {
+                  "format": "uuid",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "role": {
+                  "$ref": "#/components/schemas/Role"
+                },
+                "role_id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "started_at": {
+                  "format": "date",
+                  "type": "string"
+                },
+                "updated_at": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "user_id": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "user_id",
+                "role_id",
+                "organization_unit_id",
+                "role",
+                "is_primary",
+                "started_at",
+                "ended_at",
+                "notes",
+                "created_at",
+                "updated_at"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "AssignRoleRequest": {
+        "properties": {
+          "is_primary": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "notes": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "role_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "started_at": {
+            "format": "date",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "role_id"
+        ],
+        "type": "object"
+      },
+      "ChangePasswordRequest": {
+        "properties": {
+          "currentPassword": {
+            "type": "string"
+          },
+          "newPassword": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "currentPassword",
+          "newPassword"
+        ],
+        "type": "object"
+      },
+      "CreateDelegationRequest": {
+        "properties": {
+          "expires_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "permission_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "to_user_id": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "to_user_id",
+          "permission_id"
+        ],
+        "type": "object"
+      },
+      "CreateOrganizationUnitRequest": {
+        "properties": {
+          "category": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "code": {
+            "type": "string"
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "email": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "location": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "name_en": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "parent_unit_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "phone": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "subject_group_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "unit_type": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "code",
+          "name"
+        ],
+        "type": "object"
+      },
+      "CreateRoleRequest": {
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "level": {
+            "format": "int32",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "name_en": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "permissions": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "user_type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "name",
+          "user_type"
+        ],
+        "type": "object"
+      },
+      "DelegatablePermission": {
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "name"
+        ],
+        "type": "object"
+      },
+      "DelegationIdData": {
+        "properties": {
+          "delegation_id": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "delegation_id"
+        ],
+        "type": "object"
+      },
+      "DelegationItem": {
+        "properties": {
+          "expires_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "from_user_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "from_user_name": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "permission_code": {
+            "type": "string"
+          },
+          "permission_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "permission_name": {
+            "type": "string"
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "started_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "to_user_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "to_user_name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "from_user_id",
+          "from_user_name",
+          "to_user_id",
+          "to_user_name",
+          "permission_id",
+          "permission_code",
+          "permission_name",
+          "reason",
+          "started_at",
+          "expires_at"
+        ],
+        "type": "object"
+      },
+      "EmptyData": {
+        "type": "object"
+      },
+      "ListMembersQuery": {
+        "properties": {
+          "include_children": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "LoginData": {
+        "properties": {
+          "user": {
+            "$ref": "#/components/schemas/UserResponse"
+          }
+        },
+        "required": [
+          "user"
+        ],
+        "type": "object"
+      },
+      "LoginRequest": {
+        "properties": {
+          "password": {
+            "type": "string"
+          },
+          "rememberMe": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "username": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "username",
+          "password"
+        ],
+        "type": "object"
+      },
+      "OrganizationMemberItem": {
+        "properties": {
+          "is_primary": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "organization_unit_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "organization_unit_name": {
+            "type": "string"
+          },
+          "position_code": {
+            "type": "string"
+          },
+          "position_title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "responsibilities": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "started_at": {
+            "format": "date",
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "user_id": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_id",
+          "organization_unit_id",
+          "organization_unit_name",
+          "name",
+          "title",
+          "position_code",
+          "position_title",
+          "is_primary",
+          "responsibilities",
+          "started_at"
+        ],
+        "type": "object"
+      },
+      "OrganizationPermissionGrant": {
+        "properties": {
+          "permission_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "position_code": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "permission_id",
+          "position_code"
+        ],
+        "type": "object"
+      },
+      "OrganizationPermissionGrantInput": {
+        "properties": {
+          "permission_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "position_code": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "permission_id"
+        ],
+        "type": "object"
+      },
+      "OrganizationUnit": {
+        "properties": {
+          "category": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "display_order": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "email": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "is_active": {
+            "type": "boolean"
+          },
+          "location": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "name_en": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "parent_unit_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "phone": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "subject_group_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "unit_type": {
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "name",
+          "name_en",
+          "description",
+          "parent_unit_id",
+          "phone",
+          "email",
+          "location",
+          "is_active",
+          "display_order",
+          "category",
+          "unit_type",
+          "subject_group_id",
+          "created_at",
+          "updated_at"
+        ],
+        "type": "object"
+      },
+      "Permission": {
+        "properties": {
+          "action": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "module": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "scope": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "name",
+          "module",
+          "action",
+          "scope",
+          "description",
+          "created_at"
+        ],
+        "type": "object"
+      },
+      "ProfileResponse": {
+        "properties": {
+          "address": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "dateOfBirth": {
+            "format": "date",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "email": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "emergencyContact": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "firstName": {
+            "type": "string"
+          },
+          "gender": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "hiredDate": {
+            "format": "date",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "lastName": {
+            "type": "string"
+          },
+          "lineId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "nationalId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "nickname": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "phone": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "primaryRoleName": {
+            "type": "string"
+          },
+          "profileImageUrl": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "type": "string"
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "username": {
+            "type": "string"
+          },
+          "userType": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "username",
+          "nationalId",
+          "firstName",
+          "lastName",
+          "userType",
+          "status",
+          "createdAt",
+          "updatedAt",
+          "title",
+          "nickname",
+          "email",
+          "phone",
+          "emergencyContact",
+          "lineId",
+          "dateOfBirth",
+          "gender",
+          "address",
+          "profileImageUrl",
+          "hiredDate"
+        ],
+        "type": "object"
+      },
+      "Role": {
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "is_active": {
+            "type": "boolean"
+          },
+          "level": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "name_en": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "permissions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "user_type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "name",
+          "name_en",
+          "description",
+          "user_type",
+          "level",
+          "permissions",
+          "is_active",
+          "created_at",
+          "updated_at"
+        ],
+        "type": "object"
+      },
+      "UpdateMemberRequest": {
+        "properties": {
+          "is_primary": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "new_organization_unit_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "position_code": {
+            "type": "string"
+          },
+          "position_title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "responsibilities": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "position_code"
+        ],
+        "type": "object"
+      },
+      "UpdateOrganizationPermissionsRequest": {
+        "properties": {
+          "grants": {
+            "items": {
+              "$ref": "#/components/schemas/OrganizationPermissionGrantInput"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "grants"
+        ],
+        "type": "object"
+      },
+      "UpdateOrganizationUnitRequest": {
+        "properties": {
+          "category": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "email": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "is_active": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "location": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name_en": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "parent_unit_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "phone": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "subject_group_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "unit_type": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "UpdateProfileRequest": {
+        "properties": {
+          "address": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "dateOfBirth": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "email": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "emergencyContact": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "gender": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "lineId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "nickname": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "phone": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "profileImageUrl": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "UpdateRoleRequest": {
+        "properties": {
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "is_active": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "level": {
+            "format": "int32",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name_en": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "permissions": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "user_type": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
       "UserResponse": {
         "properties": {
           "createdAt": {
@@ -181,6 +2321,87 @@
           "profileImageUrl"
         ],
         "type": "object"
+      },
+      "UserRoleAssignmentResponse": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "ended_at": {
+            "format": "date",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "is_primary": {
+            "type": "boolean"
+          },
+          "notes": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "organization_unit_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "role": {
+            "$ref": "#/components/schemas/Role"
+          },
+          "role_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "started_at": {
+            "format": "date",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "user_id": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "user_id",
+          "role_id",
+          "organization_unit_id",
+          "role",
+          "is_primary",
+          "started_at",
+          "ended_at",
+          "notes",
+          "created_at",
+          "updated_at"
+        ],
+        "type": "object"
+      },
+      "UuidIdData": {
+        "description": "OpenAPI transport schema for the UUID identifier payload emitted by `IdData<Uuid>`.",
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
       }
     }
   },
@@ -194,6 +2415,78 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/auth/login": {
+      "post": {
+        "operationId": "login",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_LoginData"
+                }
+              }
+            },
+            "description": "Authenticated user"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid credentials"
+          }
+        },
+        "summary": "Login handler",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/auth/logout": {
+      "post": {
+        "operationId": "logout",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_EmptyData"
+                }
+              }
+            },
+            "description": "Authentication cookie cleared"
+          }
+        },
+        "summary": "Logout handler",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
     "/api/auth/me": {
       "get": {
         "operationId": "getCurrentUser",
@@ -224,12 +2517,1652 @@
           "auth"
         ]
       }
+    },
+    "/api/auth/me/change-password": {
+      "post": {
+        "operationId": "changeCurrentUserPassword",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChangePasswordRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_EmptyData"
+                }
+              }
+            },
+            "description": "Password changed"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid password data"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required or current password invalid"
+          }
+        },
+        "summary": "Change password handler (POST /me/change-password)\nChanges user's password after verifying current password\nChange password handler (POST /me/change-password)\nChanges user's password after verifying current password",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/auth/me/profile": {
+      "get": {
+        "operationId": "getCurrentUserProfile",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ProfileResponse"
+                }
+              }
+            },
+            "description": "Current user's full profile"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "User not found"
+          }
+        },
+        "summary": "Get full profile handler (GET /me/profile)\nReturns complete user profile with all fields\nGet full profile handler (GET /me/profile)\nReturns complete user profile with all fields",
+        "tags": [
+          "auth"
+        ]
+      },
+      "put": {
+        "operationId": "updateCurrentUserProfile",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateProfileRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ProfileResponse"
+                }
+              }
+            },
+            "description": "Updated current-user profile"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid profile data"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "User not found"
+          }
+        },
+        "summary": "Update profile handler (PUT /me/profile)\nUpdates user's editable fields only\nUpdate profile handler (PUT /me/profile)\nUpdates user's editable fields only\nUpdate profile handler (PUT /me/profile)\nUpdates user's editable fields only",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/organization/delegations/{id}": {
+      "delete": {
+        "operationId": "revokeOrganizationDelegation",
+        "parameters": [
+          {
+            "description": "Delegation ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_EmptyData"
+                }
+              }
+            },
+            "description": "Delegation revoked"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Delegation ownership required"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Delegation not found"
+          }
+        },
+        "tags": [
+          "organization"
+        ]
+      }
+    },
+    "/api/organization/units": {
+      "get": {
+        "operationId": "listOrganizationUnits",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_OrganizationUnit"
+                }
+              }
+            },
+            "description": "Organization units"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Permission denied"
+          }
+        },
+        "tags": [
+          "organization"
+        ]
+      },
+      "post": {
+        "operationId": "createOrganizationUnit",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateOrganizationUnitRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_UuidIdData"
+                }
+              }
+            },
+            "description": "Organization unit created"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid organization unit"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Permission denied"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Organization unit code conflict"
+          }
+        },
+        "tags": [
+          "organization"
+        ]
+      }
+    },
+    "/api/organization/units/{id}": {
+      "get": {
+        "operationId": "getOrganizationUnit",
+        "parameters": [
+          {
+            "description": "Organization unit ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_OrganizationUnit"
+                }
+              }
+            },
+            "description": "Organization unit"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Organization unit not found"
+          }
+        },
+        "tags": [
+          "organization"
+        ]
+      },
+      "put": {
+        "operationId": "updateOrganizationUnit",
+        "parameters": [
+          {
+            "description": "Organization unit ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateOrganizationUnitRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_EmptyData"
+                }
+              }
+            },
+            "description": "Organization unit updated"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid organization unit"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Organization unit not found"
+          }
+        },
+        "tags": [
+          "organization"
+        ]
+      }
+    },
+    "/api/organization/units/{id}/delegatable-permissions": {
+      "get": {
+        "operationId": "listDelegatablePermissions",
+        "parameters": [
+          {
+            "description": "Organization unit ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_DelegatablePermission"
+                }
+              }
+            },
+            "description": "Permissions this unit may delegate"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Organization approval access required"
+          }
+        },
+        "tags": [
+          "organization"
+        ]
+      }
+    },
+    "/api/organization/units/{id}/delegations": {
+      "get": {
+        "operationId": "listOrganizationDelegations",
+        "parameters": [
+          {
+            "description": "Organization unit ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_DelegationItem"
+                }
+              }
+            },
+            "description": "Active organization delegations"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Organization approval access required"
+          }
+        },
+        "tags": [
+          "organization"
+        ]
+      },
+      "post": {
+        "operationId": "createOrganizationDelegation",
+        "parameters": [
+          {
+            "description": "Organization unit ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateDelegationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_DelegationIdData"
+                }
+              }
+            },
+            "description": "Delegation created"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid delegation target or permission"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Organization approval access required"
+          }
+        },
+        "tags": [
+          "organization"
+        ]
+      }
+    },
+    "/api/organization/units/{id}/members": {
+      "get": {
+        "operationId": "listOrganizationMembers",
+        "parameters": [
+          {
+            "description": "Organization unit ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Include direct child units",
+            "in": "query",
+            "name": "include_children",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_OrganizationMemberItem"
+                }
+              }
+            },
+            "description": "Organization members"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          }
+        },
+        "tags": [
+          "organization"
+        ]
+      },
+      "post": {
+        "operationId": "addOrganizationMember",
+        "parameters": [
+          {
+            "description": "Organization unit ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddMemberRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_EmptyData"
+                }
+              }
+            },
+            "description": "Organization member added"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "User is already a member"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Permission denied"
+          }
+        },
+        "tags": [
+          "organization"
+        ]
+      }
+    },
+    "/api/organization/units/{id}/members/{user_id}": {
+      "delete": {
+        "operationId": "removeOrganizationMember",
+        "parameters": [
+          {
+            "description": "Organization unit ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "description": "User ID",
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_EmptyData"
+                }
+              }
+            },
+            "description": "Organization member removed"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Permission denied"
+          }
+        },
+        "tags": [
+          "organization"
+        ]
+      },
+      "put": {
+        "operationId": "updateOrganizationMember",
+        "parameters": [
+          {
+            "description": "Organization unit ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "description": "User ID",
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateMemberRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_EmptyData"
+                }
+              }
+            },
+            "description": "Organization member updated"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid membership"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Membership not found"
+          }
+        },
+        "tags": [
+          "organization"
+        ]
+      }
+    },
+    "/api/organization/units/{id}/permissions": {
+      "get": {
+        "operationId": "getOrganizationPermissions",
+        "parameters": [
+          {
+            "description": "Organization unit ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_OrganizationPermissionGrant"
+                }
+              }
+            },
+            "description": "Organization permission grants"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Permission denied"
+          }
+        },
+        "tags": [
+          "organization"
+        ]
+      },
+      "put": {
+        "operationId": "updateOrganizationPermissions",
+        "parameters": [
+          {
+            "description": "Organization unit ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateOrganizationPermissionsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_EmptyData"
+                }
+              }
+            },
+            "description": "Organization permission grants replaced"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid permission grants"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Organization unit not found"
+          }
+        },
+        "tags": [
+          "organization"
+        ]
+      }
+    },
+    "/api/permissions": {
+      "get": {
+        "operationId": "listPermissions",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_Permission"
+                }
+              }
+            },
+            "description": "Permissions"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Permission denied"
+          }
+        },
+        "tags": [
+          "permissions"
+        ]
+      }
+    },
+    "/api/permissions/modules": {
+      "get": {
+        "operationId": "listPermissionsByModule",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_HashMap_String_Vec_Permission"
+                }
+              }
+            },
+            "description": "Permissions grouped by module"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Permission denied"
+          }
+        },
+        "tags": [
+          "permissions"
+        ]
+      }
+    },
+    "/api/roles": {
+      "get": {
+        "operationId": "listRoles",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_Role"
+                }
+              }
+            },
+            "description": "Roles"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Permission denied"
+          }
+        },
+        "tags": [
+          "roles"
+        ]
+      },
+      "post": {
+        "operationId": "createRole",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateRoleRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_UuidIdData"
+                }
+              }
+            },
+            "description": "Role created"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid role"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Permission denied"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Role code conflict"
+          }
+        },
+        "tags": [
+          "roles"
+        ]
+      }
+    },
+    "/api/roles/{id}": {
+      "get": {
+        "operationId": "getRole",
+        "parameters": [
+          {
+            "description": "Role ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Role"
+                }
+              }
+            },
+            "description": "Role"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Role not found"
+          }
+        },
+        "tags": [
+          "roles"
+        ]
+      },
+      "put": {
+        "operationId": "updateRole",
+        "parameters": [
+          {
+            "description": "Role ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateRoleRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_EmptyData"
+                }
+              }
+            },
+            "description": "Role updated"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid role"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Role not found"
+          }
+        },
+        "tags": [
+          "roles"
+        ]
+      }
+    },
+    "/api/users/{id}/permissions": {
+      "get": {
+        "operationId": "listUserEffectivePermissions",
+        "parameters": [
+          {
+            "description": "User ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_String"
+                }
+              }
+            },
+            "description": "Effective permission codes"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Permission denied"
+          }
+        },
+        "tags": [
+          "permissions"
+        ]
+      }
+    },
+    "/api/users/{id}/roles": {
+      "get": {
+        "operationId": "getUserRoles",
+        "parameters": [
+          {
+            "description": "User ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_UserRoleAssignmentResponse"
+                }
+              }
+            },
+            "description": "User role assignments"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Permission denied"
+          }
+        },
+        "tags": [
+          "roles"
+        ]
+      },
+      "post": {
+        "operationId": "assignUserRole",
+        "parameters": [
+          {
+            "description": "User ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssignRoleRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_UuidIdData"
+                }
+              }
+            },
+            "description": "Role assigned"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Role cannot be assigned"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "User or role not found"
+          }
+        },
+        "tags": [
+          "roles"
+        ]
+      }
+    },
+    "/api/users/{id}/roles/{role_id}": {
+      "delete": {
+        "operationId": "removeUserRole",
+        "parameters": [
+          {
+            "description": "User ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Role ID",
+            "in": "path",
+            "name": "role_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_EmptyData"
+                }
+              }
+            },
+            "description": "Role assignment removed"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Role assignment not found"
+          }
+        },
+        "tags": [
+          "roles"
+        ]
+      }
     }
   },
   "tags": [
     {
       "description": "Authentication and current-user operations",
       "name": "auth"
+    },
+    {
+      "description": "Role assignment and role administration",
+      "name": "roles"
+    },
+    {
+      "description": "Permission discovery and effective permissions",
+      "name": "permissions"
+    },
+    {
+      "description": "Organization units and scoped access",
+      "name": "organization"
     }
   ]
 }

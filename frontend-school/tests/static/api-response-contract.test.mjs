@@ -83,7 +83,7 @@ test('frontend auth consumes the shared envelope through apiClient', async () =>
 	);
 	assert.match(
 		source,
-		/export\s+type\s+CurrentUserDto\s*=\s*components\['schemas'\]\['UserResponse'\]/
+		/type\s+Schemas\s*=\s*components\['schemas'\][\s\S]*export\s+type\s+CurrentUserDto\s*=\s*Schemas\['UserResponse'\]/
 	);
 	assert.match(source, /function\s+normalizeCurrentUser\(userData:\s*CurrentUserDto\):\s*User/);
 	assert.doesNotMatch(source, /interface\s+BackendUser/);
@@ -111,6 +111,76 @@ test('generated current-user schemas keep concrete envelope and payload types', 
 		/'application\/json':\s*components\['schemas'\]\['ApiResponse_UserResponse'\]/
 	);
 	assert.match(generated, /'application\/json':\s*components\['schemas'\]\['ApiErrorResponse'\]/);
+});
+
+test('generated authorization contracts cover implemented routes and frontend DTO ownership', async () => {
+	const contract = JSON.parse(await readRepoFile('contracts/openapi/school-api.json'));
+	const generated = await readRepoFile('frontend-school/src/lib/api/generated/school-api.ts');
+	const authApi = await readRepoFile('frontend-school/src/lib/api/auth.ts');
+	const rolesApi = await readRepoFile('frontend-school/src/lib/api/roles.ts');
+	const staffApi = await readRepoFile('frontend-school/src/lib/api/staff.ts');
+	const expected = [
+		['/api/auth/login', 'post', 'login'],
+		['/api/auth/logout', 'post', 'logout'],
+		['/api/auth/me', 'get', 'getCurrentUser'],
+		['/api/auth/me/profile', 'get', 'getCurrentUserProfile'],
+		['/api/auth/me/profile', 'put', 'updateCurrentUserProfile'],
+		['/api/auth/me/change-password', 'post', 'changeCurrentUserPassword'],
+		['/api/roles', 'get', 'listRoles'],
+		['/api/roles/{id}', 'get', 'getRole'],
+		['/api/roles', 'post', 'createRole'],
+		['/api/roles/{id}', 'put', 'updateRole'],
+		['/api/permissions', 'get', 'listPermissions'],
+		['/api/permissions/modules', 'get', 'listPermissionsByModule'],
+		['/api/users/{id}/roles', 'get', 'getUserRoles'],
+		['/api/users/{id}/roles', 'post', 'assignUserRole'],
+		['/api/users/{id}/roles/{role_id}', 'delete', 'removeUserRole'],
+		['/api/users/{id}/permissions', 'get', 'listUserEffectivePermissions'],
+		['/api/organization/units', 'get', 'listOrganizationUnits'],
+		['/api/organization/units/{id}', 'get', 'getOrganizationUnit'],
+		['/api/organization/units', 'post', 'createOrganizationUnit'],
+		['/api/organization/units/{id}', 'put', 'updateOrganizationUnit'],
+		['/api/organization/units/{id}/permissions', 'get', 'getOrganizationPermissions'],
+		['/api/organization/units/{id}/permissions', 'put', 'updateOrganizationPermissions'],
+		['/api/organization/units/{id}/delegatable-permissions', 'get', 'listDelegatablePermissions'],
+		['/api/organization/units/{id}/delegations', 'get', 'listOrganizationDelegations'],
+		['/api/organization/units/{id}/delegations', 'post', 'createOrganizationDelegation'],
+		['/api/organization/delegations/{id}', 'delete', 'revokeOrganizationDelegation'],
+		['/api/organization/units/{id}/members', 'get', 'listOrganizationMembers'],
+		['/api/organization/units/{id}/members', 'post', 'addOrganizationMember'],
+		['/api/organization/units/{id}/members/{user_id}', 'put', 'updateOrganizationMember'],
+		['/api/organization/units/{id}/members/{user_id}', 'delete', 'removeOrganizationMember']
+	];
+
+	assert.equal(expected.length, 30);
+	for (const [route, method, operationId] of expected) {
+		assert.equal(contract.paths?.[route]?.[method]?.operationId, operationId, `${method} ${route}`);
+	}
+	assert.equal(contract.paths?.['/api/roles/{id}']?.delete, undefined);
+	assert.equal(contract.paths?.['/api/organization/units/{id}']?.delete, undefined);
+
+	for (const schemaName of [
+		'LoginRequest',
+		'ProfileResponse',
+		'Role',
+		'Permission',
+		'UserRoleAssignmentResponse',
+		'OrganizationUnit',
+		'OrganizationPermissionGrant',
+		'DelegationItem',
+		'OrganizationMemberItem'
+	]) {
+		assert.doesNotMatch(extractGeneratedSchemaBlock(generated, schemaName), /\b(?:any|unknown)\b/);
+	}
+
+	assert.doesNotMatch(authApi, /export\s+interface\s+(?:LoginRequest|ProfileResponse)\b/);
+	assert.match(rolesApi, /import\s+type\s+\{\s*components\s*\}/);
+	assert.doesNotMatch(rolesApi, /export\s+interface\s+(?:Role|Permission|UserRoleAssignment)\b/);
+	assert.match(staffApi, /import\s+type\s+\{\s*components\s*\}/);
+	assert.doesNotMatch(
+		staffApi,
+		/export\s+interface\s+(?:Role|OrganizationUnit|OrganizationPermissionGrant|DelegationItem|DelegatablePermission|OrganizationMemberItem)\b/
+	);
 });
 
 test('generated schema lookup uses the complete property name', () => {
@@ -161,6 +231,7 @@ test('user role assignment API contract stays aligned across backend and fronten
 		'backend-school/src/modules/staff/services/staff_service.rs'
 	);
 	const frontendApi = await readRepoFile('frontend-school/src/lib/api/roles.ts');
+	const generated = await readRepoFile('frontend-school/src/lib/api/generated/school-api.ts');
 	const frontendStaffApi = await readRepoFile('frontend-school/src/lib/api/staff.ts');
 	const frontendComponent = await readRepoFile(
 		'frontend-school/src/lib/components/UserRoleManager.svelte'
@@ -179,8 +250,14 @@ test('user role assignment API contract stays aligned across backend and fronten
 	assert.match(backendService, /AS role_permissions/);
 	assert.match(backendService, /role:\s+Role\s*\{/);
 
-	assert.match(frontendApi, /interface\s+UserRoleAssignment/);
-	assert.match(frontendApi, /role:\s+Role/);
+	assert.match(
+		frontendApi,
+		/export\s+type\s+UserRoleAssignment\s*=\s*Schemas\['UserRoleAssignmentResponse'\]/
+	);
+	assert.match(
+		extractGeneratedSchemaBlock(generated, 'UserRoleAssignmentResponse'),
+		/role:\s*components\['schemas'\]\['Role'\]/
+	);
 	assert.match(
 		frontendApi,
 		/getUserRoles\(userId:\s*string\):\s*Promise<ApiResponse<UserRoleAssignment\[\]>>/
