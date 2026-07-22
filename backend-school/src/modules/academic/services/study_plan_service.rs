@@ -723,18 +723,98 @@ fn not_found_or(error: sqlx::Error, message: &str) -> AppError {
 }
 
 async fn ensure_study_plan_version_exists(pool: &PgPool, version_id: Uuid) -> Result<(), AppError> {
-    let exists: bool =
-        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM study_plan_versions WHERE id = $1)")
-            .bind(version_id)
-            .fetch_one(pool)
-            .await?;
+    ensure_entity_exists(
+        pool,
+        "SELECT EXISTS(SELECT 1 FROM study_plan_versions WHERE id = $1)",
+        version_id,
+        "Study-plan version not found",
+    )
+    .await
+}
+
+async fn ensure_activity_catalog_exists(pool: &PgPool, catalog_id: Uuid) -> Result<(), AppError> {
+    ensure_entity_exists(
+        pool,
+        "SELECT EXISTS(SELECT 1 FROM activity_catalog WHERE id = $1)",
+        catalog_id,
+        "Activity catalog not found",
+    )
+    .await
+}
+
+async fn ensure_academic_year_exists(pool: &PgPool, year_id: Uuid) -> Result<(), AppError> {
+    ensure_entity_exists(
+        pool,
+        "SELECT EXISTS(SELECT 1 FROM academic_years WHERE id = $1)",
+        year_id,
+        "Academic year not found",
+    )
+    .await
+}
+
+async fn ensure_academic_semester_exists(pool: &PgPool, semester_id: Uuid) -> Result<(), AppError> {
+    ensure_entity_exists(
+        pool,
+        "SELECT EXISTS(SELECT 1 FROM academic_semesters WHERE id = $1)",
+        semester_id,
+        "Academic semester not found",
+    )
+    .await
+}
+
+async fn ensure_entity_exists(
+    pool: &PgPool,
+    query: &'static str,
+    id: Uuid,
+    not_found_message: &'static str,
+) -> Result<(), AppError> {
+    let exists: bool = sqlx::query_scalar(query).bind(id).fetch_one(pool).await?;
 
     if exists {
         Ok(())
     } else {
-        Err(AppError::NotFound(
-            "Study-plan version not found".to_string(),
-        ))
+        Err(AppError::NotFound(not_found_message.to_string()))
+    }
+}
+
+async fn ensure_grade_levels_exist(
+    pool: &PgPool,
+    grade_level_ids: &[Uuid],
+) -> Result<(), AppError> {
+    let all_exist: bool = sqlx::query_scalar(
+        "SELECT NOT EXISTS (
+             SELECT requested.id
+             FROM UNNEST($1::uuid[]) AS requested(id)
+             LEFT JOIN grade_levels gl ON gl.id = requested.id
+             WHERE gl.id IS NULL
+         )",
+    )
+    .bind(grade_level_ids)
+    .fetch_one(pool)
+    .await?;
+    if all_exist {
+        Ok(())
+    } else {
+        Err(AppError::NotFound("Grade level not found".to_string()))
+    }
+}
+
+async fn ensure_users_exist(pool: &PgPool, user_ids: &[Uuid]) -> Result<(), AppError> {
+    let all_exist: bool = sqlx::query_scalar(
+        "SELECT NOT EXISTS (
+             SELECT requested.id
+             FROM UNNEST($1::uuid[]) AS requested(id)
+             LEFT JOIN users u ON u.id = requested.id
+             WHERE u.id IS NULL
+         )",
+    )
+    .bind(user_ids)
+    .fetch_one(pool)
+    .await?;
+    if all_exist {
+        Ok(())
+    } else {
+        Err(AppError::NotFound("Instructor not found".to_string()))
     }
 }
 
@@ -935,6 +1015,7 @@ pub async fn list_plan_activities(
     pool: &PgPool,
     version_id: Uuid,
 ) -> Result<Vec<StudyPlanVersionActivity>, AppError> {
+    ensure_study_plan_version_exists(pool, version_id).await?;
     let rows = sqlx::query_as::<_, StudyPlanVersionActivityRow>(
         "SELECT sva.*,
                 ac.name AS catalog_name,
@@ -962,6 +1043,39 @@ pub async fn add_plan_activity(
     version_id: Uuid,
     req: CreatePlanActivityRequest,
 ) -> Result<StudyPlanVersionActivity, AppError> {
+    let mut tx = pool.begin().await?;
+    let version_exists = sqlx::query_scalar::<_, Uuid>(
+        "SELECT id FROM study_plan_versions WHERE id = $1 FOR KEY SHARE",
+    )
+    .bind(version_id)
+    .fetch_optional(&mut *tx)
+    .await?
+    .is_some();
+    if !version_exists {
+        return Err(AppError::NotFound(
+            "Study-plan version not found".to_string(),
+        ));
+    }
+    let catalog_exists = sqlx::query_scalar::<_, Uuid>(
+        "SELECT id FROM activity_catalog WHERE id = $1 FOR KEY SHARE",
+    )
+    .bind(req.activity_catalog_id)
+    .fetch_optional(&mut *tx)
+    .await?
+    .is_some();
+    if !catalog_exists {
+        return Err(AppError::NotFound("Activity catalog not found".to_string()));
+    }
+    let grade_exists =
+        sqlx::query_scalar::<_, Uuid>("SELECT id FROM grade_levels WHERE id = $1 FOR KEY SHARE")
+            .bind(req.grade_level_id)
+            .fetch_optional(&mut *tx)
+            .await?
+            .is_some();
+    if !grade_exists {
+        return Err(AppError::NotFound("Grade level not found".to_string()));
+    }
+
     let row = sqlx::query_as::<_, StudyPlanVersionActivityRow>(
         "INSERT INTO study_plan_version_activities
          (study_plan_version_id, activity_catalog_id, grade_level_id, term, display_order)
@@ -975,11 +1089,12 @@ pub async fn add_plan_activity(
     .bind(req.display_order)
     .bind(&req.term)
     .bind(req.grade_level_id)
-    .fetch_optional(pool)
+    .fetch_optional(&mut *tx)
     .await
     .map_err(|e| AppError::InternalServerError(e.to_string()))?
     .ok_or_else(|| AppError::BadRequest("กิจกรรมนี้อยู่ในหลักสูตรสำหรับชั้น+เทอมนี้แล้ว".to_string()))?;
 
+    tx.commit().await?;
     plan_activity_from_row(row)
 }
 
@@ -998,38 +1113,43 @@ pub async fn update_plan_activity(
     .bind(id)
     .bind(req.display_order)
     .bind(&req.term)
-    .fetch_one(pool)
+    .fetch_optional(pool)
     .await
-    .map_err(|e| AppError::NotFound(e.to_string()))?;
+    .map_err(|e| AppError::InternalServerError(e.to_string()))?
+    .ok_or_else(|| AppError::NotFound("Study-plan activity not found".to_string()))?;
 
     plan_activity_from_row(row)
 }
 
 pub async fn delete_plan_activity(pool: &PgPool, id: Uuid) -> Result<(), AppError> {
-    let context: Option<(String, Uuid, Uuid)> = sqlx::query_as(
-        "SELECT ac.name, sva.study_plan_version_id, sva.grade_level_id
-         FROM study_plan_version_activities sva
-         JOIN activity_catalog ac ON ac.id = sva.activity_catalog_id
-         WHERE sva.id = $1",
-    )
-    .bind(id)
-    .fetch_optional(pool)
-    .await
-    .map_err(|e| AppError::InternalServerError(e.to_string()))?;
-
     let mut tx = pool
         .begin()
         .await
         .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+    let context: Option<(String, Uuid, Uuid)> = sqlx::query_as(
+        "SELECT ac.name, sva.study_plan_version_id, sva.grade_level_id
+         FROM study_plan_version_activities sva
+         JOIN activity_catalog ac ON ac.id = sva.activity_catalog_id
+         WHERE sva.id = $1
+         FOR UPDATE OF sva",
+    )
+    .bind(id)
+    .fetch_optional(&mut *tx)
+    .await
+    .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+    let Some((catalog_name, plan_id, grade_id)) = context else {
+        return Err(AppError::NotFound(
+            "Study-plan activity not found".to_string(),
+        ));
+    };
     sqlx::query("DELETE FROM study_plan_version_activities WHERE id = $1")
         .bind(id)
         .execute(&mut *tx)
         .await
         .map_err(|e| AppError::InternalServerError(e.to_string()))?;
 
-    if let Some((catalog_name, plan_id, grade_id)) = context {
-        sqlx::query(
-            "DELETE FROM activity_slot_classrooms asc_row
+    sqlx::query(
+        "DELETE FROM activity_slot_classrooms asc_row
              USING activity_slots s, activity_catalog ac, academic_semesters sem, class_rooms cr
              WHERE asc_row.slot_id = s.id
                AND s.activity_catalog_id = ac.id
@@ -1039,14 +1159,13 @@ pub async fn delete_plan_activity(pool: &PgPool, id: Uuid) -> Result<(), AppErro
                AND cr.study_plan_version_id = $2
                AND cr.grade_level_id = $3
                AND sem.end_date >= CURRENT_DATE",
-        )
-        .bind(&catalog_name)
-        .bind(plan_id)
-        .bind(grade_id)
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
-    }
+    )
+    .bind(&catalog_name)
+    .bind(plan_id)
+    .bind(grade_id)
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| AppError::InternalServerError(e.to_string()))?;
 
     tx.commit()
         .await
@@ -1059,6 +1178,8 @@ pub async fn generate_activities_from_plan(
     req: GenerateActivitiesFromPlanRequest,
     user_id: Option<Uuid>,
 ) -> Result<GenerateActivitiesFromPlanOutcome, AppError> {
+    ensure_study_plan_version_exists(pool, req.study_plan_version_id).await?;
+    ensure_academic_semester_exists(pool, req.semester_id).await?;
     let counts: (i64, i64) = sqlx::query_as(
         r#"
         WITH target_year AS (
@@ -1238,6 +1359,18 @@ pub async fn create_activity_catalog(
     pool: &PgPool,
     req: CreateCatalogRequest,
 ) -> Result<ActivityCatalog, AppError> {
+    ensure_academic_year_exists(pool, req.start_academic_year_id).await?;
+    if let Some(grade_level_ids) = &req.grade_level_ids {
+        ensure_grade_levels_exist(pool, grade_level_ids).await?;
+    }
+    if let Some(team) = &req.default_instructors {
+        let team = unique_catalog_default_instructors(team)?;
+        let instructor_ids = team
+            .iter()
+            .map(|instructor| instructor.instructor_id)
+            .collect::<Vec<_>>();
+        ensure_users_exist(pool, &instructor_ids).await?;
+    }
     let allowed = grade_level_ids_json(req.grade_level_ids.as_deref());
     let mut tx = pool
         .begin()
@@ -1278,6 +1411,9 @@ pub async fn update_activity_catalog(
     id: Uuid,
     req: UpdateCatalogRequest,
 ) -> Result<ActivityCatalog, AppError> {
+    if let Some(grade_level_ids) = &req.grade_level_ids {
+        ensure_grade_levels_exist(pool, grade_level_ids).await?;
+    }
     let allowed = grade_level_ids_json(req.grade_level_ids.as_deref());
     let row = sqlx::query_as::<_, ActivityCatalogRow>(
         "UPDATE activity_catalog SET
@@ -1301,15 +1437,16 @@ pub async fn update_activity_catalog(
     .bind(req.is_active)
     .bind(&req.term)
     .bind(allowed)
-    .fetch_one(pool)
+    .fetch_optional(pool)
     .await
-    .map_err(|e| AppError::NotFound(e.to_string()))?;
+    .map_err(|e| AppError::InternalServerError(e.to_string()))?
+    .ok_or_else(|| AppError::NotFound("Activity catalog not found".to_string()))?;
 
     activity_catalog_from_row(row)
 }
 
 pub async fn delete_activity_catalog(pool: &PgPool, id: Uuid) -> Result<(), AppError> {
-    sqlx::query("DELETE FROM activity_catalog WHERE id = $1")
+    let result = sqlx::query("DELETE FROM activity_catalog WHERE id = $1")
         .bind(id)
         .execute(pool)
         .await
@@ -1320,6 +1457,9 @@ pub async fn delete_activity_catalog(pool: &PgPool, id: Uuid) -> Result<(), AppE
                 e.to_string()
             })
         })?;
+    if result.rows_affected() == 0 {
+        return Err(AppError::NotFound("Activity catalog not found".to_string()));
+    }
     Ok(())
 }
 
@@ -1331,6 +1471,7 @@ pub async fn list_catalog_default_instructors(
     pool: &PgPool,
     catalog_id: Uuid,
 ) -> Result<Vec<CatalogDefaultInstructor>, AppError> {
+    ensure_activity_catalog_exists(pool, catalog_id).await?;
     sqlx::query_as::<_, CatalogDefaultInstructor>(
         "SELECT acdi.*, concat(u.first_name, ' ', u.last_name) AS instructor_name
          FROM activity_catalog_default_instructors acdi
@@ -1355,6 +1496,25 @@ pub async fn add_catalog_default_instructor(
         .begin()
         .await
         .map_err(|_| AppError::InternalServerError("Transaction failed".to_string()))?;
+    let catalog_exists = sqlx::query_scalar::<_, Uuid>(
+        "SELECT id FROM activity_catalog WHERE id = $1 FOR KEY SHARE",
+    )
+    .bind(catalog_id)
+    .fetch_optional(&mut *tx)
+    .await?
+    .is_some();
+    if !catalog_exists {
+        return Err(AppError::NotFound("Activity catalog not found".to_string()));
+    }
+    let instructor_exists =
+        sqlx::query_scalar::<_, Uuid>("SELECT id FROM users WHERE id = $1 FOR KEY SHARE")
+            .bind(instructor_id)
+            .fetch_optional(&mut *tx)
+            .await?
+            .is_some();
+    if !instructor_exists {
+        return Err(AppError::NotFound("Instructor not found".to_string()));
+    }
 
     if role == "primary" {
         sqlx::query(
@@ -1391,10 +1551,15 @@ pub async fn remove_catalog_default_instructor(
     catalog_id: Uuid,
     instructor_id: Uuid,
 ) -> Result<(), AppError> {
-    sqlx::query(
+    let result = sqlx::query(
         "DELETE FROM activity_catalog_default_instructors WHERE catalog_id = $1 AND instructor_id = $2"
     ).bind(catalog_id).bind(instructor_id).execute(pool).await
     .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+    if result.rows_affected() == 0 {
+        return Err(AppError::NotFound(
+            "Activity catalog instructor assignment not found".to_string(),
+        ));
+    }
     Ok(())
 }
 
@@ -1409,6 +1574,21 @@ pub async fn update_catalog_default_instructor_role(
         .begin()
         .await
         .map_err(|_| AppError::InternalServerError("Transaction failed".to_string()))?;
+    let assignment_exists = sqlx::query_scalar::<_, Uuid>(
+        "SELECT id FROM activity_catalog_default_instructors
+         WHERE catalog_id = $1 AND instructor_id = $2
+         FOR UPDATE",
+    )
+    .bind(catalog_id)
+    .bind(instructor_id)
+    .fetch_optional(&mut *tx)
+    .await?
+    .is_some();
+    if !assignment_exists {
+        return Err(AppError::NotFound(
+            "Activity catalog instructor assignment not found".to_string(),
+        ));
+    }
 
     if role == "primary" {
         sqlx::query(
