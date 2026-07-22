@@ -1337,6 +1337,16 @@ fn academic_core_study_plan_handlers_enforce_curriculum_permission_contract() {
     assert!(generate_handler
         .contains("actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL)?"));
     assert!(generate_handler.contains("Some(actor.user_id)"));
+
+    let list_subjects_handler = handlers
+        .split_once("pub async fn list_study_plan_subjects")
+        .expect("missing list_study_plan_subjects handler")
+        .1
+        .split("pub async fn ")
+        .next()
+        .unwrap_or("");
+    assert!(list_subjects_handler.contains("Path(version_id): Path<Uuid>"));
+    assert!(list_subjects_handler.contains("query.study_plan_version_id = Some(version_id)"));
 }
 
 #[test]

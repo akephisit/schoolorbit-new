@@ -102,10 +102,7 @@ pub async fn ensure_subject_manage(
         return Err(AppError::Forbidden(format!("ไม่มีสิทธิ์ {}", manage_code)));
     };
 
-    let subject_group = subject_service::get_subject_group_id(pool, subject_id)
-        .await
-        .ok()
-        .flatten();
+    let subject_group = subject_service::get_subject_group_id(pool, subject_id).await?;
     if !subject_service::subject_group_access_allows(&access, subject_group) {
         return Err(AppError::Forbidden(
             "ไม่สามารถจัดการวิชาในกลุ่มสาระอื่นได้".to_string(),

@@ -152,12 +152,12 @@ async fn bulk_insert_study_plan_subjects(
     terms: &[String],
     subject_ids: &[Uuid],
     display_orders: &[i32],
-) -> Result<(), AppError> {
+) -> Result<u64, AppError> {
     if grade_level_ids.is_empty() {
-        return Ok(());
+        return Ok(0);
     }
 
-    sqlx::query(
+    let result = sqlx::query(
         "INSERT INTO study_plan_subjects
          (study_plan_version_id, grade_level_id, term, subject_id, display_order)
          SELECT $1, grade_level_id, term, subject_id, display_order
@@ -173,7 +173,7 @@ async fn bulk_insert_study_plan_subjects(
     .execute(&mut **tx)
     .await?;
 
-    Ok(())
+    Ok(result.rows_affected())
 }
 
 fn validate_catalog_instructor_role(role: &str) -> Result<(), AppError> {
@@ -369,7 +369,7 @@ pub async fn get_plan(pool: &PgPool, plan_id: Uuid) -> Result<StudyPlan, AppErro
         .bind(plan_id)
         .fetch_one(pool)
         .await
-        .map_err(AppError::from)?;
+        .map_err(|error| not_found_or(error, "Study plan not found"))?;
 
     study_plan_from_row(row)
 }
@@ -455,15 +455,21 @@ pub async fn update_plan(
         q = q.bind(v);
     }
     q = q.bind(plan_id);
-    let row = q.fetch_one(pool).await.map_err(AppError::from)?;
+    let row = q
+        .fetch_one(pool)
+        .await
+        .map_err(|error| not_found_or(error, "Study plan not found"))?;
     study_plan_from_row(row)
 }
 
 pub async fn delete_plan(pool: &PgPool, plan_id: Uuid) -> Result<(), AppError> {
-    sqlx::query("DELETE FROM study_plans WHERE id = $1")
+    let result = sqlx::query("DELETE FROM study_plans WHERE id = $1")
         .bind(plan_id)
         .execute(pool)
         .await?;
+    if result.rows_affected() == 0 {
+        return Err(AppError::NotFound("Study plan not found".to_string()));
+    }
     Ok(())
 }
 
@@ -496,7 +502,7 @@ pub async fn list_versions(
     if let Some(v) = query.study_plan_id {
         q = q.bind(v);
     }
-    Ok(q.fetch_all(pool).await.unwrap_or_default())
+    q.fetch_all(pool).await.map_err(AppError::from)
 }
 
 pub async fn get_version(pool: &PgPool, version_id: Uuid) -> Result<StudyPlanVersion, AppError> {
@@ -510,7 +516,7 @@ pub async fn get_version(pool: &PgPool, version_id: Uuid) -> Result<StudyPlanVer
     .bind(version_id)
     .fetch_one(pool)
     .await
-    .map_err(AppError::from)
+    .map_err(|error| not_found_or(error, "Study-plan version not found"))
 }
 
 pub async fn create_version(
@@ -529,7 +535,7 @@ pub async fn create_version(
     .bind(&req.description)
     .fetch_one(pool)
     .await
-    .map_err(AppError::from)
+    .map_err(|error| not_found_or(error, "Study-plan version not found"))
 }
 
 pub async fn update_version(
@@ -554,14 +560,19 @@ pub async fn update_version(
     .bind(version_id)
     .fetch_one(pool)
     .await
-    .map_err(AppError::from)
+    .map_err(|error| not_found_or(error, "Study-plan version not found"))
 }
 
 pub async fn delete_version(pool: &PgPool, version_id: Uuid) -> Result<(), AppError> {
-    sqlx::query("DELETE FROM study_plan_versions WHERE id = $1")
+    let result = sqlx::query("DELETE FROM study_plan_versions WHERE id = $1")
         .bind(version_id)
         .execute(pool)
         .await?;
+    if result.rows_affected() == 0 {
+        return Err(AppError::NotFound(
+            "Study-plan version not found".to_string(),
+        ));
+    }
     Ok(())
 }
 
@@ -573,6 +584,9 @@ pub async fn list_plan_subjects(
     pool: &PgPool,
     query: StudyPlanSubjectQuery,
 ) -> Result<Vec<StudyPlanSubject>, AppError> {
+    if let Some(version_id) = query.study_plan_version_id {
+        ensure_study_plan_version_exists(pool, version_id).await?;
+    }
     let mut sql = String::from(
         "SELECT sps.id, sps.study_plan_version_id, sps.grade_level_id, sps.term,
                 sps.subject_id, s.code as subject_code, sps.display_order, sps.metadata,
@@ -616,7 +630,7 @@ pub async fn list_plan_subjects(
     if let Some(ref v) = query.term {
         q = q.bind(v);
     }
-    Ok(q.fetch_all(pool).await.unwrap_or_default())
+    q.fetch_all(pool).await.map_err(AppError::from)
 }
 
 pub async fn add_subjects_to_version(
@@ -625,9 +639,20 @@ pub async fn add_subjects_to_version(
     req: AddSubjectsToVersionRequest,
 ) -> Result<usize, AppError> {
     let mut tx = pool.begin().await?;
+    let version_exists =
+        sqlx::query_scalar::<_, Uuid>("SELECT id FROM study_plan_versions WHERE id = $1 FOR SHARE")
+            .bind(version_id)
+            .fetch_optional(&mut *tx)
+            .await?
+            .is_some();
+    if !version_exists {
+        return Err(AppError::NotFound(
+            "Study-plan version not found".to_string(),
+        ));
+    }
     let (grade_level_ids, terms, subject_ids, display_orders) =
         study_plan_subject_bulk_rows(&req.subjects);
-    bulk_insert_study_plan_subjects(
+    let inserted = bulk_insert_study_plan_subjects(
         &mut tx,
         version_id,
         &grade_level_ids,
@@ -637,7 +662,7 @@ pub async fn add_subjects_to_version(
     )
     .await?;
     tx.commit().await?;
-    Ok(req.subjects.len())
+    Ok(inserted as usize)
 }
 
 pub async fn delete_plan_subject(pool: &PgPool, sps_id: Uuid) -> Result<(), AppError> {
@@ -650,6 +675,12 @@ pub async fn delete_plan_subject(pool: &PgPool, sps_id: Uuid) -> Result<(), AppE
     .await
     .map_err(|e| AppError::InternalServerError(e.to_string()))?;
 
+    let Some((plan_id, grade_id, term, subject_id)) = context else {
+        return Err(AppError::NotFound(
+            "Study-plan subject not found".to_string(),
+        ));
+    };
+
     let mut tx = pool
         .begin()
         .await
@@ -659,9 +690,8 @@ pub async fn delete_plan_subject(pool: &PgPool, sps_id: Uuid) -> Result<(), AppE
         .execute(&mut *tx)
         .await?;
 
-    if let Some((plan_id, grade_id, term, subject_id)) = context {
-        sqlx::query(
-            "DELETE FROM classroom_courses cc
+    sqlx::query(
+        "DELETE FROM classroom_courses cc
              USING class_rooms cr, academic_semesters sem
              WHERE cc.classroom_id = cr.id
                AND cc.academic_semester_id = sem.id
@@ -670,20 +700,42 @@ pub async fn delete_plan_subject(pool: &PgPool, sps_id: Uuid) -> Result<(), AppE
                AND sem.term = $3
                AND cc.subject_id = $4
                AND sem.end_date >= CURRENT_DATE",
-        )
-        .bind(plan_id)
-        .bind(grade_id)
-        .bind(&term)
-        .bind(subject_id)
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
-    }
+    )
+    .bind(plan_id)
+    .bind(grade_id)
+    .bind(&term)
+    .bind(subject_id)
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| AppError::InternalServerError(e.to_string()))?;
 
     tx.commit()
         .await
         .map_err(|e| AppError::InternalServerError(e.to_string()))?;
     Ok(())
+}
+
+fn not_found_or(error: sqlx::Error, message: &str) -> AppError {
+    match error {
+        sqlx::Error::RowNotFound => AppError::NotFound(message.to_string()),
+        error => AppError::from(error),
+    }
+}
+
+async fn ensure_study_plan_version_exists(pool: &PgPool, version_id: Uuid) -> Result<(), AppError> {
+    let exists: bool =
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM study_plan_versions WHERE id = $1)")
+            .bind(version_id)
+            .fetch_one(pool)
+            .await?;
+
+    if exists {
+        Ok(())
+    } else {
+        Err(AppError::NotFound(
+            "Study-plan version not found".to_string(),
+        ))
+    }
 }
 
 // ============================================

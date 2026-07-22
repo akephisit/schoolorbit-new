@@ -330,10 +330,14 @@ pub async fn update_subject(
     .bind(&payload.subject_type).bind(payload.group_id).bind(&payload.description)
     .bind(payload.is_active).bind(payload.start_academic_year_id).bind(id)
     .bind(&payload.term)
-    .fetch_one(&mut *tx).await
-    .map_err(|e| {
-        tracing::error!("Failed to update subject {}: {}", id, e);
-        AppError::InternalServerError("Failed to update subject".to_string())
+    .fetch_one(&mut *tx)
+    .await
+    .map_err(|error| match error {
+        sqlx::Error::RowNotFound => AppError::NotFound("Subject not found".to_string()),
+        error => {
+            tracing::error!("Failed to update subject {}: {}", id, error);
+            AppError::InternalServerError("Failed to update subject".to_string())
+        }
     })?;
 
     if let Some(level_ids) = &payload.grade_level_ids {
@@ -362,7 +366,7 @@ pub async fn update_subject(
 }
 
 pub async fn delete_subject(pool: &PgPool, id: Uuid) -> Result<(), AppError> {
-    sqlx::query("DELETE FROM subjects WHERE id = $1")
+    let result = sqlx::query("DELETE FROM subjects WHERE id = $1")
         .bind(id)
         .execute(pool)
         .await
@@ -370,22 +374,29 @@ pub async fn delete_subject(pool: &PgPool, id: Uuid) -> Result<(), AppError> {
             tracing::error!("Failed to delete subject {}: {}", id, e);
             AppError::BadRequest("ไม่สามารถลบรายวิชาได้ (อาจมีการใช้งานอยู่)".to_string())
         })?;
+    if result.rows_affected() == 0 {
+        return Err(AppError::NotFound("Subject not found".to_string()));
+    }
     Ok(())
 }
 
 pub async fn get_subject_group_id(pool: &PgPool, id: Uuid) -> Result<Option<Uuid>, AppError> {
-    sqlx::query_scalar("SELECT group_id FROM subjects WHERE id = $1")
-        .bind(id)
-        .fetch_optional(pool)
-        .await
-        .map_err(|_| AppError::InternalServerError("Failed to fetch subject".to_string()))
-        .map(|opt| opt.flatten())
+    let group_id =
+        sqlx::query_scalar::<_, Option<Uuid>>("SELECT group_id FROM subjects WHERE id = $1")
+            .bind(id)
+            .fetch_optional(pool)
+            .await
+            .map_err(|_| AppError::InternalServerError("Failed to fetch subject".to_string()))?;
+
+    group_id.ok_or_else(|| AppError::NotFound("Subject not found".to_string()))
 }
 
 pub async fn list_subject_default_instructors(
     pool: &PgPool,
     subject_id: Uuid,
 ) -> Result<Vec<SubjectDefaultInstructor>, AppError> {
+    ensure_subject_exists(pool, subject_id).await?;
+
     sqlx::query_as::<_, SubjectDefaultInstructor>(
         r#"SELECT sdi.*, concat(u.first_name, ' ', u.last_name) AS instructor_name
            FROM subject_default_instructors sdi
@@ -404,6 +415,7 @@ pub async fn add_subject_default_instructor(
     subject_id: Uuid,
     body: AddSubjectDefaultInstructorRequest,
 ) -> Result<(), AppError> {
+    ensure_subject_exists(pool, subject_id).await?;
     let role = subject_instructor_role_or_default(body.role);
     validate_subject_instructor_role(&role)?;
 
@@ -447,7 +459,8 @@ pub async fn remove_subject_default_instructor(
     subject_id: Uuid,
     instructor_id: Uuid,
 ) -> Result<(), AppError> {
-    sqlx::query(
+    ensure_subject_exists(pool, subject_id).await?;
+    let result = sqlx::query(
         "DELETE FROM subject_default_instructors WHERE subject_id = $1 AND instructor_id = $2",
     )
     .bind(subject_id)
@@ -455,6 +468,11 @@ pub async fn remove_subject_default_instructor(
     .execute(pool)
     .await
     .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+    if result.rows_affected() == 0 {
+        return Err(AppError::NotFound(
+            "Subject instructor assignment not found".to_string(),
+        ));
+    }
     Ok(())
 }
 
@@ -470,6 +488,30 @@ pub async fn update_subject_default_instructor_role(
         .begin()
         .await
         .map_err(|_| AppError::InternalServerError("Transaction failed".to_string()))?;
+
+    let subject_exists =
+        sqlx::query_scalar::<_, Uuid>("SELECT id FROM subjects WHERE id = $1 FOR SHARE")
+            .bind(subject_id)
+            .fetch_optional(&mut *tx)
+            .await?
+            .is_some();
+    if !subject_exists {
+        return Err(AppError::NotFound("Subject not found".to_string()));
+    }
+    let assignment_exists = sqlx::query_scalar::<_, Uuid>(
+        "SELECT id FROM subject_default_instructors
+         WHERE subject_id = $1 AND instructor_id = $2 FOR UPDATE",
+    )
+    .bind(subject_id)
+    .bind(instructor_id)
+    .fetch_optional(&mut *tx)
+    .await?
+    .is_some();
+    if !assignment_exists {
+        return Err(AppError::NotFound(
+            "Subject instructor assignment not found".to_string(),
+        ));
+    }
 
     if role == "primary" {
         sqlx::query(
@@ -588,6 +630,19 @@ fn validate_subject_instructor_role(role: &str) -> Result<(), AppError> {
         Err(AppError::BadRequest(
             "role must be 'primary' or 'secondary'".to_string(),
         ))
+    }
+}
+
+async fn ensure_subject_exists(pool: &PgPool, subject_id: Uuid) -> Result<(), AppError> {
+    let exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM subjects WHERE id = $1)")
+        .bind(subject_id)
+        .fetch_one(pool)
+        .await?;
+
+    if exists {
+        Ok(())
+    } else {
+        Err(AppError::NotFound("Subject not found".to_string()))
     }
 }
 

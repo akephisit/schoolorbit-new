@@ -18,5 +18,11 @@ pub mod timetable_template_service;
 #[cfg(test)]
 mod academic_structure_service_tests;
 
+#[cfg(test)]
+mod subject_service_tests;
+
+#[cfg(test)]
+mod study_plan_service_tests;
+
 // Re-export main types for convenience
 pub use scheduler::{types::SchedulingAlgorithm, SchedulerBuilder};

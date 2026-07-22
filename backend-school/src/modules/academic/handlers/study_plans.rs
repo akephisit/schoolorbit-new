@@ -180,12 +180,14 @@ pub async fn delete_study_plan_version(
 pub async fn list_study_plan_subjects(
     State(state): State<AppState>,
     headers: HeaderMap,
-    Query(query): Query<StudyPlanSubjectQuery>,
+    Path(version_id): Path<Uuid>,
+    Query(mut query): Query<StudyPlanSubjectQuery>,
 ) -> Result<impl IntoResponse, AppError> {
     let context = actor_tenant_context(&state, &headers).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     curriculum_access_policy::ensure_curriculum_read(&actor)?;
+    query.study_plan_version_id = Some(version_id);
     let subjects = study_plan_service::list_plan_subjects(&pool, query).await?;
     Ok(Json(ApiResponse::ok(subjects)))
 }
