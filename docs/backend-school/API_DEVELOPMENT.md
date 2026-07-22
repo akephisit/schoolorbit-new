@@ -52,13 +52,13 @@ Frontend API modules import generated wire DTOs and may map them to separate
 domain/view models. Generation must not require database credentials or start
 the backend server.
 
-The current checkpoint contains 66 unique operations: the initial 30
+The current checkpoint contains 68 unique operations: 32
 auth/authorization operations plus 36 read-oriented JSON operations spanning
 lookups, menus, staff/self-service views, schedules, calendars, school settings,
 and notifications. The OpenAPI document describes implemented backend routes
 only; a frontend helper or UI call is not evidence that a backend route exists.
 
-Phase 4 will add mutation operations after reviewing each endpoint's behavior,
+Phase 4 is adding mutation operations after reviewing each endpoint's behavior,
 status codes, permission policy, and response DTO. SSE, WebSocket,
 health/readiness, and file/binary endpoints remain explicitly outside this
 OpenAPI contract.
@@ -72,16 +72,28 @@ For a new documented endpoint:
 5. Import the generated wire DTO in the frontend API module; add an explicit
    mapper only when the UI needs a different view/domain shape.
 
-Known behavior discrepancies are intentionally excluded from OpenAPI:
+### Reversible access-record deactivation
 
-- `DELETE /api/roles/{id}` is called by the roles UI, but the backend has no
-  route or reviewed delete/deactivation semantics.
-- `DELETE /api/organization/units/{id}` exists as an unused frontend helper,
-  but the backend has no route or dependency-safe deletion policy.
-
-Do not add either path only to make generated types compile. Resolve each as a
-separate behavior change after reviewing references, audit requirements, and
-whether deactivation is safer than deletion.
+- `DELETE /api/roles/{id}` and `DELETE /api/organization/units/{id}` are
+  implemented backend routes that set `is_active = false`; neither route performs
+  a physical delete.
+- Both DELETE routes require `roles.delete.all`. A PUT with
+  `is_active: false` requires `roles.update.all` plus `roles.delete.all`;
+  reactivation with `is_active: true` requires `roles.update.all`.
+- Existing role assignments, organization memberships, grants, delegations, and
+  history remain stored. Inactive sources do not contribute effective permissions;
+  valid relationships take effect again after reactivation.
+- Every real status transition writes an audit row in the same transaction.
+  Idempotent requests do not add audit rows or trigger permission-cache/realtime
+  invalidation.
+- `is_system` is read-only and migration/provisioning-owned. It protects the
+  `ADMIN` role and `SCHOOL` organization unit and must not be added to create or
+  update request DTOs.
+- Organization units enforce hierarchy safety: active children block parent
+  deactivation, and an inactive parent blocks active create, move, or reactivation.
+- `GET /api/roles` and `GET /api/organization/units` accept the optional
+  `include_inactive=true` query for management screens. The default stays
+  active-only for assignment consumers.
 
 ## Error Handling
 *   Use the custom `AppError` type (if available) to map errors to HTTP status codes.

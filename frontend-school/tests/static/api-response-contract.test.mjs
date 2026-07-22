@@ -420,7 +420,7 @@ test('project rules document generated API contract ownership', async () => {
 	}
 });
 
-test('project docs record the 66-operation checkpoint and remaining mutation phase', async () => {
+test('project docs record the 68-operation checkpoint and reviewed mutation phase', async () => {
 	const sources = await Promise.all([
 		readRepoFile('.rules'),
 		readRepoFile('docs/TESTING.md'),
@@ -429,7 +429,8 @@ test('project docs record the 66-operation checkpoint and remaining mutation pha
 	]);
 
 	for (const source of sources) {
-		assert.match(source, /66 unique operations/i);
+		assert.match(source, /68 unique operations/i);
+		assert.match(source, /32[\s\S]{0,30}auth\/authorization/i);
 		assert.match(source, /36 read-oriented/i);
 		assert.match(source, /Phase 4[\s\S]{0,120}mutation|mutation[\s\S]{0,120}Phase 4/i);
 		assert.match(
@@ -439,19 +440,21 @@ test('project docs record the 66-operation checkpoint and remaining mutation pha
 	}
 });
 
-test('API docs record implemented-route ownership and unsupported delete discrepancies', async () => {
+test('API docs record implemented reversible role and organization deactivation', async () => {
 	const guide = await readRepoFile('docs/backend-school/API_DEVELOPMENT.md');
 	const testing = await readRepoFile('docs/TESTING.md');
 	const improvements = await readRepoFile('IMPROVEMENT_PLAN.md');
 
 	for (const source of [guide, testing]) {
-		assert.match(source, /66 unique operations/);
-		assert.match(source, /30[\s\S]{0,30}auth\/authorization operations/);
+		assert.match(source, /68 unique operations/);
+		assert.match(source, /32[\s\S]{0,30}auth\/authorization operations/);
 		assert.match(source, /implemented backend routes\s+only/i);
 	}
-	for (const source of [guide, improvements]) {
+	for (const source of [guide, testing, improvements]) {
 		assert.match(source, /DELETE `?\/api\/roles\/\{id\}`?/);
 		assert.match(source, /DELETE `?\/api\/organization\/units\/\{id\}`?/);
+		assert.match(source, /deactivat|ปิดใช้งาน/i);
+		assert.match(source, /is_system/);
 	}
 });
 

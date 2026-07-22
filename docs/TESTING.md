@@ -70,16 +70,31 @@ Frontend API modules import generated wire DTOs and may map them to separate
 domain/view models. Generation must not require database credentials or start
 the backend server.
 
-The generated document currently contains 66 unique operations: the initial 30
+The generated document currently contains 68 unique operations: 32
 auth/authorization operations plus 36 read-oriented JSON operations. It tracks
 implemented backend routes only; frontend-only helpers are not exported. Phase 4
-will add mutation operations after their behavior, status codes, and response
+is adding mutation operations after their behavior, status codes, and response
 DTOs are reviewed. SSE, WebSocket, health/readiness, and file/binary endpoints
 remain explicitly outside this OpenAPI contract.
 
-In particular, `DELETE /api/roles/{id}` and
-`DELETE /api/organization/units/{id}` remain outside the contract until their
-backend behavior is explicitly designed and implemented.
+`DELETE /api/roles/{id}` and `DELETE /api/organization/units/{id}` are implemented
+as reversible deactivation (`is_active = false`), never physical deletion. They
+preserve assignments, memberships, permission grants, delegations, and audit
+history. `is_system` is a read-only migration/provisioning flag that protects the
+`ADMIN` role and `SCHOOL` unit. Management lists can request
+`include_inactive=true`; assignment lists remain active-only by default.
+
+Database-backed lifecycle coverage can be run with:
+
+```bash
+cd backend-school
+TEST_DATABASE_URL='postgresql://.../schoolorbit_test' \
+  cargo test modules::staff::services::status_tests --bin backend-school
+```
+
+These tests cover idempotent deactivate/reactivate audit rows, active-child and
+inactive-parent conflicts, inactive authorization sources, and rejection of new
+assignments to inactive records.
 
 The phase gate is:
 

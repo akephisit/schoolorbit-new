@@ -145,14 +145,16 @@
 | **ผลลัพธ์** | log filter ได้ตาม level/module และลดการพิมพ์ response ดิบจาก external APIs |
 | **ตรวจสอบ** | `cargo test`, `cargo check`, `git diff --check`, `rg "println!\|eprintln!" backend-admin/src/main.rs backend-admin/src/services/school_service.rs backend-admin/src/clients/*.rs` |
 
-### M-6. กำหนด behavior สำหรับ route ลบ role/organization unit ที่ frontend อ้างถึง
+### ✅ M-6. กำหนด behavior สำหรับ route ลบ role/organization unit ที่ frontend อ้างถึง — เสร็จแล้ว
 
 | | |
 |---|---|
-| **ไฟล์** | `frontend-school/src/lib/api/roles.ts`, `frontend-school/src/lib/api/staff.ts`, `frontend-school/src/routes/(app)/staff/roles/`, `backend-school/src/modules/staff/` |
-| **ปัญหา** | roles UI เรียก `DELETE /api/roles/{id}` และ staff API มี helper `DELETE /api/organization/units/{id}` แต่ backend ไม่มีทั้งสอง route จึงไม่อยู่ใน generated OpenAPI |
-| **สิ่งที่ต้องตัดสินใจ** | ตรวจ foreign keys, audit/history, default roles/units และ permission cache ก่อนเลือก soft-delete/deactivate, hard-delete หรือถอด action/helper ออกจาก frontend |
-| **ข้อห้าม** | ห้ามเพิ่ม route เปล่าเพื่อให้ frontend ไม่ error และห้ามประกาศ path ใน OpenAPI ก่อนมี backend behavior + tests ที่ review แล้ว |
+| **ไฟล์** | migration `027_role_organization_system_flags.sql`, staff handlers/services, permission resolver/policies, generated OpenAPI/TypeScript, role/organization management UI |
+| **ที่ทำ** | เพิ่ม `DELETE /api/roles/{id}` และ `DELETE /api/organization/units/{id}` เป็น reversible deactivation (`is_active = false`) โดยเก็บ assignments, memberships, grants, delegations และ history ไว้ทั้งหมด; เพิ่ม `include_inactive=true` สำหรับหน้าจัดการและเปิดกลับผ่าน PUT |
+| **ความปลอดภัย** | DELETE ต้องมี `roles.delete.all`; PUT ที่ส่ง `is_active: false` ต้องมีทั้ง update+delete; `is_system` เป็น read-only migration/provisioning flag ป้องกัน `ADMIN` และ `SCHOOL`; inactive role/unit/scoped delegation ไม่ให้ effective permission และห้ามสร้าง assignment ใหม่ไปยัง record ที่ inactive |
+| **Hierarchy / side effects** | ห้ามปิด parent ที่ยังมี active child และห้ามเปิด/สร้าง/ย้าย active child ใต้ inactive parent; status transition จริงเขียน audit ใน transaction เดียวกันและจึง invalidate tenant permission cache + แจ้ง realtime ส่วน idempotent no-op ไม่สร้าง side effect |
+| **Frontend** | หน้าจัดการแสดง inactive/system, ใช้คำว่า “ปิดใช้งาน/เปิดใช้งาน”, จำกัด action ตาม permission และอธิบายว่าความสัมพันธ์เดิมยังอยู่; assignment picker ยังเรียก active-only default |
+| **ตรวจสอบ** | database lifecycle/authorization/assignment tests, OpenAPI 409 + operation inventory, static architecture 99 tests, generated-contract tests, focused UI tests, Svelte autofixer และ `svelte-check` |
 | **ความยาก** | Medium |
 
 ### ✅ M-7. Shared API contract ระหว่าง backend-school และ frontend — read phase เสร็จแล้ว
@@ -161,8 +163,8 @@
 |---|---|
 | **ไฟล์** | `backend-school/src/api_contract.rs`, `contracts/openapi/school-api.json`, `frontend-school/src/lib/api/generated/school-api.ts`, `backend-school/tests/static_architecture.rs` |
 | **ที่ทำ** | ให้ Rust serde DTO + `utoipa` เป็น source of truth, generate OpenAPI/TypeScript แบบ offline และย้าย frontend wire DTO ที่ซ้ำให้ใช้งาน generated schema พร้อม router-derived drift guard |
-| **ผลลัพธ์** | ปัจจุบัน contract มี 66 unique operations: 30 auth/authorization และ 36 read-oriented JSON operations ทำให้ backend/frontend drift ถูกตรวจใน CI และ type check |
-| **งานต่อ Phase 4** | เพิ่ม mutation operations ทีละกลุ่มหลังตรวจ behavior, permission, status และ response DTO; SSE, WebSocket, health/readiness และ file/binary endpoints ยังอยู่นอก OpenAPI contract โดยตั้งใจ |
+| **ผลลัพธ์** | ปัจจุบัน contract มี 68 unique operations: 32 auth/authorization และ 36 read-oriented JSON operations ทำให้ backend/frontend drift ถูกตรวจใน CI และ type check |
+| **งานต่อ Phase 4** | เพิ่ม mutation operations ทีละกลุ่มหลังตรวจ behavior, permission, status และ response DTO โดยกลุ่ม soft-deactivation เป็นชุดแรกที่เสร็จแล้ว; SSE, WebSocket, health/readiness และ file/binary endpoints ยังอยู่นอก OpenAPI contract โดยตั้งใจ |
 | **ความยาก** | Medium |
 
 ---
