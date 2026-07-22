@@ -70,12 +70,26 @@ Frontend API modules import generated wire DTOs and may map them to separate
 domain/view models. Generation must not require database credentials or start
 the backend server.
 
-The generated document currently contains 68 unique operations: 32
-auth/authorization operations plus 36 read-oriented JSON operations. It tracks
-implemented backend routes only; frontend-only helpers are not exported. Phase 4
-is adding mutation operations after their behavior, status codes, and response
-DTOs are reviewed. SSE, WebSocket, health/readiness, and file/binary endpoints
-remain explicitly outside this OpenAPI contract.
+The generated document currently contains 81 unique operations: 32
+auth/authorization operations, 36 read-oriented JSON operations from the prior
+checkpoint, and the completed Phase 4 mutation rollout Phase 1 people batch (12
+mutations plus the dependent achievement list read). The people operations are:
+
+- staff: `createStaff`, `updateStaff`, `deleteStaff`
+- student/parent-link: `updateStudentProfile`, `createStudent`, `updateStudent`,
+  `deleteStudent`, `addStudentParent`, `removeStudentParent`
+- achievement: `listAchievements`, `createAchievement`, `updateAchievement`,
+  `deleteAchievement`
+
+Phase 2 academic mutations are next. The document tracks implemented backend
+routes only; frontend-only helpers are not exported. SSE, WebSocket,
+health/readiness, and file/binary endpoints remain explicitly outside this
+OpenAPI contract.
+
+Authorization regression tests require effective permissions to be empty when
+`users.status != 'active'`. Student soft deletion invalidates that user's
+permission cache and emits `permission_changed`. Missing student targets for
+update, delete, and add-parent return not-found before dependent writes occur.
 
 `DELETE /api/roles/{id}` and `DELETE /api/organization/units/{id}` are implemented
 as reversible deactivation (`is_active = false`), never physical deletion. They

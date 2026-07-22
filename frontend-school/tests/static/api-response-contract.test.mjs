@@ -436,7 +436,7 @@ test('project rules document generated API contract ownership', async () => {
 	}
 });
 
-test('project docs record the 68-operation checkpoint and reviewed mutation phase', async () => {
+test('project docs record the 81-operation people checkpoint and next mutation phase', async () => {
 	const sources = await Promise.all([
 		readRepoFile('.rules'),
 		readRepoFile('docs/TESTING.md'),
@@ -445,10 +445,33 @@ test('project docs record the 68-operation checkpoint and reviewed mutation phas
 	]);
 
 	for (const source of sources) {
-		assert.match(source, /68 unique operations/i);
+		assert.match(source, /81 unique operations/i);
 		assert.match(source, /32[\s\S]{0,30}auth\/authorization/i);
 		assert.match(source, /36 read-oriented/i);
+		assert.match(source, /12\s+mutations/i);
+		assert.match(source, /achievement list read/i);
+		assert.match(source, /Phase 1[\s\S]{0,80}people/i);
+		assert.match(source, /Phase 2[\s\S]{0,80}academic/i);
+		for (const operationId of [
+			'createStaff',
+			'updateStaff',
+			'deleteStaff',
+			'updateStudentProfile',
+			'createStudent',
+			'updateStudent',
+			'deleteStudent',
+			'addStudentParent',
+			'removeStudentParent',
+			'listAchievements',
+			'createAchievement',
+			'updateAchievement',
+			'deleteAchievement'
+		]) {
+			assert.match(source, new RegExp(`\\b${operationId}\\b`));
+		}
 		assert.match(source, /Phase 4[\s\S]{0,120}mutation|mutation[\s\S]{0,120}Phase 4/i);
+		assert.match(source, /users\.status\s*!=\s*['"`]active['"`]/);
+		assert.match(source, /permission_changed/);
 		assert.match(
 			source,
 			/SSE[\s\S]{0,120}WebSocket[\s\S]{0,120}(?:binary|file)|(?:binary|file)[\s\S]{0,120}SSE[\s\S]{0,120}WebSocket/i
@@ -462,9 +485,9 @@ test('API docs record implemented reversible role and organization deactivation'
 	const improvements = await readRepoFile('IMPROVEMENT_PLAN.md');
 
 	for (const source of [guide, testing]) {
-		assert.match(source, /68 unique operations/);
-		assert.match(source, /32[\s\S]{0,30}auth\/authorization operations/);
-		assert.match(source, /implemented backend routes\s+only/i);
+		assert.match(source, /81 unique operations/);
+		assert.match(source, /32[\s\S]{0,50}auth\/authorization[\s\S]{0,30}operations/);
+		assert.match(source, /implemented\s+backend\s+routes\s+only/i);
 	}
 	for (const source of [guide, testing, improvements]) {
 		assert.match(source, /DELETE `?\/api\/roles\/\{id\}`?/);

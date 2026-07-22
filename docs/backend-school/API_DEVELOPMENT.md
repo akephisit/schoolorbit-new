@@ -52,16 +52,28 @@ Frontend API modules import generated wire DTOs and may map them to separate
 domain/view models. Generation must not require database credentials or start
 the backend server.
 
-The current checkpoint contains 68 unique operations: 32
-auth/authorization operations plus 36 read-oriented JSON operations spanning
-lookups, menus, staff/self-service views, schedules, calendars, school settings,
-and notifications. The OpenAPI document describes implemented backend routes
-only; a frontend helper or UI call is not evidence that a backend route exists.
+The current checkpoint contains 81 unique operations: 32 auth/authorization
+operations, 36 read-oriented JSON operations from the prior checkpoint, and the
+completed Phase 4 mutation rollout Phase 1 people batch (12 mutations plus the
+dependent achievement list read). The people operations are:
 
-Phase 4 is adding mutation operations after reviewing each endpoint's behavior,
-status codes, permission policy, and response DTO. SSE, WebSocket,
-health/readiness, and file/binary endpoints remain explicitly outside this
-OpenAPI contract.
+- staff: `createStaff`, `updateStaff`, `deleteStaff`
+- student/parent-link: `updateStudentProfile`, `createStudent`, `updateStudent`,
+  `deleteStudent`, `addStudentParent`, `removeStudentParent`
+- achievement: `listAchievements`, `createAchievement`, `updateAchievement`,
+  `deleteAchievement`
+
+Phase 2 academic mutations are next. The OpenAPI document describes implemented
+backend routes only; a frontend helper or UI call is not evidence that a backend
+route exists. SSE, WebSocket, health/readiness, and file/binary endpoints remain
+explicitly outside this OpenAPI contract.
+
+Effective authorization is conditional on the account itself: when
+`users.status != 'active'`, permission resolution returns no effective
+permissions even if active assignments remain. A user-status mutation must
+invalidate the per-user permission cache and emit `permission_changed`; student
+soft deletion follows this rule. Student update/delete/add-parent services return
+not-found for a missing student before any dependent mutation or parent creation.
 
 For a new documented endpoint:
 
