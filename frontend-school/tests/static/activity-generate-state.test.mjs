@@ -38,6 +38,7 @@ function extractFunction(source, name) {
 test('activity generate patches returned slots and groups without reloading the full page data', async () => {
 	const page = await readProjectFile('src/routes/(app)/staff/academic/activities/+page.svelte');
 	const api = await readProjectFile('src/lib/api/academic.ts');
+	const generated = await readProjectFile('src/lib/api/generated/school-api.ts');
 	const handleGenerate = extractFunction(page, 'handleGenerate');
 	const mergeGeneratedActivities = extractFunction(page, 'mergeGeneratedActivities');
 
@@ -56,18 +57,22 @@ test('activity generate patches returned slots and groups without reloading the 
 	assert.match(mergeGeneratedActivities, /\bslotClassroomAssignmentsMap\s*=/);
 	assert.match(
 		api,
-		/interface\s+GenerateActivitiesFromPlanResponse\s*\{[\s\S]*slots:\s*ActivitySlot\[\]/
+		/export\s+type\s+GenerateActivitiesFromPlanResponse\s*=\s*Schemas\['GenerateActivitiesFromPlanOutcome'\]/
 	);
 	assert.match(
-		api,
-		/interface\s+GenerateActivitiesFromPlanResponse\s*\{[\s\S]*groups:\s*ActivityGroup\[\]/
+		generated,
+		/GenerateActivitiesFromPlanOutcome:\s*\{[\s\S]*slots:\s*components\['schemas'\]\['ActivitySlot'\]\[\]/
 	);
 	assert.match(
-		api,
-		/interface\s+GenerateActivitiesFromPlanResponse\s*\{[\s\S]*slot_instructors:\s*Record<string,\s*SlotInstructor\[\]>/
+		generated,
+		/GenerateActivitiesFromPlanOutcome:\s*\{[\s\S]*groups:\s*components\['schemas'\]\['ActivityGroup'\]\[\]/
 	);
 	assert.match(
-		api,
-		/interface\s+GenerateActivitiesFromPlanResponse\s*\{[\s\S]*slot_classroom_assignments:\s*Record<string,\s*SlotClassroomAssignment\[\]>/
+		generated,
+		/GenerateActivitiesFromPlanOutcome:\s*\{[\s\S]*slot_instructors:\s*\{[\s\S]*components\['schemas'\]\['SlotInstructorInfo'\]\[\]/
+	);
+	assert.match(
+		generated,
+		/GenerateActivitiesFromPlanOutcome:\s*\{[\s\S]*slot_classroom_assignments:\s*\{[\s\S]*components\['schemas'\]\['SlotClassroomAssignment'\]\[\]/
 	);
 });
