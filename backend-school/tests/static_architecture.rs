@@ -2420,49 +2420,74 @@ fn permissions_do_not_use_legacy_user_permissions_resolver() {
     assert_eq!(violations, Vec::<String>::new());
 }
 
+fn authorization_handlers_from_router(router: &str) -> Vec<String> {
+    let handler_pattern = Regex::new(
+        r"\bmodules::(?P<handler>(?:auth::handlers|staff::handlers::(?:roles|permissions|user_roles|organization_permissions|organization_delegations|organization_members))::[A-Za-z_][A-Za-z0-9_]*)\b",
+    )
+    .expect("valid authorization handler regex");
+    let router = strip_comments(router);
+    let mut handlers = handler_pattern
+        .captures_iter(&router)
+        .map(|captures| {
+            format!(
+                "crate::modules::{}",
+                captures.name("handler").expect("handler capture").as_str()
+            )
+        })
+        .collect::<Vec<_>>();
+    handlers.sort();
+    handlers.dedup();
+    handlers
+}
+
+fn authorization_handlers_missing_from_contract(router: &str, contract: &str) -> Vec<String> {
+    let paths_start = contract
+        .find("paths(")
+        .expect("OpenAPI contract must declare paths");
+    let components_offset = contract[paths_start..]
+        .find("components(schemas(")
+        .expect("OpenAPI paths must precede component schemas");
+    let path_registry = &contract[paths_start..paths_start + components_offset];
+
+    authorization_handlers_from_router(router)
+        .into_iter()
+        .filter(|handler| !path_registry.contains(handler))
+        .collect()
+}
+
 #[test]
 fn authorization_handlers_are_registered_in_the_openapi_document() {
+    let router = read_source(manifest_dir().join("src/main.rs"));
     let contract = read_source(manifest_dir().join("src/api_contract.rs"));
-    let handlers = [
-        "auth::handlers::login",
-        "auth::handlers::logout",
-        "auth::handlers::me",
-        "auth::handlers::get_profile",
-        "auth::handlers::update_profile",
-        "auth::handlers::change_password",
-        "handlers::roles::list_roles",
-        "handlers::roles::get_role",
-        "handlers::roles::create_role",
-        "handlers::roles::update_role",
-        "handlers::permissions::list_permissions",
-        "handlers::permissions::list_permissions_by_module",
-        "handlers::user_roles::get_user_roles",
-        "handlers::user_roles::assign_user_role",
-        "handlers::user_roles::remove_user_role",
-        "handlers::user_roles::get_user_permissions",
-        "handlers::roles::list_organization_units",
-        "handlers::roles::get_organization_unit",
-        "handlers::roles::create_organization_unit",
-        "handlers::roles::update_organization_unit",
-        "handlers::organization_permissions::get_organization_permissions",
-        "handlers::organization_permissions::update_organization_permissions",
-        "handlers::organization_delegations::list_delegatable_permissions",
-        "handlers::organization_delegations::list_delegations",
-        "handlers::organization_delegations::create_delegation",
-        "handlers::organization_delegations::revoke_delegation",
-        "handlers::organization_members::list_members",
-        "handlers::organization_members::add_member",
-        "handlers::organization_members::update_member",
-        "handlers::organization_members::remove_member",
-    ];
 
-    let missing = handlers
-        .iter()
-        .filter(|handler| !contract.contains(*handler))
-        .copied()
-        .collect::<Vec<_>>();
+    assert!(
+        authorization_handlers_from_router(&router).len() >= 30,
+        "authorization router parser must find the current phase inventory"
+    );
 
-    assert_eq!(missing, Vec::<&str>::new());
+    assert_eq!(
+        authorization_handlers_missing_from_contract(&router, &contract),
+        Vec::<String>::new()
+    );
+}
+
+#[test]
+fn authorization_openapi_guard_detects_a_new_router_handler() {
+    let router = r#"
+        .route("/api/auth/login", post(modules::auth::handlers::login))
+        .route("/api/auth/refresh", post(modules::auth::handlers::refresh))
+    "#;
+    let contract = r#"
+        #[openapi(
+            paths(crate::modules::auth::handlers::login),
+            components(schemas(ApiErrorResponse))
+        )]
+    "#;
+
+    assert_eq!(
+        authorization_handlers_missing_from_contract(router, contract),
+        vec!["crate::modules::auth::handlers::refresh".to_string()]
+    );
 }
 
 #[test]

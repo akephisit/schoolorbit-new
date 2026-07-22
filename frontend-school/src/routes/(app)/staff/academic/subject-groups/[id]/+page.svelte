@@ -1,7 +1,10 @@
 <script lang="ts">
 	import type { PageProps } from './$types';
 	import { onMount } from 'svelte';
-	import { getOrganizationUnitLookup, type OrganizationUnit } from '$lib/api/staff';
+	import {
+		getOrganizationUnitLookup,
+		type OrganizationUnitLookupItem
+	} from '$lib/api/staff';
 	import { Button } from '$lib/components/ui/button';
 	import { PageShell } from '$lib/components/app-layout';
 	import { Badge } from '$lib/components/ui/badge';
@@ -14,7 +17,7 @@
 
 	const { params }: PageProps = $props();
 	let deptId = $derived(params.id);
-	let department: OrganizationUnit | null = $state(null);
+	let department: OrganizationUnitLookupItem | null = $state(null);
 	let loading = $state(true);
 	let error = $state('');
 

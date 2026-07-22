@@ -78,8 +78,7 @@ pub async fn get_role(
         (status = 201, description = "Role created", body = ApiResponse<UuidIdData>),
         (status = 400, description = "Invalid role", body = ApiErrorResponse),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
-        (status = 403, description = "Permission denied", body = ApiErrorResponse),
-        (status = 409, description = "Role code conflict", body = ApiErrorResponse)
+        (status = 403, description = "Permission denied", body = ApiErrorResponse)
     )
 )]
 pub async fn create_role(
@@ -204,8 +203,7 @@ pub async fn get_organization_unit(
         (status = 201, description = "Organization unit created", body = ApiResponse<UuidIdData>),
         (status = 400, description = "Invalid organization unit", body = ApiErrorResponse),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
-        (status = 403, description = "Permission denied", body = ApiErrorResponse),
-        (status = 409, description = "Organization unit code conflict", body = ApiErrorResponse)
+        (status = 403, description = "Permission denied", body = ApiErrorResponse)
     )
 )]
 pub async fn create_organization_unit(

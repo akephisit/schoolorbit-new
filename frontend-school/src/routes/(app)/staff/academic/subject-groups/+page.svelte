@@ -2,7 +2,10 @@
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
-	import { listOrganizationUnitsLookup, type OrganizationUnit } from '$lib/api/staff';
+	import {
+		listOrganizationUnitsLookup,
+		type OrganizationUnitLookupItem
+	} from '$lib/api/staff';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { PageShell } from '$lib/components/app-layout';
@@ -12,7 +15,7 @@
 	import { PERMISSIONS } from '$lib/permissions/registry';
 	import { can } from '$lib/stores/permissions';
 
-	let departments: OrganizationUnit[] = $state([]);
+	let departments: OrganizationUnitLookupItem[] = $state([]);
 	let loading = $state(true);
 	let searchQuery = $state('');
 
@@ -28,7 +31,7 @@
 	);
 
 	let showPermissionDialog = $state(false);
-	let permissionDepartment = $state<OrganizationUnit | null>(null);
+	let permissionDepartment = $state<OrganizationUnitLookupItem | null>(null);
 
 	const canReadSubjectGroups = $derived(
 		$can.hasAny(
@@ -45,7 +48,7 @@
 		goto(resolve(`/staff/academic/subject-groups/${id}`));
 	}
 
-	function handlePermission(dept: OrganizationUnit, e: MouseEvent) {
+	function handlePermission(dept: OrganizationUnitLookupItem, e: MouseEvent) {
 		e.preventDefault();
 		if (!canManageSubjectGroupPermissions) return;
 		permissionDepartment = dept;

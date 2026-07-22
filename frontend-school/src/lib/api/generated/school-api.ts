@@ -985,8 +985,8 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_LoginData'];
 				};
 			};
-			/** @description Invalid request */
-			400: {
+			/** @description Invalid credentials */
+			401: {
 				headers: {
 					[name: string]: unknown;
 				};
@@ -994,8 +994,8 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
-			/** @description Invalid credentials */
-			401: {
+			/** @description Malformed or invalid JSON request */
+			422: {
 				headers: {
 					[name: string]: unknown;
 				};
@@ -1076,8 +1076,8 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_EmptyData'];
 				};
 			};
-			/** @description Invalid password data */
-			400: {
+			/** @description Authentication required or current password invalid */
+			401: {
 				headers: {
 					[name: string]: unknown;
 				};
@@ -1085,8 +1085,8 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
-			/** @description Authentication required or current password invalid */
-			401: {
+			/** @description Active user not found */
+			404: {
 				headers: {
 					[name: string]: unknown;
 				};
@@ -1315,15 +1315,6 @@ export interface operations {
 			};
 			/** @description Permission denied */
 			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Organization unit code conflict */
-			409: {
 				headers: {
 					[name: string]: unknown;
 				};
@@ -1872,15 +1863,6 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
-			/** @description Organization unit not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
 		};
 	};
 	listPermissions: {
@@ -2039,15 +2021,6 @@ export interface operations {
 			};
 			/** @description Permission denied */
 			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Role code conflict */
-			409: {
 				headers: {
 					[name: string]: unknown;
 				};

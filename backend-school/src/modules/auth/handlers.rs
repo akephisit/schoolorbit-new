@@ -30,8 +30,8 @@ use tower_cookies::{Cookie, Cookies};
     request_body = LoginRequest,
     responses(
         (status = 200, description = "Authenticated user", body = ApiResponse<LoginData>),
-        (status = 400, description = "Invalid request", body = ApiErrorResponse),
-        (status = 401, description = "Invalid credentials", body = ApiErrorResponse)
+        (status = 401, description = "Invalid credentials", body = ApiErrorResponse),
+        (status = 422, description = "Malformed or invalid JSON request", body = ApiErrorResponse)
     )
 )]
 pub async fn login(
@@ -293,8 +293,8 @@ pub async fn update_profile(
     request_body = ChangePasswordRequest,
     responses(
         (status = 200, description = "Password changed", body = ApiResponse<EmptyData>),
-        (status = 400, description = "Invalid password data", body = ApiErrorResponse),
-        (status = 401, description = "Authentication required or current password invalid", body = ApiErrorResponse)
+        (status = 401, description = "Authentication required or current password invalid", body = ApiErrorResponse),
+        (status = 404, description = "Active user not found", body = ApiErrorResponse)
     )
 )]
 pub async fn change_password(

@@ -49,7 +49,7 @@
 		onSuccess,
 		readOnly = false
 	} = $props<{
-		organizationUnit: OrganizationUnit | null;
+		organizationUnit: Pick<OrganizationUnit, 'id'> | null;
 		open: boolean;
 		onSuccess?: () => void;
 		readOnly?: boolean;

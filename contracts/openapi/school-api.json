@@ -2439,16 +2439,6 @@
             },
             "description": "Authenticated user"
           },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Invalid request"
-          },
           "401": {
             "content": {
               "application/json": {
@@ -2458,6 +2448,16 @@
               }
             },
             "description": "Invalid credentials"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Malformed or invalid JSON request"
           }
         },
         "summary": "Login handler",
@@ -2542,16 +2542,6 @@
             },
             "description": "Password changed"
           },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Invalid password data"
-          },
           "401": {
             "content": {
               "application/json": {
@@ -2561,6 +2551,16 @@
               }
             },
             "description": "Authentication required or current password invalid"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Active user not found"
           }
         },
         "summary": "Change password handler (POST /me/change-password)\nChanges user's password after verifying current password\nChange password handler (POST /me/change-password)\nChanges user's password after verifying current password",
@@ -2822,16 +2822,6 @@
               }
             },
             "description": "Permission denied"
-          },
-          "409": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Organization unit code conflict"
           }
         },
         "tags": [
@@ -3543,16 +3533,6 @@
               }
             },
             "description": "Permission denied"
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Organization unit not found"
           }
         },
         "tags": [
@@ -3731,16 +3711,6 @@
               }
             },
             "description": "Permission denied"
-          },
-          "409": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Role code conflict"
           }
         },
         "tags": [

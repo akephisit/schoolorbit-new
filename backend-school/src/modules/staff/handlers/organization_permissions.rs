@@ -60,8 +60,7 @@ pub async fn get_organization_permissions(
         (status = 200, description = "Organization permission grants replaced", body = ApiResponse<EmptyData>),
         (status = 400, description = "Invalid permission grants", body = ApiErrorResponse),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
-        (status = 403, description = "Permission denied", body = ApiErrorResponse),
-        (status = 404, description = "Organization unit not found", body = ApiErrorResponse)
+        (status = 403, description = "Permission denied", body = ApiErrorResponse)
     )
 )]
 pub async fn update_organization_permissions(

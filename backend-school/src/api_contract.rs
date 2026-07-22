@@ -308,6 +308,12 @@ mod tests {
                 ["application/json"]["schema"]["$ref"],
             "#/components/schemas/ApiResponse_LoginData"
         );
+        assert_eq!(
+            document["paths"]["/api/auth/login"]["post"]["responses"]["422"]["content"]
+                ["application/json"]["schema"]["$ref"],
+            "#/components/schemas/ApiErrorResponse"
+        );
+        assert!(document["paths"]["/api/auth/login"]["post"]["responses"]["400"].is_null());
 
         let profile = &schemas["ProfileResponse"];
         for field in [
@@ -342,6 +348,14 @@ mod tests {
         assert!(update.get("profileImageUrl").is_some());
         let change = &schemas["ChangePasswordRequest"];
         assert_eq!(required(change), vec!["currentPassword", "newPassword"]);
+        assert_eq!(
+            document["paths"]["/api/auth/me/change-password"]["post"]["responses"]["404"]
+                ["content"]["application/json"]["schema"]["$ref"],
+            "#/components/schemas/ApiErrorResponse"
+        );
+        assert!(
+            document["paths"]["/api/auth/me/change-password"]["post"]["responses"]["400"].is_null()
+        );
     }
 
     #[test]
@@ -377,6 +391,12 @@ mod tests {
                 ["application/json"]["schema"]["$ref"],
             "#/components/schemas/ApiResponse_UuidIdData"
         );
+        assert_eq!(
+            document["paths"]["/api/roles"]["post"]["responses"]["400"]["content"]
+                ["application/json"]["schema"]["$ref"],
+            "#/components/schemas/ApiErrorResponse"
+        );
+        assert!(document["paths"]["/api/roles"]["post"]["responses"]["409"].is_null());
         assert_eq!(
             document["paths"]["/api/roles/{id}"]["put"]["responses"]["200"]["content"]
                 ["application/json"]["schema"]["$ref"],
@@ -435,6 +455,17 @@ mod tests {
             document["paths"]["/api/organization/units"]["post"]["responses"]["201"]["content"]
                 ["application/json"]["schema"]["$ref"],
             "#/components/schemas/ApiResponse_UuidIdData"
+        );
+        assert_eq!(
+            document["paths"]["/api/organization/units"]["post"]["responses"]["400"]["content"]
+                ["application/json"]["schema"]["$ref"],
+            "#/components/schemas/ApiErrorResponse"
+        );
+        assert!(document["paths"]["/api/organization/units"]["post"]["responses"]["409"].is_null());
+        assert!(
+            document["paths"]["/api/organization/units/{id}/permissions"]["put"]["responses"]
+                ["404"]
+                .is_null()
         );
 
         let schemas = &document["components"]["schemas"];

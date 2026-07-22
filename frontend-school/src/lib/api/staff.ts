@@ -216,6 +216,20 @@ export interface UpdateStaffRequest {
 export type Role = Schemas['Role'];
 export type OrganizationUnit = Schemas['OrganizationUnit'];
 
+export interface OrganizationUnitLookupItem {
+	id: string;
+	code: string;
+	name: string;
+	name_en?: string;
+	description?: string;
+	category?: string;
+	display_order: number;
+	is_active: boolean;
+	parent_unit_id?: string;
+	unit_type?: string;
+	subject_group_id?: string;
+}
+
 interface StaffFilter {
 	user_type?: string;
 	role_id?: string;
@@ -310,18 +324,18 @@ export async function listOrganizationUnits(): Promise<ApiResponse<OrganizationU
 // Auth-only version (no roles.read.all required) — for non-admin pages
 export async function listOrganizationUnitsLookup(options?: {
 	member_only?: boolean;
-}): Promise<ApiResponse<OrganizationUnit[]>> {
+}): Promise<ApiResponse<OrganizationUnitLookupItem[]>> {
 	const params = new URLSearchParams();
 	if (options?.member_only) params.set('member_only', 'true');
 	const qs = params.toString() ? `?${params}` : '';
-	return apiClient.get<OrganizationUnit[]>(`/api/lookup/organization-units${qs}`);
+	return apiClient.get<OrganizationUnitLookupItem[]>(`/api/lookup/organization-units${qs}`);
 }
 
 // Get single organization unit (auth only, no roles.read.all required)
 export async function getOrganizationUnitLookup(
 	id: string
-): Promise<ApiResponse<OrganizationUnit>> {
-	return apiClient.get<OrganizationUnit>(`/api/lookup/organization-units/${id}`);
+): Promise<ApiResponse<OrganizationUnitLookupItem>> {
+	return apiClient.get<OrganizationUnitLookupItem>(`/api/lookup/organization-units/${id}`);
 }
 
 export async function getOrganizationUnit(unitId: string): Promise<ApiResponse<OrganizationUnit>> {
