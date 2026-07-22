@@ -1,13 +1,29 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
+use utoipa::ToSchema;
 use uuid::Uuid;
+
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "UPPERCASE")]
+pub enum SubjectType {
+    Basic,
+    Additional,
+    Activity,
+}
+
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum CurriculumInstructorRole {
+    Primary,
+    Secondary,
+}
 
 // ==========================================
 // Curriculum: Subject Group Models
 // ==========================================
 
-#[derive(Debug, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Serialize, Deserialize, FromRow, ToSchema)]
 pub struct SubjectGroup {
     pub id: Uuid,
     pub code: String,
@@ -23,7 +39,7 @@ pub struct SubjectGroup {
 // Curriculum: Subject Models
 // ==========================================
 
-#[derive(Debug, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Serialize, Deserialize, FromRow, ToSchema)]
 pub struct Subject {
     pub id: Uuid,
     pub code: String,
@@ -34,6 +50,7 @@ pub struct Subject {
     pub hours_per_semester: Option<i32>,
     #[serde(rename = "type")]
     #[sqlx(rename = "type")]
+    #[schema(value_type = SubjectType)]
     pub subject_type: String, // 'type' is a reserved keyword in Rust
     pub group_id: Option<Uuid>,
     pub description: Option<String>,
@@ -55,13 +72,14 @@ pub struct Subject {
     pub default_instructor_name: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct DefaultInstructorInput {
     pub instructor_id: Uuid,
+    #[schema(value_type = CurriculumInstructorRole)]
     pub role: String, // "primary" | "secondary"
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct CreateSubjectRequest {
     pub code: String,
     pub start_academic_year_id: Uuid, // effective-from year for this version
@@ -70,6 +88,7 @@ pub struct CreateSubjectRequest {
     pub credit: Option<f64>,
     pub hours_per_semester: Option<i32>,
     #[serde(rename = "type")]
+    #[schema(value_type = SubjectType)]
     pub subject_type: String,
     pub group_id: Option<Uuid>,
     pub description: Option<String>,
@@ -80,7 +99,7 @@ pub struct CreateSubjectRequest {
     pub default_instructors: Option<Vec<DefaultInstructorInput>>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct UpdateSubjectRequest {
     pub code: Option<String>,
     pub name_th: Option<String>,
@@ -88,6 +107,7 @@ pub struct UpdateSubjectRequest {
     pub credit: Option<f64>,
     pub hours_per_semester: Option<i32>,
     #[serde(rename = "type")]
+    #[schema(value_type = Option<SubjectType>)]
     pub subject_type: Option<String>,
     pub group_id: Option<Uuid>,
     pub description: Option<String>,
@@ -104,11 +124,12 @@ pub struct UpdateSubjectRequest {
 // Subject Default Instructors (team teaching at catalog level)
 // ==========================================
 
-#[derive(Debug, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Serialize, Deserialize, FromRow, ToSchema)]
 pub struct SubjectDefaultInstructor {
     pub id: Uuid,
     pub subject_id: Uuid,
     pub instructor_id: Uuid,
+    #[schema(value_type = CurriculumInstructorRole)]
     pub role: String,
     pub created_at: DateTime<Utc>,
 
@@ -117,14 +138,16 @@ pub struct SubjectDefaultInstructor {
     pub instructor_name: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct AddSubjectDefaultInstructorRequest {
     pub instructor_id: Uuid,
+    #[schema(value_type = Option<CurriculumInstructorRole>)]
     pub role: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct UpdateSubjectDefaultInstructorRoleRequest {
+    #[schema(value_type = CurriculumInstructorRole)]
     pub role: String,
 }
 

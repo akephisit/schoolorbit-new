@@ -1,7 +1,18 @@
 use crate::api_response::{ApiErrorResponse, ApiResponse, EmptyData, UuidIdData};
+use crate::modules::academic::handlers::study_plans::{CountData, GenerateCoursesData};
 use crate::modules::academic::handlers::timetable::TimetableItemsData;
+use crate::modules::academic::models::curriculum::{
+    AddSubjectDefaultInstructorRequest, CreateSubjectRequest, CurriculumInstructorRole,
+    DefaultInstructorInput, Subject, SubjectDefaultInstructor, SubjectGroup, SubjectType,
+    UpdateSubjectDefaultInstructorRoleRequest, UpdateSubjectRequest,
+};
 use crate::modules::academic::models::exam_schedule::{
     PersonalExamScheduleRound, PersonalExamSessionView,
+};
+use crate::modules::academic::models::study_plans::{
+    AddSubjectsToVersionRequest, CreateStudyPlanRequest, CreateStudyPlanVersionRequest,
+    GenerateCoursesFromPlanRequest, GenerateCoursesResponse, StudyPlan, StudyPlanSubject,
+    StudyPlanVersion, SubjectInPlan, UpdateStudyPlanRequest, UpdateStudyPlanVersionRequest,
 };
 use crate::modules::academic::models::timetable::TimetableEntry;
 use crate::modules::academic::models::{
@@ -136,6 +147,30 @@ use utoipa::OpenApi;
         crate::modules::academic::handlers::remove_enrollment,
         crate::modules::academic::handlers::update_enrollment_number,
         crate::modules::academic::handlers::auto_assign_class_numbers,
+        crate::modules::academic::handlers::subjects::list_subject_groups,
+        crate::modules::academic::handlers::subjects::batch_list_subject_default_instructors,
+        crate::modules::academic::handlers::subjects::list_subjects,
+        crate::modules::academic::handlers::subjects::create_subject,
+        crate::modules::academic::handlers::subjects::update_subject,
+        crate::modules::academic::handlers::subjects::delete_subject,
+        crate::modules::academic::handlers::subjects::list_subject_default_instructors,
+        crate::modules::academic::handlers::subjects::add_subject_default_instructor,
+        crate::modules::academic::handlers::subjects::remove_subject_default_instructor,
+        crate::modules::academic::handlers::subjects::update_subject_default_instructor_role,
+        crate::modules::academic::handlers::study_plans::list_study_plans,
+        crate::modules::academic::handlers::study_plans::get_study_plan,
+        crate::modules::academic::handlers::study_plans::create_study_plan,
+        crate::modules::academic::handlers::study_plans::update_study_plan,
+        crate::modules::academic::handlers::study_plans::delete_study_plan,
+        crate::modules::academic::handlers::study_plans::list_study_plan_versions,
+        crate::modules::academic::handlers::study_plans::get_study_plan_version,
+        crate::modules::academic::handlers::study_plans::create_study_plan_version,
+        crate::modules::academic::handlers::study_plans::update_study_plan_version,
+        crate::modules::academic::handlers::study_plans::delete_study_plan_version,
+        crate::modules::academic::handlers::study_plans::list_study_plan_subjects,
+        crate::modules::academic::handlers::study_plans::add_subjects_to_version,
+        crate::modules::academic::handlers::study_plans::delete_study_plan_subject,
+        crate::modules::academic::handlers::study_plans::generate_courses_from_plan,
         crate::modules::calendar::handlers::list_my_calendar_events,
         crate::modules::calendar::handlers::list_public_calendar_events,
         crate::modules::calendar::handlers::list_calendar_events,
@@ -310,6 +345,41 @@ use utoipa::OpenApi;
         ApiResponse<Vec<Classroom>>,
         ApiResponse<Classroom>,
         ApiResponse<Vec<StudentEnrollment>>,
+        SubjectType,
+        CurriculumInstructorRole,
+        SubjectGroup,
+        Subject,
+        DefaultInstructorInput,
+        CreateSubjectRequest,
+        UpdateSubjectRequest,
+        SubjectDefaultInstructor,
+        AddSubjectDefaultInstructorRequest,
+        UpdateSubjectDefaultInstructorRoleRequest,
+        StudyPlan,
+        CreateStudyPlanRequest,
+        UpdateStudyPlanRequest,
+        StudyPlanVersion,
+        CreateStudyPlanVersionRequest,
+        UpdateStudyPlanVersionRequest,
+        StudyPlanSubject,
+        AddSubjectsToVersionRequest,
+        SubjectInPlan,
+        GenerateCoursesFromPlanRequest,
+        GenerateCoursesResponse,
+        CountData<usize>,
+        GenerateCoursesData,
+        ApiResponse<Vec<SubjectGroup>>,
+        ApiResponse<Vec<Subject>>,
+        ApiResponse<Subject>,
+        ApiResponse<Vec<SubjectDefaultInstructor>>,
+        ApiResponse<std::collections::HashMap<String, Vec<SubjectDefaultInstructor>>>,
+        ApiResponse<Vec<StudyPlan>>,
+        ApiResponse<StudyPlan>,
+        ApiResponse<Vec<StudyPlanVersion>>,
+        ApiResponse<StudyPlanVersion>,
+        ApiResponse<Vec<StudyPlanSubject>>,
+        ApiResponse<CountData<usize>>,
+        ApiResponse<GenerateCoursesData>,
         ChildDto,
         ParentProfile,
         ApiResponse<StudentProfile>,
@@ -1045,7 +1115,153 @@ mod tests {
             .flat_map(|path| path.as_object().expect("path item").values())
             .filter(|operation| operation.get("operationId").is_some())
             .count();
-        assert_eq!(operation_count, 100);
+        assert_eq!(operation_count, 124);
+    }
+
+    #[test]
+    fn academic_curriculum_core_contracts() {
+        let document = school_api_value().expect("document should serialize");
+        assert_operations(
+            &document,
+            &[
+                ("/api/academic/subjects/groups", "get", "listSubjectGroups"),
+                (
+                    "/api/academic/subjects/default-instructors",
+                    "get",
+                    "batchListSubjectDefaultInstructors",
+                ),
+                ("/api/academic/subjects", "get", "listSubjects"),
+                ("/api/academic/subjects", "post", "createSubject"),
+                ("/api/academic/subjects/{id}", "put", "updateSubject"),
+                ("/api/academic/subjects/{id}", "delete", "deleteSubject"),
+                (
+                    "/api/academic/subjects/{id}/default-instructors",
+                    "get",
+                    "listSubjectDefaultInstructors",
+                ),
+                (
+                    "/api/academic/subjects/{id}/default-instructors",
+                    "post",
+                    "addSubjectDefaultInstructor",
+                ),
+                (
+                    "/api/academic/subjects/{id}/default-instructors/{uid}",
+                    "delete",
+                    "removeSubjectDefaultInstructor",
+                ),
+                (
+                    "/api/academic/subjects/{id}/default-instructors/{uid}",
+                    "put",
+                    "updateSubjectDefaultInstructorRole",
+                ),
+                ("/api/academic/study-plans", "get", "listStudyPlans"),
+                ("/api/academic/study-plans", "post", "createStudyPlan"),
+                ("/api/academic/study-plans/{id}", "get", "getStudyPlan"),
+                ("/api/academic/study-plans/{id}", "put", "updateStudyPlan"),
+                (
+                    "/api/academic/study-plans/{id}",
+                    "delete",
+                    "deleteStudyPlan",
+                ),
+                (
+                    "/api/academic/study-plan-versions",
+                    "get",
+                    "listStudyPlanVersions",
+                ),
+                (
+                    "/api/academic/study-plan-versions",
+                    "post",
+                    "createStudyPlanVersion",
+                ),
+                (
+                    "/api/academic/study-plan-versions/{id}",
+                    "get",
+                    "getStudyPlanVersion",
+                ),
+                (
+                    "/api/academic/study-plan-versions/{id}",
+                    "put",
+                    "updateStudyPlanVersion",
+                ),
+                (
+                    "/api/academic/study-plan-versions/{id}",
+                    "delete",
+                    "deleteStudyPlanVersion",
+                ),
+                (
+                    "/api/academic/study-plan-versions/{id}/subjects",
+                    "get",
+                    "listStudyPlanSubjects",
+                ),
+                (
+                    "/api/academic/study-plan-versions/{id}/subjects",
+                    "post",
+                    "addSubjectsToStudyPlanVersion",
+                ),
+                (
+                    "/api/academic/study-plan-subjects/{id}",
+                    "delete",
+                    "deleteStudyPlanSubject",
+                ),
+                (
+                    "/api/academic/planning/generate-from-plan",
+                    "post",
+                    "generateCoursesFromStudyPlan",
+                ),
+            ],
+        );
+
+        let create_subject = &document["paths"]["/api/academic/subjects"]["post"];
+        assert_eq!(
+            create_subject["requestBody"]["content"]["application/json"]["schema"]["$ref"],
+            "#/components/schemas/CreateSubjectRequest"
+        );
+        assert_eq!(
+            create_subject["responses"]["201"]["content"]["application/json"]["schema"]["$ref"],
+            "#/components/schemas/ApiResponse_Subject"
+        );
+
+        let create_plan = &document["paths"]["/api/academic/study-plans"]["post"];
+        assert_eq!(
+            create_plan["requestBody"]["content"]["application/json"]["schema"]["$ref"],
+            "#/components/schemas/CreateStudyPlanRequest"
+        );
+        assert_eq!(
+            create_plan["responses"]["201"]["content"]["application/json"]["schema"]["$ref"],
+            "#/components/schemas/ApiResponse_StudyPlan"
+        );
+
+        for (path, method) in [
+            ("/api/academic/subjects/{id}", "delete"),
+            ("/api/academic/subjects/{id}/default-instructors", "post"),
+            (
+                "/api/academic/subjects/{id}/default-instructors/{uid}",
+                "delete",
+            ),
+            (
+                "/api/academic/subjects/{id}/default-instructors/{uid}",
+                "put",
+            ),
+            ("/api/academic/study-plans/{id}", "delete"),
+            ("/api/academic/study-plan-versions/{id}", "delete"),
+            ("/api/academic/study-plan-subjects/{id}", "delete"),
+        ] {
+            assert_eq!(
+                document["paths"][path][method]["responses"]["200"]["content"]["application/json"]
+                    ["schema"]["$ref"],
+                "#/components/schemas/ApiResponse_EmptyData",
+                "incorrect empty success envelope for {method} {path}"
+            );
+        }
+
+        let operation_count = document["paths"]
+            .as_object()
+            .expect("paths must be an object")
+            .values()
+            .flat_map(|path| path.as_object().expect("path item").values())
+            .filter(|operation| operation.get("operationId").is_some())
+            .count();
+        assert_eq!(operation_count, 124);
     }
 
     #[test]
@@ -1601,7 +1817,7 @@ mod tests {
                 }
             }
         }
-        assert_eq!(operation_ids.len(), 100);
+        assert_eq!(operation_ids.len(), 124);
 
         let schemas = &document["components"]["schemas"];
         let delegation = &schemas["DelegationItem"];

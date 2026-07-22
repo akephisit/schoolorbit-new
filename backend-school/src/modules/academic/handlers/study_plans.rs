@@ -1,4 +1,4 @@
-use crate::api_response::ApiResponse;
+use crate::api_response::{ApiErrorResponse, ApiResponse};
 use crate::error::AppError;
 use crate::modules::academic::services::study_plan_service;
 use crate::permissions::registry::codes;
@@ -15,17 +15,18 @@ use axum::{
     Json,
 };
 use serde::Serialize;
+use utoipa::ToSchema;
 use uuid::Uuid;
 
 use super::super::models::study_plans::*;
 
-#[derive(Debug, Serialize)]
-struct CountData<T> {
+#[derive(Debug, Serialize, ToSchema)]
+pub(crate) struct CountData<T> {
     count: T,
 }
 
-#[derive(Debug, Serialize)]
-struct GenerateCoursesData {
+#[derive(Debug, Serialize, ToSchema)]
+pub(crate) struct GenerateCoursesData {
     items: GenerateCoursesResponse,
     courses_created: i32,
     courses_skipped: i32,
@@ -37,6 +38,19 @@ struct GenerateCoursesData {
 // Study Plans
 // ============================================
 
+#[utoipa::path(
+    get,
+    path = "/api/academic/study-plans",
+    operation_id = "listStudyPlans",
+    tag = "academic",
+    params(("active_only" = Option<bool>, Query, description = "Return active plans only")),
+    responses(
+        (status = 200, description = "Study plans", body = ApiResponse<Vec<StudyPlan>>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Curriculum read permission denied", body = ApiErrorResponse),
+        (status = 500, description = "Study plans could not be loaded", body = ApiErrorResponse)
+    )
+)]
 pub async fn list_study_plans(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -50,6 +64,20 @@ pub async fn list_study_plans(
     Ok(Json(ApiResponse::ok(plans)))
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/academic/study-plans/{id}",
+    operation_id = "getStudyPlan",
+    tag = "academic",
+    params(("id" = Uuid, Path, description = "Study plan ID")),
+    responses(
+        (status = 200, description = "Study plan", body = ApiResponse<StudyPlan>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Curriculum read permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Study plan not found", body = ApiErrorResponse),
+        (status = 500, description = "Study plan could not be loaded", body = ApiErrorResponse)
+    )
+)]
 pub async fn get_study_plan(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -63,6 +91,21 @@ pub async fn get_study_plan(
     Ok(Json(ApiResponse::ok(plan)))
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/academic/study-plans",
+    operation_id = "createStudyPlan",
+    tag = "academic",
+    request_body = CreateStudyPlanRequest,
+    responses(
+        (status = 201, description = "Study plan created", body = ApiResponse<StudyPlan>),
+        (status = 400, description = "Invalid study plan", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Curriculum create permission denied", body = ApiErrorResponse),
+        (status = 409, description = "Study plan code already exists", body = ApiErrorResponse),
+        (status = 500, description = "Study plan could not be created", body = ApiErrorResponse)
+    )
+)]
 pub async fn create_study_plan(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -76,6 +119,23 @@ pub async fn create_study_plan(
     Ok((StatusCode::CREATED, Json(ApiResponse::ok(plan))))
 }
 
+#[utoipa::path(
+    put,
+    path = "/api/academic/study-plans/{id}",
+    operation_id = "updateStudyPlan",
+    tag = "academic",
+    params(("id" = Uuid, Path, description = "Study plan ID")),
+    request_body = UpdateStudyPlanRequest,
+    responses(
+        (status = 200, description = "Study plan updated", body = ApiResponse<StudyPlan>),
+        (status = 400, description = "Invalid study plan update", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Curriculum update permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Study plan not found", body = ApiErrorResponse),
+        (status = 409, description = "Study plan conflicts with an existing plan", body = ApiErrorResponse),
+        (status = 500, description = "Study plan could not be updated", body = ApiErrorResponse)
+    )
+)]
 pub async fn update_study_plan(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -90,6 +150,20 @@ pub async fn update_study_plan(
     Ok(Json(ApiResponse::ok(plan)))
 }
 
+#[utoipa::path(
+    delete,
+    path = "/api/academic/study-plans/{id}",
+    operation_id = "deleteStudyPlan",
+    tag = "academic",
+    params(("id" = Uuid, Path, description = "Study plan ID")),
+    responses(
+        (status = 200, description = "Study plan deleted", body = ApiResponse<crate::api_response::EmptyData>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Curriculum delete permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Study plan not found", body = ApiErrorResponse),
+        (status = 500, description = "Study plan could not be deleted", body = ApiErrorResponse)
+    )
+)]
 pub async fn delete_study_plan(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -107,6 +181,22 @@ pub async fn delete_study_plan(
 // Study Plan Versions
 // ============================================
 
+#[utoipa::path(
+    get,
+    path = "/api/academic/study-plan-versions",
+    operation_id = "listStudyPlanVersions",
+    tag = "academic",
+    params(
+        ("study_plan_id" = Option<Uuid>, Query, description = "Filter by study plan"),
+        ("active_only" = Option<bool>, Query, description = "Return active versions only")
+    ),
+    responses(
+        (status = 200, description = "Study-plan versions", body = ApiResponse<Vec<StudyPlanVersion>>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Curriculum read permission denied", body = ApiErrorResponse),
+        (status = 500, description = "Study-plan versions could not be loaded", body = ApiErrorResponse)
+    )
+)]
 pub async fn list_study_plan_versions(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -120,6 +210,20 @@ pub async fn list_study_plan_versions(
     Ok(Json(ApiResponse::ok(versions)))
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/academic/study-plan-versions/{id}",
+    operation_id = "getStudyPlanVersion",
+    tag = "academic",
+    params(("id" = Uuid, Path, description = "Study-plan version ID")),
+    responses(
+        (status = 200, description = "Study-plan version", body = ApiResponse<StudyPlanVersion>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Curriculum read permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Study-plan version not found", body = ApiErrorResponse),
+        (status = 500, description = "Study-plan version could not be loaded", body = ApiErrorResponse)
+    )
+)]
 pub async fn get_study_plan_version(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -133,6 +237,22 @@ pub async fn get_study_plan_version(
     Ok(Json(ApiResponse::ok(version)))
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/academic/study-plan-versions",
+    operation_id = "createStudyPlanVersion",
+    tag = "academic",
+    request_body = CreateStudyPlanVersionRequest,
+    responses(
+        (status = 201, description = "Study-plan version created", body = ApiResponse<StudyPlanVersion>),
+        (status = 400, description = "Invalid study-plan version", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Curriculum create permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Referenced plan or academic year not found", body = ApiErrorResponse),
+        (status = 409, description = "Study-plan version already exists", body = ApiErrorResponse),
+        (status = 500, description = "Study-plan version could not be created", body = ApiErrorResponse)
+    )
+)]
 pub async fn create_study_plan_version(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -146,6 +266,23 @@ pub async fn create_study_plan_version(
     Ok((StatusCode::CREATED, Json(ApiResponse::ok(version))))
 }
 
+#[utoipa::path(
+    put,
+    path = "/api/academic/study-plan-versions/{id}",
+    operation_id = "updateStudyPlanVersion",
+    tag = "academic",
+    params(("id" = Uuid, Path, description = "Study-plan version ID")),
+    request_body = UpdateStudyPlanVersionRequest,
+    responses(
+        (status = 200, description = "Study-plan version updated", body = ApiResponse<StudyPlanVersion>),
+        (status = 400, description = "Invalid study-plan version update", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Curriculum update permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Study-plan version not found", body = ApiErrorResponse),
+        (status = 409, description = "Study-plan version conflicts with an existing version", body = ApiErrorResponse),
+        (status = 500, description = "Study-plan version could not be updated", body = ApiErrorResponse)
+    )
+)]
 pub async fn update_study_plan_version(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -160,6 +297,20 @@ pub async fn update_study_plan_version(
     Ok(Json(ApiResponse::ok(version)))
 }
 
+#[utoipa::path(
+    delete,
+    path = "/api/academic/study-plan-versions/{id}",
+    operation_id = "deleteStudyPlanVersion",
+    tag = "academic",
+    params(("id" = Uuid, Path, description = "Study-plan version ID")),
+    responses(
+        (status = 200, description = "Study-plan version deleted", body = ApiResponse<crate::api_response::EmptyData>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Curriculum delete permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Study-plan version not found", body = ApiErrorResponse),
+        (status = 500, description = "Study-plan version could not be deleted", body = ApiErrorResponse)
+    )
+)]
 pub async fn delete_study_plan_version(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -177,6 +328,24 @@ pub async fn delete_study_plan_version(
 // Study Plan Subjects
 // ============================================
 
+#[utoipa::path(
+    get,
+    path = "/api/academic/study-plan-versions/{id}/subjects",
+    operation_id = "listStudyPlanSubjects",
+    tag = "academic",
+    params(
+        ("id" = Uuid, Path, description = "Study-plan version ID"),
+        ("grade_level_id" = Option<Uuid>, Query, description = "Filter by grade level"),
+        ("term" = Option<String>, Query, description = "Filter by term")
+    ),
+    responses(
+        (status = 200, description = "Subjects in the study-plan version", body = ApiResponse<Vec<StudyPlanSubject>>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Curriculum read permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Study-plan version not found", body = ApiErrorResponse),
+        (status = 500, description = "Study-plan subjects could not be loaded", body = ApiErrorResponse)
+    )
+)]
 pub async fn list_study_plan_subjects(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -192,6 +361,22 @@ pub async fn list_study_plan_subjects(
     Ok(Json(ApiResponse::ok(subjects)))
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/academic/study-plan-versions/{id}/subjects",
+    operation_id = "addSubjectsToStudyPlanVersion",
+    tag = "academic",
+    params(("id" = Uuid, Path, description = "Study-plan version ID")),
+    request_body = AddSubjectsToVersionRequest,
+    responses(
+        (status = 200, description = "Subjects added to the study-plan version", body = ApiResponse<CountData<usize>>),
+        (status = 400, description = "Invalid subject assignment", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Curriculum update permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Study-plan version or referenced item not found", body = ApiErrorResponse),
+        (status = 500, description = "Subjects could not be added", body = ApiErrorResponse)
+    )
+)]
 pub async fn add_subjects_to_version(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -209,6 +394,20 @@ pub async fn add_subjects_to_version(
     )))
 }
 
+#[utoipa::path(
+    delete,
+    path = "/api/academic/study-plan-subjects/{id}",
+    operation_id = "deleteStudyPlanSubject",
+    tag = "academic",
+    params(("id" = Uuid, Path, description = "Study-plan subject row ID")),
+    responses(
+        (status = 200, description = "Study-plan subject deleted", body = ApiResponse<crate::api_response::EmptyData>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Curriculum delete permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Study-plan subject not found", body = ApiErrorResponse),
+        (status = 500, description = "Study-plan subject could not be deleted", body = ApiErrorResponse)
+    )
+)]
 pub async fn delete_study_plan_subject(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -226,6 +425,21 @@ pub async fn delete_study_plan_subject(
 // Generate Courses from Plan
 // ============================================
 
+#[utoipa::path(
+    post,
+    path = "/api/academic/planning/generate-from-plan",
+    operation_id = "generateCoursesFromStudyPlan",
+    tag = "academic",
+    request_body = GenerateCoursesFromPlanRequest,
+    responses(
+        (status = 200, description = "Classroom courses generated from the assigned study plan", body = ApiResponse<GenerateCoursesData>),
+        (status = 400, description = "Classroom has no study plan or request is invalid", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Course-plan management permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Classroom or semester not found", body = ApiErrorResponse),
+        (status = 500, description = "Courses could not be generated", body = ApiErrorResponse)
+    )
+)]
 pub async fn generate_courses_from_plan(
     State(state): State<AppState>,
     headers: HeaderMap,

@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
+use utoipa::ToSchema;
 use uuid::Uuid;
 
 use chrono::{DateTime, Utc};
@@ -8,7 +9,7 @@ use chrono::{DateTime, Utc};
 // Study Plan Models (หลักสูตรสถานศึกษา)
 // ==========================================
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct StudyPlan {
     pub id: Uuid,
     pub code: String,
@@ -21,7 +22,7 @@ pub struct StudyPlan {
     pub updated_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct CreateStudyPlanRequest {
     pub code: String,
     pub name_th: String,
@@ -30,7 +31,7 @@ pub struct CreateStudyPlanRequest {
     pub grade_level_ids: Option<Vec<Uuid>>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct UpdateStudyPlanRequest {
     pub code: Option<String>,
     pub name_th: Option<String>,
@@ -44,7 +45,7 @@ pub struct UpdateStudyPlanRequest {
 // Study Plan Version Models
 // ==========================================
 
-#[derive(Debug, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Serialize, Deserialize, FromRow, ToSchema)]
 pub struct StudyPlanVersion {
     pub id: Uuid,
     pub study_plan_id: Uuid,
@@ -65,7 +66,7 @@ pub struct StudyPlanVersion {
     pub start_year_name: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct CreateStudyPlanVersionRequest {
     pub study_plan_id: Uuid,
     pub version_name: String,
@@ -74,7 +75,7 @@ pub struct CreateStudyPlanVersionRequest {
     pub description: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct UpdateStudyPlanVersionRequest {
     pub version_name: Option<String>,
     pub start_academic_year_id: Option<Uuid>,
@@ -87,7 +88,7 @@ pub struct UpdateStudyPlanVersionRequest {
 // Study Plan Subject Models
 // ==========================================
 
-#[derive(Debug, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Serialize, Deserialize, FromRow, ToSchema)]
 pub struct StudyPlanSubject {
     pub id: Uuid,
     pub study_plan_version_id: Uuid,
@@ -124,12 +125,12 @@ pub struct StudyPlanSubject {
     pub grade_level_name: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct AddSubjectsToVersionRequest {
     pub subjects: Vec<SubjectInPlan>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct SubjectInPlan {
     pub grade_level_id: Uuid,
     pub term: String,
@@ -163,7 +164,7 @@ pub struct StudyPlanSubjectQuery {
 // Bulk Operations
 // ==========================================
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct GenerateCoursesFromPlanRequest {
     pub classroom_id: Uuid,
     pub academic_semester_id: Uuid,
@@ -171,7 +172,7 @@ pub struct GenerateCoursesFromPlanRequest {
     pub skip_existing: Option<bool>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct GenerateCoursesResponse {
     pub added_count: i32,
     pub skipped_count: i32,

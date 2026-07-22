@@ -9,8 +9,8 @@ use uuid::Uuid;
 use crate::api_response::{ApiErrorResponse, ApiResponse};
 use crate::error::AppError;
 use crate::modules::academic::models::curriculum::{
-    AddSubjectDefaultInstructorRequest, CreateSubjectRequest, SubjectFilter,
-    UpdateSubjectDefaultInstructorRoleRequest, UpdateSubjectRequest,
+    AddSubjectDefaultInstructorRequest, CreateSubjectRequest, Subject, SubjectDefaultInstructor,
+    SubjectFilter, SubjectGroup, UpdateSubjectDefaultInstructorRoleRequest, UpdateSubjectRequest,
 };
 use crate::modules::academic::services::subject_service;
 use crate::permissions::registry::codes;
@@ -18,6 +18,18 @@ use crate::policies::curriculum_access_policy;
 use crate::utils::request_context::actor_tenant_context;
 use crate::AppState;
 
+#[utoipa::path(
+    get,
+    path = "/api/academic/subjects/groups",
+    operation_id = "listSubjectGroups",
+    tag = "academic",
+    responses(
+        (status = 200, description = "Subject groups", body = ApiResponse<Vec<SubjectGroup>>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Curriculum read permission denied", body = ApiErrorResponse),
+        (status = 500, description = "Subject groups could not be loaded", body = ApiErrorResponse)
+    )
+)]
 pub async fn list_subject_groups(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -43,6 +55,27 @@ pub async fn list_subject_groups(
     Ok(Json(ApiResponse::ok(groups)).into_response())
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/academic/subjects",
+    operation_id = "listSubjects",
+    tag = "academic",
+    params(
+        ("group_id" = Option<Uuid>, Query, description = "Filter by subject group"),
+        ("type" = Option<String>, Query, description = "Filter by subject type"),
+        ("search" = Option<String>, Query, description = "Search code or name"),
+        ("active_only" = Option<bool>, Query, description = "Return active subjects only"),
+        ("active_in_year_id" = Option<Uuid>, Query, description = "Resolve versions active in an academic year"),
+        ("term" = Option<String>, Query, description = "Filter by term"),
+        ("latest_only" = Option<bool>, Query, description = "Return the latest version per code")
+    ),
+    responses(
+        (status = 200, description = "Subjects", body = ApiResponse<Vec<Subject>>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Curriculum read permission denied", body = ApiErrorResponse),
+        (status = 500, description = "Subjects could not be loaded", body = ApiErrorResponse)
+    )
+)]
 pub async fn list_subjects(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -67,6 +100,20 @@ pub async fn list_subjects(
     Ok(Json(ApiResponse::ok(subjects)).into_response())
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/academic/subjects",
+    operation_id = "createSubject",
+    tag = "academic",
+    request_body = CreateSubjectRequest,
+    responses(
+        (status = 201, description = "Subject created", body = ApiResponse<Subject>),
+        (status = 400, description = "Invalid or duplicate subject", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Curriculum create permission denied", body = ApiErrorResponse),
+        (status = 500, description = "Subject could not be created", body = ApiErrorResponse)
+    )
+)]
 pub async fn create_subject(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -102,6 +149,22 @@ pub async fn create_subject(
     Ok((StatusCode::CREATED, Json(ApiResponse::ok(subject))).into_response())
 }
 
+#[utoipa::path(
+    put,
+    path = "/api/academic/subjects/{id}",
+    operation_id = "updateSubject",
+    tag = "academic",
+    params(("id" = Uuid, Path, description = "Subject ID")),
+    request_body = UpdateSubjectRequest,
+    responses(
+        (status = 200, description = "Subject updated", body = ApiResponse<Subject>),
+        (status = 400, description = "Invalid subject update", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Curriculum update permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Subject not found", body = ApiErrorResponse),
+        (status = 500, description = "Subject could not be updated", body = ApiErrorResponse)
+    )
+)]
 pub async fn update_subject(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -143,6 +206,21 @@ pub async fn update_subject(
     Ok(Json(ApiResponse::ok(subject)).into_response())
 }
 
+#[utoipa::path(
+    delete,
+    path = "/api/academic/subjects/{id}",
+    operation_id = "deleteSubject",
+    tag = "academic",
+    params(("id" = Uuid, Path, description = "Subject ID")),
+    responses(
+        (status = 200, description = "Subject deleted", body = ApiResponse<crate::api_response::EmptyData>),
+        (status = 400, description = "Subject is in use", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Curriculum delete permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Subject not found", body = ApiErrorResponse),
+        (status = 500, description = "Subject could not be deleted", body = ApiErrorResponse)
+    )
+)]
 pub async fn delete_subject(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -179,6 +257,20 @@ pub async fn delete_subject(
     Ok(Json(ApiResponse::empty()).into_response())
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/academic/subjects/{id}/default-instructors",
+    operation_id = "listSubjectDefaultInstructors",
+    tag = "academic",
+    params(("id" = Uuid, Path, description = "Subject ID")),
+    responses(
+        (status = 200, description = "Subject default instructors", body = ApiResponse<Vec<SubjectDefaultInstructor>>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Curriculum access denied", body = ApiErrorResponse),
+        (status = 404, description = "Subject not found", body = ApiErrorResponse),
+        (status = 500, description = "Default instructors could not be loaded", body = ApiErrorResponse)
+    )
+)]
 pub async fn list_subject_default_instructors(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -199,6 +291,22 @@ pub async fn list_subject_default_instructors(
     Ok(Json(ApiResponse::ok(rows)).into_response())
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/academic/subjects/{id}/default-instructors",
+    operation_id = "addSubjectDefaultInstructor",
+    tag = "academic",
+    params(("id" = Uuid, Path, description = "Subject ID")),
+    request_body = AddSubjectDefaultInstructorRequest,
+    responses(
+        (status = 200, description = "Default instructor added", body = ApiResponse<crate::api_response::EmptyData>),
+        (status = 400, description = "Invalid instructor role", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Curriculum update permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Subject not found", body = ApiErrorResponse),
+        (status = 500, description = "Default instructor could not be added", body = ApiErrorResponse)
+    )
+)]
 pub async fn add_subject_default_instructor(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -220,6 +328,23 @@ pub async fn add_subject_default_instructor(
     Ok(Json(ApiResponse::empty()).into_response())
 }
 
+#[utoipa::path(
+    delete,
+    path = "/api/academic/subjects/{id}/default-instructors/{uid}",
+    operation_id = "removeSubjectDefaultInstructor",
+    tag = "academic",
+    params(
+        ("id" = Uuid, Path, description = "Subject ID"),
+        ("uid" = Uuid, Path, description = "Instructor user ID")
+    ),
+    responses(
+        (status = 200, description = "Default instructor removed", body = ApiResponse<crate::api_response::EmptyData>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Curriculum update permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Subject or instructor assignment not found", body = ApiErrorResponse),
+        (status = 500, description = "Default instructor could not be removed", body = ApiErrorResponse)
+    )
+)]
 pub async fn remove_subject_default_instructor(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -240,6 +365,25 @@ pub async fn remove_subject_default_instructor(
     Ok(Json(ApiResponse::empty()).into_response())
 }
 
+#[utoipa::path(
+    put,
+    path = "/api/academic/subjects/{id}/default-instructors/{uid}",
+    operation_id = "updateSubjectDefaultInstructorRole",
+    tag = "academic",
+    params(
+        ("id" = Uuid, Path, description = "Subject ID"),
+        ("uid" = Uuid, Path, description = "Instructor user ID")
+    ),
+    request_body = UpdateSubjectDefaultInstructorRoleRequest,
+    responses(
+        (status = 200, description = "Default instructor role updated", body = ApiResponse<crate::api_response::EmptyData>),
+        (status = 400, description = "Invalid instructor role", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Curriculum update permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Subject or instructor assignment not found", body = ApiErrorResponse),
+        (status = 500, description = "Default instructor role could not be updated", body = ApiErrorResponse)
+    )
+)]
 pub async fn update_subject_default_instructor_role(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -272,6 +416,19 @@ pub struct BatchListSubjectDefaultInstructorsQuery {
     pub subject_ids: String,
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/academic/subjects/default-instructors",
+    operation_id = "batchListSubjectDefaultInstructors",
+    tag = "academic",
+    params(("subject_ids" = String, Query, description = "Comma-separated subject IDs")),
+    responses(
+        (status = 200, description = "Default instructors grouped by subject ID", body = ApiResponse<std::collections::HashMap<String, Vec<SubjectDefaultInstructor>>>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Curriculum read permission denied", body = ApiErrorResponse),
+        (status = 500, description = "Default instructors could not be loaded", body = ApiErrorResponse)
+    )
+)]
 pub async fn batch_list_subject_default_instructors(
     State(state): State<AppState>,
     headers: HeaderMap,
