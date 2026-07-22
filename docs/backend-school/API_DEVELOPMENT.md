@@ -52,11 +52,25 @@ Frontend API modules import generated wire DTOs and may map them to separate
 domain/view models. Generation must not require database credentials or start
 the backend server.
 
-The current rollout covers 30 auth/authorization operations: authentication,
-roles, permissions, user-role assignment, organization units, organization
-permission grants, delegations, and members. The OpenAPI document describes
-implemented backend routes only; a frontend helper or UI call is not evidence
-that a backend route exists.
+The current checkpoint contains 66 unique operations: the initial 30
+auth/authorization operations plus 36 read-oriented JSON operations spanning
+lookups, menus, staff/self-service views, schedules, calendars, school settings,
+and notifications. The OpenAPI document describes implemented backend routes
+only; a frontend helper or UI call is not evidence that a backend route exists.
+
+Phase 4 will add mutation operations after reviewing each endpoint's behavior,
+status codes, permission policy, and response DTO. SSE, WebSocket,
+health/readiness, and file/binary endpoints remain explicitly outside this
+OpenAPI contract.
+
+For a new documented endpoint:
+
+1. Derive/register the exact Rust serde/`ToSchema` request and response DTOs.
+2. Add `utoipa::path` to the implemented handler with only statuses it can emit.
+3. Register the handler and schemas in `backend-school/src/api_contract.rs`.
+4. Run the generator and commit both tracked generated files.
+5. Import the generated wire DTO in the frontend API module; add an explicit
+   mapper only when the UI needs a different view/domain shape.
 
 Known behavior discrepancies are intentionally excluded from OpenAPI:
 

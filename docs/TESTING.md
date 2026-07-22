@@ -70,8 +70,13 @@ Frontend API modules import generated wire DTOs and may map them to separate
 domain/view models. Generation must not require database credentials or start
 the backend server.
 
-The generated document currently covers 30 auth/authorization operations. It
-tracks implemented backend routes only; frontend-only helpers are not exported.
+The generated document currently contains 66 unique operations: the initial 30
+auth/authorization operations plus 36 read-oriented JSON operations. It tracks
+implemented backend routes only; frontend-only helpers are not exported. Phase 4
+will add mutation operations after their behavior, status codes, and response
+DTOs are reviewed. SSE, WebSocket, health/readiness, and file/binary endpoints
+remain explicitly outside this OpenAPI contract.
+
 In particular, `DELETE /api/roles/{id}` and
 `DELETE /api/organization/units/{id}` remain outside the contract until their
 backend behavior is explicitly designed and implemented.

@@ -420,14 +420,34 @@ test('project rules document generated API contract ownership', async () => {
 	}
 });
 
+test('project docs record the 66-operation checkpoint and remaining mutation phase', async () => {
+	const sources = await Promise.all([
+		readRepoFile('.rules'),
+		readRepoFile('docs/TESTING.md'),
+		readRepoFile('docs/backend-school/API_DEVELOPMENT.md'),
+		readRepoFile('IMPROVEMENT_PLAN.md')
+	]);
+
+	for (const source of sources) {
+		assert.match(source, /66 unique operations/i);
+		assert.match(source, /36 read-oriented/i);
+		assert.match(source, /Phase 4[\s\S]{0,120}mutation|mutation[\s\S]{0,120}Phase 4/i);
+		assert.match(
+			source,
+			/SSE[\s\S]{0,120}WebSocket[\s\S]{0,120}(?:binary|file)|(?:binary|file)[\s\S]{0,120}SSE[\s\S]{0,120}WebSocket/i
+		);
+	}
+});
+
 test('API docs record implemented-route ownership and unsupported delete discrepancies', async () => {
 	const guide = await readRepoFile('docs/backend-school/API_DEVELOPMENT.md');
 	const testing = await readRepoFile('docs/TESTING.md');
 	const improvements = await readRepoFile('IMPROVEMENT_PLAN.md');
 
 	for (const source of [guide, testing]) {
-		assert.match(source, /30 auth\/authorization operations/);
-		assert.match(source, /implemented backend routes only/i);
+		assert.match(source, /66 unique operations/);
+		assert.match(source, /30[\s\S]{0,30}auth\/authorization operations/);
+		assert.match(source, /implemented backend routes\s+only/i);
 	}
 	for (const source of [guide, improvements]) {
 		assert.match(source, /DELETE `?\/api\/roles\/\{id\}`?/);

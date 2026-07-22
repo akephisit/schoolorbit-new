@@ -155,6 +155,16 @@
 | **ข้อห้าม** | ห้ามเพิ่ม route เปล่าเพื่อให้ frontend ไม่ error และห้ามประกาศ path ใน OpenAPI ก่อนมี backend behavior + tests ที่ review แล้ว |
 | **ความยาก** | Medium |
 
+### ✅ M-7. Shared API contract ระหว่าง backend-school และ frontend — read phase เสร็จแล้ว
+
+| | |
+|---|---|
+| **ไฟล์** | `backend-school/src/api_contract.rs`, `contracts/openapi/school-api.json`, `frontend-school/src/lib/api/generated/school-api.ts`, `backend-school/tests/static_architecture.rs` |
+| **ที่ทำ** | ให้ Rust serde DTO + `utoipa` เป็น source of truth, generate OpenAPI/TypeScript แบบ offline และย้าย frontend wire DTO ที่ซ้ำให้ใช้งาน generated schema พร้อม router-derived drift guard |
+| **ผลลัพธ์** | ปัจจุบัน contract มี 66 unique operations: 30 auth/authorization และ 36 read-oriented JSON operations ทำให้ backend/frontend drift ถูกตรวจใน CI และ type check |
+| **งานต่อ Phase 4** | เพิ่ม mutation operations ทีละกลุ่มหลังตรวจ behavior, permission, status และ response DTO; SSE, WebSocket, health/readiness และ file/binary endpoints ยังอยู่นอก OpenAPI contract โดยตั้งใจ |
+| **ความยาก** | Medium |
+
 ---
 
 ## 🟢 Priority 4: Low — Developer experience
