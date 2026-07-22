@@ -1,5 +1,7 @@
 # Academic Course Planning Contracts Implementation Plan
 
+> **Superseded scheduler guidance (2026-07-23):** Any forward-looking Auto Schedule, Scheduling Configuration, jobs, or undo guidance in this historical plan no longer applies. Manual timetable editing is the only supported construction workflow; see `2026-07-23-auto-scheduler-removal.md`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Export all 12 Course Planning and Teaching Assignment JSON operations through the generated Rust/OpenAPI/TypeScript contract and correct their verified validation, missing-target, and instructor-synchronization behavior.

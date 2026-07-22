@@ -1,5 +1,7 @@
 # Module Permission UI Rollout Implementation Plan
 
+> **Superseded scheduler guidance (2026-07-23):** Scheduler routes listed in this historical inventory were removed. Manual timetable editing is the only supported construction workflow; see `2026-07-23-auto-scheduler-removal.md`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Standardize staff-facing module pages so route/menu access is module-level, page controls progressively appear by specific permission, and refactored UI uses the local shadcn-svelte component set.

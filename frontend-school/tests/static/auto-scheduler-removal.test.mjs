@@ -18,13 +18,14 @@ test('auto scheduler frontend and generated contract are absent', async () => {
 		assert.equal(await exists(removed), false, removed);
 	}
 
-	const [api, timetable, generated, contractText] = await Promise.all([
+	const [api, timetable, templates, generated, contractText] = await Promise.all([
 		readRepo('frontend-school/src/lib/api/scheduling.ts'),
 		readRepo('frontend-school/src/routes/(app)/staff/academic/timetable/+page.svelte'),
+		readRepo('frontend-school/src/routes/(app)/staff/academic/timetable/templates/+page.svelte'),
 		readRepo('frontend-school/src/lib/api/generated/school-api.ts'),
 		readRepo('contracts/openapi/school-api.json')
 	]);
-	const combined = `${api}\n${timetable}\n${generated}`;
+	const combined = `${api}\n${timetable}\n${templates}\n${generated}`;
 	for (const removed of [
 		'autoScheduleTimetable',
 		'SchedulingJobResponse',
@@ -33,7 +34,8 @@ test('auto scheduler frontend and generated contract are absent', async () => {
 		'/scheduling/configuration',
 		'/scheduling-config',
 		'InstructorConstraintView',
-		'SaveSchedulingConfigurationRequest'
+		'SaveSchedulingConfigurationRequest',
+		'จัดอัตโนมัติ'
 	]) {
 		assert.doesNotMatch(combined, new RegExp(removed.replaceAll('/', '\\/')));
 	}
