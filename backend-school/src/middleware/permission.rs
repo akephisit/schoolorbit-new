@@ -157,6 +157,12 @@ async fn fetch_user_permissions(
               AND (opd.expires_at IS NULL OR opd.expires_at > NOW())
               AND (opd.organization_unit_id IS NULL OR delegated_ou.is_active = true)
         ) AS perms
+        WHERE EXISTS (
+            SELECT 1
+            FROM users active_user
+            WHERE active_user.id = $1
+              AND active_user.status = 'active'
+        )
         ORDER BY code
         "#,
     )

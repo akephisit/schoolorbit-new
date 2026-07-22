@@ -58,6 +58,18 @@ fn read_source(path: impl AsRef<Path>) -> String {
         .unwrap_or_else(|error| panic!("failed to read {}: {error}", path.as_ref().display()))
 }
 
+#[test]
+fn student_deactivation_invalidates_effective_permissions() {
+    let source = read_source(manifest_dir().join("src/modules/students/handlers.rs"));
+    let start = source
+        .find("pub async fn delete_student")
+        .expect("delete_student handler should exist");
+    let body = &source[start..];
+
+    assert!(body.contains("permission_cache.invalidate_user(&tenant, student_id)"));
+    assert!(body.contains("notify_permission_changed(&tenant, student_id)"));
+}
+
 fn active_baseline_migration_path() -> PathBuf {
     manifest_dir().join("migrations").join("001_baseline.sql")
 }

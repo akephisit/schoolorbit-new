@@ -213,6 +213,12 @@ pub async fn get_user_permissions(pool: &PgPool, user_id: Uuid) -> Result<Vec<St
          JOIN role_permissions rp ON r.id = rp.role_id
          JOIN permissions p ON rp.permission_id = p.id
          WHERE ur.user_id = $1 AND ur.ended_at IS NULL
+           AND EXISTS (
+               SELECT 1
+               FROM users active_user
+               WHERE active_user.id = $1
+                 AND active_user.status = 'active'
+           )
          ORDER BY p.code",
     )
     .bind(user_id)

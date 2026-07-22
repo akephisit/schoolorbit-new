@@ -102,6 +102,62 @@ fn assert_lacks_permission(permissions: &[String], code: &str) {
 }
 
 #[tokio::test]
+async fn inactive_user_accounts_have_no_effective_permissions() {
+    let pool = create_test_pool().await;
+    run_test_migrations(&pool).await;
+
+    let fixture = Uuid::new_v4().simple().to_string();
+    let user_id = create_test_user(
+        &pool,
+        &format!("inactive-user-{}@example.test", &fixture[..8]),
+        "Test1234!",
+    )
+    .await
+    .expect("test user should be created");
+    let role_id: Uuid = sqlx::query_scalar(
+        "INSERT INTO roles (code, name, user_type, level)
+         VALUES ($1, $2, 'staff', 1) RETURNING id",
+    )
+    .bind(format!("TACTIVEUSER{}", &fixture[..8]))
+    .bind("inactive user test role")
+    .fetch_one(&pool)
+    .await
+    .expect("test role should be created");
+    let permission_id = permission_id(&pool, "roles.read.all").await;
+    sqlx::query("INSERT INTO role_permissions (role_id, permission_id) VALUES ($1, $2)")
+        .bind(role_id)
+        .bind(permission_id)
+        .execute(&pool)
+        .await
+        .expect("role permission should be assigned");
+    sqlx::query("INSERT INTO user_roles (user_id, role_id) VALUES ($1, $2)")
+        .bind(user_id)
+        .bind(role_id)
+        .execute(&pool)
+        .await
+        .expect("role should be assigned");
+
+    let tenant = format!("inactive-user-{}", &fixture[..8]);
+    let cache = PermissionCache::new();
+    let active = get_cached_user_permissions(&tenant, user_id, &pool, &cache)
+        .await
+        .expect("active permissions should load");
+    assert_has_permission(&active, "roles.read.all");
+
+    sqlx::query("UPDATE users SET status = 'inactive' WHERE id = $1")
+        .bind(user_id)
+        .execute(&pool)
+        .await
+        .expect("test account should deactivate");
+    cache.invalidate_user(&tenant, user_id);
+
+    let inactive = get_cached_user_permissions(&tenant, user_id, &pool, &cache)
+        .await
+        .expect("inactive permissions should load");
+    assert_lacks_permission(&inactive, "roles.read.all");
+}
+
+#[tokio::test]
 async fn inactive_authorization_sources_stop_granting_permissions() {
     let pool = create_test_pool().await;
     run_test_migrations(&pool).await;

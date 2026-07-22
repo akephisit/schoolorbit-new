@@ -143,11 +143,14 @@ pub async fn delete_student(
     Path(student_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
     let context = actor_tenant_context(&state, &headers).await?;
+    let tenant = context.tenant.subdomain.clone();
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::STUDENT_DELETE_ALL)?;
 
     student_service::delete_student(&pool, student_id).await?;
+    state.permission_cache.invalidate_user(&tenant, student_id);
+    state.notify_permission_changed(&tenant, student_id);
 
     Ok((
         StatusCode::OK,
