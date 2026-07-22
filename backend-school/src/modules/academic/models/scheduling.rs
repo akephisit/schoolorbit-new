@@ -1,5 +1,6 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
 use uuid::Uuid;
 
 // ==================== Instructor Preferences ====================
@@ -31,7 +32,7 @@ pub struct InstructorPreference {
     pub updated_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, ToSchema)]
 pub struct TimeSlot {
     pub day: String, // "MON", "TUE", etc.
     pub period_id: Uuid,

@@ -14,6 +14,7 @@ pub mod course_planning;
 pub mod curriculum;
 pub mod exam_schedule;
 pub mod scheduling;
+pub mod scheduling_config;
 pub mod study_plans;
 pub mod timetable;
 
