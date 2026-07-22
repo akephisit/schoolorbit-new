@@ -49,8 +49,8 @@ test('generated activity workspace contract owns all wire DTOs and operations', 
 		Object.values(pathItem).flatMap((operation) => operation.operationId ?? [])
 	);
 
-	assert.equal(contractOperationIds.length, 184);
-	assert.equal(new Set(contractOperationIds).size, 184);
+	assert.equal(contractOperationIds.length, 177);
+	assert.equal(new Set(contractOperationIds).size, 177);
 	for (const operationId of expectedOperationIds) {
 		assert.ok(contractOperationIds.includes(operationId), operationId);
 		assert.match(generated, new RegExp(`\\b${operationId}:\\s*\\{`));

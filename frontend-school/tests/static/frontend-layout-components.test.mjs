@@ -299,13 +299,10 @@ test('academic curriculum planning pages use shared app page shell', async () =>
 	}
 });
 
-test('academic timetable scheduling pages use shared app page shell', async () => {
+test('academic timetable pages use shared app page shell', async () => {
 	const pages = [
 		'src/routes/(app)/staff/academic/timetable/+page.svelte',
-		'src/routes/(app)/staff/academic/timetable/templates/+page.svelte',
-		'src/routes/(app)/staff/academic/timetable/scheduling-config/+page.svelte',
-		'src/routes/(app)/staff/academic/timetable/scheduling/jobs/+page.svelte',
-		'src/routes/(app)/staff/academic/timetable/scheduling/jobs/[jobId]/+page.svelte'
+		'src/routes/(app)/staff/academic/timetable/templates/+page.svelte'
 	];
 
 	for (const page of pages) {

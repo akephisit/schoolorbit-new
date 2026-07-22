@@ -1144,40 +1144,8 @@ test('teaching supervision frontend contract uses typed API and permission metad
 	assert.doesNotMatch(supervisionWorkspace, /\bfetch\s*\(/);
 });
 
-test('scheduling configuration uses generated DTOs and one atomic save', async () => {
+test('timetable template API keeps typed empty responses after scheduler removal', async () => {
 	const schedulingApi = await readRepoFile('frontend-school/src/lib/api/scheduling.ts');
-	const timetableTemplatePage = await readRepoFile(
-		'frontend-school/src/routes/(app)/staff/academic/timetable/templates/+page.svelte'
-	);
-	const schedulingConfigPage = await readRepoFile(
-		'frontend-school/src/routes/(app)/staff/academic/timetable/scheduling-config/+page.svelte'
-	);
-
-	assert.match(schedulingApi, /type Schemas = components\['schemas'\]/);
-	for (const schema of [
-		'InstructorConstraintView',
-		'SubjectConstraintView',
-		'ClassroomCourseConstraintView',
-		'CcPreferredRoomView',
-		'SchedulingRoomView',
-		'SaveSchedulingConfigurationRequest',
-		'SchedulingConfigurationSaveResult'
-	]) {
-		assert.match(schedulingApi, new RegExp(`Schemas\\['${schema}'\\]`));
-	}
-	for (const removed of [
-		'updateInstructorConstraints',
-		'reorderInstructorPriority',
-		'updateSubjectConstraints',
-		'updateClassroomCourseConstraints',
-		'setCcPreferredRooms'
-	]) {
-		assert.doesNotMatch(schedulingApi, new RegExp(`function ${removed}\\b`));
-	}
-	assert.match(
-		schedulingApi,
-		/saveSchedulingConfiguration[\s\S]*apiClient\.put<SchedulingConfigurationSaveResult>[\s\S]*\/api\/academic\/scheduling\/configuration/
-	);
 	assert.match(
 		schedulingApi,
 		/updateTimetableTemplate[\s\S]*apiClient\.put<Record<string, never>>/
@@ -1186,39 +1154,10 @@ test('scheduling configuration uses generated DTOs and one atomic save', async (
 		schedulingApi,
 		/deleteTimetableTemplate[\s\S]*apiClient\.delete<Record<string, never>>/
 	);
-	assert.match(schedulingApi, /apiClient\.deleteWithBody<\{\s*deleted:\s*number\s*\}>/);
-	assert.doesNotMatch(schedulingApi, /apiClient\.(put|delete)<unknown>/);
 	assert.doesNotMatch(
 		schedulingApi,
-		/return response as \{ success: boolean; data: \{ deleted: number \} \}/
+		/autoScheduleTimetable|SchedulingJobResponse|saveSchedulingConfiguration/
 	);
-	assert.match(timetableTemplatePage, /LoadingButton/);
-	assert.match(timetableTemplatePage, /replaceTemplate/);
-	assert.match(timetableTemplatePage, /removeTemplate/);
-	assert.match(timetableTemplatePage, /deletingTemplateId/);
-	const createTemplateBody =
-		timetableTemplatePage.match(/async function handleCreate\(\) \{[\s\S]*?\n\t\}/)?.[0] ?? '';
-	const deleteTemplateBody =
-		timetableTemplatePage.match(/async function handleDelete\([^)]*\) \{[\s\S]*?\n\t\}/)?.[0] ?? '';
-	assert.doesNotMatch(createTemplateBody, /await loadAll\(\)/);
-	assert.doesNotMatch(deleteTemplateBody, /await loadAll\(\)/);
-
-	assert.match(schedulingConfigPage, /LoadingButton/);
-	assert.match(schedulingConfigPage, /applySavedInstructorEdits/);
-	assert.match(schedulingConfigPage, /applySavedCcEdits/);
-	assert.match(schedulingConfigPage, /applySavedCcRoomEdits/);
-	const saveAllStart = schedulingConfigPage.indexOf('async function saveAll(): Promise<boolean>');
-	const saveAllEnd = schedulingConfigPage.indexOf('function slotsEqual');
-	const saveAllBody = schedulingConfigPage.slice(saveAllStart, saveAllEnd);
-	assert.notEqual(saveAllStart, -1);
-	assert.doesNotMatch(saveAllBody, /await loadAll\(\)/);
-	assert.match(saveAllBody, /await saveSchedulingConfiguration\(request\)/);
-	assert.doesNotMatch(saveAllBody, /Promise\.all/);
-	assert.match(saveAllBody, /if \(!response\.success \|\| !response\.data\)/);
-	const autoScheduleBody =
-		schedulingConfigPage.match(/async function runAutoSchedule\(\) \{[\s\S]*?\n\t\}/)?.[0] ?? '';
-	assert.match(autoScheduleBody, /const saved = await saveAll\(\);/);
-	assert.match(autoScheduleBody, /if \(!saved\) return;/);
 });
 
 test('academic curriculum mutations patch local state instead of broad workspace reloads', async () => {

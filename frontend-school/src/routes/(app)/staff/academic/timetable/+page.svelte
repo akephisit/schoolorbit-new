@@ -79,7 +79,6 @@
 		PlusCircle,
 		MapPin,
 		Download,
-		Zap,
 		Lock,
 		FileStack,
 		FileSpreadsheet,
@@ -3631,14 +3630,6 @@
 		{/if}
 
 		{#if canManageTimetable}
-			<Button
-				variant="outline"
-				onclick={() => goto(resolve('/staff/academic/timetable/scheduling-config'))}
-			>
-				<Zap class="w-4 h-4 mr-2 text-orange-500" />
-				จัดอัตโนมัติ
-			</Button>
-
 			<Button
 				variant="outline"
 				onclick={() => goto(resolve('/staff/academic/timetable/templates'))}

@@ -21,7 +21,6 @@ const dragDropRoutes = [
 	'src/routes/(app)/staff/academic/exam-schedules/[id]/+page.svelte',
 	'src/routes/(app)/staff/academic/periods/+page.svelte',
 	'src/routes/(app)/staff/academic/timetable/+page.svelte',
-	'src/routes/(app)/staff/academic/timetable/scheduling-config/+page.svelte',
 	'src/routes/(app)/staff/menu/+page.svelte',
 	'src/routes/(app)/staff/organization/+page.svelte'
 ];
