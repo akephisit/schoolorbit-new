@@ -20,7 +20,7 @@ use axum::{
     routing::{delete, get, post},
     Json, Router,
 };
-use db::admin_client::AdminClient;
+use db::admin_client::{AdminClient, AdminClientConfig};
 use db::permission_cache::PermissionCache;
 use db::pool_manager::PoolManager;
 use dotenvy::dotenv;
@@ -117,7 +117,18 @@ async fn main() {
     let internal_secret = env::var("INTERNAL_API_SECRET")
         .expect("INTERNAL_API_SECRET must be set for internal API authentication");
 
-    let admin_client = Arc::new(AdminClient::new(backend_admin_url, internal_secret));
+    let admin_client_config = match AdminClientConfig::from_env() {
+        Ok(config) => config,
+        Err(error) => {
+            tracing::error!(error = %error, "Invalid backend-admin client configuration");
+            std::process::exit(1);
+        }
+    };
+    let admin_client = Arc::new(AdminClient::new(
+        backend_admin_url,
+        internal_secret,
+        admin_client_config,
+    ));
 
     tracing::info!("✅ Admin client initialized (HTTP-based school mapping)");
 
