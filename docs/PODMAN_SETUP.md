@@ -583,9 +583,9 @@ services:
     networks:
       - web
     healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost:8080/health" ]
+      test: [ "CMD", "curl", "-f", "http://localhost:8080/ready" ]
       interval: 30s
-      timeout: 10s
+      timeout: 20s
       retries: 3
       start_period: 40s
 
@@ -598,6 +598,9 @@ services:
     environment:
       # Backend-Admin URL for school mapping via HTTP (required!)
       - BACKEND_ADMIN_URL=${BACKEND_ADMIN_URL:-http://schoolorbit-backend-admin:8080}
+      - BACKEND_ADMIN_REQUEST_TIMEOUT_MS=${BACKEND_ADMIN_REQUEST_TIMEOUT_MS:-5000}
+      - BACKEND_ADMIN_RETRY_MAX_ATTEMPTS=${BACKEND_ADMIN_RETRY_MAX_ATTEMPTS:-3}
+      - BACKEND_ADMIN_RETRY_BASE_DELAY_MS=${BACKEND_ADMIN_RETRY_BASE_DELAY_MS:-100}
       # Secrets
       - JWT_SECRET=${JWT_SECRET}
       - INTERNAL_API_SECRET=${INTERNAL_API_SECRET}
@@ -638,9 +641,9 @@ services:
     networks:
       - web
     healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost:8081/health" ]
+      test: [ "CMD", "curl", "-f", "http://localhost:8081/ready" ]
       interval: 30s
-      timeout: 10s
+      timeout: 20s
       retries: 3
       start_period: 40s
 
@@ -670,6 +673,10 @@ INTERNAL_API_SECRET_BACKEND_SCHOOL=
 # Internal service URLs for this single compose stack
 BACKEND_ADMIN_URL=http://schoolorbit-backend-admin:8080
 BACKEND_SCHOOL_URL=http://schoolorbit-backend-school:8081
+# backend-school -> backend-admin request reliability
+BACKEND_ADMIN_REQUEST_TIMEOUT_MS=5000
+BACKEND_ADMIN_RETRY_MAX_ATTEMPTS=3
+BACKEND_ADMIN_RETRY_BASE_DELAY_MS=100
 
 # Public backend-school API URL passed to tenant frontend deployments
 API_URL=https://school-api.schoolorbit.app

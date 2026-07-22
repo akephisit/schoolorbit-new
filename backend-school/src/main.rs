@@ -744,6 +744,7 @@ async fn main() {
     tracing::info!("\n✅ Available endpoints:");
     tracing::info!("  GET  /                          - API info");
     tracing::info!("  GET  /health                    - Health check");
+    tracing::info!("  GET  /ready                     - Control-plane readiness");
     tracing::info!("  POST /api/auth/login            - Login");
     tracing::info!("  POST /api/auth/logout           - Logout");
     tracing::info!("  GET  /api/auth/me               - Get current user (protected)\n");
