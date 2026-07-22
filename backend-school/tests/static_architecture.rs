@@ -4385,3 +4385,57 @@ fn inactive_authorization_sources_are_filtered() {
     assert!(staff_service.contains("active_actor_unit.is_active = true"));
     assert!(staff_service.contains("active_root.is_active = true"));
 }
+
+#[test]
+fn scheduling_configuration_routes_permissions_and_boundaries_are_explicit() {
+    let router = read_source(manifest_dir().join("src/modules/academic.rs"));
+    for expected in [
+        "get(handlers::scheduling_config::list_instructor_constraints)",
+        "get(handlers::scheduling_config::list_subject_constraints)",
+        "get(handlers::scheduling_config::get_scheduler_settings)",
+        "get(handlers::scheduling_config::list_classroom_course_constraints)",
+        "get(handlers::scheduling_config::list_cc_preferred_rooms)",
+        "get(handlers::scheduling_config::list_all_rooms)",
+        "put(handlers::scheduling_config::save_scheduling_configuration)",
+    ] {
+        assert!(router.contains(expected), "missing route: {expected}");
+    }
+    for removed in [
+        "reorder_instructor_priority",
+        "update_instructor_constraints",
+        "update_subject_constraints",
+        "update_scheduler_settings",
+        "update_classroom_course_constraints",
+        "set_cc_preferred_rooms",
+    ] {
+        assert!(
+            !router.contains(removed),
+            "removed scheduling mutation must not remain routed: {removed}"
+        );
+    }
+
+    let handlers = strip_comments(&read_source(
+        manifest_dir().join("src/modules/academic/handlers/scheduling_config.rs"),
+    ));
+    assert!(handlers.contains(
+        "payload_result: Result<Json<SaveSchedulingConfigurationRequest>, JsonRejection>"
+    ));
+    assert_eq!(
+        handlers
+            .matches("require_permission(codes::ACADEMIC_COURSE_PLAN_READ_ALL)")
+            .count(),
+        6
+    );
+    assert_eq!(
+        handlers
+            .matches("require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL)")
+            .count(),
+        1
+    );
+    for forbidden_db_call in ["sqlx::query", ".execute(", ".fetch_"] {
+        assert!(
+            !handlers.contains(forbidden_db_call),
+            "scheduling handlers must delegate database work to the service layer"
+        );
+    }
+}

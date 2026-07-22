@@ -408,47 +408,32 @@ pub fn academic_routes() -> Router<AppState> {
             "/scheduling/instructors",
             get(handlers::scheduling_config::list_instructor_constraints),
         )
-        // Bulk reorder priority — register BEFORE /{id} เพื่อกัน Axum match "order" เป็น id
-        .route(
-            "/scheduling/instructors/order",
-            put(handlers::scheduling_config::reorder_instructor_priority),
-        )
-        .route(
-            "/scheduling/instructors/{id}",
-            put(handlers::scheduling_config::update_instructor_constraints),
-        )
         .route(
             "/scheduling/subjects",
             get(handlers::scheduling_config::list_subject_constraints),
         )
-        .route(
-            "/scheduling/subjects/{id}",
-            put(handlers::scheduling_config::update_subject_constraints),
-        )
         // Global scheduler settings
         .route(
             "/scheduling/settings",
-            get(handlers::scheduling_config::get_scheduler_settings)
-                .put(handlers::scheduling_config::update_scheduler_settings),
+            get(handlers::scheduling_config::get_scheduler_settings),
         )
         // Classroom-course constraints (Phase B)
         .route(
             "/scheduling/classroom-courses",
             get(handlers::scheduling_config::list_classroom_course_constraints),
         )
-        .route(
-            "/scheduling/classroom-courses/{id}",
-            put(handlers::scheduling_config::update_classroom_course_constraints),
-        )
         // Classroom-course preferred rooms (Phase D)
         .route(
             "/scheduling/classroom-courses/{id}/rooms",
-            get(handlers::scheduling_config::list_cc_preferred_rooms)
-                .put(handlers::scheduling_config::set_cc_preferred_rooms),
+            get(handlers::scheduling_config::list_cc_preferred_rooms),
         )
         .route(
             "/scheduling/rooms",
             get(handlers::scheduling_config::list_all_rooms),
+        )
+        .route(
+            "/scheduling/configuration",
+            put(handlers::scheduling_config::save_scheduling_configuration),
         )
         // Phase F: Timetable Templates
         // from-current + clear ต้อง register ก่อน /{id} กัน Axum match path เป็น id

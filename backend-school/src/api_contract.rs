@@ -28,6 +28,14 @@ use crate::modules::academic::models::curriculum::{
 use crate::modules::academic::models::exam_schedule::{
     PersonalExamScheduleRound, PersonalExamSessionView,
 };
+use crate::modules::academic::models::scheduling::TimeSlot;
+use crate::modules::academic::models::scheduling_config::{
+    CcPreferredRoomView, ClassroomCourseConstraintPatch, ClassroomCourseConstraintView,
+    ClassroomCoursePreferredRoomsPatch, InstructorConstraintPatch, InstructorConstraintView,
+    ListClassroomCourseConstraintsQuery, PreferredRoomInput, SaveSchedulingConfigurationRequest,
+    SchedulerSettingsPatch, SchedulerSettingsView, SchedulingConfigurationSaveResult,
+    SchedulingRoomView, SubjectConstraintPatch, SubjectConstraintView,
+};
 use crate::modules::academic::models::study_plans::{
     ActivityCatalog, ActivityCatalogType, ActivitySchedulingMode,
     AddCatalogDefaultInstructorRequest, AddSubjectsToVersionRequest, CatalogDefaultInstructor,
@@ -252,6 +260,13 @@ use utoipa::OpenApi;
         crate::modules::academic::handlers::course_planning::remove_course_instructor,
         crate::modules::academic::handlers::course_planning::list_classroom_activities,
         crate::modules::academic::handlers::course_planning::remove_classroom_from_slot,
+        crate::modules::academic::handlers::scheduling_config::list_instructor_constraints,
+        crate::modules::academic::handlers::scheduling_config::list_subject_constraints,
+        crate::modules::academic::handlers::scheduling_config::get_scheduler_settings,
+        crate::modules::academic::handlers::scheduling_config::list_classroom_course_constraints,
+        crate::modules::academic::handlers::scheduling_config::list_cc_preferred_rooms,
+        crate::modules::academic::handlers::scheduling_config::list_all_rooms,
+        crate::modules::academic::handlers::scheduling_config::save_scheduling_configuration,
         crate::modules::calendar::handlers::list_my_calendar_events,
         crate::modules::calendar::handlers::list_public_calendar_events,
         crate::modules::calendar::handlers::list_calendar_events,
@@ -480,6 +495,29 @@ use utoipa::OpenApi;
         ApiResponse<HashMap<String, Vec<CourseInstructor>>>,
         ApiResponse<Vec<ClassroomActivity>>,
         ApiResponse<CourseAssignedCountData>,
+        TimeSlot,
+        SaveSchedulingConfigurationRequest,
+        SchedulerSettingsPatch,
+        InstructorConstraintPatch,
+        SubjectConstraintPatch,
+        ClassroomCourseConstraintPatch,
+        ClassroomCoursePreferredRoomsPatch,
+        PreferredRoomInput,
+        ListClassroomCourseConstraintsQuery,
+        SchedulerSettingsView,
+        InstructorConstraintView,
+        SubjectConstraintView,
+        ClassroomCourseConstraintView,
+        CcPreferredRoomView,
+        SchedulingRoomView,
+        SchedulingConfigurationSaveResult,
+        ApiResponse<SchedulerSettingsView>,
+        ApiResponse<Vec<InstructorConstraintView>>,
+        ApiResponse<Vec<SubjectConstraintView>>,
+        ApiResponse<Vec<ClassroomCourseConstraintView>>,
+        ApiResponse<Vec<CcPreferredRoomView>>,
+        ApiResponse<Vec<SchedulingRoomView>>,
+        ApiResponse<SchedulingConfigurationSaveResult>,
         ActivityCatalogType,
         ActivitySchedulingMode,
         StudyPlanVersionActivity,
@@ -1272,7 +1310,7 @@ mod tests {
             .flat_map(|path| path.as_object().expect("path item").values())
             .filter(|operation| operation.get("operationId").is_some())
             .count();
-        assert_eq!(operation_count, 177);
+        assert_eq!(operation_count, 184);
     }
 
     #[test]
@@ -1418,7 +1456,7 @@ mod tests {
             .flat_map(|path| path.as_object().expect("path item").values())
             .filter(|operation| operation.get("operationId").is_some())
             .count();
-        assert_eq!(operation_count, 177);
+        assert_eq!(operation_count, 184);
     }
 
     #[test]
@@ -1600,7 +1638,7 @@ mod tests {
             .flat_map(|path| path.as_object().expect("path item").values())
             .filter(|operation| operation.get("operationId").is_some())
             .count();
-        assert_eq!(operation_count, 177);
+        assert_eq!(operation_count, 184);
     }
 
     #[test]
@@ -1873,7 +1911,7 @@ mod tests {
             .flat_map(|path| path.as_object().expect("path item").values())
             .filter(|operation| operation.get("operationId").is_some())
             .count();
-        assert_eq!(operation_count, 177);
+        assert_eq!(operation_count, 184);
     }
 
     #[test]
@@ -1948,10 +1986,10 @@ mod tests {
             .flat_map(|path| path.as_object().expect("path item").values())
             .filter_map(|operation| operation["operationId"].as_str())
             .collect();
-        assert_eq!(operation_ids.len(), 177);
+        assert_eq!(operation_ids.len(), 184);
         assert_eq!(
             operation_ids.iter().copied().collect::<HashSet<_>>().len(),
-            177
+            184
         );
 
         for (path, method, request_schema) in [
@@ -2652,7 +2690,7 @@ mod tests {
                 }
             }
         }
-        assert_eq!(operation_ids.len(), 177);
+        assert_eq!(operation_ids.len(), 184);
 
         let schemas = &document["components"]["schemas"];
         let delegation = &schemas["DelegationItem"];
@@ -2682,5 +2720,80 @@ mod tests {
         assert_eq!(include_children["in"], "query");
         assert_eq!(include_children["required"], false);
         assert_eq!(include_children["schema"]["type"], "boolean");
+    }
+
+    #[test]
+    fn academic_scheduling_configuration_contracts() {
+        let document = school_api_value().expect("document should serialize");
+        let expected = [
+            (
+                "/api/academic/scheduling/instructors",
+                "get",
+                "listSchedulingInstructorConstraints",
+            ),
+            (
+                "/api/academic/scheduling/subjects",
+                "get",
+                "listSchedulingSubjectConstraints",
+            ),
+            (
+                "/api/academic/scheduling/settings",
+                "get",
+                "getSchedulingSettings",
+            ),
+            (
+                "/api/academic/scheduling/classroom-courses",
+                "get",
+                "listSchedulingClassroomCourseConstraints",
+            ),
+            (
+                "/api/academic/scheduling/classroom-courses/{id}/rooms",
+                "get",
+                "listSchedulingClassroomCoursePreferredRooms",
+            ),
+            (
+                "/api/academic/scheduling/rooms",
+                "get",
+                "listSchedulingRooms",
+            ),
+            (
+                "/api/academic/scheduling/configuration",
+                "put",
+                "saveSchedulingConfiguration",
+            ),
+        ];
+        assert_operations(&document, &expected);
+
+        let save = &document["paths"]["/api/academic/scheduling/configuration"]["put"];
+        for status in ["400", "401", "403", "404", "409", "500"] {
+            assert_eq!(
+                save["responses"][status]["content"]["application/json"]["schema"]["$ref"],
+                "#/components/schemas/ApiErrorResponse"
+            );
+        }
+        let schemas = &document["components"]["schemas"];
+        let request = &schemas["SaveSchedulingConfigurationRequest"];
+        assert!(request["required"].is_null() || !required(request).contains(&"instructor_order"));
+        assert!(contains_null(&request["properties"]["instructor_order"]));
+        let instructor = &schemas["InstructorConstraintPatch"];
+        assert!(!required(instructor).contains(&"assigned_room_id"));
+        assert!(contains_null(&instructor["properties"]["assigned_room_id"]));
+        let subject = &schemas["SubjectConstraintPatch"];
+        assert!(contains_null(&subject["properties"]["allowed_period_ids"]));
+        let course = &schemas["ClassroomCourseConstraintPatch"];
+        assert!(contains_null(&course["properties"]["consecutive_pattern"]));
+
+        let operation_ids = document["paths"]
+            .as_object()
+            .expect("paths")
+            .values()
+            .flat_map(|path| path.as_object().expect("path item").values())
+            .filter_map(|operation| operation["operationId"].as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(operation_ids.len(), 184);
+        assert_eq!(
+            operation_ids.iter().copied().collect::<HashSet<_>>().len(),
+            184
+        );
     }
 }
