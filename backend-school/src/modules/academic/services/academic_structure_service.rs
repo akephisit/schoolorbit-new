@@ -180,6 +180,16 @@ pub async fn update_academic_year(
 pub async fn toggle_active_year(pool: &PgPool, id: Uuid) -> Result<(), AppError> {
     let mut tx = pool.begin().await?;
 
+    let target_exists =
+        sqlx::query_scalar::<_, Uuid>("SELECT id FROM academic_years WHERE id = $1 FOR UPDATE")
+            .bind(id)
+            .fetch_optional(&mut *tx)
+            .await?
+            .is_some();
+    if !target_exists {
+        return Err(AppError::NotFound("Academic year not found".to_string()));
+    }
+
     sqlx::query("UPDATE academic_years SET is_active = false")
         .execute(&mut *tx)
         .await?;
@@ -249,22 +259,30 @@ pub async fn update_semester(
     .bind(id)
     .fetch_one(pool)
     .await
-    .map_err(AppError::from)
+    .map_err(|error| match error {
+        sqlx::Error::RowNotFound => AppError::NotFound("Semester not found".to_string()),
+        error => AppError::from(error),
+    })
 }
 
 pub async fn delete_semester(pool: &PgPool, id: Uuid) -> Result<(), AppError> {
-    sqlx::query("DELETE FROM academic_semesters WHERE id = $1")
+    let result = sqlx::query("DELETE FROM academic_semesters WHERE id = $1")
         .bind(id)
         .execute(pool)
         .await
-        .map(|_| ())
         .map_err(|error| {
             if error.to_string().contains("foreign key constraint") {
                 AppError::BadRequest("ไม่สามารถลบภาคเรียนที่มีการใช้งานได้".to_string())
             } else {
                 AppError::from(error)
             }
-        })
+        })?;
+
+    if result.rows_affected() == 0 {
+        return Err(AppError::NotFound("Semester not found".to_string()));
+    }
+
+    Ok(())
 }
 
 pub async fn list_classrooms(
@@ -487,8 +505,7 @@ pub async fn delete_grade_level(pool: &PgPool, id: Uuid) -> Result<(), AppError>
         sqlx::query_scalar("SELECT COUNT(*) FROM class_rooms WHERE grade_level_id = $1")
             .bind(id)
             .fetch_one(pool)
-            .await
-            .unwrap_or(0);
+            .await?;
 
     if usage_count > 0 {
         return Err(AppError::BadRequest(format!(
@@ -497,10 +514,14 @@ pub async fn delete_grade_level(pool: &PgPool, id: Uuid) -> Result<(), AppError>
         )));
     }
 
-    sqlx::query("DELETE FROM grade_levels WHERE id = $1")
+    let result = sqlx::query("DELETE FROM grade_levels WHERE id = $1")
         .bind(id)
         .execute(pool)
         .await?;
+
+    if result.rows_affected() == 0 {
+        return Err(AppError::NotFound("Grade level not found".to_string()));
+    }
 
     Ok(())
 }
@@ -533,6 +554,8 @@ pub async fn get_class_enrollments(
     pool: &PgPool,
     class_id: Uuid,
 ) -> Result<Vec<StudentEnrollment>, AppError> {
+    ensure_classroom_exists(pool, class_id).await?;
+
     sqlx::query_as::<_, StudentEnrollment>(
         "SELECT ske.*, 
                 CONCAT(u.first_name, ' ', u.last_name) as student_name,
@@ -554,17 +577,12 @@ pub async fn get_class_enrollments(
 pub async fn remove_enrollment(pool: &PgPool, id: Uuid) -> Result<(), AppError> {
     let mut tx = pool.begin().await?;
 
-    let enrollment_exists: bool =
-        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM student_class_enrollments WHERE id = $1)")
-            .bind(id)
-            .fetch_one(&mut *tx)
-            .await?;
-
-    if enrollment_exists {
-        sqlx::query("DELETE FROM student_class_enrollments WHERE id = $1")
-            .bind(id)
-            .execute(&mut *tx)
-            .await?;
+    let result = sqlx::query("DELETE FROM student_class_enrollments WHERE id = $1")
+        .bind(id)
+        .execute(&mut *tx)
+        .await?;
+    if result.rows_affected() == 0 {
+        return Err(AppError::NotFound("Enrollment not found".to_string()));
     }
 
     tx.commit().await?;
@@ -576,13 +594,17 @@ pub async fn update_enrollment_number(
     id: Uuid,
     class_number: Option<i32>,
 ) -> Result<(), AppError> {
-    sqlx::query(
+    let result = sqlx::query(
         "UPDATE student_class_enrollments SET class_number = $1, updated_at = NOW() WHERE id = $2",
     )
     .bind(class_number)
     .bind(id)
     .execute(pool)
     .await?;
+
+    if result.rows_affected() == 0 {
+        return Err(AppError::NotFound("Enrollment not found".to_string()));
+    }
 
     Ok(())
 }
@@ -592,12 +614,15 @@ pub async fn auto_assign_class_numbers(
     class_id: Uuid,
     sort_by: &str,
 ) -> Result<usize, AppError> {
+    ensure_classroom_exists(pool, class_id).await?;
     let students = sorted_students_for_numbering(pool, class_id, sort_by).await?;
     update_class_numbers(pool, &students).await?;
     Ok(students.len())
 }
 
 pub async fn get_year_levels(pool: &PgPool, year_id: Uuid) -> Result<Vec<Uuid>, AppError> {
+    ensure_academic_year_exists(pool, year_id).await?;
+
     sqlx::query_scalar::<_, Uuid>(
         "SELECT grade_level_id FROM academic_year_grade_levels WHERE academic_year_id = $1",
     )
@@ -613,6 +638,16 @@ pub async fn update_year_levels(
     grade_level_ids: Vec<Uuid>,
 ) -> Result<(), AppError> {
     let mut tx = pool.begin().await?;
+
+    let target_exists =
+        sqlx::query_scalar::<_, Uuid>("SELECT id FROM academic_years WHERE id = $1 FOR UPDATE")
+            .bind(year_id)
+            .fetch_optional(&mut *tx)
+            .await?
+            .is_some();
+    if !target_exists {
+        return Err(AppError::NotFound("Academic year not found".to_string()));
+    }
 
     sqlx::query("DELETE FROM academic_year_grade_levels WHERE academic_year_id = $1")
         .bind(year_id)
@@ -782,6 +817,20 @@ async fn ensure_classroom_exists(pool: &PgPool, class_room_id: Uuid) -> Result<(
     .fetch_optional(pool)
     .await?
     .ok_or(AppError::NotFound("Classroom not found".to_string()))?;
+
+    Ok(())
+}
+
+async fn ensure_academic_year_exists(pool: &PgPool, year_id: Uuid) -> Result<(), AppError> {
+    let exists: bool =
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM academic_years WHERE id = $1)")
+            .bind(year_id)
+            .fetch_one(pool)
+            .await?;
+
+    if !exists {
+        return Err(AppError::NotFound("Academic year not found".to_string()));
+    }
 
     Ok(())
 }
