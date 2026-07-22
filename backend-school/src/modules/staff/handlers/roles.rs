@@ -162,7 +162,7 @@ pub async fn list_organization_units(
     let actor = context.actor;
     actor.require_permission(codes::ROLES_READ_ALL)?;
 
-    let units = organization_unit_service::list_organization_units(&pool).await?;
+    let units = organization_unit_service::list_organization_units(&pool, false).await?;
     Ok(Json(ApiResponse::ok(units)).into_response())
 }
 
@@ -253,6 +253,7 @@ pub async fn update_organization_unit(
     let actor = context.actor;
     actor.require_permission(codes::ROLES_UPDATE_ALL)?;
 
-    organization_unit_service::update_organization_unit(&pool, unit_id, payload).await?;
+    organization_unit_service::update_organization_unit(&pool, unit_id, payload, actor.user_id)
+        .await?;
     Ok(Json(ApiResponse::empty_with_message("อัปเดตหน่วยงานสำเร็จ")).into_response())
 }
