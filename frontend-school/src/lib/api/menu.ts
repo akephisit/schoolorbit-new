@@ -2,28 +2,17 @@
 // API for fetching user's dynamic menu based on permissions
 
 import { apiClient } from '$lib/api/client';
+import type { components } from '$lib/api/generated/school-api';
 
-export interface MenuItem {
-	id: string;
-	code: string;
-	name: string;
-	path: string;
-	icon?: string;
-}
+type Schemas = components['schemas'];
 
-export interface MenuGroup {
-	code: string;
-	name: string;
-	icon?: string;
-	workspaceCode: string;
-	items: MenuItem[];
-}
+export type MenuItem = Schemas['MenuItemResponse'];
+export type MenuGroup = Schemas['MenuGroupResponse'];
+export type UserMenuData = Schemas['UserMenuData'];
 
 export interface UserMenuResponse {
 	success: boolean;
-	data?: {
-		groups: MenuGroup[];
-	};
+	data?: UserMenuData;
 	groups: MenuGroup[];
 }
 
@@ -32,7 +21,7 @@ export interface UserMenuResponse {
  * Menu is dynamically generated from database
  */
 export async function getUserMenu(): Promise<UserMenuResponse> {
-	const response = await apiClient.get<{ groups: MenuGroup[] }>('/api/menu/user');
+	const response = await apiClient.get<UserMenuData>('/api/menu/user');
 	if (!response.success) throw new Error(response.error || 'Failed to fetch menu');
 
 	return {

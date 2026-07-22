@@ -215,20 +215,7 @@ export interface UpdateStaffRequest {
 
 export type Role = Schemas['Role'];
 export type OrganizationUnit = Schemas['OrganizationUnit'];
-
-export interface OrganizationUnitLookupItem {
-	id: string;
-	code: string;
-	name: string;
-	name_en?: string;
-	description?: string;
-	category?: string;
-	display_order: number;
-	is_active: boolean;
-	parent_unit_id?: string;
-	unit_type?: string;
-	subject_group_id?: string;
-}
+export type OrganizationUnitLookupItem = Schemas['OrganizationUnitLookupItem'];
 
 interface StaffFilter {
 	user_type?: string;

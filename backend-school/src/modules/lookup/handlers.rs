@@ -6,10 +6,14 @@ use axum::{
 };
 use uuid::Uuid;
 
-use crate::api_response::ApiResponse;
+use crate::api_response::{ApiErrorResponse, ApiResponse};
 use crate::error::AppError;
 use crate::modules::auth::models::Claims;
-use crate::modules::lookup::models::LookupQuery;
+use crate::modules::facility::models::Room;
+use crate::modules::lookup::models::{
+    AcademicYearLookupItem, ClassroomLookupItem, GradeLevelLookupItem, LookupItem, LookupQuery,
+    OrganizationUnitLookupItem, RoleLookupItem, StaffLookupItem, StudentLookupItem,
+};
 use crate::modules::lookup::services as lookup_service;
 use crate::permissions::registry::codes;
 use crate::utils::request_context::{
@@ -30,6 +34,17 @@ async fn active_lookup_context(
 
 /// GET /api/lookup/staff
 /// Returns minimal staff data for dropdowns (id, name, title)
+#[utoipa::path(
+    get,
+    path = "/api/lookup/staff",
+    operation_id = "lookupStaff",
+    tag = "lookup",
+    params(LookupQuery),
+    responses(
+        (status = 200, description = "Staff lookup items", body = ApiResponse<Vec<StaffLookupItem>>),
+        (status = 401, description = "Authentication required or account inactive", body = ApiErrorResponse)
+    )
+)]
 pub async fn lookup_staff(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -44,6 +59,18 @@ pub async fn lookup_staff(
 
 /// GET /api/lookup/roles
 /// Returns minimal role data for dropdowns
+#[utoipa::path(
+    get,
+    path = "/api/lookup/roles",
+    operation_id = "lookupRoles",
+    tag = "lookup",
+    params(LookupQuery),
+    responses(
+        (status = 200, description = "Role lookup items", body = ApiResponse<Vec<RoleLookupItem>>),
+        (status = 401, description = "Authentication required or account inactive", body = ApiErrorResponse),
+        (status = 403, description = "Role lookup permission denied", body = ApiErrorResponse)
+    )
+)]
 pub async fn lookup_roles(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -61,6 +88,17 @@ pub async fn lookup_roles(
 
 /// GET /api/lookup/organization-units
 /// Returns organization unit data. Supports ?member_only=true to filter to user's own units.
+#[utoipa::path(
+    get,
+    path = "/api/lookup/organization-units",
+    operation_id = "lookupOrganizationUnits",
+    tag = "lookup",
+    params(LookupQuery),
+    responses(
+        (status = 200, description = "Organization unit lookup items", body = ApiResponse<Vec<OrganizationUnitLookupItem>>),
+        (status = 401, description = "Authentication required or account inactive", body = ApiErrorResponse)
+    )
+)]
 pub async fn lookup_organization_units(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -77,6 +115,18 @@ pub async fn lookup_organization_units(
 
 /// GET /api/lookup/organization-units/:id
 /// Returns single organization unit by ID (auth only, no permission required)
+#[utoipa::path(
+    get,
+    path = "/api/lookup/organization-units/{id}",
+    operation_id = "getLookupOrganizationUnit",
+    tag = "lookup",
+    params(("id" = Uuid, Path, description = "Organization unit ID")),
+    responses(
+        (status = 200, description = "Organization unit lookup item", body = ApiResponse<OrganizationUnitLookupItem>),
+        (status = 401, description = "Authentication required or account inactive", body = ApiErrorResponse),
+        (status = 404, description = "Organization unit not found", body = ApiErrorResponse)
+    )
+)]
 pub async fn lookup_organization_unit_by_id(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
@@ -91,6 +141,17 @@ pub async fn lookup_organization_unit_by_id(
 
 /// GET /api/lookup/grade-levels
 /// Returns minimal grade level data for dropdowns
+#[utoipa::path(
+    get,
+    path = "/api/lookup/grade-levels",
+    operation_id = "lookupGradeLevels",
+    tag = "lookup",
+    params(LookupQuery),
+    responses(
+        (status = 200, description = "Grade level lookup items", body = ApiResponse<Vec<GradeLevelLookupItem>>),
+        (status = 401, description = "Authentication required or account inactive", body = ApiErrorResponse)
+    )
+)]
 pub async fn lookup_grade_levels(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -105,6 +166,17 @@ pub async fn lookup_grade_levels(
 
 /// GET /api/lookup/classrooms
 /// Returns minimal classroom data for dropdowns
+#[utoipa::path(
+    get,
+    path = "/api/lookup/classrooms",
+    operation_id = "lookupClassrooms",
+    tag = "lookup",
+    params(LookupQuery),
+    responses(
+        (status = 200, description = "Classroom lookup items", body = ApiResponse<Vec<ClassroomLookupItem>>),
+        (status = 401, description = "Authentication required or account inactive", body = ApiErrorResponse)
+    )
+)]
 pub async fn lookup_classrooms(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -119,6 +191,17 @@ pub async fn lookup_classrooms(
 
 /// GET /api/lookup/academic-years
 /// Returns minimal academic year data for dropdowns
+#[utoipa::path(
+    get,
+    path = "/api/lookup/academic-years",
+    operation_id = "lookupAcademicYears",
+    tag = "lookup",
+    params(LookupQuery),
+    responses(
+        (status = 200, description = "Academic year lookup items", body = ApiResponse<Vec<AcademicYearLookupItem>>),
+        (status = 401, description = "Authentication required or account inactive", body = ApiErrorResponse)
+    )
+)]
 pub async fn lookup_academic_years(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -133,6 +216,17 @@ pub async fn lookup_academic_years(
 
 /// GET /api/lookup/students
 /// Returns minimal student data for dropdowns (with student_id and class_room)
+#[utoipa::path(
+    get,
+    path = "/api/lookup/students",
+    operation_id = "lookupStudents",
+    tag = "lookup",
+    params(LookupQuery),
+    responses(
+        (status = 200, description = "Student lookup items", body = ApiResponse<Vec<StudentLookupItem>>),
+        (status = 401, description = "Authentication required or account inactive", body = ApiErrorResponse)
+    )
+)]
 pub async fn lookup_students(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -147,6 +241,16 @@ pub async fn lookup_students(
 
 /// GET /api/lookup/rooms
 /// Returns active rooms with building info
+#[utoipa::path(
+    get,
+    path = "/api/lookup/rooms",
+    operation_id = "lookupRooms",
+    tag = "lookup",
+    responses(
+        (status = 200, description = "Active room lookup items", body = ApiResponse<Vec<Room>>),
+        (status = 401, description = "Authentication required or account inactive", body = ApiErrorResponse)
+    )
+)]
 pub async fn lookup_rooms(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -160,6 +264,17 @@ pub async fn lookup_rooms(
 
 /// GET /api/lookup/subjects
 /// Returns minimal subject data for dropdowns
+#[utoipa::path(
+    get,
+    path = "/api/lookup/subjects",
+    operation_id = "lookupSubjects",
+    tag = "lookup",
+    params(LookupQuery),
+    responses(
+        (status = 200, description = "Subject lookup items", body = ApiResponse<Vec<LookupItem>>),
+        (status = 401, description = "Authentication required or account inactive", body = ApiErrorResponse)
+    )
+)]
 pub async fn lookup_subjects(
     State(state): State<AppState>,
     headers: HeaderMap,

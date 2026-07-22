@@ -1,4 +1,4 @@
-use crate::api_response::ApiResponse;
+use crate::api_response::{ApiErrorResponse, ApiResponse};
 use crate::error::AppError;
 use crate::modules::menu::services::menu_service;
 use crate::utils::request_context::{actor_tenant_context, ActorTenantContext};
@@ -10,6 +10,7 @@ use axum::{
     response::{IntoResponse, Json as JsonResponse},
 };
 use serde::{Deserialize, Serialize};
+use utoipa::IntoParams;
 use uuid::Uuid;
 
 #[derive(Debug, Deserialize)]
@@ -72,7 +73,8 @@ pub struct ReorderItem {
     pub group_id: Option<Uuid>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
 pub struct MenuItemFilter {
     pub group_id: Option<Uuid>,
 }
@@ -113,6 +115,16 @@ async fn auth_check_module(
 
 // ==================== Menu Groups ====================
 
+#[utoipa::path(
+    get,
+    path = "/api/admin/menu/groups",
+    operation_id = "listMenuGroups",
+    tag = "menu",
+    responses(
+        (status = 200, description = "Menu groups", body = ApiResponse<Vec<crate::modules::menu::models::MenuGroup>>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse)
+    )
+)]
 pub async fn list_menu_groups(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -196,6 +208,17 @@ pub async fn delete_menu_group(
 
 // ==================== Menu Items ====================
 
+#[utoipa::path(
+    get,
+    path = "/api/admin/menu/items",
+    operation_id = "listMenuItems",
+    tag = "menu",
+    params(MenuItemFilter),
+    responses(
+        (status = 200, description = "Menu items visible to the current administrator", body = ApiResponse<Vec<crate::modules::menu::models::MenuItem>>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse)
+    )
+)]
 pub async fn list_menu_items(
     State(state): State<AppState>,
     headers: HeaderMap,

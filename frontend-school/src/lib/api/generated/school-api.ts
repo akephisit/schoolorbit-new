@@ -5,6 +5,70 @@
  */
 
 export interface paths {
+	'/api/admin/features': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listFeatures'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/admin/features/{id}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getFeature'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/admin/menu/groups': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listMenuGroups'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/admin/menu/items': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listMenuItems'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/api/auth/login': {
 		parameters: {
 			query?: never;
@@ -101,6 +165,222 @@ export interface paths {
 		 *     Updates user's editable fields only
 		 */
 		put: operations['updateCurrentUserProfile'];
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/lookup/academic-years': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		/**
+		 * GET /api/lookup/academic-years
+		 *     Returns minimal academic year data for dropdowns
+		 */
+		get: operations['lookupAcademicYears'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/lookup/classrooms': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		/**
+		 * GET /api/lookup/classrooms
+		 *     Returns minimal classroom data for dropdowns
+		 */
+		get: operations['lookupClassrooms'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/lookup/grade-levels': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		/**
+		 * GET /api/lookup/grade-levels
+		 *     Returns minimal grade level data for dropdowns
+		 */
+		get: operations['lookupGradeLevels'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/lookup/organization-units': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		/**
+		 * GET /api/lookup/organization-units
+		 *     Returns organization unit data. Supports ?member_only=true to filter to user's own units.
+		 */
+		get: operations['lookupOrganizationUnits'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/lookup/organization-units/{id}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		/**
+		 * GET /api/lookup/organization-units/:id
+		 *     Returns single organization unit by ID (auth only, no permission required)
+		 */
+		get: operations['getLookupOrganizationUnit'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/lookup/roles': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		/**
+		 * GET /api/lookup/roles
+		 *     Returns minimal role data for dropdowns
+		 */
+		get: operations['lookupRoles'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/lookup/rooms': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		/**
+		 * GET /api/lookup/rooms
+		 *     Returns active rooms with building info
+		 */
+		get: operations['lookupRooms'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/lookup/staff': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		/**
+		 * GET /api/lookup/staff
+		 *     Returns minimal staff data for dropdowns (id, name, title)
+		 */
+		get: operations['lookupStaff'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/lookup/students': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		/**
+		 * GET /api/lookup/students
+		 *     Returns minimal student data for dropdowns (with student_id and class_room)
+		 */
+		get: operations['lookupStudents'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/lookup/subjects': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		/**
+		 * GET /api/lookup/subjects
+		 *     Returns minimal subject data for dropdowns
+		 */
+		get: operations['lookupSubjects'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/menu/user': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getUserMenu'];
+		put?: never;
 		post?: never;
 		delete?: never;
 		options?: never;
@@ -352,6 +632,15 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
 	schemas: {
+		/** @description Academic year lookup item */
+		AcademicYearLookupItem: {
+			/** Format: uuid */
+			id: string;
+			is_current: boolean;
+			name: string;
+			/** Format: int32 */
+			year: number;
+		};
 		AddMemberRequest: {
 			is_primary?: boolean | null;
 			position_code: string;
@@ -431,6 +720,28 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
+		ApiResponse_OrganizationUnitLookupItem: {
+			/** @description Organization unit lookup item */
+			data: {
+				category?: string;
+				code: string;
+				description?: string;
+				/** Format: int32 */
+				display_order: number;
+				/** Format: uuid */
+				id: string;
+				is_active: boolean;
+				name: string;
+				name_en?: string;
+				/** Format: uuid */
+				parent_unit_id?: string;
+				/** Format: uuid */
+				subject_group_id?: string;
+				unit_type?: string;
+			};
+			message?: string;
+			success: boolean;
+		};
 		ApiResponse_ProfileResponse: {
 			data: {
 				address: string | null;
@@ -484,6 +795,13 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
+		ApiResponse_UserMenuData: {
+			data: {
+				groups: components['schemas']['MenuGroupResponse'][];
+			};
+			message?: string;
+			success: boolean;
+		};
 		ApiResponse_UserResponse: {
 			data: {
 				/** Format: date-time */
@@ -511,6 +829,30 @@ export interface components {
 				/** Format: uuid */
 				id: string;
 			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_Vec_AcademicYearLookupItem: {
+			data: {
+				/** Format: uuid */
+				id: string;
+				is_current: boolean;
+				name: string;
+				/** Format: int32 */
+				year: number;
+			}[];
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_Vec_ClassroomLookupItem: {
+			data: {
+				grade_level?: string;
+				/** Format: uuid */
+				grade_level_id?: string;
+				/** Format: uuid */
+				id: string;
+				name: string;
+			}[];
 			message?: string;
 			success: boolean;
 		};
@@ -543,6 +885,68 @@ export interface components {
 				/** Format: uuid */
 				to_user_id: string;
 				to_user_name: string;
+			}[];
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_Vec_GradeLevelLookupItem: {
+			data: {
+				code: string;
+				/** Format: uuid */
+				id: string;
+				/** Format: int32 */
+				level_order: number;
+				level_type: string;
+				name: string;
+				short_name: string | null;
+			}[];
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_Vec_LookupItem: {
+			data: {
+				code?: string;
+				grade_level_ids?: string[];
+				/** Format: uuid */
+				id: string;
+				name: string;
+			}[];
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_Vec_MenuGroup: {
+			data: {
+				code: string;
+				/** Format: int32 */
+				display_order: number;
+				icon: string | null;
+				/** Format: uuid */
+				id: string;
+				is_active: boolean;
+				name: string;
+				name_en: string | null;
+			}[];
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_Vec_MenuItem: {
+			data: {
+				code: string;
+				/** Format: int32 */
+				display_order: number;
+				/** Format: uuid */
+				group_id: string | null;
+				icon: string | null;
+				/** Format: uuid */
+				id: string;
+				is_active: boolean;
+				name: string;
+				name_en: string | null;
+				/** Format: uuid */
+				parent_id: string | null;
+				path: string;
+				required_permission: string | null;
+				user_type: string;
 			}[];
 			message?: string;
 			success: boolean;
@@ -603,6 +1007,27 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
+		ApiResponse_Vec_OrganizationUnitLookupItem: {
+			data: {
+				category?: string;
+				code: string;
+				description?: string;
+				/** Format: int32 */
+				display_order: number;
+				/** Format: uuid */
+				id: string;
+				is_active: boolean;
+				name: string;
+				name_en?: string;
+				/** Format: uuid */
+				parent_unit_id?: string;
+				/** Format: uuid */
+				subject_group_id?: string;
+				unit_type?: string;
+			}[];
+			message?: string;
+			success: boolean;
+		};
 		ApiResponse_Vec_Permission: {
 			data: {
 				action: string;
@@ -640,8 +1065,66 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
+		ApiResponse_Vec_RoleLookupItem: {
+			data: {
+				code: string;
+				/** Format: uuid */
+				id: string;
+				name: string;
+				user_type: string;
+			}[];
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_Vec_Room: {
+			data: {
+				/** Format: uuid */
+				building_id: string | null;
+				building_name: string | null;
+				/** Format: int32 */
+				capacity: number;
+				code: string | null;
+				/** Format: date-time */
+				created_at: string;
+				description: string | null;
+				/** Format: int32 */
+				floor: number | null;
+				/** Format: uuid */
+				id: string;
+				name_en: string | null;
+				name_th: string;
+				room_type: string;
+				status: string;
+				/** Format: date-time */
+				updated_at: string;
+			}[];
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_Vec_StaffLookupItem: {
+			data: {
+				/** Format: uuid */
+				id: string;
+				name: string;
+				title?: string;
+			}[];
+			message?: string;
+			success: boolean;
+		};
 		ApiResponse_Vec_String: {
 			data: string[];
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_Vec_StudentLookupItem: {
+			data: {
+				class_room?: string;
+				/** Format: uuid */
+				id: string;
+				name: string;
+				student_id?: string;
+				title?: string;
+			}[];
 			message?: string;
 			success: boolean;
 		};
@@ -681,6 +1164,15 @@ export interface components {
 		ChangePasswordRequest: {
 			currentPassword: string;
 			newPassword: string;
+		};
+		/** @description Classroom lookup item */
+		ClassroomLookupItem: {
+			grade_level?: string;
+			/** Format: uuid */
+			grade_level_id?: string;
+			/** Format: uuid */
+			id: string;
+			name: string;
 		};
 		CreateDelegationRequest: {
 			/** Format: date-time */
@@ -746,6 +1238,36 @@ export interface components {
 			to_user_name: string;
 		};
 		EmptyData: Record<string, never>;
+		FeatureListResponse: {
+			data: components['schemas']['FeatureToggle'][];
+			success: boolean;
+		};
+		/** @description Feature Toggle */
+		FeatureToggle: {
+			code: string;
+			/** Format: uuid */
+			id: string;
+			is_enabled: boolean;
+			module: string | null;
+			name: string;
+			name_en: string | null;
+		};
+		FeatureToggleResponse: {
+			data: null | components['schemas']['FeatureToggle'];
+			message: string | null;
+			success: boolean;
+		};
+		/** @description Grade level lookup item */
+		GradeLevelLookupItem: {
+			code: string;
+			/** Format: uuid */
+			id: string;
+			/** Format: int32 */
+			level_order: number;
+			level_type: string;
+			name: string;
+			short_name: string | null;
+		};
 		ListMembersQuery: {
 			include_children?: boolean | null;
 		};
@@ -756,6 +1278,62 @@ export interface components {
 			password: string;
 			rememberMe?: boolean | null;
 			username: string;
+		};
+		/** @description Generic lookup item - minimal data for dropdowns */
+		LookupItem: {
+			code?: string;
+			grade_level_ids?: string[];
+			/** Format: uuid */
+			id: string;
+			name: string;
+		};
+		/** @description Menu Group */
+		MenuGroup: {
+			code: string;
+			/** Format: int32 */
+			display_order: number;
+			icon: string | null;
+			/** Format: uuid */
+			id: string;
+			is_active: boolean;
+			name: string;
+			name_en: string | null;
+		};
+		/** @description Menu Group Response (for user menu API) */
+		MenuGroupResponse: {
+			code: string;
+			icon: string | null;
+			items: components['schemas']['MenuItemResponse'][];
+			name: string;
+			workspaceCode: string;
+		};
+		/** @description Menu Item */
+		MenuItem: {
+			code: string;
+			/** Format: int32 */
+			display_order: number;
+			/** Format: uuid */
+			group_id: string | null;
+			icon: string | null;
+			/** Format: uuid */
+			id: string;
+			is_active: boolean;
+			name: string;
+			name_en: string | null;
+			/** Format: uuid */
+			parent_id: string | null;
+			path: string;
+			required_permission: string | null;
+			user_type: string;
+		};
+		/** @description Menu Item Response (for user menu API) */
+		MenuItemResponse: {
+			code: string;
+			icon: string | null;
+			/** Format: uuid */
+			id: string;
+			name: string;
+			path: string;
 		};
 		OrganizationMemberItem: {
 			is_primary: boolean;
@@ -805,6 +1383,24 @@ export interface components {
 			unit_type: string;
 			/** Format: date-time */
 			updated_at: string;
+		};
+		/** @description Organization unit lookup item */
+		OrganizationUnitLookupItem: {
+			category?: string;
+			code: string;
+			description?: string;
+			/** Format: int32 */
+			display_order: number;
+			/** Format: uuid */
+			id: string;
+			is_active: boolean;
+			name: string;
+			name_en?: string;
+			/** Format: uuid */
+			parent_unit_id?: string;
+			/** Format: uuid */
+			subject_group_id?: string;
+			unit_type?: string;
 		};
 		Permission: {
 			action: string;
@@ -863,6 +1459,51 @@ export interface components {
 			updated_at: string;
 			user_type: string;
 		};
+		/** @description Role lookup item */
+		RoleLookupItem: {
+			code: string;
+			/** Format: uuid */
+			id: string;
+			name: string;
+			user_type: string;
+		};
+		Room: {
+			/** Format: uuid */
+			building_id: string | null;
+			building_name: string | null;
+			/** Format: int32 */
+			capacity: number;
+			code: string | null;
+			/** Format: date-time */
+			created_at: string;
+			description: string | null;
+			/** Format: int32 */
+			floor: number | null;
+			/** Format: uuid */
+			id: string;
+			name_en: string | null;
+			name_th: string;
+			room_type: string;
+			status: string;
+			/** Format: date-time */
+			updated_at: string;
+		};
+		/** @description Staff lookup item with title */
+		StaffLookupItem: {
+			/** Format: uuid */
+			id: string;
+			name: string;
+			title?: string;
+		};
+		/** @description Student lookup item with student_id and class_room for enrollment */
+		StudentLookupItem: {
+			class_room?: string;
+			/** Format: uuid */
+			id: string;
+			name: string;
+			student_id?: string;
+			title?: string;
+		};
 		UpdateMemberRequest: {
 			is_primary?: boolean | null;
 			/** Format: uuid */
@@ -910,6 +1551,9 @@ export interface components {
 			name_en?: string | null;
 			permissions?: string[] | null;
 			user_type?: string | null;
+		};
+		UserMenuData: {
+			groups: components['schemas']['MenuGroupResponse'][];
 		};
 		UserResponse: {
 			/** Format: date-time */
@@ -963,6 +1607,145 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+	listFeatures: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Feature toggles visible to the current user */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['FeatureListResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getFeature: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Feature toggle ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Feature toggle */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['FeatureToggleResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Feature module access denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Feature toggle not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	listMenuGroups: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Menu groups */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_MenuGroup'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	listMenuItems: {
+		parameters: {
+			query?: {
+				group_id?: string;
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Menu items visible to the current administrator */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_MenuItem'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
 	login: {
 		parameters: {
 			query?: never;
@@ -1176,6 +1959,474 @@ export interface operations {
 			};
 			/** @description User not found */
 			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	lookupAcademicYears: {
+		parameters: {
+			query?: {
+				/** @description Filter by specific Academic Year ID (for grade_levels, classrooms) */
+				academic_year_id?: string;
+				/** @description Filter for active items only (default: true) */
+				active_only?: boolean;
+				/** @description Filter by current active Academic Year (default: false unless specified) */
+				current_year?: boolean;
+				/** @description Filter by level type (kindergarten, primary, secondary) */
+				level_type?: string;
+				/** @description Maximum items to return (default: 100) */
+				limit?: number;
+				/** @description Filter to organization units where the current user is a member */
+				member_only?: boolean;
+				/** @description Search term */
+				search?: string;
+				subject_type?: string;
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Academic year lookup items */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_AcademicYearLookupItem'];
+				};
+			};
+			/** @description Authentication required or account inactive */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	lookupClassrooms: {
+		parameters: {
+			query?: {
+				/** @description Filter by specific Academic Year ID (for grade_levels, classrooms) */
+				academic_year_id?: string;
+				/** @description Filter for active items only (default: true) */
+				active_only?: boolean;
+				/** @description Filter by current active Academic Year (default: false unless specified) */
+				current_year?: boolean;
+				/** @description Filter by level type (kindergarten, primary, secondary) */
+				level_type?: string;
+				/** @description Maximum items to return (default: 100) */
+				limit?: number;
+				/** @description Filter to organization units where the current user is a member */
+				member_only?: boolean;
+				/** @description Search term */
+				search?: string;
+				subject_type?: string;
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Classroom lookup items */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_ClassroomLookupItem'];
+				};
+			};
+			/** @description Authentication required or account inactive */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	lookupGradeLevels: {
+		parameters: {
+			query?: {
+				/** @description Filter by specific Academic Year ID (for grade_levels, classrooms) */
+				academic_year_id?: string;
+				/** @description Filter for active items only (default: true) */
+				active_only?: boolean;
+				/** @description Filter by current active Academic Year (default: false unless specified) */
+				current_year?: boolean;
+				/** @description Filter by level type (kindergarten, primary, secondary) */
+				level_type?: string;
+				/** @description Maximum items to return (default: 100) */
+				limit?: number;
+				/** @description Filter to organization units where the current user is a member */
+				member_only?: boolean;
+				/** @description Search term */
+				search?: string;
+				subject_type?: string;
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Grade level lookup items */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_GradeLevelLookupItem'];
+				};
+			};
+			/** @description Authentication required or account inactive */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	lookupOrganizationUnits: {
+		parameters: {
+			query?: {
+				/** @description Filter by specific Academic Year ID (for grade_levels, classrooms) */
+				academic_year_id?: string;
+				/** @description Filter for active items only (default: true) */
+				active_only?: boolean;
+				/** @description Filter by current active Academic Year (default: false unless specified) */
+				current_year?: boolean;
+				/** @description Filter by level type (kindergarten, primary, secondary) */
+				level_type?: string;
+				/** @description Maximum items to return (default: 100) */
+				limit?: number;
+				/** @description Filter to organization units where the current user is a member */
+				member_only?: boolean;
+				/** @description Search term */
+				search?: string;
+				subject_type?: string;
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Organization unit lookup items */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_OrganizationUnitLookupItem'];
+				};
+			};
+			/** @description Authentication required or account inactive */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getLookupOrganizationUnit: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Organization unit ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Organization unit lookup item */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_OrganizationUnitLookupItem'];
+				};
+			};
+			/** @description Authentication required or account inactive */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Organization unit not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	lookupRoles: {
+		parameters: {
+			query?: {
+				/** @description Filter by specific Academic Year ID (for grade_levels, classrooms) */
+				academic_year_id?: string;
+				/** @description Filter for active items only (default: true) */
+				active_only?: boolean;
+				/** @description Filter by current active Academic Year (default: false unless specified) */
+				current_year?: boolean;
+				/** @description Filter by level type (kindergarten, primary, secondary) */
+				level_type?: string;
+				/** @description Maximum items to return (default: 100) */
+				limit?: number;
+				/** @description Filter to organization units where the current user is a member */
+				member_only?: boolean;
+				/** @description Search term */
+				search?: string;
+				subject_type?: string;
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Role lookup items */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_RoleLookupItem'];
+				};
+			};
+			/** @description Authentication required or account inactive */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Role lookup permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	lookupRooms: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Active room lookup items */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_Room'];
+				};
+			};
+			/** @description Authentication required or account inactive */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	lookupStaff: {
+		parameters: {
+			query?: {
+				/** @description Filter by specific Academic Year ID (for grade_levels, classrooms) */
+				academic_year_id?: string;
+				/** @description Filter for active items only (default: true) */
+				active_only?: boolean;
+				/** @description Filter by current active Academic Year (default: false unless specified) */
+				current_year?: boolean;
+				/** @description Filter by level type (kindergarten, primary, secondary) */
+				level_type?: string;
+				/** @description Maximum items to return (default: 100) */
+				limit?: number;
+				/** @description Filter to organization units where the current user is a member */
+				member_only?: boolean;
+				/** @description Search term */
+				search?: string;
+				subject_type?: string;
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Staff lookup items */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_StaffLookupItem'];
+				};
+			};
+			/** @description Authentication required or account inactive */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	lookupStudents: {
+		parameters: {
+			query?: {
+				/** @description Filter by specific Academic Year ID (for grade_levels, classrooms) */
+				academic_year_id?: string;
+				/** @description Filter for active items only (default: true) */
+				active_only?: boolean;
+				/** @description Filter by current active Academic Year (default: false unless specified) */
+				current_year?: boolean;
+				/** @description Filter by level type (kindergarten, primary, secondary) */
+				level_type?: string;
+				/** @description Maximum items to return (default: 100) */
+				limit?: number;
+				/** @description Filter to organization units where the current user is a member */
+				member_only?: boolean;
+				/** @description Search term */
+				search?: string;
+				subject_type?: string;
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Student lookup items */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_StudentLookupItem'];
+				};
+			};
+			/** @description Authentication required or account inactive */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	lookupSubjects: {
+		parameters: {
+			query?: {
+				/** @description Filter by specific Academic Year ID (for grade_levels, classrooms) */
+				academic_year_id?: string;
+				/** @description Filter for active items only (default: true) */
+				active_only?: boolean;
+				/** @description Filter by current active Academic Year (default: false unless specified) */
+				current_year?: boolean;
+				/** @description Filter by level type (kindergarten, primary, secondary) */
+				level_type?: string;
+				/** @description Maximum items to return (default: 100) */
+				limit?: number;
+				/** @description Filter to organization units where the current user is a member */
+				member_only?: boolean;
+				/** @description Search term */
+				search?: string;
+				subject_type?: string;
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Subject lookup items */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_LookupItem'];
+				};
+			};
+			/** @description Authentication required or account inactive */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getUserMenu: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Menu groups visible to the current user */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_UserMenuData'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
 				headers: {
 					[name: string]: unknown;
 				};

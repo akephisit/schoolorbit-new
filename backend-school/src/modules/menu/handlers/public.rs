@@ -5,8 +5,9 @@ use axum::{
 };
 use serde::Serialize;
 use std::collections::HashMap;
+use utoipa::ToSchema;
 
-use crate::api_response::ApiResponse;
+use crate::api_response::{ApiErrorResponse, ApiResponse};
 use crate::error::AppError;
 use crate::middleware::permission::ActorContext;
 use crate::modules::menu::models::*;
@@ -14,11 +15,21 @@ use crate::modules::menu::services::public_menu_service::{self, MenuRow};
 use crate::utils::request_context::actor_tenant_context;
 use crate::AppState;
 
-#[derive(Debug, Serialize)]
-struct UserMenuData {
+#[derive(Debug, Serialize, ToSchema)]
+pub struct UserMenuData {
     groups: Vec<MenuGroupResponse>,
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/menu/user",
+    operation_id = "getUserMenu",
+    tag = "menu",
+    responses(
+        (status = 200, description = "Menu groups visible to the current user", body = ApiResponse<UserMenuData>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse)
+    )
+)]
 pub async fn get_user_menu(
     State(state): State<AppState>,
     headers: HeaderMap,

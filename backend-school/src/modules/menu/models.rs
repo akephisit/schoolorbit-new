@@ -1,63 +1,75 @@
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
+use utoipa::ToSchema;
 use uuid::Uuid;
 
 /// Menu Group
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow, ToSchema)]
 pub struct MenuGroup {
     pub id: Uuid,
     pub code: String,
     pub name: String,
+    #[schema(required = true)]
     pub name_en: Option<String>,
+    #[schema(required = true)]
     pub icon: Option<String>,
     pub display_order: i32,
     pub is_active: bool,
 }
 
 /// Menu Item
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow, ToSchema)]
 pub struct MenuItem {
     pub id: Uuid,
     pub code: String,
     pub name: String,
+    #[schema(required = true)]
     pub name_en: Option<String>,
     pub path: String,
+    #[schema(required = true)]
     pub icon: Option<String>,
+    #[schema(required = true)]
     pub required_permission: Option<String>,
     pub user_type: String, // 'staff', 'student', or 'parent'
+    #[schema(required = true)]
     pub group_id: Option<Uuid>,
+    #[schema(required = true)]
     pub parent_id: Option<Uuid>,
     pub display_order: i32,
     pub is_active: bool,
 }
 
 /// Feature Toggle
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow, ToSchema)]
 pub struct FeatureToggle {
     pub id: Uuid,
     pub code: String,
     pub name: String,
+    #[schema(required = true)]
     pub name_en: Option<String>,
+    #[schema(required = true)]
     pub module: Option<String>,
     pub is_enabled: bool,
 }
 
 /// Menu Item Response (for user menu API)
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct MenuItemResponse {
     pub id: Uuid,
     pub code: String,
     pub name: String,
     pub path: String,
+    #[schema(required = true)]
     pub icon: Option<String>,
 }
 
 /// Menu Group Response (for user menu API)
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct MenuGroupResponse {
     pub code: String,
     pub name: String,
+    #[schema(required = true)]
     pub icon: Option<String>,
     pub workspace_code: String,
     pub items: Vec<MenuItemResponse>,

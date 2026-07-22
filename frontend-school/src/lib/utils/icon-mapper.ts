@@ -15,7 +15,7 @@ type LucideIconCtor = typeof LucideIcon;
  * @param iconName - Icon name in kebab-case (e.g., 'layout-dashboard', 'users', 'shield')
  * @returns Lucide Svelte icon component
  */
-export function getIconComponent(iconName?: string): LucideIconCtor {
+export function getIconComponent(iconName?: string | null): LucideIconCtor {
 	if (!iconName) return Icons.Circle;
 
 	// Convert 'layout-dashboard' to 'LayoutDashboard'

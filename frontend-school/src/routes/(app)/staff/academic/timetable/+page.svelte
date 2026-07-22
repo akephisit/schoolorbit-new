@@ -736,7 +736,7 @@
 			instructor_ids: instructorIds,
 			instructor_names: instructorNames,
 			classroom_name: classroom?.name,
-			room_code: room?.code,
+			room_code: room?.code ?? undefined,
 			period_name: period?.name ?? undefined,
 			start_time: period?.start_time,
 			end_time: period?.end_time,

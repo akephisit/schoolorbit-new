@@ -177,7 +177,10 @@ test('generated authorization contracts cover implemented routes and frontend DT
 	assert.match(rolesApi, /import\s+type\s+\{\s*components\s*\}/);
 	assert.doesNotMatch(rolesApi, /export\s+interface\s+(?:Role|Permission|UserRoleAssignment)\b/);
 	assert.match(staffApi, /import\s+type\s+\{\s*components\s*\}/);
-	assert.match(staffApi, /export\s+interface\s+OrganizationUnitLookupItem\s*\{/);
+	assert.match(
+		staffApi,
+		/OrganizationUnitLookupItem\s*=\s*Schemas\['OrganizationUnitLookupItem'\]/
+	);
 	assert.match(
 		staffApi,
 		/listOrganizationUnitsLookup[\s\S]*Promise<ApiResponse<OrganizationUnitLookupItem\[\]>>/
@@ -203,6 +206,48 @@ test('generated schema lookup uses the complete property name', () => {
 
 	assert.match(extractGeneratedSchemaBlock(source, 'UserResponse'), /id:\s*string/);
 	assert.doesNotMatch(extractGeneratedSchemaBlock(source, 'UserResponse'), /data:\s*unknown/);
+});
+
+test('generated lookup, menu, and feature contracts own read transport DTOs', async () => {
+	const contract = JSON.parse(await readRepoFile('contracts/openapi/school-api.json'));
+	const lookupApi = await readRepoFile('frontend-school/src/lib/api/lookup.ts');
+	const staffApi = await readRepoFile('frontend-school/src/lib/api/staff.ts');
+	const menuApi = await readRepoFile('frontend-school/src/lib/api/menu.ts');
+	const menuAdminApi = await readRepoFile('frontend-school/src/lib/api/menu-admin.ts');
+	const featureApi = await readRepoFile('frontend-school/src/lib/api/feature-toggles.ts');
+	const expected = [
+		['/api/menu/user', 'get', 'getUserMenu'],
+		['/api/admin/features', 'get', 'listFeatures'],
+		['/api/admin/features/{id}', 'get', 'getFeature'],
+		['/api/admin/menu/groups', 'get', 'listMenuGroups'],
+		['/api/admin/menu/items', 'get', 'listMenuItems'],
+		['/api/lookup/staff', 'get', 'lookupStaff'],
+		['/api/lookup/students', 'get', 'lookupStudents'],
+		['/api/lookup/rooms', 'get', 'lookupRooms'],
+		['/api/lookup/roles', 'get', 'lookupRoles'],
+		['/api/lookup/organization-units', 'get', 'lookupOrganizationUnits'],
+		['/api/lookup/organization-units/{id}', 'get', 'getLookupOrganizationUnit'],
+		['/api/lookup/grade-levels', 'get', 'lookupGradeLevels'],
+		['/api/lookup/classrooms', 'get', 'lookupClassrooms'],
+		['/api/lookup/academic-years', 'get', 'lookupAcademicYears'],
+		['/api/lookup/subjects', 'get', 'lookupSubjects']
+	];
+
+	for (const [route, method, operationId] of expected) {
+		assert.equal(contract.paths?.[route]?.[method]?.operationId, operationId, `${method} ${route}`);
+	}
+
+	for (const source of [lookupApi, staffApi, menuApi, menuAdminApi, featureApi]) {
+		assert.match(source, /import\s+type\s+\{\s*components\s*\}/);
+	}
+	assert.doesNotMatch(
+		lookupApi,
+		/export\s+interface\s+(?:LookupItem|StaffLookupItem|RoleLookupItem|OrganizationUnitLookupItem|GradeLevelLookupItem|ClassroomLookupItem|AcademicYearLookupItem|StudentLookupItem|RoomLookupItem)\b/
+	);
+	assert.match(staffApi, /OrganizationUnitLookupItem\s*=\s*Schemas\['OrganizationUnitLookupItem'\]/);
+	assert.doesNotMatch(menuApi, /export\s+interface\s+(?:MenuItem|MenuGroup)\b/);
+	assert.doesNotMatch(menuAdminApi, /export\s+interface\s+(?:MenuGroup|MenuItem)\b/);
+	assert.doesNotMatch(featureApi, /export\s+interface\s+FeatureToggle\b/);
 });
 
 test('project rules document generated API contract ownership', async () => {

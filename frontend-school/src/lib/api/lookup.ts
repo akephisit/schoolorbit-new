@@ -3,73 +3,23 @@
 // Generic lookup responses must stay small; workflow-specific detail belongs in options endpoints.
 
 import { apiClient, requireApiData } from '$lib/api/client';
+import type { components } from '$lib/api/generated/school-api';
+
+type Schemas = components['schemas'];
 
 // ===================================================================
 // Types
 // ===================================================================
 
-export interface LookupItem {
-	id: string;
-	name: string;
-	code?: string;
-	grade_level_ids?: string[];
-}
-
-export interface StaffLookupItem {
-	id: string;
-	name: string;
-	title?: string;
-}
-
-export interface RoleLookupItem {
-	id: string;
-	code: string;
-	name: string;
-	user_type: string;
-}
-
-export interface OrganizationUnitLookupItem {
-	id: string;
-	code: string;
-	name: string;
-	parent_unit_id?: string;
-	unit_type?: string;
-	subject_group_id?: string;
-}
-
-export interface GradeLevelLookupItem {
-	id: string;
-	code: string;
-	name: string;
-	short_name?: string;
-	level_order: number;
-}
-
-export interface ClassroomLookupItem {
-	id: string;
-	name: string;
-	grade_level?: string;
-	grade_level_id?: string;
-}
-
-export interface AcademicYearLookupItem {
-	id: string;
-	name: string;
-	is_current: boolean;
-}
-
-export interface StudentLookupItem {
-	id: string;
-	name: string;
-	title?: string;
-	student_id?: string;
-	class_room?: string;
-}
-
-export interface LookupResponse<T> {
-	success: boolean;
-	data: T[];
-}
+export type LookupItem = Schemas['LookupItem'];
+export type StaffLookupItem = Schemas['StaffLookupItem'];
+export type RoleLookupItem = Schemas['RoleLookupItem'];
+export type OrganizationUnitLookupItem = Schemas['OrganizationUnitLookupItem'];
+export type GradeLevelLookupItem = Schemas['GradeLevelLookupItem'];
+export type ClassroomLookupItem = Schemas['ClassroomLookupItem'];
+export type AcademicYearLookupItem = Schemas['AcademicYearLookupItem'];
+export type StudentLookupItem = Schemas['StudentLookupItem'];
+export type RoomLookupItem = Schemas['Room'];
 
 export interface LookupOptions {
 	/** Filter for active items only (default: true) */
@@ -177,15 +127,6 @@ export async function lookupAcademicYears(
 	options?: LookupOptions
 ): Promise<AcademicYearLookupItem[]> {
 	return fetchLookup<AcademicYearLookupItem>('academic-years', options);
-}
-
-export interface RoomLookupItem {
-	id: string;
-	name_th: string;
-	name_en?: string;
-	code?: string;
-	room_type: string;
-	building_name?: string;
 }
 
 /**

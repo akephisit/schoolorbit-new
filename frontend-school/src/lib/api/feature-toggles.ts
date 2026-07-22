@@ -4,26 +4,11 @@
  */
 
 import { apiClient, requireApiData } from '$lib/api/client';
+import type { components } from '$lib/api/generated/school-api';
 
-export interface FeatureToggle {
-	id: string;
-	code: string;
-	name: string;
-	name_en: string | null;
-	module: string | null;
-	is_enabled: boolean;
-}
+type Schemas = components['schemas'];
 
-export interface FeatureListResponse {
-	success: boolean;
-	data: FeatureToggle[];
-}
-
-export interface FeatureToggleResponse {
-	success: boolean;
-	data: FeatureToggle | null;
-	message: string | null;
-}
+export type FeatureToggle = Schemas['FeatureToggle'];
 
 export interface UpdateFeatureRequest {
 	is_enabled?: boolean;

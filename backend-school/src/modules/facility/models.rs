@@ -1,6 +1,7 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
+use utoipa::ToSchema;
 use uuid::Uuid;
 
 #[derive(Debug, Serialize, Deserialize, FromRow)]
@@ -30,23 +31,29 @@ pub struct UpdateBuildingRequest {
     pub description: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Serialize, Deserialize, FromRow, ToSchema)]
 pub struct Room {
     pub id: Uuid,
+    #[schema(required = true)]
     pub building_id: Option<Uuid>,
     pub name_th: String,
+    #[schema(required = true)]
     pub name_en: Option<String>,
+    #[schema(required = true)]
     pub code: Option<String>,
     pub room_type: String,
     pub capacity: i32,
+    #[schema(required = true)]
     pub floor: Option<i32>,
     pub status: String,
+    #[schema(required = true)]
     pub description: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 
     // Joined
     #[sqlx(default)]
+    #[schema(required = true)]
     pub building_name: Option<String>,
 }
 

@@ -1,6 +1,32 @@
 {
   "components": {
     "schemas": {
+      "AcademicYearLookupItem": {
+        "description": "Academic year lookup item",
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "is_current": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "year": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "year",
+          "is_current"
+        ],
+        "type": "object"
+      },
       "AddMemberRequest": {
         "properties": {
           "is_primary": {
@@ -305,6 +331,71 @@
         ],
         "type": "object"
       },
+      "ApiResponse_OrganizationUnitLookupItem": {
+        "properties": {
+          "data": {
+            "description": "Organization unit lookup item",
+            "properties": {
+              "category": {
+                "type": "string"
+              },
+              "code": {
+                "type": "string"
+              },
+              "description": {
+                "type": "string"
+              },
+              "display_order": {
+                "format": "int32",
+                "type": "integer"
+              },
+              "id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "is_active": {
+                "type": "boolean"
+              },
+              "name": {
+                "type": "string"
+              },
+              "name_en": {
+                "type": "string"
+              },
+              "parent_unit_id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "subject_group_id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "unit_type": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "code",
+              "name",
+              "display_order",
+              "is_active"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
       "ApiResponse_ProfileResponse": {
         "properties": {
           "data": {
@@ -530,6 +621,35 @@
         ],
         "type": "object"
       },
+      "ApiResponse_UserMenuData": {
+        "properties": {
+          "data": {
+            "properties": {
+              "groups": {
+                "items": {
+                  "$ref": "#/components/schemas/MenuGroupResponse"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "groups"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
       "ApiResponse_UserResponse": {
         "properties": {
           "data": {
@@ -647,6 +767,92 @@
         ],
         "type": "object"
       },
+      "ApiResponse_Vec_AcademicYearLookupItem": {
+        "properties": {
+          "data": {
+            "items": {
+              "description": "Academic year lookup item",
+              "properties": {
+                "id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "is_current": {
+                  "type": "boolean"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "year": {
+                  "format": "int32",
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "id",
+                "name",
+                "year",
+                "is_current"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_Vec_ClassroomLookupItem": {
+        "properties": {
+          "data": {
+            "items": {
+              "description": "Classroom lookup item",
+              "properties": {
+                "grade_level": {
+                  "type": "string"
+                },
+                "grade_level_id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "name"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
       "ApiResponse_Vec_DelegatablePermission": {
         "properties": {
           "data": {
@@ -748,6 +954,261 @@
                 "reason",
                 "started_at",
                 "expires_at"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_Vec_GradeLevelLookupItem": {
+        "properties": {
+          "data": {
+            "items": {
+              "description": "Grade level lookup item",
+              "properties": {
+                "code": {
+                  "type": "string"
+                },
+                "id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "level_order": {
+                  "format": "int32",
+                  "type": "integer"
+                },
+                "level_type": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "short_name": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "code",
+                "name",
+                "short_name",
+                "level_type",
+                "level_order"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_Vec_LookupItem": {
+        "properties": {
+          "data": {
+            "items": {
+              "description": "Generic lookup item - minimal data for dropdowns",
+              "properties": {
+                "code": {
+                  "type": "string"
+                },
+                "grade_level_ids": {
+                  "items": {
+                    "format": "uuid",
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "name"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_Vec_MenuGroup": {
+        "properties": {
+          "data": {
+            "items": {
+              "description": "Menu Group",
+              "properties": {
+                "code": {
+                  "type": "string"
+                },
+                "display_order": {
+                  "format": "int32",
+                  "type": "integer"
+                },
+                "icon": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "is_active": {
+                  "type": "boolean"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "name_en": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "code",
+                "name",
+                "name_en",
+                "icon",
+                "display_order",
+                "is_active"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_Vec_MenuItem": {
+        "properties": {
+          "data": {
+            "items": {
+              "description": "Menu Item",
+              "properties": {
+                "code": {
+                  "type": "string"
+                },
+                "display_order": {
+                  "format": "int32",
+                  "type": "integer"
+                },
+                "group_id": {
+                  "format": "uuid",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "icon": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "is_active": {
+                  "type": "boolean"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "name_en": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "parent_id": {
+                  "format": "uuid",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "path": {
+                  "type": "string"
+                },
+                "required_permission": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "user_type": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "code",
+                "name",
+                "name_en",
+                "path",
+                "icon",
+                "required_permission",
+                "user_type",
+                "group_id",
+                "parent_id",
+                "display_order",
+                "is_active"
               ],
               "type": "object"
             },
@@ -993,6 +1454,74 @@
         ],
         "type": "object"
       },
+      "ApiResponse_Vec_OrganizationUnitLookupItem": {
+        "properties": {
+          "data": {
+            "items": {
+              "description": "Organization unit lookup item",
+              "properties": {
+                "category": {
+                  "type": "string"
+                },
+                "code": {
+                  "type": "string"
+                },
+                "description": {
+                  "type": "string"
+                },
+                "display_order": {
+                  "format": "int32",
+                  "type": "integer"
+                },
+                "id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "is_active": {
+                  "type": "boolean"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "name_en": {
+                  "type": "string"
+                },
+                "parent_unit_id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "subject_group_id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "unit_type": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "code",
+                "name",
+                "display_order",
+                "is_active"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
       "ApiResponse_Vec_Permission": {
         "properties": {
           "data": {
@@ -1137,11 +1666,237 @@
         ],
         "type": "object"
       },
+      "ApiResponse_Vec_RoleLookupItem": {
+        "properties": {
+          "data": {
+            "items": {
+              "description": "Role lookup item",
+              "properties": {
+                "code": {
+                  "type": "string"
+                },
+                "id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "user_type": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "code",
+                "name",
+                "user_type"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_Vec_Room": {
+        "properties": {
+          "data": {
+            "items": {
+              "properties": {
+                "building_id": {
+                  "format": "uuid",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "building_name": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "capacity": {
+                  "format": "int32",
+                  "type": "integer"
+                },
+                "code": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "created_at": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "description": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "floor": {
+                  "format": "int32",
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "name_en": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "name_th": {
+                  "type": "string"
+                },
+                "room_type": {
+                  "type": "string"
+                },
+                "status": {
+                  "type": "string"
+                },
+                "updated_at": {
+                  "format": "date-time",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "building_id",
+                "name_th",
+                "name_en",
+                "code",
+                "room_type",
+                "capacity",
+                "floor",
+                "status",
+                "description",
+                "created_at",
+                "updated_at",
+                "building_name"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_Vec_StaffLookupItem": {
+        "properties": {
+          "data": {
+            "items": {
+              "description": "Staff lookup item with title",
+              "properties": {
+                "id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "name"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
       "ApiResponse_Vec_String": {
         "properties": {
           "data": {
             "items": {
               "type": "string"
+            },
+            "type": "array"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_Vec_StudentLookupItem": {
+        "properties": {
+          "data": {
+            "items": {
+              "description": "Student lookup item with student_id and class_room for enrollment",
+              "properties": {
+                "class_room": {
+                  "type": "string"
+                },
+                "id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "student_id": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "name"
+              ],
+              "type": "object"
             },
             "type": "array"
           },
@@ -1287,6 +2042,30 @@
         "required": [
           "currentPassword",
           "newPassword"
+        ],
+        "type": "object"
+      },
+      "ClassroomLookupItem": {
+        "description": "Classroom lookup item",
+        "properties": {
+          "grade_level": {
+            "type": "string"
+          },
+          "grade_level_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
         ],
         "type": "object"
       },
@@ -1536,6 +2315,129 @@
       "EmptyData": {
         "type": "object"
       },
+      "FeatureListResponse": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/FeatureToggle"
+            },
+            "type": "array"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "FeatureToggle": {
+        "description": "Feature Toggle",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "is_enabled": {
+            "type": "boolean"
+          },
+          "module": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "name_en": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "name",
+          "name_en",
+          "module",
+          "is_enabled"
+        ],
+        "type": "object"
+      },
+      "FeatureToggleResponse": {
+        "properties": {
+          "data": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/FeatureToggle"
+              }
+            ]
+          },
+          "message": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data",
+          "message"
+        ],
+        "type": "object"
+      },
+      "GradeLevelLookupItem": {
+        "description": "Grade level lookup item",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "level_order": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "level_type": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "short_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "name",
+          "short_name",
+          "level_type",
+          "level_order"
+        ],
+        "type": "object"
+      },
       "ListMembersQuery": {
         "properties": {
           "include_children": {
@@ -1576,6 +2478,218 @@
         "required": [
           "username",
           "password"
+        ],
+        "type": "object"
+      },
+      "LookupItem": {
+        "description": "Generic lookup item - minimal data for dropdowns",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "grade_level_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "type": "object"
+      },
+      "MenuGroup": {
+        "description": "Menu Group",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "display_order": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "icon": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "is_active": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "name_en": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "name",
+          "name_en",
+          "icon",
+          "display_order",
+          "is_active"
+        ],
+        "type": "object"
+      },
+      "MenuGroupResponse": {
+        "description": "Menu Group Response (for user menu API)",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "icon": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/MenuItemResponse"
+            },
+            "type": "array"
+          },
+          "name": {
+            "type": "string"
+          },
+          "workspaceCode": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "name",
+          "icon",
+          "workspaceCode",
+          "items"
+        ],
+        "type": "object"
+      },
+      "MenuItem": {
+        "description": "Menu Item",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "display_order": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "group_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "icon": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "is_active": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "name_en": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "parent_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "path": {
+            "type": "string"
+          },
+          "required_permission": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "user_type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "name",
+          "name_en",
+          "path",
+          "icon",
+          "required_permission",
+          "user_type",
+          "group_id",
+          "parent_id",
+          "display_order",
+          "is_active"
+        ],
+        "type": "object"
+      },
+      "MenuItemResponse": {
+        "description": "Menu Item Response (for user menu API)",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "icon": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "name",
+          "path",
+          "icon"
         ],
         "type": "object"
       },
@@ -1767,6 +2881,56 @@
           "subject_group_id",
           "created_at",
           "updated_at"
+        ],
+        "type": "object"
+      },
+      "OrganizationUnitLookupItem": {
+        "description": "Organization unit lookup item",
+        "properties": {
+          "category": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "display_order": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "is_active": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "name_en": {
+            "type": "string"
+          },
+          "parent_unit_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "subject_group_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "unit_type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "name",
+          "display_order",
+          "is_active"
         ],
         "type": "object"
       },
@@ -2009,6 +3173,160 @@
         ],
         "type": "object"
       },
+      "RoleLookupItem": {
+        "description": "Role lookup item",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "user_type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "name",
+          "user_type"
+        ],
+        "type": "object"
+      },
+      "Room": {
+        "properties": {
+          "building_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "building_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "capacity": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "code": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "floor": {
+            "format": "int32",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "name_en": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name_th": {
+            "type": "string"
+          },
+          "room_type": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "building_id",
+          "name_th",
+          "name_en",
+          "code",
+          "room_type",
+          "capacity",
+          "floor",
+          "status",
+          "description",
+          "created_at",
+          "updated_at",
+          "building_name"
+        ],
+        "type": "object"
+      },
+      "StaffLookupItem": {
+        "description": "Staff lookup item with title",
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "type": "object"
+      },
+      "StudentLookupItem": {
+        "description": "Student lookup item with student_id and class_room for enrollment",
+        "properties": {
+          "class_room": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "student_id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "type": "object"
+      },
       "UpdateMemberRequest": {
         "properties": {
           "is_primary": {
@@ -2248,6 +3566,20 @@
         },
         "type": "object"
       },
+      "UserMenuData": {
+        "properties": {
+          "groups": {
+            "items": {
+              "$ref": "#/components/schemas/MenuGroupResponse"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "groups"
+        ],
+        "type": "object"
+      },
       "UserResponse": {
         "properties": {
           "createdAt": {
@@ -2415,6 +3747,169 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/admin/features": {
+      "get": {
+        "operationId": "listFeatures",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeatureListResponse"
+                }
+              }
+            },
+            "description": "Feature toggles visible to the current user"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          }
+        },
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/api/admin/features/{id}": {
+      "get": {
+        "operationId": "getFeature",
+        "parameters": [
+          {
+            "description": "Feature toggle ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeatureToggleResponse"
+                }
+              }
+            },
+            "description": "Feature toggle"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Feature module access denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Feature toggle not found"
+          }
+        },
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/api/admin/menu/groups": {
+      "get": {
+        "operationId": "listMenuGroups",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_MenuGroup"
+                }
+              }
+            },
+            "description": "Menu groups"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          }
+        },
+        "tags": [
+          "menu"
+        ]
+      }
+    },
+    "/api/admin/menu/items": {
+      "get": {
+        "operationId": "listMenuItems",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "group_id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_MenuItem"
+                }
+              }
+            },
+            "description": "Menu items visible to the current administrator"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          }
+        },
+        "tags": [
+          "menu"
+        ]
+      }
+    },
     "/api/auth/login": {
       "post": {
         "operationId": "login",
@@ -2666,6 +4161,978 @@
         "summary": "Update profile handler (PUT /me/profile)\nUpdates user's editable fields only\nUpdate profile handler (PUT /me/profile)\nUpdates user's editable fields only\nUpdate profile handler (PUT /me/profile)\nUpdates user's editable fields only",
         "tags": [
           "auth"
+        ]
+      }
+    },
+    "/api/lookup/academic-years": {
+      "get": {
+        "operationId": "lookupAcademicYears",
+        "parameters": [
+          {
+            "description": "Filter for active items only (default: true)",
+            "in": "query",
+            "name": "active_only",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Search term",
+            "in": "query",
+            "name": "search",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Maximum items to return (default: 100)",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Filter by specific Academic Year ID (for grade_levels, classrooms)",
+            "in": "query",
+            "name": "academic_year_id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Filter by current active Academic Year (default: false unless specified)",
+            "in": "query",
+            "name": "current_year",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Filter by level type (kindergarten, primary, secondary)",
+            "in": "query",
+            "name": "level_type",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "subject_type",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Filter to organization units where the current user is a member",
+            "in": "query",
+            "name": "member_only",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_AcademicYearLookupItem"
+                }
+              }
+            },
+            "description": "Academic year lookup items"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required or account inactive"
+          }
+        },
+        "summary": "GET /api/lookup/academic-years\nReturns minimal academic year data for dropdowns",
+        "tags": [
+          "lookup"
+        ]
+      }
+    },
+    "/api/lookup/classrooms": {
+      "get": {
+        "operationId": "lookupClassrooms",
+        "parameters": [
+          {
+            "description": "Filter for active items only (default: true)",
+            "in": "query",
+            "name": "active_only",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Search term",
+            "in": "query",
+            "name": "search",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Maximum items to return (default: 100)",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Filter by specific Academic Year ID (for grade_levels, classrooms)",
+            "in": "query",
+            "name": "academic_year_id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Filter by current active Academic Year (default: false unless specified)",
+            "in": "query",
+            "name": "current_year",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Filter by level type (kindergarten, primary, secondary)",
+            "in": "query",
+            "name": "level_type",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "subject_type",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Filter to organization units where the current user is a member",
+            "in": "query",
+            "name": "member_only",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_ClassroomLookupItem"
+                }
+              }
+            },
+            "description": "Classroom lookup items"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required or account inactive"
+          }
+        },
+        "summary": "GET /api/lookup/classrooms\nReturns minimal classroom data for dropdowns",
+        "tags": [
+          "lookup"
+        ]
+      }
+    },
+    "/api/lookup/grade-levels": {
+      "get": {
+        "operationId": "lookupGradeLevels",
+        "parameters": [
+          {
+            "description": "Filter for active items only (default: true)",
+            "in": "query",
+            "name": "active_only",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Search term",
+            "in": "query",
+            "name": "search",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Maximum items to return (default: 100)",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Filter by specific Academic Year ID (for grade_levels, classrooms)",
+            "in": "query",
+            "name": "academic_year_id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Filter by current active Academic Year (default: false unless specified)",
+            "in": "query",
+            "name": "current_year",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Filter by level type (kindergarten, primary, secondary)",
+            "in": "query",
+            "name": "level_type",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "subject_type",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Filter to organization units where the current user is a member",
+            "in": "query",
+            "name": "member_only",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_GradeLevelLookupItem"
+                }
+              }
+            },
+            "description": "Grade level lookup items"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required or account inactive"
+          }
+        },
+        "summary": "GET /api/lookup/grade-levels\nReturns minimal grade level data for dropdowns",
+        "tags": [
+          "lookup"
+        ]
+      }
+    },
+    "/api/lookup/organization-units": {
+      "get": {
+        "operationId": "lookupOrganizationUnits",
+        "parameters": [
+          {
+            "description": "Filter for active items only (default: true)",
+            "in": "query",
+            "name": "active_only",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Search term",
+            "in": "query",
+            "name": "search",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Maximum items to return (default: 100)",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Filter by specific Academic Year ID (for grade_levels, classrooms)",
+            "in": "query",
+            "name": "academic_year_id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Filter by current active Academic Year (default: false unless specified)",
+            "in": "query",
+            "name": "current_year",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Filter by level type (kindergarten, primary, secondary)",
+            "in": "query",
+            "name": "level_type",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "subject_type",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Filter to organization units where the current user is a member",
+            "in": "query",
+            "name": "member_only",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_OrganizationUnitLookupItem"
+                }
+              }
+            },
+            "description": "Organization unit lookup items"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required or account inactive"
+          }
+        },
+        "summary": "GET /api/lookup/organization-units\nReturns organization unit data. Supports ?member_only=true to filter to user's own units.",
+        "tags": [
+          "lookup"
+        ]
+      }
+    },
+    "/api/lookup/organization-units/{id}": {
+      "get": {
+        "operationId": "getLookupOrganizationUnit",
+        "parameters": [
+          {
+            "description": "Organization unit ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_OrganizationUnitLookupItem"
+                }
+              }
+            },
+            "description": "Organization unit lookup item"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required or account inactive"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Organization unit not found"
+          }
+        },
+        "summary": "GET /api/lookup/organization-units/:id\nReturns single organization unit by ID (auth only, no permission required)",
+        "tags": [
+          "lookup"
+        ]
+      }
+    },
+    "/api/lookup/roles": {
+      "get": {
+        "operationId": "lookupRoles",
+        "parameters": [
+          {
+            "description": "Filter for active items only (default: true)",
+            "in": "query",
+            "name": "active_only",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Search term",
+            "in": "query",
+            "name": "search",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Maximum items to return (default: 100)",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Filter by specific Academic Year ID (for grade_levels, classrooms)",
+            "in": "query",
+            "name": "academic_year_id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Filter by current active Academic Year (default: false unless specified)",
+            "in": "query",
+            "name": "current_year",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Filter by level type (kindergarten, primary, secondary)",
+            "in": "query",
+            "name": "level_type",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "subject_type",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Filter to organization units where the current user is a member",
+            "in": "query",
+            "name": "member_only",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_RoleLookupItem"
+                }
+              }
+            },
+            "description": "Role lookup items"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required or account inactive"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Role lookup permission denied"
+          }
+        },
+        "summary": "GET /api/lookup/roles\nReturns minimal role data for dropdowns",
+        "tags": [
+          "lookup"
+        ]
+      }
+    },
+    "/api/lookup/rooms": {
+      "get": {
+        "operationId": "lookupRooms",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_Room"
+                }
+              }
+            },
+            "description": "Active room lookup items"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required or account inactive"
+          }
+        },
+        "summary": "GET /api/lookup/rooms\nReturns active rooms with building info",
+        "tags": [
+          "lookup"
+        ]
+      }
+    },
+    "/api/lookup/staff": {
+      "get": {
+        "operationId": "lookupStaff",
+        "parameters": [
+          {
+            "description": "Filter for active items only (default: true)",
+            "in": "query",
+            "name": "active_only",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Search term",
+            "in": "query",
+            "name": "search",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Maximum items to return (default: 100)",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Filter by specific Academic Year ID (for grade_levels, classrooms)",
+            "in": "query",
+            "name": "academic_year_id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Filter by current active Academic Year (default: false unless specified)",
+            "in": "query",
+            "name": "current_year",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Filter by level type (kindergarten, primary, secondary)",
+            "in": "query",
+            "name": "level_type",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "subject_type",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Filter to organization units where the current user is a member",
+            "in": "query",
+            "name": "member_only",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_StaffLookupItem"
+                }
+              }
+            },
+            "description": "Staff lookup items"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required or account inactive"
+          }
+        },
+        "summary": "GET /api/lookup/staff\nReturns minimal staff data for dropdowns (id, name, title)",
+        "tags": [
+          "lookup"
+        ]
+      }
+    },
+    "/api/lookup/students": {
+      "get": {
+        "operationId": "lookupStudents",
+        "parameters": [
+          {
+            "description": "Filter for active items only (default: true)",
+            "in": "query",
+            "name": "active_only",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Search term",
+            "in": "query",
+            "name": "search",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Maximum items to return (default: 100)",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Filter by specific Academic Year ID (for grade_levels, classrooms)",
+            "in": "query",
+            "name": "academic_year_id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Filter by current active Academic Year (default: false unless specified)",
+            "in": "query",
+            "name": "current_year",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Filter by level type (kindergarten, primary, secondary)",
+            "in": "query",
+            "name": "level_type",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "subject_type",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Filter to organization units where the current user is a member",
+            "in": "query",
+            "name": "member_only",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_StudentLookupItem"
+                }
+              }
+            },
+            "description": "Student lookup items"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required or account inactive"
+          }
+        },
+        "summary": "GET /api/lookup/students\nReturns minimal student data for dropdowns (with student_id and class_room)",
+        "tags": [
+          "lookup"
+        ]
+      }
+    },
+    "/api/lookup/subjects": {
+      "get": {
+        "operationId": "lookupSubjects",
+        "parameters": [
+          {
+            "description": "Filter for active items only (default: true)",
+            "in": "query",
+            "name": "active_only",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Search term",
+            "in": "query",
+            "name": "search",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Maximum items to return (default: 100)",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Filter by specific Academic Year ID (for grade_levels, classrooms)",
+            "in": "query",
+            "name": "academic_year_id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Filter by current active Academic Year (default: false unless specified)",
+            "in": "query",
+            "name": "current_year",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Filter by level type (kindergarten, primary, secondary)",
+            "in": "query",
+            "name": "level_type",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "subject_type",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Filter to organization units where the current user is a member",
+            "in": "query",
+            "name": "member_only",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_LookupItem"
+                }
+              }
+            },
+            "description": "Subject lookup items"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required or account inactive"
+          }
+        },
+        "summary": "GET /api/lookup/subjects\nReturns minimal subject data for dropdowns",
+        "tags": [
+          "lookup"
+        ]
+      }
+    },
+    "/api/menu/user": {
+      "get": {
+        "operationId": "getUserMenu",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_UserMenuData"
+                }
+              }
+            },
+            "description": "Menu groups visible to the current user"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          }
+        },
+        "tags": [
+          "menu"
         ]
       }
     },
@@ -4133,6 +6600,18 @@
     {
       "description": "Organization units and scoped access",
       "name": "organization"
+    },
+    {
+      "description": "Authenticated reference-data lookups",
+      "name": "lookup"
+    },
+    {
+      "description": "User and administrator menu reads",
+      "name": "menu"
+    },
+    {
+      "description": "System feature reads",
+      "name": "system"
     }
   ]
 }

@@ -4,53 +4,12 @@
  */
 
 import { apiClient, requireApiData } from '$lib/api/client';
+import type { components } from '$lib/api/generated/school-api';
 
-export interface MenuGroup {
-	id: string;
-	code: string;
-	name: string;
-	name_en: string | null;
-	icon: string | null;
-	display_order: number;
-	is_active: boolean;
-}
+type Schemas = components['schemas'];
 
-export interface MenuItem {
-	id: string;
-	code: string;
-	name: string;
-	name_en: string | null;
-	path: string;
-	icon: string | null;
-	required_permission: string | null; // Module name
-	user_type: string; // 'staff' | 'student' | 'parent'
-	group_id: string;
-	parent_id: string | null;
-	display_order: number;
-	is_active: boolean;
-}
-
-export interface MenuGroupListResponse {
-	success: boolean;
-	data: MenuGroup[];
-}
-
-export interface MenuItemListResponse {
-	success: boolean;
-	data: MenuItem[];
-}
-
-export interface MenuGroupResponse {
-	success: boolean;
-	data: MenuGroup | null;
-	message: string | null;
-}
-
-export interface MenuItemResponse {
-	success: boolean;
-	data: MenuItem | null;
-	message: string | null;
-}
+export type MenuGroup = Schemas['MenuGroup'];
+export type MenuItem = Schemas['MenuItem'];
 
 export interface CreateMenuGroupRequest {
 	code: string;

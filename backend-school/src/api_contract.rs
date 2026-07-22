@@ -3,6 +3,15 @@ use crate::modules::auth::models::{
     ChangePasswordRequest, LoginData, LoginRequest, ProfileResponse, UpdateProfileRequest,
     UserResponse,
 };
+use crate::modules::facility::models::Room;
+use crate::modules::lookup::models::{
+    AcademicYearLookupItem, ClassroomLookupItem, GradeLevelLookupItem, LookupItem,
+    OrganizationUnitLookupItem, RoleLookupItem, StaffLookupItem, StudentLookupItem,
+};
+use crate::modules::menu::handlers::public::UserMenuData;
+use crate::modules::menu::models::{
+    FeatureToggle, MenuGroup, MenuGroupResponse, MenuItem, MenuItemResponse,
+};
 use crate::modules::staff::handlers::organization_delegations::{
     CreateDelegationRequest, DelegationIdData, DelegationItem,
 };
@@ -17,6 +26,9 @@ use crate::modules::staff::models::{
 };
 use crate::modules::staff::services::organization_delegation_service::DelegatablePermission;
 use crate::modules::staff::services::organization_permission_service::OrganizationPermissionGrant;
+use crate::modules::system::handlers::feature_toggles::{
+    FeatureListResponse, FeatureToggleResponse,
+};
 use serde_json::Value;
 use utoipa::OpenApi;
 
@@ -29,6 +41,21 @@ use utoipa::OpenApi;
         crate::modules::auth::handlers::get_profile,
         crate::modules::auth::handlers::update_profile,
         crate::modules::auth::handlers::change_password,
+        crate::modules::menu::handlers::public::get_user_menu,
+        crate::modules::system::handlers::feature_toggles::list_features,
+        crate::modules::system::handlers::feature_toggles::get_feature,
+        crate::modules::menu::handlers::admin::list_menu_groups,
+        crate::modules::menu::handlers::admin::list_menu_items,
+        crate::modules::lookup::handlers::lookup_staff,
+        crate::modules::lookup::handlers::lookup_students,
+        crate::modules::lookup::handlers::lookup_rooms,
+        crate::modules::lookup::handlers::lookup_roles,
+        crate::modules::lookup::handlers::lookup_organization_units,
+        crate::modules::lookup::handlers::lookup_organization_unit_by_id,
+        crate::modules::lookup::handlers::lookup_grade_levels,
+        crate::modules::lookup::handlers::lookup_classrooms,
+        crate::modules::lookup::handlers::lookup_academic_years,
+        crate::modules::lookup::handlers::lookup_subjects,
         crate::modules::staff::handlers::roles::list_roles,
         crate::modules::staff::handlers::roles::get_role,
         crate::modules::staff::handlers::roles::create_role,
@@ -101,13 +128,46 @@ use utoipa::OpenApi;
         ApiResponse<Vec<DelegationItem>>,
         ApiResponse<DelegationIdData>,
         ApiResponse<Vec<OrganizationMemberItem>>,
+        LookupItem,
+        StaffLookupItem,
+        RoleLookupItem,
+        OrganizationUnitLookupItem,
+        GradeLevelLookupItem,
+        ClassroomLookupItem,
+        AcademicYearLookupItem,
+        StudentLookupItem,
+        Room,
+        ApiResponse<Vec<LookupItem>>,
+        ApiResponse<Vec<StaffLookupItem>>,
+        ApiResponse<Vec<RoleLookupItem>>,
+        ApiResponse<Vec<OrganizationUnitLookupItem>>,
+        ApiResponse<OrganizationUnitLookupItem>,
+        ApiResponse<Vec<GradeLevelLookupItem>>,
+        ApiResponse<Vec<ClassroomLookupItem>>,
+        ApiResponse<Vec<AcademicYearLookupItem>>,
+        ApiResponse<Vec<StudentLookupItem>>,
+        ApiResponse<Vec<Room>>,
+        MenuItemResponse,
+        MenuGroupResponse,
+        UserMenuData,
+        ApiResponse<UserMenuData>,
+        MenuGroup,
+        MenuItem,
+        ApiResponse<Vec<MenuGroup>>,
+        ApiResponse<Vec<MenuItem>>,
+        FeatureToggle,
+        FeatureListResponse,
+        FeatureToggleResponse,
         ApiErrorResponse
     )),
     tags(
         (name = "auth", description = "Authentication and current-user operations"),
         (name = "roles", description = "Role assignment and role administration"),
         (name = "permissions", description = "Permission discovery and effective permissions"),
-        (name = "organization", description = "Organization units and scoped access")
+        (name = "organization", description = "Organization units and scoped access"),
+        (name = "lookup", description = "Authenticated reference-data lookups"),
+        (name = "menu", description = "User and administrator menu reads"),
+        (name = "system", description = "System feature reads")
     )
 )]
 struct SchoolApiDoc;
@@ -489,6 +549,78 @@ mod tests {
     }
 
     #[test]
+    fn documents_lookup_menu_and_feature_read_operations() {
+        let document = school_api_value().expect("document should serialize");
+        assert_operations(
+            &document,
+            &[
+                ("/api/menu/user", "get", "getUserMenu"),
+                ("/api/admin/features", "get", "listFeatures"),
+                ("/api/admin/features/{id}", "get", "getFeature"),
+                ("/api/admin/menu/groups", "get", "listMenuGroups"),
+                ("/api/admin/menu/items", "get", "listMenuItems"),
+                ("/api/lookup/staff", "get", "lookupStaff"),
+                ("/api/lookup/students", "get", "lookupStudents"),
+                ("/api/lookup/rooms", "get", "lookupRooms"),
+                ("/api/lookup/roles", "get", "lookupRoles"),
+                (
+                    "/api/lookup/organization-units",
+                    "get",
+                    "lookupOrganizationUnits",
+                ),
+                (
+                    "/api/lookup/organization-units/{id}",
+                    "get",
+                    "getLookupOrganizationUnit",
+                ),
+                ("/api/lookup/grade-levels", "get", "lookupGradeLevels"),
+                ("/api/lookup/classrooms", "get", "lookupClassrooms"),
+                ("/api/lookup/academic-years", "get", "lookupAcademicYears"),
+                ("/api/lookup/subjects", "get", "lookupSubjects"),
+            ],
+        );
+
+        assert_eq!(
+            document["paths"]["/api/menu/user"]["get"]["responses"]["200"]["content"]
+                ["application/json"]["schema"]["$ref"],
+            "#/components/schemas/ApiResponse_UserMenuData"
+        );
+        assert_eq!(
+            document["paths"]["/api/lookup/staff"]["get"]["responses"]["200"]["content"]
+                ["application/json"]["schema"]["$ref"],
+            "#/components/schemas/ApiResponse_Vec_StaffLookupItem"
+        );
+
+        let lookup_parameters = document["paths"]["/api/lookup/staff"]["get"]["parameters"]
+            .as_array()
+            .expect("lookup parameters must be an array");
+        for name in ["active_only", "search", "limit", "academic_year_id"] {
+            assert!(lookup_parameters
+                .iter()
+                .any(|parameter| { parameter["name"] == name && parameter["in"] == "query" }));
+        }
+
+        let schemas = &document["components"]["schemas"];
+        let grade = &schemas["GradeLevelLookupItem"];
+        assert!(required(grade).contains(&"short_name"));
+        assert!(contains_null(&grade["properties"]["short_name"]));
+
+        let organization = &schemas["OrganizationUnitLookupItem"];
+        assert!(!required(organization).contains(&"description"));
+        assert!(!contains_null(&organization["properties"]["description"]));
+
+        let menu_group = &schemas["MenuGroup"];
+        assert!(required(menu_group).contains(&"name_en"));
+        assert!(contains_null(&menu_group["properties"]["name_en"]));
+
+        let feature_response = &schemas["FeatureToggleResponse"];
+        for field in ["data", "message"] {
+            assert!(required(feature_response).contains(&field));
+            assert!(contains_null(&feature_response["properties"][field]));
+        }
+    }
+
+    #[test]
     fn documents_delegation_member_and_complete_authorization_inventory() {
         let document = school_api_value().expect("document should serialize");
         let expected = [
@@ -601,7 +733,7 @@ mod tests {
                 }
             }
         }
-        assert_eq!(operation_ids.len(), 30);
+        assert_eq!(operation_ids.len(), 45);
 
         let schemas = &document["components"]["schemas"];
         let delegation = &schemas["DelegationItem"];
