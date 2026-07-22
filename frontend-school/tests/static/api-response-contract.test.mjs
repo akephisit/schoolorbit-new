@@ -209,6 +209,21 @@ test('project rules document generated API contract ownership', async () => {
 	}
 });
 
+test('API docs record implemented-route ownership and unsupported delete discrepancies', async () => {
+	const guide = await readRepoFile('docs/backend-school/API_DEVELOPMENT.md');
+	const testing = await readRepoFile('docs/TESTING.md');
+	const improvements = await readRepoFile('IMPROVEMENT_PLAN.md');
+
+	for (const source of [guide, testing]) {
+		assert.match(source, /30 auth\/authorization operations/);
+		assert.match(source, /implemented backend routes only/i);
+	}
+	for (const source of [guide, improvements]) {
+		assert.match(source, /DELETE `?\/api\/roles\/\{id\}`?/);
+		assert.match(source, /DELETE `?\/api\/organization\/units\/\{id\}`?/);
+	}
+});
+
 test('API contract CI protects the offline exporter boundary', async () => {
 	const workflow = await readRepoFile('.github/workflows/api-contract.yml');
 

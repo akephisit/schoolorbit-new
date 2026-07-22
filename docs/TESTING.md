@@ -70,6 +70,26 @@ Frontend API modules import generated wire DTOs and may map them to separate
 domain/view models. Generation must not require database credentials or start
 the backend server.
 
+The generated document currently covers 30 auth/authorization operations. It
+tracks implemented backend routes only; frontend-only helpers are not exported.
+In particular, `DELETE /api/roles/{id}` and
+`DELETE /api/organization/units/{id}` remain outside the contract until their
+backend behavior is explicitly designed and implemented.
+
+The phase gate is:
+
+```bash
+cd backend-school
+cargo test api_contract::tests -- --nocapture
+cargo test --test static_architecture
+
+cd ../frontend-school
+npm run test:api-contracts
+npm run check:api-contracts
+npm run test:static
+PUBLIC_BACKEND_URL=http://localhost:3000 PUBLIC_VAPID_KEY=test npm run check
+```
+
 ## Permission Contract
 
 `contracts/permissions.json` is the only handwritten registry for backend and frontend

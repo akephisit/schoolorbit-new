@@ -52,6 +52,23 @@ Frontend API modules import generated wire DTOs and may map them to separate
 domain/view models. Generation must not require database credentials or start
 the backend server.
 
+The current rollout covers 30 auth/authorization operations: authentication,
+roles, permissions, user-role assignment, organization units, organization
+permission grants, delegations, and members. The OpenAPI document describes
+implemented backend routes only; a frontend helper or UI call is not evidence
+that a backend route exists.
+
+Known behavior discrepancies are intentionally excluded from OpenAPI:
+
+- `DELETE /api/roles/{id}` is called by the roles UI, but the backend has no
+  route or reviewed delete/deactivation semantics.
+- `DELETE /api/organization/units/{id}` exists as an unused frontend helper,
+  but the backend has no route or dependency-safe deletion policy.
+
+Do not add either path only to make generated types compile. Resolve each as a
+separate behavior change after reviewing references, audit requirements, and
+whether deactivation is safer than deletion.
+
 ## Error Handling
 *   Use the custom `AppError` type (if available) to map errors to HTTP status codes.
 *   Internal DB errors should generally result in `500 Internal Server Error`, while validation failures result in `400 Bad Request`.

@@ -145,6 +145,16 @@
 | **ผลลัพธ์** | log filter ได้ตาม level/module และลดการพิมพ์ response ดิบจาก external APIs |
 | **ตรวจสอบ** | `cargo test`, `cargo check`, `git diff --check`, `rg "println!\|eprintln!" backend-admin/src/main.rs backend-admin/src/services/school_service.rs backend-admin/src/clients/*.rs` |
 
+### M-6. กำหนด behavior สำหรับ route ลบ role/organization unit ที่ frontend อ้างถึง
+
+| | |
+|---|---|
+| **ไฟล์** | `frontend-school/src/lib/api/roles.ts`, `frontend-school/src/lib/api/staff.ts`, `frontend-school/src/routes/(app)/staff/roles/`, `backend-school/src/modules/staff/` |
+| **ปัญหา** | roles UI เรียก `DELETE /api/roles/{id}` และ staff API มี helper `DELETE /api/organization/units/{id}` แต่ backend ไม่มีทั้งสอง route จึงไม่อยู่ใน generated OpenAPI |
+| **สิ่งที่ต้องตัดสินใจ** | ตรวจ foreign keys, audit/history, default roles/units และ permission cache ก่อนเลือก soft-delete/deactivate, hard-delete หรือถอด action/helper ออกจาก frontend |
+| **ข้อห้าม** | ห้ามเพิ่ม route เปล่าเพื่อให้ frontend ไม่ error และห้ามประกาศ path ใน OpenAPI ก่อนมี backend behavior + tests ที่ review แล้ว |
+| **ความยาก** | Medium |
+
 ---
 
 ## 🟢 Priority 4: Low — Developer experience
