@@ -7,7 +7,7 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::api_response::{ApiErrorResponse, ApiResponse};
+use crate::api_response::ApiResponse;
 use crate::error::AppError;
 use crate::modules::academic::models::activity::*;
 use crate::modules::academic::services::activity_service;
@@ -122,12 +122,12 @@ pub async fn create_activity_group(
         activity_service::CreateGroupOutcome::Created(row) => {
             Ok(Json(ApiResponse::ok(*row)).into_response())
         }
-        activity_service::CreateGroupOutcome::SlotClosed => {
-            Ok(Json(ApiErrorResponse::new("ช่องกิจกรรมนี้ยังไม่เปิดให้ลงทะเบียน")).into_response())
-        }
-        activity_service::CreateGroupOutcome::InstructorNotInSlot => {
-            Ok(Json(ApiErrorResponse::new("ครูคนนี้ไม่ได้อยู่ในรายชื่อครูของช่องกิจกรรมนี้")).into_response())
-        }
+        activity_service::CreateGroupOutcome::SlotClosed => Err(AppError::BadRequest(
+            "ช่องกิจกรรมนี้ยังไม่เปิดให้ลงทะเบียน".to_string(),
+        )),
+        activity_service::CreateGroupOutcome::InstructorNotInSlot => Err(AppError::BadRequest(
+            "ครูคนนี้ไม่ได้อยู่ในรายชื่อครูของช่องกิจกรรมนี้".to_string(),
+        )),
     }
 }
 
@@ -152,8 +152,7 @@ pub async fn delete_activity_group(
     let context = actor_tenant_context(&state, &headers).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_permission(codes::ACTIVITY_MANAGE_ALL)?;
-    activity_service::delete_group(&pool, id).await?;
+    activity_service::delete_group(&pool, &actor, id).await?;
     Ok(Json(ApiResponse::empty_with_message("ลบกลุ่มกิจกรรมแล้ว")).into_response())
 }
 
@@ -189,7 +188,7 @@ pub async fn add_members(
             Ok(Json(ApiResponse::ok(InsertedData { inserted: n })).into_response())
         }
         activity_service::AddMembersOutcome::OverCapacity(cap) => {
-            Ok(Json(ApiErrorResponse::new(format!("จำนวนเกินที่รับได้ ({cap} คน)"))).into_response())
+            Err(AppError::BadRequest(format!("จำนวนเกินที่รับได้ ({cap} คน)")))
         }
     }
 }
@@ -219,19 +218,19 @@ pub async fn self_enroll(
             Ok(Json(ApiResponse::empty_with_message("ลงทะเบียนสำเร็จ")).into_response())
         }
         activity_service::SelfEnrollOutcome::AlreadyEnrolled => {
-            Ok(Json(ApiErrorResponse::new("ลงทะเบียนแล้วก่อนหน้านี้")).into_response())
+            Err(AppError::Conflict("ลงทะเบียนแล้วก่อนหน้านี้".to_string()))
         }
-        activity_service::SelfEnrollOutcome::NotSelfRegistrationType => {
-            Ok(Json(ApiErrorResponse::new("กลุ่มนี้ไม่เปิดให้ลงทะเบียนด้วยตนเอง")).into_response())
-        }
+        activity_service::SelfEnrollOutcome::NotSelfRegistrationType => Err(AppError::BadRequest(
+            "กลุ่มนี้ไม่เปิดให้ลงทะเบียนด้วยตนเอง".to_string(),
+        )),
         activity_service::SelfEnrollOutcome::NotOpen => {
-            Ok(Json(ApiErrorResponse::new("ยังไม่เปิดรับสมัคร")).into_response())
+            Err(AppError::BadRequest("ยังไม่เปิดรับสมัคร".to_string()))
         }
         activity_service::SelfEnrollOutcome::Full => {
-            Ok(Json(ApiErrorResponse::new("กลุ่มเต็มแล้ว")).into_response())
+            Err(AppError::BadRequest("กลุ่มเต็มแล้ว".to_string()))
         }
         activity_service::SelfEnrollOutcome::ClassroomNotAllowed => {
-            Ok(Json(ApiErrorResponse::new("ห้องเรียนของคุณไม่อยู่ในห้องที่รับ")).into_response())
+            Err(AppError::BadRequest("ห้องเรียนของคุณไม่อยู่ในห้องที่รับ".to_string()))
         }
     }
 }
@@ -337,7 +336,7 @@ pub async fn list_slot_instructors(
     let context = actor_tenant_context(&state, &headers).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_permission(codes::ACTIVITY_READ_ALL)?;
+    activity_access_policy::can_read_activity_slot(&pool, &actor, slot_id).await?;
     let rows = activity_service::list_slot_instructors(&pool, slot_id).await?;
     Ok(Json(ApiResponse::ok(rows)).into_response())
 }
@@ -454,7 +453,7 @@ pub async fn list_slot_classroom_assignments(
     let context = actor_tenant_context(&state, &headers).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_permission(codes::ACTIVITY_READ_ALL)?;
+    activity_access_policy::can_read_activity_slot(&pool, &actor, slot_id).await?;
     let rows = activity_service::list_slot_classroom_assignments(&pool, slot_id).await?;
     Ok(Json(ApiResponse::ok(rows)).into_response())
 }

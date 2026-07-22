@@ -1817,14 +1817,76 @@ fn activity_manage_own_uses_resource_policy_for_group_access() {
     assert!(activity_handler.contains("activity_service::list_groups(&pool, filter, access)"));
     assert!(activity_handler.contains("activity_service::create_group(&pool, &actor, body)"));
     assert!(activity_handler.contains("activity_service::update_group(&pool, &actor, id, body)"));
+    assert!(activity_handler.contains("activity_service::delete_group(&pool, &actor, id)"));
     assert!(activity_handler.contains("activity_service::add_group_instructor"));
     assert!(activity_handler.contains("activity_service::remove_group_instructor"));
+    assert_eq!(
+        activity_handler
+            .matches("activity_access_policy::can_read_activity_slot")
+            .count(),
+        2,
+        "slot instructor and classroom-assignment reads must support the same manage-own scope as slot listing"
+    );
     assert!(!activity_handler.contains("actor.has_permission(codes::ACTIVITY_MANAGE"));
 
     assert!(activity_service.contains("activity_access_policy::can_manage_activity_group"));
     assert!(activity_service.contains("activity_access_policy::can_create_activity_group_for"));
     assert!(activity_service.contains("UserResourceListAccess"));
     assert!(!activity_service.contains("actor.has_permission(codes::ACTIVITY_MANAGE"));
+}
+
+#[test]
+fn activity_workspace_error_outcomes_use_non_success_http_statuses() {
+    let activity_handler = strip_comments(&read_source(
+        manifest_dir().join("src/modules/academic/handlers/activity.rs"),
+    ));
+
+    let create_group = activity_handler
+        .split_once("pub async fn create_activity_group")
+        .expect("missing create_activity_group")
+        .1
+        .split("pub async fn ")
+        .next()
+        .unwrap_or("");
+    assert!(create_group.contains("CreateGroupOutcome::SlotClosed => Err(AppError::BadRequest"));
+    assert!(create_group
+        .contains("CreateGroupOutcome::InstructorNotInSlot => Err(AppError::BadRequest"));
+    assert!(!create_group.contains("ApiErrorResponse::new"));
+
+    let add_members = activity_handler
+        .split_once("pub async fn add_members")
+        .expect("missing add_members")
+        .1
+        .split("pub async fn ")
+        .next()
+        .unwrap_or("");
+    assert!(add_members.contains("AddMembersOutcome::OverCapacity(cap)"));
+    assert!(add_members.contains("Err(AppError::BadRequest"));
+    assert!(!add_members.contains("ApiErrorResponse::new"));
+
+    let self_enroll = activity_handler
+        .split_once("pub async fn self_enroll")
+        .expect("missing self_enroll")
+        .1
+        .split("pub async fn ")
+        .next()
+        .unwrap_or("");
+    assert!(self_enroll.contains("SelfEnrollOutcome::AlreadyEnrolled"));
+    assert!(self_enroll.contains("Err(AppError::Conflict"));
+    for outcome in [
+        "NotSelfRegistrationType",
+        "NotOpen",
+        "Full",
+        "ClassroomNotAllowed",
+    ] {
+        assert!(self_enroll.contains(&format!("SelfEnrollOutcome::{outcome}")));
+    }
+    assert_eq!(
+        self_enroll.matches("Err(AppError::BadRequest").count(),
+        4,
+        "every non-conflict self-enrollment rejection must use a 400 response"
+    );
+    assert!(!self_enroll.contains("ApiErrorResponse::new"));
 }
 
 #[test]

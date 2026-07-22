@@ -594,7 +594,8 @@ pub async fn update_group(
     .map(ActivityGroup::from)
 }
 
-pub async fn delete_group(pool: &PgPool, id: Uuid) -> Result<(), AppError> {
+pub async fn delete_group(pool: &PgPool, actor: &ActorContext, id: Uuid) -> Result<(), AppError> {
+    activity_access_policy::can_manage_activity_group(pool, actor, id).await?;
     sqlx::query("DELETE FROM activity_groups WHERE id = $1")
         .bind(id)
         .execute(pool)

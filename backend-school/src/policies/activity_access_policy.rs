@@ -77,6 +77,64 @@ pub async fn can_read_activity_group(
     .map(|_| ())
 }
 
+pub async fn can_read_activity_slot(
+    pool: &PgPool,
+    actor: &ActorContext,
+    slot_id: Uuid,
+) -> Result<(), AppError> {
+    let row: Option<(bool, bool)> = sqlx::query_as(
+        r#"
+        SELECT
+            s.teacher_reg_open,
+            EXISTS (
+                SELECT 1
+                FROM activity_slot_instructors asi
+                WHERE asi.slot_id = s.id
+                  AND asi.user_id = $2
+            ) OR EXISTS (
+                SELECT 1
+                FROM activity_groups ag
+                WHERE ag.slot_id = s.id
+                  AND ag.is_active = true
+                  AND (
+                      ag.instructor_id = $2
+                      OR EXISTS (
+                          SELECT 1
+                          FROM activity_group_instructors agi
+                          WHERE agi.activity_group_id = ag.id
+                            AND agi.instructor_id = $2
+                      )
+                  )
+            ) AS actor_is_assigned
+        FROM activity_slots s
+        WHERE s.id = $1
+          AND s.is_active = true
+        "#,
+    )
+    .bind(slot_id)
+    .bind(actor.user_id)
+    .fetch_optional(pool)
+    .await
+    .map_err(|error| {
+        tracing::error!("Failed to load activity slot target: {}", error);
+        AppError::InternalServerError("ไม่สามารถตรวจสอบช่องกิจกรรมได้".to_string())
+    })?;
+
+    let Some((teacher_reg_open, actor_is_assigned)) = row else {
+        return Err(AppError::NotFound("ไม่พบช่องกิจกรรม".to_string()));
+    };
+
+    if actor.has_permission(codes::ACTIVITY_MANAGE_ALL)
+        || actor.has_permission(codes::ACTIVITY_READ_ALL)
+        || (actor.has_permission(codes::ACTIVITY_MANAGE_OWN)
+            && (teacher_reg_open || actor_is_assigned))
+    {
+        return Ok(());
+    }
+
+    Err(AppError::Forbidden("ไม่มีสิทธิ์ดูช่องกิจกรรมนี้".to_string()))
+}
+
 pub async fn can_manage_activity_group(
     pool: &PgPool,
     actor: &ActorContext,
