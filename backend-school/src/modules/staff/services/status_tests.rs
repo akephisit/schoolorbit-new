@@ -1,12 +1,83 @@
 use crate::db::permission_cache::PermissionCache;
 use crate::error::AppError;
 use crate::middleware::permission::get_cached_user_permissions;
-use crate::modules::staff::models::{CreateOrganizationUnitRequest, UpdateOrganizationUnitRequest};
+use crate::modules::staff::models::{
+    CreateOrganizationUnitRequest, CreateStaffRequest, OrganizationAssignment,
+    OrganizationPermissionGrantInput, UpdateOrganizationUnitRequest, UpdateStaffRequest,
+};
 use crate::test_helpers::{create_test_pool, create_test_user, run_test_migrations};
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use super::{organization_unit_service, role_service, StatusTransitionOutcome};
+use super::{
+    organization_delegation_service, organization_member_service, organization_permission_service,
+    organization_unit_service, role_service, staff_service, StatusTransitionOutcome,
+};
+
+fn test_create_staff_request(
+    username: String,
+    role_ids: Vec<Uuid>,
+    organization_assignments: Option<Vec<OrganizationAssignment>>,
+) -> CreateStaffRequest {
+    CreateStaffRequest {
+        username: Some(username),
+        national_id: None,
+        email: None,
+        password: "Test1234!".to_string(),
+        title: None,
+        first_name: "Status".to_string(),
+        last_name: "Target".to_string(),
+        nickname: None,
+        phone: None,
+        emergency_contact: None,
+        line_id: None,
+        date_of_birth: None,
+        gender: None,
+        address: None,
+        hired_date: None,
+        staff_info: None,
+        profile_image_url: None,
+        role_ids,
+        primary_role_id: None,
+        organization_assignments,
+    }
+}
+
+fn test_update_staff_request(
+    role_ids: Option<Vec<Uuid>>,
+    organization_assignments: Option<Vec<OrganizationAssignment>>,
+) -> UpdateStaffRequest {
+    UpdateStaffRequest {
+        title: None,
+        first_name: None,
+        last_name: None,
+        nickname: None,
+        email: None,
+        phone: None,
+        emergency_contact: None,
+        line_id: None,
+        date_of_birth: None,
+        gender: None,
+        address: None,
+        hired_date: None,
+        status: None,
+        profile_image_url: None,
+        staff_info: None,
+        role_ids,
+        primary_role_id: None,
+        organization_assignments,
+    }
+}
+
+fn test_organization_assignment(organization_unit_id: Uuid) -> OrganizationAssignment {
+    OrganizationAssignment {
+        organization_unit_id,
+        position_code: "member".to_string(),
+        position_title: None,
+        is_primary: Some(false),
+        responsibilities: None,
+    }
+}
 
 async fn permission_id(pool: &PgPool, code: &str) -> Uuid {
     sqlx::query_scalar("SELECT id FROM permissions WHERE code = $1")
@@ -516,4 +587,215 @@ async fn organization_unit_soft_deactivation_enforces_hierarchy_and_audit_rules(
         Some(serde_json::json!({ "is_active": false }))
     );
     assert_eq!(child_audits[1].0, "reactivate");
+}
+
+#[tokio::test]
+async fn inactive_assignment_targets_are_rejected_before_existing_access_is_replaced() {
+    let pool = create_test_pool().await;
+    run_test_migrations(&pool).await;
+
+    let fixture = Uuid::new_v4().simple().to_string();
+    let target_user_id = create_test_user(
+        &pool,
+        &format!("inactive-target-{}@example.test", &fixture[..8]),
+        "Test1234!",
+    )
+    .await
+    .expect("target test user should be created");
+    let delegator_user_id = create_test_user(
+        &pool,
+        &format!("inactive-from-{}@example.test", &fixture[..8]),
+        "Test1234!",
+    )
+    .await
+    .expect("delegator test user should be created");
+
+    let active_role_id: Uuid = sqlx::query_scalar(
+        "INSERT INTO roles (code, name, user_type, level)
+         VALUES ($1, $2, 'staff', 1)
+         RETURNING id",
+    )
+    .bind(format!("TACTIVE{}", &fixture[..8]))
+    .bind(format!("active test role {}", &fixture[..8]))
+    .fetch_one(&pool)
+    .await
+    .expect("active role should be created");
+    let inactive_role_id: Uuid = sqlx::query_scalar(
+        "INSERT INTO roles (code, name, user_type, level, is_active)
+         VALUES ($1, $2, 'staff', 1, false)
+         RETURNING id",
+    )
+    .bind(format!("TINACTIVE{}", &fixture[..8]))
+    .bind(format!("inactive test role {}", &fixture[..8]))
+    .fetch_one(&pool)
+    .await
+    .expect("inactive role should be created");
+
+    let active_unit_id: Uuid = sqlx::query_scalar(
+        "INSERT INTO organization_units (code, name, category, unit_type)
+         VALUES ($1, $2, 'other', 'unit')
+         RETURNING id",
+    )
+    .bind(format!("TUACTIVE{}", &fixture[..8]))
+    .bind(format!("active test unit {}", &fixture[..8]))
+    .fetch_one(&pool)
+    .await
+    .expect("active unit should be created");
+    let inactive_unit_id: Uuid = sqlx::query_scalar(
+        "INSERT INTO organization_units (code, name, category, unit_type, is_active)
+         VALUES ($1, $2, 'other', 'unit', false)
+         RETURNING id",
+    )
+    .bind(format!("TUINACTIVE{}", &fixture[..8]))
+    .bind(format!("inactive test unit {}", &fixture[..8]))
+    .fetch_one(&pool)
+    .await
+    .expect("inactive unit should be created");
+
+    let add_to_inactive = organization_member_service::add_member(
+        &pool,
+        target_user_id,
+        inactive_unit_id,
+        "member",
+        None,
+        false,
+        None,
+    )
+    .await;
+    assert!(matches!(add_to_inactive, Err(AppError::Conflict(_))));
+
+    organization_member_service::add_member(
+        &pool,
+        target_user_id,
+        active_unit_id,
+        "member",
+        None,
+        true,
+        None,
+    )
+    .await
+    .expect("active membership should be created");
+    let move_to_inactive = organization_member_service::update_member(
+        &pool,
+        organization_member_service::UpdateMemberInput {
+            organization_unit_id: active_unit_id,
+            user_id: target_user_id,
+            position_code: "member".to_string(),
+            position_title: None,
+            is_primary: true,
+            responsibilities: None,
+            new_organization_unit_id: inactive_unit_id,
+        },
+    )
+    .await;
+    assert!(matches!(move_to_inactive, Err(AppError::Conflict(_))));
+    let active_membership_remains: bool = sqlx::query_scalar(
+        "SELECT EXISTS(
+            SELECT 1 FROM organization_members
+            WHERE user_id = $1 AND organization_unit_id = $2
+        )",
+    )
+    .bind(target_user_id)
+    .bind(active_unit_id)
+    .fetch_one(&pool)
+    .await
+    .expect("membership should be checked");
+    assert!(active_membership_remains);
+
+    let permission_id = permission_id(&pool, "roles.read.all").await;
+    organization_permission_service::replace_organization_permission_grants(
+        &pool,
+        inactive_unit_id,
+        vec![OrganizationPermissionGrantInput {
+            permission_id,
+            position_code: None,
+        }],
+    )
+    .await
+    .expect("permission grants may be configured while a unit is inactive");
+    let delegation_to_inactive = organization_delegation_service::create_delegation(
+        &pool,
+        delegator_user_id,
+        target_user_id,
+        permission_id,
+        inactive_unit_id,
+        None,
+        None,
+    )
+    .await;
+    assert!(matches!(delegation_to_inactive, Err(AppError::Conflict(_))));
+
+    let create_with_inactive_role = staff_service::create_staff(
+        &pool,
+        test_create_staff_request(
+            format!("create-role-{}", &fixture[..8]),
+            vec![inactive_role_id],
+            None,
+        ),
+    )
+    .await;
+    assert!(create_with_inactive_role.is_err());
+
+    let create_with_inactive_unit = staff_service::create_staff(
+        &pool,
+        test_create_staff_request(
+            format!("create-unit-{}", &fixture[..8]),
+            vec![],
+            Some(vec![test_organization_assignment(inactive_unit_id)]),
+        ),
+    )
+    .await;
+    assert!(create_with_inactive_unit.is_err());
+
+    sqlx::query(
+        "INSERT INTO user_roles (user_id, role_id, is_primary)
+         VALUES ($1, $2, true)",
+    )
+    .bind(target_user_id)
+    .bind(active_role_id)
+    .execute(&pool)
+    .await
+    .expect("existing active role should be assigned");
+
+    let update_with_inactive_role = staff_service::update_staff(
+        &pool,
+        target_user_id,
+        test_update_staff_request(Some(vec![inactive_role_id]), None),
+    )
+    .await;
+    assert!(update_with_inactive_role.is_err());
+    let active_role_remains: bool = sqlx::query_scalar(
+        "SELECT EXISTS(
+            SELECT 1 FROM user_roles WHERE user_id = $1 AND role_id = $2
+        )",
+    )
+    .bind(target_user_id)
+    .bind(active_role_id)
+    .fetch_one(&pool)
+    .await
+    .expect("role assignment should be checked");
+    assert!(active_role_remains);
+
+    let update_with_inactive_unit = staff_service::update_staff(
+        &pool,
+        target_user_id,
+        test_update_staff_request(
+            None,
+            Some(vec![test_organization_assignment(inactive_unit_id)]),
+        ),
+    )
+    .await;
+    assert!(update_with_inactive_unit.is_err());
+    let active_membership_still_remains: bool = sqlx::query_scalar(
+        "SELECT EXISTS(
+            SELECT 1 FROM organization_members
+            WHERE user_id = $1 AND organization_unit_id = $2
+        )",
+    )
+    .bind(target_user_id)
+    .bind(active_unit_id)
+    .fetch_one(&pool)
+    .await
+    .expect("membership should be checked after rejected staff update");
+    assert!(active_membership_still_remains);
 }

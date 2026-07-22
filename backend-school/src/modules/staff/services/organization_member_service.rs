@@ -3,6 +3,7 @@ use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
 use crate::modules::staff::handlers::organization_members::OrganizationMemberItem;
+use crate::modules::staff::services::organization_unit_service;
 
 fn organization_member_display_name(name: Option<String>) -> String {
     name.unwrap_or_default()
@@ -89,6 +90,10 @@ pub async fn add_member(
     is_primary: bool,
     responsibilities: Option<String>,
 ) -> Result<(), AppError> {
+    let mut tx = pool.begin().await?;
+    organization_unit_service::ensure_organization_unit_active(&mut tx, organization_unit_id)
+        .await?;
+
     sqlx::query(
         "INSERT INTO organization_members
             (
@@ -103,8 +108,10 @@ pub async fn add_member(
     .bind(position_title)
     .bind(is_primary)
     .bind(responsibilities)
-    .execute(pool)
+    .execute(&mut *tx)
     .await?;
+
+    tx.commit().await?;
     Ok(())
 }
 
@@ -119,6 +126,15 @@ pub struct UpdateMemberInput {
 }
 
 pub async fn update_member(pool: &PgPool, input: UpdateMemberInput) -> Result<u64, AppError> {
+    let mut tx = pool.begin().await?;
+    if input.new_organization_unit_id != input.organization_unit_id {
+        organization_unit_service::ensure_organization_unit_active(
+            &mut tx,
+            input.new_organization_unit_id,
+        )
+        .await?;
+    }
+
     let result = sqlx::query(
         r#"UPDATE organization_members
            SET position_code = $1,
@@ -136,9 +152,11 @@ pub async fn update_member(pool: &PgPool, input: UpdateMemberInput) -> Result<u6
     .bind(input.new_organization_unit_id)
     .bind(input.user_id)
     .bind(input.organization_unit_id)
-    .execute(pool)
+    .execute(&mut *tx)
     .await?;
-    Ok(result.rows_affected())
+    let rows_affected = result.rows_affected();
+    tx.commit().await?;
+    Ok(rows_affected)
 }
 
 pub async fn remove_member(

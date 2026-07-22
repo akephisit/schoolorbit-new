@@ -236,6 +236,31 @@ async fn require_active_parent(
     }
 }
 
+pub(super) async fn ensure_organization_unit_active(
+    tx: &mut Transaction<'_, Postgres>,
+    organization_unit_id: Uuid,
+) -> Result<(), AppError> {
+    let is_active = sqlx::query_scalar::<_, bool>(
+        "SELECT is_active
+         FROM organization_units
+         WHERE id = $1
+         FOR SHARE",
+    )
+    .bind(organization_unit_id)
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(|error| {
+        tracing::error!(%organization_unit_id, %error, "failed to validate organization unit status");
+        AppError::InternalServerError("ไม่สามารถตรวจสอบสถานะหน่วยงานได้".to_string())
+    })?;
+
+    match is_active {
+        Some(true) => Ok(()),
+        Some(false) => Err(AppError::Conflict("หน่วยงานนี้ถูกปิดใช้งานอยู่".to_string())),
+        None => Err(AppError::BadRequest("ไม่พบหน่วยงานที่ระบุ".to_string())),
+    }
+}
+
 async fn transition_locked_organization_unit_status(
     tx: &mut Transaction<'_, Postgres>,
     unit_id: Uuid,

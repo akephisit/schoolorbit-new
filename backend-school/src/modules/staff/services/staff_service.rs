@@ -213,6 +213,85 @@ async fn insert_organization_memberships(
     Ok(())
 }
 
+async fn validate_active_staff_roles(
+    tx: &mut sqlx::Transaction<'_, Postgres>,
+    role_ids: &[Uuid],
+) -> Result<(), AppError> {
+    let requested_role_ids: Vec<Uuid> = role_ids
+        .iter()
+        .copied()
+        .collect::<std::collections::HashSet<_>>()
+        .into_iter()
+        .collect();
+    if requested_role_ids.is_empty() {
+        return Ok(());
+    }
+
+    let valid_role_ids: Vec<Uuid> = sqlx::query_scalar(
+        "SELECT id
+         FROM roles
+         WHERE id = ANY($1)
+           AND user_type = 'staff'
+           AND is_active = true
+         ORDER BY id
+         FOR SHARE",
+    )
+    .bind(&requested_role_ids)
+    .fetch_all(&mut **tx)
+    .await
+    .map_err(|error| {
+        tracing::error!(%error, "failed to validate staff role assignments");
+        AppError::InternalServerError("ไม่สามารถตรวจสอบบทบาทที่ระบุได้".to_string())
+    })?;
+
+    if valid_role_ids.len() != requested_role_ids.len() {
+        return Err(AppError::BadRequest(
+            "บทบาทที่ระบุไม่มีอยู่ ถูกปิดใช้งาน หรือไม่ใช่บทบาทบุคลากร".to_string(),
+        ));
+    }
+
+    Ok(())
+}
+
+async fn validate_active_organization_assignments(
+    tx: &mut sqlx::Transaction<'_, Postgres>,
+    assignments: &[OrganizationAssignment],
+) -> Result<(), AppError> {
+    let requested_unit_ids: Vec<Uuid> = assignments
+        .iter()
+        .map(|assignment| assignment.organization_unit_id)
+        .collect::<std::collections::HashSet<_>>()
+        .into_iter()
+        .collect();
+    if requested_unit_ids.is_empty() {
+        return Ok(());
+    }
+
+    let valid_unit_ids: Vec<Uuid> = sqlx::query_scalar(
+        "SELECT id
+         FROM organization_units
+         WHERE id = ANY($1)
+           AND is_active = true
+         ORDER BY id
+         FOR SHARE",
+    )
+    .bind(&requested_unit_ids)
+    .fetch_all(&mut **tx)
+    .await
+    .map_err(|error| {
+        tracing::error!(%error, "failed to validate staff organization assignments");
+        AppError::InternalServerError("ไม่สามารถตรวจสอบหน่วยงานที่ระบุได้".to_string())
+    })?;
+
+    if valid_unit_ids.len() != requested_unit_ids.len() {
+        return Err(AppError::BadRequest(
+            "หน่วยงานที่ระบุไม่มีอยู่หรือถูกปิดใช้งาน".to_string(),
+        ));
+    }
+
+    Ok(())
+}
+
 #[derive(Debug, Serialize, ToSchema)]
 pub struct PublicStaffProfile {
     pub id: Uuid,
@@ -649,6 +728,11 @@ pub async fn create_staff(pool: &PgPool, payload: CreateStaffRequest) -> Result<
         AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
     })?;
 
+    validate_active_staff_roles(&mut tx, &payload.role_ids).await?;
+    if let Some(organization_assignments) = &payload.organization_assignments {
+        validate_active_organization_assignments(&mut tx, organization_assignments).await?;
+    }
+
     let encrypted_national_id = field_encryption::encrypt_optional(payload.national_id.as_deref())
         .map_err(|e| {
             tracing::error!("Encryption failed: {}", e);
@@ -749,33 +833,6 @@ pub async fn create_staff(pool: &PgPool, payload: CreateStaffRequest) -> Result<
         })?;
     }
 
-    // Validate: all roles must have user_type = 'staff'
-    if !payload.role_ids.is_empty() {
-        let invalid_roles: Vec<String> = sqlx::query_as::<_, (String,)>(
-            "SELECT code FROM roles
-             WHERE id = ANY($1)
-               AND (user_type != 'staff' OR is_active = false)",
-        )
-        .bind(&payload.role_ids)
-        .fetch_all(&mut *tx)
-        .await
-        .unwrap_or_default()
-        .into_iter()
-        .map(|(code,)| code)
-        .collect();
-
-        if !invalid_roles.is_empty() {
-            tracing::error!(
-                "❌ Role validation failed for staff: invalid roles = {:?}",
-                invalid_roles
-            );
-            return Err(AppError::BadRequest(format!(
-                "มีบทบาทที่ไม่ถูกต้องสำหรับบุคลากร: {:?}",
-                invalid_roles
-            )));
-        }
-    }
-
     let role_rows = user_role_bulk_rows(&payload.role_ids, payload.primary_role_id);
     insert_user_roles(&mut tx, user_id, &role_rows).await?;
 
@@ -803,6 +860,13 @@ pub async fn update_staff(
         tracing::error!("❌ Failed to start transaction: {}", e);
         AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
     })?;
+
+    if let Some(role_ids) = &payload.role_ids {
+        validate_active_staff_roles(&mut tx, role_ids).await?;
+    }
+    if let Some(organization_assignments) = &payload.organization_assignments {
+        validate_active_organization_assignments(&mut tx, organization_assignments).await?;
+    }
 
     let result = sqlx::query(
         "UPDATE users

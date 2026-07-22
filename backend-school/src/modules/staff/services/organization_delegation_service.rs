@@ -6,6 +6,7 @@ use utoipa::ToSchema;
 use uuid::Uuid;
 
 use crate::modules::staff::handlers::organization_delegations::DelegationItem;
+use crate::modules::staff::services::organization_unit_service;
 
 #[derive(Serialize, sqlx::FromRow, ToSchema)]
 pub struct DelegatablePermission {
@@ -148,6 +149,10 @@ pub async fn create_delegation(
     reason: Option<String>,
     expires_at: Option<DateTime<Utc>>,
 ) -> Result<Uuid, AppError> {
+    let mut tx = pool.begin().await?;
+    organization_unit_service::ensure_organization_unit_active(&mut tx, organization_unit_id)
+        .await?;
+
     let id: Uuid = sqlx::query_scalar(
         "INSERT INTO organization_permission_delegations
             (from_user_id, to_user_id, permission_id, organization_unit_id, reason, expires_at)
@@ -160,8 +165,9 @@ pub async fn create_delegation(
     .bind(organization_unit_id)
     .bind(reason)
     .bind(expires_at)
-    .fetch_one(pool)
+    .fetch_one(&mut *tx)
     .await?;
+    tx.commit().await?;
     Ok(id)
 }
 
