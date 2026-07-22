@@ -1,6 +1,8 @@
 use crate::api_response::{ApiErrorResponse, ApiResponse};
 use crate::error::AppError;
-use crate::modules::academic::services::study_plan_service;
+use crate::modules::academic::services::study_plan_service::{
+    self, GenerateActivitiesFromPlanOutcome,
+};
 use crate::permissions::registry::codes;
 use crate::policies::curriculum_access_policy;
 use crate::utils::request_context::actor_tenant_context;
@@ -474,6 +476,20 @@ pub async fn generate_courses_from_plan(
 // Study Plan Version Activities
 // ============================================
 
+#[utoipa::path(
+    get,
+    path = "/api/academic/study-plan-versions/{id}/activities",
+    operation_id = "listStudyPlanActivities",
+    tag = "academic",
+    params(("id" = Uuid, Path, description = "Study-plan version ID")),
+    responses(
+        (status = 200, description = "Activities in the study-plan version", body = ApiResponse<Vec<StudyPlanVersionActivity>>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Curriculum read permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Study-plan version not found", body = ApiErrorResponse),
+        (status = 500, description = "Plan activities could not be loaded", body = ApiErrorResponse)
+    )
+)]
 pub async fn list_plan_activities(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -487,6 +503,22 @@ pub async fn list_plan_activities(
     Ok(Json(ApiResponse::ok(rows)))
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/academic/study-plan-versions/{id}/activities",
+    operation_id = "addStudyPlanActivity",
+    tag = "academic",
+    params(("id" = Uuid, Path, description = "Study-plan version ID")),
+    request_body = CreatePlanActivityRequest,
+    responses(
+        (status = 201, description = "Activity added to the study-plan version", body = ApiResponse<StudyPlanVersionActivity>),
+        (status = 400, description = "Activity already exists in this plan scope or request is invalid", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Curriculum update permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Study-plan version, catalog, or grade level not found", body = ApiErrorResponse),
+        (status = 500, description = "Plan activity could not be added", body = ApiErrorResponse)
+    )
+)]
 pub async fn add_plan_activity(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -501,6 +533,21 @@ pub async fn add_plan_activity(
     Ok((StatusCode::CREATED, Json(ApiResponse::ok(row))))
 }
 
+#[utoipa::path(
+    put,
+    path = "/api/academic/study-plan-activities/{id}",
+    operation_id = "updateStudyPlanActivity",
+    tag = "academic",
+    params(("id" = Uuid, Path, description = "Study-plan activity ID")),
+    request_body = UpdatePlanActivityRequest,
+    responses(
+        (status = 200, description = "Study-plan activity updated", body = ApiResponse<StudyPlanVersionActivity>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Curriculum update permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Study-plan activity not found", body = ApiErrorResponse),
+        (status = 500, description = "Plan activity could not be updated", body = ApiErrorResponse)
+    )
+)]
 pub async fn update_plan_activity(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -515,6 +562,20 @@ pub async fn update_plan_activity(
     Ok(Json(ApiResponse::ok(row)))
 }
 
+#[utoipa::path(
+    delete,
+    path = "/api/academic/study-plan-activities/{id}",
+    operation_id = "deleteStudyPlanActivity",
+    tag = "academic",
+    params(("id" = Uuid, Path, description = "Study-plan activity ID")),
+    responses(
+        (status = 200, description = "Study-plan activity deleted", body = ApiResponse<crate::api_response::EmptyData>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Curriculum delete permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Study-plan activity not found", body = ApiErrorResponse),
+        (status = 500, description = "Plan activity could not be deleted", body = ApiErrorResponse)
+    )
+)]
 pub async fn delete_plan_activity(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -528,6 +589,20 @@ pub async fn delete_plan_activity(
     Ok(Json(ApiResponse::empty()))
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/academic/activities/generate-from-plan",
+    operation_id = "generateActivitiesFromStudyPlan",
+    tag = "academic",
+    request_body = GenerateActivitiesFromPlanRequest,
+    responses(
+        (status = 200, description = "Semester activity workspace generated from the study plan", body = ApiResponse<GenerateActivitiesFromPlanOutcome>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Curriculum read or school activity management permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Study-plan version or semester not found", body = ApiErrorResponse),
+        (status = 500, description = "Activities could not be generated", body = ApiErrorResponse)
+    )
+)]
 pub async fn generate_activities_from_plan(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -547,6 +622,19 @@ pub async fn generate_activities_from_plan(
 // Activity Catalog
 // ============================================
 
+#[utoipa::path(
+    get,
+    path = "/api/academic/activity-catalog",
+    operation_id = "listActivityCatalog",
+    tag = "academic",
+    params(("latest_only" = Option<bool>, Query, description = "Return only the latest active version per name")),
+    responses(
+        (status = 200, description = "Activity catalog", body = ApiResponse<Vec<ActivityCatalog>>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Curriculum read permission denied", body = ApiErrorResponse),
+        (status = 500, description = "Activity catalog could not be loaded", body = ApiErrorResponse)
+    )
+)]
 pub async fn list_activity_catalog(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -561,6 +649,21 @@ pub async fn list_activity_catalog(
     Ok(Json(ApiResponse::ok(rows)))
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/academic/activity-catalog",
+    operation_id = "createActivityCatalog",
+    tag = "academic",
+    request_body = CreateCatalogRequest,
+    responses(
+        (status = 201, description = "Activity catalog version created", body = ApiResponse<ActivityCatalog>),
+        (status = 400, description = "Catalog request is invalid", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Curriculum create permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Academic year, grade level, or instructor not found", body = ApiErrorResponse),
+        (status = 500, description = "Activity catalog could not be created", body = ApiErrorResponse)
+    )
+)]
 pub async fn create_activity_catalog(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -574,6 +677,21 @@ pub async fn create_activity_catalog(
     Ok((StatusCode::CREATED, Json(ApiResponse::ok(row))))
 }
 
+#[utoipa::path(
+    put,
+    path = "/api/academic/activity-catalog/{id}",
+    operation_id = "updateActivityCatalog",
+    tag = "academic",
+    params(("id" = Uuid, Path, description = "Activity catalog ID")),
+    request_body = UpdateCatalogRequest,
+    responses(
+        (status = 200, description = "Activity catalog updated", body = ApiResponse<ActivityCatalog>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Curriculum update permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Activity catalog or grade level not found", body = ApiErrorResponse),
+        (status = 500, description = "Activity catalog could not be updated", body = ApiErrorResponse)
+    )
+)]
 pub async fn update_activity_catalog(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -588,6 +706,21 @@ pub async fn update_activity_catalog(
     Ok(Json(ApiResponse::ok(row)))
 }
 
+#[utoipa::path(
+    delete,
+    path = "/api/academic/activity-catalog/{id}",
+    operation_id = "deleteActivityCatalog",
+    tag = "academic",
+    params(("id" = Uuid, Path, description = "Activity catalog ID")),
+    responses(
+        (status = 200, description = "Activity catalog deleted", body = ApiResponse<crate::api_response::EmptyData>),
+        (status = 400, description = "Catalog is still referenced by a study plan", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Curriculum delete permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Activity catalog not found", body = ApiErrorResponse),
+        (status = 500, description = "Activity catalog could not be deleted", body = ApiErrorResponse)
+    )
+)]
 pub async fn delete_activity_catalog(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -605,6 +738,20 @@ pub async fn delete_activity_catalog(
 // Activity Catalog Default Instructors
 // ============================================
 
+#[utoipa::path(
+    get,
+    path = "/api/academic/activity-catalog/{id}/default-instructors",
+    operation_id = "listActivityCatalogDefaultInstructors",
+    tag = "academic",
+    params(("id" = Uuid, Path, description = "Activity catalog ID")),
+    responses(
+        (status = 200, description = "Default activity instructors", body = ApiResponse<Vec<CatalogDefaultInstructor>>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Curriculum read permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Activity catalog not found", body = ApiErrorResponse),
+        (status = 500, description = "Default instructors could not be loaded", body = ApiErrorResponse)
+    )
+)]
 pub async fn list_catalog_default_instructors(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -618,6 +765,22 @@ pub async fn list_catalog_default_instructors(
     Ok(Json(ApiResponse::ok(rows)))
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/academic/activity-catalog/{id}/default-instructors",
+    operation_id = "addActivityCatalogDefaultInstructor",
+    tag = "academic",
+    params(("id" = Uuid, Path, description = "Activity catalog ID")),
+    request_body = AddCatalogDefaultInstructorRequest,
+    responses(
+        (status = 200, description = "Default instructor added", body = ApiResponse<crate::api_response::EmptyData>),
+        (status = 400, description = "Instructor role is invalid", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Curriculum update permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Activity catalog or instructor not found", body = ApiErrorResponse),
+        (status = 500, description = "Default instructor could not be added", body = ApiErrorResponse)
+    )
+)]
 pub async fn add_catalog_default_instructor(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -639,6 +802,23 @@ pub async fn add_catalog_default_instructor(
     Ok(Json(ApiResponse::empty()))
 }
 
+#[utoipa::path(
+    delete,
+    path = "/api/academic/activity-catalog/{id}/default-instructors/{uid}",
+    operation_id = "removeActivityCatalogDefaultInstructor",
+    tag = "academic",
+    params(
+        ("id" = Uuid, Path, description = "Activity catalog ID"),
+        ("uid" = Uuid, Path, description = "Instructor user ID")
+    ),
+    responses(
+        (status = 200, description = "Default instructor removed", body = ApiResponse<crate::api_response::EmptyData>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Curriculum update permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Default instructor assignment not found", body = ApiErrorResponse),
+        (status = 500, description = "Default instructor could not be removed", body = ApiErrorResponse)
+    )
+)]
 pub async fn remove_catalog_default_instructor(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -652,6 +832,25 @@ pub async fn remove_catalog_default_instructor(
     Ok(Json(ApiResponse::empty()))
 }
 
+#[utoipa::path(
+    put,
+    path = "/api/academic/activity-catalog/{id}/default-instructors/{uid}",
+    operation_id = "updateActivityCatalogDefaultInstructorRole",
+    tag = "academic",
+    params(
+        ("id" = Uuid, Path, description = "Activity catalog ID"),
+        ("uid" = Uuid, Path, description = "Instructor user ID")
+    ),
+    request_body = UpdateCatalogDefaultInstructorRoleRequest,
+    responses(
+        (status = 200, description = "Default instructor role updated", body = ApiResponse<crate::api_response::EmptyData>),
+        (status = 400, description = "Instructor role is invalid", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Curriculum update permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Default instructor assignment not found", body = ApiErrorResponse),
+        (status = 500, description = "Default instructor role could not be updated", body = ApiErrorResponse)
+    )
+)]
 pub async fn update_catalog_default_instructor_role(
     State(state): State<AppState>,
     headers: HeaderMap,

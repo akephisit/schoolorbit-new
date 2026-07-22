@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
+use utoipa::ToSchema;
 use uuid::Uuid;
 
 use chrono::{DateTime, Utc};
@@ -8,7 +9,7 @@ use chrono::{DateTime, Utc};
 // Activity Slot Models (ช่องกิจกรรม)
 // ==========================================
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct ActivitySlot {
     pub id: Uuid,
     pub activity_catalog_id: Uuid,
@@ -77,7 +78,7 @@ pub struct ActivitySlotFilter {
 // Activity Group Models (กิจกรรมจริง ภายใต้ slot)
 // ==========================================
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct ActivityGroup {
     pub id: Uuid,
     pub slot_id: Option<Uuid>,
@@ -187,7 +188,7 @@ pub struct UpdateMemberResultRequest {
 // Classroom Assignments (ครูต่อห้อง — independent slots)
 // ==========================================
 
-#[derive(Debug, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Serialize, Deserialize, FromRow, ToSchema)]
 pub struct SlotClassroomAssignment {
     pub id: Uuid,
     pub slot_id: Uuid,

@@ -50,7 +50,7 @@ struct SlotInstructorForSlotRow {
     instructor_name: Option<String>,
 }
 
-#[derive(Debug, serde::Serialize)]
+#[derive(Debug, serde::Serialize, utoipa::ToSchema)]
 pub struct GenerateActivitiesFromPlanOutcome {
     pub created: i32,
     pub skipped: i32,

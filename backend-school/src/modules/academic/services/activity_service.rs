@@ -913,7 +913,7 @@ pub async fn remove_group_instructor(
 // Slot Instructors
 // ============================================
 
-#[derive(Debug, serde::Serialize, sqlx::FromRow)]
+#[derive(Debug, serde::Serialize, sqlx::FromRow, utoipa::ToSchema)]
 pub struct SlotInstructorInfo {
     pub id: Uuid,
     pub user_id: Uuid,

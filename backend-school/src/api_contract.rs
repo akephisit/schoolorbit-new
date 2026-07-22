@@ -1,6 +1,9 @@
 use crate::api_response::{ApiErrorResponse, ApiResponse, EmptyData, UuidIdData};
 use crate::modules::academic::handlers::study_plans::{CountData, GenerateCoursesData};
 use crate::modules::academic::handlers::timetable::TimetableItemsData;
+use crate::modules::academic::models::activity::{
+    ActivityGroup, ActivitySlot, SlotClassroomAssignment,
+};
 use crate::modules::academic::models::curriculum::{
     AddSubjectDefaultInstructorRequest, CreateSubjectRequest, CurriculumInstructorRole,
     DefaultInstructorInput, Subject, SubjectDefaultInstructor, SubjectGroup, SubjectType,
@@ -10,9 +13,14 @@ use crate::modules::academic::models::exam_schedule::{
     PersonalExamScheduleRound, PersonalExamSessionView,
 };
 use crate::modules::academic::models::study_plans::{
-    AddSubjectsToVersionRequest, CreateStudyPlanRequest, CreateStudyPlanVersionRequest,
+    ActivityCatalog, ActivityCatalogType, ActivitySchedulingMode,
+    AddCatalogDefaultInstructorRequest, AddSubjectsToVersionRequest, CatalogDefaultInstructor,
+    CatalogDefaultInstructorInput, CreateCatalogRequest, CreatePlanActivityRequest,
+    CreateStudyPlanRequest, CreateStudyPlanVersionRequest, GenerateActivitiesFromPlanRequest,
     GenerateCoursesFromPlanRequest, GenerateCoursesResponse, StudyPlan, StudyPlanSubject,
-    StudyPlanVersion, SubjectInPlan, UpdateStudyPlanRequest, UpdateStudyPlanVersionRequest,
+    StudyPlanVersion, StudyPlanVersionActivity, SubjectInPlan,
+    UpdateCatalogDefaultInstructorRoleRequest, UpdateCatalogRequest, UpdatePlanActivityRequest,
+    UpdateStudyPlanRequest, UpdateStudyPlanVersionRequest,
 };
 use crate::modules::academic::models::timetable::TimetableEntry;
 use crate::modules::academic::models::{
@@ -23,6 +31,8 @@ use crate::modules::academic::models::{
     UpdateYearLevelsRequest,
 };
 use crate::modules::academic::services::academic_structure_service::AcademicStructure;
+use crate::modules::academic::services::activity_service::SlotInstructorInfo;
+use crate::modules::academic::services::study_plan_service::GenerateActivitiesFromPlanOutcome;
 use crate::modules::achievement::models::{
     Achievement, AchievementListFilter, CreateAchievementRequest, UpdateAchievementRequest,
 };
@@ -171,6 +181,19 @@ use utoipa::OpenApi;
         crate::modules::academic::handlers::study_plans::add_subjects_to_version,
         crate::modules::academic::handlers::study_plans::delete_study_plan_subject,
         crate::modules::academic::handlers::study_plans::generate_courses_from_plan,
+        crate::modules::academic::handlers::study_plans::list_plan_activities,
+        crate::modules::academic::handlers::study_plans::add_plan_activity,
+        crate::modules::academic::handlers::study_plans::update_plan_activity,
+        crate::modules::academic::handlers::study_plans::delete_plan_activity,
+        crate::modules::academic::handlers::study_plans::generate_activities_from_plan,
+        crate::modules::academic::handlers::study_plans::list_activity_catalog,
+        crate::modules::academic::handlers::study_plans::create_activity_catalog,
+        crate::modules::academic::handlers::study_plans::update_activity_catalog,
+        crate::modules::academic::handlers::study_plans::delete_activity_catalog,
+        crate::modules::academic::handlers::study_plans::list_catalog_default_instructors,
+        crate::modules::academic::handlers::study_plans::add_catalog_default_instructor,
+        crate::modules::academic::handlers::study_plans::remove_catalog_default_instructor,
+        crate::modules::academic::handlers::study_plans::update_catalog_default_instructor_role,
         crate::modules::calendar::handlers::list_my_calendar_events,
         crate::modules::calendar::handlers::list_public_calendar_events,
         crate::modules::calendar::handlers::list_calendar_events,
@@ -380,6 +403,30 @@ use utoipa::OpenApi;
         ApiResponse<Vec<StudyPlanSubject>>,
         ApiResponse<CountData<usize>>,
         ApiResponse<GenerateCoursesData>,
+        ActivityCatalogType,
+        ActivitySchedulingMode,
+        StudyPlanVersionActivity,
+        CreatePlanActivityRequest,
+        UpdatePlanActivityRequest,
+        GenerateActivitiesFromPlanRequest,
+        ActivityCatalog,
+        CatalogDefaultInstructorInput,
+        CreateCatalogRequest,
+        UpdateCatalogRequest,
+        CatalogDefaultInstructor,
+        AddCatalogDefaultInstructorRequest,
+        UpdateCatalogDefaultInstructorRoleRequest,
+        ActivitySlot,
+        ActivityGroup,
+        SlotInstructorInfo,
+        SlotClassroomAssignment,
+        GenerateActivitiesFromPlanOutcome,
+        ApiResponse<Vec<StudyPlanVersionActivity>>,
+        ApiResponse<StudyPlanVersionActivity>,
+        ApiResponse<Vec<ActivityCatalog>>,
+        ApiResponse<ActivityCatalog>,
+        ApiResponse<Vec<CatalogDefaultInstructor>>,
+        ApiResponse<GenerateActivitiesFromPlanOutcome>,
         ChildDto,
         ParentProfile,
         ApiResponse<StudentProfile>,
@@ -1115,7 +1162,7 @@ mod tests {
             .flat_map(|path| path.as_object().expect("path item").values())
             .filter(|operation| operation.get("operationId").is_some())
             .count();
-        assert_eq!(operation_count, 124);
+        assert_eq!(operation_count, 137);
     }
 
     #[test]
@@ -1261,7 +1308,189 @@ mod tests {
             .flat_map(|path| path.as_object().expect("path item").values())
             .filter(|operation| operation.get("operationId").is_some())
             .count();
-        assert_eq!(operation_count, 124);
+        assert_eq!(operation_count, 137);
+    }
+
+    #[test]
+    fn academic_activity_template_contracts() {
+        let document = school_api_value().expect("document should serialize");
+        assert_operations(
+            &document,
+            &[
+                (
+                    "/api/academic/study-plan-versions/{id}/activities",
+                    "get",
+                    "listStudyPlanActivities",
+                ),
+                (
+                    "/api/academic/study-plan-versions/{id}/activities",
+                    "post",
+                    "addStudyPlanActivity",
+                ),
+                (
+                    "/api/academic/study-plan-activities/{id}",
+                    "put",
+                    "updateStudyPlanActivity",
+                ),
+                (
+                    "/api/academic/study-plan-activities/{id}",
+                    "delete",
+                    "deleteStudyPlanActivity",
+                ),
+                (
+                    "/api/academic/activities/generate-from-plan",
+                    "post",
+                    "generateActivitiesFromStudyPlan",
+                ),
+                (
+                    "/api/academic/activity-catalog",
+                    "get",
+                    "listActivityCatalog",
+                ),
+                (
+                    "/api/academic/activity-catalog",
+                    "post",
+                    "createActivityCatalog",
+                ),
+                (
+                    "/api/academic/activity-catalog/{id}",
+                    "put",
+                    "updateActivityCatalog",
+                ),
+                (
+                    "/api/academic/activity-catalog/{id}",
+                    "delete",
+                    "deleteActivityCatalog",
+                ),
+                (
+                    "/api/academic/activity-catalog/{id}/default-instructors",
+                    "get",
+                    "listActivityCatalogDefaultInstructors",
+                ),
+                (
+                    "/api/academic/activity-catalog/{id}/default-instructors",
+                    "post",
+                    "addActivityCatalogDefaultInstructor",
+                ),
+                (
+                    "/api/academic/activity-catalog/{id}/default-instructors/{uid}",
+                    "delete",
+                    "removeActivityCatalogDefaultInstructor",
+                ),
+                (
+                    "/api/academic/activity-catalog/{id}/default-instructors/{uid}",
+                    "put",
+                    "updateActivityCatalogDefaultInstructorRole",
+                ),
+            ],
+        );
+
+        for (path, method, request_schema) in [
+            (
+                "/api/academic/study-plan-versions/{id}/activities",
+                "post",
+                "CreatePlanActivityRequest",
+            ),
+            (
+                "/api/academic/study-plan-activities/{id}",
+                "put",
+                "UpdatePlanActivityRequest",
+            ),
+            (
+                "/api/academic/activities/generate-from-plan",
+                "post",
+                "GenerateActivitiesFromPlanRequest",
+            ),
+            (
+                "/api/academic/activity-catalog",
+                "post",
+                "CreateCatalogRequest",
+            ),
+            (
+                "/api/academic/activity-catalog/{id}",
+                "put",
+                "UpdateCatalogRequest",
+            ),
+            (
+                "/api/academic/activity-catalog/{id}/default-instructors",
+                "post",
+                "AddCatalogDefaultInstructorRequest",
+            ),
+            (
+                "/api/academic/activity-catalog/{id}/default-instructors/{uid}",
+                "put",
+                "UpdateCatalogDefaultInstructorRoleRequest",
+            ),
+        ] {
+            assert_eq!(
+                document["paths"][path][method]["requestBody"]["content"]["application/json"]
+                    ["schema"]["$ref"],
+                format!("#/components/schemas/{request_schema}")
+            );
+        }
+
+        assert_eq!(
+            document["paths"]["/api/academic/study-plan-versions/{id}/activities"]["post"]
+                ["responses"]["201"]["content"]["application/json"]["schema"]["$ref"],
+            "#/components/schemas/ApiResponse_StudyPlanVersionActivity"
+        );
+        assert_eq!(
+            document["paths"]["/api/academic/activity-catalog"]["post"]["responses"]["201"]
+                ["content"]["application/json"]["schema"]["$ref"],
+            "#/components/schemas/ApiResponse_ActivityCatalog"
+        );
+        assert_eq!(
+            document["paths"]["/api/academic/activities/generate-from-plan"]["post"]["responses"]
+                ["200"]["content"]["application/json"]["schema"]["$ref"],
+            "#/components/schemas/ApiResponse_GenerateActivitiesFromPlanOutcome"
+        );
+
+        for (path, method) in [
+            ("/api/academic/study-plan-activities/{id}", "delete"),
+            ("/api/academic/activity-catalog/{id}", "delete"),
+            (
+                "/api/academic/activity-catalog/{id}/default-instructors",
+                "post",
+            ),
+            (
+                "/api/academic/activity-catalog/{id}/default-instructors/{uid}",
+                "delete",
+            ),
+            (
+                "/api/academic/activity-catalog/{id}/default-instructors/{uid}",
+                "put",
+            ),
+        ] {
+            assert_eq!(
+                document["paths"][path][method]["responses"]["200"]["content"]["application/json"]
+                    ["schema"]["$ref"],
+                "#/components/schemas/ApiResponse_EmptyData",
+                "incorrect empty success envelope for {method} {path}"
+            );
+        }
+
+        let schemas = &document["components"]["schemas"];
+        assert_eq!(
+            schemas["ActivityCatalog"]["properties"]["activity_type"]["$ref"],
+            "#/components/schemas/ActivityCatalogType"
+        );
+        assert_eq!(
+            schemas["ActivityCatalog"]["properties"]["scheduling_mode"]["$ref"],
+            "#/components/schemas/ActivitySchedulingMode"
+        );
+        assert_eq!(
+            schemas["CatalogDefaultInstructor"]["properties"]["role"]["$ref"],
+            "#/components/schemas/CurriculumInstructorRole"
+        );
+
+        let operation_count = document["paths"]
+            .as_object()
+            .expect("paths must be an object")
+            .values()
+            .flat_map(|path| path.as_object().expect("path item").values())
+            .filter(|operation| operation.get("operationId").is_some())
+            .count();
+        assert_eq!(operation_count, 137);
     }
 
     #[test]
@@ -1817,7 +2046,7 @@ mod tests {
                 }
             }
         }
-        assert_eq!(operation_ids.len(), 124);
+        assert_eq!(operation_ids.len(), 137);
 
         let schemas = &document["components"]["schemas"];
         let delegation = &schemas["DelegationItem"];

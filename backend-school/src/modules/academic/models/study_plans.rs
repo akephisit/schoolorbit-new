@@ -3,6 +3,7 @@ use sqlx::FromRow;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
+use crate::modules::academic::models::curriculum::CurriculumInstructorRole;
 use chrono::{DateTime, Utc};
 
 // ==========================================
@@ -183,7 +184,7 @@ pub struct GenerateCoursesResponse {
 // Study Plan Version Activities (template กิจกรรมพัฒนาผู้เรียน)
 // ==========================================
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct StudyPlanVersionActivity {
     pub id: Uuid,
     pub study_plan_version_id: Uuid,
@@ -201,12 +202,14 @@ pub struct StudyPlanVersionActivity {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub catalog_name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = Option<ActivityCatalogType>)]
     pub catalog_activity_type: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub catalog_description: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub catalog_periods_per_week: Option<i32>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = Option<ActivitySchedulingMode>)]
     pub catalog_scheduling_mode: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub catalog_term: Option<String>,
@@ -214,7 +217,7 @@ pub struct StudyPlanVersionActivity {
     pub catalog_grade_level_ids: Option<Vec<Uuid>>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct CreatePlanActivityRequest {
     pub activity_catalog_id: Uuid,
     /// ระดับชั้นที่จะเพิ่ม — required (1 row ต่อ grade)
@@ -224,7 +227,7 @@ pub struct CreatePlanActivityRequest {
     pub display_order: Option<i32>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct UpdatePlanActivityRequest {
     /// Pinned term — null means "ทุกเทอม" (always overwrites; no "keep old" semantic).
     /// Caller should pass the existing value to preserve.
@@ -232,7 +235,7 @@ pub struct UpdatePlanActivityRequest {
     pub display_order: Option<i32>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct GenerateActivitiesFromPlanRequest {
     pub study_plan_version_id: Uuid,
     pub semester_id: Uuid,
@@ -242,14 +245,33 @@ pub struct GenerateActivitiesFromPlanRequest {
 // Activity Catalog (คลังกิจกรรม — pattern เดียวกับ subjects)
 // ==========================================
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum ActivityCatalogType {
+    Scout,
+    Club,
+    Guidance,
+    Social,
+    Other,
+}
+
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum ActivitySchedulingMode {
+    Synchronized,
+    Independent,
+}
+
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct ActivityCatalog {
     pub id: Uuid,
     pub name: String,
     pub start_academic_year_id: Uuid, // version key — name เดียวมีหลายเวอร์ชันแยกปี
+    #[schema(value_type = ActivityCatalogType)]
     pub activity_type: String,
     pub description: Option<String>,
     pub periods_per_week: i32,
+    #[schema(value_type = ActivitySchedulingMode)]
     pub scheduling_mode: String,
     pub is_active: bool,
     pub term: Option<String>,
@@ -258,19 +280,22 @@ pub struct ActivityCatalog {
     pub updated_at: chrono::DateTime<chrono::Utc>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct CatalogDefaultInstructorInput {
     pub instructor_id: Uuid,
+    #[schema(value_type = CurriculumInstructorRole)]
     pub role: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct CreateCatalogRequest {
     pub name: String,
     pub start_academic_year_id: Uuid,
+    #[schema(value_type = ActivityCatalogType)]
     pub activity_type: String,
     pub description: Option<String>,
     pub periods_per_week: Option<i32>,
+    #[schema(value_type = Option<ActivitySchedulingMode>)]
     pub scheduling_mode: Option<String>,
     pub term: Option<String>,
     pub grade_level_ids: Option<Vec<Uuid>>,
@@ -280,12 +305,14 @@ pub struct CreateCatalogRequest {
     pub default_instructors: Option<Vec<CatalogDefaultInstructorInput>>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct UpdateCatalogRequest {
     pub name: Option<String>,
+    #[schema(value_type = Option<ActivityCatalogType>)]
     pub activity_type: Option<String>,
     pub description: Option<String>,
     pub periods_per_week: Option<i32>,
+    #[schema(value_type = Option<ActivitySchedulingMode>)]
     pub scheduling_mode: Option<String>,
     pub is_active: Option<bool>,
     pub term: Option<String>,
@@ -296,11 +323,12 @@ pub struct UpdateCatalogRequest {
 // Activity Catalog Default Instructors (pattern = subject_default_instructors)
 // ==========================================
 
-#[derive(Debug, serde::Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, serde::Serialize, Deserialize, sqlx::FromRow, ToSchema)]
 pub struct CatalogDefaultInstructor {
     pub id: Uuid,
     pub catalog_id: Uuid,
     pub instructor_id: Uuid,
+    #[schema(value_type = CurriculumInstructorRole)]
     pub role: String,
     pub created_at: chrono::DateTime<chrono::Utc>,
 
@@ -309,13 +337,15 @@ pub struct CatalogDefaultInstructor {
     pub instructor_name: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct AddCatalogDefaultInstructorRequest {
     pub instructor_id: Uuid,
+    #[schema(value_type = Option<CurriculumInstructorRole>)]
     pub role: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct UpdateCatalogDefaultInstructorRoleRequest {
+    #[schema(value_type = CurriculumInstructorRole)]
     pub role: String,
 }
