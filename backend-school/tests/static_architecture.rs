@@ -2272,54 +2272,6 @@ fn known_shape_jsonb_api_arrays_use_typed_boundaries() {
             "instructor_ids: serde_json::Value",
         ),
         (
-            "src/modules/academic/services/scheduling_service.rs",
-            "hard_unavailable_slots: serde_json::Value",
-        ),
-        (
-            "src/modules/academic/services/scheduling_service.rs",
-            "preferred_slots: serde_json::Value",
-        ),
-        (
-            "src/modules/academic/services/scheduling_service.rs",
-            "preferred_days: serde_json::Value",
-        ),
-        (
-            "src/modules/academic/services/scheduling_service.rs",
-            "avoid_days: serde_json::Value",
-        ),
-        (
-            "src/modules/academic/services/scheduling_service.rs",
-            "for_subjects: serde_json::Value",
-        ),
-        (
-            "src/modules/academic/services/scheduling_service.rs",
-            "scope_ids: serde_json::Value",
-        ),
-        (
-            "src/modules/academic/services/scheduling_service.rs",
-            "period_ids: serde_json::Value",
-        ),
-        (
-            "src/modules/academic/services/scheduling_service.rs",
-            "classroom_ids: serde_json::Value",
-        ),
-        (
-            "src/modules/academic/services/scheduling_service.rs",
-            "config: serde_json::Value",
-        ),
-        (
-            "src/modules/academic/services/scheduling_service.rs",
-            "failed_courses: serde_json::Value",
-        ),
-        (
-            "src/modules/academic/services/scheduling_config_service.rs",
-            "use serde_json::Value",
-        ),
-        (
-            "src/modules/academic/services/scheduler_data.rs",
-            "Option<serde_json::Value>",
-        ),
-        (
             "src/modules/academic/models.rs",
             "advisors: serde_json::Value",
         ),
