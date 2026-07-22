@@ -83,6 +83,7 @@ export type AddCatalogDefaultInstructorRequest = Schemas['AddCatalogDefaultInstr
 export type UpdateCatalogDefaultInstructorRoleRequest =
 	Schemas['UpdateCatalogDefaultInstructorRoleRequest'];
 export type ClassroomCourse = Schemas['ClassroomCourse'];
+export type ClassroomCourseSettings = Schemas['ClassroomCourseSettings'];
 export type CourseInstructor = Schemas['CourseInstructor'];
 export type CourseInstructorRole = Schemas['CourseInstructorRole'];
 export type AssignCoursesRequest = Schemas['AssignCoursesRequest'];

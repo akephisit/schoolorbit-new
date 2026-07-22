@@ -5234,7 +5234,9 @@
                     "null"
                   ]
                 },
-                "settings": {},
+                "settings": {
+                  "$ref": "#/components/schemas/ClassroomCourseSettings"
+                },
                 "subject_code": {
                   "type": [
                     "string",
@@ -5283,7 +5285,16 @@
                 "classroom_id",
                 "subject_id",
                 "academic_semester_id",
-                "settings"
+                "primary_instructor_id",
+                "settings",
+                "subject_code",
+                "subject_name_th",
+                "subject_name_en",
+                "subject_credit",
+                "subject_hours",
+                "instructor_name",
+                "subject_type",
+                "classroom_name"
               ],
               "type": "object"
             },
@@ -8585,7 +8596,9 @@
               "null"
             ]
           },
-          "settings": {},
+          "settings": {
+            "$ref": "#/components/schemas/ClassroomCourseSettings"
+          },
           "subject_code": {
             "type": [
               "string",
@@ -8634,8 +8647,21 @@
           "classroom_id",
           "subject_id",
           "academic_semester_id",
-          "settings"
+          "primary_instructor_id",
+          "settings",
+          "subject_code",
+          "subject_name_th",
+          "subject_name_en",
+          "subject_credit",
+          "subject_hours",
+          "instructor_name",
+          "subject_type",
+          "classroom_name"
         ],
+        "type": "object"
+      },
+      "ClassroomCourseSettings": {
+        "additionalProperties": true,
         "type": "object"
       },
       "ClassroomLookupItem": {
@@ -13469,7 +13495,9 @@
               "null"
             ]
           },
-          "settings": {}
+          "settings": {
+            "$ref": "#/components/schemas/ClassroomCourseSettings"
+          }
         },
         "type": "object"
       },
@@ -18368,6 +18396,16 @@
             },
             "description": "Courses assigned"
           },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Malformed or invalid JSON request"
+          },
           "401": {
             "content": {
               "application/json": {
@@ -18520,6 +18558,16 @@
             },
             "description": "Classroom course updated"
           },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Malformed or invalid JSON request"
+          },
           "401": {
             "content": {
               "application/json": {
@@ -18549,6 +18597,16 @@
               }
             },
             "description": "Classroom course or instructor not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Instructor has another timetable entry in the same period"
           },
           "500": {
             "content": {
@@ -18680,7 +18738,7 @@
                 }
               }
             },
-            "description": "Instructor role is invalid"
+            "description": "Malformed body or invalid instructor role"
           },
           "401": {
             "content": {
@@ -18711,6 +18769,16 @@
               }
             },
             "description": "Classroom course or instructor not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Instructor has another timetable entry in the same period"
           },
           "500": {
             "content": {
@@ -18794,6 +18862,16 @@
             },
             "description": "Classroom course or instructor assignment not found"
           },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Promoted instructor has another timetable entry in the same period"
+          },
           "500": {
             "content": {
               "application/json": {
@@ -18862,7 +18940,7 @@
                 }
               }
             },
-            "description": "Instructor role is invalid"
+            "description": "Malformed body or invalid instructor role"
           },
           "401": {
             "content": {
@@ -18893,6 +18971,16 @@
               }
             },
             "description": "Classroom course or instructor assignment not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Instructor has another timetable entry in the same period"
           },
           "500": {
             "content": {
@@ -19003,6 +19091,16 @@
               }
             },
             "description": "Course instructors grouped by course"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Malformed or invalid JSON request"
           },
           "401": {
             "content": {

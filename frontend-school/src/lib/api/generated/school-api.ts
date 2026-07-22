@@ -3491,23 +3491,23 @@ export interface components {
 				academic_semester_id: string;
 				/** Format: uuid */
 				classroom_id: string;
-				classroom_name?: string | null;
+				classroom_name: string | null;
 				/** Format: uuid */
 				id: string;
-				instructor_name?: string | null;
+				instructor_name: string | null;
 				/** Format: uuid */
-				primary_instructor_id?: string | null;
-				settings: unknown;
-				subject_code?: string | null;
+				primary_instructor_id: string | null;
+				settings: components['schemas']['ClassroomCourseSettings'];
+				subject_code: string | null;
 				/** Format: double */
-				subject_credit?: number | null;
+				subject_credit: number | null;
 				/** Format: int32 */
-				subject_hours?: number | null;
+				subject_hours: number | null;
 				/** Format: uuid */
 				subject_id: string;
-				subject_name_en?: string | null;
-				subject_name_th?: string | null;
-				subject_type?: string | null;
+				subject_name_en: string | null;
+				subject_name_th: string | null;
+				subject_type: string | null;
 			}[];
 			message?: string;
 			success: boolean;
@@ -4387,23 +4387,26 @@ export interface components {
 			academic_semester_id: string;
 			/** Format: uuid */
 			classroom_id: string;
-			classroom_name?: string | null;
+			classroom_name: string | null;
 			/** Format: uuid */
 			id: string;
-			instructor_name?: string | null;
+			instructor_name: string | null;
 			/** Format: uuid */
-			primary_instructor_id?: string | null;
-			settings: unknown;
-			subject_code?: string | null;
+			primary_instructor_id: string | null;
+			settings: components['schemas']['ClassroomCourseSettings'];
+			subject_code: string | null;
 			/** Format: double */
-			subject_credit?: number | null;
+			subject_credit: number | null;
 			/** Format: int32 */
-			subject_hours?: number | null;
+			subject_hours: number | null;
 			/** Format: uuid */
 			subject_id: string;
-			subject_name_en?: string | null;
-			subject_name_th?: string | null;
-			subject_type?: string | null;
+			subject_name_en: string | null;
+			subject_name_th: string | null;
+			subject_type: string | null;
+		};
+		ClassroomCourseSettings: {
+			[key: string]: unknown;
 		};
 		/** @description Classroom lookup item */
 		ClassroomLookupItem: {
@@ -5655,7 +5658,7 @@ export interface components {
 		UpdateCourseRequest: {
 			/** Format: uuid */
 			primary_instructor_id?: string | null;
-			settings?: unknown;
+			settings?: components['schemas']['ClassroomCourseSettings'];
 		};
 		UpdateEnrollmentNumberRequest: {
 			/** Format: int32 */
@@ -9019,6 +9022,15 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_CourseAssignedCountData'];
 				};
 			};
+			/** @description Malformed or invalid JSON request */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
 			/** @description Authentication required */
 			401: {
 				headers: {
@@ -9082,6 +9094,15 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_EmptyData'];
 				};
 			};
+			/** @description Malformed or invalid JSON request */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
 			/** @description Authentication required */
 			401: {
 				headers: {
@@ -9102,6 +9123,15 @@ export interface operations {
 			};
 			/** @description Classroom course or instructor not found */
 			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Instructor has another timetable entry in the same period */
+			409: {
 				headers: {
 					[name: string]: unknown;
 				};
@@ -9263,7 +9293,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_EmptyData'];
 				};
 			};
-			/** @description Instructor role is invalid */
+			/** @description Malformed body or invalid instructor role */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -9292,6 +9322,15 @@ export interface operations {
 			};
 			/** @description Classroom course or instructor not found */
 			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Instructor has another timetable entry in the same period */
+			409: {
 				headers: {
 					[name: string]: unknown;
 				};
@@ -9337,7 +9376,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_EmptyData'];
 				};
 			};
-			/** @description Instructor role is invalid */
+			/** @description Malformed body or invalid instructor role */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -9366,6 +9405,15 @@ export interface operations {
 			};
 			/** @description Classroom course or instructor assignment not found */
 			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Instructor has another timetable entry in the same period */
+			409: {
 				headers: {
 					[name: string]: unknown;
 				};
@@ -9427,6 +9475,15 @@ export interface operations {
 			};
 			/** @description Classroom course or instructor assignment not found */
 			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Promoted instructor has another timetable entry in the same period */
+			409: {
 				headers: {
 					[name: string]: unknown;
 				};
@@ -9523,6 +9580,15 @@ export interface operations {
 				};
 				content: {
 					'application/json': components['schemas']['ApiResponse_HashMap_String_Vec_CourseInstructor'];
+				};
+			};
+			/** @description Malformed or invalid JSON request */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
 			/** @description Authentication required */

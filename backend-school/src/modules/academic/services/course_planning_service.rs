@@ -169,7 +169,7 @@ pub async fn update_course(
     payload: UpdateCourseRequest,
 ) -> Result<(), AppError> {
     let mut tx = pool.begin().await?;
-    let _current_primary = sqlx::query_scalar::<_, Option<Uuid>>(
+    let current_primary = sqlx::query_scalar::<_, Option<Uuid>>(
         "SELECT primary_instructor_id FROM classroom_courses WHERE id = $1 FOR UPDATE",
     )
     .bind(id)
@@ -180,7 +180,7 @@ pub async fn update_course(
     if let Some(settings) = payload.settings {
         sqlx::query("UPDATE classroom_courses SET settings = $2, updated_at = NOW() WHERE id = $1")
             .bind(id)
-            .bind(settings)
+            .bind(sqlx::types::Json(settings))
             .execute(&mut *tx)
             .await?;
     }
@@ -188,26 +188,30 @@ pub async fn update_course(
     match payload.primary_instructor_id {
         OptionalUuidPatch::Unspecified => {}
         OptionalUuidPatch::Null => {
-            sqlx::query("DELETE FROM classroom_course_instructors WHERE classroom_course_id = $1")
+            if let Some(instructor_id) = current_primary {
+                sqlx::query(
+                    "DELETE FROM classroom_course_instructors
+                     WHERE classroom_course_id = $1 AND instructor_id = $2",
+                )
                 .bind(id)
+                .bind(instructor_id)
                 .execute(&mut *tx)
                 .await?;
-            sqlx::query(
-                "DELETE FROM timetable_entry_instructors tei
-                 USING academic_timetable_entries te
-                 WHERE tei.entry_id = te.id AND te.classroom_course_id = $1",
-            )
-            .bind(id)
-            .execute(&mut *tx)
-            .await?;
-            sqlx::query(
-                "UPDATE classroom_courses
-                 SET primary_instructor_id = NULL, updated_at = NOW()
-                 WHERE id = $1",
-            )
-            .bind(id)
-            .execute(&mut *tx)
-            .await?;
+                sqlx::query(
+                    "DELETE FROM timetable_entry_instructors tei
+                     USING academic_timetable_entries te
+                     WHERE tei.entry_id = te.id
+                       AND te.classroom_course_id = $1
+                       AND tei.instructor_id = $2",
+                )
+                .bind(id)
+                .bind(instructor_id)
+                .execute(&mut *tx)
+                .await?;
+                reconcile_course_primary_role(&mut tx, id).await?;
+                sync_existing_timetable_instructor_roles(&mut tx, id).await?;
+                upsert_course_primary_timetable_assignments(&mut tx, id).await?;
+            }
         }
         OptionalUuidPatch::Value(instructor_id) => {
             if sqlx::query_scalar::<_, Uuid>("SELECT id FROM users WHERE id = $1 FOR KEY SHARE")
@@ -229,29 +233,9 @@ pub async fn update_course(
             .bind(instructor_id)
             .execute(&mut *tx)
             .await?;
-            sqlx::query(
-                "UPDATE timetable_entry_instructors SET role = 'secondary'
-                 FROM academic_timetable_entries te
-                 WHERE timetable_entry_instructors.entry_id = te.id
-                   AND te.classroom_course_id = $1
-                   AND timetable_entry_instructors.instructor_id <> $2
-                   AND timetable_entry_instructors.role = 'primary'",
-            )
-            .bind(id)
-            .bind(instructor_id)
-            .execute(&mut *tx)
-            .await?;
-            sqlx::query(
-                "INSERT INTO timetable_entry_instructors (entry_id, instructor_id, role)
-                 SELECT te.id, $2, 'primary'
-                 FROM academic_timetable_entries te
-                 WHERE te.classroom_course_id = $1
-                 ON CONFLICT (entry_id, instructor_id) DO UPDATE SET role = 'primary'",
-            )
-            .bind(id)
-            .bind(instructor_id)
-            .execute(&mut *tx)
-            .await?;
+            reconcile_course_primary_role(&mut tx, id).await?;
+            sync_existing_timetable_instructor_roles(&mut tx, id).await?;
+            upsert_course_instructor_timetable_assignments(&mut tx, id, instructor_id).await?;
         }
     }
 
@@ -330,45 +314,11 @@ pub async fn add_course_instructor(
     .bind(instructor_id)
     .bind(role)
     .execute(&mut *tx)
-    .await
-    .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+    .await?;
 
-    if role == "primary" {
-        sqlx::query(
-            "UPDATE timetable_entry_instructors SET role = 'secondary'
-             FROM academic_timetable_entries te
-             WHERE timetable_entry_instructors.entry_id = te.id
-               AND te.classroom_course_id = $1
-               AND timetable_entry_instructors.instructor_id <> $2
-               AND timetable_entry_instructors.role = 'primary'",
-        )
-        .bind(course_id)
-        .bind(instructor_id)
-        .execute(&mut *tx)
-        .await?;
-    }
-
-    sqlx::query(
-        r#"INSERT INTO timetable_entry_instructors (entry_id, instructor_id, role)
-           SELECT te.id, $2, $3
-           FROM academic_timetable_entries te
-           WHERE te.classroom_course_id = $1
-             AND NOT EXISTS (
-                 SELECT 1 FROM academic_timetable_entries te2
-                 JOIN timetable_entry_instructors tei2 ON tei2.entry_id = te2.id
-                 WHERE tei2.instructor_id = $2
-                   AND te2.day_of_week = te.day_of_week
-                   AND te2.period_id = te.period_id
-                   AND te2.id <> te.id
-             )
-           ON CONFLICT (entry_id, instructor_id) DO UPDATE SET role = EXCLUDED.role"#,
-    )
-    .bind(course_id)
-    .bind(instructor_id)
-    .bind(role)
-    .execute(&mut *tx)
-    .await
-    .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+    reconcile_course_primary_role(&mut tx, course_id).await?;
+    sync_existing_timetable_instructor_roles(&mut tx, course_id).await?;
+    upsert_course_instructor_timetable_assignments(&mut tx, course_id, instructor_id).await?;
 
     tx.commit()
         .await
@@ -387,6 +337,11 @@ pub async fn remove_course_instructor(
         .map_err(|e| AppError::InternalServerError(e.to_string()))?;
 
     ensure_course_exists_in_tx(&mut tx, course_id).await?;
+    let current_primary: Option<Uuid> =
+        sqlx::query_scalar("SELECT primary_instructor_id FROM classroom_courses WHERE id = $1")
+            .bind(course_id)
+            .fetch_one(&mut *tx)
+            .await?;
 
     let result = sqlx::query(
         "DELETE FROM classroom_course_instructors
@@ -410,8 +365,13 @@ pub async fn remove_course_instructor(
     .bind(course_id)
     .bind(instructor_id)
     .execute(&mut *tx)
-    .await
-    .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+    .await?;
+
+    reconcile_course_primary_role(&mut tx, course_id).await?;
+    sync_existing_timetable_instructor_roles(&mut tx, course_id).await?;
+    if current_primary == Some(instructor_id) {
+        upsert_course_primary_timetable_assignments(&mut tx, course_id).await?;
+    }
 
     tx.commit()
         .await
@@ -432,6 +392,11 @@ pub async fn update_course_instructor_role(
         .map_err(|e| AppError::InternalServerError(e.to_string()))?;
 
     ensure_course_exists_in_tx(&mut tx, course_id).await?;
+    let current_primary: Option<Uuid> =
+        sqlx::query_scalar("SELECT primary_instructor_id FROM classroom_courses WHERE id = $1")
+            .bind(course_id)
+            .fetch_one(&mut *tx)
+            .await?;
     if sqlx::query_scalar::<_, Uuid>(
         "SELECT id FROM classroom_course_instructors
          WHERE classroom_course_id = $1 AND instructor_id = $2 FOR UPDATE",
@@ -447,20 +412,29 @@ pub async fn update_course_instructor_role(
         ));
     }
 
-    if role == "primary" {
-        sqlx::query(
-            "UPDATE timetable_entry_instructors SET role = 'secondary'
-             FROM academic_timetable_entries te
-             WHERE timetable_entry_instructors.entry_id = te.id
-               AND te.classroom_course_id = $1
-               AND timetable_entry_instructors.instructor_id <> $2
-               AND timetable_entry_instructors.role = 'primary'",
+    let replacement_primary = if role == "secondary" && current_primary == Some(instructor_id) {
+        Some(
+            sqlx::query_scalar::<_, Uuid>(
+                "SELECT instructor_id FROM classroom_course_instructors
+                 WHERE classroom_course_id = $1 AND instructor_id <> $2
+                 ORDER BY created_at, instructor_id
+                 LIMIT 1
+                 FOR UPDATE",
+            )
+            .bind(course_id)
+            .bind(instructor_id)
+            .fetch_optional(&mut *tx)
+            .await?
+            .ok_or_else(|| {
+                AppError::Conflict(
+                    "A course team must keep one primary instructor while it is not empty"
+                        .to_string(),
+                )
+            })?,
         )
-        .bind(course_id)
-        .bind(instructor_id)
-        .execute(&mut *tx)
-        .await?;
-    }
+    } else {
+        None
+    };
 
     sqlx::query(
         "UPDATE classroom_course_instructors SET role = $3
@@ -470,22 +444,27 @@ pub async fn update_course_instructor_role(
     .bind(instructor_id)
     .bind(role)
     .execute(&mut *tx)
-    .await
-    .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+    .await?;
 
-    sqlx::query(
-        "UPDATE timetable_entry_instructors SET role = $3
-         FROM academic_timetable_entries te
-         WHERE timetable_entry_instructors.entry_id = te.id
-           AND te.classroom_course_id = $1
-           AND timetable_entry_instructors.instructor_id = $2",
-    )
-    .bind(course_id)
-    .bind(instructor_id)
-    .bind(role)
-    .execute(&mut *tx)
-    .await
-    .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+    if let Some(replacement_id) = replacement_primary {
+        sqlx::query(
+            "UPDATE classroom_course_instructors SET role = 'primary'
+             WHERE classroom_course_id = $1 AND instructor_id = $2",
+        )
+        .bind(course_id)
+        .bind(replacement_id)
+        .execute(&mut *tx)
+        .await?;
+    }
+
+    reconcile_course_primary_role(&mut tx, course_id).await?;
+    sync_existing_timetable_instructor_roles(&mut tx, course_id).await?;
+    if role == "primary" {
+        upsert_course_instructor_timetable_assignments(&mut tx, course_id, instructor_id).await?;
+    }
+    if let Some(replacement_id) = replacement_primary {
+        upsert_course_instructor_timetable_assignments(&mut tx, course_id, replacement_id).await?;
+    }
 
     tx.commit()
         .await
@@ -581,7 +560,7 @@ async fn ensure_course_exists_in_tx(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     course_id: Uuid,
 ) -> Result<(), AppError> {
-    if sqlx::query_scalar::<_, Uuid>("SELECT id FROM classroom_courses WHERE id = $1 FOR KEY SHARE")
+    if sqlx::query_scalar::<_, Uuid>("SELECT id FROM classroom_courses WHERE id = $1 FOR UPDATE")
         .bind(course_id)
         .fetch_optional(&mut **tx)
         .await?
@@ -591,6 +570,95 @@ async fn ensure_course_exists_in_tx(
     } else {
         Err(AppError::NotFound("Classroom course not found".to_string()))
     }
+}
+
+async fn reconcile_course_primary_role(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    course_id: Uuid,
+) -> Result<(), AppError> {
+    sqlx::query(
+        "UPDATE classroom_course_instructors cci
+         SET role = 'primary'
+         FROM classroom_courses cc
+         WHERE cc.id = $1
+           AND cci.classroom_course_id = cc.id
+           AND cci.instructor_id = cc.primary_instructor_id
+           AND cci.role IS DISTINCT FROM 'primary'",
+    )
+    .bind(course_id)
+    .execute(&mut **tx)
+    .await?;
+    Ok(())
+}
+
+async fn sync_existing_timetable_instructor_roles(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    course_id: Uuid,
+) -> Result<(), AppError> {
+    sqlx::query(
+        "UPDATE timetable_entry_instructors tei
+         SET role = cci.role
+         FROM academic_timetable_entries te, classroom_course_instructors cci
+         WHERE tei.entry_id = te.id
+           AND te.classroom_course_id = $1
+           AND cci.classroom_course_id = $1
+           AND cci.instructor_id = tei.instructor_id
+           AND tei.role IS DISTINCT FROM cci.role",
+    )
+    .bind(course_id)
+    .execute(&mut **tx)
+    .await
+    .map_err(map_timetable_conflict)?;
+    Ok(())
+}
+
+async fn upsert_course_instructor_timetable_assignments(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    course_id: Uuid,
+    instructor_id: Uuid,
+) -> Result<(), AppError> {
+    sqlx::query(
+        "INSERT INTO timetable_entry_instructors (entry_id, instructor_id, role)
+         SELECT te.id, cci.instructor_id, cci.role
+         FROM academic_timetable_entries te
+         JOIN classroom_course_instructors cci
+           ON cci.classroom_course_id = te.classroom_course_id
+          AND cci.instructor_id = $2
+         WHERE te.classroom_course_id = $1
+         ON CONFLICT (entry_id, instructor_id) DO UPDATE SET role = EXCLUDED.role",
+    )
+    .bind(course_id)
+    .bind(instructor_id)
+    .execute(&mut **tx)
+    .await
+    .map_err(map_timetable_conflict)?;
+    Ok(())
+}
+
+async fn upsert_course_primary_timetable_assignments(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    course_id: Uuid,
+) -> Result<(), AppError> {
+    let primary_instructor_id: Option<Uuid> =
+        sqlx::query_scalar("SELECT primary_instructor_id FROM classroom_courses WHERE id = $1")
+            .bind(course_id)
+            .fetch_one(&mut **tx)
+            .await?;
+    if let Some(instructor_id) = primary_instructor_id {
+        upsert_course_instructor_timetable_assignments(tx, course_id, instructor_id).await?;
+    }
+    Ok(())
+}
+
+fn map_timetable_conflict(error: sqlx::Error) -> AppError {
+    if let sqlx::Error::Database(database_error) = &error {
+        if database_error.code().as_deref() == Some("23514") {
+            return AppError::Conflict(
+                "Instructor has another timetable entry in the same period".to_string(),
+            );
+        }
+    }
+    AppError::DbError(error)
 }
 
 async fn ensure_classroom_exists(pool: &PgPool, classroom_id: Uuid) -> Result<(), AppError> {

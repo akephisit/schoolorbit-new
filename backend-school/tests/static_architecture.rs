@@ -2381,11 +2381,7 @@ fn remaining_raw_json_values_are_explicit_dynamic_payloads() {
         ),
         (
             "src/modules/academic/models/course_planning.rs",
-            "pub settings: serde_json::Value",
-        ),
-        (
-            "src/modules/academic/models/course_planning.rs",
-            "pub settings: Option<serde_json::Value>",
+            "pub struct ClassroomCourseSettings(pub BTreeMap<String, serde_json::Value>);",
         ),
         (
             "src/modules/academic/models/study_plans.rs",
@@ -4010,8 +4006,10 @@ fn course_instructor_batch_endpoint_accepts_post_body() {
         "course instructor batch endpoint should route POST requests to the batch handler"
     );
     assert!(
-        handler.contains("Json(payload): Json<BatchListCourseInstructorsRequest>"),
-        "batch handler should deserialize course ids from JSON body"
+        handler.contains(
+            "payload_result: Result<Json<BatchListCourseInstructorsRequest>, JsonRejection>"
+        ),
+        "batch handler should map JSON rejection into the standard API error envelope"
     );
     assert!(
         models.contains("pub struct BatchListCourseInstructorsRequest")
@@ -4081,6 +4079,33 @@ fn course_planning_handlers_enforce_permission_and_service_boundaries() {
             );
         }
     }
+}
+
+#[test]
+fn course_planning_mutations_map_json_rejections_and_serialize_team_changes() {
+    let handlers = strip_comments(&read_source(
+        manifest_dir().join("src/modules/academic/handlers/course_planning.rs"),
+    ));
+    for request_type in [
+        "AssignCoursesRequest",
+        "UpdateCourseRequest",
+        "BatchListCourseInstructorsRequest",
+        "AddCourseInstructorRequest",
+        "UpdateCourseInstructorRoleRequest",
+    ] {
+        assert!(
+            handlers.contains(&format!("Result<Json<{request_type}>, JsonRejection>")),
+            "{request_type} must map malformed JSON into AppError"
+        );
+    }
+
+    let service = strip_comments(&read_source(
+        manifest_dir().join("src/modules/academic/services/course_planning_service.rs"),
+    ));
+    assert!(
+        service.contains("SELECT id FROM classroom_courses WHERE id = $1 FOR UPDATE"),
+        "teaching-team mutations must serialize on the classroom course row"
+    );
 }
 
 #[test]

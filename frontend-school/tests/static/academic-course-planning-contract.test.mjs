@@ -72,6 +72,7 @@ test('generated course planning contract owns all operations and wire DTOs', asy
 
 	for (const [alias, schema] of [
 		['ClassroomCourse', 'ClassroomCourse'],
+		['ClassroomCourseSettings', 'ClassroomCourseSettings'],
 		['CourseInstructor', 'CourseInstructor'],
 		['CourseInstructorRole', 'CourseInstructorRole'],
 		['AssignCoursesRequest', 'AssignCoursesRequest'],
@@ -87,10 +88,6 @@ test('generated course planning contract owns all operations and wire DTOs', asy
 			academicApi,
 			new RegExp(`export\\s+type\\s+${alias}\\s*=\\s*Schemas\\['${schema}'\\]`)
 		);
-	}
-
-	for (const localInterface of ['ClassroomCourseSettings']) {
-		assert.doesNotMatch(academicApi, new RegExp(`export\\s+interface\\s+${localInterface}\\b`));
 	}
 
 	assert.match(

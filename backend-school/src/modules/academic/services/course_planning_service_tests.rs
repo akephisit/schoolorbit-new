@@ -2,7 +2,8 @@ use std::sync::atomic::{AtomicI32, Ordering};
 
 use crate::error::AppError;
 use crate::modules::academic::models::course_planning::{
-    AssignCoursesRequest, OptionalUuidPatch, PlanQuery, UpdateCourseRequest,
+    AssignCoursesRequest, ClassroomCourseSettings, OptionalUuidPatch, PlanQuery,
+    UpdateCourseRequest,
 };
 use crate::test_helpers::{create_test_pool, run_test_migrations};
 use uuid::Uuid;
@@ -314,7 +315,12 @@ async fn course_update_assigns_and_clears_primary_team_transactionally() {
         fixture.course_id,
         UpdateCourseRequest {
             primary_instructor_id: OptionalUuidPatch::Unspecified,
-            settings: Some(serde_json::json!({ "display": "compact" })),
+            settings: Some(
+                serde_json::from_value::<ClassroomCourseSettings>(
+                    serde_json::json!({ "display": "compact" }),
+                )
+                .expect("object settings should deserialize"),
+            ),
         },
     )
     .await
@@ -366,7 +372,7 @@ async fn course_update_assigns_and_clears_primary_team_transactionally() {
             .fetch_one(&pool)
             .await
             .expect("course should remain");
-    assert_eq!(primary_after_clear, None);
+    assert_eq!(primary_after_clear, Some(fixture.primary_instructor_id));
     let remaining_primary_count: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM classroom_course_instructors
          WHERE classroom_course_id = $1 AND role = 'primary'",
@@ -375,7 +381,7 @@ async fn course_update_assigns_and_clears_primary_team_transactionally() {
     .fetch_one(&pool)
     .await
     .expect("course team should remain queryable");
-    assert_eq!(remaining_primary_count, 0);
+    assert_eq!(remaining_primary_count, 1);
     let cleared_timetable_count: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM timetable_entry_instructors
          WHERE entry_id = $1 AND instructor_id = $2",
@@ -386,6 +392,27 @@ async fn course_update_assigns_and_clears_primary_team_transactionally() {
     .await
     .expect("timetable team should remain queryable");
     assert_eq!(cleared_timetable_count, 0);
+
+    let retained_course_role: String = sqlx::query_scalar(
+        "SELECT role FROM classroom_course_instructors
+         WHERE classroom_course_id = $1 AND instructor_id = $2",
+    )
+    .bind(fixture.course_id)
+    .bind(fixture.primary_instructor_id)
+    .fetch_one(&pool)
+    .await
+    .expect("previous instructor should remain as a secondary team member");
+    assert_eq!(retained_course_role, "primary");
+    let retained_timetable_role: String = sqlx::query_scalar(
+        "SELECT role FROM timetable_entry_instructors
+         WHERE entry_id = $1 AND instructor_id = $2",
+    )
+    .bind(entry_id)
+    .bind(fixture.primary_instructor_id)
+    .fetch_one(&pool)
+    .await
+    .expect("previous instructor should remain on the timetable entry");
+    assert_eq!(retained_timetable_role, retained_course_role);
 }
 
 #[tokio::test]
@@ -507,6 +534,674 @@ async fn promoting_course_instructor_synchronizes_existing_timetable_team() {
     .expect("timetable instructor roles should load");
     assert!(timetable_roles.contains(&(fixture.primary_instructor_id, "secondary".to_string())));
     assert!(timetable_roles.contains(&(fixture.second_instructor_id, "primary".to_string())));
+}
+
+#[tokio::test]
+async fn removing_primary_synchronizes_the_database_promoted_timetable_role() {
+    let pool = migrated_pool().await;
+    let fixture = insert_fixture(&pool).await;
+    let entry_id = Uuid::new_v4();
+
+    sqlx::query(
+        "INSERT INTO academic_timetable_entries
+            (id, classroom_course_id, day_of_week, period_id, classroom_id,
+             academic_semester_id)
+         VALUES ($1, $2, 'WED', $3, $4, $5)",
+    )
+    .bind(entry_id)
+    .bind(fixture.course_id)
+    .bind(fixture.period_id)
+    .bind(fixture.classroom_id)
+    .bind(fixture.semester_id)
+    .execute(&pool)
+    .await
+    .expect("timetable entry should insert");
+    sqlx::query(
+        "INSERT INTO timetable_entry_instructors (entry_id, instructor_id, role)
+         VALUES ($1, $2, 'primary')",
+    )
+    .bind(entry_id)
+    .bind(fixture.primary_instructor_id)
+    .execute(&pool)
+    .await
+    .expect("primary timetable instructor should insert");
+
+    course_planning_service::add_course_instructor(
+        &pool,
+        fixture.course_id,
+        fixture.second_instructor_id,
+        "secondary",
+    )
+    .await
+    .expect("secondary instructor should be added");
+    sqlx::query(
+        "DELETE FROM timetable_entry_instructors
+         WHERE entry_id = $1 AND instructor_id = $2",
+    )
+    .bind(entry_id)
+    .bind(fixture.second_instructor_id)
+    .execute(&pool)
+    .await
+    .expect("legacy partial timetable assignment should be simulated");
+    course_planning_service::remove_course_instructor(
+        &pool,
+        fixture.course_id,
+        fixture.primary_instructor_id,
+    )
+    .await
+    .expect("current primary should be removed");
+
+    let course_role: String = sqlx::query_scalar(
+        "SELECT role FROM classroom_course_instructors
+         WHERE classroom_course_id = $1 AND instructor_id = $2",
+    )
+    .bind(fixture.course_id)
+    .bind(fixture.second_instructor_id)
+    .fetch_one(&pool)
+    .await
+    .expect("remaining course instructor should exist");
+    assert_eq!(course_role, "primary");
+
+    let timetable_role: String = sqlx::query_scalar(
+        "SELECT role FROM timetable_entry_instructors
+         WHERE entry_id = $1 AND instructor_id = $2",
+    )
+    .bind(entry_id)
+    .bind(fixture.second_instructor_id)
+    .fetch_one(&pool)
+    .await
+    .expect("remaining timetable instructor should exist");
+    assert_eq!(timetable_role, course_role);
+}
+
+#[tokio::test]
+async fn clearing_primary_fills_a_missing_promoted_timetable_assignment() {
+    let pool = migrated_pool().await;
+    let fixture = insert_fixture(&pool).await;
+    let entry_id = Uuid::new_v4();
+
+    sqlx::query(
+        "INSERT INTO academic_timetable_entries
+            (id, classroom_course_id, day_of_week, period_id, classroom_id,
+             academic_semester_id)
+         VALUES ($1, $2, 'TUE', $3, $4, $5)",
+    )
+    .bind(entry_id)
+    .bind(fixture.course_id)
+    .bind(fixture.period_id)
+    .bind(fixture.classroom_id)
+    .bind(fixture.semester_id)
+    .execute(&pool)
+    .await
+    .expect("timetable entry should insert");
+    sqlx::query(
+        "INSERT INTO timetable_entry_instructors (entry_id, instructor_id, role)
+         VALUES ($1, $2, 'primary')",
+    )
+    .bind(entry_id)
+    .bind(fixture.primary_instructor_id)
+    .execute(&pool)
+    .await
+    .expect("current primary timetable assignment should insert");
+    course_planning_service::add_course_instructor(
+        &pool,
+        fixture.course_id,
+        fixture.second_instructor_id,
+        "secondary",
+    )
+    .await
+    .expect("secondary instructor should be added");
+    sqlx::query(
+        "DELETE FROM timetable_entry_instructors
+         WHERE entry_id = $1 AND instructor_id = $2",
+    )
+    .bind(entry_id)
+    .bind(fixture.second_instructor_id)
+    .execute(&pool)
+    .await
+    .expect("legacy partial timetable assignment should be simulated");
+
+    course_planning_service::update_course(
+        &pool,
+        fixture.course_id,
+        UpdateCourseRequest {
+            primary_instructor_id: OptionalUuidPatch::Null,
+            settings: None,
+        },
+    )
+    .await
+    .expect("clearing the primary should attach the promoted replacement");
+
+    let timetable_role: String = sqlx::query_scalar(
+        "SELECT role FROM timetable_entry_instructors
+         WHERE entry_id = $1 AND instructor_id = $2",
+    )
+    .bind(entry_id)
+    .bind(fixture.second_instructor_id)
+    .fetch_one(&pool)
+    .await
+    .expect("promoted replacement should be restored to the timetable entry");
+    assert_eq!(timetable_role, "primary");
+}
+
+#[tokio::test]
+async fn adding_the_first_secondary_uses_the_database_promoted_timetable_role() {
+    let pool = migrated_pool().await;
+    let fixture = insert_fixture(&pool).await;
+    let entry_id = Uuid::new_v4();
+
+    sqlx::query(
+        "INSERT INTO academic_timetable_entries
+            (id, classroom_course_id, day_of_week, period_id, classroom_id,
+             academic_semester_id)
+         VALUES ($1, $2, 'FRI', $3, $4, $5)",
+    )
+    .bind(entry_id)
+    .bind(fixture.course_id)
+    .bind(fixture.period_id)
+    .bind(fixture.classroom_id)
+    .bind(fixture.semester_id)
+    .execute(&pool)
+    .await
+    .expect("timetable entry should insert");
+    course_planning_service::update_course(
+        &pool,
+        fixture.course_id,
+        UpdateCourseRequest {
+            primary_instructor_id: OptionalUuidPatch::Null,
+            settings: None,
+        },
+    )
+    .await
+    .expect("existing primary should clear before adding the first team member");
+
+    course_planning_service::add_course_instructor(
+        &pool,
+        fixture.course_id,
+        fixture.second_instructor_id,
+        "secondary",
+    )
+    .await
+    .expect("first secondary request should add the instructor");
+
+    let course_role: String = sqlx::query_scalar(
+        "SELECT role FROM classroom_course_instructors
+         WHERE classroom_course_id = $1 AND instructor_id = $2",
+    )
+    .bind(fixture.course_id)
+    .bind(fixture.second_instructor_id)
+    .fetch_one(&pool)
+    .await
+    .expect("new course instructor should exist");
+    assert_eq!(course_role, "primary");
+    let timetable_role: String = sqlx::query_scalar(
+        "SELECT role FROM timetable_entry_instructors
+         WHERE entry_id = $1 AND instructor_id = $2",
+    )
+    .bind(entry_id)
+    .bind(fixture.second_instructor_id)
+    .fetch_one(&pool)
+    .await
+    .expect("new timetable instructor should exist");
+    assert_eq!(timetable_role, course_role);
+}
+
+#[tokio::test]
+async fn adding_an_instructor_with_a_timetable_conflict_rolls_back_the_team_change() {
+    let pool = migrated_pool().await;
+    let fixture = insert_fixture(&pool).await;
+    let course_entry_id = Uuid::new_v4();
+    let conflicting_entry_id = Uuid::new_v4();
+
+    for entry_id in [course_entry_id, conflicting_entry_id] {
+        sqlx::query(
+            "INSERT INTO academic_timetable_entries
+                (id, classroom_course_id, day_of_week, period_id, classroom_id,
+                 academic_semester_id)
+             VALUES ($1, $2, 'THU', $3, $4, $5)",
+        )
+        .bind(entry_id)
+        .bind(if entry_id == course_entry_id {
+            Some(fixture.course_id)
+        } else {
+            None
+        })
+        .bind(fixture.period_id)
+        .bind(if entry_id == course_entry_id {
+            Some(fixture.classroom_id)
+        } else {
+            None
+        })
+        .bind(fixture.semester_id)
+        .execute(&pool)
+        .await
+        .expect("timetable entry should insert");
+    }
+    sqlx::query(
+        "INSERT INTO timetable_entry_instructors (entry_id, instructor_id, role)
+         VALUES ($1, $2, 'primary')",
+    )
+    .bind(conflicting_entry_id)
+    .bind(fixture.second_instructor_id)
+    .execute(&pool)
+    .await
+    .expect("conflicting timetable assignment should insert");
+
+    assert!(matches!(
+        course_planning_service::add_course_instructor(
+            &pool,
+            fixture.course_id,
+            fixture.second_instructor_id,
+            "secondary",
+        )
+        .await,
+        Err(AppError::Conflict(_))
+    ));
+
+    let course_assignment_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM classroom_course_instructors
+         WHERE classroom_course_id = $1 AND instructor_id = $2",
+    )
+    .bind(fixture.course_id)
+    .bind(fixture.second_instructor_id)
+    .fetch_one(&pool)
+    .await
+    .expect("course assignment count should load");
+    assert_eq!(course_assignment_count, 0);
+}
+
+#[tokio::test]
+async fn updating_the_course_primary_maps_timetable_conflict_and_rolls_back() {
+    let pool = migrated_pool().await;
+    let fixture = insert_fixture(&pool).await;
+    let course_entry_id = Uuid::new_v4();
+    let conflicting_entry_id = Uuid::new_v4();
+
+    for entry_id in [course_entry_id, conflicting_entry_id] {
+        sqlx::query(
+            "INSERT INTO academic_timetable_entries
+                (id, classroom_course_id, day_of_week, period_id, classroom_id,
+                 academic_semester_id)
+             VALUES ($1, $2, 'SAT', $3, $4, $5)",
+        )
+        .bind(entry_id)
+        .bind(if entry_id == course_entry_id {
+            Some(fixture.course_id)
+        } else {
+            None
+        })
+        .bind(fixture.period_id)
+        .bind(if entry_id == course_entry_id {
+            Some(fixture.classroom_id)
+        } else {
+            None
+        })
+        .bind(fixture.semester_id)
+        .execute(&pool)
+        .await
+        .expect("timetable entry should insert");
+    }
+    sqlx::query(
+        "INSERT INTO timetable_entry_instructors (entry_id, instructor_id, role)
+         VALUES ($1, $2, 'primary')",
+    )
+    .bind(conflicting_entry_id)
+    .bind(fixture.second_instructor_id)
+    .execute(&pool)
+    .await
+    .expect("conflicting timetable assignment should insert");
+
+    assert!(matches!(
+        course_planning_service::update_course(
+            &pool,
+            fixture.course_id,
+            UpdateCourseRequest {
+                primary_instructor_id: OptionalUuidPatch::Value(fixture.second_instructor_id),
+                settings: None,
+            },
+        )
+        .await,
+        Err(AppError::Conflict(_))
+    ));
+
+    let course_primary: Option<Uuid> =
+        sqlx::query_scalar("SELECT primary_instructor_id FROM classroom_courses WHERE id = $1")
+            .bind(fixture.course_id)
+            .fetch_one(&pool)
+            .await
+            .expect("course primary should load");
+    assert_eq!(course_primary, Some(fixture.primary_instructor_id));
+}
+
+#[tokio::test]
+async fn promoting_an_instructor_fills_missing_timetable_assignments() {
+    let pool = migrated_pool().await;
+    let fixture = insert_fixture(&pool).await;
+
+    course_planning_service::add_course_instructor(
+        &pool,
+        fixture.course_id,
+        fixture.second_instructor_id,
+        "secondary",
+    )
+    .await
+    .expect("secondary instructor should be added before scheduling");
+
+    let entry_id = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO academic_timetable_entries
+            (id, classroom_course_id, day_of_week, period_id, classroom_id,
+             academic_semester_id)
+         VALUES ($1, $2, 'SUN', $3, $4, $5)",
+    )
+    .bind(entry_id)
+    .bind(fixture.course_id)
+    .bind(fixture.period_id)
+    .bind(fixture.classroom_id)
+    .bind(fixture.semester_id)
+    .execute(&pool)
+    .await
+    .expect("timetable entry should insert");
+    sqlx::query(
+        "INSERT INTO timetable_entry_instructors (entry_id, instructor_id, role)
+         VALUES ($1, $2, 'primary')",
+    )
+    .bind(entry_id)
+    .bind(fixture.primary_instructor_id)
+    .execute(&pool)
+    .await
+    .expect("current primary timetable assignment should insert");
+
+    course_planning_service::update_course_instructor_role(
+        &pool,
+        fixture.course_id,
+        fixture.second_instructor_id,
+        "primary",
+    )
+    .await
+    .expect("promotion should fill the instructor's missing timetable assignment");
+
+    let promoted_role: String = sqlx::query_scalar(
+        "SELECT role FROM timetable_entry_instructors
+         WHERE entry_id = $1 AND instructor_id = $2",
+    )
+    .bind(entry_id)
+    .bind(fixture.second_instructor_id)
+    .fetch_one(&pool)
+    .await
+    .expect("promoted instructor should be added to the timetable entry");
+    assert_eq!(promoted_role, "primary");
+}
+
+#[tokio::test]
+async fn demoting_the_primary_promotes_another_instructor_and_synchronizes_timetable_roles() {
+    let pool = migrated_pool().await;
+    let fixture = insert_fixture(&pool).await;
+    let entry_id = Uuid::new_v4();
+
+    sqlx::query(
+        "INSERT INTO academic_timetable_entries
+            (id, classroom_course_id, day_of_week, period_id, classroom_id,
+             academic_semester_id)
+         VALUES ($1, $2, 'MON', $3, $4, $5)",
+    )
+    .bind(entry_id)
+    .bind(fixture.course_id)
+    .bind(fixture.period_id)
+    .bind(fixture.classroom_id)
+    .bind(fixture.semester_id)
+    .execute(&pool)
+    .await
+    .expect("timetable entry should insert");
+    sqlx::query(
+        "INSERT INTO timetable_entry_instructors (entry_id, instructor_id, role)
+         VALUES ($1, $2, 'primary')",
+    )
+    .bind(entry_id)
+    .bind(fixture.primary_instructor_id)
+    .execute(&pool)
+    .await
+    .expect("current primary timetable assignment should insert");
+    course_planning_service::add_course_instructor(
+        &pool,
+        fixture.course_id,
+        fixture.second_instructor_id,
+        "secondary",
+    )
+    .await
+    .expect("secondary instructor should be added");
+
+    course_planning_service::update_course_instructor_role(
+        &pool,
+        fixture.course_id,
+        fixture.primary_instructor_id,
+        "secondary",
+    )
+    .await
+    .expect("another instructor should replace the demoted primary");
+
+    let course_primary: Option<Uuid> =
+        sqlx::query_scalar("SELECT primary_instructor_id FROM classroom_courses WHERE id = $1")
+            .bind(fixture.course_id)
+            .fetch_one(&pool)
+            .await
+            .expect("course primary should load");
+    assert_eq!(course_primary, Some(fixture.second_instructor_id));
+
+    let roles: Vec<(Uuid, String, String)> = sqlx::query_as(
+        "SELECT cci.instructor_id, cci.role, tei.role
+         FROM classroom_course_instructors cci
+         JOIN timetable_entry_instructors tei ON tei.instructor_id = cci.instructor_id
+         WHERE cci.classroom_course_id = $1 AND tei.entry_id = $2
+         ORDER BY cci.instructor_id",
+    )
+    .bind(fixture.course_id)
+    .bind(entry_id)
+    .fetch_all(&pool)
+    .await
+    .expect("course and timetable roles should load");
+    assert!(roles.contains(&(
+        fixture.primary_instructor_id,
+        "secondary".to_string(),
+        "secondary".to_string(),
+    )));
+    assert!(roles.contains(&(
+        fixture.second_instructor_id,
+        "primary".to_string(),
+        "primary".to_string(),
+    )));
+}
+
+#[tokio::test]
+async fn demoting_the_only_instructor_returns_conflict_without_changing_the_team() {
+    let pool = migrated_pool().await;
+    let fixture = insert_fixture(&pool).await;
+
+    assert!(matches!(
+        course_planning_service::update_course_instructor_role(
+            &pool,
+            fixture.course_id,
+            fixture.primary_instructor_id,
+            "secondary",
+        )
+        .await,
+        Err(AppError::Conflict(_))
+    ));
+
+    let role: String = sqlx::query_scalar(
+        "SELECT role FROM classroom_course_instructors
+         WHERE classroom_course_id = $1 AND instructor_id = $2",
+    )
+    .bind(fixture.course_id)
+    .bind(fixture.primary_instructor_id)
+    .fetch_one(&pool)
+    .await
+    .expect("sole instructor role should load");
+    assert_eq!(role, "primary");
+}
+
+#[tokio::test]
+async fn keeping_a_secondary_role_does_not_restore_an_intentionally_missing_timetable_row() {
+    let pool = migrated_pool().await;
+    let fixture = insert_fixture(&pool).await;
+
+    course_planning_service::add_course_instructor(
+        &pool,
+        fixture.course_id,
+        fixture.second_instructor_id,
+        "secondary",
+    )
+    .await
+    .expect("secondary instructor should join the course team");
+
+    let course_entry_id = Uuid::new_v4();
+    let conflicting_entry_id = Uuid::new_v4();
+    for entry_id in [course_entry_id, conflicting_entry_id] {
+        sqlx::query(
+            "INSERT INTO academic_timetable_entries
+                (id, classroom_course_id, day_of_week, period_id, classroom_id,
+                 academic_semester_id)
+             VALUES ($1, $2, 'WED', $3, $4, $5)",
+        )
+        .bind(entry_id)
+        .bind(if entry_id == course_entry_id {
+            Some(fixture.course_id)
+        } else {
+            None
+        })
+        .bind(fixture.period_id)
+        .bind(if entry_id == course_entry_id {
+            Some(fixture.classroom_id)
+        } else {
+            None
+        })
+        .bind(fixture.semester_id)
+        .execute(&pool)
+        .await
+        .expect("timetable entry should insert");
+    }
+    sqlx::query(
+        "INSERT INTO timetable_entry_instructors (entry_id, instructor_id, role)
+         VALUES ($1, $2, 'primary'), ($3, $4, 'primary')",
+    )
+    .bind(course_entry_id)
+    .bind(fixture.primary_instructor_id)
+    .bind(conflicting_entry_id)
+    .bind(fixture.second_instructor_id)
+    .execute(&pool)
+    .await
+    .expect("actual timetable assignments should insert");
+
+    course_planning_service::update_course_instructor_role(
+        &pool,
+        fixture.course_id,
+        fixture.second_instructor_id,
+        "secondary",
+    )
+    .await
+    .expect("unchanged secondary role should not touch missing timetable rows");
+
+    let restored_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM timetable_entry_instructors
+         WHERE entry_id = $1 AND instructor_id = $2",
+    )
+    .bind(course_entry_id)
+    .bind(fixture.second_instructor_id)
+    .fetch_one(&pool)
+    .await
+    .expect("timetable assignment count should load");
+    assert_eq!(restored_count, 0);
+}
+
+#[tokio::test]
+async fn adding_a_secondary_does_not_restore_a_missing_primary_timetable_row() {
+    let pool = migrated_pool().await;
+    let fixture = insert_fixture(&pool).await;
+    let entry_id = Uuid::new_v4();
+
+    sqlx::query(
+        "INSERT INTO academic_timetable_entries
+            (id, classroom_course_id, day_of_week, period_id, classroom_id,
+             academic_semester_id)
+         VALUES ($1, $2, 'FRI', $3, $4, $5)",
+    )
+    .bind(entry_id)
+    .bind(fixture.course_id)
+    .bind(fixture.period_id)
+    .bind(fixture.classroom_id)
+    .bind(fixture.semester_id)
+    .execute(&pool)
+    .await
+    .expect("timetable entry should insert without an actual primary assignment");
+
+    course_planning_service::add_course_instructor(
+        &pool,
+        fixture.course_id,
+        fixture.second_instructor_id,
+        "secondary",
+    )
+    .await
+    .expect("secondary instructor should be added to current entries");
+
+    let primary_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM timetable_entry_instructors
+         WHERE entry_id = $1 AND instructor_id = $2",
+    )
+    .bind(entry_id)
+    .bind(fixture.primary_instructor_id)
+    .fetch_one(&pool)
+    .await
+    .expect("primary assignment count should load");
+    assert_eq!(primary_count, 0);
+}
+
+#[tokio::test]
+async fn removing_a_secondary_does_not_restore_a_missing_primary_timetable_row() {
+    let pool = migrated_pool().await;
+    let fixture = insert_fixture(&pool).await;
+    course_planning_service::add_course_instructor(
+        &pool,
+        fixture.course_id,
+        fixture.second_instructor_id,
+        "secondary",
+    )
+    .await
+    .expect("secondary instructor should join the course team");
+
+    let entry_id = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO academic_timetable_entries
+            (id, classroom_course_id, day_of_week, period_id, classroom_id,
+             academic_semester_id)
+         VALUES ($1, $2, 'SAT', $3, $4, $5)",
+    )
+    .bind(entry_id)
+    .bind(fixture.course_id)
+    .bind(fixture.period_id)
+    .bind(fixture.classroom_id)
+    .bind(fixture.semester_id)
+    .execute(&pool)
+    .await
+    .expect("timetable entry should insert without an actual primary assignment");
+
+    course_planning_service::remove_course_instructor(
+        &pool,
+        fixture.course_id,
+        fixture.second_instructor_id,
+    )
+    .await
+    .expect("secondary instructor should be removed from the course team");
+
+    let primary_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM timetable_entry_instructors
+         WHERE entry_id = $1 AND instructor_id = $2",
+    )
+    .bind(entry_id)
+    .bind(fixture.primary_instructor_id)
+    .fetch_one(&pool)
+    .await
+    .expect("primary assignment count should load");
+    assert_eq!(primary_count, 0);
 }
 
 #[tokio::test]

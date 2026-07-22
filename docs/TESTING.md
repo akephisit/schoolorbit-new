@@ -146,8 +146,12 @@ Course planning reads use `ACADEMIC_COURSE_PLAN_READ_ALL`; mutations use
 `ACADEMIC_COURSE_PLAN_MANAGE_ALL`. Missing parents and mutation targets return
 not-found, instructor roles are limited to `primary`/`secondary`, and assignment
 counts report actual inserts. In `UpdateCourseRequest`, an omitted
-`primary_instructor_id` leaves the team unchanged while explicit `null` clears
-the primary team assignment and derived timetable-entry instructors.
+`primary_instructor_id` leaves the team unchanged while explicit `null` removes
+only the current primary and derived timetable-entry assignments. Secondary
+team members remain, and any database-promoted replacement primary is synced to
+the timetable. Team mutations serialize on the course row and roll back with
+`409` instead of committing partial assignments when an instructor has a period
+conflict. `settings`, when present, must be a JSON object.
 
 This is the current Phase 4 mutation-contract rollout checkpoint. The next
 Phase 2 batch is scheduling configuration. The document tracks implemented

@@ -130,7 +130,12 @@ Course planning reads require `ACADEMIC_COURSE_PLAN_READ_ALL`; mutations require
 targets with not-found, constrain instructor roles to `primary`/`secondary`,
 report actual inserted counts, and synchronize primary-team and timetable-entry
 instructors transactionally. Omitting `primary_instructor_id` from
-`UpdateCourseRequest` leaves the team unchanged; explicit JSON `null` clears it.
+`UpdateCourseRequest` leaves the team unchanged; explicit JSON `null` removes
+only the current primary and its derived timetable assignments while preserving
+secondary instructors and syncing any promoted replacement. Instructor period
+conflicts return `409` and roll back the whole team mutation. Course `settings`
+is an optional, flexible JSON object; non-object values and explicit `null` are
+invalid request bodies.
 
 This is the current Phase 4 mutation-contract rollout checkpoint. The next
 Phase 2 batch is scheduling configuration. The OpenAPI document describes

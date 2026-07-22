@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
+use std::collections::BTreeMap;
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
@@ -16,6 +17,31 @@ pub enum OptionalUuidPatch {
     Unspecified,
     Null,
     Value(Uuid),
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct ClassroomCourseSettings(pub BTreeMap<String, serde_json::Value>);
+
+impl utoipa::PartialSchema for ClassroomCourseSettings {
+    fn schema() -> utoipa::openapi::RefOr<utoipa::openapi::schema::Schema> {
+        utoipa::openapi::schema::ObjectBuilder::new()
+            .additional_properties(Some(
+                utoipa::openapi::schema::AdditionalProperties::FreeForm(true),
+            ))
+            .into()
+    }
+}
+
+impl ToSchema for ClassroomCourseSettings {}
+
+fn deserialize_optional_course_settings<'de, D>(
+    deserializer: D,
+) -> Result<Option<ClassroomCourseSettings>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    ClassroomCourseSettings::deserialize(deserializer).map(Some)
 }
 
 impl<'de> Deserialize<'de> for OptionalUuidPatch {
@@ -36,27 +62,37 @@ pub struct ClassroomCourse {
     pub classroom_id: Uuid,
     pub subject_id: Uuid,
     pub academic_semester_id: Uuid,
+    #[schema(required = true)]
     pub primary_instructor_id: Option<Uuid>,
     #[sqlx(default)]
-    pub settings: serde_json::Value,
+    #[schema(value_type = ClassroomCourseSettings)]
+    pub settings: sqlx::types::Json<ClassroomCourseSettings>,
 
     // Joined Fields
     #[sqlx(default)]
+    #[schema(required = true)]
     pub subject_code: Option<String>,
     #[sqlx(default)]
+    #[schema(required = true)]
     pub subject_name_th: Option<String>,
     #[sqlx(default)]
+    #[schema(required = true)]
     pub subject_name_en: Option<String>,
     #[sqlx(default)]
+    #[schema(required = true)]
     pub subject_credit: Option<f64>,
     #[sqlx(default)]
+    #[schema(required = true)]
     pub subject_hours: Option<i32>,
     #[sqlx(default)]
+    #[schema(required = true)]
     pub instructor_name: Option<String>,
     #[sqlx(default)]
     #[serde(rename = "subject_type")]
+    #[schema(required = true)]
     pub subject_type: Option<String>,
     #[sqlx(default)]
+    #[schema(required = true)]
     pub classroom_name: Option<String>,
 }
 
@@ -81,7 +117,9 @@ pub struct UpdateCourseRequest {
     #[serde(default)]
     #[schema(value_type = Option<Uuid>, nullable = true)]
     pub primary_instructor_id: OptionalUuidPatch,
-    pub settings: Option<serde_json::Value>,
+    #[serde(default, deserialize_with = "deserialize_optional_course_settings")]
+    #[schema(value_type = ClassroomCourseSettings)]
+    pub settings: Option<ClassroomCourseSettings>,
 }
 
 // ==========================================
@@ -130,4 +168,28 @@ pub struct BatchListCourseInstructorsQuery {
 #[into_params(parameter_in = Query)]
 pub struct ClassroomActivityQuery {
     pub semester_id: Uuid,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::UpdateCourseRequest;
+
+    #[test]
+    fn course_settings_accept_only_json_objects_when_present() {
+        let valid: UpdateCourseRequest =
+            serde_json::from_str(r#"{"settings":{"display":"compact","nested":{"enabled":true}}}"#)
+                .expect("object settings should deserialize");
+        assert!(valid.settings.is_some());
+
+        for invalid in [
+            r#"{"settings":null}"#,
+            r#"{"settings":"compact"}"#,
+            r#"{"settings":["compact"]}"#,
+        ] {
+            assert!(
+                serde_json::from_str::<UpdateCourseRequest>(invalid).is_err(),
+                "non-object settings should be rejected: {invalid}"
+            );
+        }
+    }
 }

@@ -1,5 +1,5 @@
 use axum::{
-    extract::{Path, Query, State},
+    extract::{rejection::JsonRejection, Path, Query, State},
     http::HeaderMap,
     response::IntoResponse,
     Json,
@@ -42,6 +42,12 @@ fn parse_course_ids(value: &str) -> Result<Vec<Uuid>, AppError> {
             Err(error) => Some(Err(error)),
         })
         .collect()
+}
+
+fn parse_json_payload<T>(payload_result: Result<Json<T>, JsonRejection>) -> Result<T, AppError> {
+    let Json(payload) =
+        payload_result.map_err(|rejection| AppError::BadRequest(rejection.body_text()))?;
+    Ok(payload)
 }
 
 async fn broadcast_course_refresh(
@@ -100,6 +106,7 @@ pub async fn list_classroom_courses(
     request_body = AssignCoursesRequest,
     responses(
         (status = 200, description = "Courses assigned", body = ApiResponse<CourseAssignedCountData>),
+        (status = 400, description = "Malformed or invalid JSON request", body = crate::api_response::ApiErrorResponse),
         (status = 401, description = "Authentication required", body = crate::api_response::ApiErrorResponse),
         (status = 403, description = "Course-plan management permission denied", body = crate::api_response::ApiErrorResponse),
         (status = 404, description = "Classroom, semester, or subject not found", body = crate::api_response::ApiErrorResponse),
@@ -109,8 +116,9 @@ pub async fn list_classroom_courses(
 pub async fn assign_courses(
     State(state): State<AppState>,
     headers: HeaderMap,
-    Json(payload): Json<AssignCoursesRequest>,
+    payload_result: Result<Json<AssignCoursesRequest>, JsonRejection>,
 ) -> Result<impl IntoResponse, AppError> {
+    let payload = parse_json_payload(payload_result)?;
     let context = actor_tenant_context(&state, &headers).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
@@ -159,9 +167,11 @@ pub async fn remove_course(
     request_body = UpdateCourseRequest,
     responses(
         (status = 200, description = "Classroom course updated", body = ApiResponse<crate::api_response::EmptyData>),
+        (status = 400, description = "Malformed or invalid JSON request", body = crate::api_response::ApiErrorResponse),
         (status = 401, description = "Authentication required", body = crate::api_response::ApiErrorResponse),
         (status = 403, description = "Course-plan management permission denied", body = crate::api_response::ApiErrorResponse),
         (status = 404, description = "Classroom course or instructor not found", body = crate::api_response::ApiErrorResponse),
+        (status = 409, description = "Instructor has another timetable entry in the same period", body = crate::api_response::ApiErrorResponse),
         (status = 500, description = "Classroom course could not be updated", body = crate::api_response::ApiErrorResponse)
     )
 )]
@@ -169,8 +179,9 @@ pub async fn update_course(
     State(state): State<AppState>,
     headers: HeaderMap,
     Path(id): Path<Uuid>,
-    Json(payload): Json<UpdateCourseRequest>,
+    payload_result: Result<Json<UpdateCourseRequest>, JsonRejection>,
 ) -> Result<impl IntoResponse, AppError> {
+    let payload = parse_json_payload(payload_result)?;
     let context = actor_tenant_context(&state, &headers).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
@@ -187,6 +198,7 @@ pub async fn update_course(
     request_body = BatchListCourseInstructorsRequest,
     responses(
         (status = 200, description = "Course instructors grouped by course", body = ApiResponse<HashMap<String, Vec<crate::modules::academic::models::course_planning::CourseInstructor>>>),
+        (status = 400, description = "Malformed or invalid JSON request", body = crate::api_response::ApiErrorResponse),
         (status = 401, description = "Authentication required", body = crate::api_response::ApiErrorResponse),
         (status = 403, description = "Course-plan read permission denied", body = crate::api_response::ApiErrorResponse),
         (status = 500, description = "Course instructors could not be loaded", body = crate::api_response::ApiErrorResponse)
@@ -195,8 +207,9 @@ pub async fn update_course(
 pub async fn batch_list_course_instructors(
     State(state): State<AppState>,
     headers: HeaderMap,
-    Json(payload): Json<BatchListCourseInstructorsRequest>,
+    payload_result: Result<Json<BatchListCourseInstructorsRequest>, JsonRejection>,
 ) -> Result<impl IntoResponse, AppError> {
+    let payload = parse_json_payload(payload_result)?;
     let context = actor_tenant_context(&state, &headers).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
@@ -270,10 +283,11 @@ pub async fn list_course_instructors(
     request_body = AddCourseInstructorRequest,
     responses(
         (status = 200, description = "Course instructor added", body = ApiResponse<crate::api_response::EmptyData>),
-        (status = 400, description = "Instructor role is invalid", body = crate::api_response::ApiErrorResponse),
+        (status = 400, description = "Malformed body or invalid instructor role", body = crate::api_response::ApiErrorResponse),
         (status = 401, description = "Authentication required", body = crate::api_response::ApiErrorResponse),
         (status = 403, description = "Course-plan management permission denied", body = crate::api_response::ApiErrorResponse),
         (status = 404, description = "Classroom course or instructor not found", body = crate::api_response::ApiErrorResponse),
+        (status = 409, description = "Instructor has another timetable entry in the same period", body = crate::api_response::ApiErrorResponse),
         (status = 500, description = "Course instructor could not be added", body = crate::api_response::ApiErrorResponse)
     )
 )]
@@ -281,8 +295,9 @@ pub async fn add_course_instructor(
     State(state): State<AppState>,
     headers: HeaderMap,
     Path(course_id): Path<Uuid>,
-    Json(body): Json<AddCourseInstructorRequest>,
+    payload_result: Result<Json<AddCourseInstructorRequest>, JsonRejection>,
 ) -> Result<impl IntoResponse, AppError> {
+    let body = parse_json_payload(payload_result)?;
     let context = actor_tenant_context(&state, &headers).await?;
     context
         .actor
@@ -313,6 +328,7 @@ pub async fn add_course_instructor(
         (status = 401, description = "Authentication required", body = crate::api_response::ApiErrorResponse),
         (status = 403, description = "Course-plan management permission denied", body = crate::api_response::ApiErrorResponse),
         (status = 404, description = "Classroom course or instructor assignment not found", body = crate::api_response::ApiErrorResponse),
+        (status = 409, description = "Promoted instructor has another timetable entry in the same period", body = crate::api_response::ApiErrorResponse),
         (status = 500, description = "Course instructor could not be removed", body = crate::api_response::ApiErrorResponse)
     )
 )]
@@ -347,10 +363,11 @@ pub async fn remove_course_instructor(
     request_body = UpdateCourseInstructorRoleRequest,
     responses(
         (status = 200, description = "Course instructor role updated", body = ApiResponse<crate::api_response::EmptyData>),
-        (status = 400, description = "Instructor role is invalid", body = crate::api_response::ApiErrorResponse),
+        (status = 400, description = "Malformed body or invalid instructor role", body = crate::api_response::ApiErrorResponse),
         (status = 401, description = "Authentication required", body = crate::api_response::ApiErrorResponse),
         (status = 403, description = "Course-plan management permission denied", body = crate::api_response::ApiErrorResponse),
         (status = 404, description = "Classroom course or instructor assignment not found", body = crate::api_response::ApiErrorResponse),
+        (status = 409, description = "Instructor has another timetable entry in the same period", body = crate::api_response::ApiErrorResponse),
         (status = 500, description = "Course instructor role could not be updated", body = crate::api_response::ApiErrorResponse)
     )
 )]
@@ -358,8 +375,9 @@ pub async fn update_course_instructor_role(
     State(state): State<AppState>,
     headers: HeaderMap,
     Path((course_id, instructor_id)): Path<(Uuid, Uuid)>,
-    Json(body): Json<UpdateCourseInstructorRoleRequest>,
+    payload_result: Result<Json<UpdateCourseInstructorRoleRequest>, JsonRejection>,
 ) -> Result<impl IntoResponse, AppError> {
+    let body = parse_json_payload(payload_result)?;
     let context = actor_tenant_context(&state, &headers).await?;
     context
         .actor

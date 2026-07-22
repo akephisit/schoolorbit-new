@@ -16,8 +16,9 @@ use crate::modules::academic::models::activity::{
 };
 use crate::modules::academic::models::course_planning::{
     AddCourseInstructorRequest, AssignCoursesRequest, BatchListCourseInstructorsQuery,
-    BatchListCourseInstructorsRequest, ClassroomActivityQuery, ClassroomCourse, CourseInstructor,
-    CourseInstructorRole, PlanQuery, UpdateCourseInstructorRoleRequest, UpdateCourseRequest,
+    BatchListCourseInstructorsRequest, ClassroomActivityQuery, ClassroomCourse,
+    ClassroomCourseSettings, CourseInstructor, CourseInstructorRole, PlanQuery,
+    UpdateCourseInstructorRoleRequest, UpdateCourseRequest,
 };
 use crate::modules::academic::models::curriculum::{
     AddSubjectDefaultInstructorRequest, CreateSubjectRequest, CurriculumInstructorRole,
@@ -462,6 +463,7 @@ use utoipa::OpenApi;
         ApiResponse<GenerateCoursesData>,
         CourseInstructorRole,
         ClassroomCourse,
+        ClassroomCourseSettings,
         PlanQuery,
         AssignCoursesRequest,
         UpdateCourseRequest,
@@ -1985,6 +1987,32 @@ mod tests {
                 format!("#/components/schemas/{request_schema}"),
                 "incorrect request schema for {method} {path}"
             );
+            assert_eq!(
+                document["paths"][path][method]["responses"]["400"]["content"]["application/json"]
+                    ["schema"]["$ref"],
+                "#/components/schemas/ApiErrorResponse",
+                "invalid JSON must use the standard 400 envelope for {method} {path}"
+            );
+        }
+
+        for (path, method) in [
+            ("/api/academic/planning/courses/{id}", "put"),
+            ("/api/academic/planning/courses/{id}/instructors", "post"),
+            (
+                "/api/academic/planning/courses/{id}/instructors/{uid}",
+                "put",
+            ),
+            (
+                "/api/academic/planning/courses/{id}/instructors/{uid}",
+                "delete",
+            ),
+        ] {
+            assert_eq!(
+                document["paths"][path][method]["responses"]["409"]["content"]["application/json"]
+                    ["schema"]["$ref"],
+                "#/components/schemas/ApiErrorResponse",
+                "timetable conflicts must use the standard 409 envelope for {method} {path}"
+            );
         }
 
         assert_eq!(
@@ -2016,6 +2044,58 @@ mod tests {
         assert_eq!(
             schemas["CourseInstructorRole"]["enum"],
             serde_json::json!(["primary", "secondary"])
+        );
+
+        let classroom_course = &schemas["ClassroomCourse"];
+        assert_eq!(
+            required(classroom_course),
+            vec![
+                "academic_semester_id",
+                "classroom_id",
+                "classroom_name",
+                "id",
+                "instructor_name",
+                "primary_instructor_id",
+                "settings",
+                "subject_code",
+                "subject_credit",
+                "subject_hours",
+                "subject_id",
+                "subject_name_en",
+                "subject_name_th",
+                "subject_type",
+            ]
+        );
+        for nullable_field in [
+            "primary_instructor_id",
+            "subject_code",
+            "subject_name_th",
+            "subject_name_en",
+            "subject_credit",
+            "subject_hours",
+            "instructor_name",
+            "subject_type",
+            "classroom_name",
+        ] {
+            assert!(
+                contains_null(&classroom_course["properties"][nullable_field]),
+                "{nullable_field} must be required but nullable"
+            );
+        }
+        assert_eq!(
+            classroom_course["properties"]["settings"]["$ref"],
+            "#/components/schemas/ClassroomCourseSettings"
+        );
+        assert_eq!(
+            schemas["UpdateCourseRequest"]["properties"]["settings"]["$ref"],
+            "#/components/schemas/ClassroomCourseSettings"
+        );
+        assert_eq!(schemas["ClassroomCourseSettings"]["type"], "object");
+        assert!(
+            schemas["ClassroomCourseSettings"]
+                .get("additionalProperties")
+                .is_some(),
+            "course settings must allow arbitrary JSON-valued properties"
         );
     }
 

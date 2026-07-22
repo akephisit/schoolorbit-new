@@ -49,7 +49,7 @@ The checkpoint after this batch is 177 unique operations. SSE, WebSocket, health
 
 ### Typed API boundary
 
-`models/course_planning.rs` owns query, request, response, and bounded role schemas. Existing snake_case JSON remains unchanged. Flexible `classroom_courses.settings` stays a JSON object because the stored settings are intentionally open-ended; it is the exception permitted for flexible configuration, not a new known-shape JSONB contract.
+`models/course_planning.rs` owns query, request, response, and bounded role schemas. Existing snake_case JSON remains unchanged. Flexible `classroom_courses.settings` stays a named JSON-object schema with arbitrary JSON-valued properties because the stored settings are intentionally open-ended; primitives, arrays, and explicit `null` are rejected when the field is present.
 
 The primary instructor patch must distinguish an omitted property from explicit JSON `null`:
 
@@ -65,12 +65,12 @@ Handlers remain limited to request context, permission enforcement, service call
 
 - Course assignment validates the classroom, semester, and every distinct subject before writing. Duplicate subject IDs are normalized. The returned count is the number of newly inserted classroom courses.
 - Course update/delete return `404` when the course does not exist.
-- Explicit primary-instructor changes validate the user and update the course team plus existing timetable-entry instructors in one transaction. Clearing the primary removes that primary assignment and its derived timetable-entry assignments; omitting the field leaves it unchanged.
-- Instructor list on a missing course returns `404`. Add validates course, instructor, and role. Remove/update return `404` for a missing assignment, and updating a missing assignment cannot demote the current primary.
+- Explicit primary-instructor changes validate the user and update the course team plus existing timetable-entry instructors in one transaction. Clearing the primary removes only that instructor and its derived timetable-entry assignments; secondary team members remain, and the database-selected replacement primary is synchronized back to timetable roles. Omitting the field leaves it unchanged.
+- Instructor list on a missing course returns `404`. Add validates course, instructor, and role. Remove/update return `404` for a missing assignment, and updating a missing assignment cannot demote the current primary. Team mutations lock the course row, never commit partial timetable assignments, and return `409` when an instructor is already scheduled in the same period or when demoting the only team member would leave a non-empty team without a primary.
 - The comma-separated GET batch query rejects any malformed UUID with `400` rather than silently dropping it. Empty batch input returns an empty map.
 - Classroom activity listing validates both classroom and semester before returning an empty list. Removing a missing classroom-slot assignment returns `404`.
 
-Database failures remain `500` without exposing raw SQL or credentials. Expected client errors are `400`, `401`, `403`, `404`, and `409` only where a real domain conflict can occur.
+Malformed or semantically invalid JSON bodies are mapped to the standard error envelope with `400`. Database failures remain `500` without exposing raw SQL or credentials. Expected client errors are `400`, `401`, `403`, `404`, and `409` only where a real domain conflict can occur.
 
 ### Authorization
 
