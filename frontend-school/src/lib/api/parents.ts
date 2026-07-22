@@ -1,31 +1,13 @@
 import { apiClient } from '$lib/api/client';
+import type { components } from '$lib/api/generated/school-api';
 import type { TimetableEntry } from './timetable';
 import type { Student } from './students';
 
 type LoadedApiResponse<T> = { success: true; data: T };
+type Schemas = components['schemas'];
 
-export interface ChildDto {
-	id: string;
-	first_name: string;
-	last_name: string;
-	student_id?: string;
-	grade_level?: string;
-	class_room?: string;
-	profile_image_url?: string;
-	relationship: string;
-}
-
-export interface ParentProfile {
-	id: string;
-	username: string;
-	first_name: string;
-	last_name: string;
-	title?: string;
-	phone?: string;
-	email?: string;
-	national_id?: string;
-	children: ChildDto[];
-}
+export type ChildDto = Schemas['ChildDto'];
+export type ParentProfile = Schemas['ParentProfile'];
 
 /**
  * Get own parent profile (Parent self-service)

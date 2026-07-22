@@ -516,6 +516,40 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/api/parent/profile': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		/** GET /api/parent/profile - ผู้ปกครองดูข้อมูลตนเองและบุตรหลาน */
+		get: operations['getParentProfile'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/parent/students/{student_id}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		/** GET /api/parent/students/:student_id - ผู้ปกครองดูรายละเอียดบุตรหลาน */
+		get: operations['getParentChildProfile'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/api/permissions': {
 		parameters: {
 			query?: never;
@@ -573,6 +607,88 @@ export interface paths {
 		};
 		get: operations['getRole'];
 		put: operations['updateRole'];
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/staff': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listStaff'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/staff/{id}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getStaffProfile'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/staff/{id}/public-profile': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		/** Public profile — authentication required but no permission check (any logged-in user) */
+		get: operations['getPublicStaffProfile'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/staff/dashboard': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getStaffDashboard'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/student/profile': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		/** GET /api/student/profile - นักเรียนดูข้อมูลตนเอง */
+		get: operations['getStudentProfile'];
+		put?: never;
 		post?: never;
 		delete?: never;
 		options?: never;
@@ -648,6 +764,17 @@ export interface components {
 			responsibilities?: string | null;
 			/** Format: uuid */
 			user_id: string;
+		};
+		/** @description ห้องที่ครูเป็นครูที่ปรึกษา — ดึงจาก classroom_advisors */
+		AdvisorClassroomItem: {
+			/** Format: int32 */
+			academic_year: number;
+			academic_year_label: string;
+			classroom_code: string;
+			/** Format: uuid */
+			classroom_id: string;
+			classroom_name: string;
+			role: string;
 		};
 		ApiErrorResponse: {
 			error: string;
@@ -742,6 +869,22 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
+		ApiResponse_ParentProfile: {
+			data: {
+				children: components['schemas']['ChildDto'][];
+				email: string | null;
+				first_name: string;
+				/** Format: uuid */
+				id: string;
+				last_name: string;
+				national_id: string | null;
+				phone: string | null;
+				title: string | null;
+				username: string;
+			};
+			message?: string;
+			success: boolean;
+		};
 		ApiResponse_ProfileResponse: {
 			data: {
 				address: string | null;
@@ -774,6 +917,28 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
+		ApiResponse_PublicStaffProfile: {
+			data: {
+				email: string | null;
+				first_name: string;
+				/** Format: date */
+				hired_date: string | null;
+				/** Format: uuid */
+				id: string;
+				last_name: string;
+				nickname: string | null;
+				organization_units: components['schemas']['PublicStaffOrganizationUnit'][];
+				phone: string | null;
+				profile_image_url: string | null;
+				roles: components['schemas']['PublicStaffRole'][];
+				status: string;
+				title: string | null;
+				user_type: string;
+				username: string;
+			};
+			message?: string;
+			success: boolean;
+		};
 		ApiResponse_Role: {
 			data: {
 				code: string;
@@ -791,6 +956,71 @@ export interface components {
 				/** Format: date-time */
 				updated_at: string;
 				user_type: string;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_StaffDashboardOverview: {
+			data: {
+				/** Format: int64 */
+				activeClassrooms: number;
+				/** Format: int64 */
+				totalStaff: number;
+				/** Format: int64 */
+				totalStudents: number;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_StaffListData: {
+			data: {
+				items: components['schemas']['StaffListItem'][];
+				/** Format: int64 */
+				page: number;
+				/** Format: int64 */
+				page_size: number;
+				/** Format: int64 */
+				total: number;
+				/** Format: int64 */
+				total_pages: number;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_StaffProfileResponse: {
+			data: {
+				address: string | null;
+				advisor_classrooms: components['schemas']['AdvisorClassroomItem'][];
+				date_of_birth: string | null;
+				email: string | null;
+				emergency_contact: string | null;
+				first_name: string;
+				gender: string | null;
+				hired_date: string | null;
+				/** Format: uuid */
+				id: string;
+				last_name: string;
+				line_id: string | null;
+				national_id: string | null;
+				nickname: string | null;
+				organization_units: components['schemas']['OrganizationUnitResponse'][];
+				permissions: string[];
+				phone: string | null;
+				profile_image_url: string | null;
+				roles: components['schemas']['RoleResponse'][];
+				staff_info: null | components['schemas']['StaffInfoResponse'];
+				status: string;
+				teaching_courses: components['schemas']['TeachingCourseItem'][];
+				title: string | null;
+				user_type: string;
+				username: string;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_StudentProfile: {
+			data: components['schemas']['StudentDbRow'] & {
+				parents: components['schemas']['ParentDto'][];
 			};
 			message?: string;
 			success: boolean;
@@ -1165,6 +1395,17 @@ export interface components {
 			currentPassword: string;
 			newPassword: string;
 		};
+		ChildDto: {
+			class_room: string | null;
+			first_name: string;
+			grade_level: string | null;
+			/** Format: uuid */
+			id: string;
+			last_name: string;
+			profile_image_url: string | null;
+			relationship: string;
+			student_id: string | null;
+		};
 		/** @description Classroom lookup item */
 		ClassroomLookupItem: {
 			grade_level?: string;
@@ -1402,6 +1643,42 @@ export interface components {
 			subject_group_id?: string;
 			unit_type?: string;
 		};
+		OrganizationUnitResponse: {
+			category: string | null;
+			code: string;
+			/** Format: uuid */
+			id: string;
+			is_primary: boolean | null;
+			name: string;
+			position_code: string | null;
+			position_title: string | null;
+			responsibilities: string | null;
+			/** Format: uuid */
+			subject_group_id: string | null;
+			unit_type: string | null;
+		};
+		ParentDto: {
+			first_name: string;
+			/** Format: uuid */
+			id: string;
+			is_primary: boolean;
+			last_name: string;
+			phone: string | null;
+			relationship: string;
+			username: string;
+		};
+		ParentProfile: {
+			children: components['schemas']['ChildDto'][];
+			email: string | null;
+			first_name: string;
+			/** Format: uuid */
+			id: string;
+			last_name: string;
+			national_id: string | null;
+			phone: string | null;
+			title: string | null;
+			username: string;
+		};
 		Permission: {
 			action: string;
 			code: string;
@@ -1442,6 +1719,40 @@ export interface components {
 			username: string;
 			userType: string;
 		};
+		PublicStaffOrganizationUnit: {
+			code: string;
+			/** Format: uuid */
+			id: string;
+			name: string;
+			position_code: string;
+			position_title: string | null;
+		};
+		PublicStaffProfile: {
+			email: string | null;
+			first_name: string;
+			/** Format: date */
+			hired_date: string | null;
+			/** Format: uuid */
+			id: string;
+			last_name: string;
+			nickname: string | null;
+			organization_units: components['schemas']['PublicStaffOrganizationUnit'][];
+			phone: string | null;
+			profile_image_url: string | null;
+			roles: components['schemas']['PublicStaffRole'][];
+			status: string;
+			title: string | null;
+			user_type: string;
+			username: string;
+		};
+		PublicStaffRole: {
+			code: string;
+			/** Format: uuid */
+			id: string;
+			/** Format: int32 */
+			level: number | null;
+			name: string;
+		};
 		Role: {
 			code: string;
 			/** Format: date-time */
@@ -1467,6 +1778,17 @@ export interface components {
 			name: string;
 			user_type: string;
 		};
+		RoleResponse: {
+			code: string;
+			/** Format: uuid */
+			id: string;
+			is_primary: boolean | null;
+			/** Format: int32 */
+			level: number;
+			name: string;
+			name_en: string | null;
+			user_type: string;
+		};
 		Room: {
 			/** Format: uuid */
 			building_id: string | null;
@@ -1488,12 +1810,100 @@ export interface components {
 			/** Format: date-time */
 			updated_at: string;
 		};
+		StaffDashboardOverview: {
+			/** Format: int64 */
+			activeClassrooms: number;
+			/** Format: int64 */
+			totalStaff: number;
+			/** Format: int64 */
+			totalStudents: number;
+		};
+		StaffInfoResponse: {
+			education_level: string | null;
+			major: string | null;
+			university: string | null;
+		};
+		StaffListData: {
+			items: components['schemas']['StaffListItem'][];
+			/** Format: int64 */
+			page: number;
+			/** Format: int64 */
+			page_size: number;
+			/** Format: int64 */
+			total: number;
+			/** Format: int64 */
+			total_pages: number;
+		};
+		StaffListItem: {
+			first_name: string;
+			/** Format: uuid */
+			id: string;
+			last_name: string;
+			organization_units: string[];
+			roles: string[];
+			status: string;
+			title: string;
+			username: string;
+		};
 		/** @description Staff lookup item with title */
 		StaffLookupItem: {
 			/** Format: uuid */
 			id: string;
 			name: string;
 			title?: string;
+		};
+		StaffProfileResponse: {
+			address: string | null;
+			advisor_classrooms: components['schemas']['AdvisorClassroomItem'][];
+			date_of_birth: string | null;
+			email: string | null;
+			emergency_contact: string | null;
+			first_name: string;
+			gender: string | null;
+			hired_date: string | null;
+			/** Format: uuid */
+			id: string;
+			last_name: string;
+			line_id: string | null;
+			national_id: string | null;
+			nickname: string | null;
+			organization_units: components['schemas']['OrganizationUnitResponse'][];
+			permissions: string[];
+			phone: string | null;
+			profile_image_url: string | null;
+			roles: components['schemas']['RoleResponse'][];
+			staff_info: null | components['schemas']['StaffInfoResponse'];
+			status: string;
+			teaching_courses: components['schemas']['TeachingCourseItem'][];
+			title: string | null;
+			user_type: string;
+			username: string;
+		};
+		StudentDbRow: {
+			address: string | null;
+			allergies: string | null;
+			blood_type: string | null;
+			class_room: string | null;
+			/** Format: date */
+			date_of_birth: string | null;
+			email: string | null;
+			first_name: string;
+			gender: string | null;
+			grade_level: string | null;
+			/** Format: uuid */
+			id: string;
+			last_name: string;
+			medical_conditions: string | null;
+			national_id: string | null;
+			nickname: string | null;
+			phone: string | null;
+			profile_image_url: string | null;
+			status: string | null;
+			student_id: string | null;
+			/** Format: int32 */
+			student_number: number | null;
+			title: string | null;
+			username: string;
 		};
 		/** @description Student lookup item with student_id and class_room for enrollment */
 		StudentLookupItem: {
@@ -1503,6 +1913,28 @@ export interface components {
 			name: string;
 			student_id?: string;
 			title?: string;
+		};
+		StudentProfile: components['schemas']['StudentDbRow'] & {
+			parents: components['schemas']['ParentDto'][];
+		};
+		/**
+		 * @description วิชาที่ครูสอน — ดึงจาก classroom_courses (+ classroom_course_instructors)
+		 *     Source of truth: ระบบ Course Planning ที่ assign วิชาให้ห้อง
+		 */
+		TeachingCourseItem: {
+			/** Format: int32 */
+			academic_year: number;
+			academic_year_label: string;
+			classroom_code: string;
+			/** Format: uuid */
+			classroom_course_id: string;
+			classroom_name: string;
+			/** Format: int32 */
+			hours_per_semester: number | null;
+			role: string;
+			subject_code: string;
+			subject_name: string;
+			term: string;
 		};
 		UpdateMemberRequest: {
 			is_primary?: boolean | null;
@@ -3116,6 +3548,103 @@ export interface operations {
 			};
 		};
 	};
+	getParentProfile: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Current parent profile and linked children */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_ParentProfile'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Parent account required */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Parent profile not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getParentChildProfile: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Linked student user ID */
+				student_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Linked child's profile */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_StudentProfile'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Parent-child access denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Child profile not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
 	listPermissions: {
 		parameters: {
 			query?: never;
@@ -3384,6 +3913,228 @@ export interface operations {
 				};
 			};
 			/** @description Role not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	listStaff: {
+		parameters: {
+			query?: {
+				organization_unit_id?: string;
+				page?: number;
+				page_size?: number;
+				role_id?: string;
+				search?: string;
+				status?: string;
+				user_type?: string;
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Paginated staff list */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_StaffListData'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Staff list permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getStaffProfile: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Staff user ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Scoped staff profile */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_StaffProfileResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Staff profile permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Staff member not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getPublicStaffProfile: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Staff user ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Limited staff profile without national ID */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_PublicStaffProfile'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Staff member not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getStaffDashboard: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Aggregate staff dashboard overview */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_StaffDashboardOverview'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Active staff account required */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getStudentProfile: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Current student's scoped profile */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_StudentProfile'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Student profile access denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Student profile not found */
 			404: {
 				headers: {
 					[name: string]: unknown;

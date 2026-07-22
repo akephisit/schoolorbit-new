@@ -61,6 +61,40 @@
         ],
         "type": "object"
       },
+      "AdvisorClassroomItem": {
+        "description": "ห้องที่ครูเป็นครูที่ปรึกษา — ดึงจาก classroom_advisors",
+        "properties": {
+          "academic_year": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "academic_year_label": {
+            "type": "string"
+          },
+          "classroom_code": {
+            "type": "string"
+          },
+          "classroom_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "classroom_name": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "classroom_id",
+          "classroom_name",
+          "classroom_code",
+          "academic_year",
+          "academic_year_label",
+          "role"
+        ],
+        "type": "object"
+      },
       "ApiErrorResponse": {
         "properties": {
           "error": {
@@ -396,6 +430,80 @@
         ],
         "type": "object"
       },
+      "ApiResponse_ParentProfile": {
+        "properties": {
+          "data": {
+            "properties": {
+              "children": {
+                "items": {
+                  "$ref": "#/components/schemas/ChildDto"
+                },
+                "type": "array"
+              },
+              "email": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "first_name": {
+                "type": "string"
+              },
+              "id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "last_name": {
+                "type": "string"
+              },
+              "national_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "phone": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "title": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "username": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "username",
+              "first_name",
+              "last_name",
+              "title",
+              "phone",
+              "email",
+              "national_id",
+              "children"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
       "ApiResponse_ProfileResponse": {
         "properties": {
           "data": {
@@ -542,6 +650,110 @@
         ],
         "type": "object"
       },
+      "ApiResponse_PublicStaffProfile": {
+        "properties": {
+          "data": {
+            "properties": {
+              "email": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "first_name": {
+                "type": "string"
+              },
+              "hired_date": {
+                "format": "date",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "last_name": {
+                "type": "string"
+              },
+              "nickname": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "organization_units": {
+                "items": {
+                  "$ref": "#/components/schemas/PublicStaffOrganizationUnit"
+                },
+                "type": "array"
+              },
+              "phone": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "profile_image_url": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "roles": {
+                "items": {
+                  "$ref": "#/components/schemas/PublicStaffRole"
+                },
+                "type": "array"
+              },
+              "status": {
+                "type": "string"
+              },
+              "title": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "user_type": {
+                "type": "string"
+              },
+              "username": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "username",
+              "first_name",
+              "last_name",
+              "nickname",
+              "title",
+              "email",
+              "phone",
+              "hired_date",
+              "profile_image_url",
+              "user_type",
+              "status",
+              "roles",
+              "organization_units"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
       "ApiResponse_Role": {
         "properties": {
           "data": {
@@ -607,6 +819,305 @@
               "updated_at"
             ],
             "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_StaffDashboardOverview": {
+        "properties": {
+          "data": {
+            "properties": {
+              "activeClassrooms": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "totalStaff": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "totalStudents": {
+                "format": "int64",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "totalStaff",
+              "totalStudents",
+              "activeClassrooms"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_StaffListData": {
+        "properties": {
+          "data": {
+            "properties": {
+              "items": {
+                "items": {
+                  "$ref": "#/components/schemas/StaffListItem"
+                },
+                "type": "array"
+              },
+              "page": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "page_size": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "total": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "total_pages": {
+                "format": "int64",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "items",
+              "total",
+              "page",
+              "page_size",
+              "total_pages"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_StaffProfileResponse": {
+        "properties": {
+          "data": {
+            "properties": {
+              "address": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "advisor_classrooms": {
+                "items": {
+                  "$ref": "#/components/schemas/AdvisorClassroomItem"
+                },
+                "type": "array"
+              },
+              "date_of_birth": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "email": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "emergency_contact": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "first_name": {
+                "type": "string"
+              },
+              "gender": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "hired_date": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "last_name": {
+                "type": "string"
+              },
+              "line_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "national_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "nickname": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "organization_units": {
+                "items": {
+                  "$ref": "#/components/schemas/OrganizationUnitResponse"
+                },
+                "type": "array"
+              },
+              "permissions": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "phone": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "profile_image_url": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "roles": {
+                "items": {
+                  "$ref": "#/components/schemas/RoleResponse"
+                },
+                "type": "array"
+              },
+              "staff_info": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/StaffInfoResponse"
+                  }
+                ]
+              },
+              "status": {
+                "type": "string"
+              },
+              "teaching_courses": {
+                "items": {
+                  "$ref": "#/components/schemas/TeachingCourseItem"
+                },
+                "type": "array"
+              },
+              "title": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "user_type": {
+                "type": "string"
+              },
+              "username": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "username",
+              "national_id",
+              "email",
+              "title",
+              "first_name",
+              "last_name",
+              "nickname",
+              "phone",
+              "emergency_contact",
+              "line_id",
+              "date_of_birth",
+              "gender",
+              "address",
+              "hired_date",
+              "user_type",
+              "status",
+              "profile_image_url",
+              "staff_info",
+              "roles",
+              "organization_units",
+              "teaching_courses",
+              "advisor_classrooms",
+              "permissions"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_StudentProfile": {
+        "properties": {
+          "data": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/StudentDbRow"
+              },
+              {
+                "properties": {
+                  "parents": {
+                    "items": {
+                      "$ref": "#/components/schemas/ParentDto"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "parents"
+                ],
+                "type": "object"
+              }
+            ]
           },
           "message": {
             "type": "string"
@@ -2045,6 +2556,58 @@
         ],
         "type": "object"
       },
+      "ChildDto": {
+        "properties": {
+          "class_room": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "first_name": {
+            "type": "string"
+          },
+          "grade_level": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "last_name": {
+            "type": "string"
+          },
+          "profile_image_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "relationship": {
+            "type": "string"
+          },
+          "student_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "first_name",
+          "last_name",
+          "student_id",
+          "grade_level",
+          "class_room",
+          "profile_image_url",
+          "relationship"
+        ],
+        "type": "object"
+      },
       "ClassroomLookupItem": {
         "description": "Classroom lookup item",
         "properties": {
@@ -2934,6 +3497,174 @@
         ],
         "type": "object"
       },
+      "OrganizationUnitResponse": {
+        "properties": {
+          "category": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "code": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "is_primary": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "position_code": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "position_title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "responsibilities": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "subject_group_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "unit_type": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "name",
+          "position_code",
+          "position_title",
+          "is_primary",
+          "category",
+          "unit_type",
+          "subject_group_id",
+          "responsibilities"
+        ],
+        "type": "object"
+      },
+      "ParentDto": {
+        "properties": {
+          "first_name": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "is_primary": {
+            "type": "boolean"
+          },
+          "last_name": {
+            "type": "string"
+          },
+          "phone": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "relationship": {
+            "type": "string"
+          },
+          "username": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "username",
+          "first_name",
+          "last_name",
+          "phone",
+          "relationship",
+          "is_primary"
+        ],
+        "type": "object"
+      },
+      "ParentProfile": {
+        "properties": {
+          "children": {
+            "items": {
+              "$ref": "#/components/schemas/ChildDto"
+            },
+            "type": "array"
+          },
+          "email": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "first_name": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "last_name": {
+            "type": "string"
+          },
+          "national_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "phone": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "username": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "username",
+          "first_name",
+          "last_name",
+          "title",
+          "phone",
+          "email",
+          "national_id",
+          "children"
+        ],
+        "type": "object"
+      },
       "Permission": {
         "properties": {
           "action": {
@@ -3109,6 +3840,154 @@
         ],
         "type": "object"
       },
+      "PublicStaffOrganizationUnit": {
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "position_code": {
+            "type": "string"
+          },
+          "position_title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "name",
+          "position_code",
+          "position_title"
+        ],
+        "type": "object"
+      },
+      "PublicStaffProfile": {
+        "properties": {
+          "email": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "first_name": {
+            "type": "string"
+          },
+          "hired_date": {
+            "format": "date",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "last_name": {
+            "type": "string"
+          },
+          "nickname": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "organization_units": {
+            "items": {
+              "$ref": "#/components/schemas/PublicStaffOrganizationUnit"
+            },
+            "type": "array"
+          },
+          "phone": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "profile_image_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "roles": {
+            "items": {
+              "$ref": "#/components/schemas/PublicStaffRole"
+            },
+            "type": "array"
+          },
+          "status": {
+            "type": "string"
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "user_type": {
+            "type": "string"
+          },
+          "username": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "username",
+          "first_name",
+          "last_name",
+          "nickname",
+          "title",
+          "email",
+          "phone",
+          "hired_date",
+          "profile_image_url",
+          "user_type",
+          "status",
+          "roles",
+          "organization_units"
+        ],
+        "type": "object"
+      },
+      "PublicStaffRole": {
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "level": {
+            "format": "int32",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "name",
+          "level"
+        ],
+        "type": "object"
+      },
       "Role": {
         "properties": {
           "code": {
@@ -3198,6 +4077,49 @@
         ],
         "type": "object"
       },
+      "RoleResponse": {
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "is_primary": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "level": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "name_en": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "user_type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "name",
+          "name_en",
+          "user_type",
+          "level",
+          "is_primary"
+        ],
+        "type": "object"
+      },
       "Room": {
         "properties": {
           "building_id": {
@@ -3281,6 +4203,136 @@
         ],
         "type": "object"
       },
+      "StaffDashboardOverview": {
+        "properties": {
+          "activeClassrooms": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "totalStaff": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "totalStudents": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "totalStaff",
+          "totalStudents",
+          "activeClassrooms"
+        ],
+        "type": "object"
+      },
+      "StaffInfoResponse": {
+        "properties": {
+          "education_level": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "major": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "university": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "education_level",
+          "major",
+          "university"
+        ],
+        "type": "object"
+      },
+      "StaffListData": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/StaffListItem"
+            },
+            "type": "array"
+          },
+          "page": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "page_size": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "total": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "total_pages": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "page",
+          "page_size",
+          "total_pages"
+        ],
+        "type": "object"
+      },
+      "StaffListItem": {
+        "properties": {
+          "first_name": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "last_name": {
+            "type": "string"
+          },
+          "organization_units": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "roles": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "status": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "username": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "username",
+          "title",
+          "first_name",
+          "last_name",
+          "roles",
+          "organization_units",
+          "status"
+        ],
+        "type": "object"
+      },
       "StaffLookupItem": {
         "description": "Staff lookup item with title",
         "properties": {
@@ -3298,6 +4350,313 @@
         "required": [
           "id",
           "name"
+        ],
+        "type": "object"
+      },
+      "StaffProfileResponse": {
+        "properties": {
+          "address": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "advisor_classrooms": {
+            "items": {
+              "$ref": "#/components/schemas/AdvisorClassroomItem"
+            },
+            "type": "array"
+          },
+          "date_of_birth": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "email": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "emergency_contact": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "first_name": {
+            "type": "string"
+          },
+          "gender": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "hired_date": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "last_name": {
+            "type": "string"
+          },
+          "line_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "national_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "nickname": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "organization_units": {
+            "items": {
+              "$ref": "#/components/schemas/OrganizationUnitResponse"
+            },
+            "type": "array"
+          },
+          "permissions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "phone": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "profile_image_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "roles": {
+            "items": {
+              "$ref": "#/components/schemas/RoleResponse"
+            },
+            "type": "array"
+          },
+          "staff_info": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/StaffInfoResponse"
+              }
+            ]
+          },
+          "status": {
+            "type": "string"
+          },
+          "teaching_courses": {
+            "items": {
+              "$ref": "#/components/schemas/TeachingCourseItem"
+            },
+            "type": "array"
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "user_type": {
+            "type": "string"
+          },
+          "username": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "username",
+          "national_id",
+          "email",
+          "title",
+          "first_name",
+          "last_name",
+          "nickname",
+          "phone",
+          "emergency_contact",
+          "line_id",
+          "date_of_birth",
+          "gender",
+          "address",
+          "hired_date",
+          "user_type",
+          "status",
+          "profile_image_url",
+          "staff_info",
+          "roles",
+          "organization_units",
+          "teaching_courses",
+          "advisor_classrooms",
+          "permissions"
+        ],
+        "type": "object"
+      },
+      "StudentDbRow": {
+        "properties": {
+          "address": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "allergies": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "blood_type": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "class_room": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "date_of_birth": {
+            "format": "date",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "email": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "first_name": {
+            "type": "string"
+          },
+          "gender": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "grade_level": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "last_name": {
+            "type": "string"
+          },
+          "medical_conditions": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "national_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "nickname": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "phone": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "profile_image_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "student_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "student_number": {
+            "format": "int32",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "username": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "username",
+          "national_id",
+          "email",
+          "first_name",
+          "last_name",
+          "title",
+          "nickname",
+          "phone",
+          "date_of_birth",
+          "gender",
+          "address",
+          "profile_image_url",
+          "student_id",
+          "student_number",
+          "blood_type",
+          "allergies",
+          "medical_conditions",
+          "status",
+          "grade_level",
+          "class_room"
         ],
         "type": "object"
       },
@@ -3324,6 +4683,81 @@
         "required": [
           "id",
           "name"
+        ],
+        "type": "object"
+      },
+      "StudentProfile": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/StudentDbRow"
+          },
+          {
+            "properties": {
+              "parents": {
+                "items": {
+                  "$ref": "#/components/schemas/ParentDto"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "parents"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "TeachingCourseItem": {
+        "description": "วิชาที่ครูสอน — ดึงจาก classroom_courses (+ classroom_course_instructors)\nSource of truth: ระบบ Course Planning ที่ assign วิชาให้ห้อง",
+        "properties": {
+          "academic_year": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "academic_year_label": {
+            "type": "string"
+          },
+          "classroom_code": {
+            "type": "string"
+          },
+          "classroom_course_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "classroom_name": {
+            "type": "string"
+          },
+          "hours_per_semester": {
+            "format": "int32",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "role": {
+            "type": "string"
+          },
+          "subject_code": {
+            "type": "string"
+          },
+          "subject_name": {
+            "type": "string"
+          },
+          "term": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "classroom_course_id",
+          "subject_code",
+          "subject_name",
+          "hours_per_semester",
+          "classroom_name",
+          "classroom_code",
+          "academic_year",
+          "academic_year_label",
+          "term",
+          "role"
         ],
         "type": "object"
       },
@@ -6007,6 +7441,120 @@
         ]
       }
     },
+    "/api/parent/profile": {
+      "get": {
+        "operationId": "getParentProfile",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ParentProfile"
+                }
+              }
+            },
+            "description": "Current parent profile and linked children"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Parent account required"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Parent profile not found"
+          }
+        },
+        "summary": "GET /api/parent/profile - ผู้ปกครองดูข้อมูลตนเองและบุตรหลาน",
+        "tags": [
+          "parent"
+        ]
+      }
+    },
+    "/api/parent/students/{student_id}": {
+      "get": {
+        "operationId": "getParentChildProfile",
+        "parameters": [
+          {
+            "description": "Linked student user ID",
+            "in": "path",
+            "name": "student_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_StudentProfile"
+                }
+              }
+            },
+            "description": "Linked child's profile"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Parent-child access denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Child profile not found"
+          }
+        },
+        "summary": "GET /api/parent/students/:student_id - ผู้ปกครองดูรายละเอียดบุตรหลาน",
+        "tags": [
+          "parent"
+        ]
+      }
+    },
     "/api/permissions": {
       "get": {
         "operationId": "listPermissions",
@@ -6327,6 +7875,314 @@
         ]
       }
     },
+    "/api/staff": {
+      "get": {
+        "operationId": "listStaff",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "user_type",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "role_id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "organization_unit_id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "search",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page_size",
+            "required": false,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_StaffListData"
+                }
+              }
+            },
+            "description": "Paginated staff list"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Staff list permission denied"
+          }
+        },
+        "tags": [
+          "staff"
+        ]
+      }
+    },
+    "/api/staff/{id}": {
+      "get": {
+        "operationId": "getStaffProfile",
+        "parameters": [
+          {
+            "description": "Staff user ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_StaffProfileResponse"
+                }
+              }
+            },
+            "description": "Scoped staff profile"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Staff profile permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Staff member not found"
+          }
+        },
+        "tags": [
+          "staff"
+        ]
+      }
+    },
+    "/api/staff/{id}/public-profile": {
+      "get": {
+        "operationId": "getPublicStaffProfile",
+        "parameters": [
+          {
+            "description": "Staff user ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_PublicStaffProfile"
+                }
+              }
+            },
+            "description": "Limited staff profile without national ID"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Staff member not found"
+          }
+        },
+        "summary": "Public profile — authentication required but no permission check (any logged-in user)",
+        "tags": [
+          "staff"
+        ]
+      }
+    },
+    "/api/staff/dashboard": {
+      "get": {
+        "operationId": "getStaffDashboard",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_StaffDashboardOverview"
+                }
+              }
+            },
+            "description": "Aggregate staff dashboard overview"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Active staff account required"
+          }
+        },
+        "tags": [
+          "staff"
+        ]
+      }
+    },
+    "/api/student/profile": {
+      "get": {
+        "operationId": "getStudentProfile",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_StudentProfile"
+                }
+              }
+            },
+            "description": "Current student's scoped profile"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Student profile access denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Student profile not found"
+          }
+        },
+        "summary": "GET /api/student/profile - นักเรียนดูข้อมูลตนเอง",
+        "tags": [
+          "student"
+        ]
+      }
+    },
     "/api/users/{id}/permissions": {
       "get": {
         "operationId": "listUserEffectivePermissions",
@@ -6612,6 +8468,18 @@
     {
       "description": "System feature reads",
       "name": "system"
+    },
+    {
+      "description": "Staff directory and profiles",
+      "name": "staff"
+    },
+    {
+      "description": "Student self-service reads",
+      "name": "student"
+    },
+    {
+      "description": "Parent self-service reads",
+      "name": "parent"
     }
   ]
 }

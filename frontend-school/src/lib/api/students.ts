@@ -4,43 +4,12 @@
  */
 
 import { apiClient, requireApiData } from '$lib/api/client';
+import type { components } from '$lib/api/generated/school-api';
 
-export interface StudentParent {
-	id: string;
-	title?: string;
-	first_name: string;
-	last_name: string;
-	phone: string;
-	relationship: string;
-	national_id?: string;
-	email?: string;
-	is_primary?: boolean;
-	username?: string;
-}
+type Schemas = components['schemas'];
 
-export interface Student {
-	id: string;
-	national_id?: string;
-	email?: string;
-	first_name: string;
-	last_name: string;
-	title?: string;
-	nickname?: string;
-	phone?: string;
-	date_of_birth?: string;
-	gender?: string;
-	address?: string;
-	profile_image_url?: string;
-	student_id?: string;
-	grade_level?: string;
-	class_room?: string;
-	student_number?: number;
-	blood_type?: string;
-	allergies?: string;
-	medical_conditions?: string;
-	status: string;
-	parents?: StudentParent[];
-}
+export type StudentParent = Schemas['ParentDto'];
+export type Student = Schemas['StudentProfile'];
 
 export interface StudentListItem {
 	id: string;

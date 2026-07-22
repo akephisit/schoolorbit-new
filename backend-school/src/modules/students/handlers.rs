@@ -7,10 +7,11 @@ use axum::{
 use uuid::Uuid;
 
 use super::models::{
-    CreateStudentRequest, ListStudentsQuery, UpdateOwnProfileRequest, UpdateStudentRequest,
+    CreateStudentRequest, ListStudentsQuery, StudentProfile, UpdateOwnProfileRequest,
+    UpdateStudentRequest,
 };
 use super::services as student_service;
-use crate::api_response::ApiResponse;
+use crate::api_response::{ApiErrorResponse, ApiResponse};
 use crate::error::AppError;
 use crate::permissions::registry::codes;
 use crate::policies::student_access_policy;
@@ -18,6 +19,18 @@ use crate::utils::request_context::actor_tenant_context;
 use crate::AppState;
 
 /// GET /api/student/profile - นักเรียนดูข้อมูลตนเอง
+#[utoipa::path(
+    get,
+    path = "/api/student/profile",
+    operation_id = "getStudentProfile",
+    tag = "student",
+    responses(
+        (status = 200, description = "Current student's scoped profile", body = ApiResponse<StudentProfile>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Student profile access denied", body = ApiErrorResponse),
+        (status = 404, description = "Student profile not found", body = ApiErrorResponse)
+    )
+)]
 pub async fn get_own_profile(
     State(state): State<AppState>,
     headers: HeaderMap,

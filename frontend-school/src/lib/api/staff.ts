@@ -6,16 +6,7 @@ import type { components } from '$lib/api/generated/school-api';
 
 type Schemas = components['schemas'];
 
-export interface StaffListItem {
-	id: string;
-	username: string;
-	title: string;
-	first_name: string;
-	last_name: string;
-	roles: string[];
-	organization_units: string[];
-	status: string;
-}
+export type StaffListItem = Schemas['StaffListItem'];
 
 export interface StaffListResponse {
 	success: boolean;
@@ -26,124 +17,20 @@ export interface StaffListResponse {
 	total_pages: number;
 }
 
-export interface StaffDashboardOverview {
-	totalStaff: number;
-	totalStudents: number;
-	activeClassrooms: number;
-}
-
-export interface RoleResponse {
-	id: string;
-	code: string;
-	name: string;
-	name_en?: string;
-	user_type: string; // Changed from category to user_type
-	level: number;
-	is_primary?: boolean;
-}
-
-export interface OrganizationUnitResponse {
-	id: string;
-	code: string;
-	name: string;
-	position_code?: string;
-	position_title?: string;
-	is_primary?: boolean;
-	category?: string;
-	unit_type?: string;
-	subject_group_id?: string;
-	responsibilities?: string;
-}
+export type StaffDashboardOverview = Schemas['StaffDashboardOverview'];
+export type RoleResponse = Schemas['RoleResponse'];
+export type OrganizationUnitResponse = Schemas['OrganizationUnitResponse'];
 
 /** วิชาที่ครูสอน — ดึงจาก classroom_courses (Course Planning) */
-export interface TeachingCourseItem {
-	classroom_course_id: string;
-	subject_code: string;
-	subject_name: string;
-	hours_per_semester?: number;
-	classroom_name: string;
-	classroom_code: string;
-	academic_year: number;
-	academic_year_label: string;
-	term: string;
-	role: 'primary' | 'secondary';
-}
+export type TeachingCourseItem = Schemas['TeachingCourseItem'];
 
 /** ห้องที่ครูเป็นครูที่ปรึกษา — ดึงจาก classroom_advisors */
-export interface AdvisorClassroomItem {
-	classroom_id: string;
-	classroom_name: string;
-	classroom_code: string;
-	academic_year: number;
-	academic_year_label: string;
-	role: 'primary' | 'secondary';
-}
-
-export interface StaffInfoResponse {
-	education_level?: string;
-	major?: string;
-	university?: string;
-}
-
-export interface StaffProfileResponse {
-	id: string;
-	username: string;
-	national_id?: string;
-	email?: string;
-	title?: string;
-	first_name: string;
-	last_name: string;
-	nickname?: string;
-	phone?: string;
-	emergency_contact?: string;
-	line_id?: string;
-	date_of_birth?: string;
-	gender?: string;
-	address?: string;
-	hired_date?: string;
-	user_type: string;
-	status: string;
-	profile_image_url?: string | null;
-	staff_info?: StaffInfoResponse;
-	roles: RoleResponse[];
-	primary_role?: RoleResponse;
-	organization_units: OrganizationUnitResponse[];
-	teaching_courses: TeachingCourseItem[];
-	advisor_classrooms: AdvisorClassroomItem[];
-	permissions: string[];
-}
-
-export interface PublicStaffRoleResponse {
-	id: string;
-	code: string;
-	name: string;
-	level?: number;
-}
-
-export interface PublicStaffOrganizationUnitResponse {
-	id: string;
-	code: string;
-	name: string;
-	position_code: string;
-	position_title?: string;
-}
-
-export interface PublicStaffProfileResponse {
-	id: string;
-	username: string;
-	email?: string;
-	title?: string;
-	first_name: string;
-	last_name: string;
-	nickname?: string;
-	phone?: string;
-	hired_date?: string;
-	user_type: string;
-	status: string;
-	profile_image_url?: string | null;
-	roles: PublicStaffRoleResponse[];
-	organization_units: PublicStaffOrganizationUnitResponse[];
-}
+export type AdvisorClassroomItem = Schemas['AdvisorClassroomItem'];
+export type StaffInfoResponse = Schemas['StaffInfoResponse'];
+export type StaffProfileResponse = Schemas['StaffProfileResponse'];
+export type PublicStaffRoleResponse = Schemas['PublicStaffRole'];
+export type PublicStaffOrganizationUnitResponse = Schemas['PublicStaffOrganizationUnit'];
+export type PublicStaffProfileResponse = Schemas['PublicStaffProfile'];
 
 export interface CreateStaffRequest {
 	username?: string;
@@ -231,13 +118,7 @@ interface StaffFilter {
 // Staff APIs
 // ===================================================================
 
-interface StaffListData {
-	items: StaffListItem[];
-	total: number;
-	page: number;
-	page_size: number;
-	total_pages: number;
-}
+type StaffListData = Schemas['StaffListData'];
 
 export async function getStaffDashboard(): Promise<ApiResponse<StaffDashboardOverview>> {
 	return apiClient.get<StaffDashboardOverview>('/api/staff/dashboard');

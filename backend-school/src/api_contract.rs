@@ -12,20 +12,28 @@ use crate::modules::menu::handlers::public::UserMenuData;
 use crate::modules::menu::models::{
     FeatureToggle, MenuGroup, MenuGroupResponse, MenuItem, MenuItemResponse,
 };
+use crate::modules::parents::models::{ChildDto, ParentProfile};
 use crate::modules::staff::handlers::organization_delegations::{
     CreateDelegationRequest, DelegationIdData, DelegationItem,
 };
 use crate::modules::staff::handlers::organization_members::{
     AddMemberRequest, ListMembersQuery, OrganizationMemberItem, UpdateMemberRequest,
 };
+use crate::modules::staff::handlers::staff::StaffListData;
 use crate::modules::staff::models::{
-    AssignRoleRequest, CreateOrganizationUnitRequest, CreateRoleRequest,
-    OrganizationPermissionGrantInput, OrganizationUnit, Permission, Role,
+    AdvisorClassroomItem, AssignRoleRequest, CreateOrganizationUnitRequest, CreateRoleRequest,
+    OrganizationPermissionGrantInput, OrganizationUnit, OrganizationUnitResponse, Permission, Role,
+    RoleResponse, StaffInfoResponse, StaffListItem, StaffProfileResponse, TeachingCourseItem,
     UpdateOrganizationPermissionsRequest, UpdateOrganizationUnitRequest, UpdateRoleRequest,
     UserRoleAssignmentResponse,
 };
+use crate::modules::staff::services::dashboard_service::StaffDashboardOverview;
 use crate::modules::staff::services::organization_delegation_service::DelegatablePermission;
 use crate::modules::staff::services::organization_permission_service::OrganizationPermissionGrant;
+use crate::modules::staff::services::staff_service::{
+    PublicStaffOrganizationUnit, PublicStaffProfile, PublicStaffRole,
+};
+use crate::modules::students::models::{ParentDto, StudentDbRow, StudentProfile};
 use crate::modules::system::handlers::feature_toggles::{
     FeatureListResponse, FeatureToggleResponse,
 };
@@ -56,6 +64,13 @@ use utoipa::OpenApi;
         crate::modules::lookup::handlers::lookup_classrooms,
         crate::modules::lookup::handlers::lookup_academic_years,
         crate::modules::lookup::handlers::lookup_subjects,
+        crate::modules::staff::handlers::staff::list_staff,
+        crate::modules::staff::handlers::staff::get_staff_dashboard,
+        crate::modules::staff::handlers::staff::get_staff_profile,
+        crate::modules::staff::handlers::staff::get_public_staff_profile,
+        crate::modules::students::handlers::get_own_profile,
+        crate::modules::parents::handlers::get_own_parent_profile,
+        crate::modules::parents::handlers::get_child_profile,
         crate::modules::staff::handlers::roles::list_roles,
         crate::modules::staff::handlers::roles::get_role,
         crate::modules::staff::handlers::roles::create_role,
@@ -158,6 +173,29 @@ use utoipa::OpenApi;
         FeatureToggle,
         FeatureListResponse,
         FeatureToggleResponse,
+        StaffListItem,
+        StaffListData,
+        StaffDashboardOverview,
+        RoleResponse,
+        OrganizationUnitResponse,
+        TeachingCourseItem,
+        AdvisorClassroomItem,
+        StaffInfoResponse,
+        StaffProfileResponse,
+        PublicStaffRole,
+        PublicStaffOrganizationUnit,
+        PublicStaffProfile,
+        ApiResponse<StaffListData>,
+        ApiResponse<StaffDashboardOverview>,
+        ApiResponse<StaffProfileResponse>,
+        ApiResponse<PublicStaffProfile>,
+        ParentDto,
+        StudentDbRow,
+        StudentProfile,
+        ChildDto,
+        ParentProfile,
+        ApiResponse<StudentProfile>,
+        ApiResponse<ParentProfile>,
         ApiErrorResponse
     )),
     tags(
@@ -167,7 +205,10 @@ use utoipa::OpenApi;
         (name = "organization", description = "Organization units and scoped access"),
         (name = "lookup", description = "Authenticated reference-data lookups"),
         (name = "menu", description = "User and administrator menu reads"),
-        (name = "system", description = "System feature reads")
+        (name = "system", description = "System feature reads"),
+        (name = "staff", description = "Staff directory and profiles"),
+        (name = "student", description = "Student self-service reads"),
+        (name = "parent", description = "Parent self-service reads")
     )
 )]
 struct SchoolApiDoc;
@@ -621,6 +662,62 @@ mod tests {
     }
 
     #[test]
+    fn documents_staff_student_and_parent_profile_reads() {
+        let document = school_api_value().expect("document should serialize");
+        assert_operations(
+            &document,
+            &[
+                ("/api/staff", "get", "listStaff"),
+                ("/api/staff/dashboard", "get", "getStaffDashboard"),
+                ("/api/staff/{id}", "get", "getStaffProfile"),
+                (
+                    "/api/staff/{id}/public-profile",
+                    "get",
+                    "getPublicStaffProfile",
+                ),
+                ("/api/student/profile", "get", "getStudentProfile"),
+                ("/api/parent/profile", "get", "getParentProfile"),
+                (
+                    "/api/parent/students/{student_id}",
+                    "get",
+                    "getParentChildProfile",
+                ),
+            ],
+        );
+
+        assert_eq!(
+            document["paths"]["/api/staff"]["get"]["responses"]["200"]["content"]
+                ["application/json"]["schema"]["$ref"],
+            "#/components/schemas/ApiResponse_StaffListData"
+        );
+        assert_eq!(
+            document["paths"]["/api/student/profile"]["get"]["responses"]["200"]["content"]
+                ["application/json"]["schema"]["$ref"],
+            "#/components/schemas/ApiResponse_StudentProfile"
+        );
+
+        let schemas = &document["components"]["schemas"];
+        let staff = &schemas["StaffProfileResponse"];
+        for field in ["national_id", "email", "phone", "staff_info"] {
+            assert!(required(staff).contains(&field));
+            assert!(contains_null(&staff["properties"][field]));
+        }
+
+        let student = &schemas["StudentDbRow"];
+        for field in ["national_id", "date_of_birth", "medical_conditions"] {
+            assert!(required(student).contains(&field));
+            assert!(contains_null(&student["properties"][field]));
+        }
+
+        let parent = &schemas["ParentProfile"];
+        assert!(required(parent).contains(&"national_id"));
+        assert!(contains_null(&parent["properties"]["national_id"]));
+
+        let public_staff = &schemas["PublicStaffProfile"];
+        assert!(public_staff["properties"].get("national_id").is_none());
+    }
+
+    #[test]
     fn documents_delegation_member_and_complete_authorization_inventory() {
         let document = school_api_value().expect("document should serialize");
         let expected = [
@@ -733,7 +830,7 @@ mod tests {
                 }
             }
         }
-        assert_eq!(operation_ids.len(), 45);
+        assert_eq!(operation_ids.len(), 52);
 
         let schemas = &document["components"]["schemas"];
         let delegation = &schemas["DelegationItem"];

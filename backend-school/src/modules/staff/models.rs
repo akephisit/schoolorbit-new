@@ -1,7 +1,7 @@
 use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
-use utoipa::ToSchema;
+use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow, ToSchema)]
@@ -143,38 +143,48 @@ pub struct CreateStaffInfoRequest {
 // Response Models
 // ===================================================================
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct RoleResponse {
     pub id: Uuid,
     pub code: String,
     pub name: String,
+    #[schema(required = true)]
     pub name_en: Option<String>,
     pub user_type: String, // Changed from category to user_type
     pub level: i32,
+    #[schema(required = true)]
     pub is_primary: Option<bool>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct OrganizationUnitResponse {
     pub id: Uuid,
     pub code: String,
     pub name: String,
+    #[schema(required = true)]
     pub position_code: Option<String>,
+    #[schema(required = true)]
     pub position_title: Option<String>,
+    #[schema(required = true)]
     pub is_primary: Option<bool>,
+    #[schema(required = true)]
     pub category: Option<String>,
+    #[schema(required = true)]
     pub unit_type: Option<String>,
+    #[schema(required = true)]
     pub subject_group_id: Option<Uuid>,
+    #[schema(required = true)]
     pub responsibilities: Option<String>,
 }
 
 /// วิชาที่ครูสอน — ดึงจาก classroom_courses (+ classroom_course_instructors)
 /// Source of truth: ระบบ Course Planning ที่ assign วิชาให้ห้อง
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct TeachingCourseItem {
     pub classroom_course_id: Uuid,
     pub subject_code: String,
     pub subject_name: String,
+    #[schema(required = true)]
     pub hours_per_semester: Option<i32>,
     pub classroom_name: String,
     pub classroom_code: String,
@@ -185,7 +195,7 @@ pub struct TeachingCourseItem {
 }
 
 /// ห้องที่ครูเป็นครูที่ปรึกษา — ดึงจาก classroom_advisors
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct AdvisorClassroomItem {
     pub classroom_id: Uuid,
     pub classroom_name: String,
@@ -195,28 +205,41 @@ pub struct AdvisorClassroomItem {
     pub role: String, // 'primary' | 'secondary'
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct StaffProfileResponse {
     pub id: Uuid,
     pub username: String,
+    #[schema(required = true)]
     pub national_id: Option<String>,
+    #[schema(required = true)]
     pub email: Option<String>,
+    #[schema(required = true)]
     pub title: Option<String>,
     pub first_name: String,
     pub last_name: String,
+    #[schema(required = true)]
     pub nickname: Option<String>,
+    #[schema(required = true)]
     pub phone: Option<String>,
+    #[schema(required = true)]
     pub emergency_contact: Option<String>,
+    #[schema(required = true)]
     pub line_id: Option<String>,
+    #[schema(required = true)]
     pub date_of_birth: Option<String>,
+    #[schema(required = true)]
     pub gender: Option<String>,
+    #[schema(required = true)]
     pub address: Option<String>,
+    #[schema(required = true)]
     pub hired_date: Option<String>,
     pub user_type: String,
     pub status: String,
+    #[schema(required = true)]
     pub profile_image_url: Option<String>,
 
     // Staff specific info
+    #[schema(required = true)]
     pub staff_info: Option<StaffInfoResponse>,
 
     // Roles
@@ -235,10 +258,13 @@ pub struct StaffProfileResponse {
     pub permissions: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct StaffInfoResponse {
+    #[schema(required = true)]
     pub education_level: Option<String>,
+    #[schema(required = true)]
     pub major: Option<String>,
+    #[schema(required = true)]
     pub university: Option<String>,
 }
 
@@ -320,7 +346,8 @@ pub struct UpdateStaffRequest {
 // List Filters
 // ===================================================================
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
 pub struct StaffListFilter {
     pub user_type: Option<String>,
     pub role_id: Option<Uuid>,
@@ -331,7 +358,7 @@ pub struct StaffListFilter {
     pub page_size: Option<i64>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct StaffListItem {
     pub id: Uuid,
     pub username: String,

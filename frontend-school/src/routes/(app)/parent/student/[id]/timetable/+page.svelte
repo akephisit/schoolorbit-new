@@ -21,8 +21,8 @@
 	interface ChildSummary {
 		first_name?: string;
 		last_name?: string;
-		grade_level?: string;
-		class_room?: string;
+		grade_level?: string | null;
+		class_room?: string | null;
 	}
 
 	let { params, data }: PageProps = $props();

@@ -1,10 +1,11 @@
 use serde::Serialize;
 use sqlx::{FromRow, PgPool};
+use utoipa::ToSchema;
 use uuid::Uuid;
 
 use crate::error::AppError;
 
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, PartialEq, Eq, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct StaffDashboardOverview {
     pub total_staff: i64,

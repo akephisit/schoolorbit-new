@@ -1,4 +1,4 @@
-use crate::api_response::{ApiResponse, IdData};
+use crate::api_response::{ApiErrorResponse, ApiResponse, IdData};
 use crate::error::AppError;
 use crate::modules::staff::models::*;
 use crate::modules::staff::services::{dashboard_service, staff_service};
@@ -15,21 +15,33 @@ use axum::{
     Json,
 };
 use serde::Serialize;
+use utoipa::ToSchema;
 use uuid::Uuid;
 
-#[derive(Debug, Serialize)]
-struct StaffListData {
-    items: Vec<StaffListItem>,
-    total: i64,
-    page: i64,
-    page_size: i64,
-    total_pages: i64,
+#[derive(Debug, Serialize, ToSchema)]
+pub struct StaffListData {
+    pub items: Vec<StaffListItem>,
+    pub total: i64,
+    pub page: i64,
+    pub page_size: i64,
+    pub total_pages: i64,
 }
 
 // ============================================
 // Handlers
 // ============================================
 
+#[utoipa::path(
+    get,
+    path = "/api/staff/dashboard",
+    operation_id = "getStaffDashboard",
+    tag = "staff",
+    responses(
+        (status = 200, description = "Aggregate staff dashboard overview", body = ApiResponse<crate::modules::staff::services::dashboard_service::StaffDashboardOverview>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Active staff account required", body = ApiErrorResponse)
+    )
+)]
 pub async fn get_staff_dashboard(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -44,6 +56,18 @@ pub async fn get_staff_dashboard(
     Ok((StatusCode::OK, Json(ApiResponse::ok(data))).into_response())
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/staff",
+    operation_id = "listStaff",
+    tag = "staff",
+    params(StaffListFilter),
+    responses(
+        (status = 200, description = "Paginated staff list", body = ApiResponse<StaffListData>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Staff list permission denied", body = ApiErrorResponse)
+    )
+)]
 pub async fn list_staff(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -70,6 +94,19 @@ pub async fn list_staff(
         .into_response())
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/staff/{id}",
+    operation_id = "getStaffProfile",
+    tag = "staff",
+    params(("id" = Uuid, Path, description = "Staff user ID")),
+    responses(
+        (status = 200, description = "Scoped staff profile", body = ApiResponse<StaffProfileResponse>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Staff profile permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Staff member not found", body = ApiErrorResponse)
+    )
+)]
 pub async fn get_staff_profile(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -154,6 +191,18 @@ pub async fn delete_staff(
 }
 
 /// Public profile — authentication required but no permission check (any logged-in user)
+#[utoipa::path(
+    get,
+    path = "/api/staff/{id}/public-profile",
+    operation_id = "getPublicStaffProfile",
+    tag = "staff",
+    params(("id" = Uuid, Path, description = "Staff user ID")),
+    responses(
+        (status = 200, description = "Limited staff profile without national ID", body = ApiResponse<crate::modules::staff::services::staff_service::PublicStaffProfile>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 404, description = "Staff member not found", body = ApiErrorResponse)
+    )
+)]
 pub async fn get_public_staff_profile(
     State(state): State<AppState>,
     headers: HeaderMap,

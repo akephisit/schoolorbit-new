@@ -1,5 +1,6 @@
-use crate::api_response::ApiResponse;
+use crate::api_response::{ApiErrorResponse, ApiResponse};
 use crate::error::AppError;
+use crate::modules::parents::models::ParentProfile;
 use crate::modules::parents::services as parent_service;
 use crate::utils::request_context::actor_tenant_context;
 use crate::AppState;
@@ -12,6 +13,18 @@ use axum::{
 use uuid::Uuid;
 
 /// GET /api/parent/profile - ผู้ปกครองดูข้อมูลตนเองและบุตรหลาน
+#[utoipa::path(
+    get,
+    path = "/api/parent/profile",
+    operation_id = "getParentProfile",
+    tag = "parent",
+    responses(
+        (status = 200, description = "Current parent profile and linked children", body = ApiResponse<ParentProfile>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Parent account required", body = ApiErrorResponse),
+        (status = 404, description = "Parent profile not found", body = ApiErrorResponse)
+    )
+)]
 pub async fn get_own_parent_profile(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -25,6 +38,19 @@ pub async fn get_own_parent_profile(
 }
 
 /// GET /api/parent/students/:student_id - ผู้ปกครองดูรายละเอียดบุตรหลาน
+#[utoipa::path(
+    get,
+    path = "/api/parent/students/{student_id}",
+    operation_id = "getParentChildProfile",
+    tag = "parent",
+    params(("student_id" = Uuid, Path, description = "Linked student user ID")),
+    responses(
+        (status = 200, description = "Linked child's profile", body = ApiResponse<crate::modules::students::models::StudentProfile>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Parent-child access denied", body = ApiErrorResponse),
+        (status = 404, description = "Child profile not found", body = ApiErrorResponse)
+    )
+)]
 pub async fn get_child_profile(
     State(state): State<AppState>,
     headers: HeaderMap,

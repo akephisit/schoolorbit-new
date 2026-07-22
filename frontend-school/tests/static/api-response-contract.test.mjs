@@ -250,6 +250,35 @@ test('generated lookup, menu, and feature contracts own read transport DTOs', as
 	assert.doesNotMatch(featureApi, /export\s+interface\s+FeatureToggle\b/);
 });
 
+test('generated staff, student, and parent profile contracts own read transport DTOs', async () => {
+	const contract = JSON.parse(await readRepoFile('contracts/openapi/school-api.json'));
+	const staffApi = await readRepoFile('frontend-school/src/lib/api/staff.ts');
+	const studentApi = await readRepoFile('frontend-school/src/lib/api/students.ts');
+	const parentApi = await readRepoFile('frontend-school/src/lib/api/parents.ts');
+	const expected = [
+		['/api/staff', 'get', 'listStaff'],
+		['/api/staff/dashboard', 'get', 'getStaffDashboard'],
+		['/api/staff/{id}', 'get', 'getStaffProfile'],
+		['/api/staff/{id}/public-profile', 'get', 'getPublicStaffProfile'],
+		['/api/student/profile', 'get', 'getStudentProfile'],
+		['/api/parent/profile', 'get', 'getParentProfile'],
+		['/api/parent/students/{student_id}', 'get', 'getParentChildProfile']
+	];
+
+	for (const [route, method, operationId] of expected) {
+		assert.equal(contract.paths?.[route]?.[method]?.operationId, operationId, `${method} ${route}`);
+	}
+	for (const source of [staffApi, studentApi, parentApi]) {
+		assert.match(source, /import\s+type\s+\{\s*components\s*\}/);
+	}
+	assert.doesNotMatch(
+		staffApi,
+		/export\s+interface\s+(?:StaffListItem|StaffDashboardOverview|RoleResponse|OrganizationUnitResponse|TeachingCourseItem|AdvisorClassroomItem|StaffInfoResponse|StaffProfileResponse|PublicStaffRoleResponse|PublicStaffOrganizationUnitResponse|PublicStaffProfileResponse)\b/
+	);
+	assert.doesNotMatch(studentApi, /export\s+interface\s+(?:StudentParent|Student)\b/);
+	assert.doesNotMatch(parentApi, /export\s+interface\s+(?:ChildDto|ParentProfile)\b/);
+});
+
 test('project rules document generated API contract ownership', async () => {
 	const rules = await readRepoFile('.rules');
 	const testing = await readRepoFile('docs/TESTING.md');
@@ -332,8 +361,15 @@ test('user role assignment API contract stays aligned across backend and fronten
 		/getUserRoles\(userId:\s*string\):\s*Promise<ApiResponse<UserRoleAssignment\[\]>>/
 	);
 	assert.doesNotMatch(frontendApi, /interface\s+UserRole\s*\{/);
-	assert.match(frontendStaffApi, /permissions:\s*string\[\]/);
-	assert.doesNotMatch(frontendStaffApi, /permissions:\s*Record<string,\s*unknown>/);
+	assert.match(
+		frontendStaffApi,
+		/export\s+type\s+StaffProfileResponse\s*=\s*Schemas\['StaffProfileResponse'\]/
+	);
+	assert.match(extractGeneratedSchemaBlock(generated, 'StaffProfileResponse'), /permissions:\s*string\[\]/);
+	assert.doesNotMatch(
+		extractGeneratedSchemaBlock(generated, 'StaffProfileResponse'),
+		/permissions:\s*Record<string,\s*unknown>/
+	);
 	assert.match(delegationService, /struct\s+DelegatablePermission/);
 	assert.match(delegationService, /Result<Vec<DelegatablePermission>,\s*AppError>/);
 	assert.doesNotMatch(delegationService, /Result<Vec<serde_json::Value>,\s*AppError>/);
@@ -343,7 +379,10 @@ test('user role assignment API contract stays aligned across backend and fronten
 		staffService,
 		/get_public_staff_profile[\s\S]*?Result<serde_json::Value,\s*AppError>/
 	);
-	assert.match(frontendStaffApi, /interface\s+PublicStaffProfileResponse/);
+	assert.match(
+		frontendStaffApi,
+		/export\s+type\s+PublicStaffProfileResponse\s*=\s*Schemas\['PublicStaffProfile'\]/
+	);
 	assert.match(
 		frontendStaffApi,
 		/getPublicStaffProfile[\s\S]*ApiResponse<PublicStaffProfileResponse>/
@@ -357,15 +396,20 @@ test('user role assignment API contract stays aligned across backend and fronten
 
 test('staff dashboard API uses a typed aggregate-only response', async () => {
 	const frontendStaffApi = await readRepoFile('frontend-school/src/lib/api/staff.ts');
+	const generated = await readRepoFile('frontend-school/src/lib/api/generated/school-api.ts');
 	const backendService = await readRepoFile(
 		'backend-school/src/modules/staff/services/dashboard_service.rs'
 	);
 	const backendHandler = await readRepoFile('backend-school/src/modules/staff/handlers/staff.rs');
 
-	assert.match(frontendStaffApi, /interface\s+StaffDashboardOverview/);
-	assert.match(frontendStaffApi, /totalStaff:\s*number/);
-	assert.match(frontendStaffApi, /totalStudents:\s*number/);
-	assert.match(frontendStaffApi, /activeClassrooms:\s*number/);
+	assert.match(
+		frontendStaffApi,
+		/export\s+type\s+StaffDashboardOverview\s*=\s*Schemas\['StaffDashboardOverview'\]/
+	);
+	const dashboardSchema = extractGeneratedSchemaBlock(generated, 'StaffDashboardOverview');
+	assert.match(dashboardSchema, /totalStaff:\s*number/);
+	assert.match(dashboardSchema, /totalStudents:\s*number/);
+	assert.match(dashboardSchema, /activeClassrooms:\s*number/);
 	assert.match(
 		frontendStaffApi,
 		/getStaffDashboard\(\):\s*Promise<ApiResponse<StaffDashboardOverview>>/
