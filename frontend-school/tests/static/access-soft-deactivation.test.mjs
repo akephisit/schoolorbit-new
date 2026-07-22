@@ -91,3 +91,21 @@ test('role management uses reversible permission-aware status controls', async (
 	assert.match(detailPage, /เปิดใช้งานกลับ/);
 	assert.doesNotMatch(detailPage, /การกระทำนี้ไม่สามารถย้อนกลับได้/);
 });
+
+test('organization management uses reversible hierarchy-aware status controls', async () => {
+	const page = await readRepoFile(
+		'frontend-school/src/routes/(app)/staff/organization/+page.svelte'
+	);
+
+	assert.match(page, /listOrganizationUnits\(\{ include_inactive: true \}\)/);
+	assert.match(page, /deleteOrganizationUnit/);
+	assert.match(page, /canDeleteOrganizationUnit/);
+	assert.match(page, /selectedUnit\.is_system/);
+	assert.match(page, /handleDeactivateOrganizationUnit/);
+	assert.match(page, /handleReactivateOrganizationUnit/);
+	assert.match(page, /ปิดใช้งาน/);
+	assert.match(page, /เปิดใช้งาน/);
+	assert.match(page, /สิทธิ์[\s\S]{0,120}ทันที/);
+	assert.match(page, /ประวัติ/);
+	assert.match(page, /response\.error \|\| 'ไม่สามารถปิดใช้งานหน่วยงานได้'/);
+});

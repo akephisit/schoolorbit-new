@@ -3,6 +3,7 @@
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import {
+		deleteOrganizationUnit,
 		listOrganizationMembers,
 		listOrganizationUnits,
 		updateOrganizationUnit
@@ -14,6 +15,14 @@
 	import { PageShell } from '$lib/components/app-layout';
 	import { Input } from '$lib/components/ui/input';
 	import { Badge } from '$lib/components/ui/badge';
+	import {
+		Dialog,
+		DialogContent,
+		DialogDescription,
+		DialogFooter,
+		DialogHeader,
+		DialogTitle
+	} from '$lib/components/ui/dialog';
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import MobileDragDropPolyfill from '$lib/components/MobileDragDropPolyfill.svelte';
 	import {
@@ -25,6 +34,8 @@
 		Network,
 		Pencil,
 		Plus,
+		Power,
+		RotateCcw,
 		Search,
 		School,
 		Users
@@ -57,6 +68,8 @@
 	let editingDepartment: OrganizationUnit | null = $state(null);
 	let showPermissionDialog = $state(false);
 	let permissionDepartment = $state<OrganizationUnit | null>(null);
+	let showDeactivateDialog = $state(false);
+	let statusMutationPending = $state(false);
 
 	let selectedMembers = $state<OrganizationMemberItem[]>([]);
 	let selectedMembersLoading = $state(false);
@@ -65,6 +78,7 @@
 	const canReadOrganization = $derived($can.has(PERMISSIONS.ROLES_READ_ALL));
 	const canCreateOrganizationUnit = $derived($can.has(PERMISSIONS.ROLES_CREATE_ALL));
 	const canUpdateOrganizationUnit = $derived($can.has(PERMISSIONS.ROLES_UPDATE_ALL));
+	const canDeleteOrganizationUnit = $derived($can.has(PERMISSIONS.ROLES_DELETE_ALL));
 	const canReadOrganizationPermissions = $derived($can.has(PERMISSIONS.ROLES_READ_ALL));
 	const canUpdateOrganizationPermissions = $derived($can.has(PERMISSIONS.ROLES_UPDATE_ALL));
 	const canAssignOrganizationMembers = $derived($can.has(PERMISSIONS.ROLES_ASSIGN_ALL));
@@ -187,7 +201,7 @@
 		try {
 			loading = true;
 			error = '';
-			const response = await listOrganizationUnits();
+			const response = await listOrganizationUnits({ include_inactive: true });
 
 			if (response.success && response.data) {
 				departments = response.data;
@@ -246,6 +260,59 @@
 		if (!canReadOrganizationPermissions) return;
 		permissionDepartment = unit;
 		showPermissionDialog = true;
+	}
+
+	async function handleDeactivateOrganizationUnit() {
+		const unit = selectedUnit;
+		if (!unit || !canDeleteOrganizationUnit) {
+			toast.error('ไม่มีสิทธิ์ปิดใช้งานหน่วยงาน');
+			return;
+		}
+		if (unit.is_system) {
+			toast.error('ไม่สามารถปิดใช้งานหน่วยงานระบบได้');
+			return;
+		}
+
+		statusMutationPending = true;
+		try {
+			const response = await deleteOrganizationUnit(unit.id);
+			if (response.success) {
+				toast.success('ปิดใช้งานหน่วยงานสำเร็จ');
+				showDeactivateDialog = false;
+				await loadDepartments();
+			} else {
+				toast.error(response.error || 'ไม่สามารถปิดใช้งานหน่วยงานได้');
+			}
+		} catch (cause) {
+			console.error('Failed to deactivate organization unit:', cause);
+			toast.error(cause instanceof Error ? cause.message : 'ไม่สามารถปิดใช้งานหน่วยงานได้');
+		} finally {
+			statusMutationPending = false;
+		}
+	}
+
+	async function handleReactivateOrganizationUnit() {
+		const unit = selectedUnit;
+		if (!unit || !canUpdateOrganizationUnit) {
+			toast.error('ไม่มีสิทธิ์เปิดใช้งานหน่วยงาน');
+			return;
+		}
+
+		statusMutationPending = true;
+		try {
+			const response = await updateOrganizationUnit(unit.id, { is_active: true });
+			if (response.success) {
+				toast.success('เปิดใช้งานหน่วยงานสำเร็จ');
+				await loadDepartments();
+			} else {
+				toast.error(response.error || 'ไม่สามารถเปิดใช้งานหน่วยงานได้');
+			}
+		} catch (cause) {
+			console.error('Failed to reactivate organization unit:', cause);
+			toast.error(cause instanceof Error ? cause.message : 'ไม่สามารถเปิดใช้งานหน่วยงานได้');
+		} finally {
+			statusMutationPending = false;
+		}
 	}
 
 	function handleDragStart(event: DragEvent, unitId: string) {
@@ -494,6 +561,9 @@
 											<Badge variant="secondary" class="shrink-0 text-[10px]">
 												{unitTypeLabel(unit)}
 											</Badge>
+											{#if unit.is_system}
+												<Badge variant="outline" class="shrink-0 text-[10px]">ระบบ</Badge>
+											{/if}
 										</span>
 										<span class="mt-0.5 flex items-center gap-2 text-xs text-muted-foreground">
 											<span class="font-mono">{unit.code}</span>
@@ -535,6 +605,9 @@
 									<Badge variant={selectedUnit.is_active ? 'default' : 'outline'}>
 										{selectedUnit.is_active ? 'ใช้งาน' : 'ปิดใช้งาน'}
 									</Badge>
+									{#if selectedUnit.is_system}
+										<Badge variant="outline">หน่วยงานระบบ</Badge>
+									{/if}
 								</div>
 								<h2 class="mt-3 text-xl font-semibold leading-tight">{selectedUnit.name}</h2>
 								{#if selectedUnit.name_en}
@@ -626,6 +699,27 @@
 								<ArrowRight class="h-4 w-4" />
 								เปิดรายละเอียด
 							</Button>
+							{#if selectedUnit.is_active && canDeleteOrganizationUnit && !selectedUnit.is_system}
+								<Button
+									variant="destructive"
+									onclick={() => (showDeactivateDialog = true)}
+									disabled={statusMutationPending}
+									class="gap-2"
+								>
+									<Power class="h-4 w-4" />
+									ปิดใช้งาน
+								</Button>
+							{:else if !selectedUnit.is_active && canUpdateOrganizationUnit}
+								<Button
+									variant="outline"
+									onclick={handleReactivateOrganizationUnit}
+									disabled={statusMutationPending}
+									class="gap-2"
+								>
+									<RotateCcw class="h-4 w-4" />
+									{statusMutationPending ? 'กำลังเปิดใช้งาน...' : 'เปิดใช้งาน'}
+								</Button>
+							{/if}
 							{#if canUpdateOrganizationUnit || canReadOrganizationPermissions || canAssignOrganizationMembers}
 								<div class="grid grid-cols-2 gap-2">
 									{#if canUpdateOrganizationUnit}
@@ -689,3 +783,33 @@
 		/>
 	{/if}
 </PageShell>
+
+<Dialog bind:open={showDeactivateDialog}>
+	<DialogContent>
+		<DialogHeader>
+			<DialogTitle>ยืนยันการปิดใช้งานหน่วยงาน</DialogTitle>
+			<DialogDescription>
+				สิทธิ์ที่ผู้ใช้ได้รับจากหน่วยงาน <strong>{selectedUnit?.name}</strong> จะหยุดมีผลทันที ประวัติ
+				สมาชิก การกำหนดสิทธิ์ และการมอบหมายเดิมจะยังคงอยู่ และสามารถเปิดใช้งานกลับได้ภายหลัง
+			</DialogDescription>
+		</DialogHeader>
+		<DialogFooter>
+			<Button
+				variant="outline"
+				onclick={() => (showDeactivateDialog = false)}
+				disabled={statusMutationPending}
+			>
+				ยกเลิก
+			</Button>
+			<Button
+				variant="destructive"
+				onclick={handleDeactivateOrganizationUnit}
+				disabled={statusMutationPending}
+				class="gap-2"
+			>
+				<Power class="h-4 w-4" />
+				{statusMutationPending ? 'กำลังปิดใช้งาน...' : 'ปิดใช้งานหน่วยงาน'}
+			</Button>
+		</DialogFooter>
+	</DialogContent>
+</Dialog>
