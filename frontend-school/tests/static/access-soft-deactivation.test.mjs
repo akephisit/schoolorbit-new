@@ -68,3 +68,26 @@ test('staff assignment screens keep active-only list defaults', async () => {
 		assert.doesNotMatch(source, /include_inactive\s*:\s*true/);
 	}
 });
+
+test('role management uses reversible permission-aware status controls', async () => {
+	const listPage = await readRepoFile('frontend-school/src/routes/(app)/staff/roles/+page.svelte');
+	const detailPage = await readRepoFile(
+		'frontend-school/src/routes/(app)/staff/roles/[id]/+page.svelte'
+	);
+
+	assert.match(listPage, /roleAPI\.listRoles\(\{ include_inactive: true \}\)/);
+	assert.match(listPage, /role\.is_system/);
+	assert.match(listPage, /ระบบ/);
+
+	assert.match(detailPage, /canDeleteRoles/);
+	assert.match(detailPage, /role\.is_system/);
+	assert.match(detailPage, /handleDeactivate/);
+	assert.match(detailPage, /handleReactivate/);
+	assert.match(detailPage, /roleAPI\.deleteRole\(roleId\)/);
+	assert.match(detailPage, /roleAPI\.updateRole\(roleId, \{ is_active: true \}\)/);
+	assert.match(detailPage, /ปิดใช้งาน/);
+	assert.match(detailPage, /เปิดใช้งาน/);
+	assert.match(detailPage, /สิทธิ์[\s\S]{0,100}ทันที/);
+	assert.match(detailPage, /เปิดใช้งานกลับ/);
+	assert.doesNotMatch(detailPage, /การกระทำนี้ไม่สามารถย้อนกลับได้/);
+});

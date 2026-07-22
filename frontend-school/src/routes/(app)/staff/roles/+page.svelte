@@ -39,7 +39,7 @@
 
 		loading = true;
 		try {
-			const response = await roleAPI.listRoles();
+			const response = await roleAPI.listRoles({ include_inactive: true });
 			if (response.success && response.data) {
 				roles = response.data.sort((a: Role, b: Role) => b.level - a.level);
 			} else {
@@ -109,13 +109,18 @@
 		<div class="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
 			{#each roles as role (role.id)}
 				<Card
-					class="hover:shadow-lg transition-shadow cursor-pointer"
+					class={`cursor-pointer transition-shadow hover:shadow-lg ${role.is_active ? '' : 'opacity-70'}`}
 					onclick={() => goto(resolve(`/staff/roles/${role.id}`))}
 				>
 					<CardHeader>
-						<div class="flex items-start justify-between">
+						<div class="flex items-start justify-between gap-3">
 							<div class="flex-1 min-w-0">
-								<CardTitle class="truncate">{role.name}</CardTitle>
+								<div class="flex items-center gap-2">
+									<CardTitle class="truncate">{role.name}</CardTitle>
+									{#if role.is_system}
+										<Badge variant="outline">ระบบ</Badge>
+									{/if}
+								</div>
 								<CardDescription class="truncate">{role.code}</CardDescription>
 							</div>
 							<Badge class="{getLevelBadgeColor(role.level)} text-white">
@@ -151,7 +156,7 @@
 						<!-- Status -->
 						<div class="flex items-center justify-between pt-2 border-t">
 							<Badge variant={role.is_active ? 'default' : 'secondary'}>
-								{role.is_active ? 'ใช้งาน' : 'ไม่ใช้งาน'}
+								{role.is_active ? 'กำลังใช้งาน' : 'ปิดใช้งาน'}
 							</Badge>
 							<Button
 								variant="ghost"

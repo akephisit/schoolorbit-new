@@ -38,7 +38,7 @@
 	} from '$lib/components/ui/dialog';
 	import { Checkbox } from '$lib/components/ui/checkbox';
 	import { Badge } from '$lib/components/ui/badge';
-	import { AlertTriangle, Save, Trash2, Shield } from 'lucide-svelte';
+	import { AlertTriangle, Power, RotateCcw, Save, Shield } from 'lucide-svelte';
 	import { toast } from 'svelte-sonner';
 
 	let { params }: PageProps = $props();
@@ -47,9 +47,11 @@
 
 	let loading = $state(true);
 	let saving = $state(false);
-	let deleting = $state(false);
-	let showDeleteDialog = $state(false);
+	let deactivating = $state(false);
+	let reactivating = $state(false);
+	let showDeactivateDialog = $state(false);
 	let rolePermissionListLoading = $state(true);
+	let initialRoleIsActive = $state<boolean | null>(null);
 
 	// Role data
 	let role = $state<Partial<Role>>({
@@ -60,7 +62,8 @@
 		user_type: 'staff', // Changed from category to user_type
 		level: 10,
 		permissions: [],
-		is_active: true
+		is_active: true,
+		is_system: false
 	});
 
 	// Permissions
@@ -99,6 +102,7 @@
 			const response = await roleAPI.getRole(roleId);
 			if (response.success && response.data) {
 				role = response.data;
+				initialRoleIsActive = response.data.is_active;
 				selectedPermissions.clear();
 				for (const p of role.permissions || []) selectedPermissions.add(p);
 			} else {
@@ -176,19 +180,20 @@
 
 		saving = true;
 		try {
-			const data = {
-				code: role.code!,
+			const commonData = {
 				name: role.name!,
 				name_en: role.name_en,
 				description: role.description,
-				user_type: role.user_type!, // Changed from category to user_type
+				user_type: role.user_type!,
 				level: role.level,
-				permissions: Array.from(selectedPermissions),
-				is_active: role.is_active
+				permissions: Array.from(selectedPermissions)
 			};
 
 			if (isNew) {
-				const response = await roleAPI.createRole(data);
+				const response = await roleAPI.createRole({
+					code: role.code!,
+					...commonData
+				});
 				if (response.success) {
 					toast.success('สร้างบทบาทสำเร็จ');
 					goto(resolve('/staff/roles'));
@@ -196,7 +201,15 @@
 					toast.error(response.error || 'ไม่สามารถสร้างบทบาทได้');
 				}
 			} else {
-				const response = await roleAPI.updateRole(roleId, data);
+				const statusChanged = initialRoleIsActive !== role.is_active;
+				if (statusChanged && role.is_active === false && !canDeleteRoles) {
+					toast.error('ต้องมีสิทธิ์ปิดใช้งานบทบาทก่อนเปลี่ยนสถานะ');
+					return;
+				}
+				const response = await roleAPI.updateRole(roleId, {
+					...commonData,
+					...(statusChanged ? { is_active: role.is_active } : {})
+				});
 				if (response.success) {
 					toast.success('บันทึกข้อมูลสำเร็จ');
 					goto(resolve('/staff/roles'));
@@ -212,29 +225,56 @@
 		}
 	}
 
-	async function handleDelete() {
+	async function handleDeactivate() {
 		if (!canDeleteRoles) {
-			toast.error('ไม่มีสิทธิ์ลบบทบาท');
+			toast.error('ไม่มีสิทธิ์ปิดใช้งานบทบาท');
+			return;
+		}
+		if (role.is_system) {
+			toast.error('ไม่สามารถปิดใช้งานบทบาทระบบได้');
 			return;
 		}
 
-		deleting = true;
+		deactivating = true;
 		try {
 			const response = await roleAPI.deleteRole(roleId);
 			if (response.success) {
-				toast.success('ลบบทบาทสำเร็จ');
-				showDeleteDialog = false;
+				toast.success('ปิดใช้งานบทบาทสำเร็จ');
+				showDeactivateDialog = false;
 				goto(resolve('/staff/roles'));
 			} else {
-				toast.error(response.error || 'ไม่สามารถลบบทบาทได้');
-				showDeleteDialog = false;
+				toast.error(response.error || 'ไม่สามารถปิดใช้งานบทบาทได้');
+				showDeactivateDialog = false;
 			}
 		} catch (error) {
-			console.error('Failed to delete role:', error);
-			toast.error('เกิดข้อผิดพลาดในการลบข้อมูล');
-			showDeleteDialog = false;
+			console.error('Failed to deactivate role:', error);
+			toast.error(error instanceof Error ? error.message : 'เกิดข้อผิดพลาดในการปิดใช้งาน');
+			showDeactivateDialog = false;
 		} finally {
-			deleting = false;
+			deactivating = false;
+		}
+	}
+
+	async function handleReactivate() {
+		if (!canUpdateRoles) {
+			toast.error('ไม่มีสิทธิ์เปิดใช้งานบทบาท');
+			return;
+		}
+
+		reactivating = true;
+		try {
+			const response = await roleAPI.updateRole(roleId, { is_active: true });
+			if (response.success) {
+				toast.success('เปิดใช้งานบทบาทสำเร็จ');
+				goto(resolve('/staff/roles'));
+			} else {
+				toast.error(response.error || 'ไม่สามารถเปิดใช้งานบทบาทได้');
+			}
+		} catch (error) {
+			console.error('Failed to reactivate role:', error);
+			toast.error(error instanceof Error ? error.message : 'เกิดข้อผิดพลาดในการเปิดใช้งาน');
+		} finally {
+			reactivating = false;
 		}
 	}
 
@@ -258,10 +298,15 @@
 >
 	{#snippet actions()}
 		<div class="flex gap-2">
-			{#if !isNew && canDeleteRoles}
-				<Button variant="destructive" onclick={() => (showDeleteDialog = true)} class="gap-2">
-					<Trash2 class="h-4 w-4" />
-					ลบ
+			{#if !loading && !isNew && initialRoleIsActive === true && canDeleteRoles && !role.is_system}
+				<Button variant="destructive" onclick={() => (showDeactivateDialog = true)} class="gap-2">
+					<Power class="h-4 w-4" />
+					ปิดใช้งาน
+				</Button>
+			{:else if !loading && !isNew && initialRoleIsActive === false && canUpdateRoles}
+				<Button variant="outline" onclick={handleReactivate} disabled={reactivating} class="gap-2">
+					<RotateCcw class="h-4 w-4" />
+					{reactivating ? 'กำลังเปิดใช้งาน...' : 'เปิดใช้งาน'}
 				</Button>
 			{/if}
 			{#if canEditRole}
@@ -285,7 +330,15 @@
 		<div class="space-y-6">
 			<Card>
 				<CardHeader>
-					<CardTitle>ข้อมูลพื้นฐาน</CardTitle>
+					<div class="flex items-center gap-2">
+						<CardTitle>ข้อมูลพื้นฐาน</CardTitle>
+						{#if role.is_system}
+							<Badge variant="outline">บทบาทระบบ</Badge>
+						{/if}
+						{#if !role.is_active}
+							<Badge variant="secondary">ปิดใช้งาน</Badge>
+						{/if}
+					</div>
 					<CardDescription>ข้อมูลทั่วไปของบทบาท</CardDescription>
 				</CardHeader>
 				<CardContent class="space-y-4">
@@ -360,8 +413,20 @@
 					</div>
 
 					<div class="flex items-center gap-2">
-						<Switch id="is_active" bind:checked={role.is_active} disabled={!canEditRole} />
+						<Switch
+							id="is_active"
+							bind:checked={role.is_active}
+							disabled={isNew ||
+								!canEditRole ||
+								role.is_system ||
+								(initialRoleIsActive === true && !canDeleteRoles)}
+						/>
 						<Label for="is_active">เปิดใช้งาน</Label>
+						{#if role.is_system}
+							<span class="text-xs text-muted-foreground">บทบาทระบบไม่สามารถปิดใช้งานได้</span>
+						{:else if role.is_active && !canDeleteRoles && !isNew}
+							<span class="text-xs text-muted-foreground">ต้องมีสิทธิ์ปิดใช้งานบทบาท</span>
+						{/if}
 					</div>
 				</CardContent>
 			</Card>
@@ -471,23 +536,32 @@
 	{/if}
 </PageShell>
 
-<!-- Delete Confirmation Dialog -->
-<Dialog bind:open={showDeleteDialog}>
+<!-- Deactivation Confirmation Dialog -->
+<Dialog bind:open={showDeactivateDialog}>
 	<DialogContent>
 		<DialogHeader>
-			<DialogTitle>ยืนยันการลบบทบาท</DialogTitle>
+			<DialogTitle>ยืนยันการปิดใช้งานบทบาท</DialogTitle>
 			<DialogDescription>
-				คุณแน่ใจหรือไม่ว่าต้องการลบบทบาท <strong>{role.name}</strong>?
-				การกระทำนี้ไม่สามารถย้อนกลับได้
+				ผู้ใช้ที่ได้รับบทบาท <strong>{role.name}</strong> จะสูญเสียสิทธิ์จากบทบาทนี้ทันที แต่ข้อมูลและการมอบหมายเดิมจะยังคงอยู่
+				และสามารถเปิดใช้งานกลับเพื่อคืนสิทธิ์ได้ภายหลัง
 			</DialogDescription>
 		</DialogHeader>
 		<DialogFooter>
-			<Button variant="outline" onclick={() => (showDeleteDialog = false)} disabled={deleting}>
+			<Button
+				variant="outline"
+				onclick={() => (showDeactivateDialog = false)}
+				disabled={deactivating}
+			>
 				ยกเลิก
 			</Button>
-			<Button variant="destructive" onclick={handleDelete} disabled={deleting} class="gap-2">
-				<Trash2 class="h-4 w-4" />
-				{deleting ? 'กำลังลบ...' : 'ลบบทบาท'}
+			<Button
+				variant="destructive"
+				onclick={handleDeactivate}
+				disabled={deactivating}
+				class="gap-2"
+			>
+				<Power class="h-4 w-4" />
+				{deactivating ? 'กำลังปิดใช้งาน...' : 'ปิดใช้งานบทบาท'}
 			</Button>
 		</DialogFooter>
 	</DialogContent>
