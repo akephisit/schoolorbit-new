@@ -436,7 +436,7 @@ test('project rules document generated API contract ownership', async () => {
 	}
 });
 
-test('project docs record the 177-operation course planning checkpoint and next mutation phase', async () => {
+test('project docs record the 184-operation scheduling configuration checkpoint', async () => {
 	const sources = await Promise.all([
 		readRepoFile('.rules'),
 		readRepoFile('docs/TESTING.md'),
@@ -445,7 +445,7 @@ test('project docs record the 177-operation course planning checkpoint and next 
 	]);
 
 	for (const source of sources) {
-		assert.match(source, /177 unique operations/i);
+		assert.match(source, /184 unique operations/i);
 		assert.match(source, /32[\s\S]{0,30}auth\/authorization/i);
 		assert.match(source, /36 read-oriented/i);
 		assert.match(source, /12\s+mutations/i);
@@ -463,9 +463,12 @@ test('project docs record the 177-operation course planning checkpoint and next 
 		assert.match(source, /seven\s+mutations|7\s+mutations/i);
 		assert.match(source, /five dependent reads|5 dependent reads/i);
 		assert.match(source, /course[- ]planning (?:operations|batch)/i);
+		assert.match(source, /scheduling[- ]configuration\s+(?:operations|batch|now)/i);
+		assert.match(source, /six (?:configuration )?reads|6 (?:configuration )?reads/i);
+		assert.match(source, /one atomic mutation|1 atomic mutation/i);
 		assert.match(
 			source,
-			/next[\s\S]{0,80}scheduling\s+configuration|scheduling\s+configuration[\s\S]{0,80}ชุดถัดไป/i
+			/scheduling[- ]configuration[\s\S]{0,120}(?:complete|เสร็จ|atomic mutation)/i
 		);
 		for (const operationId of [
 			'createStaff',
@@ -620,7 +623,7 @@ test('API docs record implemented reversible role and organization deactivation'
 	const improvements = await readRepoFile('IMPROVEMENT_PLAN.md');
 
 	for (const source of [guide, testing]) {
-		assert.match(source, /177 unique operations/);
+		assert.match(source, /184 unique operations/);
 		assert.match(source, /32[\s\S]{0,50}auth\/authorization[\s\S]{0,30}operations/);
 		assert.match(source, /implemented\s+backend\s+routes\s+only/i);
 	}
@@ -1141,7 +1144,7 @@ test('teaching supervision frontend contract uses typed API and permission metad
 	assert.doesNotMatch(supervisionWorkspace, /\bfetch\s*\(/);
 });
 
-test('scheduling API uses backend envelope data types without response casts', async () => {
+test('scheduling configuration uses generated DTOs and one atomic save', async () => {
 	const schedulingApi = await readRepoFile('frontend-school/src/lib/api/scheduling.ts');
 	const timetableTemplatePage = await readRepoFile(
 		'frontend-school/src/routes/(app)/staff/academic/timetable/templates/+page.svelte'
@@ -1150,24 +1153,31 @@ test('scheduling API uses backend envelope data types without response casts', a
 		'frontend-school/src/routes/(app)/staff/academic/timetable/scheduling-config/+page.svelte'
 	);
 
+	assert.match(schedulingApi, /type Schemas = components\['schemas'\]/);
+	for (const schema of [
+		'InstructorConstraintView',
+		'SubjectConstraintView',
+		'ClassroomCourseConstraintView',
+		'CcPreferredRoomView',
+		'SchedulingRoomView',
+		'SaveSchedulingConfigurationRequest',
+		'SchedulingConfigurationSaveResult'
+	]) {
+		assert.match(schedulingApi, new RegExp(`Schemas\\['${schema}'\\]`));
+	}
+	for (const removed of [
+		'updateInstructorConstraints',
+		'reorderInstructorPriority',
+		'updateSubjectConstraints',
+		'updateClassroomCourseConstraints',
+		'setCcPreferredRooms'
+	]) {
+		assert.doesNotMatch(schedulingApi, new RegExp(`function ${removed}\\b`));
+	}
 	assert.match(
 		schedulingApi,
-		/updateInstructorConstraints[\s\S]*apiClient\.put<Record<string, never>>/
+		/saveSchedulingConfiguration[\s\S]*apiClient\.put<SchedulingConfigurationSaveResult>[\s\S]*\/api\/academic\/scheduling\/configuration/
 	);
-	assert.match(
-		schedulingApi,
-		/reorderInstructorPriority[\s\S]*apiClient\.put<Record<string, never>>/
-	);
-	assert.match(schedulingApi, /updateSchoolSettings[\s\S]*apiClient\.put<Record<string, never>>/);
-	assert.match(
-		schedulingApi,
-		/updateSubjectConstraints[\s\S]*apiClient\.put<Record<string, never>>/
-	);
-	assert.match(
-		schedulingApi,
-		/updateClassroomCourseConstraints[\s\S]*apiClient\.put<Record<string, never>>/
-	);
-	assert.match(schedulingApi, /setCcPreferredRooms[\s\S]*apiClient\.put<Record<string, never>>/);
 	assert.match(
 		schedulingApi,
 		/updateTimetableTemplate[\s\S]*apiClient\.put<Record<string, never>>/
@@ -1197,10 +1207,18 @@ test('scheduling API uses backend envelope data types without response casts', a
 	assert.match(schedulingConfigPage, /applySavedInstructorEdits/);
 	assert.match(schedulingConfigPage, /applySavedCcEdits/);
 	assert.match(schedulingConfigPage, /applySavedCcRoomEdits/);
-	const saveAllStart = schedulingConfigPage.indexOf('async function saveAll()');
+	const saveAllStart = schedulingConfigPage.indexOf('async function saveAll(): Promise<boolean>');
 	const saveAllEnd = schedulingConfigPage.indexOf('function slotsEqual');
 	const saveAllBody = schedulingConfigPage.slice(saveAllStart, saveAllEnd);
+	assert.notEqual(saveAllStart, -1);
 	assert.doesNotMatch(saveAllBody, /await loadAll\(\)/);
+	assert.match(saveAllBody, /await saveSchedulingConfiguration\(request\)/);
+	assert.doesNotMatch(saveAllBody, /Promise\.all/);
+	assert.match(saveAllBody, /if \(!response\.success \|\| !response\.data\)/);
+	const autoScheduleBody =
+		schedulingConfigPage.match(/async function runAutoSchedule\(\) \{[\s\S]*?\n\t\}/)?.[0] ?? '';
+	assert.match(autoScheduleBody, /const saved = await saveAll\(\);/);
+	assert.match(autoScheduleBody, /if \(!saved\) return;/);
 });
 
 test('academic curriculum mutations patch local state instead of broad workspace reloads', async () => {

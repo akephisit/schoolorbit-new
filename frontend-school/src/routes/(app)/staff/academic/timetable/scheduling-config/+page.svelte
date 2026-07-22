@@ -3,16 +3,12 @@
 	import { toast } from 'svelte-sonner';
 	import {
 		listInstructorConstraints,
-		updateInstructorConstraints,
-		reorderInstructorPriority,
 		getSchoolSettings,
-		updateSchoolSettings,
 		listPeriods,
 		listClassroomCourseConstraints,
-		updateClassroomCourseConstraints,
 		listCcPreferredRooms,
-		setCcPreferredRooms,
 		listAllRooms,
+		saveSchedulingConfiguration,
 		autoScheduleTimetable,
 		getSchedulingJob,
 		undoSchedulingJob,
@@ -22,6 +18,7 @@
 		type RoomView,
 		type Period,
 		type TimeSlot,
+		type SaveSchedulingConfigurationRequest,
 		type SchedulingJobResponse
 	} from '$lib/api/scheduling';
 	import {
@@ -62,6 +59,7 @@
 	let periods = $state<Period[]>([]);
 	let schoolDays = $state<{ value: string; label: string; shortLabel: string }[]>([]);
 	let defaultMaxConsecutive = $state(4);
+	let savedDefaultMaxConsecutive = $state(4);
 	let activeYear = $state<AcademicYear | null>(null);
 
 	// Per-row UI state
@@ -157,6 +155,7 @@
 			instructors = (instrRes.data ?? []).filter((i) => i.primary_course_count > 0);
 			periods = (periodsRes.data ?? []).sort((a, b) => a.order_index - b.order_index);
 			defaultMaxConsecutive = settingsRes.data?.default_max_consecutive ?? 4;
+			savedDefaultMaxConsecutive = defaultMaxConsecutive;
 			allRooms = roomsRes.data ?? [];
 
 			// Initialize edits from server state
@@ -217,8 +216,8 @@
 			return {
 				...instructor,
 				hard_unavailable_slots: [...update.hardUnavailableSlots],
-				assigned_room_id: update.assignedRoomId || undefined,
-				assigned_room_name: assignedRoom?.name_th
+				assigned_room_id: update.assignedRoomId || null,
+				assigned_room_name: assignedRoom?.name_th ?? null
 			};
 		});
 
@@ -266,22 +265,26 @@
 		}
 	}
 
-	async function saveAll() {
-		if (saving) return;
+	async function saveAll(): Promise<boolean> {
+		if (saving) return false;
 		saving = true;
 		try {
-			const ops: Promise<unknown>[] = [];
+			const request: SaveSchedulingConfigurationRequest = {};
 			const savedInstructorUpdates: SavedInstructorUpdate[] = [];
 			const savedCcUpdates: SavedCcUpdate[] = [];
 			const savedCcRoomIds: string[] = [];
 
-			// 1. Priority order — bulk endpoint (1 query batch)
+			// 1. Priority order
 			if (priorityDirty) {
-				ops.push(reorderInstructorPriority(instructors.map((i) => i.id)));
+				request.instructor_order = instructors.map((i) => i.id);
 			}
 
 			// 2. Global settings
-			ops.push(updateSchoolSettings({ default_max_consecutive: defaultMaxConsecutive }));
+			if (defaultMaxConsecutive !== savedDefaultMaxConsecutive) {
+				request.scheduler_settings = {
+					default_max_consecutive: defaultMaxConsecutive
+				};
+			}
 
 			// 3. Per-instructor unavailable + room — only ที่เปลี่ยนจริง
 			for (const i of instructors) {
@@ -295,21 +298,19 @@
 
 				if (!unavailChanged && !roomChanged) continue;
 
-				const req: Parameters<typeof updateInstructorConstraints>[1] = {};
-				if (unavailChanged) req.hard_unavailable_slots = localUnavail;
+				const instructorPatch: NonNullable<
+					SaveSchedulingConfigurationRequest['instructors']
+				>[number] = { id: i.id };
+				if (unavailChanged) instructorPatch.hard_unavailable_slots = localUnavail;
 				if (roomChanged) {
-					if (localRoom === '') {
-						req.clear_assigned_room = true;
-					} else {
-						req.assigned_room_id = localRoom;
-					}
+					instructorPatch.assigned_room_id = localRoom || null;
 				}
+				(request.instructors ??= []).push(instructorPatch);
 				savedInstructorUpdates.push({
 					id: i.id,
 					hardUnavailableSlots: [...localUnavail],
 					assignedRoomId: localRoom
 				});
-				ops.push(updateInstructorConstraints(i.id, req));
 			}
 
 			// 4. Per-cc constraints — only ที่เปลี่ยนจริง
@@ -331,13 +332,13 @@
 						consecutivePattern: localPattern,
 						sameDayUnique: localSdu ?? cc.same_day_unique
 					});
-					ops.push(
-						updateClassroomCourseConstraints(cc.id, {
-							hard_unavailable_slots: unavailChanged ? localUnavail : undefined,
-							consecutive_pattern: patternChanged ? localPattern : undefined,
-							same_day_unique: sduChanged ? localSdu : undefined
-						})
-					);
+					const coursePatch: NonNullable<
+						SaveSchedulingConfigurationRequest['classroom_courses']
+					>[number] = { id: cc.id };
+					if (unavailChanged) coursePatch.hard_unavailable_slots = localUnavail;
+					if (patternChanged) coursePatch.consecutive_pattern = localPattern;
+					if (sduChanged) coursePatch.same_day_unique = localSdu;
+					(request.classroom_courses ??= []).push(coursePatch);
 				}
 			}
 
@@ -346,25 +347,36 @@
 				if (!ccRoomsChanged(ccId)) continue;
 				const local = ccRoomsEdits.get(ccId) ?? [];
 				savedCcRoomIds.push(ccId);
-				ops.push(
-					setCcPreferredRooms(ccId, {
-						rooms: local.map((r) => ({
-							room_id: r.room_id,
-							rank: r.rank,
-							is_required: r.is_required
-						}))
-					})
-				);
+				(request.preferred_rooms ??= []).push({
+					classroom_course_id: ccId,
+					rooms: local.map((r) => ({
+						room_id: r.room_id,
+						rank: r.rank,
+						is_required: r.is_required
+					}))
+				});
 			}
 
-			await Promise.all(ops);
+			const response = await saveSchedulingConfiguration(request);
+			if (!response.success || !response.data) {
+				throw new Error(response.error || 'บันทึกไม่สำเร็จ');
+			}
 			applySavedInstructorEdits(savedInstructorUpdates);
 			applySavedCcEdits(savedCcUpdates);
 			applySavedCcRoomEdits(savedCcRoomIds);
+			savedDefaultMaxConsecutive = defaultMaxConsecutive;
+			if (priorityDirty) {
+				instructors = instructors.map((instructor, index) => ({
+					...instructor,
+					priority: index + 1
+				}));
+			}
 			toast.success('บันทึกการตั้งค่าสำเร็จ');
 			priorityDirty = false;
+			return true;
 		} catch (e) {
 			toast.error(e instanceof Error ? e.message : 'บันทึกไม่สำเร็จ');
+			return false;
 		} finally {
 			saving = false;
 		}
@@ -587,8 +599,8 @@
 			return;
 		}
 		// บันทึก config ก่อน → จัด
-		await saveAll();
-		if (saving) return; // saveAll ยัง running
+		const saved = await saveAll();
+		if (!saved) return;
 
 		// Load classrooms ของปีการศึกษานี้
 		try {

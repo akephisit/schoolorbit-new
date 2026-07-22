@@ -1,5 +1,8 @@
 import { apiClient } from './client';
+import type { components } from '$lib/api/generated/school-api';
 import type { UUID } from '$lib/types';
+
+type Schemas = components['schemas'];
 
 // ==================== Types ====================
 
@@ -70,10 +73,7 @@ export interface SchedulingJobResponse {
 	created_at: string;
 }
 
-export interface TimeSlot {
-	day: string;
-	period_id: UUID;
-}
+export type TimeSlot = Schemas['TimeSlot'];
 
 export interface InstructorPreference {
 	id: UUID;
@@ -149,112 +149,26 @@ export interface CreateLockedSlotRequest {
 
 // ==================== Scheduling Constraints ====================
 
-export interface InstructorConstraintView {
-	id: UUID;
-	first_name: string;
-	last_name: string;
-	short_name?: string;
-	max_periods_per_day?: number;
-	hard_unavailable_slots?: TimeSlot[]; // Concrete type
-	preferred_slots?: TimeSlot[];
-	assigned_room_id?: UUID;
-	assigned_room_name?: string;
-	priority: number;
-	primary_course_count: number;
-}
-
-export interface UpdateInstructorConstraintRequest {
-	max_periods_per_day?: number;
-	hard_unavailable_slots?: TimeSlot[];
-	preferred_slots?: TimeSlot[];
-	assigned_room_id?: UUID;
-	/// ส่ง true เพื่อล้าง room assignment (อย่าใช้ assigned_room_id=null)
-	clear_assigned_room?: boolean;
-	priority?: number;
-}
-
-export interface SchoolSettings {
-	default_max_consecutive: number;
-}
-
-export interface UpdateSchoolSettingsRequest {
-	default_max_consecutive?: number;
-}
-
-export interface SubjectConstraintView {
-	id: UUID;
-	code: string;
-	name: string;
-	min_consecutive_periods?: number;
-	max_consecutive_periods?: number;
-	periods_per_week?: number;
-	allowed_period_ids?: UUID[]; // Array of period UUID strings
-	allowed_days?: string[]; // Array of day codes: MON, TUE, etc.
-}
-
-export interface UpdateSubjectConstraintRequest {
-	min_consecutive_periods?: number;
-	max_consecutive_periods?: number;
-	periods_per_week?: number;
-	allowed_period_ids?: UUID[] | null;
-	allowed_days?: string[] | null;
-}
+export type InstructorConstraintView = Schemas['InstructorConstraintView'];
+export type SchoolSettings = Schemas['SchedulerSettingsView'];
+export type SubjectConstraintView = Schemas['SubjectConstraintView'];
+export type ClassroomCourseConstraintView = Schemas['ClassroomCourseConstraintView'];
+export type CcPreferredRoom = Schemas['CcPreferredRoomView'];
+export type RoomView = Schemas['SchedulingRoomView'];
+export type SaveSchedulingConfigurationRequest = Schemas['SaveSchedulingConfigurationRequest'];
+export type SchedulingConfigurationSaveResult = Schemas['SchedulingConfigurationSaveResult'];
 
 // Constraints API
 export async function listInstructorConstraints() {
 	return apiClient.get<InstructorConstraintView[]>('/api/academic/scheduling/instructors');
 }
 
-export async function updateInstructorConstraints(
-	id: UUID,
-	req: UpdateInstructorConstraintRequest
-) {
-	return apiClient.put<Record<string, never>>(`/api/academic/scheduling/instructors/${id}`, req);
-}
-
-export async function reorderInstructorPriority(instructor_ids: UUID[]) {
-	return apiClient.put<Record<string, never>>('/api/academic/scheduling/instructors/order', {
-		instructor_ids
-	});
-}
-
 export async function getSchoolSettings() {
 	return apiClient.get<SchoolSettings>('/api/academic/scheduling/settings');
 }
 
-export async function updateSchoolSettings(req: UpdateSchoolSettingsRequest) {
-	return apiClient.put<Record<string, never>>('/api/academic/scheduling/settings', req);
-}
-
 export async function listSubjectConstraints() {
 	return apiClient.get<SubjectConstraintView[]>('/api/academic/scheduling/subjects');
-}
-
-export async function updateSubjectConstraints(id: UUID, req: UpdateSubjectConstraintRequest) {
-	return apiClient.put<Record<string, never>>(`/api/academic/scheduling/subjects/${id}`, req);
-}
-
-// Phase B: Classroom Course Constraints
-export interface ClassroomCourseConstraintView {
-	id: UUID;
-	classroom_id: UUID;
-	classroom_name: string;
-	subject_id: UUID;
-	subject_code: string;
-	subject_name: string;
-	periods_per_week?: number;
-	primary_instructor_id?: UUID;
-	primary_instructor_name?: string;
-	consecutive_pattern?: number[] | null;
-	same_day_unique: boolean;
-	hard_unavailable_slots: TimeSlot[];
-	team_unavailable_slots: TimeSlot[]; // readonly union ครูใน team
-}
-
-export interface UpdateClassroomCourseConstraintRequest {
-	consecutive_pattern?: number[] | null;
-	same_day_unique?: boolean;
-	hard_unavailable_slots?: TimeSlot[];
 }
 
 export async function listClassroomCourseConstraints(instructorId?: UUID) {
@@ -264,53 +178,21 @@ export async function listClassroomCourseConstraints(instructorId?: UUID) {
 	);
 }
 
-export async function updateClassroomCourseConstraints(
-	id: UUID,
-	req: UpdateClassroomCourseConstraintRequest
-) {
-	return apiClient.put<Record<string, never>>(
-		`/api/academic/scheduling/classroom-courses/${id}`,
-		req
-	);
-}
-
-// Phase D: Room Assignment
-export interface CcPreferredRoom {
-	id: UUID;
-	classroom_course_id: UUID;
-	room_id: UUID;
-	room_code: string;
-	room_name: string;
-	rank: number;
-	is_required: boolean;
-}
-
-export interface RoomView {
-	id: UUID;
-	code: string;
-	name_th: string;
-	room_type?: string;
-}
-
-export interface SetCcRoomsRequest {
-	rooms: { room_id: UUID; rank: number; is_required?: boolean }[];
-}
-
 export async function listCcPreferredRooms(ccId: UUID) {
 	return apiClient.get<CcPreferredRoom[]>(
 		`/api/academic/scheduling/classroom-courses/${ccId}/rooms`
 	);
 }
 
-export async function setCcPreferredRooms(ccId: UUID, req: SetCcRoomsRequest) {
-	return apiClient.put<Record<string, never>>(
-		`/api/academic/scheduling/classroom-courses/${ccId}/rooms`,
-		req
-	);
-}
-
 export async function listAllRooms() {
 	return apiClient.get<RoomView[]>('/api/academic/scheduling/rooms');
+}
+
+export async function saveSchedulingConfiguration(req: SaveSchedulingConfigurationRequest) {
+	return apiClient.put<SchedulingConfigurationSaveResult>(
+		'/api/academic/scheduling/configuration',
+		req
+	);
 }
 
 // Phase F: Timetable Templates

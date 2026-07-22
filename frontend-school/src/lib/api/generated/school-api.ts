@@ -693,6 +693,118 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/api/academic/scheduling/classroom-courses': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listSchedulingClassroomCourseConstraints'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/scheduling/classroom-courses/{id}/rooms': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listSchedulingClassroomCoursePreferredRooms'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/scheduling/configuration': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put: operations['saveSchedulingConfiguration'];
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/scheduling/instructors': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listSchedulingInstructorConstraints'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/scheduling/rooms': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listSchedulingRooms'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/scheduling/settings': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getSchedulingSettings'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/scheduling/subjects': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listSchedulingSubjectConstraints'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/api/academic/semesters': {
 		parameters: {
 			query?: never;
@@ -2903,6 +3015,27 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
+		ApiResponse_SchedulerSettingsView: {
+			data: {
+				/** Format: int32 */
+				default_max_consecutive: number;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_SchedulingConfigurationSaveResult: {
+			data: {
+				changed: boolean;
+				classroom_course_constraints_updated: number;
+				instructor_constraints_updated: number;
+				instructor_order_updated: number;
+				preferred_room_sets_updated: number;
+				scheduler_settings_changed: boolean;
+				subject_constraints_updated: number;
+			};
+			message?: string;
+			success: boolean;
+		};
 		ApiResponse_SchoolSettingsResponse: {
 			/** @description Response to frontend — logoUrl built from path */
 			data: {
@@ -3443,6 +3576,23 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
+		ApiResponse_Vec_CcPreferredRoomView: {
+			data: {
+				/** Format: uuid */
+				classroom_course_id: string;
+				/** Format: uuid */
+				id: string;
+				is_required: boolean;
+				/** Format: int32 */
+				rank: number;
+				room_code: string;
+				/** Format: uuid */
+				room_id: string;
+				room_name: string;
+			}[];
+			message?: string;
+			success: boolean;
+		};
 		ApiResponse_Vec_Classroom: {
 			data: {
 				/** Format: uuid */
@@ -3508,6 +3658,30 @@ export interface components {
 				subject_name_en: string | null;
 				subject_name_th: string | null;
 				subject_type: string | null;
+			}[];
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_Vec_ClassroomCourseConstraintView: {
+			data: {
+				/** Format: uuid */
+				classroom_id: string;
+				classroom_name: string;
+				consecutive_pattern: number[] | null;
+				hard_unavailable_slots: components['schemas']['TimeSlot'][];
+				/** Format: uuid */
+				id: string;
+				/** Format: int32 */
+				periods_per_week: number | null;
+				/** Format: uuid */
+				primary_instructor_id: string | null;
+				primary_instructor_name: string | null;
+				same_day_unique: boolean;
+				subject_code: string;
+				/** Format: uuid */
+				subject_id: string;
+				subject_name: string;
+				team_unavailable_slots: components['schemas']['TimeSlot'][];
 			}[];
 			message?: string;
 			success: boolean;
@@ -3583,6 +3757,28 @@ export interface components {
 				level_type: string;
 				name: string;
 				short_name: string | null;
+			}[];
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_Vec_InstructorConstraintView: {
+			data: {
+				/** Format: uuid */
+				assigned_room_id: string | null;
+				assigned_room_name: string | null;
+				first_name: string;
+				hard_unavailable_slots: components['schemas']['TimeSlot'][] | null;
+				/** Format: uuid */
+				id: string;
+				last_name: string;
+				/** Format: int32 */
+				max_periods_per_day: number | null;
+				/** Format: int32 */
+				min_periods_per_day: number | null;
+				/** Format: int64 */
+				primary_course_count: number;
+				/** Format: int32 */
+				priority: number;
 			}[];
 			message?: string;
 			success: boolean;
@@ -3813,6 +4009,17 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
+		ApiResponse_Vec_SchedulingRoomView: {
+			data: {
+				code: string;
+				/** Format: uuid */
+				id: string;
+				name_th: string;
+				room_type: string | null;
+			}[];
+			message?: string;
+			success: boolean;
+		};
 		ApiResponse_Vec_SlotClassroomAssignment: {
 			data: {
 				/** Format: uuid */
@@ -4023,6 +4230,25 @@ export interface components {
 				type: components['schemas']['SubjectType'];
 				/** Format: date-time */
 				updated_at: string;
+			}[];
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_Vec_SubjectConstraintView: {
+			data: {
+				allow_single_period: boolean | null;
+				allowed_days: string[] | null;
+				allowed_period_ids: string[] | null;
+				code: string;
+				/** Format: uuid */
+				id: string;
+				/** Format: int32 */
+				max_consecutive_periods: number | null;
+				/** Format: int32 */
+				min_consecutive_periods: number;
+				name: string;
+				/** Format: int32 */
+				periods_per_week: number | null;
 			}[];
 			message?: string;
 			success: boolean;
@@ -4316,6 +4542,19 @@ export interface components {
 			instructor_id: string;
 			role: components['schemas']['CurriculumInstructorRole'];
 		};
+		CcPreferredRoomView: {
+			/** Format: uuid */
+			classroom_course_id: string;
+			/** Format: uuid */
+			id: string;
+			is_required: boolean;
+			/** Format: int32 */
+			rank: number;
+			room_code: string;
+			/** Format: uuid */
+			room_id: string;
+			room_name: string;
+		};
 		ChangePasswordRequest: {
 			currentPassword: string;
 			newPassword: string;
@@ -4404,6 +4643,38 @@ export interface components {
 			subject_name_en: string | null;
 			subject_name_th: string | null;
 			subject_type: string | null;
+		};
+		ClassroomCourseConstraintPatch: {
+			consecutive_pattern?: number[] | null;
+			hard_unavailable_slots?: components['schemas']['TimeSlot'][] | null;
+			/** Format: uuid */
+			id: string;
+			same_day_unique?: boolean | null;
+		};
+		ClassroomCourseConstraintView: {
+			/** Format: uuid */
+			classroom_id: string;
+			classroom_name: string;
+			consecutive_pattern: number[] | null;
+			hard_unavailable_slots: components['schemas']['TimeSlot'][];
+			/** Format: uuid */
+			id: string;
+			/** Format: int32 */
+			periods_per_week: number | null;
+			/** Format: uuid */
+			primary_instructor_id: string | null;
+			primary_instructor_name: string | null;
+			same_day_unique: boolean;
+			subject_code: string;
+			/** Format: uuid */
+			subject_id: string;
+			subject_name: string;
+			team_unavailable_slots: components['schemas']['TimeSlot'][];
+		};
+		ClassroomCoursePreferredRoomsPatch: {
+			/** Format: uuid */
+			classroom_course_id: string;
+			rooms: components['schemas']['PreferredRoomInput'][];
 		};
 		ClassroomCourseSettings: {
 			[key: string]: unknown;
@@ -4805,6 +5076,34 @@ export interface components {
 		};
 		/** @enum {string} */
 		GradeLevelType: 'kindergarten' | 'primary' | 'secondary';
+		InstructorConstraintPatch: {
+			/** Format: uuid */
+			assigned_room_id?: string | null;
+			hard_unavailable_slots?: components['schemas']['TimeSlot'][] | null;
+			/** Format: uuid */
+			id: string;
+			/** Format: int32 */
+			max_periods_per_day?: number | null;
+			preferred_slots?: components['schemas']['TimeSlot'][] | null;
+		};
+		InstructorConstraintView: {
+			/** Format: uuid */
+			assigned_room_id: string | null;
+			assigned_room_name: string | null;
+			first_name: string;
+			hard_unavailable_slots: components['schemas']['TimeSlot'][] | null;
+			/** Format: uuid */
+			id: string;
+			last_name: string;
+			/** Format: int32 */
+			max_periods_per_day: number | null;
+			/** Format: int32 */
+			min_periods_per_day: number | null;
+			/** Format: int64 */
+			primary_course_count: number;
+			/** Format: int32 */
+			priority: number;
+		};
 		InstructorInfo: {
 			/** Format: uuid */
 			id: string;
@@ -4817,6 +5116,10 @@ export interface components {
 			/** Format: uuid */
 			instructor_id: string;
 			role?: null | components['schemas']['ActivityGroupInstructorRole'];
+		};
+		ListClassroomCourseConstraintsQuery: {
+			/** Format: uuid */
+			instructor_id?: string | null;
 		};
 		ListMembersQuery: {
 			include_children?: boolean | null;
@@ -5062,6 +5365,13 @@ export interface components {
 			/** Format: uuid */
 			subject_id?: string | null;
 		};
+		PreferredRoomInput: {
+			is_required?: boolean;
+			/** Format: int32 */
+			rank: number;
+			/** Format: uuid */
+			room_id: string;
+		};
 		ProfileResponse: {
 			address: string | null;
 			/** Format: date-time */
@@ -5185,6 +5495,38 @@ export interface components {
 			status: string;
 			/** Format: date-time */
 			updated_at: string;
+		};
+		SaveSchedulingConfigurationRequest: {
+			classroom_courses?: components['schemas']['ClassroomCourseConstraintPatch'][];
+			instructor_order?: string[] | null;
+			instructors?: components['schemas']['InstructorConstraintPatch'][];
+			preferred_rooms?: components['schemas']['ClassroomCoursePreferredRoomsPatch'][];
+			scheduler_settings?: null | components['schemas']['SchedulerSettingsPatch'];
+			subjects?: components['schemas']['SubjectConstraintPatch'][];
+		};
+		SchedulerSettingsPatch: {
+			/** Format: int32 */
+			default_max_consecutive?: number | null;
+		};
+		SchedulerSettingsView: {
+			/** Format: int32 */
+			default_max_consecutive: number;
+		};
+		SchedulingConfigurationSaveResult: {
+			changed: boolean;
+			classroom_course_constraints_updated: number;
+			instructor_constraints_updated: number;
+			instructor_order_updated: number;
+			preferred_room_sets_updated: number;
+			scheduler_settings_changed: boolean;
+			subject_constraints_updated: number;
+		};
+		SchedulingRoomView: {
+			code: string;
+			/** Format: uuid */
+			id: string;
+			name_th: string;
+			room_type: string | null;
 		};
 		/** @description Response to frontend — logoUrl built from path */
 		SchoolSettingsResponse: {
@@ -5468,6 +5810,32 @@ export interface components {
 			/** Format: date-time */
 			updated_at: string;
 		};
+		SubjectConstraintPatch: {
+			allow_single_period?: boolean | null;
+			allowed_days?: string[] | null;
+			allowed_period_ids?: string[] | null;
+			/** Format: uuid */
+			id: string;
+			/** Format: int32 */
+			max_consecutive_periods?: number | null;
+			/** Format: int32 */
+			min_consecutive_periods?: number | null;
+		};
+		SubjectConstraintView: {
+			allow_single_period: boolean | null;
+			allowed_days: string[] | null;
+			allowed_period_ids: string[] | null;
+			code: string;
+			/** Format: uuid */
+			id: string;
+			/** Format: int32 */
+			max_consecutive_periods: number | null;
+			/** Format: int32 */
+			min_consecutive_periods: number;
+			name: string;
+			/** Format: int32 */
+			periods_per_week: number | null;
+		};
 		SubjectDefaultInstructor: {
 			/** Format: date-time */
 			created_at: string;
@@ -5523,6 +5891,11 @@ export interface components {
 			subject_code: string;
 			subject_name: string;
 			term: string;
+		};
+		TimeSlot: {
+			day: string;
+			/** Format: uuid */
+			period_id: string;
 		};
 		TimetableEntry: {
 			/** Format: uuid */
@@ -9679,6 +10052,398 @@ export interface operations {
 				};
 			};
 			/** @description Courses could not be generated */
+			500: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	listSchedulingClassroomCourseConstraints: {
+		parameters: {
+			query?: {
+				instructor_id?: string;
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Scheduling classroom-course constraints */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_ClassroomCourseConstraintView'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Course-plan read permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Active academic year not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Classroom-course constraints could not be loaded */
+			500: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	listSchedulingClassroomCoursePreferredRooms: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Classroom-course ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Preferred rooms for a classroom course */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_CcPreferredRoomView'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Course-plan read permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Classroom course not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Preferred rooms could not be loaded */
+			500: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	saveSchedulingConfiguration: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['SaveSchedulingConfigurationRequest'];
+			};
+		};
+		responses: {
+			/** @description Scheduling configuration saved atomically */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_SchedulingConfigurationSaveResult'];
+				};
+			};
+			/** @description Malformed or invalid scheduling configuration */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Course-plan management permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Active academic year or referenced target not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Scheduling configuration changed concurrently */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Scheduling configuration could not be saved */
+			500: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	listSchedulingInstructorConstraints: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Scheduling instructor constraints */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_InstructorConstraintView'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Course-plan read permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Active academic year not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Instructor constraints could not be loaded */
+			500: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	listSchedulingRooms: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Active scheduling rooms */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_SchedulingRoomView'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Course-plan read permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Rooms could not be loaded */
+			500: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getSchedulingSettings: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Scheduling settings */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_SchedulerSettingsView'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Course-plan read permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Scheduling settings could not be loaded */
+			500: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	listSchedulingSubjectConstraints: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Scheduling subject constraints */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_SubjectConstraintView'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Course-plan read permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Subject constraints could not be loaded */
 			500: {
 				headers: {
 					[name: string]: unknown;

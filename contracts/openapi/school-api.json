@@ -2939,6 +2939,88 @@
         ],
         "type": "object"
       },
+      "ApiResponse_SchedulerSettingsView": {
+        "properties": {
+          "data": {
+            "properties": {
+              "default_max_consecutive": {
+                "format": "int32",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "default_max_consecutive"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_SchedulingConfigurationSaveResult": {
+        "properties": {
+          "data": {
+            "properties": {
+              "changed": {
+                "type": "boolean"
+              },
+              "classroom_course_constraints_updated": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "instructor_constraints_updated": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "instructor_order_updated": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "preferred_room_sets_updated": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "scheduler_settings_changed": {
+                "type": "boolean"
+              },
+              "subject_constraints_updated": {
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "changed",
+              "scheduler_settings_changed",
+              "instructor_order_updated",
+              "instructor_constraints_updated",
+              "subject_constraints_updated",
+              "classroom_course_constraints_updated",
+              "preferred_room_sets_updated"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
       "ApiResponse_SchoolSettingsResponse": {
         "properties": {
           "data": {
@@ -5046,6 +5128,63 @@
         ],
         "type": "object"
       },
+      "ApiResponse_Vec_CcPreferredRoomView": {
+        "properties": {
+          "data": {
+            "items": {
+              "properties": {
+                "classroom_course_id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "is_required": {
+                  "type": "boolean"
+                },
+                "rank": {
+                  "format": "int32",
+                  "type": "integer"
+                },
+                "room_code": {
+                  "type": "string"
+                },
+                "room_id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "room_name": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "classroom_course_id",
+                "room_id",
+                "room_code",
+                "room_name",
+                "rank",
+                "is_required"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
       "ApiResponse_Vec_Classroom": {
         "properties": {
           "data": {
@@ -5295,6 +5434,110 @@
                 "instructor_name",
                 "subject_type",
                 "classroom_name"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_Vec_ClassroomCourseConstraintView": {
+        "properties": {
+          "data": {
+            "items": {
+              "properties": {
+                "classroom_id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "classroom_name": {
+                  "type": "string"
+                },
+                "consecutive_pattern": {
+                  "items": {
+                    "format": "int32",
+                    "type": "integer"
+                  },
+                  "type": [
+                    "array",
+                    "null"
+                  ]
+                },
+                "hard_unavailable_slots": {
+                  "items": {
+                    "$ref": "#/components/schemas/TimeSlot"
+                  },
+                  "type": "array"
+                },
+                "id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "periods_per_week": {
+                  "format": "int32",
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "primary_instructor_id": {
+                  "format": "uuid",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "primary_instructor_name": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "same_day_unique": {
+                  "type": "boolean"
+                },
+                "subject_code": {
+                  "type": "string"
+                },
+                "subject_id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "subject_name": {
+                  "type": "string"
+                },
+                "team_unavailable_slots": {
+                  "items": {
+                    "$ref": "#/components/schemas/TimeSlot"
+                  },
+                  "type": "array"
+                }
+              },
+              "required": [
+                "id",
+                "classroom_id",
+                "classroom_name",
+                "subject_id",
+                "subject_code",
+                "subject_name",
+                "periods_per_week",
+                "primary_instructor_id",
+                "primary_instructor_name",
+                "consecutive_pattern",
+                "same_day_unique",
+                "hard_unavailable_slots",
+                "team_unavailable_slots"
               ],
               "type": "object"
             },
@@ -5566,6 +5809,95 @@
                 "short_name",
                 "level_type",
                 "level_order"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_Vec_InstructorConstraintView": {
+        "properties": {
+          "data": {
+            "items": {
+              "properties": {
+                "assigned_room_id": {
+                  "format": "uuid",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "assigned_room_name": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "first_name": {
+                  "type": "string"
+                },
+                "hard_unavailable_slots": {
+                  "items": {
+                    "$ref": "#/components/schemas/TimeSlot"
+                  },
+                  "type": [
+                    "array",
+                    "null"
+                  ]
+                },
+                "id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "last_name": {
+                  "type": "string"
+                },
+                "max_periods_per_day": {
+                  "format": "int32",
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "min_periods_per_day": {
+                  "format": "int32",
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "primary_course_count": {
+                  "format": "int64",
+                  "type": "integer"
+                },
+                "priority": {
+                  "format": "int32",
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "id",
+                "first_name",
+                "last_name",
+                "hard_unavailable_slots",
+                "max_periods_per_day",
+                "min_periods_per_day",
+                "assigned_room_id",
+                "assigned_room_name",
+                "priority",
+                "primary_course_count"
               ],
               "type": "object"
             },
@@ -6474,6 +6806,51 @@
         ],
         "type": "object"
       },
+      "ApiResponse_Vec_SchedulingRoomView": {
+        "properties": {
+          "data": {
+            "items": {
+              "properties": {
+                "code": {
+                  "type": "string"
+                },
+                "id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "name_th": {
+                  "type": "string"
+                },
+                "room_type": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "code",
+                "name_th",
+                "room_type"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
       "ApiResponse_Vec_SlotClassroomAssignment": {
         "properties": {
           "data": {
@@ -7246,6 +7623,93 @@
                 "is_active",
                 "created_at",
                 "updated_at"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_Vec_SubjectConstraintView": {
+        "properties": {
+          "data": {
+            "items": {
+              "properties": {
+                "allow_single_period": {
+                  "type": [
+                    "boolean",
+                    "null"
+                  ]
+                },
+                "allowed_days": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": [
+                    "array",
+                    "null"
+                  ]
+                },
+                "allowed_period_ids": {
+                  "items": {
+                    "format": "uuid",
+                    "type": "string"
+                  },
+                  "type": [
+                    "array",
+                    "null"
+                  ]
+                },
+                "code": {
+                  "type": "string"
+                },
+                "id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "max_consecutive_periods": {
+                  "format": "int32",
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "min_consecutive_periods": {
+                  "format": "int32",
+                  "type": "integer"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "periods_per_week": {
+                  "format": "int32",
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "code",
+                "name",
+                "min_consecutive_periods",
+                "max_consecutive_periods",
+                "allow_single_period",
+                "periods_per_week",
+                "allowed_period_ids",
+                "allowed_days"
               ],
               "type": "object"
             },
@@ -8325,6 +8789,45 @@
         ],
         "type": "object"
       },
+      "CcPreferredRoomView": {
+        "properties": {
+          "classroom_course_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "is_required": {
+            "type": "boolean"
+          },
+          "rank": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "room_code": {
+            "type": "string"
+          },
+          "room_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "room_name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "classroom_course_id",
+          "room_id",
+          "room_code",
+          "room_name",
+          "rank",
+          "is_required"
+        ],
+        "type": "object"
+      },
       "ChangePasswordRequest": {
         "properties": {
           "currentPassword": {
@@ -8657,6 +9160,148 @@
           "instructor_name",
           "subject_type",
           "classroom_name"
+        ],
+        "type": "object"
+      },
+      "ClassroomCourseConstraintPatch": {
+        "properties": {
+          "consecutive_pattern": {
+            "items": {
+              "format": "int32",
+              "type": "integer"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "hard_unavailable_slots": {
+            "items": {
+              "$ref": "#/components/schemas/TimeSlot"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "same_day_unique": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "ClassroomCourseConstraintView": {
+        "properties": {
+          "classroom_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "classroom_name": {
+            "type": "string"
+          },
+          "consecutive_pattern": {
+            "items": {
+              "format": "int32",
+              "type": "integer"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "hard_unavailable_slots": {
+            "items": {
+              "$ref": "#/components/schemas/TimeSlot"
+            },
+            "type": "array"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "periods_per_week": {
+            "format": "int32",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "primary_instructor_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "primary_instructor_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "same_day_unique": {
+            "type": "boolean"
+          },
+          "subject_code": {
+            "type": "string"
+          },
+          "subject_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "subject_name": {
+            "type": "string"
+          },
+          "team_unavailable_slots": {
+            "items": {
+              "$ref": "#/components/schemas/TimeSlot"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "classroom_id",
+          "classroom_name",
+          "subject_id",
+          "subject_code",
+          "subject_name",
+          "periods_per_week",
+          "primary_instructor_id",
+          "primary_instructor_name",
+          "consecutive_pattern",
+          "same_day_unique",
+          "hard_unavailable_slots",
+          "team_unavailable_slots"
+        ],
+        "type": "object"
+      },
+      "ClassroomCoursePreferredRoomsPatch": {
+        "properties": {
+          "classroom_course_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "rooms": {
+            "items": {
+              "$ref": "#/components/schemas/PreferredRoomInput"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "classroom_course_id",
+          "rooms"
         ],
         "type": "object"
       },
@@ -10173,6 +10818,121 @@
         ],
         "type": "string"
       },
+      "InstructorConstraintPatch": {
+        "properties": {
+          "assigned_room_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "hard_unavailable_slots": {
+            "items": {
+              "$ref": "#/components/schemas/TimeSlot"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "max_periods_per_day": {
+            "format": "int32",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "preferred_slots": {
+            "items": {
+              "$ref": "#/components/schemas/TimeSlot"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "InstructorConstraintView": {
+        "properties": {
+          "assigned_room_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "assigned_room_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "first_name": {
+            "type": "string"
+          },
+          "hard_unavailable_slots": {
+            "items": {
+              "$ref": "#/components/schemas/TimeSlot"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "last_name": {
+            "type": "string"
+          },
+          "max_periods_per_day": {
+            "format": "int32",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "min_periods_per_day": {
+            "format": "int32",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "primary_course_count": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "priority": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "first_name",
+          "last_name",
+          "hard_unavailable_slots",
+          "max_periods_per_day",
+          "min_periods_per_day",
+          "assigned_room_id",
+          "assigned_room_name",
+          "priority",
+          "primary_course_count"
+        ],
+        "type": "object"
+      },
       "InstructorInfo": {
         "properties": {
           "id": {
@@ -10220,6 +10980,18 @@
         "required": [
           "instructor_id"
         ],
+        "type": "object"
+      },
+      "ListClassroomCourseConstraintsQuery": {
+        "properties": {
+          "instructor_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
         "type": "object"
       },
       "ListMembersQuery": {
@@ -11160,6 +11932,26 @@
         },
         "type": "object"
       },
+      "PreferredRoomInput": {
+        "properties": {
+          "is_required": {
+            "type": "boolean"
+          },
+          "rank": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "room_id": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "room_id",
+          "rank"
+        ],
+        "type": "object"
+      },
       "ProfileResponse": {
         "properties": {
           "address": {
@@ -11676,6 +12468,146 @@
           "created_at",
           "updated_at",
           "building_name"
+        ],
+        "type": "object"
+      },
+      "SaveSchedulingConfigurationRequest": {
+        "properties": {
+          "classroom_courses": {
+            "items": {
+              "$ref": "#/components/schemas/ClassroomCourseConstraintPatch"
+            },
+            "type": "array"
+          },
+          "instructor_order": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "instructors": {
+            "items": {
+              "$ref": "#/components/schemas/InstructorConstraintPatch"
+            },
+            "type": "array"
+          },
+          "preferred_rooms": {
+            "items": {
+              "$ref": "#/components/schemas/ClassroomCoursePreferredRoomsPatch"
+            },
+            "type": "array"
+          },
+          "scheduler_settings": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/SchedulerSettingsPatch"
+              }
+            ]
+          },
+          "subjects": {
+            "items": {
+              "$ref": "#/components/schemas/SubjectConstraintPatch"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "SchedulerSettingsPatch": {
+        "properties": {
+          "default_max_consecutive": {
+            "format": "int32",
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "SchedulerSettingsView": {
+        "properties": {
+          "default_max_consecutive": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "default_max_consecutive"
+        ],
+        "type": "object"
+      },
+      "SchedulingConfigurationSaveResult": {
+        "properties": {
+          "changed": {
+            "type": "boolean"
+          },
+          "classroom_course_constraints_updated": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "instructor_constraints_updated": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "instructor_order_updated": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "preferred_room_sets_updated": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "scheduler_settings_changed": {
+            "type": "boolean"
+          },
+          "subject_constraints_updated": {
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "changed",
+          "scheduler_settings_changed",
+          "instructor_order_updated",
+          "instructor_constraints_updated",
+          "subject_constraints_updated",
+          "classroom_course_constraints_updated",
+          "preferred_room_sets_updated"
+        ],
+        "type": "object"
+      },
+      "SchedulingRoomView": {
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "name_th": {
+            "type": "string"
+          },
+          "room_type": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "name_th",
+          "room_type"
         ],
         "type": "object"
       },
@@ -12789,6 +13721,126 @@
         ],
         "type": "object"
       },
+      "SubjectConstraintPatch": {
+        "properties": {
+          "allow_single_period": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "allowed_days": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "allowed_period_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "max_consecutive_periods": {
+            "format": "int32",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "min_consecutive_periods": {
+            "format": "int32",
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "SubjectConstraintView": {
+        "properties": {
+          "allow_single_period": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "allowed_days": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "allowed_period_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "code": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "max_consecutive_periods": {
+            "format": "int32",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "min_consecutive_periods": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "periods_per_week": {
+            "format": "int32",
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "name",
+          "min_consecutive_periods",
+          "max_consecutive_periods",
+          "allow_single_period",
+          "periods_per_week",
+          "allowed_period_ids",
+          "allowed_days"
+        ],
+        "type": "object"
+      },
       "SubjectDefaultInstructor": {
         "properties": {
           "created_at": {
@@ -12956,6 +14008,22 @@
           "academic_year_label",
           "term",
           "role"
+        ],
+        "type": "object"
+      },
+      "TimeSlot": {
+        "properties": {
+          "day": {
+            "type": "string"
+          },
+          "period_id": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "day",
+          "period_id"
         ],
         "type": "object"
       },
@@ -19211,6 +20279,449 @@
               }
             },
             "description": "Courses could not be generated"
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
+    "/api/academic/scheduling/classroom-courses": {
+      "get": {
+        "operationId": "listSchedulingClassroomCourseConstraints",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "instructor_id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_ClassroomCourseConstraintView"
+                }
+              }
+            },
+            "description": "Scheduling classroom-course constraints"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Course-plan read permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Active academic year not found"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Classroom-course constraints could not be loaded"
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
+    "/api/academic/scheduling/classroom-courses/{id}/rooms": {
+      "get": {
+        "operationId": "listSchedulingClassroomCoursePreferredRooms",
+        "parameters": [
+          {
+            "description": "Classroom-course ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_CcPreferredRoomView"
+                }
+              }
+            },
+            "description": "Preferred rooms for a classroom course"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Course-plan read permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Classroom course not found"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Preferred rooms could not be loaded"
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
+    "/api/academic/scheduling/configuration": {
+      "put": {
+        "operationId": "saveSchedulingConfiguration",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveSchedulingConfigurationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_SchedulingConfigurationSaveResult"
+                }
+              }
+            },
+            "description": "Scheduling configuration saved atomically"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Malformed or invalid scheduling configuration"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Course-plan management permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Active academic year or referenced target not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Scheduling configuration changed concurrently"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Scheduling configuration could not be saved"
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
+    "/api/academic/scheduling/instructors": {
+      "get": {
+        "operationId": "listSchedulingInstructorConstraints",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_InstructorConstraintView"
+                }
+              }
+            },
+            "description": "Scheduling instructor constraints"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Course-plan read permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Active academic year not found"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Instructor constraints could not be loaded"
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
+    "/api/academic/scheduling/rooms": {
+      "get": {
+        "operationId": "listSchedulingRooms",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_SchedulingRoomView"
+                }
+              }
+            },
+            "description": "Active scheduling rooms"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Course-plan read permission denied"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Rooms could not be loaded"
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
+    "/api/academic/scheduling/settings": {
+      "get": {
+        "operationId": "getSchedulingSettings",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_SchedulerSettingsView"
+                }
+              }
+            },
+            "description": "Scheduling settings"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Course-plan read permission denied"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Scheduling settings could not be loaded"
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
+    "/api/academic/scheduling/subjects": {
+      "get": {
+        "operationId": "listSchedulingSubjectConstraints",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_SubjectConstraintView"
+                }
+              }
+            },
+            "description": "Scheduling subject constraints"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Course-plan read permission denied"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Subject constraints could not be loaded"
           }
         },
         "tags": [
