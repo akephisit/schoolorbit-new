@@ -27,5 +27,8 @@ mod study_plan_service_tests;
 #[cfg(test)]
 mod activity_service_tests;
 
+#[cfg(test)]
+mod course_planning_service_tests;
+
 // Re-export main types for convenience
 pub use scheduler::{types::SchedulingAlgorithm, SchedulerBuilder};

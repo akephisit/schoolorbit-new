@@ -2,6 +2,26 @@ use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use uuid::Uuid;
 
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum OptionalUuidPatch {
+    #[default]
+    Unspecified,
+    Null,
+    Value(Uuid),
+}
+
+impl<'de> Deserialize<'de> for OptionalUuidPatch {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        Option::<Uuid>::deserialize(deserializer).map(|value| match value {
+            Some(id) => Self::Value(id),
+            None => Self::Null,
+        })
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize, FromRow)]
 pub struct ClassroomCourse {
     pub id: Uuid,
@@ -49,7 +69,8 @@ pub struct AssignCoursesRequest {
 
 #[derive(Debug, Deserialize)]
 pub struct UpdateCourseRequest {
-    pub primary_instructor_id: Option<Uuid>,
+    #[serde(default)]
+    pub primary_instructor_id: OptionalUuidPatch,
     pub settings: Option<serde_json::Value>,
 }
 

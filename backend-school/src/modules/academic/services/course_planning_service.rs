@@ -1,6 +1,7 @@
 use crate::error::AppError;
 use crate::modules::academic::models::course_planning::{
-    AssignCoursesRequest, ClassroomCourse, CourseInstructor, PlanQuery, UpdateCourseRequest,
+    AssignCoursesRequest, ClassroomCourse, CourseInstructor, OptionalUuidPatch, PlanQuery,
+    UpdateCourseRequest,
 };
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -82,17 +83,43 @@ pub async fn list_classroom_courses(
 }
 
 pub async fn assign_courses(pool: &PgPool, payload: AssignCoursesRequest) -> Result<i64, AppError> {
-    let exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM class_rooms WHERE id = $1)")
-        .bind(payload.classroom_id)
-        .fetch_one(pool)
-        .await
-        .unwrap_or(false);
+    let subject_ids = ordered_unique_ids(payload.subject_ids);
+    let mut tx = pool.begin().await?;
 
-    if !exists {
+    if sqlx::query_scalar::<_, Uuid>("SELECT id FROM class_rooms WHERE id = $1 FOR KEY SHARE")
+        .bind(payload.classroom_id)
+        .fetch_optional(&mut *tx)
+        .await?
+        .is_none()
+    {
         return Err(AppError::NotFound("Classroom not found".to_string()));
     }
+    if sqlx::query_scalar::<_, Uuid>(
+        "SELECT id FROM academic_semesters WHERE id = $1 FOR KEY SHARE",
+    )
+    .bind(payload.academic_semester_id)
+    .fetch_optional(&mut *tx)
+    .await?
+    .is_none()
+    {
+        return Err(AppError::NotFound(
+            "Academic semester not found".to_string(),
+        ));
+    }
+    if !subject_ids.is_empty() {
+        let existing_subject_count: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM subjects WHERE id = ANY($1)")
+                .bind(&subject_ids)
+                .fetch_one(&mut *tx)
+                .await?;
+        if existing_subject_count != subject_ids.len() as i64 {
+            return Err(AppError::NotFound(
+                "One or more subjects were not found".to_string(),
+            ));
+        }
+    }
 
-    sqlx::query_scalar(
+    let inserted = sqlx::query_scalar(
         r#"WITH inserted AS (
                INSERT INTO classroom_courses (classroom_id, academic_semester_id, subject_id, primary_instructor_id)
                SELECT $1, $2, s.id,
@@ -116,17 +143,23 @@ pub async fn assign_courses(pool: &PgPool, payload: AssignCoursesRequest) -> Res
            )
            SELECT COUNT(*) FROM inserted"#
     )
-    .bind(payload.classroom_id).bind(payload.academic_semester_id).bind(&payload.subject_ids)
-    .fetch_one(pool).await
-    .map_err(|e| { tracing::error!("assign_courses failed: {}", e); AppError::InternalServerError("Failed to assign courses".to_string()) })
+    .bind(payload.classroom_id)
+    .bind(payload.academic_semester_id)
+    .bind(&subject_ids)
+    .fetch_one(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    Ok(inserted)
 }
 
 pub async fn remove_course(pool: &PgPool, id: Uuid) -> Result<(), AppError> {
-    sqlx::query("DELETE FROM classroom_courses WHERE id = $1")
+    let result = sqlx::query("DELETE FROM classroom_courses WHERE id = $1")
         .bind(id)
         .execute(pool)
-        .await
-        .map_err(|_| AppError::InternalServerError("Failed to remove course".to_string()))?;
+        .await?;
+    if result.rows_affected() == 0 {
+        return Err(AppError::NotFound("Classroom course not found".to_string()));
+    }
     Ok(())
 }
 
@@ -135,22 +168,94 @@ pub async fn update_course(
     id: Uuid,
     payload: UpdateCourseRequest,
 ) -> Result<(), AppError> {
-    sqlx::query(
-        r#"UPDATE classroom_courses SET
-            primary_instructor_id = COALESCE($1, primary_instructor_id),
-            settings = COALESCE($2, settings),
-            updated_at = NOW()
-           WHERE id = $3"#,
+    let mut tx = pool.begin().await?;
+    let _current_primary = sqlx::query_scalar::<_, Option<Uuid>>(
+        "SELECT primary_instructor_id FROM classroom_courses WHERE id = $1 FOR UPDATE",
     )
-    .bind(payload.primary_instructor_id)
-    .bind(payload.settings)
     .bind(id)
-    .execute(pool)
-    .await
-    .map_err(|e| {
-        tracing::error!("Update error: {}", e);
-        AppError::InternalServerError("Failed to update course".to_string())
-    })?;
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or_else(|| AppError::NotFound("Classroom course not found".to_string()))?;
+
+    if let Some(settings) = payload.settings {
+        sqlx::query("UPDATE classroom_courses SET settings = $2, updated_at = NOW() WHERE id = $1")
+            .bind(id)
+            .bind(settings)
+            .execute(&mut *tx)
+            .await?;
+    }
+
+    match payload.primary_instructor_id {
+        OptionalUuidPatch::Unspecified => {}
+        OptionalUuidPatch::Null => {
+            sqlx::query("DELETE FROM classroom_course_instructors WHERE classroom_course_id = $1")
+                .bind(id)
+                .execute(&mut *tx)
+                .await?;
+            sqlx::query(
+                "DELETE FROM timetable_entry_instructors tei
+                 USING academic_timetable_entries te
+                 WHERE tei.entry_id = te.id AND te.classroom_course_id = $1",
+            )
+            .bind(id)
+            .execute(&mut *tx)
+            .await?;
+            sqlx::query(
+                "UPDATE classroom_courses
+                 SET primary_instructor_id = NULL, updated_at = NOW()
+                 WHERE id = $1",
+            )
+            .bind(id)
+            .execute(&mut *tx)
+            .await?;
+        }
+        OptionalUuidPatch::Value(instructor_id) => {
+            if sqlx::query_scalar::<_, Uuid>("SELECT id FROM users WHERE id = $1 FOR KEY SHARE")
+                .bind(instructor_id)
+                .fetch_optional(&mut *tx)
+                .await?
+                .is_none()
+            {
+                return Err(AppError::NotFound("Instructor not found".to_string()));
+            }
+            sqlx::query(
+                "INSERT INTO classroom_course_instructors
+                    (classroom_course_id, instructor_id, role)
+                 VALUES ($1, $2, 'primary')
+                 ON CONFLICT (classroom_course_id, instructor_id)
+                 DO UPDATE SET role = 'primary'",
+            )
+            .bind(id)
+            .bind(instructor_id)
+            .execute(&mut *tx)
+            .await?;
+            sqlx::query(
+                "UPDATE timetable_entry_instructors SET role = 'secondary'
+                 FROM academic_timetable_entries te
+                 WHERE timetable_entry_instructors.entry_id = te.id
+                   AND te.classroom_course_id = $1
+                   AND timetable_entry_instructors.instructor_id <> $2
+                   AND timetable_entry_instructors.role = 'primary'",
+            )
+            .bind(id)
+            .bind(instructor_id)
+            .execute(&mut *tx)
+            .await?;
+            sqlx::query(
+                "INSERT INTO timetable_entry_instructors (entry_id, instructor_id, role)
+                 SELECT te.id, $2, 'primary'
+                 FROM academic_timetable_entries te
+                 WHERE te.classroom_course_id = $1
+                 ON CONFLICT (entry_id, instructor_id) DO UPDATE SET role = 'primary'",
+            )
+            .bind(id)
+            .bind(instructor_id)
+            .execute(&mut *tx)
+            .await?;
+        }
+    }
+
+    tx.commit().await?;
     Ok(())
 }
 
@@ -180,6 +285,7 @@ pub async fn list_course_instructors(
     pool: &PgPool,
     course_id: Uuid,
 ) -> Result<Vec<CourseInstructor>, AppError> {
+    ensure_course_exists(pool, course_id).await?;
     sqlx::query_as(
         r#"SELECT cci.*, concat(u.first_name, ' ', u.last_name) AS instructor_name
            FROM classroom_course_instructors cci
@@ -199,10 +305,21 @@ pub async fn add_course_instructor(
     instructor_id: Uuid,
     role: &str,
 ) -> Result<(), AppError> {
+    validate_course_instructor_role(role)?;
     let mut tx = pool
         .begin()
         .await
         .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+    ensure_course_exists_in_tx(&mut tx, course_id).await?;
+    if sqlx::query_scalar::<_, Uuid>("SELECT id FROM users WHERE id = $1 FOR KEY SHARE")
+        .bind(instructor_id)
+        .fetch_optional(&mut *tx)
+        .await?
+        .is_none()
+    {
+        return Err(AppError::NotFound("Instructor not found".to_string()));
+    }
 
     sqlx::query(
         "INSERT INTO classroom_course_instructors (classroom_course_id, instructor_id, role)
@@ -215,6 +332,21 @@ pub async fn add_course_instructor(
     .execute(&mut *tx)
     .await
     .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+    if role == "primary" {
+        sqlx::query(
+            "UPDATE timetable_entry_instructors SET role = 'secondary'
+             FROM academic_timetable_entries te
+             WHERE timetable_entry_instructors.entry_id = te.id
+               AND te.classroom_course_id = $1
+               AND timetable_entry_instructors.instructor_id <> $2
+               AND timetable_entry_instructors.role = 'primary'",
+        )
+        .bind(course_id)
+        .bind(instructor_id)
+        .execute(&mut *tx)
+        .await?;
+    }
 
     sqlx::query(
         r#"INSERT INTO timetable_entry_instructors (entry_id, instructor_id, role)
@@ -254,9 +386,21 @@ pub async fn remove_course_instructor(
         .await
         .map_err(|e| AppError::InternalServerError(e.to_string()))?;
 
-    sqlx::query("DELETE FROM classroom_course_instructors WHERE classroom_course_id = $1 AND instructor_id = $2")
-        .bind(course_id).bind(instructor_id).execute(&mut *tx).await
-        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+    ensure_course_exists_in_tx(&mut tx, course_id).await?;
+
+    let result = sqlx::query(
+        "DELETE FROM classroom_course_instructors
+         WHERE classroom_course_id = $1 AND instructor_id = $2",
+    )
+    .bind(course_id)
+    .bind(instructor_id)
+    .execute(&mut *tx)
+    .await?;
+    if result.rows_affected() == 0 {
+        return Err(AppError::NotFound(
+            "Course instructor assignment not found".to_string(),
+        ));
+    }
 
     sqlx::query(
         "DELETE FROM timetable_entry_instructors tei
@@ -281,10 +425,42 @@ pub async fn update_course_instructor_role(
     instructor_id: Uuid,
     role: &str,
 ) -> Result<(), AppError> {
+    validate_course_instructor_role(role)?;
     let mut tx = pool
         .begin()
         .await
         .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+    ensure_course_exists_in_tx(&mut tx, course_id).await?;
+    if sqlx::query_scalar::<_, Uuid>(
+        "SELECT id FROM classroom_course_instructors
+         WHERE classroom_course_id = $1 AND instructor_id = $2 FOR UPDATE",
+    )
+    .bind(course_id)
+    .bind(instructor_id)
+    .fetch_optional(&mut *tx)
+    .await?
+    .is_none()
+    {
+        return Err(AppError::NotFound(
+            "Course instructor assignment not found".to_string(),
+        ));
+    }
+
+    if role == "primary" {
+        sqlx::query(
+            "UPDATE timetable_entry_instructors SET role = 'secondary'
+             FROM academic_timetable_entries te
+             WHERE timetable_entry_instructors.entry_id = te.id
+               AND te.classroom_course_id = $1
+               AND timetable_entry_instructors.instructor_id <> $2
+               AND timetable_entry_instructors.role = 'primary'",
+        )
+        .bind(course_id)
+        .bind(instructor_id)
+        .execute(&mut *tx)
+        .await?;
+    }
 
     sqlx::query(
         "UPDATE classroom_course_instructors SET role = $3
@@ -331,6 +507,8 @@ pub async fn list_classroom_activities(
     classroom_id: Uuid,
     semester_id: Uuid,
 ) -> Result<Vec<ClassroomActivity>, AppError> {
+    ensure_classroom_exists(pool, classroom_id).await?;
+    ensure_semester_exists(pool, semester_id).await?;
     sqlx::query_as(
         r#"SELECT s.id AS slot_id, s.activity_catalog_id,
                   ac.name, ac.activity_type, ac.periods_per_week, ac.scheduling_mode,
@@ -356,13 +534,91 @@ pub async fn remove_classroom_from_slot(
     classroom_id: Uuid,
     slot_id: Uuid,
 ) -> Result<(), AppError> {
-    sqlx::query("DELETE FROM activity_slot_classrooms WHERE classroom_id = $1 AND slot_id = $2")
-        .bind(classroom_id)
-        .bind(slot_id)
-        .execute(pool)
-        .await
-        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+    let result = sqlx::query(
+        "DELETE FROM activity_slot_classrooms WHERE classroom_id = $1 AND slot_id = $2",
+    )
+    .bind(classroom_id)
+    .bind(slot_id)
+    .execute(pool)
+    .await?;
+    if result.rows_affected() == 0 {
+        return Err(AppError::NotFound(
+            "Classroom activity assignment not found".to_string(),
+        ));
+    }
     Ok(())
+}
+
+fn ordered_unique_ids(ids: Vec<Uuid>) -> Vec<Uuid> {
+    let mut seen = std::collections::HashSet::new();
+    ids.into_iter().filter(|id| seen.insert(*id)).collect()
+}
+
+fn validate_course_instructor_role(role: &str) -> Result<(), AppError> {
+    if role == "primary" || role == "secondary" {
+        Ok(())
+    } else {
+        Err(AppError::BadRequest(
+            "role must be 'primary' or 'secondary'".to_string(),
+        ))
+    }
+}
+
+async fn ensure_course_exists(pool: &PgPool, course_id: Uuid) -> Result<(), AppError> {
+    if sqlx::query_scalar::<_, Uuid>("SELECT id FROM classroom_courses WHERE id = $1")
+        .bind(course_id)
+        .fetch_optional(pool)
+        .await?
+        .is_some()
+    {
+        Ok(())
+    } else {
+        Err(AppError::NotFound("Classroom course not found".to_string()))
+    }
+}
+
+async fn ensure_course_exists_in_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    course_id: Uuid,
+) -> Result<(), AppError> {
+    if sqlx::query_scalar::<_, Uuid>("SELECT id FROM classroom_courses WHERE id = $1 FOR KEY SHARE")
+        .bind(course_id)
+        .fetch_optional(&mut **tx)
+        .await?
+        .is_some()
+    {
+        Ok(())
+    } else {
+        Err(AppError::NotFound("Classroom course not found".to_string()))
+    }
+}
+
+async fn ensure_classroom_exists(pool: &PgPool, classroom_id: Uuid) -> Result<(), AppError> {
+    if sqlx::query_scalar::<_, Uuid>("SELECT id FROM class_rooms WHERE id = $1")
+        .bind(classroom_id)
+        .fetch_optional(pool)
+        .await?
+        .is_some()
+    {
+        Ok(())
+    } else {
+        Err(AppError::NotFound("Classroom not found".to_string()))
+    }
+}
+
+async fn ensure_semester_exists(pool: &PgPool, semester_id: Uuid) -> Result<(), AppError> {
+    if sqlx::query_scalar::<_, Uuid>("SELECT id FROM academic_semesters WHERE id = $1")
+        .bind(semester_id)
+        .fetch_optional(pool)
+        .await?
+        .is_some()
+    {
+        Ok(())
+    } else {
+        Err(AppError::NotFound(
+            "Academic semester not found".to_string(),
+        ))
+    }
 }
 
 fn plan_query_has_course_filter(query: &PlanQuery) -> bool {
