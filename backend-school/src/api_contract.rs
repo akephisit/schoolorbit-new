@@ -1,8 +1,17 @@
 use crate::api_response::{ApiErrorResponse, ApiResponse, EmptyData, UuidIdData};
+use crate::modules::academic::handlers::activity::{
+    ActivityAddedCountData, ActivityDeletedCountData, ActivityInsertedCountData,
+    ActivityProcessedCountData, AddSlotInstructorRequest, AddSlotInstructorsBatchRequest,
+    InstructorRoleRequest,
+};
 use crate::modules::academic::handlers::study_plans::{CountData, GenerateCoursesData};
 use crate::modules::academic::handlers::timetable::TimetableItemsData;
 use crate::modules::academic::models::activity::{
-    ActivityGroup, ActivitySlot, SlotClassroomAssignment,
+    ActivityGroup, ActivityGroupFilter, ActivityGroupInstructorRole, ActivityGroupMember,
+    ActivityMemberResult, ActivityRegistrationType, ActivitySlot, ActivitySlotFilter,
+    AddMembersRequest, BatchUpsertSlotClassroomAssignmentsRequest, CreateActivityGroupRequest,
+    SlotClassroomAssignment, UpdateActivityGroupRequest, UpdateActivitySlotRequest,
+    UpdateMemberResultRequest, UpsertSlotClassroomAssignmentRequest,
 };
 use crate::modules::academic::models::curriculum::{
     AddSubjectDefaultInstructorRequest, CreateSubjectRequest, CurriculumInstructorRole,
@@ -31,7 +40,7 @@ use crate::modules::academic::models::{
     UpdateYearLevelsRequest,
 };
 use crate::modules::academic::services::academic_structure_service::AcademicStructure;
-use crate::modules::academic::services::activity_service::SlotInstructorInfo;
+use crate::modules::academic::services::activity_service::{InstructorInfo, SlotInstructorInfo};
 use crate::modules::academic::services::study_plan_service::GenerateActivitiesFromPlanOutcome;
 use crate::modules::achievement::models::{
     Achievement, AchievementListFilter, CreateAchievementRequest, UpdateAchievementRequest,
@@ -194,6 +203,34 @@ use utoipa::OpenApi;
         crate::modules::academic::handlers::study_plans::add_catalog_default_instructor,
         crate::modules::academic::handlers::study_plans::remove_catalog_default_instructor,
         crate::modules::academic::handlers::study_plans::update_catalog_default_instructor_role,
+        crate::modules::academic::handlers::activity::list_activity_slots,
+        crate::modules::academic::handlers::activity::update_activity_slot,
+        crate::modules::academic::handlers::activity::delete_activity_slot,
+        crate::modules::academic::handlers::activity::list_slot_instructors,
+        crate::modules::academic::handlers::activity::add_slot_instructor,
+        crate::modules::academic::handlers::activity::add_slot_instructors_batch,
+        crate::modules::academic::handlers::activity::remove_slot_instructor,
+        crate::modules::academic::handlers::activity::remove_all_slot_instructors,
+        crate::modules::academic::handlers::activity::delete_all_slot_groups,
+        crate::modules::academic::handlers::activity::delete_slot_timetable_entries,
+        crate::modules::academic::handlers::activity::list_slot_classroom_assignments,
+        crate::modules::academic::handlers::activity::batch_upsert_slot_classroom_assignments,
+        crate::modules::academic::handlers::activity::delete_all_slot_classroom_assignments,
+        crate::modules::academic::handlers::activity::delete_slot_classroom_assignment,
+        crate::modules::academic::handlers::activity::list_activity_groups,
+        crate::modules::academic::handlers::activity::create_activity_group,
+        crate::modules::academic::handlers::activity::update_activity_group,
+        crate::modules::academic::handlers::activity::delete_activity_group,
+        crate::modules::academic::handlers::activity::list_members,
+        crate::modules::academic::handlers::activity::add_members,
+        crate::modules::academic::handlers::activity::remove_member,
+        crate::modules::academic::handlers::activity::update_member_result,
+        crate::modules::academic::handlers::activity::list_instructors,
+        crate::modules::academic::handlers::activity::add_instructor,
+        crate::modules::academic::handlers::activity::remove_instructor,
+        crate::modules::academic::handlers::activity::my_enrollments,
+        crate::modules::academic::handlers::activity::self_enroll,
+        crate::modules::academic::handlers::activity::self_unenroll,
         crate::modules::calendar::handlers::list_my_calendar_events,
         crate::modules::calendar::handlers::list_public_calendar_events,
         crate::modules::calendar::handlers::list_calendar_events,
@@ -417,9 +454,42 @@ use utoipa::OpenApi;
         AddCatalogDefaultInstructorRequest,
         UpdateCatalogDefaultInstructorRoleRequest,
         ActivitySlot,
+        ActivityRegistrationType,
+        ActivitySlotFilter,
+        UpdateActivitySlotRequest,
         ActivityGroup,
+        ActivityGroupFilter,
+        CreateActivityGroupRequest,
+        UpdateActivityGroupRequest,
+        ActivityGroupMember,
+        ActivityMemberResult,
+        ActivityGroupInstructorRole,
+        AddMembersRequest,
+        UpdateMemberResultRequest,
+        InstructorInfo,
         SlotInstructorInfo,
+        AddSlotInstructorRequest,
+        AddSlotInstructorsBatchRequest,
+        InstructorRoleRequest,
         SlotClassroomAssignment,
+        UpsertSlotClassroomAssignmentRequest,
+        BatchUpsertSlotClassroomAssignmentsRequest,
+        ActivityInsertedCountData,
+        ActivityAddedCountData,
+        ActivityDeletedCountData,
+        ActivityProcessedCountData,
+        ApiResponse<Vec<ActivitySlot>>,
+        ApiResponse<ActivitySlot>,
+        ApiResponse<Vec<ActivityGroup>>,
+        ApiResponse<ActivityGroup>,
+        ApiResponse<Vec<ActivityGroupMember>>,
+        ApiResponse<Vec<InstructorInfo>>,
+        ApiResponse<Vec<SlotInstructorInfo>>,
+        ApiResponse<Vec<SlotClassroomAssignment>>,
+        ApiResponse<ActivityInsertedCountData>,
+        ApiResponse<ActivityAddedCountData>,
+        ApiResponse<ActivityDeletedCountData>,
+        ApiResponse<ActivityProcessedCountData>,
         GenerateActivitiesFromPlanOutcome,
         ApiResponse<Vec<StudyPlanVersionActivity>>,
         ApiResponse<StudyPlanVersionActivity>,
@@ -1162,7 +1232,7 @@ mod tests {
             .flat_map(|path| path.as_object().expect("path item").values())
             .filter(|operation| operation.get("operationId").is_some())
             .count();
-        assert_eq!(operation_count, 137);
+        assert_eq!(operation_count, 165);
     }
 
     #[test]
@@ -1308,7 +1378,7 @@ mod tests {
             .flat_map(|path| path.as_object().expect("path item").values())
             .filter(|operation| operation.get("operationId").is_some())
             .count();
-        assert_eq!(operation_count, 137);
+        assert_eq!(operation_count, 165);
     }
 
     #[test]
@@ -1490,7 +1560,275 @@ mod tests {
             .flat_map(|path| path.as_object().expect("path item").values())
             .filter(|operation| operation.get("operationId").is_some())
             .count();
-        assert_eq!(operation_count, 137);
+        assert_eq!(operation_count, 165);
+    }
+
+    #[test]
+    fn academic_activity_workspace_contracts() {
+        let document = school_api_value().expect("document should serialize");
+        assert_operations(
+            &document,
+            &[
+                ("/api/academic/activity-slots", "get", "listActivitySlots"),
+                (
+                    "/api/academic/activity-slots/{id}",
+                    "put",
+                    "updateActivitySlot",
+                ),
+                (
+                    "/api/academic/activity-slots/{id}",
+                    "delete",
+                    "deleteActivitySlot",
+                ),
+                (
+                    "/api/academic/activity-slots/{id}/instructors",
+                    "get",
+                    "listActivitySlotInstructors",
+                ),
+                (
+                    "/api/academic/activity-slots/{id}/instructors",
+                    "post",
+                    "addActivitySlotInstructor",
+                ),
+                (
+                    "/api/academic/activity-slots/{id}/instructors/batch",
+                    "post",
+                    "addActivitySlotInstructorsBatch",
+                ),
+                (
+                    "/api/academic/activity-slots/{id}/instructors/{user_id}",
+                    "delete",
+                    "removeActivitySlotInstructor",
+                ),
+                (
+                    "/api/academic/activity-slots/{id}/instructors/all",
+                    "delete",
+                    "removeAllActivitySlotInstructors",
+                ),
+                (
+                    "/api/academic/activity-slots/{id}/groups",
+                    "delete",
+                    "deleteAllActivitySlotGroups",
+                ),
+                (
+                    "/api/academic/activity-slots/{id}/timetable-entries",
+                    "delete",
+                    "deleteActivitySlotTimetableEntries",
+                ),
+                (
+                    "/api/academic/activity-slots/{id}/classroom-assignments",
+                    "get",
+                    "listActivitySlotClassroomAssignments",
+                ),
+                (
+                    "/api/academic/activity-slots/{id}/classroom-assignments",
+                    "post",
+                    "upsertActivitySlotClassroomAssignments",
+                ),
+                (
+                    "/api/academic/activity-slots/{id}/classroom-assignments/all",
+                    "delete",
+                    "deleteAllActivitySlotClassroomAssignments",
+                ),
+                (
+                    "/api/academic/activity-slots/{id}/classroom-assignments/{assignment_id}",
+                    "delete",
+                    "deleteActivitySlotClassroomAssignment",
+                ),
+                ("/api/academic/activities", "get", "listActivityGroups"),
+                ("/api/academic/activities", "post", "createActivityGroup"),
+                (
+                    "/api/academic/activities/{id}",
+                    "put",
+                    "updateActivityGroup",
+                ),
+                (
+                    "/api/academic/activities/{id}",
+                    "delete",
+                    "deleteActivityGroup",
+                ),
+                (
+                    "/api/academic/activities/{id}/members",
+                    "get",
+                    "listActivityGroupMembers",
+                ),
+                (
+                    "/api/academic/activities/{id}/members",
+                    "post",
+                    "addActivityGroupMembers",
+                ),
+                (
+                    "/api/academic/activities/{id}/members/{student_id}",
+                    "delete",
+                    "removeActivityGroupMember",
+                ),
+                (
+                    "/api/academic/activities/members/{member_id}/result",
+                    "put",
+                    "updateActivityGroupMemberResult",
+                ),
+                (
+                    "/api/academic/activities/{id}/instructors",
+                    "get",
+                    "listActivityGroupInstructors",
+                ),
+                (
+                    "/api/academic/activities/{id}/instructors",
+                    "post",
+                    "addActivityGroupInstructor",
+                ),
+                (
+                    "/api/academic/activities/{id}/instructors/{instructor_id}",
+                    "delete",
+                    "removeActivityGroupInstructor",
+                ),
+                (
+                    "/api/academic/activities/my-enrollments",
+                    "get",
+                    "listMyActivityEnrollments",
+                ),
+                (
+                    "/api/academic/activities/{id}/enroll",
+                    "post",
+                    "selfEnrollActivityGroup",
+                ),
+                (
+                    "/api/academic/activities/{id}/enroll",
+                    "delete",
+                    "selfUnenrollActivityGroup",
+                ),
+            ],
+        );
+
+        for (path, method, request_schema) in [
+            (
+                "/api/academic/activity-slots/{id}",
+                "put",
+                "UpdateActivitySlotRequest",
+            ),
+            (
+                "/api/academic/activity-slots/{id}/instructors",
+                "post",
+                "AddSlotInstructorRequest",
+            ),
+            (
+                "/api/academic/activity-slots/{id}/instructors/batch",
+                "post",
+                "AddSlotInstructorsBatchRequest",
+            ),
+            (
+                "/api/academic/activity-slots/{id}/classroom-assignments",
+                "post",
+                "BatchUpsertSlotClassroomAssignmentsRequest",
+            ),
+            (
+                "/api/academic/activities",
+                "post",
+                "CreateActivityGroupRequest",
+            ),
+            (
+                "/api/academic/activities/{id}",
+                "put",
+                "UpdateActivityGroupRequest",
+            ),
+            (
+                "/api/academic/activities/{id}/members",
+                "post",
+                "AddMembersRequest",
+            ),
+            (
+                "/api/academic/activities/members/{member_id}/result",
+                "put",
+                "UpdateMemberResultRequest",
+            ),
+            (
+                "/api/academic/activities/{id}/instructors",
+                "post",
+                "InstructorRoleRequest",
+            ),
+        ] {
+            assert_eq!(
+                document["paths"][path][method]["requestBody"]["content"]["application/json"]
+                    ["schema"]["$ref"],
+                format!("#/components/schemas/{request_schema}")
+            );
+        }
+
+        for (path, method, response_schema) in [
+            (
+                "/api/academic/activity-slots",
+                "get",
+                "ApiResponse_Vec_ActivitySlot",
+            ),
+            (
+                "/api/academic/activity-slots/{id}",
+                "put",
+                "ApiResponse_ActivitySlot",
+            ),
+            (
+                "/api/academic/activities",
+                "get",
+                "ApiResponse_Vec_ActivityGroup",
+            ),
+            (
+                "/api/academic/activities/{id}/members",
+                "get",
+                "ApiResponse_Vec_ActivityGroupMember",
+            ),
+            (
+                "/api/academic/activities/{id}/members",
+                "post",
+                "ApiResponse_ActivityInsertedCountData",
+            ),
+            (
+                "/api/academic/activity-slots/{id}/instructors/batch",
+                "post",
+                "ApiResponse_ActivityAddedCountData",
+            ),
+            (
+                "/api/academic/activity-slots/{id}/timetable-entries",
+                "delete",
+                "ApiResponse_ActivityDeletedCountData",
+            ),
+            (
+                "/api/academic/activity-slots/{id}/classroom-assignments",
+                "post",
+                "ApiResponse_ActivityProcessedCountData",
+            ),
+        ] {
+            assert_eq!(
+                document["paths"][path][method]["responses"]["200"]["content"]["application/json"]
+                    ["schema"]["$ref"],
+                format!("#/components/schemas/{response_schema}")
+            );
+        }
+
+        assert_eq!(
+            document["paths"]["/api/academic/activities/{id}/enroll"]["post"]["responses"]["409"]
+                ["content"]["application/json"]["schema"]["$ref"],
+            "#/components/schemas/ApiErrorResponse"
+        );
+
+        let schemas = &document["components"]["schemas"];
+        assert_eq!(
+            schemas["ActivitySlot"]["properties"]["registration_type"]["$ref"],
+            "#/components/schemas/ActivityRegistrationType"
+        );
+        assert!(schemas["ActivityGroupMember"]["properties"]["result"]
+            .to_string()
+            .contains("#/components/schemas/ActivityMemberResult"));
+        assert!(schemas["InstructorRoleRequest"]["properties"]["role"]
+            .to_string()
+            .contains("#/components/schemas/ActivityGroupInstructorRole"));
+
+        let operation_count = document["paths"]
+            .as_object()
+            .expect("paths must be an object")
+            .values()
+            .flat_map(|path| path.as_object().expect("path item").values())
+            .filter(|operation| operation.get("operationId").is_some())
+            .count();
+        assert_eq!(operation_count, 165);
     }
 
     #[test]
@@ -2046,7 +2384,7 @@ mod tests {
                 }
             }
         }
-        assert_eq!(operation_ids.len(), 137);
+        assert_eq!(operation_ids.len(), 165);
 
         let schemas = &document["components"]["schemas"];
         let delegation = &schemas["DelegationItem"];

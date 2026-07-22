@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
-use utoipa::ToSchema;
+use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
 use chrono::{DateTime, Utc};
@@ -9,11 +9,34 @@ use chrono::{DateTime, Utc};
 // Activity Slot Models (ช่องกิจกรรม)
 // ==========================================
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum ActivityRegistrationType {
+    #[serde(rename = "self")]
+    SelfRegistration,
+    Assigned,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum ActivityMemberResult {
+    Pass,
+    Fail,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum ActivityGroupInstructorRole {
+    Primary,
+    Assistant,
+}
+
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct ActivitySlot {
     pub id: Uuid,
     pub activity_catalog_id: Uuid,
     pub semester_id: Uuid,
+    #[schema(value_type = ActivityRegistrationType)]
     pub registration_type: String,
     pub teacher_reg_open: bool,
     pub student_reg_open: bool,
@@ -56,8 +79,9 @@ pub struct ActivitySlot {
 
 /// Semester-specific fields only. Template fields (name/type/periods/mode/grade)
 /// come from activity_catalog and are edited there — not here.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct UpdateActivitySlotRequest {
+    #[schema(value_type = Option<ActivityRegistrationType>)]
     pub registration_type: Option<String>,
     pub teacher_reg_open: Option<bool>,
     pub student_reg_open: Option<bool>,
@@ -66,7 +90,8 @@ pub struct UpdateActivitySlotRequest {
     pub is_active: Option<bool>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema, IntoParams)]
+#[into_params(parameter_in = Query)]
 pub struct ActivitySlotFilter {
     pub semester_id: Option<Uuid>,
     pub activity_type: Option<String>,
@@ -111,7 +136,7 @@ pub struct ActivityGroup {
     pub semester_name: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct CreateActivityGroupRequest {
     pub slot_id: Uuid,
     pub name: String,
@@ -121,7 +146,7 @@ pub struct CreateActivityGroupRequest {
     pub allowed_classroom_ids: Option<Vec<Uuid>>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct UpdateActivityGroupRequest {
     pub name: Option<String>,
     pub description: Option<String>,
@@ -132,7 +157,8 @@ pub struct UpdateActivityGroupRequest {
     pub allowed_classroom_ids: Option<Vec<Uuid>>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema, IntoParams)]
+#[into_params(parameter_in = Query)]
 pub struct ActivityGroupFilter {
     pub slot_id: Option<Uuid>,
     pub semester_id: Option<Uuid>,
@@ -146,12 +172,13 @@ pub struct ActivityGroupFilter {
 // Activity Group Member Models
 // ==========================================
 
-#[derive(Debug, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Serialize, Deserialize, FromRow, ToSchema)]
 pub struct ActivityGroupMember {
     pub id: Uuid,
     pub activity_group_id: Uuid,
     /// FK → users(id) (เปลี่ยนจาก student_info(id) ใน M114)
     pub student_id: Uuid,
+    #[schema(value_type = Option<ActivityMemberResult>)]
     pub result: Option<String>,
     pub enrolled_by: Option<Uuid>,
     pub enrolled_at: DateTime<Utc>,
@@ -174,13 +201,14 @@ pub struct ActivityGroupMember {
     pub grade_level_name: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct AddMembersRequest {
     pub student_ids: Vec<Uuid>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct UpdateMemberResultRequest {
+    #[schema(value_type = ActivityMemberResult)]
     pub result: String, // "pass" | "fail"
 }
 
@@ -205,13 +233,13 @@ pub struct SlotClassroomAssignment {
     pub instructor_name: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct UpsertSlotClassroomAssignmentRequest {
     pub classroom_id: Uuid,
     pub instructor_id: Uuid,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct BatchUpsertSlotClassroomAssignmentsRequest {
     pub assignments: Vec<UpsertSlotClassroomAssignmentRequest>,
 }

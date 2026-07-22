@@ -1005,10 +1005,11 @@ pub async fn update_member_result(
 // Group Instructors
 // ============================================
 
-#[derive(serde::Serialize, sqlx::FromRow)]
+#[derive(Debug, serde::Serialize, sqlx::FromRow, utoipa::ToSchema)]
 pub struct InstructorInfo {
     pub id: Uuid,
     pub instructor_id: Uuid,
+    #[schema(value_type = ActivityGroupInstructorRole)]
     pub role: String,
     pub instructor_name: Option<String>,
 }

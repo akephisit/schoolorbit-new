@@ -5,6 +5,118 @@
  */
 
 export interface paths {
+	'/api/academic/activities': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listActivityGroups'];
+		put?: never;
+		post: operations['createActivityGroup'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/activities/{id}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put: operations['updateActivityGroup'];
+		post?: never;
+		delete: operations['deleteActivityGroup'];
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/activities/{id}/enroll': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['selfEnrollActivityGroup'];
+		delete: operations['selfUnenrollActivityGroup'];
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/activities/{id}/instructors': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listActivityGroupInstructors'];
+		put?: never;
+		post: operations['addActivityGroupInstructor'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/activities/{id}/instructors/{instructor_id}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post?: never;
+		delete: operations['removeActivityGroupInstructor'];
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/activities/{id}/members': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listActivityGroupMembers'];
+		put?: never;
+		post: operations['addActivityGroupMembers'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/activities/{id}/members/{student_id}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post?: never;
+		delete: operations['removeActivityGroupMember'];
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/api/academic/activities/generate-from-plan': {
 		parameters: {
 			query?: never;
@@ -15,6 +127,38 @@ export interface paths {
 		get?: never;
 		put?: never;
 		post: operations['generateActivitiesFromStudyPlan'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/activities/members/{member_id}/result': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put: operations['updateActivityGroupMemberResult'];
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/activities/my-enrollments': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listMyActivityEnrollments'];
+		put?: never;
+		post?: never;
 		delete?: never;
 		options?: never;
 		head?: never;
@@ -80,6 +224,182 @@ export interface paths {
 		put: operations['updateActivityCatalogDefaultInstructorRole'];
 		post?: never;
 		delete: operations['removeActivityCatalogDefaultInstructor'];
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/activity-slots': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listActivitySlots'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/activity-slots/{id}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put: operations['updateActivitySlot'];
+		post?: never;
+		delete: operations['deleteActivitySlot'];
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/activity-slots/{id}/classroom-assignments': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listActivitySlotClassroomAssignments'];
+		put?: never;
+		post: operations['upsertActivitySlotClassroomAssignments'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/activity-slots/{id}/classroom-assignments/{assignment_id}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post?: never;
+		delete: operations['deleteActivitySlotClassroomAssignment'];
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/activity-slots/{id}/classroom-assignments/all': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post?: never;
+		delete: operations['deleteAllActivitySlotClassroomAssignments'];
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/activity-slots/{id}/groups': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post?: never;
+		delete: operations['deleteAllActivitySlotGroups'];
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/activity-slots/{id}/instructors': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listActivitySlotInstructors'];
+		put?: never;
+		post: operations['addActivitySlotInstructor'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/activity-slots/{id}/instructors/{user_id}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post?: never;
+		delete: operations['removeActivitySlotInstructor'];
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/activity-slots/{id}/instructors/all': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post?: never;
+		delete: operations['removeAllActivitySlotInstructors'];
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/activity-slots/{id}/instructors/batch': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['addActivitySlotInstructorsBatch'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/activity-slots/{id}/timetable-entries': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post?: never;
+		delete: operations['deleteActivitySlotTimetableEntries'];
 		options?: never;
 		head?: never;
 		patch?: never;
@@ -1733,6 +2053,9 @@ export interface components {
 			/** Format: uuid */
 			user_id?: string | null;
 		};
+		ActivityAddedCountData: {
+			added: number;
+		};
 		ActivityCatalog: {
 			activity_type: components['schemas']['ActivityCatalogType'];
 			/** Format: date-time */
@@ -1754,6 +2077,10 @@ export interface components {
 		};
 		/** @enum {string} */
 		ActivityCatalogType: 'scout' | 'club' | 'guidance' | 'social' | 'other';
+		ActivityDeletedCountData: {
+			/** Format: int64 */
+			deleted_count: number;
+		};
 		ActivityGroup: {
 			activity_type?: string | null;
 			/** @description ห้องที่ group นี้รับ (override slot). NULL = รับทุกห้องที่ slot รับ */
@@ -1782,6 +2109,49 @@ export interface components {
 			/** Format: date-time */
 			updated_at: string;
 		};
+		ActivityGroupFilter: {
+			activity_type?: string | null;
+			/** Format: uuid */
+			instructor_id?: string | null;
+			registration_open?: boolean | null;
+			search?: string | null;
+			/** Format: uuid */
+			semester_id?: string | null;
+			/** Format: uuid */
+			slot_id?: string | null;
+		};
+		/** @enum {string} */
+		ActivityGroupInstructorRole: 'primary' | 'assistant';
+		ActivityGroupMember: {
+			/** Format: uuid */
+			activity_group_id: string;
+			classroom_name?: string | null;
+			/** Format: date-time */
+			enrolled_at: string;
+			/** Format: uuid */
+			enrolled_by?: string | null;
+			grade_level_name?: string | null;
+			/** Format: uuid */
+			id: string;
+			result?: null | components['schemas']['ActivityMemberResult'];
+			student_code?: string | null;
+			/**
+			 * Format: uuid
+			 * @description FK → users(id) (เปลี่ยนจาก student_info(id) ใน M114)
+			 */
+			student_id: string;
+			student_name?: string | null;
+		};
+		ActivityInsertedCountData: {
+			inserted: number;
+		};
+		/** @enum {string} */
+		ActivityMemberResult: 'pass' | 'fail';
+		ActivityProcessedCountData: {
+			count: number;
+		};
+		/** @enum {string} */
+		ActivityRegistrationType: 'self' | 'assigned';
 		/** @enum {string} */
 		ActivitySchedulingMode: 'synchronized' | 'independent';
 		ActivitySlot: {
@@ -1807,7 +2177,7 @@ export interface components {
 			name?: string | null;
 			/** Format: int32 */
 			periods_per_week?: number | null;
-			registration_type: string;
+			registration_type: components['schemas']['ActivityRegistrationType'];
 			scheduling_mode?: string | null;
 			/** Format: uuid */
 			semester_id: string;
@@ -1823,6 +2193,13 @@ export interface components {
 			/** Format: date-time */
 			updated_at: string;
 		};
+		ActivitySlotFilter: {
+			activity_type?: string | null;
+			/** Format: uuid */
+			semester_id?: string | null;
+			student_reg_open?: boolean | null;
+			teacher_reg_open?: boolean | null;
+		};
 		AddCatalogDefaultInstructorRequest: {
 			/** Format: uuid */
 			instructor_id: string;
@@ -1835,6 +2212,16 @@ export interface components {
 			responsibilities?: string | null;
 			/** Format: uuid */
 			user_id: string;
+		};
+		AddMembersRequest: {
+			student_ids: string[];
+		};
+		AddSlotInstructorRequest: {
+			/** Format: uuid */
+			user_id: string;
+		};
+		AddSlotInstructorsBatchRequest: {
+			user_ids: string[];
 		};
 		AddSubjectDefaultInstructorRequest: {
 			/** Format: uuid */
@@ -1915,6 +2302,13 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
+		ApiResponse_ActivityAddedCountData: {
+			data: {
+				added: number;
+			};
+			message?: string;
+			success: boolean;
+		};
 		ApiResponse_ActivityCatalog: {
 			data: {
 				activity_type: components['schemas']['ActivityCatalogType'];
@@ -1932,6 +2326,103 @@ export interface components {
 				/** Format: uuid */
 				start_academic_year_id: string;
 				term?: string | null;
+				/** Format: date-time */
+				updated_at: string;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_ActivityDeletedCountData: {
+			data: {
+				/** Format: int64 */
+				deleted_count: number;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_ActivityGroup: {
+			data: {
+				activity_type?: string | null;
+				/** @description ห้องที่ group นี้รับ (override slot). NULL = รับทุกห้องที่ slot รับ */
+				allowed_classroom_ids?: string[] | null;
+				/** Format: date-time */
+				created_at: string;
+				/** Format: uuid */
+				created_by?: string | null;
+				description?: string | null;
+				/** Format: uuid */
+				id: string;
+				/** Format: uuid */
+				instructor_id?: string | null;
+				instructor_name?: string | null;
+				is_active: boolean;
+				/** Format: int32 */
+				max_capacity?: number | null;
+				/** Format: int64 */
+				member_count?: number | null;
+				name: string;
+				registration_open: boolean;
+				semester_name?: string | null;
+				/** Format: uuid */
+				slot_id?: string | null;
+				slot_name?: string | null;
+				/** Format: date-time */
+				updated_at: string;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_ActivityInsertedCountData: {
+			data: {
+				inserted: number;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_ActivityProcessedCountData: {
+			data: {
+				count: number;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_ActivitySlot: {
+			data: {
+				/** Format: uuid */
+				activity_catalog_id: string;
+				activity_type?: string | null;
+				allowed_grade_level_ids?: string[] | null;
+				/**
+				 * @description UUIDs of classrooms participating in this slot (from activity_slot_classrooms junction).
+				 *     Used on the activities page to show only real participants (instead of grade-matched set).
+				 */
+				classroom_ids?: string[] | null;
+				/** Format: date-time */
+				created_at: string;
+				/** Format: uuid */
+				created_by?: string | null;
+				description?: string | null;
+				/** Format: int64 */
+				group_count?: number | null;
+				/** Format: uuid */
+				id: string;
+				is_active: boolean;
+				name?: string | null;
+				/** Format: int32 */
+				periods_per_week?: number | null;
+				registration_type: components['schemas']['ActivityRegistrationType'];
+				scheduling_mode?: string | null;
+				/** Format: uuid */
+				semester_id: string;
+				semester_name?: string | null;
+				/** Format: date-time */
+				student_reg_end?: string | null;
+				student_reg_open: boolean;
+				/** Format: date-time */
+				student_reg_start?: string | null;
+				teacher_reg_open: boolean;
+				/** Format: int64 */
+				total_members?: number | null;
 				/** Format: date-time */
 				updated_at: string;
 			};
@@ -2558,6 +3049,105 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
+		ApiResponse_Vec_ActivityGroup: {
+			data: {
+				activity_type?: string | null;
+				/** @description ห้องที่ group นี้รับ (override slot). NULL = รับทุกห้องที่ slot รับ */
+				allowed_classroom_ids?: string[] | null;
+				/** Format: date-time */
+				created_at: string;
+				/** Format: uuid */
+				created_by?: string | null;
+				description?: string | null;
+				/** Format: uuid */
+				id: string;
+				/** Format: uuid */
+				instructor_id?: string | null;
+				instructor_name?: string | null;
+				is_active: boolean;
+				/** Format: int32 */
+				max_capacity?: number | null;
+				/** Format: int64 */
+				member_count?: number | null;
+				name: string;
+				registration_open: boolean;
+				semester_name?: string | null;
+				/** Format: uuid */
+				slot_id?: string | null;
+				slot_name?: string | null;
+				/** Format: date-time */
+				updated_at: string;
+			}[];
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_Vec_ActivityGroupMember: {
+			data: {
+				/** Format: uuid */
+				activity_group_id: string;
+				classroom_name?: string | null;
+				/** Format: date-time */
+				enrolled_at: string;
+				/** Format: uuid */
+				enrolled_by?: string | null;
+				grade_level_name?: string | null;
+				/** Format: uuid */
+				id: string;
+				result?: null | components['schemas']['ActivityMemberResult'];
+				student_code?: string | null;
+				/**
+				 * Format: uuid
+				 * @description FK → users(id) (เปลี่ยนจาก student_info(id) ใน M114)
+				 */
+				student_id: string;
+				student_name?: string | null;
+			}[];
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_Vec_ActivitySlot: {
+			data: {
+				/** Format: uuid */
+				activity_catalog_id: string;
+				activity_type?: string | null;
+				allowed_grade_level_ids?: string[] | null;
+				/**
+				 * @description UUIDs of classrooms participating in this slot (from activity_slot_classrooms junction).
+				 *     Used on the activities page to show only real participants (instead of grade-matched set).
+				 */
+				classroom_ids?: string[] | null;
+				/** Format: date-time */
+				created_at: string;
+				/** Format: uuid */
+				created_by?: string | null;
+				description?: string | null;
+				/** Format: int64 */
+				group_count?: number | null;
+				/** Format: uuid */
+				id: string;
+				is_active: boolean;
+				name?: string | null;
+				/** Format: int32 */
+				periods_per_week?: number | null;
+				registration_type: components['schemas']['ActivityRegistrationType'];
+				scheduling_mode?: string | null;
+				/** Format: uuid */
+				semester_id: string;
+				semester_name?: string | null;
+				/** Format: date-time */
+				student_reg_end?: string | null;
+				student_reg_open: boolean;
+				/** Format: date-time */
+				student_reg_start?: string | null;
+				teacher_reg_open: boolean;
+				/** Format: int64 */
+				total_members?: number | null;
+				/** Format: date-time */
+				updated_at: string;
+			}[];
+			message?: string;
+			success: boolean;
+		};
 		ApiResponse_Vec_CalendarCategory: {
 			data: {
 				color: string;
@@ -2779,6 +3369,18 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
+		ApiResponse_Vec_InstructorInfo: {
+			data: {
+				/** Format: uuid */
+				id: string;
+				/** Format: uuid */
+				instructor_id: string;
+				instructor_name?: string | null;
+				role: components['schemas']['ActivityGroupInstructorRole'];
+			}[];
+			message?: string;
+			success: boolean;
+		};
 		ApiResponse_Vec_LookupItem: {
 			data: {
 				code?: string;
@@ -2989,6 +3591,35 @@ export interface components {
 				status: string;
 				/** Format: date-time */
 				updated_at: string;
+			}[];
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_Vec_SlotClassroomAssignment: {
+			data: {
+				/** Format: uuid */
+				classroom_id: string;
+				classroom_name?: string | null;
+				/** Format: date-time */
+				created_at: string;
+				/** Format: uuid */
+				id: string;
+				/** Format: uuid */
+				instructor_id: string;
+				instructor_name?: string | null;
+				/** Format: uuid */
+				slot_id: string;
+			}[];
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_Vec_SlotInstructorInfo: {
+			data: {
+				/** Format: uuid */
+				id: string;
+				instructor_name?: string | null;
+				/** Format: uuid */
+				user_id: string;
 			}[];
 			message?: string;
 			success: boolean;
@@ -3310,6 +3941,9 @@ export interface components {
 		AutoAssignClassNumbersRequest: {
 			sort_by: string;
 		};
+		BatchUpsertSlotClassroomAssignmentsRequest: {
+			assignments: components['schemas']['UpsertSlotClassroomAssignmentRequest'][];
+		};
 		CalendarCategory: {
 			color: string;
 			/** Format: date-time */
@@ -3532,6 +4166,17 @@ export interface components {
 			title: string;
 			/** Format: uuid */
 			user_id?: string | null;
+		};
+		CreateActivityGroupRequest: {
+			allowed_classroom_ids?: string[] | null;
+			description?: string | null;
+			/** Format: uuid */
+			instructor_id?: string | null;
+			/** Format: int32 */
+			max_capacity?: number | null;
+			name: string;
+			/** Format: uuid */
+			slot_id: string;
 		};
 		CreateCatalogRequest: {
 			activity_type: components['schemas']['ActivityCatalogType'];
@@ -3869,6 +4514,19 @@ export interface components {
 		};
 		/** @enum {string} */
 		GradeLevelType: 'kindergarten' | 'primary' | 'secondary';
+		InstructorInfo: {
+			/** Format: uuid */
+			id: string;
+			/** Format: uuid */
+			instructor_id: string;
+			instructor_name?: string | null;
+			role: components['schemas']['ActivityGroupInstructorRole'];
+		};
+		InstructorRoleRequest: {
+			/** Format: uuid */
+			instructor_id: string;
+			role?: null | components['schemas']['ActivityGroupInstructorRole'];
+		};
 		ListMembersQuery: {
 			include_children?: boolean | null;
 		};
@@ -4646,6 +5304,29 @@ export interface components {
 			image_path?: string | null;
 			title?: string | null;
 		};
+		UpdateActivityGroupRequest: {
+			allowed_classroom_ids?: string[] | null;
+			description?: string | null;
+			/** Format: uuid */
+			instructor_id?: string | null;
+			is_active?: boolean | null;
+			/** Format: int32 */
+			max_capacity?: number | null;
+			name?: string | null;
+			registration_open?: boolean | null;
+		};
+		/**
+		 * @description Semester-specific fields only. Template fields (name/type/periods/mode/grade)
+		 *     come from activity_catalog and are edited there — not here.
+		 */
+		UpdateActivitySlotRequest: {
+			is_active?: boolean | null;
+			registration_type?: null | components['schemas']['ActivityRegistrationType'];
+			student_reg_end?: string | null;
+			student_reg_open?: boolean | null;
+			student_reg_start?: string | null;
+			teacher_reg_open?: boolean | null;
+		};
 		UpdateCatalogDefaultInstructorRoleRequest: {
 			role: components['schemas']['CurriculumInstructorRole'];
 		};
@@ -4681,6 +5362,9 @@ export interface components {
 			position_code: string;
 			position_title?: string | null;
 			responsibilities?: string | null;
+		};
+		UpdateMemberResultRequest: {
+			result: components['schemas']['ActivityMemberResult'];
 		};
 		UpdateOrganizationPermissionsRequest: {
 			grants: components['schemas']['OrganizationPermissionGrantInput'][];
@@ -4823,6 +5507,12 @@ export interface components {
 		UpdateYearLevelsRequest: {
 			grade_level_ids: string[];
 		};
+		UpsertSlotClassroomAssignmentRequest: {
+			/** Format: uuid */
+			classroom_id: string;
+			/** Format: uuid */
+			instructor_id: string;
+		};
 		UserMenuData: {
 			groups: components['schemas']['MenuGroupResponse'][];
 		};
@@ -4878,6 +5568,753 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+	listActivityGroups: {
+		parameters: {
+			query?: {
+				activity_type?: string;
+				instructor_id?: string;
+				registration_open?: boolean;
+				search?: string;
+				semester_id?: string;
+				slot_id?: string;
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Activity groups visible to the caller */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_ActivityGroup'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Activity read permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Activity groups could not be loaded */
+			500: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	createActivityGroup: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['CreateActivityGroupRequest'];
+			};
+		};
+		responses: {
+			/** @description Activity group created */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_ActivityGroup'];
+				};
+			};
+			/** @description Slot is closed, instructor is invalid, or classroom scope is invalid */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Activity management permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Slot, instructor, or classroom not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Activity group could not be created */
+			500: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	updateActivityGroup: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Activity group ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['UpdateActivityGroupRequest'];
+			};
+		};
+		responses: {
+			/** @description Activity group updated */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_ActivityGroup'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Activity management permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Group, instructor, or classroom not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Activity group could not be updated */
+			500: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	deleteActivityGroup: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Activity group ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Activity group deleted */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_EmptyData'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Activity management permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Activity group not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Activity group could not be deleted */
+			500: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	selfEnrollActivityGroup: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Activity group ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Current student enrolled */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_EmptyData'];
+				};
+			};
+			/** @description Self-enrollment is unavailable, full, or outside classroom scope */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Activity group not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Current student is already enrolled */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Self-enrollment could not be completed */
+			500: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	selfUnenrollActivityGroup: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Activity group ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Current user's enrollment removed */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_EmptyData'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Current user's activity enrollment not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Self-unenrollment could not be completed */
+			500: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	listActivityGroupInstructors: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Activity group ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Activity group instructors */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_InstructorInfo'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Activity group read permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Activity group not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Activity instructors could not be loaded */
+			500: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	addActivityGroupInstructor: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Activity group ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['InstructorRoleRequest'];
+			};
+		};
+		responses: {
+			/** @description Activity group instructor added */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_EmptyData'];
+				};
+			};
+			/** @description Instructor role is invalid */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Activity group management permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Activity group or instructor not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Activity instructor could not be added */
+			500: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	removeActivityGroupInstructor: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Activity group ID */
+				id: string;
+				/** @description Instructor user ID */
+				instructor_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Activity group instructor removed */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_EmptyData'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Activity group management permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Activity instructor assignment not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Activity instructor could not be removed */
+			500: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	listActivityGroupMembers: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Activity group ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Activity group members */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_ActivityGroupMember'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Activity group read permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Activity group not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Activity members could not be loaded */
+			500: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	addActivityGroupMembers: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Activity group ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['AddMembersRequest'];
+			};
+		};
+		responses: {
+			/** @description Members added */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_ActivityInsertedCountData'];
+				};
+			};
+			/** @description Group capacity would be exceeded */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Member management permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Activity group or user not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Activity members could not be added */
+			500: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	removeActivityGroupMember: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Activity group ID */
+				id: string;
+				/** @description Student user ID */
+				student_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Activity member removed */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_EmptyData'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Member management permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Activity member not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Activity member could not be removed */
+			500: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
 	generateActivitiesFromStudyPlan: {
 		parameters: {
 			query?: never;
@@ -4928,6 +6365,116 @@ export interface operations {
 				};
 			};
 			/** @description Activities could not be generated */
+			500: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	updateActivityGroupMemberResult: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Activity membership ID */
+				member_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['UpdateMemberResultRequest'];
+			};
+		};
+		responses: {
+			/** @description Activity member result updated */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_EmptyData'];
+				};
+			};
+			/** @description Result must be pass or fail */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Member management permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Activity member not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Activity result could not be updated */
+			500: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	listMyActivityEnrollments: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Current user's activity group IDs */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_String'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Activity enrollments could not be loaded */
 			500: {
 				headers: {
 					[name: string]: unknown;
@@ -5444,6 +6991,845 @@ export interface operations {
 				};
 			};
 			/** @description Default instructor could not be removed */
+			500: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	listActivitySlots: {
+		parameters: {
+			query?: {
+				activity_type?: string;
+				semester_id?: string;
+				student_reg_open?: boolean;
+				teacher_reg_open?: boolean;
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Activity slots visible to the caller */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_ActivitySlot'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Activity read permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Activity slots could not be loaded */
+			500: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	updateActivitySlot: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Activity slot ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['UpdateActivitySlotRequest'];
+			};
+		};
+		responses: {
+			/** @description Activity slot updated */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_ActivitySlot'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description School-wide activity management permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Activity slot not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Activity slot could not be updated */
+			500: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	deleteActivitySlot: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Activity slot ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Activity slot deleted */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_EmptyData'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description School-wide activity management permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Activity slot not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Activity slot could not be deleted */
+			500: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	listActivitySlotClassroomAssignments: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Activity slot ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Slot classroom assignments */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_SlotClassroomAssignment'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Activity slot read permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Activity slot not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Classroom assignments could not be loaded */
+			500: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	upsertActivitySlotClassroomAssignments: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Activity slot ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['BatchUpsertSlotClassroomAssignmentsRequest'];
+			};
+		};
+		responses: {
+			/** @description Slot classroom assignments saved */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_ActivityProcessedCountData'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description School-wide activity management permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Activity slot, classroom, or instructor not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Classroom assignments could not be saved */
+			500: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	deleteActivitySlotClassroomAssignment: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Classroom assignment ID */
+				assignment_id: string;
+				/** @description Activity slot ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Slot classroom assignment deleted */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_EmptyData'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description School-wide activity management permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Activity slot or classroom assignment not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Classroom assignment could not be deleted */
+			500: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	deleteAllActivitySlotClassroomAssignments: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Activity slot ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description All slot classroom assignments deleted */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_ActivityDeletedCountData'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description School-wide activity management permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Activity slot not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Classroom assignments could not be deleted */
+			500: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	deleteAllActivitySlotGroups: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Activity slot ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description All groups in the slot deleted */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_ActivityDeletedCountData'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description School-wide activity management permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Activity slot not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Slot groups could not be deleted */
+			500: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	listActivitySlotInstructors: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Activity slot ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Activity slot instructors */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_SlotInstructorInfo'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Activity slot read permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Activity slot not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Slot instructors could not be loaded */
+			500: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	addActivitySlotInstructor: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Activity slot ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['AddSlotInstructorRequest'];
+			};
+		};
+		responses: {
+			/** @description Activity slot instructor added */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_EmptyData'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description School-wide activity management permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Activity slot or instructor not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Slot instructor could not be added */
+			500: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	removeActivitySlotInstructor: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Activity slot ID */
+				id: string;
+				/** @description Instructor user ID */
+				user_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Activity slot instructor removed */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_EmptyData'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description School-wide activity management permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Activity slot or instructor assignment not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Slot instructor could not be removed */
+			500: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	removeAllActivitySlotInstructors: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Activity slot ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description All slot instructors removed */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_ActivityDeletedCountData'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description School-wide activity management permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Activity slot not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Slot instructors could not be removed */
+			500: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	addActivitySlotInstructorsBatch: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Activity slot ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['AddSlotInstructorsBatchRequest'];
+			};
+		};
+		responses: {
+			/** @description Activity slot instructors added */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_ActivityAddedCountData'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description School-wide activity management permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Activity slot or instructor not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Slot instructors could not be added */
+			500: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	deleteActivitySlotTimetableEntries: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Activity slot ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Slot timetable entries deleted */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_ActivityDeletedCountData'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Course-plan management permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Activity slot not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Slot timetable entries could not be deleted */
 			500: {
 				headers: {
 					[name: string]: unknown;
