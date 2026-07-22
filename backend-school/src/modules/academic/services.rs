@@ -25,3 +25,6 @@ mod activity_service_tests;
 
 #[cfg(test)]
 mod course_planning_service_tests;
+
+#[cfg(test)]
+mod exam_schedule_service_tests;
