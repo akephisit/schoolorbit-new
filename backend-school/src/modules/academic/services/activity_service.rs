@@ -151,6 +151,16 @@ fn validate_group_instructor_role(role: &str) -> Result<(), AppError> {
     }
 }
 
+fn validate_activity_registration_type(registration_type: &str) -> Result<(), AppError> {
+    if matches!(registration_type, "self" | "assigned") {
+        Ok(())
+    } else {
+        Err(AppError::BadRequest(
+            "registration_type ต้องเป็น self หรือ assigned".to_string(),
+        ))
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct SlotClassroomAssignmentBulkRow {
     classroom_id: Uuid,
@@ -392,6 +402,10 @@ pub async fn update_slot(
     id: Uuid,
     body: UpdateActivitySlotRequest,
 ) -> Result<ActivitySlot, AppError> {
+    if let Some(registration_type) = body.registration_type.as_deref() {
+        validate_activity_registration_type(registration_type)?;
+    }
+
     sqlx::query_as::<_, ActivitySlotRow>(
         r#"WITH upd AS (
             UPDATE activity_slots SET

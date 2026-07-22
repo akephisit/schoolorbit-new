@@ -290,3 +290,16 @@ async fn classroom_assignment_targets_must_exist() {
         Err(AppError::NotFound(_))
     ));
 }
+
+#[tokio::test]
+async fn invalid_activity_registration_type_is_rejected_before_update() {
+    let pool = migrated_pool().await;
+    let fixture = insert_activity_fixture(&pool, 9814).await;
+    let mut body = empty_slot_update();
+    body.registration_type = Some("lottery".to_string());
+
+    assert!(matches!(
+        activity_service::update_slot(&pool, fixture.slot_id, body).await,
+        Err(AppError::BadRequest(_))
+    ));
+}

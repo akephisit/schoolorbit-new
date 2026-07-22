@@ -88,6 +88,7 @@ pub async fn list_activity_slots(
     request_body = UpdateActivitySlotRequest,
     responses(
         (status = 200, description = "Activity slot updated", body = ApiResponse<ActivitySlot>),
+        (status = 400, description = "Activity registration type is invalid", body = ApiErrorResponse),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "School-wide activity management permission denied", body = ApiErrorResponse),
         (status = 404, description = "Activity slot not found", body = ApiErrorResponse),
@@ -659,18 +660,16 @@ pub async fn add_slot_instructors_batch(
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ACTIVITY_MANAGE_ALL)?;
-    if body.user_ids.is_empty() {
-        return Ok(Json(ApiResponse::with_message(
-            ActivityAddedCountData { added: 0 },
-            "ไม่มีครูที่จะเพิ่ม",
-        ))
-        .into_response());
-    }
-
+    let is_empty = body.user_ids.is_empty();
     let added = activity_service::add_slot_instructors_batch(&pool, slot_id, body.user_ids).await?;
+    let message = if is_empty {
+        "ไม่มีครูที่จะเพิ่ม"
+    } else {
+        "เพิ่มครูแล้ว"
+    };
     Ok(Json(ApiResponse::with_message(
         ActivityAddedCountData { added },
-        "เพิ่มครูแล้ว",
+        message,
     ))
     .into_response())
 }

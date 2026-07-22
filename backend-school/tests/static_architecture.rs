@@ -1887,6 +1887,19 @@ fn activity_workspace_error_outcomes_use_non_success_http_statuses() {
         "every non-conflict self-enrollment rejection must use a 400 response"
     );
     assert!(!self_enroll.contains("ApiErrorResponse::new"));
+
+    let add_slot_instructors_batch = activity_handler
+        .split_once("pub async fn add_slot_instructors_batch")
+        .expect("missing add_slot_instructors_batch")
+        .1
+        .split("pub async fn ")
+        .next()
+        .unwrap_or("");
+    assert!(add_slot_instructors_batch.contains("activity_service::add_slot_instructors_batch"));
+    assert!(
+        !add_slot_instructors_batch.contains("if body.user_ids.is_empty()"),
+        "empty batches must still reach the service so a missing slot returns not-found"
+    );
 }
 
 #[test]

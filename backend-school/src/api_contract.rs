@@ -1808,6 +1808,11 @@ mod tests {
                 ["content"]["application/json"]["schema"]["$ref"],
             "#/components/schemas/ApiErrorResponse"
         );
+        assert_eq!(
+            document["paths"]["/api/academic/activity-slots/{id}"]["put"]["responses"]["400"]
+                ["content"]["application/json"]["schema"]["$ref"],
+            "#/components/schemas/ApiErrorResponse"
+        );
 
         let schemas = &document["components"]["schemas"];
         assert_eq!(

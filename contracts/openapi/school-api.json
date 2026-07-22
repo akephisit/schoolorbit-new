@@ -15764,6 +15764,16 @@
             },
             "description": "Activity slot updated"
           },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Activity registration type is invalid"
+          },
           "401": {
             "content": {
               "application/json": {
