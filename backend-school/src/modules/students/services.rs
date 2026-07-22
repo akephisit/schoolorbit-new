@@ -357,7 +357,7 @@ pub async fn update_student(
         AppError::InternalServerError("เกิดข้อผิดพลาดในการเริ่ม Transaction".to_string())
     })?;
 
-    sqlx::query(
+    let user_update = sqlx::query(
         r#"
         UPDATE users
         SET
@@ -382,6 +382,10 @@ pub async fn update_student(
         tracing::error!("Failed to update student user: {}", e);
         AppError::InternalServerError("ไม่สามารถอัพเดตข้อมูลได้".to_string())
     })?;
+
+    if user_update.rows_affected() == 0 {
+        return Err(AppError::NotFound("ไม่พบนักเรียน".to_string()));
+    }
 
     sqlx::query(
         r#"
@@ -415,7 +419,7 @@ pub async fn delete_student(pool: &PgPool, student_id: Uuid) -> Result<(), AppEr
         AppError::InternalServerError("ไม่สามารถลบนักเรียนได้".to_string())
     })?;
 
-    sqlx::query(
+    let user_update = sqlx::query(
         r#"
         UPDATE users
         SET status = 'inactive',
@@ -431,6 +435,9 @@ pub async fn delete_student(pool: &PgPool, student_id: Uuid) -> Result<(), AppEr
         tracing::error!("Failed to delete student: {}", e);
         AppError::InternalServerError("ไม่สามารถลบนักเรียนได้".to_string())
     })?;
+    if user_update.rows_affected() == 0 {
+        return Err(AppError::NotFound("ไม่พบนักเรียน".to_string()));
+    }
 
     sqlx::query(
         r#"
@@ -464,6 +471,23 @@ pub async fn add_parent_to_student(
         tracing::error!("Failed to begin add parent transaction: {}", e);
         AppError::InternalServerError("เกิดข้อผิดพลาดในการเริ่มต้น transaction".to_string())
     })?;
+
+    let student_exists: bool = sqlx::query_scalar(
+        "SELECT EXISTS(
+            SELECT 1 FROM users
+            WHERE id = $1 AND user_type = 'student'
+        )",
+    )
+    .bind(student_id)
+    .fetch_one(&mut *tx)
+    .await
+    .map_err(|e| {
+        tracing::error!("Failed to validate student before adding parent: {}", e);
+        AppError::InternalServerError("ไม่สามารถตรวจสอบข้อมูลนักเรียนได้".to_string())
+    })?;
+    if !student_exists {
+        return Err(AppError::NotFound("ไม่พบนักเรียน".to_string()));
+    }
 
     let parent_id = get_or_create_parent_user(&mut tx, &payload).await?;
     link_parent_to_student(&mut tx, student_id, parent_id, &payload.relationship).await?;
