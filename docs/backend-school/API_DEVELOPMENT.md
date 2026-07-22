@@ -52,10 +52,11 @@ Frontend API modules import generated wire DTOs and may map them to separate
 domain/view models. Generation must not require database credentials or start
 the backend server.
 
-The current checkpoint contains 81 unique operations: 32 auth/authorization
-operations, 36 read-oriented JSON operations from the prior checkpoint, and the
-completed Phase 4 mutation rollout Phase 1 people batch (12 mutations plus the
-dependent achievement list read). The people operations are:
+The current checkpoint contains 100 unique operations: 32 auth/authorization
+operations, 36 read-oriented JSON operations from the prior checkpoint, the
+completed Phase 1 people batch (12 mutations plus the dependent achievement
+list read), and the first Phase 2 academic structure batch (15 mutations plus
+four dependent reads). The people operations are:
 
 - staff: `createStaff`, `updateStaff`, `deleteStaff`
 - student/parent-link: `updateStudentProfile`, `createStudent`, `updateStudent`,
@@ -63,10 +64,19 @@ dependent achievement list read). The people operations are:
 - achievement: `listAchievements`, `createAchievement`, `updateAchievement`,
   `deleteAchievement`
 
-Phase 2 academic mutations are next. The OpenAPI document describes implemented
-backend routes only; a frontend helper or UI call is not evidence that a backend
-route exists. SSE, WebSocket, health/readiness, and file/binary endpoints remain
-explicitly outside this OpenAPI contract.
+The academic structure operations are `getAcademicStructure`,
+`createGradeLevel`, `deleteGradeLevel`, `createAcademicYear`,
+`updateAcademicYear`, `setActiveAcademicYear`, `getAcademicYearLevels`,
+`updateAcademicYearLevels`, `createSemester`, `updateSemester`,
+`deleteSemester`, `listClassrooms`, `createClassroom`, `updateClassroom`,
+`enrollStudents`, `listClassEnrollments`, `removeEnrollment`,
+`updateEnrollmentNumber`, and `autoAssignClassNumbers`.
+
+This is the current Phase 4 mutation-contract rollout checkpoint. The next
+Phase 2 batch is curriculum and study plans. The OpenAPI document
+describes implemented backend routes only; a frontend helper or UI call is not
+evidence that a backend route exists. SSE, WebSocket, health/readiness, and
+file/binary endpoints remain explicitly outside this OpenAPI contract.
 
 Effective authorization is conditional on the account itself: when
 `users.status != 'active'`, permission resolution returns no effective
@@ -74,6 +84,12 @@ permissions even if active assignments remain. A user-status mutation must
 invalidate the per-user permission cache and emit `permission_changed`; student
 soft deletion follows this rule. Student update/delete/add-parent services return
 not-found for a missing student before any dependent mutation or parent creation.
+
+Academic structure, classroom, and enrollment handlers load one
+`actor_tenant_context` and enforce the matching generated permission before the
+service call. Missing academic years, semesters, grade levels, classrooms, and
+enrollments return not-found. Setting a missing academic year active leaves the
+current active year unchanged.
 
 For a new documented endpoint:
 

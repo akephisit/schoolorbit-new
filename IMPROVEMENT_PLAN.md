@@ -157,16 +157,17 @@
 | **ตรวจสอบ** | database lifecycle/authorization/assignment tests, OpenAPI 409 + operation inventory, static architecture 99 tests, generated-contract tests, focused UI tests, Svelte autofixer และ `svelte-check` |
 | **ความยาก** | Medium |
 
-### ✅ M-7. Shared API contract ระหว่าง backend-school และ frontend — people mutation phase เสร็จแล้ว
+### ✅ M-7. Shared API contract ระหว่าง backend-school และ frontend — Academic structure batch เสร็จแล้ว
 
 | | |
 |---|---|
 | **ไฟล์** | `backend-school/src/api_contract.rs`, `contracts/openapi/school-api.json`, `frontend-school/src/lib/api/generated/school-api.ts`, `backend-school/tests/static_architecture.rs` |
 | **ที่ทำ** | ให้ Rust serde DTO + `utoipa` เป็น source of truth, generate OpenAPI/TypeScript แบบ offline และย้าย frontend wire DTO ที่ซ้ำให้ใช้งาน generated schema พร้อม router-derived drift guard |
-| **ผลลัพธ์** | ปัจจุบัน contract มี 81 unique operations: 32 auth/authorization, 36 read-oriented JSON operations จาก checkpoint เดิม และ Phase 4 mutation rollout — Phase 1 people จำนวน 12 mutations พร้อม achievement list read ที่เกี่ยวข้อง |
+| **ผลลัพธ์** | ปัจจุบัน contract มี 100 unique operations: 32 auth/authorization, 36 read-oriented JSON operations จาก checkpoint เดิม, Phase 1 people จำนวน 12 mutations พร้อม achievement list read และ Phase 2 academic structure จำนวน 15 mutations พร้อม 4 dependent reads |
 | **Phase 1 people operations** | staff: `createStaff`, `updateStaff`, `deleteStaff`; student/parent-link: `updateStudentProfile`, `createStudent`, `updateStudent`, `deleteStudent`, `addStudentParent`, `removeStudentParent`; achievement: `listAchievements`, `createAchievement`, `updateAchievement`, `deleteAchievement` |
-| **ความถูกต้อง/ความปลอดภัย** | เมื่อ `users.status != 'active'` effective permissions ต้องว่าง; student soft delete invalidate permission cache และส่ง `permission_changed`; update/delete/add-parent ของนักเรียนที่ไม่มีอยู่จริงคืน not-found ก่อนสร้างหรือแก้ dependent records |
-| **งานต่อ Phase 4** | Phase 2 academic mutations เป็นชุดถัดไป โดยยังต้องตรวจ behavior, permission, status และ response DTO ทีละกลุ่ม; SSE, WebSocket, health/readiness และ file/binary endpoints ยังอยู่นอก OpenAPI contract โดยตั้งใจ |
+| **Phase 2 academic structure operations** | `getAcademicStructure`, `createGradeLevel`, `deleteGradeLevel`, `createAcademicYear`, `updateAcademicYear`, `setActiveAcademicYear`, `getAcademicYearLevels`, `updateAcademicYearLevels`, `createSemester`, `updateSemester`, `deleteSemester`, `listClassrooms`, `createClassroom`, `updateClassroom`, `enrollStudents`, `listClassEnrollments`, `removeEnrollment`, `updateEnrollmentNumber`, `autoAssignClassNumbers` |
+| **ความถูกต้อง/ความปลอดภัย** | เมื่อ `users.status != 'active'` effective permissions ต้องว่างและ student soft delete ส่ง `permission_changed`; Academic structure/classroom/enrollment handlers ใช้ `actor_tenant_context` และบังคับ permission backend ตรงกับ frontend; target ที่ไม่มีอยู่คืน not-found และการตั้ง active year ด้วย ID ผิดไม่ปิดปีปัจจุบัน |
+| **งานต่อ Phase 4** | Phase 2 curriculum และ study-plan mutations เป็นชุดถัดไป โดยยังต้องตรวจ behavior, permission, status และ response DTO ทีละกลุ่ม; SSE, WebSocket, health/readiness และ file/binary endpoints ยังอยู่นอก OpenAPI contract โดยตั้งใจ |
 | **ความยาก** | Medium |
 
 ---
