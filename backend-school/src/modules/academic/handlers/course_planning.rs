@@ -19,6 +19,24 @@ use crate::utils::request_context::{actor_tenant_context, ActorTenantContext};
 use crate::utils::subdomain::extract_subdomain_from_request;
 use crate::AppState;
 
+fn parse_course_ids(value: &str) -> Result<Vec<Uuid>, AppError> {
+    let mut seen = std::collections::HashSet::new();
+    value
+        .split(',')
+        .filter(|part| !part.trim().is_empty())
+        .map(|part| {
+            part.trim().parse::<Uuid>().map_err(|_| {
+                AppError::BadRequest("course_ids must contain valid UUIDs".to_string())
+            })
+        })
+        .filter_map(|result| match result {
+            Ok(id) if seen.insert(id) => Some(Ok(id)),
+            Ok(_) => None,
+            Err(error) => Some(Err(error)),
+        })
+        .collect()
+}
+
 async fn broadcast_course_refresh(
     state: &AppState,
     headers: &HeaderMap,
@@ -126,11 +144,7 @@ pub async fn batch_list_course_instructors_from_query(
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_READ_ALL)?;
-    let ids: Vec<Uuid> = query
-        .course_ids
-        .split(',')
-        .filter_map(|s| s.trim().parse::<Uuid>().ok())
-        .collect();
+    let ids = parse_course_ids(&query.course_ids)?;
     let grouped = course_planning_service::batch_list_course_instructors(&pool, &ids).await?;
     Ok(Json(ApiResponse::ok(grouped)).into_response())
 }
@@ -242,4 +256,34 @@ pub async fn remove_classroom_from_slot(
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL)?;
     course_planning_service::remove_classroom_from_slot(&pool, classroom_id, slot_id).await?;
     Ok(Json(ApiResponse::empty()).into_response())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_course_ids_accepts_empty_and_valid_values() {
+        assert_eq!(
+            parse_course_ids("").expect("empty input should be valid"),
+            Vec::<Uuid>::new()
+        );
+
+        let first = Uuid::new_v4();
+        let second = Uuid::new_v4();
+        assert_eq!(
+            parse_course_ids(&format!("{first}, {second}, {first}"))
+                .expect("valid UUIDs should parse"),
+            vec![first, second]
+        );
+    }
+
+    #[test]
+    fn parse_course_ids_rejects_any_malformed_value() {
+        assert!(matches!(
+            parse_course_ids(&format!("{},not-a-uuid", Uuid::new_v4())),
+            Err(AppError::BadRequest(message))
+                if message == "course_ids must contain valid UUIDs"
+        ));
+    }
 }

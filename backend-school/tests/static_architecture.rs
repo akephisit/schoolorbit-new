@@ -4021,6 +4021,69 @@ fn course_instructor_batch_endpoint_accepts_post_body() {
 }
 
 #[test]
+fn course_planning_handlers_enforce_permission_and_service_boundaries() {
+    fn handler_body<'a>(source: &'a str, handler_name: &str) -> &'a str {
+        let marker = format!("pub async fn {handler_name}");
+        let tail = source
+            .split_once(&marker)
+            .unwrap_or_else(|| panic!("missing course-planning handler `{handler_name}`"))
+            .1;
+        tail.split("pub async fn ").next().unwrap_or(tail)
+    }
+
+    let source = strip_comments(&read_source(
+        manifest_dir().join("src/modules/academic/handlers/course_planning.rs"),
+    ));
+    let cases = [
+        ("list_classroom_courses", "ACADEMIC_COURSE_PLAN_READ_ALL"),
+        ("assign_courses", "ACADEMIC_COURSE_PLAN_MANAGE_ALL"),
+        ("remove_course", "ACADEMIC_COURSE_PLAN_MANAGE_ALL"),
+        ("update_course", "ACADEMIC_COURSE_PLAN_MANAGE_ALL"),
+        (
+            "batch_list_course_instructors",
+            "ACADEMIC_COURSE_PLAN_READ_ALL",
+        ),
+        (
+            "batch_list_course_instructors_from_query",
+            "ACADEMIC_COURSE_PLAN_READ_ALL",
+        ),
+        ("list_course_instructors", "ACADEMIC_COURSE_PLAN_READ_ALL"),
+        ("add_course_instructor", "ACADEMIC_COURSE_PLAN_MANAGE_ALL"),
+        (
+            "remove_course_instructor",
+            "ACADEMIC_COURSE_PLAN_MANAGE_ALL",
+        ),
+        (
+            "update_course_instructor_role",
+            "ACADEMIC_COURSE_PLAN_MANAGE_ALL",
+        ),
+        ("list_classroom_activities", "ACADEMIC_COURSE_PLAN_READ_ALL"),
+        (
+            "remove_classroom_from_slot",
+            "ACADEMIC_COURSE_PLAN_MANAGE_ALL",
+        ),
+    ];
+
+    for (handler_name, permission) in cases {
+        let body = handler_body(&source, handler_name);
+        assert!(
+            body.contains("actor_tenant_context(&state, &headers).await?"),
+            "{handler_name} must load actor and tenant through the shared request context"
+        );
+        assert!(
+            body.contains(&format!("require_permission(codes::{permission})")),
+            "{handler_name} must require {permission}"
+        );
+        for forbidden_db_call in ["sqlx::query", ".execute(", ".fetch_"] {
+            assert!(
+                !body.contains(forbidden_db_call),
+                "{handler_name} must delegate database work to the service layer"
+            );
+        }
+    }
+}
+
+#[test]
 fn calendar_schema_routes_and_permissions_are_registered() {
     let migration = read_source(manifest_dir().join("migrations/018_school_calendar.sql"));
     let tags_migration = read_source(manifest_dir().join("migrations/026_calendar_event_tags.sql"));
