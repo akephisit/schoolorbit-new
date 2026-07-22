@@ -1,5 +1,6 @@
 import { PUBLIC_VAPID_KEY } from '$env/static/public';
 import { apiClient, BACKEND_URL } from '$lib/api/client';
+import type { components } from '$lib/api/generated/school-api';
 import { workStore } from '$lib/stores/work';
 import { toast } from 'svelte-sonner';
 import { writable } from 'svelte/store';
@@ -71,15 +72,10 @@ async function syncPushSubscription(subscription: PushSubscription) {
 	return true;
 }
 
-export interface Notification {
-	id: string;
-	title: string;
-	message: string;
-	type_: 'info' | 'success' | 'warning' | 'error';
-	link?: string;
-	read_at?: string;
-	created_at: string;
-}
+type Schemas = components['schemas'];
+
+export type Notification = Schemas['Notification'];
+type ListNotificationsResponse = Schemas['ListNotificationsResponse'];
 
 export interface NotificationState {
 	notifications: Notification[];
@@ -112,10 +108,9 @@ function createNotificationStore() {
 		async fetchNotifications(limit = 10) {
 			update((s) => ({ ...s, loading: true }));
 			try {
-				const response = await apiClient.get<{
-					items: Notification[];
-					unread_count: number;
-				}>(`/api/notifications?limit=${limit}`);
+				const response = await apiClient.get<ListNotificationsResponse>(
+					`/api/notifications?limit=${limit}`
+				);
 
 				if (response.success && response.data) {
 					set({

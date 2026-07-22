@@ -87,31 +87,34 @@ test('calendar API client uses current typed contracts', async () => {
 		assert.match(api, new RegExp(`\\b${name}\\b`));
 	}
 
-	const target = interfaceBody(api, 'CalendarEventTarget');
+	const target = generatedSchemaBody(generated, 'CalendarEventTarget');
 	const targetInput = interfaceBody(api, 'CalendarEventTargetInput');
 	const viewerEvent = generatedSchemaBody(generated, 'CalendarViewerEvent');
 	const publicFilters = interfaceBody(api, 'CalendarPublicEventFilters');
 	const publicQuery = functionBody(api, 'publicCalendarQuery');
-	const event = interfaceBody(api, 'CalendarEvent');
+	const event = generatedSchemaBody(generated, 'CalendarEvent');
 	const createEvent = interfaceBody(api, 'CreateCalendarEventRequest');
 
 	assert.match(target, /\bid:\s*string;/);
-	assert.match(target, /\baudienceType:\s*CalendarAudienceType;/);
-	assert.match(target, /\bclassRoomId\?:\s*string \| null;/);
+	assert.match(target, /\baudienceType:\s*string;/);
+	assert.match(target, /\bclassRoomId:\s*string \| null;/);
 	assert.doesNotMatch(target, /\baudience:\s*CalendarAudienceType;/);
-	assert.doesNotMatch(target, /\bclassroomId\?:\s*string \| null;/);
+	assert.doesNotMatch(target, /\bclassroomId:\s*string \| null;/);
+	assert.match(
+		api,
+		/export\s+type\s+CalendarEventTarget\s*=\s*Omit<CalendarEventTargetDto, 'audienceType'>/
+	);
+	assert.match(api, /audienceType:\s*CalendarAudienceType;/);
 	assert.match(targetInput, /\baudienceType:\s*CalendarAudienceType;/);
 	assert.match(targetInput, /\bclassRoomId\?:\s*string \| null;/);
 	assert.doesNotMatch(targetInput, /\baudience:\s*CalendarAudienceType;/);
 	assert.doesNotMatch(targetInput, /\bclassroomId\?:\s*string \| null;/);
 	assert.doesNotMatch(targetInput, /\bid[?:]?:\s*string;/);
 	assert.match(api, /targets:\s*CalendarEventTargetInput\[];/);
-	assert.match(event, /tags:\s*CalendarEventTag\[];/);
+	assert.match(event, /tags:\s*components\['schemas'\]\['CalendarEventTag'\]\[];/);
 	assert.match(createEvent, /tagIds:\s*string\[];/);
-	assert.match(
-		api,
-		/export\s+type\s+CalendarViewerEvent\s*=\s*Schemas\['CalendarViewerEvent'\]/
-	);
+	assert.match(api, /export\s+type\s+CalendarEvent\s*=\s*Omit<CalendarEventDto, 'targets'>/);
+	assert.match(api, /export\s+type\s+CalendarViewerEvent\s*=\s*Schemas\['CalendarViewerEvent'\]/);
 	assert.match(api, /export\s+type\s+CalendarEventTag\s*=\s*Schemas\['CalendarEventTag'\]/);
 	assert.match(viewerEvent, /tags:\s*components\['schemas'\]\['CalendarEventTag'\]\[];/);
 	assert.doesNotMatch(viewerEvent, /targets:/);
@@ -120,7 +123,7 @@ test('calendar API client uses current typed contracts', async () => {
 	assert.doesNotMatch(viewerEvent, /updatedBy/);
 	assert.match(api, /listMyCalendarEvents[\s\S]*Promise<CalendarViewerEvent\[]>/);
 	assert.match(api, /listChildCalendarEvents[\s\S]*Promise<CalendarViewerEvent\[]>/);
-	assert.match(api, /export interface CalendarPublicEvent\s*{/);
+	assert.match(api, /export\s+type\s+CalendarPublicEvent\s*=\s*Schemas\['CalendarPublicEvent'\]/);
 	assert.doesNotMatch(api, /CalendarPublicEvent\s*=\s*Omit/);
 	assert.match(publicFilters, /categoryId\?:\s*string;/);
 	assert.match(publicFilters, /tagId\?:\s*string;/);

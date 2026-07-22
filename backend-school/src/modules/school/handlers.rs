@@ -1,22 +1,36 @@
 use axum::{extract::State, http::HeaderMap, response::IntoResponse, Json};
 use serde::Serialize;
+use utoipa::ToSchema;
 
 use super::models::UpdateSchoolSettingsRequest;
 use super::services as school_service;
-use crate::api_response::ApiResponse;
+use crate::api_response::{ApiErrorResponse, ApiResponse};
 use crate::error::AppError;
 use crate::permissions::registry::codes;
 use crate::utils::request_context::{actor_tenant_context, tenant_context};
 use crate::AppState;
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
-struct PublicSchoolInfoData {
-    logo_url: Option<String>,
-    school_name: Option<String>,
+pub struct PublicSchoolInfoData {
+    #[schema(required = true)]
+    pub logo_url: Option<String>,
+    #[schema(required = true)]
+    pub school_name: Option<String>,
 }
 
 /// GET /api/school/settings — staff only (SETTINGS_READ_ALL)
+#[utoipa::path(
+    get,
+    path = "/api/school/settings",
+    operation_id = "getSchoolSettings",
+    tag = "school",
+    responses(
+        (status = 200, description = "School settings", body = ApiResponse<crate::modules::school::models::SchoolSettingsResponse>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Settings read permission required", body = ApiErrorResponse)
+    )
+)]
 pub async fn get_settings(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -47,6 +61,15 @@ pub async fn update_settings(
 
 /// GET /api/school/public — no auth required
 /// Returns logoUrl (built from logo_path) + schoolName (from backend-admin)
+#[utoipa::path(
+    get,
+    path = "/api/school/public",
+    operation_id = "getPublicSchoolInfo",
+    tag = "school",
+    responses(
+        (status = 200, description = "Public school branding", body = ApiResponse<PublicSchoolInfoData>)
+    )
+)]
 pub async fn get_public_info(
     State(state): State<AppState>,
     headers: HeaderMap,

@@ -2570,6 +2570,22 @@ fn authorization_openapi_guard_detects_a_new_router_handler() {
 }
 
 #[test]
+fn read_oriented_handlers_are_registered_in_the_openapi_document() {
+    let main_router = read_source(manifest_dir().join("src/main.rs"));
+    let calendar_router = read_source(manifest_dir().join("src/modules/calendar.rs"));
+    let contract = read_source(manifest_dir().join("src/api_contract.rs"));
+
+    assert!(
+        read_oriented_handlers_from_routers(&main_router, &calendar_router).len() >= 35,
+        "read-oriented router parser must find the current phase inventory"
+    );
+    assert_eq!(
+        read_oriented_handlers_missing_from_contract(&main_router, &calendar_router, &contract),
+        Vec::<String>::new()
+    );
+}
+
+#[test]
 fn read_oriented_openapi_guard_detects_direct_and_nested_router_handlers() {
     let main_router = r#"
         .route(

@@ -8,7 +8,10 @@ use crate::modules::auth::models::{
     ChangePasswordRequest, LoginData, LoginRequest, ProfileResponse, UpdateProfileRequest,
     UserResponse,
 };
-use crate::modules::calendar::models::{CalendarEventTag, CalendarViewerEvent};
+use crate::modules::calendar::models::{
+    CalendarCategory, CalendarEvent, CalendarEventReminder, CalendarEventTag, CalendarEventTarget,
+    CalendarPublicEvent, CalendarTag, CalendarViewerEvent,
+};
 use crate::modules::facility::models::Room;
 use crate::modules::lookup::models::{
     AcademicYearLookupItem, ClassroomLookupItem, GradeLevelLookupItem, LookupItem,
@@ -18,7 +21,10 @@ use crate::modules::menu::handlers::public::UserMenuData;
 use crate::modules::menu::models::{
     FeatureToggle, MenuGroup, MenuGroupResponse, MenuItem, MenuItemResponse,
 };
+use crate::modules::notification::models::{ListNotificationsResponse, Notification};
 use crate::modules::parents::models::{ChildDto, ParentProfile};
+use crate::modules::school::handlers::PublicSchoolInfoData;
+use crate::modules::school::models::SchoolSettingsResponse;
 use crate::modules::staff::handlers::organization_delegations::{
     CreateDelegationRequest, DelegationIdData, DelegationItem,
 };
@@ -84,6 +90,13 @@ use utoipa::OpenApi;
         crate::modules::academic::handlers::exam_schedule::list_my_exam_schedule,
         crate::modules::academic::handlers::exam_schedule::list_staff_exam_schedule,
         crate::modules::calendar::handlers::list_my_calendar_events,
+        crate::modules::calendar::handlers::list_public_calendar_events,
+        crate::modules::calendar::handlers::list_calendar_events,
+        crate::modules::calendar::handlers::list_calendar_categories,
+        crate::modules::calendar::handlers::list_calendar_tags,
+        crate::modules::school::handlers::get_public_info,
+        crate::modules::school::handlers::get_settings,
+        crate::modules::notification::handlers::list_notifications,
         crate::modules::staff::handlers::roles::list_roles,
         crate::modules::staff::handlers::roles::get_role,
         crate::modules::staff::handlers::roles::create_role,
@@ -219,6 +232,23 @@ use utoipa::OpenApi;
         CalendarEventTag,
         CalendarViewerEvent,
         ApiResponse<Vec<CalendarViewerEvent>>,
+        CalendarCategory,
+        CalendarTag,
+        CalendarEventTarget,
+        CalendarEventReminder,
+        CalendarEvent,
+        CalendarPublicEvent,
+        ApiResponse<Vec<CalendarCategory>>,
+        ApiResponse<Vec<CalendarTag>>,
+        ApiResponse<Vec<CalendarEvent>>,
+        ApiResponse<Vec<CalendarPublicEvent>>,
+        SchoolSettingsResponse,
+        PublicSchoolInfoData,
+        ApiResponse<SchoolSettingsResponse>,
+        ApiResponse<PublicSchoolInfoData>,
+        Notification,
+        ListNotificationsResponse,
+        ApiResponse<ListNotificationsResponse>,
         ApiErrorResponse
     )),
     tags(
@@ -233,7 +263,9 @@ use utoipa::OpenApi;
         (name = "student", description = "Student self-service reads"),
         (name = "parent", description = "Parent self-service reads"),
         (name = "academic", description = "Academic self-service reads"),
-        (name = "calendar", description = "Calendar reads")
+        (name = "calendar", description = "Calendar reads"),
+        (name = "school", description = "School settings and public branding reads"),
+        (name = "notifications", description = "Current-user notification reads")
     )
 )]
 struct SchoolApiDoc;
@@ -857,6 +889,102 @@ mod tests {
     }
 
     #[test]
+    fn documents_calendar_school_and_notification_reads() {
+        let document = school_api_value().expect("document should serialize");
+        assert_operations(
+            &document,
+            &[
+                (
+                    "/api/public/calendar/events",
+                    "get",
+                    "listPublicCalendarEvents",
+                ),
+                ("/api/calendar/events", "get", "listCalendarEvents"),
+                ("/api/calendar/categories", "get", "listCalendarCategories"),
+                ("/api/calendar/tags", "get", "listCalendarTags"),
+                ("/api/school/public", "get", "getPublicSchoolInfo"),
+                ("/api/school/settings", "get", "getSchoolSettings"),
+                ("/api/notifications", "get", "listNotifications"),
+            ],
+        );
+
+        assert_eq!(
+            document["paths"]["/api/calendar/events"]["get"]["responses"]["200"]["content"]
+                ["application/json"]["schema"]["$ref"],
+            "#/components/schemas/ApiResponse_Vec_CalendarEvent"
+        );
+        assert_eq!(
+            document["paths"]["/api/notifications"]["get"]["responses"]["200"]["content"]
+                ["application/json"]["schema"]["$ref"],
+            "#/components/schemas/ApiResponse_ListNotificationsResponse"
+        );
+
+        let calendar_parameters = document["paths"]["/api/calendar/events"]["get"]["parameters"]
+            .as_array()
+            .expect("calendar parameters must be an array");
+        for name in [
+            "from",
+            "to",
+            "category_id",
+            "tag_id",
+            "audience",
+            "visibility",
+            "q",
+        ] {
+            assert!(calendar_parameters
+                .iter()
+                .any(|parameter| parameter["name"] == name && parameter["in"] == "query"));
+        }
+
+        let notification_parameters = document["paths"]["/api/notifications"]["get"]["parameters"]
+            .as_array()
+            .expect("notification parameters must be an array");
+        for name in ["page", "limit", "unread_only"] {
+            assert!(notification_parameters
+                .iter()
+                .any(|parameter| parameter["name"] == name && parameter["in"] == "query"));
+        }
+
+        let schemas = &document["components"]["schemas"];
+        let calendar_event = &schemas["CalendarEvent"];
+        for field in [
+            "categoryId",
+            "description",
+            "startTime",
+            "createdBy",
+            "updatedBy",
+        ] {
+            assert!(required(calendar_event).contains(&field));
+            assert!(contains_null(&calendar_event["properties"][field]));
+        }
+        assert!(calendar_event["properties"].get("targets").is_some());
+        assert!(calendar_event["properties"].get("reminders").is_some());
+        let public_event = &schemas["CalendarPublicEvent"];
+        assert!(public_event["properties"].get("targets").is_none());
+        assert!(public_event["properties"].get("reminders").is_none());
+
+        for schema_name in ["SchoolSettingsResponse", "PublicSchoolInfoData"] {
+            let school = &schemas[schema_name];
+            for property in school["properties"]
+                .as_object()
+                .expect("school schema properties")
+                .keys()
+            {
+                assert!(required(school).contains(&property.as_str()));
+                assert!(contains_null(&school["properties"][property]));
+            }
+        }
+
+        let notification = &schemas["Notification"];
+        assert!(notification["properties"].get("type").is_some());
+        assert!(notification["properties"].get("type_").is_none());
+        for field in ["link", "read_at"] {
+            assert!(required(notification).contains(&field));
+            assert!(contains_null(&notification["properties"][field]));
+        }
+    }
+
+    #[test]
     fn documents_delegation_member_and_complete_authorization_inventory() {
         let document = school_api_value().expect("document should serialize");
         let expected = [
@@ -969,7 +1097,7 @@ mod tests {
                 }
             }
         }
-        assert_eq!(operation_ids.len(), 59);
+        assert_eq!(operation_ids.len(), 66);
 
         let schemas = &document["components"]["schemas"];
         let delegation = &schemas["DelegationItem"];

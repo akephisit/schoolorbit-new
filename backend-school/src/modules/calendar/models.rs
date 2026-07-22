@@ -31,7 +31,7 @@ pub enum CalendarVisibility {
     Private,
 }
 
-#[derive(Debug, Clone, Serialize, FromRow)]
+#[derive(Debug, Clone, Serialize, FromRow, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CalendarCategory {
     pub id: Uuid,
@@ -52,7 +52,7 @@ pub struct UpsertCalendarCategoryRequest {
     pub is_active: Option<bool>,
 }
 
-#[derive(Debug, Clone, Serialize, FromRow)]
+#[derive(Debug, Clone, Serialize, FromRow, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CalendarTag {
     pub id: Uuid,
@@ -74,12 +74,14 @@ pub struct UpsertCalendarTagRequest {
     pub name: String,
 }
 
-#[derive(Debug, Clone, Serialize, FromRow)]
+#[derive(Debug, Clone, Serialize, FromRow, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CalendarEventTarget {
     pub id: Uuid,
     pub audience_type: String,
+    #[schema(required = true)]
     pub grade_level_id: Option<Uuid>,
+    #[schema(required = true)]
     pub class_room_id: Option<Uuid>,
 }
 
@@ -91,54 +93,71 @@ pub struct CalendarEventTargetInput {
     pub class_room_id: Option<Uuid>,
 }
 
-#[derive(Debug, Clone, Serialize, FromRow)]
+#[derive(Debug, Clone, Serialize, FromRow, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CalendarEventReminder {
     pub id: Uuid,
     pub days_before: i32,
     pub remind_on: NaiveDate,
+    #[schema(required = true)]
     pub sent_at: Option<DateTime<Utc>>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CalendarEvent {
     pub id: Uuid,
+    #[schema(required = true)]
     pub category_id: Option<Uuid>,
+    #[schema(required = true)]
     pub category_name: Option<String>,
+    #[schema(required = true)]
     pub category_color: Option<String>,
     pub title: String,
+    #[schema(required = true)]
     pub description: Option<String>,
+    #[schema(required = true)]
     pub location: Option<String>,
     pub start_date: NaiveDate,
     pub end_date: NaiveDate,
     pub all_day: bool,
+    #[schema(required = true)]
     pub start_time: Option<NaiveTime>,
+    #[schema(required = true)]
     pub end_time: Option<NaiveTime>,
     pub is_public: bool,
     pub tags: Vec<CalendarEventTag>,
     pub targets: Vec<CalendarEventTarget>,
     pub reminders: Vec<CalendarEventReminder>,
+    #[schema(required = true)]
     pub created_by: Option<Uuid>,
+    #[schema(required = true)]
     pub updated_by: Option<Uuid>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CalendarPublicEvent {
     pub id: Uuid,
+    #[schema(required = true)]
     pub category_id: Option<Uuid>,
+    #[schema(required = true)]
     pub category_name: Option<String>,
+    #[schema(required = true)]
     pub category_color: Option<String>,
     pub title: String,
+    #[schema(required = true)]
     pub description: Option<String>,
+    #[schema(required = true)]
     pub location: Option<String>,
     pub start_date: NaiveDate,
     pub end_date: NaiveDate,
     pub all_day: bool,
+    #[schema(required = true)]
     pub start_time: Option<NaiveTime>,
+    #[schema(required = true)]
     pub end_time: Option<NaiveTime>,
     pub is_public: bool,
     pub tags: Vec<CalendarEventTag>,

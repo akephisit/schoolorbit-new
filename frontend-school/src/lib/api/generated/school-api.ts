@@ -172,6 +172,54 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/api/calendar/categories': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listCalendarCategories'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/calendar/events': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listCalendarEvents'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/calendar/tags': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listCalendarTags'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/api/lookup/academic-years': {
 		parameters: {
 			query?: never;
@@ -443,6 +491,23 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/api/notifications': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		/** List notifications for current user */
+		get: operations['listNotifications'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/api/organization/delegations/{id}': {
 		parameters: {
 			query?: never;
@@ -694,6 +759,22 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/api/public/calendar/events': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listPublicCalendarEvents'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/api/roles': {
 		parameters: {
 			query?: never;
@@ -719,6 +800,43 @@ export interface paths {
 		};
 		get: operations['getRole'];
 		put: operations['updateRole'];
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/school/public': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		/**
+		 * GET /api/school/public — no auth required
+		 *     Returns logoUrl (built from logo_path) + schoolName (from backend-admin)
+		 */
+		get: operations['getPublicSchoolInfo'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/school/settings': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		/** GET /api/school/settings — staff only (SETTINGS_READ_ALL) */
+		get: operations['getSchoolSettings'];
+		put?: never;
 		post?: never;
 		delete?: never;
 		options?: never;
@@ -941,6 +1059,19 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
+		ApiResponse_ListNotificationsResponse: {
+			data: {
+				items: components['schemas']['Notification'][];
+				/** Format: int64 */
+				limit: number;
+				/** Format: int64 */
+				page: number;
+				/** Format: int64 */
+				unread_count: number;
+			};
+			message?: string;
+			success: boolean;
+		};
 		ApiResponse_LoginData: {
 			data: {
 				user: components['schemas']['UserResponse'];
@@ -1046,6 +1177,14 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
+		ApiResponse_PublicSchoolInfoData: {
+			data: {
+				logoUrl: string | null;
+				schoolName: string | null;
+			};
+			message?: string;
+			success: boolean;
+		};
 		ApiResponse_PublicStaffProfile: {
 			data: {
 				email: string | null;
@@ -1085,6 +1224,16 @@ export interface components {
 				/** Format: date-time */
 				updated_at: string;
 				user_type: string;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_SchoolSettingsResponse: {
+			/** @description Response to frontend — logoUrl built from path */
+			data: {
+				/** Format: uuid */
+				logoFileId: string | null;
+				logoUrl: string | null;
 			};
 			message?: string;
 			success: boolean;
@@ -1208,6 +1357,98 @@ export interface components {
 				name: string;
 				/** Format: int32 */
 				year: number;
+			}[];
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_Vec_CalendarCategory: {
+			data: {
+				color: string;
+				/** Format: date-time */
+				createdAt: string;
+				/** Format: uuid */
+				id: string;
+				isActive: boolean;
+				name: string;
+				/** Format: int32 */
+				orderIndex: number;
+				/** Format: date-time */
+				updatedAt: string;
+			}[];
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_Vec_CalendarEvent: {
+			data: {
+				allDay: boolean;
+				categoryColor: string | null;
+				/** Format: uuid */
+				categoryId: string | null;
+				categoryName: string | null;
+				/** Format: date-time */
+				createdAt: string;
+				/** Format: uuid */
+				createdBy: string | null;
+				description: string | null;
+				/** Format: date */
+				endDate: string;
+				endTime: string | null;
+				/** Format: uuid */
+				id: string;
+				isPublic: boolean;
+				location: string | null;
+				reminders: components['schemas']['CalendarEventReminder'][];
+				/** Format: date */
+				startDate: string;
+				startTime: string | null;
+				tags: components['schemas']['CalendarEventTag'][];
+				targets: components['schemas']['CalendarEventTarget'][];
+				title: string;
+				/** Format: date-time */
+				updatedAt: string;
+				/** Format: uuid */
+				updatedBy: string | null;
+			}[];
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_Vec_CalendarPublicEvent: {
+			data: {
+				allDay: boolean;
+				categoryColor: string | null;
+				/** Format: uuid */
+				categoryId: string | null;
+				categoryName: string | null;
+				/** Format: date-time */
+				createdAt: string;
+				description: string | null;
+				/** Format: date */
+				endDate: string;
+				endTime: string | null;
+				/** Format: uuid */
+				id: string;
+				isPublic: boolean;
+				location: string | null;
+				/** Format: date */
+				startDate: string;
+				startTime: string | null;
+				tags: components['schemas']['CalendarEventTag'][];
+				title: string;
+				/** Format: date-time */
+				updatedAt: string;
+			}[];
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_Vec_CalendarTag: {
+			data: {
+				/** Format: date-time */
+				createdAt: string;
+				/** Format: uuid */
+				id: string;
+				name: string;
+				/** Format: date-time */
+				updatedAt: string;
 			}[];
 			message?: string;
 			success: boolean;
@@ -1633,10 +1874,105 @@ export interface components {
 			/** Format: date */
 			started_at?: string | null;
 		};
+		CalendarCategory: {
+			color: string;
+			/** Format: date-time */
+			createdAt: string;
+			/** Format: uuid */
+			id: string;
+			isActive: boolean;
+			name: string;
+			/** Format: int32 */
+			orderIndex: number;
+			/** Format: date-time */
+			updatedAt: string;
+		};
+		CalendarEvent: {
+			allDay: boolean;
+			categoryColor: string | null;
+			/** Format: uuid */
+			categoryId: string | null;
+			categoryName: string | null;
+			/** Format: date-time */
+			createdAt: string;
+			/** Format: uuid */
+			createdBy: string | null;
+			description: string | null;
+			/** Format: date */
+			endDate: string;
+			endTime: string | null;
+			/** Format: uuid */
+			id: string;
+			isPublic: boolean;
+			location: string | null;
+			reminders: components['schemas']['CalendarEventReminder'][];
+			/** Format: date */
+			startDate: string;
+			startTime: string | null;
+			tags: components['schemas']['CalendarEventTag'][];
+			targets: components['schemas']['CalendarEventTarget'][];
+			title: string;
+			/** Format: date-time */
+			updatedAt: string;
+			/** Format: uuid */
+			updatedBy: string | null;
+		};
+		CalendarEventReminder: {
+			/** Format: int32 */
+			daysBefore: number;
+			/** Format: uuid */
+			id: string;
+			/** Format: date */
+			remindOn: string;
+			/** Format: date-time */
+			sentAt: string | null;
+		};
 		CalendarEventTag: {
 			/** Format: uuid */
 			id: string;
 			name: string;
+		};
+		CalendarEventTarget: {
+			audienceType: string;
+			/** Format: uuid */
+			classRoomId: string | null;
+			/** Format: uuid */
+			gradeLevelId: string | null;
+			/** Format: uuid */
+			id: string;
+		};
+		CalendarPublicEvent: {
+			allDay: boolean;
+			categoryColor: string | null;
+			/** Format: uuid */
+			categoryId: string | null;
+			categoryName: string | null;
+			/** Format: date-time */
+			createdAt: string;
+			description: string | null;
+			/** Format: date */
+			endDate: string;
+			endTime: string | null;
+			/** Format: uuid */
+			id: string;
+			isPublic: boolean;
+			location: string | null;
+			/** Format: date */
+			startDate: string;
+			startTime: string | null;
+			tags: components['schemas']['CalendarEventTag'][];
+			title: string;
+			/** Format: date-time */
+			updatedAt: string;
+		};
+		CalendarTag: {
+			/** Format: date-time */
+			createdAt: string;
+			/** Format: uuid */
+			id: string;
+			name: string;
+			/** Format: date-time */
+			updatedAt: string;
 		};
 		CalendarViewerEvent: {
 			allDay: boolean;
@@ -1783,6 +2119,15 @@ export interface components {
 		ListMembersQuery: {
 			include_children?: boolean | null;
 		};
+		ListNotificationsResponse: {
+			items: components['schemas']['Notification'][];
+			/** Format: int64 */
+			limit: number;
+			/** Format: int64 */
+			page: number;
+			/** Format: int64 */
+			unread_count: number;
+		};
 		LoginData: {
 			user: components['schemas']['UserResponse'];
 		};
@@ -1846,6 +2191,18 @@ export interface components {
 			id: string;
 			name: string;
 			path: string;
+		};
+		Notification: {
+			/** Format: date-time */
+			created_at: string;
+			/** Format: uuid */
+			id: string;
+			link: string | null;
+			message: string;
+			/** Format: date-time */
+			read_at: string | null;
+			title: string;
+			type: string;
 		};
 		OrganizationMemberItem: {
 			is_primary: boolean;
@@ -2012,6 +2369,10 @@ export interface components {
 			username: string;
 			userType: string;
 		};
+		PublicSchoolInfoData: {
+			logoUrl: string | null;
+			schoolName: string | null;
+		};
 		PublicStaffOrganizationUnit: {
 			code: string;
 			/** Format: uuid */
@@ -2102,6 +2463,12 @@ export interface components {
 			status: string;
 			/** Format: date-time */
 			updated_at: string;
+		};
+		/** @description Response to frontend — logoUrl built from path */
+		SchoolSettingsResponse: {
+			/** Format: uuid */
+			logoFileId: string | null;
+			logoUrl: string | null;
 		};
 		StaffDashboardOverview: {
 			/** Format: int64 */
@@ -2756,6 +3123,144 @@ export interface operations {
 			};
 		};
 	};
+	listCalendarCategories: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Calendar categories */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_CalendarCategory'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Calendar read permission required */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	listCalendarEvents: {
+		parameters: {
+			query?: {
+				/** @description Audience: all, staff, student, or parent */
+				audience?: string;
+				/** @description Calendar category ID */
+				category_id?: string;
+				/** @description Inclusive range start */
+				from?: string;
+				/** @description Title or description search */
+				q?: string;
+				/** @description Calendar tag ID */
+				tag_id?: string;
+				/** @description Inclusive range end */
+				to?: string;
+				/** @description Visibility: public or private */
+				visibility?: string;
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description School calendar events */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_CalendarEvent'];
+				};
+			};
+			/** @description Invalid date range */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Calendar read permission required */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	listCalendarTags: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Calendar tags */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_CalendarTag'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Calendar read permission required */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
 	lookupAcademicYears: {
 		parameters: {
 			query?: {
@@ -3364,6 +3869,39 @@ export interface operations {
 				};
 				content: {
 					'application/json': components['schemas']['ApiResponse_UserMenuData'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	listNotifications: {
+		parameters: {
+			query?: {
+				limit?: number;
+				page?: number;
+				unread_only?: boolean;
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Current user's notifications */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_ListNotificationsResponse'];
 				};
 			};
 			/** @description Authentication required */
@@ -4381,6 +4919,50 @@ export interface operations {
 			};
 		};
 	};
+	listPublicCalendarEvents: {
+		parameters: {
+			query?: {
+				/** @description Accepted for compatibility; public visibility is always enforced */
+				audience?: string;
+				/** @description Calendar category ID */
+				category_id?: string;
+				/** @description Inclusive range start */
+				from?: string;
+				/** @description Title or description search */
+				q?: string;
+				/** @description Calendar tag ID */
+				tag_id?: string;
+				/** @description Inclusive range end */
+				to?: string;
+				/** @description Accepted for compatibility; public visibility is always enforced */
+				visibility?: string;
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Public calendar events */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_CalendarPublicEvent'];
+				};
+			};
+			/** @description Invalid date range */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
 	listRoles: {
 		parameters: {
 			query?: never;
@@ -4574,6 +5156,64 @@ export interface operations {
 			};
 			/** @description Role not found */
 			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getPublicSchoolInfo: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Public school branding */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_PublicSchoolInfoData'];
+				};
+			};
+		};
+	};
+	getSchoolSettings: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description School settings */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_SchoolSettingsResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Settings read permission required */
+			403: {
 				headers: {
 					[name: string]: unknown;
 				};

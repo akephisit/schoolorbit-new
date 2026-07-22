@@ -5,31 +5,21 @@ type Schemas = components['schemas'];
 
 export type CalendarAudienceType = 'all' | 'staff' | 'student' | 'parent';
 
-export interface CalendarCategory {
-	id: string;
-	name: string;
-	color: string;
-	orderIndex: number;
-	isActive: boolean;
-	createdAt: string;
-	updatedAt: string;
-}
-
-export interface CalendarTag {
-	id: string;
-	name: string;
-	createdAt: string;
-	updatedAt: string;
-}
-
+export type CalendarCategory = Schemas['CalendarCategory'];
+export type CalendarTag = Schemas['CalendarTag'];
 export type CalendarEventTag = Schemas['CalendarEventTag'];
+export type CalendarEventTargetDto = Schemas['CalendarEventTarget'];
+export type CalendarEventReminderDto = Schemas['CalendarEventReminder'];
+export type CalendarEventDto = Schemas['CalendarEvent'];
+export type CalendarPublicEvent = Schemas['CalendarPublicEvent'];
 
-export interface CalendarEventTarget {
-	id: string;
+export type CalendarEventTarget = Omit<CalendarEventTargetDto, 'audienceType'> & {
 	audienceType: CalendarAudienceType;
-	gradeLevelId?: string | null;
-	classRoomId?: string | null;
-}
+};
+export type CalendarEventReminder = CalendarEventReminderDto;
+export type CalendarEvent = Omit<CalendarEventDto, 'targets'> & {
+	targets: CalendarEventTarget[];
+};
 
 export interface CalendarEventTargetInput {
 	audienceType: CalendarAudienceType;
@@ -37,55 +27,23 @@ export interface CalendarEventTargetInput {
 	classRoomId?: string | null;
 }
 
-export interface CalendarEventReminder {
-	id: string;
-	daysBefore: number;
-	remindOn: string;
-	sentAt?: string | null;
-}
-
-export interface CalendarEvent {
-	id: string;
-	categoryId?: string | null;
-	categoryName?: string | null;
-	categoryColor?: string | null;
-	title: string;
-	description?: string | null;
-	location?: string | null;
-	startDate: string;
-	endDate: string;
-	allDay: boolean;
-	startTime?: string | null;
-	endTime?: string | null;
-	isPublic: boolean;
-	tags: CalendarEventTag[];
-	targets: CalendarEventTarget[];
-	reminders: CalendarEventReminder[];
-	createdBy?: string | null;
-	updatedBy?: string | null;
-	createdAt: string;
-	updatedAt: string;
-}
-
 export type CalendarViewerEvent = Schemas['CalendarViewerEvent'];
 
-export interface CalendarPublicEvent {
-	id: string;
-	categoryId?: string | null;
-	categoryName?: string | null;
-	categoryColor?: string | null;
-	title: string;
-	description?: string | null;
-	location?: string | null;
-	startDate: string;
-	endDate: string;
-	allDay: boolean;
-	startTime?: string | null;
-	endTime?: string | null;
-	isPublic: boolean;
-	tags: CalendarEventTag[];
-	createdAt: string;
-	updatedAt: string;
+const CALENDAR_AUDIENCES = new Set<CalendarAudienceType>(['all', 'staff', 'student', 'parent']);
+
+function calendarEventFromDto(dto: CalendarEventDto): CalendarEvent {
+	const targets = dto.targets.map((target): CalendarEventTarget => {
+		if (!CALENDAR_AUDIENCES.has(target.audienceType as CalendarAudienceType)) {
+			throw new Error(`Unsupported calendar audience: ${target.audienceType}`);
+		}
+
+		return {
+			...target,
+			audienceType: target.audienceType as CalendarAudienceType
+		};
+	});
+
+	return { ...dto, targets };
 }
 
 interface CalendarEventBaseFilters {
@@ -166,10 +124,10 @@ function publicCalendarQuery(filters: CalendarPublicEventFilters = {}) {
 export async function listCalendarEvents(
 	filters: CalendarEventFilters = {}
 ): Promise<CalendarEvent[]> {
-	const response = await apiClient.get<CalendarEvent[]>(
+	const response = await apiClient.get<CalendarEventDto[]>(
 		`/api/calendar/events${calendarQuery(filters)}`
 	);
-	return requireApiData(response, 'ไม่สามารถโหลดกิจกรรมปฏิทินได้');
+	return requireApiData(response, 'ไม่สามารถโหลดกิจกรรมปฏิทินได้').map(calendarEventFromDto);
 }
 
 export async function listMyCalendarEvents(
@@ -203,19 +161,19 @@ export async function listPublicCalendarEvents(
 export async function createCalendarEvent(
 	payload: CreateCalendarEventRequest
 ): Promise<CalendarEvent> {
-	const response = await apiClient.post<CalendarEvent>('/api/calendar/events', payload);
-	return requireApiData(response, 'ไม่สามารถสร้างกิจกรรมปฏิทินได้');
+	const response = await apiClient.post<CalendarEventDto>('/api/calendar/events', payload);
+	return calendarEventFromDto(requireApiData(response, 'ไม่สามารถสร้างกิจกรรมปฏิทินได้'));
 }
 
 export async function updateCalendarEvent(
 	id: string,
 	payload: UpdateCalendarEventRequest
 ): Promise<CalendarEvent> {
-	const response = await apiClient.put<CalendarEvent>(
+	const response = await apiClient.put<CalendarEventDto>(
 		`/api/calendar/events/${encodeURIComponent(id)}`,
 		payload
 	);
-	return requireApiData(response, 'ไม่สามารถบันทึกกิจกรรมปฏิทินได้');
+	return calendarEventFromDto(requireApiData(response, 'ไม่สามารถบันทึกกิจกรรมปฏิทินได้'));
 }
 
 export async function deleteCalendarEvent(id: string): Promise<Record<string, never>> {

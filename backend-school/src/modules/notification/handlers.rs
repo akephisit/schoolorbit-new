@@ -1,4 +1,4 @@
-use crate::api_response::ApiResponse;
+use crate::api_response::{ApiErrorResponse, ApiResponse};
 use crate::error::AppError;
 use crate::modules::notification::models::{
     CreateNotificationRequest, ListNotificationsQuery, SubscribePushRequest,
@@ -19,6 +19,17 @@ use tokio::sync::broadcast;
 use uuid::Uuid;
 
 /// List notifications for current user
+#[utoipa::path(
+    get,
+    path = "/api/notifications",
+    operation_id = "listNotifications",
+    tag = "notifications",
+    params(ListNotificationsQuery),
+    responses(
+        (status = 200, description = "Current user's notifications", body = ApiResponse<crate::modules::notification::models::ListNotificationsResponse>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse)
+    )
+)]
 pub async fn list_notifications(
     State(state): State<AppState>,
     headers: HeaderMap,

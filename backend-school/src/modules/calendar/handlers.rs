@@ -18,6 +18,27 @@ use axum::{
 };
 use uuid::Uuid;
 
+#[utoipa::path(
+    get,
+    path = "/api/calendar/events",
+    operation_id = "listCalendarEvents",
+    tag = "calendar",
+    params(
+        ("from" = Option<chrono::NaiveDate>, Query, description = "Inclusive range start"),
+        ("to" = Option<chrono::NaiveDate>, Query, description = "Inclusive range end"),
+        ("category_id" = Option<Uuid>, Query, description = "Calendar category ID"),
+        ("tag_id" = Option<Uuid>, Query, description = "Calendar tag ID"),
+        ("audience" = Option<String>, Query, description = "Audience: all, staff, student, or parent"),
+        ("visibility" = Option<String>, Query, description = "Visibility: public or private"),
+        ("q" = Option<String>, Query, description = "Title or description search")
+    ),
+    responses(
+        (status = 200, description = "School calendar events", body = ApiResponse<Vec<crate::modules::calendar::models::CalendarEvent>>),
+        (status = 400, description = "Invalid date range", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Calendar read permission required", body = ApiErrorResponse)
+    )
+)]
 pub async fn list_calendar_events(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -115,6 +136,17 @@ pub async fn delete_calendar_event(
     Ok(Json(ApiResponse::empty()))
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/calendar/categories",
+    operation_id = "listCalendarCategories",
+    tag = "calendar",
+    responses(
+        (status = 200, description = "Calendar categories", body = ApiResponse<Vec<crate::modules::calendar::models::CalendarCategory>>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Calendar read permission required", body = ApiErrorResponse)
+    )
+)]
 pub async fn list_calendar_categories(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -167,6 +199,17 @@ pub async fn delete_calendar_category(
     Ok(Json(ApiResponse::empty()))
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/calendar/tags",
+    operation_id = "listCalendarTags",
+    tag = "calendar",
+    responses(
+        (status = 200, description = "Calendar tags", body = ApiResponse<Vec<crate::modules::calendar::models::CalendarTag>>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Calendar read permission required", body = ApiErrorResponse)
+    )
+)]
 pub async fn list_calendar_tags(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -251,6 +294,25 @@ pub async fn list_my_calendar_events(
     Ok(Json(ApiResponse::ok(events)))
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/public/calendar/events",
+    operation_id = "listPublicCalendarEvents",
+    tag = "calendar",
+    params(
+        ("from" = Option<chrono::NaiveDate>, Query, description = "Inclusive range start"),
+        ("to" = Option<chrono::NaiveDate>, Query, description = "Inclusive range end"),
+        ("category_id" = Option<Uuid>, Query, description = "Calendar category ID"),
+        ("tag_id" = Option<Uuid>, Query, description = "Calendar tag ID"),
+        ("audience" = Option<String>, Query, description = "Accepted for compatibility; public visibility is always enforced"),
+        ("visibility" = Option<String>, Query, description = "Accepted for compatibility; public visibility is always enforced"),
+        ("q" = Option<String>, Query, description = "Title or description search")
+    ),
+    responses(
+        (status = 200, description = "Public calendar events", body = ApiResponse<Vec<crate::modules::calendar::models::CalendarPublicEvent>>),
+        (status = 400, description = "Invalid date range", body = ApiErrorResponse)
+    )
+)]
 pub async fn list_public_calendar_events(
     State(state): State<AppState>,
     headers: HeaderMap,
