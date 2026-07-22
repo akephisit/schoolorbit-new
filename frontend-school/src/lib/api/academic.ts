@@ -22,6 +22,26 @@ export type CreateGradeLevelRequest = Schemas['CreateGradeLevelRequest'];
 export type CreateClassroomRequest = Schemas['CreateClassroomRequest'];
 export type UpdateClassroomRequest = Schemas['UpdateClassroomRequest'];
 export type EnrollStudentRequest = Schemas['EnrollStudentRequest'];
+export type SubjectGroup = Schemas['SubjectGroup'];
+export type Subject = Schemas['Subject'];
+export type CurriculumInstructorRole = Schemas['CurriculumInstructorRole'];
+export type SubjectDefaultInstructor = Schemas['SubjectDefaultInstructor'];
+export type CreateSubjectRequest = Schemas['CreateSubjectRequest'];
+export type UpdateSubjectRequest = Schemas['UpdateSubjectRequest'];
+export type AddSubjectDefaultInstructorRequest = Schemas['AddSubjectDefaultInstructorRequest'];
+export type UpdateSubjectDefaultInstructorRoleRequest =
+	Schemas['UpdateSubjectDefaultInstructorRoleRequest'];
+export type StudyPlan = Schemas['StudyPlan'];
+export type CreateStudyPlanRequest = Schemas['CreateStudyPlanRequest'];
+export type UpdateStudyPlanRequest = Schemas['UpdateStudyPlanRequest'];
+export type StudyPlanVersion = Schemas['StudyPlanVersion'];
+export type CreateStudyPlanVersionRequest = Schemas['CreateStudyPlanVersionRequest'];
+export type UpdateStudyPlanVersionRequest = Schemas['UpdateStudyPlanVersionRequest'];
+export type StudyPlanSubject = Schemas['StudyPlanSubject'];
+export type AddSubjectsToVersionRequest = Schemas['AddSubjectsToVersionRequest'];
+export type SubjectInPlan = Schemas['SubjectInPlan'];
+export type GenerateCoursesFromPlanRequest = Schemas['GenerateCoursesFromPlanRequest'];
+export type GenerateCoursesFromPlanResponse = Schemas['GenerateCoursesData'];
 
 // Lookup Types
 export interface LookupItem {
@@ -180,35 +200,6 @@ export const autoAssignClassNumbers = async (
 // Curriculum API
 // ==========================================
 
-export interface SubjectGroup {
-	id: string;
-	code: string;
-	name_th: string;
-	name_en: string;
-	display_order: number;
-	is_active: boolean;
-}
-
-export interface Subject {
-	id: string;
-	code: string;
-	start_academic_year_id: string; // effective-from year for this subject version
-	name_th: string;
-	name_en?: string;
-	credit: number;
-	hours_per_semester?: number;
-	type: 'BASIC' | 'ADDITIONAL' | 'ACTIVITY';
-	group_id?: string;
-	description?: string;
-	is_active: boolean;
-	group_name_th?: string;
-	grade_level_ids?: string[];
-	term?: string;
-	default_instructor_name?: string;
-	/** Pass on create/update to replace default instructor team atomically. */
-	default_instructors?: { instructor_id: string; role: 'primary' | 'secondary' }[];
-}
-
 export const listSubjectGroups = async (): Promise<{ data: SubjectGroup[] }> => {
 	return await fetchApi<SubjectGroup[]>('/api/academic/subjects/groups');
 };
@@ -239,14 +230,14 @@ export const listSubjects = async (
 	return await fetchApi<Subject[]>(`/api/academic/subjects${queryString}`);
 };
 
-export const createSubject = async (data: Partial<Subject>) => {
+export const createSubject = async (data: CreateSubjectRequest) => {
 	return await fetchApi<Subject>('/api/academic/subjects', {
 		method: 'POST',
 		body: JSON.stringify(data)
 	});
 };
 
-export const updateSubject = async (id: string, data: Partial<Subject>) => {
+export const updateSubject = async (id: string, data: UpdateSubjectRequest) => {
 	return await fetchApi<Subject>(`/api/academic/subjects/${id}`, {
 		method: 'PUT',
 		body: JSON.stringify(data)
@@ -367,50 +358,6 @@ export const updateCourse = async (
 // Study Plans (หลักสูตรสถานศึกษา)
 // ==========================================
 
-export interface StudyPlan {
-	id: string;
-	code: string;
-	name_th: string;
-	name_en?: string;
-	description?: string;
-	grade_level_ids?: string[];
-	is_active: boolean;
-	created_at: string;
-	updated_at: string;
-}
-
-export interface StudyPlanVersion {
-	id: string;
-	study_plan_id: string;
-	version_name: string;
-	start_academic_year_id: string;
-	end_academic_year_id?: string;
-	description?: string;
-	is_active: boolean;
-	created_at: string;
-	updated_at: string;
-	// Joined fields
-	study_plan_name_th?: string;
-	start_year_name?: string;
-}
-
-export interface StudyPlanSubject {
-	id: string;
-	study_plan_version_id: string;
-	grade_level_id: string;
-	term: string; // '1', '2', '3'
-	subject_id: string;
-	subject_code: string;
-	display_order: number;
-	// Joined fields
-	subject_name_th?: string;
-	subject_name_en?: string;
-	subject_credit?: number;
-	subject_type?: string;
-	subject_hours?: number;
-	grade_level_name?: string;
-}
-
 // Study Plans CRUD
 export const listStudyPlans = async (
 	filters: {
@@ -428,20 +375,14 @@ export const getStudyPlan = async (id: string): Promise<{ data: StudyPlan }> => 
 	return await fetchApi<StudyPlan>(`/api/academic/study-plans/${id}`);
 };
 
-export const createStudyPlan = async (data: {
-	code: string;
-	name_th: string;
-	name_en?: string;
-	description?: string;
-	grade_level_ids?: string[];
-}) => {
+export const createStudyPlan = async (data: CreateStudyPlanRequest) => {
 	return await fetchApi<StudyPlan>('/api/academic/study-plans', {
 		method: 'POST',
 		body: JSON.stringify(data)
 	});
 };
 
-export const updateStudyPlan = async (id: string, data: Partial<StudyPlan>) => {
+export const updateStudyPlan = async (id: string, data: UpdateStudyPlanRequest) => {
 	return await fetchApi<StudyPlan>(`/api/academic/study-plans/${id}`, {
 		method: 'PUT',
 		body: JSON.stringify(data)
@@ -473,20 +414,14 @@ export const getStudyPlanVersion = async (id: string): Promise<{ data: StudyPlan
 	return await fetchApi<StudyPlanVersion>(`/api/academic/study-plan-versions/${id}`);
 };
 
-export const createStudyPlanVersion = async (data: {
-	study_plan_id: string;
-	version_name: string;
-	start_academic_year_id: string;
-	end_academic_year_id?: string;
-	description?: string;
-}) => {
+export const createStudyPlanVersion = async (data: CreateStudyPlanVersionRequest) => {
 	return await fetchApi<StudyPlanVersion>('/api/academic/study-plan-versions', {
 		method: 'POST',
 		body: JSON.stringify(data)
 	});
 };
 
-export const updateStudyPlanVersion = async (id: string, data: Partial<StudyPlanVersion>) => {
+export const updateStudyPlanVersion = async (id: string, data: UpdateStudyPlanVersionRequest) => {
 	return await fetchApi<StudyPlanVersion>(`/api/academic/study-plan-versions/${id}`, {
 		method: 'PUT',
 		body: JSON.stringify(data)
@@ -521,12 +456,7 @@ export const listStudyPlanSubjects = async (
 
 export const addSubjectsToVersion = async (
 	versionId: string,
-	subjects: {
-		subject_id: string;
-		grade_level_id: string;
-		term: string;
-		display_order?: number;
-	}[]
+	subjects: SubjectInPlan[]
 ) => {
 	return await fetchApi<{ count: number }>(
 		`/api/academic/study-plan-versions/${versionId}/subjects`,
@@ -544,11 +474,9 @@ export const deleteStudyPlanSubject = async (id: string) => {
 };
 
 // Bulk: Generate Courses (+ activities) from Study Plan
-export const generateCoursesFromPlan = async (data: {
-	classroom_id: string;
-	academic_semester_id: string;
-	skip_existing?: boolean;
-}): Promise<GenerateCoursesFromPlanResponse> => {
+export const generateCoursesFromPlan = async (
+	data: GenerateCoursesFromPlanRequest
+): Promise<GenerateCoursesFromPlanResponse> => {
 	const response = await fetchApi<GenerateCoursesFromPlanResponse>(
 		'/api/academic/planning/generate-from-plan',
 		{
@@ -558,14 +486,6 @@ export const generateCoursesFromPlan = async (data: {
 	);
 	return response.data;
 };
-
-export interface GenerateCoursesFromPlanResponse {
-	items: { added_count: number; skipped_count: number; message: string };
-	courses_created: number;
-	courses_skipped: number;
-	activities_created: number;
-	activities_skipped: number;
-}
 
 export interface ActivitySlot {
 	id: string;
@@ -984,14 +904,6 @@ export const updateCourseInstructorRole = async (
 // ครูประจำวิชาใน คลังรายวิชา — auto-copy ไป classroom_course_instructors ตอน assign
 // ==========================================
 
-export interface SubjectDefaultInstructor {
-	id: string;
-	subject_id: string;
-	instructor_id: string;
-	role: 'primary' | 'secondary';
-	instructor_name?: string;
-}
-
 export const listSubjectDefaultInstructors = async (
 	subjectId: string
 ): Promise<{ data: SubjectDefaultInstructor[] }> => {
@@ -1013,7 +925,7 @@ export const batchListSubjectDefaultInstructors = async (
 export const addSubjectDefaultInstructor = async (
 	subjectId: string,
 	instructorId: string,
-	role: 'primary' | 'secondary' = 'secondary'
+	role: CurriculumInstructorRole = 'secondary'
 ) => {
 	return await fetchApi(`/api/academic/subjects/${subjectId}/default-instructors`, {
 		method: 'POST',
@@ -1030,7 +942,7 @@ export const removeSubjectDefaultInstructor = async (subjectId: string, instruct
 export const updateSubjectDefaultInstructorRole = async (
 	subjectId: string,
 	instructorId: string,
-	role: 'primary' | 'secondary'
+	role: CurriculumInstructorRole
 ) => {
 	return await fetchApi(`/api/academic/subjects/${subjectId}/default-instructors/${instructorId}`, {
 		method: 'PUT',

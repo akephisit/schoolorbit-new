@@ -341,8 +341,11 @@
 		}
 
 		planForm = {
-			...getEmptyPlanForm(),
-			...plan,
+			id: plan.id,
+			code: plan.code,
+			name_th: plan.name_th,
+			name_en: plan.name_en ?? '',
+			description: plan.description ?? '',
 			grade_level_ids: plan.grade_level_ids ?? []
 		};
 		showPlanDialog = true;
@@ -361,10 +364,11 @@
 
 		submitting = true;
 		try {
-			if (planForm.id) {
-				await updateStudyPlan(planForm.id, planForm);
+			const { id, ...payload } = planForm;
+			if (id) {
+				await updateStudyPlan(id, payload);
 			} else {
-				await createStudyPlan(planForm);
+				await createStudyPlan(payload);
 			}
 			showPlanDialog = false;
 			await initData();
@@ -396,7 +400,14 @@
 			return;
 		}
 
-		versionForm = { ...version };
+		versionForm = {
+			id: version.id,
+			study_plan_id: version.study_plan_id,
+			version_name: version.version_name,
+			start_academic_year_id: version.start_academic_year_id,
+			end_academic_year_id: version.end_academic_year_id ?? '',
+			description: version.description ?? ''
+		};
 		showVersionDialog = true;
 	}
 
@@ -413,10 +424,11 @@
 
 		submitting = true;
 		try {
-			if (versionForm.id) {
-				await updateStudyPlanVersion(versionForm.id, versionForm);
+			const { id, ...payload } = versionForm;
+			if (id) {
+				await updateStudyPlanVersion(id, payload);
 			} else {
-				await createStudyPlanVersion(versionForm);
+				await createStudyPlanVersion(payload);
 			}
 			showVersionDialog = false;
 			if (selectedPlan) {
@@ -847,7 +859,7 @@
 			return;
 		}
 
-		handleOpenDelete('subject', s.id, s.subject_name_th || s.subject_code);
+		handleOpenDelete('subject', s.id, s.subject_name_th || s.subject_code || 'รายวิชา');
 	}
 
 	onMount(() => {

@@ -21,6 +21,7 @@
 		ACTIVITY_TYPE_LABELS,
 		type Subject,
 		type SubjectGroup,
+		type CreateSubjectRequest,
 		type LookupItem,
 		type ActivityCatalog
 	} from '$lib/api/academic';
@@ -283,7 +284,23 @@
 	let submitting = $state(false);
 	let deleting = $state(false);
 	let showAdvanced = $state(false);
-	let currentSubject: Partial<Subject> = $state(getInitialSubjectState());
+	type SubjectForm = {
+		id?: string;
+		code: string;
+		start_academic_year_id: string;
+		name_th: string;
+		name_en: string;
+		credit: number;
+		hours_per_semester?: number;
+		type: Subject['type'];
+		group_id: string;
+		description: string;
+		is_active: boolean;
+		grade_level_ids: string[];
+		term: string;
+	};
+
+	let currentSubject: SubjectForm = $state(getInitialSubjectState());
 
 	// Unified Add Dialog State
 	let showUnifiedAddDialog = $state(false);
@@ -309,7 +326,7 @@
 			teamDraft = (res.data ?? []).map((r) => ({
 				instructor_id: r.instructor_id,
 				role: r.role,
-				instructor_name: r.instructor_name
+				instructor_name: r.instructor_name ?? undefined
 			}));
 			// Smart default role after load
 			teamAddRole = teamDraft.some((t) => t.role === 'primary') ? 'secondary' : 'primary';
@@ -487,7 +504,7 @@
 		return nextYear != null ? `ปี ${startYear}–${nextYear}` : `ตั้งแต่ปี ${startYear}`;
 	}
 
-	function getInitialSubjectState(): Partial<Subject> {
+	function getInitialSubjectState(): SubjectForm {
 		// Find current/active academic year from the list, or use first one
 		const currentYear = academicYears.find((y) => y.is_current) || academicYears[0];
 
@@ -502,7 +519,26 @@
 			group_id: '',
 			grade_level_ids: [],
 			description: '',
+			term: '',
 			is_active: true
+		};
+	}
+
+	function subjectToForm(subject: Subject): SubjectForm {
+		return {
+			id: subject.id,
+			code: subject.code,
+			start_academic_year_id: subject.start_academic_year_id,
+			name_th: subject.name_th,
+			name_en: subject.name_en ?? '',
+			credit: subject.credit,
+			hours_per_semester: subject.hours_per_semester ?? undefined,
+			type: subject.type,
+			group_id: subject.group_id ?? '',
+			description: subject.description ?? '',
+			is_active: subject.is_active,
+			grade_level_ids: subject.grade_level_ids ?? [],
+			term: subject.term ?? ''
 		};
 	}
 
@@ -591,7 +627,7 @@
 			return;
 		}
 
-		currentSubject = { ...subject }; // Clone
+		currentSubject = subjectToForm(subject);
 		isEditing = true;
 		isNewVersion = false;
 		showDialog = true;
@@ -624,7 +660,7 @@
 			grade_level_ids: [...(subject.grade_level_ids ?? [])],
 			term: subject.term ?? '',
 			credit: subject.credit,
-			hours_per_semester: subject.hours_per_semester,
+			hours_per_semester: subject.hours_per_semester ?? undefined,
 			description: subject.description ?? '',
 			is_active: true
 		};
@@ -645,7 +681,7 @@
 			return;
 		}
 
-		currentSubject = { ...subject };
+		currentSubject = subjectToForm(subject);
 		showDeleteDialog = true;
 	}
 
@@ -662,33 +698,30 @@
 
 		submitting = true;
 		try {
-			// Sanitize payload: convert empty strings to null for UUID fields to avoid 422 errors
-			// Sanitize all UUID & Optional fields
-			const payload = { ...currentSubject };
-
-			// Helper: Convert empty string to null.
-			// Note: Keep 0 for numbers!
-			const nullify = <T,>(val: T | '' | undefined): T | null =>
-				val === '' || val === undefined ? null : (val as T);
-
-			payload.group_id = nullify(payload.group_id) ?? undefined;
-			payload.start_academic_year_id = nullify(payload.start_academic_year_id) ?? '';
-			payload.description = nullify(payload.description) ?? undefined;
-			payload.term = nullify(payload.term) ?? undefined;
-
-			if ((payload.credit as unknown) === '') payload.credit = 0;
-			if ((payload.hours_per_semester as unknown) === '') payload.hours_per_semester = undefined;
-
-			// Attach full team — backend replaces subject_default_instructors atomically.
-			// Empty array clears all defaults. Strip the instructor_name helper before send.
-			payload.default_instructors = teamDraft.map((t) => ({
-				instructor_id: t.instructor_id,
-				role: t.role
-			}));
+			const payload: CreateSubjectRequest = {
+				code: currentSubject.code,
+				start_academic_year_id: currentSubject.start_academic_year_id,
+				name_th: currentSubject.name_th,
+				name_en: currentSubject.name_en || null,
+				credit: currentSubject.credit,
+				hours_per_semester: currentSubject.hours_per_semester ?? null,
+				type: currentSubject.type,
+				group_id: currentSubject.group_id || null,
+				description: currentSubject.description || null,
+				grade_level_ids: currentSubject.grade_level_ids,
+				term: currentSubject.term || null,
+				default_instructors: teamDraft.map((teacher) => ({
+					instructor_id: teacher.instructor_id,
+					role: teacher.role
+				}))
+			};
 
 			let savedSubject: Subject;
-			if (isEditing && payload.id) {
-				const res = await updateSubject(payload.id, payload);
+			if (isEditing && currentSubject.id) {
+				const res = await updateSubject(currentSubject.id, {
+					...payload,
+					is_active: currentSubject.is_active
+				});
 				savedSubject = res.data;
 				toast.success('บันทึกแล้ว');
 			} else {
