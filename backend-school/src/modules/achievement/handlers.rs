@@ -1,4 +1,4 @@
-use crate::api_response::ApiResponse;
+use crate::api_response::{ApiErrorResponse, ApiResponse};
 use crate::error::AppError;
 use crate::modules::achievement::models::*;
 use crate::modules::achievement::services as achievement_service;
@@ -12,6 +12,18 @@ use axum::{
 };
 use uuid::Uuid;
 
+#[utoipa::path(
+    get,
+    path = "/api/achievements",
+    operation_id = "listAchievements",
+    tag = "achievement",
+    params(AchievementListFilter),
+    responses(
+        (status = 200, description = "Scoped achievement list", body = ApiResponse<Vec<Achievement>>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Achievement read permission denied", body = ApiErrorResponse)
+    )
+)]
 pub async fn list_achievements(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -25,6 +37,18 @@ pub async fn list_achievements(
     Ok((StatusCode::OK, Json(ApiResponse::ok(items))).into_response())
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/achievements",
+    operation_id = "createAchievement",
+    tag = "achievement",
+    request_body = CreateAchievementRequest,
+    responses(
+        (status = 201, description = "Achievement created", body = ApiResponse<Achievement>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Achievement creation permission denied", body = ApiErrorResponse)
+    )
+)]
 pub async fn create_achievement(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -38,6 +62,20 @@ pub async fn create_achievement(
     Ok((StatusCode::CREATED, Json(ApiResponse::ok(achievement))).into_response())
 }
 
+#[utoipa::path(
+    put,
+    path = "/api/achievements/{id}",
+    operation_id = "updateAchievement",
+    tag = "achievement",
+    params(("id" = Uuid, Path, description = "Achievement ID")),
+    request_body = UpdateAchievementRequest,
+    responses(
+        (status = 200, description = "Achievement updated", body = ApiResponse<Achievement>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Achievement update permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Achievement not found", body = ApiErrorResponse)
+    )
+)]
 pub async fn update_achievement(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -52,6 +90,19 @@ pub async fn update_achievement(
     Ok((StatusCode::OK, Json(ApiResponse::ok(achievement))).into_response())
 }
 
+#[utoipa::path(
+    delete,
+    path = "/api/achievements/{id}",
+    operation_id = "deleteAchievement",
+    tag = "achievement",
+    params(("id" = Uuid, Path, description = "Achievement ID")),
+    responses(
+        (status = 200, description = "Achievement deleted", body = ApiResponse<crate::api_response::EmptyData>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Achievement deletion permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Achievement not found", body = ApiErrorResponse)
+    )
+)]
 pub async fn delete_achievement(
     State(state): State<AppState>,
     headers: HeaderMap,

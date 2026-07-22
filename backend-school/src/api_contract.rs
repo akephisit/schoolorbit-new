@@ -4,6 +4,9 @@ use crate::modules::academic::models::exam_schedule::{
     PersonalExamScheduleRound, PersonalExamSessionView,
 };
 use crate::modules::academic::models::timetable::TimetableEntry;
+use crate::modules::achievement::models::{
+    Achievement, AchievementListFilter, CreateAchievementRequest, UpdateAchievementRequest,
+};
 use crate::modules::auth::models::{
     ChangePasswordRequest, LoginData, LoginRequest, ProfileResponse, UpdateProfileRequest,
     UserResponse,
@@ -94,6 +97,10 @@ use utoipa::OpenApi;
         crate::modules::students::handlers::delete_student,
         crate::modules::students::handlers_parents::add_parent_to_student,
         crate::modules::students::handlers_parents::remove_parent_from_student,
+        crate::modules::achievement::handlers::list_achievements,
+        crate::modules::achievement::handlers::create_achievement,
+        crate::modules::achievement::handlers::update_achievement,
+        crate::modules::achievement::handlers::delete_achievement,
         crate::modules::parents::handlers::get_own_parent_profile,
         crate::modules::parents::handlers::get_child_profile,
         crate::modules::parents::handlers::get_child_timetable,
@@ -242,6 +249,12 @@ use utoipa::OpenApi;
         CreateParentRequest,
         UpdateStudentRequest,
         CreateStudentResponse,
+        Achievement,
+        AchievementListFilter,
+        CreateAchievementRequest,
+        UpdateAchievementRequest,
+        ApiResponse<Vec<Achievement>>,
+        ApiResponse<Achievement>,
         ChildDto,
         ParentProfile,
         ApiResponse<StudentProfile>,
@@ -289,7 +302,8 @@ use utoipa::OpenApi;
         (name = "academic", description = "Academic self-service reads"),
         (name = "calendar", description = "Calendar reads"),
         (name = "school", description = "School settings and public branding reads"),
-        (name = "notifications", description = "Current-user notification reads")
+        (name = "notifications", description = "Current-user notification reads"),
+        (name = "achievement", description = "Scoped staff achievement operations")
     )
 )]
 struct SchoolApiDoc;
@@ -757,6 +771,91 @@ mod tests {
                 "incorrect success envelope for {method} {path}"
             );
         }
+    }
+
+    #[test]
+    fn people_achievement_contracts() {
+        let document = school_api_value().expect("document should serialize");
+        assert_operations(
+            &document,
+            &[
+                ("/api/achievements", "get", "listAchievements"),
+                ("/api/achievements", "post", "createAchievement"),
+                ("/api/achievements/{id}", "put", "updateAchievement"),
+                ("/api/achievements/{id}", "delete", "deleteAchievement"),
+            ],
+        );
+
+        let list = &document["paths"]["/api/achievements"]["get"];
+        let parameters = list["parameters"]
+            .as_array()
+            .expect("achievement filters must be query parameters");
+        let user_id = parameters
+            .iter()
+            .find(|parameter| parameter["name"] == "user_id")
+            .expect("achievement user filter");
+        assert_eq!(user_id["in"], "query");
+        assert_eq!(user_id["schema"]["format"], "uuid");
+        for name in ["start_date", "end_date"] {
+            let parameter = parameters
+                .iter()
+                .find(|parameter| parameter["name"] == name)
+                .unwrap_or_else(|| panic!("missing achievement {name} filter"));
+            assert_eq!(parameter["in"], "query");
+            assert_eq!(parameter["schema"]["format"], "date");
+        }
+        assert_eq!(
+            list["responses"]["200"]["content"]["application/json"]["schema"]["$ref"],
+            "#/components/schemas/ApiResponse_Vec_Achievement"
+        );
+
+        let create = &document["paths"]["/api/achievements"]["post"];
+        assert_eq!(
+            create["responses"]["201"]["content"]["application/json"]["schema"]["$ref"],
+            "#/components/schemas/ApiResponse_Achievement"
+        );
+        let update = &document["paths"]["/api/achievements/{id}"]["put"];
+        assert_eq!(
+            update["responses"]["200"]["content"]["application/json"]["schema"]["$ref"],
+            "#/components/schemas/ApiResponse_Achievement"
+        );
+        let delete = &document["paths"]["/api/achievements/{id}"]["delete"];
+        assert_eq!(
+            delete["responses"]["200"]["content"]["application/json"]["schema"]["$ref"],
+            "#/components/schemas/ApiResponse_EmptyData"
+        );
+        for operation in [list, create, update, delete] {
+            for status in ["401", "403"] {
+                assert_eq!(
+                    operation["responses"][status]["content"]["application/json"]["schema"]["$ref"],
+                    "#/components/schemas/ApiErrorResponse"
+                );
+            }
+        }
+        for operation in [update, delete] {
+            assert_eq!(
+                operation["responses"]["404"]["content"]["application/json"]["schema"]["$ref"],
+                "#/components/schemas/ApiErrorResponse"
+            );
+        }
+
+        let achievement = &document["components"]["schemas"]["Achievement"];
+        for field in [
+            "description",
+            "image_path",
+            "created_by",
+            "user_first_name",
+            "user_last_name",
+            "user_profile_image_url",
+        ] {
+            assert!(required(achievement).contains(&field));
+            assert!(contains_null(&achievement["properties"][field]));
+        }
+        assert_eq!(achievement["properties"]["id"]["format"], "uuid");
+        assert_eq!(
+            achievement["properties"]["achievement_date"]["format"],
+            "date"
+        );
     }
 
     #[test]
@@ -1312,7 +1411,7 @@ mod tests {
                 }
             }
         }
-        assert_eq!(operation_ids.len(), 77);
+        assert_eq!(operation_ids.len(), 81);
 
         let schemas = &document["components"]["schemas"];
         let delegation = &schemas["DelegationItem"];
