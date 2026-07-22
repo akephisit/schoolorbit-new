@@ -42,6 +42,50 @@ pub async fn resolve_subject_manage_access(
         .map(Some)
 }
 
+pub fn ensure_curriculum_read(actor: &ActorContext) -> Result<(), AppError> {
+    ensure_curriculum_access(
+        actor,
+        curriculum_read_permissions(actor),
+        codes::ACADEMIC_CURRICULUM_READ_ALL,
+    )
+}
+
+pub fn ensure_curriculum_create(actor: &ActorContext) -> Result<(), AppError> {
+    ensure_curriculum_access(
+        actor,
+        curriculum_manage_permissions(codes::ACADEMIC_CURRICULUM_CREATE_ALL),
+        codes::ACADEMIC_CURRICULUM_CREATE_ALL,
+    )
+}
+
+pub fn ensure_curriculum_update(actor: &ActorContext) -> Result<(), AppError> {
+    ensure_curriculum_access(
+        actor,
+        curriculum_manage_permissions(codes::ACADEMIC_CURRICULUM_UPDATE_ALL),
+        codes::ACADEMIC_CURRICULUM_UPDATE_ALL,
+    )
+}
+
+pub fn ensure_curriculum_delete(actor: &ActorContext) -> Result<(), AppError> {
+    ensure_curriculum_access(
+        actor,
+        curriculum_manage_permissions(codes::ACADEMIC_CURRICULUM_DELETE_ALL),
+        codes::ACADEMIC_CURRICULUM_DELETE_ALL,
+    )
+}
+
+fn ensure_curriculum_access(
+    actor: &ActorContext,
+    permissions: ResourceAccessPermissions,
+    school_permission: &'static str,
+) -> Result<(), AppError> {
+    if resource_access_policy::resolve_user_resource_list_access(actor, permissions).is_some() {
+        return Ok(());
+    }
+
+    Err(AppError::Forbidden(format!("ไม่มีสิทธิ์ {school_permission}")))
+}
+
 pub async fn ensure_subject_manage(
     actor: &ActorContext,
     pool: &PgPool,
@@ -193,5 +237,36 @@ mod tests {
             permissions.school,
             Some(codes::ACADEMIC_CURRICULUM_UPDATE_ALL)
         );
+    }
+
+    #[test]
+    fn curriculum_plan_helpers_accept_the_same_scoped_permissions_as_the_frontend() {
+        let scoped_reader = actor(
+            Uuid::new_v4(),
+            &[codes::ACADEMIC_CURRICULUM_READ_ORGANIZATION_TREE],
+        );
+        let scoped_manager = actor(
+            Uuid::new_v4(),
+            &[codes::ACADEMIC_CURRICULUM_MANAGE_ORGANIZATION_UNIT],
+        );
+
+        assert!(ensure_curriculum_read(&scoped_reader).is_ok());
+        assert!(ensure_curriculum_create(&scoped_manager).is_ok());
+        assert!(ensure_curriculum_update(&scoped_manager).is_ok());
+        assert!(ensure_curriculum_delete(&scoped_manager).is_ok());
+    }
+
+    #[test]
+    fn curriculum_plan_helpers_reject_unrelated_permissions() {
+        let unrelated = actor(Uuid::new_v4(), &[codes::ACADEMIC_COURSE_PLAN_READ_ALL]);
+
+        assert!(matches!(
+            ensure_curriculum_read(&unrelated),
+            Err(AppError::Forbidden(_))
+        ));
+        assert!(matches!(
+            ensure_curriculum_update(&unrelated),
+            Err(AppError::Forbidden(_))
+        ));
     }
 }

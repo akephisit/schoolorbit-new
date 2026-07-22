@@ -1,7 +1,11 @@
 use crate::api_response::ApiResponse;
 use crate::error::AppError;
 use crate::modules::academic::services::study_plan_service;
-use crate::utils::request_context::{optional_user_id_from_headers, tenant_pool};
+use crate::permissions::registry::codes;
+use crate::policies::curriculum_access_policy;
+use crate::utils::request_context::{
+    actor_tenant_context, optional_user_id_from_headers, tenant_pool,
+};
 use crate::AppState;
 
 use axum::{
@@ -38,7 +42,10 @@ pub async fn list_study_plans(
     headers: HeaderMap,
     Query(query): Query<StudyPlanQuery>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = tenant_pool(&state, &headers).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    curriculum_access_policy::ensure_curriculum_read(&actor)?;
     let plans = study_plan_service::list_plans(&pool, query).await?;
     Ok(Json(ApiResponse::ok(plans)))
 }
@@ -48,7 +55,10 @@ pub async fn get_study_plan(
     headers: HeaderMap,
     Path(plan_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = tenant_pool(&state, &headers).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    curriculum_access_policy::ensure_curriculum_read(&actor)?;
     let plan = study_plan_service::get_plan(&pool, plan_id).await?;
     Ok(Json(ApiResponse::ok(plan)))
 }
@@ -58,7 +68,10 @@ pub async fn create_study_plan(
     headers: HeaderMap,
     Json(req): Json<CreateStudyPlanRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = tenant_pool(&state, &headers).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    curriculum_access_policy::ensure_curriculum_create(&actor)?;
     let plan = study_plan_service::create_plan(&pool, req).await?;
     Ok((StatusCode::CREATED, Json(ApiResponse::ok(plan))))
 }
@@ -69,7 +82,10 @@ pub async fn update_study_plan(
     Path(plan_id): Path<Uuid>,
     Json(req): Json<UpdateStudyPlanRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = tenant_pool(&state, &headers).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    curriculum_access_policy::ensure_curriculum_update(&actor)?;
     let plan = study_plan_service::update_plan(&pool, plan_id, req).await?;
     Ok(Json(ApiResponse::ok(plan)))
 }
@@ -79,7 +95,10 @@ pub async fn delete_study_plan(
     headers: HeaderMap,
     Path(plan_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = tenant_pool(&state, &headers).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    curriculum_access_policy::ensure_curriculum_delete(&actor)?;
     study_plan_service::delete_plan(&pool, plan_id).await?;
     Ok((StatusCode::OK, Json(ApiResponse::empty())))
 }
@@ -93,7 +112,10 @@ pub async fn list_study_plan_versions(
     headers: HeaderMap,
     Query(query): Query<StudyPlanVersionQuery>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = tenant_pool(&state, &headers).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    curriculum_access_policy::ensure_curriculum_read(&actor)?;
     let versions = study_plan_service::list_versions(&pool, query).await?;
     Ok(Json(ApiResponse::ok(versions)))
 }
@@ -103,7 +125,10 @@ pub async fn get_study_plan_version(
     headers: HeaderMap,
     Path(version_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = tenant_pool(&state, &headers).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    curriculum_access_policy::ensure_curriculum_read(&actor)?;
     let version = study_plan_service::get_version(&pool, version_id).await?;
     Ok(Json(ApiResponse::ok(version)))
 }
@@ -113,7 +138,10 @@ pub async fn create_study_plan_version(
     headers: HeaderMap,
     Json(req): Json<CreateStudyPlanVersionRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = tenant_pool(&state, &headers).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    curriculum_access_policy::ensure_curriculum_create(&actor)?;
     let version = study_plan_service::create_version(&pool, req).await?;
     Ok((StatusCode::CREATED, Json(ApiResponse::ok(version))))
 }
@@ -124,7 +152,10 @@ pub async fn update_study_plan_version(
     Path(version_id): Path<Uuid>,
     Json(req): Json<UpdateStudyPlanVersionRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = tenant_pool(&state, &headers).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    curriculum_access_policy::ensure_curriculum_update(&actor)?;
     let version = study_plan_service::update_version(&pool, version_id, req).await?;
     Ok(Json(ApiResponse::ok(version)))
 }
@@ -134,7 +165,10 @@ pub async fn delete_study_plan_version(
     headers: HeaderMap,
     Path(version_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = tenant_pool(&state, &headers).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    curriculum_access_policy::ensure_curriculum_delete(&actor)?;
     study_plan_service::delete_version(&pool, version_id).await?;
     Ok((StatusCode::OK, Json(ApiResponse::empty())))
 }
@@ -148,7 +182,10 @@ pub async fn list_study_plan_subjects(
     headers: HeaderMap,
     Query(query): Query<StudyPlanSubjectQuery>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = tenant_pool(&state, &headers).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    curriculum_access_policy::ensure_curriculum_read(&actor)?;
     let subjects = study_plan_service::list_plan_subjects(&pool, query).await?;
     Ok(Json(ApiResponse::ok(subjects)))
 }
@@ -159,7 +196,10 @@ pub async fn add_subjects_to_version(
     Path(version_id): Path<Uuid>,
     Json(req): Json<AddSubjectsToVersionRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = tenant_pool(&state, &headers).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    curriculum_access_policy::ensure_curriculum_update(&actor)?;
     let count = study_plan_service::add_subjects_to_version(&pool, version_id, req).await?;
     Ok(Json(ApiResponse::with_message(
         CountData { count },
@@ -172,7 +212,10 @@ pub async fn delete_study_plan_subject(
     headers: HeaderMap,
     Path(sps_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = tenant_pool(&state, &headers).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    curriculum_access_policy::ensure_curriculum_delete(&actor)?;
     study_plan_service::delete_plan_subject(&pool, sps_id).await?;
     Ok((StatusCode::OK, Json(ApiResponse::empty())))
 }
@@ -186,10 +229,13 @@ pub async fn generate_courses_from_plan(
     headers: HeaderMap,
     Json(req): Json<GenerateCoursesFromPlanRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = tenant_pool(&state, &headers).await?;
-    let user_id = optional_user_id_from_headers(&headers, &pool).await;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL)?;
 
-    let result = study_plan_service::generate_courses_from_plan(&pool, req, user_id).await?;
+    let result =
+        study_plan_service::generate_courses_from_plan(&pool, req, Some(actor.user_id)).await?;
 
     Ok(Json(ApiResponse::ok(GenerateCoursesData {
         items: GenerateCoursesResponse {
