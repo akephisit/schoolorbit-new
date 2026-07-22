@@ -123,10 +123,17 @@
 			});
 		}
 
-		if (res.success) {
+		if (res.success && res.data) {
+			const savedAchievement = res.data;
+			if (payload.id) {
+				achievements = achievements.map((item) =>
+					item.id === savedAchievement.id ? savedAchievement : item
+				);
+			} else {
+				achievements = [savedAchievement, ...achievements];
+			}
 			toast.success(payload.id ? 'แก้ไขผลงานเรียบร้อย' : 'เพิ่มผลงานเรียบร้อย');
 			showAchievementDialog = false;
-			loadAchievements();
 		} else {
 			toast.error(res.error || 'เกิดข้อผิดพลาด');
 		}
@@ -141,10 +148,11 @@
 	async function handleConfirmDelete() {
 		if (!deleteId) return;
 
-		const res = await deleteAchievement(deleteId);
+		const deletedId = deleteId;
+		const res = await deleteAchievement(deletedId);
 		if (res.success) {
 			toast.success('ลบผลงานเรียบร้อย');
-			loadAchievements();
+			achievements = achievements.filter((item) => item.id !== deletedId);
 		} else {
 			toast.error(res.error || 'เกิดข้อผิดพลาด');
 		}

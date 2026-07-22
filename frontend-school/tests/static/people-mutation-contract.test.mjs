@@ -93,3 +93,23 @@ test('generated people mutation contract owns all migrated operations and DTOs',
 	assert.match(achievementApi, /deleteAchievement[\s\S]*ApiResponse<EmptyData>/);
 	assert.match(achievementApi, /apiClient\.delete<EmptyData>\(`\/api\/achievements\/\$\{id\}`/);
 });
+
+test('staff profile achievement mutations patch local state without refetching', async () => {
+	const page = await readRepoFile(
+		'frontend-school/src/routes/(app)/staff/manage/[id]/+page.svelte'
+	);
+
+	assert.match(page, /const savedAchievement = res\.data;/);
+	assert.match(page, /achievements = \[savedAchievement, \.\.\.achievements\];/);
+	assert.match(
+		page,
+		/achievements = achievements\.map\([\s\S]{0,100}item\.id === savedAchievement\.id \? savedAchievement : item/
+	);
+	assert.match(page, /const deletedId = deleteId;/);
+	assert.match(page, /achievements = achievements\.filter\(\(item\) => item\.id !== deletedId\);/);
+	assert.equal(
+		page.match(/\bloadAchievements\(\);/g)?.length,
+		1,
+		'only the initial profile load should fetch achievements'
+	);
+});
