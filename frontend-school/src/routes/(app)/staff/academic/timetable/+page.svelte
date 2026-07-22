@@ -39,7 +39,7 @@
 		type Semester,
 		listActivitySlots,
 		type ActivitySlot,
-		ACTIVITY_TYPE_LABELS,
+		getActivityTypeLabel,
 		listActivityGroups,
 		listSlotClassroomAssignments,
 		listSlotInstructors,
@@ -728,7 +728,7 @@
 			period_id: args.periodId,
 			room_id: args.roomId,
 			entry_type: args.entryType,
-			title: args.title ?? activitySlot?.name,
+			title: args.title ?? activitySlot?.name ?? undefined,
 			is_active: true,
 			subject_code: courseInfo?.subject_code,
 			subject_name_th: courseInfo?.subject_name_th,
@@ -740,7 +740,7 @@
 			period_name: period?.name ?? undefined,
 			start_time: period?.start_time,
 			end_time: period?.end_time,
-			activity_scheduling_mode: activitySlot?.scheduling_mode
+			activity_scheduling_mode: activitySlot?.scheduling_mode ?? undefined
 		};
 	}
 
@@ -761,8 +761,8 @@
 				subject_code: undefined,
 				subject_name_th: undefined,
 				subject_name_en: undefined,
-				title: args.newTitle ?? slot?.name,
-				activity_scheduling_mode: slot?.scheduling_mode,
+				title: args.newTitle ?? slot?.name ?? undefined,
+				activity_scheduling_mode: slot?.scheduling_mode ?? undefined,
 				instructor_ids: [],
 				instructor_names: []
 			};
@@ -1676,26 +1676,29 @@
 		dragType = 'NEW';
 		// For INSTRUCTOR view independent: classroom comes from _classroom_id
 		const classroomId = activity._classroom_id || selectedClassroomId;
-		draggedCourse = {
+		const activityCode = getActivityTypeLabel(activity.activity_type);
+		const activityName = activity.name ?? 'กิจกรรม';
+		const nextDraggedCourse: DragCourse = {
 			id: activity.id,
 			_isActivity: true,
 			activity_slot_id: activity.id,
 			_classroom_id: classroomId,
-			subject_code: ACTIVITY_TYPE_LABELS[activity.activity_type] ?? activity.activity_type,
-			title_th: activity.name,
-			title: activity.name
+			subject_code: activityCode,
+			title_th: activityName,
+			title: activityName
 		};
+		draggedCourse = nextDraggedCourse;
 		draggedEntryId = null;
 
 		// conflict highlights: ใช้ draggedCourse ที่มี _isActivity + _classroom_id
 		// fetchInstructorConflicts จัดการ target classroom + team lookup เองตาม viewMode
-		fetchInstructorConflicts(draggedCourse);
+		fetchInstructorConflicts(nextDraggedCourse);
 
 		if (event.dataTransfer) {
 			event.dataTransfer.effectAllowed = 'copy';
 			event.dataTransfer.setData('text/plain', JSON.stringify({ type: 'NEW', id: activity.id }));
 			// Frame-only drag ghost (โปร่งตรงกลาง → popup ทะลุเห็นได้)
-			const code = ACTIVITY_TYPE_LABELS[activity.activity_type] ?? activity.activity_type;
+			const code = activityCode;
 			const bgColor = getSubjectColor(code, 'ACTIVITY');
 			const borderColor = getSubjectBorderColor(code, 'ACTIVITY');
 			const dragElement = createDragFrame(code, bgColor, borderColor);
@@ -1711,8 +1714,8 @@
 					user_id: $authStore.user.id,
 					course_id: activity.id,
 					info: {
-						code: ACTIVITY_TYPE_LABELS[activity.activity_type] ?? activity.activity_type,
-						title: activity.name
+						code: activityCode,
+						title: activityName
 					}
 				}
 			});
@@ -2747,6 +2750,7 @@
 			// Synchronized: count unique (day, period) ต่อ slot
 			// (1 คาบ logical = N entries ของ N ห้อง — นับเป็น 1)
 			for (const slot of sidebarActivitySlots) {
+				const maxPeriods = slot.periods_per_week ?? 0;
 				const seen = new SvelteSet<string>();
 				for (const entry of timetableEntries) {
 					if (entry.activity_slot_id === slot.id) {
@@ -2754,11 +2758,11 @@
 					}
 				}
 				const scheduled = seen.size;
-				if (scheduled < slot.periods_per_week) {
+				if (scheduled < maxPeriods) {
 					items.push({
 						...slot,
 						scheduled_count: scheduled,
-						max_periods: slot.periods_per_week,
+						max_periods: maxPeriods,
 						is_completed: false,
 						is_draggable: false,
 						_classroom_id: undefined,
@@ -2778,13 +2782,14 @@
 			for (const item of instructorActivityItems) {
 				const key = `${item.slot.id}:${item.classroom_id}`;
 				const scheduled = indepCounts.get(key) || 0;
-				if (scheduled < item.slot.periods_per_week) {
+				const maxPeriods = item.slot.periods_per_week ?? 0;
+				if (scheduled < maxPeriods) {
 					items.push({
 						...item.slot,
 						// เก็บ name เดิม (ไม่ใส่ " — ห้อง") — สำหรับใช้เป็น title ของ entry ตอน drop
 						// sidebar UI จะใส่ห้องตาม _classroom_name แยก
 						scheduled_count: scheduled,
-						max_periods: item.slot.periods_per_week,
+						max_periods: maxPeriods,
 						is_completed: false,
 						is_draggable: true,
 						_classroom_id: item.classroom_id,
@@ -2807,7 +2812,7 @@
 		return sidebarActivitySlots
 			.map((slot) => {
 				const scheduled = slotCounts.get(slot.id) || 0;
-				const maxPeriods = slot.periods_per_week;
+				const maxPeriods = slot.periods_per_week ?? 0;
 				return {
 					...slot,
 					scheduled_count: scheduled,
@@ -3947,7 +3952,7 @@
 													variant="outline"
 													class="text-[10px] border-emerald-300 text-emerald-700"
 												>
-													{ACTIVITY_TYPE_LABELS[activity.activity_type] ?? activity.activity_type}
+											{getActivityTypeLabel(activity.activity_type)}
 												</Badge>
 												<Badge variant="default" class="text-[10px] bg-emerald-600">
 													{activity.scheduled_count}/{activity.max_periods} คาบ
@@ -3981,7 +3986,7 @@
 										>
 											<div class="flex justify-between items-start mb-1">
 												<Badge variant="outline" class="text-[10px]">
-													{ACTIVITY_TYPE_LABELS[activity.activity_type] ?? activity.activity_type}
+											{getActivityTypeLabel(activity.activity_type)}
 												</Badge>
 												<Badge variant="secondary" class="text-[10px]">
 													{activity.scheduled_count}/{activity.max_periods} คาบ
@@ -5168,7 +5173,7 @@
 												{@const slot = activitySlots.find((s) => s.id === batchSlotId)}
 												{#if slot}
 													<span class="text-xs text-muted-foreground">
-														{ACTIVITY_TYPE_LABELS[slot.activity_type] || slot.activity_type}
+												{getActivityTypeLabel(slot.activity_type)}
 													</span>
 												{/if}
 											{/if}
@@ -5178,12 +5183,12 @@
 										{#each activitySlots as slot (slot.id)}
 											<Select.Item
 												value={slot.id}
-												label={slot.name}
+												label={slot.name ?? 'ไม่ระบุชื่อกิจกรรม'}
 												class="flex flex-col items-start py-2 border-b last:border-0"
 											>
 												<span class="font-medium text-sm">{slot.name}</span>
 												<span class="text-xs text-muted-foreground">
-													{ACTIVITY_TYPE_LABELS[slot.activity_type] || slot.activity_type}
+												{getActivityTypeLabel(slot.activity_type)}
 												</span>
 											</Select.Item>
 										{/each}

@@ -7,7 +7,7 @@
 		selfEnrollActivity,
 		selfUnenrollActivity,
 		getMyActivityEnrollments,
-		ACTIVITY_TYPE_LABELS,
+		getActivityTypeLabel,
 		type ActivitySlot,
 		type ActivityGroup
 	} from '$lib/api/academic';
@@ -125,9 +125,7 @@
 				<div class="p-4 border-b">
 					<div class="flex items-center gap-2 flex-wrap">
 						<span class="font-semibold">{slot.name}</span>
-						<Badge variant="secondary"
-							>{ACTIVITY_TYPE_LABELS[slot.activity_type] ?? slot.activity_type}</Badge
-						>
+						<Badge variant="secondary">{getActivityTypeLabel(slot.activity_type)}</Badge>
 					</div>
 					{#if enrolled && enrolledGroup}
 						<div class="mt-2 flex items-center gap-2 text-sm text-green-600">

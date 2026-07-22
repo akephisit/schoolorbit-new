@@ -14,6 +14,7 @@
 		addSlotInstructorsBatch,
 		removeSlotInstructor,
 		ACTIVITY_TYPE_LABELS,
+		getActivityTypeLabel,
 		type SlotInstructor,
 		type ActivitySlot,
 		type ActivityGroup,
@@ -241,7 +242,8 @@
 			classroom_id: classroomId,
 			instructor_id: instructorId,
 			classroom_name: classroom?.name ?? existing?.classroom_name,
-			instructor_name: staff?.name ?? existing?.instructor_name
+			instructor_name: staff?.name ?? existing?.instructor_name,
+			created_at: existing?.created_at ?? new Date().toISOString()
 		};
 
 		slotClassroomAssignmentsMap = {
@@ -422,12 +424,13 @@
 	function openEditSlot(s: ActivitySlot) {
 		if (!canManageActivity) return;
 		// Template fields live in catalog — read-only here. Only registration is editable.
-		slotName = s.name;
+		slotName = s.name ?? '';
 		slotDescription = s.description ?? '';
-		slotActivityType = s.activity_type;
+		slotActivityType = s.activity_type ?? 'other';
 		slotRegistrationType = s.registration_type;
-		slotPeriodsPerWeek = s.periods_per_week;
-		slotSchedulingMode = s.scheduling_mode;
+		slotPeriodsPerWeek = s.periods_per_week ?? 1;
+		slotSchedulingMode =
+			s.scheduling_mode === 'independent' ? 'independent' : 'synchronized';
 		slotAllowedGradeLevelIds = s.allowed_grade_level_ids ?? [];
 		isSlotEdit = true;
 		editSlotTarget = s;
@@ -835,9 +838,7 @@
 							<div class="flex-1 min-w-0">
 								<div class="flex items-center gap-2 flex-wrap">
 									<span class="font-semibold">{slot.name}</span>
-									<Badge variant="secondary"
-										>{ACTIVITY_TYPE_LABELS[slot.activity_type] ?? slot.activity_type}</Badge
-									>
+									<Badge variant="secondary">{getActivityTypeLabel(slot.activity_type)}</Badge>
 									{#if slot.activity_catalog_id}
 										<Badge variant="outline" class="text-[10px] border-blue-300 text-blue-700">
 											📎 จากคลังกิจกรรม
@@ -845,9 +846,9 @@
 									{/if}
 									<span
 										class="text-sm text-muted-foreground"
-										title={classroomListDisplay(slot.classroom_ids)}
+										title={classroomListDisplay(slot.classroom_ids ?? undefined)}
 									>
-										{classroomGradesDisplay(slot.classroom_ids)}
+										{classroomGradesDisplay(slot.classroom_ids ?? undefined)}
 									</span>
 								</div>
 								<div class="text-sm text-muted-foreground mt-0.5">

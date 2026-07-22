@@ -42,6 +42,25 @@ export type AddSubjectsToVersionRequest = Schemas['AddSubjectsToVersionRequest']
 export type SubjectInPlan = Schemas['SubjectInPlan'];
 export type GenerateCoursesFromPlanRequest = Schemas['GenerateCoursesFromPlanRequest'];
 export type GenerateCoursesFromPlanResponse = Schemas['GenerateCoursesData'];
+export type ActivitySlot = Schemas['ActivitySlot'];
+export type ActivityGroup = Schemas['ActivityGroup'];
+export type SlotInstructor = Schemas['SlotInstructorInfo'];
+export type SlotClassroomAssignment = Schemas['SlotClassroomAssignment'];
+export type StudyPlanVersionActivity = Schemas['StudyPlanVersionActivity'];
+export type CreatePlanActivityRequest = Schemas['CreatePlanActivityRequest'];
+export type UpdatePlanActivityRequest = Schemas['UpdatePlanActivityRequest'];
+export type GenerateActivitiesFromPlanRequest = Schemas['GenerateActivitiesFromPlanRequest'];
+export type GenerateActivitiesFromPlanResponse = Schemas['GenerateActivitiesFromPlanOutcome'];
+export type ActivityCatalog = Schemas['ActivityCatalog'];
+export type ActivityCatalogType = Schemas['ActivityCatalogType'];
+export type ActivitySchedulingMode = Schemas['ActivitySchedulingMode'];
+export type CatalogDefaultInstructor = Schemas['CatalogDefaultInstructor'];
+export type CatalogDefaultInstructorInput = Schemas['CatalogDefaultInstructorInput'];
+export type CreateCatalogRequest = Schemas['CreateCatalogRequest'];
+export type UpdateCatalogRequest = Schemas['UpdateCatalogRequest'];
+export type AddCatalogDefaultInstructorRequest = Schemas['AddCatalogDefaultInstructorRequest'];
+export type UpdateCatalogDefaultInstructorRoleRequest =
+	Schemas['UpdateCatalogDefaultInstructorRoleRequest'];
 
 // Lookup Types
 export interface LookupItem {
@@ -487,33 +506,6 @@ export const generateCoursesFromPlan = async (
 	return response.data;
 };
 
-export interface ActivitySlot {
-	id: string;
-	activity_catalog_id: string; // FK to specific catalog version (template snapshot)
-	semester_id: string;
-	registration_type: 'self' | 'assigned';
-	teacher_reg_open: boolean;
-	student_reg_open: boolean;
-	student_reg_start?: string;
-	student_reg_end?: string;
-	is_active: boolean;
-	created_at: string;
-	// Live-linked from activity_catalog (read-only — edit at คลังกิจกรรม).
-	// Backend always JOINs, so these are present even though DB model is via FK.
-	name: string;
-	description?: string;
-	activity_type: 'scout' | 'club' | 'guidance' | 'social' | 'other';
-	periods_per_week: number;
-	scheduling_mode: 'synchronized' | 'independent';
-	allowed_grade_level_ids?: string[];
-	// Other joins
-	semester_name?: string;
-	group_count?: number;
-	total_members?: number;
-	/** UUIDs of classrooms participating via activity_slot_classrooms junction */
-	classroom_ids?: string[];
-}
-
 export const ALL_DAYS = [
 	{ value: 'MON', label: 'จันทร์', shortLabel: 'จ' },
 	{ value: 'TUE', label: 'อังคาร', shortLabel: 'อ' },
@@ -537,6 +529,11 @@ export const ACTIVITY_TYPE_LABELS: Record<string, string> = {
 	social: 'กิจกรรมเพื่อสังคม',
 	other: 'อื่น ๆ'
 };
+
+export function getActivityTypeLabel(activityType?: string | null): string {
+	if (!activityType) return ACTIVITY_TYPE_LABELS.other;
+	return ACTIVITY_TYPE_LABELS[activityType] ?? activityType;
+}
 
 export const listActivitySlots = async (
 	filter: {
@@ -580,12 +577,6 @@ export const deleteActivitySlot = async (id: string) => {
 };
 
 // Slot Instructors
-export interface SlotInstructor {
-	id: string;
-	user_id: string;
-	instructor_name?: string;
-}
-
 export const listSlotInstructors = async (slotId: string): Promise<{ data: SlotInstructor[] }> => {
 	return await fetchApi<SlotInstructor[]>(`/api/academic/activity-slots/${slotId}/instructors`);
 };
@@ -644,15 +635,6 @@ export const deleteSlotTimetableEntries = async (slotId: string) => {
 // Slot Classroom Assignments (ครูต่อห้อง — independent)
 // ==========================================
 
-export interface SlotClassroomAssignment {
-	id: string;
-	slot_id: string;
-	classroom_id: string;
-	instructor_id: string;
-	classroom_name?: string;
-	instructor_name?: string;
-}
-
 export const listSlotClassroomAssignments = async (
 	slotId: string
 ): Promise<{ data: SlotClassroomAssignment[] }> => {
@@ -693,26 +675,6 @@ export const deleteAllSlotClassroomAssignments = async (slotId: string) => {
 // ==========================================
 // Activity Groups (กิจกรรมจริง ภายใต้ slot)
 // ==========================================
-
-export interface ActivityGroup {
-	id: string;
-	slot_id?: string;
-	name: string;
-	description?: string;
-	instructor_id?: string;
-	max_capacity?: number;
-	registration_open: boolean;
-	/** ห้องที่ group นี้รับ — NULL = รับทุกห้องที่ slot รับ (inherit) */
-	allowed_classroom_ids?: string[];
-	is_active: boolean;
-	created_at: string;
-	// joined
-	instructor_name?: string;
-	member_count?: number;
-	slot_name?: string;
-	activity_type?: string;
-	semester_name?: string;
-}
 
 export interface ActivityGroupMember {
 	id: string;
@@ -954,28 +916,6 @@ export const updateSubjectDefaultInstructorRole = async (
 // Study Plan Version Activities (template)
 // ==========================================
 
-export interface StudyPlanVersionActivity {
-	id: string;
-	study_plan_version_id: string;
-	activity_catalog_id: string;
-	/** ระดับชั้นที่ plan กำหนด (pattern C — 1 row per grade) */
-	grade_level_id: string;
-	/** Pinned term in this plan (snapshot จาก catalog ตอน add). null = ทุกเทอม. */
-	term?: string | null;
-	display_order: number;
-	created_at: string;
-	updated_at: string;
-
-	// Joined from catalog (for display)
-	catalog_name?: string;
-	catalog_activity_type?: string;
-	catalog_description?: string;
-	catalog_periods_per_week?: number;
-	catalog_scheduling_mode?: string;
-	catalog_term?: string; // original catalog.term (for reference/badge only)
-	catalog_grade_level_ids?: string[];
-}
-
 export const listPlanActivities = async (
 	versionId: string
 ): Promise<{ data: StudyPlanVersionActivity[] }> => {
@@ -986,13 +926,7 @@ export const listPlanActivities = async (
 
 export const addPlanActivity = async (
 	versionId: string,
-	data: {
-		activity_catalog_id: string;
-		grade_level_id: string;
-		/** Override term. Omit to snapshot from catalog.term at insert time. */
-		term?: string | null;
-		display_order?: number;
-	}
+	data: CreatePlanActivityRequest
 ) => {
 	return await fetchApi<StudyPlanVersionActivity>(
 		`/api/academic/study-plan-versions/${versionId}/activities`,
@@ -1005,11 +939,7 @@ export const addPlanActivity = async (
 
 export const updatePlanActivity = async (
 	id: string,
-	data: Partial<{
-		/** null = ทุกเทอม (always overwrites — caller pass existing value to preserve). */
-		term: string | null;
-		display_order: number;
-	}>
+	data: UpdatePlanActivityRequest
 ) => {
 	return await fetchApi<StudyPlanVersionActivity>(`/api/academic/study-plan-activities/${id}`, {
 		method: 'PUT',
@@ -1020,21 +950,6 @@ export const updatePlanActivity = async (
 // ==========================================
 // Activity Catalog (คลังกิจกรรม)
 // ==========================================
-
-export interface ActivityCatalog {
-	id: string;
-	name: string;
-	start_academic_year_id: string; // version key — name เดียวมีหลาย version แยกตามปี
-	activity_type: 'scout' | 'club' | 'guidance' | 'social' | 'other';
-	description?: string;
-	periods_per_week: number;
-	scheduling_mode: 'synchronized' | 'independent';
-	is_active: boolean;
-	term?: string;
-	grade_level_ids?: string[];
-	created_at: string;
-	updated_at: string;
-}
 
 export const listActivityCatalog = async (
 	opts: {
@@ -1048,25 +963,14 @@ export const listActivityCatalog = async (
 	return await fetchApi<ActivityCatalog[]>(`/api/academic/activity-catalog${qs}`);
 };
 
-export const createActivityCatalog = async (data: {
-	name: string;
-	start_academic_year_id: string;
-	activity_type: string;
-	description?: string;
-	periods_per_week?: number;
-	scheduling_mode?: string;
-	term?: string;
-	grade_level_ids?: string[];
-	/** Default team to insert atomically with catalog creation. */
-	default_instructors?: { instructor_id: string; role: 'primary' | 'secondary' }[];
-}) => {
+export const createActivityCatalog = async (data: CreateCatalogRequest) => {
 	return await fetchApi<ActivityCatalog>(`/api/academic/activity-catalog`, {
 		method: 'POST',
 		body: JSON.stringify(data)
 	});
 };
 
-export const updateActivityCatalog = async (id: string, data: Partial<ActivityCatalog>) => {
+export const updateActivityCatalog = async (id: string, data: UpdateCatalogRequest) => {
 	return await fetchApi<ActivityCatalog>(`/api/academic/activity-catalog/${id}`, {
 		method: 'PUT',
 		body: JSON.stringify(data)
@@ -1082,14 +986,6 @@ export const deleteActivityCatalog = async (id: string) => {
 // Pattern เดียวกับ SubjectDefaultInstructor
 // ==========================================
 
-export interface CatalogDefaultInstructor {
-	id: string;
-	catalog_id: string;
-	instructor_id: string;
-	role: 'primary' | 'secondary';
-	instructor_name?: string;
-}
-
 export const listCatalogDefaultInstructors = async (
 	catalogId: string
 ): Promise<{ data: CatalogDefaultInstructor[] }> => {
@@ -1101,11 +997,12 @@ export const listCatalogDefaultInstructors = async (
 export const addCatalogDefaultInstructor = async (
 	catalogId: string,
 	instructorId: string,
-	role: 'primary' | 'secondary' = 'secondary'
+	role: CurriculumInstructorRole = 'secondary'
 ) => {
+	const data: AddCatalogDefaultInstructorRequest = { instructor_id: instructorId, role };
 	return await fetchApi(`/api/academic/activity-catalog/${catalogId}/default-instructors`, {
 		method: 'POST',
-		body: JSON.stringify({ instructor_id: instructorId, role })
+		body: JSON.stringify(data)
 	});
 };
 
@@ -1121,13 +1018,14 @@ export const removeCatalogDefaultInstructor = async (catalogId: string, instruct
 export const updateCatalogDefaultInstructorRole = async (
 	catalogId: string,
 	instructorId: string,
-	role: 'primary' | 'secondary'
+	role: CurriculumInstructorRole
 ) => {
+	const data: UpdateCatalogDefaultInstructorRoleRequest = { role };
 	return await fetchApi(
 		`/api/academic/activity-catalog/${catalogId}/default-instructors/${instructorId}`,
 		{
 			method: 'PUT',
-			body: JSON.stringify({ role })
+			body: JSON.stringify(data)
 		}
 	);
 };
@@ -1138,10 +1036,9 @@ export const deletePlanActivity = async (id: string) => {
 	});
 };
 
-export const generateActivitiesFromPlan = async (data: {
-	study_plan_version_id: string;
-	semester_id: string;
-}): Promise<GenerateActivitiesFromPlanResponse> => {
+export const generateActivitiesFromPlan = async (
+	data: GenerateActivitiesFromPlanRequest
+): Promise<GenerateActivitiesFromPlanResponse> => {
 	const response = await fetchApi<GenerateActivitiesFromPlanResponse>(
 		`/api/academic/activities/generate-from-plan`,
 		{
@@ -1151,16 +1048,6 @@ export const generateActivitiesFromPlan = async (data: {
 	);
 	return response.data;
 };
-
-export interface GenerateActivitiesFromPlanResponse {
-	created: number;
-	skipped: number;
-	total_templates: number;
-	slots: ActivitySlot[];
-	groups: ActivityGroup[];
-	slot_instructors: Record<string, SlotInstructor[]>;
-	slot_classroom_assignments: Record<string, SlotClassroomAssignment[]>;
-}
 
 // ==========================================
 // Classroom Activities (junction-backed)

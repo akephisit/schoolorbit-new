@@ -164,7 +164,7 @@
 			catalogTeam = (res.data ?? []).map((r) => ({
 				instructor_id: r.instructor_id,
 				role: r.role,
-				instructor_name: r.instructor_name
+				instructor_name: r.instructor_name ?? undefined
 			}));
 			// Smart default role: already has primary → default next to secondary
 			catalogTeamAddRole = catalogTeam.some((t) => t.role === 'primary') ? 'secondary' : 'primary';
@@ -899,7 +899,7 @@
 			catalogTeam = (res.data ?? []).map((r) => ({
 				instructor_id: r.instructor_id,
 				role: r.role,
-				instructor_name: r.instructor_name
+				instructor_name: r.instructor_name ?? undefined
 			}));
 		} catch {
 			// non-fatal
