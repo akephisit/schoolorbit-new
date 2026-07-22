@@ -1,7 +1,8 @@
 use crate::api_response::ApiResponse;
 use crate::error::AppError;
 use crate::modules::academic::services::academic_structure_service;
-use crate::utils::request_context::tenant_pool;
+use crate::permissions::registry::codes;
+use crate::utils::request_context::actor_tenant_context;
 use crate::AppState;
 
 pub mod activity;
@@ -28,7 +29,10 @@ pub async fn list_academic_structure(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = tenant_pool(&state, &headers).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    actor.require_permission(codes::ACADEMIC_STRUCTURE_READ_ALL)?;
     let structure = academic_structure_service::list_academic_structure(&pool).await?;
 
     Ok(Json(ApiResponse::ok(structure)))
@@ -39,7 +43,10 @@ pub async fn create_academic_year(
     headers: HeaderMap,
     Json(payload): Json<CreateAcademicYearRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = tenant_pool(&state, &headers).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    actor.require_permission(codes::ACADEMIC_STRUCTURE_MANAGE_ALL)?;
     let year = academic_structure_service::create_academic_year(&pool, payload).await?;
 
     Ok((StatusCode::CREATED, Json(ApiResponse::ok(year))))
@@ -51,7 +58,10 @@ pub async fn update_academic_year(
     Path(id): Path<Uuid>,
     Json(payload): Json<UpdateAcademicYearRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = tenant_pool(&state, &headers).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    actor.require_permission(codes::ACADEMIC_STRUCTURE_MANAGE_ALL)?;
     let year = academic_structure_service::update_academic_year(&pool, id, payload).await?;
 
     Ok(Json(ApiResponse::ok(year)).into_response())
@@ -62,7 +72,10 @@ pub async fn toggle_active_year(
     headers: HeaderMap,
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = tenant_pool(&state, &headers).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    actor.require_permission(codes::ACADEMIC_STRUCTURE_MANAGE_ALL)?;
     academic_structure_service::toggle_active_year(&pool, id).await?;
 
     Ok(Json(ApiResponse::empty_with_message("Updated active year")))
@@ -73,7 +86,10 @@ pub async fn create_semester(
     headers: HeaderMap,
     Json(payload): Json<CreateSemesterRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = tenant_pool(&state, &headers).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    actor.require_permission(codes::ACADEMIC_STRUCTURE_MANAGE_ALL)?;
     let semester = academic_structure_service::create_semester(&pool, payload).await?;
 
     Ok((StatusCode::CREATED, Json(ApiResponse::ok(semester))))
@@ -85,7 +101,10 @@ pub async fn update_semester(
     Path(id): Path<Uuid>,
     Json(payload): Json<UpdateSemesterRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = tenant_pool(&state, &headers).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    actor.require_permission(codes::ACADEMIC_STRUCTURE_MANAGE_ALL)?;
     let semester = academic_structure_service::update_semester(&pool, id, payload).await?;
 
     Ok(Json(ApiResponse::ok(semester)))
@@ -96,7 +115,10 @@ pub async fn delete_semester(
     headers: HeaderMap,
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = tenant_pool(&state, &headers).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    actor.require_permission(codes::ACADEMIC_STRUCTURE_MANAGE_ALL)?;
     academic_structure_service::delete_semester(&pool, id).await?;
 
     Ok(Json(ApiResponse::empty_with_message("Semester deleted")))
@@ -107,7 +129,10 @@ pub async fn list_classrooms(
     headers: HeaderMap,
     Query(filter): Query<ClassroomQuery>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = tenant_pool(&state, &headers).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    actor.require_permission(codes::ACADEMIC_CLASSROOM_READ_ALL)?;
     let classrooms = academic_structure_service::list_classrooms(&pool, filter).await?;
 
     Ok(Json(ApiResponse::ok(classrooms)))
@@ -118,7 +143,10 @@ pub async fn create_classroom(
     headers: HeaderMap,
     Json(payload): Json<CreateClassroomRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = tenant_pool(&state, &headers).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    actor.require_permission(codes::ACADEMIC_CLASSROOM_CREATE_ALL)?;
     let classroom = academic_structure_service::create_classroom(&pool, payload).await?;
 
     Ok((StatusCode::CREATED, Json(ApiResponse::ok(classroom))))
@@ -130,7 +158,10 @@ pub async fn update_classroom(
     Path(id): Path<Uuid>,
     Json(payload): Json<UpdateClassroomRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = tenant_pool(&state, &headers).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    actor.require_permission(codes::ACADEMIC_CLASSROOM_UPDATE_ALL)?;
     let classroom = academic_structure_service::update_classroom(&pool, id, payload).await?;
 
     Ok(Json(ApiResponse::ok(classroom)))
@@ -141,7 +172,10 @@ pub async fn create_grade_level(
     headers: HeaderMap,
     Json(payload): Json<CreateGradeLevelRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = tenant_pool(&state, &headers).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    actor.require_permission(codes::ACADEMIC_STRUCTURE_MANAGE_ALL)?;
     let level = academic_structure_service::create_grade_level(&pool, payload).await?;
 
     Ok((StatusCode::CREATED, Json(ApiResponse::ok(level))))
@@ -152,7 +186,10 @@ pub async fn delete_grade_level(
     headers: HeaderMap,
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = tenant_pool(&state, &headers).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    actor.require_permission(codes::ACADEMIC_STRUCTURE_MANAGE_ALL)?;
     academic_structure_service::delete_grade_level(&pool, id).await?;
 
     Ok(Json(ApiResponse::empty_with_message("Grade level deleted")))
@@ -163,7 +200,10 @@ pub async fn enroll_students(
     headers: HeaderMap,
     Json(payload): Json<EnrollStudentRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = tenant_pool(&state, &headers).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    actor.require_permission(codes::ACADEMIC_ENROLLMENT_UPDATE_ALL)?;
     let enrolled_count = academic_structure_service::enroll_students(&pool, payload).await?;
 
     Ok(Json(ApiResponse::empty_with_message(format!(
@@ -177,7 +217,10 @@ pub async fn get_class_enrollments(
     headers: HeaderMap,
     Path(class_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = tenant_pool(&state, &headers).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    actor.require_permission(codes::ACADEMIC_ENROLLMENT_READ_ALL)?;
     let enrollments = academic_structure_service::get_class_enrollments(&pool, class_id).await?;
 
     Ok(Json(ApiResponse::ok(enrollments)))
@@ -188,7 +231,10 @@ pub async fn remove_enrollment(
     headers: HeaderMap,
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = tenant_pool(&state, &headers).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    actor.require_permission(codes::ACADEMIC_ENROLLMENT_UPDATE_ALL)?;
     academic_structure_service::remove_enrollment(&pool, id).await?;
 
     Ok(Json(ApiResponse::empty_with_message("Enrollment removed")))
@@ -205,7 +251,10 @@ pub async fn update_enrollment_number(
     Path(id): Path<Uuid>,
     Json(payload): Json<UpdateEnrollmentNumberRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = tenant_pool(&state, &headers).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    actor.require_permission(codes::ACADEMIC_ENROLLMENT_UPDATE_ALL)?;
     academic_structure_service::update_enrollment_number(&pool, id, payload.class_number).await?;
 
     Ok(Json(ApiResponse::empty_with_message(
@@ -224,7 +273,10 @@ pub async fn auto_assign_class_numbers(
     Path(class_id): Path<Uuid>,
     Json(payload): Json<AutoAssignClassNumbersRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = tenant_pool(&state, &headers).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    actor.require_permission(codes::ACADEMIC_ENROLLMENT_UPDATE_ALL)?;
     let updated_count =
         academic_structure_service::auto_assign_class_numbers(&pool, class_id, &payload.sort_by)
             .await?;
@@ -240,7 +292,10 @@ pub async fn get_year_levels(
     headers: HeaderMap,
     Path(year_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = tenant_pool(&state, &headers).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    actor.require_permission(codes::ACADEMIC_STRUCTURE_READ_ALL)?;
     let level_ids = academic_structure_service::get_year_levels(&pool, year_id).await?;
 
     Ok(Json(ApiResponse::ok(level_ids)))
@@ -252,7 +307,10 @@ pub async fn update_year_levels(
     Path(year_id): Path<Uuid>,
     Json(payload): Json<UpdateYearLevelsRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = tenant_pool(&state, &headers).await?;
+    let context = actor_tenant_context(&state, &headers).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    actor.require_permission(codes::ACADEMIC_STRUCTURE_MANAGE_ALL)?;
     academic_structure_service::update_year_levels(&pool, year_id, payload.grade_level_ids).await?;
 
     Ok(Json(ApiResponse::empty_with_message("Year levels updated")))

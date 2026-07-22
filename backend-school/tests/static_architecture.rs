@@ -1226,6 +1226,61 @@ fn daily_teaching_overview_endpoint_is_read_only_and_pii_safe() {
 }
 
 #[test]
+fn academic_structure_handlers_enforce_generated_permission_contract() {
+    let handlers = strip_comments(&read_source(
+        manifest_dir().join("src/modules/academic/handlers.rs"),
+    ));
+    let cases = [
+        ("list_academic_structure", "ACADEMIC_STRUCTURE_READ_ALL"),
+        ("create_academic_year", "ACADEMIC_STRUCTURE_MANAGE_ALL"),
+        ("update_academic_year", "ACADEMIC_STRUCTURE_MANAGE_ALL"),
+        ("toggle_active_year", "ACADEMIC_STRUCTURE_MANAGE_ALL"),
+        ("create_semester", "ACADEMIC_STRUCTURE_MANAGE_ALL"),
+        ("update_semester", "ACADEMIC_STRUCTURE_MANAGE_ALL"),
+        ("delete_semester", "ACADEMIC_STRUCTURE_MANAGE_ALL"),
+        ("list_classrooms", "ACADEMIC_CLASSROOM_READ_ALL"),
+        ("create_classroom", "ACADEMIC_CLASSROOM_CREATE_ALL"),
+        ("update_classroom", "ACADEMIC_CLASSROOM_UPDATE_ALL"),
+        ("create_grade_level", "ACADEMIC_STRUCTURE_MANAGE_ALL"),
+        ("delete_grade_level", "ACADEMIC_STRUCTURE_MANAGE_ALL"),
+        ("enroll_students", "ACADEMIC_ENROLLMENT_UPDATE_ALL"),
+        ("get_class_enrollments", "ACADEMIC_ENROLLMENT_READ_ALL"),
+        ("remove_enrollment", "ACADEMIC_ENROLLMENT_UPDATE_ALL"),
+        ("update_enrollment_number", "ACADEMIC_ENROLLMENT_UPDATE_ALL"),
+        (
+            "auto_assign_class_numbers",
+            "ACADEMIC_ENROLLMENT_UPDATE_ALL",
+        ),
+        ("get_year_levels", "ACADEMIC_STRUCTURE_READ_ALL"),
+        ("update_year_levels", "ACADEMIC_STRUCTURE_MANAGE_ALL"),
+    ];
+
+    for (handler_name, permission) in cases {
+        let marker = format!("pub async fn {handler_name}");
+        let handler_tail = handlers
+            .split_once(&marker)
+            .unwrap_or_else(|| panic!("missing academic handler `{handler_name}`"))
+            .1;
+        let handler = handler_tail
+            .split("pub async fn ")
+            .next()
+            .unwrap_or(handler_tail);
+
+        assert!(
+            handler.contains("actor_tenant_context(&state, &headers).await?"),
+            "{handler_name} must load the authenticated actor and tenant together"
+        );
+        assert!(
+            handler.contains(&format!("actor.require_permission(codes::{permission})?")),
+            "{handler_name} must require {permission}"
+        );
+    }
+
+    assert!(handlers.contains("use crate::permissions::registry::codes;"));
+    assert!(!handlers.contains("use crate::utils::request_context::tenant_pool;"));
+}
+
+#[test]
 fn academic_exam_schedule_routes_are_registered_and_authorized() {
     fn handler_body<'a>(source: &'a str, handler_name: &str) -> &'a str {
         let marker = format!("pub async fn {handler_name}");
