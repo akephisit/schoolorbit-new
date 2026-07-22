@@ -289,12 +289,18 @@ The script checks:
 
 - tenant frontend page loads
 - backend-admin `/health`
+- backend-admin `/ready` confirms the admin database is reachable
 - backend-school `/health`
+- backend-school `/ready` confirms the backend-admin control plane is ready
 - CORS from the tenant origin
 - unauthenticated `/api/auth/me` returns `401`
 - login preflight returns `204`
 - login returns an `auth_token` cookie
 - authenticated `/api/auth/me` returns the logged-in user
+
+`/health` is a lightweight process-liveness probe and does not call dependencies. The
+backend-school `/ready` probe calls backend-admin `/ready`; it does not resolve a school,
+open a tenant pool, run migrations, or wake every tenant database.
 
 Production tenant browser requests use `Origin` for tenant resolution by default. Smoke tenant API requests still send both `Origin` and `X-School-Subdomain`; the preflight check includes `x-school-subdomain` so CORS config drift for explicit override clients is caught before browser E2E.
 

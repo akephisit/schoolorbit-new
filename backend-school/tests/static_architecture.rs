@@ -3960,6 +3960,32 @@ fn backend_school_registers_separate_liveness_and_readiness_routes() {
 }
 
 #[test]
+fn deployment_and_smoke_checks_use_backend_readiness() {
+    let docker_compose = read_source(repo_root().join("docker-compose.yml"));
+    let podman_compose = read_source(repo_root().join("podman-compose.yml"));
+    let school_deploy =
+        read_source(repo_root().join(".github/workflows/deploy-backend-school.yml"));
+    let admin_deploy = read_source(repo_root().join(".github/workflows/deploy-backend-admin.yml"));
+    let smoke = read_source(repo_root().join("scripts/smoke_test.sh"));
+
+    for compose in [&docker_compose, &podman_compose] {
+        assert!(compose.contains("http://localhost:8080/ready"));
+        assert!(compose.contains("http://localhost:8081/ready"));
+        assert!(compose.contains("BACKEND_ADMIN_REQUEST_TIMEOUT_MS"));
+        assert!(compose.contains("BACKEND_ADMIN_RETRY_MAX_ATTEMPTS"));
+        assert!(compose.contains("BACKEND_ADMIN_RETRY_BASE_DELAY_MS"));
+    }
+    assert!(school_deploy.contains("http://127.0.0.1:8081/ready"));
+    assert!(admin_deploy.contains("http://127.0.0.1:8080/ready"));
+    assert!(school_deploy.contains("seq 1 12"));
+    assert!(admin_deploy.contains("seq 1 12"));
+    assert!(school_deploy.contains("timeout 60 bash -c"));
+    assert!(admin_deploy.contains("timeout 60 bash -c"));
+    assert!(smoke.contains("$SMOKE_ADMIN_API_URL/ready"));
+    assert!(smoke.contains("$SMOKE_API_URL/ready"));
+}
+
+#[test]
 fn course_instructor_batch_endpoint_accepts_post_body() {
     let routes = read_source(manifest_dir().join("src/modules/academic.rs"));
     let handler =

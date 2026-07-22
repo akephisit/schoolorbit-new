@@ -217,11 +217,24 @@ admin_health_body="$tmp_dir/admin-health.body"
 status="$(request "admin health" GET "$SMOKE_ADMIN_API_URL/health" "$admin_health_headers" "$admin_health_body")"
 expect_status "admin health" "$status" "200"
 
+admin_ready_headers="$tmp_dir/admin-ready.headers"
+admin_ready_body="$tmp_dir/admin-ready.body"
+status="$(request "admin readiness" GET "$SMOKE_ADMIN_API_URL/ready" "$admin_ready_headers" "$admin_ready_body")"
+expect_status "admin readiness" "$status" "200"
+expect_body_contains "admin readiness" "$admin_ready_body" '"status":"ready"'
+
 health_headers="$tmp_dir/health.headers"
 health_body="$tmp_dir/health.body"
 status="$(request "school API health" GET "$SMOKE_API_URL/health" "$health_headers" "$health_body")"
 expect_status "school API health" "$status" "200"
 expect_body_contains "school API health" "$health_body" '"status":"healthy"'
+
+ready_headers="$tmp_dir/ready.headers"
+ready_body="$tmp_dir/ready.body"
+status="$(request "school API readiness" GET "$SMOKE_API_URL/ready" "$ready_headers" "$ready_body")"
+expect_status "school API readiness" "$status" "200"
+expect_body_contains "school API readiness" "$ready_body" '"status":"ready"'
+expect_body_contains "school API readiness" "$ready_body" '"controlPlane":"connected"'
 
 me_unauth_headers="$tmp_dir/me-unauth.headers"
 me_unauth_body="$tmp_dir/me-unauth.body"

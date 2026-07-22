@@ -181,8 +181,8 @@
 
 | # | ปัญหา | แก้ไข | ความยาก |
 |---|---|---|---|
-| L-1 | ไม่มี circuit breaker สำหรับ Neon/Cloudflare | เพิ่ม timeout + exponential backoff ใน clients | Medium |
-| ✅ L-2 | `/health` return healthy เสมอ ไม่ตรวจ DB จริง | แยก `/health` เป็น liveness ที่ไม่แตะ DB และเพิ่ม `/ready` สำหรับ `SELECT 1` readiness เพื่อลดการปลุก Neon จาก container healthcheck | Small |
+| L-1 (partial) | ไม่มี circuit breaker สำหรับ external clients | backend-school → backend-admin มี bounded timeout และ exponential retry สำหรับ GET แล้ว; PUT ไม่ retry โดยตั้งใจ ส่วน circuit breaker และ client อื่นยังคงเป็นงานอนาคต | Medium |
+| ✅ L-2 | ต้องแยก process liveness ออกจาก dependency readiness | `/health` ของทั้งสอง backend เป็น liveness; backend-admin `/ready` ตรวจ admin DB และ backend-school `/ready` ตรวจ backend-admin control plane โดยไม่ปลุก tenant databases พร้อมนำไปใช้ใน Compose, smoke และ deployment wait | Small |
 | L-3 | ไม่มี shared type contracts ระหว่าง services | สร้าง `schoolorbit-contracts` workspace crate | Medium |
 | ✅ L-4 | RBAC ของ backend-admin | `require_auth` บังคับ role ผ่าน `AdminRole::can_access_admin_backend()` แล้ว และ `/api/v1/auth/me` ใช้นโยบายเดียวกัน | Small |
 | ✅ L-5 | backend-school ยังใช้ Rust module-root แบบ `mod.rs` | migrate เป็น Rust 2018-style module roots (`foo.rs` + `foo/` children) และคง `.rules` ว่าไม่สร้าง `mod.rs` ใหม่ | Small |

@@ -84,9 +84,25 @@ jobs:
             # We don't specify service name argument if it causes issues, 
             # or we rely on the fact that missing container forces recreation.
             podman-compose up -d backend-school
+
+            # 4. Wait for control-plane readiness (maximum 60 seconds)
+            if ! timeout 60 bash -c '
+              for attempt in $(seq 1 12); do
+                if curl -fsS "$1" >/dev/null; then
+                  exit 0
+                fi
+                if [ "$attempt" -lt 12 ]; then
+                  sleep 5
+                fi
+              done
+              exit 1
+            ' _ http://127.0.0.1:8081/ready; then
+              podman logs --tail 100 schoolorbit-backend-school
+              exit 1
+            fi
             
-            # 4. Clean up
+            # 5. Clean up
             podman image prune -f
             
-            # 5. Reload Nginx to update DNS/IPs
+            # 6. Reload Nginx to update DNS/IPs
             podman exec schoolorbit-nginx nginx -s reload || true

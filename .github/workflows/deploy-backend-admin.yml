@@ -82,9 +82,25 @@ jobs:
             
             # 3. Start new container using podman-compose
             podman-compose up -d backend-admin
+
+            # 4. Wait for database readiness (maximum 60 seconds)
+            if ! timeout 60 bash -c '
+              for attempt in $(seq 1 12); do
+                if curl -fsS "$1" >/dev/null; then
+                  exit 0
+                fi
+                if [ "$attempt" -lt 12 ]; then
+                  sleep 5
+                fi
+              done
+              exit 1
+            ' _ http://127.0.0.1:8080/ready; then
+              podman logs --tail 100 schoolorbit-backend-admin
+              exit 1
+            fi
             
-            # 4. Clean up
+            # 5. Clean up
             podman image prune -f
             
-            # 5. Reload Nginx to update DNS/IPs
+            # 6. Reload Nginx to update DNS/IPs
             podman exec schoolorbit-nginx nginx -s reload || true
