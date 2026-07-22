@@ -13,12 +13,16 @@ type UpdateRoleRequest = Schemas['UpdateRoleRequest'];
 type AssignRoleRequest = Schemas['AssignRoleRequest'];
 type UuidIdData = Schemas['UuidIdData'];
 type EmptyData = Schemas['EmptyData'];
+type ManagedListOptions = { include_inactive?: boolean };
 
 // Role Management API
 export const roleAPI = {
-	// List all roles
-	async listRoles(): Promise<ApiResponse<Role[]>> {
-		return apiClient.get<Role[]>('/api/roles');
+	// List active roles by default; management screens can include inactive records.
+	async listRoles(options?: ManagedListOptions): Promise<ApiResponse<Role[]>> {
+		const params = new URLSearchParams();
+		if (options?.include_inactive) params.set('include_inactive', 'true');
+		const qs = params.toString() ? `?${params}` : '';
+		return apiClient.get<Role[]>(`/api/roles${qs}`);
 	},
 
 	// Get single role
@@ -36,9 +40,9 @@ export const roleAPI = {
 		return apiClient.put<EmptyData>(`/api/roles/${roleId}`, data);
 	},
 
-	// Delete role
-	async deleteRole(roleId: string): Promise<ApiResponse<Record<string, never>>> {
-		return apiClient.delete<Record<string, never>>(`/api/roles/${roleId}`);
+	// Deactivate role (the backend preserves assignments for later reactivation).
+	async deleteRole(roleId: string): Promise<ApiResponse<EmptyData>> {
+		return apiClient.delete<EmptyData>(`/api/roles/${roleId}`);
 	}
 };
 

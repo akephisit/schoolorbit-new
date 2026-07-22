@@ -103,6 +103,7 @@ export interface UpdateStaffRequest {
 export type Role = Schemas['Role'];
 export type OrganizationUnit = Schemas['OrganizationUnit'];
 export type OrganizationUnitLookupItem = Schemas['OrganizationUnitLookupItem'];
+type ManagedListOptions = { include_inactive?: boolean };
 
 interface StaffFilter {
 	user_type?: string;
@@ -185,8 +186,13 @@ export async function getRole(roleId: string): Promise<ApiResponse<Role>> {
 // Organization Unit APIs
 // ===================================================================
 
-export async function listOrganizationUnits(): Promise<ApiResponse<OrganizationUnit[]>> {
-	return apiClient.get<OrganizationUnit[]>('/api/organization/units');
+export async function listOrganizationUnits(
+	options?: ManagedListOptions
+): Promise<ApiResponse<OrganizationUnit[]>> {
+	const params = new URLSearchParams();
+	if (options?.include_inactive) params.set('include_inactive', 'true');
+	const qs = params.toString() ? `?${params}` : '';
+	return apiClient.get<OrganizationUnit[]>(`/api/organization/units${qs}`);
 }
 
 // Auth-only version (no roles.read.all required) — for non-admin pages
@@ -228,10 +234,8 @@ export async function updateOrganizationUnit(
 	return apiClient.put<EmptyData>(`/api/organization/units/${unitId}`, data);
 }
 
-export async function deleteOrganizationUnit(
-	unitId: string
-): Promise<ApiResponse<Record<string, never>>> {
-	return apiClient.delete<Record<string, never>>(`/api/organization/units/${unitId}`);
+export async function deleteOrganizationUnit(unitId: string): Promise<ApiResponse<EmptyData>> {
+	return apiClient.delete<EmptyData>(`/api/organization/units/${unitId}`);
 }
 
 // ===================================================================

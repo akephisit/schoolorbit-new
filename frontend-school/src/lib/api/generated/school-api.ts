@@ -550,7 +550,7 @@ export interface paths {
 		get: operations['getOrganizationUnit'];
 		put: operations['updateOrganizationUnit'];
 		post?: never;
-		delete?: never;
+		delete: operations['deactivateOrganizationUnit'];
 		options?: never;
 		head?: never;
 		patch?: never;
@@ -801,7 +801,7 @@ export interface paths {
 		get: operations['getRole'];
 		put: operations['updateRole'];
 		post?: never;
-		delete?: never;
+		delete: operations['deleteRole'];
 		options?: never;
 		head?: never;
 		patch?: never;
@@ -1092,6 +1092,7 @@ export interface components {
 				/** Format: uuid */
 				id: string;
 				is_active: boolean;
+				is_system: boolean;
 				location: string | null;
 				name: string;
 				name_en: string | null;
@@ -1216,6 +1217,7 @@ export interface components {
 				/** Format: uuid */
 				id: string;
 				is_active: boolean;
+				is_system: boolean;
 				/** Format: int32 */
 				level: number;
 				name: string;
@@ -1629,6 +1631,7 @@ export interface components {
 				/** Format: uuid */
 				id: string;
 				is_active: boolean;
+				is_system: boolean;
 				location: string | null;
 				name: string;
 				name_en: string | null;
@@ -1704,6 +1707,7 @@ export interface components {
 				/** Format: uuid */
 				id: string;
 				is_active: boolean;
+				is_system: boolean;
 				/** Format: int32 */
 				level: number;
 				name: string;
@@ -2241,6 +2245,7 @@ export interface components {
 			/** Format: uuid */
 			id: string;
 			is_active: boolean;
+			is_system: boolean;
 			location: string | null;
 			name: string;
 			name_en: string | null;
@@ -2415,6 +2420,7 @@ export interface components {
 			/** Format: uuid */
 			id: string;
 			is_active: boolean;
+			is_system: boolean;
 			/** Format: int32 */
 			level: number;
 			name: string;
@@ -3967,7 +3973,9 @@ export interface operations {
 	};
 	listOrganizationUnits: {
 		parameters: {
-			query?: never;
+			query?: {
+				include_inactive?: boolean;
+			};
 			header?: never;
 			path?: never;
 			cookie?: never;
@@ -4158,6 +4166,74 @@ export interface operations {
 			};
 			/** @description Organization unit not found */
 			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Protected unit or invalid hierarchy transition */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	deactivateOrganizationUnit: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Organization unit ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Organization unit deactivated */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_EmptyData'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Organization unit not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description System unit or active child prevents deactivation */
+			409: {
 				headers: {
 					[name: string]: unknown;
 				};
@@ -4965,7 +5041,9 @@ export interface operations {
 	};
 	listRoles: {
 		parameters: {
-			query?: never;
+			query?: {
+				include_inactive?: boolean;
+			};
 			header?: never;
 			path?: never;
 			cookie?: never;
@@ -5156,6 +5234,74 @@ export interface operations {
 			};
 			/** @description Role not found */
 			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Protected role or invalid status transition */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	deleteRole: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Role ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Role deactivated */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_EmptyData'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Role not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description System role cannot be deactivated */
+			409: {
 				headers: {
 					[name: string]: unknown;
 				};

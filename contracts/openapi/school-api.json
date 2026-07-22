@@ -333,6 +333,9 @@
               "is_active": {
                 "type": "boolean"
               },
+              "is_system": {
+                "type": "boolean"
+              },
               "location": {
                 "type": [
                   "string",
@@ -387,6 +390,7 @@
               "email",
               "location",
               "is_active",
+              "is_system",
               "display_order",
               "category",
               "unit_type",
@@ -858,6 +862,9 @@
               "is_active": {
                 "type": "boolean"
               },
+              "is_system": {
+                "type": "boolean"
+              },
               "level": {
                 "format": "int32",
                 "type": "integer"
@@ -895,6 +902,7 @@
               "level",
               "permissions",
               "is_active",
+              "is_system",
               "created_at",
               "updated_at"
             ],
@@ -2528,6 +2536,9 @@
                 "is_active": {
                   "type": "boolean"
                 },
+                "is_system": {
+                  "type": "boolean"
+                },
                 "location": {
                   "type": [
                     "string",
@@ -2582,6 +2593,7 @@
                 "email",
                 "location",
                 "is_active",
+                "is_system",
                 "display_order",
                 "category",
                 "unit_type",
@@ -2815,6 +2827,9 @@
                 "is_active": {
                   "type": "boolean"
                 },
+                "is_system": {
+                  "type": "boolean"
+                },
                 "level": {
                   "format": "int32",
                   "type": "integer"
@@ -2852,6 +2867,7 @@
                 "level",
                 "permissions",
                 "is_active",
+                "is_system",
                 "created_at",
                 "updated_at"
               ],
@@ -4851,6 +4867,9 @@
           "is_active": {
             "type": "boolean"
           },
+          "is_system": {
+            "type": "boolean"
+          },
           "location": {
             "type": [
               "string",
@@ -4905,6 +4924,7 @@
           "email",
           "location",
           "is_active",
+          "is_system",
           "display_order",
           "category",
           "unit_type",
@@ -5584,6 +5604,9 @@
           "is_active": {
             "type": "boolean"
           },
+          "is_system": {
+            "type": "boolean"
+          },
           "level": {
             "format": "int32",
             "type": "integer"
@@ -5621,6 +5644,7 @@
           "level",
           "permissions",
           "is_active",
+          "is_system",
           "created_at",
           "updated_at"
         ],
@@ -8964,6 +8988,16 @@
     "/api/organization/units": {
       "get": {
         "operationId": "listOrganizationUnits",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "include_inactive",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -9060,6 +9094,76 @@
       }
     },
     "/api/organization/units/{id}": {
+      "delete": {
+        "operationId": "deactivateOrganizationUnit",
+        "parameters": [
+          {
+            "description": "Organization unit ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_EmptyData"
+                }
+              }
+            },
+            "description": "Organization unit deactivated"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Organization unit not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "System unit or active child prevents deactivation"
+          }
+        },
+        "tags": [
+          "organization"
+        ]
+      },
       "get": {
         "operationId": "getOrganizationUnit",
         "parameters": [
@@ -9194,6 +9298,16 @@
               }
             },
             "description": "Organization unit not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Protected unit or invalid hierarchy transition"
           }
         },
         "tags": [
@@ -10320,6 +10434,16 @@
     "/api/roles": {
       "get": {
         "operationId": "listRoles",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "include_inactive",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -10416,6 +10540,76 @@
       }
     },
     "/api/roles/{id}": {
+      "delete": {
+        "operationId": "deleteRole",
+        "parameters": [
+          {
+            "description": "Role ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_EmptyData"
+                }
+              }
+            },
+            "description": "Role deactivated"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Role not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "System role cannot be deactivated"
+          }
+        },
+        "tags": [
+          "roles"
+        ]
+      },
       "get": {
         "operationId": "getRole",
         "parameters": [
@@ -10550,6 +10744,16 @@
               }
             },
             "description": "Role not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Protected role or invalid status transition"
           }
         },
         "tags": [

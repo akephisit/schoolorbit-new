@@ -130,6 +130,7 @@ test('generated authorization contracts cover implemented routes and frontend DT
 		['/api/roles/{id}', 'get', 'getRole'],
 		['/api/roles', 'post', 'createRole'],
 		['/api/roles/{id}', 'put', 'updateRole'],
+		['/api/roles/{id}', 'delete', 'deleteRole'],
 		['/api/permissions', 'get', 'listPermissions'],
 		['/api/permissions/modules', 'get', 'listPermissionsByModule'],
 		['/api/users/{id}/roles', 'get', 'getUserRoles'],
@@ -140,6 +141,7 @@ test('generated authorization contracts cover implemented routes and frontend DT
 		['/api/organization/units/{id}', 'get', 'getOrganizationUnit'],
 		['/api/organization/units', 'post', 'createOrganizationUnit'],
 		['/api/organization/units/{id}', 'put', 'updateOrganizationUnit'],
+		['/api/organization/units/{id}', 'delete', 'deactivateOrganizationUnit'],
 		['/api/organization/units/{id}/permissions', 'get', 'getOrganizationPermissions'],
 		['/api/organization/units/{id}/permissions', 'put', 'updateOrganizationPermissions'],
 		['/api/organization/units/{id}/delegatable-permissions', 'get', 'listDelegatablePermissions'],
@@ -152,12 +154,10 @@ test('generated authorization contracts cover implemented routes and frontend DT
 		['/api/organization/units/{id}/members/{user_id}', 'delete', 'removeOrganizationMember']
 	];
 
-	assert.equal(expected.length, 30);
+	assert.equal(expected.length, 32);
 	for (const [route, method, operationId] of expected) {
 		assert.equal(contract.paths?.[route]?.[method]?.operationId, operationId, `${method} ${route}`);
 	}
-	assert.equal(contract.paths?.['/api/roles/{id}']?.delete, undefined);
-	assert.equal(contract.paths?.['/api/organization/units/{id}']?.delete, undefined);
 
 	for (const schemaName of [
 		'LoginRequest',
