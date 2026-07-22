@@ -52,7 +52,7 @@ Frontend API modules import generated wire DTOs and may map them to separate
 domain/view models. Generation must not require database credentials or start
 the backend server.
 
-The current checkpoint contains 184 unique operations: 32 auth/authorization
+The current checkpoint contains 177 unique operations: 32 auth/authorization
 operations, 36 read-oriented JSON operations from the prior checkpoint, the
 completed Phase 1 people batch (12 mutations plus the dependent achievement
 list read), and the first Phase 2 academic structure batch (15 mutations plus
@@ -60,8 +60,7 @@ four dependent reads), the Phase 2 curriculum core batch (15 mutations plus
 nine dependent reads), the Phase 2 activity-template batch (10 mutations plus
 three dependent reads), the Phase 2 activity workspace batch (21 mutations
 plus seven dependent reads), and the Phase 2 course planning batch (seven
-mutations plus five dependent reads), and the Phase 2 scheduling-configuration
-batch (six configuration reads plus one atomic mutation). The people operations are:
+mutations plus five dependent reads). The people operations are:
 
 - staff: `createStaff`, `updateStaff`, `deleteStaff`
 - student/parent-link: `updateStudentProfile`, `createStudent`, `updateStudent`,
@@ -138,11 +137,12 @@ conflicts return `409` and roll back the whole team mutation. Course `settings`
 is an optional, flexible JSON object; non-object values and explicit `null` are
 invalid request bodies.
 
-This is the current Phase 4 mutation-contract rollout checkpoint. Scheduling
-configuration now uses six reads plus one atomic mutation at
-`PUT /api/academic/scheduling/configuration`; the six previous mutation routes
-were removed. The next Phase 2 batch can cover scheduling jobs and undo. The OpenAPI document describes
-implemented backend routes only; a frontend helper or UI call is not evidence
+This is the current Phase 4 mutation-contract rollout checkpoint. Auto Schedule,
+Scheduling Configuration, scheduling jobs, and undo were intentionally removed.
+Manual timetable editing is the only supported timetable-construction workflow.
+Migration 028 preserves all `academic_timetable_entries` rows while removing
+scheduler-only metadata and schema. The OpenAPI document describes implemented
+backend routes only; a frontend helper or UI call is not evidence
 that a backend route exists. SSE, WebSocket, health/readiness, and file/binary
 endpoints remain explicitly outside this OpenAPI contract.
 

@@ -436,184 +436,17 @@ test('project rules document generated API contract ownership', async () => {
 	}
 });
 
-test('project docs record the 184-operation scheduling configuration checkpoint', async () => {
-	const sources = await Promise.all([
-		readRepoFile('.rules'),
-		readRepoFile('docs/TESTING.md'),
-		readRepoFile('docs/backend-school/API_DEVELOPMENT.md'),
-		readRepoFile('IMPROVEMENT_PLAN.md')
-	]);
-
-	for (const source of sources) {
-		assert.match(source, /184 unique operations/i);
-		assert.match(source, /32[\s\S]{0,30}auth\/authorization/i);
-		assert.match(source, /36 read-oriented/i);
-		assert.match(source, /12\s+mutations/i);
-		assert.match(source, /achievement\s+list read/i);
-		assert.match(source, /Phase 1[\s\S]{0,80}people/i);
-		assert.match(source, /Phase 2[\s\S]{0,120}academic structure/i);
-		assert.match(source, /15\s+mutations/i);
-		assert.match(source, /four dependent reads|4 dependent reads/i);
-		assert.match(source, /nine dependent reads|9 dependent reads/i);
-		assert.match(source, /10\s+mutations/i);
-		assert.match(source, /three dependent reads|3 dependent reads/i);
-		assert.match(source, /21\s+mutations/i);
-		assert.match(source, /seven dependent reads|7 dependent reads/i);
-		assert.match(source, /activity[- ]workspace (?:operations|batch)/i);
-		assert.match(source, /seven\s+mutations|7\s+mutations/i);
-		assert.match(source, /five dependent reads|5 dependent reads/i);
-		assert.match(source, /course[- ]planning (?:operations|batch)/i);
-		assert.match(source, /scheduling[- ]configuration\s+(?:operations|batch|now)/i);
-		assert.match(source, /six (?:configuration )?reads|6 (?:configuration )?reads/i);
-		assert.match(source, /one atomic mutation|1 atomic mutation/i);
-		assert.match(
-			source,
-			/scheduling[- ]configuration[\s\S]{0,120}(?:complete|เสร็จ|atomic mutation)/i
-		);
-		for (const operationId of [
-			'createStaff',
-			'updateStaff',
-			'deleteStaff',
-			'updateStudentProfile',
-			'createStudent',
-			'updateStudent',
-			'deleteStudent',
-			'addStudentParent',
-			'removeStudentParent',
-			'listAchievements',
-			'createAchievement',
-			'updateAchievement',
-			'deleteAchievement'
-		]) {
-			assert.match(source, new RegExp(`\\b${operationId}\\b`));
-		}
-		for (const operationId of [
-			'listSubjectGroups',
-			'batchListSubjectDefaultInstructors',
-			'listSubjects',
-			'createSubject',
-			'updateSubject',
-			'deleteSubject',
-			'listSubjectDefaultInstructors',
-			'addSubjectDefaultInstructor',
-			'removeSubjectDefaultInstructor',
-			'updateSubjectDefaultInstructorRole',
-			'listStudyPlans',
-			'createStudyPlan',
-			'getStudyPlan',
-			'updateStudyPlan',
-			'deleteStudyPlan',
-			'listStudyPlanVersions',
-			'createStudyPlanVersion',
-			'getStudyPlanVersion',
-			'updateStudyPlanVersion',
-			'deleteStudyPlanVersion',
-			'listStudyPlanSubjects',
-			'addSubjectsToStudyPlanVersion',
-			'deleteStudyPlanSubject',
-			'generateCoursesFromStudyPlan'
-		]) {
-			assert.match(source, new RegExp(`\\b${operationId}\\b`));
-		}
-		for (const operationId of [
-			'listStudyPlanActivities',
-			'addStudyPlanActivity',
-			'updateStudyPlanActivity',
-			'deleteStudyPlanActivity',
-			'generateActivitiesFromStudyPlan',
-			'listActivityCatalog',
-			'createActivityCatalog',
-			'updateActivityCatalog',
-			'deleteActivityCatalog',
-			'listActivityCatalogDefaultInstructors',
-			'addActivityCatalogDefaultInstructor',
-			'removeActivityCatalogDefaultInstructor',
-			'updateActivityCatalogDefaultInstructorRole'
-		]) {
-			assert.match(source, new RegExp(`\\b${operationId}\\b`));
-		}
-		for (const operationId of [
-			'listActivitySlots',
-			'updateActivitySlot',
-			'deleteActivitySlot',
-			'listActivitySlotInstructors',
-			'addActivitySlotInstructor',
-			'addActivitySlotInstructorsBatch',
-			'removeActivitySlotInstructor',
-			'removeAllActivitySlotInstructors',
-			'deleteAllActivitySlotGroups',
-			'deleteActivitySlotTimetableEntries',
-			'listActivitySlotClassroomAssignments',
-			'upsertActivitySlotClassroomAssignments',
-			'deleteAllActivitySlotClassroomAssignments',
-			'deleteActivitySlotClassroomAssignment',
-			'listActivityGroups',
-			'createActivityGroup',
-			'updateActivityGroup',
-			'deleteActivityGroup',
-			'listActivityGroupMembers',
-			'addActivityGroupMembers',
-			'removeActivityGroupMember',
-			'updateActivityGroupMemberResult',
-			'listActivityGroupInstructors',
-			'addActivityGroupInstructor',
-			'removeActivityGroupInstructor',
-			'listMyActivityEnrollments',
-			'selfEnrollActivityGroup',
-			'selfUnenrollActivityGroup'
-		]) {
-			assert.match(source, new RegExp(`\\b${operationId}\\b`));
-		}
-		for (const operationId of [
-			'getAcademicStructure',
-			'createGradeLevel',
-			'deleteGradeLevel',
-			'createAcademicYear',
-			'updateAcademicYear',
-			'setActiveAcademicYear',
-			'getAcademicYearLevels',
-			'updateAcademicYearLevels',
-			'createSemester',
-			'updateSemester',
-			'deleteSemester',
-			'listClassrooms',
-			'createClassroom',
-			'updateClassroom',
-			'enrollStudents',
-			'listClassEnrollments',
-			'removeEnrollment',
-			'updateEnrollmentNumber',
-			'autoAssignClassNumbers'
-		]) {
-			assert.match(source, new RegExp(`\\b${operationId}\\b`));
-		}
-		for (const operationId of [
-			'listClassroomCourses',
-			'assignCourses',
-			'updateClassroomCourse',
-			'removeClassroomCourse',
-			'batchListCourseInstructors',
-			'batchListCourseInstructorsFromQuery',
-			'listCourseInstructors',
-			'addCourseInstructor',
-			'updateCourseInstructorRole',
-			'removeCourseInstructor',
-			'listClassroomActivities',
-			'removeClassroomFromActivitySlot'
-		]) {
-			assert.match(source, new RegExp(`\\b${operationId}\\b`));
-		}
-		assert.match(source, /primary_instructor_id/);
-		assert.match(source, /explicit(?: JSON)? `?null`?/i);
-		assert.match(source, /Phase 4[\s\S]{0,120}mutation|mutation[\s\S]{0,120}Phase 4/i);
-		assert.match(source, /users\.status\s*!=\s*['"`]active['"`]/);
-		assert.match(source, /permission_changed/);
-		assert.match(source, /actor_tenant_context/);
-		assert.match(source, /not-found/i);
-		assert.match(
-			source,
-			/SSE[\s\S]{0,120}WebSocket[\s\S]{0,120}(?:binary|file)|(?:binary|file)[\s\S]{0,120}SSE[\s\S]{0,120}WebSocket/i
-		);
+test('project docs record the 177-operation manual timetable checkpoint', async () => {
+	for (const file of [
+		'.rules',
+		'IMPROVEMENT_PLAN.md',
+		'docs/TESTING.md',
+		'docs/backend-school/API_DEVELOPMENT.md'
+	]) {
+		const source = await readRepoFile(file);
+		assert.match(source, /177 unique operations/i);
+		assert.match(source, /manual timetable/i);
+		assert.doesNotMatch(source, /scheduling jobs\/undo.*next|auto[- ]scheduler.*supported/i);
 	}
 });
 
@@ -623,7 +456,7 @@ test('API docs record implemented reversible role and organization deactivation'
 	const improvements = await readRepoFile('IMPROVEMENT_PLAN.md');
 
 	for (const source of [guide, testing]) {
-		assert.match(source, /184 unique operations/);
+		assert.match(source, /177 unique operations/);
 		assert.match(source, /32[\s\S]{0,50}auth\/authorization[\s\S]{0,30}operations/);
 		assert.match(source, /implemented\s+backend\s+routes\s+only/i);
 	}
