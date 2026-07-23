@@ -165,7 +165,15 @@ fn timetable_service_uses_private_child_modules() {
         read_source(manifest_dir().join("src/modules/academic/services/timetable_service.rs"));
     let service_dir = manifest_dir().join("src/modules/academic/services/timetable_service");
 
-    for module in ["shared", "occupancy"] {
+    for module in [
+        "batch_mutations",
+        "entries",
+        "instructors",
+        "moves_and_swaps",
+        "occupancy",
+        "shared",
+        "validation",
+    ] {
         assert!(
             facade.contains(&format!("mod {module};")),
             "timetable facade must declare private module `{module}`"
@@ -178,7 +186,56 @@ fn timetable_service_uses_private_child_modules() {
             service_dir.join(format!("{module}.rs")).is_file(),
             "timetable child module `{module}` must have its own source file"
         );
+        if module != "shared" {
+            assert!(
+                facade.contains(&format!("pub use {module}")),
+                "timetable facade must re-export child module `{module}`"
+            );
+        }
     }
+
+    for public_item in [
+        "add_entry_instructor",
+        "create_batch_entries",
+        "create_entry",
+        "delete_batch_group",
+        "delete_entries_by_slot",
+        "delete_entry",
+        "fetch_entry_by_id",
+        "get_my_activity_for_entry",
+        "get_occupancy",
+        "hide_instructor_from_slot",
+        "hide_instructor_from_slot_period",
+        "list_entries",
+        "remove_entry_instructor",
+        "resolve_classroom_course_semester_id",
+        "restore_instructor_to_slot",
+        "swap_entries",
+        "update_entry",
+        "validate_entry",
+        "validate_moves",
+    ] {
+        assert!(
+            facade.contains(public_item),
+            "timetable facade must preserve public item `{public_item}`"
+        );
+    }
+
+    for forbidden in ["sqlx::", ".fetch_", ".execute(", ".begin(", "SELECT "] {
+        assert!(
+            !facade.contains(forbidden),
+            "timetable facade must not contain persistence fragment `{forbidden}`"
+        );
+    }
+
+    let nonblank_line_count = facade
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .count();
+    assert!(
+        nonblank_line_count <= 85,
+        "timetable facade must stay thin; found {nonblank_line_count} nonblank lines"
+    );
 }
 
 #[test]

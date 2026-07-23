@@ -5,7 +5,8 @@ use crate::modules::academic::models::timetable::{
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use super::{validate_entry, CreateEntryOutcome, TimetableFilter, UpdateEntryOutcome};
+pub use super::shared::{CreateEntryOutcome, TimetableFilter, UpdateEntryOutcome};
+use super::validate_entry;
 
 /// SELECT clause พร้อม joins ที่ใช้ร่วมระหว่าง list_entries และ fetch_entry_by_id
 /// แก้ตรงนี้ที่เดียวเมื่อต้องเพิ่มฟิลด์ joined

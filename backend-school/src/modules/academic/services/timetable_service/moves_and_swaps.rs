@@ -5,10 +5,8 @@ use crate::modules::academic::models::timetable::{
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use super::shared::{
-    MoveCellKey, MoveEntryRefs, MoveEntryRow, MoveSourceRow, SwapConflictInfo, SwapEntryRow,
-    SwapOutcome,
-};
+use super::shared::{MoveCellKey, MoveEntryRefs, MoveEntryRow, MoveSourceRow, SwapEntryRow};
+pub use super::shared::{SwapConflictInfo, SwapOutcome};
 
 /// Swap 2 entries ใน day/period กัน
 /// 3-step transaction เพื่อ bypass trigger race (migration 097)
