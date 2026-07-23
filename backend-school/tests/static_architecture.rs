@@ -3747,9 +3747,16 @@ fn teaching_supervision_observation_detail_actions_are_registered() {
     let models = strip_comments(&read_source(
         manifest_dir().join("src/modules/supervision/models.rs"),
     ));
-    let service = strip_comments(&read_source(
-        manifest_dir().join("src/modules/supervision/services.rs"),
-    ));
+    let service = strip_comments(
+        &[
+            "src/modules/supervision/services/shared.rs",
+            "src/modules/supervision/services/observations.rs",
+            "src/modules/supervision/services/evaluations.rs",
+        ]
+        .into_iter()
+        .map(|path| read_source(manifest_dir().join(path)))
+        .collect::<String>(),
+    );
 
     for expected in [
         "patch(update_observation)",
@@ -3791,9 +3798,15 @@ fn teaching_supervision_observation_detail_actions_are_registered() {
 
 #[test]
 fn teaching_supervision_services_use_bulk_mutations_for_multi_row_writes() {
-    let service = strip_comments(&read_source(
-        manifest_dir().join("src/modules/supervision/services.rs"),
-    ));
+    let service = strip_comments(
+        &[
+            "src/modules/supervision/services/templates.rs",
+            "src/modules/supervision/services/evaluations.rs",
+        ]
+        .into_iter()
+        .map(|path| read_source(manifest_dir().join(path)))
+        .collect::<String>(),
+    );
 
     for expected in [
         "build_template_section_bulk_rows",
