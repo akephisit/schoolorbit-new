@@ -179,7 +179,8 @@ test('calendar shared components use shadcn primitives', async () => {
 	assert.match(categoryDialog, /from '\$lib\/components\/ui\/tabs'/);
 	assert.match(categoryDialog, /from '\$lib\/components\/ui\/alert-dialog'/);
 	assert.match(colorKey, /CalendarColorKeyItem/);
-	assert.match(colorKey, /คำอธิบายสี/);
+	assert.doesNotMatch(colorKey, /คำอธิบายสี/);
+	assert.match(colorKey, /aria-label="หมวดหมู่กิจกรรมในปฏิทิน"/);
 	assert.match(colorKey, /\{#each items as item \(item\.id\)\}/);
 	assert.match(colorKey, /overflow-x-auto/);
 	assert.match(colorKey, /sm:flex-wrap/);
