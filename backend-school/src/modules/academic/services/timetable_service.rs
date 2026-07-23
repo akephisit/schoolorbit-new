@@ -1,132 +1,25 @@
 use crate::error::AppError;
 use crate::modules::academic::models::timetable::{
     ConflictInfo, CreateBatchTimetableEntriesRequest, CreateTimetableEntryRequest,
-    MoveValidityCell, SwapTimetableEntriesRequest, TimetableEntry, TimetableQuery,
-    TimetableValidationResponse, UpdateTimetableEntryRequest, ValidateMovesRequest,
+    MoveValidityCell, SwapTimetableEntriesRequest, TimetableEntry, TimetableValidationResponse,
+    UpdateTimetableEntryRequest, ValidateMovesRequest,
 };
 use serde::Serialize;
 use sqlx::PgPool;
 use uuid::Uuid;
 
-/// ผลของ create_batch_entries — handler ใช้ semester_id broadcast WS event
-pub struct BatchCreateOutcome {
-    pub inserted_count: i64,
-    pub skipped: Vec<BatchSkippedCell>,
-    pub blocked: Vec<BatchBlockedCell>,
-    pub deleted: Vec<BatchDeletedEntry>,
-    pub excluded_instructors: Vec<BatchExcludedInstructor>,
-    pub semester_id: Uuid,
-}
+mod occupancy;
+mod shared;
 
-#[derive(Serialize)]
-pub struct BatchSkippedCell {
-    pub classroom_id: Option<Uuid>,
-    pub classroom_name: Option<String>,
-    pub day_of_week: String,
-    pub period_id: Uuid,
-    pub period_name: Option<String>,
-    pub reason: String,
-    pub message: String,
-}
-
-#[derive(Serialize)]
-pub struct BatchBlockedCell {
-    pub classroom_id: Uuid,
-    pub classroom_name: Option<String>,
-    pub day_of_week: String,
-    pub period_id: Uuid,
-    pub period_name: Option<String>,
-    pub reason: String,
-    pub message: String,
-}
-
-#[derive(Serialize)]
-pub struct BatchDeletedEntry {
-    pub id: Uuid,
-    pub classroom_name: Option<String>,
-    pub day_of_week: String,
-    pub period_id: Uuid,
-    pub period_name: Option<String>,
-    pub title: String,
-    pub entry_type: String,
-    pub instructor_names: Vec<String>,
-}
-
-#[derive(Serialize)]
-pub struct BatchInstructorConflict {
-    pub day_of_week: String,
-    pub period_id: Uuid,
-    pub period_name: Option<String>,
-    pub existing_title: String,
-}
-
-#[derive(Serialize)]
-pub struct BatchExcludedInstructor {
-    pub instructor_id: Uuid,
-    pub instructor_name: String,
-    pub conflicting_at: Vec<BatchInstructorConflict>,
-}
-
-/// ข้อมูลสำหรับ DropRejected broadcast เมื่อ swap fail
-pub struct SwapConflictInfo {
-    pub reason: String,
-    pub semester_id: Uuid,
-    pub a_id: Uuid,
-    pub a_day: String,
-    pub a_period: Uuid,
-    pub a_room: Option<Uuid>,
-    pub b_id: Uuid,
-    pub b_day: String,
-    pub b_period: Uuid,
-}
-
-pub enum SwapOutcome {
-    Swapped { semester_id: Uuid },
-    Conflict(SwapConflictInfo),
-}
-
-/// Row สำหรับ /timetable/occupancy — ใช้ frontend สร้าง index เอง
-#[derive(serde::Serialize, sqlx::FromRow)]
-pub struct OccupancyRow {
-    pub id: Uuid,
-    pub classroom_id: Option<Uuid>,
-    pub day_of_week: String,
-    pub period_id: Uuid,
-    pub room_id: Option<Uuid>,
-    pub instructor_ids: Vec<Uuid>,
-}
-
-/// Outcome ของ create_entry — service ตัดสินใจ logic, handler ตัดสินใจ HTTP/WS broadcast
-pub enum CreateEntryOutcome {
-    Created(Box<TimetableEntry>),
-    Conflict(Vec<ConflictInfo>),
-}
-
-/// Outcome ของ update_entry — handler ใช้ existing_entry เพื่อ broadcast DropRejected/EntryUpdated
-pub enum UpdateEntryOutcome {
-    Updated {
-        updated: Box<TimetableEntry>,
-        existing: Box<TimetableEntry>,
-    },
-    Conflict {
-        conflicts: Vec<ConflictInfo>,
-        existing: Box<TimetableEntry>,
-    },
-}
-
-type SwapEntryRow = (
-    Uuid,
-    String,
-    Uuid,
-    Option<Uuid>,
-    Option<Uuid>,
-    Uuid,
-    Option<Uuid>,
-);
-type MoveSourceRow = (String, Uuid, Option<Uuid>, Option<Uuid>, Uuid, Uuid);
-type MoveEntryRow = (Uuid, String, Uuid, Option<Uuid>, Option<Uuid>);
-type MoveCellKey = (String, Uuid);
-type MoveEntryRefs<'a> = Vec<&'a MoveEntryRow>;
+pub use occupancy::get_occupancy;
+#[allow(unused_imports)]
+pub use occupancy::OccupancyRow;
+pub use shared::{
+    BatchBlockedCell, BatchCreateOutcome, BatchDeletedEntry, BatchExcludedInstructor,
+    BatchInstructorConflict, BatchSkippedCell, CreateEntryOutcome, SwapConflictInfo, SwapOutcome,
+    TimetableFilter, UpdateEntryOutcome,
+};
+use shared::{MoveCellKey, MoveEntryRefs, MoveEntryRow, MoveSourceRow, SwapEntryRow};
 
 #[derive(Serialize)]
 pub struct MyActivityInstructor {
@@ -144,39 +37,6 @@ pub struct MyActivityForEntry {
     pub member_count: Option<i64>,
     pub instructor_name: Option<String>,
     pub instructors: Option<Vec<MyActivityInstructor>>,
-}
-
-/// Filter สำหรับ list_entries — รวม use case ทุกมุมมอง:
-/// - Staff/Admin: ส่ง classroom_id หรือ semester_id (ไม่ filter user)
-/// - Student: ส่ง student_id → filter ตาม student_class_enrollments
-/// - Teacher: ส่ง instructor_id → filter ตาม timetable_entry_instructors
-/// - Parent → ดูลูก: caller verify parent-child link แล้วส่ง student_id
-#[derive(Debug, Default, Clone)]
-pub struct TimetableFilter {
-    pub classroom_id: Option<Uuid>,
-    pub student_id: Option<Uuid>,
-    pub instructor_id: Option<Uuid>,
-    pub room_id: Option<Uuid>,
-    pub academic_semester_id: Option<Uuid>,
-    pub day_of_week: Option<String>,
-    pub entry_type: Option<String>,
-    /// ใช้กับ instructor_id: รวม cell ที่ instructor อยู่ใน team แต่ไม่ใช่ผู้สอนหลักของ cell
-    pub include_team_ghosts: bool,
-}
-
-impl From<TimetableQuery> for TimetableFilter {
-    fn from(q: TimetableQuery) -> Self {
-        Self {
-            classroom_id: q.classroom_id,
-            student_id: q.student_id,
-            instructor_id: q.instructor_id,
-            room_id: q.room_id,
-            academic_semester_id: q.academic_semester_id,
-            day_of_week: q.day_of_week,
-            entry_type: q.entry_type,
-            include_team_ghosts: q.include_team_ghosts.unwrap_or(false),
-        }
-    }
 }
 
 /// SELECT clause พร้อม joins ที่ใช้ร่วมระหว่าง list_entries และ fetch_entry_by_id
@@ -1537,33 +1397,6 @@ pub async fn validate_moves(
     Ok(cells)
 }
 
-/// Get occupancy snapshot — frontend ใช้สร้าง index คำนวณ drop validity client-side
-pub async fn get_occupancy(
-    pool: &PgPool,
-    semester_id: Uuid,
-) -> Result<Vec<OccupancyRow>, AppError> {
-    sqlx::query_as::<_, OccupancyRow>(
-        r#"SELECT
-            te.id,
-            te.classroom_id,
-            te.day_of_week,
-            te.period_id,
-            te.room_id,
-            COALESCE(
-                ARRAY_AGG(tei.instructor_id) FILTER (WHERE tei.instructor_id IS NOT NULL),
-                '{}'::uuid[]
-            ) AS instructor_ids
-           FROM academic_timetable_entries te
-           LEFT JOIN timetable_entry_instructors tei ON tei.entry_id = te.id
-           WHERE te.academic_semester_id = $1 AND te.is_active = true
-           GROUP BY te.id"#,
-    )
-    .bind(semester_id)
-    .fetch_all(pool)
-    .await
-    .map_err(|e| AppError::InternalServerError(e.to_string()))
-}
-
 /// ลบ entries ทั้งหมดที่ match (slot_id, day, semester) — return rows affected
 pub async fn delete_entries_by_slot(
     pool: &PgPool,
@@ -2576,45 +2409,4 @@ pub async fn create_batch_entries(
         excluded_instructors,
         semester_id: payload.academic_semester_id,
     })
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn empty_query() -> TimetableQuery {
-        TimetableQuery {
-            classroom_id: None,
-            student_id: None,
-            instructor_id: None,
-            room_id: None,
-            academic_semester_id: None,
-            day_of_week: None,
-            entry_type: None,
-            include_team_ghosts: None,
-        }
-    }
-
-    #[test]
-    fn timetable_filter_defaults_include_team_ghosts_to_false() {
-        let filter = TimetableFilter::from(empty_query());
-
-        assert!(!filter.include_team_ghosts);
-    }
-
-    #[test]
-    fn timetable_filter_preserves_query_fields() {
-        let classroom_id = Uuid::new_v4();
-        let query = TimetableQuery {
-            classroom_id: Some(classroom_id),
-            day_of_week: Some("MON".to_string()),
-            include_team_ghosts: Some(true),
-            ..empty_query()
-        };
-        let filter = TimetableFilter::from(query);
-
-        assert_eq!(filter.classroom_id, Some(classroom_id));
-        assert_eq!(filter.day_of_week.as_deref(), Some("MON"));
-        assert!(filter.include_team_ghosts);
-    }
 }
