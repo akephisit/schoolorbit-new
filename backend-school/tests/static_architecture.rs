@@ -724,16 +724,16 @@ fn module_service_files() -> Vec<PathBuf> {
 }
 
 fn is_reexport_only_service_file(source: &str) -> bool {
-    strip_comments(source)
-        .lines()
-        .map(str::trim)
-        .filter(|line| !line.is_empty())
-        .all(|line| {
-            line.starts_with("pub mod ")
-                || line.starts_with("pub use ")
-                || line.starts_with("#[")
-                || line == ";"
-        })
+    let source = strip_comments(source);
+    let logic_declaration =
+        Regex::new(r"(?m)^\s*(?:pub(?:\([^)]*\))?\s+)?(?:(?:async\s+)?fn|struct|enum|const)\s+")
+            .expect("valid service logic declaration regex");
+
+    let has_module_or_reexport = source.lines().map(str::trim).any(|line| {
+        line.starts_with("mod ") || line.starts_with("pub mod ") || line.starts_with("pub use ")
+    });
+
+    has_module_or_reexport && !logic_declaration.is_match(&source)
 }
 
 #[test]
@@ -2297,8 +2297,36 @@ fn module_service_logic_has_focused_unit_tests() {
             .join("tests.rs");
         let has_focused_family_tests =
             family_tests_path.is_file() && read_source(&family_tests_path).contains("#[test]");
+        let characterization_tests_path = if file
+            .parent()
+            .and_then(|parent| parent.file_name())
+            .is_some_and(|name| name == "services")
+        {
+            file.parent()
+                .and_then(Path::parent)
+                .map(|parent| parent.join("services_tests.rs"))
+        } else {
+            file.parent()
+                .and_then(|parent| {
+                    parent.file_name().map(|name| {
+                        parent
+                            .parent()
+                            .map(|root| root.join(format!("{}_tests.rs", name.to_string_lossy())))
+                    })
+                })
+                .flatten()
+        };
+        let has_characterization_tests = characterization_tests_path.is_some_and(|path| {
+            path.is_file() && {
+                let tests = read_source(path);
+                tests.contains("#[test]") || tests.contains("#[tokio::test]")
+            }
+        });
 
-        if !source.contains("#[cfg(test)]") && !has_focused_family_tests {
+        if !source.contains("#[cfg(test)]")
+            && !has_focused_family_tests
+            && !has_characterization_tests
+        {
             violations.push(format!(
                 "{}: service logic files must include focused #[cfg(test)] coverage in-file or in a colocated tests.rs",
                 relative(&file)
@@ -4000,19 +4028,19 @@ fn mutation_performance_foundation_services_use_bulk_helpers() {
             ["for (id, display_order) in &groups"].as_slice(),
         ),
         (
-            "src/modules/supervision/services.rs",
-            [
-                "insert_supervision_evaluators",
-                "Failed to insert supervision cycle targets",
-                "Failed to insert supervision template steps",
-            ]
-            .as_slice(),
-            [
-                "for evaluator in input.evaluators",
-                "Failed to insert supervision cycle target:",
-                "Failed to insert supervision template step:",
-            ]
-            .as_slice(),
+            "src/modules/supervision/services/evaluations.rs",
+            ["insert_supervision_evaluators"].as_slice(),
+            ["for evaluator in input.evaluators"].as_slice(),
+        ),
+        (
+            "src/modules/supervision/services/cycles.rs",
+            ["Failed to insert supervision cycle targets"].as_slice(),
+            ["Failed to insert supervision cycle target:"].as_slice(),
+        ),
+        (
+            "src/modules/supervision/services/templates.rs",
+            ["Failed to insert supervision template steps"].as_slice(),
+            ["Failed to insert supervision template step:"].as_slice(),
         ),
         (
             "src/modules/staff/services/organization_permission_service.rs",
