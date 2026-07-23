@@ -239,6 +239,27 @@ fn timetable_service_uses_private_child_modules() {
 }
 
 #[test]
+fn calendar_service_uses_private_child_modules() {
+    let facade = read_source(manifest_dir().join("src/modules/calendar/services.rs"));
+    let service_dir = manifest_dir().join("src/modules/calendar/services");
+
+    for module in ["shared", "categories_and_tags"] {
+        assert!(
+            facade.contains(&format!("mod {module};")),
+            "calendar facade must declare private module `{module}`"
+        );
+        assert!(
+            !facade.contains(&format!("pub mod {module};")),
+            "calendar child module `{module}` must remain private"
+        );
+        assert!(
+            service_dir.join(format!("{module}.rs")).is_file(),
+            "calendar child module `{module}` must have its own source file"
+        );
+    }
+}
+
+#[test]
 fn exam_schedule_service_uses_a_thin_private_module_facade() {
     let service_dir = manifest_dir().join("src/modules/academic/services/exam_schedule_service");
     let facade_path = manifest_dir().join("src/modules/academic/services/exam_schedule_service.rs");

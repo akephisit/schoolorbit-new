@@ -1,7 +1,9 @@
-use chrono::{Datelike, Duration, Months, NaiveDate, NaiveTime, Utc};
+#[cfg(test)]
+use chrono::NaiveTime;
+use chrono::{NaiveDate, Utc};
 use sqlx::pool::PoolConnection;
 use sqlx::{PgPool, Postgres, QueryBuilder, Transaction};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::broadcast;
 use uuid::Uuid;
@@ -9,22 +11,30 @@ use uuid::Uuid;
 use crate::db::{admin_client::AdminClient, pool_manager::PoolManager};
 use crate::error::AppError;
 use crate::modules::calendar::models::{
-    CalendarAudienceType, CalendarCategory, CalendarEvent, CalendarEventQuery,
-    CalendarEventReminder, CalendarEventRow, CalendarEventTag, CalendarEventTarget,
-    CalendarEventTargetInput, CalendarPublicEvent, CalendarTag, CalendarViewerEvent,
-    CalendarVisibility, UpsertCalendarCategoryRequest, UpsertCalendarEventRequest,
-    UpsertCalendarTagRequest,
+    CalendarAudienceType, CalendarEvent, CalendarEventQuery, CalendarEventReminder,
+    CalendarEventRow, CalendarEventTag, CalendarEventTarget, CalendarEventTargetInput,
+    CalendarPublicEvent, CalendarViewerEvent, CalendarVisibility, UpsertCalendarEventRequest,
 };
 use crate::modules::notification::events::TenantNotificationEvent;
 use crate::services::notification::{
     NotificationService, NotificationType, TenantNotificationPublisher,
 };
 
-const DUPLICATE_CATEGORY_MESSAGE: &str = "มีหมวดหมู่นี้อยู่แล้ว";
-const DUPLICATE_TAG_MESSAGE: &str = "มีแท็กนี้อยู่แล้ว";
+mod categories_and_tags;
+mod shared;
+
+#[cfg(test)]
+use categories_and_tags::normalized_tag_name;
+pub use categories_and_tags::{
+    create_category, create_tag, hard_delete_category, hard_delete_tag, list_categories, list_tags,
+    update_category, update_tag,
+};
+#[cfg(test)]
+pub use shared::reminder_dates;
+pub use shared::{dedupe_user_ids, validate_event_date_time, validate_targets};
+use shared::{dedupe_uuid_ids, normalized_event_range, reminder_schedule, tenant_today};
+
 const EVENT_NOT_FOUND_MESSAGE: &str = "ไม่พบกำหนดการ";
-const CATEGORY_NOT_FOUND_MESSAGE: &str = "ไม่พบหมวดหมู่";
-const TAG_NOT_FOUND_MESSAGE: &str = "ไม่พบแท็ก";
 const INVALID_TAGS_MESSAGE: &str = "มีแท็กที่ไม่ถูกต้อง กรุณาเลือกแท็กใหม่";
 
 const SELECT_DUE_CALENDAR_REMINDER_CANDIDATES_SQL: &str = r#"
@@ -138,127 +148,6 @@ impl CalendarNotificationSendOutcome {
     fn should_mark_reminder_sent(self) -> bool {
         self.recipient_count == 0 || self.successful_count > 0
     }
-}
-
-pub fn validate_event_date_time(
-    start_date: NaiveDate,
-    end_date: NaiveDate,
-    all_day: bool,
-    start_time: Option<NaiveTime>,
-    end_time: Option<NaiveTime>,
-) -> Result<(), AppError> {
-    if end_date < start_date {
-        return Err(AppError::BadRequest("วันที่สิ้นสุดต้องไม่ก่อนวันที่เริ่มต้น".to_string()));
-    }
-
-    if all_day {
-        return Ok(());
-    }
-
-    if start_date == end_date {
-        match (start_time, end_time) {
-            (Some(start), Some(end)) if end > start => Ok(()),
-            (Some(_), Some(_)) => Err(AppError::BadRequest("เวลาสิ้นสุดต้องหลังเวลาเริ่มต้น".to_string())),
-            _ => Err(AppError::BadRequest(
-                "event แบบระบุเวลาต้องมีเวลาเริ่มต้นและสิ้นสุด".to_string(),
-            )),
-        }
-    } else if start_time.is_some() && end_time.is_some() {
-        Ok(())
-    } else {
-        Err(AppError::BadRequest(
-            "event หลายวันที่ระบุเวลาต้องมีเวลาเริ่มต้นและสิ้นสุด".to_string(),
-        ))
-    }
-}
-
-fn reminder_schedule(
-    start_date: NaiveDate,
-    offsets: &[i32],
-) -> Result<Vec<(i32, NaiveDate)>, AppError> {
-    let mut pairs = Vec::with_capacity(offsets.len());
-    let mut seen = HashSet::new();
-
-    for days_before in offsets {
-        if *days_before <= 0 {
-            return Err(AppError::BadRequest(
-                "จำนวนวันแจ้งเตือนต้องมากกว่า 0".to_string(),
-            ));
-        }
-        if seen.insert(*days_before) {
-            let remind_on = start_date
-                .checked_sub_signed(Duration::days(i64::from(*days_before)))
-                .ok_or_else(|| AppError::BadRequest("วันที่แจ้งเตือนอยู่นอกช่วงที่รองรับ".to_string()))?;
-            pairs.push((*days_before, remind_on));
-        }
-    }
-
-    pairs.sort_by_key(|(_, remind_on)| *remind_on);
-    Ok(pairs)
-}
-
-#[cfg(test)]
-pub fn reminder_dates(start_date: NaiveDate, offsets: &[i32]) -> Result<Vec<NaiveDate>, AppError> {
-    Ok(reminder_schedule(start_date, offsets)?
-        .into_iter()
-        .map(|(_, remind_on)| remind_on)
-        .collect())
-}
-
-pub fn validate_targets(targets: &[CalendarEventTargetInput]) -> Result<(), AppError> {
-    if targets.is_empty() {
-        return Err(AppError::BadRequest("ต้องเลือกผู้เห็นอย่างน้อยหนึ่งกลุ่ม".to_string()));
-    }
-
-    let mut seen_targets = HashSet::new();
-
-    for target in targets {
-        if target.grade_level_id.is_some() && target.class_room_id.is_some() {
-            return Err(AppError::BadRequest(
-                "เลือกได้เพียงระดับชั้นหรือห้องเรียนอย่างใดอย่างหนึ่ง".to_string(),
-            ));
-        }
-
-        match &target.audience_type {
-            CalendarAudienceType::All | CalendarAudienceType::Staff => {
-                if target.grade_level_id.is_some() || target.class_room_id.is_some() {
-                    return Err(AppError::BadRequest(
-                        "กลุ่มผู้เห็น all/staff ไม่รองรับการกรองระดับชั้นหรือห้องเรียน".to_string(),
-                    ));
-                }
-            }
-            CalendarAudienceType::Student | CalendarAudienceType::Parent => {}
-        }
-
-        let target_key = (
-            target.audience_type.as_str(),
-            target.grade_level_id,
-            target.class_room_id,
-        );
-        if !seen_targets.insert(target_key) {
-            return Err(AppError::BadRequest("กลุ่มผู้เห็นซ้ำ".to_string()));
-        }
-    }
-
-    Ok(())
-}
-
-pub fn dedupe_user_ids(ids: Vec<Uuid>) -> Vec<Uuid> {
-    let mut seen = HashSet::new();
-    let mut deduped = Vec::new();
-
-    for id in ids {
-        if seen.insert(id) {
-            deduped.push(id);
-        }
-    }
-
-    deduped
-}
-
-fn dedupe_uuid_ids(ids: &[Uuid]) -> Vec<Uuid> {
-    let mut seen = HashSet::new();
-    ids.iter().copied().filter(|id| seen.insert(*id)).collect()
 }
 
 pub async fn resolve_event_recipient_user_ids(
@@ -617,154 +506,6 @@ async fn get_event_for_response(pool: &PgPool, event_id: Uuid) -> Result<Calenda
     events
         .pop()
         .ok_or_else(|| AppError::NotFound(EVENT_NOT_FOUND_MESSAGE.to_string()))
-}
-
-pub async fn list_categories(pool: &PgPool) -> Result<Vec<CalendarCategory>, AppError> {
-    sqlx::query_as::<_, CalendarCategory>(
-        r#"
-        SELECT id, name, color, order_index, is_active, created_at, updated_at
-        FROM calendar_categories
-        WHERE is_active = true
-        ORDER BY order_index, name
-        "#,
-    )
-    .fetch_all(pool)
-    .await
-    .map_err(AppError::from)
-}
-
-pub async fn create_category(
-    pool: &PgPool,
-    payload: UpsertCalendarCategoryRequest,
-) -> Result<CalendarCategory, AppError> {
-    sqlx::query_as::<_, CalendarCategory>(
-        r#"
-        INSERT INTO calendar_categories (name, color, order_index, is_active)
-        VALUES (
-            $1,
-            $2,
-            COALESCE($3, (SELECT COALESCE(MAX(order_index), 0) + 1 FROM calendar_categories)),
-            COALESCE($4, true)
-        )
-        RETURNING id, name, color, order_index, is_active, created_at, updated_at
-        "#,
-    )
-    .bind(payload.name)
-    .bind(payload.color)
-    .bind(payload.order_index)
-    .bind(payload.is_active)
-    .fetch_one(pool)
-    .await
-    .map_err(map_category_write_error)
-}
-
-pub async fn update_category(
-    pool: &PgPool,
-    id: Uuid,
-    payload: UpsertCalendarCategoryRequest,
-) -> Result<CalendarCategory, AppError> {
-    let category = sqlx::query_as::<_, CalendarCategory>(
-        r#"
-        UPDATE calendar_categories
-        SET
-            name = $1,
-            color = $2,
-            order_index = COALESCE($3, order_index),
-            is_active = COALESCE($4, is_active)
-        WHERE id = $5 AND is_active = true
-        RETURNING id, name, color, order_index, is_active, created_at, updated_at
-        "#,
-    )
-    .bind(payload.name)
-    .bind(payload.color)
-    .bind(payload.order_index)
-    .bind(payload.is_active)
-    .bind(id)
-    .fetch_optional(pool)
-    .await
-    .map_err(map_category_write_error)?;
-
-    category.ok_or_else(|| AppError::NotFound(CATEGORY_NOT_FOUND_MESSAGE.to_string()))
-}
-
-pub async fn hard_delete_category(pool: &PgPool, id: Uuid) -> Result<(), AppError> {
-    let result = sqlx::query("DELETE FROM calendar_categories WHERE id = $1")
-        .bind(id)
-        .execute(pool)
-        .await?;
-
-    if result.rows_affected() == 0 {
-        return Err(AppError::NotFound(CATEGORY_NOT_FOUND_MESSAGE.to_string()));
-    }
-
-    Ok(())
-}
-
-pub async fn list_tags(pool: &PgPool) -> Result<Vec<CalendarTag>, AppError> {
-    sqlx::query_as::<_, CalendarTag>(
-        r#"
-        SELECT id, name, created_at, updated_at
-        FROM calendar_tags
-        ORDER BY LOWER(name), id
-        "#,
-    )
-    .fetch_all(pool)
-    .await
-    .map_err(AppError::from)
-}
-
-pub async fn create_tag(
-    pool: &PgPool,
-    payload: UpsertCalendarTagRequest,
-) -> Result<CalendarTag, AppError> {
-    let name = normalized_tag_name(payload.name)?;
-    sqlx::query_as::<_, CalendarTag>(
-        r#"
-        INSERT INTO calendar_tags (name)
-        VALUES ($1)
-        RETURNING id, name, created_at, updated_at
-        "#,
-    )
-    .bind(name)
-    .fetch_one(pool)
-    .await
-    .map_err(map_tag_write_error)
-}
-
-pub async fn update_tag(
-    pool: &PgPool,
-    id: Uuid,
-    payload: UpsertCalendarTagRequest,
-) -> Result<CalendarTag, AppError> {
-    let name = normalized_tag_name(payload.name)?;
-    let tag = sqlx::query_as::<_, CalendarTag>(
-        r#"
-        UPDATE calendar_tags
-        SET name = $1
-        WHERE id = $2
-        RETURNING id, name, created_at, updated_at
-        "#,
-    )
-    .bind(name)
-    .bind(id)
-    .fetch_optional(pool)
-    .await
-    .map_err(map_tag_write_error)?;
-
-    tag.ok_or_else(|| AppError::NotFound(TAG_NOT_FOUND_MESSAGE.to_string()))
-}
-
-pub async fn hard_delete_tag(pool: &PgPool, id: Uuid) -> Result<(), AppError> {
-    let result = sqlx::query("DELETE FROM calendar_tags WHERE id = $1")
-        .bind(id)
-        .execute(pool)
-        .await?;
-
-    if result.rows_affected() == 0 {
-        return Err(AppError::NotFound(TAG_NOT_FOUND_MESSAGE.to_string()));
-    }
-
-    Ok(())
 }
 
 pub async fn create_event(
@@ -1406,33 +1147,6 @@ fn release_calendar_reminder_advisory_lock_sql() -> &'static str {
     RELEASE_CALENDAR_REMINDER_ADVISORY_LOCK_SQL
 }
 
-fn normalized_event_range(
-    query: &CalendarEventQuery,
-    today: NaiveDate,
-) -> Result<(NaiveDate, NaiveDate), AppError> {
-    match (query.from, query.to) {
-        (Some(from), Some(to)) if from > to => {
-            Err(AppError::BadRequest("วันที่เริ่มต้นต้องไม่หลังวันที่สิ้นสุด".to_string()))
-        }
-        (Some(from), Some(to)) => Ok((from, to)),
-        _ => Ok(current_month_range(today)),
-    }
-}
-
-fn tenant_today() -> NaiveDate {
-    (Utc::now() + Duration::hours(7)).date_naive()
-}
-
-fn current_month_range(today: NaiveDate) -> (NaiveDate, NaiveDate) {
-    let first_day = NaiveDate::from_ymd_opt(today.year(), today.month(), 1).unwrap_or(today);
-    let last_day = first_day
-        .checked_add_months(Months::new(1))
-        .and_then(|next_month| next_month.checked_sub_signed(Duration::days(1)))
-        .unwrap_or(first_day);
-
-    (first_day, last_day)
-}
-
 fn push_base_event_filters(
     builder: &mut QueryBuilder<'_, Postgres>,
     from: NaiveDate,
@@ -1716,56 +1430,6 @@ fn calendar_search_pattern(search: &str) -> String {
 
 fn push_event_order(builder: &mut QueryBuilder<'_, Postgres>) {
     builder.push(" ORDER BY e.start_date, e.start_time NULLS FIRST, e.created_at");
-}
-
-fn map_category_write_error(error: sqlx::Error) -> AppError {
-    if is_duplicate_active_category_name(&error) {
-        AppError::BadRequest(DUPLICATE_CATEGORY_MESSAGE.to_string())
-    } else {
-        AppError::from(error)
-    }
-}
-
-fn normalized_tag_name(name: String) -> Result<String, AppError> {
-    let normalized = name.trim();
-    if normalized.is_empty() {
-        return Err(AppError::BadRequest("กรุณาระบุชื่อแท็ก".to_string()));
-    }
-    if normalized.chars().count() > 80 {
-        return Err(AppError::BadRequest("ชื่อแท็กต้องไม่เกิน 80 ตัวอักษร".to_string()));
-    }
-
-    Ok(normalized.to_string())
-}
-
-fn map_tag_write_error(error: sqlx::Error) -> AppError {
-    if is_unique_violation_for_constraint(&error, "idx_calendar_tags_name_unique") {
-        AppError::BadRequest(DUPLICATE_TAG_MESSAGE.to_string())
-    } else {
-        AppError::from(error)
-    }
-}
-
-fn is_duplicate_active_category_name(error: &sqlx::Error) -> bool {
-    is_unique_violation_for_constraint(error, "idx_calendar_categories_active_name_unique")
-}
-
-fn is_unique_violation_for_constraint(error: &sqlx::Error, constraint_name: &str) -> bool {
-    let sqlx::Error::Database(database_error) = error else {
-        return false;
-    };
-
-    if database_error.code().as_deref() != Some("23505") {
-        return false;
-    }
-
-    let constraint_matches = database_error
-        .constraint()
-        .map(|constraint| constraint == constraint_name)
-        .unwrap_or(false);
-    let message_matches = database_error.message().contains(constraint_name);
-
-    constraint_matches || message_matches
 }
 
 #[cfg(test)]
