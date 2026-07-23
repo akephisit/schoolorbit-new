@@ -1,8 +1,10 @@
 #![allow(dead_code)]
 
+mod shared;
+
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
-use chrono::{DateTime, Duration, NaiveDate, NaiveTime, Timelike, Utc};
+use chrono::{DateTime, NaiveDate, NaiveTime, Utc};
 use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
@@ -19,6 +21,18 @@ use crate::modules::academic::models::exam_schedule::{
     UpsertDayRoomAssignmentRequest, UpsertExamDayRequest,
 };
 
+use self::shared::{
+    exam_invigilator_staff_lock_keys, exam_session_conflict_lock_keys,
+    has_invigilator_time_conflict, has_same_classroom_conflict, has_same_room_conflict,
+    minutes_between_times, unique_uuids, validate_session_window, validation_error_to_app_error,
+    CandidateRoomSession, CandidateSession, InvigilatorSessionWindow,
+};
+
+#[cfg(test)]
+use self::shared::{
+    add_minutes, invigilator_workload_minutes, time_ranges_overlap, SessionValidationError,
+};
+
 #[derive(Debug, Clone, Copy)]
 pub struct WorkspaceCounts {
     pub day_count: i64,
@@ -30,10 +44,6 @@ pub struct WorkspaceCounts {
     pub invigilator_conflict_count: i64,
 }
 
-const EXAM_SESSION_SLOT_MINUTES: u32 = 5;
-const EXAM_SESSION_CLASSROOM_LOCK_NAMESPACE: i64 = 0x4558_5343_4C52_0000;
-const EXAM_SESSION_ROOM_LOCK_NAMESPACE: i64 = 0x4558_5352_4F4D_0000;
-const EXAM_INVIGILATOR_STAFF_LOCK_NAMESPACE: i64 = 0x4558_5349_4E56_0000;
 const INVIGILATOR_STAFF_OPTION_DEFAULT_LIMIT: i64 = 40;
 const INVIGILATOR_STAFF_OPTION_MAX_LIMIT: i64 = 100;
 
@@ -207,15 +217,6 @@ struct DayRoomAssignmentPlacementContext {
     room_id: Uuid,
 }
 
-#[derive(Debug, Clone)]
-struct CandidateRoomSession {
-    session_id: Option<Uuid>,
-    room_id: Uuid,
-    exam_day_id: Uuid,
-    starts_at: NaiveTime,
-    ends_at: NaiveTime,
-}
-
 #[derive(Debug, sqlx::FromRow)]
 struct PersonalExamSessionRow {
     round_id: Uuid,
@@ -337,159 +338,6 @@ impl InvigilatorViewRow {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
-pub enum SessionValidationError {
-    InvalidDuration,
-    EndTimeOverflow,
-    StartTimeOutsideSlot,
-    BeforeDayStart,
-    AfterDayEnd,
-    BlockedWindow(String),
-}
-
-pub fn add_minutes(start: NaiveTime, minutes: i32) -> Result<NaiveTime, SessionValidationError> {
-    if minutes <= 0 {
-        return Err(SessionValidationError::InvalidDuration);
-    }
-
-    let (end_time, day_delta) = start.overflowing_add_signed(Duration::minutes(i64::from(minutes)));
-    if day_delta == 0 {
-        Ok(end_time)
-    } else {
-        Err(SessionValidationError::EndTimeOverflow)
-    }
-}
-
-pub fn time_ranges_overlap(
-    left_start: NaiveTime,
-    left_end: NaiveTime,
-    right_start: NaiveTime,
-    right_end: NaiveTime,
-) -> bool {
-    left_start < right_end && right_start < left_end
-}
-
-fn is_exam_session_start_on_slot(starts_at: NaiveTime) -> bool {
-    starts_at
-        .num_seconds_from_midnight()
-        .is_multiple_of(EXAM_SESSION_SLOT_MINUTES * 60)
-}
-
-#[derive(Debug, Clone)]
-pub struct CandidateSession {
-    pub session_id: Option<Uuid>,
-    pub classroom_id: Uuid,
-    pub exam_day_id: Uuid,
-    pub starts_at: NaiveTime,
-    pub ends_at: NaiveTime,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct InvigilatorSessionWindow {
-    pub assignment_id: Uuid,
-    pub exam_day_id: Uuid,
-    pub staff_id: Uuid,
-    pub starts_at: NaiveTime,
-    pub ends_at: NaiveTime,
-}
-
-pub fn invigilator_workload_minutes(windows: &[InvigilatorSessionWindow]) -> i32 {
-    windows
-        .iter()
-        .map(|window| minutes_between_times(window.starts_at, window.ends_at))
-        .sum()
-}
-
-fn minutes_between_times(starts_at: NaiveTime, ends_at: NaiveTime) -> i32 {
-    let start_minutes = starts_at.num_seconds_from_midnight() / 60;
-    let end_minutes = ends_at.num_seconds_from_midnight() / 60;
-    end_minutes.saturating_sub(start_minutes) as i32
-}
-
-pub fn has_invigilator_time_conflict(
-    candidate_assignment_id: Uuid,
-    candidate_windows: &[InvigilatorSessionWindow],
-    existing_windows: &[InvigilatorSessionWindow],
-) -> bool {
-    candidate_windows.iter().any(|candidate| {
-        existing_windows.iter().any(|existing| {
-            existing.assignment_id != candidate_assignment_id
-                && existing.staff_id == candidate.staff_id
-                && existing.exam_day_id == candidate.exam_day_id
-                && time_ranges_overlap(
-                    candidate.starts_at,
-                    candidate.ends_at,
-                    existing.starts_at,
-                    existing.ends_at,
-                )
-        })
-    })
-}
-
-pub fn has_same_classroom_conflict(
-    candidate: &CandidateSession,
-    existing: &[CandidateSession],
-) -> bool {
-    existing.iter().any(|item| {
-        item.exam_day_id == candidate.exam_day_id
-            && item.classroom_id == candidate.classroom_id
-            && item.session_id != candidate.session_id
-            && time_ranges_overlap(
-                candidate.starts_at,
-                candidate.ends_at,
-                item.starts_at,
-                item.ends_at,
-            )
-    })
-}
-
-fn has_same_room_conflict(
-    candidate: &CandidateRoomSession,
-    existing: &[CandidateRoomSession],
-) -> bool {
-    existing.iter().any(|item| {
-        item.exam_day_id == candidate.exam_day_id
-            && item.room_id == candidate.room_id
-            && item.session_id != candidate.session_id
-            && time_ranges_overlap(
-                candidate.starts_at,
-                candidate.ends_at,
-                item.starts_at,
-                item.ends_at,
-            )
-    })
-}
-
-fn exam_session_conflict_lock_key(namespace: i64, exam_day_id: Uuid, resource_id: Uuid) -> i64 {
-    let day_bytes = exam_day_id.as_bytes();
-    let resource_bytes = resource_id.as_bytes();
-    let mut key_bytes = [0_u8; 8];
-    for index in 0..8 {
-        key_bytes[index] = day_bytes[index]
-            ^ day_bytes[index + 8]
-            ^ resource_bytes[index]
-            ^ resource_bytes[index + 8];
-    }
-    i64::from_be_bytes(key_bytes) ^ namespace
-}
-
-fn exam_session_conflict_lock_keys(
-    exam_day_id: Uuid,
-    classroom_id: Uuid,
-    room_id: Uuid,
-) -> [i64; 2] {
-    let mut keys = [
-        exam_session_conflict_lock_key(
-            EXAM_SESSION_CLASSROOM_LOCK_NAMESPACE,
-            exam_day_id,
-            classroom_id,
-        ),
-        exam_session_conflict_lock_key(EXAM_SESSION_ROOM_LOCK_NAMESPACE, exam_day_id, room_id),
-    ];
-    keys.sort_unstable();
-    keys
-}
-
 async fn lock_exam_session_conflict_scope(
     tx: &mut Transaction<'_, Postgres>,
     exam_day_id: Uuid,
@@ -503,21 +351,6 @@ async fn lock_exam_session_conflict_scope(
             .await?;
     }
     Ok(())
-}
-
-fn exam_invigilator_staff_lock_keys(exam_day_id: Uuid, staff_ids: &[Uuid]) -> Vec<i64> {
-    let mut keys = unique_uuids(staff_ids.to_vec())
-        .into_iter()
-        .map(|staff_id| {
-            exam_session_conflict_lock_key(
-                EXAM_INVIGILATOR_STAFF_LOCK_NAMESPACE,
-                exam_day_id,
-                staff_id,
-            )
-        })
-        .collect::<Vec<_>>();
-    keys.sort_unstable();
-    keys
 }
 
 async fn lock_exam_invigilator_staff_conflict_scope(
@@ -536,54 +369,6 @@ async fn lock_exam_invigilator_staff_conflict_scope(
             .await?;
     }
     Ok(())
-}
-
-pub fn validate_session_window(
-    starts_at: NaiveTime,
-    duration_minutes: i32,
-    day_start: NaiveTime,
-    day_end: NaiveTime,
-    blocked_windows: &[BlockedWindow],
-) -> Result<NaiveTime, SessionValidationError> {
-    let ends_at = add_minutes(starts_at, duration_minutes)?;
-    if !is_exam_session_start_on_slot(starts_at) {
-        return Err(SessionValidationError::StartTimeOutsideSlot);
-    }
-    if starts_at < day_start {
-        return Err(SessionValidationError::BeforeDayStart);
-    }
-    if ends_at > day_end {
-        return Err(SessionValidationError::AfterDayEnd);
-    }
-    for blocked in blocked_windows {
-        if time_ranges_overlap(starts_at, ends_at, blocked.start_time, blocked.end_time) {
-            return Err(SessionValidationError::BlockedWindow(blocked.label.clone()));
-        }
-    }
-    Ok(ends_at)
-}
-
-pub fn validation_error_to_app_error(error: SessionValidationError) -> AppError {
-    match error {
-        SessionValidationError::InvalidDuration => {
-            AppError::BadRequest("Exam duration must be greater than zero".into())
-        }
-        SessionValidationError::EndTimeOverflow => {
-            AppError::BadRequest("Exam end time is outside the valid day range".into())
-        }
-        SessionValidationError::StartTimeOutsideSlot => AppError::BadRequest(format!(
-            "Exam start time must align to a {EXAM_SESSION_SLOT_MINUTES}-minute slot"
-        )),
-        SessionValidationError::BeforeDayStart => {
-            AppError::BadRequest("Exam starts before the exam day begins".into())
-        }
-        SessionValidationError::AfterDayEnd => {
-            AppError::BadRequest("Exam ends after the exam day ends".into())
-        }
-        SessionValidationError::BlockedWindow(label) => {
-            AppError::BadRequest(format!("Exam overlaps blocked window: {label}"))
-        }
-    }
 }
 
 pub fn build_readiness(counts: WorkspaceCounts) -> ExamScheduleReadiness {
@@ -3560,11 +3345,6 @@ fn normalize_blocked_windows(
         });
     }
     Ok(normalized)
-}
-
-fn unique_uuids(ids: Vec<Uuid>) -> Vec<Uuid> {
-    let mut seen = HashSet::new();
-    ids.into_iter().filter(|id| seen.insert(*id)).collect()
 }
 
 async fn fetch_round(pool: &PgPool, round_id: Uuid) -> Result<ExamRound, AppError> {

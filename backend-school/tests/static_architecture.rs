@@ -59,6 +59,18 @@ fn read_source(path: impl AsRef<Path>) -> String {
 }
 
 #[test]
+fn exam_schedule_shared_module_is_private() {
+    let facade_path = manifest_dir().join("src/modules/academic/services/exam_schedule_service.rs");
+    let shared_path =
+        manifest_dir().join("src/modules/academic/services/exam_schedule_service/shared.rs");
+    let source = read_source(facade_path);
+
+    assert!(source.contains("mod shared;"));
+    assert!(!source.contains("pub mod shared;"));
+    assert!(shared_path.is_file());
+}
+
+#[test]
 fn student_deactivation_invalidates_effective_permissions() {
     let source = read_source(manifest_dir().join("src/modules/students/handlers.rs"));
     let start = source
