@@ -1,4 +1,9 @@
-import { apiClient, requireApiData, type ApiResponse } from '$lib/api/client';
+import {
+	apiClient,
+	requireApiData,
+	type ApiRequestOptions,
+	type ApiResponse
+} from '$lib/api/client';
 import type { components } from '$lib/api/generated/school-api';
 
 type EmptyResponseData = Record<string, never>;
@@ -23,7 +28,10 @@ async function fetchApi<T = EmptyResponseData>(
 	} else if (method === 'DELETE') {
 		response = await apiClient.delete<T>(path);
 	} else {
-		response = await apiClient.get<T>(path);
+		response = await apiClient.get<T>(
+			path,
+			options.signal ? { signal: options.signal } : undefined
+		);
 	}
 
 	if (!response.success) throw new Error(response.error || 'Request failed');
@@ -381,7 +389,8 @@ export const listTimetableEntries = async (
 		entry_type?: string;
 		/** คู่กับ instructor_id: รวม entries ของ course ที่ instructor อยู่ในทีม (รวม ghost cells) */
 		include_team_ghosts?: boolean;
-	} = {}
+	} = {},
+	options: ApiRequestOptions = {}
 ): Promise<{ data: TimetableEntry[]; current_seq?: number }> => {
 	const params = new URLSearchParams();
 	if (filters.classroom_id) params.append('classroom_id', filters.classroom_id);
@@ -396,7 +405,8 @@ export const listTimetableEntries = async (
 
 	const queryString = params.toString() ? `?${params.toString()}` : '';
 	const response = await apiClient.get<TimetableEntryDto[] | TimetableItemsData>(
-		`/api/academic/timetable${queryString}`
+		`/api/academic/timetable${queryString}`,
+		options
 	);
 	return normalizeTimetableListResponse(response);
 };
@@ -562,10 +572,12 @@ export interface OccupancyEntry {
 }
 
 export const getTimetableOccupancy = async (
-	semesterId: string
+	semesterId: string,
+	options: ApiRequestOptions = {}
 ): Promise<{ data: OccupancyEntry[] }> => {
 	return await fetchApi<OccupancyEntry[]>(
-		`/api/academic/timetable/occupancy?semester_id=${encodeURIComponent(semesterId)}`
+		`/api/academic/timetable/occupancy?semester_id=${encodeURIComponent(semesterId)}`,
+		{ signal: options.signal }
 	);
 };
 

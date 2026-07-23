@@ -43,8 +43,7 @@ export type GenerateCoursesFromPlanRequest = Schemas['GenerateCoursesFromPlanReq
 export type GenerateCoursesFromPlanResponse = Schemas['GenerateCoursesData'];
 export type ActivitySlot = Schemas['ActivitySlot'];
 export type ActivitySlotFilter = Schemas['ActivitySlotFilter'];
-export type ActivitySlotTimetableContextResponse =
-	Schemas['ActivitySlotTimetableContextResponse'];
+export type ActivitySlotTimetableContextResponse = Schemas['ActivitySlotTimetableContextResponse'];
 export type UpdateActivitySlotRequest = Schemas['UpdateActivitySlotRequest'];
 export type ActivityRegistrationType = Schemas['ActivityRegistrationType'];
 export type AddSlotInstructorRequest = Schemas['AddSlotInstructorRequest'];
@@ -342,7 +341,8 @@ export const saveYearLevelConfig = async (yearId: string, gradeLevelIds: string[
 };
 
 export const listClassroomCourses = async (
-	filters: ClassroomCourseFilters = {}
+	filters: ClassroomCourseFilters = {},
+	options: ApiRequestOptions = {}
 ): Promise<{ data: ClassroomCourse[] }> => {
 	const url = '/api/academic/planning/courses';
 	const params = new URLSearchParams();
@@ -352,7 +352,7 @@ export const listClassroomCourses = async (
 	if (filters.subjectId) params.append('subject_id', filters.subjectId);
 
 	const queryString = params.toString() ? `?${params.toString()}` : '';
-	return await fetchApi<ClassroomCourse[]>(url + queryString);
+	return await fetchApi<ClassroomCourse[]>(url + queryString, { signal: options.signal });
 };
 
 export const assignCourses = async (data: AssignCoursesRequest) => {
@@ -366,10 +366,7 @@ export const removeCourse = async (id: string) => {
 	return await fetchApi(`/api/academic/planning/courses/${id}`, { method: 'DELETE' });
 };
 
-export const updateCourse = async (
-	id: string,
-	data: UpdateCourseRequest
-) => {
+export const updateCourse = async (id: string, data: UpdateCourseRequest) => {
 	return await fetchApi(`/api/academic/planning/courses/${id}`, {
 		method: 'PUT',
 		body: JSON.stringify(data)
@@ -476,10 +473,7 @@ export const listStudyPlanSubjects = async (
 	);
 };
 
-export const addSubjectsToVersion = async (
-	versionId: string,
-	subjects: SubjectInPlan[]
-) => {
+export const addSubjectsToVersion = async (versionId: string, subjects: SubjectInPlan[]) => {
 	return await fetchApi<{ count: number }>(
 		`/api/academic/study-plan-versions/${versionId}/subjects`,
 		{
@@ -676,7 +670,8 @@ export const deleteAllSlotClassroomAssignments = async (slotId: string) => {
 // ==========================================
 
 export const listActivityGroups = async (
-	filter: ActivityGroupFilter = {}
+	filter: ActivityGroupFilter = {},
+	options: ApiRequestOptions = {}
 ): Promise<{ data: ActivityGroup[] }> => {
 	const params = new URLSearchParams();
 	if (filter.slot_id) params.set('slot_id', filter.slot_id);
@@ -686,7 +681,9 @@ export const listActivityGroups = async (
 	if (filter.registration_open !== undefined)
 		params.set('registration_open', String(filter.registration_open));
 	if (filter.search) params.set('search', filter.search);
-	return await fetchApi<ActivityGroup[]>(`/api/academic/activities?${params}`);
+	return await fetchApi<ActivityGroup[]>(`/api/academic/activities?${params}`, {
+		signal: options.signal
+	});
 };
 
 export const createActivityGroup = async (data: CreateActivityGroupRequest) => {
