@@ -1447,7 +1447,7 @@ test('personal exam schedule pages use the published schedule APIs and shared vi
 	assert.match(studentPage, /PageSkeleton/);
 	assert.match(studentPage, /PageState/);
 
-	assert.match(parentPage, /listChildExamSchedules\(studentId\)/);
+	assert.match(parentPage, /listChildExamSchedules\(requestedStudentId\)/);
 	assert.doesNotMatch(parentPage, /listMyExamSchedules/);
 	assert.match(parentPage, /PersonalExamScheduleView/);
 	assert.match(parentPage, /PageSkeleton/);
@@ -1455,10 +1455,12 @@ test('personal exam schedule pages use the published schedule APIs and shared vi
 	assert.match(parentPage, /data\.studentId/);
 	assert.match(parentPage, /let scheduleRequestToken = 0/);
 	assert.match(parentPage, /\$effect\(\(\) => \{/);
+	assert.match(parentPage, /void loadSchedules\(studentId\)/);
 	assert.match(parentPage, /const requestToken = \+\+scheduleRequestToken/);
 	assert.match(parentPage, /rounds = \[\]/);
-	assert.match(parentPage, /listChildExamSchedules\(studentId\)/);
+	assert.match(parentPage, /listChildExamSchedules\(requestedStudentId\)/);
 	assert.match(parentPage, /requestToken !== scheduleRequestToken/);
+	assert.match(parentPage, /requestToken === scheduleRequestToken/);
 	assert.doesNotMatch(parentPage, /onMount/);
 });
 
