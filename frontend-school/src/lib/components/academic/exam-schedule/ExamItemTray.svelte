@@ -15,6 +15,7 @@
 	import { compareExamDaysByDate } from '$lib/utils/examScheduleDayOrder';
 	import { addMinutes, validateExamSessionPlacement } from '$lib/utils/examScheduleTime';
 	import { CalendarPlus, GripVertical } from 'lucide-svelte';
+	import { SvelteMap } from 'svelte/reactivity';
 
 	const ALL_FILTER_VALUE = '__all__';
 
@@ -72,7 +73,7 @@
 	const unschedulingSessionIdSet = $derived(new Set(unschedulingSessionIds));
 	const selectedItemPlacing = $derived(selectedItem ? placingItemIdSet.has(selectedItem.id) : false);
 	const subjectGroupOptions = $derived.by(() => {
-		const options = new Map<string, FilterOption>();
+		const options = new SvelteMap<string, FilterOption>();
 		for (const item of unscheduledItems) {
 			if (!item.subjectGroupId) continue;
 			options.set(item.subjectGroupId, {
@@ -86,7 +87,7 @@
 		);
 	});
 	const gradeLevelOptions = $derived.by(() => {
-		const options = new Map<string, FilterOption>();
+		const options = new SvelteMap<string, FilterOption>();
 		for (const item of unscheduledItems) {
 			options.set(item.gradeLevelId, {
 				value: item.gradeLevelId,

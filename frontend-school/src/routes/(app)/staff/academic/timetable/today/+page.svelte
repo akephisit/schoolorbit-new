@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 	import { toast } from 'svelte-sonner';
 	import { PageShell } from '$lib/components/app-layout';
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
@@ -80,7 +81,7 @@
 		semesters.filter((semester) => !selectedYearId || semester.academic_year_id === selectedYearId)
 	);
 	const subjectGroupOptions = $derived.by(() => {
-		const values = new Set<string>();
+		const values = new SvelteSet<string>();
 		for (const teacher of overview?.teachers ?? []) {
 			for (const subjectGroupName of teacher.subjectGroupNames) {
 				if (subjectGroupName) values.add(subjectGroupName);
@@ -89,7 +90,7 @@
 		return toSortedOptions(values);
 	});
 	const subjectOptions = $derived.by(() => {
-		const options = new Map<string, string>();
+		const options = new SvelteMap<string, string>();
 		forEachOverviewEntry((entry) => {
 			const value = entrySubjectValue(entry);
 			if (!value) return;
@@ -98,7 +99,7 @@
 		return toSortedOptions(options);
 	});
 	const classroomOptions = $derived.by(() => {
-		const values = new Set<string>();
+		const values = new SvelteSet<string>();
 		forEachOverviewEntry((entry) => {
 			if (entry.classroomName) values.add(entry.classroomName);
 		});
