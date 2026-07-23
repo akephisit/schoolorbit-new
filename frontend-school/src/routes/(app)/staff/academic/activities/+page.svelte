@@ -430,8 +430,7 @@
 		slotActivityType = s.activity_type ?? 'other';
 		slotRegistrationType = s.registration_type;
 		slotPeriodsPerWeek = s.periods_per_week ?? 1;
-		slotSchedulingMode =
-			s.scheduling_mode === 'independent' ? 'independent' : 'synchronized';
+		slotSchedulingMode = s.scheduling_mode === 'independent' ? 'independent' : 'synchronized';
 		slotAllowedGradeLevelIds = s.allowed_grade_level_ids ?? [];
 		isSlotEdit = true;
 		editSlotTarget = s;

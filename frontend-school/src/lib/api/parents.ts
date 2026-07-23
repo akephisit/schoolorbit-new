@@ -1,10 +1,6 @@
 import { apiClient } from '$lib/api/client';
 import type { components } from '$lib/api/generated/school-api';
-import {
-	timetableEntryFromDto,
-	type TimetableEntry,
-	type TimetableEntryDto
-} from './timetable';
+import { timetableEntryFromDto, type TimetableEntry, type TimetableEntryDto } from './timetable';
 import type { Student } from './students';
 
 type LoadedApiResponse<T> = { success: true; data: T };

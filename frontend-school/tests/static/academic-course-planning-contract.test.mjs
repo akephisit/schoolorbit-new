@@ -23,36 +23,12 @@ test('generated course planning contract owns all operations and wire DTOs', asy
 		['/api/academic/planning/courses', 'post', 'assignCourses'],
 		['/api/academic/planning/courses/{id}', 'put', 'updateClassroomCourse'],
 		['/api/academic/planning/courses/{id}', 'delete', 'removeClassroomCourse'],
-		[
-			'/api/academic/planning/courses/instructors/batch',
-			'post',
-			'batchListCourseInstructors'
-		],
-		[
-			'/api/academic/planning/courses/instructors',
-			'get',
-			'batchListCourseInstructorsFromQuery'
-		],
-		[
-			'/api/academic/planning/courses/{id}/instructors',
-			'get',
-			'listCourseInstructors'
-		],
-		[
-			'/api/academic/planning/courses/{id}/instructors',
-			'post',
-			'addCourseInstructor'
-		],
-		[
-			'/api/academic/planning/courses/{id}/instructors/{uid}',
-			'put',
-			'updateCourseInstructorRole'
-		],
-		[
-			'/api/academic/planning/courses/{id}/instructors/{uid}',
-			'delete',
-			'removeCourseInstructor'
-		],
+		['/api/academic/planning/courses/instructors/batch', 'post', 'batchListCourseInstructors'],
+		['/api/academic/planning/courses/instructors', 'get', 'batchListCourseInstructorsFromQuery'],
+		['/api/academic/planning/courses/{id}/instructors', 'get', 'listCourseInstructors'],
+		['/api/academic/planning/courses/{id}/instructors', 'post', 'addCourseInstructor'],
+		['/api/academic/planning/courses/{id}/instructors/{uid}', 'put', 'updateCourseInstructorRole'],
+		['/api/academic/planning/courses/{id}/instructors/{uid}', 'delete', 'removeCourseInstructor'],
 		[
 			'/api/academic/planning/classrooms/{classroom_id}/activities',
 			'get',
@@ -97,8 +73,14 @@ test('generated course planning contract owns all operations and wire DTOs', asy
 	assert.doesNotMatch(academicApi, /listClassroomCourses = async \([\s\S]*?param2\?: string/);
 	assert.match(academicApi, /assignCourses = async \(data: AssignCoursesRequest\)/);
 	assert.match(academicApi, /updateCourse = async \(\s*id: string,\s*data: UpdateCourseRequest/);
-	assert.match(academicApi, /const data: BatchListCourseInstructorsRequest = \{ course_ids: courseIds \}/);
-	assert.match(academicApi, /const data: AddCourseInstructorRequest = \{ instructor_id: instructorId, role \}/);
+	assert.match(
+		academicApi,
+		/const data: BatchListCourseInstructorsRequest = \{ course_ids: courseIds \}/
+	);
+	assert.match(
+		academicApi,
+		/const data: AddCourseInstructorRequest = \{ instructor_id: instructorId, role \}/
+	);
 	assert.match(academicApi, /const data: UpdateCourseInstructorRoleRequest = \{ role \}/);
 	assert.match(academicApi, /batchListCourseInstructorsFromQuery = async/);
 	assert.match(

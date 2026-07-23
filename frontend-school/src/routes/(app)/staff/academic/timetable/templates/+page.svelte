@@ -213,8 +213,8 @@
 
 	<Card.Root class="p-3 bg-muted/30 space-y-1">
 		<p class="text-sm text-muted-foreground">
-			💡 <strong>Workflow:</strong> 1) จัดตารางด้วยมือและวางคาบที่ต้องการเก็บ → 2) สร้าง
-			template → 3) เมื่อต้องการเริ่มจัดใหม่ ให้เคลียร์ตารางแล้ว apply template เป็นจุดตั้งต้น
+			💡 <strong>Workflow:</strong> 1) จัดตารางด้วยมือและวางคาบที่ต้องการเก็บ → 2) สร้าง template → 3)
+			เมื่อต้องการเริ่มจัดใหม่ ให้เคลียร์ตารางแล้ว apply template เป็นจุดตั้งต้น
 		</p>
 		<p class="text-xs text-muted-foreground">
 			📌 Template เก็บเฉพาะกิจกรรมแบบ <strong>ระบุชื่อเอง</strong>

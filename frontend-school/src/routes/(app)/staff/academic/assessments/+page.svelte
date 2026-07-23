@@ -845,8 +845,7 @@
 					<Table.Root class="min-w-[1240px]">
 						<Table.Header>
 							<Table.Row>
-								<Table.Head
-									class="assessment-sticky-head sticky top-0 z-30 bg-background"
+								<Table.Head class="assessment-sticky-head sticky top-0 z-30 bg-background"
 									>รายวิชา</Table.Head
 								>
 								<Table.Head class="assessment-sticky-head sticky top-0 z-30 bg-background"

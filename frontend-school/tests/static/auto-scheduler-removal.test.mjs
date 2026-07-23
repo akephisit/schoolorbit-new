@@ -6,7 +6,11 @@ import { fileURLToPath } from 'node:url';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const readRepo = (file) => readFile(path.join(repoRoot, file), 'utf8');
-const exists = async (file) => access(path.join(repoRoot, file)).then(() => true, () => false);
+const exists = async (file) =>
+	access(path.join(repoRoot, file)).then(
+		() => true,
+		() => false
+	);
 
 test('auto scheduler frontend and generated contract are absent', async () => {
 	for (const removed of [
@@ -46,5 +50,8 @@ test('auto scheduler frontend and generated contract are absent', async () => {
 	);
 	assert.equal(operationIds.length, 178);
 	assert.equal(new Set(operationIds).size, 178);
-	assert.equal(Object.keys(contract.paths).some((route) => route.includes('/scheduling/')), false);
+	assert.equal(
+		Object.keys(contract.paths).some((route) => route.includes('/scheduling/')),
+		false
+	);
 });

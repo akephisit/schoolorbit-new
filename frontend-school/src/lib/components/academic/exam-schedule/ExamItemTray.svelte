@@ -71,7 +71,9 @@
 	);
 	const placingItemIdSet = $derived(new Set(placingItemIds));
 	const unschedulingSessionIdSet = $derived(new Set(unschedulingSessionIds));
-	const selectedItemPlacing = $derived(selectedItem ? placingItemIdSet.has(selectedItem.id) : false);
+	const selectedItemPlacing = $derived(
+		selectedItem ? placingItemIdSet.has(selectedItem.id) : false
+	);
 	const subjectGroupOptions = $derived.by(() => {
 		const options = new SvelteMap<string, FilterOption>();
 		for (const item of unscheduledItems) {

@@ -1,10 +1,7 @@
 <script lang="ts">
 	import type { PageProps } from './$types';
 	import { toast } from 'svelte-sonner';
-	import {
-		listChildExamSchedules,
-		type PersonalExamScheduleRound
-	} from '$lib/api/examSchedule';
+	import { listChildExamSchedules, type PersonalExamScheduleRound } from '$lib/api/examSchedule';
 	import { PageShell } from '$lib/components/app-layout';
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import PersonalExamScheduleView from '$lib/components/academic/exam-schedule/PersonalExamScheduleView.svelte';

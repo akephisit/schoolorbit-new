@@ -2,10 +2,7 @@
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
-	import {
-		listOrganizationUnitsLookup,
-		type OrganizationUnitLookupItem
-	} from '$lib/api/staff';
+	import { listOrganizationUnitsLookup, type OrganizationUnitLookupItem } from '$lib/api/staff';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { PageShell } from '$lib/components/app-layout';

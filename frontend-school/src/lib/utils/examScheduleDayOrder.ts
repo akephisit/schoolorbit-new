@@ -8,10 +8,7 @@ function normalizedTime(value: string | null | undefined): string {
 	return value?.slice(0, 5) ?? '';
 }
 
-export function compareExamDaysByDate(
-	left: ExamDayOrderInput,
-	right: ExamDayOrderInput
-): number {
+export function compareExamDaysByDate(left: ExamDayOrderInput, right: ExamDayOrderInput): number {
 	const dateCompare = left.examDate.localeCompare(right.examDate);
 	if (dateCompare !== 0) return dateCompare;
 

@@ -55,9 +55,13 @@
 	let editingAssignmentId = $state<string | null>(null);
 
 	const sortedDays = $derived([...days].sort(compareExamDaysByDate));
-	const selectedDay = $derived(days.find((day) => day.id === selectedDayId) ?? sortedDays[0] ?? null);
+	const selectedDay = $derived(
+		days.find((day) => day.id === selectedDayId) ?? sortedDays[0] ?? null
+	);
 	const assignments = $derived<ExamDayRoomAssignmentView[]>(selectedDay?.roomAssignments ?? []);
-	const dayLabel = $derived(selectedDay ? formatDayDate(selectedDay.examDate, selectedDay.label) : 'เลือกวันสอบ');
+	const dayLabel = $derived(
+		selectedDay ? formatDayDate(selectedDay.examDate, selectedDay.label) : 'เลือกวันสอบ'
+	);
 	const filteredClassrooms = $derived(
 		selectedDay
 			? classrooms.filter(
@@ -129,7 +133,9 @@
 	}
 
 	function assignmentRoomMeta(assignment: ExamDayRoomAssignmentView): string {
-		return assignment.roomCapacity ? `${assignment.roomCapacity} ที่นั่งตามทะเบียนห้อง` : 'ไม่ระบุความจุหลัก';
+		return assignment.roomCapacity
+			? `${assignment.roomCapacity} ที่นั่งตามทะเบียนห้อง`
+			: 'ไม่ระบุความจุหลัก';
 	}
 
 	function selectRoom(value: string) {
@@ -179,7 +185,9 @@
 </script>
 
 <section class="overflow-hidden rounded-md border bg-background">
-	<div class="flex flex-col gap-3 border-b px-4 py-4 lg:flex-row lg:items-center lg:justify-between">
+	<div
+		class="flex flex-col gap-3 border-b px-4 py-4 lg:flex-row lg:items-center lg:justify-between"
+	>
 		<div>
 			<h2 class="font-semibold">ห้องสอบและที่นั่ง</h2>
 			<p class="text-sm text-muted-foreground">{assignments.length} ห้องในวันที่เลือก</p>
@@ -214,7 +222,10 @@
 		{#if !selectedDay}
 			<PageState title="ยังไม่มีวันสอบ" description="ต้องมีวันสอบก่อนกำหนดห้องสอบ" />
 		{:else if assignments.length === 0}
-			<PageState title="ยังไม่มีห้องสอบในวันนี้" description="ยังไม่พบการกำหนดห้องสอบสำหรับวันสอบที่เลือก" />
+			<PageState
+				title="ยังไม่มีห้องสอบในวันนี้"
+				description="ยังไม่พบการกำหนดห้องสอบสำหรับวันสอบที่เลือก"
+			/>
 		{:else}
 			<div class="overflow-x-auto">
 				<Table class="min-w-[640px]">
@@ -240,7 +251,11 @@
 								<TableCell class="text-right">
 									<div class="flex justify-end gap-1">
 										{#if !readonly}
-											<Button variant="outline" size="sm" onclick={() => loadAssignment(assignment)}>
+											<Button
+												variant="outline"
+												size="sm"
+												onclick={() => loadAssignment(assignment)}
+											>
 												แก้ไข
 											</Button>
 											<LoadingButton
@@ -296,7 +311,11 @@
 
 						<div class="grid gap-2">
 							<Label>ห้องสอบ</Label>
-							<Select.Root type="single" value={roomId} onValueChange={(value) => value && selectRoom(value)}>
+							<Select.Root
+								type="single"
+								value={roomId}
+								onValueChange={(value) => value && selectRoom(value)}
+							>
 								<Select.Trigger class="w-full">{selectedRoomLabel}</Select.Trigger>
 								<Select.Content>
 									{#each availableRooms as room (room.id)}
@@ -320,7 +339,9 @@
 					</div>
 
 					<Sheet.Footer class="sticky bottom-0 -mx-6 -mb-6 border-t bg-background px-6 py-4">
-						<Button type="button" variant="outline" onclick={() => (editorOpen = false)}>ยกเลิก</Button>
+						<Button type="button" variant="outline" onclick={() => (editorOpen = false)}
+							>ยกเลิก</Button
+						>
 						<LoadingButton
 							type="submit"
 							loading={saving}
