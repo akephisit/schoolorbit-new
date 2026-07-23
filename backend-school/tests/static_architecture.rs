@@ -71,6 +71,53 @@ fn exam_schedule_shared_module_is_private() {
 }
 
 #[test]
+fn exam_schedule_service_uses_a_thin_private_module_facade() {
+    let service_dir = manifest_dir().join("src/modules/academic/services/exam_schedule_service");
+    let facade_path = manifest_dir().join("src/modules/academic/services/exam_schedule_service.rs");
+    let source = read_source(facade_path);
+
+    for module in [
+        "invigilation",
+        "published_views",
+        "publishing",
+        "room_assignments",
+        "rounds_and_days",
+        "sessions_and_conflicts",
+        "shared",
+        "workspace",
+    ] {
+        assert!(
+            source.contains(&format!("mod {module};")),
+            "exam schedule facade must declare private module `{module}`"
+        );
+        assert!(
+            !source.contains(&format!("pub mod {module};")),
+            "exam schedule child module `{module}` must remain private"
+        );
+        assert!(
+            service_dir.join(format!("{module}.rs")).is_file(),
+            "exam schedule child module `{module}` must have its own source file"
+        );
+    }
+
+    let nonblank_line_count = source
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .count();
+    assert!(
+        nonblank_line_count <= 90,
+        "exam schedule facade must stay thin; found {nonblank_line_count} nonblank lines"
+    );
+
+    for forbidden in ["sqlx::query", ".begin().await", "sqlx::FromRow"] {
+        assert!(
+            !source.contains(forbidden),
+            "exam schedule facade must not contain persistence workflow fragment `{forbidden}`"
+        );
+    }
+}
+
+#[test]
 fn student_deactivation_invalidates_effective_permissions() {
     let source = read_source(manifest_dir().join("src/modules/students/handlers.rs"));
     let start = source
@@ -740,14 +787,16 @@ fn academic_exam_days_use_date_ordering_without_sort_order_contract() {
             .join("models")
             .join("exam_schedule.rs"),
     );
-    let service = read_source(
-        manifest_dir()
-            .join("src")
-            .join("modules")
-            .join("academic")
-            .join("services")
-            .join("exam_schedule_service.rs"),
-    );
+    let service_dir = manifest_dir().join("src/modules/academic/services");
+    let service = [
+        service_dir.join("exam_schedule_service.rs"),
+        service_dir.join("exam_schedule_service/rounds_and_days.rs"),
+        service_dir.join("exam_schedule_service/workspace.rs"),
+    ]
+    .into_iter()
+    .map(read_source)
+    .collect::<Vec<_>>()
+    .join("\n");
 
     assert!(!model.contains("sort_order"));
     assert!(!service.contains("sort_order"));
@@ -1488,7 +1537,8 @@ fn academic_exam_schedule_routes_are_registered_and_authorized() {
         manifest_dir().join("src/modules/parents/services.rs"),
     ));
     let exam_service = strip_comments(&read_source(
-        manifest_dir().join("src/modules/academic/services/exam_schedule_service.rs"),
+        manifest_dir()
+            .join("src/modules/academic/services/exam_schedule_service/published_views.rs"),
     ));
     let exam_handler_path = manifest_dir().join("src/modules/academic/handlers/exam_schedule.rs");
 
@@ -2121,9 +2171,16 @@ fn module_service_logic_has_focused_unit_tests() {
             continue;
         }
 
-        if !source.contains("#[cfg(test)]") {
+        let family_tests_path = file
+            .parent()
+            .expect("service source should have a parent directory")
+            .join("tests.rs");
+        let has_focused_family_tests =
+            family_tests_path.is_file() && read_source(&family_tests_path).contains("#[test]");
+
+        if !source.contains("#[cfg(test)]") && !has_focused_family_tests {
             violations.push(format!(
-                "{}: service logic files must include focused #[cfg(test)] coverage",
+                "{}: service logic files must include focused #[cfg(test)] coverage in-file or in a colocated tests.rs",
                 relative(&file)
             ));
         }
