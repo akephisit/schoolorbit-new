@@ -8,6 +8,8 @@ use crate::modules::calendar::models::{
     CalendarAudienceType, CalendarEventQuery, CalendarEventTargetInput,
 };
 
+pub(super) const EVENT_NOT_FOUND_MESSAGE: &str = "ไม่พบกำหนดการ";
+
 pub fn validate_event_date_time(
     start_date: NaiveDate,
     end_date: NaiveDate,
