@@ -243,7 +243,14 @@ fn calendar_service_uses_private_child_modules() {
     let facade = read_source(manifest_dir().join("src/modules/calendar/services.rs"));
     let service_dir = manifest_dir().join("src/modules/calendar/services");
 
-    for module in ["shared", "categories_and_tags"] {
+    for module in [
+        "categories_and_tags",
+        "events",
+        "notifications",
+        "reminders",
+        "shared",
+        "visibility",
+    ] {
         assert!(
             facade.contains(&format!("mod {module};")),
             "calendar facade must declare private module `{module}`"
@@ -257,6 +264,39 @@ fn calendar_service_uses_private_child_modules() {
             "calendar child module `{module}` must have its own source file"
         );
     }
+
+    for public_item in [
+        "create_event",
+        "list_management_events",
+        "list_my_events",
+        "list_child_events",
+        "list_public_events",
+        "resolve_event_recipient_user_ids",
+        "send_event_notification",
+        "process_due_reminders",
+        "process_due_calendar_reminders_for_all_tenants",
+    ] {
+        assert!(
+            facade.contains(public_item),
+            "calendar facade must preserve public item `{public_item}`"
+        );
+    }
+
+    for forbidden in ["sqlx::", ".fetch_", ".execute(", ".begin(", "SELECT "] {
+        assert!(
+            !facade.contains(forbidden),
+            "calendar facade must not contain persistence fragment `{forbidden}`"
+        );
+    }
+
+    let nonblank_line_count = facade
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .count();
+    assert!(
+        nonblank_line_count <= 75,
+        "calendar facade must stay thin; found {nonblank_line_count} nonblank lines"
+    );
 }
 
 #[test]
@@ -4522,9 +4562,21 @@ fn calendar_handlers_stay_thin_and_services_own_sql() {
     let handlers = strip_comments(&read_source(
         manifest_dir().join("src/modules/calendar/handlers.rs"),
     ));
-    let services = strip_comments(&read_source(
-        manifest_dir().join("src/modules/calendar/services.rs"),
-    ));
+    let services = strip_comments(
+        &[
+            "src/modules/calendar/services.rs",
+            "src/modules/calendar/services/categories_and_tags.rs",
+            "src/modules/calendar/services/events.rs",
+            "src/modules/calendar/services/notifications.rs",
+            "src/modules/calendar/services/reminders.rs",
+            "src/modules/calendar/services/shared.rs",
+            "src/modules/calendar/services/visibility.rs",
+        ]
+        .into_iter()
+        .map(|path| read_source(manifest_dir().join(path)))
+        .collect::<Vec<_>>()
+        .join("\n"),
+    );
     let routes = strip_comments(&read_source(manifest_dir().join("src/modules/calendar.rs")));
     let parent_handlers = strip_comments(&read_source(
         manifest_dir().join("src/modules/parents/handlers.rs"),
