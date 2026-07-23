@@ -145,6 +145,8 @@ test('calendar shared components use shadcn primitives', async () => {
 	const categoryDialog = await readProjectFile(
 		'src/lib/components/calendar/CalendarCategoryDialog.svelte'
 	);
+	const colorKey = await readProjectFile('src/lib/components/calendar/CalendarColorKey.svelte');
+	const staffPage = await readProjectFile('src/routes/(app)/staff/calendar/+page.svelte');
 
 	assert.match(monthGrid, /buildCalendarMonthWeeks/);
 	assert.match(monthGrid, /eventOverlapsDate/);
@@ -176,6 +178,13 @@ test('calendar shared components use shadcn primitives', async () => {
 	assert.match(categoryDialog, /UpsertCalendarTagRequest/);
 	assert.match(categoryDialog, /from '\$lib\/components\/ui\/tabs'/);
 	assert.match(categoryDialog, /from '\$lib\/components\/ui\/alert-dialog'/);
+	assert.match(colorKey, /CalendarColorKeyItem/);
+	assert.match(colorKey, /คำอธิบายสี/);
+	assert.match(colorKey, /\{#each items as item \(item\.id\)\}/);
+	assert.match(colorKey, /overflow-x-auto/);
+	assert.match(colorKey, /sm:flex-wrap/);
+	assert.match(staffPage, /CalendarColorKey/);
+	assert.match(staffPage, /items=\{activeCategories\}/);
 });
 
 test('calendar event dialog builds backend-safe event payloads', async () => {

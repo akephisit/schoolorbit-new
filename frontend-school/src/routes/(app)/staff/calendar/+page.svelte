@@ -14,6 +14,7 @@
 	import CalendarEventList from '$lib/components/calendar/CalendarEventList.svelte';
 	import CalendarEventDialog from '$lib/components/calendar/CalendarEventDialog.svelte';
 	import CalendarCategoryDialog from '$lib/components/calendar/CalendarCategoryDialog.svelte';
+	import CalendarColorKey from '$lib/components/calendar/CalendarColorKey.svelte';
 	import {
 		type CalendarAudienceType,
 		type CalendarCategory,
@@ -659,20 +660,7 @@
 					onselect={(date) => (selectedDate = date)}
 				/>
 				{#if activeCategories.length > 0}
-					<div
-						class="flex flex-wrap items-center gap-x-4 gap-y-2 px-1 text-xs text-muted-foreground"
-					>
-						{#each activeCategories as category (category.id)}
-							<span class="flex items-center gap-1.5">
-								<span
-									class="size-2 rounded-full"
-									style:background-color={category.color}
-									aria-hidden="true"
-								></span>
-								{category.name}
-							</span>
-						{/each}
-					</div>
+					<CalendarColorKey items={activeCategories} />
 				{/if}
 			</div>
 			<section class="space-y-3">
