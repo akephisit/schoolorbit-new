@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { page } from '$app/state';
 	import { addMonths } from 'date-fns';
 	import { onMount } from 'svelte';
 	import { toast } from 'svelte-sonner';
@@ -51,6 +52,7 @@
 		CalendarDays,
 		ChevronLeft,
 		ChevronRight,
+		Copy,
 		FolderPlus,
 		Plus,
 		RefreshCw,
@@ -493,6 +495,15 @@
 		await loadCalendar();
 	}
 
+	async function copyPublicCalendarLink() {
+		try {
+			await navigator.clipboard.writeText(`${page.url.origin}/calendar`);
+			toast.success('คัดลอกลิงก์ปฏิทินสาธารณะแล้ว');
+		} catch {
+			toast.error('คัดลอกลิงก์ไม่สำเร็จ');
+		}
+	}
+
 	onMount(() => {
 		void loadCalendar();
 	});
@@ -505,6 +516,12 @@
 <PageShell title="ปฏิทินโรงเรียน" description="กิจกรรมและประกาศตามช่วงเดือน">
 	{#snippet actions()}
 		<div class="flex flex-wrap gap-2">
+			{#if canReadCalendar}
+				<Button variant="outline" onclick={copyPublicCalendarLink}>
+					<Copy class="size-4" />
+					คัดลอกลิงก์สาธารณะ
+				</Button>
+			{/if}
 			{#if canManageCalendar}
 				<Button variant="outline" onclick={openCategoryDialog}>
 					<FolderPlus class="h-4 w-4" />

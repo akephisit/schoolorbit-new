@@ -268,6 +268,19 @@ test('calendar routes keep staff reads and local state filter-aware', async () =
 	assert.match(staffSource, /categoryId = '';\s*await loadCalendar\(\);/);
 });
 
+test('staff calendar copies the current school public URL with feedback', async () => {
+	const staffPage = await readProjectFile('src/routes/(app)/staff/calendar/+page.svelte');
+	const copyBody = svelteFunctionBody(staffPage, 'copyPublicCalendarLink');
+
+	assert.match(staffPage, /from '\$app\/state'/);
+	assert.match(staffPage, /Copy/);
+	assert.match(staffPage, /คัดลอกลิงก์สาธารณะ/);
+	assert.match(copyBody, /page\.url\.origin/);
+	assert.match(copyBody, /await navigator\.clipboard\.writeText/);
+	assert.match(copyBody, /toast\.success\('คัดลอกลิงก์ปฏิทินสาธารณะแล้ว'\)/);
+	assert.match(copyBody, /toast\.error\('คัดลอกลิงก์ไม่สำเร็จ'\)/);
+});
+
 test('calendar read-only pages sort selected-day events consistently', async () => {
 	for (const route of [
 		'src/routes/(app)/student/calendar/+page.svelte',
