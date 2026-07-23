@@ -304,11 +304,11 @@ mod tests {
 
         assert!(!has_same_classroom_conflict(
             &classroom_candidate,
-            &[classroom_candidate.clone()]
+            std::slice::from_ref(&classroom_candidate)
         ));
         assert!(!has_same_room_conflict(
             &room_candidate,
-            &[room_candidate.clone()]
+            std::slice::from_ref(&room_candidate)
         ));
     }
 
