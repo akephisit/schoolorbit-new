@@ -1,6 +1,12 @@
 #![allow(dead_code)]
 
+mod published_views;
 mod shared;
+
+pub use self::published_views::{
+    list_child_published_exam_schedule, list_my_published_exam_schedule,
+    list_staff_published_exam_schedule,
+};
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
@@ -1902,35 +1908,6 @@ const WORKSPACE_COUNTS_SQL: &str = r#"
                      AND right_session.starts_at < left_session.ends_at
                ) AS invigilator_conflict_count
         "#;
-
-pub async fn list_my_published_exam_schedule(
-    pool: &PgPool,
-    user_id: Uuid,
-    academic_semester_id: Option<Uuid>,
-) -> Result<Vec<PersonalExamScheduleRound>, AppError> {
-    ensure_active_student_user(pool, user_id).await?;
-    list_published_exam_schedule_for_student(pool, user_id, academic_semester_id).await
-}
-
-pub async fn list_staff_published_exam_schedule(
-    pool: &PgPool,
-    user_id: Uuid,
-    academic_semester_id: Option<Uuid>,
-) -> Result<Vec<PersonalExamScheduleRound>, AppError> {
-    ensure_active_staff_user_for_exam_schedule(pool, user_id).await?;
-    list_published_exam_schedule_for_staff(pool, academic_semester_id).await
-}
-
-pub async fn list_child_published_exam_schedule(
-    pool: &PgPool,
-    parent_user_id: Uuid,
-    student_id: Uuid,
-    academic_semester_id: Option<Uuid>,
-) -> Result<Vec<PersonalExamScheduleRound>, AppError> {
-    ensure_parent_user_for_exam_schedule(pool, parent_user_id).await?;
-    ensure_parent_student_link_for_exam_schedule(pool, parent_user_id, student_id).await?;
-    list_published_exam_schedule_for_student(pool, student_id, academic_semester_id).await
-}
 
 async fn mark_round_draft_after_mutation(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
