@@ -11,15 +11,27 @@ async function readRepoFile(relativePath) {
 	return readFile(path.join(repoRoot, relativePath), 'utf8');
 }
 
+const supervisionServiceFiles = [
+	'backend-school/src/modules/supervision/services.rs',
+	'backend-school/src/modules/supervision/services/cycles.rs',
+	'backend-school/src/modules/supervision/services/evaluations.rs',
+	'backend-school/src/modules/supervision/services/observations.rs',
+	'backend-school/src/modules/supervision/services/reviews_and_reports.rs',
+	'backend-school/src/modules/supervision/services/shared.rs',
+	'backend-school/src/modules/supervision/services/templates.rs'
+];
+
+async function readSupervisionServices() {
+	return (await Promise.all(supervisionServiceFiles.map(readRepoFile))).join('\n');
+}
+
 test('teaching supervision booking uses a weekly timetable grid with exact observed dates', async () => {
 	const supervisionApi = await readRepoFile('frontend-school/src/lib/api/supervision.ts');
 	const supervisionPage = await readRepoFile(
 		'frontend-school/src/lib/components/supervision/SupervisionWorkspace.svelte'
 	);
 	const supervisionModels = await readRepoFile('backend-school/src/modules/supervision/models.rs');
-	const supervisionService = await readRepoFile(
-		'backend-school/src/modules/supervision/services.rs'
-	);
+	const supervisionService = await readSupervisionServices();
 	const migration = await readRepoFile('backend-school/migrations/008_supervision_observed_at.sql');
 
 	assert.match(supervisionApi, /observedAt\?:\s*string\s*\|\s*null/);
@@ -69,9 +81,7 @@ test('teaching supervision request approval renders request rows with multiple e
 	const supervisionHandlers = await readRepoFile(
 		'backend-school/src/modules/supervision/handlers.rs'
 	);
-	const supervisionService = await readRepoFile(
-		'backend-school/src/modules/supervision/services.rs'
-	);
+	const supervisionService = await readSupervisionServices();
 
 	assert.match(supervisionApi, /SupervisionEvaluatorAvailability/);
 	assert.match(supervisionApi, /conflictReason/);
@@ -178,9 +188,7 @@ test('teaching supervision approval workflow skips review submission', async () 
 	const supervisionHandlers = await readRepoFile(
 		'backend-school/src/modules/supervision/handlers.rs'
 	);
-	const supervisionService = await readRepoFile(
-		'backend-school/src/modules/supervision/services.rs'
-	);
+	const supervisionService = await readSupervisionServices();
 
 	assert.match(supervisionApi, /certifySupervisionObservation/);
 	assert.match(supervisionApi, /\/api\/supervision\/observations\/\$\{id\}\/certify/);
@@ -268,9 +276,7 @@ test('teaching supervision detail hides scores until academic approval releases 
 	const supervisionHandlers = await readRepoFile(
 		'backend-school/src/modules/supervision/handlers.rs'
 	);
-	const supervisionService = await readRepoFile(
-		'backend-school/src/modules/supervision/services.rs'
-	);
+	const supervisionService = await readSupervisionServices();
 
 	assert.match(detailPage, /function observationResultsReleased/);
 	assert.match(detailPage, /function observationAverageScoreLabel/);
@@ -295,9 +301,7 @@ test('teaching supervision approval review shows completed rubric before approvi
 		'backend-school/src/modules/supervision/handlers.rs'
 	);
 	const supervisionModels = await readRepoFile('backend-school/src/modules/supervision/models.rs');
-	const supervisionService = await readRepoFile(
-		'backend-school/src/modules/supervision/services.rs'
-	);
+	const supervisionService = await readSupervisionServices();
 
 	assert.match(supervisionApi, /SupervisionObservationReview/);
 	assert.match(supervisionApi, /SupervisionReviewEvaluatorResult/);
@@ -404,9 +408,7 @@ test('teaching supervision manager view exposes teacher status overview and alig
 	const supervisionHandlers = await readRepoFile(
 		'backend-school/src/modules/supervision/handlers.rs'
 	);
-	const supervisionService = await readRepoFile(
-		'backend-school/src/modules/supervision/services.rs'
-	);
+	const supervisionService = await readSupervisionServices();
 	const supervisionPolicy = await readRepoFile(
 		'backend-school/src/policies/supervision_access_policy.rs'
 	);

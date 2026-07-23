@@ -44,7 +44,7 @@ test('auto scheduler frontend and generated contract are absent', async () => {
 	const operationIds = Object.values(contract.paths).flatMap((item) =>
 		Object.values(item).flatMap((operation) => operation.operationId ?? [])
 	);
-	assert.equal(operationIds.length, 177);
-	assert.equal(new Set(operationIds).size, 177);
+	assert.equal(operationIds.length, 178);
+	assert.equal(new Set(operationIds).size, 178);
 	assert.equal(Object.keys(contract.paths).some((route) => route.includes('/scheduling/')), false);
 });

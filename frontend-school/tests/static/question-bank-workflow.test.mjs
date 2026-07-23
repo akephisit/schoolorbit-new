@@ -227,7 +227,7 @@ test('question bank exports selected questions with editable native Word Math eq
 	assert.doesNotMatch(exporter, /\bfetch\s*\(/);
 	assert.match(api, /export async function getQuestionBankQuestionFile/);
 	assert.match(api, /apiClient\.getBlob/);
-	assert.match(apiClient, /async getBlob\(endpoint: string\)/);
+	assert.match(apiClient, /async getBlob\(endpoint: string, options: ApiRequestOptions = \{\}\)/);
 	assert.match(exporter, /includeAnswerKey/);
 	assert.match(exporter, /TH Sarabun New/);
 	assert.doesNotMatch(page, /สูตรจะเป็นภาพ PNG/);

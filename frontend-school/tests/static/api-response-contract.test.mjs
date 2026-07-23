@@ -1215,9 +1215,20 @@ test('facility API returns typed loaded envelope data without helper casts', asy
 test('timetable API exposes typed loaded responses and conflict unions without response casts', async () => {
 	const timetableApi = await readRepoFile('frontend-school/src/lib/api/timetable.ts');
 	const generated = await readRepoFile('frontend-school/src/lib/api/generated/school-api.ts');
-	const timetableService = await readRepoFile(
-		'backend-school/src/modules/academic/services/timetable_service.rs'
-	);
+	const timetableService = (
+		await Promise.all(
+			[
+				'backend-school/src/modules/academic/services/timetable_service.rs',
+				'backend-school/src/modules/academic/services/timetable_service/batch_mutations.rs',
+				'backend-school/src/modules/academic/services/timetable_service/entries.rs',
+				'backend-school/src/modules/academic/services/timetable_service/instructors.rs',
+				'backend-school/src/modules/academic/services/timetable_service/moves_and_swaps.rs',
+				'backend-school/src/modules/academic/services/timetable_service/occupancy.rs',
+				'backend-school/src/modules/academic/services/timetable_service/shared.rs',
+				'backend-school/src/modules/academic/services/timetable_service/validation.rs'
+			].map(readRepoFile)
+		)
+	).join('\n');
 	const timetablePage = await readRepoFile(
 		'frontend-school/src/routes/(app)/staff/academic/timetable/+page.svelte'
 	);
