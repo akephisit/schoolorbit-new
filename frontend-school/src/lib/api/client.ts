@@ -15,6 +15,10 @@ export interface ApiResponse<T> {
 	message?: string;
 }
 
+export interface ApiRequestOptions {
+	signal?: AbortSignal;
+}
+
 const INVALID_API_RESPONSE_ERROR = 'รูปแบบข้อมูลจากเซิร์ฟเวอร์ไม่ถูกต้อง';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -157,18 +161,19 @@ class APIClient {
 		return normalized;
 	}
 
-	async get<T>(endpoint: string): Promise<ApiResponse<T>> {
-		return this.request<T>(endpoint, { method: 'GET' });
+	async get<T>(endpoint: string, options: ApiRequestOptions = {}): Promise<ApiResponse<T>> {
+		return this.request<T>(endpoint, { method: 'GET', signal: options.signal });
 	}
 
-	async getBlob(endpoint: string): Promise<ApiResponse<Blob>> {
+	async getBlob(endpoint: string, options: ApiRequestOptions = {}): Promise<ApiResponse<Blob>> {
 		const url = `${this.baseURL}${endpoint}`;
 		const headers = new Headers();
 		this.applyTenantHeader(headers);
 		const response = await fetch(url, {
 			method: 'GET',
 			credentials: 'include',
-			headers
+			headers,
+			signal: options.signal
 		});
 		if (response.ok) return { success: true, data: await response.blob() };
 
