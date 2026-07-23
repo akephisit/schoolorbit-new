@@ -81,6 +81,85 @@ fn supervision_service_uses_private_child_modules() {
 }
 
 #[test]
+fn supervision_service_facade_is_thin_and_preserves_public_surface() {
+    let facade = read_source(manifest_dir().join("src/modules/supervision/services.rs"));
+    let service_dir = manifest_dir().join("src/modules/supervision/services");
+
+    for module in [
+        "cycles",
+        "evaluations",
+        "observations",
+        "reviews_and_reports",
+        "shared",
+        "templates",
+    ] {
+        assert!(facade.contains(&format!("mod {module};")));
+        assert!(!facade.contains(&format!("pub mod {module};")));
+        assert!(service_dir.join(format!("{module}.rs")).is_file());
+        assert!(facade.contains(&format!("pub use {module}")));
+    }
+
+    for public_item in [
+        "acknowledge_observation",
+        "all_required_evaluators_submitted",
+        "approve_observation",
+        "approve_observation_request",
+        "average_submitted_evaluator_rating",
+        "cancel_observation",
+        "cancel_requested_observation",
+        "can_transition_observation_status",
+        "can_view_observation_results",
+        "certify_observation",
+        "create_cycle",
+        "create_template",
+        "cycle_progress",
+        "cycle_teacher_status",
+        "evaluator_availability",
+        "evaluator_conflict_status_codes",
+        "get_cycle",
+        "get_observation",
+        "get_observation_review",
+        "get_template",
+        "list_cycles",
+        "list_observations",
+        "list_templates",
+        "manager_can_edit_observation",
+        "observation_timetable_options",
+        "replace_observation_evaluators",
+        "request_observation",
+        "resolve_supervision_target_rule",
+        "return_observation_request",
+        "submit_my_evaluation",
+        "teacher_can_edit_requested_observation",
+        "update_cycle",
+        "update_observation",
+        "update_requested_observation",
+        "update_template",
+    ] {
+        assert!(
+            facade.contains(public_item),
+            "supervision facade must re-export `{public_item}`"
+        );
+    }
+
+    for forbidden in ["sqlx::", ".fetch_", ".execute(", ".begin("] {
+        assert!(
+            !facade.contains(forbidden),
+            "supervision facade must not contain `{forbidden}`"
+        );
+    }
+
+    assert!(
+        facade
+            .lines()
+            .filter(|line| !line.trim().is_empty())
+            .count()
+            <= 80,
+        "supervision facade must remain under 80 nonblank lines"
+    );
+}
+
+#[test]
 fn exam_schedule_service_uses_a_thin_private_module_facade() {
     let service_dir = manifest_dir().join("src/modules/academic/services/exam_schedule_service");
     let facade_path = manifest_dir().join("src/modules/academic/services/exam_schedule_service.rs");

@@ -312,3 +312,307 @@ pub fn evaluator_conflict_status_codes() -> &'static [&'static str] {
         "completed",
     ]
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    fn target_rule(
+        target_type: SupervisionTargetType,
+        target_id: Option<Uuid>,
+        priority: i32,
+    ) -> SupervisionTargetRule {
+        SupervisionTargetRule {
+            target_type,
+            target_id,
+            required_observations: 1,
+            priority,
+        }
+    }
+    #[test]
+    fn target_specificity_prefers_staff_then_subject_then_organization_then_school() {
+        let staff_user_id = Uuid::new_v4();
+        let subject_group_id = Uuid::new_v4();
+        let organization_unit_id = Uuid::new_v4();
+        let lower_priority_school_rule = target_rule(SupervisionTargetType::School, None, 0);
+        let rules = vec![
+            lower_priority_school_rule,
+            target_rule(
+                SupervisionTargetType::OrganizationUnit,
+                Some(organization_unit_id),
+                0,
+            ),
+            target_rule(
+                SupervisionTargetType::SubjectGroup,
+                Some(subject_group_id),
+                0,
+            ),
+            target_rule(SupervisionTargetType::Staff, Some(staff_user_id), 100),
+        ];
+        let staff_match = SupervisionTargetMatch {
+            staff_user_id,
+            subject_group_ids: vec![subject_group_id],
+            organization_unit_ids: vec![organization_unit_id],
+        };
+
+        let resolved =
+            resolve_supervision_target_rule(&rules, &staff_match).expect("matching target rule");
+
+        assert_eq!(resolved.target_type, SupervisionTargetType::Staff);
+        assert_eq!(resolved.target_id, Some(staff_user_id));
+        assert_ne!(*resolved, lower_priority_school_rule);
+    }
+    #[test]
+    fn target_priority_breaks_ties_within_same_specificity() {
+        let organization_unit_id = Uuid::new_v4();
+        let rules = vec![
+            target_rule(
+                SupervisionTargetType::OrganizationUnit,
+                Some(organization_unit_id),
+                50,
+            ),
+            target_rule(
+                SupervisionTargetType::OrganizationUnit,
+                Some(organization_unit_id),
+                10,
+            ),
+        ];
+        let staff_match = SupervisionTargetMatch {
+            staff_user_id: Uuid::new_v4(),
+            subject_group_ids: Vec::new(),
+            organization_unit_ids: vec![organization_unit_id],
+        };
+
+        let resolved = resolve_supervision_target_rule(&rules, &staff_match)
+            .expect("matching organization target rule");
+
+        assert_eq!(resolved.priority, 10);
+    }
+    #[test]
+    fn teachers_may_edit_requests_only_while_requested() {
+        assert!(teacher_can_edit_requested_observation(
+            SupervisionObservationStatus::Requested
+        ));
+        assert!(!teacher_can_edit_requested_observation(
+            SupervisionObservationStatus::Planned
+        ));
+        assert!(!teacher_can_edit_requested_observation(
+            SupervisionObservationStatus::Returned
+        ));
+        assert!(!teacher_can_edit_requested_observation(
+            SupervisionObservationStatus::Cancelled
+        ));
+    }
+    #[test]
+    fn manager_can_edit_only_manageable_observation_statuses() {
+        assert!(manager_can_edit_observation(
+            SupervisionObservationStatus::Requested
+        ));
+        assert!(manager_can_edit_observation(
+            SupervisionObservationStatus::Planned
+        ));
+        assert!(manager_can_edit_observation(
+            SupervisionObservationStatus::Returned
+        ));
+        assert!(!manager_can_edit_observation(
+            SupervisionObservationStatus::UnderReview
+        ));
+        assert!(!manager_can_edit_observation(
+            SupervisionObservationStatus::Approved
+        ));
+        assert!(!manager_can_edit_observation(
+            SupervisionObservationStatus::Published
+        ));
+        assert!(!manager_can_edit_observation(
+            SupervisionObservationStatus::Completed
+        ));
+        assert!(!manager_can_edit_observation(
+            SupervisionObservationStatus::Cancelled
+        ));
+    }
+    #[test]
+    fn explicitly_optional_evaluators_have_no_required_member() {
+        let evaluators = vec![
+            EvaluatorAssignmentInput {
+                evaluator_user_id: Uuid::new_v4(),
+                role_label: None,
+                is_required: Some(false),
+            },
+            EvaluatorAssignmentInput {
+                evaluator_user_id: Uuid::new_v4(),
+                role_label: None,
+                is_required: Some(false),
+            },
+        ];
+
+        assert!(!has_required_evaluator(&evaluators));
+    }
+    #[test]
+    fn unspecified_evaluator_requirement_defaults_to_required() {
+        let evaluators = vec![EvaluatorAssignmentInput {
+            evaluator_user_id: Uuid::new_v4(),
+            role_label: None,
+            is_required: None,
+        }];
+
+        assert!(has_required_evaluator(&evaluators));
+    }
+    #[test]
+    fn evaluator_replacement_keeps_submitted_evaluators() {
+        let submitted_user_id = Uuid::new_v4();
+        let requested_user_id = Uuid::new_v4();
+        let retained = normalize_evaluator_replacement(
+            &[EvaluatorReplacementState {
+                evaluator_user_id: submitted_user_id,
+                submitted: true,
+            }],
+            vec![EvaluatorAssignmentInput {
+                evaluator_user_id: requested_user_id,
+                role_label: None,
+                is_required: Some(true),
+            }],
+        )
+        .expect("replacement");
+
+        assert!(retained
+            .iter()
+            .any(|evaluator| evaluator.evaluator_user_id == submitted_user_id));
+        assert!(retained
+            .iter()
+            .any(|evaluator| evaluator.evaluator_user_id == requested_user_id));
+    }
+    #[test]
+    fn average_rating_uses_equal_submitted_evaluator_weights() {
+        let evaluator_a = EvaluatorRatingInput {
+            submitted: true,
+            rating_scores: vec![Some(5.0), Some(5.0)],
+        };
+        let evaluator_b = EvaluatorRatingInput {
+            submitted: true,
+            rating_scores: vec![Some(1.0), None],
+        };
+        let evaluator_c = EvaluatorRatingInput {
+            submitted: false,
+            rating_scores: vec![Some(5.0)],
+        };
+
+        let average = average_submitted_evaluator_rating(&[evaluator_a, evaluator_b, evaluator_c])
+            .expect("submitted rating average");
+
+        assert!((average - 3.0).abs() < f64::EPSILON);
+    }
+    #[test]
+    fn observation_results_release_after_academic_approval_for_regular_readers() {
+        assert!(!can_view_observation_results(
+            SupervisionObservationStatus::EvaluatorsSubmitted,
+            false
+        ));
+        assert!(!can_view_observation_results(
+            SupervisionObservationStatus::Approved,
+            false
+        ));
+        assert!(can_view_observation_results(
+            SupervisionObservationStatus::Published,
+            false
+        ));
+        assert!(can_view_observation_results(
+            SupervisionObservationStatus::Completed,
+            false
+        ));
+    }
+    #[test]
+    fn observation_result_reviewers_can_view_unreleased_scores() {
+        assert!(can_view_observation_results(
+            SupervisionObservationStatus::EvaluatorsSubmitted,
+            true
+        ));
+        assert!(can_view_observation_results(
+            SupervisionObservationStatus::Approved,
+            true
+        ));
+    }
+    #[test]
+    fn all_required_evaluators_must_submit_before_review() {
+        let states = vec![
+            EvaluatorSubmissionState {
+                is_required: true,
+                submitted: true,
+            },
+            EvaluatorSubmissionState {
+                is_required: true,
+                submitted: false,
+            },
+            EvaluatorSubmissionState {
+                is_required: false,
+                submitted: false,
+            },
+        ];
+
+        assert!(!all_required_evaluators_submitted(&states));
+
+        let submitted_states = vec![
+            EvaluatorSubmissionState {
+                is_required: true,
+                submitted: true,
+            },
+            EvaluatorSubmissionState {
+                is_required: true,
+                submitted: true,
+            },
+            EvaluatorSubmissionState {
+                is_required: false,
+                submitted: false,
+            },
+        ];
+
+        assert!(all_required_evaluators_submitted(&submitted_states));
+    }
+    #[test]
+    fn evaluator_conflicts_count_only_approved_or_active_observations() {
+        let conflict_statuses = evaluator_conflict_status_codes();
+
+        assert!(conflict_statuses.contains(&"planned"));
+        assert!(conflict_statuses.contains(&"in_progress"));
+        assert!(conflict_statuses.contains(&"evaluators_submitted"));
+        assert!(conflict_statuses.contains(&"approved"));
+        assert!(conflict_statuses.contains(&"published"));
+        assert!(conflict_statuses.contains(&"completed"));
+        assert!(!conflict_statuses.contains(&"requested"));
+        assert!(!conflict_statuses.contains(&"returned"));
+        assert!(!conflict_statuses.contains(&"cancelled"));
+    }
+    #[test]
+    fn invalid_status_transitions_are_rejected() {
+        assert!(can_transition_observation_status(
+            SupervisionObservationStatus::Requested,
+            SupervisionObservationStatus::Planned
+        ));
+        assert!(can_transition_observation_status(
+            SupervisionObservationStatus::EvaluatorsSubmitted,
+            SupervisionObservationStatus::Approved
+        ));
+        assert!(can_transition_observation_status(
+            SupervisionObservationStatus::Approved,
+            SupervisionObservationStatus::Published
+        ));
+        assert!(can_transition_observation_status(
+            SupervisionObservationStatus::Published,
+            SupervisionObservationStatus::Completed
+        ));
+        assert!(!can_transition_observation_status(
+            SupervisionObservationStatus::Requested,
+            SupervisionObservationStatus::Approved
+        ));
+        assert!(!can_transition_observation_status(
+            SupervisionObservationStatus::EvaluatorsSubmitted,
+            SupervisionObservationStatus::UnderReview
+        ));
+        assert!(!can_transition_observation_status(
+            SupervisionObservationStatus::Approved,
+            SupervisionObservationStatus::Returned
+        ));
+        assert!(!can_transition_observation_status(
+            SupervisionObservationStatus::Completed,
+            SupervisionObservationStatus::Returned
+        ));
+    }
+}

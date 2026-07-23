@@ -636,3 +636,43 @@ fn template_step_from_row(
         updated_at: row.updated_at,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::modules::supervision::models::CreateSupervisionTemplateItemRequest;
+    #[test]
+    fn template_bulk_rows_preserve_section_item_relationships() {
+        let (section_rows, item_rows) =
+            build_template_section_bulk_rows(&[CreateSupervisionTemplateSectionRequest {
+                title: "ด้านการจัดกิจกรรม".to_string(),
+                description: Some("ตรวจแผนและกิจกรรมการเรียนรู้".to_string()),
+                sort_order: 1,
+                items: vec![
+                    CreateSupervisionTemplateItemRequest {
+                        label: "จัดกิจกรรมตามแผน".to_string(),
+                        description: None,
+                        item_type: SupervisionTemplateItemType::Rating,
+                        required: true,
+                        sort_order: 1,
+                    },
+                    CreateSupervisionTemplateItemRequest {
+                        label: "ข้อเสนอแนะ".to_string(),
+                        description: Some("บันทึกเพิ่มเติม".to_string()),
+                        item_type: SupervisionTemplateItemType::Text,
+                        required: false,
+                        sort_order: 2,
+                    },
+                ],
+            }]);
+
+        assert_eq!(section_rows.len(), 1);
+        assert_eq!(item_rows.len(), 2);
+        assert_ne!(section_rows[0].id, Uuid::nil());
+        assert!(item_rows
+            .iter()
+            .all(|item| item.section_id == section_rows[0].id));
+        assert_eq!(item_rows[0].item_type, SupervisionTemplateItemType::Rating);
+        assert_eq!(item_rows[1].item_type, SupervisionTemplateItemType::Text);
+    }
+}

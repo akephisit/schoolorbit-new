@@ -654,3 +654,85 @@ pub(super) async fn validate_evaluator_availability_for_observation(
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn duplicate_evaluation_responses_keep_the_latest_answer() {
+        let item_id = Uuid::new_v4();
+        let responses = dedupe_evaluation_responses(vec![
+            EvaluationResponseInput {
+                template_item_id: item_id,
+                rating_score: Some(2.0),
+                text_response: None,
+            },
+            EvaluationResponseInput {
+                template_item_id: item_id,
+                rating_score: Some(5.0),
+                text_response: None,
+            },
+        ]);
+
+        assert_eq!(responses.len(), 1);
+        assert_eq!(responses[0].template_item_id, item_id);
+        assert_eq!(responses[0].rating_score, Some(5.0));
+    }
+    #[test]
+    fn evaluation_bulk_rows_validate_item_type_and_rating_range() {
+        let rating_item_id = Uuid::new_v4();
+        let text_item_id = Uuid::new_v4();
+        let specs = HashMap::from([
+            (
+                rating_item_id,
+                EvaluationItemSpec {
+                    item_type: SupervisionTemplateItemType::Rating,
+                    rating_min: 1,
+                    rating_max: 5,
+                },
+            ),
+            (
+                text_item_id,
+                EvaluationItemSpec {
+                    item_type: SupervisionTemplateItemType::Text,
+                    rating_min: 1,
+                    rating_max: 5,
+                },
+            ),
+        ]);
+
+        let rows = build_evaluation_response_bulk_rows(
+            &[
+                EvaluationResponseInput {
+                    template_item_id: rating_item_id,
+                    rating_score: Some(4.0),
+                    text_response: None,
+                },
+                EvaluationResponseInput {
+                    template_item_id: text_item_id,
+                    rating_score: None,
+                    text_response: Some("จัดกิจกรรมได้ต่อเนื่อง".to_string()),
+                },
+            ],
+            &specs,
+        )
+        .expect("valid bulk rows");
+
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].rating_score, Some(4.0));
+        assert_eq!(rows[1].text_response.as_deref(), Some("จัดกิจกรรมได้ต่อเนื่อง"));
+
+        let invalid = build_evaluation_response_bulk_rows(
+            &[EvaluationResponseInput {
+                template_item_id: rating_item_id,
+                rating_score: Some(6.0),
+                text_response: None,
+            }],
+            &specs,
+        );
+
+        assert!(
+            matches!(invalid, Err(AppError::ValidationError(message)) if message == "คะแนนอยู่นอกช่วงที่แบบประเมินกำหนด")
+        );
+    }
+}
