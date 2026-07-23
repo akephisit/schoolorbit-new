@@ -1,11 +1,16 @@
-use std::sync::atomic::{AtomicI32, Ordering};
+use std::sync::{
+    atomic::{AtomicI32, Ordering},
+    Arc,
+};
 
 use chrono::{NaiveDate, NaiveTime};
 use sqlx::PgPool;
 use uuid::Uuid;
 
+use crate::error::AppError;
 use crate::modules::academic::models::exam_schedule::{
-    CreateExamRoundRequest, ImportExamItemsRequest, UpsertDayRoomAssignmentRequest,
+    CreateExamRoundRequest, GenerateSeatsRequest, ImportExamItemsRequest, PlaceExamSessionRequest,
+    UpdateExamInvigilatorsRequest, UpdateExamRoundRequest, UpsertDayRoomAssignmentRequest,
     UpsertExamDayRequest,
 };
 use crate::test_helpers::{create_test_pool, run_test_migrations};
@@ -352,19 +357,67 @@ async fn import_items(
 }
 
 async fn assign_room(pool: &PgPool, exam_day_id: Uuid, fixture: &ExamScheduleFixture) -> Uuid {
+    assign_room_for(
+        pool,
+        exam_day_id,
+        fixture.classroom_id,
+        fixture.room_id,
+        fixture.staff_user_id,
+    )
+    .await
+}
+
+async fn assign_room_for(
+    pool: &PgPool,
+    exam_day_id: Uuid,
+    classroom_id: Uuid,
+    room_id: Uuid,
+    actor_user_id: Uuid,
+) -> Uuid {
     exam_schedule_service::upsert_day_room_assignment(
         pool,
         exam_day_id,
         UpsertDayRoomAssignmentRequest {
-            classroom_id: fixture.classroom_id,
-            room_id: fixture.room_id,
+            classroom_id,
+            room_id,
             capacity_override: None,
             invigilator_staff_ids: None,
         },
-        fixture.staff_user_id,
+        actor_user_id,
     )
     .await
     .expect("day room assignment should be created")
+    .id
+}
+
+fn imported_item_id(items: &[(Uuid, Uuid, Uuid)], classroom_id: Uuid, subject_id: Uuid) -> Uuid {
+    items
+        .iter()
+        .find_map(|(item_id, item_classroom_id, item_subject_id)| {
+            (*item_classroom_id == classroom_id && *item_subject_id == subject_id)
+                .then_some(*item_id)
+        })
+        .expect("expected imported exam item should exist")
+}
+
+async fn place_session(
+    pool: &PgPool,
+    item_id: Uuid,
+    exam_day_id: Uuid,
+    starts_at: NaiveTime,
+    actor_user_id: Uuid,
+) -> Uuid {
+    exam_schedule_service::place_exam_session(
+        pool,
+        PlaceExamSessionRequest {
+            exam_schedule_item_id: item_id,
+            exam_day_id,
+            starts_at,
+        },
+        actor_user_id,
+    )
+    .await
+    .expect("exam session should be placed")
     .id
 }
 
@@ -472,4 +525,445 @@ async fn fixture_builds_all_prerequisites() {
     let (round_id, day_id) = create_round_with_day(&pool, &fixture).await;
     assert_eq!(import_items(&pool, round_id, &fixture).await.len(), 3);
     assert_ne!(assign_room(&pool, day_id, &fixture).await, Uuid::nil());
+}
+
+#[tokio::test]
+async fn round_and_day_lifecycle_preserves_identity_and_draft_rules() {
+    let pool = migrated_pool().await;
+    let fixture = insert_fixture(&pool).await;
+    let (round_id, day_id) = create_round_with_day(&pool, &fixture).await;
+
+    let updated_day = exam_schedule_service::update_exam_day(
+        &pool,
+        day_id,
+        UpsertExamDayRequest {
+            exam_date: NaiveDate::from_ymd_opt(9800, 3, 2).expect("fixture date should be valid"),
+            label: Some("Updated Exam Day".to_string()),
+            start_time: NaiveTime::from_hms_opt(9, 0, 0).expect("fixture time should be valid"),
+            end_time: NaiveTime::from_hms_opt(15, 0, 0).expect("fixture time should be valid"),
+            grade_level_ids: vec![fixture.grade_level_id],
+            blocked_windows: Vec::new(),
+        },
+    )
+    .await
+    .expect("exam day should update");
+    assert_eq!(updated_day.id, day_id);
+    assert_eq!(updated_day.label.as_deref(), Some("Updated Exam Day"));
+
+    let updated_round = exam_schedule_service::update_round(
+        &pool,
+        round_id,
+        UpdateExamRoundRequest {
+            name: Some("Final Characterization".to_string()),
+            description: Some("Updated description".to_string()),
+            exam_kind: Some("final".to_string()),
+        },
+        fixture.staff_user_id,
+    )
+    .await
+    .expect("exam round should update");
+    assert_eq!(updated_round.id, round_id);
+    assert_eq!(updated_round.status, "draft");
+    assert_eq!(updated_round.exam_kind, "final");
+
+    let listed_round = exam_schedule_service::list_rounds(&pool, Some(fixture.semester_id))
+        .await
+        .expect("exam rounds should list")
+        .into_iter()
+        .find(|round| round.id == round_id)
+        .expect("updated round should be listed");
+    assert_eq!(listed_round.name, "Final Characterization");
+
+    let workspace = exam_schedule_service::get_workspace(&pool, round_id)
+        .await
+        .expect("workspace should load");
+    assert_eq!(workspace.days.len(), 1);
+    assert_eq!(workspace.days[0].id, day_id);
+    assert_eq!(workspace.days[0].exam_date, updated_day.exam_date);
+
+    exam_schedule_service::delete_exam_day(&pool, day_id)
+        .await
+        .expect("exam day should delete");
+    let workspace = exam_schedule_service::get_workspace(&pool, round_id)
+        .await
+        .expect("workspace should reload");
+    assert!(workspace.days.is_empty());
+}
+
+#[tokio::test]
+async fn room_assignment_and_seat_generation_preserve_capacity_rules() {
+    let pool = migrated_pool().await;
+    let fixture = insert_fixture(&pool).await;
+    let extra_student_id = insert_active_user(&pool, "student", "Capacity Student").await;
+    sqlx::query(
+        "INSERT INTO student_class_enrollments
+            (student_id, class_room_id, status, class_number)
+         VALUES ($1, $2, 'active', 2)",
+    )
+    .bind(extra_student_id)
+    .bind(fixture.classroom_id)
+    .execute(&pool)
+    .await
+    .expect("capacity-test enrollment should insert");
+
+    let (round_id, day_id) = create_round_with_day(&pool, &fixture).await;
+    assert_eq!(import_items(&pool, round_id, &fixture).await.len(), 3);
+    let assignment_id = assign_room(&pool, day_id, &fixture).await;
+
+    let seats = exam_schedule_service::generate_seats_for_assignment(
+        &pool,
+        assignment_id,
+        GenerateSeatsRequest { regenerate: false },
+        fixture.staff_user_id,
+    )
+    .await
+    .expect("seats should generate");
+    assert_eq!(seats.len(), 2);
+    assert_eq!(seats[0].student_id, fixture.student_user_id);
+    assert_eq!(seats[0].seat_number, "01");
+    assert_eq!(seats[1].student_id, extra_student_id);
+    assert_eq!(seats[1].seat_number, "02");
+
+    let capacity_error = exam_schedule_service::upsert_day_room_assignment(
+        &pool,
+        day_id,
+        UpsertDayRoomAssignmentRequest {
+            classroom_id: fixture.classroom_id,
+            room_id: fixture.room_id,
+            capacity_override: Some(1),
+            invigilator_staff_ids: None,
+        },
+        fixture.staff_user_id,
+    )
+    .await
+    .expect_err("capacity below active enrollment should be rejected");
+    assert!(matches!(
+        capacity_error,
+        AppError::BadRequest(message)
+            if message == "Classroom has 2 active student(s), which exceeds the room capacity of 1"
+    ));
+
+    let assignments = exam_schedule_service::list_day_room_assignments(&pool, day_id)
+        .await
+        .expect("room assignments should list");
+    assert_eq!(assignments.len(), 1);
+    assert_eq!(assignments[0].id, assignment_id);
+    assert_eq!(assignments[0].capacity_override, None);
+
+    let persisted_seats = exam_schedule_service::generate_seats_for_assignment(
+        &pool,
+        assignment_id,
+        GenerateSeatsRequest { regenerate: false },
+        fixture.staff_user_id,
+    )
+    .await
+    .expect("existing seats should load");
+    assert_eq!(
+        persisted_seats
+            .iter()
+            .map(|seat| (seat.id, seat.student_id, seat.seat_number.as_str()))
+            .collect::<Vec<_>>(),
+        seats
+            .iter()
+            .map(|seat| (seat.id, seat.student_id, seat.seat_number.as_str()))
+            .collect::<Vec<_>>()
+    );
+}
+
+#[tokio::test]
+async fn invigilator_assignment_rejects_overlapping_live_sessions() {
+    let pool = migrated_pool().await;
+    let fixture = insert_fixture(&pool).await;
+    let (round_id, day_id) = create_round_with_day(&pool, &fixture).await;
+    let items = import_items(&pool, round_id, &fixture).await;
+    let first_assignment_id = assign_room(&pool, day_id, &fixture).await;
+    let second_assignment_id = assign_room_for(
+        &pool,
+        day_id,
+        fixture.second_classroom_id,
+        fixture.second_room_id,
+        fixture.staff_user_id,
+    )
+    .await;
+
+    exam_schedule_service::assign_invigilator_to_assignment(
+        &pool,
+        first_assignment_id,
+        fixture.staff_user_id,
+        fixture.staff_user_id,
+    )
+    .await
+    .expect("first invigilator assignment should succeed");
+
+    place_session(
+        &pool,
+        imported_item_id(&items, fixture.classroom_id, fixture.subject_id),
+        day_id,
+        NaiveTime::from_hms_opt(8, 0, 0).expect("fixture time should be valid"),
+        fixture.staff_user_id,
+    )
+    .await;
+    place_session(
+        &pool,
+        imported_item_id(&items, fixture.second_classroom_id, fixture.subject_id),
+        day_id,
+        NaiveTime::from_hms_opt(8, 30, 0).expect("fixture time should be valid"),
+        fixture.staff_user_id,
+    )
+    .await;
+
+    let conflict = exam_schedule_service::update_assignment_invigilators(
+        &pool,
+        second_assignment_id,
+        UpdateExamInvigilatorsRequest {
+            invigilator_staff_ids: vec![fixture.staff_user_id],
+        },
+        fixture.staff_user_id,
+    )
+    .await
+    .expect_err("overlapping invigilation should be rejected");
+    assert!(matches!(
+        conflict,
+        AppError::BadRequest(message)
+            if message == "Invigilator has an overlapping exam supervision assignment"
+    ));
+
+    let workspace = exam_schedule_service::get_invigilator_workspace(&pool, round_id)
+        .await
+        .expect("invigilator workspace should load");
+    let first_assignment = workspace
+        .assignments
+        .iter()
+        .find(|assignment| assignment.assignment_id == first_assignment_id)
+        .expect("first assignment should remain");
+    let second_assignment = workspace
+        .assignments
+        .iter()
+        .find(|assignment| assignment.assignment_id == second_assignment_id)
+        .expect("second assignment should remain");
+    assert_eq!(first_assignment.invigilators.len(), 1);
+    assert_eq!(
+        first_assignment.invigilators[0].staff_id,
+        fixture.staff_user_id
+    );
+    assert!(second_assignment.invigilators.is_empty());
+}
+
+#[tokio::test]
+async fn concurrent_overlapping_placements_allow_only_one_commit() {
+    let pool = migrated_pool().await;
+    let fixture = insert_fixture(&pool).await;
+    let (round_id, day_id) = create_round_with_day(&pool, &fixture).await;
+    let items = import_items(&pool, round_id, &fixture).await;
+    assign_room(&pool, day_id, &fixture).await;
+
+    let first_item_id = imported_item_id(&items, fixture.classroom_id, fixture.subject_id);
+    let second_item_id = imported_item_id(&items, fixture.classroom_id, fixture.second_subject_id);
+    let actor_user_id = fixture.staff_user_id;
+    let barrier = Arc::new(tokio::sync::Barrier::new(2));
+    let first_pool = pool.clone();
+    let second_pool = pool.clone();
+    let first_barrier = Arc::clone(&barrier);
+    let second_barrier = Arc::clone(&barrier);
+    let starts_at = NaiveTime::from_hms_opt(8, 0, 0).expect("fixture time should be valid");
+
+    let (first_result, second_result) = tokio::join!(
+        async move {
+            first_barrier.wait().await;
+            exam_schedule_service::place_exam_session(
+                &first_pool,
+                PlaceExamSessionRequest {
+                    exam_schedule_item_id: first_item_id,
+                    exam_day_id: day_id,
+                    starts_at,
+                },
+                actor_user_id,
+            )
+            .await
+        },
+        async move {
+            second_barrier.wait().await;
+            exam_schedule_service::place_exam_session(
+                &second_pool,
+                PlaceExamSessionRequest {
+                    exam_schedule_item_id: second_item_id,
+                    exam_day_id: day_id,
+                    starts_at,
+                },
+                actor_user_id,
+            )
+            .await
+        }
+    );
+
+    assert_eq!(
+        usize::from(first_result.is_ok()) + usize::from(second_result.is_ok()),
+        1
+    );
+    let errors = [first_result.err(), second_result.err()]
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>();
+    assert_eq!(errors.len(), 1);
+    assert!(matches!(
+        &errors[0],
+        AppError::BadRequest(message)
+            if message == "Classroom already has an exam session during this time"
+    ));
+
+    let persisted_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*)::BIGINT FROM academic_exam_sessions
+         WHERE exam_schedule_item_id = ANY($1::uuid[])",
+    )
+    .bind(vec![first_item_id, second_item_id])
+    .fetch_one(&pool)
+    .await
+    .expect("concurrent session rows should be countable");
+    assert_eq!(persisted_count, 1);
+}
+
+#[tokio::test]
+async fn publish_exposes_the_same_session_to_student_staff_and_linked_parent() {
+    let pool = migrated_pool().await;
+    let fixture = insert_fixture(&pool).await;
+    let (round_id, day_id) = create_round_with_day(&pool, &fixture).await;
+    let items = import_items(&pool, round_id, &fixture).await;
+    let first_assignment_id = assign_room(&pool, day_id, &fixture).await;
+    let second_assignment_id = assign_room_for(
+        &pool,
+        day_id,
+        fixture.second_classroom_id,
+        fixture.second_room_id,
+        fixture.staff_user_id,
+    )
+    .await;
+
+    for assignment_id in [first_assignment_id, second_assignment_id] {
+        exam_schedule_service::generate_seats_for_assignment(
+            &pool,
+            assignment_id,
+            GenerateSeatsRequest { regenerate: false },
+            fixture.staff_user_id,
+        )
+        .await
+        .expect("publish fixture seats should generate");
+    }
+    exam_schedule_service::assign_invigilator_to_assignment(
+        &pool,
+        first_assignment_id,
+        fixture.staff_user_id,
+        fixture.staff_user_id,
+    )
+    .await
+    .expect("publish fixture invigilator should assign");
+
+    place_session(
+        &pool,
+        imported_item_id(&items, fixture.classroom_id, fixture.subject_id),
+        day_id,
+        NaiveTime::from_hms_opt(8, 0, 0).expect("fixture time should be valid"),
+        fixture.staff_user_id,
+    )
+    .await;
+    place_session(
+        &pool,
+        imported_item_id(&items, fixture.classroom_id, fixture.second_subject_id),
+        day_id,
+        NaiveTime::from_hms_opt(9, 0, 0).expect("fixture time should be valid"),
+        fixture.staff_user_id,
+    )
+    .await;
+    place_session(
+        &pool,
+        imported_item_id(&items, fixture.second_classroom_id, fixture.subject_id),
+        day_id,
+        NaiveTime::from_hms_opt(8, 0, 0).expect("fixture time should be valid"),
+        fixture.staff_user_id,
+    )
+    .await;
+
+    let published = exam_schedule_service::publish_round(&pool, round_id, fixture.staff_user_id)
+        .await
+        .expect("ready exam round should publish");
+    assert_eq!(published.status, "published");
+
+    let student_rounds = exam_schedule_service::list_my_published_exam_schedule(
+        &pool,
+        fixture.student_user_id,
+        Some(fixture.semester_id),
+    )
+    .await
+    .expect("student published schedule should load");
+    let staff_rounds = exam_schedule_service::list_staff_published_exam_schedule(
+        &pool,
+        fixture.staff_user_id,
+        Some(fixture.semester_id),
+    )
+    .await
+    .expect("staff published schedule should load");
+    let parent_rounds = exam_schedule_service::list_child_published_exam_schedule(
+        &pool,
+        fixture.parent_user_id,
+        fixture.student_user_id,
+        Some(fixture.semester_id),
+    )
+    .await
+    .expect("parent published schedule should load");
+
+    assert_eq!(student_rounds.len(), 1);
+    assert_eq!(staff_rounds.len(), 1);
+    assert_eq!(parent_rounds.len(), 1);
+    assert_eq!(student_rounds[0].round_id, round_id);
+    assert_eq!(staff_rounds[0].round_id, round_id);
+    assert_eq!(parent_rounds[0].round_id, round_id);
+    assert_eq!(student_rounds[0].sessions.len(), 2);
+    assert_eq!(staff_rounds[0].sessions.len(), 3);
+    assert_eq!(parent_rounds[0].sessions.len(), 2);
+
+    let student_sessions = student_rounds[0]
+        .sessions
+        .iter()
+        .map(|session| {
+            (
+                session.exam_date,
+                session.starts_at,
+                session.ends_at,
+                session.subject_name.as_str(),
+                session.room_name.as_str(),
+                session.seat_number.as_deref(),
+            )
+        })
+        .collect::<Vec<_>>();
+    let parent_sessions = parent_rounds[0]
+        .sessions
+        .iter()
+        .map(|session| {
+            (
+                session.exam_date,
+                session.starts_at,
+                session.ends_at,
+                session.subject_name.as_str(),
+                session.room_name.as_str(),
+                session.seat_number.as_deref(),
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(student_sessions, parent_sessions);
+    assert!(student_sessions
+        .iter()
+        .all(|session| session.5 == Some("01")));
+
+    let unrelated_parent_id = insert_active_user(&pool, "parent", "Unrelated Parent").await;
+    let unrelated_error = exam_schedule_service::list_child_published_exam_schedule(
+        &pool,
+        unrelated_parent_id,
+        fixture.student_user_id,
+        Some(fixture.semester_id),
+    )
+    .await
+    .expect_err("unlinked parent should not read the student schedule");
+    assert!(matches!(
+        unrelated_error,
+        AppError::Forbidden(message) if message == "คุณไม่มีสิทธิ์เข้าถึงข้อมูลนักเรียนคนนี้"
+    ));
 }
