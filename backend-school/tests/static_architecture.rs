@@ -2158,6 +2158,22 @@ fn activity_manage_own_uses_resource_policy_for_group_access() {
 }
 
 #[test]
+fn activity_timetable_context_route_contract_is_registered() {
+    let routes = strip_comments(&read_source(manifest_dir().join("src/modules/academic.rs")));
+    let handlers = strip_comments(&read_source(
+        manifest_dir().join("src/modules/academic/handlers/activity.rs"),
+    ));
+    let contract = strip_comments(&read_source(manifest_dir().join("src/api_contract.rs")));
+
+    assert!(routes.contains("\"/activity-slots/timetable-context\""));
+    assert!(routes.contains("get(handlers::activity::get_timetable_context)"));
+    assert!(handlers.contains("operation_id = \"getActivitySlotTimetableContext\""));
+    assert!(handlers.contains("codes::ACADEMIC_COURSE_PLAN_READ_ALL"));
+    assert!(handlers.contains("activity_access_policy::resolve_activity_list_access"));
+    assert!(contract.contains("handlers::activity::get_timetable_context"));
+}
+
+#[test]
 fn activity_workspace_error_outcomes_use_non_success_http_statuses() {
     let activity_handler = strip_comments(&read_source(
         manifest_dir().join("src/modules/academic/handlers/activity.rs"),

@@ -1,9 +1,10 @@
 use crate::error::AppError;
 use crate::modules::academic::models::activity::{
     ActivityGroup, ActivityGroupFilter, ActivitySlot, ActivitySlotFilter, SlotClassroomAssignment,
+    SlotInstructorInfo,
 };
 use crate::modules::academic::models::study_plans::*;
-use crate::modules::academic::services::activity_service::{self, SlotInstructorInfo};
+use crate::modules::academic::services::activity_service;
 use crate::policies::resource_access_policy::UserResourceListAccess;
 use chrono::{DateTime, Utc};
 use sqlx::{types::Json, FromRow, PgPool};

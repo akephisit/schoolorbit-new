@@ -80,6 +80,35 @@ pub async fn list_activity_slots(
 }
 
 #[utoipa::path(
+    get,
+    path = "/api/academic/activity-slots/timetable-context",
+    operation_id = "getActivitySlotTimetableContext",
+    tag = "academic",
+    params(ActivityTimetableContextQuery),
+    responses(
+        (status = 200, description = "Semester activity timetable context", body = ApiResponse<ActivitySlotTimetableContextResponse>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Timetable or activity read permission denied", body = ApiErrorResponse),
+        (status = 500, description = "Activity timetable context could not be loaded", body = ApiErrorResponse)
+    )
+)]
+pub async fn get_timetable_context(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<ActivityTimetableContextQuery>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context(&state, &headers).await?;
+    context
+        .actor
+        .require_permission(codes::ACADEMIC_COURSE_PLAN_READ_ALL)?;
+    let access = activity_access_policy::resolve_activity_list_access(&context.actor)?;
+    let data =
+        activity_service::get_timetable_context(&context.tenant.pool, query.semester_id, access)
+            .await?;
+    Ok(Json(ApiResponse::ok(data)).into_response())
+}
+
+#[utoipa::path(
     put,
     path = "/api/academic/activity-slots/{id}",
     operation_id = "updateActivitySlot",
@@ -495,7 +524,7 @@ pub struct InstructorRoleRequest {
     tag = "academic",
     params(("id" = Uuid, Path, description = "Activity group ID")),
     responses(
-        (status = 200, description = "Activity group instructors", body = ApiResponse<Vec<activity_service::InstructorInfo>>),
+        (status = 200, description = "Activity group instructors", body = ApiResponse<Vec<InstructorInfo>>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Activity group read permission denied", body = ApiErrorResponse),
         (status = 404, description = "Activity group not found", body = ApiErrorResponse),
@@ -586,7 +615,7 @@ pub async fn remove_instructor(
     tag = "academic",
     params(("id" = Uuid, Path, description = "Activity slot ID")),
     responses(
-        (status = 200, description = "Activity slot instructors", body = ApiResponse<Vec<activity_service::SlotInstructorInfo>>),
+        (status = 200, description = "Activity slot instructors", body = ApiResponse<Vec<SlotInstructorInfo>>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Activity slot read permission denied", body = ApiErrorResponse),
         (status = 404, description = "Activity slot not found", body = ApiErrorResponse),

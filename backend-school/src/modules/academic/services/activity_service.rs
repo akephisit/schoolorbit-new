@@ -397,6 +397,145 @@ pub async fn list_slots(
     Ok(rows.into_iter().map(ActivitySlot::from).collect())
 }
 
+#[derive(Debug, FromRow)]
+struct SlotInstructorTimetableContextRow {
+    slot_id: Uuid,
+    id: Uuid,
+    user_id: Uuid,
+    instructor_name: Option<String>,
+}
+
+#[derive(Debug, FromRow)]
+struct SlotClassroomAssignmentTimetableContextRow {
+    id: Uuid,
+    slot_id: Uuid,
+    classroom_id: Uuid,
+    instructor_id: Uuid,
+    created_at: DateTime<Utc>,
+    classroom_name: Option<String>,
+    instructor_name: Option<String>,
+}
+
+pub async fn get_timetable_context(
+    pool: &PgPool,
+    semester_id: Uuid,
+    access: UserResourceListAccess,
+) -> Result<ActivitySlotTimetableContextResponse, AppError> {
+    let slots = list_slots(
+        pool,
+        ActivitySlotFilter {
+            semester_id: Some(semester_id),
+            activity_type: None,
+            teacher_reg_open: None,
+            student_reg_open: None,
+        },
+        access,
+    )
+    .await?;
+    let slot_ids = slots.iter().map(|slot| slot.id).collect::<Vec<_>>();
+    if slot_ids.is_empty() {
+        return Ok(ActivitySlotTimetableContextResponse {
+            slots,
+            instructors_by_slot: HashMap::new(),
+            classroom_assignments_by_slot: HashMap::new(),
+        });
+    }
+
+    let instructors = list_instructors_for_slots(pool, &slot_ids).await?;
+    let assignments = list_classroom_assignments_for_slots(pool, &slot_ids).await?;
+
+    Ok(group_timetable_context(slots, instructors, assignments))
+}
+
+async fn list_instructors_for_slots(
+    pool: &PgPool,
+    slot_ids: &[Uuid],
+) -> Result<Vec<SlotInstructorTimetableContextRow>, AppError> {
+    sqlx::query_as(
+        r#"SELECT asi.slot_id, asi.id, asi.user_id,
+                  u.first_name || ' ' || u.last_name AS instructor_name
+           FROM activity_slot_instructors asi
+           JOIN users u ON u.id = asi.user_id
+           WHERE asi.slot_id = ANY($1)
+           ORDER BY asi.slot_id, u.first_name, u.last_name, asi.id"#,
+    )
+    .bind(slot_ids)
+    .fetch_all(pool)
+    .await
+    .map_err(|error| {
+        tracing::error!("list timetable-context activity instructors error: {error}");
+        AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
+    })
+}
+
+async fn list_classroom_assignments_for_slots(
+    pool: &PgPool,
+    slot_ids: &[Uuid],
+) -> Result<Vec<SlotClassroomAssignmentTimetableContextRow>, AppError> {
+    sqlx::query_as(
+        r#"SELECT asca.id, asca.slot_id, asca.classroom_id, asca.instructor_id,
+                  asca.created_at, cr.name AS classroom_name,
+                  concat(u.first_name, ' ', u.last_name) AS instructor_name
+           FROM activity_slot_classroom_assignments asca
+           JOIN class_rooms cr ON cr.id = asca.classroom_id
+           JOIN users u ON u.id = asca.instructor_id
+           WHERE asca.slot_id = ANY($1)
+           ORDER BY asca.slot_id, cr.name, asca.id"#,
+    )
+    .bind(slot_ids)
+    .fetch_all(pool)
+    .await
+    .map_err(|error| {
+        tracing::error!("list timetable-context classroom assignments error: {error}");
+        AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
+    })
+}
+
+fn group_timetable_context(
+    slots: Vec<ActivitySlot>,
+    instructors: Vec<SlotInstructorTimetableContextRow>,
+    assignments: Vec<SlotClassroomAssignmentTimetableContextRow>,
+) -> ActivitySlotTimetableContextResponse {
+    let mut instructors_by_slot = slots
+        .iter()
+        .map(|slot| (slot.id, Vec::new()))
+        .collect::<HashMap<_, _>>();
+    let mut classroom_assignments_by_slot = slots
+        .iter()
+        .map(|slot| (slot.id, Vec::new()))
+        .collect::<HashMap<_, _>>();
+
+    for instructor in instructors {
+        if let Some(slot_instructors) = instructors_by_slot.get_mut(&instructor.slot_id) {
+            slot_instructors.push(SlotInstructorInfo {
+                id: instructor.id,
+                user_id: instructor.user_id,
+                instructor_name: instructor.instructor_name,
+            });
+        }
+    }
+
+    for assignment in assignments {
+        if let Some(slot_assignments) = classroom_assignments_by_slot.get_mut(&assignment.slot_id) {
+            slot_assignments.push(SlotClassroomAssignment {
+                id: assignment.id,
+                slot_id: assignment.slot_id,
+                classroom_id: assignment.classroom_id,
+                instructor_id: assignment.instructor_id,
+                created_at: assignment.created_at,
+                classroom_name: assignment.classroom_name,
+                instructor_name: assignment.instructor_name,
+            });
+        }
+    }
+
+    ActivitySlotTimetableContextResponse {
+        slots,
+        instructors_by_slot,
+        classroom_assignments_by_slot,
+    }
+}
+
 pub async fn update_slot(
     pool: &PgPool,
     id: Uuid,
@@ -1019,15 +1158,6 @@ pub async fn update_member_result(
 // Group Instructors
 // ============================================
 
-#[derive(Debug, serde::Serialize, sqlx::FromRow, utoipa::ToSchema)]
-pub struct InstructorInfo {
-    pub id: Uuid,
-    pub instructor_id: Uuid,
-    #[schema(value_type = ActivityGroupInstructorRole)]
-    pub role: String,
-    pub instructor_name: Option<String>,
-}
-
 pub async fn list_group_instructors(
     pool: &PgPool,
     group_id: Uuid,
@@ -1097,13 +1227,6 @@ pub async fn remove_group_instructor(
 // ============================================
 // Slot Instructors
 // ============================================
-
-#[derive(Debug, serde::Serialize, sqlx::FromRow, utoipa::ToSchema)]
-pub struct SlotInstructorInfo {
-    pub id: Uuid,
-    pub user_id: Uuid,
-    pub instructor_name: Option<String>,
-}
 
 pub async fn list_slot_instructors(
     pool: &PgPool,

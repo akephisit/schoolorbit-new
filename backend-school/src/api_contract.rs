@@ -10,9 +10,10 @@ use crate::modules::academic::handlers::timetable::TimetableItemsData;
 use crate::modules::academic::models::activity::{
     ActivityGroup, ActivityGroupFilter, ActivityGroupInstructorRole, ActivityGroupMember,
     ActivityMemberResult, ActivityRegistrationType, ActivitySlot, ActivitySlotFilter,
-    AddMembersRequest, BatchUpsertSlotClassroomAssignmentsRequest, CreateActivityGroupRequest,
-    SlotClassroomAssignment, UpdateActivityGroupRequest, UpdateActivitySlotRequest,
-    UpdateMemberResultRequest, UpsertSlotClassroomAssignmentRequest,
+    ActivitySlotTimetableContextResponse, AddMembersRequest,
+    BatchUpsertSlotClassroomAssignmentsRequest, CreateActivityGroupRequest, InstructorInfo,
+    SlotClassroomAssignment, SlotInstructorInfo, UpdateActivityGroupRequest,
+    UpdateActivitySlotRequest, UpdateMemberResultRequest, UpsertSlotClassroomAssignmentRequest,
 };
 use crate::modules::academic::models::course_planning::{
     AddCourseInstructorRequest, AssignCoursesRequest, BatchListCourseInstructorsQuery,
@@ -47,7 +48,6 @@ use crate::modules::academic::models::{
     UpdateYearLevelsRequest,
 };
 use crate::modules::academic::services::academic_structure_service::AcademicStructure;
-use crate::modules::academic::services::activity_service::{InstructorInfo, SlotInstructorInfo};
 use crate::modules::academic::services::course_planning_service::ClassroomActivity;
 use crate::modules::academic::services::study_plan_service::GenerateActivitiesFromPlanOutcome;
 use crate::modules::achievement::models::{
@@ -213,6 +213,7 @@ use utoipa::OpenApi;
         crate::modules::academic::handlers::study_plans::remove_catalog_default_instructor,
         crate::modules::academic::handlers::study_plans::update_catalog_default_instructor_role,
         crate::modules::academic::handlers::activity::list_activity_slots,
+        crate::modules::academic::handlers::activity::get_timetable_context,
         crate::modules::academic::handlers::activity::update_activity_slot,
         crate::modules::academic::handlers::activity::delete_activity_slot,
         crate::modules::academic::handlers::activity::list_slot_instructors,
@@ -496,6 +497,7 @@ use utoipa::OpenApi;
         ActivitySlot,
         ActivityRegistrationType,
         ActivitySlotFilter,
+        ActivitySlotTimetableContextResponse,
         UpdateActivitySlotRequest,
         ActivityGroup,
         ActivityGroupFilter,
@@ -520,6 +522,7 @@ use utoipa::OpenApi;
         ActivityProcessedCountData,
         ApiResponse<Vec<ActivitySlot>>,
         ApiResponse<ActivitySlot>,
+        ApiResponse<ActivitySlotTimetableContextResponse>,
         ApiResponse<Vec<ActivityGroup>>,
         ApiResponse<ActivityGroup>,
         ApiResponse<Vec<ActivityGroupMember>>,
@@ -1272,7 +1275,7 @@ mod tests {
             .flat_map(|path| path.as_object().expect("path item").values())
             .filter(|operation| operation.get("operationId").is_some())
             .count();
-        assert_eq!(operation_count, 177);
+        assert_eq!(operation_count, 178);
     }
 
     #[test]
@@ -1418,7 +1421,7 @@ mod tests {
             .flat_map(|path| path.as_object().expect("path item").values())
             .filter(|operation| operation.get("operationId").is_some())
             .count();
-        assert_eq!(operation_count, 177);
+        assert_eq!(operation_count, 178);
     }
 
     #[test]
@@ -1600,7 +1603,7 @@ mod tests {
             .flat_map(|path| path.as_object().expect("path item").values())
             .filter(|operation| operation.get("operationId").is_some())
             .count();
-        assert_eq!(operation_count, 177);
+        assert_eq!(operation_count, 178);
     }
 
     #[test]
@@ -1610,6 +1613,11 @@ mod tests {
             &document,
             &[
                 ("/api/academic/activity-slots", "get", "listActivitySlots"),
+                (
+                    "/api/academic/activity-slots/timetable-context",
+                    "get",
+                    "getActivitySlotTimetableContext",
+                ),
                 (
                     "/api/academic/activity-slots/{id}",
                     "put",
@@ -1801,6 +1809,11 @@ mod tests {
                 "ApiResponse_Vec_ActivitySlot",
             ),
             (
+                "/api/academic/activity-slots/timetable-context",
+                "get",
+                "ApiResponse_ActivitySlotTimetableContextResponse",
+            ),
+            (
                 "/api/academic/activity-slots/{id}",
                 "put",
                 "ApiResponse_ActivitySlot",
@@ -1873,7 +1886,7 @@ mod tests {
             .flat_map(|path| path.as_object().expect("path item").values())
             .filter(|operation| operation.get("operationId").is_some())
             .count();
-        assert_eq!(operation_count, 177);
+        assert_eq!(operation_count, 178);
     }
 
     #[test]

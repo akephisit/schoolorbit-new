@@ -398,6 +398,10 @@ pub fn academic_routes() -> Router<AppState> {
             get(handlers::activity::list_activity_slots),
         )
         .route(
+            "/activity-slots/timetable-context",
+            get(handlers::activity::get_timetable_context),
+        )
+        .route(
             "/activity-slots/{id}",
             put(handlers::activity::update_activity_slot)
                 .delete(handlers::activity::delete_activity_slot),
