@@ -100,6 +100,37 @@ fn exam_schedule_service_uses_a_thin_private_module_facade() {
         );
     }
 
+    for public_function in [
+        "assign_invigilator_to_assignment",
+        "clear_mismatched_exam_items",
+        "create_round",
+        "delete_exam_day",
+        "delete_exam_session",
+        "generate_seats_for_assignment",
+        "get_invigilator_workspace",
+        "get_workspace",
+        "import_exam_items",
+        "list_child_published_exam_schedule",
+        "list_day_room_assignments",
+        "list_invigilator_staff_options",
+        "list_my_published_exam_schedule",
+        "list_rounds",
+        "list_staff_published_exam_schedule",
+        "place_exam_session",
+        "publish_round",
+        "remove_invigilator_from_assignment",
+        "update_assignment_invigilators",
+        "update_exam_day",
+        "update_round",
+        "upsert_day_room_assignment",
+        "upsert_exam_day",
+    ] {
+        assert!(
+            source.contains(public_function),
+            "exam schedule facade must preserve public function `{public_function}`"
+        );
+    }
+
     let nonblank_line_count = source
         .lines()
         .filter(|line| !line.trim().is_empty())
@@ -109,7 +140,7 @@ fn exam_schedule_service_uses_a_thin_private_module_facade() {
         "exam schedule facade must stay thin; found {nonblank_line_count} nonblank lines"
     );
 
-    for forbidden in ["sqlx::query", ".begin().await", "sqlx::FromRow"] {
+    for forbidden in ["sqlx::query", ".begin().await", "sqlx::FromRow", "SELECT "] {
         assert!(
             !source.contains(forbidden),
             "exam schedule facade must not contain persistence workflow fragment `{forbidden}`"

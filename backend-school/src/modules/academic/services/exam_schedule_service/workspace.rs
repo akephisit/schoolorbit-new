@@ -15,17 +15,17 @@ use super::sessions_and_conflicts::ExamSessionRow;
 use super::shared::unique_uuids;
 
 #[derive(Debug, Clone, Copy)]
-pub struct WorkspaceCounts {
-    pub day_count: i64,
-    pub item_count: i64,
-    pub unscheduled_count: i64,
-    pub missing_room_assignment_count: i64,
-    pub invalid_session_count: i64,
-    pub missing_seat_student_count: i64,
-    pub invigilator_conflict_count: i64,
+pub(super) struct WorkspaceCounts {
+    pub(super) day_count: i64,
+    pub(super) item_count: i64,
+    pub(super) unscheduled_count: i64,
+    pub(super) missing_room_assignment_count: i64,
+    pub(super) invalid_session_count: i64,
+    pub(super) missing_seat_student_count: i64,
+    pub(super) invigilator_conflict_count: i64,
 }
 
-pub fn build_readiness(counts: WorkspaceCounts) -> ExamScheduleReadiness {
+pub(super) fn build_readiness(counts: WorkspaceCounts) -> ExamScheduleReadiness {
     let mut blockers = Vec::new();
     if counts.day_count == 0 {
         blockers.push("Add at least one exam day".to_string());
