@@ -134,10 +134,6 @@
 			</div>
 		</header>
 
-		{#if !loading && !error && colorKeyItems.length > 0}
-			<CalendarColorKey items={colorKeyItems} />
-		{/if}
-
 		{#if loading}
 			<div class="min-h-0 flex-1 overflow-hidden">
 				<PageSkeleton variant="detail" />
@@ -156,13 +152,20 @@
 			<div
 				class="grid min-h-0 flex-1 lg:grid-cols-[minmax(0,1fr)_22rem] lg:gap-5 xl:grid-cols-[minmax(0,1fr)_24rem]"
 			>
-				<CalendarMonthGrid
-					monthDate={selectedMonth}
-					{events}
-					{selectedDate}
-					onselect={selectDate}
-					fillHeight
-				/>
+				<div class="flex min-h-0 min-w-0 flex-col gap-3">
+					<div class="min-h-0 flex-1">
+						<CalendarMonthGrid
+							monthDate={selectedMonth}
+							{events}
+							{selectedDate}
+							onselect={selectDate}
+							fillHeight
+						/>
+					</div>
+					{#if colorKeyItems.length > 0}
+						<CalendarColorKey items={colorKeyItems} />
+					{/if}
+				</div>
 				<aside
 					class="hidden min-h-0 flex-col overflow-hidden rounded-xl border bg-card shadow-sm lg:flex"
 				>

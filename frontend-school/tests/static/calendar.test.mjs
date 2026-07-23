@@ -307,6 +307,9 @@ test('public calendar fills mobile viewport and opens selected days in a timelin
 	const timelineDialog = await readProjectFile(
 		'src/lib/components/calendar/CalendarDayTimelineDialog.svelte'
 	);
+	const monthGridPosition = publicPage.indexOf('<CalendarMonthGrid');
+	const colorKeyPosition = publicPage.indexOf('<CalendarColorKey items={colorKeyItems} />');
+	const detailPanelPosition = publicPage.indexOf('<aside');
 
 	assert.match(publicPage, /max-w-screen-2xl/);
 	assert.match(publicPage, /h-dvh overflow-hidden/);
@@ -325,6 +328,14 @@ test('public calendar fills mobile viewport and opens selected days in a timelin
 	assert.doesNotMatch(publicPage, /grid-rows-\[minmax\(0,2fr\)/);
 	assert.match(publicPage, /lg:grid-cols-\[minmax\(0,1fr\)_22rem\]/);
 	assert.match(publicPage, /xl:grid-cols-\[minmax\(0,1fr\)_24rem\]/);
+	assert.ok(monthGridPosition >= 0, 'Expected the public month grid');
+	assert.ok(colorKeyPosition > monthGridPosition, 'Expected the public color key below the month grid');
+	assert.ok(
+		detailPanelPosition > colorKeyPosition,
+		'Expected the color key in the left calendar column'
+	);
+	assert.match(publicPage, /class="flex min-h-0 min-w-0 flex-col gap-3"/);
+	assert.match(publicPage, /class="min-h-0 flex-1"[\s\S]*<CalendarMonthGrid/);
 	assert.match(publicPage, /showFullDescription/);
 	assert.match(publicPage, /function goToToday\(\)/);
 
