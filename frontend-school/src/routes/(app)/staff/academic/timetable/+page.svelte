@@ -37,12 +37,11 @@
 		getAcademicStructure,
 		type AcademicYear,
 		type Semester,
-		listActivitySlots,
 		type ActivitySlot,
+		type ActivitySlotTimetableContextResponse,
+		getActivitySlotTimetableContext,
 		getActivityTypeLabel,
 		listActivityGroups,
-		listSlotClassroomAssignments,
-		listSlotInstructors,
 		type ClassroomCourse
 	} from '$lib/api/academic';
 	import {
@@ -94,6 +93,12 @@
 		type TeacherLoadExportRows
 	} from '$lib/utils/timetable-teacher-load-export';
 	import { SvelteSet, SvelteMap } from 'svelte/reactivity';
+	import { createRequestCoordinator, isAbortError } from '$lib/utils/request-coordinator';
+	import {
+		activityInstructorEntries,
+		independentItemsForInstructor,
+		synchronizedSlotsForInstructor
+	} from '$lib/utils/timetable-activity-context';
 
 	import { Checkbox } from '$lib/components/ui/checkbox';
 
@@ -146,6 +151,7 @@
 
 	let { data } = $props();
 
+	const requestCoordinator = createRequestCoordinator();
 	const canReadTimetable = $derived($can.has(PERMISSIONS.ACADEMIC_COURSE_PLAN_READ_ALL));
 	const canManageTimetable = $derived($can.has(PERMISSIONS.ACADEMIC_COURSE_PLAN_MANAGE_ALL));
 
@@ -215,6 +221,8 @@
 
 	// Activity slots for sidebar
 	let sidebarActivitySlots = $state<ActivitySlot[]>([]);
+	let activityTimetableContext = $state<ActivitySlotTimetableContextResponse | null>(null);
+	let activityContextSemesterId = $state('');
 
 	// Instructor's activity groups map: slot_id → group name (for INSTRUCTOR view)
 	let instructorGroupsMap = $state<Record<string, string>>({});
@@ -379,43 +387,17 @@
 		}
 	}
 
-	async function loadCourses() {
-		if (!canReadTimetable) return;
-		// Mode: CLASSROOM
-		if (viewMode === 'CLASSROOM' && !selectedClassroomId) return;
-		// Mode: INSTRUCTOR
-		if (viewMode === 'INSTRUCTOR' && !selectedInstructorId) return;
-
-		try {
-			let res;
-			if (viewMode === 'CLASSROOM') {
-				res = await listClassroomCourses({
-					classroomId: selectedClassroomId,
-					semesterId: selectedSemesterId
-				});
-			} else {
-				res = await listClassroomCourses({
-					instructorId: selectedInstructorId,
-					semesterId: selectedSemesterId
-				});
-			}
-			courses = res.data;
-			// Phase 2 Fix 3: batch-fetch teams ทุก course → cache สำหรับ buildTempEntry
-			void loadCourseTeams(courses.map((c) => c.id));
-		} catch (e) {
-			console.error(e);
-			toast.error('โหลดรายวิชาไม่สำเร็จ');
-		}
-	}
-
-	async function loadCourseTeams(courseIds: string[]) {
+	async function loadCourseTeams(courseIds: string[], requestKey: string) {
 		if (!canReadTimetable) return;
 		if (courseIds.length === 0) {
-			courseTeamsMap.clear();
+			if (currentSelectionRequestKey() === requestKey) {
+				courseTeamsMap.clear();
+			}
 			return;
 		}
 		try {
 			const res = await batchListCourseInstructors(courseIds);
+			if (currentSelectionRequestKey() !== requestKey) return;
 			const map = new SvelteMap<string, CourseInstructor[]>();
 			for (const [cid, team] of Object.entries(res.data ?? {})) {
 				map.set(cid, team);
@@ -426,18 +408,11 @@
 		}
 	}
 
-	async function checkClassroomHasInstructor(
-		slotId: string,
-		classroomIdOverride?: string
-	): Promise<boolean> {
-		if (!canReadTimetable) return false;
-		try {
-			const res = await listSlotClassroomAssignments(slotId);
-			const clsId = classroomIdOverride || selectedClassroomId;
-			return (res.data ?? []).some((a) => a.classroom_id === clsId);
-		} catch {
-			return false;
-		}
+	function checkClassroomHasInstructor(slotId: string, classroomIdOverride?: string): boolean {
+		const classroomId = classroomIdOverride || selectedClassroomId;
+		return (activityTimetableContext?.classroomAssignmentsBySlot[slotId] ?? []).some(
+			(assignment) => assignment.classroom_id === classroomId
+		);
 	}
 
 	// For INSTRUCTOR view: independent slots with per-classroom items
@@ -459,188 +434,203 @@
 					?.scheduling_mode === 'synchronized')
 	);
 
-	async function loadSidebarActivitySlots() {
-		if (!canReadTimetable) return;
-		if (!selectedSemesterId) {
-			sidebarActivitySlots = [];
-			instructorActivityItems = [];
-			return;
-		}
+	type SelectionLoadResult<T> = { ok: true; value: T } | { ok: false; error: unknown };
 
-		if (viewMode === 'CLASSROOM' && selectedClassroomId) {
-			try {
-				const res = await listActivitySlots({ semester_id: selectedSemesterId });
-				// ใช้ classroom_ids (actual participation) ไม่ใช่ catalog template
-				sidebarActivitySlots = res.data.filter((slot) =>
-					(slot.classroom_ids ?? []).includes(selectedClassroomId)
-				);
-				// Pre-fetch instructor assignment ของ independent slot สำหรับห้องนี้
-				// → buildTempEntry แสดงชื่อครูตอน CREATE optimistic
-				const independentSlots = sidebarActivitySlots.filter(
-					(s) => s.scheduling_mode === 'independent'
-				);
-				const newMap = new SvelteMap<string, { id: string; name: string }>();
-				await Promise.all(
-					independentSlots.map(async (slot) => {
-						try {
-							const assignRes = await listSlotClassroomAssignments(slot.id);
-							for (const a of assignRes.data ?? []) {
-								newMap.set(`${slot.id}|${a.classroom_id}`, {
-									id: a.instructor_id,
-									name: a.instructor_name ?? ''
-								});
-							}
-						} catch {
-							/* skip slot on error */
-						}
-					})
-				);
-				replaceSvelteMap(activityInstructorMap, newMap);
-			} catch (e) {
-				console.error('Failed to load activity slots for sidebar', e);
-			}
-		} else if (viewMode === 'INSTRUCTOR' && selectedInstructorId) {
-			try {
-				const res = await listActivitySlots({ semester_id: selectedSemesterId });
-				const allSlots = res.data;
-
-				// Synchronized: slots where instructor is in slot_instructors
-				const syncSlots = allSlots.filter((s) => s.scheduling_mode === 'synchronized');
-				// Check which slots this instructor belongs to
-				const relevantSyncSlots: ActivitySlot[] = [];
-				for (const slot of syncSlots) {
-					try {
-						const instrRes = await listSlotInstructors(slot.id);
-						if ((instrRes.data ?? []).some((i) => i.user_id === selectedInstructorId)) {
-							relevantSyncSlots.push(slot);
-						}
-					} catch {
-						/* ignore per-slot errors */
-					}
-				}
-
-				// Independent: slots where instructor is assigned to classrooms
-				// + populate activityInstructorMap (ใช้ทุก assignment ไม่ filter ครู)
-				// → buildTempEntry แสดงครูถูกตอน drop ใน INSTRUCTOR view
-				const indepSlots = allSlots.filter((s) => s.scheduling_mode === 'independent');
-				const items: typeof instructorActivityItems = [];
-				const newInstrMap = new SvelteMap<string, { id: string; name: string }>();
-				for (const slot of indepSlots) {
-					try {
-						const assignRes = await listSlotClassroomAssignments(slot.id);
-						for (const a of assignRes.data ?? []) {
-							newInstrMap.set(`${slot.id}|${a.classroom_id}`, {
-								id: a.instructor_id,
-								name: a.instructor_name ?? ''
-							});
-							if (a.instructor_id === selectedInstructorId) {
-								items.push({
-									slot,
-									classroom_id: a.classroom_id,
-									classroom_name: a.classroom_name ?? ''
-								});
-							}
-						}
-					} catch {
-						/* ignore per-slot errors */
-					}
-				}
-
-				sidebarActivitySlots = relevantSyncSlots;
-				instructorActivityItems = items;
-				replaceSvelteMap(activityInstructorMap, newInstrMap);
-			} catch (e) {
-				console.error('Failed to load activity slots for sidebar', e);
-			}
-		} else {
-			sidebarActivitySlots = [];
-			instructorActivityItems = [];
-		}
-	}
-
-	async function loadInstructorGroups() {
-		if (!canReadTimetable) return;
-		if (viewMode !== 'INSTRUCTOR' || !selectedInstructorId || !selectedSemesterId) {
-			instructorGroupsMap = {};
-			return;
-		}
+	async function captureSelectionLoad<T>(promise: Promise<T>): Promise<SelectionLoadResult<T>> {
 		try {
-			const res = await listActivityGroups({
-				instructor_id: selectedInstructorId,
-				semester_id: selectedSemesterId
-			});
-			const map: Record<string, string> = {};
-			for (const g of res.data ?? []) {
-				if (g.slot_id) map[g.slot_id] = g.name;
-			}
-			instructorGroupsMap = map;
-		} catch (e) {
-			console.error('Failed to load instructor groups', e);
+			return { ok: true, value: await promise };
+		} catch (error) {
+			if (isAbortError(error)) throw error;
+			return { ok: false, error };
 		}
 	}
 
-	async function loadTimetable() {
+	function currentSelectionRequestKey(): string {
+		const selectedViewId = viewMode === 'CLASSROOM' ? selectedClassroomId : selectedInstructorId;
+		if (!selectedSemesterId || !selectedViewId) return '';
+		return [
+			selectedSemesterId,
+			viewMode,
+			selectedViewId,
+			showTeamGhosts ? 'team-ghosts' : 'own-cells'
+		].join('|');
+	}
+
+	function clearSelectionData() {
+		requestCoordinator.abort('selection');
+		timetableEntries = [];
+		rawTeamEntries = [];
+		courses = [];
+		occupancyEntries = [];
+		sidebarActivitySlots = [];
+		instructorActivityItems = [];
+		instructorGroupsMap = {};
+	}
+
+	function applyActivityContext(
+		context: ActivitySlotTimetableContextResponse,
+		mode: 'CLASSROOM' | 'INSTRUCTOR',
+		classroomId: string,
+		instructorId: string
+	) {
+		activityTimetableContext = context;
+		activityContextSemesterId = selectedSemesterId;
+		activitySlots = context.slots.filter((slot) => slot.scheduling_mode === 'synchronized');
+		replaceSvelteMap(
+			activityInstructorMap,
+			activityInstructorEntries(context.classroomAssignmentsBySlot)
+		);
+
+		if (mode === 'CLASSROOM') {
+			sidebarActivitySlots = context.slots.filter((slot) =>
+				(slot.classroom_ids ?? []).includes(classroomId)
+			);
+			instructorActivityItems = [];
+			return;
+		}
+
+		sidebarActivitySlots = synchronizedSlotsForInstructor(
+			context.slots,
+			context.instructorsBySlot,
+			instructorId
+		);
+		instructorActivityItems = independentItemsForInstructor(
+			context.slots,
+			context.classroomAssignmentsBySlot,
+			instructorId
+		);
+	}
+
+	async function loadSelectionData() {
 		if (!canReadTimetable) {
-			timetableEntries = [];
-			rawTeamEntries = [];
-			return;
-		}
-		if (viewMode === 'CLASSROOM' && !selectedClassroomId) {
-			timetableEntries = [];
-			return;
-		}
-		if (viewMode === 'INSTRUCTOR' && !selectedInstructorId) {
-			timetableEntries = [];
+			clearSelectionData();
 			return;
 		}
 
+		const requestKey = currentSelectionRequestKey();
+		if (!requestKey) {
+			clearSelectionData();
+			return;
+		}
+
+		const semesterId = selectedSemesterId;
+		const mode = viewMode;
+		const classroomId = selectedClassroomId;
+		const instructorId = selectedInstructorId;
+		const includeTeamGhosts = showTeamGhosts;
+
 		try {
-			let res;
-			if (viewMode === 'CLASSROOM') {
-				res = await listTimetableEntries({
-					classroom_id: selectedClassroomId,
-					academic_semester_id: selectedSemesterId
-				});
+			const results = await requestCoordinator.run('selection', requestKey, async (signal) => {
+				const entriesRequest =
+					mode === 'CLASSROOM'
+						? listTimetableEntries(
+								{
+									classroom_id: classroomId,
+									academic_semester_id: semesterId
+								},
+								{ signal }
+							)
+						: listTimetableEntries(
+								{
+									instructor_id: instructorId,
+									academic_semester_id: semesterId,
+									include_team_ghosts: true
+								},
+								{ signal }
+							);
+				const coursesRequest =
+					mode === 'CLASSROOM'
+						? listClassroomCourses({ classroomId, semesterId }, { signal })
+						: listClassroomCourses({ instructorId, semesterId }, { signal });
+				const groupsRequest =
+					mode === 'INSTRUCTOR'
+						? listActivityGroups(
+								{ instructor_id: instructorId, semester_id: semesterId },
+								{ signal }
+							)
+						: Promise.resolve({ data: [] });
+
+				const [entries, occupancy, loadedCourses, activityContext, groups] = await Promise.all([
+					captureSelectionLoad(entriesRequest),
+					captureSelectionLoad(getTimetableOccupancy(semesterId, { signal })),
+					captureSelectionLoad(coursesRequest),
+					captureSelectionLoad(getActivitySlotTimetableContext(semesterId, { signal })),
+					captureSelectionLoad(groupsRequest)
+				]);
+
+				return { entries, occupancy, loadedCourses, activityContext, groups };
+			});
+
+			if (currentSelectionRequestKey() !== requestKey) return;
+
+			if (results.entries.ok) {
+				const response = results.entries.value;
+				if (mode === 'INSTRUCTOR') {
+					rawTeamEntries = response.data;
+					timetableEntries = includeTeamGhosts
+						? response.data
+						: response.data.filter((entry) => (entry.instructor_ids ?? []).includes(instructorId));
+				} else {
+					rawTeamEntries = [];
+					timetableEntries = response.data;
+				}
+				if (typeof response.current_seq === 'number') {
+					setInitialSeq(response.current_seq);
+				}
 			} else {
-				// มุมมองครู: fetch ด้วย include_team_ghosts=true เสมอ (superset)
-				// แล้ว filter สำหรับแสดง cell ตาม toggle
-				res = await listTimetableEntries({
-					instructor_id: selectedInstructorId,
-					academic_semester_id: selectedSemesterId,
-					include_team_ghosts: true
-				});
+				toast.error('โหลดตารางสอนไม่สำเร็จ');
 			}
-			if (viewMode === 'INSTRUCTOR') {
-				rawTeamEntries = res.data;
-				timetableEntries = showTeamGhosts
-					? res.data
-					: res.data.filter((e) => (e.instructor_ids ?? []).includes(selectedInstructorId));
+
+			if (results.occupancy.ok) {
+				occupancyEntries = results.occupancy.value.data ?? [];
 			} else {
-				rawTeamEntries = [];
-				timetableEntries = res.data;
+				occupancyEntries = [];
 			}
-			// Sync seq: ตั้งจุดเริ่ม tracking patch events จาก response
-			if (typeof res.current_seq === 'number') {
-				setInitialSeq(res.current_seq);
+
+			if (results.loadedCourses.ok) {
+				courses = results.loadedCourses.value.data;
+				void loadCourseTeams(
+					courses.map((course) => course.id),
+					requestKey
+				);
+			} else {
+				console.error(results.loadedCourses.error);
+				toast.error('โหลดรายวิชาไม่สำเร็จ');
 			}
-		} catch {
-			toast.error('โหลดตารางสอนไม่สำเร็จ');
+
+			if (results.activityContext.ok) {
+				applyActivityContext(results.activityContext.value.data, mode, classroomId, instructorId);
+			} else {
+				console.error('Failed to load activity slots for sidebar', results.activityContext.error);
+				sidebarActivitySlots = [];
+				instructorActivityItems = [];
+				if (activityContextSemesterId !== semesterId) {
+					activityTimetableContext = null;
+					activityContextSemesterId = '';
+					activityInstructorMap.clear();
+				}
+			}
+
+			if (mode === 'INSTRUCTOR' && results.groups.ok) {
+				const groupsMap: Record<string, string> = {};
+				for (const group of results.groups.value.data ?? []) {
+					if (group.slot_id) groupsMap[group.slot_id] = group.name;
+				}
+				instructorGroupsMap = groupsMap;
+			} else if (mode === 'CLASSROOM') {
+				instructorGroupsMap = {};
+			} else if (!results.groups.ok) {
+				console.error('Failed to load instructor groups', results.groups.error);
+			}
+		} catch (error) {
+			if (!isAbortError(error)) {
+				console.error('Failed to load timetable selection', error);
+			}
 		}
 	}
 
-	// ===== Occupancy map: client-side validation (Phase 1) =====
-	async function loadOccupancy() {
-		if (!canReadTimetable) return;
-		if (!selectedSemesterId) {
-			occupancyEntries = [];
-			return;
-		}
-		try {
-			const res = await getTimetableOccupancy(selectedSemesterId);
-			occupancyEntries = res.data ?? [];
-		} catch {
-			occupancyEntries = [];
-		}
+	function loadTimetable() {
+		void loadSelectionData();
 	}
 
 	function entryToOccupancy(e: TimetableEntry): OccupancyEntry {
@@ -1289,7 +1279,6 @@
 			}
 			// Backend broadcasts patch event ให้แล้ว — ไม่ต้องส่ง TableRefresh ซ้ำ
 			loadTimetable();
-			loadSidebarActivitySlots();
 			return;
 		}
 
@@ -1326,7 +1315,6 @@
 					showDeleteBatchDialog = false;
 					deleteBatchTarget = null;
 					loadTimetable();
-					loadSidebarActivitySlots();
 					return;
 				}
 			}
@@ -1363,7 +1351,6 @@
 					showDeleteBatchDialog = false;
 					deleteBatchTarget = null;
 					loadTimetable();
-					loadSidebarActivitySlots();
 					return;
 				}
 			}
@@ -1535,13 +1522,10 @@
 		} else if (course._isActivity) {
 			// ACTIVITY NEW — Independent เท่านั้น (synchronized ลากไม่ได้): 1 ครู/ห้อง
 			if (course.activity_slot_id) {
-				try {
-					const res = await listSlotClassroomAssignments(course.activity_slot_id);
-					const a = (res.data ?? []).find((x) => x.classroom_id === targetClassroomId);
-					if (a) teamIds = [a.instructor_id];
-				} catch {
-					/* ignore */
-				}
+				const assignment = (
+					activityTimetableContext?.classroomAssignmentsBySlot[course.activity_slot_id] ?? []
+				).find((candidate) => candidate.classroom_id === targetClassroomId);
+				if (assignment) teamIds = [assignment.instructor_id];
 			}
 		} else if (course.id) {
 			// COURSE NEW: ทีมจาก classroom_course_instructors
@@ -2826,74 +2810,33 @@
 	});
 
 	$effect(() => {
-		if (!canReadTimetable) return;
-		if (viewMode === 'CLASSROOM' && selectedClassroomId) {
-			loadCourses();
-			loadTimetable();
-			loadSidebarActivitySlots();
-
-			// Broadcast View Context
-			if ($authStore.user) {
-				sendTimetableEvent({
-					type: 'CursorMove',
-					payload: {
-						user_id: $authStore.user.id,
-						x: 0,
-						y: 0,
-						context: {
-							view_mode: 'CLASSROOM',
-							view_id: selectedClassroomId
-						}
-					}
-				});
-			}
-		} else if (viewMode === 'INSTRUCTOR' && selectedInstructorId) {
-			loadCourses();
-			loadTimetable();
-			loadInstructorGroups();
-			loadSidebarActivitySlots();
-
-			// Broadcast View Context
-			if ($authStore.user) {
-				sendTimetableEvent({
-					type: 'CursorMove',
-					payload: {
-						user_id: $authStore.user.id,
-						x: 0,
-						y: 0,
-						context: {
-							view_mode: 'INSTRUCTOR',
-							view_id: selectedInstructorId
-						}
-					}
-				});
-			}
-		}
-	});
-
-	$effect(() => {
-		if (!canReadTimetable) return;
-		if (selectedSemesterId) {
-			if (
-				(viewMode === 'CLASSROOM' && selectedClassroomId) ||
-				(viewMode === 'INSTRUCTOR' && selectedInstructorId)
-			) {
-				loadCourses();
-				loadTimetable();
-			}
-		}
-	});
-
-	// Occupancy = semester-wide (ไม่ขึ้นกับ view) → load แยก ตอน semester เปลี่ยน
-	$effect(() => {
+		const requestKey = currentSelectionRequestKey();
 		if (!canReadTimetable) {
-			occupancyEntries = [];
+			clearSelectionData();
 			return;
 		}
-		if (selectedSemesterId) {
-			loadOccupancy();
-		} else {
-			occupancyEntries = [];
+		if (!requestKey) {
+			clearSelectionData();
+			return;
+		}
+
+		void loadSelectionData();
+
+		const user = $authStore.user;
+		if (user) {
+			const selectedViewId = viewMode === 'CLASSROOM' ? selectedClassroomId : selectedInstructorId;
+			sendTimetableEvent({
+				type: 'CursorMove',
+				payload: {
+					user_id: user.id,
+					x: 0,
+					y: 0,
+					context: {
+						view_mode: viewMode,
+						view_id: selectedViewId
+					}
+				}
+			});
 		}
 	});
 
@@ -2926,26 +2869,37 @@
 			if (slot?.classroom_ids) {
 				batchClassrooms = [...slot.classroom_ids];
 			}
-			listSlotInstructors(sid)
-				.then((res) => {
-					if (batchSlotId === sid) {
-						batchInstructors = (res.data ?? []).map((i) => i.user_id);
-					}
-				})
-				.catch(() => {});
+			batchInstructors = (activityTimetableContext?.instructorsBySlot[sid] ?? []).map(
+				(instructor) => instructor.user_id
+			);
 		}
 	});
 
 	async function ensureActivitySlotsLoaded() {
 		if (!canManageTimetable) return;
-		if (activitySlots.length > 0 || !selectedSemesterId) return;
+		if (
+			!selectedSemesterId ||
+			(activityContextSemesterId === selectedSemesterId && activityTimetableContext)
+		)
+			return;
+		const semesterId = selectedSemesterId;
 		loadingSlots = true;
 		try {
-			const res = await listActivitySlots({ semester_id: selectedSemesterId });
+			const res = await requestCoordinator.run('activity-context', semesterId, (signal) =>
+				getActivitySlotTimetableContext(semesterId, { signal })
+			);
+			if (selectedSemesterId !== semesterId) return;
+			activityTimetableContext = res.data;
+			activityContextSemesterId = semesterId;
+			replaceSvelteMap(
+				activityInstructorMap,
+				activityInstructorEntries(res.data.classroomAssignmentsBySlot)
+			);
 			// Batch รองรับเฉพาะ synchronized (ต้องตรงกันทุกห้อง)
 			// Independent → ลากทีละห้องจาก sidebar ไม่ใช่ batch
-			activitySlots = res.data.filter((s) => s.scheduling_mode === 'synchronized');
+			activitySlots = res.data.slots.filter((slot) => slot.scheduling_mode === 'synchronized');
 		} catch (e) {
+			if (isAbortError(e)) return;
 			console.error(e);
 			toast.error('โหลดข้อมูล Activity Slot ไม่สำเร็จ');
 		} finally {
@@ -3093,7 +3047,6 @@
 				batchSlotId = '';
 				batchInstructors = [];
 				loadTimetable();
-				loadSidebarActivitySlots();
 			} else {
 				toast.error(res.message || 'บันทึกไม่สำเร็จ');
 			}
@@ -3118,6 +3071,7 @@
 	});
 
 	onDestroy(() => {
+		requestCoordinator.abortAll();
 		disconnectTimetableSocket();
 	});
 
@@ -3196,7 +3150,6 @@
 		if ($refreshTrigger > 0) {
 			console.log('Auto-refreshing timetable...');
 			loadTimetable();
-			loadCourses();
 		}
 	});
 
@@ -3943,7 +3896,7 @@
 													variant="outline"
 													class="text-[10px] border-emerald-300 text-emerald-700"
 												>
-											{getActivityTypeLabel(activity.activity_type)}
+													{getActivityTypeLabel(activity.activity_type)}
 												</Badge>
 												<Badge variant="default" class="text-[10px] bg-emerald-600">
 													{activity.scheduled_count}/{activity.max_periods} คาบ
@@ -3977,7 +3930,7 @@
 										>
 											<div class="flex justify-between items-start mb-1">
 												<Badge variant="outline" class="text-[10px]">
-											{getActivityTypeLabel(activity.activity_type)}
+													{getActivityTypeLabel(activity.activity_type)}
 												</Badge>
 												<Badge variant="secondary" class="text-[10px]">
 													{activity.scheduled_count}/{activity.max_periods} คาบ
@@ -3999,7 +3952,6 @@
 															await restoreInstructorToSlot(activity.id, selectedInstructorId);
 															toast.success('แสดงในตารางแล้ว');
 															loadTimetable();
-															loadSidebarActivitySlots();
 														} catch (e: unknown) {
 															toast.error(
 																(e instanceof Error ? e.message : String(e)) || 'ไม่สำเร็จ'
@@ -5164,7 +5116,7 @@
 												{@const slot = activitySlots.find((s) => s.id === batchSlotId)}
 												{#if slot}
 													<span class="text-xs text-muted-foreground">
-												{getActivityTypeLabel(slot.activity_type)}
+														{getActivityTypeLabel(slot.activity_type)}
 													</span>
 												{/if}
 											{/if}
@@ -5179,7 +5131,7 @@
 											>
 												<span class="font-medium text-sm">{slot.name}</span>
 												<span class="text-xs text-muted-foreground">
-												{getActivityTypeLabel(slot.activity_type)}
+													{getActivityTypeLabel(slot.activity_type)}
 												</span>
 											</Select.Item>
 										{/each}

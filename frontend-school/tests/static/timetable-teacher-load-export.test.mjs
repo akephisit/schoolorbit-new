@@ -44,6 +44,23 @@ function workspaceFile(path) {
 	return new URL(`../../../${path}`, import.meta.url);
 }
 
+const timetableServiceFiles = [
+	'backend-school/src/modules/academic/services/timetable_service.rs',
+	'backend-school/src/modules/academic/services/timetable_service/batch_mutations.rs',
+	'backend-school/src/modules/academic/services/timetable_service/entries.rs',
+	'backend-school/src/modules/academic/services/timetable_service/instructors.rs',
+	'backend-school/src/modules/academic/services/timetable_service/moves_and_swaps.rs',
+	'backend-school/src/modules/academic/services/timetable_service/occupancy.rs',
+	'backend-school/src/modules/academic/services/timetable_service/shared.rs',
+	'backend-school/src/modules/academic/services/timetable_service/validation.rs'
+];
+
+function readTimetableServices() {
+	return timetableServiceFiles
+		.map((file) => readFileSync(workspaceFile(file), 'utf8'))
+		.join('\n');
+}
+
 describe('timetable teacher load export helpers', () => {
 	it('classifies courses and activity scheduling modes', () => {
 		assert.equal(teacherLoadCategoryForEntry(entry({ entry_type: 'COURSE' })), 'course');
@@ -393,10 +410,7 @@ describe('timetable teacher load export helpers', () => {
 			workspaceFile('backend-school/src/modules/academic/models/timetable.rs'),
 			'utf8'
 		);
-		const backendService = readFileSync(
-			workspaceFile('backend-school/src/modules/academic/services/timetable_service.rs'),
-			'utf8'
-		);
+		const backendService = readTimetableServices();
 
 		assert.match(frontendApi, /export type TimetableEntryDto = Schemas\['TimetableEntry'\]/);
 		assert.match(generated, /subject_group_id\?: string;/);

@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
+use std::collections::HashMap;
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
@@ -97,6 +98,12 @@ pub struct ActivitySlotFilter {
     pub activity_type: Option<String>,
     pub teacher_reg_open: Option<bool>,
     pub student_reg_open: Option<bool>,
+}
+
+#[derive(Debug, Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
+pub struct ActivityTimetableContextQuery {
+    pub semester_id: Uuid,
 }
 
 // ==========================================
@@ -231,6 +238,30 @@ pub struct SlotClassroomAssignment {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[sqlx(default)]
     pub instructor_name: Option<String>,
+}
+
+#[derive(Debug, Serialize, FromRow, ToSchema)]
+pub struct InstructorInfo {
+    pub id: Uuid,
+    pub instructor_id: Uuid,
+    #[schema(value_type = ActivityGroupInstructorRole)]
+    pub role: String,
+    pub instructor_name: Option<String>,
+}
+
+#[derive(Debug, Serialize, FromRow, ToSchema)]
+pub struct SlotInstructorInfo {
+    pub id: Uuid,
+    pub user_id: Uuid,
+    pub instructor_name: Option<String>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ActivitySlotTimetableContextResponse {
+    pub slots: Vec<ActivitySlot>,
+    pub instructors_by_slot: HashMap<Uuid, Vec<SlotInstructorInfo>>,
+    pub classroom_assignments_by_slot: HashMap<Uuid, Vec<SlotClassroomAssignment>>,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]

@@ -2,6 +2,9 @@ pub mod handlers;
 pub mod models;
 pub mod services;
 
+#[cfg(test)]
+mod services_tests;
+
 use crate::AppState;
 use axum::routing::{get, put};
 use axum::Router;

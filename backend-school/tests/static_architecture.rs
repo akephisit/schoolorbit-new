@@ -71,6 +71,235 @@ fn exam_schedule_shared_module_is_private() {
 }
 
 #[test]
+fn supervision_service_uses_private_child_modules() {
+    let facade = read_source(manifest_dir().join("src/modules/supervision/services.rs"));
+    let shared = manifest_dir().join("src/modules/supervision/services/shared.rs");
+
+    assert!(facade.contains("mod shared;"));
+    assert!(!facade.contains("pub mod shared;"));
+    assert!(shared.is_file());
+}
+
+#[test]
+fn supervision_service_facade_is_thin_and_preserves_public_surface() {
+    let facade = read_source(manifest_dir().join("src/modules/supervision/services.rs"));
+    let service_dir = manifest_dir().join("src/modules/supervision/services");
+
+    for module in [
+        "cycles",
+        "evaluations",
+        "observations",
+        "reviews_and_reports",
+        "shared",
+        "templates",
+    ] {
+        assert!(facade.contains(&format!("mod {module};")));
+        assert!(!facade.contains(&format!("pub mod {module};")));
+        assert!(service_dir.join(format!("{module}.rs")).is_file());
+        assert!(facade.contains(&format!("pub use {module}")));
+    }
+
+    for public_item in [
+        "acknowledge_observation",
+        "all_required_evaluators_submitted",
+        "approve_observation",
+        "approve_observation_request",
+        "average_submitted_evaluator_rating",
+        "cancel_observation",
+        "cancel_requested_observation",
+        "can_transition_observation_status",
+        "can_view_observation_results",
+        "certify_observation",
+        "create_cycle",
+        "create_template",
+        "cycle_progress",
+        "cycle_teacher_status",
+        "evaluator_availability",
+        "evaluator_conflict_status_codes",
+        "get_cycle",
+        "get_observation",
+        "get_observation_review",
+        "get_template",
+        "list_cycles",
+        "list_observations",
+        "list_templates",
+        "manager_can_edit_observation",
+        "observation_timetable_options",
+        "replace_observation_evaluators",
+        "request_observation",
+        "resolve_supervision_target_rule",
+        "return_observation_request",
+        "submit_my_evaluation",
+        "teacher_can_edit_requested_observation",
+        "update_cycle",
+        "update_observation",
+        "update_requested_observation",
+        "update_template",
+    ] {
+        assert!(
+            facade.contains(public_item),
+            "supervision facade must re-export `{public_item}`"
+        );
+    }
+
+    for forbidden in ["sqlx::", ".fetch_", ".execute(", ".begin("] {
+        assert!(
+            !facade.contains(forbidden),
+            "supervision facade must not contain `{forbidden}`"
+        );
+    }
+
+    assert!(
+        facade
+            .lines()
+            .filter(|line| !line.trim().is_empty())
+            .count()
+            <= 80,
+        "supervision facade must remain under 80 nonblank lines"
+    );
+}
+
+#[test]
+fn timetable_service_uses_private_child_modules() {
+    let facade =
+        read_source(manifest_dir().join("src/modules/academic/services/timetable_service.rs"));
+    let service_dir = manifest_dir().join("src/modules/academic/services/timetable_service");
+
+    for module in [
+        "batch_mutations",
+        "entries",
+        "instructors",
+        "moves_and_swaps",
+        "occupancy",
+        "shared",
+        "validation",
+    ] {
+        assert!(
+            facade.contains(&format!("mod {module};")),
+            "timetable facade must declare private module `{module}`"
+        );
+        assert!(
+            !facade.contains(&format!("pub mod {module};")),
+            "timetable child module `{module}` must remain private"
+        );
+        assert!(
+            service_dir.join(format!("{module}.rs")).is_file(),
+            "timetable child module `{module}` must have its own source file"
+        );
+        if module != "shared" {
+            assert!(
+                facade.contains(&format!("pub use {module}")),
+                "timetable facade must re-export child module `{module}`"
+            );
+        }
+    }
+
+    for public_item in [
+        "add_entry_instructor",
+        "create_batch_entries",
+        "create_entry",
+        "delete_batch_group",
+        "delete_entries_by_slot",
+        "delete_entry",
+        "fetch_entry_by_id",
+        "get_my_activity_for_entry",
+        "get_occupancy",
+        "hide_instructor_from_slot",
+        "hide_instructor_from_slot_period",
+        "list_entries",
+        "remove_entry_instructor",
+        "resolve_classroom_course_semester_id",
+        "restore_instructor_to_slot",
+        "swap_entries",
+        "update_entry",
+        "validate_entry",
+        "validate_moves",
+    ] {
+        assert!(
+            facade.contains(public_item),
+            "timetable facade must preserve public item `{public_item}`"
+        );
+    }
+
+    for forbidden in ["sqlx::", ".fetch_", ".execute(", ".begin(", "SELECT "] {
+        assert!(
+            !facade.contains(forbidden),
+            "timetable facade must not contain persistence fragment `{forbidden}`"
+        );
+    }
+
+    let nonblank_line_count = facade
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .count();
+    assert!(
+        nonblank_line_count <= 85,
+        "timetable facade must stay thin; found {nonblank_line_count} nonblank lines"
+    );
+}
+
+#[test]
+fn calendar_service_uses_private_child_modules() {
+    let facade = read_source(manifest_dir().join("src/modules/calendar/services.rs"));
+    let service_dir = manifest_dir().join("src/modules/calendar/services");
+
+    for module in [
+        "categories_and_tags",
+        "events",
+        "notifications",
+        "reminders",
+        "shared",
+        "visibility",
+    ] {
+        assert!(
+            facade.contains(&format!("mod {module};")),
+            "calendar facade must declare private module `{module}`"
+        );
+        assert!(
+            !facade.contains(&format!("pub mod {module};")),
+            "calendar child module `{module}` must remain private"
+        );
+        assert!(
+            service_dir.join(format!("{module}.rs")).is_file(),
+            "calendar child module `{module}` must have its own source file"
+        );
+    }
+
+    for public_item in [
+        "create_event",
+        "list_management_events",
+        "list_my_events",
+        "list_child_events",
+        "list_public_events",
+        "resolve_event_recipient_user_ids",
+        "send_event_notification",
+        "process_due_reminders",
+        "process_due_calendar_reminders_for_all_tenants",
+    ] {
+        assert!(
+            facade.contains(public_item),
+            "calendar facade must preserve public item `{public_item}`"
+        );
+    }
+
+    for forbidden in ["sqlx::", ".fetch_", ".execute(", ".begin(", "SELECT "] {
+        assert!(
+            !facade.contains(forbidden),
+            "calendar facade must not contain persistence fragment `{forbidden}`"
+        );
+    }
+
+    let nonblank_line_count = facade
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .count();
+    assert!(
+        nonblank_line_count <= 75,
+        "calendar facade must stay thin; found {nonblank_line_count} nonblank lines"
+    );
+}
+
+#[test]
 fn exam_schedule_service_uses_a_thin_private_module_facade() {
     let service_dir = manifest_dir().join("src/modules/academic/services/exam_schedule_service");
     let facade_path = manifest_dir().join("src/modules/academic/services/exam_schedule_service.rs");
@@ -635,16 +864,16 @@ fn module_service_files() -> Vec<PathBuf> {
 }
 
 fn is_reexport_only_service_file(source: &str) -> bool {
-    strip_comments(source)
-        .lines()
-        .map(str::trim)
-        .filter(|line| !line.is_empty())
-        .all(|line| {
-            line.starts_with("pub mod ")
-                || line.starts_with("pub use ")
-                || line.starts_with("#[")
-                || line == ";"
-        })
+    let source = strip_comments(source);
+    let logic_declaration =
+        Regex::new(r"(?m)^\s*(?:pub(?:\([^)]*\))?\s+)?(?:(?:async\s+)?fn|struct|enum|const)\s+")
+            .expect("valid service logic declaration regex");
+
+    let has_module_or_reexport = source.lines().map(str::trim).any(|line| {
+        line.starts_with("mod ") || line.starts_with("pub mod ") || line.starts_with("pub use ")
+    });
+
+    has_module_or_reexport && !logic_declaration.is_match(&source)
 }
 
 #[test]
@@ -1929,6 +2158,22 @@ fn activity_manage_own_uses_resource_policy_for_group_access() {
 }
 
 #[test]
+fn activity_timetable_context_route_contract_is_registered() {
+    let routes = strip_comments(&read_source(manifest_dir().join("src/modules/academic.rs")));
+    let handlers = strip_comments(&read_source(
+        manifest_dir().join("src/modules/academic/handlers/activity.rs"),
+    ));
+    let contract = strip_comments(&read_source(manifest_dir().join("src/api_contract.rs")));
+
+    assert!(routes.contains("\"/activity-slots/timetable-context\""));
+    assert!(routes.contains("get(handlers::activity::get_timetable_context)"));
+    assert!(handlers.contains("operation_id = \"getActivitySlotTimetableContext\""));
+    assert!(handlers.contains("codes::ACADEMIC_COURSE_PLAN_READ_ALL"));
+    assert!(handlers.contains("activity_access_policy::resolve_activity_list_access"));
+    assert!(contract.contains("handlers::activity::get_timetable_context"));
+}
+
+#[test]
 fn activity_workspace_error_outcomes_use_non_success_http_statuses() {
     let activity_handler = strip_comments(&read_source(
         manifest_dir().join("src/modules/academic/handlers/activity.rs"),
@@ -2208,8 +2453,36 @@ fn module_service_logic_has_focused_unit_tests() {
             .join("tests.rs");
         let has_focused_family_tests =
             family_tests_path.is_file() && read_source(&family_tests_path).contains("#[test]");
+        let characterization_tests_path = if file
+            .parent()
+            .and_then(|parent| parent.file_name())
+            .is_some_and(|name| name == "services")
+        {
+            file.parent()
+                .and_then(Path::parent)
+                .map(|parent| parent.join("services_tests.rs"))
+        } else {
+            file.parent()
+                .and_then(|parent| {
+                    parent.file_name().map(|name| {
+                        parent
+                            .parent()
+                            .map(|root| root.join(format!("{}_tests.rs", name.to_string_lossy())))
+                    })
+                })
+                .flatten()
+        };
+        let has_characterization_tests = characterization_tests_path.is_some_and(|path| {
+            path.is_file() && {
+                let tests = read_source(path);
+                tests.contains("#[test]") || tests.contains("#[tokio::test]")
+            }
+        });
 
-        if !source.contains("#[cfg(test)]") && !has_focused_family_tests {
+        if !source.contains("#[cfg(test)]")
+            && !has_focused_family_tests
+            && !has_characterization_tests
+        {
             violations.push(format!(
                 "{}: service logic files must include focused #[cfg(test)] coverage in-file or in a colocated tests.rs",
                 relative(&file)
@@ -3737,9 +4010,16 @@ fn teaching_supervision_observation_detail_actions_are_registered() {
     let models = strip_comments(&read_source(
         manifest_dir().join("src/modules/supervision/models.rs"),
     ));
-    let service = strip_comments(&read_source(
-        manifest_dir().join("src/modules/supervision/services.rs"),
-    ));
+    let service = strip_comments(
+        &[
+            "src/modules/supervision/services/shared.rs",
+            "src/modules/supervision/services/observations.rs",
+            "src/modules/supervision/services/evaluations.rs",
+        ]
+        .into_iter()
+        .map(|path| read_source(manifest_dir().join(path)))
+        .collect::<String>(),
+    );
 
     for expected in [
         "patch(update_observation)",
@@ -3781,9 +4061,15 @@ fn teaching_supervision_observation_detail_actions_are_registered() {
 
 #[test]
 fn teaching_supervision_services_use_bulk_mutations_for_multi_row_writes() {
-    let service = strip_comments(&read_source(
-        manifest_dir().join("src/modules/supervision/services.rs"),
-    ));
+    let service = strip_comments(
+        &[
+            "src/modules/supervision/services/templates.rs",
+            "src/modules/supervision/services/evaluations.rs",
+        ]
+        .into_iter()
+        .map(|path| read_source(manifest_dir().join(path)))
+        .collect::<String>(),
+    );
 
     for expected in [
         "build_template_section_bulk_rows",
@@ -3898,19 +4184,19 @@ fn mutation_performance_foundation_services_use_bulk_helpers() {
             ["for (id, display_order) in &groups"].as_slice(),
         ),
         (
-            "src/modules/supervision/services.rs",
-            [
-                "insert_supervision_evaluators",
-                "Failed to insert supervision cycle targets",
-                "Failed to insert supervision template steps",
-            ]
-            .as_slice(),
-            [
-                "for evaluator in input.evaluators",
-                "Failed to insert supervision cycle target:",
-                "Failed to insert supervision template step:",
-            ]
-            .as_slice(),
+            "src/modules/supervision/services/evaluations.rs",
+            ["insert_supervision_evaluators"].as_slice(),
+            ["for evaluator in input.evaluators"].as_slice(),
+        ),
+        (
+            "src/modules/supervision/services/cycles.rs",
+            ["Failed to insert supervision cycle targets"].as_slice(),
+            ["Failed to insert supervision cycle target:"].as_slice(),
+        ),
+        (
+            "src/modules/supervision/services/templates.rs",
+            ["Failed to insert supervision template steps"].as_slice(),
+            ["Failed to insert supervision template step:"].as_slice(),
         ),
         (
             "src/modules/staff/services/organization_permission_service.rs",
@@ -4292,9 +4578,21 @@ fn calendar_handlers_stay_thin_and_services_own_sql() {
     let handlers = strip_comments(&read_source(
         manifest_dir().join("src/modules/calendar/handlers.rs"),
     ));
-    let services = strip_comments(&read_source(
-        manifest_dir().join("src/modules/calendar/services.rs"),
-    ));
+    let services = strip_comments(
+        &[
+            "src/modules/calendar/services.rs",
+            "src/modules/calendar/services/categories_and_tags.rs",
+            "src/modules/calendar/services/events.rs",
+            "src/modules/calendar/services/notifications.rs",
+            "src/modules/calendar/services/reminders.rs",
+            "src/modules/calendar/services/shared.rs",
+            "src/modules/calendar/services/visibility.rs",
+        ]
+        .into_iter()
+        .map(|path| read_source(manifest_dir().join(path)))
+        .collect::<Vec<_>>()
+        .join("\n"),
+    );
     let routes = strip_comments(&read_source(manifest_dir().join("src/modules/calendar.rs")));
     let parent_handlers = strip_comments(&read_source(
         manifest_dir().join("src/modules/parents/handlers.rs"),

@@ -5,6 +5,7 @@ use crate::modules::academic::models::activity::{
     UpsertSlotClassroomAssignmentRequest,
 };
 use crate::permissions::registry::codes;
+use crate::policies::resource_access_policy::UserResourceListAccess;
 use crate::test_helpers::{create_test_pool, run_test_migrations};
 use uuid::Uuid;
 
@@ -14,6 +15,13 @@ struct ActivityFixture {
     slot_id: Uuid,
     group_id: Uuid,
     teacher_id: Uuid,
+}
+
+struct ActivityTimetableContextFixture {
+    semester_id: Uuid,
+    synchronized_slot_id: Uuid,
+    independent_slot_id: Uuid,
+    other_semester_slot_id: Uuid,
 }
 
 async fn migrated_pool() -> sqlx::PgPool {
@@ -122,6 +130,207 @@ async fn insert_activity_fixture(pool: &sqlx::PgPool, year: i32) -> ActivityFixt
         group_id,
         teacher_id,
     }
+}
+
+async fn insert_activity_timetable_context_fixture(
+    pool: &sqlx::PgPool,
+) -> ActivityTimetableContextFixture {
+    let fixture = insert_activity_fixture(pool, 9815).await;
+    let (semester_id, academic_year_id): (Uuid, Uuid) = sqlx::query_as(
+        "SELECT s.semester_id, sem.academic_year_id
+         FROM activity_slots s
+         JOIN academic_semesters sem ON sem.id = s.semester_id
+         WHERE s.id = $1",
+    )
+    .bind(fixture.slot_id)
+    .fetch_one(pool)
+    .await
+    .expect("fixture semester should load");
+
+    let independent_catalog_id = Uuid::new_v4();
+    let independent_slot_id = Uuid::new_v4();
+    let other_semester_id = Uuid::new_v4();
+    let other_catalog_id = Uuid::new_v4();
+    let other_semester_slot_id = Uuid::new_v4();
+    let second_teacher_id = insert_user(pool, "staff").await;
+    let other_teacher_id = insert_user(pool, "staff").await;
+
+    sqlx::query(
+        "INSERT INTO academic_semesters
+            (id, academic_year_id, term, name, start_date, end_date)
+         VALUES ($1, $2, '2', 'Semester 2', '9800-07-01', '9800-12-31')",
+    )
+    .bind(other_semester_id)
+    .bind(academic_year_id)
+    .execute(pool)
+    .await
+    .expect("other semester should insert");
+
+    for (catalog_id, name, scheduling_mode) in [
+        (independent_catalog_id, "Independent Context", "independent"),
+        (other_catalog_id, "Other Semester Context", "synchronized"),
+    ] {
+        sqlx::query(
+            "INSERT INTO activity_catalog
+                (id, name, start_academic_year_id, activity_type, scheduling_mode)
+             VALUES ($1, $2, $3, 'club', $4)",
+        )
+        .bind(catalog_id)
+        .bind(name)
+        .bind(academic_year_id)
+        .bind(scheduling_mode)
+        .execute(pool)
+        .await
+        .expect("context activity catalog should insert");
+    }
+
+    for (slot_id, catalog_id, target_semester_id) in [
+        (independent_slot_id, independent_catalog_id, semester_id),
+        (other_semester_slot_id, other_catalog_id, other_semester_id),
+    ] {
+        sqlx::query(
+            "INSERT INTO activity_slots
+                (id, activity_catalog_id, semester_id, registration_type,
+                 teacher_reg_open, student_reg_open)
+             VALUES ($1, $2, $3, 'assigned', true, true)",
+        )
+        .bind(slot_id)
+        .bind(catalog_id)
+        .bind(target_semester_id)
+        .execute(pool)
+        .await
+        .expect("context activity slot should insert");
+    }
+
+    for (slot_id, user_id) in [
+        (fixture.slot_id, fixture.teacher_id),
+        (fixture.slot_id, second_teacher_id),
+        (other_semester_slot_id, other_teacher_id),
+    ] {
+        sqlx::query("INSERT INTO activity_slot_instructors (slot_id, user_id) VALUES ($1, $2)")
+            .bind(slot_id)
+            .bind(user_id)
+            .execute(pool)
+            .await
+            .expect("context slot instructor should insert");
+    }
+
+    let grade_level_id: Uuid =
+        sqlx::query_scalar("SELECT id FROM grade_levels ORDER BY level_type, year LIMIT 1")
+            .fetch_one(pool)
+            .await
+            .expect("seeded grade level should load");
+    let study_plan_id = Uuid::new_v4();
+    let study_plan_version_id = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO study_plans (id, code, name_th)
+         VALUES ($1, $2, 'Activity Context Plan')",
+    )
+    .bind(study_plan_id)
+    .bind(format!("ACT-{study_plan_id}"))
+    .execute(pool)
+    .await
+    .expect("context study plan should insert");
+    sqlx::query(
+        "INSERT INTO study_plan_versions
+            (id, study_plan_id, version_name, start_academic_year_id)
+         VALUES ($1, $2, 'Activity Context Version', $3)",
+    )
+    .bind(study_plan_version_id)
+    .bind(study_plan_id)
+    .bind(academic_year_id)
+    .execute(pool)
+    .await
+    .expect("context study plan version should insert");
+
+    for (index, instructor_id) in [fixture.teacher_id, second_teacher_id]
+        .into_iter()
+        .enumerate()
+    {
+        let classroom_id = Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO class_rooms
+                (id, code, name, academic_year_id, grade_level_id, study_plan_version_id)
+             VALUES ($1, $2, $3, $4, $5, $6)",
+        )
+        .bind(classroom_id)
+        .bind(format!("ACT-{index}-{classroom_id}"))
+        .bind(format!("Activity Context Classroom {index}"))
+        .bind(academic_year_id)
+        .bind(grade_level_id)
+        .bind(study_plan_version_id)
+        .execute(pool)
+        .await
+        .expect("context classroom should insert");
+        sqlx::query(
+            "INSERT INTO activity_slot_classroom_assignments
+                (slot_id, classroom_id, instructor_id)
+             VALUES ($1, $2, $3)",
+        )
+        .bind(independent_slot_id)
+        .bind(classroom_id)
+        .bind(instructor_id)
+        .execute(pool)
+        .await
+        .expect("context classroom assignment should insert");
+    }
+
+    ActivityTimetableContextFixture {
+        semester_id,
+        synchronized_slot_id: fixture.slot_id,
+        independent_slot_id,
+        other_semester_slot_id,
+    }
+}
+
+#[tokio::test]
+async fn timetable_context_groups_all_semester_slots_instructors_and_assignments() {
+    let pool = migrated_pool().await;
+    let fixture = insert_activity_timetable_context_fixture(&pool).await;
+
+    let context = activity_service::get_timetable_context(
+        &pool,
+        fixture.semester_id,
+        UserResourceListAccess::School,
+    )
+    .await
+    .expect("timetable context should load");
+
+    assert_eq!(context.slots.len(), 2);
+    assert_eq!(
+        context.instructors_by_slot[&fixture.synchronized_slot_id].len(),
+        2
+    );
+    assert_eq!(
+        context.classroom_assignments_by_slot[&fixture.independent_slot_id].len(),
+        2
+    );
+    assert!(context
+        .instructors_by_slot
+        .contains_key(&fixture.independent_slot_id));
+    assert!(!context
+        .instructors_by_slot
+        .contains_key(&fixture.other_semester_slot_id));
+    assert!(!context
+        .classroom_assignments_by_slot
+        .contains_key(&fixture.other_semester_slot_id));
+}
+
+#[tokio::test]
+async fn timetable_context_returns_empty_collections_for_an_empty_semester() {
+    let pool = migrated_pool().await;
+
+    let context = activity_service::get_timetable_context(
+        &pool,
+        Uuid::new_v4(),
+        UserResourceListAccess::School,
+    )
+    .await
+    .expect("empty timetable context should load");
+
+    assert!(context.slots.is_empty());
+    assert!(context.instructors_by_slot.is_empty());
+    assert!(context.classroom_assignments_by_slot.is_empty());
 }
 
 #[tokio::test]

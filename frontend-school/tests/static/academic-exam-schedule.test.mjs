@@ -784,7 +784,9 @@ test('exam schedule detail exports one editable report workbook', () => {
 
 test('exam invigilator staff names join title and first name without a middle space', () => {
 	const service = readFileSync(
-		projectPath('../backend-school/src/modules/academic/services/exam_schedule_service.rs'),
+		projectPath(
+			'../backend-school/src/modules/academic/services/exam_schedule_service/invigilation.rs'
+		),
 		'utf8'
 	);
 
