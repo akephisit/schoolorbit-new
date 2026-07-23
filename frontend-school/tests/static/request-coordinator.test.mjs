@@ -1,10 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import {
-	createRequestCoordinator,
-	isAbortError
-} from '../../src/lib/utils/request-coordinator.ts';
+import { createRequestCoordinator, isAbortError } from '../../src/lib/utils/request-coordinator.ts';
 
 function deferred() {
 	let resolve;

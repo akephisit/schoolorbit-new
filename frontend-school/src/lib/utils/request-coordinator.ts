@@ -1,9 +1,5 @@
 export interface RequestCoordinator {
-	run<T>(
-		scope: string,
-		key: string,
-		operation: (signal: AbortSignal) => Promise<T>
-	): Promise<T>;
+	run<T>(scope: string, key: string, operation: (signal: AbortSignal) => Promise<T>): Promise<T>;
 	abort(scope: string): void;
 	abortAll(): void;
 }
@@ -26,11 +22,7 @@ export function createRequestCoordinator(): RequestCoordinator {
 	const inFlightByScope = new Map<string, InFlightRequest>();
 
 	return {
-		run<T>(
-			scope: string,
-			key: string,
-			operation: (signal: AbortSignal) => Promise<T>
-		): Promise<T> {
+		run<T>(scope: string, key: string, operation: (signal: AbortSignal) => Promise<T>): Promise<T> {
 			const current = inFlightByScope.get(scope);
 			if (current?.key === key) {
 				return current.promise as Promise<T>;
@@ -47,8 +39,7 @@ export function createRequestCoordinator(): RequestCoordinator {
 				operationPromise = Promise.reject(error);
 			}
 
-			let trackedPromise: Promise<T>;
-			trackedPromise = operationPromise.finally(() => {
+			const trackedPromise = operationPromise.finally(() => {
 				if (inFlightByScope.get(scope)?.promise === trackedPromise) {
 					inFlightByScope.delete(scope);
 				}
