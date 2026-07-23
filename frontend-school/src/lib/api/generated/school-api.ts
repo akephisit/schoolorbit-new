@@ -405,6 +405,22 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/api/academic/activity-slots/timetable-context': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getActivitySlotTimetableContext'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/api/academic/classrooms': {
 		parameters: {
 			query?: never;
@@ -2328,6 +2344,15 @@ export interface components {
 			student_reg_open?: boolean | null;
 			teacher_reg_open?: boolean | null;
 		};
+		ActivitySlotTimetableContextResponse: {
+			classroomAssignmentsBySlot: {
+				[key: string]: components['schemas']['SlotClassroomAssignment'][];
+			};
+			instructorsBySlot: {
+				[key: string]: components['schemas']['SlotInstructorInfo'][];
+			};
+			slots: components['schemas']['ActivitySlot'][];
+		};
 		AddCatalogDefaultInstructorRequest: {
 			/** Format: uuid */
 			instructor_id: string;
@@ -2558,6 +2583,19 @@ export interface components {
 				total_members?: number | null;
 				/** Format: date-time */
 				updated_at: string;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_ActivitySlotTimetableContextResponse: {
+			data: {
+				classroomAssignmentsBySlot: {
+					[key: string]: components['schemas']['SlotClassroomAssignment'][];
+				};
+				instructorsBySlot: {
+					[key: string]: components['schemas']['SlotInstructorInfo'][];
+				};
+				slots: components['schemas']['ActivitySlot'][];
 			};
 			message?: string;
 			success: boolean;
@@ -8148,6 +8186,55 @@ export interface operations {
 				};
 			};
 			/** @description Slot timetable entries could not be deleted */
+			500: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getActivitySlotTimetableContext: {
+		parameters: {
+			query: {
+				semester_id: string;
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Semester activity timetable context */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_ActivitySlotTimetableContextResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Timetable or activity read permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Activity timetable context could not be loaded */
 			500: {
 				headers: {
 					[name: string]: unknown;

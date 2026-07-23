@@ -17,6 +17,7 @@ test('generated activity workspace contract owns all wire DTOs and operations', 
 	const academicApi = await readRepoFile('frontend-school/src/lib/api/academic.ts');
 	const expectedOperationIds = [
 		'listActivitySlots',
+		'getActivitySlotTimetableContext',
 		'updateActivitySlot',
 		'deleteActivitySlot',
 		'listActivitySlotInstructors',
@@ -49,12 +50,21 @@ test('generated activity workspace contract owns all wire DTOs and operations', 
 		Object.values(pathItem).flatMap((operation) => operation.operationId ?? [])
 	);
 
-	assert.equal(contractOperationIds.length, 177);
-	assert.equal(new Set(contractOperationIds).size, 177);
+	assert.equal(contractOperationIds.length, 178);
+	assert.equal(new Set(contractOperationIds).size, 178);
 	for (const operationId of expectedOperationIds) {
 		assert.ok(contractOperationIds.includes(operationId), operationId);
 		assert.match(generated, new RegExp(`\\b${operationId}:\\s*\\{`));
 	}
+
+	assert.equal(
+		contract.paths['/api/academic/activity-slots/timetable-context'].get.operationId,
+		'getActivitySlotTimetableContext'
+	);
+	assert.match(
+		generated,
+		/getActivitySlotTimetableContext:[\s\S]*?'application\/json': components\['schemas'\]\['ApiResponse_ActivitySlotTimetableContextResponse'\]/
+	);
 
 	for (const [alias, schema] of [
 		['ActivitySlotFilter', 'ActivitySlotFilter'],

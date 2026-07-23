@@ -761,6 +761,48 @@
         },
         "type": "object"
       },
+      "ActivitySlotTimetableContextResponse": {
+        "properties": {
+          "classroomAssignmentsBySlot": {
+            "additionalProperties": {
+              "items": {
+                "$ref": "#/components/schemas/SlotClassroomAssignment"
+              },
+              "type": "array"
+            },
+            "propertyNames": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "instructorsBySlot": {
+            "additionalProperties": {
+              "items": {
+                "$ref": "#/components/schemas/SlotInstructorInfo"
+              },
+              "type": "array"
+            },
+            "propertyNames": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "slots": {
+            "items": {
+              "$ref": "#/components/schemas/ActivitySlot"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "slots",
+          "instructorsBySlot",
+          "classroomAssignmentsBySlot"
+        ],
+        "type": "object"
+      },
       "AddCatalogDefaultInstructorRequest": {
         "properties": {
           "instructor_id": {
@@ -1630,6 +1672,63 @@
               "is_active",
               "created_at",
               "updated_at"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_ActivitySlotTimetableContextResponse": {
+        "properties": {
+          "data": {
+            "properties": {
+              "classroomAssignmentsBySlot": {
+                "additionalProperties": {
+                  "items": {
+                    "$ref": "#/components/schemas/SlotClassroomAssignment"
+                  },
+                  "type": "array"
+                },
+                "propertyNames": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "instructorsBySlot": {
+                "additionalProperties": {
+                  "items": {
+                    "$ref": "#/components/schemas/SlotInstructorInfo"
+                  },
+                  "type": "array"
+                },
+                "propertyNames": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "slots": {
+                "items": {
+                  "$ref": "#/components/schemas/ActivitySlot"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "slots",
+              "instructorsBySlot",
+              "classroomAssignmentsBySlot"
             ],
             "type": "object"
           },
@@ -17304,6 +17403,67 @@
               }
             },
             "description": "Slot timetable entries could not be deleted"
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
+    "/api/academic/activity-slots/timetable-context": {
+      "get": {
+        "operationId": "getActivitySlotTimetableContext",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "semester_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ActivitySlotTimetableContextResponse"
+                }
+              }
+            },
+            "description": "Semester activity timetable context"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Timetable or activity read permission denied"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Activity timetable context could not be loaded"
           }
         },
         "tags": [
