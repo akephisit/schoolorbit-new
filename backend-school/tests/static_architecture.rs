@@ -71,6 +71,16 @@ fn exam_schedule_shared_module_is_private() {
 }
 
 #[test]
+fn supervision_service_uses_private_child_modules() {
+    let facade = read_source(manifest_dir().join("src/modules/supervision/services.rs"));
+    let shared = manifest_dir().join("src/modules/supervision/services/shared.rs");
+
+    assert!(facade.contains("mod shared;"));
+    assert!(!facade.contains("pub mod shared;"));
+    assert!(shared.is_file());
+}
+
+#[test]
 fn exam_schedule_service_uses_a_thin_private_module_facade() {
     let service_dir = manifest_dir().join("src/modules/academic/services/exam_schedule_service");
     let facade_path = manifest_dir().join("src/modules/academic/services/exam_schedule_service.rs");
