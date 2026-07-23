@@ -5,6 +5,7 @@ import {
 	CALENDAR_WEEKDAY_LABELS,
 	buildCalendarMonth,
 	buildCalendarMonthWeeks,
+	buildCalendarColorKey,
 	calendarGridRange,
 	eventOverlapsDate,
 	formatCalendarDate,
@@ -125,5 +126,82 @@ describe('calendar helpers', () => {
 		);
 
 		assert.deepEqual(firstWeek?.hiddenEventCounts, [0, 0, 0, 0, 1, 0, 0]);
+	});
+
+	it('builds a selected-month color key without adjacent-month-only events', () => {
+		const items = buildCalendarColorKey('2026-07-15', [
+			{
+				id: 'june',
+				startDate: '2026-06-30',
+				endDate: '2026-06-30',
+				categoryId: 'internal',
+				categoryName: 'ภายใน',
+				categoryColor: '#111827'
+			},
+			{
+				id: 'spanning',
+				startDate: '2026-06-29',
+				endDate: '2026-07-02',
+				categoryId: 'camp',
+				categoryName: 'ค่าย',
+				categoryColor: '#7c3aed'
+			},
+			{
+				id: 'july',
+				startDate: '2026-07-20',
+				endDate: '2026-07-20',
+				categoryId: 'academic',
+				categoryName: 'วิชาการ',
+				categoryColor: '#0284c7'
+			}
+		]);
+
+		assert.deepEqual(items, [
+			{ id: 'camp', name: 'ค่าย', color: '#7c3aed' },
+			{ id: 'academic', name: 'วิชาการ', color: '#0284c7' }
+		]);
+	});
+
+	it('deduplicates categories and places the uncategorized fallback last', () => {
+		const items = buildCalendarColorKey('2026-07-01', [
+			{
+				id: 'academic-1',
+				startDate: '2026-07-01',
+				endDate: '2026-07-01',
+				categoryId: 'academic',
+				categoryName: 'วิชาการ',
+				categoryColor: '#0284c7'
+			},
+			{
+				id: 'academic-2',
+				startDate: '2026-07-02',
+				endDate: '2026-07-02',
+				categoryId: 'academic',
+				categoryName: 'วิชาการ',
+				categoryColor: '#0284c7'
+			},
+			{
+				id: 'meeting',
+				startDate: '2026-07-03',
+				endDate: '2026-07-03',
+				categoryId: 'meeting',
+				categoryName: 'ประชุม',
+				categoryColor: '#16a34a'
+			},
+			{
+				id: 'uncategorized',
+				startDate: '2026-07-04',
+				endDate: '2026-07-04',
+				categoryId: null,
+				categoryName: null,
+				categoryColor: null
+			}
+		]);
+
+		assert.deepEqual(items, [
+			{ id: 'meeting', name: 'ประชุม', color: '#16a34a' },
+			{ id: 'academic', name: 'วิชาการ', color: '#0284c7' },
+			{ id: 'uncategorized', name: 'ไม่ระบุหมวดหมู่', color: '#64748b' }
+		]);
 	});
 });

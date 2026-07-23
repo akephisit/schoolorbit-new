@@ -16,7 +16,23 @@ export interface CalendarMonthCell {
 }
 
 export const CALENDAR_WEEKDAY_LABELS = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'] as const;
+export const CALENDAR_FALLBACK_COLOR = '#64748b';
 const BUDDHIST_YEAR_OFFSET = 543;
+
+export interface CalendarColorKeyEvent {
+	id: string;
+	startDate: string;
+	endDate: string;
+	categoryId?: string | null;
+	categoryName?: string | null;
+	categoryColor?: string | null;
+}
+
+export interface CalendarColorKeyItem {
+	id: string;
+	name: string;
+	color: string;
+}
 
 export interface CalendarLayoutEvent {
 	id: string;
@@ -92,6 +108,45 @@ export function eventOverlapsDate(
 	date: string
 ): boolean {
 	return event.startDate <= date && event.endDate >= date;
+}
+
+export function buildCalendarColorKey(
+	monthDate: string,
+	events: CalendarColorKeyEvent[]
+): CalendarColorKeyItem[] {
+	const range = monthRange(monthDate);
+	const categories = new Map<string, CalendarColorKeyItem>();
+	let hasUncategorizedEvent = false;
+
+	for (const event of events) {
+		if (event.startDate > range.to || event.endDate < range.from) continue;
+
+		if (event.categoryId && event.categoryName && event.categoryColor) {
+			if (!categories.has(event.categoryId)) {
+				categories.set(event.categoryId, {
+					id: event.categoryId,
+					name: event.categoryName,
+					color: event.categoryColor
+				});
+			}
+		} else {
+			hasUncategorizedEvent = true;
+		}
+	}
+
+	const items = [...categories.values()].sort((left, right) =>
+		left.name.localeCompare(right.name, 'th')
+	);
+
+	if (hasUncategorizedEvent) {
+		items.push({
+			id: 'uncategorized',
+			name: 'ไม่ระบุหมวดหมู่',
+			color: CALENDAR_FALLBACK_COLOR
+		});
+	}
+
+	return items;
 }
 
 export function buildCalendarMonthWeeks<EventType extends CalendarLayoutEvent>(
