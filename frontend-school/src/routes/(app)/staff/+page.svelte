@@ -45,33 +45,32 @@
 		icon: typeof LucideIcon;
 	};
 
-	let summaryCards = $derived.by(
-		(): StatCard[] =>
-			stats
-				? [
-						{
-							label: 'บุคลากรทั้งหมด',
-							value: stats.totalStaff,
-							description: 'ครูและเจ้าหน้าที่ที่ใช้งานอยู่',
-							toneClass: 'bg-sky-500/10 text-sky-600',
-							icon: Users
-						},
-						{
-							label: 'นักเรียนทั้งหมด',
-							value: stats.totalStudents,
-							description: 'นักเรียนสถานะใช้งานอยู่',
-							toneClass: 'bg-emerald-500/10 text-emerald-600',
-							icon: GraduationCap
-						},
-						{
-							label: 'ห้องเรียนที่เปิด',
-							value: stats.activeClassrooms,
-							description: 'ห้องเรียน active ในระบบ',
-							toneClass: 'bg-amber-500/10 text-amber-600',
-							icon: Building2
-						}
-					]
-				: []
+	let summaryCards = $derived.by((): StatCard[] =>
+		stats
+			? [
+					{
+						label: 'บุคลากรทั้งหมด',
+						value: stats.totalStaff,
+						description: 'ครูและเจ้าหน้าที่ที่ใช้งานอยู่',
+						toneClass: 'bg-sky-500/10 text-sky-600',
+						icon: Users
+					},
+					{
+						label: 'นักเรียนทั้งหมด',
+						value: stats.totalStudents,
+						description: 'นักเรียนสถานะใช้งานอยู่',
+						toneClass: 'bg-emerald-500/10 text-emerald-600',
+						icon: GraduationCap
+					},
+					{
+						label: 'ห้องเรียนที่เปิด',
+						value: stats.activeClassrooms,
+						description: 'ห้องเรียน active ในระบบ',
+						toneClass: 'bg-amber-500/10 text-amber-600',
+						icon: Building2
+					}
+				]
+			: []
 	);
 
 	async function loadDashboard() {
@@ -165,7 +164,11 @@
 					{/if}
 
 					{#if canOpenRolesModule}
-						<Button variant="outline" class="h-auto justify-start gap-3 p-4" href="/staff/organization">
+						<Button
+							variant="outline"
+							class="h-auto justify-start gap-3 p-4"
+							href="/staff/organization"
+						>
 							<FileText class="h-5 w-5 text-violet-600" />
 							<span class="text-left">โครงสร้างโรงเรียน</span>
 						</Button>

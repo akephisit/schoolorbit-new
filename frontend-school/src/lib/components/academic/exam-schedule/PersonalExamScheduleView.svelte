@@ -10,6 +10,7 @@
 		TableHeader,
 		TableRow
 	} from '$lib/components/ui/table';
+	import { SvelteMap } from 'svelte/reactivity';
 
 	interface SessionDateGroup {
 		examDate: string;
@@ -58,7 +59,7 @@
 	}
 
 	function groupSessionsByDate(sessions: PersonalExamSessionView[]): SessionDateGroup[] {
-		const groups = new Map<string, PersonalExamSessionView[]>();
+		const groups = new SvelteMap<string, PersonalExamSessionView[]>();
 		for (const session of sessions) {
 			const dateSessions = groups.get(session.examDate) ?? [];
 			dateSessions.push(session);

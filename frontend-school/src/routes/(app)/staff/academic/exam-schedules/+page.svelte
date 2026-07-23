@@ -99,8 +99,7 @@
 		try {
 			rounds = await listExamRounds({ academicSemesterId: selectedSemesterId });
 		} catch (loadError) {
-			error =
-				loadError instanceof Error ? loadError.message : 'ไม่สามารถโหลดรายการรอบตารางสอบได้';
+			error = loadError instanceof Error ? loadError.message : 'ไม่สามารถโหลดรายการรอบตารางสอบได้';
 			rounds = [];
 		} finally {
 			roundsLoading = false;
@@ -114,12 +113,15 @@
 			const academic = await getAcademicStructure();
 			structure = academic.data;
 
-			const activeYear = academic.data.years.find((year) => year.is_active) ?? academic.data.years[0];
+			const activeYear =
+				academic.data.years.find((year) => year.is_active) ?? academic.data.years[0];
 			const yearSemesters = activeYear
 				? academic.data.semesters.filter((semester) => semester.academic_year_id === activeYear.id)
 				: academic.data.semesters;
 			const activeSemester =
-				yearSemesters.find((semester) => semester.is_active) ?? yearSemesters[0] ?? academic.data.semesters[0];
+				yearSemesters.find((semester) => semester.is_active) ??
+				yearSemesters[0] ??
+				academic.data.semesters[0];
 
 			selectedYearId = activeSemester?.academic_year_id ?? activeYear?.id ?? '';
 			selectedSemesterId = activeSemester?.id ?? '';
@@ -204,11 +206,17 @@
 		</div>
 	{/snippet}
 
-	<div class="flex flex-col gap-3 rounded-md border bg-background p-3 md:flex-row md:items-end md:justify-between">
+	<div
+		class="flex flex-col gap-3 rounded-md border bg-background p-3 md:flex-row md:items-end md:justify-between"
+	>
 		<div class="grid gap-3 sm:grid-cols-2">
 			<div class="grid gap-2">
 				<span class="text-xs font-medium text-muted-foreground">ปีการศึกษา</span>
-				<Select.Root type="single" value={selectedYearId} onValueChange={(value) => value && selectYear(value)}>
+				<Select.Root
+					type="single"
+					value={selectedYearId}
+					onValueChange={(value) => value && selectYear(value)}
+				>
 					<Select.Trigger class="w-full sm:w-56">{selectedYearLabel}</Select.Trigger>
 					<Select.Content>
 						{#each years as year (year.id)}
@@ -281,13 +289,17 @@
 							>
 								<TableCell>
 									<div class="flex min-w-0 items-center gap-3">
-										<div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border bg-muted/40">
+										<div
+											class="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border bg-muted/40"
+										>
 											<CalendarClock class="h-4 w-4 text-muted-foreground" />
 										</div>
 										<div class="min-w-0">
 											<div class="truncate font-medium">{round.name}</div>
 											{#if round.description}
-												<div class="truncate text-xs text-muted-foreground">{round.description}</div>
+												<div class="truncate text-xs text-muted-foreground">
+													{round.description}
+												</div>
 											{/if}
 										</div>
 									</div>
@@ -299,7 +311,8 @@
 									<Badge variant={statusVariant(round.status)}>{statusLabel(round.status)}</Badge>
 								</TableCell>
 								<TableCell class="text-sm text-muted-foreground">
-									{semesters.find((semester) => semester.id === round.academicSemesterId)?.name ?? '-'}
+									{semesters.find((semester) => semester.id === round.academicSemesterId)?.name ??
+										'-'}
 								</TableCell>
 								<TableCell class="text-sm text-muted-foreground">
 									{formatDate(round.publishedAt)}

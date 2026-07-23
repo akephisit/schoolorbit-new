@@ -160,7 +160,10 @@
 								{formatInvigilatorMinutes(staff.totalMinutes)}
 							</TableCell>
 							<TableCell>
-								<Badge variant="outline" class="max-w-24 justify-start truncate {statusBadgeClass(staff)}">
+								<Badge
+									variant="outline"
+									class="max-w-24 justify-start truncate {statusBadgeClass(staff)}"
+								>
 									{statusLabel(staff)}
 								</Badge>
 							</TableCell>

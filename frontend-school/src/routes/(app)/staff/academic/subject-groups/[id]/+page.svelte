@@ -1,10 +1,7 @@
 <script lang="ts">
 	import type { PageProps } from './$types';
 	import { onMount } from 'svelte';
-	import {
-		getOrganizationUnitLookup,
-		type OrganizationUnitLookupItem
-	} from '$lib/api/staff';
+	import { getOrganizationUnitLookup, type OrganizationUnitLookupItem } from '$lib/api/staff';
 	import { Button } from '$lib/components/ui/button';
 	import { PageShell } from '$lib/components/app-layout';
 	import { Badge } from '$lib/components/ui/badge';

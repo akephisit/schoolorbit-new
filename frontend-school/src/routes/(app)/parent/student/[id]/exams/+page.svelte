@@ -1,10 +1,7 @@
 <script lang="ts">
 	import type { PageProps } from './$types';
 	import { toast } from 'svelte-sonner';
-	import {
-		listChildExamSchedules,
-		type PersonalExamScheduleRound
-	} from '$lib/api/examSchedule';
+	import { listChildExamSchedules, type PersonalExamScheduleRound } from '$lib/api/examSchedule';
 	import { PageShell } from '$lib/components/app-layout';
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import PersonalExamScheduleView from '$lib/components/academic/exam-schedule/PersonalExamScheduleView.svelte';
@@ -16,13 +13,13 @@
 	let rounds = $state<PersonalExamScheduleRound[]>([]);
 	let scheduleRequestToken = 0;
 
-	async function loadSchedules() {
+	async function loadSchedules(requestedStudentId: string) {
 		const requestToken = ++scheduleRequestToken;
 		loading = true;
 		error = '';
 		rounds = [];
 		try {
-			const nextRounds = await listChildExamSchedules(studentId);
+			const nextRounds = await listChildExamSchedules(requestedStudentId);
 			if (requestToken !== scheduleRequestToken) return;
 			rounds = nextRounds;
 		} catch (loadError: unknown) {
@@ -31,14 +28,14 @@
 			error = loadError instanceof Error ? loadError.message : 'โหลดตารางสอบของนักเรียนไม่สำเร็จ';
 			toast.error(error);
 		} finally {
-			if (requestToken !== scheduleRequestToken) return;
-			loading = false;
+			if (requestToken === scheduleRequestToken) {
+				loading = false;
+			}
 		}
 	}
 
 	$effect(() => {
-		studentId;
-		loadSchedules();
+		void loadSchedules(studentId);
 	});
 </script>
 
@@ -59,7 +56,7 @@
 			title="โหลดตารางสอบไม่สำเร็จ"
 			description={error}
 			actionLabel="ลองอีกครั้ง"
-			onaction={loadSchedules}
+			onaction={() => loadSchedules(studentId)}
 		/>
 	{:else}
 		<PersonalExamScheduleView {rounds} />

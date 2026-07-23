@@ -15,7 +15,9 @@ test('protected app route previews derive titles from route metadata automatical
 	const routePreview = await readProjectFile('src/lib/server/route-preview-meta.ts');
 	const hook = await readProjectFile('src/hooks.server.ts');
 	const appHtml = await readProjectFile('src/app.html');
-	const assessmentsRoute = await readProjectFile('src/routes/(app)/staff/academic/assessments/+page.ts');
+	const assessmentsRoute = await readProjectFile(
+		'src/routes/(app)/staff/academic/assessments/+page.ts'
+	);
 
 	assert.match(
 		routePreview,

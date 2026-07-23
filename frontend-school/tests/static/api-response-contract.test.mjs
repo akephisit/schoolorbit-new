@@ -436,7 +436,7 @@ test('project rules document generated API contract ownership', async () => {
 	}
 });
 
-test('project docs record the 177-operation manual timetable checkpoint', async () => {
+test('project docs record the 178-operation manual timetable checkpoint', async () => {
 	for (const file of [
 		'.rules',
 		'IMPROVEMENT_PLAN.md',
@@ -444,7 +444,8 @@ test('project docs record the 177-operation manual timetable checkpoint', async 
 		'docs/backend-school/API_DEVELOPMENT.md'
 	]) {
 		const source = await readRepoFile(file);
-		assert.match(source, /177 unique operations/i);
+		assert.match(source, /178 unique operations/i);
+		assert.match(source, /getActivitySlotTimetableContext/);
 		assert.match(source, /manual timetable/i);
 		assert.doesNotMatch(source, /scheduling jobs\/undo.*next|auto[- ]scheduler.*supported/i);
 	}
@@ -456,7 +457,8 @@ test('API docs record implemented reversible role and organization deactivation'
 	const improvements = await readRepoFile('IMPROVEMENT_PLAN.md');
 
 	for (const source of [guide, testing]) {
-		assert.match(source, /177 unique operations/);
+		assert.match(source, /178 unique operations/);
+		assert.match(source, /getActivitySlotTimetableContext/);
 		assert.match(source, /32[\s\S]{0,50}auth\/authorization[\s\S]{0,30}operations/);
 		assert.match(source, /implemented\s+backend\s+routes\s+only/i);
 	}

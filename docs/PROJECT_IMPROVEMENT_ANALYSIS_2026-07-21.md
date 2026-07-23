@@ -3,6 +3,23 @@
 วันที่วิเคราะห์: 21 กรกฎาคม 2026  
 ขอบเขต: `backend-school`, `backend-admin`, `frontend-school`, `frontend-admin`, migrations, tests, CI/CD, deployment และเอกสารโครงการ
 
+## Status update — 2026-07-23
+
+The findings below preserve the 2026-07-21 analysis baseline. The following
+items are now resolved:
+
+- backend-school exposes a dependency-aware `/ready` endpoint;
+- exam schedule, supervision, timetable, and calendar services have cohesive
+  private modules behind stable service facades with focused tests;
+- the timetable activity-slot fan-out is replaced by
+  `GET /api/academic/activity-slots/timetable-context`;
+- the frontend API client accepts `AbortSignal`, and timetable loading rejects
+  stale request results through a request coordinator;
+- the generated school API contract contains 178 unique operations.
+
+Remaining recommendations should be evaluated against current code before
+implementation. Historical measurements and findings stay unchanged below.
+
 ## Executive summary
 
 SchoolOrbit ไม่จำเป็นต้อง rewrite ใหม่ โครงสร้างพื้นฐานถือว่าดี โดยเฉพาะ service layer, migration discipline, permission model และการเข้ารหัสข้อมูลส่วนบุคคล อย่างไรก็ตาม ก่อนเพิ่มปริมาณผู้ใช้หรือรัน backend หลาย instance ควรพัฒนาตามลำดับดังนี้:
@@ -529,21 +546,23 @@ DB-backed tests, sandbox smoke และ Playwright E2E ไม่ได้รั
 
 ### Sprint 2 — Reliability และ measurable performance
 
-- request ID, tracing, metrics และ `/ready`
+- request ID, tracing และ metrics
+- [x] `/ready`
 - pool single-flight + sliding TTL
 - HTTP timeout/retry/circuit breaker
-- timetable batch endpoints
+- [x] timetable batch endpoints
 - scheduler locking และ realtime backplane
 
 ### Sprint 3 — Developer flexibility
 
-- แยก timetable, supervision และ exam-schedule modules
+- [x] แยก timetable, supervision, exam-schedule และ calendar modules
 - [x] generate permission registry ร่วมกันระหว่าง Rust/TypeScript พร้อม drift CI
-- OpenAPI-generated contracts
-- frontend resource controllers และ request cancellation
+- [x] OpenAPI-generated contracts
+- [x] frontend timetable request coordinator และ request cancellation
 - bundle budgets
 - PR CI และ immutable deployment
-- ปรับเอกสารและ ADR ให้ตรงกับระบบจริง
+- [x] ปรับเอกสารสถานะปัจจุบันให้ตรงกับระบบจริง
+- ADR ที่ยังขาดให้ประเมินตาม feature ที่พัฒนาต่อ
 
 ## ข้อจำกัดของการวิเคราะห์
 

@@ -42,7 +42,10 @@ test('activity generate patches returned slots and groups without reloading the 
 	const handleGenerate = extractFunction(page, 'handleGenerate');
 	const mergeGeneratedActivities = extractFunction(page, 'mergeGeneratedActivities');
 
-	assert.match(page, /const canGenerateFromPlan = \$derived\(canManageActivity && canReadCurriculumForGeneration\)/);
+	assert.match(
+		page,
+		/const canGenerateFromPlan = \$derived\(canManageActivity && canReadCurriculumForGeneration\)/
+	);
 	assert.match(handleGenerate, /if \(!canGenerateFromPlan\)/);
 	assert.match(page, /\{#if canGenerateFromPlan\}[\s\S]{0,500}onclick=\{openGenerateDialog\}/);
 	assert.doesNotMatch(

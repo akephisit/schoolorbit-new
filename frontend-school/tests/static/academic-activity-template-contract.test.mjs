@@ -16,23 +16,11 @@ test('generated activity template contract owns all batch operations and wire DT
 	const generated = await readRepoFile('frontend-school/src/lib/api/generated/school-api.ts');
 	const academicApi = await readRepoFile('frontend-school/src/lib/api/academic.ts');
 	const expected = [
-		[
-			'/api/academic/study-plan-versions/{id}/activities',
-			'get',
-			'listStudyPlanActivities'
-		],
-		[
-			'/api/academic/study-plan-versions/{id}/activities',
-			'post',
-			'addStudyPlanActivity'
-		],
+		['/api/academic/study-plan-versions/{id}/activities', 'get', 'listStudyPlanActivities'],
+		['/api/academic/study-plan-versions/{id}/activities', 'post', 'addStudyPlanActivity'],
 		['/api/academic/study-plan-activities/{id}', 'put', 'updateStudyPlanActivity'],
 		['/api/academic/study-plan-activities/{id}', 'delete', 'deleteStudyPlanActivity'],
-		[
-			'/api/academic/activities/generate-from-plan',
-			'post',
-			'generateActivitiesFromStudyPlan'
-		],
+		['/api/academic/activities/generate-from-plan', 'post', 'generateActivitiesFromStudyPlan'],
 		['/api/academic/activity-catalog', 'get', 'listActivityCatalog'],
 		['/api/academic/activity-catalog', 'post', 'createActivityCatalog'],
 		['/api/academic/activity-catalog/{id}', 'put', 'updateActivityCatalog'],
@@ -88,10 +76,7 @@ test('generated activity template contract owns all batch operations and wire DT
 		['CreateCatalogRequest', 'CreateCatalogRequest'],
 		['UpdateCatalogRequest', 'UpdateCatalogRequest'],
 		['AddCatalogDefaultInstructorRequest', 'AddCatalogDefaultInstructorRequest'],
-		[
-			'UpdateCatalogDefaultInstructorRoleRequest',
-			'UpdateCatalogDefaultInstructorRoleRequest'
-		]
+		['UpdateCatalogDefaultInstructorRoleRequest', 'UpdateCatalogDefaultInstructorRoleRequest']
 	]) {
 		assert.doesNotMatch(academicApi, new RegExp(`export\\s+interface\\s+${alias}\\b`));
 		assert.match(

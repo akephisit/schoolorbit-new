@@ -76,7 +76,9 @@
 			</div>
 
 			{#if readiness.blockers.length === 0}
-				<div class="flex items-start gap-2 rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">
+				<div
+					class="flex items-start gap-2 rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900"
+				>
 					<CheckCircle2 class="mt-0.5 h-4 w-4 shrink-0" />
 					<span>ไม่มีรายการติดขัด</span>
 				</div>

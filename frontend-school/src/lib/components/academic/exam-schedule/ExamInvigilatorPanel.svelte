@@ -9,6 +9,7 @@
 	import * as Select from '$lib/components/ui/select';
 	import { compareExamDaysByDate } from '$lib/utils/examScheduleDayOrder';
 	import { RefreshCw } from 'lucide-svelte';
+	import { SvelteMap } from 'svelte/reactivity';
 	import InvigilatorRoomBoard from './InvigilatorRoomBoard.svelte';
 	import InvigilatorStaffList from './InvigilatorStaffList.svelte';
 	import {
@@ -48,7 +49,7 @@
 	let selectedDayId = $state('');
 	let staffSearch = $state('');
 	let showAvailableOnly = $state(false);
-	let localWorkspace = $state<ExamInvigilatorWorkspace | null>(null);
+	let localWorkspace = $derived(workspace);
 	let pendingStaffIds = $state<string[]>([]);
 	let pendingAssignmentIds = $state<string[]>([]);
 	let activeDragStaffId = $state<string | null>(null);
@@ -96,7 +97,7 @@
 	}
 
 	function buildStaffCards(): InvigilatorStaffCardView[] {
-		const cards = new Map<string, InvigilatorStaffCardView>();
+		const cards = new SvelteMap<string, InvigilatorStaffCardView>();
 
 		for (const option of staff) {
 			cards.set(option.staffId, {
@@ -194,10 +195,6 @@
 			activeDragStaffId = null;
 		}
 	}
-
-	$effect(() => {
-		localWorkspace = workspace;
-	});
 
 	$effect(() => {
 		if (!selectedDayId && sortedDays[0]) {

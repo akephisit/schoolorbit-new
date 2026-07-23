@@ -4,8 +4,7 @@ import type {
 	ExamInvigilatorStaffWorkload
 } from '$lib/api/examSchedule';
 
-export const INVIGILATOR_STAFF_DRAG_TYPE =
-	'application/x-schoolorbit-exam-invigilator-staff-id';
+export const INVIGILATOR_STAFF_DRAG_TYPE = 'application/x-schoolorbit-exam-invigilator-staff-id';
 
 export type InvigilatorStaffCardView = {
 	staffId: string;

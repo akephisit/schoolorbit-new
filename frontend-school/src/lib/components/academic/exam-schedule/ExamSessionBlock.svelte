@@ -69,7 +69,7 @@
 		draggable={!disabled}
 		aria-busy={busy}
 		aria-label={`จัดเวลา ${subjectLabel()} ${timeLabel()}`}
-		disabled={disabled}
+		{disabled}
 		ondragstart={handleDragStart}
 		onclick={() => onOpen?.(session)}
 	>

@@ -52,11 +52,7 @@ export function getRoutePreviewMeta(pathname: string): RoutePreviewMeta | null {
 	};
 }
 
-export function injectRoutePreviewMeta(
-	html: string,
-	meta: RoutePreviewMeta,
-	url: URL
-): string {
+export function injectRoutePreviewMeta(html: string, meta: RoutePreviewMeta, url: URL): string {
 	if (!html.includes(ROUTE_PREVIEW_MARKER) && !html.includes('</head>')) {
 		return html;
 	}

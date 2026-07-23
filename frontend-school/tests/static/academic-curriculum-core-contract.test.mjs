@@ -17,25 +17,13 @@ test('generated curriculum core contract owns all batch operations and wire DTOs
 	const academicApi = await readRepoFile('frontend-school/src/lib/api/academic.ts');
 	const expected = [
 		['/api/academic/subjects/groups', 'get', 'listSubjectGroups'],
-		[
-			'/api/academic/subjects/default-instructors',
-			'get',
-			'batchListSubjectDefaultInstructors'
-		],
+		['/api/academic/subjects/default-instructors', 'get', 'batchListSubjectDefaultInstructors'],
 		['/api/academic/subjects', 'get', 'listSubjects'],
 		['/api/academic/subjects', 'post', 'createSubject'],
 		['/api/academic/subjects/{id}', 'put', 'updateSubject'],
 		['/api/academic/subjects/{id}', 'delete', 'deleteSubject'],
-		[
-			'/api/academic/subjects/{id}/default-instructors',
-			'get',
-			'listSubjectDefaultInstructors'
-		],
-		[
-			'/api/academic/subjects/{id}/default-instructors',
-			'post',
-			'addSubjectDefaultInstructor'
-		],
+		['/api/academic/subjects/{id}/default-instructors', 'get', 'listSubjectDefaultInstructors'],
+		['/api/academic/subjects/{id}/default-instructors', 'post', 'addSubjectDefaultInstructor'],
 		[
 			'/api/academic/subjects/{id}/default-instructors/{uid}',
 			'delete',
@@ -56,22 +44,10 @@ test('generated curriculum core contract owns all batch operations and wire DTOs
 		['/api/academic/study-plan-versions/{id}', 'get', 'getStudyPlanVersion'],
 		['/api/academic/study-plan-versions/{id}', 'put', 'updateStudyPlanVersion'],
 		['/api/academic/study-plan-versions/{id}', 'delete', 'deleteStudyPlanVersion'],
-		[
-			'/api/academic/study-plan-versions/{id}/subjects',
-			'get',
-			'listStudyPlanSubjects'
-		],
-		[
-			'/api/academic/study-plan-versions/{id}/subjects',
-			'post',
-			'addSubjectsToStudyPlanVersion'
-		],
+		['/api/academic/study-plan-versions/{id}/subjects', 'get', 'listStudyPlanSubjects'],
+		['/api/academic/study-plan-versions/{id}/subjects', 'post', 'addSubjectsToStudyPlanVersion'],
 		['/api/academic/study-plan-subjects/{id}', 'delete', 'deleteStudyPlanSubject'],
-		[
-			'/api/academic/planning/generate-from-plan',
-			'post',
-			'generateCoursesFromStudyPlan'
-		]
+		['/api/academic/planning/generate-from-plan', 'post', 'generateCoursesFromStudyPlan']
 	];
 
 	for (const [route, method, operationId] of expected) {
@@ -112,10 +88,7 @@ test('generated curriculum core contract owns all batch operations and wire DTOs
 	assert.match(academicApi, /createSubject = async \(data: CreateSubjectRequest\)/);
 	assert.match(academicApi, /updateSubject = async \(id: string, data: UpdateSubjectRequest\)/);
 	assert.match(academicApi, /createStudyPlan = async \(data: CreateStudyPlanRequest\)/);
-	assert.match(
-		academicApi,
-		/updateStudyPlan = async \(id: string, data: UpdateStudyPlanRequest\)/
-	);
+	assert.match(academicApi, /updateStudyPlan = async \(id: string, data: UpdateStudyPlanRequest\)/);
 	assert.match(
 		academicApi,
 		/createStudyPlanVersion = async \(data: CreateStudyPlanVersionRequest\)/

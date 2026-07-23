@@ -56,9 +56,7 @@ const timetableServiceFiles = [
 ];
 
 function readTimetableServices() {
-	return timetableServiceFiles
-		.map((file) => readFileSync(workspaceFile(file), 'utf8'))
-		.join('\n');
+	return timetableServiceFiles.map((file) => readFileSync(workspaceFile(file), 'utf8')).join('\n');
 }
 
 describe('timetable teacher load export helpers', () => {
@@ -402,10 +400,7 @@ describe('timetable teacher load export helpers', () => {
 
 	it('keeps teacher load subject-group fields aligned across backend and frontend', () => {
 		const frontendApi = readFileSync(projectFile('src/lib/api/timetable.ts'), 'utf8');
-		const generated = readFileSync(
-			projectFile('src/lib/api/generated/school-api.ts'),
-			'utf8'
-		);
+		const generated = readFileSync(projectFile('src/lib/api/generated/school-api.ts'), 'utf8');
 		const backendModel = readFileSync(
 			workspaceFile('backend-school/src/modules/academic/models/timetable.rs'),
 			'utf8'
