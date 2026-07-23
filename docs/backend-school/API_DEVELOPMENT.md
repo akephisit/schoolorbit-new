@@ -52,14 +52,14 @@ Frontend API modules import generated wire DTOs and may map them to separate
 domain/view models. Generation must not require database credentials or start
 the backend server.
 
-The current checkpoint contains 177 unique operations: 32 auth/authorization
+The current checkpoint contains 178 unique operations: 32 auth/authorization
 operations, 36 read-oriented JSON operations from the prior checkpoint, the
 completed Phase 1 people batch (12 mutations plus the dependent achievement
 list read), and the first Phase 2 academic structure batch (15 mutations plus
 four dependent reads), the Phase 2 curriculum core batch (15 mutations plus
 nine dependent reads), the Phase 2 activity-template batch (10 mutations plus
 three dependent reads), the Phase 2 activity workspace batch (21 mutations
-plus seven dependent reads), and the Phase 2 course planning batch (seven
+plus eight dependent reads), and the Phase 2 course planning batch (seven
 mutations plus five dependent reads). The people operations are:
 
 - staff: `createStaff`, `updateStaff`, `deleteStaff`
@@ -96,8 +96,9 @@ The activity-template operations are `listStudyPlanActivities`,
 `removeActivityCatalogDefaultInstructor`, and
 `updateActivityCatalogDefaultInstructorRole`.
 
-The activity workspace operations are `listActivitySlots`, `updateActivitySlot`,
-`deleteActivitySlot`, `listActivitySlotInstructors`, `addActivitySlotInstructor`,
+The activity workspace operations are `listActivitySlots`,
+`getActivitySlotTimetableContext`, `updateActivitySlot`, `deleteActivitySlot`,
+`listActivitySlotInstructors`, `addActivitySlotInstructor`,
 `addActivitySlotInstructorsBatch`, `removeActivitySlotInstructor`,
 `removeAllActivitySlotInstructors`, `deleteAllActivitySlotGroups`,
 `deleteActivitySlotTimetableEntries`, `listActivitySlotClassroomAssignments`,
