@@ -1961,10 +1961,10 @@ mod tests {
             .flat_map(|path| path.as_object().expect("path item").values())
             .filter_map(|operation| operation["operationId"].as_str())
             .collect();
-        assert_eq!(operation_ids.len(), 177);
+        assert_eq!(operation_ids.len(), 178);
         assert_eq!(
             operation_ids.iter().copied().collect::<HashSet<_>>().len(),
-            177
+            178
         );
 
         for (path, method, request_schema) in [
@@ -2665,7 +2665,7 @@ mod tests {
                 }
             }
         }
-        assert_eq!(operation_ids.len(), 177);
+        assert_eq!(operation_ids.len(), 178);
 
         let schemas = &document["components"]["schemas"];
         let delegation = &schemas["DelegationItem"];
