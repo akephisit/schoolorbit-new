@@ -311,6 +311,13 @@ test('public calendar fills mobile viewport and opens selected days in a timelin
 	assert.match(publicPage, /h-dvh overflow-hidden/);
 	assert.match(publicPage, /fillHeight/);
 	assert.match(publicPage, /CalendarDayTimelineDialog/);
+	assert.match(publicPage, /CalendarColorKey/);
+	assert.match(publicPage, /buildCalendarColorKey/);
+	assert.match(
+		publicPage,
+		/const colorKeyItems = \$derived\(buildCalendarColorKey\(selectedMonth, events\)\)/
+	);
+	assert.match(publicPage, /<CalendarColorKey items=\{colorKeyItems\} \/>/);
 	assert.match(publicPage, /function selectDate\(date: string\)/);
 	assert.match(publicPage, /window\.matchMedia\('\(max-width: 1023px\)'\)/);
 	assert.match(publicPage, /hidden min-h-0[\s\S]*lg:flex/);

@@ -3,11 +3,13 @@
 	import { addMonths } from 'date-fns';
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import { Button } from '$lib/components/ui/button';
+	import CalendarColorKey from '$lib/components/calendar/CalendarColorKey.svelte';
 	import CalendarDayTimelineDialog from '$lib/components/calendar/CalendarDayTimelineDialog.svelte';
 	import CalendarMonthGrid from '$lib/components/calendar/CalendarMonthGrid.svelte';
 	import CalendarEventList from '$lib/components/calendar/CalendarEventList.svelte';
 	import { type CalendarPublicEvent, listPublicCalendarEvents } from '$lib/api/calendar';
 	import {
+		buildCalendarColorKey,
 		calendarGridRange,
 		eventOverlapsDate,
 		formatCalendarDate,
@@ -27,6 +29,7 @@
 	let dayDialogOpen = $state(false);
 
 	const monthLabel = $derived(formatCalendarMonth(selectedMonth));
+	const colorKeyItems = $derived(buildCalendarColorKey(selectedMonth, events));
 	const selectedDateEvents = $derived(
 		events
 			.filter((event) => eventOverlapsDate(event, selectedDate))
@@ -130,6 +133,10 @@
 				</div>
 			</div>
 		</header>
+
+		{#if !loading && !error && colorKeyItems.length > 0}
+			<CalendarColorKey items={colorKeyItems} />
+		{/if}
 
 		{#if loading}
 			<div class="min-h-0 flex-1 overflow-hidden">
