@@ -90,7 +90,7 @@
 	let generatingAssignmentId = $state<string | null>(null);
 	let placingItemIds = $state<string[]>([]);
 	let unschedulingSessionIds = $state<string[]>([]);
-	let requestedRoundId = $state('');
+	let requestedRoundId = '';
 	let loadedRoundId = $state('');
 	let workspaceRequestToken = 0;
 	let managementOptionsRequestToken = 0;

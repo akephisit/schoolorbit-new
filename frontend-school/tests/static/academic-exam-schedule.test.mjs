@@ -1269,6 +1269,8 @@ test('staff workspace reloads by route round id and keeps form input on failed s
 	assert.match(page, /getExamScheduleWorkspace\(roundId\)/);
 	assert.match(page, /resetWorkspaceForRound\(roundId\)/);
 	assert.match(page, /loadWorkspace\(roundId,\s*true\)/);
+	assert.match(page, /let requestedRoundId = '';/);
+	assert.doesNotMatch(page, /let requestedRoundId = \$state/);
 	assert.doesNotMatch(page, /onMount\(\(\) => \{\s*loadWorkspace\(true\)/);
 
 	assert.match(
