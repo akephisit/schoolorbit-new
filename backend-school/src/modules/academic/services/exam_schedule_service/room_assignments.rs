@@ -13,7 +13,7 @@ use super::invigilation::{
     validate_unique_invigilator_staff_ids,
 };
 use super::rounds_and_days::{fetch_exam_day_context_for_update, mark_round_draft_after_mutation};
-use super::validate_day_allows_grade_level;
+use super::sessions_and_conflicts::validate_day_allows_grade_level;
 
 #[derive(Debug, sqlx::FromRow)]
 struct DayRoomAssignmentViewRow {

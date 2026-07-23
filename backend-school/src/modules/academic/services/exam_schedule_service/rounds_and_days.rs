@@ -11,7 +11,7 @@ use crate::modules::academic::models::exam_schedule::{
     UpsertExamDayRequest,
 };
 
-use super::fetch_invigilators_by_assignment_ids;
+use super::invigilation::fetch_invigilators_by_assignment_ids;
 use super::shared::unique_uuids;
 
 #[derive(Debug, sqlx::FromRow)]

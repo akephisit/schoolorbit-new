@@ -1,18 +1,17 @@
-use chrono::{DateTime, NaiveDate, NaiveTime, Utc};
 use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::error::AppError;
 use crate::modules::academic::models::exam_schedule::{
-    ClearMismatchedExamItemsResult, ExamInvigilatorView, ExamScheduleItemView,
-    ExamScheduleReadiness, ExamScheduleWorkspace, ExamSessionView, ImportExamItemsRequest,
-    ImportExamItemsResult,
+    ClearMismatchedExamItemsResult, ExamScheduleItemView, ExamScheduleReadiness,
+    ExamScheduleWorkspace, ExamSessionView, ImportExamItemsRequest, ImportExamItemsResult,
 };
 
 use super::invigilation::{fetch_invigilators_by_assignment_ids, invigilators_for_assignment};
 use super::rounds_and_days::{
     fetch_exam_day_details_for_round, fetch_round, mark_round_draft_after_mutation,
 };
+use super::sessions_and_conflicts::ExamSessionRow;
 use super::shared::unique_uuids;
 
 #[derive(Debug, Clone, Copy)]
@@ -24,81 +23,6 @@ pub struct WorkspaceCounts {
     pub invalid_session_count: i64,
     pub missing_seat_student_count: i64,
     pub invigilator_conflict_count: i64,
-}
-
-#[derive(Debug, sqlx::FromRow)]
-pub(super) struct ExamSessionRow {
-    id: Uuid,
-    exam_schedule_item_id: Uuid,
-    exam_round_id: Uuid,
-    exam_day_id: Uuid,
-    starts_at: NaiveTime,
-    ends_at: NaiveTime,
-    academic_semester_id: Uuid,
-    assessment_category_id: Uuid,
-    assessment_plan_id: Uuid,
-    classroom_course_id: Uuid,
-    classroom_id: Uuid,
-    subject_id: Uuid,
-    grade_level_id: Uuid,
-    duration_minutes: i32,
-    imported_at: DateTime<Utc>,
-    exam_date: Option<NaiveDate>,
-    assessment_category_name: Option<String>,
-    subject_code: Option<String>,
-    subject_name_th: Option<String>,
-    subject_name_en: Option<String>,
-    subject_group_id: Option<Uuid>,
-    subject_group_name: Option<String>,
-    subject_group_display_order: Option<i32>,
-    subject_type: Option<String>,
-    classroom_name: Option<String>,
-    grade_level_name: Option<String>,
-    grade_level_type: Option<String>,
-    grade_level_year: Option<i32>,
-    pub(super) day_room_assignment_id: Option<Uuid>,
-    room_id: Option<Uuid>,
-    room_name: Option<String>,
-    building_name: Option<String>,
-}
-
-impl ExamSessionRow {
-    pub(super) fn into_view(self, invigilators: Vec<ExamInvigilatorView>) -> ExamSessionView {
-        ExamSessionView {
-            id: self.id,
-            exam_schedule_item_id: self.exam_schedule_item_id,
-            exam_round_id: self.exam_round_id,
-            exam_day_id: self.exam_day_id,
-            starts_at: self.starts_at,
-            ends_at: self.ends_at,
-            academic_semester_id: self.academic_semester_id,
-            assessment_category_id: self.assessment_category_id,
-            assessment_plan_id: self.assessment_plan_id,
-            classroom_course_id: self.classroom_course_id,
-            classroom_id: self.classroom_id,
-            subject_id: self.subject_id,
-            grade_level_id: self.grade_level_id,
-            duration_minutes: self.duration_minutes,
-            imported_at: self.imported_at,
-            exam_date: self.exam_date,
-            assessment_category_name: self.assessment_category_name,
-            subject_code: self.subject_code,
-            subject_name_th: self.subject_name_th,
-            subject_name_en: self.subject_name_en,
-            subject_group_id: self.subject_group_id,
-            subject_group_name: self.subject_group_name,
-            subject_group_display_order: self.subject_group_display_order,
-            subject_type: self.subject_type,
-            classroom_name: self.classroom_name,
-            grade_level_name: self.grade_level_name,
-            grade_level_type: self.grade_level_type,
-            grade_level_year: self.grade_level_year,
-            room_id: self.room_id,
-            room_name: self.room_name,
-            building_name: self.building_name,
-            invigilators,
-        }
-    }
 }
 
 pub fn build_readiness(counts: WorkspaceCounts) -> ExamScheduleReadiness {
