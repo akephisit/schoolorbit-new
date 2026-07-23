@@ -450,9 +450,9 @@
 				loadError instanceof Error ? loadError.message : 'โหลดตัวเลือกสำหรับจัดห้องสอบไม่สำเร็จ'
 			);
 		} finally {
-			if (!isCurrentManagementOptionsRequest(requestToken, roundId, semesterId, yearId)) return;
-
-			optionsLoading = false;
+			if (isCurrentManagementOptionsRequest(requestToken, roundId, semesterId, yearId)) {
+				optionsLoading = false;
+			}
 		}
 	}
 
