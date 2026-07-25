@@ -1,0 +1,111 @@
+import assert from 'node:assert/strict';
+import { execFile } from 'node:child_process';
+import { access, readFile } from 'node:fs/promises';
+import path from 'node:path';
+import { promisify } from 'node:util';
+import { fileURLToPath } from 'node:url';
+import test from 'node:test';
+
+const execFileAsync = promisify(execFile);
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const repoRoot = path.resolve(__dirname, '../../..');
+
+const MARKDOWN_ALLOWLIST = [
+	'AGENTS.md',
+	'CLAUDE.md',
+	'GEMINI.md',
+	'README.md',
+	'backend-admin/README.md',
+	'backend-school/README.md',
+	'docs/OPERATIONS.md',
+	'docs/README.md',
+	'docs/TESTING.md',
+	'frontend-admin/README.md',
+	'frontend-school/README.md'
+].sort();
+
+async function existingTrackedMarkdown() {
+	const { stdout } = await execFileAsync('git', ['ls-files', '*.md'], { cwd: repoRoot });
+	const paths = stdout
+		.split(/\r?\n/)
+		.map((value) => value.trim())
+		.filter(Boolean);
+	const existing = [];
+
+	for (const relativePath of paths) {
+		try {
+			await access(path.join(repoRoot, relativePath));
+			existing.push(relativePath);
+		} catch {
+			// A tracked file deleted in the current worktree is not active documentation.
+		}
+	}
+
+	return existing.sort();
+}
+
+function localLinkTargets(source) {
+	const targets = [];
+	const pattern = /!?\[[^\]]*]\(([^)]+)\)/g;
+
+	for (const match of source.matchAll(pattern)) {
+		const rawTarget = match[1].trim().replace(/^<|>$/g, '');
+		const target = rawTarget.split(/\s+["']/)[0];
+		if (!target || target.startsWith('#') || /^(?:https?:|mailto:|tel:)/i.test(target)) {
+			continue;
+		}
+		targets.push(decodeURIComponent(target.split('#')[0]));
+	}
+
+	return targets;
+}
+
+test('tracked Markdown is limited to the canonical documentation set', async () => {
+	assert.deepEqual(await existingTrackedMarkdown(), MARKDOWN_ALLOWLIST);
+});
+
+test('canonical Markdown local links resolve', async () => {
+	const broken = [];
+
+	for (const relativePath of MARKDOWN_ALLOWLIST) {
+		const source = await readFile(path.join(repoRoot, relativePath), 'utf8');
+		for (const target of localLinkTargets(source)) {
+			const resolved = path.resolve(repoRoot, path.dirname(relativePath), target);
+			try {
+				await access(resolved);
+			} catch {
+				broken.push(`${relativePath} -> ${target}`);
+			}
+		}
+	}
+
+	assert.deepEqual(broken, []);
+});
+
+test('project rules own durable development and verification workflows', async () => {
+	const rules = await readFile(path.join(repoRoot, '.rules'), 'utf8');
+	const required = [
+		'## 0. Rule Ownership and Documentation Policy',
+		'## 1. Required Analysis Workflow',
+		'## 2. Adding or Changing a Feature',
+		'## 4. Permissions and Resource Authorization',
+		'## 5. API Contracts',
+		'## 6. Database Migrations',
+		'## 7. Frontend: SvelteKit 5',
+		'## 9. Security, PDPA, and Logging',
+		'## 11. Verification Matrix',
+		'contracts/permissions.json',
+		'npm run generate:permissions',
+		'npm run check:permissions',
+		'npm run test:permissions',
+		'npm run generate:api-contracts',
+		'npm run check:api-contracts',
+		'npm run test:api-contracts',
+		'cargo test --test static_architecture',
+		'git diff --check'
+	];
+
+	for (const value of required) {
+		assert.ok(rules.includes(value), `.rules must contain: ${value}`);
+	}
+});

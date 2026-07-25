@@ -16,6 +16,7 @@
 		"generate:permissions": "node ../scripts/generate-permissions.mjs",
 		"check:permissions": "node ../scripts/generate-permissions.mjs --check",
 		"test:permissions": "node --test ../scripts/tests/generate-permissions.test.mjs",
+		"check:docs": "node --test tests/static/documentation-policy.test.mjs",
 		"test:static": "node --test tests/static/*.test.mjs",
 		"test:e2e": "playwright test",
 		"test:e2e:headed": "playwright test --headed",
