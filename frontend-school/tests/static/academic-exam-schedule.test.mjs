@@ -1502,6 +1502,27 @@ test('staff exam mobile cards use the shared collapsible primitive', () => {
 	assert.match(index, /Root as Collapsible/);
 });
 
+test('staff exam reports use semantic merged tables and responsive day cards', () => {
+	const schedulePath = 'src/lib/components/academic/exam-schedule/StaffExamScheduleTable.svelte';
+	const invigilatorPath =
+		'src/lib/components/academic/exam-schedule/StaffExamInvigilatorTable.svelte';
+	assert.equal(existsSync(projectPath(schedulePath)), true, `${schedulePath} should exist`);
+	assert.equal(existsSync(projectPath(invigilatorPath)), true, `${invigilatorPath} should exist`);
+
+	const scheduleTable = readFileSync(projectPath(schedulePath), 'utf8');
+	const invigilatorTable = readFileSync(projectPath(invigilatorPath), 'utf8');
+	for (const source of [scheduleTable, invigilatorTable]) {
+		assert.match(source, /hidden[^"]*md:block/);
+		assert.match(source, /md:hidden/);
+		assert.match(source, /Collapsible\.Root/);
+		assert.match(source, /scope="col"/);
+	}
+	assert.match(scheduleTable, /rowspan=\{row\.dayRowSpan\}/);
+	assert.match(scheduleTable, /rowspan=\{row\.timeRowSpan\}/);
+	assert.match(invigilatorTable, /rowspan=\{row\.dayRowSpan\}/);
+	assert.match(invigilatorTable, /ฉัน/);
+});
+
 test('personal exam schedule view groups published sessions and hides staff supervision data', () => {
 	const personalViewPath =
 		'src/lib/components/academic/exam-schedule/PersonalExamScheduleView.svelte';
