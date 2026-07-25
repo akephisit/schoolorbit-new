@@ -174,7 +174,10 @@ At widths below the existing mobile breakpoint:
 - Summary cards become a compact grid.
 - Filters stack vertically.
 - Tabs remain horizontally scrollable through the local Tabs primitive.
-- Schedule and invigilator tables become day-grouped cards.
+- Schedule and invigilator tables become day-grouped cards built from a shared shadcn-style
+  Collapsible primitive backed by the existing `bits-ui` dependency.
+- The first visible day starts expanded; other day cards start collapsed and can be toggled with
+  keyboard-accessible triggers.
 - Cards expose time, subject, classroom, room, and invigilators as labeled values.
 - No page-level horizontal overflow is introduced.
 
