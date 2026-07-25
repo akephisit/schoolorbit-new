@@ -1,85 +1,63 @@
-# SchoolOrbit Backend
+# Backend Admin
 
-Backend API server for SchoolOrbit built with Ohkami web framework.
+## Purpose
 
-## Tech Stack
+The control-plane API manages school records, tenant database provisioning metadata, and deployment coordination. Backend-school uses its authenticated internal endpoints to resolve tenant database information.
 
-- **Framework**: Ohkami (Rust web framework)
-- **Runtime**: Tokio
-- **Serialization**: Serde + Serde JSON
+## Stack
 
-## Getting Started
+- Rust
+- Axum and Tokio
+- SQLx with PostgreSQL
+- Serde and tracing
 
-### Prerequisites
-
-- Rust 1.70+ and Cargo installed
-- Run `rustup update` to ensure you have the latest stable Rust
-
-### Installation
+## Local Setup
 
 ```bash
-cd backend
+cd backend-admin
+cp .env.example .env
 cargo build
 ```
 
-### Running the Server
+Set a local admin `DATABASE_URL` and replace every example secret before using a shared environment.
+
+## Run
 
 ```bash
 cargo run
 ```
 
-The server will start on `http://localhost:8080`
+The service binds to `0.0.0.0:8080`.
 
-### Available Endpoints
-
-- `GET /` - API information
-- `GET /health` - Liveness check endpoint, does not query the database
-- `GET /ready` - Readiness check endpoint, verifies database connectivity
-- `GET /api/hello/:name` - Test endpoint with path parameter
-
-### Testing the API
+## Check and Test
 
 ```bash
-# Check API info
-curl http://localhost:8080/
-
-# Liveness check
-curl http://localhost:8080/health
-
-# Readiness check
-curl http://localhost:8080/ready
-
-# Test hello endpoint
-curl http://localhost:8080/api/hello/John
+cargo fmt --all -- --check
+cargo test
+cargo check
 ```
 
-## Development
+Run focused tests first for changed handlers, clients, or services.
 
-### Hot Reload
+## Environment
 
-For development with hot reload, install cargo-watch:
+The main groups are:
 
-```bash
-cargo install cargo-watch
-cargo watch -x run
-```
+- `DATABASE_URL`, `JWT_SECRET`, and `INTERNAL_API_SECRET`;
+- `BACKEND_SCHOOL_URL` for internal coordination;
+- Neon credentials for tenant database provisioning;
+- Cloudflare and GitHub credentials for DNS/deployment operations;
+- `RUST_LOG` for structured log filtering.
 
-## Project Structure
+See `.env.example` for names and [Operations](../docs/OPERATIONS.md) for secret-handling and rotation rules.
 
-```
-backend/
-├── src/
-│   └── main.rs       # Main application entry point
-├── Cargo.toml        # Dependencies and project metadata
-└── README.md         # This file
-```
+## Health
 
-## Next Steps
+- `GET /health` checks process liveness without querying PostgreSQL.
+- `GET /ready` checks admin database readiness and is the deployment gate.
 
-- [ ] Add database connection (PostgreSQL/MySQL)
-- [ ] Implement authentication & authorization
-- [ ] Add CORS middleware
-- [ ] Create API routes for school management
-- [ ] Add environment configuration
-- [ ] Implement logging
-- [ ] Add API documentation (OpenAPI)
+## Project Documentation
+
+- [Development rules](../.rules)
+- [Testing](../docs/TESTING.md)
+- [Operations](../docs/OPERATIONS.md)
