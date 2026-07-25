@@ -1,251 +1,273 @@
-# Project Rules: SvelteKit + Axum Rust
+# SchoolOrbit Development Rules
 
-## 0. Analysis Workflow (ก่อนทำทุกครั้ง)
-* **Step 0 - Consult Documentation:**
-  * Check `/docs/` folder for:
-    * Architecture docs (`architecture.md`, `system-design.md`)
-    * Feature guides (`features/`, `workflows/`)
-    * API documentation (`api/`, `endpoints.md`)
-    * Setup & deployment (`setup.md`, `deployment.md`)
-  * If docs don't exist or are incomplete, search codebase and code comments
-  * When implementing, consider if new docs are needed for future developers
+This file is the single authoritative development standard for this repository. Read it before changing code. Human-facing documentation explains the system in `README.md` and `docs/`; it must not duplicate or override these rules.
 
-* **Step 1 - Understand the Request:**
-  * Clarify requirements with user if ambiguous
-  * Identify which parts of the stack are affected (Frontend/Backend/Database)
+## 0. Rule Ownership and Documentation Policy
 
-* **Step 2 - Analyze Existing Code:**
-  * **Backend:** Read handlers, services, database models related to the feature
-  * **Frontend:** Read routes, components, API client calls, types/interfaces
-  * **Contracts:** Verify API request/response DTOs match on both ends
+- Keep durable development requirements here. Update this file in the same change whenever an architectural convention changes.
+- Keep only these Markdown entry points:
+  - `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, and `README.md`
+  - `docs/README.md`, `docs/TESTING.md`, and `docs/OPERATIONS.md`
+  - one `README.md` in each application directory: `backend-admin/`, `backend-school/`, `frontend-admin/`, and `frontend-school/`
+- Do not create feature-completion reports, implementation diaries, status snapshots, temporary analysis files, duplicate developer guides, or per-feature README files.
+- Put commands and test recipes in `docs/TESTING.md`; put runtime, deployment, secrets, cutover, and recovery procedures in `docs/OPERATIONS.md`.
+- Code, contracts, migrations, generated artifacts, and executable configuration remain the source of truth for runtime behavior. Documentation must link to them instead of copying large inventories that become stale.
+- Minimal AI entry-point files are intentional. Do not expand `AGENTS.md`, `CLAUDE.md`, or `GEMINI.md` into competing rule sets.
 
-* **Step 3 - Plan the Change:**
-  * Identify files that need modification
-  * Ensure consistency with existing patterns
-  * Consider impact on other features
+## 1. Required Analysis Workflow
 
-* **Step 4 - Implement & Verify:**
-  * Make changes following project rules
-  * Test both frontend and backend integration
+Before every change:
 
-### Example: Adding a New Feature
-If adding "User Profile Edit" feature:
-1. **Backend Analysis:** Read `src/handlers/user.rs`, `src/models/user.rs`, existing update endpoints
-2. **Frontend Analysis:** Read `src/routes/profile/`, `src/lib/api.ts` (user API calls), `src/lib/types/user.ts`
-3. **Database:** Check migration files for `users` table schema
-4. **Plan:** List all files to modify, ensure DTO consistency between Rust and TypeScript
-5. **Implement:** Follow error handling rules, use proper types, test API integration
+1. Read this file, then use `docs/README.md` to locate only the relevant canonical document.
+2. Inspect the current implementation with direct searches and file reads. Follow re-exports, route registration, migration history, generated contracts, and call sites before declaring code unused or broken.
+3. Identify impact across backend, frontend, database, permissions, API contracts, realtime events, security/PDPA, deployment, and tests.
+4. Write a short implementation plan for multi-file or risky work. Reuse existing patterns and name the verification commands before editing.
+5. Implement the smallest coherent change. Fix root causes; do not suppress errors, bypass checks, add `as any`, swallow exceptions, or disable tests.
+6. Run focused tests while working, then the applicable verification matrix in section 11. Review `git diff --check`, the final diff, and `git status --short`.
 
-## 1. General Principles
-* [cite_start]**Correctness & Clarity:** Prioritize code correctness and clarity over premature optimization[cite: 1].
-* **No Fluff:** Do not write comments that just summarize the code. [cite_start]Only explain "why" complex logic exists[cite: 2, 3].
-* **Modularization:** Prefer implementing functionality in existing files unless it is a new logical component. [cite_start]Avoid creating many tiny files[cite: 4].
-* [cite_start]**Naming:** Use full words for variable names (e.g., `queue` instead of `q`)[cite: 11].
-* **Fix Root Causes, Not Symptoms:** When fixing bugs, errors, or test failures:
-  * **Identify the actual cause** before writing any fix — read related code, trace the flow, understand WHY it fails
-  * **Do not patch around errors** to silence them (e.g., suppressing type errors with `as any`, swallowing exceptions, adding `if` guards that hide real problems)
-  * **Do not bypass safety checks** (e.g., `--no-verify`, disabling lint, skipping tests) just to make builds pass
-  * If a fix feels like "making the error go away", stop and investigate the root cause first
-  * **Acceptable patches:** working around external library bugs, temporary workarounds with clear `TODO` linking the real issue, time-critical hotfixes that explicitly state "patch only — root cause: X"
-  * **When uncertain whether a fix is at the root cause level:** explain the reasoning to the user before applying — let them decide if a deeper fix is needed
+Do not trust sweeping analysis without verifying it against the current tree. In particular:
 
-## 2. Backend: Rust (Axum)
-* **Error Handling (Strict):**
-  * **No Panics:** Avoid `unwrap()` and `expect()`. [cite_start]Use `?` to propagate errors[cite: 5].
-  * **Response:** Errors must implement `IntoResponse` to return proper HTTP status codes to the frontend.
-  * [cite_start]**Handling:** Never silently discard errors with `let _ =`[cite: 7]. Use `.map_err()` to add context before propagating.
-  * [cite_start]**Visibility:** Ensure errors that affect the UI propagate meaningful messages[cite: 8].
+- UI subcomponents may be consumed through `frontend-school/src/lib/components/ui/**/index.ts` aliases.
+- Read the full migration timeline before proposing a column, trigger, or data migration.
+- Minimal AI entry-point files are loaded by tools and are not unused placeholders.
 
-* **Architecture (Axum):**
-  * **State:** Use `AppState` wrapped in `Arc` for sharing DB pools and config.
-  * **Tenant / Actor Request Context:** New or refactored module handlers should use `backend-school/src/utils/request_context.rs` helpers (`tenant_context`, `tenant_pool`, `tenant_context_by_subdomain`, `actor_tenant_context`, `current_user_tenant_context_from_claims`, `current_user_tenant_context_from_headers`, `optional_user_id_from_headers`) instead of copy-pasting local `get_pool`, `Claims -> Uuid`, header token parsing, or actor-loading helpers. Lower-level tenant resolution still lives in `backend-school/src/utils/tenant.rs` (`resolve_tenant_context` or `resolve_tenant_context_by_subdomain`). Browser tenant requests should use Origin/Referer by default. `X-School-Subdomain` is an explicit override for non-browser clients, local/custom-host clients, scripts, and tests; when a tenant Origin/Referer is present, the backend must require the header to match it. Do not call `get_school_database_url`, `pool_manager.get_pool`, or `PgPool::connect` directly from feature handlers. The manual migration handler is the exception because it receives an explicit `db_url/subdomain` operational input.
-  * **Handler Request Context Pattern:** For backend-school JSON handlers, prefer this shape: `actor_tenant_context(&state, &headers).await?` for authenticated routes, `tenant_context(&state, &headers).await?` or `tenant_pool(&state, &headers).await?` for public tenant routes, then `actor.require_*()?`, then service call, then response formatting. Do not add new local `get_pool` helpers in handlers, do not import `utils::tenant::{resolve_tenant_pool, resolve_tenant_context}` directly into feature handlers, and do not call `load_actor_context(...)` directly from feature handlers once the module has been migrated to `utils::request_context`. Add migrated modules to `backend-school/tests/static_architecture.rs` so this stays true.
-  * **Actor / Permission Context:** When a handler needs the current `user_id` plus effective permissions, prefer `utils::request_context::actor_tenant_context()` and then call `ActorContext` helper methods (`has_permission`, `has_any_permission`, `has_all_permissions`, `has_module_permission`, `require_permission`, `require_any_permission`, `require_all_permissions`). Module-based menu/feature filtering should use `ActorContext::has_module_permission()` or `module_permission_matches()`. Do not reintroduce legacy permission wrappers (`check_permission`, `check_any_permission`, `check_all_permissions`, `check_user_permission`, `get_actor_context`, `get_actor_context_or_error`), tuple-style permission resolvers, or manual wildcard checks in feature handlers.
-  * **Permission Constants Everywhere:** Backend production code and backend tests should use `backend-school/src/permissions/registry.rs` constants (`codes::*`) for known permission literals. Frontend production code and frontend tests should use `frontend-school/src/lib/permissions/registry.ts`. Raw permission strings are acceptable only when intentionally testing string parsing, invalid input, migration/seed data, or registry generation itself.
-  * **Permission Code Contract:** Permission codes must use the canonical `module.action.scope` shape and must match the `PermissionDef { module, action, scope }` fields exactly. Constant names must mirror the same shape in uppercase (`MODULE_ACTION_SCOPE`). Use explicit scopes such as `all`, `own`, `assigned`, `organization_unit`, `organization_tree`, `school`, or `global`; do not add shortened runtime codes such as `settings.update`, `student.create`, or `dashboard`.
-  * **Organization Permission Naming:** New organization-scoped permission contracts must use `organization_unit` scope and `organization_work` module names. Do not introduce new runtime permission names with `department`, `dept`, `DEPT_*`, or `.department`; add a migration that renames existing DB permission codes instead of supporting old and new names together.
-  * **Organization Placement:** `SCHOOL` is the root organization unit and must remain a first-class placement target. Directors should be members of `SCHOOL` with `position_code = director`; management-group heads belong to their management group; subject-group heads belong to their subject group; staff may have multiple organization memberships. Treat `is_primary` as the HR/home assignment only, not as the source of authorization.
-  * **Subject Group Organization Units:** Subject-group organization units must use `SUBJ-{subject_groups.code}` and be linked through `organization_units.subject_group_id`. They belong under `ACAD-01` for organization-tree authorization. Do not add alias/legacy subject-group codes such as `SUBJ-OT`; rename data with a migration so the organization unit code matches the canonical curriculum subject-group code.
-  * **No Hidden Organization Permission Inheritance:** `organization_permission_grants` apply only to the exact organization unit and matching position they are assigned to. Do not make parent units inherit child grants or child units inherit parent grants in the effective permission resolver. If a parent role needs access across child units, grant an explicit `*.organization_tree` permission to that parent unit/position and enforce the resource scope in a backend policy/service.
-  * **Resource-Aware Scopes:** New domain permissions should prefer the standard scopes `own`, `assigned`, `organization_unit`, `organization_tree`, and `school` over ad-hoc `all` naming. Handlers that read or mutate another user's/resource's data must call a backend policy helper that evaluates the actor, target resource, and organization membership/tree; do not rely on frontend route guards or raw permission strings alone for resource access. Use `backend-school/src/policies/resource_access_policy.rs` for reusable resource access decisions instead of duplicating organization-unit or organization-tree SQL in feature-specific policies.
-  * **List Scope Union:** List/read endpoints must combine independent resource scopes as a union. Scopes such as `own`, `assigned`, `organization_unit`, and `organization_tree` describe different relationships to records, so one scope must not hide another. For example, `*.read.assigned` must not prevent the actor from also seeing `*.read.own` records. `school`/true all-record scopes may short-circuit to all records; otherwise list queries should use OR conditions, a union query, or an equivalent policy-provided combined access struct. Add a focused policy/service test whenever a module supports multiple read scopes.
-  * **Policy Layer Authorization:** Resource-scoped authorization decisions belong in `backend-school/src/policies/*_access_policy.rs`, not spread across handlers or services. Handlers should load request context and call policy/service APIs; services may apply a policy-provided scope such as `UserResourceListAccess` to SQL filters, but should not decide access with raw `actor.has_permission(...)` checks. When moving a module to this pattern, add or update `backend-school/tests/static_architecture.rs` so direct permission checks do not creep back into handlers/services.
-  * **PII Permissions:** Reading normal profile data and reading sensitive fields are separate capabilities. PII such as `national_id`, blind-indexed identifiers, contact details that are not needed for a workflow, medical/guardian-sensitive details, or plaintext document identifiers must use explicit PII permissions and must never be exposed through generic lookup endpoints.
-  * **Handlers:** Keep handlers thin. Move business logic to `services/` or `logic/` modules.
-  * **Structured Logging:** Backend runtime code must use `tracing::{debug, info, warn, error}` macros instead of `println!` or `eprintln!`. Plain stdout/stderr is acceptable only for intentional CLI/bin command output. Never log plaintext PII, national IDs, credentials, tokens, database URLs, or raw request bodies.
-  * **Handler / Service Database Boundary:** Feature handlers must not own database logic or database-facing row types. Do not use `sqlx::query*`, `.fetch_*`, `.execute`, `.begin`, `sqlx::FromRow`, or handler helpers typed as `PgPool` in module handlers. Put DB queries and DB-facing view structs in services/models, then let handlers do only request context, permission checks, service calls, and response formatting. The manual migration handler is the operational exception.
-  * **Service Logic Testability:** Service modules may own database calls, but business rules, defaults, validation, parsing, formatting, grouping, and ID/number generation should be extracted into small pure helpers or outcome types before/around the DB flow. Add focused unit tests for those helpers in the same service file. Do not hide untested logic inside long `sqlx` transactions, query-building branches, or ad-hoc inline `map/unwrap_or` chains when the behavior affects school workflows.
-  * **Service Unit Test Coverage:** Backend module service implementation files under `backend-school/src/modules/**/services/*.rs` and logic-bearing `services.rs` files should include `#[cfg(test)]` focused unit tests for their service-level logic. Re-export-only module roots (`pub mod ...`) are exempt. New service files should not be added without at least one meaningful service-level test unless the file is a pure type/export shim.
-  * **Bulk Mutations:** When a mutation writes multiple rows of the same kind, prefer one validated bulk insert/upsert/delete (`QueryBuilder`, array bind, or database-supported batch statement) over per-row `.execute()` loops. Validate and normalize the payload before the DB write, dedupe conflict keys where needed, and add a focused service test for the batch helper. Per-row writes are acceptable only when each row intentionally has different side effects, policy checks, external calls, or transactional ordering that cannot be represented as a batch.
-  * **DTOs:** Use `serde` structs for Request/Response bodies. Use `#[serde(rename_all = "camelCase")]` for JSON response compatibility with frontend.
-  * **Typed API Boundary:** Service functions that feed JSON API responses should return typed Rust structs or outcome enums, not `serde_json::Value`. Use `serde_json::Value` only for genuinely dynamic JSONB/storage payloads such as `metadata`, `form_data`, flexible settings/config, audit payloads, or third-party payloads. If database JSONB uses snake_case but the frontend API needs camelCase, keep separate storage and API response structs and map between them.
-  * **Known-Shape JSONB:** JSONB columns with stable shapes must use typed boundaries (`sqlx::types::Json<T>`, `Vec<T>`, or domain structs), including scheduler config arrays, timetable template ids, study-plan grade ids, classroom advisors, admission `selection_settings`, and admission `parent_status`. Do not add manual `serde_json::Value` parsers for these; extend `backend-school/tests/static_architecture.rs` when adding a new known-shape JSONB contract.
-  * **Typed Handler DTOs:** Module handlers must use typed `serde` request/response DTOs at the API boundary. Do not put `serde_json::Value` in handler request structs, handler response structs, or handler-local API DTOs. When a field is stored as JSONB but has a known API shape, handlers should accept/return the typed shape and services should convert to/from JSONB row/storage types.
-  * **API Response Contract:** JSON API endpoints must return a single envelope shape. Success responses use `{ success: true, data: T, message?: string }`. Error responses use `{ success: false, error: string, message?: string, data?: T }` when structured error details are needed. Do not return raw objects such as `User`, feature DTOs, or ad-hoc top-level fields directly from API routes. Exceptions are only for non-JSON responses such as file downloads, binary/image responses, WebSocket upgrades, and low-level health probes.
-  * **Empty Mutation Responses:** Mutations that do not need to return a resource or result payload should use `ApiResponse::empty()` or `ApiResponse::empty_with_message(...)`. Do not put success text in `data: string`; put user-facing success text in `message` so frontend clients can type the response as empty data.
-  * **Database:** Use `sqlx` for PostgreSQL interactions. Prefer compile-time checked queries (`sqlx::query_as!`) where possible.
+## 2. Adding or Changing a Feature
 
-* **Project Structure (Rust):**
-  * **Modules:** Never create `mod.rs` files. [cite_start]Use `src/handlers.rs` instead of `src/handlers/mod.rs`[cite: 9].
-  * [cite_start]**Crate Root:** Specify lib path in `Cargo.toml` if creating libraries[cite: 10].
+For every feature or behavior change:
 
-* **Database Migrations:**
-  * **Never edit a migration that may already have been applied**, even for comments. `sqlx` validates migration checksums and will fail tenant startup with `migration N was previously applied but has been modified`.
-  * Schema, index, data, or comment changes must be added as a new migration with the next sequential number.
-  * If a checksum mismatch happens after a migration edit, restore the old migration file content. Do not patch the database checksum table to hide the mismatch.
-  * **Clean Tenant Baseline:** Active tenant migrations start from `backend-school/migrations/001_baseline.sql`. Historical migrations are archived under `backend-school/migrations_legacy/` for audit/reference only and must not be used by the runtime migrator.
-  * Do not deploy a clean-baseline branch against an existing tenant database that still has historical `_sqlx_migrations` rows from the legacy 1-127 timeline. Use a controlled cutover to a clean database, copy required tenant data, then point the tenant to the new database.
-  * Prepare brand-new clean tenant databases with `scripts/prepare_clean_tenant_db.sh`. The script must keep target `_sqlx_migrations` at exactly one successful row with version `1`, refuse legacy migration histories, and require explicit confirmation before touching non-test databases.
-  * Existing-tenant clean cutover data copies must use `scripts/cutover_tenant_data.sh` or an equivalent reviewed process: apply the clean baseline to the target, keep target `_sqlx_migrations` at version 1, exclude source `_sqlx_migrations`, restore tenant data only, run permission sync, and compare table row counts.
-  * After the clean cutover, treat `001_baseline.sql` like any other applied migration: do not edit it once any live tenant has applied it. Add new schema/index/data/comment changes as `002_*.sql`, `003_*.sql`, and so on.
+1. Find the closest existing module and read its route, handler, service, model, frontend API wrapper, page loader, route metadata, and tests.
+2. Define data ownership and authorization before implementing. Decide whether access is `own`, `assigned`, `organization_unit`, `organization_tree`, `school`, or another existing scope.
+3. If the database changes, add a new sequential migration. Never edit an applied migration.
+4. If authorization changes, update `contracts/permissions.json`, generate registries, enforce the permission and resource policy in the backend, add route/UI metadata, and test both allowed and denied paths.
+5. If the JSON API changes, update typed Rust DTOs and OpenAPI registration, regenerate the contract, and consume generated TypeScript DTOs.
+6. Put business logic in a service or pure helper with focused tests. Keep handlers limited to context, authorization, service calls, response formatting, and necessary realtime broadcasts.
+7. Load only data needed for the current page or workflow. Patch affected client state after typed mutations instead of broadly reloading a workspace.
+8. Update canonical documentation only when the durable system, verification, or operational procedure changed. Do not add a completion report.
+9. Run all applicable checks from section 11.
 
-## 3. Frontend: SvelteKit (TypeScript)
-* **Core Principles:**
-  * Use **TypeScript** for everything. Strict typing between API responses and UI components.
-  * Use `+page.server.ts` for data loading (Loaders) and Form Actions to keep secrets on the server.
-* **State Management:**
-  * Use Svelte **Stores** (`writable`, `readable`) for client-side global state (e.g., WebSocket connection, Toasts).
-  * Avoid complex state management libraries unless necessary; Svelte's native reactivity is usually enough.
-* **Components:**
-  * Props must be typed.
-  * Use **TailwindCSS** for styling. Utility classes first, extracted components second.
-  * Use local **shadcn-svelte** components as the default building blocks for standard app UI: buttons, inputs, selects, checkboxes, switches, radios, tabs, tables, cards, dialogs, drawers/sheets, dropdowns, popovers, tooltips, alerts, badges, skeletons, pagination, breadcrumbs, and forms. Do not hand-roll these primitives with raw HTML/Tailwind unless the local shadcn-svelte library does not provide the needed primitive or the UI is a truly custom visualization.
-  * **Dense Table Input Sizing:** Spreadsheet-style tables and dense data-entry grids must give fixed-format controls explicit readable widths. Numeric score, quantity, period, duration, and short code inputs should set both the table column/cell width and the input `w-*`/`min-w-*`; do not rely on `w-full min-w-0` alone when the value must remain visible on narrower screens. Prefer horizontal scrolling over shrinking these fields below a readable width, and hide native number spinners when they consume too much space. For compact numeric fields, verify that common values such as `20`, `30`, `100`, and blank placeholders remain visible with the app sidebar open.
-  * When a needed shadcn-svelte primitive is missing, add or extend the local component in `frontend-school/src/lib/components/ui/` following the existing shadcn-svelte pattern instead of creating one-off page-local primitives.
-  * **API Integration:**
-  * Use the custom API client wrapper (e.g., `api.ts`) that handles `credentials: 'include'` for CORS/Cookies.
-  * API client code should consume the standard backend envelope `{ success, data, error?, message? }`. Avoid adding raw-response variants just to support inconsistent backend responses; fix the backend contract instead.
-  * Known endpoints should use concrete `apiClient<T>` types. Avoid `unknown`, `ApiResponse<unknown>`, and `res.data as ...` casts for known backend contracts; fix or type the backend/frontend contract instead.
-  * Frontend API files should not expose raw `Record<string, unknown>` as an endpoint contract. If a JSON payload is intentionally flexible, give it a named contract such as `ClassroomCourseSettings` or `AdmissionEnrollmentFormData`; if the shape is known, model it as a concrete interface.
-  * Mutation endpoints that return no payload should use the generated `Schemas['EmptyData']` when the endpoint is in the OpenAPI contract (or `Record<string, never>` only while an endpoint is still intentionally undocumented) and read success text from `response.message` when needed. Do not type these endpoints as `apiClient<string>` just because the UI needs a toast/message; fix the backend to return empty data plus `message`.
-  * **Lookup Contract:** `/api/lookup/*` endpoints are for minimal reference data only. They may return stable identifiers and display labels such as `id`, `name`, `code`, simple category/type, parent id, and ordering fields. Do not expose usernames, national IDs, phone numbers, emails, addresses, full profiles, documents, or workflow-specific detail through generic lookup. If a page needs richer cross-module data, add a workflow-specific options endpoint authorized by that workflow permission.
-  * When changing an API response shape, update the static contract checks that guard backend and frontend alignment.
-  * Do not `fetch` directly in components if possible; use Loaders.
+A feature is not complete when only its UI is hidden. Backend authorization, resource scope, contract generation, migrations, tests, and operational impact are part of the same change.
 
-### Generated API contracts
+## 3. Backend: Rust, Axum, SQLx
 
-Rust request/response DTOs and OpenAPI handler metadata are the source of truth.
-`contracts/openapi/school-api.json` and files under
-`frontend-school/src/lib/api/generated/` are generated files; do not edit them
-directly.
+### Request context and architecture
 
-After changing a documented DTO or endpoint:
+- Share pools and configuration through `Arc<AppState>`.
+- Authenticated tenant handlers use `backend-school/src/utils/request_context.rs`, normally `actor_tenant_context(&state, &headers).await?`.
+- Public tenant handlers use `tenant_context`, `tenant_pool`, or `tenant_context_by_subdomain` as appropriate.
+- Current-user helpers include `current_user_tenant_context_from_claims`, `current_user_tenant_context_from_headers`, and `optional_user_id_from_headers`.
+- Do not add handler-local pool, JWT, actor, or tenant-resolution helpers. Do not call `get_school_database_url`, `pool_manager.get_pool`, `PgPool::connect`, lower-level tenant resolvers, or `load_actor_context` directly from feature handlers. The explicit manual migration operation is the exception.
+- Browser tenant resolution defaults to `Origin`/`Referer`. `X-School-Subdomain` is an explicit override for non-browser, local/custom-host, script, and test clients; if tenant origin data is present, both must match.
+- Keep handlers thin: request context → permission/policy → service → typed response → realtime signal when required.
+- Feature handlers must not contain `sqlx::query*`, `.fetch_*`, `.execute`, `.begin`, `sqlx::FromRow`, or database helpers typed as `PgPool`.
+- Business logic and SQL belong in `modules/<feature>/services/`; DB-facing types belong in services/models. Services receive `&PgPool` and return `Result<T, AppError>` or a meaningful outcome enum.
+- Extract validation, grouping, defaults, formatting, parsing, ID generation, and decision logic into testable helpers. New logic-bearing service files require focused `#[cfg(test)]` tests.
+- Prefer validated bulk SQL for same-kind multi-row mutations. Normalize and deduplicate before writing. Per-row writes are reserved for genuinely different side effects or ordering.
+- Never create `mod.rs`; use sibling module files such as `handlers.rs`.
+
+### Errors, logging, and types
+
+- Do not use `unwrap()` or `expect()` in runtime request paths. Propagate with `?` and add useful context.
+- Do not discard meaningful errors with `let _ =`. Map them into `AppError`/`IntoResponse` and preserve actionable client messages without leaking internals.
+- Runtime logging uses `tracing::{debug, info, warn, error}`. `println!`/`eprintln!` are only for intentional CLI output.
+- Never log plaintext PII, national IDs, credentials, tokens, cookies, database URLs, encryption keys, or raw request bodies.
+- API requests and responses use typed `serde` structs, normally with `#[serde(rename_all = "camelCase")]`.
+- Stable-shape JSON/JSONB uses named domain types or `sqlx::types::Json<T>`. `serde_json::Value` is limited to genuinely dynamic metadata, flexible configuration, audit records, or third-party payloads.
+- A service feeding a JSON endpoint returns typed structs/outcomes, not ad-hoc `serde_json::Value`.
+- Prefer compile-time-checked SQLx queries where practical.
+
+### API Response Contract
+
+All JSON endpoints use one envelope:
+
+```text
+success: true, data: T, message?: string
+success: false, error: string, message?: string, data?: T
+```
+
+Use `ApiResponse` and `ApiErrorResponse`; do not return raw feature DTOs or ad-hoc top-level JSON. Non-JSON downloads, binary/image responses, WebSocket upgrades, and low-level health probes are exceptions. Empty mutations use `ApiResponse::empty()` or `ApiResponse::empty_with_message(...)`; success text belongs in `message`, not `data`.
+
+## 4. Permissions and Resource Authorization
+
+### Permission contract
+
+- `contracts/permissions.json` is the permission source of truth.
+- Codes use `module.action.scope`, and each code must match its `module`, `action`, and `scope` fields. Generated constant names mirror the code in uppercase.
+- Prefer existing scopes: `own`, `assigned`, `organization_unit`, `organization_tree`, `school`, and `global`. Do not create shortened or role-named permission codes.
+- Organization permissions use `organization_unit` and `organization_work`; do not add `department`, `dept`, `DEPT_*`, or `.department` variants.
+- To add, rename, or remove a permission:
+  1. Edit `contracts/permissions.json`.
+  2. Add a new tenant migration to insert/rename/deactivate DB permission data and grants when applicable.
+  3. From `frontend-school`, run `npm run generate:permissions`.
+  4. Commit the contract lock and both generated registries.
+  5. Use backend constants from `backend-school/src/permissions/registry.rs` and frontend constants from `frontend-school/src/lib/permissions/registry.ts`.
+  6. Add backend enforcement, resource-policy tests, route metadata, and capability-level UI checks.
+  7. Run `npm run check:permissions` and `npm run test:permissions`.
+- Generated files are artifacts; do not edit generated files directly.
+- Raw permission strings are allowed only in seed/migration data, generator tests, invalid-input parsing tests, or explicit contract tests.
+
+### Resource authorization
+
+- Frontend route guards and hidden controls are convenience UX; backend policies are authoritative.
+- Use `ActorContext` helpers for coarse capability checks. Do not reintroduce legacy permission wrappers or manual wildcard parsing.
+- Access to another user or resource must be decided by a reusable policy in `backend-school/src/policies/*_access_policy.rs`.
+- Use `resource_access_policy.rs` for shared organization membership/tree decisions instead of duplicating SQL.
+- List endpoints combine independent scopes as a union. `own`, `assigned`, `organization_unit`, and `organization_tree` must not hide one another. Only a true `school`/all-record scope may short-circuit.
+- Add focused policy/service tests for allowed, denied, and multi-scope union behavior.
+- Organization grants apply to the exact unit and matching position. Do not infer parent/child permission inheritance; grant and enforce `*.organization_tree` explicitly.
+- `SCHOOL` remains the root organization unit. `is_primary` is the HR/home assignment, not an authorization source.
+- PII access is separate from ordinary profile access. Generic lookup endpoints must never expose national IDs, blind indexes, unnecessary contact data, medical/guardian-sensitive fields, or document identifiers.
+- After roles, grants, delegations, memberships, or permission definitions change, invalidate the relevant backend permission cache and emit `permission_changed`. The frontend then silently refreshes `/api/auth/me`; SSE/Web Push payloads are signals, not permission truth.
+
+## 5. API Contracts
+
+- Rust DTOs plus `utoipa` registration in `backend-school/src/api_contract.rs` own the HTTP wire contract.
+- Tracked OpenAPI output lives at `contracts/openapi/school-api.json`; generated frontend DTOs live under `frontend-school/src/lib/api/generated/`.
+- When adding or changing an endpoint:
+  1. Add typed request/response DTOs and `ToSchema` as needed.
+  2. Annotate the handler with `utoipa::path`.
+  3. Register paths and schemas in `api_contract.rs`.
+  4. From `frontend-school`, run `npm run generate:api-contracts`.
+  5. Consume the generated wire DTO in the frontend API module.
+  6. Run `npm run check:api-contracts` and `npm run test:api-contracts`.
+- Generated files are artifacts; do not edit generated files directly.
+- Frontend API wrappers must use concrete response types. Do not use `unknown`, `ApiResponse<unknown>`, response casts, or `Record<string, unknown>` for a known shape. Give genuinely dynamic JSON a named contract.
+- Use a separate UI view model and explicit mapper only when UI semantics differ from the wire DTO.
+
+## 6. Database Migrations
+
+- Migration files are immutable after application, including comments. SQLx checks checksums.
+- Add a new next-numbered migration for every schema, index, data, permission, seed, or comment change.
+- If a checksum mismatch follows an edit, restore the original file. Never patch `_sqlx_migrations` to conceal it.
+- Runtime tenant migrations start at `backend-school/migrations/001_baseline.sql`. `backend-school/migrations_legacy/` is audit history only.
+- Once any live tenant has applied the baseline, do not edit it; continue with `002_*.sql`, `003_*.sql`, and so on.
+- Never point a clean-baseline release at a tenant whose `_sqlx_migrations` still contains the legacy timeline.
+- New clean tenant databases use `scripts/prepare_clean_tenant_db.sh`.
+- Existing-tenant cutovers use `scripts/cutover_tenant_data.sh` or an equivalently reviewed process: create a clean target, apply baseline, exclude the source migration table, copy tenant data, sync permissions/menu data, and compare row counts.
+- Database-backed tests use `TEST_DATABASE_URL` and isolated test state. For Neon migration/schema tests, use a direct endpoint rather than a `-pooler` transaction endpoint.
+
+## 7. Frontend: SvelteKit 5
+
+### Data, state, and components
+
+- Use TypeScript throughout and keep the API boundary strictly typed.
+- Prefer `+page.server.ts` loaders/actions where server-only credentials or server-side behavior are involved. Load route-specific data only.
+- Use Svelte stores for shared client state such as auth, permissions, realtime connectivity, notifications, and toasts.
+- Type component props. Prefer existing local components and patterns before adding abstractions.
+- Use Tailwind CSS and local shadcn-svelte primitives for standard buttons, forms, tables, dialogs, sheets, tabs, menus, alerts, badges, skeletons, pagination, and tooltips.
+- Dense fixed-format inputs need explicit readable column and input widths. Prefer horizontal scrolling to unreadable shrinking.
+- Use shared app states from `src/lib/components/app-state/`: `PageSkeleton`, `PageState`, and `LoadingButton`.
+- Mutation controls use action-specific loading state. When a typed mutation returns a resource, patch only the affected local state; reserve broad reloads for intentionally broad dependencies or manual refresh.
+
+### Permissions and routing
+
+- `/api/auth/me` is the only current-user permission source. It populates the auth/permission stores.
+- Use `$can.has`, `$can.hasAny`, `$can.hasAll`, `$can.hasModule`, and the route-access helper. Do not fetch a separate current-user permission list or inspect `authStore.user.permissions` directly.
+- Staff/admin workspaces are read-first: module readers can enter and inspect; create/update/delete/approve/export controls and data load only after the exact permission passes.
+- Never let a read-only page fail because it eagerly requests admin/action-only data.
+- `_meta.menu` describes real sidebar menu records and may use a module/read permission for discovery.
+- `_meta.access` guards child, detail, create, edit, approval, and workflow routes that must not become menu records.
+- Authenticated users who lack route access go to `/403` with the requested path.
+- Long-lived workflows that need deep links, browser history, or independent lazy loading should be separate routes, not in-memory tabs.
+
+### Shared Page Layout UI
+
+- App pages use `frontend-school/src/lib/components/app-layout/PageShell.svelte` or `PageHeader.svelte`.
+- `PageShell` owns standard page padding and spacing; `(app)/+layout.svelte` must not add page padding around it.
+- Page-local `PageShell` classes must not add outer padding, margins, `container`, `mx-auto`, or `max-w-*`.
+- PageShell content uses the full available app width; do not put `container`, `mx-auto`, or `max-w-*` in `contentClass`. Constrain a specific inner form/card/text wrapper instead.
+- For full-height boards, timelines, tabs, and split panes, pass height with `h-full min-h-0 flex` and scroll the actual content pane. Do not size inner workspaces with `100vh`.
+
+### Sidebar Navigation IA
+
+- Keep navigation organized by workspace/module with persisted collapsible workflow sections.
+- Expanded mode shows workspace headings, section headings, and child links.
+- Collapsed mode becomes a workspace icon rail; each workspace opens a flyout containing its permission-filtered sections and child links.
+- Show a section only when `/api/menu/user` leaves at least one permitted child.
+- Do not duplicate routes by role merely to shape navigation.
+
+## 8. Realtime and Events
+
+- Backend connection state lives in `ConnectedClients` inside `AppState`, using shared concurrent state.
+- Authenticate and bind connection identity server-side. Do not trust client-supplied user/school identity after connection establishment.
+- WebSocket clients implement ping/pong heartbeat (normally every 30 seconds), stale-connection cleanup, and bounded reconnect with backoff/jitter.
+- SSE/WebSocket events signal that data changed; clients re-read authoritative HTTP state when the event contract does not carry a complete typed resource.
+- When changing connection URLs, identity, event payloads, or proxy behavior, test direct backend access and the deployed reverse-proxy path.
+
+## 9. Security, PDPA, and Logging
+
+- Never store or log a national ID in plaintext.
+- Encrypt readable `national_id` values app-side with AES-256-GCM through `backend-school/src/utils/field_encryption.rs` and `ENCRYPTION_KEY`.
+- Store searchable `*_national_id_hash` values as keyed HMAC-SHA256 blind indexes using `BLIND_INDEX_KEY`.
+- Keep both keys stable after data exists. Rotation requires a dedicated, reviewed re-encryption/reindex operation.
+- Do not reintroduce PostgreSQL `pgcrypto` helpers or database-role encryption settings for application fields.
+- Secrets come from environment variables or the deployment secret store. Never commit them, print them, or include them in test fixtures.
+- Validate and authorize file access. Keep private uploads out of public static roots and return only authorized downloads.
+- Minimize sensitive data in API responses, analytics, errors, audit payloads, and realtime events.
+
+## 10. Deployment Constraints
+
+- Runtime configuration is environment-driven; do not bake environment URLs, credentials, keys, or tenant identifiers into images.
+- Containers bind application ports to `0.0.0.0`.
+- `/health` is liveness; `/ready` verifies dependencies and is the deployment/smoke readiness gate.
+- Keep Docker/Podman service networking, reverse-proxy routes, CORS origins, cookies, and public backend URLs aligned.
+- Required backend-school secrets include `ENCRYPTION_KEY`, `BLIND_INDEX_KEY`, `JWT_SECRET`, `INTERNAL_API_SECRET`, and `DEPLOY_KEY`.
+- Internal calls send `X-Internal-Caller`; caller-specific secrets may use `INTERNAL_API_SECRET_<CALLER>` with controlled fallback during rotation.
+- Treat permission/menu sync, tenant migrations, encryption keys, file storage, and data cutover as deployment concerns. Follow `docs/OPERATIONS.md`.
+
+## 11. Verification Matrix
+
+Always run focused tests for touched behavior plus:
 
 ```bash
-cd frontend-school
+git diff --check
+git status --short
+```
+
+For permission-contract changes, from `frontend-school`:
+
+```bash
+npm run generate:permissions
+npm run check:permissions
+npm run test:permissions
+```
+
+For API-contract changes, from `frontend-school`:
+
+```bash
 npm run generate:api-contracts
 npm run check:api-contracts
 npm run test:api-contracts
 ```
 
-Commit Rust source, OpenAPI, generated TypeScript, and focused tests together.
-Frontend API modules import generated wire DTOs and may map them to separate
-domain/view models. Generation must not require database credentials or start
-the backend server.
+For frontend changes:
 
-Current checkpoint (2026-07-23): the generated school API contract contains 178 unique operations—32 auth/authorization operations, 36 read-oriented JSON operations from the prior checkpoint, the completed Phase 1 people batch (12 mutations plus the dependent achievement list read), the Phase 2 academic structure batch (15 mutations plus four dependent reads), the Phase 2 curriculum core batch (15 mutations plus nine dependent reads), the Phase 2 activity-template batch (10 mutations plus three dependent reads), the Phase 2 activity-workspace batch (21 mutations plus eight dependent reads), and the Phase 2 course-planning batch (seven mutations plus five dependent reads). The people operations are staff (`createStaff`, `updateStaff`, `deleteStaff`), student/parent-link (`updateStudentProfile`, `createStudent`, `updateStudent`, `deleteStudent`, `addStudentParent`, `removeStudentParent`), and achievement (`listAchievements`, `createAchievement`, `updateAchievement`, `deleteAchievement`). The academic structure operations are `getAcademicStructure`, `createGradeLevel`, `deleteGradeLevel`, `createAcademicYear`, `updateAcademicYear`, `setActiveAcademicYear`, `getAcademicYearLevels`, `updateAcademicYearLevels`, `createSemester`, `updateSemester`, `deleteSemester`, `listClassrooms`, `createClassroom`, `updateClassroom`, `enrollStudents`, `listClassEnrollments`, `removeEnrollment`, `updateEnrollmentNumber`, and `autoAssignClassNumbers`. The curriculum core operations are `listSubjectGroups`, `batchListSubjectDefaultInstructors`, `listSubjects`, `createSubject`, `updateSubject`, `deleteSubject`, `listSubjectDefaultInstructors`, `addSubjectDefaultInstructor`, `removeSubjectDefaultInstructor`, `updateSubjectDefaultInstructorRole`, `listStudyPlans`, `createStudyPlan`, `getStudyPlan`, `updateStudyPlan`, `deleteStudyPlan`, `listStudyPlanVersions`, `createStudyPlanVersion`, `getStudyPlanVersion`, `updateStudyPlanVersion`, `deleteStudyPlanVersion`, `listStudyPlanSubjects`, `addSubjectsToStudyPlanVersion`, `deleteStudyPlanSubject`, and `generateCoursesFromStudyPlan`. The activity-template operations are `listStudyPlanActivities`, `addStudyPlanActivity`, `updateStudyPlanActivity`, `deleteStudyPlanActivity`, `generateActivitiesFromStudyPlan`, `listActivityCatalog`, `createActivityCatalog`, `updateActivityCatalog`, `deleteActivityCatalog`, `listActivityCatalogDefaultInstructors`, `addActivityCatalogDefaultInstructor`, `removeActivityCatalogDefaultInstructor`, and `updateActivityCatalogDefaultInstructorRole`. The activity-workspace operations are `listActivitySlots`, `getActivitySlotTimetableContext`, `updateActivitySlot`, `deleteActivitySlot`, `listActivitySlotInstructors`, `addActivitySlotInstructor`, `addActivitySlotInstructorsBatch`, `removeActivitySlotInstructor`, `removeAllActivitySlotInstructors`, `deleteAllActivitySlotGroups`, `deleteActivitySlotTimetableEntries`, `listActivitySlotClassroomAssignments`, `upsertActivitySlotClassroomAssignments`, `deleteAllActivitySlotClassroomAssignments`, `deleteActivitySlotClassroomAssignment`, `listActivityGroups`, `createActivityGroup`, `updateActivityGroup`, `deleteActivityGroup`, `listActivityGroupMembers`, `addActivityGroupMembers`, `removeActivityGroupMember`, `updateActivityGroupMemberResult`, `listActivityGroupInstructors`, `addActivityGroupInstructor`, `removeActivityGroupInstructor`, `listMyActivityEnrollments`, `selfEnrollActivityGroup`, and `selfUnenrollActivityGroup`. The course-planning operations are `listClassroomCourses`, `assignCourses`, `updateClassroomCourse`, `removeClassroomCourse`, `batchListCourseInstructors`, `batchListCourseInstructorsFromQuery`, `listCourseInstructors`, `addCourseInstructor`, `updateCourseInstructorRole`, `removeCourseInstructor`, `listClassroomActivities`, and `removeClassroomFromActivitySlot`. Course planning reads require `ACADEMIC_COURSE_PLAN_READ_ALL`; mutations require `ACADEMIC_COURSE_PLAN_MANAGE_ALL`. Missing parents and mutation targets return not-found, instructor roles are bounded, counts report actual writes, and primary-team/timetable synchronization is transactional. Omitting `primary_instructor_id` leaves the team unchanged; explicit JSON `null` clears it. This is the current Phase 4 mutation-contract rollout checkpoint. SSE, WebSocket, health/readiness, and file/binary endpoints remain explicitly outside this OpenAPI contract.
+```bash
+npm run lint
+PUBLIC_BACKEND_URL=http://localhost:3000 PUBLIC_VAPID_KEY=test npm run check
+npm run test:static
+```
 
-Auto Schedule, Scheduling Configuration, scheduling jobs, and undo were intentionally removed. Manual timetable editing is the only supported timetable-construction workflow. Migration 028 preserves all `academic_timetable_entries` rows while removing scheduler-only metadata and schema. Existing manual and formerly generated timetable entries remain available after migration.
+When creating, editing, or analyzing `.svelte`, `.svelte.ts`, or `.svelte.js`, use the project Svelte tooling and resolve all reported issues before completion.
 
-Authorization must suppress all effective permissions when `users.status != 'active'`. Any user-status mutation, including student soft deletion, must invalidate that user's permission cache and emit `permission_changed`. Student update/delete/add-parent services must return not-found for a missing student before creating or mutating dependent records.
+For backend-school changes:
 
-Academic structure handlers must load `actor_tenant_context` and enforce the matching generated backend permission before service work: `ACADEMIC_STRUCTURE_READ_ALL`/`MANAGE_ALL`, `ACADEMIC_CLASSROOM_READ_ALL`/`CREATE_ALL`/`UPDATE_ALL`, and `ACADEMIC_ENROLLMENT_READ_ALL`/`UPDATE_ALL`. A missing academic year, semester, grade level, classroom, or enrollment returns not-found; setting an unknown active year must not deactivate the current active year.
+```bash
+cargo fmt --all -- --check
+cargo test --test static_architecture
+cargo check
+```
 
-Curriculum subject and study-plan handlers must enforce the same generated permission policy used by the frontend. Study-plan CRUD supports the matching all-scope or organization-scope curriculum permissions; course generation requires `ACADEMIC_COURSE_PLAN_MANAGE_ALL`. Missing subjects, instructor assignments, study plans, versions, and plan-subject rows return not-found. The version id from `/study-plan-versions/{version_id}/subjects` owns the query scope, adding subjects returns the number actually inserted, and updating a missing instructor assignment must not demote the existing primary instructor.
+For backend-admin changes:
 
-Study-plan activity and activity-catalog handlers must load `actor_tenant_context` and use the curriculum read/create/update/delete policy matching the operation. Activity generation additionally requires `ACTIVITY_MANAGE_ALL` plus curriculum read access. Missing study-plan versions, semesters, catalogs, grade levels, instructors, plan-activity rows, and default-instructor assignments return not-found; updating a missing default-instructor assignment must not demote the existing primary instructor.
+```bash
+cargo fmt --all -- --check
+cargo check
+```
 
-Role and organization-unit deletion is reversible deactivation. `DELETE /api/roles/{id}` and `DELETE /api/organization/units/{id}` set `is_active = false`; they must never physically delete assignments, memberships, grants, delegations, or history. Both endpoints require `roles.delete.all`. A `PUT` that sets `is_active: false` requires both `roles.update.all` and `roles.delete.all`, while reactivation requires `roles.update.all`. The read-only `is_system` flag is owned by migrations/provisioning (`ADMIN` role and `SCHOOL` unit) and must not be exposed in create/update payloads or changed by application clients. Management lists use `include_inactive=true`; assignment pickers keep the active-only default.
+Run `scripts/smoke_test.sh` when authentication, CORS, readiness, proxying, deployment, or cross-service behavior changes. Run Playwright from `frontend-school` when browser auth or user workflows change. Credentials must come from `SMOKE_*` or `E2E_*` environment variables and must never be committed.
 
-When adding a documented endpoint, update the Rust serde/`ToSchema` DTO and handler `utoipa::path`, register the handler and schemas in `backend-school/src/api_contract.rs`, regenerate both tracked artifacts, then consume the generated wire DTO from the frontend API module. Do not create a parallel handwritten transport DTO; use a separate view model and explicit mapper only when UI semantics differ from the wire.
+Static-test ownership:
 
-  * **Permission UI:** Current-user permissions come only from `/api/auth/me` via `authStore.setUser()` and `src/lib/stores/permissions.ts`. UI permission checks should use the `can` store (`$can.has`, `$can.hasAny`, `$can.hasAll`, `$can.hasModule`) or the route-access helper; do not call a separate current-user permission endpoint, reintroduce `loadUserPermissions`, or check `authStore.user.permissions.includes(...)` directly in app UI. Permission changes are pushed through the existing SSE stream as a `permission_changed` event; the frontend must refresh `/api/auth/me` silently and must not use Web Push or SSE permission snapshots as the source of truth.
-  * **Permission Constants:** Frontend permission strings must come from `frontend-school/src/lib/permissions/registry.ts`. Do not hardcode permission literals in `_meta.menu.permission`, `$can.has(...)`, `$can.hasAny(...)`, `$can.hasAll(...)`, route guards, or app UI. To add or change a permission, edit `contracts/permissions.json`, run `npm run generate:permissions` from `frontend-school`, commit the contract lock and both generated registries, and run `npm run check:permissions`. Never edit `registry_generated.rs` or `registry.generated.ts` directly.
-  * **Frontend Permission UX:** Staff/admin workspaces should be read-first module screens: users with the module read permission can enter and inspect the workspace, then action controls, panels, tabs, columns, and workflows appear only when the exact capability permission is present (`create`, `update`, `delete`, `approve`, `export`, etc.). Do not create duplicate pages per role just to hide buttons; split routes only when the workflow, data scope, or backend policy genuinely differs.
-  * **Read-First Loading:** Initial page load should call only APIs covered by the read permission that opened the workspace. Admin-only or action-specific data should load lazily after `$can.has(...)`/`$can.hasAny(...)` passes, or through workflow-specific options endpoints guarded by the same action permission. Never make a read-only page fail because it eagerly calls an API for a hidden admin action.
-  * **Mutation UI State:** Mutations should use action-specific loading state and `LoadingButton` (or a local sub-panel spinner for small inline tools) so users can see which operation is saving. After a mutation returns a typed resource, patch or replace only the affected local state (`items = items.map(...)`, prepend the created item, remove the deleted item) instead of reloading the whole page. Full-page or full-workspace reloads are reserved for manual refresh, initial load, or mutations whose dependencies are intentionally broad and cannot be represented by the returned resource.
-  * **shadcn-svelte Permission States:** Permission-aware controls and states must be built from local shadcn-svelte components (`Button`, `Alert`, `Dialog`, `Tabs`, `DropdownMenu`, `Table`, etc.). If a user has read access but lacks action permissions, show the readable workspace without those controls and use clear disabled/blocked states where needed; let the route guard handle true no-read-access as `/403`.
-  * **Shared Frontend State UI:** App pages should use the shared `frontend-school/src/lib/components/app-state/` components for common states instead of page-local spinners, hand-rolled skeletons, or ad-hoc alert blocks. Use `PageSkeleton` for initial page loads, `PageState` for empty/error/permission states, and `LoadingButton` for action buttons that enter a saving/installing/submitting state. Keep specialized inline loading only for small sub-panels, popovers, or table cells where a full-page state would be disruptive.
-  * **Shared Page Layout UI:** App pages should use `frontend-school/src/lib/components/app-layout/PageShell.svelte` or `PageHeader.svelte` for consistent page padding, title position, subtitle styling, back-button placement, action-button alignment, and vertical rhythm between page content blocks. `PageShell` owns standard app page padding; `(app)/+layout.svelte` should not wrap children with page padding, and page-local `<PageShell class>` must not set outer padding, margins, `container`, `mx-auto`, or `max-w-*`. `PageShell` content should use the full available app width; do not put `container`, `mx-auto`, or `max-w-*` in `contentClass`. When a specific form/card/text block should stay narrower, put the width constraint on an inner wrapper so the page header and operational workspace still start at the shared app edge. PageShell must preserve default content spacing so filters, cards, tables, and states do not visually stick together after the header. Page titles should default to text-only `text-2xl font-semibold tracking-tight`; do not place icons beside every H1 by default. Header icons are opt-in only for dense dashboard/tool surfaces and must use the shared header icon slot so size and placement stay consistent.
-  * **Full-Height App Workspaces:** Pages inside `(app)/+layout.svelte` already live below the sticky topbar. Do not size inner workspace panels with `100vh` or fixed large `min-h-*` values. For tabbed, board-style, timeline, or split-pane pages, pass height down with `h-full min-h-0 flex`, and put scrolling inside the actual content panes (`overflow-auto` or `overflow-y-auto`) instead of making the whole page scroll.
-  * **Sidebar Navigation IA:** The app sidebar must stay workspace/module based, with menu items grouped into collapsible workflow sections instead of a long flat list. Whole-sidebar collapse is separate from workflow-section collapse: expanded sidebars should show readable workspace headings, workflow section headings, and child links; collapsed sidebars should become a workspace icon rail where each workspace icon opens a flyout containing its sections and child links. Show a section only when it has at least one permission-filtered child item from `/api/menu/user`; do not duplicate role-specific pages just to shape the menu. Detail/action routes should remain guard-only `_meta.access` routes entered from their parent workspace, not sidebar menu records. Shared foundation screens such as academic periods should stay in their canonical foundation section and may be linked from related workflow pages when useful.
-  * **Progressive Route Metadata:** Real workspace menu routes should usually use `_meta.menu.permission = PERMISSION_MODULES.*` (or the module read permission) so the module is discoverable to readers. Child/create/edit/approval/detail routes that need stricter access should use `_meta.access` with exact `PERMISSIONS.*` and must not add menu records. Route guards and UI checks are convenience gates only; backend policies remain the authority.
-  * **Route-Backed Workflows:** Long-lived workflow sections that users can enter, leave, and return to (requests, approvals, reports, templates, cycles, detail views, or permission-scoped work queues) should be separate SvelteKit routes with `_meta.access`, not only in-memory tab state inside one page. Use tabs only for small local subviews where back/forward behavior, direct links, and lazy API loading are not important. Route-backed workflow pages should load only the API data needed by that route.
-  * **Organization Permission Names:** Frontend permission constants and route metadata must use backend organization permission contracts (`organization_unit`, `organization_work`). Do not add UI permission checks for legacy `department`, `dept_work`, `DEPT_*`, or `.department` contracts.
-  * **Route Access Metadata:** Authenticated app route access uses `frontend-school/src/lib/auth/route-access.ts`, which reads `_meta.access` for guard-only routes and falls back to `_meta.menu` for real menu routes. Top-level staff/student/parent route groups must expose `_meta.menu.user_type`; protected child/detail routes may omit `_meta` only when they intentionally inherit from an ancestor route with `_meta.menu` or `_meta.access`.
-  * **Guard-Only Route Metadata:** Child/detail/action routes that need stricter access than their menu parent should define `_meta.access` instead of `_meta.menu`. Use `_meta.access` for permission guards that must not create sidebar/menu records, such as workflow management pages or detail pages opened from a parent workspace.
-  * **Menu Sync Metadata:** `_meta.menu` is also used by the frontend build plugin to sync menu items to the backend. Only real menu routes should define full menu metadata (`title`, `icon`, `group`, `order`, `user_type`, and optional `permission`). Do not add incomplete `_meta.menu` to child/detail pages just to guard them, because it can create bogus menu items during deploy.
-  * **Forbidden Flow:** If an authenticated user lacks route permission, redirect to `/403` with the requested path instead of silently sending them back to a dashboard. Keep `/403` authenticated but open from route-permission checks.
-
-## 4. Realtime & WebSocket (Project Specific)
-* **Connection:**
-  * Frontend connects to WebSocket via `ws://` (or `wss://`) directly to the Axum backend (bypassing Cloudflare caching issues where applicable).
-  * Implement **Heartbeat (Ping/Pong)** every 30s to keep the connection alive through proxies (Cloudflare/Traefik).
-* **State:**
-  * Handle "Reconnection" logic in the frontend store.
-  * Backend must manage `ConnectedClients` in `AppState` using `Arc<RwLock<HashMap<...>>>`.
-
-## 5. Security & Privacy (PDPA)
-* **National ID:**
-  * **NEVER** log or store National IDs in plain text.
-  * Store readable values encrypted with app-side AES-256-GCM via `backend-school/src/utils/field_encryption.rs` and `ENCRYPTION_KEY`.
-  * Store searchable values in `*_national_id_hash` using keyed HMAC-SHA256 blind indexes via `BLIND_INDEX_KEY`.
-  * Keep `ENCRYPTION_KEY` and `BLIND_INDEX_KEY` stable after data exists. Rotating either key requires a dedicated re-encryption/reindex job.
-  * Do not reintroduce PostgreSQL `pgcrypto` helpers for app fields; that path was legacy and has been removed.
-  * Clear memory of sensitive variables as soon as they are used (where applicable in Rust).
-
-## 6. Deployment (Coolify/Docker)
-* **Configuration:** All secrets (Database URL, Salt, Keys) must come from Environment Variables (`std::env::var`).
-* **backend-school required secrets:** `ENCRYPTION_KEY`, `BLIND_INDEX_KEY`, `JWT_SECRET`, `INTERNAL_API_SECRET`, and `DEPLOY_KEY` must be present in the runtime environment (for Podman, `/opt/stack/.env`). Internal API calls should send `X-Internal-Caller`; caller-specific secrets use `INTERNAL_API_SECRET_<CALLER>` (for example `INTERNAL_API_SECRET_BACKEND_ADMIN` / `INTERNAL_API_SECRET_BACKEND_SCHOOL`) and fall back to `INTERNAL_API_SECRET` during rotation.
-* **Ports:** Backend must listen on `0.0.0.0` (not `127.0.0.1`) inside Docker.
-
-## 7. Testing & Sandbox Verification
-* **Local backend checks before commit:** For backend-school changes, run focused tests for touched behavior plus `cargo check`. For encryption/admission PII work:
-  ```bash
-  cd backend-school
-  cargo test utils::field_encryption::tests --bin backend-school
-  cargo test modules::admission::services::pii::tests --bin backend-school
-  cargo check
-  ```
-* **Backend DB tests:** Database-backed backend tests must use `TEST_DATABASE_URL`, not `DATABASE_URL`, and isolate state in a test schema. For Neon, use the direct endpoint for test migrations; do not run schema/search-path based migration tests through the `-pooler` host because transaction pooling can expose `public._sqlx_migrations` and cause checksum mismatches.
-* **Static Guard Ownership:**
-  * Backend-only architecture rules belong in `backend-school/tests/static_architecture.rs` or a repository-level script, not in `frontend-school` static tests. Examples: no `mod.rs`, service-layer handler boundaries, legacy permission helper bans, tenant resolver rules, internal auth rules, and backend permission-cache/SSE invalidation rules.
-  * Frontend static tests should cover frontend behavior or cross-stack API contracts. Examples: backend/frontend permission registry alignment, route metadata/menu alignment, API response envelopes consumed by the frontend, CSR/auth flow, and frontend API-client usage.
-* **Diff checks before commit:** From the repository root, run:
-  ```bash
-  git diff --check
-  git status --short
-  ```
-* **Smoke tests:** Use `scripts/smoke_test.sh` for production-like sandbox checks. Pass credentials through environment variables only (`SMOKE_USERNAME`, `SMOKE_PASSWORD`); never commit sandbox passwords.
-* **Browser E2E:** `frontend-school` uses Playwright for live sandbox login checks. Run from `frontend-school` with `npm run test:e2e` and provide `E2E_BASE_URL`, `E2E_USERNAME`, and `E2E_PASSWORD` or the equivalent `SMOKE_*` variables.
-* **Cross-origin auth cookies:** The tenant frontend runs on `*.schoolorbit.app`, but the backend cookie is set by `school-api.schoolorbit.app`. Playwright tests that assert `auth_token` should inspect the browser context cookies, not only tenant-domain cookies.
-* **Ubuntu 26.04 local Playwright:** Until Playwright ships official Ubuntu 26.04 browser builds, use `PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64` for local install/run commands. Do not rely on `npx playwright install-deps` on Ubuntu 26.04 because it can request Ubuntu 24.04 package names that no longer exist. Install the needed native packages directly when required:
-  ```bash
-  sudo apt install -y libnspr4 libnss3 libasound2t64 libxss1 fonts-liberation
-  ```
-* **GitHub Actions:** The `E2E Sandbox` workflow is pinned to `ubuntu-24.04` for Playwright browser support.
-
-
-You are able to use the Svelte MCP server, where you have access to comprehensive Svelte 5 and SvelteKit documentation. Here's how to use the available tools effectively:
-
-## Available MCP Tools:
-
-### 1. list-sections
-
-Use this FIRST to discover all available documentation sections. Returns a structured list with titles, use_cases, and paths.
-When asked about Svelte or SvelteKit topics, ALWAYS use this tool at the start of the chat to find relevant sections.
-
-### 2. get-documentation
-
-Retrieves full documentation content for specific sections. Accepts single or multiple sections.
-After calling the list-sections tool, you MUST analyze the returned documentation sections (especially the use_cases field) and then use the get-documentation tool to fetch ALL documentation sections that are relevant for the user's task.
-
-### 3. svelte-autofixer
-
-Analyzes Svelte code and returns issues and suggestions.
-You MUST use this tool whenever writing Svelte code before sending it to the user. Keep calling it until no issues or suggestions are returned.
-
-### 4. playground-link
-
-Generates a Svelte Playground link with the provided code.
-After completing the code, ask the user if they want a playground link. Only call this tool after user confirmation and NEVER if code was written to files in their project.
+- Backend architecture constraints belong in `backend-school/tests/static_architecture.rs` or a repository script.
+- Frontend behavior and cross-stack contract constraints belong in `frontend-school/tests/static/`.
+- Add a focused guard when a durable boundary has repeatedly regressed; do not write static tests for temporary counts, progress checkpoints, or prose history.
