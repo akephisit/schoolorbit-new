@@ -47,6 +47,8 @@ For every feature or behavior change:
 
 A feature is not complete when only its UI is hidden. Backend authorization, resource scope, contract generation, migrations, tests, and operational impact are part of the same change.
 
+Feature toggles are optional. Add one only for staged rollout or operational control, and enforce it in the backend as well as the UI; a frontend-only toggle is not an authorization or safety boundary.
+
 ## 3. Backend: Rust, Axum, SQLx
 
 ### Request context and architecture
