@@ -1482,6 +1482,26 @@ test('staff exam schedule API uses a staff-only generated transport type', () =>
 	assert.match(childSource, /Promise<PersonalExamScheduleRound\[\]>/);
 });
 
+test('staff exam mobile cards use the shared collapsible primitive', () => {
+	for (const relativePath of [
+		'src/lib/components/ui/collapsible/collapsible.svelte',
+		'src/lib/components/ui/collapsible/collapsible-trigger.svelte',
+		'src/lib/components/ui/collapsible/collapsible-content.svelte',
+		'src/lib/components/ui/collapsible/index.ts'
+	]) {
+		assert.equal(existsSync(projectPath(relativePath)), true, `${relativePath} should exist`);
+	}
+
+	const root = readFileSync(
+		projectPath('src/lib/components/ui/collapsible/collapsible.svelte'),
+		'utf8'
+	);
+	const index = readFileSync(projectPath('src/lib/components/ui/collapsible/index.ts'), 'utf8');
+	assert.match(root, /Collapsible as CollapsiblePrimitive/);
+	assert.match(root, /bind:open/);
+	assert.match(index, /Root as Collapsible/);
+});
+
 test('personal exam schedule view groups published sessions and hides staff supervision data', () => {
 	const personalViewPath =
 		'src/lib/components/academic/exam-schedule/PersonalExamScheduleView.svelte';
