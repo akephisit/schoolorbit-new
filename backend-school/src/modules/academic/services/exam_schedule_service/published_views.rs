@@ -107,7 +107,7 @@ pub async fn list_staff_published_exam_schedule(
     pool: &PgPool,
     user_id: Uuid,
     academic_semester_id: Option<Uuid>,
-) -> Result<Vec<PersonalExamScheduleRound>, AppError> {
+) -> Result<Vec<StaffPublishedExamScheduleRound>, AppError> {
     ensure_active_staff_user_for_exam_schedule(pool, user_id).await?;
     list_published_exam_schedule_for_staff(pool, academic_semester_id).await
 }
@@ -287,23 +287,101 @@ async fn list_published_exam_schedule_for_student(
 async fn list_published_exam_schedule_for_staff(
     pool: &PgPool,
     academic_semester_id: Option<Uuid>,
-) -> Result<Vec<PersonalExamScheduleRound>, AppError> {
-    let rows = sqlx::query_as::<_, PersonalExamSessionRow>(
+) -> Result<Vec<StaffPublishedExamScheduleRound>, AppError> {
+    let assignment_rows = sqlx::query_as::<_, StaffPublishedExamAssignmentRow>(
         r#"
         SELECT round.id AS round_id,
                round.name AS round_name,
                round.academic_semester_id,
                round.published_at,
+               day.id AS exam_day_id,
+               day.label AS day_label,
                day.exam_date,
-               session.starts_at,
-               session.ends_at,
-               COALESCE(NULLIF(subject.name_th, ''), NULLIF(subject.name_en, ''), subject.code)
-                   AS subject_name,
-               category.name AS assessment_category_name,
+               assignment.id AS assignment_id,
+               assignment.classroom_id,
                classroom.name AS classroom_name,
+               assignment.room_id,
                room.name_th AS room_name,
                building.name_th AS building_name,
-               NULL::text AS seat_number
+               invigilator.staff_id,
+               CASE
+                   WHEN invigilator.staff_id IS NULL THEN NULL
+                   ELSE concat_ws(
+                       ' ',
+                       NULLIF(
+                           concat_ws(
+                               '',
+                               NULLIF(TRIM(user_account.title), ''),
+                               NULLIF(TRIM(user_account.first_name), '')
+                           ),
+                           ''
+                       ),
+                       NULLIF(TRIM(user_account.last_name), '')
+                   )
+               END AS display_name
+        FROM academic_exam_day_room_assignments assignment
+        JOIN academic_exam_days day ON day.id = assignment.exam_day_id
+        JOIN academic_exam_rounds round ON round.id = day.exam_round_id
+        JOIN class_rooms classroom ON classroom.id = assignment.classroom_id
+        JOIN rooms room ON room.id = assignment.room_id
+        LEFT JOIN buildings building ON building.id = room.building_id
+        LEFT JOIN academic_exam_day_invigilators invigilator
+          ON invigilator.day_room_assignment_id = assignment.id
+         AND invigilator.exam_day_id = day.id
+        LEFT JOIN users user_account ON user_account.id = invigilator.staff_id
+        WHERE round.status = 'published'
+          AND ($1::uuid IS NULL OR round.academic_semester_id = $1)
+        ORDER BY round.published_at DESC NULLS LAST,
+                 round.name,
+                 round.id,
+                 day.exam_date,
+                 classroom.name,
+                 room.name_th,
+                 user_account.first_name NULLS LAST,
+                 user_account.last_name NULLS LAST,
+                 invigilator.staff_id NULLS LAST
+        "#,
+    )
+    .bind(academic_semester_id)
+    .fetch_all(pool)
+    .await?;
+
+    let session_rows = sqlx::query_as::<_, StaffPublishedExamSessionRow>(
+        r#"
+        SELECT round.id AS round_id,
+               round.name AS round_name,
+               round.academic_semester_id,
+               round.published_at,
+               day.id AS exam_day_id,
+               day.label AS day_label,
+               day.exam_date,
+               session.id AS session_id,
+               session.starts_at,
+               session.ends_at,
+               item.duration_minutes,
+               subject.id AS subject_id,
+               subject.code AS subject_code,
+               COALESCE(
+                   NULLIF(subject.name_th, ''),
+                   NULLIF(subject.name_en, ''),
+                   subject.code
+               ) AS subject_name,
+               category.name AS assessment_category_name,
+               grade_level.id AS grade_level_id,
+               CASE grade_level.level_type
+                   WHEN 'kindergarten' THEN CONCAT('อ.', grade_level.year)
+                   WHEN 'primary' THEN CONCAT('ป.', grade_level.year)
+                   WHEN 'secondary' THEN CONCAT('ม.', grade_level.year)
+                   ELSE CONCAT('?.', grade_level.year)
+               END AS grade_level_name,
+               grade_level.level_type AS grade_level_type,
+               grade_level.year AS grade_level_year,
+               classroom.id AS classroom_id,
+               classroom.name AS classroom_name,
+               assignment.id AS day_room_assignment_id,
+               room.id AS room_id,
+               room.name_th AS room_name,
+               building.name_th AS building_name
         FROM academic_exam_sessions session
         JOIN academic_exam_schedule_items item
           ON item.id = session.exam_schedule_item_id
@@ -318,6 +396,7 @@ async fn list_published_exam_schedule_for_staff(
           ON category.id = item.assessment_category_id
         JOIN subjects subject ON subject.id = item.subject_id
         JOIN class_rooms classroom ON classroom.id = item.classroom_id
+        JOIN grade_levels grade_level ON grade_level.id = item.grade_level_id
         JOIN academic_exam_day_room_assignments assignment
           ON assignment.exam_day_id = session.exam_day_id
          AND assignment.classroom_id = item.classroom_id
@@ -327,8 +406,17 @@ async fn list_published_exam_schedule_for_staff(
           AND ($1::uuid IS NULL OR round.academic_semester_id = $1)
         ORDER BY round.published_at DESC NULLS LAST,
                  round.name,
+                 round.id,
                  day.exam_date,
                  session.starts_at,
+                 session.ends_at,
+                 CASE grade_level.level_type
+                     WHEN 'kindergarten' THEN 1
+                     WHEN 'primary' THEN 2
+                     WHEN 'secondary' THEN 3
+                     ELSE 4
+                 END,
+                 grade_level.year,
                  classroom.name,
                  subject.code,
                  category.display_order,
@@ -340,7 +428,10 @@ async fn list_published_exam_schedule_for_staff(
     .fetch_all(pool)
     .await?;
 
-    Ok(group_personal_exam_schedule_rows(rows))
+    Ok(group_staff_published_exam_rows(
+        assignment_rows,
+        session_rows,
+    ))
 }
 
 fn group_personal_exam_schedule_rows(

@@ -86,11 +86,15 @@ async fn insert_fixture(pool: &PgPool) -> ExamScheduleFixture {
     let second_student_user_id = insert_active_user(pool, "student", "Second Student").await;
     let staff_user_id = insert_active_user(pool, "staff", "Invigilator").await;
     let parent_user_id = insert_active_user(pool, "parent", "Parent").await;
-    let grade_level_id: Uuid =
-        sqlx::query_scalar("SELECT id FROM grade_levels ORDER BY created_at, id LIMIT 1")
-            .fetch_one(pool)
-            .await
-            .expect("baseline grade level should exist");
+    let grade_level_id: Uuid = sqlx::query_scalar(
+        "SELECT id
+         FROM grade_levels
+         WHERE level_type = 'secondary' AND year = 1
+         LIMIT 1",
+    )
+    .fetch_one(pool)
+    .await
+    .expect("baseline secondary grade level should exist");
 
     sqlx::query(
         "INSERT INTO academic_years (id, year, name, start_date, end_date)
@@ -917,8 +921,46 @@ async fn publish_exposes_the_same_session_to_student_staff_and_linked_parent() {
     assert_eq!(staff_rounds[0].round_id, round_id);
     assert_eq!(parent_rounds[0].round_id, round_id);
     assert_eq!(student_rounds[0].sessions.len(), 2);
-    assert_eq!(staff_rounds[0].sessions.len(), 3);
     assert_eq!(parent_rounds[0].sessions.len(), 2);
+
+    let staff_round = &staff_rounds[0];
+    assert_eq!(staff_round.days.len(), 1);
+
+    let staff_day = &staff_round.days[0];
+    assert_eq!(staff_day.sessions.len(), 3);
+    assert_eq!(staff_day.room_assignments.len(), 2);
+
+    let first_assignment = staff_day
+        .room_assignments
+        .iter()
+        .find(|assignment| assignment.assignment_id == first_assignment_id)
+        .expect("first room assignment should be published");
+    assert_eq!(first_assignment.invigilators.len(), 1);
+    assert_eq!(
+        first_assignment.invigilators[0].staff_id,
+        fixture.staff_user_id
+    );
+    assert_eq!(first_assignment.session_minutes, 120);
+    assert_eq!(
+        first_assignment.earliest_starts_at,
+        NaiveTime::from_hms_opt(8, 0, 0)
+    );
+    assert_eq!(
+        first_assignment.latest_ends_at,
+        NaiveTime::from_hms_opt(10, 0, 0)
+    );
+    assert!(staff_day.sessions.iter().all(|session| {
+        session.grade_level_type == "secondary"
+            && session.grade_level_year >= 1
+            && !session.grade_level_name.is_empty()
+    }));
+
+    let second_assignment = staff_day
+        .room_assignments
+        .iter()
+        .find(|assignment| assignment.assignment_id == second_assignment_id)
+        .expect("second room assignment should be published");
+    assert!(second_assignment.invigilators.is_empty());
 
     let student_sessions = student_rounds[0]
         .sessions
