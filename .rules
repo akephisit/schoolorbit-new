@@ -10,6 +10,7 @@ This file is the single authoritative development standard for this repository. 
   - `docs/README.md`, `docs/TESTING.md`, and `docs/OPERATIONS.md`
   - one `README.md` in each application directory: `backend-admin/`, `backend-school/`, `frontend-admin/`, and `frontend-school/`
 - Do not create feature-completion reports, implementation diaries, status snapshots, temporary analysis files, duplicate developer guides, or per-feature README files.
+- A proposed twelfth Markdown file requires explicit review of why none of the canonical files can own the content; update the allowlist and documentation-policy test in the same change only when that new long-lived owner is approved.
 - Put commands and test recipes in `docs/TESTING.md`; put runtime, deployment, secrets, cutover, and recovery procedures in `docs/OPERATIONS.md`.
 - Code, contracts, migrations, generated artifacts, and executable configuration remain the source of truth for runtime behavior. Documentation must link to them instead of copying large inventories that become stale.
 - Minimal AI entry-point files are intentional. Do not expand `AGENTS.md`, `CLAUDE.md`, or `GEMINI.md` into competing rule sets.
@@ -191,6 +192,7 @@ Use `ApiResponse` and `ApiErrorResponse`; do not return raw feature DTOs or ad-h
 
 - Backend connection state lives in `ConnectedClients` inside `AppState`, using shared concurrent state.
 - Authenticate and bind connection identity server-side. Do not trust client-supplied user/school identity after connection establishment.
+- Realtime authentication and authorization fail closed: reject the handshake or close the connection when identity, tenant, active-user status, or required permission cannot be verified or is revoked.
 - WebSocket clients implement ping/pong heartbeat (normally every 30 seconds), stale-connection cleanup, and bounded reconnect with backoff/jitter.
 - SSE/WebSocket events signal that data changed; clients re-read authoritative HTTP state when the event contract does not carry a complete typed resource.
 - When changing connection URLs, identity, event payloads, or proxy behavior, test direct backend access and the deployed reverse-proxy path.
