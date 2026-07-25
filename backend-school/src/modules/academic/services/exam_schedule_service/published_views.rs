@@ -6,8 +6,12 @@ use uuid::Uuid;
 
 use crate::error::AppError;
 use crate::modules::academic::models::exam_schedule::{
-    PersonalExamScheduleRound, PersonalExamSessionView,
+    PersonalExamScheduleRound, PersonalExamSessionView, StaffPublishedExamDay,
+    StaffPublishedExamInvigilator, StaffPublishedExamRoomAssignment,
+    StaffPublishedExamScheduleRound, StaffPublishedExamSession,
 };
+
+use super::shared::minutes_between_times;
 
 #[derive(Debug, sqlx::FromRow)]
 struct PersonalExamSessionRow {
@@ -24,6 +28,54 @@ struct PersonalExamSessionRow {
     room_name: String,
     building_name: Option<String>,
     seat_number: Option<String>,
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct StaffPublishedExamAssignmentRow {
+    round_id: Uuid,
+    round_name: String,
+    academic_semester_id: Uuid,
+    published_at: Option<DateTime<Utc>>,
+    exam_day_id: Uuid,
+    day_label: Option<String>,
+    exam_date: NaiveDate,
+    assignment_id: Uuid,
+    classroom_id: Uuid,
+    classroom_name: String,
+    room_id: Uuid,
+    room_name: String,
+    building_name: Option<String>,
+    staff_id: Option<Uuid>,
+    display_name: Option<String>,
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct StaffPublishedExamSessionRow {
+    round_id: Uuid,
+    round_name: String,
+    academic_semester_id: Uuid,
+    published_at: Option<DateTime<Utc>>,
+    exam_day_id: Uuid,
+    day_label: Option<String>,
+    exam_date: NaiveDate,
+    session_id: Uuid,
+    starts_at: NaiveTime,
+    ends_at: NaiveTime,
+    duration_minutes: i32,
+    subject_id: Uuid,
+    subject_code: String,
+    subject_name: String,
+    assessment_category_name: String,
+    grade_level_id: Uuid,
+    grade_level_name: String,
+    grade_level_type: String,
+    grade_level_year: i32,
+    classroom_id: Uuid,
+    classroom_name: String,
+    day_room_assignment_id: Uuid,
+    room_id: Uuid,
+    room_name: String,
+    building_name: Option<String>,
 }
 
 impl PersonalExamSessionRow {
@@ -319,4 +371,279 @@ fn group_personal_exam_schedule_rows(
     }
 
     rounds
+}
+
+fn group_staff_published_exam_rows(
+    assignment_rows: Vec<StaffPublishedExamAssignmentRow>,
+    session_rows: Vec<StaffPublishedExamSessionRow>,
+) -> Vec<StaffPublishedExamScheduleRound> {
+    let mut rounds = Vec::new();
+    let mut round_indexes = HashMap::new();
+    let mut day_indexes = HashMap::new();
+    let mut assignment_locations = HashMap::new();
+
+    for row in assignment_rows {
+        let round_index = match round_indexes.get(&row.round_id) {
+            Some(index) => *index,
+            None => {
+                let index = rounds.len();
+                rounds.push(StaffPublishedExamScheduleRound {
+                    round_id: row.round_id,
+                    round_name: row.round_name.clone(),
+                    academic_semester_id: row.academic_semester_id,
+                    published_at: row.published_at,
+                    days: Vec::new(),
+                });
+                round_indexes.insert(row.round_id, index);
+                index
+            }
+        };
+
+        let day_key = (row.round_id, row.exam_day_id);
+        let day_index = match day_indexes.get(&day_key) {
+            Some(index) => *index,
+            None => {
+                let index = rounds[round_index].days.len();
+                rounds[round_index].days.push(StaffPublishedExamDay {
+                    exam_day_id: row.exam_day_id,
+                    label: row.day_label.clone(),
+                    exam_date: row.exam_date,
+                    sessions: Vec::new(),
+                    room_assignments: Vec::new(),
+                });
+                day_indexes.insert(day_key, index);
+                index
+            }
+        };
+
+        let assignment_index = match assignment_locations.get(&row.assignment_id) {
+            Some((_, _, index)) => *index,
+            None => {
+                let index = rounds[round_index].days[day_index].room_assignments.len();
+                rounds[round_index].days[day_index].room_assignments.push(
+                    StaffPublishedExamRoomAssignment {
+                        assignment_id: row.assignment_id,
+                        classroom_id: row.classroom_id,
+                        classroom_name: row.classroom_name,
+                        room_id: row.room_id,
+                        room_name: row.room_name,
+                        building_name: row.building_name,
+                        session_minutes: 0,
+                        earliest_starts_at: None,
+                        latest_ends_at: None,
+                        invigilators: Vec::new(),
+                    },
+                );
+                assignment_locations.insert(row.assignment_id, (round_index, day_index, index));
+                index
+            }
+        };
+
+        if let (Some(staff_id), Some(display_name)) = (row.staff_id, row.display_name) {
+            let invigilators = &mut rounds[round_index].days[day_index].room_assignments
+                [assignment_index]
+                .invigilators;
+            if !invigilators
+                .iter()
+                .any(|invigilator| invigilator.staff_id == staff_id)
+            {
+                invigilators.push(StaffPublishedExamInvigilator {
+                    staff_id,
+                    display_name,
+                });
+            }
+        }
+    }
+
+    for row in session_rows {
+        let Some(&round_index) = round_indexes.get(&row.round_id) else {
+            continue;
+        };
+        let Some(&day_index) = day_indexes.get(&(row.round_id, row.exam_day_id)) else {
+            continue;
+        };
+
+        rounds[round_index].days[day_index]
+            .sessions
+            .push(StaffPublishedExamSession {
+                session_id: row.session_id,
+                starts_at: row.starts_at,
+                ends_at: row.ends_at,
+                duration_minutes: row.duration_minutes,
+                subject_id: row.subject_id,
+                subject_code: row.subject_code,
+                subject_name: row.subject_name,
+                assessment_category_name: row.assessment_category_name,
+                grade_level_id: row.grade_level_id,
+                grade_level_name: row.grade_level_name,
+                grade_level_type: row.grade_level_type,
+                grade_level_year: row.grade_level_year,
+                classroom_id: row.classroom_id,
+                classroom_name: row.classroom_name,
+                day_room_assignment_id: row.day_room_assignment_id,
+                room_id: row.room_id,
+                room_name: row.room_name,
+                building_name: row.building_name,
+            });
+
+        if let Some(&(assignment_round_index, assignment_day_index, assignment_index)) =
+            assignment_locations.get(&row.day_room_assignment_id)
+        {
+            let assignment = &mut rounds[assignment_round_index].days[assignment_day_index]
+                .room_assignments[assignment_index];
+            assignment.session_minutes += minutes_between_times(row.starts_at, row.ends_at);
+            assignment.earliest_starts_at = Some(
+                assignment
+                    .earliest_starts_at
+                    .map_or(row.starts_at, |value| value.min(row.starts_at)),
+            );
+            assignment.latest_ends_at = Some(
+                assignment
+                    .latest_ends_at
+                    .map_or(row.ends_at, |value| value.max(row.ends_at)),
+            );
+        }
+    }
+
+    rounds
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::{DateTime, NaiveDate, NaiveTime, Utc};
+
+    fn t(value: &str) -> NaiveTime {
+        NaiveTime::parse_from_str(value, "%H:%M").expect("test time must be valid")
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn staff_session_row(
+        round_id: Uuid,
+        day_id: Uuid,
+        session_id: Uuid,
+        assignment_id: Uuid,
+        classroom_id: Uuid,
+        room_id: Uuid,
+        published_at: DateTime<Utc>,
+        starts_at: NaiveTime,
+        ends_at: NaiveTime,
+    ) -> StaffPublishedExamSessionRow {
+        StaffPublishedExamSessionRow {
+            round_id,
+            round_name: "กลางภาค 1/2569".to_string(),
+            academic_semester_id: Uuid::from_u128(6),
+            published_at: Some(published_at),
+            exam_day_id: day_id,
+            day_label: Some("วันแรก".to_string()),
+            exam_date: NaiveDate::from_ymd_opt(2026, 8, 3).expect("date must be valid"),
+            session_id,
+            starts_at,
+            ends_at,
+            duration_minutes: minutes_between_times(starts_at, ends_at),
+            subject_id: Uuid::from_u128(9),
+            subject_code: "ค21101".to_string(),
+            subject_name: "คณิตศาสตร์".to_string(),
+            assessment_category_name: "กลางภาค".to_string(),
+            grade_level_id: Uuid::from_u128(10),
+            grade_level_name: "ม.1".to_string(),
+            grade_level_type: "secondary".to_string(),
+            grade_level_year: 1,
+            classroom_id,
+            classroom_name: "ม.1/1".to_string(),
+            day_room_assignment_id: assignment_id,
+            room_id,
+            room_name: "313".to_string(),
+            building_name: Some("อาคาร 3".to_string()),
+        }
+    }
+
+    #[test]
+    fn staff_rows_group_by_round_day_and_assignment_with_actual_minutes() {
+        let round_id = Uuid::from_u128(1);
+        let day_id = Uuid::from_u128(2);
+        let assignment_id = Uuid::from_u128(3);
+        let classroom_id = Uuid::from_u128(4);
+        let room_id = Uuid::from_u128(5);
+        let published_at = Utc::now();
+
+        let assignment_rows = vec![
+            StaffPublishedExamAssignmentRow {
+                round_id,
+                round_name: "กลางภาค 1/2569".to_string(),
+                academic_semester_id: Uuid::from_u128(6),
+                published_at: Some(published_at),
+                exam_day_id: day_id,
+                day_label: Some("วันแรก".to_string()),
+                exam_date: NaiveDate::from_ymd_opt(2026, 8, 3).expect("date must be valid"),
+                assignment_id,
+                classroom_id,
+                classroom_name: "ม.1/1".to_string(),
+                room_id,
+                room_name: "313".to_string(),
+                building_name: Some("อาคาร 3".to_string()),
+                staff_id: Some(Uuid::from_u128(7)),
+                display_name: Some("ครู ก".to_string()),
+            },
+            StaffPublishedExamAssignmentRow {
+                round_id,
+                round_name: "กลางภาค 1/2569".to_string(),
+                academic_semester_id: Uuid::from_u128(6),
+                published_at: Some(published_at),
+                exam_day_id: day_id,
+                day_label: Some("วันแรก".to_string()),
+                exam_date: NaiveDate::from_ymd_opt(2026, 8, 3).expect("date must be valid"),
+                assignment_id,
+                classroom_id,
+                classroom_name: "ม.1/1".to_string(),
+                room_id,
+                room_name: "313".to_string(),
+                building_name: Some("อาคาร 3".to_string()),
+                staff_id: Some(Uuid::from_u128(8)),
+                display_name: Some("ครู ข".to_string()),
+            },
+        ];
+
+        let session_rows = vec![
+            staff_session_row(
+                round_id,
+                day_id,
+                Uuid::from_u128(11),
+                assignment_id,
+                classroom_id,
+                room_id,
+                published_at,
+                t("08:30"),
+                t("09:30"),
+            ),
+            staff_session_row(
+                round_id,
+                day_id,
+                Uuid::from_u128(12),
+                assignment_id,
+                classroom_id,
+                room_id,
+                published_at,
+                t("10:00"),
+                t("11:30"),
+            ),
+        ];
+
+        let rounds = group_staff_published_exam_rows(assignment_rows, session_rows);
+        let day = &rounds[0].days[0];
+        let assignment = &day.room_assignments[0];
+
+        assert_eq!(day.sessions.len(), 2);
+        assert_eq!(
+            day.sessions
+                .iter()
+                .map(|session| session.starts_at)
+                .collect::<Vec<_>>(),
+            vec![t("08:30"), t("10:00")]
+        );
+        assert_eq!(assignment.invigilators.len(), 2);
+        assert_eq!(assignment.session_minutes, 150);
+        assert_eq!(assignment.earliest_starts_at, Some(t("08:30")));
+        assert_eq!(assignment.latest_ends_at, Some(t("11:30")));
+    }
 }

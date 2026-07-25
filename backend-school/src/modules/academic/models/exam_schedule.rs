@@ -382,3 +382,74 @@ pub struct PersonalExamSessionView {
     #[schema(required = true)]
     pub seat_number: Option<String>,
 }
+
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct StaffPublishedExamScheduleRound {
+    pub round_id: Uuid,
+    pub round_name: String,
+    pub academic_semester_id: Uuid,
+    #[schema(required = true)]
+    pub published_at: Option<DateTime<Utc>>,
+    pub days: Vec<StaffPublishedExamDay>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct StaffPublishedExamDay {
+    pub exam_day_id: Uuid,
+    #[schema(required = true)]
+    pub label: Option<String>,
+    pub exam_date: NaiveDate,
+    pub sessions: Vec<StaffPublishedExamSession>,
+    pub room_assignments: Vec<StaffPublishedExamRoomAssignment>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct StaffPublishedExamSession {
+    pub session_id: Uuid,
+    pub starts_at: NaiveTime,
+    pub ends_at: NaiveTime,
+    pub duration_minutes: i32,
+    pub subject_id: Uuid,
+    pub subject_code: String,
+    pub subject_name: String,
+    pub assessment_category_name: String,
+    pub grade_level_id: Uuid,
+    pub grade_level_name: String,
+    pub grade_level_type: String,
+    pub grade_level_year: i32,
+    pub classroom_id: Uuid,
+    pub classroom_name: String,
+    pub day_room_assignment_id: Uuid,
+    pub room_id: Uuid,
+    pub room_name: String,
+    #[schema(required = true)]
+    pub building_name: Option<String>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct StaffPublishedExamRoomAssignment {
+    pub assignment_id: Uuid,
+    pub classroom_id: Uuid,
+    pub classroom_name: String,
+    pub room_id: Uuid,
+    pub room_name: String,
+    #[schema(required = true)]
+    pub building_name: Option<String>,
+    pub session_minutes: i32,
+    #[schema(required = true)]
+    pub earliest_starts_at: Option<NaiveTime>,
+    #[schema(required = true)]
+    pub latest_ends_at: Option<NaiveTime>,
+    pub invigilators: Vec<StaffPublishedExamInvigilator>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct StaffPublishedExamInvigilator {
+    pub staff_id: Uuid,
+    pub display_name: String,
+}
