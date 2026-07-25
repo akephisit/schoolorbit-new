@@ -1438,8 +1438,11 @@ test('personal exam schedule pages use the published schedule APIs and shared vi
 	assert.match(staffPage, /listStaffExamSchedules/);
 	assert.doesNotMatch(staffPage, /listMyExamSchedules/);
 	assert.doesNotMatch(staffPage, /listChildExamSchedules/);
-	assert.match(staffPage, /PersonalExamScheduleView/);
-	assert.match(staffPage, /showSeatNumber=\{false\}/);
+	assert.match(staffPage, /type StaffPublishedExamScheduleRound/);
+	assert.match(staffPage, /StaffExamScheduleDashboard/);
+	assert.match(staffPage, /authStore/);
+	assert.doesNotMatch(staffPage, /PersonalExamScheduleView/);
+	assert.doesNotMatch(staffPage, /showSeatNumber/);
 	assert.match(staffPage, /PageSkeleton/);
 	assert.match(staffPage, /PageState/);
 
@@ -1523,6 +1526,49 @@ test('staff exam reports use semantic merged tables and responsive day cards', (
 	assert.match(invigilatorTable, /ฉัน/);
 });
 
+test('staff exam route composes the four-tab dashboard without exposing private staff fields', () => {
+	const dashboardPath =
+		'src/lib/components/academic/exam-schedule/StaffExamScheduleDashboard.svelte';
+	const myViewPath = 'src/lib/components/academic/exam-schedule/MyExamInvigilationView.svelte';
+	assert.equal(existsSync(projectPath(dashboardPath)), true, `${dashboardPath} should exist`);
+	assert.equal(existsSync(projectPath(myViewPath)), true, `${myViewPath} should exist`);
+
+	const staffPage = readFileSync(projectPath('src/routes/(app)/staff/exams/+page.svelte'), 'utf8');
+	const dashboard = readFileSync(projectPath(dashboardPath), 'utf8');
+	const myView = readFileSync(projectPath(myViewPath), 'utf8');
+	const scheduleTable = readFileSync(
+		projectPath('src/lib/components/academic/exam-schedule/StaffExamScheduleTable.svelte'),
+		'utf8'
+	);
+	const invigilatorTable = readFileSync(
+		projectPath('src/lib/components/academic/exam-schedule/StaffExamInvigilatorTable.svelte'),
+		'utf8'
+	);
+
+	for (const label of ['ภาพรวม', 'ตารางสอบ', 'กรรมการคุมสอบ', 'งานคุมของฉัน']) {
+		assert.match(dashboard, new RegExp(label));
+	}
+	assert.match(dashboard, /Tabs\.Root/);
+	assert.match(dashboard, /Select\.Root/);
+	assert.match(dashboard, /StaffExamScheduleTable/);
+	assert.match(dashboard, /StaffExamInvigilatorTable/);
+	assert.match(dashboard, /MyExamInvigilationView/);
+	assert.match(dashboard, /ล้างตัวกรอง/);
+	assert.match(dashboard, /rounds\[0\] \?\? null/);
+	assert.match(dashboard, /activeTab = 'schedule'/);
+	assert.match(dashboard, /selectedDayId = examDayId/);
+	assert.match(dashboard, /aria-label=/);
+	assert.match(dashboard, /ยังไม่มีตารางสอบที่เผยแพร่/);
+	assert.match(myView, /ยังไม่มีงานคุมสอบของฉัน/);
+
+	for (const forbidden of ['nationalId', 'national_id', 'username', 'phone', 'email']) {
+		assert.doesNotMatch(
+			[staffPage, dashboard, scheduleTable, invigilatorTable, myView].join('\n'),
+			new RegExp(forbidden)
+		);
+	}
+});
+
 test('personal exam schedule view groups published sessions and hides staff supervision data', () => {
 	const personalViewPath =
 		'src/lib/components/academic/exam-schedule/PersonalExamScheduleView.svelte';
@@ -1535,8 +1581,7 @@ test('personal exam schedule view groups published sessions and hides staff supe
 		projectPath('src/routes/(app)/parent/student/[id]/exams/+page.svelte'),
 		'utf8'
 	);
-	const staffPage = readFileSync(projectPath('src/routes/(app)/staff/exams/+page.svelte'), 'utf8');
-	const combinedPersonalSources = [personalView, staffPage, studentPage, parentPage].join('\n');
+	const combinedPersonalSources = [personalView, studentPage, parentPage].join('\n');
 
 	for (const expected of [
 		'PersonalExamScheduleRound',

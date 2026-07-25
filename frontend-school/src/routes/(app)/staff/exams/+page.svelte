@@ -2,15 +2,20 @@
 	import type { PageProps } from './$types';
 	import { onMount } from 'svelte';
 	import { toast } from 'svelte-sonner';
-	import { listStaffExamSchedules, type PersonalExamScheduleRound } from '$lib/api/examSchedule';
+	import {
+		listStaffExamSchedules,
+		type StaffPublishedExamScheduleRound
+	} from '$lib/api/examSchedule';
 	import { PageShell } from '$lib/components/app-layout';
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
-	import PersonalExamScheduleView from '$lib/components/academic/exam-schedule/PersonalExamScheduleView.svelte';
+	import StaffExamScheduleDashboard from '$lib/components/academic/exam-schedule/StaffExamScheduleDashboard.svelte';
+	import { authStore } from '$lib/stores/auth';
 
 	let { data }: PageProps = $props();
 	let loading = $state(true);
 	let error = $state('');
-	let rounds = $state<PersonalExamScheduleRound[]>([]);
+	let rounds = $state<StaffPublishedExamScheduleRound[]>([]);
+	let currentStaffId = $derived($authStore.user?.id ?? '');
 
 	async function loadSchedules() {
 		loading = true;
@@ -33,9 +38,9 @@
 	<title>{data.title}</title>
 </svelte:head>
 
-<PageShell title={data.title} description="ตารางสอบที่ประกาศแล้วสำหรับครู">
+<PageShell title={data.title} description="ภาพรวมตารางสอบและการคุมสอบที่ประกาศแล้ว">
 	{#if loading}
-		<PageSkeleton variant="table" rows={6} columns={6} />
+		<PageSkeleton variant="table" rows={7} columns={7} />
 	{:else if error}
 		<PageState
 			variant="error"
@@ -45,6 +50,6 @@
 			onaction={loadSchedules}
 		/>
 	{:else}
-		<PersonalExamScheduleView {rounds} showSeatNumber={false} />
+		<StaffExamScheduleDashboard {rounds} {currentStaffId} />
 	{/if}
 </PageShell>
