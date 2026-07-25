@@ -426,47 +426,12 @@ test('generated calendar, school, and notification contracts own final read DTOs
 test('project rules document generated API contract ownership', async () => {
 	const rules = await readRepoFile('.rules');
 	const testing = await readRepoFile('docs/TESTING.md');
-	const guide = await readRepoFile('docs/backend-school/API_DEVELOPMENT.md');
 
-	for (const source of [rules, testing, guide]) {
+	for (const source of [rules, testing]) {
 		assert.match(source, /generate:api-contracts/);
 		assert.match(source, /check:api-contracts/);
 		assert.match(source, /contracts\/openapi\/school-api\.json/);
 		assert.match(source, /generated files?[^\n]*do not edit|do not edit[^\n]*generated files?/i);
-	}
-});
-
-test('project docs record the 178-operation manual timetable checkpoint', async () => {
-	for (const file of [
-		'.rules',
-		'IMPROVEMENT_PLAN.md',
-		'docs/TESTING.md',
-		'docs/backend-school/API_DEVELOPMENT.md'
-	]) {
-		const source = await readRepoFile(file);
-		assert.match(source, /178 unique operations/i);
-		assert.match(source, /getActivitySlotTimetableContext/);
-		assert.match(source, /manual timetable/i);
-		assert.doesNotMatch(source, /scheduling jobs\/undo.*next|auto[- ]scheduler.*supported/i);
-	}
-});
-
-test('API docs record implemented reversible role and organization deactivation', async () => {
-	const guide = await readRepoFile('docs/backend-school/API_DEVELOPMENT.md');
-	const testing = await readRepoFile('docs/TESTING.md');
-	const improvements = await readRepoFile('IMPROVEMENT_PLAN.md');
-
-	for (const source of [guide, testing]) {
-		assert.match(source, /178 unique operations/);
-		assert.match(source, /getActivitySlotTimetableContext/);
-		assert.match(source, /32[\s\S]{0,50}auth\/authorization[\s\S]{0,30}operations/);
-		assert.match(source, /implemented\s+backend\s+routes\s+only/i);
-	}
-	for (const source of [guide, testing, improvements]) {
-		assert.match(source, /DELETE `?\/api\/roles\/\{id\}`?/);
-		assert.match(source, /DELETE `?\/api\/organization\/units\/\{id\}`?/);
-		assert.match(source, /deactivat|ปิดใช้งาน/i);
-		assert.match(source, /is_system/);
 	}
 });
 

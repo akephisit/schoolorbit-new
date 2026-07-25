@@ -19,7 +19,6 @@ on:
       - "frontend-school/package-lock.json"
       - ".rules"
       - "docs/TESTING.md"
-      - "docs/backend-school/API_DEVELOPMENT.md"
       - ".github/workflows/api-contract.yml"
   push:
     branches:
@@ -41,7 +40,6 @@ on:
       - "frontend-school/package-lock.json"
       - ".rules"
       - "docs/TESTING.md"
-      - "docs/backend-school/API_DEVELOPMENT.md"
       - ".github/workflows/api-contract.yml"
 
 permissions:

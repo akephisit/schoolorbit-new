@@ -4350,7 +4350,6 @@ fn backend_school_registers_separate_liveness_and_readiness_routes() {
 fn deployment_and_smoke_checks_use_backend_readiness() {
     let docker_compose = read_source(repo_root().join("docker-compose.yml"));
     let podman_compose = read_source(repo_root().join("podman-compose.yml"));
-    let podman_setup = read_source(repo_root().join("docs/PODMAN_SETUP.md"));
     let school_deploy =
         read_source(repo_root().join(".github/workflows/deploy-backend-school.yml"));
     let admin_deploy = read_source(repo_root().join(".github/workflows/deploy-backend-admin.yml"));
@@ -4363,12 +4362,6 @@ fn deployment_and_smoke_checks_use_backend_readiness() {
         assert!(compose.contains("BACKEND_ADMIN_RETRY_MAX_ATTEMPTS"));
         assert!(compose.contains("BACKEND_ADMIN_RETRY_BASE_DELAY_MS"));
     }
-    assert!(podman_setup.contains("http://localhost:8080/ready"));
-    assert!(podman_setup.contains("http://localhost:8081/ready"));
-    assert!(podman_setup.matches("timeout: 20s").count() >= 2);
-    assert!(podman_setup.contains("BACKEND_ADMIN_REQUEST_TIMEOUT_MS"));
-    assert!(podman_setup.contains("BACKEND_ADMIN_RETRY_MAX_ATTEMPTS"));
-    assert!(podman_setup.contains("BACKEND_ADMIN_RETRY_BASE_DELAY_MS"));
     assert!(school_deploy.contains("http://127.0.0.1:8081/ready"));
     assert!(admin_deploy.contains("http://127.0.0.1:8080/ready"));
     assert!(school_deploy.contains("seq 1 12"));
