@@ -27,7 +27,9 @@ use crate::modules::academic::models::curriculum::{
     UpdateSubjectDefaultInstructorRoleRequest, UpdateSubjectRequest,
 };
 use crate::modules::academic::models::exam_schedule::{
-    PersonalExamScheduleRound, PersonalExamSessionView,
+    PersonalExamScheduleRound, PersonalExamSessionView, StaffPublishedExamDay,
+    StaffPublishedExamInvigilator, StaffPublishedExamRoomAssignment,
+    StaffPublishedExamScheduleRound, StaffPublishedExamSession,
 };
 use crate::modules::academic::models::study_plans::{
     ActivityCatalog, ActivityCatalogType, ActivitySchedulingMode,
@@ -551,6 +553,12 @@ use utoipa::OpenApi;
         PersonalExamScheduleRound,
         PersonalExamSessionView,
         ApiResponse<Vec<PersonalExamScheduleRound>>,
+        StaffPublishedExamScheduleRound,
+        StaffPublishedExamDay,
+        StaffPublishedExamSession,
+        StaffPublishedExamRoomAssignment,
+        StaffPublishedExamInvigilator,
+        ApiResponse<Vec<StaffPublishedExamScheduleRound>>,
         CalendarEventTag,
         CalendarViewerEvent,
         ApiResponse<Vec<CalendarViewerEvent>>,
@@ -2374,6 +2382,11 @@ mod tests {
                 ["responses"]["200"]["content"]["application/json"]["schema"]["$ref"],
             "#/components/schemas/ApiResponse_Vec_PersonalExamScheduleRound"
         );
+        assert_eq!(
+            document["paths"]["/api/staff/exam-schedules"]["get"]["responses"]["200"]["content"]
+                ["application/json"]["schema"]["$ref"],
+            "#/components/schemas/ApiResponse_Vec_StaffPublishedExamScheduleRound"
+        );
 
         let parent_calendar_parameters = document["paths"]
             ["/api/parent/students/{student_id}/calendar/events"]["get"]["parameters"]
@@ -2433,6 +2446,27 @@ mod tests {
         for field in ["buildingName", "seatNumber"] {
             assert!(required(exam_session).contains(&field));
             assert!(contains_null(&exam_session["properties"][field]));
+        }
+
+        let staff_round = &schemas["StaffPublishedExamScheduleRound"];
+        assert!(required(staff_round).contains(&"publishedAt"));
+        assert!(contains_null(&staff_round["properties"]["publishedAt"]));
+        assert!(required(staff_round).contains(&"days"));
+
+        let staff_day = &schemas["StaffPublishedExamDay"];
+        for field in ["sessions", "roomAssignments"] {
+            assert!(required(staff_day).contains(&field));
+        }
+
+        let staff_assignment = &schemas["StaffPublishedExamRoomAssignment"];
+        for field in ["buildingName", "earliestStartsAt", "latestEndsAt"] {
+            assert!(required(staff_assignment).contains(&field));
+            assert!(contains_null(&staff_assignment["properties"][field]));
+        }
+
+        let staff_invigilator = &schemas["StaffPublishedExamInvigilator"];
+        for forbidden in ["username", "email", "phone", "nationalId", "national_id"] {
+            assert!(staff_invigilator["properties"].get(forbidden).is_none());
         }
 
         let calendar_event = &schemas["CalendarViewerEvent"];

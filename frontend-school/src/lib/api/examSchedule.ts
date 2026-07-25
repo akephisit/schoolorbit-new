@@ -212,6 +212,11 @@ export interface SeatAssignmentView {
 
 export type PersonalExamScheduleRound = Schemas['PersonalExamScheduleRound'];
 export type PersonalExamSessionView = Schemas['PersonalExamSessionView'];
+export type StaffPublishedExamScheduleRound = Schemas['StaffPublishedExamScheduleRound'];
+export type StaffPublishedExamDay = Schemas['StaffPublishedExamDay'];
+export type StaffPublishedExamSession = Schemas['StaffPublishedExamSession'];
+export type StaffPublishedExamRoomAssignment = Schemas['StaffPublishedExamRoomAssignment'];
+export type StaffPublishedExamInvigilator = Schemas['StaffPublishedExamInvigilator'];
 
 export interface ExamScheduleFilters {
 	academicSemesterId?: string;
@@ -484,8 +489,8 @@ export async function listMyExamSchedules(
 
 export async function listStaffExamSchedules(
 	filters: ExamScheduleFilters = {}
-): Promise<PersonalExamScheduleRound[]> {
-	const response = await apiClient.get<PersonalExamScheduleRound[]>(
+): Promise<StaffPublishedExamScheduleRound[]> {
+	const response = await apiClient.get<StaffPublishedExamScheduleRound[]>(
 		`/api/staff/exam-schedules${examScheduleQuery(filters)}`
 	);
 	return apiData(response, 'ไม่สามารถโหลดตารางสอบสำหรับครูได้');

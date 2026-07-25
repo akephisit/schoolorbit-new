@@ -422,7 +422,7 @@ pub async fn list_my_exam_schedule(
     tag = "academic",
     params(PersonalExamScheduleQuery),
     responses(
-        (status = 200, description = "Published school exam schedules for staff", body = ApiResponse<Vec<crate::modules::academic::models::exam_schedule::PersonalExamScheduleRound>>),
+        (status = 200, description = "Published school exam schedules for staff", body = ApiResponse<Vec<crate::modules::academic::models::exam_schedule::StaffPublishedExamScheduleRound>>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Active staff account required", body = ApiErrorResponse)
     )

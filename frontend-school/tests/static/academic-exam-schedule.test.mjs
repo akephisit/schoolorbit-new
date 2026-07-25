@@ -1466,6 +1466,22 @@ test('personal exam schedule pages use the published schedule APIs and shared vi
 	assert.doesNotMatch(parentPage, /onMount/);
 });
 
+test('staff exam schedule API uses a staff-only generated transport type', () => {
+	const examScheduleApi = readFileSync(projectPath('src/lib/api/examSchedule.ts'), 'utf8');
+	const staffSource = exportedFunctionSource(examScheduleApi, 'listStaffExamSchedules');
+	const mySource = exportedFunctionSource(examScheduleApi, 'listMyExamSchedules');
+	const childSource = exportedFunctionSource(examScheduleApi, 'listChildExamSchedules');
+
+	assert.match(
+		examScheduleApi,
+		/export type StaffPublishedExamScheduleRound = Schemas\['StaffPublishedExamScheduleRound'\]/
+	);
+	assert.match(staffSource, /Promise<StaffPublishedExamScheduleRound\[\]>/);
+	assert.match(staffSource, /apiClient\.get<StaffPublishedExamScheduleRound\[\]>/);
+	assert.match(mySource, /Promise<PersonalExamScheduleRound\[\]>/);
+	assert.match(childSource, /Promise<PersonalExamScheduleRound\[\]>/);
+});
+
 test('personal exam schedule view groups published sessions and hides staff supervision data', () => {
 	const personalViewPath =
 		'src/lib/components/academic/exam-schedule/PersonalExamScheduleView.svelte';

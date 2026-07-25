@@ -6714,6 +6714,60 @@
         ],
         "type": "object"
       },
+      "ApiResponse_Vec_StaffPublishedExamScheduleRound": {
+        "properties": {
+          "data": {
+            "items": {
+              "properties": {
+                "academicSemesterId": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "days": {
+                  "items": {
+                    "$ref": "#/components/schemas/StaffPublishedExamDay"
+                  },
+                  "type": "array"
+                },
+                "publishedAt": {
+                  "format": "date-time",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "roundId": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "roundName": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "roundId",
+                "roundName",
+                "academicSemesterId",
+                "publishedAt",
+                "days"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
       "ApiResponse_Vec_String": {
         "properties": {
           "data": {
@@ -12217,6 +12271,249 @@
           "teaching_courses",
           "advisor_classrooms",
           "permissions"
+        ],
+        "type": "object"
+      },
+      "StaffPublishedExamDay": {
+        "properties": {
+          "examDate": {
+            "format": "date",
+            "type": "string"
+          },
+          "examDayId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "label": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "roomAssignments": {
+            "items": {
+              "$ref": "#/components/schemas/StaffPublishedExamRoomAssignment"
+            },
+            "type": "array"
+          },
+          "sessions": {
+            "items": {
+              "$ref": "#/components/schemas/StaffPublishedExamSession"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "examDayId",
+          "label",
+          "examDate",
+          "sessions",
+          "roomAssignments"
+        ],
+        "type": "object"
+      },
+      "StaffPublishedExamInvigilator": {
+        "properties": {
+          "displayName": {
+            "type": "string"
+          },
+          "staffId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "staffId",
+          "displayName"
+        ],
+        "type": "object"
+      },
+      "StaffPublishedExamRoomAssignment": {
+        "properties": {
+          "assignmentId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "buildingName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "classroomId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "classroomName": {
+            "type": "string"
+          },
+          "earliestStartsAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "invigilators": {
+            "items": {
+              "$ref": "#/components/schemas/StaffPublishedExamInvigilator"
+            },
+            "type": "array"
+          },
+          "latestEndsAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "roomId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "roomName": {
+            "type": "string"
+          },
+          "sessionMinutes": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "assignmentId",
+          "classroomId",
+          "classroomName",
+          "roomId",
+          "roomName",
+          "buildingName",
+          "sessionMinutes",
+          "earliestStartsAt",
+          "latestEndsAt",
+          "invigilators"
+        ],
+        "type": "object"
+      },
+      "StaffPublishedExamScheduleRound": {
+        "properties": {
+          "academicSemesterId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "days": {
+            "items": {
+              "$ref": "#/components/schemas/StaffPublishedExamDay"
+            },
+            "type": "array"
+          },
+          "publishedAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "roundId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "roundName": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "roundId",
+          "roundName",
+          "academicSemesterId",
+          "publishedAt",
+          "days"
+        ],
+        "type": "object"
+      },
+      "StaffPublishedExamSession": {
+        "properties": {
+          "assessmentCategoryName": {
+            "type": "string"
+          },
+          "buildingName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "classroomId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "classroomName": {
+            "type": "string"
+          },
+          "dayRoomAssignmentId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "durationMinutes": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "endsAt": {
+            "type": "string"
+          },
+          "gradeLevelId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "gradeLevelName": {
+            "type": "string"
+          },
+          "gradeLevelType": {
+            "type": "string"
+          },
+          "gradeLevelYear": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "roomId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "roomName": {
+            "type": "string"
+          },
+          "sessionId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "startsAt": {
+            "type": "string"
+          },
+          "subjectCode": {
+            "type": "string"
+          },
+          "subjectId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "subjectName": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "sessionId",
+          "startsAt",
+          "endsAt",
+          "durationMinutes",
+          "subjectId",
+          "subjectCode",
+          "subjectName",
+          "assessmentCategoryName",
+          "gradeLevelId",
+          "gradeLevelName",
+          "gradeLevelType",
+          "gradeLevelYear",
+          "classroomId",
+          "classroomName",
+          "dayRoomAssignmentId",
+          "roomId",
+          "roomName",
+          "buildingName"
         ],
         "type": "object"
       },
@@ -26786,7 +27083,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_Vec_PersonalExamScheduleRound"
+                  "$ref": "#/components/schemas/ApiResponse_Vec_StaffPublishedExamScheduleRound"
                 }
               }
             },

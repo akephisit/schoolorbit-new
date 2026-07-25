@@ -3890,6 +3890,20 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
+		ApiResponse_Vec_StaffPublishedExamScheduleRound: {
+			data: {
+				/** Format: uuid */
+				academicSemesterId: string;
+				days: components['schemas']['StaffPublishedExamDay'][];
+				/** Format: date-time */
+				publishedAt: string | null;
+				/** Format: uuid */
+				roundId: string;
+				roundName: string;
+			}[];
+			message?: string;
+			success: boolean;
+		};
 		ApiResponse_Vec_String: {
 			data: string[];
 			message?: string;
@@ -5333,6 +5347,74 @@ export interface components {
 			title: string | null;
 			user_type: string;
 			username: string;
+		};
+		StaffPublishedExamDay: {
+			/** Format: date */
+			examDate: string;
+			/** Format: uuid */
+			examDayId: string;
+			label: string | null;
+			roomAssignments: components['schemas']['StaffPublishedExamRoomAssignment'][];
+			sessions: components['schemas']['StaffPublishedExamSession'][];
+		};
+		StaffPublishedExamInvigilator: {
+			displayName: string;
+			/** Format: uuid */
+			staffId: string;
+		};
+		StaffPublishedExamRoomAssignment: {
+			/** Format: uuid */
+			assignmentId: string;
+			buildingName: string | null;
+			/** Format: uuid */
+			classroomId: string;
+			classroomName: string;
+			earliestStartsAt: string | null;
+			invigilators: components['schemas']['StaffPublishedExamInvigilator'][];
+			latestEndsAt: string | null;
+			/** Format: uuid */
+			roomId: string;
+			roomName: string;
+			/** Format: int32 */
+			sessionMinutes: number;
+		};
+		StaffPublishedExamScheduleRound: {
+			/** Format: uuid */
+			academicSemesterId: string;
+			days: components['schemas']['StaffPublishedExamDay'][];
+			/** Format: date-time */
+			publishedAt: string | null;
+			/** Format: uuid */
+			roundId: string;
+			roundName: string;
+		};
+		StaffPublishedExamSession: {
+			assessmentCategoryName: string;
+			buildingName: string | null;
+			/** Format: uuid */
+			classroomId: string;
+			classroomName: string;
+			/** Format: uuid */
+			dayRoomAssignmentId: string;
+			/** Format: int32 */
+			durationMinutes: number;
+			endsAt: string;
+			/** Format: uuid */
+			gradeLevelId: string;
+			gradeLevelName: string;
+			gradeLevelType: string;
+			/** Format: int32 */
+			gradeLevelYear: number;
+			/** Format: uuid */
+			roomId: string;
+			roomName: string;
+			/** Format: uuid */
+			sessionId: string;
+			startsAt: string;
+			subjectCode: string;
+			/** Format: uuid */
+			subjectId: string;
+			subjectName: string;
 		};
 		StudentDbRow: {
 			address: string | null;
@@ -15246,7 +15328,7 @@ export interface operations {
 					[name: string]: unknown;
 				};
 				content: {
-					'application/json': components['schemas']['ApiResponse_Vec_PersonalExamScheduleRound'];
+					'application/json': components['schemas']['ApiResponse_Vec_StaffPublishedExamScheduleRound'];
 				};
 			};
 			/** @description Authentication required */
