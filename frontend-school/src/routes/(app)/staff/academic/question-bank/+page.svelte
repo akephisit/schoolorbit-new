@@ -846,7 +846,7 @@
 		</section>
 
 		<section class="space-y-4">
-			<div class="rounded-lg border bg-card p-4">
+			<div class="rounded-xl border bg-card p-3 shadow-sm sm:p-4">
 				<div class="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
 					<div class="md:col-span-2 xl:col-span-2">
 						<Label for="question-search">ค้นหา</Label>

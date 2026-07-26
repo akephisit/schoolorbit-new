@@ -203,9 +203,11 @@
 	/>
 {:else}
 	<div class="min-w-0 space-y-5">
-		<Card.Root>
-			<Card.Content class="grid gap-4 p-4 md:grid-cols-2 xl:grid-cols-6">
-				<div class="space-y-2 md:col-span-2 xl:col-span-2">
+		<Card.Root class="gap-0 py-0">
+			<Card.Content
+				class="grid gap-3 p-3 sm:p-4 md:grid-cols-2 xl:grid-cols-[minmax(14rem,2fr)_repeat(4,minmax(8rem,1fr))_auto]"
+			>
+				<div class="space-y-2 md:col-span-2 xl:col-span-1">
 					<Label for={`${controlId}-round`}>รอบสอบ</Label>
 					<Select.Root
 						type="single"
@@ -304,8 +306,8 @@
 					</div>
 				</div>
 
-				<div class="flex items-end md:col-span-2 xl:col-span-6 xl:justify-end">
-					<Button variant="outline" onclick={clearFilters}>
+				<div class="flex items-end md:col-span-2 xl:col-span-1 xl:justify-end">
+					<Button class="w-full xl:w-auto" variant="outline" onclick={clearFilters}>
 						<RotateCcw class="size-4" aria-hidden="true" />
 						ล้างตัวกรอง
 					</Button>

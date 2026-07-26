@@ -164,22 +164,22 @@
 		/>
 	{:else}
 		<!-- Search and Filter -->
-		<div class="bg-card border border-border rounded-lg p-4">
-			<div class="grid grid-cols-1 md:grid-cols-12 gap-4">
-				<div class="md:col-span-8 relative">
-					<Search class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+		<div class="rounded-xl border bg-card p-3 shadow-sm sm:p-4">
+			<div class="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(12rem,16rem)_auto]">
+				<div class="relative">
+					<Search class="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
 					<Input
 						type="text"
 						bind:value={searchQuery}
 						onkeypress={(e) => e.key === 'Enter' && handleSearch()}
 						placeholder="ค้นหาชื่อ หรือรหัสนักเรียน..."
-						class="pl-10"
+						class="pl-9"
 					/>
 				</div>
 
-				<div class="md:col-span-4">
+				<div>
 					<Select.Root type="single" bind:value={statusFilter} onValueChange={handleSearch}>
-						<Select.Trigger>
+						<Select.Trigger class="w-full">
 							{statusFilter === 'active'
 								? 'ใช้งาน (Active)'
 								: statusFilter === 'inactive'
@@ -193,11 +193,13 @@
 						</Select.Content>
 					</Select.Root>
 				</div>
-			</div>
 
-			<div class="flex gap-2 mt-4">
-				<Button onclick={handleSearch}>ค้นหา</Button>
-				<Button onclick={handleReset} variant="outline">ล้างตัวกรอง</Button>
+				<div class="flex gap-2 md:justify-end">
+					<Button class="flex-1 md:flex-none" onclick={handleSearch}>ค้นหา</Button>
+					<Button class="flex-1 md:flex-none" onclick={handleReset} variant="outline">
+						ล้างตัวกรอง
+					</Button>
+				</div>
 			</div>
 		</div>
 
