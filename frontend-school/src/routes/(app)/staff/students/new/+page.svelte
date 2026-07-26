@@ -147,10 +147,6 @@
 	}
 </script>
 
-<svelte:head>
-	<title>เพิ่มนักเรียนใหม่ - SchoolOrbit</title>
-</svelte:head>
-
 <PageShell
 	title="เพิ่มนักเรียนใหม่"
 	description="กรอกข้อมูลนักเรียนให้ครบถ้วน"

@@ -19,8 +19,6 @@
 	import { Plus, Search, Pencil, Trash2, Eye } from 'lucide-svelte';
 	import { toast } from 'svelte-sonner';
 
-	let { data } = $props();
-
 	const canReadStudents = $derived(
 		$can.hasAny(
 			PERMISSIONS.STUDENT_READ_SCHOOL,
@@ -147,10 +145,6 @@
 		loadStudents();
 	});
 </script>
-
-<svelte:head>
-	<title>{data.title} - SchoolOrbit</title>
-</svelte:head>
 
 <PageShell title="จัดการนักเรียน" description="จัดการข้อมูลนักเรียนทั้งหมด">
 	{#snippet actions()}

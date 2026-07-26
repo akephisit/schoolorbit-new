@@ -18,8 +18,6 @@
 	} from '$lib/utils/calendar';
 	import { ChevronLeft, ChevronRight } from 'lucide-svelte';
 
-	let { data } = $props();
-
 	let events = $state.raw<CalendarViewerEvent[]>([]);
 	let loading = $state(true);
 	let error = $state('');
@@ -62,10 +60,6 @@
 		void loadCalendar();
 	});
 </script>
-
-<svelte:head>
-	<title>{data.title}</title>
-</svelte:head>
 
 <PageShell title="ปฏิทิน" description="กิจกรรมที่เกี่ยวข้องกับคุณ">
 	<div

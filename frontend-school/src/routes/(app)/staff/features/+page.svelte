@@ -80,10 +80,6 @@
 	);
 </script>
 
-<svelte:head>
-	<title>จัดการระบบงาน - Feature Toggles</title>
-</svelte:head>
-
 <PageShell title="จัดการระบบงาน" description="เปิด/ปิดการทำงานของระบบย่อยต่างๆ">
 	{#snippet actions()}
 		{#if canReadFeatures}

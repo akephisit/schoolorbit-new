@@ -64,8 +64,6 @@
 	import { PERMISSIONS } from '$lib/permissions/registry';
 	import { can } from '$lib/stores/permissions';
 
-	let { data } = $props();
-
 	const canReadCurriculum = $derived(
 		$can.hasAny(
 			PERMISSIONS.ACADEMIC_CURRICULUM_READ_ALL,
@@ -1096,10 +1094,6 @@
 		initData();
 	});
 </script>
-
-<svelte:head>
-	<title>{data.title} - SchoolOrbit</title>
-</svelte:head>
 
 <PageShell title="คลังรายวิชา" description="จัดการรายชื่อวิชาและกลุ่มสาระการเรียนรู้">
 	{#snippet actions()}

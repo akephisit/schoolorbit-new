@@ -2,8 +2,6 @@
 	import { onMount } from 'svelte';
 	import { SvelteSet } from 'svelte/reactivity';
 
-	let { data } = $props();
-
 	import {
 		getAcademicStructure,
 		listClassrooms,
@@ -733,10 +731,6 @@
 
 	onMount(initData);
 </script>
-
-<svelte:head>
-	<title>{data.title} - SchoolOrbit</title>
-</svelte:head>
 
 <PageShell
 	title="จัดแผนการเรียน (Course Planning)"

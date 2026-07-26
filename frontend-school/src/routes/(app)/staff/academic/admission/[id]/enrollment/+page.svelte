@@ -41,7 +41,7 @@
 
 	type EnrollRow = EnrollmentPending;
 
-	let { data, params }: PageProps = $props();
+	let { params }: PageProps = $props();
 	let id = $derived(params.id);
 	const canEnrollAdmission = $derived($can.has(PERMISSIONS.ADMISSION_ENROLL_ALL));
 
@@ -202,10 +202,6 @@
 
 	onMount(load);
 </script>
-
-<svelte:head>
-	<title>{data.title} - SchoolOrbit</title>
-</svelte:head>
 
 <PageShell
 	title="รับมอบตัว"

@@ -25,7 +25,7 @@
 		class_room?: string | null;
 	}
 
-	let { params, data }: PageProps = $props();
+	let { params }: PageProps = $props();
 	let studentId = $derived(params.id);
 
 	let loading = $state(true);
@@ -132,10 +132,6 @@
 
 	onMount(loadStructureAndChild);
 </script>
-
-<svelte:head>
-	<title>{data.title}</title>
-</svelte:head>
 
 <PageShell
 	title="ตารางเรียน"

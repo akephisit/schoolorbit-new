@@ -32,7 +32,7 @@
 	} from 'lucide-svelte';
 	import { SvelteSet, SvelteMap } from 'svelte/reactivity';
 
-	let { data, params }: PageProps = $props();
+	let { params }: PageProps = $props();
 	let id = $derived(params.id);
 	const canManageAdmission = $derived($can.has(PERMISSIONS.ADMISSION_MANAGE_ALL));
 
@@ -370,10 +370,6 @@
 		toast.success(`กรอกเลขประจำตัวสำเร็จ ${pendingMatches.length} คน`);
 	}
 </script>
-
-<svelte:head>
-	<title>{data.title} - SchoolOrbit</title>
-</svelte:head>
 
 <PageShell
 	title="กำหนดเลขประจำตัวนักเรียน"

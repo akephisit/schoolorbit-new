@@ -19,8 +19,6 @@
 	import * as Select from '$lib/components/ui/select';
 	import { School, MapPin } from 'lucide-svelte';
 
-	let { data } = $props();
-
 	let loading = $state(true);
 	let entries = $state<TimetableEntry[]>([]);
 	let periods = $state<TimetablePeriodSummary[]>([]);
@@ -117,10 +115,6 @@
 
 	onMount(loadStructure);
 </script>
-
-<svelte:head>
-	<title>{data.title}</title>
-</svelte:head>
 
 <PageShell title="ตารางสอน" description={userName ? `ครู${userName}` : 'ตารางสอนของฉัน'}>
 	<!-- Year + Semester selector -->

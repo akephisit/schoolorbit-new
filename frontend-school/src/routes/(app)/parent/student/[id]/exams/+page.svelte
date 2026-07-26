@@ -39,10 +39,6 @@
 	});
 </script>
 
-<svelte:head>
-	<title>{data.title}</title>
-</svelte:head>
-
 <PageShell
 	title={data.title}
 	description="ตารางสอบที่ประกาศแล้วสำหรับนักเรียน"

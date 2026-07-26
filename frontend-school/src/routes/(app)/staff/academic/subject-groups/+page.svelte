@@ -70,10 +70,6 @@
 	onMount(loadData);
 </script>
 
-<svelte:head>
-	<title>กลุ่มสาระการเรียนรู้ - SchoolOrbit</title>
-</svelte:head>
-
 <PageShell title="กลุ่มสาระการเรียนรู้" description="จัดการกลุ่มสาระและสมาชิกในแต่ละกลุ่ม">
 	<!-- Search -->
 	<div class="relative max-w-sm">

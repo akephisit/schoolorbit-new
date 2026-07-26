@@ -20,8 +20,6 @@
 	import { LoadingButton, PageSkeleton, PageState } from '$lib/components/app-state';
 	import { Plus, Trash2, Play, Eraser } from 'lucide-svelte';
 
-	let { data } = $props();
-
 	let loading = $state(true);
 	let templates = $state<TimetableTemplateView[]>([]);
 	let semesters = $state<Semester[]>([]);
@@ -174,10 +172,6 @@
 
 	onMount(loadAll);
 </script>
-
-<svelte:head>
-	<title>{data.title}</title>
-</svelte:head>
 
 <PageShell
 	title="Templates ตาราง"

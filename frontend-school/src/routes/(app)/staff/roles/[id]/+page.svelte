@@ -285,12 +285,6 @@
 	}
 </script>
 
-<svelte:head>
-	<title
-		>{isNew ? 'สร้างบทบาทใหม่' : canUpdateRoles ? 'แก้ไขบทบาท' : 'รายละเอียดบทบาท'} - SchoolOrbit</title
-	>
-</svelte:head>
-
 <PageShell
 	title={isNew ? 'สร้างบทบาทใหม่' : canUpdateRoles ? 'แก้ไขบทบาท' : 'รายละเอียดบทบาท'}
 	description={canEditRole ? 'กำหนดข้อมูลและสิทธิ์การเข้าถึง' : 'ดูข้อมูลและสิทธิ์ของบทบาท'}

@@ -38,10 +38,6 @@
 	});
 </script>
 
-<svelte:head>
-	<title>ข้อมูลนักเรียน - SchoolOrbit</title>
-</svelte:head>
-
 <PageShell
 	title={student
 		? `${student.title || ''}${student.first_name} ${student.last_name}`

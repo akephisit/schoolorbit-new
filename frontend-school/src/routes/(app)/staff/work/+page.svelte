@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import type { PageProps } from './$types';
 	import { Button } from '$lib/components/ui/button';
 	import { PageShell } from '$lib/components/app-layout';
 	import { Badge, type BadgeVariant } from '$lib/components/ui/badge';
@@ -17,8 +16,6 @@
 		LockKeyhole,
 		TimerReset
 	} from 'lucide-svelte';
-
-	const { data }: PageProps = $props();
 
 	type WorkFilter = 'all' | WorkItemState;
 
@@ -118,10 +115,6 @@
 		void workStore.fetchItems();
 	});
 </script>
-
-<svelte:head>
-	<title>{data.title} - SchoolOrbit</title>
-</svelte:head>
 
 <PageShell
 	title="งานของฉัน"

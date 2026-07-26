@@ -168,10 +168,6 @@
 	}
 </script>
 
-<svelte:head>
-	<title>โปรไฟล์ของฉัน - SchoolOrbit</title>
-</svelte:head>
-
 <PageShell title="โปรไฟล์ของฉัน" description="จัดการข้อมูลส่วนตัวของคุณ" backHref="/staff">
 	{#snippet actions()}
 		<Button onclick={handleSubmit} disabled={saving || loading} class="gap-2">

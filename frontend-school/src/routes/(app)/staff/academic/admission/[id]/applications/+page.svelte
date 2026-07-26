@@ -27,7 +27,7 @@
 	import { can } from '$lib/stores/permissions';
 	import { PERMISSIONS } from '$lib/permissions/registry';
 
-	let { data, params }: PageProps = $props();
+	let { params }: PageProps = $props();
 
 	let id = $derived(params.id);
 	const canReadAdmission = $derived($can.has(PERMISSIONS.ADMISSION_READ_ALL));
@@ -174,10 +174,6 @@
 
 	onMount(loadApps);
 </script>
-
-<svelte:head>
-	<title>{data.title} - SchoolOrbit</title>
-</svelte:head>
 
 <PageShell
 	title="ใบสมัคร"

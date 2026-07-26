@@ -2,8 +2,6 @@
 	import { onMount } from 'svelte';
 	import { toast } from 'svelte-sonner';
 
-	let { data } = $props();
-
 	import {
 		type Building,
 		type Room,
@@ -298,10 +296,6 @@
 
 	onMount(loadData);
 </script>
-
-<svelte:head>
-	<title>{data.title} - SchoolOrbit</title>
-</svelte:head>
 
 <PageShell
 	title="จัดการอาคารสถานที่"

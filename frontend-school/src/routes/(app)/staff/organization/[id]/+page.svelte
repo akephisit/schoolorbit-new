@@ -312,10 +312,6 @@
 	});
 </script>
 
-<svelte:head>
-	<title>{department ? department.name : 'รายละเอียดหน่วยงาน'} - SchoolOrbit</title>
-</svelte:head>
-
 <PageShell
 	title="รายละเอียดหน่วยงาน"
 	description={department?.name ?? 'ข้อมูลหน่วยงานในโครงสร้างโรงเรียน'}

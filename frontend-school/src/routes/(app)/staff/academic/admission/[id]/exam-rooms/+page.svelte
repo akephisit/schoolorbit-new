@@ -45,7 +45,7 @@
 		Check
 	} from 'lucide-svelte';
 
-	let { data, params }: PageProps = $props();
+	let { params }: PageProps = $props();
 	let id = $derived(params.id);
 	const canManageAdmission = $derived($can.has(PERMISSIONS.ADMISSION_MANAGE_ALL));
 
@@ -417,10 +417,6 @@
 		loadAll();
 	});
 </script>
-
-<svelte:head>
-	<title>{data.title} - SchoolOrbit</title>
-</svelte:head>
 
 <PageShell
 	title="จัดห้องสอบ"

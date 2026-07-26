@@ -66,10 +66,6 @@
 	});
 </script>
 
-<svelte:head>
-	<title>{data.title}</title>
-</svelte:head>
-
 <PageShell
 	title="ปฏิทินของลูก"
 	description="กิจกรรมที่เกี่ยวข้องกับนักเรียน"

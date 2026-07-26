@@ -45,8 +45,6 @@
 	import AchievementDialog from '$lib/components/achievement/AchievementDialog.svelte';
 	import { toast } from 'svelte-sonner';
 
-	let { data } = $props();
-
 	// State
 	let loading = $state(false);
 	let achievements = $state<Achievement[]>([]);
@@ -279,10 +277,6 @@
 		}
 	});
 </script>
-
-<svelte:head>
-	<title>{data.title} - SchoolOrbit</title>
-</svelte:head>
 
 <PageShell
 	title="จัดการข้อมูลเกียรติบัตร"

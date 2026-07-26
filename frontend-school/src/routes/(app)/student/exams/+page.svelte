@@ -29,10 +29,6 @@
 	onMount(loadSchedules);
 </script>
 
-<svelte:head>
-	<title>{data.title}</title>
-</svelte:head>
-
 <PageShell title={data.title} description="ตารางสอบที่ประกาศแล้วสำหรับฉัน">
 	{#if loading}
 		<PageSkeleton variant="table" rows={6} columns={7} />

@@ -128,10 +128,6 @@
 	onMount(loadData);
 </script>
 
-<svelte:head>
-	<title>ตารางเรียน</title>
-</svelte:head>
-
 <PageShell
 	title="ตารางเรียน"
 	description={student

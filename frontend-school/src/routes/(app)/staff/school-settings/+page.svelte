@@ -104,10 +104,6 @@
 	}
 </script>
 
-<svelte:head>
-	<title>ตั้งค่าโรงเรียน - SchoolOrbit</title>
-</svelte:head>
-
 <PageShell
 	title="ตั้งค่าโรงเรียน"
 	description="จัดการข้อมูลและการแสดงผลของโรงเรียน"

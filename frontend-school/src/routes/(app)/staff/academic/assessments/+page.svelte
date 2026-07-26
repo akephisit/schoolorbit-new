@@ -39,8 +39,6 @@
 		Save
 	} from 'lucide-svelte';
 
-	let { data } = $props();
-
 	type StatusFilter = AssessmentPlanStatus | 'all';
 	type QuickExamMode = Extract<AssessmentExamMode, 'none' | 'in_timetable' | 'outside_timetable'>;
 	type QuickScoreField = 'beforeMidtermScore' | 'midtermScore' | 'afterMidtermScore' | 'finalScore';
@@ -657,10 +655,6 @@
 
 	onMount(initData);
 </script>
-
-<svelte:head>
-	<title>{data.title} - SchoolOrbit</title>
-</svelte:head>
 
 <PageShell
 	title="โครงสร้างคะแนน"

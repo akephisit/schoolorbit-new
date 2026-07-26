@@ -49,6 +49,8 @@ test('shared app layout components define consistent page header and shell', asy
 
 	assert.match(pageShell, /from '.\/PageHeader.svelte'/);
 	assert.match(pageShell, /space-y-6/);
+	assert.match(pageShell, /<svelte:head>/);
+	assert.match(pageShell, /<title>\{title\} - SchoolOrbit<\/title>/);
 	assert.match(
 		pageShell,
 		/class=\{cn\('w-full min-w-0 space-y-6 px-4 py-4 lg:px-6 lg:py-6', className\)\}/,
@@ -75,6 +77,42 @@ test('shared app layout components define consistent page header and shell', asy
 	assert.match(rules, /PageShell/);
 	assert.match(rules, /full available app width/);
 	assert.match(rules, /do not put `container`, `mx-auto`, or `max-w-\*` in `contentClass`/);
+});
+
+test('app page titles are owned by PageShell', async () => {
+	const appRoutesDir = path.join(projectRoot, 'src/routes/(app)');
+	const pages = (await listFiles(appRoutesDir)).filter((file) => file.endsWith('+page.svelte'));
+	const violations = [];
+
+	for (const file of pages) {
+		const source = await readFile(file, 'utf8');
+		if (!/<svelte:head>[\s\S]*?<title>/.test(source)) continue;
+		violations.push(path.relative(projectRoot, file));
+	}
+
+	assert.deepEqual(
+		violations,
+		[],
+		'App pages should pass their title to PageShell instead of creating duplicate title elements.'
+	);
+});
+
+test('every protected app page renders the shared page shell', async () => {
+	const appRoutesDir = path.join(projectRoot, 'src/routes/(app)');
+	const pages = (await listFiles(appRoutesDir)).filter((file) => file.endsWith('+page.svelte'));
+	const violations = [];
+
+	for (const file of pages) {
+		const source = await readFile(file, 'utf8');
+		if (/<PageShell\b|<SupervisionWorkspace\b/.test(source)) continue;
+		violations.push(path.relative(projectRoot, file));
+	}
+
+	assert.deepEqual(
+		violations,
+		[],
+		'Protected app pages should render PageShell directly or through the shared supervision workspace.'
+	);
 });
 
 test('app pages keep PageShell content full width', async () => {

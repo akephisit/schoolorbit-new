@@ -24,8 +24,6 @@
 	import { can } from '$lib/stores/permissions';
 	import { PERMISSIONS } from '$lib/permissions/registry';
 
-	let { data } = $props();
-
 	const canManageAdmission = $derived($can.has(PERMISSIONS.ADMISSION_MANAGE_ALL));
 
 	function goToAdmissionRound(id: string) {
@@ -128,10 +126,6 @@
 
 	onMount(load);
 </script>
-
-<svelte:head>
-	<title>{data.title} - SchoolOrbit</title>
-</svelte:head>
 
 <PageShell
 	title="สร้างรอบรับสมัครใหม่"

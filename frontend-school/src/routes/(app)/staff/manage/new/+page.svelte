@@ -342,10 +342,6 @@
 	}
 </script>
 
-<svelte:head>
-	<title>เพิ่มบุคลากร - SchoolOrbit</title>
-</svelte:head>
-
 <PageShell
 	title="เพิ่มบุคลากรใหม่"
 	description={`กรอกข้อมูลบุคลากรให้ครบถ้วน • ขั้นตอน ${currentStep} / ${totalSteps}`}

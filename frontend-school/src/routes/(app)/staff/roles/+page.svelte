@@ -75,10 +75,6 @@
 	}
 </script>
 
-<svelte:head>
-	<title>จัดการบทบาท - SchoolOrbit</title>
-</svelte:head>
-
 <PageShell title="จัดการบทบาท" description="กำหนดบทบาทและสิทธิ์การเข้าถึงของผู้ใช้งาน">
 	{#snippet actions()}
 		{#if canCreateRoles}

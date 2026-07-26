@@ -396,10 +396,6 @@
 	});
 </script>
 
-<svelte:head>
-	<title>โครงสร้างโรงเรียน - SchoolOrbit</title>
-</svelte:head>
-
 <MobileDragDropPolyfill />
 
 <PageShell

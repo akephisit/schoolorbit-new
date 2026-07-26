@@ -48,7 +48,7 @@
 		Columns2
 	} from 'lucide-svelte';
 
-	let { data, params }: PageProps = $props();
+	let { params }: PageProps = $props();
 	let id = $derived(params.id);
 	const canScoreAdmission = $derived($can.has(PERMISSIONS.ADMISSION_SCORES_ALL));
 
@@ -442,10 +442,6 @@
 
 	onMount(loadBase);
 </script>
-
-<svelte:head>
-	<title>{data.title} - SchoolOrbit</title>
-</svelte:head>
 
 <MobileDragDropPolyfill />
 

@@ -95,10 +95,6 @@
 	}
 </script>
 
-<svelte:head>
-	<title>ลงทะเบียนกิจกรรม</title>
-</svelte:head>
-
 <PageShell title="ลงทะเบียนกิจกรรม" description="เลือกและจัดการกิจกรรมที่เปิดให้นักเรียนลงทะเบียน">
 	{#if loading}
 		<PageSkeleton variant="cards" rows={3} />

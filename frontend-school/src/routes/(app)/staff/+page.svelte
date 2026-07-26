@@ -95,10 +95,6 @@
 	});
 </script>
 
-<svelte:head>
-	<title>แดชบอร์ดบุคลากร - SchoolOrbit</title>
-</svelte:head>
-
 <PageShell title="แดชบอร์ดบุคลากร" description="ภาพรวมโรงเรียนและทางลัดสำหรับการทำงานประจำวัน">
 	{#if loadingStats}
 		<PageSkeleton variant="cards" rows={3} />

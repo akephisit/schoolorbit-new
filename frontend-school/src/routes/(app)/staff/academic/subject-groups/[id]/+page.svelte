@@ -57,10 +57,6 @@
 	onMount(loadData);
 </script>
 
-<svelte:head>
-	<title>{department ? department.name : 'รายละเอียดกลุ่มสาระ'} - SchoolOrbit</title>
-</svelte:head>
-
 <PageShell
 	title={loading ? 'กำลังโหลด...' : department ? department.name : 'ไม่พบข้อมูล'}
 	description={department?.code}

@@ -165,12 +165,6 @@
 	});
 </script>
 
-<svelte:head>
-	<title>
-		{staff ? `${staff.first_name} ${staff.last_name}` : 'ข้อมูลบุคลากร'} - SchoolOrbit
-	</title>
-</svelte:head>
-
 <PageShell
 	title="ข้อมูลบุคลากร"
 	description={staff?.username ? `รายละเอียดบุคลากร • ${staff.username}` : 'รายละเอียดบุคลากร'}

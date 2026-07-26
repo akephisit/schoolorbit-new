@@ -118,10 +118,6 @@
 	}
 </script>
 
-<svelte:head>
-	<title>การตั้งค่า - SchoolOrbit</title>
-</svelte:head>
-
 <PageShell title="การตั้งค่า" description="จัดการการตั้งค่าบัญชีและความปลอดภัย" backHref="/student">
 	<!-- Settings Tabs -->
 	<div class="grid gap-6 lg:grid-cols-4">

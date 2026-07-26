@@ -149,8 +149,6 @@
 		color?: string;
 	}
 
-	let { data } = $props();
-
 	const requestCoordinator = createRequestCoordinator();
 	const canReadTimetable = $derived($can.has(PERMISSIONS.ACADEMIC_COURSE_PLAN_READ_ALL));
 	const canManageTimetable = $derived($can.has(PERMISSIONS.ACADEMIC_COURSE_PLAN_MANAGE_ALL));
@@ -3461,10 +3459,6 @@
 
 	onMount(loadInitialData);
 </script>
-
-<svelte:head>
-	<title>{data.title} - SchoolOrbit</title>
-</svelte:head>
 
 <MobileDragDropPolyfill />
 

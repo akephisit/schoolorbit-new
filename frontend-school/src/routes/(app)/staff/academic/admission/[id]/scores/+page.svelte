@@ -30,7 +30,7 @@
 	import { Save, Loader2, DoorOpen, UserX } from 'lucide-svelte';
 	import { SvelteSet } from 'svelte/reactivity';
 
-	let { data, params }: PageProps = $props();
+	let { params }: PageProps = $props();
 	let id = $derived(params.id);
 	const canScoreAdmission = $derived($can.has(PERMISSIONS.ADMISSION_SCORES_ALL));
 
@@ -216,10 +216,6 @@
 	});
 	onMount(loadAll);
 </script>
-
-<svelte:head>
-	<title>{data.title} - SchoolOrbit</title>
-</svelte:head>
 
 <PageShell
 	title="กรอกคะแนนสอบ"

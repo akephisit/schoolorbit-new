@@ -176,6 +176,7 @@ Use `ApiResponse` and `ApiErrorResponse`; do not return raw feature DTOs or ad-h
 ### Shared Page Layout UI
 
 - App pages use `frontend-school/src/lib/components/app-layout/PageShell.svelte` or `PageHeader.svelte`.
+- `PageShell` owns the browser title. App pages must not add a duplicate `<title>`; pass the visible page title to `PageShell`.
 - `PageShell` owns standard page padding and spacing; `(app)/+layout.svelte` must not add page padding around it.
 - Page-local `PageShell` classes must not add outer padding, margins, `container`, `mx-auto`, or `max-w-*`.
 - PageShell content uses the full available app width; do not put `container`, `mx-auto`, or `max-w-*` in `contentClass`. Constrain a specific inner form/card/text wrapper instead.

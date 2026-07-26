@@ -19,7 +19,7 @@
 	import { SvelteMap } from 'svelte/reactivity';
 
 	import type { PageProps } from './$types';
-	let { data, params }: PageProps = $props();
+	let { params }: PageProps = $props();
 
 	let id = $derived(params.id);
 	const canReadAdmission = $derived($can.has(PERMISSIONS.ADMISSION_READ_ALL));
@@ -177,10 +177,6 @@
 
 	onMount(load);
 </script>
-
-<svelte:head>
-	<title>{data.title} - SchoolOrbit</title>
-</svelte:head>
 
 {#snippet statsBlock(scopeKey: string, apps: ApplicationListItem[])}
 	{@const zoneSchools = reportConfig?.zone?.schools ?? []}

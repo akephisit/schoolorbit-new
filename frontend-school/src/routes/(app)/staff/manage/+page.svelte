@@ -33,8 +33,6 @@
 	import { LoadingButton, PageSkeleton, PageState } from '$lib/components/app-state';
 	import { ChevronLeft, ChevronRight, Eye, Pencil, Plus, Search, Trash2 } from 'lucide-svelte';
 
-	let { data } = $props();
-
 	let staffList: StaffListItem[] = $state([]);
 	let loading = $state(true);
 	let deleting = $state(false);
@@ -132,10 +130,6 @@
 		void loadStaff();
 	});
 </script>
-
-<svelte:head>
-	<title>{data.title} - SchoolOrbit</title>
-</svelte:head>
 
 <PageShell title="จัดการบุคลากร" description="จัดการข้อมูลครูและบุคลากรทั้งหมด">
 	{#snippet actions()}

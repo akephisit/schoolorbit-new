@@ -1,8 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 
-	let { data } = $props();
-
 	import {
 		getAcademicStructure,
 		listClassrooms,
@@ -286,10 +284,6 @@
 
 	onMount(loadInitData);
 </script>
-
-<svelte:head>
-	<title>{data.title} - SchoolOrbit</title>
-</svelte:head>
 
 {#snippet advisorEditor(list: AdvisorRow[], setList: (next: AdvisorRow[]) => void)}
 	<div class="space-y-2">

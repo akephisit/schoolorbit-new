@@ -1719,10 +1719,6 @@
 	});
 </script>
 
-<svelte:head>
-	<title>{sectionConfig.title} - SchoolOrbit</title>
-</svelte:head>
-
 <PageShell title={sectionConfig.title} description={sectionConfig.description}>
 	{#snippet actions()}
 		<Button variant="outline" size="sm" onclick={refreshAll} disabled={loading || mutationBusy}>

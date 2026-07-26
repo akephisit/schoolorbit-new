@@ -76,10 +76,6 @@
 	}
 </script>
 
-<svelte:head>
-	<title>ข้อมูลส่วนตัว - Student Portal</title>
-</svelte:head>
-
 <PageShell title="ข้อมูลส่วนตัว" description="ดูและแก้ไขข้อมูลส่วนตัวของคุณ">
 	{#snippet actions()}
 		{#if !editing && !loading}

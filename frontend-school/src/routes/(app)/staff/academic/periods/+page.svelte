@@ -2,8 +2,6 @@
 	import { onMount } from 'svelte';
 	import { toast } from 'svelte-sonner';
 
-	let { data } = $props();
-
 	import {
 		type AcademicPeriod,
 		listPeriods,
@@ -239,10 +237,6 @@
 
 	onMount(loadData);
 </script>
-
-<svelte:head>
-	<title>{data.title} - SchoolOrbit</title>
-</svelte:head>
 
 <MobileDragDropPolyfill />
 

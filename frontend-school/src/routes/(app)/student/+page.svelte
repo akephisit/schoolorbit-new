@@ -33,10 +33,6 @@
 	});
 </script>
 
-<svelte:head>
-	<title>แดชบอร์ด - Student Portal</title>
-</svelte:head>
-
 <PageShell
 	title="แดชบอร์ด"
 	description={student

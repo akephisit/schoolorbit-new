@@ -1,8 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 
-	let { data } = $props();
-
 	import {
 		getAcademicStructure,
 		listClassrooms,
@@ -274,10 +272,6 @@
 
 	onMount(loadInitData);
 </script>
-
-<svelte:head>
-	<title>{data.title} - SchoolOrbit</title>
-</svelte:head>
 
 <PageShell title="จัดห้องเรียน" description="จัดการนักเรียนเข้าห้องเรียนประจำปีการศึกษา">
 	{#if !canReadEnrollments}

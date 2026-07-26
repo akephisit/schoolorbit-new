@@ -65,8 +65,6 @@
 	type VisibilityFilter = '' | 'public' | 'private';
 	type AudienceFilter = '' | CalendarAudienceType;
 
-	let { data } = $props();
-
 	const todayDate = toIsoDate(new Date());
 
 	let events = $state.raw<CalendarEvent[]>([]);
@@ -508,10 +506,6 @@
 		void loadCalendar();
 	});
 </script>
-
-<svelte:head>
-	<title>{data.title}</title>
-</svelte:head>
 
 <PageShell title="ปฏิทินโรงเรียน" description="กิจกรรมและประกาศตามช่วงเดือน">
 	{#snippet actions()}

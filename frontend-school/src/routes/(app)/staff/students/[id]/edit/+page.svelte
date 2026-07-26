@@ -231,12 +231,6 @@
 	}
 </script>
 
-<svelte:head>
-	<title>
-		{student ? `${student.first_name} ${student.last_name}` : 'นักเรียน'} - SchoolOrbit
-	</title>
-</svelte:head>
-
 <PageShell
 	title={student ? `${student.first_name} ${student.last_name}` : 'นักเรียน'}
 	description="รายละเอียดและจัดการข้อมูลนักเรียน"

@@ -32,8 +32,6 @@
 		Search
 	} from 'lucide-svelte';
 
-	let { data } = $props();
-
 	type FilterOption = {
 		value: string;
 		label: string;
@@ -422,10 +420,6 @@
 		initialized = true;
 	});
 </script>
-
-<svelte:head>
-	<title>{data.title} - SchoolOrbit</title>
-</svelte:head>
 
 <PageShell
 	title="ตารางสอนวันนี้"

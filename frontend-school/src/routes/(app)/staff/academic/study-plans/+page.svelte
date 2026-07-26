@@ -71,8 +71,6 @@
 		plannedSummaryForWorksheet
 	} from '$lib/utils/curriculum-export';
 
-	let { data } = $props();
-
 	const canReadStudyPlans = $derived(
 		$can.hasAny(
 			PERMISSIONS.ACADEMIC_CURRICULUM_READ_ALL,
@@ -866,10 +864,6 @@
 		initData();
 	});
 </script>
-
-<svelte:head>
-	<title>{data.title} - SchoolOrbit</title>
-</svelte:head>
 
 <PageShell title="หลักสูตรสถานศึกษา" description="จัดการหลักสูตรและเวอร์ชันของหลักสูตร">
 	{#snippet actions()}

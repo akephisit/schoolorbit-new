@@ -19,8 +19,6 @@
 	import { can } from '$lib/stores/permissions';
 	import { PERMISSIONS } from '$lib/permissions/registry';
 
-	let { data } = $props();
-
 	const canReadAdmission = $derived($can.has(PERMISSIONS.ADMISSION_READ_ALL));
 	const canManageAdmission = $derived($can.has(PERMISSIONS.ADMISSION_MANAGE_ALL));
 
@@ -102,10 +100,6 @@
 
 	onMount(load);
 </script>
-
-<svelte:head>
-	<title>{data.title} - SchoolOrbit</title>
-</svelte:head>
 
 <PageShell title="ระบบรับสมัครนักเรียน" description="จัดการรอบรับสมัคร สายการเรียน และใบสมัคร">
 	{#snippet actions()}

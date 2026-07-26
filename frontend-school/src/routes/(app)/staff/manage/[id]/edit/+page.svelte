@@ -399,12 +399,6 @@
 	}
 </script>
 
-<svelte:head>
-	<title>
-		{staff ? `แก้ไข ${staff.first_name} ${staff.last_name}` : 'แก้ไขบุคลากร'} - SchoolOrbit
-	</title>
-</svelte:head>
-
 <PageShell
 	title="แก้ไขข้อมูลบุคลากร"
 	description={staff

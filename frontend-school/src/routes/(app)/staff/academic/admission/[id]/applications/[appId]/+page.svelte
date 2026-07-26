@@ -55,7 +55,7 @@
 	import { PERMISSIONS } from '$lib/permissions/registry';
 
 	import type { PageProps } from './$types';
-	let { data, params }: PageProps = $props();
+	let { params }: PageProps = $props();
 
 	let roundId = $derived(params.id);
 	let appId = $derived(params.appId);
@@ -528,10 +528,6 @@
 		docSlots = {};
 	});
 </script>
-
-<svelte:head>
-	<title>{data.title} - SchoolOrbit</title>
-</svelte:head>
 
 <svelte:window onkeydown={onLbKeyDown} />
 

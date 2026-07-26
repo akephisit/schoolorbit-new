@@ -36,10 +36,6 @@
 	});
 </script>
 
-<svelte:head>
-	<title>ผู้ปกครอง - SchoolOrbit</title>
-</svelte:head>
-
 <PageShell
 	title={`สวัสดี, คุณ${profile?.first_name || '...'} ${profile?.last_name || ''}`}
 	description="ติดตามการเรียนและความเป็นอยู่ของบุตรหลาน"

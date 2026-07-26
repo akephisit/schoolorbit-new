@@ -55,7 +55,7 @@
 					{@render meta()}
 				</div>
 			{/if}
-			<h1 class="truncate text-2xl font-semibold tracking-tight text-foreground">{title}</h1>
+			<h1 class="text-pretty text-2xl font-semibold tracking-tight text-foreground">{title}</h1>
 			{#if description}
 				<p class="max-w-3xl text-sm text-muted-foreground">{description}</p>
 			{/if}
@@ -63,7 +63,7 @@
 	</div>
 
 	{#if actions}
-		<div class="flex shrink-0 flex-wrap items-center gap-2 sm:justify-end">
+		<div class="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:shrink-0 sm:justify-end">
 			{@render actions()}
 		</div>
 	{/if}

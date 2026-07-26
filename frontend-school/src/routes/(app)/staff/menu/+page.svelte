@@ -372,10 +372,6 @@
 	}
 </script>
 
-<svelte:head>
-	<title>จัดการเมนู - Menu Management</title>
-</svelte:head>
-
 <MobileDragDropPolyfill />
 
 <PageShell title="จัดการเมนู" description="จัดการโครงสร้างเมนูและกลุ่มเมนู (Native Drag & Drop)">

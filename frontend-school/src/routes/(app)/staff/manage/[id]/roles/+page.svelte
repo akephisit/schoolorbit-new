@@ -11,10 +11,6 @@
 	let activeTab = $state('roles');
 </script>
 
-<svelte:head>
-	<title>จัดการสิทธิ์ - SchoolOrbit</title>
-</svelte:head>
-
 <PageShell title="จัดการสิทธิ์ผู้ใช้งาน" description="บทบาทและสิทธิ์การเข้าถึง" backHref="/staff">
 	<Tabs bind:value={activeTab}>
 		<TabsList>

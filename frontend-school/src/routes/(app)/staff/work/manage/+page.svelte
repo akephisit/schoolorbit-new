@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import type { PageProps } from './$types';
 	import { Badge, type BadgeVariant } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import { PageShell } from '$lib/components/app-layout';
@@ -37,8 +36,6 @@
 		Send,
 		TimerReset
 	} from 'lucide-svelte';
-
-	const { data }: PageProps = $props();
 
 	type AssigneeMode = 'user' | 'organization_unit' | 'organization_position';
 
@@ -307,10 +304,6 @@
 		void loadData();
 	});
 </script>
-
-<svelte:head>
-	<title>{data.title} - SchoolOrbit</title>
-</svelte:head>
 
 <PageShell
 	title="จัดการรอบงาน"

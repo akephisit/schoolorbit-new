@@ -177,10 +177,6 @@
 	onMount(loadInitialData);
 </script>
 
-<svelte:head>
-	<title>{data.title}</title>
-</svelte:head>
-
 <PageShell title={data.title} description="จัดการรอบสอบประจำภาคเรียน">
 	{#snippet actions()}
 		<div class="flex flex-wrap items-center gap-2">
