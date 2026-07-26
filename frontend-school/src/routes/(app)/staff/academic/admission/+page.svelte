@@ -130,7 +130,7 @@
 	{:else}
 		<div class="grid gap-4">
 			{#each rounds as round (round.id)}
-				<Card.Root class="hover:shadow-md transition-shadow">
+				<Card.Root class="gap-0 py-0 transition-shadow hover:shadow-md">
 					<Card.Content class="p-5">
 						<div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
 							<div class="space-y-2">

@@ -203,7 +203,7 @@
 	{/snippet}
 
 	<div
-		class="flex flex-col gap-3 rounded-md border bg-background p-3 md:flex-row md:items-end md:justify-between"
+		class="flex flex-col gap-3 rounded-xl border bg-card p-3 shadow-sm sm:p-4 md:flex-row md:items-end md:justify-between"
 	>
 		<div class="grid gap-3 sm:grid-cols-2">
 			<div class="grid gap-2">

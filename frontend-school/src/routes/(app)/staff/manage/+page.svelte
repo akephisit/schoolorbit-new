@@ -148,9 +148,9 @@
 			description="บัญชีนี้ยังไม่มีสิทธิ์อ่านข้อมูลบุคลากรในขอบเขตที่ระบบอนุญาต"
 		/>
 	{:else}
-		<Card>
-			<CardContent class="p-4">
-				<div class="flex flex-col gap-2 sm:flex-row">
+		<Card class="gap-0 py-0">
+			<CardContent class="p-3 sm:p-4">
+				<div class="flex flex-col gap-3 sm:flex-row">
 					<div class="relative flex-1">
 						<Search
 							class="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"

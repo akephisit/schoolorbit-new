@@ -518,7 +518,7 @@
 	{:else if round}
 		<div class="space-y-6">
 			<!-- Round Info Card -->
-			<Card.Root>
+			<Card.Root class="gap-0 py-0">
 				<Card.Content class="p-5">
 					<div class="flex flex-col md:flex-row md:items-start justify-between gap-4">
 						<div class="space-y-1">

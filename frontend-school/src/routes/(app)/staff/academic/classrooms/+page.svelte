@@ -395,9 +395,9 @@
 			description="บัญชีนี้เข้า module ห้องเรียนได้ แต่ยังไม่มีสิทธิ์อ่านรายการห้องเรียน"
 		/>
 	{:else}
-		<Card.Root>
-			<Card.Content class="pt-6">
-				<div class="flex flex-col gap-4 md:flex-row md:items-end">
+		<Card.Root class="gap-0 py-0">
+			<Card.Content class="p-3 sm:p-4">
+				<div class="flex flex-col gap-3 md:flex-row md:items-end">
 					<div class="grid w-full max-w-sm gap-1.5">
 						<Label>ปีการศึกษา</Label>
 						<Select.Root type="single" bind:value={selectedYearId} onValueChange={fetchClassrooms}>

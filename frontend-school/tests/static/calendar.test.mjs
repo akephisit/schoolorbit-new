@@ -329,7 +329,10 @@ test('public calendar fills mobile viewport and opens selected days in a timelin
 	assert.match(publicPage, /lg:grid-cols-\[minmax\(0,1fr\)_22rem\]/);
 	assert.match(publicPage, /xl:grid-cols-\[minmax\(0,1fr\)_24rem\]/);
 	assert.ok(monthGridPosition >= 0, 'Expected the public month grid');
-	assert.ok(colorKeyPosition > monthGridPosition, 'Expected the public color key below the month grid');
+	assert.ok(
+		colorKeyPosition > monthGridPosition,
+		'Expected the public color key below the month grid'
+	);
 	assert.ok(
 		detailPanelPosition > colorKeyPosition,
 		'Expected the color key in the left calendar column'

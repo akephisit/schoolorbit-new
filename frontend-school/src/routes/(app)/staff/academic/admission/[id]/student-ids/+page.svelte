@@ -384,8 +384,8 @@
 		/>
 	{:else}
 		<!-- Controls -->
-		<Card.Root>
-			<Card.Content class="py-3 flex items-center gap-2 overflow-x-auto flex-nowrap">
+		<Card.Root class="gap-0 py-0">
+			<Card.Content class="flex flex-nowrap items-center gap-2 overflow-x-auto p-3 sm:p-4">
 				<!-- Stats -->
 				<p class="text-sm text-muted-foreground whitespace-nowrap shrink-0">
 					{#if loading}

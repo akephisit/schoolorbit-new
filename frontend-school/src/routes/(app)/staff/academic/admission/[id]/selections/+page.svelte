@@ -458,7 +458,7 @@
 		/>
 	{:else}
 		<!-- Step 1: เลือกโหมดจัดห้อง -->
-		<Card.Root>
+		<Card.Root class="gap-0 py-0">
 			<Card.Content class="pt-4 pb-4 space-y-3">
 				<div class="flex items-center justify-between">
 					<p class="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
@@ -525,7 +525,7 @@
 		<!-- ========== โหมด: แยกตามสาย ========== -->
 		{#if assignmentMode === 'per_track'}
 			<!-- Track Selector -->
-			<Card.Root>
+			<Card.Root class="gap-0 py-0">
 				<Card.Content class="pt-4 pb-4 flex items-center gap-4 flex-wrap">
 					<p class="text-sm font-medium shrink-0">สาย:</p>
 					<div class="flex gap-2 flex-wrap flex-1">
@@ -571,7 +571,7 @@
 
 			<!-- วิชาที่ใช้คัดผ่าน-ไม่ผ่าน -->
 			{#if subjects.length > 0}
-				<Card.Root>
+				<Card.Root class="gap-0 py-0">
 					<Card.Content class="pt-4 pb-3 space-y-2">
 						<p class="text-sm font-medium">วิชาที่ใช้คัดผ่าน-ไม่ผ่าน</p>
 						<div class="flex flex-wrap gap-3">
@@ -607,7 +607,7 @@
 			{/if}
 
 			<!-- วิธีจัดห้อง -->
-			<Card.Root>
+			<Card.Root class="gap-0 py-0">
 				<Card.Content class="pt-4 pb-3 space-y-2">
 					<p class="text-sm font-medium">วิธีจัดห้อง</p>
 					<RadioGroup.Root
@@ -648,7 +648,7 @@
 				{#if ranking.rooms?.length > 0}
 					<div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
 						{#each ranking.rooms as room (room.roomId)}
-							<Card.Root>
+							<Card.Root class="gap-0 py-0">
 								<Card.Content class="pt-3 pb-3 text-center space-y-1">
 									<p class="font-semibold">{room.roomName}</p>
 									{#if room.studentCount > 0}
@@ -965,7 +965,7 @@
 			<!-- ========== โหมด: รวมทุกคน ========== -->
 		{:else}
 			<!-- DnD Room Ordering -->
-			<Card.Root>
+			<Card.Root class="gap-0 py-0">
 				<Card.Content class="pt-4 pb-4 space-y-3">
 					<div class="flex items-center justify-between">
 						<div>
@@ -1036,7 +1036,7 @@
 
 			<!-- ผลจัดห้อง (tabs) -->
 			{#if loadingGlobal}
-				<Card.Root>
+				<Card.Root class="gap-0 py-0">
 					<Card.Content class="flex justify-center py-16">
 						<LoaderCircle class="w-8 h-8 animate-spin text-primary" />
 					</Card.Content>
@@ -1047,7 +1047,7 @@
 					<div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
 						{#each globalRoomsSorted() as room (room.roomId)}
 							{@const isOver = room.studentCount > room.capacity}
-							<Card.Root class={isOver ? 'border-red-300' : ''}>
+							<Card.Root class={isOver ? 'gap-0 border-red-300 py-0' : 'gap-0 py-0'}>
 								<Card.Content class="pt-3 pb-3 text-center space-y-1">
 									<p class="font-semibold">{room.roomName}</p>
 									{#if room.studentCount > 0}

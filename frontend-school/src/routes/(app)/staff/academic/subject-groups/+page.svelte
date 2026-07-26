@@ -72,9 +72,11 @@
 
 <PageShell title="กลุ่มสาระการเรียนรู้" description="จัดการกลุ่มสาระและสมาชิกในแต่ละกลุ่ม">
 	<!-- Search -->
-	<div class="relative max-w-sm">
-		<Search class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-		<Input type="text" bind:value={searchQuery} placeholder="ค้นหากลุ่มสาระ..." class="pl-9" />
+	<div class="rounded-xl border bg-card p-3 shadow-sm sm:p-4">
+		<div class="relative max-w-sm">
+			<Search class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+			<Input type="text" bind:value={searchQuery} placeholder="ค้นหากลุ่มสาระ..." class="pl-9" />
+		</div>
 	</div>
 
 	{#if !canReadSubjectGroups}

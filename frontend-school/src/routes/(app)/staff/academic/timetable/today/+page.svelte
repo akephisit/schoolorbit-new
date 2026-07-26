@@ -425,7 +425,7 @@
 	title="ตารางสอนวันนี้"
 	description="ภาพรวมคาบสอนของครูทั้งโรงเรียน แยกตามวัน คาบ ชั้นเรียน และรายวิชา"
 >
-	<div class="print:hidden space-y-3 rounded-md border bg-background p-3">
+	<div class="print:hidden space-y-3 rounded-xl border bg-card p-3 shadow-sm sm:p-4">
 		<div class="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
 			<div class="grid flex-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
 				<div class="space-y-1.5">

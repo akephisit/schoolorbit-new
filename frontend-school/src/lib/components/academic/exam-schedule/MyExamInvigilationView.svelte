@@ -36,7 +36,7 @@
 </script>
 
 <div class="grid gap-3 sm:grid-cols-3">
-	<Card.Root>
+	<Card.Root class="gap-0 py-0">
 		<Card.Content class="flex items-center gap-3 p-4">
 			<div class="rounded-lg bg-primary/10 p-2 text-primary">
 				<CalendarDays class="size-5" aria-hidden="true" />
@@ -47,7 +47,7 @@
 			</div>
 		</Card.Content>
 	</Card.Root>
-	<Card.Root>
+	<Card.Root class="gap-0 py-0">
 		<Card.Content class="flex items-center gap-3 p-4">
 			<div class="rounded-lg bg-primary/10 p-2 text-primary">
 				<DoorOpen class="size-5" aria-hidden="true" />
@@ -58,7 +58,7 @@
 			</div>
 		</Card.Content>
 	</Card.Root>
-	<Card.Root>
+	<Card.Root class="gap-0 py-0">
 		<Card.Content class="flex items-center gap-3 p-4">
 			<div class="rounded-lg bg-primary/10 p-2 text-primary">
 				<Clock3 class="size-5" aria-hidden="true" />

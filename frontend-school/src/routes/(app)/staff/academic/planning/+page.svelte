@@ -756,13 +756,13 @@
 			description="บัญชีนี้เข้า module วางแผนรายวิชาได้ แต่ยังไม่มีสิทธิ์อ่านข้อมูลแผนรายวิชา"
 		/>
 	{:else}
-		<Card.Root>
-			<Card.Content class="pt-6">
-				<div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+		<Card.Root class="gap-0 py-0">
+			<Card.Content class="p-3 sm:p-4">
+				<div class="grid grid-cols-1 gap-3 md:grid-cols-3">
 					<div class="space-y-2">
 						<Label>ปีการศึกษา</Label>
 						<Select.Root type="single" value={selectedYearId} onValueChange={onYearChange}>
-							<Select.Trigger>
+							<Select.Trigger class="w-full">
 								{structure.years.find((y) => y.id === selectedYearId)?.name || 'เลือกปีการศึกษา'}
 							</Select.Trigger>
 							<Select.Content>
@@ -776,7 +776,7 @@
 					<div class="space-y-2">
 						<Label>ภาคเรียน (Semster)</Label>
 						<Select.Root type="single" bind:value={selectedTermId}>
-							<Select.Trigger disabled={!selectedYearId}>
+							<Select.Trigger class="w-full" disabled={!selectedYearId}>
 								{filteredSemesters.find((s) => s.id === selectedTermId)?.term || 'เลือกภาคเรียน'}
 							</Select.Trigger>
 							<Select.Content>
@@ -790,7 +790,7 @@
 					<div class="space-y-2">
 						<Label>ห้องเรียน</Label>
 						<Select.Root type="single" bind:value={selectedClassroomId}>
-							<Select.Trigger disabled={!selectedYearId}>
+							<Select.Trigger class="w-full" disabled={!selectedYearId}>
 								{classrooms.find((c) => c.id === selectedClassroomId)?.name || 'เลือกห้องเรียน'}
 							</Select.Trigger>
 							<Select.Content class="max-h-[300px]">
@@ -816,7 +816,7 @@
 			<div class="space-y-4">
 				<!-- Summary Statistic Cards -->
 				<div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-					<Card.Root>
+					<Card.Root class="gap-0 py-0">
 						<Card.Content class="p-3 flex flex-col items-center justify-center text-center">
 							<h4 class="text-sm font-medium text-muted-foreground mb-1">วิชาพื้นฐาน</h4>
 							<div class="text-xl font-bold">
@@ -828,7 +828,7 @@
 							</div>
 						</Card.Content>
 					</Card.Root>
-					<Card.Root>
+					<Card.Root class="gap-0 py-0">
 						<Card.Content class="p-3 flex flex-col items-center justify-center text-center">
 							<h4 class="text-sm font-medium text-muted-foreground mb-1">วิชาเพิ่มเติม</h4>
 							<div class="text-xl font-bold">
@@ -840,7 +840,7 @@
 							</div>
 						</Card.Content>
 					</Card.Root>
-					<Card.Root>
+					<Card.Root class="gap-0 py-0">
 						<Card.Content class="p-3 flex flex-col items-center justify-center text-center">
 							<h4 class="text-sm font-medium text-muted-foreground mb-1">กิจกรรมพัฒนาผู้เรียน</h4>
 							<div class="text-xl font-bold">
@@ -852,7 +852,7 @@
 							</div>
 						</Card.Content>
 					</Card.Root>
-					<Card.Root class="bg-primary/5 border-primary/20">
+					<Card.Root class="gap-0 border-primary/20 bg-primary/5 py-0">
 						<Card.Content class="p-3 flex flex-col items-center justify-center text-center">
 							<h4 class="text-sm font-medium text-primary mb-1">รวมทั้งสิ้น (วิชา)</h4>
 							<div class="text-xl font-bold text-primary">

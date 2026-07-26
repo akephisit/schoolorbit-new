@@ -113,13 +113,13 @@
 	</div>
 
 	{#if loading}
-		<Card.Root>
+		<Card.Root class="gap-0 py-0">
 			<Card.Content class="flex items-center justify-center p-12">
 				<LoaderCircle class="h-8 w-8 animate-spin text-muted-foreground" />
 			</Card.Content>
 		</Card.Root>
 	{:else if error}
-		<Card.Root class="border-destructive">
+		<Card.Root class="gap-0 border-destructive py-0">
 			<Card.Content class="flex items-center gap-3 p-6 text-destructive">
 				<AlertCircle class="h-5 w-5" />
 				<p>{error}</p>
@@ -249,7 +249,7 @@
 		{/if}
 
 		<!-- Privacy Policy Link -->
-		<Card.Root>
+		<Card.Root class="gap-0 py-0">
 			<Card.Content class="p-4">
 				<p class="text-sm text-muted-foreground text-center">
 					การให้ความยินยอมนี้ถือว่าท่านได้อ่านและเข้าใจ

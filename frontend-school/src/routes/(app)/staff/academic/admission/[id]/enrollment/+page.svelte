@@ -217,13 +217,13 @@
 	{:else}
 		<!-- Stats -->
 		<div class="grid grid-cols-2 md:grid-cols-4 gap-3">
-			<Card.Root>
+			<Card.Root class="gap-0 py-0">
 				<Card.Content class="pt-5 pb-5 text-center">
 					<p class="text-3xl font-bold">{list.length}</p>
 					<p class="text-xs text-muted-foreground mt-1">ได้รับคัดเลือกทั้งหมด</p>
 				</Card.Content>
 			</Card.Root>
-			<Card.Root class="border-green-200 bg-green-50 dark:bg-green-950/20">
+			<Card.Root class="gap-0 border-green-200 bg-green-50 py-0 dark:bg-green-950/20">
 				<Card.Content class="pt-5 pb-5 text-center">
 					<p class="text-3xl font-bold text-green-700">
 						{list.filter((a) => a.studentConfirmed).length}
@@ -231,7 +231,7 @@
 					<p class="text-xs text-green-600 mt-1">ยืนยันแล้ว</p>
 				</Card.Content>
 			</Card.Root>
-			<Card.Root class="border-blue-200 bg-blue-50 dark:bg-blue-950/20">
+			<Card.Root class="gap-0 border-blue-200 bg-blue-50 py-0 dark:bg-blue-950/20">
 				<Card.Content class="pt-5 pb-5 text-center">
 					<p class="text-3xl font-bold text-blue-700">
 						{list.filter((a) => a.preSubmitted).length}
@@ -239,7 +239,7 @@
 					<p class="text-xs text-blue-600 mt-1">กรอกฟอร์มล่วงหน้า</p>
 				</Card.Content>
 			</Card.Root>
-			<Card.Root class="border-purple-200 bg-purple-50 dark:bg-purple-950/20">
+			<Card.Root class="gap-0 border-purple-200 bg-purple-50 py-0 dark:bg-purple-950/20">
 				<Card.Content class="pt-5 pb-5 text-center">
 					<p class="text-3xl font-bold text-purple-700">
 						{list.filter((a) => a.status === 'enrolled').length}

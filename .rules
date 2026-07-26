@@ -180,7 +180,7 @@ Use `ApiResponse` and `ApiErrorResponse`; do not return raw feature DTOs or ad-h
 - `PageShell` owns standard page padding and spacing; `(app)/+layout.svelte` must not add page padding around it.
 - Page-local `PageShell` classes must not add outer padding, margins, `container`, `mx-auto`, or `max-w-*`.
 - PageShell content uses the full available app width; do not put `container`, `mx-auto`, or `max-w-*` in `contentClass`. Constrain a specific inner form/card/text wrapper instead.
-- Compact filter surfaces use `rounded-xl border bg-card p-3 shadow-sm sm:p-4` with `gap-3` between controls. When using `Card.Root` for a filter-only surface, override its content-card spacing with `gap-0 py-0`; keep filter actions in the same responsive row when space allows.
+- Compact filter surfaces use `rounded-xl border bg-card p-3 shadow-sm sm:p-4` with `gap-3` between controls. When using `Card.Root` for a filter-only surface, override its content-card spacing with `gap-0 py-0`; keep filter actions in the same responsive row when space allows. Any compact card made from only `Card.Content` must also use `gap-0 py-0` on the root when the content declares its own vertical padding, so root and content padding do not compound.
 - For full-height boards, timelines, tabs, and split panes, pass height with `h-full min-h-0 flex` and scroll the actual content pane. Do not size inner workspaces with `100vh`.
 
 ### Sidebar Navigation IA

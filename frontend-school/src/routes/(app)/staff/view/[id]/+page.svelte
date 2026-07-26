@@ -131,7 +131,7 @@
 	{:else if staff}
 		<!-- Header Profile Card -->
 		<Card
-			class="overflow-hidden border-none shadow-lg bg-gradient-to-br from-primary/5 via-card to-card"
+			class="gap-0 overflow-hidden border-none bg-gradient-to-br from-primary/5 via-card to-card py-0 shadow-lg"
 		>
 			<CardContent class="p-8">
 				<div class="flex flex-col md:flex-row items-center gap-8">

@@ -506,7 +506,7 @@
 	{:else if round}
 		<div class="space-y-6">
 			{#if !reportConfig || reportConfig.reportMode === null}
-				<Card.Root>
+				<Card.Root class="gap-0 py-0">
 					<Card.Content class="py-12 text-center space-y-3">
 						<p class="text-muted-foreground">ยังไม่ได้ตั้งค่าการรายงานสำหรับรอบนี้</p>
 						<Button
@@ -522,19 +522,19 @@
 			{:else}
 				<!-- Summary cards -->
 				<div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
-					<Card.Root>
+					<Card.Root class="gap-0 py-0">
 						<Card.Content class="p-4">
 							<p class="text-xs text-muted-foreground">ประเภทการรายงาน</p>
 							<p class="font-semibold mt-0.5">{reportModeLabel[reportConfig.reportMode]}</p>
 						</Card.Content>
 					</Card.Root>
-					<Card.Root>
+					<Card.Root class="gap-0 py-0">
 						<Card.Content class="p-4">
 							<p class="text-xs text-muted-foreground">ผู้สมัครทั้งหมด</p>
 							<p class="font-semibold mt-0.5">{applications.length} คน</p>
 						</Card.Content>
 					</Card.Root>
-					<Card.Root>
+					<Card.Root class="gap-0 py-0">
 						<Card.Content class="p-4">
 							<p class="text-xs text-muted-foreground">แสดง (ตามตัวกรอง)</p>
 							<p class="font-semibold mt-0.5">{filteredApps.length} คน</p>
@@ -543,7 +543,9 @@
 				</div>
 
 				<!-- Status filter -->
-				<div class="flex flex-col sm:flex-row items-start sm:items-center gap-2">
+				<div
+					class="flex flex-col items-start gap-2 rounded-xl border bg-card p-3 shadow-sm sm:flex-row sm:items-center sm:p-4"
+				>
 					<span class="text-sm font-medium">กรอง:</span>
 					<Select.Root type="single" bind:value={statusFilter}>
 						<Select.Trigger class="w-full sm:w-48">

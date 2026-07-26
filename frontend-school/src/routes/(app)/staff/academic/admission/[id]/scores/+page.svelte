@@ -232,8 +232,8 @@
 		/>
 	{:else}
 		<!-- View mode + Track selector -->
-		<Card.Root>
-			<Card.Content class="pt-4 pb-4 flex flex-wrap items-center gap-3">
+		<Card.Root class="gap-0 py-0">
+			<Card.Content class="flex flex-wrap items-center gap-3 p-3 sm:p-4">
 				{#if seatGroups.length > 0}
 					<div class="flex gap-1.5 shrink-0">
 						<Button

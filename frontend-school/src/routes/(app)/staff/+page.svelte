@@ -110,7 +110,7 @@
 		<div class="grid gap-4 md:grid-cols-3">
 			{#each summaryCards as item (item.label)}
 				{@const Icon = item.icon}
-				<Card class="overflow-hidden">
+				<Card class="gap-0 overflow-hidden py-0">
 					<CardContent class="p-5">
 						<div class="flex items-start justify-between gap-4">
 							<div class="min-w-0 space-y-2">

@@ -188,9 +188,9 @@
 		/>
 	{:else}
 		<!-- Filters -->
-		<Card.Root>
-			<Card.Content class="pt-4 pb-4">
-				<div class="flex flex-col sm:flex-row flex-wrap gap-2">
+		<Card.Root class="gap-0 py-0">
+			<Card.Content class="p-3 sm:p-4">
+				<div class="flex flex-col flex-wrap gap-3 sm:flex-row">
 					<div class="relative flex-1 min-w-0 sm:min-w-48">
 						<Search
 							class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground"
@@ -233,7 +233,7 @@
 							</Button>
 						{/if}
 					</div>
-					<Button onclick={loadApps} variant="outline" size="sm" class="gap-1.5 w-full sm:w-auto">
+					<Button onclick={loadApps} variant="outline" class="w-full gap-1.5 sm:w-auto">
 						<Filter class="w-4 h-4" /> ค้นหา
 					</Button>
 				</div>

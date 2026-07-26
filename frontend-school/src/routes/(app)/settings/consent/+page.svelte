@@ -298,7 +298,7 @@
 		{/if}
 
 		<!-- Privacy Policy Link -->
-		<Card.Root>
+		<Card.Root class="gap-0 py-0">
 			<Card.Content class="p-4">
 				<p class="text-sm text-muted-foreground text-center">
 					อ่านเพิ่มเติมที่

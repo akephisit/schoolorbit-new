@@ -77,6 +77,7 @@ test('shared app layout components define consistent page header and shell', asy
 	assert.match(rules, /PageShell/);
 	assert.match(rules, /full available app width/);
 	assert.match(rules, /do not put `container`, `mx-auto`, or `max-w-\*` in `contentClass`/);
+	assert.match(rules, /root and content padding do not compound/);
 });
 
 test('app page titles are owned by PageShell', async () => {
@@ -172,6 +173,45 @@ test('app pages keep outer spacing on PageShell instead of page-local root class
 		violations,
 		[],
 		'PageShell class should not set page-local padding, margins, or max width. Use contentClass or an inner wrapper for content-only sizing.'
+	);
+});
+
+test('compact content-only cards do not compound vertical padding', async () => {
+	const sourceDirectories = [
+		path.join(projectRoot, 'src/routes/(app)'),
+		path.join(projectRoot, 'src/lib/components')
+	];
+	const files = (await Promise.all(sourceDirectories.map((directory) => listFiles(directory))))
+		.flat()
+		.filter((file) => file.endsWith('.svelte'))
+		.filter((file) => !file.includes(`${path.sep}app-state${path.sep}`));
+	const violations = [];
+	const directContentPatterns = [
+		/<Card\.Root\b([^>]*)>\s*<Card\.Content\b([^>]*)>/g,
+		/<Card(?=\s|>)([^>]*)>\s*<CardContent(?=\s|>)([^>]*)>/g
+	];
+	const explicitVerticalPadding = /(?:^|\s)(?:[a-z0-9-]+:)*p(?:y|t|b)?-\d+(?:\s|$)/;
+
+	for (const file of files) {
+		const source = await readFile(file, 'utf8');
+
+		for (const pattern of directContentPatterns) {
+			for (const match of source.matchAll(pattern)) {
+				const rootAttributes = match[1];
+				const contentClass = match[2].match(/\bclass="([^"]*)"/)?.[1] ?? '';
+				if (!explicitVerticalPadding.test(contentClass)) continue;
+				if (/\bgap-0\b/.test(rootAttributes) && /\bpy-0\b/.test(rootAttributes)) continue;
+
+				const line = source.slice(0, match.index).split('\n').length;
+				violations.push(`${path.relative(projectRoot, file)}:${line}`);
+			}
+		}
+	}
+
+	assert.deepEqual(
+		violations,
+		[],
+		'Content-only cards with explicit vertical padding must set gap-0 py-0 on the card root.'
 	);
 });
 

@@ -151,7 +151,7 @@
 
 	<Separator />
 
-	<div class="flex flex-wrap gap-2">
+	<div class="flex flex-wrap gap-2 rounded-xl border bg-card p-3 shadow-sm sm:p-4">
 		{#each filters as filter (filter.value)}
 			<Button
 				variant={activeFilter === filter.value ? 'default' : 'outline'}

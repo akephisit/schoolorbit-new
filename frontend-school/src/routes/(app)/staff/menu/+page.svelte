@@ -383,7 +383,7 @@
 		/>
 	{:else}
 		<!-- Filter -->
-		<div class="flex items-center gap-3">
+		<div class="flex items-center gap-3 rounded-xl border bg-card p-3 shadow-sm sm:p-4">
 			<div class="flex items-center gap-2">
 				<span class="text-sm font-medium">กรองตาม User Type:</span>
 				<Select.Root type="single" bind:value={userTypeFilter}>

@@ -282,9 +282,9 @@
 		/>
 	{:else}
 		<!-- Filters -->
-		<Card.Root>
-			<Card.Content class="pt-6">
-				<div class="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+		<Card.Root class="gap-0 py-0">
+			<Card.Content class="p-3 sm:p-4">
+				<div class="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
 					<div class="space-y-2">
 						<Label>ปีการศึกษา</Label>
 						<Select.Root type="single" bind:value={selectedYearId} onValueChange={handleYearChange}>
