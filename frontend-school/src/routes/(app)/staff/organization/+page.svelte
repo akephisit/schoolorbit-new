@@ -449,7 +449,7 @@
 		</div>
 	</div>
 
-	<div class="rounded-xl border bg-card p-3 shadow-sm sm:p-4">
+	<div class="rounded-xl border bg-card p-3 sm:p-4">
 		<div class="flex flex-col gap-3 xl:flex-row xl:items-center">
 			<div class="relative flex-1">
 				<Search class="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />

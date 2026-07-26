@@ -1123,7 +1123,7 @@
 			<Tabs.Content value="subjects" class="space-y-4 mt-4">
 				<!-- Filters & Search -->
 				<div
-					class="flex flex-col flex-wrap items-end gap-3 rounded-xl border bg-card p-3 shadow-sm sm:p-4 md:flex-row md:items-center"
+					class="flex flex-col flex-wrap items-end gap-3 rounded-xl border bg-card p-3 sm:p-4 md:flex-row md:items-center"
 				>
 					<!-- Search -->
 					<div class="w-full md:w-[240px] space-y-1">

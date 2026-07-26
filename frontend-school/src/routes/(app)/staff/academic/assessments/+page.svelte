@@ -742,7 +742,7 @@
 				</div>
 			</div>
 
-			<div class="rounded-xl border bg-card p-3 shadow-sm sm:p-4">
+			<div class="rounded-xl border bg-card p-3 sm:p-4">
 				<div class="grid gap-3 lg:grid-cols-[1fr_1fr_1fr_160px_auto]">
 					<div class="space-y-2">
 						<Label>ปีการศึกษา</Label>

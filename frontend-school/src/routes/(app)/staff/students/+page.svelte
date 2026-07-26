@@ -164,7 +164,7 @@
 		/>
 	{:else}
 		<!-- Search and Filter -->
-		<div class="rounded-xl border bg-card p-3 shadow-sm sm:p-4">
+		<div class="rounded-xl border bg-card p-3 sm:p-4">
 			<div class="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(12rem,16rem)_auto]">
 				<div class="relative">
 					<Search class="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />

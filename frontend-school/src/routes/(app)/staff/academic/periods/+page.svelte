@@ -244,7 +244,7 @@
 	title="ตั้งค่าคาบเวลา"
 	description="กำหนดคาบเรียนมาตรฐานของโรงเรียนในแต่ละปีการศึกษา (ใช้สำหรับจัดตารางสอน)"
 >
-	<div class="flex flex-wrap items-center gap-3 rounded-xl border bg-card p-3 shadow-sm sm:p-4">
+	<div class="flex flex-wrap items-center gap-3 rounded-xl border bg-card p-3 sm:p-4">
 		<div class="w-[250px]">
 			<Select.Root type="single" bind:value={selectedYearId}>
 				<Select.Trigger class="w-full">

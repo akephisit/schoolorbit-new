@@ -215,6 +215,41 @@ test('compact content-only cards do not compound vertical padding', async () => 
 	);
 });
 
+test('standard cards and compact filter surfaces stay flat', async () => {
+	const card = await readProjectFile('src/lib/components/ui/card/card.svelte');
+	const appRoutesDir = path.join(projectRoot, 'src/routes/(app)');
+	const pages = (await listFiles(appRoutesDir)).filter((file) => file.endsWith('.svelte'));
+	const violations = [];
+
+	assert.doesNotMatch(
+		card,
+		/\bshadow-(?:sm|md|lg|xl|2xl)\b/,
+		'The shared Card primitive should not add a default shadow.'
+	);
+
+	for (const file of pages) {
+		const source = await readFile(file, 'utf8');
+		const classAttributes = source.match(/\bclass="[^"]*"/g) ?? [];
+
+		for (const attribute of classAttributes) {
+			if (!/\brounded-xl\b/.test(attribute)) continue;
+			if (!/\bborder\b/.test(attribute)) continue;
+			if (!/\bbg-card\b/.test(attribute)) continue;
+			if (!/\bp-3\b/.test(attribute)) continue;
+			if (!/\bshadow-(?:sm|md|lg|xl|2xl)\b/.test(attribute)) continue;
+
+			const line = source.slice(0, source.indexOf(attribute)).split('\n').length;
+			violations.push(`${path.relative(projectRoot, file)}:${line}`);
+		}
+	}
+
+	assert.deepEqual(
+		violations,
+		[],
+		'Compact filter surfaces should use a border and background without a shadow.'
+	);
+});
+
 test('pilot workspaces use shared app page shell', async () => {
 	const pages = [
 		'src/routes/(app)/staff/manage/+page.svelte',

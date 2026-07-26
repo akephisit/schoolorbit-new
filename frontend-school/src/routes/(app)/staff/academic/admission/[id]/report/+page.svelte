@@ -544,7 +544,7 @@
 
 				<!-- Status filter -->
 				<div
-					class="flex flex-col items-start gap-2 rounded-xl border bg-card p-3 shadow-sm sm:flex-row sm:items-center sm:p-4"
+					class="flex flex-col items-start gap-2 rounded-xl border bg-card p-3 sm:flex-row sm:items-center sm:p-4"
 				>
 					<span class="text-sm font-medium">กรอง:</span>
 					<Select.Root type="single" bind:value={statusFilter}>

@@ -770,7 +770,7 @@
 		/>
 	{:else}
 		<!-- Filters + Action -->
-		<div class="flex flex-wrap items-center gap-3 rounded-xl border bg-card p-3 shadow-sm sm:p-4">
+		<div class="flex flex-wrap items-center gap-3 rounded-xl border bg-card p-3 sm:p-4">
 			<Select.Root type="single" bind:value={filterYearId}>
 				<Select.Trigger class="w-52">{currentYearName}</Select.Trigger>
 				<Select.Content>

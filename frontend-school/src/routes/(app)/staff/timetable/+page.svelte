@@ -118,7 +118,7 @@
 
 <PageShell title="ตารางสอน" description={userName ? `ครู${userName}` : 'ตารางสอนของฉัน'}>
 	<!-- Year + Semester selector -->
-	<div class="flex flex-wrap gap-3 rounded-xl border bg-card p-3 shadow-sm sm:p-4">
+	<div class="flex flex-wrap gap-3 rounded-xl border bg-card p-3 sm:p-4">
 		<div class="w-[220px]">
 			<Select.Root type="single" bind:value={selectedYearId}>
 				<Select.Trigger class="w-full">

@@ -530,7 +530,7 @@
 	{/snippet}
 
 	{#if canReadCalendar || loading}
-		<div class="overflow-hidden rounded-xl border bg-card shadow-sm">
+		<div class="overflow-hidden rounded-xl border bg-card">
 			<div class="flex flex-col gap-3 p-3 sm:flex-row sm:items-center sm:justify-between sm:p-4">
 				<div class="flex min-w-0 items-center gap-1 sm:gap-2">
 					<Button
@@ -675,7 +675,7 @@
 				{/if}
 			</div>
 			<section class="space-y-3">
-				<div class="flex items-center gap-3 rounded-xl border bg-card p-4 shadow-sm">
+				<div class="flex items-center gap-3 rounded-xl border bg-card p-4">
 					<div
 						class="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary"
 					>

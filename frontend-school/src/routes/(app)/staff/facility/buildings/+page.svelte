@@ -400,9 +400,7 @@
 
 			<!-- Rooms Tab -->
 			<Tabs.Content value="rooms" class="space-y-4 pt-4">
-				<div
-					class="flex flex-wrap items-center gap-3 rounded-xl border bg-card p-3 shadow-sm sm:p-4"
-				>
+				<div class="flex flex-wrap items-center gap-3 rounded-xl border bg-card p-3 sm:p-4">
 					<div class="w-[200px]">
 						<Select.Root
 							type="single"
