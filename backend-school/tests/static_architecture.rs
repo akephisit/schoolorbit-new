@@ -1552,7 +1552,6 @@ fn academic_structure_handlers_enforce_generated_permission_contract() {
         manifest_dir().join("src/modules/academic/handlers.rs"),
     ));
     let cases = [
-        ("list_academic_structure", "ACADEMIC_STRUCTURE_READ_ALL"),
         ("create_academic_year", "ACADEMIC_STRUCTURE_MANAGE_ALL"),
         ("update_academic_year", "ACADEMIC_STRUCTURE_MANAGE_ALL"),
         ("toggle_active_year", "ACADEMIC_STRUCTURE_MANAGE_ALL"),
@@ -1596,6 +1595,22 @@ fn academic_structure_handlers_enforce_generated_permission_contract() {
             "{handler_name} must require {permission}"
         );
     }
+
+    let list_handler = handlers
+        .split_once("pub async fn list_academic_structure")
+        .expect("missing academic handler `list_academic_structure`")
+        .1
+        .split("pub async fn ")
+        .next()
+        .expect("missing list_academic_structure handler body");
+    assert!(
+        list_handler.contains("actor_tenant_context(&state, &headers).await?"),
+        "list_academic_structure must load the authenticated actor and tenant together"
+    );
+    assert!(
+        !list_handler.contains("actor.require_"),
+        "shared academic reference data must not require a feature permission"
+    );
 
     assert!(handlers.contains("use crate::permissions::registry::codes;"));
     assert!(!handlers.contains("use crate::utils::request_context::tenant_pool;"));

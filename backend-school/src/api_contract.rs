@@ -1312,6 +1312,10 @@ mod tests {
             "date"
         );
 
+        let structure_responses = &document["paths"]["/api/academic/structure"]["get"]["responses"];
+        assert!(structure_responses.get("401").is_some());
+        assert!(structure_responses.get("403").is_none());
+
         let operation_count = document["paths"]
             .as_object()
             .expect("paths must be an object")

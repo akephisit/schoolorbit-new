@@ -32,7 +32,6 @@ use uuid::Uuid;
     responses(
         (status = 200, description = "Academic structure", body = ApiResponse<crate::modules::academic::services::academic_structure_service::AcademicStructure>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
-        (status = 403, description = "Academic structure read permission denied", body = ApiErrorResponse),
         (status = 500, description = "Academic structure could not be loaded", body = ApiErrorResponse)
     )
 )]
@@ -42,8 +41,6 @@ pub async fn list_academic_structure(
 ) -> Result<impl IntoResponse, AppError> {
     let context = actor_tenant_context(&state, &headers).await?;
     let pool = context.tenant.pool;
-    let actor = context.actor;
-    actor.require_permission(codes::ACADEMIC_STRUCTURE_READ_ALL)?;
     let structure = academic_structure_service::list_academic_structure(&pool).await?;
 
     Ok(Json(ApiResponse::ok(structure)))
