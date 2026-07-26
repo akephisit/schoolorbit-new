@@ -5,12 +5,13 @@ This file is the single authoritative development standard for this repository. 
 ## 0. Rule Ownership and Documentation Policy
 
 - Keep durable development requirements here. Update this file in the same change whenever an architectural convention changes.
-- Keep only these 12 Markdown entry points:
-  - `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, and `README.md`
+- Keep only these 13 Markdown entry points:
+  - `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `README.md`, and `TODO.md`
   - `docs/README.md`, `docs/TESTING.md`, `docs/OPERATIONS.md`, and `docs/PODMAN_SETUP.md`
   - one `README.md` in each application directory: `backend-admin/`, `backend-school/`, `frontend-admin/`, and `frontend-school/`
-- Do not create feature-completion reports, implementation diaries, status snapshots, temporary analysis files, duplicate developer guides, or per-feature README files.
-- A proposed thirteenth Markdown file requires explicit review of why none of the canonical files can own the content; update the allowlist and documentation-policy test in the same change only when that new long-lived owner is approved.
+- `TODO.md` is the single active technical backlog. Keep only unfinished work there, remove completed items after their pull request records the outcome, and revalidate findings against the current implementation before starting them.
+- Do not create feature-completion reports, implementation diaries, additional status snapshots, temporary analysis files, duplicate developer guides, or per-feature README files.
+- A proposed fourteenth Markdown file requires explicit review of why none of the canonical files can own the content; update the allowlist and documentation-policy test in the same change only when that new long-lived owner is approved.
 - Put commands and test recipes in `docs/TESTING.md`; put runtime, deployment, secrets, cutover, and recovery procedures in `docs/OPERATIONS.md`.
 - Keep first-time Podman server bootstrap commands in `docs/PODMAN_SETUP.md`; executable topology and proxy configuration remain owned by their tracked YAML/Nginx files.
 - Code, contracts, migrations, generated artifacts, and executable configuration remain the source of truth for runtime behavior. Documentation must link to them instead of copying large inventories that become stale.

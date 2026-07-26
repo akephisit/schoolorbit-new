@@ -15,6 +15,7 @@ const MARKDOWN_ALLOWLIST = [
 	'CLAUDE.md',
 	'GEMINI.md',
 	'README.md',
+	'TODO.md',
 	'backend-admin/README.md',
 	'backend-school/README.md',
 	'docs/OPERATIONS.md',
@@ -25,8 +26,12 @@ const MARKDOWN_ALLOWLIST = [
 	'frontend-school/README.md'
 ].sort();
 
-async function existingTrackedMarkdown() {
-	const { stdout } = await execFileAsync('git', ['ls-files', '*.md'], { cwd: repoRoot });
+async function existingRepositoryMarkdown() {
+	const { stdout } = await execFileAsync(
+		'git',
+		['ls-files', '--cached', '--others', '--exclude-standard', '*.md'],
+		{ cwd: repoRoot }
+	);
 	const paths = stdout
 		.split(/\r?\n/)
 		.map((value) => value.trim())
@@ -61,14 +66,14 @@ function localLinkTargets(source) {
 	return targets;
 }
 
-test('tracked Markdown is limited to the approved canonical documentation set', async () => {
-	assert.deepEqual(await existingTrackedMarkdown(), MARKDOWN_ALLOWLIST);
+test('repository Markdown is limited to the approved canonical documentation set', async () => {
+	assert.deepEqual(await existingRepositoryMarkdown(), MARKDOWN_ALLOWLIST);
 });
 
 test('canonical Markdown local links resolve', async () => {
 	const broken = [];
 
-	for (const relativePath of await existingTrackedMarkdown()) {
+	for (const relativePath of await existingRepositoryMarkdown()) {
 		const source = await readFile(path.join(repoRoot, relativePath), 'utf8');
 		for (const target of localLinkTargets(source)) {
 			const resolved = path.resolve(repoRoot, path.dirname(relativePath), target);
@@ -95,6 +100,7 @@ test('project rules own durable development and verification workflows', async (
 		'## 7. Frontend: SvelteKit 5',
 		'## 9. Security, PDPA, and Logging',
 		'## 11. Verification Matrix',
+		'TODO.md',
 		'contracts/permissions.json',
 		'npm run generate:permissions',
 		'npm run check:permissions',

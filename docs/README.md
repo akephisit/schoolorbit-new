@@ -1,6 +1,7 @@
 # Documentation
 
 - [Development rules](../.rules)
+- [Active technical backlog](../TODO.md)
 - [Testing](./TESTING.md)
 - [Operations](./OPERATIONS.md)
 - [Podman server setup](./PODMAN_SETUP.md)
@@ -12,4 +13,4 @@ Service setup:
 - [Frontend admin](../frontend-admin/README.md)
 - [Frontend school](../frontend-school/README.md)
 
-Implementation history belongs in Git history and issue or pull-request discussions, not permanent plan documents.
+Unfinished cross-service work belongs in the active technical backlog. Implementation history and completed outcomes belong in Git history and issue or pull-request discussions.
