@@ -43,7 +43,7 @@
 	class="touch-none group relative bg-background rounded-lg transition-all"
 	style="touch-action: none;"
 >
-	<Card class="p-4 hover:shadow-md transition-all active:cursor-grabbing">
+	<Card class="p-4 transition-colors active:cursor-grabbing">
 		<div class="flex items-center gap-3">
 			<!-- Drag Handle -->
 			{#if canReorder}

@@ -1168,15 +1168,10 @@ test('daily teaching overview page is table based and read only', async () => {
 			'utf8'
 		)
 	);
-	const sidebar = stripComments(
-		await readFile(
-			path.join(repoRoot, 'frontend-school/src/lib/components/layout/sidebar-navigation.ts'),
-			'utf8'
-		)
-	);
-
 	assert.match(meta, /PERMISSION_MODULES\.ACADEMIC_TIMETABLE_TODAY/);
 	assert.match(meta, /title:\s*'ตารางสอนวันนี้'/);
+	assert.match(meta, /group:\s*'academic'/);
+	assert.match(meta, /workspace:\s*'academic'/);
 	assert.match(page, /<PageShell/);
 	assert.match(page, /<PageSkeleton\s+variant="table"/);
 	assert.match(page, /<PageState/);
@@ -1195,7 +1190,6 @@ test('daily teaching overview page is table based and read only', async () => {
 	assert.match(page, /overflow-x-auto/);
 	assert.match(page, /Dialog\.Root/);
 	assert.match(page, /href="\/staff\/academic\/timetable"/);
-	assert.match(sidebar, /\/staff\/academic\/timetable\/today/);
 	assert.doesNotMatch(
 		page,
 		/listStaff\(|listStudents\(|createTimetableEntry|updateTimetableEntry|deleteTimetableEntry/
@@ -1537,7 +1531,7 @@ test('facility workspace gates read and mutation actions', async () => {
 	}
 });
 
-test('dashboard and self-view routes stay user-scoped with module-aware staff shortcuts', async () => {
+test('dashboard and self-view routes stay user-scoped with permission-filtered services', async () => {
 	const routeExpectations = new Map([
 		['frontend-school/src/routes/(app)/staff/+page.ts', 'staff'],
 		['frontend-school/src/routes/(app)/staff/timetable/+page.ts', 'staff'],
@@ -1589,8 +1583,10 @@ test('dashboard and self-view routes stay user-scoped with module-aware staff sh
 	);
 
 	assert.deepEqual(routeViolations, []);
-	assert.match(staffDashboard, /from '\$lib\/stores\/permissions'/);
-	assert.match(staffDashboard, /from '\$lib\/permissions\/registry'/);
+	assert.match(staffDashboard, /getUserMenu/);
+	assert.match(staffDashboard, /buildSidebarNavigation/);
+	assert.match(staffDashboard, /workStore\.fetchCounts/);
+	assert.match(staffDashboard, /serviceWorkspaces/);
 	assert.match(staffDashboard, /getStaffDashboard/);
 	assert.match(staffDashboard, /StaffDashboardOverview/);
 	assert.match(staffDashboard, /loadDashboard/);
@@ -1601,14 +1597,8 @@ test('dashboard and self-view routes stay user-scoped with module-aware staff sh
 	assert.doesNotMatch(staffDashboard, /totalStaff:\s*0/);
 	assert.doesNotMatch(staffDashboard, /listStaff\(/);
 	assert.doesNotMatch(staffDashboard, /listStudents\(/);
-	for (const moduleName of ['STAFF_PROFILE', 'STUDENT', 'ROLES', 'SETTINGS']) {
-		assert.match(
-			staffDashboard,
-			new RegExp(`\\$can\\.hasModule\\(PERMISSION_MODULES\\.${moduleName}\\)`)
-		);
-	}
-	assert.match(staffDashboard, /\/staff\/school-settings/);
-	assert.match(staffDashboard, /\/staff\/settings/);
+	assert.doesNotMatch(staffDashboard, /PERMISSION_MODULES|\$can\.hasModule/);
+	assert.doesNotMatch(staffDashboard, /href="\/staff\/(?:manage|students|school-settings)"/);
 
 	assert.match(staffTimetable, /getMyTimetable/);
 	assert.match(staffTimetable, /periodsFromTimetableEntries/);

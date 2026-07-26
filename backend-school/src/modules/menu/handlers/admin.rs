@@ -1,6 +1,8 @@
-use crate::api_response::{ApiErrorResponse, ApiResponse};
+use crate::api_response::{ApiErrorResponse, ApiResponse, EmptyData};
 use crate::error::AppError;
+use crate::modules::menu::models::{MenuGroup, MenuItem, MenuWorkspace};
 use crate::modules::menu::services::menu_service;
+use crate::permissions::registry::codes;
 use crate::utils::request_context::{actor_tenant_context, ActorTenantContext};
 use crate::AppState;
 
@@ -10,11 +12,11 @@ use axum::{
     response::{IntoResponse, Json as JsonResponse},
 };
 use serde::{Deserialize, Serialize};
-use utoipa::IntoParams;
+use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
-#[derive(Debug, Deserialize)]
-pub struct CreateMenuGroupRequest {
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct CreateMenuWorkspaceRequest {
     pub code: String,
     pub name: String,
     pub name_en: Option<String>,
@@ -23,8 +25,8 @@ pub struct CreateMenuGroupRequest {
     pub display_order: Option<i32>,
 }
 
-#[derive(Debug, Deserialize)]
-pub struct UpdateMenuGroupRequest {
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct UpdateMenuWorkspaceRequest {
     pub name: Option<String>,
     pub name_en: Option<String>,
     pub description: Option<String>,
@@ -33,7 +35,29 @@ pub struct UpdateMenuGroupRequest {
     pub is_active: Option<bool>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct CreateMenuGroupRequest {
+    pub code: String,
+    pub name: String,
+    pub name_en: Option<String>,
+    pub description: Option<String>,
+    pub icon: Option<String>,
+    pub workspace_code: String,
+    pub display_order: Option<i32>,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct UpdateMenuGroupRequest {
+    pub name: Option<String>,
+    pub name_en: Option<String>,
+    pub description: Option<String>,
+    pub icon: Option<String>,
+    pub workspace_code: Option<String>,
+    pub display_order: Option<i32>,
+    pub is_active: Option<bool>,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct CreateMenuItemRequest {
     pub code: String,
     pub name: String,
@@ -47,7 +71,7 @@ pub struct CreateMenuItemRequest {
     pub display_order: Option<i32>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct UpdateMenuItemRequest {
     pub name: Option<String>,
     pub name_en: Option<String>,
@@ -61,12 +85,12 @@ pub struct UpdateMenuItemRequest {
     pub is_active: Option<bool>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct ReorderRequest {
     pub items: Vec<ReorderItem>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct ReorderItem {
     pub id: Uuid,
     pub display_order: i32,
@@ -79,38 +103,203 @@ pub struct MenuItemFilter {
     pub group_id: Option<Uuid>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct ReorderGroupsRequest {
     pub groups: Vec<ReorderItem>,
 }
 
-#[derive(Debug, Serialize)]
-struct MovedCountData {
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct ReorderWorkspacesRequest {
+    pub workspaces: Vec<ReorderItem>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct MovedCountData {
     moved_count: u64,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct MoveItemToGroupRequest {
     pub group_id: Uuid,
 }
 
-async fn auth(state: &AppState, headers: &HeaderMap) -> Result<ActorTenantContext, AppError> {
-    actor_tenant_context(state, headers).await
-}
-
-async fn auth_check_module(
+async fn auth_with_permission(
     state: &AppState,
     headers: &HeaderMap,
-    module: &str,
+    permission: &str,
 ) -> Result<ActorTenantContext, AppError> {
-    let context = auth(state, headers).await?;
-    if !context.actor.has_module_permission(module) {
-        return Err(AppError::Forbidden(format!(
-            "No permission for module '{}'",
-            module
-        )));
-    }
+    let context = actor_tenant_context(state, headers).await?;
+    context.actor.require_permission(permission)?;
     Ok(context)
+}
+
+// ==================== Menu Workspaces ====================
+
+#[utoipa::path(
+    get,
+    path = "/api/admin/menu/workspaces",
+    operation_id = "listMenuWorkspaces",
+    tag = "menu",
+    responses(
+        (status = 200, description = "Menu workspaces", body = ApiResponse<Vec<MenuWorkspace>>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Menu read permission required", body = ApiErrorResponse)
+    )
+)]
+pub async fn list_menu_workspaces(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<impl IntoResponse, AppError> {
+    let context = auth_with_permission(&state, &headers, codes::MENU_READ_ALL).await?;
+    let workspaces = menu_service::list_menu_workspaces(&context.tenant.pool).await?;
+    Ok((StatusCode::OK, JsonResponse(ApiResponse::ok(workspaces))))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/admin/menu/workspaces",
+    operation_id = "createMenuWorkspace",
+    tag = "menu",
+    request_body = CreateMenuWorkspaceRequest,
+    responses(
+        (status = 201, description = "Menu workspace created", body = ApiResponse<MenuWorkspace>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Menu create permission required", body = ApiErrorResponse)
+    )
+)]
+pub async fn create_menu_workspace(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    JsonResponse(data): JsonResponse<CreateMenuWorkspaceRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = auth_with_permission(&state, &headers, codes::MENU_CREATE_ALL).await?;
+    let workspace = menu_service::create_menu_workspace(
+        &context.tenant.pool,
+        menu_service::CreateMenuWorkspaceInput {
+            code: data.code,
+            name: data.name,
+            name_en: data.name_en,
+            description: data.description,
+            icon: data.icon,
+            display_order: data.display_order,
+        },
+    )
+    .await?;
+    Ok((
+        StatusCode::CREATED,
+        JsonResponse(ApiResponse::with_message(
+            workspace,
+            "Menu workspace created successfully",
+        )),
+    ))
+}
+
+#[utoipa::path(
+    put,
+    path = "/api/admin/menu/workspaces/{id}",
+    operation_id = "updateMenuWorkspace",
+    tag = "menu",
+    params(("id" = Uuid, Path, description = "Menu workspace ID")),
+    request_body = UpdateMenuWorkspaceRequest,
+    responses(
+        (status = 200, description = "Menu workspace updated", body = ApiResponse<MenuWorkspace>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Menu update permission required", body = ApiErrorResponse),
+        (status = 404, description = "Menu workspace not found", body = ApiErrorResponse)
+    )
+)]
+pub async fn update_menu_workspace(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+    headers: HeaderMap,
+    JsonResponse(data): JsonResponse<UpdateMenuWorkspaceRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = auth_with_permission(&state, &headers, codes::MENU_UPDATE_ALL).await?;
+    let workspace = menu_service::update_menu_workspace(
+        &context.tenant.pool,
+        id,
+        menu_service::UpdateMenuWorkspaceInput {
+            name: data.name,
+            name_en: data.name_en,
+            description: data.description,
+            icon: data.icon,
+            display_order: data.display_order,
+            is_active: data.is_active,
+        },
+    )
+    .await?;
+    Ok((
+        StatusCode::OK,
+        JsonResponse(ApiResponse::with_message(
+            workspace,
+            "Menu workspace updated successfully",
+        )),
+    ))
+}
+
+#[utoipa::path(
+    delete,
+    path = "/api/admin/menu/workspaces/{id}",
+    operation_id = "deleteMenuWorkspace",
+    tag = "menu",
+    params(("id" = Uuid, Path, description = "Menu workspace ID")),
+    responses(
+        (status = 200, description = "Menu workspace deleted", body = ApiResponse<MovedCountData>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Menu delete permission required", body = ApiErrorResponse),
+        (status = 404, description = "Menu workspace not found", body = ApiErrorResponse)
+    )
+)]
+pub async fn delete_menu_workspace(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+    headers: HeaderMap,
+) -> Result<impl IntoResponse, AppError> {
+    let context = auth_with_permission(&state, &headers, codes::MENU_DELETE_ALL).await?;
+    let moved = menu_service::delete_menu_workspace(&context.tenant.pool, id).await?;
+    Ok((
+        StatusCode::OK,
+        JsonResponse(ApiResponse::with_message(
+            MovedCountData { moved_count: moved },
+            format!(
+                "Deleted workspace and moved {} groups to general administration",
+                moved
+            ),
+        )),
+    ))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/admin/menu/workspaces/reorder",
+    operation_id = "reorderMenuWorkspaces",
+    tag = "menu",
+    request_body = ReorderWorkspacesRequest,
+    responses(
+        (status = 200, description = "Menu workspaces reordered", body = ApiResponse<EmptyData>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Menu update permission required", body = ApiErrorResponse)
+    )
+)]
+pub async fn reorder_menu_workspaces(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    JsonResponse(data): JsonResponse<ReorderWorkspacesRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = auth_with_permission(&state, &headers, codes::MENU_UPDATE_ALL).await?;
+    let workspaces = data
+        .workspaces
+        .into_iter()
+        .map(|workspace| (workspace.id, workspace.display_order))
+        .collect();
+    let count = menu_service::reorder_menu_workspaces(&context.tenant.pool, workspaces).await?;
+    Ok((
+        StatusCode::OK,
+        JsonResponse(ApiResponse::empty_with_message(format!(
+            "Reordered {} workspaces",
+            count
+        ))),
+    ))
 }
 
 // ==================== Menu Groups ====================
@@ -121,25 +310,38 @@ async fn auth_check_module(
     operation_id = "listMenuGroups",
     tag = "menu",
     responses(
-        (status = 200, description = "Menu groups", body = ApiResponse<Vec<crate::modules::menu::models::MenuGroup>>),
-        (status = 401, description = "Authentication required", body = ApiErrorResponse)
+        (status = 200, description = "Menu groups", body = ApiResponse<Vec<MenuGroup>>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Menu read permission required", body = ApiErrorResponse)
     )
 )]
 pub async fn list_menu_groups(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = auth(&state, &headers).await?;
+    let context = auth_with_permission(&state, &headers, codes::MENU_READ_ALL).await?;
     let groups = menu_service::list_menu_groups(&context.tenant.pool).await?;
     Ok((StatusCode::OK, JsonResponse(ApiResponse::ok(groups))))
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/admin/menu/groups",
+    operation_id = "createMenuGroup",
+    tag = "menu",
+    request_body = CreateMenuGroupRequest,
+    responses(
+        (status = 201, description = "Menu group created", body = ApiResponse<MenuGroup>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Menu create permission required", body = ApiErrorResponse)
+    )
+)]
 pub async fn create_menu_group(
     State(state): State<AppState>,
     headers: HeaderMap,
     JsonResponse(data): JsonResponse<CreateMenuGroupRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = auth(&state, &headers).await?;
+    let context = auth_with_permission(&state, &headers, codes::MENU_CREATE_ALL).await?;
     let group = menu_service::create_menu_group(
         &context.tenant.pool,
         menu_service::CreateMenuGroupInput {
@@ -148,6 +350,7 @@ pub async fn create_menu_group(
             name_en: data.name_en,
             description: data.description,
             icon: data.icon,
+            workspace_code: data.workspace_code,
             display_order: data.display_order,
         },
     )
@@ -161,13 +364,27 @@ pub async fn create_menu_group(
     ))
 }
 
+#[utoipa::path(
+    put,
+    path = "/api/admin/menu/groups/{id}",
+    operation_id = "updateMenuGroup",
+    tag = "menu",
+    params(("id" = Uuid, Path, description = "Menu group ID")),
+    request_body = UpdateMenuGroupRequest,
+    responses(
+        (status = 200, description = "Menu group updated", body = ApiResponse<MenuGroup>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Menu update permission required", body = ApiErrorResponse),
+        (status = 404, description = "Menu group not found", body = ApiErrorResponse)
+    )
+)]
 pub async fn update_menu_group(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
     headers: HeaderMap,
     JsonResponse(data): JsonResponse<UpdateMenuGroupRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = auth(&state, &headers).await?;
+    let context = auth_with_permission(&state, &headers, codes::MENU_UPDATE_ALL).await?;
     let group = menu_service::update_menu_group(
         &context.tenant.pool,
         id,
@@ -176,6 +393,7 @@ pub async fn update_menu_group(
             name_en: data.name_en,
             description: data.description,
             icon: data.icon,
+            workspace_code: data.workspace_code,
             display_order: data.display_order,
             is_active: data.is_active,
         },
@@ -190,12 +408,25 @@ pub async fn update_menu_group(
     ))
 }
 
+#[utoipa::path(
+    delete,
+    path = "/api/admin/menu/groups/{id}",
+    operation_id = "deleteMenuGroup",
+    tag = "menu",
+    params(("id" = Uuid, Path, description = "Menu group ID")),
+    responses(
+        (status = 200, description = "Menu group deleted", body = ApiResponse<MovedCountData>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Menu delete permission required", body = ApiErrorResponse),
+        (status = 404, description = "Menu group not found", body = ApiErrorResponse)
+    )
+)]
 pub async fn delete_menu_group(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = auth_check_module(&state, &headers, "settings").await?;
+    let context = auth_with_permission(&state, &headers, codes::MENU_DELETE_ALL).await?;
     let moved = menu_service::delete_menu_group(&context.tenant.pool, id).await?;
     Ok((
         StatusCode::OK,
@@ -215,8 +446,9 @@ pub async fn delete_menu_group(
     tag = "menu",
     params(MenuItemFilter),
     responses(
-        (status = 200, description = "Menu items visible to the current administrator", body = ApiResponse<Vec<crate::modules::menu::models::MenuItem>>),
-        (status = 401, description = "Authentication required", body = ApiErrorResponse)
+        (status = 200, description = "Menu items visible to the current administrator", body = ApiResponse<Vec<MenuItem>>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Menu read permission required", body = ApiErrorResponse)
     )
 )]
 pub async fn list_menu_items(
@@ -224,26 +456,29 @@ pub async fn list_menu_items(
     headers: HeaderMap,
     Query(filter): Query<MenuItemFilter>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = auth(&state, &headers).await?;
-    let items = menu_service::list_menu_items(
-        &context.tenant.pool,
-        filter.group_id,
-        &context.actor.permissions,
-    )
-    .await?;
+    let context = auth_with_permission(&state, &headers, codes::MENU_READ_ALL).await?;
+    let items = menu_service::list_menu_items(&context.tenant.pool, filter.group_id).await?;
     Ok((StatusCode::OK, JsonResponse(ApiResponse::ok(items))))
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/admin/menu/items",
+    operation_id = "createMenuItem",
+    tag = "menu",
+    request_body = CreateMenuItemRequest,
+    responses(
+        (status = 201, description = "Menu item created", body = ApiResponse<MenuItem>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Menu create permission required", body = ApiErrorResponse)
+    )
+)]
 pub async fn create_menu_item(
     State(state): State<AppState>,
     headers: HeaderMap,
     JsonResponse(data): JsonResponse<CreateMenuItemRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = if let Some(ref module) = data.required_permission {
-        auth_check_module(&state, &headers, module).await?
-    } else {
-        auth(&state, &headers).await?
-    };
+    let context = auth_with_permission(&state, &headers, codes::MENU_CREATE_ALL).await?;
     let item = menu_service::create_menu_item(
         &context.tenant.pool,
         menu_service::CreateMenuItemInput {
@@ -269,22 +504,27 @@ pub async fn create_menu_item(
     ))
 }
 
+#[utoipa::path(
+    put,
+    path = "/api/admin/menu/items/{id}",
+    operation_id = "updateMenuItem",
+    tag = "menu",
+    params(("id" = Uuid, Path, description = "Menu item ID")),
+    request_body = UpdateMenuItemRequest,
+    responses(
+        (status = 200, description = "Menu item updated", body = ApiResponse<MenuItem>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Menu update permission required", body = ApiErrorResponse),
+        (status = 404, description = "Menu item not found", body = ApiErrorResponse)
+    )
+)]
 pub async fn update_menu_item(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
     headers: HeaderMap,
     JsonResponse(data): JsonResponse<UpdateMenuItemRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = auth(&state, &headers).await?;
-    let existing = menu_service::get_menu_item(&context.tenant.pool, id).await?;
-    if let Some(ref module) = existing.required_permission {
-        if !context.actor.has_module_permission(module) {
-            return Err(AppError::Forbidden(format!(
-                "No permission for module '{}'",
-                module
-            )));
-        }
-    }
+    let context = auth_with_permission(&state, &headers, codes::MENU_UPDATE_ALL).await?;
     let item = menu_service::update_menu_item(
         &context.tenant.pool,
         id,
@@ -311,21 +551,25 @@ pub async fn update_menu_item(
     ))
 }
 
+#[utoipa::path(
+    delete,
+    path = "/api/admin/menu/items/{id}",
+    operation_id = "deleteMenuItem",
+    tag = "menu",
+    params(("id" = Uuid, Path, description = "Menu item ID")),
+    responses(
+        (status = 200, description = "Menu item deleted", body = ApiResponse<EmptyData>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Menu delete permission required", body = ApiErrorResponse),
+        (status = 404, description = "Menu item not found", body = ApiErrorResponse)
+    )
+)]
 pub async fn delete_menu_item(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = auth(&state, &headers).await?;
-    let existing = menu_service::get_menu_item(&context.tenant.pool, id).await?;
-    if let Some(ref module) = existing.required_permission {
-        if !context.actor.has_module_permission(module) {
-            return Err(AppError::Forbidden(format!(
-                "No permission for module '{}'",
-                module
-            )));
-        }
-    }
+    let context = auth_with_permission(&state, &headers, codes::MENU_DELETE_ALL).await?;
     menu_service::delete_menu_item(&context.tenant.pool, id).await?;
     Ok((
         StatusCode::OK,
@@ -335,6 +579,18 @@ pub async fn delete_menu_item(
     ))
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/admin/menu/items/reorder",
+    operation_id = "reorderMenuItems",
+    tag = "menu",
+    request_body = ReorderRequest,
+    responses(
+        (status = 200, description = "Menu items reordered", body = ApiResponse<EmptyData>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Menu update permission required", body = ApiErrorResponse)
+    )
+)]
 pub async fn reorder_menu_items(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -346,15 +602,13 @@ pub async fn reorder_menu_items(
             JsonResponse(ApiResponse::empty_with_message("No items to reorder")),
         ));
     }
-    let context = auth(&state, &headers).await?;
+    let context = auth_with_permission(&state, &headers, codes::MENU_UPDATE_ALL).await?;
     let items: Vec<(Uuid, i32, Option<Uuid>)> = data
         .items
         .into_iter()
         .map(|i| (i.id, i.display_order, i.group_id))
         .collect();
-    let count =
-        menu_service::reorder_menu_items(&context.tenant.pool, items, &context.actor.permissions)
-            .await?;
+    let count = menu_service::reorder_menu_items(&context.tenant.pool, items).await?;
     Ok((
         StatusCode::OK,
         JsonResponse(ApiResponse::empty_with_message(format!(
@@ -364,12 +618,24 @@ pub async fn reorder_menu_items(
     ))
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/admin/menu/groups/reorder",
+    operation_id = "reorderMenuGroups",
+    tag = "menu",
+    request_body = ReorderGroupsRequest,
+    responses(
+        (status = 200, description = "Menu groups reordered", body = ApiResponse<EmptyData>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Menu update permission required", body = ApiErrorResponse)
+    )
+)]
 pub async fn reorder_menu_groups(
     State(state): State<AppState>,
     headers: HeaderMap,
     JsonResponse(data): JsonResponse<ReorderGroupsRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = auth_check_module(&state, &headers, "settings").await?;
+    let context = auth_with_permission(&state, &headers, codes::MENU_UPDATE_ALL).await?;
     let groups: Vec<(Uuid, i32)> = data
         .groups
         .into_iter()
@@ -385,13 +651,27 @@ pub async fn reorder_menu_groups(
     ))
 }
 
+#[utoipa::path(
+    put,
+    path = "/api/admin/menu/items/{id}/group",
+    operation_id = "moveMenuItemToGroup",
+    tag = "menu",
+    params(("id" = Uuid, Path, description = "Menu item ID")),
+    request_body = MoveItemToGroupRequest,
+    responses(
+        (status = 200, description = "Menu item moved", body = ApiResponse<MenuItem>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Menu update permission required", body = ApiErrorResponse),
+        (status = 404, description = "Menu item not found", body = ApiErrorResponse)
+    )
+)]
 pub async fn move_item_to_group(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
     headers: HeaderMap,
     JsonResponse(data): JsonResponse<MoveItemToGroupRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = auth_check_module(&state, &headers, "settings").await?;
+    let context = auth_with_permission(&state, &headers, codes::MENU_UPDATE_ALL).await?;
     let item = menu_service::move_item_to_group(&context.tenant.pool, id, data.group_id).await?;
     Ok((StatusCode::OK, JsonResponse(ApiResponse::ok(item))))
 }

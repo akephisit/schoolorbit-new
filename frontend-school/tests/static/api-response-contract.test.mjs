@@ -235,6 +235,7 @@ test('generated lookup, menu, and feature contracts own read transport DTOs', as
 		['/api/menu/user', 'get', 'getUserMenu'],
 		['/api/admin/features', 'get', 'listFeatures'],
 		['/api/admin/features/{id}', 'get', 'getFeature'],
+		['/api/admin/menu/workspaces', 'get', 'listMenuWorkspaces'],
 		['/api/admin/menu/groups', 'get', 'listMenuGroups'],
 		['/api/admin/menu/items', 'get', 'listMenuItems'],
 		['/api/lookup/staff', 'get', 'lookupStaff'],
@@ -256,6 +257,11 @@ test('generated lookup, menu, and feature contracts own read transport DTOs', as
 	for (const source of [lookupApi, staffApi, menuApi, menuAdminApi, featureApi]) {
 		assert.match(source, /import\s+type\s+\{\s*components\s*\}/);
 	}
+	assert.match(menuAdminApi, /MenuWorkspace\s*=\s*Schemas\['MenuWorkspace'\]/);
+	assert.match(
+		menuAdminApi,
+		/CreateMenuWorkspaceRequest\s*=\s*Schemas\['CreateMenuWorkspaceRequest'\]/
+	);
 	assert.doesNotMatch(
 		lookupApi,
 		/export\s+interface\s+(?:LookupItem|StaffLookupItem|RoleLookupItem|OrganizationUnitLookupItem|GradeLevelLookupItem|ClassroomLookupItem|AcademicYearLookupItem|StudentLookupItem|RoomLookupItem)\b/

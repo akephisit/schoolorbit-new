@@ -3198,8 +3198,8 @@ fn read_oriented_handlers_are_registered_in_the_openapi_document() {
 
     assert_eq!(
         read_oriented_handlers_from_routers(&main_router, &calendar_router).len(),
-        36,
-        "read-oriented router inventory must stay aligned with the 36-operation rollout"
+        37,
+        "read-oriented router inventory must stay aligned with the 37-operation rollout"
     );
     assert_eq!(
         read_oriented_handlers_missing_from_contract(&main_router, &calendar_router, &contract),
@@ -3322,6 +3322,7 @@ fn menu_and_feature_handlers_do_not_parse_auth_or_query_permissions_directly() {
 #[test]
 fn menu_workspace_contract_is_explicit_and_permission_based() {
     let menu_models = read_source(manifest_dir().join("src/modules/menu/models.rs"));
+    let admin_menu_handler = read_source(manifest_dir().join("src/modules/menu/handlers/admin.rs"));
     let public_menu_service =
         read_source(manifest_dir().join("src/modules/menu/services/public_menu_service.rs"));
     let public_menu_handler =
@@ -3330,15 +3331,40 @@ fn menu_workspace_contract_is_explicit_and_permission_based() {
         manifest_dir().join("src/modules/system/services/route_registration_service.rs"),
     );
     let route_migration =
-        read_source(manifest_dir().join("migrations/002_menu_workspace_code.sql"));
+        read_source(manifest_dir().join("migrations/029_configurable_menu_workspaces.sql"));
 
     assert!(menu_models.contains("pub workspace: Option<String>"));
+    assert!(menu_models.contains("pub struct MenuWorkspace"));
     assert!(menu_models.contains("pub workspace_code: String"));
+    assert!(menu_models.contains("pub workspace_name: String"));
+    assert!(menu_models.contains("pub workspace_order: i32"));
     assert!(menu_models.contains("#[serde(rename_all = \"camelCase\")]"));
     assert!(public_menu_service.contains("mg.workspace_code"));
-    assert!(public_menu_handler.contains("workspace_code: group_workspace_code"));
+    assert!(public_menu_service.contains("JOIN menu_workspaces mw"));
+    assert!(public_menu_service.contains("workspace_code: row.group_workspace_code"));
+    assert!(public_menu_service.contains("workspace_name: row.workspace_name"));
+    assert!(public_menu_handler.contains("public_menu_service::group_and_filter_menu"));
     assert!(route_registration_service.contains("route_workspace_code("));
+    assert!(route_registration_service.contains("ensure_route_navigation_defaults("));
+    assert!(!route_registration_service
+        .contains("UPDATE menu_groups SET workspace_code = $1 WHERE code = $2"));
+    assert!(!route_registration_service.contains("name = EXCLUDED.name"));
+    assert!(!route_registration_service.contains("icon = EXCLUDED.icon"));
+    assert!(route_registration_service.contains("path = EXCLUDED.path"));
+    assert!(
+        route_registration_service.contains("required_permission = EXCLUDED.required_permission")
+    );
+    assert!(route_migration.contains("CREATE TABLE menu_workspaces"));
     assert!(route_migration.contains("workspace_code"));
+    for permission in [
+        "codes::MENU_READ_ALL",
+        "codes::MENU_CREATE_ALL",
+        "codes::MENU_UPDATE_ALL",
+        "codes::MENU_DELETE_ALL",
+    ] {
+        assert!(admin_menu_handler.contains(permission));
+    }
+    assert!(!admin_menu_handler.contains("has_module_permission"));
     assert!(!public_menu_service.contains("feature_toggles"));
     assert!(!public_menu_handler.contains("feature_toggles"));
 }

@@ -3,6 +3,20 @@ use sqlx::FromRow;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
+/// Top-level navigation workspace such as academic or personnel administration.
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow, ToSchema)]
+pub struct MenuWorkspace {
+    pub id: Uuid,
+    pub code: String,
+    pub name: String,
+    #[schema(required = true)]
+    pub name_en: Option<String>,
+    #[schema(required = true)]
+    pub icon: Option<String>,
+    pub display_order: i32,
+    pub is_active: bool,
+}
+
 /// Menu Group
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow, ToSchema)]
 pub struct MenuGroup {
@@ -13,6 +27,7 @@ pub struct MenuGroup {
     pub name_en: Option<String>,
     #[schema(required = true)]
     pub icon: Option<String>,
+    pub workspace_code: String,
     pub display_order: i32,
     pub is_active: bool,
 }
@@ -71,7 +86,12 @@ pub struct MenuGroupResponse {
     pub name: String,
     #[schema(required = true)]
     pub icon: Option<String>,
+    pub display_order: i32,
     pub workspace_code: String,
+    pub workspace_name: String,
+    #[schema(required = true)]
+    pub workspace_icon: Option<String>,
+    pub workspace_order: i32,
     pub items: Vec<MenuItemResponse>,
 }
 

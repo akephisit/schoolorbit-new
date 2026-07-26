@@ -68,9 +68,15 @@ use crate::modules::lookup::models::{
     AcademicYearLookupItem, ClassroomLookupItem, GradeLevelLookupItem, LookupItem,
     OrganizationUnitLookupItem, RoleLookupItem, StaffLookupItem, StudentLookupItem,
 };
+use crate::modules::menu::handlers::admin::{
+    CreateMenuGroupRequest, CreateMenuItemRequest, CreateMenuWorkspaceRequest,
+    MoveItemToGroupRequest, MovedCountData, ReorderGroupsRequest, ReorderItem, ReorderRequest,
+    ReorderWorkspacesRequest, UpdateMenuGroupRequest, UpdateMenuItemRequest,
+    UpdateMenuWorkspaceRequest,
+};
 use crate::modules::menu::handlers::public::UserMenuData;
 use crate::modules::menu::models::{
-    FeatureToggle, MenuGroup, MenuGroupResponse, MenuItem, MenuItemResponse,
+    FeatureToggle, MenuGroup, MenuGroupResponse, MenuItem, MenuItemResponse, MenuWorkspace,
 };
 use crate::modules::notification::models::{ListNotificationsResponse, Notification};
 use crate::modules::parents::models::{ChildDto, ParentProfile};
@@ -120,8 +126,22 @@ use utoipa::OpenApi;
         crate::modules::menu::handlers::public::get_user_menu,
         crate::modules::system::handlers::feature_toggles::list_features,
         crate::modules::system::handlers::feature_toggles::get_feature,
+        crate::modules::menu::handlers::admin::list_menu_workspaces,
+        crate::modules::menu::handlers::admin::create_menu_workspace,
+        crate::modules::menu::handlers::admin::update_menu_workspace,
+        crate::modules::menu::handlers::admin::delete_menu_workspace,
+        crate::modules::menu::handlers::admin::reorder_menu_workspaces,
         crate::modules::menu::handlers::admin::list_menu_groups,
+        crate::modules::menu::handlers::admin::create_menu_group,
+        crate::modules::menu::handlers::admin::update_menu_group,
+        crate::modules::menu::handlers::admin::delete_menu_group,
+        crate::modules::menu::handlers::admin::reorder_menu_groups,
         crate::modules::menu::handlers::admin::list_menu_items,
+        crate::modules::menu::handlers::admin::create_menu_item,
+        crate::modules::menu::handlers::admin::update_menu_item,
+        crate::modules::menu::handlers::admin::delete_menu_item,
+        crate::modules::menu::handlers::admin::move_item_to_group,
+        crate::modules::menu::handlers::admin::reorder_menu_items,
         crate::modules::lookup::handlers::lookup_staff,
         crate::modules::lookup::handlers::lookup_students,
         crate::modules::lookup::handlers::lookup_rooms,
@@ -362,6 +382,22 @@ use utoipa::OpenApi;
         ApiResponse<UserMenuData>,
         MenuGroup,
         MenuItem,
+        MenuWorkspace,
+        CreateMenuWorkspaceRequest,
+        UpdateMenuWorkspaceRequest,
+        CreateMenuGroupRequest,
+        UpdateMenuGroupRequest,
+        CreateMenuItemRequest,
+        UpdateMenuItemRequest,
+        ReorderItem,
+        ReorderRequest,
+        ReorderGroupsRequest,
+        ReorderWorkspacesRequest,
+        MoveItemToGroupRequest,
+        MovedCountData,
+        ApiResponse<MenuWorkspace>,
+        ApiResponse<Vec<MenuWorkspace>>,
+        ApiResponse<MovedCountData>,
         ApiResponse<Vec<MenuGroup>>,
         ApiResponse<Vec<MenuItem>>,
         FeatureToggle,
@@ -1283,7 +1319,7 @@ mod tests {
             .flat_map(|path| path.as_object().expect("path item").values())
             .filter(|operation| operation.get("operationId").is_some())
             .count();
-        assert_eq!(operation_count, 178);
+        assert_eq!(operation_count, 192);
     }
 
     #[test]
@@ -1429,7 +1465,7 @@ mod tests {
             .flat_map(|path| path.as_object().expect("path item").values())
             .filter(|operation| operation.get("operationId").is_some())
             .count();
-        assert_eq!(operation_count, 178);
+        assert_eq!(operation_count, 192);
     }
 
     #[test]
@@ -1611,7 +1647,7 @@ mod tests {
             .flat_map(|path| path.as_object().expect("path item").values())
             .filter(|operation| operation.get("operationId").is_some())
             .count();
-        assert_eq!(operation_count, 178);
+        assert_eq!(operation_count, 192);
     }
 
     #[test]
@@ -1894,7 +1930,7 @@ mod tests {
             .flat_map(|path| path.as_object().expect("path item").values())
             .filter(|operation| operation.get("operationId").is_some())
             .count();
-        assert_eq!(operation_count, 178);
+        assert_eq!(operation_count, 192);
     }
 
     #[test]
@@ -1969,10 +2005,10 @@ mod tests {
             .flat_map(|path| path.as_object().expect("path item").values())
             .filter_map(|operation| operation["operationId"].as_str())
             .collect();
-        assert_eq!(operation_ids.len(), 178);
+        assert_eq!(operation_ids.len(), 192);
         assert_eq!(
             operation_ids.iter().copied().collect::<HashSet<_>>().len(),
-            178
+            192
         );
 
         for (path, method, request_schema) in [
@@ -2225,8 +2261,42 @@ mod tests {
                 ("/api/menu/user", "get", "getUserMenu"),
                 ("/api/admin/features", "get", "listFeatures"),
                 ("/api/admin/features/{id}", "get", "getFeature"),
+                ("/api/admin/menu/workspaces", "get", "listMenuWorkspaces"),
+                ("/api/admin/menu/workspaces", "post", "createMenuWorkspace"),
+                (
+                    "/api/admin/menu/workspaces/{id}",
+                    "put",
+                    "updateMenuWorkspace",
+                ),
+                (
+                    "/api/admin/menu/workspaces/{id}",
+                    "delete",
+                    "deleteMenuWorkspace",
+                ),
+                (
+                    "/api/admin/menu/workspaces/reorder",
+                    "post",
+                    "reorderMenuWorkspaces",
+                ),
                 ("/api/admin/menu/groups", "get", "listMenuGroups"),
+                ("/api/admin/menu/groups", "post", "createMenuGroup"),
+                ("/api/admin/menu/groups/{id}", "put", "updateMenuGroup"),
+                ("/api/admin/menu/groups/{id}", "delete", "deleteMenuGroup"),
+                (
+                    "/api/admin/menu/groups/reorder",
+                    "post",
+                    "reorderMenuGroups",
+                ),
                 ("/api/admin/menu/items", "get", "listMenuItems"),
+                ("/api/admin/menu/items", "post", "createMenuItem"),
+                ("/api/admin/menu/items/{id}", "put", "updateMenuItem"),
+                ("/api/admin/menu/items/{id}", "delete", "deleteMenuItem"),
+                (
+                    "/api/admin/menu/items/{id}/group",
+                    "put",
+                    "moveMenuItemToGroup",
+                ),
+                ("/api/admin/menu/items/reorder", "post", "reorderMenuItems"),
                 ("/api/lookup/staff", "get", "lookupStaff"),
                 ("/api/lookup/students", "get", "lookupStudents"),
                 ("/api/lookup/rooms", "get", "lookupRooms"),
@@ -2280,6 +2350,22 @@ mod tests {
         let menu_group = &schemas["MenuGroup"];
         assert!(required(menu_group).contains(&"name_en"));
         assert!(contains_null(&menu_group["properties"]["name_en"]));
+        assert!(required(menu_group).contains(&"workspace_code"));
+
+        let menu_group_response = &schemas["MenuGroupResponse"];
+        for field in [
+            "displayOrder",
+            "workspaceCode",
+            "workspaceName",
+            "workspaceIcon",
+            "workspaceOrder",
+        ] {
+            assert!(required(menu_group_response).contains(&field));
+        }
+
+        let menu_workspace = &schemas["MenuWorkspace"];
+        assert!(required(menu_workspace).contains(&"code"));
+        assert!(required(menu_workspace).contains(&"display_order"));
 
         let feature_response = &schemas["FeatureToggleResponse"];
         for field in ["data", "message"] {
@@ -2699,7 +2785,7 @@ mod tests {
                 }
             }
         }
-        assert_eq!(operation_ids.len(), 178);
+        assert_eq!(operation_ids.len(), 192);
 
         let schemas = &document["components"]["schemas"];
         let delegation = &schemas["DelegationItem"];

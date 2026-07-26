@@ -10,55 +10,50 @@ type Schemas = components['schemas'];
 
 export type MenuGroup = Schemas['MenuGroup'];
 export type MenuItem = Schemas['MenuItem'];
+export type MenuWorkspace = Schemas['MenuWorkspace'];
+export type CreateMenuWorkspaceRequest = Schemas['CreateMenuWorkspaceRequest'];
+export type UpdateMenuWorkspaceRequest = Schemas['UpdateMenuWorkspaceRequest'];
+export type CreateMenuGroupRequest = Schemas['CreateMenuGroupRequest'];
+export type UpdateMenuGroupRequest = Schemas['UpdateMenuGroupRequest'];
+export type CreateMenuItemRequest = Schemas['CreateMenuItemRequest'];
+export type UpdateMenuItemRequest = Schemas['UpdateMenuItemRequest'];
+export type ReorderItem = Schemas['ReorderItem'];
 
-export interface CreateMenuGroupRequest {
-	code: string;
-	name: string;
-	name_en?: string;
-	description?: string;
-	icon?: string;
-	display_order?: number;
+// ==================== Management workspaces ====================
+
+export async function listMenuWorkspaces(): Promise<MenuWorkspace[]> {
+	const response = await apiClient.get<MenuWorkspace[]>('/api/admin/menu/workspaces');
+	return requireApiData(response, 'Failed to fetch menu workspaces');
 }
 
-export interface UpdateMenuGroupRequest {
-	name?: string;
-	name_en?: string;
-	description?: string;
-	icon?: string;
-	display_order?: number;
-	is_active?: boolean;
+export async function createMenuWorkspace(
+	data: CreateMenuWorkspaceRequest
+): Promise<MenuWorkspace> {
+	const response = await apiClient.post<MenuWorkspace>('/api/admin/menu/workspaces', data);
+	return requireApiData(response, 'Failed to create menu workspace');
 }
 
-export interface CreateMenuItemRequest {
-	code: string;
-	name: string;
-	name_en?: string;
-	description?: string;
-	path: string;
-	icon?: string;
-	group_id: string;
-	parent_id?: string;
-	required_permission?: string; // Module name
-	display_order?: number;
+export async function updateMenuWorkspace(
+	id: string,
+	data: UpdateMenuWorkspaceRequest
+): Promise<MenuWorkspace> {
+	const response = await apiClient.put<MenuWorkspace>(`/api/admin/menu/workspaces/${id}`, data);
+	return requireApiData(response, 'Failed to update menu workspace');
 }
 
-export interface UpdateMenuItemRequest {
-	name?: string;
-	name_en?: string;
-	description?: string;
-	path?: string;
-	icon?: string;
-	group_id?: string;
-	parent_id?: string;
-	required_permission?: string;
-	display_order?: number;
-	is_active?: boolean;
+export async function deleteMenuWorkspace(id: string): Promise<Schemas['MovedCountData']> {
+	const response = await apiClient.delete<Schemas['MovedCountData']>(
+		`/api/admin/menu/workspaces/${id}`
+	);
+	return requireApiData(response, 'Failed to delete menu workspace');
 }
 
-export interface ReorderItem {
-	id: string;
-	display_order: number;
-	group_id?: string;
+export async function reorderMenuWorkspaces(workspaces: ReorderItem[]): Promise<void> {
+	const response = await apiClient.post<Schemas['EmptyData']>(
+		'/api/admin/menu/workspaces/reorder',
+		{ workspaces }
+	);
+	if (!response.success) throw new Error(response.error || 'Failed to reorder menu workspaces');
 }
 
 // ==================== Menu Groups ====================
@@ -81,13 +76,15 @@ export async function updateMenuGroup(
 	return requireApiData(response, 'Failed to update menu group');
 }
 
-export async function deleteMenuGroup(id: string): Promise<void> {
-	const response = await apiClient.delete<Record<string, never>>(`/api/admin/menu/groups/${id}`);
-	if (!response.success) throw new Error(response.error || 'Failed to delete menu group');
+export async function deleteMenuGroup(id: string): Promise<Schemas['MovedCountData']> {
+	const response = await apiClient.delete<Schemas['MovedCountData']>(
+		`/api/admin/menu/groups/${id}`
+	);
+	return requireApiData(response, 'Failed to delete menu group');
 }
 
 export async function reorderMenuGroups(groups: ReorderItem[]): Promise<void> {
-	const response = await apiClient.post<Record<string, never>>('/api/admin/menu/groups/reorder', {
+	const response = await apiClient.post<Schemas['EmptyData']>('/api/admin/menu/groups/reorder', {
 		groups
 	});
 	if (!response.success) throw new Error(response.error || 'Failed to reorder menu groups');
@@ -112,12 +109,12 @@ export async function updateMenuItem(id: string, data: UpdateMenuItemRequest): P
 }
 
 export async function deleteMenuItem(id: string): Promise<void> {
-	const response = await apiClient.delete<Record<string, never>>(`/api/admin/menu/items/${id}`);
+	const response = await apiClient.delete<Schemas['EmptyData']>(`/api/admin/menu/items/${id}`);
 	if (!response.success) throw new Error(response.error || 'Failed to delete menu item');
 }
 
 export async function reorderMenuItems(items: ReorderItem[]): Promise<void> {
-	const response = await apiClient.post<Record<string, never>>('/api/admin/menu/items/reorder', {
+	const response = await apiClient.post<Schemas['EmptyData']>('/api/admin/menu/items/reorder', {
 		items
 	});
 	if (!response.success) throw new Error(response.error || 'Failed to reorder menu items');

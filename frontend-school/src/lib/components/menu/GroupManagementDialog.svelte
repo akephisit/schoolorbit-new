@@ -1,7 +1,8 @@
 <script lang="ts">
-	import type { MenuGroup } from '$lib/api/menu-admin';
+	import type { MenuGroup, MenuWorkspace } from '$lib/api/menu-admin';
 	import { createMenuGroup, updateMenuGroup, deleteMenuGroup } from '$lib/api/menu-admin';
 	import * as Dialog from '$lib/components/ui/dialog';
+	import * as Select from '$lib/components/ui/select';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
@@ -11,6 +12,7 @@
 	interface Props {
 		open: boolean;
 		group: MenuGroup | null; // null = create mode
+		workspaces: MenuWorkspace[];
 		canCreate?: boolean;
 		canUpdate?: boolean;
 		canDelete?: boolean;
@@ -23,6 +25,7 @@
 	let {
 		open = $bindable(),
 		group,
+		workspaces,
 		canCreate = false,
 		canUpdate = false,
 		canDelete = false,
@@ -35,10 +38,15 @@
 		code: '',
 		name: '',
 		name_en: '',
-		icon: ''
+		icon: '',
+		workspace_code: ''
 	});
 
 	const canEditGroup = $derived(group ? canUpdate : canCreate);
+	const selectedWorkspaceName = $derived(
+		workspaces.find((workspace) => workspace.code === formData.workspace_code)?.name ??
+			'เลือกกลุ่มบริหาร'
+	);
 
 	// Reset form when dialog opens/closes or group changes
 	$effect(() => {
@@ -48,7 +56,8 @@
 				code: group.code,
 				name: group.name,
 				name_en: group.name_en || '',
-				icon: group.icon || ''
+				icon: group.icon || '',
+				workspace_code: group.workspace_code
 			};
 		} else if (open && !group) {
 			// Create mode
@@ -56,7 +65,8 @@
 				code: '',
 				name: '',
 				name_en: '',
-				icon: ''
+				icon: '',
+				workspace_code: workspaces.find((workspace) => workspace.is_active)?.code ?? ''
 			};
 		}
 	});
@@ -67,7 +77,7 @@
 			return;
 		}
 
-		if (!formData.name || (!group && !formData.code)) {
+		if (!formData.name || !formData.workspace_code || (!group && !formData.code)) {
 			toast.error('กรุณากรอกข้อมูลที่จำเป็น');
 			return;
 		}
@@ -80,7 +90,8 @@
 				savedGroup = await updateMenuGroup(group.id, {
 					name: formData.name,
 					name_en: formData.name_en || undefined,
-					icon: formData.icon || undefined
+					icon: formData.icon || undefined,
+					workspace_code: formData.workspace_code
 				});
 				toast.success('แก้ไขกลุ่มเมนูสำเร็จ');
 			} else {
@@ -89,7 +100,8 @@
 					code: formData.code,
 					name: formData.name,
 					name_en: formData.name_en || undefined,
-					icon: formData.icon || undefined
+					icon: formData.icon || undefined,
+					workspace_code: formData.workspace_code
 				});
 				toast.success('สร้างกลุ่มเมนูสำเร็จ');
 			}
@@ -168,6 +180,23 @@
 					<p class="text-xs text-muted-foreground">ใช้ตัวอักษรภาษาอังกฤษและ - เท่านั้น</p>
 				</div>
 			{/if}
+
+			<div class="space-y-2">
+				<Label for="workspace">กลุ่มบริหาร *</Label>
+				<Select.Root
+					type="single"
+					bind:value={formData.workspace_code}
+					disabled={saving || !canEditGroup}
+				>
+					<Select.Trigger id="workspace" class="w-full">{selectedWorkspaceName}</Select.Trigger>
+					<Select.Content>
+						{#each workspaces.filter((workspace) => workspace.is_active) as workspace (workspace.id)}
+							<Select.Item value={workspace.code}>{workspace.name}</Select.Item>
+						{/each}
+					</Select.Content>
+				</Select.Root>
+				<p class="text-xs text-muted-foreground">ฝ่าย/งานนี้จะแสดงอยู่ใต้กลุ่มบริหารที่เลือก</p>
+			</div>
 
 			<!-- Name -->
 			<div class="space-y-2">

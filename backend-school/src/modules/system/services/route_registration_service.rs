@@ -25,21 +25,7 @@ pub async fn sync_routes(
 
         let user_type = route_user_type(route.user_type.as_deref());
         let workspace_code = route_workspace_code(route.workspace.as_deref(), &route.group);
-
-        if let Err(error) =
-            sqlx::query("UPDATE menu_groups SET workspace_code = $1 WHERE code = $2")
-                .bind(workspace_code)
-                .bind(&route.group)
-                .execute(pool)
-                .await
-        {
-            tracing::warn!(
-                group = %route.group,
-                workspace_code,
-                "Failed to sync route workspace: {}",
-                error
-            );
-        }
+        ensure_route_navigation_defaults(pool, &route.group, workspace_code).await?;
 
         let result = sqlx::query(
             r#"
@@ -55,9 +41,7 @@ pub async fn sync_routes(
                 true
             )
             ON CONFLICT (code) DO UPDATE SET
-                name = EXCLUDED.name,
                 path = EXCLUDED.path,
-                icon = EXCLUDED.icon,
                 required_permission = EXCLUDED.required_permission,
                 user_type = EXCLUDED.user_type,
                 group_id = COALESCE(menu_items.group_id, EXCLUDED.group_id),
@@ -107,6 +91,46 @@ pub async fn sync_routes(
     })
 }
 
+async fn ensure_route_navigation_defaults(
+    pool: &PgPool,
+    group_code: &str,
+    workspace_code: &str,
+) -> Result<(), AppError> {
+    sqlx::query(
+        "INSERT INTO menu_workspaces (code, name, name_en, icon, display_order)
+         VALUES ($1, $1, $1, 'panel-left', 900)
+         ON CONFLICT (code) DO NOTHING",
+    )
+    .bind(workspace_code)
+    .execute(pool)
+    .await
+    .map_err(|error| {
+        AppError::InternalServerError(format!(
+            "Failed to ensure route workspace '{}': {}",
+            workspace_code, error
+        ))
+    })?;
+
+    sqlx::query(
+        "INSERT INTO menu_groups
+            (code, name, name_en, icon, display_order, workspace_code)
+         VALUES ($1, $1, $1, 'folder', 900, $2)
+         ON CONFLICT (code) DO NOTHING",
+    )
+    .bind(group_code)
+    .bind(workspace_code)
+    .execute(pool)
+    .await
+    .map_err(|error| {
+        AppError::InternalServerError(format!(
+            "Failed to ensure route menu group '{}': {}",
+            group_code, error
+        ))
+    })?;
+
+    Ok(())
+}
+
 async fn cleanup_orphaned_menu_items(pool: &PgPool, active_codes: &[String]) {
     if active_codes.is_empty() {
         return;
@@ -147,8 +171,9 @@ fn route_workspace_code<'a>(workspace: Option<&'a str>, group: &'a str) -> &'a s
         "main" => "home",
         "academic" => "academic",
         "personnel" => "personnel",
+        "budget" => "budget",
         "settings" => "settings",
-        "general_admin" | "budget" => "operations",
+        "general_admin" => "operations",
         _ => "operations",
     })
 }
@@ -181,6 +206,7 @@ mod tests {
         assert_eq!(route_workspace_code(Some("teaching"), "main"), "teaching");
         assert_eq!(route_workspace_code(None, "main"), "home");
         assert_eq!(route_workspace_code(None, "academic"), "academic");
+        assert_eq!(route_workspace_code(None, "budget"), "budget");
         assert_eq!(route_workspace_code(None, "general_admin"), "operations");
     }
 

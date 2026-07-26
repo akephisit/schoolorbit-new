@@ -185,9 +185,11 @@ Use `ApiResponse` and `ApiErrorResponse`; do not return raw feature DTOs or ad-h
 
 ### Sidebar Navigation IA
 
-- Keep navigation organized by workspace/module with persisted collapsible workflow sections.
-- Expanded mode shows workspace headings, section headings, and child links.
-- Collapsed mode becomes a workspace icon rail; each workspace opens a flyout containing its permission-filtered sections and child links.
+- Keep navigation organized as configurable management workspace → department/work section → service link. The same persisted hierarchy drives the personal home and Sidebar.
+- Route path, route code, user type, and required permission are system-owned. Workspace/section placement, display label, icon, active state, and ordering are school-owned and must survive route synchronization and deployment.
+- Navigation placement never grants access. `/api/menu/user` must continue to filter system-owned routes through the actor's effective module permissions.
+- Expanded mode shows management-workspace headings, department/work-section headings, and service links.
+- Collapsed mode becomes a management-workspace icon rail; each workspace opens a flyout containing its permission-filtered sections and service links.
 - Show a section only when `/api/menu/user` leaves at least one permitted child.
 - Do not duplicate routes by role merely to shape navigation.
 

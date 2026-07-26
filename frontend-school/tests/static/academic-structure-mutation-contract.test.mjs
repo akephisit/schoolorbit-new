@@ -45,8 +45,8 @@ test('generated academic structure contract owns all batch operations and DTOs',
 	const operationIds = Object.values(contract.paths).flatMap((pathItem) =>
 		Object.values(pathItem).flatMap((operation) => operation.operationId ?? [])
 	);
-	assert.equal(operationIds.length, 178);
-	assert.equal(new Set(operationIds).size, 178);
+	assert.equal(operationIds.length, 192);
+	assert.equal(new Set(operationIds).size, 192);
 
 	for (const [alias, schema] of [
 		['AcademicYear', 'AcademicYear'],

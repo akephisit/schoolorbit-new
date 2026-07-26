@@ -486,7 +486,24 @@ async fn main() {
             post(modules::system::handlers::feature_toggles::toggle_feature)
                 .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
         )
-        // Admin - Menu Management (protected, module-based permissions)
+        // Admin - Menu Management (protected by exact menu.* permissions)
+        .route(
+            "/api/admin/menu/workspaces",
+            get(modules::menu::handlers::admin::list_menu_workspaces)
+                .post(modules::menu::handlers::admin::create_menu_workspace)
+                .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
+        )
+        .route(
+            "/api/admin/menu/workspaces/reorder",
+            post(modules::menu::handlers::admin::reorder_menu_workspaces)
+                .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
+        )
+        .route(
+            "/api/admin/menu/workspaces/{id}",
+            axum::routing::put(modules::menu::handlers::admin::update_menu_workspace)
+                .delete(modules::menu::handlers::admin::delete_menu_workspace)
+                .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
+        )
         .route(
             "/api/admin/menu/groups",
             get(modules::menu::handlers::admin::list_menu_groups)

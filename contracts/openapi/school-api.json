@@ -2413,6 +2413,246 @@
         ],
         "type": "object"
       },
+      "ApiResponse_MenuGroup": {
+        "properties": {
+          "data": {
+            "description": "Menu Group",
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "display_order": {
+                "format": "int32",
+                "type": "integer"
+              },
+              "icon": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "is_active": {
+                "type": "boolean"
+              },
+              "name": {
+                "type": "string"
+              },
+              "name_en": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "workspace_code": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "code",
+              "name",
+              "name_en",
+              "icon",
+              "workspace_code",
+              "display_order",
+              "is_active"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_MenuItem": {
+        "properties": {
+          "data": {
+            "description": "Menu Item",
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "display_order": {
+                "format": "int32",
+                "type": "integer"
+              },
+              "group_id": {
+                "format": "uuid",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "icon": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "is_active": {
+                "type": "boolean"
+              },
+              "name": {
+                "type": "string"
+              },
+              "name_en": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "parent_id": {
+                "format": "uuid",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "path": {
+                "type": "string"
+              },
+              "required_permission": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "user_type": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "code",
+              "name",
+              "name_en",
+              "path",
+              "icon",
+              "required_permission",
+              "user_type",
+              "group_id",
+              "parent_id",
+              "display_order",
+              "is_active"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_MenuWorkspace": {
+        "properties": {
+          "data": {
+            "description": "Top-level navigation workspace such as academic or personnel administration.",
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "display_order": {
+                "format": "int32",
+                "type": "integer"
+              },
+              "icon": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "is_active": {
+                "type": "boolean"
+              },
+              "name": {
+                "type": "string"
+              },
+              "name_en": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "code",
+              "name",
+              "name_en",
+              "icon",
+              "display_order",
+              "is_active"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_MovedCountData": {
+        "properties": {
+          "data": {
+            "properties": {
+              "moved_count": {
+                "format": "int64",
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "moved_count"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
       "ApiResponse_OrganizationUnit": {
         "properties": {
           "data": {
@@ -5807,6 +6047,9 @@
                     "string",
                     "null"
                   ]
+                },
+                "workspace_code": {
+                  "type": "string"
                 }
               },
               "required": [
@@ -5815,6 +6058,7 @@
                 "name",
                 "name_en",
                 "icon",
+                "workspace_code",
                 "display_order",
                 "is_active"
               ],
@@ -5908,6 +6152,68 @@
                 "user_type",
                 "group_id",
                 "parent_id",
+                "display_order",
+                "is_active"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_Vec_MenuWorkspace": {
+        "properties": {
+          "data": {
+            "items": {
+              "description": "Top-level navigation workspace such as academic or personnel administration.",
+              "properties": {
+                "code": {
+                  "type": "string"
+                },
+                "display_order": {
+                  "format": "int32",
+                  "type": "integer"
+                },
+                "icon": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "is_active": {
+                  "type": "boolean"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "name_en": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "code",
+                "name",
+                "name_en",
+                "icon",
                 "display_order",
                 "is_active"
               ],
@@ -9198,6 +9504,152 @@
         ],
         "type": "object"
       },
+      "CreateMenuGroupRequest": {
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "display_order": {
+            "format": "int32",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "icon": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "name_en": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "workspace_code": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "name",
+          "workspace_code"
+        ],
+        "type": "object"
+      },
+      "CreateMenuItemRequest": {
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "display_order": {
+            "format": "int32",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "group_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "icon": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "name_en": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "parent_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "path": {
+            "type": "string"
+          },
+          "required_permission": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "code",
+          "name",
+          "path",
+          "group_id"
+        ],
+        "type": "object"
+      },
+      "CreateMenuWorkspaceRequest": {
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "display_order": {
+            "format": "int32",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "icon": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "name_en": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "code",
+          "name"
+        ],
+        "type": "object"
+      },
       "CreateOrganizationUnitRequest": {
         "properties": {
           "category": {
@@ -10505,6 +10957,9 @@
               "string",
               "null"
             ]
+          },
+          "workspace_code": {
+            "type": "string"
           }
         },
         "required": [
@@ -10513,6 +10968,7 @@
           "name",
           "name_en",
           "icon",
+          "workspace_code",
           "display_order",
           "is_active"
         ],
@@ -10523,6 +10979,10 @@
         "properties": {
           "code": {
             "type": "string"
+          },
+          "displayOrder": {
+            "format": "int32",
+            "type": "integer"
           },
           "icon": {
             "type": [
@@ -10541,13 +11001,30 @@
           },
           "workspaceCode": {
             "type": "string"
+          },
+          "workspaceIcon": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "workspaceName": {
+            "type": "string"
+          },
+          "workspaceOrder": {
+            "format": "int32",
+            "type": "integer"
           }
         },
         "required": [
           "code",
           "name",
           "icon",
+          "displayOrder",
           "workspaceCode",
+          "workspaceName",
+          "workspaceIcon",
+          "workspaceOrder",
           "items"
         ],
         "type": "object"
@@ -10656,6 +11133,75 @@
           "name",
           "path",
           "icon"
+        ],
+        "type": "object"
+      },
+      "MenuWorkspace": {
+        "description": "Top-level navigation workspace such as academic or personnel administration.",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "display_order": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "icon": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "is_active": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "name_en": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "name",
+          "name_en",
+          "icon",
+          "display_order",
+          "is_active"
+        ],
+        "type": "object"
+      },
+      "MovedCountData": {
+        "properties": {
+          "moved_count": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "moved_count"
+        ],
+        "type": "object"
+      },
+      "MoveItemToGroupRequest": {
+        "properties": {
+          "group_id": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "group_id"
         ],
         "type": "object"
       },
@@ -11610,6 +12156,72 @@
           "code",
           "name",
           "level"
+        ],
+        "type": "object"
+      },
+      "ReorderGroupsRequest": {
+        "properties": {
+          "groups": {
+            "items": {
+              "$ref": "#/components/schemas/ReorderItem"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "groups"
+        ],
+        "type": "object"
+      },
+      "ReorderItem": {
+        "properties": {
+          "display_order": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "group_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "display_order"
+        ],
+        "type": "object"
+      },
+      "ReorderRequest": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ReorderItem"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
+      "ReorderWorkspacesRequest": {
+        "properties": {
+          "workspaces": {
+            "items": {
+              "$ref": "#/components/schemas/ReorderItem"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "workspaces"
         ],
         "type": "object"
       },
@@ -13954,6 +14566,164 @@
         "required": [
           "result"
         ],
+        "type": "object"
+      },
+      "UpdateMenuGroupRequest": {
+        "properties": {
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "display_order": {
+            "format": "int32",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "icon": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "is_active": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name_en": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "workspace_code": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "UpdateMenuItemRequest": {
+        "properties": {
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "display_order": {
+            "format": "int32",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "group_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "icon": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "is_active": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name_en": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "parent_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "path": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "required_permission": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "UpdateMenuWorkspaceRequest": {
+        "properties": {
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "display_order": {
+            "format": "int32",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "icon": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "is_active": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name_en": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
         "type": "object"
       },
       "UpdateOrganizationPermissionsRequest": {
@@ -22928,6 +23698,246 @@
               }
             },
             "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Menu read permission required"
+          }
+        },
+        "tags": [
+          "menu"
+        ]
+      },
+      "post": {
+        "operationId": "createMenuGroup",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateMenuGroupRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_MenuGroup"
+                }
+              }
+            },
+            "description": "Menu group created"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Menu create permission required"
+          }
+        },
+        "tags": [
+          "menu"
+        ]
+      }
+    },
+    "/api/admin/menu/groups/{id}": {
+      "delete": {
+        "operationId": "deleteMenuGroup",
+        "parameters": [
+          {
+            "description": "Menu group ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_MovedCountData"
+                }
+              }
+            },
+            "description": "Menu group deleted"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Menu delete permission required"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Menu group not found"
+          }
+        },
+        "tags": [
+          "menu"
+        ]
+      },
+      "put": {
+        "operationId": "updateMenuGroup",
+        "parameters": [
+          {
+            "description": "Menu group ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateMenuGroupRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_MenuGroup"
+                }
+              }
+            },
+            "description": "Menu group updated"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Menu update permission required"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Menu group not found"
+          }
+        },
+        "tags": [
+          "menu"
+        ]
+      }
+    },
+    "/api/admin/menu/groups/reorder": {
+      "post": {
+        "operationId": "reorderMenuGroups",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReorderGroupsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_EmptyData"
+                }
+              }
+            },
+            "description": "Menu groups reordered"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Menu update permission required"
           }
         },
         "tags": [
@@ -22969,6 +23979,588 @@
               }
             },
             "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Menu read permission required"
+          }
+        },
+        "tags": [
+          "menu"
+        ]
+      },
+      "post": {
+        "operationId": "createMenuItem",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateMenuItemRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_MenuItem"
+                }
+              }
+            },
+            "description": "Menu item created"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Menu create permission required"
+          }
+        },
+        "tags": [
+          "menu"
+        ]
+      }
+    },
+    "/api/admin/menu/items/{id}": {
+      "delete": {
+        "operationId": "deleteMenuItem",
+        "parameters": [
+          {
+            "description": "Menu item ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_EmptyData"
+                }
+              }
+            },
+            "description": "Menu item deleted"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Menu delete permission required"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Menu item not found"
+          }
+        },
+        "tags": [
+          "menu"
+        ]
+      },
+      "put": {
+        "operationId": "updateMenuItem",
+        "parameters": [
+          {
+            "description": "Menu item ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateMenuItemRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_MenuItem"
+                }
+              }
+            },
+            "description": "Menu item updated"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Menu update permission required"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Menu item not found"
+          }
+        },
+        "tags": [
+          "menu"
+        ]
+      }
+    },
+    "/api/admin/menu/items/{id}/group": {
+      "put": {
+        "operationId": "moveMenuItemToGroup",
+        "parameters": [
+          {
+            "description": "Menu item ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MoveItemToGroupRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_MenuItem"
+                }
+              }
+            },
+            "description": "Menu item moved"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Menu update permission required"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Menu item not found"
+          }
+        },
+        "tags": [
+          "menu"
+        ]
+      }
+    },
+    "/api/admin/menu/items/reorder": {
+      "post": {
+        "operationId": "reorderMenuItems",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReorderRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_EmptyData"
+                }
+              }
+            },
+            "description": "Menu items reordered"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Menu update permission required"
+          }
+        },
+        "tags": [
+          "menu"
+        ]
+      }
+    },
+    "/api/admin/menu/workspaces": {
+      "get": {
+        "operationId": "listMenuWorkspaces",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_MenuWorkspace"
+                }
+              }
+            },
+            "description": "Menu workspaces"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Menu read permission required"
+          }
+        },
+        "tags": [
+          "menu"
+        ]
+      },
+      "post": {
+        "operationId": "createMenuWorkspace",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateMenuWorkspaceRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_MenuWorkspace"
+                }
+              }
+            },
+            "description": "Menu workspace created"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Menu create permission required"
+          }
+        },
+        "tags": [
+          "menu"
+        ]
+      }
+    },
+    "/api/admin/menu/workspaces/{id}": {
+      "delete": {
+        "operationId": "deleteMenuWorkspace",
+        "parameters": [
+          {
+            "description": "Menu workspace ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_MovedCountData"
+                }
+              }
+            },
+            "description": "Menu workspace deleted"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Menu delete permission required"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Menu workspace not found"
+          }
+        },
+        "tags": [
+          "menu"
+        ]
+      },
+      "put": {
+        "operationId": "updateMenuWorkspace",
+        "parameters": [
+          {
+            "description": "Menu workspace ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateMenuWorkspaceRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_MenuWorkspace"
+                }
+              }
+            },
+            "description": "Menu workspace updated"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Menu update permission required"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Menu workspace not found"
+          }
+        },
+        "tags": [
+          "menu"
+        ]
+      }
+    },
+    "/api/admin/menu/workspaces/reorder": {
+      "post": {
+        "operationId": "reorderMenuWorkspaces",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReorderWorkspacesRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_EmptyData"
+                }
+              }
+            },
+            "description": "Menu workspaces reordered"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Menu update permission required"
           }
         },
         "tags": [

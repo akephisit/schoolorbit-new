@@ -1,24 +1,24 @@
 use crate::error::AppError;
-use crate::middleware::permission::module_permission_matches;
-use crate::modules::menu::models::{MenuGroup, MenuItem};
+use crate::modules::menu::models::{MenuGroup, MenuItem, MenuWorkspace};
 use sqlx::PgPool;
 use uuid::Uuid;
 
 // ============================================
-// Menu Groups
+// Menu Workspaces
 // ============================================
 
-pub async fn list_menu_groups(pool: &PgPool) -> Result<Vec<MenuGroup>, AppError> {
-    sqlx::query_as::<_, MenuGroup>(
+pub async fn list_menu_workspaces(pool: &PgPool) -> Result<Vec<MenuWorkspace>, AppError> {
+    sqlx::query_as::<_, MenuWorkspace>(
         "SELECT id, code, name, name_en, icon, display_order, is_active
-         FROM menu_groups ORDER BY display_order, name",
+         FROM menu_workspaces
+         ORDER BY display_order, name",
     )
     .fetch_all(pool)
     .await
-    .map_err(|e| AppError::InternalServerError(format!("Failed to fetch menu groups: {}", e)))
+    .map_err(|e| AppError::InternalServerError(format!("Failed to fetch menu workspaces: {}", e)))
 }
 
-pub struct CreateMenuGroupInput {
+pub struct CreateMenuWorkspaceInput {
     pub code: String,
     pub name: String,
     pub name_en: Option<String>,
@@ -27,12 +27,13 @@ pub struct CreateMenuGroupInput {
     pub display_order: Option<i32>,
 }
 
-pub async fn create_menu_group(
+pub async fn create_menu_workspace(
     pool: &PgPool,
-    input: CreateMenuGroupInput,
-) -> Result<MenuGroup, AppError> {
-    sqlx::query_as::<_, MenuGroup>(
-        "INSERT INTO menu_groups (code, name, name_en, description, icon, display_order)
+    input: CreateMenuWorkspaceInput,
+) -> Result<MenuWorkspace, AppError> {
+    sqlx::query_as::<_, MenuWorkspace>(
+        "INSERT INTO menu_workspaces
+            (code, name, name_en, description, icon, display_order)
          VALUES ($1, $2, $3, $4, $5, $6)
          RETURNING id, code, name, name_en, icon, display_order, is_active",
     )
@@ -44,10 +45,10 @@ pub async fn create_menu_group(
     .bind(menu_display_order(input.display_order))
     .fetch_one(pool)
     .await
-    .map_err(|e| AppError::InternalServerError(format!("Failed to create menu group: {}", e)))
+    .map_err(|e| AppError::InternalServerError(format!("Failed to create menu workspace: {}", e)))
 }
 
-pub struct UpdateMenuGroupInput {
+pub struct UpdateMenuWorkspaceInput {
     pub name: Option<String>,
     pub name_en: Option<String>,
     pub description: Option<String>,
@@ -56,11 +57,11 @@ pub struct UpdateMenuGroupInput {
     pub is_active: Option<bool>,
 }
 
-pub async fn update_menu_group(
+pub async fn update_menu_workspace(
     pool: &PgPool,
     id: Uuid,
-    data: UpdateMenuGroupInput,
-) -> Result<MenuGroup, AppError> {
+    data: UpdateMenuWorkspaceInput,
+) -> Result<MenuWorkspace, AppError> {
     let mut updates = vec!["updated_at = NOW()".to_string()];
     let mut bind_count = 1;
     if data.name.is_some() {
@@ -89,7 +90,217 @@ pub async fn update_menu_group(
     }
 
     let query = format!(
-        "UPDATE menu_groups SET {} WHERE id = $1 RETURNING id, code, name, name_en, icon, display_order, is_active",
+        "UPDATE menu_workspaces SET {} WHERE id = $1
+         RETURNING id, code, name, name_en, icon, display_order, is_active",
+        updates.join(", ")
+    );
+    let mut qb = sqlx::query_as::<_, MenuWorkspace>(&query).bind(id);
+    if let Some(value) = &data.name {
+        qb = qb.bind(value);
+    }
+    if let Some(value) = &data.name_en {
+        qb = qb.bind(value);
+    }
+    if let Some(value) = &data.description {
+        qb = qb.bind(value);
+    }
+    if let Some(value) = &data.icon {
+        qb = qb.bind(value);
+    }
+    if let Some(value) = data.display_order {
+        qb = qb.bind(value);
+    }
+    if let Some(value) = data.is_active {
+        qb = qb.bind(value);
+    }
+
+    qb.fetch_optional(pool)
+        .await
+        .map_err(|e| {
+            AppError::InternalServerError(format!("Failed to update menu workspace: {}", e))
+        })?
+        .ok_or(AppError::NotFound("Menu workspace not found".to_string()))
+}
+
+pub async fn delete_menu_workspace(pool: &PgPool, id: Uuid) -> Result<u64, AppError> {
+    let workspace = sqlx::query_as::<_, MenuWorkspace>(
+        "SELECT id, code, name, name_en, icon, display_order, is_active
+         FROM menu_workspaces
+         WHERE id = $1",
+    )
+    .bind(id)
+    .fetch_optional(pool)
+    .await
+    .map_err(|e| AppError::InternalServerError(format!("Failed to fetch menu workspace: {}", e)))?
+    .ok_or(AppError::NotFound("Menu workspace not found".to_string()))?;
+
+    if matches!(workspace.code.as_str(), "home" | "operations" | "settings") {
+        return Err(AppError::BadRequest(
+            "This system workspace cannot be deleted".to_string(),
+        ));
+    }
+
+    let mut tx = pool
+        .begin()
+        .await
+        .map_err(|e| AppError::InternalServerError(format!("Transaction failed: {}", e)))?;
+
+    let moved = sqlx::query(
+        "UPDATE menu_groups
+         SET workspace_code = 'operations', updated_at = NOW()
+         WHERE workspace_code = $1",
+    )
+    .bind(&workspace.code)
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| AppError::InternalServerError(format!("Failed to move menu groups: {}", e)))?
+    .rows_affected();
+
+    sqlx::query("DELETE FROM menu_workspaces WHERE id = $1")
+        .bind(id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| {
+            AppError::InternalServerError(format!("Failed to delete menu workspace: {}", e))
+        })?;
+
+    tx.commit()
+        .await
+        .map_err(|e| AppError::InternalServerError(format!("Failed to commit: {}", e)))?;
+
+    Ok(moved)
+}
+
+pub async fn reorder_menu_workspaces(
+    pool: &PgPool,
+    workspaces: Vec<(Uuid, i32)>,
+) -> Result<usize, AppError> {
+    if workspaces.is_empty() {
+        return Ok(0);
+    }
+
+    let ids: Vec<Uuid> = workspaces.iter().map(|(id, _)| *id).collect();
+    let display_orders: Vec<i32> = workspaces
+        .iter()
+        .map(|(_, display_order)| *display_order)
+        .collect();
+
+    sqlx::query(
+        "UPDATE menu_workspaces AS workspace
+         SET display_order = updates.display_order, updated_at = NOW()
+         FROM UNNEST($1::uuid[], $2::int4[]) AS updates(id, display_order)
+         WHERE workspace.id = updates.id",
+    )
+    .bind(&ids)
+    .bind(&display_orders)
+    .execute(pool)
+    .await
+    .map_err(|e| {
+        AppError::InternalServerError(format!("Failed to reorder menu workspaces: {}", e))
+    })?;
+
+    Ok(ids.len())
+}
+
+// ============================================
+// Menu Groups
+// ============================================
+
+pub async fn list_menu_groups(pool: &PgPool) -> Result<Vec<MenuGroup>, AppError> {
+    sqlx::query_as::<_, MenuGroup>(
+        "SELECT menu_group.id, menu_group.code, menu_group.name, menu_group.name_en,
+                menu_group.icon, menu_group.workspace_code, menu_group.display_order,
+                menu_group.is_active
+         FROM menu_groups AS menu_group
+         JOIN menu_workspaces AS workspace ON workspace.code = menu_group.workspace_code
+         ORDER BY workspace.display_order, menu_group.display_order, menu_group.name",
+    )
+    .fetch_all(pool)
+    .await
+    .map_err(|e| AppError::InternalServerError(format!("Failed to fetch menu groups: {}", e)))
+}
+
+pub struct CreateMenuGroupInput {
+    pub code: String,
+    pub name: String,
+    pub name_en: Option<String>,
+    pub description: Option<String>,
+    pub icon: Option<String>,
+    pub workspace_code: String,
+    pub display_order: Option<i32>,
+}
+
+pub async fn create_menu_group(
+    pool: &PgPool,
+    input: CreateMenuGroupInput,
+) -> Result<MenuGroup, AppError> {
+    sqlx::query_as::<_, MenuGroup>(
+        "INSERT INTO menu_groups
+            (code, name, name_en, description, icon, workspace_code, display_order)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
+         RETURNING id, code, name, name_en, icon, workspace_code, display_order, is_active",
+    )
+    .bind(&input.code)
+    .bind(&input.name)
+    .bind(&input.name_en)
+    .bind(&input.description)
+    .bind(&input.icon)
+    .bind(&input.workspace_code)
+    .bind(menu_display_order(input.display_order))
+    .fetch_one(pool)
+    .await
+    .map_err(|e| AppError::InternalServerError(format!("Failed to create menu group: {}", e)))
+}
+
+pub struct UpdateMenuGroupInput {
+    pub name: Option<String>,
+    pub name_en: Option<String>,
+    pub description: Option<String>,
+    pub icon: Option<String>,
+    pub workspace_code: Option<String>,
+    pub display_order: Option<i32>,
+    pub is_active: Option<bool>,
+}
+
+pub async fn update_menu_group(
+    pool: &PgPool,
+    id: Uuid,
+    data: UpdateMenuGroupInput,
+) -> Result<MenuGroup, AppError> {
+    let mut updates = vec!["updated_at = NOW()".to_string()];
+    let mut bind_count = 1;
+    if data.name.is_some() {
+        bind_count += 1;
+        updates.push(format!("name = ${}", bind_count));
+    }
+    if data.name_en.is_some() {
+        bind_count += 1;
+        updates.push(format!("name_en = ${}", bind_count));
+    }
+    if data.description.is_some() {
+        bind_count += 1;
+        updates.push(format!("description = ${}", bind_count));
+    }
+    if data.icon.is_some() {
+        bind_count += 1;
+        updates.push(format!("icon = ${}", bind_count));
+    }
+    if data.workspace_code.is_some() {
+        bind_count += 1;
+        updates.push(format!("workspace_code = ${}", bind_count));
+    }
+    if data.display_order.is_some() {
+        bind_count += 1;
+        updates.push(format!("display_order = ${}", bind_count));
+    }
+    if data.is_active.is_some() {
+        bind_count += 1;
+        updates.push(format!("is_active = ${}", bind_count));
+    }
+
+    let query = format!(
+        "UPDATE menu_groups SET {} WHERE id = $1
+         RETURNING id, code, name, name_en, icon, workspace_code, display_order, is_active",
         updates.join(", ")
     );
     let mut qb = sqlx::query_as::<_, MenuGroup>(&query).bind(id);
@@ -103,6 +314,9 @@ pub async fn update_menu_group(
         qb = qb.bind(v);
     }
     if let Some(v) = &data.icon {
+        qb = qb.bind(v);
+    }
+    if let Some(v) = &data.workspace_code {
         qb = qb.bind(v);
     }
     if let Some(v) = data.display_order {
@@ -120,8 +334,12 @@ pub async fn update_menu_group(
 
 pub async fn delete_menu_group(pool: &PgPool, id: Uuid) -> Result<u64, AppError> {
     let group = sqlx::query_as::<_, MenuGroup>(
-        "SELECT id, code, name, name_en, description, icon, display_order, is_active FROM menu_groups WHERE id = $1"
-    ).bind(id).fetch_optional(pool).await
+        "SELECT id, code, name, name_en, icon, workspace_code, display_order, is_active
+         FROM menu_groups WHERE id = $1",
+    )
+    .bind(id)
+    .fetch_optional(pool)
+    .await
     .map_err(|_| AppError::NotFound("Group not found".to_string()))?
     .ok_or(AppError::NotFound("Group not found".to_string()))?;
 
@@ -132,9 +350,14 @@ pub async fn delete_menu_group(pool: &PgPool, id: Uuid) -> Result<u64, AppError>
     }
 
     let other_group = sqlx::query_as::<_, MenuGroup>(
-        "SELECT id, code, name, name_en, description, icon, display_order, is_active FROM menu_groups WHERE code = 'other'"
-    ).fetch_one(pool).await
-    .map_err(|_| AppError::InternalServerError("'other' group not found in database".to_string()))?;
+        "SELECT id, code, name, name_en, icon, workspace_code, display_order, is_active
+         FROM menu_groups WHERE code = 'other'",
+    )
+    .fetch_one(pool)
+    .await
+    .map_err(|_| {
+        AppError::InternalServerError("'other' group not found in database".to_string())
+    })?;
 
     let mut tx = pool
         .begin()
@@ -169,9 +392,8 @@ pub async fn delete_menu_group(pool: &PgPool, id: Uuid) -> Result<u64, AppError>
 pub async fn list_menu_items(
     pool: &PgPool,
     group_id: Option<Uuid>,
-    permissions: &[String],
 ) -> Result<Vec<MenuItem>, AppError> {
-    let all_items = if let Some(gid) = group_id {
+    if let Some(gid) = group_id {
         sqlx::query_as::<_, MenuItem>(
             "SELECT id, code, name, name_en, path, icon, required_permission, user_type,
                     group_id, parent_id, display_order, is_active
@@ -189,12 +411,7 @@ pub async fn list_menu_items(
         .fetch_all(pool)
         .await
     }
-    .map_err(|e| AppError::InternalServerError(format!("Failed to fetch menu items: {}", e)))?;
-
-    Ok(all_items
-        .into_iter()
-        .filter(|item| menu_item_allowed_by_permissions(item, permissions))
-        .collect())
+    .map_err(|e| AppError::InternalServerError(format!("Failed to fetch menu items: {}", e)))
 }
 
 pub struct CreateMenuItemInput {
@@ -226,19 +443,6 @@ pub async fn create_menu_item(
     .bind(&input.required_permission).bind(menu_display_order(input.display_order))
     .fetch_one(pool).await
     .map_err(|e| AppError::InternalServerError(format!("Failed to create menu item: {}", e)))
-}
-
-pub async fn get_menu_item(pool: &PgPool, id: Uuid) -> Result<MenuItem, AppError> {
-    sqlx::query_as::<_, MenuItem>(
-        "SELECT id, code, name, name_en, path, icon, required_permission, user_type,
-                group_id, parent_id, display_order, is_active
-         FROM menu_items WHERE id = $1",
-    )
-    .bind(id)
-    .fetch_optional(pool)
-    .await
-    .map_err(|e| AppError::InternalServerError(format!("Database error: {}", e)))?
-    .ok_or(AppError::NotFound("Menu item not found".to_string()))
 }
 
 pub struct UpdateMenuItemInput {
@@ -361,7 +565,6 @@ pub async fn delete_menu_item(pool: &PgPool, id: Uuid) -> Result<(), AppError> {
 pub async fn reorder_menu_items(
     pool: &PgPool,
     items: Vec<(Uuid, i32, Option<Uuid>)>,
-    permissions: &[String],
 ) -> Result<usize, AppError> {
     if items.is_empty() {
         return Ok(0);
@@ -376,17 +579,6 @@ pub async fn reorder_menu_items(
     .fetch_all(pool)
     .await
     .map_err(|e| AppError::InternalServerError(format!("Failed to fetch items batch: {}", e)))?;
-
-    for item in &existing_items {
-        if let Some(ref module) = item.required_permission {
-            if !menu_item_allowed_by_permissions(item, permissions) {
-                return Err(AppError::Forbidden(format!(
-                    "No permission for module '{}' on item '{}'",
-                    module, item.name
-                )));
-            }
-        }
-    }
 
     use std::collections::HashMap;
     let current_groups: HashMap<Uuid, Option<Uuid>> =
@@ -470,61 +662,13 @@ fn menu_display_order(display_order: Option<i32>) -> i32 {
     display_order.unwrap_or(0)
 }
 
-fn menu_item_allowed_by_permissions(item: &MenuItem, permissions: &[String]) -> bool {
-    if let Some(ref module) = item.required_permission {
-        module_permission_matches(permissions, module)
-    } else {
-        true
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn menu_item(required_permission: Option<&str>) -> MenuItem {
-        MenuItem {
-            id: Uuid::new_v4(),
-            code: "dashboard".to_string(),
-            name: "Dashboard".to_string(),
-            name_en: None,
-            path: "/dashboard".to_string(),
-            icon: None,
-            required_permission: required_permission.map(str::to_string),
-            user_type: "staff".to_string(),
-            group_id: None,
-            parent_id: None,
-            display_order: 1,
-            is_active: true,
-        }
-    }
 
     #[test]
     fn menu_display_order_defaults_to_zero() {
         assert_eq!(menu_display_order(None), 0);
         assert_eq!(menu_display_order(Some(12)), 12);
-    }
-
-    #[test]
-    fn menu_item_is_allowed_when_no_permission_is_required() {
-        assert!(menu_item_allowed_by_permissions(
-            &menu_item(None),
-            &Vec::<String>::new()
-        ));
-    }
-
-    #[test]
-    fn menu_item_permission_filter_uses_module_permission_matching() {
-        let permissions =
-            vec![crate::permissions::registry::codes::ACADEMIC_CURRICULUM_READ_ALL.to_string()];
-
-        assert!(menu_item_allowed_by_permissions(
-            &menu_item(Some("academic_curriculum")),
-            &permissions
-        ));
-        assert!(!menu_item_allowed_by_permissions(
-            &menu_item(Some("staff")),
-            &permissions
-        ));
     }
 }

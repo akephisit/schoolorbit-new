@@ -1118,7 +1118,39 @@ export interface paths {
 		};
 		get: operations['listMenuGroups'];
 		put?: never;
+		post: operations['createMenuGroup'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/admin/menu/groups/{id}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put: operations['updateMenuGroup'];
 		post?: never;
+		delete: operations['deleteMenuGroup'];
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/admin/menu/groups/reorder': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['reorderMenuGroups'];
 		delete?: never;
 		options?: never;
 		head?: never;
@@ -1134,7 +1166,103 @@ export interface paths {
 		};
 		get: operations['listMenuItems'];
 		put?: never;
+		post: operations['createMenuItem'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/admin/menu/items/{id}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put: operations['updateMenuItem'];
 		post?: never;
+		delete: operations['deleteMenuItem'];
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/admin/menu/items/{id}/group': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put: operations['moveMenuItemToGroup'];
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/admin/menu/items/reorder': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['reorderMenuItems'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/admin/menu/workspaces': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listMenuWorkspaces'];
+		put?: never;
+		post: operations['createMenuWorkspace'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/admin/menu/workspaces/{id}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put: operations['updateMenuWorkspace'];
+		post?: never;
+		delete: operations['deleteMenuWorkspace'];
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/admin/menu/workspaces/reorder': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['reorderMenuWorkspaces'];
 		delete?: never;
 		options?: never;
 		head?: never;
@@ -2790,6 +2918,70 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
+		ApiResponse_MenuGroup: {
+			/** @description Menu Group */
+			data: {
+				code: string;
+				/** Format: int32 */
+				display_order: number;
+				icon: string | null;
+				/** Format: uuid */
+				id: string;
+				is_active: boolean;
+				name: string;
+				name_en: string | null;
+				workspace_code: string;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_MenuItem: {
+			/** @description Menu Item */
+			data: {
+				code: string;
+				/** Format: int32 */
+				display_order: number;
+				/** Format: uuid */
+				group_id: string | null;
+				icon: string | null;
+				/** Format: uuid */
+				id: string;
+				is_active: boolean;
+				name: string;
+				name_en: string | null;
+				/** Format: uuid */
+				parent_id: string | null;
+				path: string;
+				required_permission: string | null;
+				user_type: string;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_MenuWorkspace: {
+			/** @description Top-level navigation workspace such as academic or personnel administration. */
+			data: {
+				code: string;
+				/** Format: int32 */
+				display_order: number;
+				icon: string | null;
+				/** Format: uuid */
+				id: string;
+				is_active: boolean;
+				name: string;
+				name_en: string | null;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_MovedCountData: {
+			data: {
+				/** Format: int64 */
+				moved_count: number;
+			};
+			message?: string;
+			success: boolean;
+		};
 		ApiResponse_OrganizationUnit: {
 			data: {
 				category: string;
@@ -3659,6 +3851,7 @@ export interface components {
 				is_active: boolean;
 				name: string;
 				name_en: string | null;
+				workspace_code: string;
 			}[];
 			message?: string;
 			success: boolean;
@@ -3681,6 +3874,21 @@ export interface components {
 				path: string;
 				required_permission: string | null;
 				user_type: string;
+			}[];
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_Vec_MenuWorkspace: {
+			data: {
+				code: string;
+				/** Format: int32 */
+				display_order: number;
+				icon: string | null;
+				/** Format: uuid */
+				id: string;
+				is_active: boolean;
+				name: string;
+				name_en: string | null;
 			}[];
 			message?: string;
 			success: boolean;
@@ -4568,6 +4776,40 @@ export interface components {
 			/** Format: int32 */
 			year: number;
 		};
+		CreateMenuGroupRequest: {
+			code: string;
+			description?: string | null;
+			/** Format: int32 */
+			display_order?: number | null;
+			icon?: string | null;
+			name: string;
+			name_en?: string | null;
+			workspace_code: string;
+		};
+		CreateMenuItemRequest: {
+			code: string;
+			description?: string | null;
+			/** Format: int32 */
+			display_order?: number | null;
+			/** Format: uuid */
+			group_id: string;
+			icon?: string | null;
+			name: string;
+			name_en?: string | null;
+			/** Format: uuid */
+			parent_id?: string | null;
+			path: string;
+			required_permission?: string | null;
+		};
+		CreateMenuWorkspaceRequest: {
+			code: string;
+			description?: string | null;
+			/** Format: int32 */
+			display_order?: number | null;
+			icon?: string | null;
+			name: string;
+			name_en?: string | null;
+		};
 		CreateOrganizationUnitRequest: {
 			category?: string | null;
 			code: string;
@@ -4909,14 +5151,21 @@ export interface components {
 			is_active: boolean;
 			name: string;
 			name_en: string | null;
+			workspace_code: string;
 		};
 		/** @description Menu Group Response (for user menu API) */
 		MenuGroupResponse: {
 			code: string;
+			/** Format: int32 */
+			displayOrder: number;
 			icon: string | null;
 			items: components['schemas']['MenuItemResponse'][];
 			name: string;
 			workspaceCode: string;
+			workspaceIcon: string | null;
+			workspaceName: string;
+			/** Format: int32 */
+			workspaceOrder: number;
 		};
 		/** @description Menu Item */
 		MenuItem: {
@@ -4945,6 +5194,26 @@ export interface components {
 			id: string;
 			name: string;
 			path: string;
+		};
+		/** @description Top-level navigation workspace such as academic or personnel administration. */
+		MenuWorkspace: {
+			code: string;
+			/** Format: int32 */
+			display_order: number;
+			icon: string | null;
+			/** Format: uuid */
+			id: string;
+			is_active: boolean;
+			name: string;
+			name_en: string | null;
+		};
+		MovedCountData: {
+			/** Format: int64 */
+			moved_count: number;
+		};
+		MoveItemToGroupRequest: {
+			/** Format: uuid */
+			group_id: string;
 		};
 		Notification: {
 			/** Format: date-time */
@@ -5179,6 +5448,23 @@ export interface components {
 			/** Format: int32 */
 			level: number | null;
 			name: string;
+		};
+		ReorderGroupsRequest: {
+			groups: components['schemas']['ReorderItem'][];
+		};
+		ReorderItem: {
+			/** Format: int32 */
+			display_order: number;
+			/** Format: uuid */
+			group_id?: string | null;
+			/** Format: uuid */
+			id: string;
+		};
+		ReorderRequest: {
+			items: components['schemas']['ReorderItem'][];
+		};
+		ReorderWorkspacesRequest: {
+			workspaces: components['schemas']['ReorderItem'][];
 		};
 		Role: {
 			code: string;
@@ -5794,6 +6080,40 @@ export interface components {
 		};
 		UpdateMemberResultRequest: {
 			result: components['schemas']['ActivityMemberResult'];
+		};
+		UpdateMenuGroupRequest: {
+			description?: string | null;
+			/** Format: int32 */
+			display_order?: number | null;
+			icon?: string | null;
+			is_active?: boolean | null;
+			name?: string | null;
+			name_en?: string | null;
+			workspace_code?: string | null;
+		};
+		UpdateMenuItemRequest: {
+			description?: string | null;
+			/** Format: int32 */
+			display_order?: number | null;
+			/** Format: uuid */
+			group_id?: string | null;
+			icon?: string | null;
+			is_active?: boolean | null;
+			name?: string | null;
+			name_en?: string | null;
+			/** Format: uuid */
+			parent_id?: string | null;
+			path?: string | null;
+			required_permission?: string | null;
+		};
+		UpdateMenuWorkspaceRequest: {
+			description?: string | null;
+			/** Format: int32 */
+			display_order?: number | null;
+			icon?: string | null;
+			is_active?: boolean | null;
+			name?: string | null;
+			name_en?: string | null;
 		};
 		UpdateOrganizationPermissionsRequest: {
 			grants: components['schemas']['OrganizationPermissionGrantInput'][];
@@ -12477,6 +12797,203 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Menu read permission required */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	createMenuGroup: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['CreateMenuGroupRequest'];
+			};
+		};
+		responses: {
+			/** @description Menu group created */
+			201: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_MenuGroup'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Menu create permission required */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	updateMenuGroup: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Menu group ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['UpdateMenuGroupRequest'];
+			};
+		};
+		responses: {
+			/** @description Menu group updated */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_MenuGroup'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Menu update permission required */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Menu group not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	deleteMenuGroup: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Menu group ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Menu group deleted */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_MovedCountData'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Menu delete permission required */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Menu group not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	reorderMenuGroups: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['ReorderGroupsRequest'];
+			};
+		};
+		responses: {
+			/** @description Menu groups reordered */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_EmptyData'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Menu update permission required */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
 		};
 	};
 	listMenuItems: {
@@ -12501,6 +13018,483 @@ export interface operations {
 			};
 			/** @description Authentication required */
 			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Menu read permission required */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	createMenuItem: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['CreateMenuItemRequest'];
+			};
+		};
+		responses: {
+			/** @description Menu item created */
+			201: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_MenuItem'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Menu create permission required */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	updateMenuItem: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Menu item ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['UpdateMenuItemRequest'];
+			};
+		};
+		responses: {
+			/** @description Menu item updated */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_MenuItem'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Menu update permission required */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Menu item not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	deleteMenuItem: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Menu item ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Menu item deleted */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_EmptyData'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Menu delete permission required */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Menu item not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	moveMenuItemToGroup: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Menu item ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['MoveItemToGroupRequest'];
+			};
+		};
+		responses: {
+			/** @description Menu item moved */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_MenuItem'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Menu update permission required */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Menu item not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	reorderMenuItems: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['ReorderRequest'];
+			};
+		};
+		responses: {
+			/** @description Menu items reordered */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_EmptyData'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Menu update permission required */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	listMenuWorkspaces: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Menu workspaces */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_MenuWorkspace'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Menu read permission required */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	createMenuWorkspace: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['CreateMenuWorkspaceRequest'];
+			};
+		};
+		responses: {
+			/** @description Menu workspace created */
+			201: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_MenuWorkspace'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Menu create permission required */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	updateMenuWorkspace: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Menu workspace ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['UpdateMenuWorkspaceRequest'];
+			};
+		};
+		responses: {
+			/** @description Menu workspace updated */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_MenuWorkspace'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Menu update permission required */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Menu workspace not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	deleteMenuWorkspace: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Menu workspace ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Menu workspace deleted */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_MovedCountData'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Menu delete permission required */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Menu workspace not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	reorderMenuWorkspaces: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['ReorderWorkspacesRequest'];
+			};
+		};
+		responses: {
+			/** @description Menu workspaces reordered */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_EmptyData'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Menu update permission required */
+			403: {
 				headers: {
 					[name: string]: unknown;
 				};

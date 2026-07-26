@@ -16,7 +16,7 @@ async function readRepoFile(relativePath) {
 	return readFile(path.join(repoRoot, relativePath), 'utf8');
 }
 
-test('sidebar navigation is grouped into persisted collapsible workflow sections', async () => {
+test('sidebar navigation follows the persisted management hierarchy', async () => {
 	const sidebar = await readProjectFile('src/lib/components/layout/Sidebar.svelte');
 	const navigation = await readProjectFile('src/lib/components/layout/sidebar-navigation.ts');
 	const preferences = await readProjectFile('src/lib/stores/ui-preferences.ts');
@@ -29,27 +29,20 @@ test('sidebar navigation is grouped into persisted collapsible workflow sections
 	assert.match(sidebar, /DropdownMenu\.Content/);
 	assert.match(sidebar, /sectionExpanded/);
 
-	assert.match(navigation, /academic-foundation/);
-	assert.match(navigation, /academic-curriculum/);
-	assert.match(navigation, /academic-timetable/);
-	assert.match(navigation, /\/staff\/academic\/periods/);
-	assert.match(navigation, /\/staff\/academic\/timetable/);
-
-	const timetableSection = /id:\s*'academic-timetable'[\s\S]*?paths:\s*\[([\s\S]*?)\]/.exec(
-		navigation
-	);
-	assert.ok(timetableSection, 'academic timetable section should be explicitly defined');
-	assert.doesNotMatch(
-		timetableSection[1],
-		/\/staff\/academic\/periods/,
-		'period settings should stay in academic foundation, not become timetable-only navigation'
-	);
+	assert.match(navigation, /id:\s*group\.code/);
+	assert.match(navigation, /name:\s*group\.workspaceName/);
+	assert.match(navigation, /icon:\s*group\.workspaceIcon\s*\|\|\s*'PanelLeft'/);
+	assert.match(navigation, /order:\s*group\.workspaceOrder/);
+	assert.match(navigation, /order:\s*group\.displayOrder/);
+	assert.doesNotMatch(navigation, /SIDEBAR_SECTION_DEFINITIONS|WORKSPACE_LABELS|definitionsByPath/);
+	assert.doesNotMatch(navigation, /\/staff\/academic/);
 
 	assert.match(preferences, /sidebarExpandedGroups/);
 	assert.match(preferences, /setSidebarGroupExpanded/);
 
 	assert.match(rules, /Sidebar Navigation IA/);
-	assert.match(rules, /collapsible workflow sections/);
+	assert.match(rules, /management workspace → department\/work section → service link/);
+	assert.match(rules, /Navigation placement never grants access/);
 });
 
 test('collapsed sidebar renders a workspace icon rail with section flyouts', async () => {
@@ -57,8 +50,8 @@ test('collapsed sidebar renders a workspace icon rail with section flyouts', asy
 	const navigation = await readProjectFile('src/lib/components/layout/sidebar-navigation.ts');
 	const rules = await readRepoFile('.rules');
 
-	assert.match(navigation, /WORKSPACE_ICONS/);
-	assert.match(navigation, /icon:\s*WORKSPACE_ICONS\[section\.workspaceCode\]/);
+	assert.match(navigation, /group\.workspaceIcon/);
+	assert.match(navigation, /group\.workspaceName/);
 
 	assert.match(sidebar, /function workspaceHasActiveItem/);
 	assert.match(sidebar, /function collapsedWorkspaceTriggerClass/);
@@ -69,7 +62,29 @@ test('collapsed sidebar renders a workspace icon rail with section flyouts', asy
 	assert.match(sidebar, /\{#each section\.items as item \(item\.id\)\}/);
 	assert.doesNotMatch(sidebar, /collapsedSectionTriggerClass/);
 
-	assert.match(rules, /workspace icon rail/);
+	assert.match(rules, /management-workspace icon rail/);
+});
+
+test('personal home and menu administration share the configurable hierarchy', async () => {
+	const dashboard = await readProjectFile('src/routes/(app)/staff/+page.svelte');
+	const menuAdmin = await readProjectFile('src/routes/(app)/staff/menu/+page.svelte');
+	const menuAdminApi = await readProjectFile('src/lib/api/menu-admin.ts');
+
+	assert.match(dashboard, /getUserMenu/);
+	assert.match(dashboard, /buildSidebarNavigation/);
+	assert.match(dashboard, /serviceWorkspaces/);
+	assert.match(dashboard, /หน้าหลักของฉัน/);
+	assert.match(dashboard, /workStore\.fetchCounts/);
+
+	assert.match(menuAdmin, /listMenuWorkspaces/);
+	assert.match(menuAdmin, /WorkspaceManagementDialog/);
+	assert.match(menuAdmin, /MenuItemManagementDialog/);
+	assert.match(menuAdmin, /workspace_code/);
+	assert.match(menuAdmin, /กำหนดกลุ่มบริหาร ฝ่าย\/งาน และตำแหน่งเมนู/);
+
+	assert.match(menuAdminApi, /Schemas\['MenuWorkspace'\]/);
+	assert.match(menuAdminApi, /\/api\/admin\/menu\/workspaces/);
+	assert.doesNotMatch(menuAdminApi, /export interface CreateMenuGroupRequest/);
 });
 
 test('collapsed sidebar keeps the rail vertical during width transition', async () => {
