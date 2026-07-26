@@ -3,6 +3,7 @@
 - [Development rules](../.rules)
 - [Testing](./TESTING.md)
 - [Operations](./OPERATIONS.md)
+- [Podman server setup](./PODMAN_SETUP.md)
 
 Service setup:
 

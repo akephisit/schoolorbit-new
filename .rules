@@ -5,13 +5,14 @@ This file is the single authoritative development standard for this repository. 
 ## 0. Rule Ownership and Documentation Policy
 
 - Keep durable development requirements here. Update this file in the same change whenever an architectural convention changes.
-- Keep only these Markdown entry points:
+- Keep only these 12 Markdown entry points:
   - `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, and `README.md`
-  - `docs/README.md`, `docs/TESTING.md`, and `docs/OPERATIONS.md`
+  - `docs/README.md`, `docs/TESTING.md`, `docs/OPERATIONS.md`, and `docs/PODMAN_SETUP.md`
   - one `README.md` in each application directory: `backend-admin/`, `backend-school/`, `frontend-admin/`, and `frontend-school/`
 - Do not create feature-completion reports, implementation diaries, status snapshots, temporary analysis files, duplicate developer guides, or per-feature README files.
-- A proposed twelfth Markdown file requires explicit review of why none of the canonical files can own the content; update the allowlist and documentation-policy test in the same change only when that new long-lived owner is approved.
+- A proposed thirteenth Markdown file requires explicit review of why none of the canonical files can own the content; update the allowlist and documentation-policy test in the same change only when that new long-lived owner is approved.
 - Put commands and test recipes in `docs/TESTING.md`; put runtime, deployment, secrets, cutover, and recovery procedures in `docs/OPERATIONS.md`.
+- Keep first-time Podman server bootstrap commands in `docs/PODMAN_SETUP.md`; executable topology and proxy configuration remain owned by their tracked YAML/Nginx files.
 - Code, contracts, migrations, generated artifacts, and executable configuration remain the source of truth for runtime behavior. Documentation must link to them instead of copying large inventories that become stale.
 - Minimal AI entry-point files are intentional. Do not expand `AGENTS.md`, `CLAUDE.md`, or `GEMINI.md` into competing rule sets.
 

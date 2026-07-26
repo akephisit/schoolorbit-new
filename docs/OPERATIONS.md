@@ -11,6 +11,8 @@ This guide describes production-facing procedures and invariants. Development co
 
 Local topology is defined in [`docker-compose.yml`](../docker-compose.yml). The prebuilt production-oriented Podman topology is in [`podman-compose.yml`](../podman-compose.yml). Containers use service DNS names internally; do not use `localhost` for one container to reach another.
 
+For first-time production server bootstrap, follow [Podman server setup](./PODMAN_SETUP.md).
+
 ## Required Environment and Secrets
 
 All secrets and environment-specific URLs come from the runtime environment or deployment secret store. Example files are templates only.

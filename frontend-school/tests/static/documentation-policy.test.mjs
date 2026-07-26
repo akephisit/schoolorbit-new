@@ -18,6 +18,7 @@ const MARKDOWN_ALLOWLIST = [
 	'backend-admin/README.md',
 	'backend-school/README.md',
 	'docs/OPERATIONS.md',
+	'docs/PODMAN_SETUP.md',
 	'docs/README.md',
 	'docs/TESTING.md',
 	'frontend-admin/README.md',
@@ -60,14 +61,14 @@ function localLinkTargets(source) {
 	return targets;
 }
 
-test('tracked Markdown is limited to the canonical documentation set', async () => {
+test('tracked Markdown is limited to the approved canonical documentation set', async () => {
 	assert.deepEqual(await existingTrackedMarkdown(), MARKDOWN_ALLOWLIST);
 });
 
 test('canonical Markdown local links resolve', async () => {
 	const broken = [];
 
-	for (const relativePath of MARKDOWN_ALLOWLIST) {
+	for (const relativePath of await existingTrackedMarkdown()) {
 		const source = await readFile(path.join(repoRoot, relativePath), 'utf8');
 		for (const target of localLinkTargets(source)) {
 			const resolved = path.resolve(repoRoot, path.dirname(relativePath), target);
