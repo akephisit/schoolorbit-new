@@ -26,6 +26,19 @@ const MARKDOWN_ALLOWLIST = [
 	'frontend-school/README.md'
 ].sort();
 
+const SUPERPOWERS_SPEC_PATTERN =
+	/^docs\/superpowers\/specs\/\d{4}-\d{2}-\d{2}-[a-z0-9]+(?:-[a-z0-9]+)*-design\.md$/;
+const SUPERPOWERS_PLAN_PATTERN =
+	/^docs\/superpowers\/plans\/\d{4}-\d{2}-\d{2}-[a-z0-9]+(?:-[a-z0-9]+)*\.md$/;
+
+function isAllowedMarkdown(relativePath) {
+	return (
+		MARKDOWN_ALLOWLIST.includes(relativePath) ||
+		SUPERPOWERS_SPEC_PATTERN.test(relativePath) ||
+		SUPERPOWERS_PLAN_PATTERN.test(relativePath)
+	);
+}
+
 async function existingRepositoryMarkdown() {
 	const { stdout } = await execFileAsync(
 		'git',
@@ -66,8 +79,37 @@ function localLinkTargets(source) {
 	return targets;
 }
 
-test('repository Markdown is limited to the approved canonical documentation set', async () => {
-	assert.deepEqual(await existingRepositoryMarkdown(), MARKDOWN_ALLOWLIST);
+test('Superpowers Markdown is limited to dated spec and plan artifacts', () => {
+	const accepted = [
+		'docs/superpowers/specs/2026-07-26-admin-auth-design.md',
+		'docs/superpowers/plans/2026-07-26-admin-auth.md'
+	];
+	const rejected = [
+		'docs/superpowers/README.md',
+		'docs/superpowers/specs/admin-auth-design.md',
+		'docs/superpowers/specs/2026-07-26-admin-auth.md',
+		'docs/superpowers/plans/admin-auth.md',
+		'docs/superpowers/notes/2026-07-26-admin-auth.md',
+		'docs/another-plan.md'
+	];
+
+	for (const relativePath of accepted) {
+		assert.equal(isAllowedMarkdown(relativePath), true, `must allow ${relativePath}`);
+	}
+	for (const relativePath of rejected) {
+		assert.equal(isAllowedMarkdown(relativePath), false, `must reject ${relativePath}`);
+	}
+});
+
+test('repository Markdown is limited to canonical docs and Superpowers artifacts', async () => {
+	const existing = await existingRepositoryMarkdown();
+	const missingCanonical = MARKDOWN_ALLOWLIST.filter(
+		(relativePath) => !existing.includes(relativePath)
+	);
+	const unexpected = existing.filter((relativePath) => !isAllowedMarkdown(relativePath));
+
+	assert.deepEqual(missingCanonical, []);
+	assert.deepEqual(unexpected, []);
 });
 
 test('canonical Markdown local links resolve', async () => {
@@ -101,6 +143,8 @@ test('project rules own durable development and verification workflows', async (
 		'## 9. Security, PDPA, and Logging',
 		'## 11. Verification Matrix',
 		'TODO.md',
+		'docs/superpowers/specs/',
+		'docs/superpowers/plans/',
 		'contracts/permissions.json',
 		'npm run generate:permissions',
 		'npm run check:permissions',
