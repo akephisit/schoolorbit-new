@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { Button } from '$lib/components/ui/button';
+	import { browser } from '$app/environment';
 	import { Input } from '$lib/components/ui/input';
 	import { DatePicker } from '$lib/components/ui/date-picker';
 	import { Label } from '$lib/components/ui/label';
@@ -119,8 +120,6 @@
 		});
 	}
 
-	import heic2any from 'heic2any'; // Ensure installed
-
 	async function handleFileChange(e: Event) {
 		const input = e.target as HTMLInputElement;
 		if (input.files && input.files[0]) {
@@ -140,6 +139,8 @@
 					file.type === 'image/heif';
 
 				if (isHeic) {
+					if (!browser) throw new Error('HEIC conversion requires a browser');
+					const { default: heic2any } = await import('heic2any');
 					// heic2any returns Blob | Blob[]
 					const result = await heic2any({
 						blob: file,

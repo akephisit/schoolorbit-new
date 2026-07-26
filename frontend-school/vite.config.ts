@@ -10,6 +10,15 @@ const wordExporterModule = fileURLToPath(
 const wordExporterServerStub = fileURLToPath(
 	new URL('./src/lib/question-bank/word-export.server.ts', import.meta.url)
 );
+const browserOnlyHeavyDependencyServerStub = fileURLToPath(
+	new URL('./src/lib/utils/browser-only-heavy-dependency.server.ts', import.meta.url)
+);
+const browserOnlyHeavyDependencies = new Set([
+	'exceljs',
+	'heic2any',
+	'pdfmake/build/pdfmake',
+	'xlsx'
+]);
 
 function clientOnlyWordExporterPlugin(): Plugin {
 	return {
@@ -18,6 +27,18 @@ function clientOnlyWordExporterPlugin(): Plugin {
 		resolveId(source) {
 			if (this.environment.name === 'ssr' && source === wordExporterModule) {
 				return wordExporterServerStub;
+			}
+		}
+	};
+}
+
+function clientOnlyHeavyDependenciesPlugin(): Plugin {
+	return {
+		name: 'client-only-heavy-dependencies',
+		enforce: 'pre',
+		resolveId(source) {
+			if (this.environment.name === 'ssr' && browserOnlyHeavyDependencies.has(source)) {
+				return browserOnlyHeavyDependencyServerStub;
 			}
 		}
 	};
@@ -95,7 +116,13 @@ function menuRegistryPlugin() {
 }
 
 export default defineConfig({
-	plugins: [clientOnlyWordExporterPlugin(), tailwindcss(), sveltekit(), menuRegistryPlugin()],
+	plugins: [
+		clientOnlyWordExporterPlugin(),
+		clientOnlyHeavyDependenciesPlugin(),
+		tailwindcss(),
+		sveltekit(),
+		menuRegistryPlugin()
+	],
 	optimizeDeps: {
 		include: ['html2pdf.js']
 	},

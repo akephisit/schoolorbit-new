@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { browser } from '$app/environment';
 	import { type Snippet } from 'svelte';
 	import { uploadProfileImage } from '$lib/api/files';
 	import { toast } from 'svelte-sonner';
@@ -6,7 +7,6 @@
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
 	import ImageCropper from './ImageCropper.svelte';
 	import { cn } from '$lib/utils';
-	import heic2any from 'heic2any';
 	import Compressor from 'compressorjs';
 
 	interface Props {
@@ -69,6 +69,8 @@
 
 			try {
 				if (isHeic) {
+					if (!browser) throw new Error('HEIC conversion requires a browser');
+					const { default: heic2any } = await import('heic2any');
 					const result = await heic2any({
 						blob: file,
 						toType: 'image/jpeg',

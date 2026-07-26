@@ -158,6 +158,7 @@ Use `ApiResponse` and `ApiErrorResponse`; do not return raw feature DTOs or ad-h
 - Use Svelte stores for shared client state such as auth, permissions, realtime connectivity, notifications, and toasts.
 - Type component props. Prefer existing local components and patterns before adding abstractions.
 - Use Tailwind CSS and local shadcn-svelte primitives for standard buttons, forms, tables, dialogs, sheets, tabs, menus, alerts, badges, skeletons, pagination, and tooltips.
+- Large browser-only PDF, spreadsheet, image-conversion, and document-export libraries must load lazily after a user action and resolve to a lightweight server stub during SSR. Do not bundle them into the Cloudflare Worker.
 - Dense fixed-format inputs need explicit readable column and input widths. Prefer horizontal scrolling to unreadable shrinking.
 - Use shared app states from `src/lib/components/app-state/`: `PageSkeleton`, `PageState`, and `LoadingButton`.
 - Mutation controls use action-specific loading state. When a typed mutation returns a resource, patch only the affected local state; reserve broad reloads for intentionally broad dependencies or manual refresh.
