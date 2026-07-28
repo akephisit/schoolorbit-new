@@ -53,7 +53,24 @@ cargo test --test static_architecture file_platform -- --nocapture
 
 Expected: failure listing the current direct R2 consumers and legacy response fields.
 
-**Step 4: Commit the executable boundary**
+**Step 4: Make the boundary executable during the compatibility window**
+
+Replace the initial unconditional failure with an exact allowlist of the legacy
+files reported by Step 3. The test must fail for any new direct R2 consumer or API
+locator field that is not in that allowlist. Task 8 removes every allowlisted
+entry and tightens the test to allow R2 only in the provider adapter. This keeps
+the branch green without hiding the known migration work.
+
+Rerun:
+
+```bash
+cd backend-school
+cargo test --test static_architecture file_platform -- --nocapture
+```
+
+Expected: pass with only the exact compatibility allowlist.
+
+**Step 5: Commit the executable boundary**
 
 ```bash
 git add backend-school/tests/static_architecture.rs
