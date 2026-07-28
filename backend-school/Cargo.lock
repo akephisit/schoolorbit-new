@@ -841,6 +841,7 @@ dependencies = [
  "tower-cookies",
  "tracing",
  "tracing-subscriber",
+ "url",
  "utoipa",
  "uuid",
  "web-push",
