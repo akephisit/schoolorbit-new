@@ -4877,9 +4877,13 @@ fn auto_scheduler_backend_and_schema_are_removed_without_deleting_timetable_entr
 
 #[test]
 fn file_platform_blocks_new_provider_coupling_and_locator_responses() {
-    let r2_import = Regex::new(r"use\s+crate::services::r2_client::R2Client").unwrap();
-    let r2_constructor = Regex::new(r"R2Client::new\s*\(").unwrap();
-    let tenant_object_prefix = Regex::new(r#"(?s)format!\s*\(\s*"school-\{\}[^"\n]*"#).unwrap();
+    let tenant_object_prefix = Regex::new(r#"(?s)format!\s*\(\s*"school-[^"\n]*"#).unwrap();
+    let response_struct = Regex::new(
+        r"(?s)(?:pub\s+)?struct\s+(?P<name>[A-Za-z_][A-Za-z0-9_]*)\s*\{(?P<body>.*?)\n\}",
+    )
+    .unwrap();
+    let response_field =
+        Regex::new(r"(?m)^\s*(?:pub\s+)?(?P<name>[A-Za-z_][A-Za-z0-9_]*)\s*:").unwrap();
     let mut violations = BTreeSet::new();
 
     for file in backend_rs_files() {
@@ -4889,64 +4893,35 @@ fn file_platform_blocks_new_provider_coupling_and_locator_responses() {
         }
 
         let source = strip_comments(&read_source(&file));
-        if r2_import.is_match(&source) || r2_constructor.is_match(&source) {
+        if source.contains("R2Client") || source.contains("services::r2_client") {
             violations.insert(format!("{file_name}: direct R2 client use"));
         }
         if tenant_object_prefix.is_match(&source) {
             violations.insert(format!("{file_name}: constructs a tenant object prefix"));
         }
-    }
 
-    let locator_fields = [
-        (
-            "src/modules/files/models.rs",
-            "FileResponse",
-            "storage_path",
-        ),
-        ("src/modules/files/models.rs", "FileResponse", "url"),
-        (
-            "src/modules/files/models.rs",
-            "FileResponse",
-            "thumbnail_url",
-        ),
-        ("src/modules/question_bank/models.rs", "QuestionFile", "url"),
-        (
-            "src/modules/question_bank/models.rs",
-            "QuestionFile",
-            "thumbnail_url",
-        ),
-        (
-            "src/modules/admission/models/applications.rs",
-            "ApplicationDocument",
-            "file_url",
-        ),
-        (
-            "src/modules/admission/services/application_service.rs",
-            "DocumentUploadResponse",
-            "file_url",
-        ),
-    ];
+        for response in response_struct.captures_iter(&source) {
+            let response_name = response.name("name").unwrap().as_str();
+            let is_file_response = response_name.ends_with("Response")
+                || response_name.ends_with("Data")
+                || response_name.ends_with("Dto")
+                || matches!(response_name, "QuestionFile" | "ApplicationDocument");
+            if !is_file_response {
+                continue;
+            }
 
-    for (path, response_name, field_name) in locator_fields {
-        let source = strip_comments(&read_source(manifest_dir().join(path)));
-        let response = Regex::new(&format!(
-            r"(?s)pub struct {}\s*\{{(?P<body>.*?)\n\}}",
-            regex::escape(response_name)
-        ))
-        .unwrap();
-        let field =
-            Regex::new(&format!(r"(?m)^\s*pub\s+{}\s*:", regex::escape(field_name))).unwrap();
-        let body = response
-            .captures(&source)
-            .unwrap_or_else(|| {
-                panic!("missing file API response struct {response_name} for {path}")
-            })
-            .name("body")
-            .unwrap()
-            .as_str();
-
-        if field.is_match(body) {
-            violations.insert(format!("{path}: {response_name} exposes {field_name}"));
+            let body = response.name("body").unwrap().as_str();
+            for field in response_field.captures_iter(body) {
+                let field_name = field.name("name").unwrap().as_str();
+                let is_storage_locator = matches!(
+                    field_name,
+                    "storage_path" | "thumbnail_path" | "bucket" | "object_key"
+                );
+                let is_provider_url = field_name == "url" || field_name.ends_with("_url");
+                if is_storage_locator || is_provider_url {
+                    violations.insert(format!("{file_name}: {response_name} exposes {field_name}"));
+                }
+            }
         }
     }
 
@@ -4954,6 +4929,8 @@ fn file_platform_blocks_new_provider_coupling_and_locator_responses() {
     // adapter and provider-focused tests able to reference R2 or storage locators.
     let compatibility_allowlist = BTreeSet::from([
         "src/modules/admission/handlers/applications.rs: direct R2 client use".to_string(),
+        "src/modules/admission/handlers/portal.rs: PortalUploadDocumentData exposes file_url"
+            .to_string(),
         "src/modules/admission/handlers/portal.rs: direct R2 client use".to_string(),
         "src/modules/admission/models/applications.rs: ApplicationDocument exposes file_url"
             .to_string(),
@@ -4964,15 +4941,21 @@ fn file_platform_blocks_new_provider_coupling_and_locator_responses() {
         "src/modules/admission/services/portal_service.rs: constructs a tenant object prefix"
             .to_string(),
         "src/modules/admission/services/round_service.rs: direct R2 client use".to_string(),
+        "src/modules/auth/models.rs: ProfileResponse exposes profile_image_url".to_string(),
+        "src/modules/auth/models.rs: UserResponse exposes profile_image_url".to_string(),
         "src/modules/files/models.rs: FileResponse exposes storage_path".to_string(),
         "src/modules/files/models.rs: FileResponse exposes thumbnail_url".to_string(),
         "src/modules/files/models.rs: FileResponse exposes url".to_string(),
         "src/modules/files/services.rs: constructs a tenant object prefix".to_string(),
         "src/modules/files/services.rs: direct R2 client use".to_string(),
+        "src/modules/parents/models.rs: ChildDto exposes profile_image_url".to_string(),
         "src/modules/question_bank/handlers.rs: direct R2 client use".to_string(),
         "src/modules/question_bank/models.rs: QuestionFile exposes thumbnail_url".to_string(),
         "src/modules/question_bank/models.rs: QuestionFile exposes url".to_string(),
+        "src/modules/school/handlers.rs: PublicSchoolInfoData exposes logo_url".to_string(),
+        "src/modules/school/models.rs: SchoolSettingsResponse exposes logo_url".to_string(),
         "src/modules/school/services.rs: direct R2 client use".to_string(),
+        "src/modules/staff/models.rs: StaffProfileResponse exposes profile_image_url".to_string(),
         "src/services/cleaner.rs: direct R2 client use".to_string(),
     ]);
 
