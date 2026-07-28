@@ -42,6 +42,7 @@ pub enum StorageError {
     ConfigurationInvalid,
     OperationFailed,
     AlreadyExists,
+    ObjectTooLarge,
     PublicLocationRequiresPublicObject,
     PrivateGrantRequiresPrivateObject,
     InvalidDownloadGrantTtl,
@@ -53,6 +54,7 @@ impl StorageError {
             Self::ConfigurationInvalid => "storage_configuration_invalid",
             Self::OperationFailed => "storage_operation_failed",
             Self::AlreadyExists => "storage_object_already_exists",
+            Self::ObjectTooLarge => "storage_object_too_large",
             Self::PublicLocationRequiresPublicObject => "storage_public_location_rejected",
             Self::PrivateGrantRequiresPrivateObject => "storage_private_grant_rejected",
             Self::InvalidDownloadGrantTtl => "storage_grant_ttl_invalid",
@@ -66,6 +68,7 @@ impl fmt::Display for StorageError {
             Self::ConfigurationInvalid => "storage configuration is invalid",
             Self::OperationFailed => "storage operation failed",
             Self::AlreadyExists => "storage object already exists",
+            Self::ObjectTooLarge => "storage object exceeds the allowed read size",
             Self::PublicLocationRequiresPublicObject => {
                 "public location requires a public storage object"
             }
@@ -82,6 +85,7 @@ impl std::error::Error for StorageError {}
 #[async_trait]
 pub trait StorageProvider: Send + Sync {
     async fn put(&self, object: &StoredObject, body: Bytes) -> Result<(), StorageError>;
+    async fn get(&self, object: &StoredObject, max_bytes: u64) -> Result<Bytes, StorageError>;
     async fn head(&self, object: &StoredObject) -> Result<Option<ObjectMetadata>, StorageError>;
     async fn delete(&self, object: &StoredObject) -> Result<(), StorageError>;
     async fn private_download_grant(
@@ -134,6 +138,14 @@ mod tests {
                 .unwrap()
                 .push(object.storage_class());
             Ok(())
+        }
+
+        async fn get(
+            &self,
+            _object: &StoredObject,
+            _max_bytes: u64,
+        ) -> Result<Bytes, StorageError> {
+            Ok(Bytes::new())
         }
 
         async fn head(
@@ -228,6 +240,7 @@ mod tests {
             StorageError::ConfigurationInvalid,
             StorageError::OperationFailed,
             StorageError::AlreadyExists,
+            StorageError::ObjectTooLarge,
             StorageError::PublicLocationRequiresPublicObject,
             StorageError::PrivateGrantRequiresPrivateObject,
             StorageError::InvalidDownloadGrantTtl,

@@ -45,6 +45,7 @@ pub enum PurposeRegistryError {
     UnsupportedDetectedContent,
     InvalidVersion,
     DerivativeNotAllowed,
+    InvalidPersistedObjectKey,
 }
 
 /// Immutable storage identity constructed only by the purpose registry.
@@ -69,6 +70,7 @@ impl fmt::Display for PurposeRegistryError {
             Self::UnsupportedDetectedContent => "detected content is not allowed for this purpose",
             Self::InvalidVersion => "file version must be positive",
             Self::DerivativeNotAllowed => "derivative is not allowed for this purpose",
+            Self::InvalidPersistedObjectKey => "persisted file object key is invalid",
         })
     }
 }
@@ -293,6 +295,44 @@ pub fn derivative_object_key(
         ),
         definition.visibility.into(),
     ))
+}
+
+/// Rehydrates a server-generated key from trusted platform metadata.
+///
+/// Business modules cannot call this boundary or supply raw keys. The repository
+/// uses it only after loading immutable locator columns written by this platform.
+pub(crate) fn persisted_object_key(
+    value: String,
+    storage_class: StorageClass,
+) -> Result<ObjectKey, PurposeRegistryError> {
+    if value.len() > 1024
+        || !value.is_ascii()
+        || value
+            .bytes()
+            .any(|byte| !(byte.is_ascii_alphanumeric() || matches!(byte, b'/' | b'.' | b'-')))
+    {
+        return Err(PurposeRegistryError::InvalidPersistedObjectKey);
+    }
+
+    let segments = value.split('/').collect::<Vec<_>>();
+    if segments.len() < 7
+        || segments[0] != "tenants"
+        || segments
+            .iter()
+            .any(|segment| segment.is_empty() || matches!(*segment, "." | ".."))
+        || Uuid::parse_str(segments[1]).is_err()
+        || Uuid::parse_str(segments[4]).is_err()
+        || !segments[5]
+            .strip_prefix('v')
+            .is_some_and(|version| version.parse::<u32>().is_ok_and(|version| version > 0))
+        || !segments
+            .last()
+            .is_some_and(|filename| filename.contains('.') && !filename.starts_with('.'))
+    {
+        return Err(PurposeRegistryError::InvalidPersistedObjectKey);
+    }
+
+    Ok(ObjectKey(value, storage_class))
 }
 
 #[cfg(test)]
@@ -632,5 +672,39 @@ mod tests {
             ),
             Err(PurposeRegistryError::DerivativeNotAllowed),
         );
+    }
+
+    #[test]
+    fn persisted_keys_accept_only_the_platform_key_shape() {
+        let valid_original = "tenants/11111111-1111-1111-1111-111111111111/identity/profile-image/22222222-2222-2222-2222-222222222222/v1/original.png";
+        let valid_derivative = "tenants/11111111-1111-1111-1111-111111111111/question-bank/image/22222222-2222-2222-2222-222222222222/v3/derivatives/thumbnail-1024.webp";
+
+        assert_eq!(
+            persisted_object_key(valid_original.to_string(), StorageClass::Private)
+                .expect("valid original key should rehydrate")
+                .storage_class(),
+            StorageClass::Private,
+        );
+        assert_eq!(
+            persisted_object_key(valid_derivative.to_string(), StorageClass::Private)
+                .expect("valid derivative key should rehydrate")
+                .as_str(),
+            valid_derivative,
+        );
+
+        for invalid in [
+            "tenants/not-a-uuid/identity/profile-image/22222222-2222-2222-2222-222222222222/v1/original.png",
+            "tenants/11111111-1111-1111-1111-111111111111/identity/profile-image/not-a-uuid/v1/original.png",
+            "tenants/11111111-1111-1111-1111-111111111111/identity/profile-image/22222222-2222-2222-2222-222222222222/v0/original.png",
+            "tenants/11111111-1111-1111-1111-111111111111/identity/../22222222-2222-2222-2222-222222222222/v1/original.png",
+            "tenants/11111111-1111-1111-1111-111111111111/identity/profile_image/22222222-2222-2222-2222-222222222222/v1/original.png",
+            "tenants/11111111-1111-1111-1111-111111111111/identity/profile-image/22222222-2222-2222-2222-222222222222/v1/no-extension",
+        ] {
+            assert_eq!(
+                persisted_object_key(invalid.to_string(), StorageClass::Private),
+                Err(PurposeRegistryError::InvalidPersistedObjectKey),
+                "invalid persisted key should be rejected: {invalid}",
+            );
+        }
     }
 }

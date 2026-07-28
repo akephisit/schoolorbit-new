@@ -6,6 +6,7 @@ use aws_sdk_s3::{
 };
 use chrono::Utc;
 use std::{env, time::Duration};
+use tokio::io::AsyncReadExt;
 use url::Url;
 
 use super::{
@@ -25,6 +26,7 @@ struct ObjectRequest {
 enum R2ClientError {
     NotFound,
     AlreadyExists,
+    TooLarge,
     Failed,
 }
 
@@ -35,6 +37,13 @@ struct PutRequest {
     body: bytes::Bytes,
     content_type: String,
     if_none_match: String,
+}
+
+#[derive(Clone, Eq, PartialEq)]
+struct GetRequest {
+    bucket: String,
+    key: String,
+    max_bytes: u64,
 }
 
 #[derive(Clone, Eq, PartialEq)]
@@ -49,6 +58,7 @@ struct PresignRequest {
 #[async_trait]
 trait R2Transport: Send + Sync {
     async fn put(&self, request: PutRequest) -> Result<(), R2ClientError>;
+    async fn get(&self, request: GetRequest) -> Result<bytes::Bytes, R2ClientError>;
     async fn head(&self, request: ObjectRequest) -> Result<ObjectMetadata, R2ClientError>;
     async fn delete(&self, request: ObjectRequest) -> Result<(), R2ClientError>;
     async fn presign_get(&self, request: PresignRequest) -> Result<Url, R2ClientError>;
@@ -78,6 +88,31 @@ impl R2Transport for AwsR2Transport {
                         .map(|response| response.status().as_u16()),
                 )
             })
+    }
+
+    async fn get(&self, request: GetRequest) -> Result<bytes::Bytes, R2ClientError> {
+        let output = self
+            .client
+            .get_object()
+            .bucket(request.bucket)
+            .key(request.key)
+            .send()
+            .await
+            .map_err(|_| R2ClientError::Failed)?;
+        let read_limit = request
+            .max_bytes
+            .checked_add(1)
+            .ok_or(R2ClientError::Failed)?;
+        let mut reader = output.body.into_async_read().take(read_limit);
+        let mut body = Vec::new();
+        reader
+            .read_to_end(&mut body)
+            .await
+            .map_err(|_| R2ClientError::Failed)?;
+        if body.len() as u64 > request.max_bytes {
+            return Err(R2ClientError::TooLarge);
+        }
+        Ok(body.into())
     }
 
     async fn head(&self, request: ObjectRequest) -> Result<ObjectMetadata, R2ClientError> {
@@ -308,6 +343,29 @@ impl StorageProvider for R2StorageProvider {
             .map_err(map_transport_error)
     }
 
+    async fn get(
+        &self,
+        object: &StoredObject,
+        max_bytes: u64,
+    ) -> Result<bytes::Bytes, StorageError> {
+        if max_bytes == 0 {
+            return Err(StorageError::ObjectTooLarge);
+        }
+        let body = self
+            .transport
+            .get(GetRequest {
+                bucket: self.config.bucket_name(object.storage_class()).to_string(),
+                key: object.object_key.as_str().to_string(),
+                max_bytes,
+            })
+            .await
+            .map_err(map_transport_error)?;
+        if body.len() as u64 > max_bytes {
+            return Err(StorageError::ObjectTooLarge);
+        }
+        Ok(body)
+    }
+
     async fn head(&self, object: &StoredObject) -> Result<Option<ObjectMetadata>, StorageError> {
         match self
             .transport
@@ -381,6 +439,7 @@ fn object_request(config: &R2StorageConfig, object: &StoredObject) -> ObjectRequ
 fn map_transport_error(error: R2ClientError) -> StorageError {
     match error {
         R2ClientError::AlreadyExists => StorageError::AlreadyExists,
+        R2ClientError::TooLarge => StorageError::ObjectTooLarge,
         R2ClientError::NotFound | R2ClientError::Failed => StorageError::OperationFailed,
     }
 }
@@ -442,6 +501,7 @@ mod tests {
     #[derive(Clone, Eq, PartialEq)]
     enum CapturedR2Request {
         Put(PutRequest),
+        Get(GetRequest),
         Head(ObjectRequest),
         Delete(ObjectRequest),
         Presign(PresignRequest),
@@ -465,6 +525,7 @@ mod tests {
     struct CapturedR2Client {
         requests: Mutex<Vec<CapturedR2Request>>,
         put_results: Mutex<VecDeque<Result<(), R2ClientError>>>,
+        get_results: Mutex<VecDeque<Result<Bytes, R2ClientError>>>,
         head_results: Mutex<VecDeque<Result<ObjectMetadata, R2ClientError>>>,
         delete_results: Mutex<VecDeque<Result<(), R2ClientError>>>,
         presign_results: Mutex<VecDeque<Result<Url, R2ClientError>>>,
@@ -482,6 +543,18 @@ mod tests {
                 .unwrap()
                 .pop_front()
                 .unwrap_or(Ok(()))
+        }
+
+        async fn get(&self, request: GetRequest) -> Result<Bytes, R2ClientError> {
+            self.requests
+                .lock()
+                .unwrap()
+                .push(CapturedR2Request::Get(request));
+            self.get_results
+                .lock()
+                .unwrap()
+                .pop_front()
+                .unwrap_or_else(|| Ok(Bytes::from_static(b"data")))
         }
 
         async fn head(&self, request: ObjectRequest) -> Result<ObjectMetadata, R2ClientError> {
@@ -566,6 +639,7 @@ mod tests {
             .put(&private, Bytes::from_static(b"data"))
             .await
             .unwrap();
+        assert_eq!(provider.get(&private, 4).await.unwrap(), b"data".as_slice());
         assert_eq!(
             provider
                 .head(&private)
@@ -588,12 +662,15 @@ mod tests {
                 if bucket == "private-files" && if_none_match == "*"
         ));
         assert!(
-            matches!(&requests[1], CapturedR2Request::Head(ObjectRequest { bucket, .. }) if bucket == "private-files")
+            matches!(&requests[1], CapturedR2Request::Get(GetRequest { bucket, max_bytes: 4, .. }) if bucket == "private-files")
         );
         assert!(
-            matches!(&requests[2], CapturedR2Request::Delete(ObjectRequest { bucket, .. }) if bucket == "private-files")
+            matches!(&requests[2], CapturedR2Request::Head(ObjectRequest { bucket, .. }) if bucket == "private-files")
         );
-        let CapturedR2Request::Presign(request) = &requests[3] else {
+        assert!(
+            matches!(&requests[3], CapturedR2Request::Delete(ObjectRequest { bucket, .. }) if bucket == "private-files")
+        );
+        let CapturedR2Request::Presign(request) = &requests[4] else {
             panic!("expected presign request")
         };
         assert_eq!(request.bucket, "private-files");
@@ -612,6 +689,28 @@ mod tests {
             expires_at,
             request.issued_at + chrono::Duration::from_std(request.ttl).unwrap()
         );
+    }
+
+    #[tokio::test]
+    async fn provider_bounds_internal_object_reads() {
+        let client = Arc::new(CapturedR2Client::default());
+        client
+            .get_results
+            .lock()
+            .unwrap()
+            .push_back(Ok(Bytes::from_static(b"five!")));
+        let provider = provider(Arc::clone(&client));
+        let private = object(FilePurpose::ProfileImage);
+
+        assert_eq!(
+            provider.get(&private, 4).await,
+            Err(StorageError::ObjectTooLarge)
+        );
+        assert_eq!(
+            provider.get(&private, 0).await,
+            Err(StorageError::ObjectTooLarge)
+        );
+        assert_eq!(client.requests.lock().unwrap().len(), 1);
     }
 
     #[tokio::test]

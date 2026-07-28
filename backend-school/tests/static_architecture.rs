@@ -4957,7 +4957,6 @@ fn file_platform_blocks_new_provider_coupling_and_locator_responses() {
         "src/modules/school/models.rs: SchoolSettingsResponse exposes logo_url".to_string(),
         "src/modules/school/services.rs: direct R2 client use".to_string(),
         "src/modules/staff/models.rs: StaffProfileResponse exposes profile_image_url".to_string(),
-        "src/services/cleaner.rs: direct R2 client use".to_string(),
     ]);
 
     assert_eq!(

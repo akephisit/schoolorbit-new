@@ -6,6 +6,7 @@ pub mod handlers;
 #[allow(dead_code)]
 pub mod malware_scanner;
 pub mod models;
+pub mod platform_service;
 // These platform contracts are consumed by the staged provider and application-service tasks.
 #[allow(dead_code)]
 pub mod platform_types;
@@ -13,6 +14,8 @@ pub mod platform_types;
 pub mod purpose_registry;
 #[allow(dead_code)]
 pub mod r2_storage_provider;
+pub mod reconciler;
+pub mod repository;
 pub mod services;
 #[allow(dead_code)]
 pub mod storage_provider;

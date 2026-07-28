@@ -65,6 +65,14 @@ impl ImageProcessor {
         Ok(buffer)
     }
 
+    pub fn encode_webp(image: &DynamicImage) -> Result<Vec<u8>, String> {
+        let mut buffer = Vec::new();
+        image
+            .write_to(&mut Cursor::new(&mut buffer), ImageFormat::WebP)
+            .map_err(|_| "Validated image could not be encoded".to_string())?;
+        Ok(buffer)
+    }
+
     /// Creates a thumbnail from a decoded image that came through the validated boundary.
     pub fn create_thumbnail_from_image(image: &DynamicImage, size: u32) -> Result<Vec<u8>, String> {
         info!("Creating {}x{} thumbnail", size, size);

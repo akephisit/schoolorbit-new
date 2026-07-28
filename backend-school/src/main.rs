@@ -42,6 +42,7 @@ pub struct AppState {
     pub permission_event_channel: broadcast::Sender<PermissionChangeEvent>,
     pub work_event_channel: broadcast::Sender<WorkChangeEvent>,
     pub permission_cache: Arc<PermissionCache>,
+    pub file_platform: Arc<modules::files::platform_service::FilePlatform>,
 }
 
 impl AppState {
@@ -156,6 +157,31 @@ async fn main() {
     tracing::info!("ℹ️  Multi-tenant architecture ready");
     tracing::info!("ℹ️  Each school has its own database connection pool (cached)");
 
+    let storage_provider = match modules::files::r2_storage_provider::R2StorageProvider::new().await
+    {
+        Ok(provider) => Arc::new(provider),
+        Err(error) => {
+            tracing::error!(
+                error_code = error.log_safe_code(),
+                "File Platform storage configuration is invalid"
+            );
+            std::process::exit(1);
+        }
+    };
+    let scanner_config = match modules::files::malware_scanner::ClamdConfig::from_env() {
+        Ok(config) => config,
+        Err(_) => {
+            tracing::error!("File Platform malware scanner configuration is invalid");
+            std::process::exit(1);
+        }
+    };
+    let file_platform = Arc::new(modules::files::platform_service::FilePlatform::new(
+        storage_provider,
+        Arc::new(modules::files::malware_scanner::ClamdScanner::new(
+            scanner_config,
+        )),
+    ));
+
     // Create shared state
     let state = AppState {
         admin_client,
@@ -165,6 +191,7 @@ async fn main() {
         permission_event_channel: permission_event_tx,
         work_event_channel: work_event_tx,
         permission_cache: Arc::new(PermissionCache::new()),
+        file_platform,
     };
 
     // Build application
@@ -784,8 +811,7 @@ async fn main() {
         }
     };
 
-    // Initialize Job Scheduler for background tasks
-    // Run daily cleaning at 3:00 AM
+    // Initialize the scheduler. File operations are reconciled every five minutes.
     let sched = JobScheduler::new()
         .await
         .expect("Failed to initialize job scheduler");
@@ -793,13 +819,15 @@ async fn main() {
     // Clone shared resources for the job
     let admin_client_for_job = Arc::clone(&state.admin_client);
     let pool_manager_for_job = Arc::clone(&state.pool_manager);
+    let file_platform_for_job = Arc::clone(&state.file_platform);
 
-    let cleaner_job = Job::new_async("0 0 3 * * *", move |_uuid, _l| {
+    let cleaner_job = Job::new_async("0 */5 * * * *", move |_uuid, _l| {
         let admin_client = Arc::clone(&admin_client_for_job);
         let pool_manager = pool_manager_for_job.clone();
+        let file_platform = Arc::clone(&file_platform_for_job);
 
         Box::pin(async move {
-            tracing::info!("⏰ Starting scheduled file cleanup job (Garbage Collection)...");
+            tracing::info!("Starting scheduled File Platform reconciliation");
 
             // 1. Get list of all active schools from backend-admin
             let schools = match admin_client.list_active_schools().await {
@@ -810,7 +838,7 @@ async fn main() {
                 }
             };
 
-            tracing::info!("Found {} active schools to clean.", schools.len());
+            tracing::info!("Found {} active schools to reconcile.", schools.len());
 
             for school in schools {
                 let db_url = match school.db_connection_string {
@@ -821,24 +849,15 @@ async fn main() {
                     }
                 };
 
-                tracing::info!("🧹 Cleaning school tenant: {}", school.subdomain);
+                tracing::info!("Reconciling File Platform operations for tenant");
 
                 // 2. Get Connection Pool (Reuse existing logic)
                 match pool_manager.get_pool(&db_url, &school.subdomain).await {
                     Ok(pool) => {
-                        // 3. Run Cleaner Service
-                        match services::cleaner::FileCleaner::new(pool).await {
-                            Ok(cleaner) => {
-                                cleaner.clean_orphaned_files().await;
-                            }
-                            Err(e) => {
-                                tracing::error!(
-                                    "Failed to initialize FileCleaner for {}: {}",
-                                    school.subdomain,
-                                    e
-                                );
-                            }
-                        }
+                        // 3. Reconcile durable file operations.
+                        let cleaner =
+                            services::cleaner::FileCleaner::new(pool, Arc::clone(&file_platform));
+                        cleaner.reconcile_file_operations().await;
                     }
                     Err(e) => {
                         tracing::error!(
@@ -849,7 +868,7 @@ async fn main() {
                     }
                 }
             }
-            tracing::info!("✅ Scheduled cleanup job completed for all tenants.");
+            tracing::info!("Scheduled File Platform reconciliation completed");
         })
     })
     .expect("Failed to create cleaner job");
