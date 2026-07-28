@@ -29,6 +29,7 @@ CREATE TABLE file_versions (
     version_number INTEGER NOT NULL,
     provider_code VARCHAR(32) NOT NULL,
     storage_class VARCHAR(16) NOT NULL,
+    storage_status VARCHAR(32) NOT NULL DEFAULT 'pending',
     object_key TEXT NOT NULL,
     detected_mime_type VARCHAR(100) NOT NULL,
     canonical_extension VARCHAR(20) NOT NULL,
@@ -37,11 +38,25 @@ CREATE TABLE file_versions (
     scan_status VARCHAR(32) NOT NULL DEFAULT 'pending',
     scanner_result_code VARCHAR(64),
     scanned_at TIMESTAMPTZ,
+    deleted_at TIMESTAMPTZ,
     created_by UUID REFERENCES users(id) ON DELETE SET NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     CONSTRAINT file_versions_version_number_check CHECK (version_number > 0),
     CONSTRAINT file_versions_storage_class_check
         CHECK (storage_class IN ('public', 'private')),
+    CONSTRAINT file_versions_storage_status_check
+        CHECK (storage_status IN (
+            'pending',
+            'stored',
+            'delete_requested',
+            'deleted',
+            'missing',
+            'failed'
+        )),
+    CONSTRAINT file_versions_provider_code_check
+        CHECK (btrim(provider_code) <> ''),
+    CONSTRAINT file_versions_object_key_check
+        CHECK (btrim(object_key) <> ''),
     CONSTRAINT file_versions_detected_mime_type_check
         CHECK (btrim(detected_mime_type) <> ''),
     CONSTRAINT file_versions_canonical_extension_check
@@ -53,32 +68,51 @@ CREATE TABLE file_versions (
         CHECK (scan_status IN ('pending', 'clean', 'infected', 'failed', 'skipped')),
     CONSTRAINT file_versions_scanner_result_code_check
         CHECK (scanner_result_code IS NULL OR scanner_result_code ~ '^[a-z0-9_]{1,64}$'),
+    CONSTRAINT file_versions_deleted_at_check
+        CHECK ((storage_status = 'deleted') = (deleted_at IS NOT NULL)),
     CONSTRAINT file_versions_file_version_number_key UNIQUE (file_id, version_number),
+    CONSTRAINT file_versions_id_file_id_key UNIQUE (id, file_id),
     CONSTRAINT file_versions_provider_storage_object_key_key
         UNIQUE (provider_code, storage_class, object_key)
 );
 
 ALTER TABLE files
     ADD CONSTRAINT files_current_version_id_fkey
-    FOREIGN KEY (current_version_id) REFERENCES file_versions(id) ON DELETE SET NULL;
+    FOREIGN KEY (current_version_id, id) REFERENCES file_versions(id, file_id) ON DELETE RESTRICT;
 
 CREATE TABLE file_derivatives (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    source_version_id UUID NOT NULL REFERENCES file_versions(id) ON DELETE RESTRICT,
+    file_id UUID NOT NULL REFERENCES files(id) ON DELETE RESTRICT,
+    source_version_id UUID NOT NULL,
     derivative_kind VARCHAR(64) NOT NULL,
     provider_code VARCHAR(32) NOT NULL,
     storage_class VARCHAR(16) NOT NULL,
+    storage_status VARCHAR(32) NOT NULL DEFAULT 'pending',
     object_key TEXT NOT NULL,
     detected_mime_type VARCHAR(100) NOT NULL,
     canonical_extension VARCHAR(20) NOT NULL,
     byte_size BIGINT NOT NULL,
     checksum CHAR(64) NOT NULL,
     lifecycle_status VARCHAR(32) NOT NULL DEFAULT 'pending',
+    deleted_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     CONSTRAINT file_derivatives_kind_check
         CHECK (derivative_kind ~ '^[a-z0-9][a-z0-9-]{0,63}$'),
     CONSTRAINT file_derivatives_storage_class_check
         CHECK (storage_class IN ('public', 'private')),
+    CONSTRAINT file_derivatives_storage_status_check
+        CHECK (storage_status IN (
+            'pending',
+            'stored',
+            'delete_requested',
+            'deleted',
+            'missing',
+            'failed'
+        )),
+    CONSTRAINT file_derivatives_provider_code_check
+        CHECK (btrim(provider_code) <> ''),
+    CONSTRAINT file_derivatives_object_key_check
+        CHECK (btrim(object_key) <> ''),
     CONSTRAINT file_derivatives_detected_mime_type_check
         CHECK (btrim(detected_mime_type) <> ''),
     CONSTRAINT file_derivatives_canonical_extension_check
@@ -88,8 +122,13 @@ CREATE TABLE file_derivatives (
         CHECK (checksum ~ '^[0-9a-f]{64}$'),
     CONSTRAINT file_derivatives_lifecycle_status_check
         CHECK (lifecycle_status IN ('pending', 'processing', 'ready', 'failed', 'deleted')),
+    CONSTRAINT file_derivatives_deleted_at_check
+        CHECK ((storage_status = 'deleted') = (deleted_at IS NOT NULL)),
+    CONSTRAINT file_derivatives_source_version_file_id_fkey
+        FOREIGN KEY (source_version_id, file_id) REFERENCES file_versions(id, file_id) ON DELETE RESTRICT,
     CONSTRAINT file_derivatives_source_version_kind_key
         UNIQUE (source_version_id, derivative_kind),
+    CONSTRAINT file_derivatives_id_file_id_key UNIQUE (id, file_id),
     CONSTRAINT file_derivatives_provider_storage_object_key_key
         UNIQUE (provider_code, storage_class, object_key)
 );
@@ -97,8 +136,8 @@ CREATE TABLE file_derivatives (
 CREATE TABLE file_operations (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     file_id UUID NOT NULL REFERENCES files(id) ON DELETE RESTRICT,
-    file_version_id UUID REFERENCES file_versions(id) ON DELETE RESTRICT,
-    file_derivative_id UUID REFERENCES file_derivatives(id) ON DELETE RESTRICT,
+    file_version_id UUID,
+    file_derivative_id UUID,
     operation_type VARCHAR(32) NOT NULL,
     status VARCHAR(32) NOT NULL DEFAULT 'pending',
     attempt_count INTEGER NOT NULL DEFAULT 0,
@@ -117,16 +156,27 @@ CREATE TABLE file_operations (
     CONSTRAINT file_operations_attempt_count_check
         CHECK (attempt_count BETWEEN 0 AND 100),
     CONSTRAINT file_operations_lease_check CHECK (
-        (lease_owner IS NULL AND leased_at IS NULL AND lease_expires_at IS NULL)
-        OR (
-            lease_owner IS NOT NULL
+        (
+            status = 'leased'
+            AND lease_owner IS NOT NULL
+            AND btrim(lease_owner) <> ''
             AND leased_at IS NOT NULL
             AND lease_expires_at IS NOT NULL
             AND lease_expires_at > leased_at
         )
+        OR (
+            status <> 'leased'
+            AND lease_owner IS NULL
+            AND leased_at IS NULL
+            AND lease_expires_at IS NULL
+        )
     ),
     CONSTRAINT file_operations_last_error_code_check
-        CHECK (last_error_code IS NULL OR last_error_code ~ '^[a-z0-9_]{1,64}$')
+        CHECK (last_error_code IS NULL OR last_error_code ~ '^[a-z0-9_]{1,64}$'),
+    CONSTRAINT file_operations_file_version_file_id_fkey
+        FOREIGN KEY (file_version_id, file_id) REFERENCES file_versions(id, file_id) ON DELETE RESTRICT,
+    CONSTRAINT file_operations_file_derivative_file_id_fkey
+        FOREIGN KEY (file_derivative_id, file_id) REFERENCES file_derivatives(id, file_id) ON DELETE RESTRICT
 );
 
 CREATE FUNCTION file_platform_preserve_version_identity()
@@ -153,6 +203,17 @@ CREATE TRIGGER file_versions_preserve_identity
 BEFORE UPDATE ON file_versions
 FOR EACH ROW EXECUTE FUNCTION file_platform_preserve_version_identity();
 
+CREATE FUNCTION file_platform_prevent_version_deletion()
+RETURNS TRIGGER AS $$
+BEGIN
+    RAISE EXCEPTION 'file versions must be soft-deleted';
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER file_versions_prevent_deletion
+BEFORE DELETE ON file_versions
+FOR EACH ROW EXECUTE FUNCTION file_platform_prevent_version_deletion();
+
 CREATE FUNCTION file_platform_preserve_derivative_identity()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -176,6 +237,17 @@ $$ LANGUAGE plpgsql;
 CREATE TRIGGER file_derivatives_preserve_identity
 BEFORE UPDATE ON file_derivatives
 FOR EACH ROW EXECUTE FUNCTION file_platform_preserve_derivative_identity();
+
+CREATE FUNCTION file_platform_prevent_derivative_deletion()
+RETURNS TRIGGER AS $$
+BEGIN
+    RAISE EXCEPTION 'file derivatives must be soft-deleted';
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER file_derivatives_prevent_deletion
+BEFORE DELETE ON file_derivatives
+FOR EACH ROW EXECUTE FUNCTION file_platform_prevent_derivative_deletion();
 
 CREATE INDEX idx_files_lifecycle_status
     ON files (lifecycle_status, delete_requested_at)

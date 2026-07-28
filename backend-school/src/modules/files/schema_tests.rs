@@ -4,6 +4,7 @@ use sqlx::PgPool;
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
+use uuid::Uuid;
 
 const PRE_FILE_PLATFORM_MIGRATIONS: &[(&str, &str)] = &[
     (
@@ -156,6 +157,34 @@ fn file_platform_migration_is_present() {
     );
 }
 
+#[test]
+fn file_platform_migration_declares_exact_domains_and_relationship_guards() {
+    let migration = fs::read_to_string(migrations_dir().join("030_file_platform.sql"))
+        .expect("File Platform migration should be readable");
+
+    for required_fragment in [
+        "storage_status VARCHAR(32) NOT NULL DEFAULT 'pending'",
+        "CONSTRAINT file_versions_storage_status_check",
+        "CONSTRAINT file_derivatives_storage_status_check",
+        "FOREIGN KEY (current_version_id, id)",
+        "FOREIGN KEY (source_version_id, file_id)",
+        "FOREIGN KEY (file_version_id, file_id)",
+        "FOREIGN KEY (file_derivative_id, file_id)",
+        "status = 'leased'",
+        "status <> 'leased'",
+        "btrim(lease_owner) <> ''",
+        "BEFORE DELETE ON file_versions",
+        "BEFORE DELETE ON file_derivatives",
+        "btrim(provider_code) <> ''",
+        "btrim(object_key) <> ''",
+    ] {
+        assert!(
+            migration.contains(required_fragment),
+            "migration 030 must include {required_fragment:?}"
+        );
+    }
+}
+
 #[tokio::test]
 async fn file_platform_schema_is_additive_and_constrained() {
     if !has_test_database_url() {
@@ -196,17 +225,242 @@ async fn file_platform_schema_is_additive_and_constrained() {
     )
     .await;
 
-    for (table, column) in [
-        ("files", "lifecycle_status"),
-        ("file_versions", "storage_class"),
-        ("file_versions", "scan_status"),
-        ("file_derivatives", "lifecycle_status"),
-        ("file_derivatives", "storage_class"),
-        ("file_operations", "operation_type"),
-        ("file_operations", "status"),
-    ] {
-        assert_check_constraint(&pool, table, column).await;
-    }
+    assert_check_domain(
+        &pool,
+        "files_lifecycle_status_check",
+        &[
+            "pending",
+            "processing",
+            "ready",
+            "delete_requested",
+            "deleted",
+            "failed",
+            "quarantined",
+        ],
+    )
+    .await;
+    assert_check_domain(
+        &pool,
+        "file_versions_storage_class_check",
+        &["public", "private"],
+    )
+    .await;
+    assert_check_domain(
+        &pool,
+        "file_versions_storage_status_check",
+        &[
+            "pending",
+            "stored",
+            "delete_requested",
+            "deleted",
+            "missing",
+            "failed",
+        ],
+    )
+    .await;
+    assert_check_domain(
+        &pool,
+        "file_versions_scan_status_check",
+        &["pending", "clean", "infected", "failed", "skipped"],
+    )
+    .await;
+    assert_check_domain(
+        &pool,
+        "file_derivatives_lifecycle_status_check",
+        &["pending", "processing", "ready", "failed", "deleted"],
+    )
+    .await;
+    assert_check_domain(
+        &pool,
+        "file_derivatives_storage_class_check",
+        &["public", "private"],
+    )
+    .await;
+    assert_check_domain(
+        &pool,
+        "file_derivatives_storage_status_check",
+        &[
+            "pending",
+            "stored",
+            "delete_requested",
+            "deleted",
+            "missing",
+            "failed",
+        ],
+    )
+    .await;
+    assert_check_domain(
+        &pool,
+        "file_operations_operation_type_check",
+        &["scan", "generate_derivative", "delete_object", "reconcile"],
+    )
+    .await;
+    assert_check_domain(
+        &pool,
+        "file_operations_status_check",
+        &[
+            "pending",
+            "leased",
+            "succeeded",
+            "retryable_failure",
+            "failed",
+            "cancelled",
+        ],
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn file_platform_schema_rejects_inconsistent_leases_and_cross_file_targets() {
+    let Some(pool) = test_pool_or_skip().await else {
+        return;
+    };
+
+    let file_a = insert_file(&pool).await;
+    let file_b = insert_file(&pool).await;
+    let version_a = insert_version(&pool, file_a, "stored")
+        .await
+        .expect("valid version should insert");
+    let derivative_a = insert_derivative(&pool, file_a, version_a, "stored")
+        .await
+        .expect("valid derivative should insert");
+
+    assert_sql_rejected(
+        sqlx::query(
+            "INSERT INTO file_operations (file_id, operation_type, status)
+             VALUES ($1, 'reconcile', 'leased')",
+        )
+        .bind(file_a)
+        .execute(&pool)
+        .await,
+        "leased work without a lease",
+    );
+    assert_sql_rejected(
+        sqlx::query(
+            "INSERT INTO file_operations (
+                file_id, operation_type, status, lease_owner, leased_at, lease_expires_at
+             ) VALUES ($1, 'reconcile', 'pending', 'worker', now(), now() + interval '1 minute')",
+        )
+        .bind(file_a)
+        .execute(&pool)
+        .await,
+        "non-leased work with active lease fields",
+    );
+    sqlx::query(
+        "INSERT INTO file_operations (
+            file_id, operation_type, status, lease_owner, leased_at, lease_expires_at
+         ) VALUES ($1, 'reconcile', 'leased', 'worker', now() - interval '2 minutes', now() - interval '1 minute')",
+    )
+    .bind(file_a)
+    .execute(&pool)
+    .await
+    .expect("expired leased work should remain reclaimable");
+
+    assert_sql_rejected(
+        sqlx::query("UPDATE files SET current_version_id = $1 WHERE id = $2")
+            .bind(version_a)
+            .bind(file_b)
+            .execute(&pool)
+            .await,
+        "a current version owned by another file",
+    );
+    assert_sql_rejected(
+        insert_derivative(&pool, file_b, version_a, "stored").await,
+        "a derivative whose source version belongs to another file",
+    );
+    assert_sql_rejected(
+        sqlx::query(
+            "INSERT INTO file_operations (file_id, file_version_id, operation_type)
+             VALUES ($1, $2, 'scan')",
+        )
+        .bind(file_b)
+        .bind(version_a)
+        .execute(&pool)
+        .await,
+        "an operation version target owned by another file",
+    );
+    assert_sql_rejected(
+        sqlx::query(
+            "INSERT INTO file_operations (file_id, file_derivative_id, operation_type)
+             VALUES ($1, $2, 'delete_object')",
+        )
+        .bind(file_b)
+        .bind(derivative_a)
+        .execute(&pool)
+        .await,
+        "an operation derivative target owned by another file",
+    );
+}
+
+#[tokio::test]
+async fn file_platform_schema_rejects_invalid_locator_values_and_physical_identity_deletion() {
+    let Some(pool) = test_pool_or_skip().await else {
+        return;
+    };
+
+    let file = insert_file(&pool).await;
+    let version = insert_version(&pool, file, "stored")
+        .await
+        .expect("valid version should insert");
+    let derivative = insert_derivative(&pool, file, version, "stored")
+        .await
+        .expect("valid derivative should insert");
+
+    assert_sql_rejected(
+        sqlx::query("UPDATE file_versions SET storage_status = 'deleted' WHERE id = $1")
+            .bind(version)
+            .execute(&pool)
+            .await,
+        "a version marked deleted without a soft-delete timestamp",
+    );
+    sqlx::query(
+        "UPDATE file_versions
+         SET storage_status = 'deleted', deleted_at = now()
+         WHERE id = $1",
+    )
+    .bind(version)
+    .execute(&pool)
+    .await
+    .expect("versions should support soft deletion");
+    sqlx::query(
+        "UPDATE file_derivatives
+         SET storage_status = 'deleted', deleted_at = now()
+         WHERE id = $1",
+    )
+    .bind(derivative)
+    .execute(&pool)
+    .await
+    .expect("derivatives should support soft deletion");
+
+    assert_sql_rejected(
+        sqlx::query("DELETE FROM file_versions WHERE id = $1")
+            .bind(version)
+            .execute(&pool)
+            .await,
+        "physical version deletion",
+    );
+    assert_sql_rejected(
+        sqlx::query("DELETE FROM file_derivatives WHERE id = $1")
+            .bind(derivative)
+            .execute(&pool)
+            .await,
+        "physical derivative deletion",
+    );
+    assert_sql_rejected(
+        insert_version_with_locator(
+            &pool,
+            insert_file(&pool).await,
+            " ",
+            "another-object",
+            "stored",
+        )
+        .await,
+        "a whitespace provider code",
+    );
+    assert_sql_rejected(
+        insert_version_with_locator(&pool, insert_file(&pool).await, "test", "   ", "stored").await,
+        "a whitespace object key",
+    );
 }
 
 async fn relation_exists(pool: &PgPool, relation: &str) -> bool {
@@ -258,22 +512,114 @@ async fn assert_unique_constraint(pool: &PgPool, table: &str, expected_columns: 
     );
 }
 
-async fn assert_check_constraint(pool: &PgPool, table: &str, column: &str) {
-    let constraints = sqlx::query_scalar::<_, String>(
-        "SELECT pg_get_constraintdef(constraint.oid)
-         FROM pg_constraint AS constraint
-         WHERE constraint.conrelid = $1::regclass
-           AND constraint.contype = 'c'",
+async fn assert_check_domain(pool: &PgPool, constraint_name: &str, expected: &[&str]) {
+    let definition = sqlx::query_scalar::<_, String>(
+        "SELECT pg_get_constraintdef(oid)
+         FROM pg_constraint
+         WHERE conname = $1
+           AND contype = 'c'",
     )
-    .bind(table)
-    .fetch_all(pool)
+    .bind(constraint_name)
+    .fetch_optional(pool)
     .await
-    .expect("check constraint metadata query should execute");
+    .expect("check constraint metadata query should execute")
+    .unwrap_or_else(|| panic!("missing CHECK constraint {constraint_name}"));
+    let literal = regex::Regex::new(r"'([^']*)'").expect("literal pattern should compile");
+    let actual = literal
+        .captures_iter(&definition)
+        .map(|capture| capture[1].to_string())
+        .collect::<Vec<_>>();
 
-    assert!(
-        constraints
-            .iter()
-            .any(|definition| definition.contains(column)),
-        "expected a CHECK constraint for {table}.{column}; found {constraints:?}"
+    assert_eq!(
+        actual,
+        expected.iter().map(ToString::to_string).collect::<Vec<_>>(),
+        "unexpected domain for {constraint_name}: {definition}"
     );
+}
+
+async fn test_pool_or_skip() -> Option<PgPool> {
+    if !has_test_database_url() {
+        eprintln!("SKIPPED: TEST_DATABASE_URL is not set; File Platform migration assertions require an isolated test database.");
+        return None;
+    }
+
+    let pool = create_test_pool().await;
+    run_test_migrations(&pool).await;
+    Some(pool)
+}
+
+async fn insert_file(pool: &PgPool) -> Uuid {
+    sqlx::query_scalar(
+        "INSERT INTO files (
+            filename, original_filename, file_size, mime_type, storage_path, file_type
+         ) VALUES ('platform-test.bin', 'platform-test.bin', 1, 'application/octet-stream', $1, 'other')
+         RETURNING id",
+    )
+    .bind(format!("platform-test/{}", Uuid::new_v4()))
+    .fetch_one(pool)
+    .await
+    .expect("test file should insert")
+}
+
+async fn insert_version(
+    pool: &PgPool,
+    file_id: Uuid,
+    storage_status: &str,
+) -> Result<Uuid, sqlx::Error> {
+    insert_version_with_locator(
+        pool,
+        file_id,
+        "test",
+        &format!("platform-test/{}", Uuid::new_v4()),
+        storage_status,
+    )
+    .await
+}
+
+async fn insert_version_with_locator(
+    pool: &PgPool,
+    file_id: Uuid,
+    provider_code: &str,
+    object_key: &str,
+    storage_status: &str,
+) -> Result<Uuid, sqlx::Error> {
+    sqlx::query_scalar(
+        "INSERT INTO file_versions (
+            file_id, version_number, provider_code, storage_class, storage_status,
+            object_key, detected_mime_type, canonical_extension, byte_size, checksum
+         ) VALUES ($1, 1, $2, 'private', $3, $4, 'application/octet-stream', 'bin', 1, repeat('a', 64))
+         RETURNING id",
+    )
+    .bind(file_id)
+    .bind(provider_code)
+    .bind(storage_status)
+    .bind(object_key)
+    .fetch_one(pool)
+    .await
+}
+
+async fn insert_derivative(
+    pool: &PgPool,
+    file_id: Uuid,
+    source_version_id: Uuid,
+    storage_status: &str,
+) -> Result<Uuid, sqlx::Error> {
+    sqlx::query_scalar(
+        "INSERT INTO file_derivatives (
+            file_id, source_version_id, derivative_kind, provider_code, storage_class,
+            storage_status, object_key, detected_mime_type, canonical_extension, byte_size, checksum
+         ) VALUES ($1, $2, 'thumbnail-256', 'test', 'private', $3, $4,
+                   'image/webp', 'webp', 1, repeat('b', 64))
+         RETURNING id",
+    )
+    .bind(file_id)
+    .bind(source_version_id)
+    .bind(storage_status)
+    .bind(format!("platform-test/{}", Uuid::new_v4()))
+    .fetch_one(pool)
+    .await
+}
+
+fn assert_sql_rejected<T>(result: Result<T, sqlx::Error>, scenario: &str) {
+    assert!(result.is_err(), "schema should reject {scenario}");
 }
