@@ -74,6 +74,7 @@ pub struct NewUpload {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PlatformFile {
     pub id: Uuid,
+    pub owner_user_id: Option<Uuid>,
     pub purpose: FilePurpose,
     pub visibility: FileVisibility,
     pub lifecycle_status: FileLifecycleStatus,
@@ -465,10 +466,11 @@ INSERT INTO files (
     id, user_id, filename, original_filename, file_size, mime_type,
     storage_path, file_type, width, height, has_thumbnail, is_temporary,
     is_public, checksum, uploaded_by, purpose_code, visibility,
-    lifecycle_status, retention_class
+    lifecycle_status, retention_class, expires_at
 ) VALUES (
     $1, $2, $3, $3, $4, $5, $6, $7, $8, $9, $10, $11,
-    $12, $13, $14, $15, $16, 'processing', $17
+    $12, $13, $14, $15, $16, 'processing', $17,
+    CASE WHEN $11 THEN now() + INTERVAL '24 hours' ELSE NULL END
 )
 "#,
         )
@@ -818,7 +820,7 @@ WHERE file_id = $1 AND operation_type = 'reconcile' AND status <> 'succeeded'
     ) -> Result<Option<DeliveryRecord>, RepositoryError> {
         let row = sqlx::query(
             r#"
-SELECT f.id, f.purpose_code, f.visibility, f.lifecycle_status,
+SELECT f.id, f.user_id, f.purpose_code, f.visibility, f.lifecycle_status,
        f.filename, f.file_size, f.current_version_id,
        v.version_number, v.object_key, v.storage_class, v.detected_mime_type
 FROM files f
@@ -1264,6 +1266,9 @@ fn delivery_from_row(row: sqlx::postgres::PgRow) -> Result<DeliveryRecord, Repos
         file: PlatformFile {
             id: row
                 .try_get("id")
+                .map_err(SqlFileRepository::database_error)?,
+            owner_user_id: row
+                .try_get("user_id")
                 .map_err(SqlFileRepository::database_error)?,
             purpose,
             visibility,

@@ -1420,6 +1420,54 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/api/files': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['uploadFile'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/files/{id}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getFileMetadata'];
+		put?: never;
+		post?: never;
+		delete: operations['deleteFile'];
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/files/{id}/download': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['downloadFile'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/api/lookup/academic-years': {
 		parameters: {
 			query?: never;
@@ -1967,6 +2015,22 @@ export interface paths {
 			cookie?: never;
 		};
 		get: operations['listPublicCalendarEvents'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/public/files/{id}/content': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getPublicFileContent'];
 		put?: never;
 		post?: never;
 		delete?: never;
@@ -2788,6 +2852,30 @@ export interface components {
 		};
 		ApiResponse_EmptyData: {
 			data: Record<string, never>;
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_FileDeleteResult: {
+			data: {
+				pendingRetry: boolean;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_FileMetadata: {
+			data: {
+				/** Format: int64 */
+				byteSize: number;
+				/** Format: int32 */
+				currentVersion: number | null;
+				detectedMimeType: string;
+				displayFilename: string;
+				/** Format: uuid */
+				id: string;
+				lifecycleStatus: components['schemas']['FileLifecycleStatus'];
+				publicContentUrl: string | null;
+				purpose: components['schemas']['FilePurpose'];
+			};
 			message?: string;
 			success: boolean;
 		};
@@ -5023,6 +5111,51 @@ export interface components {
 			data: null | components['schemas']['FeatureToggle'];
 			message: string | null;
 			success: boolean;
+		};
+		FileDeleteResult: {
+			pendingRetry: boolean;
+		};
+		/** @enum {string} */
+		FileLifecycleStatus:
+			| 'pending'
+			| 'processing'
+			| 'ready'
+			| 'delete_requested'
+			| 'deleted'
+			| 'failed'
+			| 'quarantined';
+		FileMetadata: {
+			/** Format: int64 */
+			byteSize: number;
+			/** Format: int32 */
+			currentVersion: number | null;
+			detectedMimeType: string;
+			displayFilename: string;
+			/** Format: uuid */
+			id: string;
+			lifecycleStatus: components['schemas']['FileLifecycleStatus'];
+			publicContentUrl: string | null;
+			purpose: components['schemas']['FilePurpose'];
+		};
+		/** @enum {string} */
+		FilePurpose:
+			| 'school_logo'
+			| 'school_banner'
+			| 'profile_image'
+			| 'admission_application_document'
+			| 'transcript'
+			| 'certificate'
+			| 'identity_card'
+			| 'question_bank_image'
+			| 'course_material'
+			| 'assignment_attachment'
+			| 'generic_private_document';
+		FileUploadMultipart: {
+			/** Format: binary */
+			file: string;
+			purpose: components['schemas']['FilePurpose'];
+			/** Format: uuid */
+			resource_id?: string | null;
 		};
 		GenerateActivitiesFromPlanOutcome: {
 			/** Format: int32 */
@@ -13855,6 +13988,229 @@ export interface operations {
 			};
 		};
 	};
+	uploadFile: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'multipart/form-data': components['schemas']['FileUploadMultipart'];
+			};
+		};
+		responses: {
+			/** @description Validated file uploaded */
+			201: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_FileMetadata'];
+				};
+			};
+			/** @description Invalid multipart content or purpose */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description File purpose policy denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Scanner or storage unavailable */
+			503: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getFileMetadata: {
+		parameters: {
+			query?: {
+				resource_id?: string;
+			};
+			header?: never;
+			path: {
+				/** @description Logical file ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Authorized file metadata */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_FileMetadata'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description File policy denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description File or resource relationship not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	deleteFile: {
+		parameters: {
+			query?: {
+				resource_id?: string;
+			};
+			header?: never;
+			path: {
+				/** @description Logical file ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Delivery revoked and deletion requested */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_FileDeleteResult'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description File policy denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description File or resource relationship not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	downloadFile: {
+		parameters: {
+			query?: {
+				resource_id?: string;
+			};
+			header?: never;
+			path: {
+				/** @description Logical file ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Short-lived private download redirect */
+			303: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content?: never;
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description File policy denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description File or resource relationship not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description File is not ready */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
 	lookupAcademicYears: {
 		parameters: {
 			query?: {
@@ -15618,6 +15974,36 @@ export interface operations {
 			};
 			/** @description Invalid date range */
 			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getPublicFileContent: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Logical public file ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Ready public file redirect */
+			307: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content?: never;
+			};
+			/** @description Public ready file not found */
+			404: {
 				headers: {
 					[name: string]: unknown;
 				};

@@ -1,87 +1,53 @@
-import { apiClient, requireApiData } from '$lib/api/client';
+import { apiClient, BACKEND_URL, requireApiData } from '$lib/api/client';
+import type { components } from '$lib/api/generated/school-api';
 
-export interface FileUploadResponse {
-	success: boolean;
-	file: {
-		id: string;
-		filename: string;
-		original_filename: string;
-		file_size: number;
-		mime_type: string;
-		file_type: string;
-		storage_path: string;
-		url: string;
-		thumbnail_url: string | null;
-		width: number | null;
-		height: number | null;
-		created_at: string;
-	};
+type Schemas = components['schemas'];
+
+export type FileMetadata = Schemas['FileMetadata'];
+export type FileDeleteResult = Schemas['FileDeleteResult'];
+export type FilePurpose = Schemas['FilePurpose'];
+
+function resourceQuery(resourceId?: string): string {
+	if (!resourceId) return '';
+	return `?${new URLSearchParams({ resource_id: resourceId }).toString()}`;
 }
 
-export interface FileListResponse {
-	success: boolean;
-	files: FileUploadResponse['file'][];
-	total: number;
-}
-
-export interface DeleteFileResponse {
-	success: boolean;
-	message: string;
-}
-
-/**
- * Upload a file to the server
- */
 export async function uploadFile(
 	file: File,
-	fileType: string = 'other',
-	isTemporary: boolean = false
-): Promise<FileUploadResponse> {
+	purpose: FilePurpose,
+	resourceId?: string
+): Promise<FileMetadata> {
 	const formData = new FormData();
-	// Append metadata query parameters first (Best practice for streaming servers)
-	formData.append('file_type', fileType);
-	formData.append('is_temporary', isTemporary ? 'true' : 'false');
-	// Append file last
+	formData.append('purpose', purpose);
+	if (resourceId) formData.append('resource_id', resourceId);
 	formData.append('file', file);
 
-	const response = await apiClient.postMultipart<{ file: FileUploadResponse['file'] }>(
-		'/api/files/upload',
-		formData
-	);
-	const data = requireApiData(response, 'Upload failed');
-	return { success: true, file: data.file };
+	const response = await apiClient.postMultipart<FileMetadata>('/api/files', formData);
+	return requireApiData(response, 'อัปโหลดไฟล์ไม่สำเร็จ');
 }
 
-/**
- * Upload profile image
- */
-export async function uploadProfileImage(file: File): Promise<FileUploadResponse> {
-	return uploadFile(file, 'profile_image', false);
+export function uploadProfileImage(file: File, userId?: string): Promise<FileMetadata> {
+	return uploadFile(file, 'profile_image', userId);
 }
 
-/**
- * Upload document
- */
-export async function uploadDocument(file: File): Promise<FileUploadResponse> {
-	return uploadFile(file, 'document', false);
+export function getFileMetadata(fileId: string, resourceId?: string): Promise<FileMetadata> {
+	return apiClient
+		.get<FileMetadata>(`/api/files/${fileId}${resourceQuery(resourceId)}`)
+		.then((response) => requireApiData(response, 'ไม่สามารถโหลดข้อมูลไฟล์ได้'));
 }
 
-/**
- * List user's files
- */
-export async function listUserFiles(): Promise<FileListResponse> {
-	const response = await apiClient.get<{ files: FileUploadResponse['file'][]; total: number }>(
-		'/api/files'
-	);
-	const data = requireApiData(response, 'Failed to fetch files');
-	return { success: true, files: data.files, total: data.total };
+export function deleteFile(fileId: string, resourceId?: string): Promise<FileDeleteResult> {
+	return apiClient
+		.delete<FileDeleteResult>(`/api/files/${fileId}${resourceQuery(resourceId)}`)
+		.then((response) => requireApiData(response, 'ลบไฟล์ไม่สำเร็จ'));
 }
 
-/**
- * Delete a file
- */
-export async function deleteFile(fileId: string): Promise<DeleteFileResponse> {
-	const response = await apiClient.delete<Record<string, never>>(`/api/files/${fileId}`);
-	if (!response.success) throw new Error(response.error || 'Failed to delete file');
-	return { success: true, message: response.message || 'ลบไฟล์สำเร็จ' };
+export function downloadFile(fileId: string, resourceId?: string): Promise<Blob> {
+	return apiClient
+		.postBlob(`/api/files/${fileId}/download${resourceQuery(resourceId)}`)
+		.then((response) => requireApiData(response, 'ดาวน์โหลดไฟล์ไม่สำเร็จ'));
+}
+
+export function publicFileUrl(fileId: string): string {
+	return `${BACKEND_URL}/api/public/files/${fileId}/content`;
 }

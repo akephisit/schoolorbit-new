@@ -597,19 +597,25 @@ async fn main() {
         )
         // File Management routes (protected)
         .route(
-            "/api/files/upload",
-            post(modules::files::handlers::upload_file)
-                .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
-        )
-        .route(
             "/api/files",
-            get(modules::files::handlers::list_user_files)
+            post(modules::files::handlers::upload_file)
+                .layer(axum::extract::DefaultBodyLimit::max(24 * 1024 * 1024))
                 .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
         )
         .route(
             "/api/files/{id}",
-            axum::routing::delete(modules::files::handlers::delete_file)
+            get(modules::files::handlers::get_file_metadata)
+                .delete(modules::files::handlers::delete_file)
                 .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
+        )
+        .route(
+            "/api/files/{id}/download",
+            post(modules::files::handlers::download_file)
+                .layer(axum_middleware::from_fn(middleware::auth::auth_middleware)),
+        )
+        .route(
+            "/api/public/files/{id}/content",
+            get(modules::files::handlers::get_public_file_content),
         )
         // Academic Management routes (Protected)
         .nest(

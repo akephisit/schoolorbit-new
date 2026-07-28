@@ -203,7 +203,7 @@ pub fn purpose_definition(purpose: FilePurpose) -> Result<PurposeDefinition, Pur
             limits: image_limits(10 * 1024 * 1024, 4096, 4096),
             scan_requirement: ScanRequirement::RequiredClean,
             derivatives: THUMBNAIL_1024,
-            retention_class: RetentionClass::Standard,
+            retention_class: RetentionClass::Temporary,
             policy_key: PolicyKey::QuestionBankImage,
         },
         FilePurpose::CourseMaterial => PurposeDefinition {
@@ -537,7 +537,14 @@ mod tests {
             assert_eq!(definition.limits.max_decoded_pixels, max_decoded_pixels);
             assert_eq!(definition.scan_requirement, ScanRequirement::RequiredClean);
             assert_eq!(definition.derivatives, derivatives);
-            assert_eq!(definition.retention_class, RetentionClass::Standard);
+            assert_eq!(
+                definition.retention_class,
+                if purpose == FilePurpose::QuestionBankImage {
+                    RetentionClass::Temporary
+                } else {
+                    RetentionClass::Standard
+                }
+            );
             assert_eq!(definition.policy_key, policy_key);
         }
     }

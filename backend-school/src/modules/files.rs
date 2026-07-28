@@ -16,7 +16,6 @@ pub mod purpose_registry;
 pub mod r2_storage_provider;
 pub mod reconciler;
 pub mod repository;
-pub mod services;
 #[allow(dead_code)]
 pub mod storage_provider;
 

@@ -1968,6 +1968,96 @@
         ],
         "type": "object"
       },
+      "ApiResponse_FileDeleteResult": {
+        "properties": {
+          "data": {
+            "properties": {
+              "pendingRetry": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "pendingRetry"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_FileMetadata": {
+        "properties": {
+          "data": {
+            "properties": {
+              "byteSize": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "currentVersion": {
+                "format": "int32",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "detectedMimeType": {
+                "type": "string"
+              },
+              "displayFilename": {
+                "type": "string"
+              },
+              "id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "lifecycleStatus": {
+                "$ref": "#/components/schemas/FileLifecycleStatus"
+              },
+              "publicContentUrl": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "purpose": {
+                "$ref": "#/components/schemas/FilePurpose"
+              }
+            },
+            "required": [
+              "id",
+              "purpose",
+              "lifecycleStatus",
+              "displayFilename",
+              "detectedMimeType",
+              "byteSize",
+              "currentVersion",
+              "publicContentUrl"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
       "ApiResponse_GenerateActivitiesFromPlanOutcome": {
         "properties": {
           "data": {
@@ -10528,6 +10618,117 @@
           "success",
           "data",
           "message"
+        ],
+        "type": "object"
+      },
+      "FileDeleteResult": {
+        "properties": {
+          "pendingRetry": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "pendingRetry"
+        ],
+        "type": "object"
+      },
+      "FileLifecycleStatus": {
+        "enum": [
+          "pending",
+          "processing",
+          "ready",
+          "delete_requested",
+          "deleted",
+          "failed",
+          "quarantined"
+        ],
+        "type": "string"
+      },
+      "FileMetadata": {
+        "properties": {
+          "byteSize": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "currentVersion": {
+            "format": "int32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "detectedMimeType": {
+            "type": "string"
+          },
+          "displayFilename": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "lifecycleStatus": {
+            "$ref": "#/components/schemas/FileLifecycleStatus"
+          },
+          "publicContentUrl": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "purpose": {
+            "$ref": "#/components/schemas/FilePurpose"
+          }
+        },
+        "required": [
+          "id",
+          "purpose",
+          "lifecycleStatus",
+          "displayFilename",
+          "detectedMimeType",
+          "byteSize",
+          "currentVersion",
+          "publicContentUrl"
+        ],
+        "type": "object"
+      },
+      "FilePurpose": {
+        "enum": [
+          "school_logo",
+          "school_banner",
+          "profile_image",
+          "admission_application_document",
+          "transcript",
+          "certificate",
+          "identity_card",
+          "question_bank_image",
+          "course_material",
+          "assignment_attachment",
+          "generic_private_document"
+        ],
+        "type": "string"
+      },
+      "FileUploadMultipart": {
+        "properties": {
+          "file": {
+            "format": "binary",
+            "type": "string"
+          },
+          "purpose": {
+            "$ref": "#/components/schemas/FilePurpose"
+          },
+          "resource_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "purpose",
+          "file"
         ],
         "type": "object"
       },
@@ -25011,6 +25212,290 @@
         ]
       }
     },
+    "/api/files": {
+      "post": {
+        "operationId": "uploadFile",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/FileUploadMultipart"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_FileMetadata"
+                }
+              }
+            },
+            "description": "Validated file uploaded"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid multipart content or purpose"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "File purpose policy denied"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Scanner or storage unavailable"
+          }
+        },
+        "tags": [
+          "files"
+        ]
+      }
+    },
+    "/api/files/{id}": {
+      "delete": {
+        "operationId": "deleteFile",
+        "parameters": [
+          {
+            "description": "Logical file ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "resource_id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_FileDeleteResult"
+                }
+              }
+            },
+            "description": "Delivery revoked and deletion requested"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "File policy denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "File or resource relationship not found"
+          }
+        },
+        "tags": [
+          "files"
+        ]
+      },
+      "get": {
+        "operationId": "getFileMetadata",
+        "parameters": [
+          {
+            "description": "Logical file ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "resource_id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_FileMetadata"
+                }
+              }
+            },
+            "description": "Authorized file metadata"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "File policy denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "File or resource relationship not found"
+          }
+        },
+        "tags": [
+          "files"
+        ]
+      }
+    },
+    "/api/files/{id}/download": {
+      "post": {
+        "operationId": "downloadFile",
+        "parameters": [
+          {
+            "description": "Logical file ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "resource_id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "303": {
+            "description": "Short-lived private download redirect"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "File policy denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "File or resource relationship not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "File is not ready"
+          }
+        },
+        "tags": [
+          "files"
+        ]
+      }
+    },
     "/api/lookup/academic-years": {
       "get": {
         "operationId": "lookupAcademicYears",
@@ -27799,6 +28284,41 @@
         ]
       }
     },
+    "/api/public/files/{id}/content": {
+      "get": {
+        "operationId": "getPublicFileContent",
+        "parameters": [
+          {
+            "description": "Logical public file ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "307": {
+            "description": "Ready public file redirect"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Public ready file not found"
+          }
+        },
+        "tags": [
+          "files"
+        ]
+      }
+    },
     "/api/roles": {
       "get": {
         "operationId": "listRoles",
@@ -29448,6 +29968,10 @@
     {
       "description": "School settings and public branding reads",
       "name": "school"
+    },
+    {
+      "description": "Authorized provider-neutral file operations",
+      "name": "files"
     },
     {
       "description": "Current-user notification reads",

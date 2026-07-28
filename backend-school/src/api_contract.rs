@@ -64,6 +64,8 @@ use crate::modules::calendar::models::{
     CalendarPublicEvent, CalendarTag, CalendarViewerEvent,
 };
 use crate::modules::facility::models::Room;
+use crate::modules::files::models::{FileDeleteResult, FileMetadata, FileUploadMultipart};
+use crate::modules::files::platform_types::{FileLifecycleStatus, FilePurpose};
 use crate::modules::lookup::models::{
     AcademicYearLookupItem, ClassroomLookupItem, GradeLevelLookupItem, LookupItem,
     OrganizationUnitLookupItem, RoleLookupItem, StaffLookupItem, StudentLookupItem,
@@ -123,6 +125,11 @@ use utoipa::OpenApi;
         crate::modules::auth::handlers::get_profile,
         crate::modules::auth::handlers::update_profile,
         crate::modules::auth::handlers::change_password,
+        crate::modules::files::handlers::upload_file,
+        crate::modules::files::handlers::get_file_metadata,
+        crate::modules::files::handlers::download_file,
+        crate::modules::files::handlers::delete_file,
+        crate::modules::files::handlers::get_public_file_content,
         crate::modules::menu::handlers::public::get_user_menu,
         crate::modules::system::handlers::feature_toggles::list_features,
         crate::modules::system::handlers::feature_toggles::get_feature,
@@ -612,6 +619,13 @@ use utoipa::OpenApi;
         PublicSchoolInfoData,
         ApiResponse<SchoolSettingsResponse>,
         ApiResponse<PublicSchoolInfoData>,
+        FilePurpose,
+        FileLifecycleStatus,
+        FileUploadMultipart,
+        FileMetadata,
+        FileDeleteResult,
+        ApiResponse<FileMetadata>,
+        ApiResponse<FileDeleteResult>,
         Notification,
         ListNotificationsResponse,
         ApiResponse<ListNotificationsResponse>,
@@ -631,6 +645,7 @@ use utoipa::OpenApi;
         (name = "academic", description = "Academic structure administration and self-service reads"),
         (name = "calendar", description = "Calendar reads"),
         (name = "school", description = "School settings and public branding reads"),
+        (name = "files", description = "Authorized provider-neutral file operations"),
         (name = "notifications", description = "Current-user notification reads"),
         (name = "achievement", description = "Scoped staff achievement operations")
     )
@@ -1323,7 +1338,7 @@ mod tests {
             .flat_map(|path| path.as_object().expect("path item").values())
             .filter(|operation| operation.get("operationId").is_some())
             .count();
-        assert_eq!(operation_count, 192);
+        assert_eq!(operation_count, 197);
     }
 
     #[test]
@@ -1469,7 +1484,7 @@ mod tests {
             .flat_map(|path| path.as_object().expect("path item").values())
             .filter(|operation| operation.get("operationId").is_some())
             .count();
-        assert_eq!(operation_count, 192);
+        assert_eq!(operation_count, 197);
     }
 
     #[test]
@@ -1651,7 +1666,7 @@ mod tests {
             .flat_map(|path| path.as_object().expect("path item").values())
             .filter(|operation| operation.get("operationId").is_some())
             .count();
-        assert_eq!(operation_count, 192);
+        assert_eq!(operation_count, 197);
     }
 
     #[test]
@@ -1934,7 +1949,7 @@ mod tests {
             .flat_map(|path| path.as_object().expect("path item").values())
             .filter(|operation| operation.get("operationId").is_some())
             .count();
-        assert_eq!(operation_count, 192);
+        assert_eq!(operation_count, 197);
     }
 
     #[test]
@@ -2009,10 +2024,10 @@ mod tests {
             .flat_map(|path| path.as_object().expect("path item").values())
             .filter_map(|operation| operation["operationId"].as_str())
             .collect();
-        assert_eq!(operation_ids.len(), 192);
+        assert_eq!(operation_ids.len(), 197);
         assert_eq!(
             operation_ids.iter().copied().collect::<HashSet<_>>().len(),
-            192
+            197
         );
 
         for (path, method, request_schema) in [
@@ -2789,7 +2804,7 @@ mod tests {
                 }
             }
         }
-        assert_eq!(operation_ids.len(), 192);
+        assert_eq!(operation_ids.len(), 197);
 
         let schemas = &document["components"]["schemas"];
         let delegation = &schemas["DelegationItem"];
@@ -2819,5 +2834,70 @@ mod tests {
         assert_eq!(include_children["in"], "query");
         assert_eq!(include_children["required"], false);
         assert_eq!(include_children["schema"]["type"], "boolean");
+    }
+
+    #[test]
+    fn documents_file_platform_without_provider_locators() {
+        let document = school_api_value().expect("document should serialize");
+        assert_operations(
+            &document,
+            &[
+                ("/api/files", "post", "uploadFile"),
+                ("/api/files/{id}", "get", "getFileMetadata"),
+                ("/api/files/{id}/download", "post", "downloadFile"),
+                ("/api/files/{id}", "delete", "deleteFile"),
+                (
+                    "/api/public/files/{id}/content",
+                    "get",
+                    "getPublicFileContent",
+                ),
+            ],
+        );
+
+        let schemas = &document["components"]["schemas"];
+        let metadata = &schemas["FileMetadata"];
+        for required_field in [
+            "id",
+            "purpose",
+            "lifecycleStatus",
+            "displayFilename",
+            "detectedMimeType",
+            "byteSize",
+            "currentVersion",
+            "publicContentUrl",
+        ] {
+            assert!(required(metadata).contains(&required_field));
+        }
+        let serialized = serde_json::to_string(metadata).unwrap();
+        for forbidden in [
+            "storagePath",
+            "thumbnailPath",
+            "objectKey",
+            "bucket",
+            "provider",
+            "checksum",
+            "signedUrl",
+        ] {
+            assert!(
+                !serialized.contains(forbidden),
+                "FileMetadata must not expose {forbidden}"
+            );
+        }
+
+        assert_eq!(
+            document["paths"]["/api/files"]["post"]["responses"]["201"]["content"]
+                ["application/json"]["schema"]["$ref"],
+            "#/components/schemas/ApiResponse_FileMetadata",
+        );
+        assert_eq!(
+            document["paths"]["/api/files/{id}"]["get"]["responses"]["200"]["content"]
+                ["application/json"]["schema"]["$ref"],
+            "#/components/schemas/ApiResponse_FileMetadata",
+        );
+        assert!(
+            document["paths"]["/api/public/files/{id}/content"]["get"]["responses"]["307"]
+                ["content"]
+                .is_null()
+        );
     }
 }

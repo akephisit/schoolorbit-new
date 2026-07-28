@@ -4700,8 +4700,11 @@ fn question_bank_subject_contract_and_temporary_file_lifecycle_are_explicit() {
             .join("migrations")
             .join("024_question_bank_subject_contract_and_search.sql"),
     );
-    let file_service = strip_comments(&read_source(
-        manifest_dir().join("src/modules/files/services.rs"),
+    let registry = strip_comments(&read_source(
+        manifest_dir().join("src/modules/files/purpose_registry.rs"),
+    ));
+    let repository = strip_comments(&read_source(
+        manifest_dir().join("src/modules/files/repository.rs"),
     ));
     let cleaner = strip_comments(&read_source(manifest_dir().join("src/services/cleaner.rs")));
     let routes = strip_comments(&read_source(
@@ -4712,8 +4715,10 @@ fn question_bank_subject_contract_and_temporary_file_lifecycle_are_explicit() {
     assert!(migration.contains("academic_question_bank_questions_subject_id_fkey"));
     assert!(migration.contains("ON DELETE RESTRICT"));
     assert!(routes.contains(".route(\"/options\", get(handlers::list_options))"));
-    assert!(file_service.contains("NOW() + INTERVAL '24 hours'"));
-    assert!(cleaner.contains("clean_expired_temporary_files"));
+    assert!(registry.contains("FilePurpose::QuestionBankImage"));
+    assert!(registry.contains("retention_class: RetentionClass::Temporary"));
+    assert!(repository.contains("INTERVAL '24 hours'"));
+    assert!(cleaner.contains("request_expired_file_deletions"));
     assert!(cleaner.contains("is_temporary = true"));
 }
 
@@ -4943,12 +4948,7 @@ fn file_platform_blocks_new_provider_coupling_and_locator_responses() {
         "src/modules/admission/services/round_service.rs: direct R2 client use".to_string(),
         "src/modules/auth/models.rs: ProfileResponse exposes profile_image_url".to_string(),
         "src/modules/auth/models.rs: UserResponse exposes profile_image_url".to_string(),
-        "src/modules/files/models.rs: FileResponse exposes storage_path".to_string(),
-        "src/modules/files/models.rs: FileResponse exposes thumbnail_url".to_string(),
-        "src/modules/files/models.rs: FileResponse exposes url".to_string(),
         "src/modules/files/r2_storage_provider.rs: direct R2 client use".to_string(),
-        "src/modules/files/services.rs: constructs a tenant object prefix".to_string(),
-        "src/modules/files/services.rs: direct R2 client use".to_string(),
         "src/modules/parents/models.rs: ChildDto exposes profile_image_url".to_string(),
         "src/modules/question_bank/handlers.rs: direct R2 client use".to_string(),
         "src/modules/question_bank/models.rs: QuestionFile exposes thumbnail_url".to_string(),
@@ -5007,7 +5007,8 @@ fn file_platform_object_keys_can_only_be_constructed_by_the_purpose_registry() {
 fn file_platform_derivatives_require_the_validated_payload_boundary() {
     let inspector = read_source(manifest_dir().join("src/modules/files/file_inspector.rs"));
     let processor = read_source(manifest_dir().join("src/utils/file_processor.rs"));
-    let legacy_service = read_source(manifest_dir().join("src/modules/files/services.rs"));
+    let platform_service =
+        read_source(manifest_dir().join("src/modules/files/platform_service.rs"));
 
     assert!(
         inspector.contains("pub struct ValidatedFile<'a>"),
@@ -5018,20 +5019,10 @@ fn file_platform_derivatives_require_the_validated_payload_boundary() {
             && processor.contains("validated: &ValidatedFile"),
         "derivative decoding must receive the validated payload instead of separate bytes and metadata"
     );
-    for legacy_raw_decoder in [
-        "ImageProcessor::is_valid_image(",
-        "ImageProcessor::get_dimensions(",
-        "ImageProcessor::resize_image(",
-        "ImageProcessor::create_thumbnail(",
-    ] {
-        assert!(
-            !legacy_service.contains(legacy_raw_decoder),
-            "legacy derivative path must not decode uninspected bytes through {legacy_raw_decoder}"
-        );
-    }
     assert!(
-        legacy_service.contains("inspect_file("),
-        "legacy derivative path must create a validated payload before processing"
+        platform_service.contains("inspect_file(")
+            && platform_service.contains("ImageProcessor::decode_inspected_image("),
+        "File Platform derivative paths must create and consume a validated payload"
     );
 
     for file in backend_rs_files() {

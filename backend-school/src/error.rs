@@ -34,6 +34,9 @@ pub enum AppError {
 
     #[error("Configuration error: {0}")]
     ConfigError(String),
+
+    #[error("Service unavailable: {0}")]
+    ServiceUnavailable(String),
 }
 
 impl IntoResponse for AppError {
@@ -80,6 +83,13 @@ impl IntoResponse for AppError {
                 (
                     StatusCode::INTERNAL_SERVER_ERROR,
                     "System configuration error".to_string(),
+                )
+            }
+            AppError::ServiceUnavailable(msg) => {
+                tracing::warn!("Service unavailable: {}", msg);
+                (
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "Service temporarily unavailable".to_string(),
                 )
             }
             AppError::InternalServerError(msg) => {

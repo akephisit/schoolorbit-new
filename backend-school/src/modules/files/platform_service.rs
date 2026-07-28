@@ -281,6 +281,7 @@ impl FilePlatform {
 
         Ok(PlatformFile {
             id: file_id,
+            owner_user_id: Some(command.owner_user_id),
             purpose: command.purpose,
             visibility: definition.visibility,
             lifecycle_status: FileLifecycleStatus::Ready,
@@ -307,6 +308,18 @@ impl FilePlatform {
             location: self.provider.public_location(&object)?,
             content_type: object.content_type,
         })
+    }
+
+    pub async fn metadata(
+        &self,
+        repository: &dyn FileRepository,
+        file_id: Uuid,
+    ) -> Result<PlatformFile, FilePlatformError> {
+        repository
+            .load_delivery(file_id)
+            .await?
+            .map(|delivery| delivery.file)
+            .ok_or(FilePlatformError::NotFound)
     }
 
     pub async fn private_download(
@@ -875,6 +888,7 @@ mod tests {
         *repository.delivery.lock().unwrap() = Some(DeliveryRecord {
             file: PlatformFile {
                 id: Uuid::new_v4(),
+                owner_user_id: Some(Uuid::new_v4()),
                 purpose: FilePurpose::SchoolLogo,
                 visibility: FileVisibility::Public,
                 lifecycle_status: FileLifecycleStatus::Processing,

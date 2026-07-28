@@ -793,7 +793,7 @@ ORDER BY sort_order ASC, label ASC, id ASC
     })
 }
 
-async fn fetch_question_scope(
+pub(crate) async fn fetch_question_scope(
     pool: &PgPool,
     question_id: Uuid,
 ) -> Result<QuestionScopeRow, AppError> {
@@ -819,7 +819,7 @@ WHERE q.id = $1
     .ok_or_else(|| AppError::NotFound("ไม่พบข้อสอบ".to_string()))
 }
 
-async fn fetch_question_file_ids(
+pub(crate) async fn fetch_question_file_ids(
     pool: &PgPool,
     question_id: Uuid,
 ) -> Result<HashSet<Uuid>, AppError> {
