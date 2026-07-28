@@ -172,11 +172,12 @@ fn file_platform_migration_declares_exact_domains_and_relationship_guards() {
         "FOREIGN KEY (file_derivative_id, file_id)",
         "status = 'leased'",
         "status <> 'leased'",
-        "btrim(lease_owner) <> ''",
+        "lease_owner ~ '[^[:space:]]'",
         "BEFORE DELETE ON file_versions",
         "BEFORE DELETE ON file_derivatives",
-        "btrim(provider_code) <> ''",
-        "btrim(object_key) <> ''",
+        "provider_code ~ '[^[:space:]]'",
+        "object_key ~ '[^[:space:]]'",
+        "NEW.id IS DISTINCT FROM OLD.id",
     ] {
         assert!(
             migration.contains(required_fragment),
@@ -227,6 +228,7 @@ async fn file_platform_schema_is_additive_and_constrained() {
 
     assert_check_domain(
         &pool,
+        "files",
         "files_lifecycle_status_check",
         &[
             "pending",
@@ -241,12 +243,14 @@ async fn file_platform_schema_is_additive_and_constrained() {
     .await;
     assert_check_domain(
         &pool,
+        "file_versions",
         "file_versions_storage_class_check",
         &["public", "private"],
     )
     .await;
     assert_check_domain(
         &pool,
+        "file_versions",
         "file_versions_storage_status_check",
         &[
             "pending",
@@ -260,24 +264,28 @@ async fn file_platform_schema_is_additive_and_constrained() {
     .await;
     assert_check_domain(
         &pool,
+        "file_versions",
         "file_versions_scan_status_check",
         &["pending", "clean", "infected", "failed", "skipped"],
     )
     .await;
     assert_check_domain(
         &pool,
+        "file_derivatives",
         "file_derivatives_lifecycle_status_check",
         &["pending", "processing", "ready", "failed", "deleted"],
     )
     .await;
     assert_check_domain(
         &pool,
+        "file_derivatives",
         "file_derivatives_storage_class_check",
         &["public", "private"],
     )
     .await;
     assert_check_domain(
         &pool,
+        "file_derivatives",
         "file_derivatives_storage_status_check",
         &[
             "pending",
@@ -291,12 +299,14 @@ async fn file_platform_schema_is_additive_and_constrained() {
     .await;
     assert_check_domain(
         &pool,
+        "file_operations",
         "file_operations_operation_type_check",
         &["scan", "generate_derivative", "delete_object", "reconcile"],
     )
     .await;
     assert_check_domain(
         &pool,
+        "file_operations",
         "file_operations_status_check",
         &[
             "pending",
@@ -393,51 +403,225 @@ async fn file_platform_schema_rejects_inconsistent_leases_and_cross_file_targets
 }
 
 #[tokio::test]
-async fn file_platform_schema_rejects_invalid_locator_values_and_physical_identity_deletion() {
+async fn file_platform_schema_exercises_every_status_domain() {
     let Some(pool) = test_pool_or_skip().await else {
         return;
     };
 
     let file = insert_file(&pool).await;
-    let version = insert_version(&pool, file, "stored")
+    for status in [
+        "pending",
+        "processing",
+        "ready",
+        "delete_requested",
+        "deleted",
+        "failed",
+        "quarantined",
+    ] {
+        sqlx::query("UPDATE files SET lifecycle_status = $1 WHERE id = $2")
+            .bind(status)
+            .bind(file)
+            .execute(&pool)
+            .await
+            .expect("allowed file lifecycle status should update");
+    }
+    assert_sql_rejected(
+        sqlx::query("UPDATE files SET lifecycle_status = 'invalid' WHERE id = $1")
+            .bind(file)
+            .execute(&pool)
+            .await,
+        "an invalid file lifecycle status",
+    );
+
+    let version = insert_version(&pool, file, "pending")
         .await
         .expect("valid version should insert");
-    let derivative = insert_derivative(&pool, file, version, "stored")
+    for status in ["pending", "clean", "infected", "failed", "skipped"] {
+        sqlx::query("UPDATE file_versions SET scan_status = $1 WHERE id = $2")
+            .bind(status)
+            .bind(version)
+            .execute(&pool)
+            .await
+            .expect("allowed scan status should update");
+    }
+    assert_sql_rejected(
+        sqlx::query("UPDATE file_versions SET scan_status = 'invalid' WHERE id = $1")
+            .bind(version)
+            .execute(&pool)
+            .await,
+        "an invalid scan status",
+    );
+    for status in [
+        "pending",
+        "stored",
+        "delete_requested",
+        "deleted",
+        "missing",
+        "failed",
+    ] {
+        sqlx::query(
+            "UPDATE file_versions
+             SET storage_status = $1,
+                 deleted_at = CASE WHEN $1 = 'deleted' THEN now() ELSE NULL END
+             WHERE id = $2",
+        )
+        .bind(status)
+        .bind(version)
+        .execute(&pool)
+        .await
+        .expect("allowed version storage status should update");
+    }
+    assert_sql_rejected(
+        sqlx::query("UPDATE file_versions SET storage_status = 'invalid' WHERE id = $1")
+            .bind(version)
+            .execute(&pool)
+            .await,
+        "an invalid version storage status",
+    );
+
+    let derivative = insert_derivative(&pool, file, version, "pending")
+        .await
+        .expect("valid derivative should insert");
+    for status in ["pending", "processing", "ready", "failed", "deleted"] {
+        sqlx::query("UPDATE file_derivatives SET lifecycle_status = $1 WHERE id = $2")
+            .bind(status)
+            .bind(derivative)
+            .execute(&pool)
+            .await
+            .expect("allowed derivative lifecycle status should update");
+    }
+    assert_sql_rejected(
+        sqlx::query("UPDATE file_derivatives SET lifecycle_status = 'invalid' WHERE id = $1")
+            .bind(derivative)
+            .execute(&pool)
+            .await,
+        "an invalid derivative lifecycle status",
+    );
+    for status in [
+        "pending",
+        "stored",
+        "delete_requested",
+        "deleted",
+        "missing",
+        "failed",
+    ] {
+        sqlx::query(
+            "UPDATE file_derivatives
+             SET storage_status = $1,
+                 deleted_at = CASE WHEN $1 = 'deleted' THEN now() ELSE NULL END
+             WHERE id = $2",
+        )
+        .bind(status)
+        .bind(derivative)
+        .execute(&pool)
+        .await
+        .expect("allowed derivative storage status should update");
+    }
+    assert_sql_rejected(
+        sqlx::query("UPDATE file_derivatives SET storage_status = 'invalid' WHERE id = $1")
+            .bind(derivative)
+            .execute(&pool)
+            .await,
+        "an invalid derivative storage status",
+    );
+
+    for operation_type in ["scan", "generate_derivative", "delete_object", "reconcile"] {
+        sqlx::query("INSERT INTO file_operations (file_id, operation_type) VALUES ($1, $2)")
+            .bind(file)
+            .bind(operation_type)
+            .execute(&pool)
+            .await
+            .expect("allowed operation type should insert");
+    }
+    assert_sql_rejected(
+        sqlx::query("INSERT INTO file_operations (file_id, operation_type) VALUES ($1, 'invalid')")
+            .bind(file)
+            .execute(&pool)
+            .await,
+        "an invalid operation type",
+    );
+    for status in [
+        "pending",
+        "succeeded",
+        "retryable_failure",
+        "failed",
+        "cancelled",
+    ] {
+        sqlx::query(
+            "INSERT INTO file_operations (file_id, operation_type, status)
+             VALUES ($1, 'reconcile', $2)",
+        )
+        .bind(file)
+        .bind(status)
+        .execute(&pool)
+        .await
+        .expect("allowed non-leased operation status should insert");
+    }
+    sqlx::query(
+        "INSERT INTO file_operations (
+            file_id, operation_type, status, lease_owner, leased_at, lease_expires_at
+         ) VALUES ($1, 'reconcile', 'leased', 'worker', now(), now() + interval '1 minute')",
+    )
+    .bind(file)
+    .execute(&pool)
+    .await
+    .expect("allowed leased operation status should insert");
+    assert_sql_rejected(
+        sqlx::query(
+            "INSERT INTO file_operations (file_id, operation_type, status)
+             VALUES ($1, 'reconcile', 'invalid')",
+        )
+        .bind(file)
+        .execute(&pool)
+        .await,
+        "an invalid operation status",
+    );
+}
+
+#[tokio::test]
+async fn file_platform_schema_rejects_invalid_locator_values_and_physical_identity_deletion() {
+    let Some(pool) = test_pool_or_skip().await else {
+        return;
+    };
+
+    let standalone_file = insert_file(&pool).await;
+    let standalone_version = insert_version(&pool, standalone_file, "stored")
+        .await
+        .expect("valid version should insert");
+    let derivative_file = insert_file(&pool).await;
+    let derivative_version = insert_version(&pool, derivative_file, "stored")
+        .await
+        .expect("valid version should insert");
+    let derivative = insert_derivative(&pool, derivative_file, derivative_version, "stored")
         .await
         .expect("valid derivative should insert");
 
     assert_sql_rejected(
-        sqlx::query("UPDATE file_versions SET storage_status = 'deleted' WHERE id = $1")
-            .bind(version)
+        sqlx::query("UPDATE file_versions SET id = $1 WHERE id = $2")
+            .bind(Uuid::new_v4())
+            .bind(standalone_version)
             .execute(&pool)
             .await,
-        "a version marked deleted without a soft-delete timestamp",
+        "a version UUID update",
     );
-    sqlx::query(
-        "UPDATE file_versions
-         SET storage_status = 'deleted', deleted_at = now()
-         WHERE id = $1",
-    )
-    .bind(version)
-    .execute(&pool)
-    .await
-    .expect("versions should support soft deletion");
-    sqlx::query(
-        "UPDATE file_derivatives
-         SET storage_status = 'deleted', deleted_at = now()
-         WHERE id = $1",
-    )
-    .bind(derivative)
-    .execute(&pool)
-    .await
-    .expect("derivatives should support soft deletion");
-
     assert_sql_rejected(
         sqlx::query("DELETE FROM file_versions WHERE id = $1")
-            .bind(version)
+            .bind(standalone_version)
             .execute(&pool)
             .await,
-        "physical version deletion",
+        "physical deletion of a version without derivatives",
+    );
+    assert_sql_rejected(
+        insert_version_with_id(&pool, standalone_file, standalone_version).await,
+        "reuse of a protected version UUID",
+    );
+    assert_sql_rejected(
+        sqlx::query("UPDATE file_derivatives SET id = $1 WHERE id = $2")
+            .bind(Uuid::new_v4())
+            .bind(derivative)
+            .execute(&pool)
+            .await,
+        "a derivative UUID update",
     );
     assert_sql_rejected(
         sqlx::query("DELETE FROM file_derivatives WHERE id = $1")
@@ -447,19 +631,61 @@ async fn file_platform_schema_rejects_invalid_locator_values_and_physical_identi
         "physical derivative deletion",
     );
     assert_sql_rejected(
-        insert_version_with_locator(
-            &pool,
-            insert_file(&pool).await,
-            " ",
-            "another-object",
-            "stored",
-        )
-        .await,
-        "a whitespace provider code",
+        insert_derivative_with_id(&pool, derivative_file, derivative_version, derivative).await,
+        "reuse of a protected derivative UUID",
     );
+
+    for (provider_code, object_key, scenario) in [
+        ("\t", "another-object", "a tab-only version provider code"),
+        ("test", "\n", "a newline-only version object key"),
+    ] {
+        assert_sql_rejected(
+            insert_version_with_locator(
+                &pool,
+                insert_file(&pool).await,
+                provider_code,
+                object_key,
+                "stored",
+            )
+            .await,
+            scenario,
+        );
+    }
+    for (provider_code, object_key, scenario) in [
+        (
+            "\t",
+            "another-object",
+            "a tab-only derivative provider code",
+        ),
+        ("test", "\n", "a newline-only derivative object key"),
+    ] {
+        let file = insert_file(&pool).await;
+        let version = insert_version(&pool, file, "stored")
+            .await
+            .expect("valid source version should insert");
+        assert_sql_rejected(
+            insert_derivative_with_locator(
+                &pool,
+                file,
+                version,
+                provider_code,
+                object_key,
+                "stored",
+            )
+            .await,
+            scenario,
+        );
+    }
     assert_sql_rejected(
-        insert_version_with_locator(&pool, insert_file(&pool).await, "test", "   ", "stored").await,
-        "a whitespace object key",
+        sqlx::query(
+            "INSERT INTO file_operations (
+                file_id, operation_type, status, lease_owner, leased_at, lease_expires_at
+             ) VALUES ($1, 'reconcile', 'leased', E'\\t\\n', now(), now() + interval '1 minute')",
+        )
+        .bind(standalone_file)
+        .execute(&pool)
+        .await,
+        "a tab/newline-only lease owner",
     );
 }
 
@@ -493,10 +719,10 @@ async fn assert_columns(pool: &PgPool, table: &str, expected: &[&str]) {
 
 async fn assert_unique_constraint(pool: &PgPool, table: &str, expected_columns: &[&str]) {
     let constraints = sqlx::query_scalar::<_, String>(
-        "SELECT pg_get_constraintdef(constraint.oid)
-         FROM pg_constraint AS constraint
-         WHERE constraint.conrelid = $1::regclass
-           AND constraint.contype = 'u'",
+        "SELECT pg_get_constraintdef(c.oid)
+         FROM pg_constraint AS c
+         WHERE c.conrelid = $1::regclass
+           AND c.contype = 'u'",
     )
     .bind(table)
     .fetch_all(pool)
@@ -512,14 +738,24 @@ async fn assert_unique_constraint(pool: &PgPool, table: &str, expected_columns: 
     );
 }
 
-async fn assert_check_domain(pool: &PgPool, constraint_name: &str, expected: &[&str]) {
+async fn assert_check_domain(
+    pool: &PgPool,
+    table_name: &str,
+    constraint_name: &str,
+    expected: &[&str],
+) {
     let definition = sqlx::query_scalar::<_, String>(
-        "SELECT pg_get_constraintdef(oid)
-         FROM pg_constraint
-         WHERE conname = $1
-           AND contype = 'c'",
+        "SELECT pg_get_constraintdef(c.oid)
+         FROM pg_constraint AS c
+         JOIN pg_class AS rel ON rel.oid = c.conrelid
+         JOIN pg_namespace AS nsp ON nsp.oid = rel.relnamespace
+         WHERE c.conname = $1
+           AND c.contype = 'c'
+           AND rel.relname = $2
+           AND nsp.nspname = current_schema()",
     )
     .bind(constraint_name)
+    .bind(table_name)
     .fetch_optional(pool)
     .await
     .expect("check constraint metadata query should execute")
@@ -598,23 +834,85 @@ async fn insert_version_with_locator(
     .await
 }
 
+async fn insert_version_with_id(
+    pool: &PgPool,
+    file_id: Uuid,
+    version_id: Uuid,
+) -> Result<Uuid, sqlx::Error> {
+    sqlx::query_scalar(
+        "INSERT INTO file_versions (
+            id, file_id, version_number, provider_code, storage_class, storage_status,
+            object_key, detected_mime_type, canonical_extension, byte_size, checksum
+         ) VALUES ($1, $2, 1, 'test', 'private', 'stored', $3,
+                   'application/octet-stream', 'bin', 1, repeat('a', 64))
+         RETURNING id",
+    )
+    .bind(version_id)
+    .bind(file_id)
+    .bind(format!("platform-test/{}", Uuid::new_v4()))
+    .fetch_one(pool)
+    .await
+}
+
 async fn insert_derivative(
     pool: &PgPool,
     file_id: Uuid,
     source_version_id: Uuid,
     storage_status: &str,
 ) -> Result<Uuid, sqlx::Error> {
+    insert_derivative_with_locator(
+        pool,
+        file_id,
+        source_version_id,
+        "test",
+        &format!("platform-test/{}", Uuid::new_v4()),
+        storage_status,
+    )
+    .await
+}
+
+async fn insert_derivative_with_locator(
+    pool: &PgPool,
+    file_id: Uuid,
+    source_version_id: Uuid,
+    provider_code: &str,
+    object_key: &str,
+    storage_status: &str,
+) -> Result<Uuid, sqlx::Error> {
     sqlx::query_scalar(
         "INSERT INTO file_derivatives (
             file_id, source_version_id, derivative_kind, provider_code, storage_class,
             storage_status, object_key, detected_mime_type, canonical_extension, byte_size, checksum
-         ) VALUES ($1, $2, 'thumbnail-256', 'test', 'private', $3, $4,
+         ) VALUES ($1, $2, 'thumbnail-256', $3, 'private', $4, $5,
                    'image/webp', 'webp', 1, repeat('b', 64))
          RETURNING id",
     )
     .bind(file_id)
     .bind(source_version_id)
+    .bind(provider_code)
     .bind(storage_status)
+    .bind(object_key)
+    .fetch_one(pool)
+    .await
+}
+
+async fn insert_derivative_with_id(
+    pool: &PgPool,
+    file_id: Uuid,
+    source_version_id: Uuid,
+    derivative_id: Uuid,
+) -> Result<Uuid, sqlx::Error> {
+    sqlx::query_scalar(
+        "INSERT INTO file_derivatives (
+            id, file_id, source_version_id, derivative_kind, provider_code, storage_class,
+            storage_status, object_key, detected_mime_type, canonical_extension, byte_size, checksum
+         ) VALUES ($1, $2, $3, 'thumbnail-256', 'test', 'private', 'stored', $4,
+                   'image/webp', 'webp', 1, repeat('b', 64))
+         RETURNING id",
+    )
+    .bind(derivative_id)
+    .bind(file_id)
+    .bind(source_version_id)
     .bind(format!("platform-test/{}", Uuid::new_v4()))
     .fetch_one(pool)
     .await

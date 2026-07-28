@@ -54,9 +54,9 @@ CREATE TABLE file_versions (
             'failed'
         )),
     CONSTRAINT file_versions_provider_code_check
-        CHECK (btrim(provider_code) <> ''),
+        CHECK (provider_code ~ '[^[:space:]]'),
     CONSTRAINT file_versions_object_key_check
-        CHECK (btrim(object_key) <> ''),
+        CHECK (object_key ~ '[^[:space:]]'),
     CONSTRAINT file_versions_detected_mime_type_check
         CHECK (btrim(detected_mime_type) <> ''),
     CONSTRAINT file_versions_canonical_extension_check
@@ -110,9 +110,9 @@ CREATE TABLE file_derivatives (
             'failed'
         )),
     CONSTRAINT file_derivatives_provider_code_check
-        CHECK (btrim(provider_code) <> ''),
+        CHECK (provider_code ~ '[^[:space:]]'),
     CONSTRAINT file_derivatives_object_key_check
-        CHECK (btrim(object_key) <> ''),
+        CHECK (object_key ~ '[^[:space:]]'),
     CONSTRAINT file_derivatives_detected_mime_type_check
         CHECK (btrim(detected_mime_type) <> ''),
     CONSTRAINT file_derivatives_canonical_extension_check
@@ -159,7 +159,7 @@ CREATE TABLE file_operations (
         (
             status = 'leased'
             AND lease_owner IS NOT NULL
-            AND btrim(lease_owner) <> ''
+            AND lease_owner ~ '[^[:space:]]'
             AND leased_at IS NOT NULL
             AND lease_expires_at IS NOT NULL
             AND lease_expires_at > leased_at
@@ -182,7 +182,8 @@ CREATE TABLE file_operations (
 CREATE FUNCTION file_platform_preserve_version_identity()
 RETURNS TRIGGER AS $$
 BEGIN
-    IF NEW.file_id IS DISTINCT FROM OLD.file_id
+    IF NEW.id IS DISTINCT FROM OLD.id
+        OR NEW.file_id IS DISTINCT FROM OLD.file_id
         OR NEW.version_number IS DISTINCT FROM OLD.version_number
         OR NEW.provider_code IS DISTINCT FROM OLD.provider_code
         OR NEW.storage_class IS DISTINCT FROM OLD.storage_class
@@ -217,7 +218,8 @@ FOR EACH ROW EXECUTE FUNCTION file_platform_prevent_version_deletion();
 CREATE FUNCTION file_platform_preserve_derivative_identity()
 RETURNS TRIGGER AS $$
 BEGIN
-    IF NEW.source_version_id IS DISTINCT FROM OLD.source_version_id
+    IF NEW.id IS DISTINCT FROM OLD.id
+        OR NEW.source_version_id IS DISTINCT FROM OLD.source_version_id
         OR NEW.derivative_kind IS DISTINCT FROM OLD.derivative_kind
         OR NEW.provider_code IS DISTINCT FROM OLD.provider_code
         OR NEW.storage_class IS DISTINCT FROM OLD.storage_class
