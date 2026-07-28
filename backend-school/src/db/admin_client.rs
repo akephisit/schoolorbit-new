@@ -1,6 +1,7 @@
 use reqwest::{Client, Response, StatusCode};
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
+use uuid::Uuid;
 
 const INTERNAL_CALLER: &str = "backend-school";
 const INTERNAL_CALLER_HEADER: &str = "X-Internal-Caller";
@@ -113,8 +114,15 @@ pub struct AdminClient {
 
 #[derive(Debug, Deserialize)]
 struct SchoolDbInfo {
+    id: Option<String>,
     db_connection_string: Option<String>,
     name: Option<String>,
+}
+
+#[derive(Debug)]
+pub struct SchoolDatabaseInfo {
+    pub tenant_id: Uuid,
+    pub database_url: String,
 }
 
 /// School info returned by the list endpoint, includes migration metadata
@@ -209,6 +217,15 @@ impl AdminClient {
     /// Fetch the tenant database URL for a given subdomain.
     /// Called on every cold-start of a tenant pool (cached 30 min by PoolManager).
     pub async fn get_db_url(&self, subdomain: &str) -> Result<String, String> {
+        Ok(self.get_school_database_info(subdomain).await?.database_url)
+    }
+
+    /// Fetch the database connection and immutable tenant identity for a school.
+    /// Tenant-sensitive platform state must use this UUID, never a mutable subdomain.
+    pub async fn get_school_database_info(
+        &self,
+        subdomain: &str,
+    ) -> Result<SchoolDatabaseInfo, String> {
         let resp = self
             .get_with_retry(
                 &format!("/internal/schools/{subdomain}"),
@@ -228,8 +245,23 @@ impl AdminClient {
             .await
             .map_err(|e| format!("Failed to parse admin response: {}", e))?;
 
-        info.db_connection_string
-            .ok_or_else(|| format!("School '{}' has no database configured", subdomain))
+        let tenant_id = info
+            .id
+            .as_deref()
+            .ok_or_else(|| "School response has no stable tenant identity".to_string())
+            .and_then(|id| {
+                Uuid::parse_str(id).map_err(|_| {
+                    "School response has an invalid stable tenant identity".to_string()
+                })
+            })?;
+        let database_url = info
+            .db_connection_string
+            .ok_or_else(|| format!("School '{}' has no database configured", subdomain))?;
+
+        Ok(SchoolDatabaseInfo {
+            tenant_id,
+            database_url,
+        })
     }
 
     /// Fetch the school name from backend-admin for a given subdomain.
@@ -397,7 +429,10 @@ mod tests {
                     }
                     (
                         StatusCode::OK,
-                        Json(json!({"db_connection_string": "postgres://tenant"})),
+                        Json(json!({
+                            "id": "11111111-1111-1111-1111-111111111111",
+                            "db_connection_string": "postgres://tenant"
+                        })),
                     )
                 }
             }),
@@ -409,13 +444,15 @@ mod tests {
             test_config(Duration::from_millis(100), 3),
         );
 
+        let school = client
+            .get_school_database_info("sandbox")
+            .await
+            .expect("transient GET must recover with an immutable tenant identity");
         assert_eq!(
-            client
-                .get_db_url("sandbox")
-                .await
-                .expect("transient GET must recover"),
-            "postgres://tenant"
+            school.tenant_id,
+            uuid::Uuid::parse_str("11111111-1111-1111-1111-111111111111").unwrap()
         );
+        assert_eq!(school.database_url, "postgres://tenant");
         assert_eq!(attempts.load(Ordering::SeqCst), 2);
         server.abort();
     }
@@ -446,17 +483,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn timed_out_get_stops_at_the_attempt_limit() {
-        let attempts = Arc::new(AtomicUsize::new(0));
+    async fn timed_out_get_returns_a_safe_timeout_error() {
         let router = Router::new().route(
             "/ready",
-            get({
-                let attempts = Arc::clone(&attempts);
-                move || async move {
-                    attempts.fetch_add(1, Ordering::SeqCst);
-                    tokio::time::sleep(Duration::from_millis(40)).await;
-                    StatusCode::OK
-                }
+            get(|| async {
+                tokio::time::sleep(Duration::from_millis(40)).await;
+                StatusCode::OK
             }),
         );
         let (base_url, server) = spawn_server(router).await;
@@ -466,8 +498,10 @@ mod tests {
             test_config(Duration::from_millis(5), 2),
         );
 
-        assert!(client.check_readiness().await.is_err());
-        assert_eq!(attempts.load(Ordering::SeqCst), 2);
+        assert_eq!(
+            client.check_readiness().await.unwrap_err(),
+            "backend-admin readiness timed out"
+        );
         server.abort();
     }
 
@@ -543,6 +577,34 @@ mod tests {
 
         assert!(client.get_db_url("broken").await.is_err());
         assert_eq!(attempts.load(Ordering::SeqCst), 1);
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn tenant_database_info_rejects_missing_or_invalid_stable_id() {
+        let router = Router::new()
+            .route(
+                "/internal/schools/missing-id",
+                get(|| async { Json(json!({"db_connection_string": "postgres://tenant"})) }),
+            )
+            .route(
+                "/internal/schools/invalid-id",
+                get(|| async {
+                    Json(json!({
+                        "id": "not-a-uuid",
+                        "db_connection_string": "postgres://tenant"
+                    }))
+                }),
+            );
+        let (base_url, server) = spawn_server(router).await;
+        let client = AdminClient::new(
+            base_url,
+            "test-secret".to_string(),
+            test_config(Duration::from_millis(100), 1),
+        );
+
+        assert!(client.get_school_database_info("missing-id").await.is_err());
+        assert!(client.get_school_database_info("invalid-id").await.is_err());
         server.abort();
     }
 

@@ -1,10 +1,10 @@
-use super::admin_client::AdminClient;
+use super::admin_client::{AdminClient, SchoolDatabaseInfo};
 
-/// Get database URL for a school subdomain.
+/// Get database metadata for a school subdomain.
 /// Calls backend-admin's internal API — backend-school no longer queries admin DB directly.
-pub async fn get_school_database_url(
+pub async fn get_school_database_info(
     client: &AdminClient,
     subdomain: &str,
-) -> Result<String, String> {
-    client.get_db_url(subdomain).await
+) -> Result<SchoolDatabaseInfo, String> {
+    client.get_school_database_info(subdomain).await
 }

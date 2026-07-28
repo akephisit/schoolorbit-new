@@ -153,6 +153,7 @@ mod tests {
             .unwrap();
 
         TenantContext {
+            tenant_id: Uuid::parse_str("11111111-1111-1111-1111-111111111111").unwrap(),
             subdomain: subdomain.to_string(),
             pool,
         }
@@ -169,6 +170,10 @@ mod tests {
         .unwrap();
 
         assert_eq!(context.tenant.subdomain, "tenant-a");
+        assert_eq!(
+            context.tenant.tenant_id,
+            Uuid::parse_str("11111111-1111-1111-1111-111111111111").unwrap()
+        );
         assert_eq!(context.user_id, Uuid::parse_str(USER_ID).unwrap());
     }
 

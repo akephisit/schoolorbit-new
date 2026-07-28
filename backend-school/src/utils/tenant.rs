@@ -1,13 +1,16 @@
 use axum::http::HeaderMap;
 use sqlx::PgPool;
+use uuid::Uuid;
 
-use crate::db::school_mapping::get_school_database_url;
+use crate::db::school_mapping::get_school_database_info;
 use crate::error::AppError;
 use crate::utils::subdomain::extract_subdomain_from_request;
 use crate::AppState;
 
 #[derive(Clone)]
+#[allow(dead_code)]
 pub struct TenantContext {
+    pub tenant_id: Uuid,
     pub subdomain: String,
     pub pool: PgPool,
 }
@@ -26,7 +29,7 @@ pub async fn resolve_tenant_context_by_subdomain(
     state: &AppState,
     subdomain: &str,
 ) -> Result<TenantContext, AppError> {
-    let db_url = get_school_database_url(&state.admin_client, subdomain)
+    let school = get_school_database_info(&state.admin_client, subdomain)
         .await
         .map_err(|error| {
             tracing::warn!(
@@ -39,7 +42,7 @@ pub async fn resolve_tenant_context_by_subdomain(
 
     let pool = state
         .pool_manager
-        .get_pool(&db_url, subdomain)
+        .get_pool(&school.database_url, subdomain)
         .await
         .map_err(|error| {
             tracing::error!(
@@ -51,6 +54,7 @@ pub async fn resolve_tenant_context_by_subdomain(
         })?;
 
     Ok(TenantContext {
+        tenant_id: school.tenant_id,
         subdomain: subdomain.to_string(),
         pool,
     })
