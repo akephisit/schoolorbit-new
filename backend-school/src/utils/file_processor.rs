@@ -1,11 +1,29 @@
-use image::{imageops::FilterType, ImageFormat};
+use image::{imageops::FilterType, DynamicImage, ImageFormat};
 use std::io::Cursor;
 use tracing::info;
+
+use crate::modules::files::file_inspector::{image_format, InspectedFile};
 
 /// Image processing utilities
 pub struct ImageProcessor;
 
 impl ImageProcessor {
+    /// Decodes only content that has already passed the purpose-bound inspector.
+    #[allow(dead_code)] // Task 6 routes derivative work through the staged inspection boundary.
+    pub fn decode_inspected_image(
+        data: &[u8],
+        inspection: InspectedFile,
+    ) -> Result<DynamicImage, String> {
+        if !inspection.is_image() {
+            return Err("Inspected content is not an image".to_string());
+        }
+
+        let format = image_format(inspection.detected_content())
+            .ok_or_else(|| "Inspected content is not an image".to_string())?;
+        image::load_from_memory_with_format(data, format)
+            .map_err(|_| "Inspected image could not be decoded".to_string())
+    }
+
     /// Resize an image to fit within max dimensions while maintaining aspect ratio
     ///
     /// # Arguments
