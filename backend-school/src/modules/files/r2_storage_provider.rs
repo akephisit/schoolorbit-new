@@ -16,7 +16,7 @@ use super::{
     },
 };
 
-#[derive(Clone, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 struct ObjectRequest {
     bucket: String,
     key: String,
@@ -30,7 +30,7 @@ enum R2ClientError {
     Failed,
 }
 
-#[derive(Clone, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 struct PutRequest {
     bucket: String,
     key: String,
@@ -39,14 +39,14 @@ struct PutRequest {
     if_none_match: String,
 }
 
-#[derive(Clone, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 struct GetRequest {
     bucket: String,
     key: String,
     max_bytes: u64,
 }
 
-#[derive(Clone, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 struct PresignRequest {
     bucket: String,
     key: String,
@@ -57,6 +57,7 @@ struct PresignRequest {
 
 #[async_trait]
 trait R2Transport: Send + Sync {
+    async fn head_bucket(&self, bucket: &str) -> Result<(), R2ClientError>;
     async fn put(&self, request: PutRequest) -> Result<(), R2ClientError>;
     async fn get(&self, request: GetRequest) -> Result<bytes::Bytes, R2ClientError>;
     async fn head(&self, request: ObjectRequest) -> Result<ObjectMetadata, R2ClientError>;
@@ -70,6 +71,16 @@ struct AwsR2Transport {
 
 #[async_trait]
 impl R2Transport for AwsR2Transport {
+    async fn head_bucket(&self, bucket: &str) -> Result<(), R2ClientError> {
+        self.client
+            .head_bucket()
+            .bucket(bucket)
+            .send()
+            .await
+            .map(|_| ())
+            .map_err(|_| R2ClientError::Failed)
+    }
+
     async fn put(&self, request: PutRequest) -> Result<(), R2ClientError> {
         self.client
             .put_object()
@@ -262,17 +273,43 @@ fn required_env(name: &str) -> Result<String, StorageError> {
 
 fn required_value(value: &str) -> Result<String, StorageError> {
     let value = value.trim();
-    (!value.is_empty())
+    (!value.is_empty() && !is_placeholder(value))
         .then(|| value.to_string())
         .ok_or(StorageError::ConfigurationInvalid)
 }
 
+fn is_placeholder(value: &str) -> bool {
+    let normalized = value.to_ascii_lowercase();
+    normalized.contains("your-")
+        || normalized.contains("change-this")
+        || normalized.contains("replace-me")
+        || normalized.contains("xxxxx")
+        || normalized.contains('<')
+        || normalized.contains('>')
+}
+
 fn normalized_bucket(value: &str) -> Result<String, StorageError> {
-    required_value(value)
+    let value = required_value(value)?;
+    let bytes = value.as_bytes();
+    if !(3..=63).contains(&bytes.len())
+        || !bytes
+            .first()
+            .is_some_and(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit())
+        || !bytes
+            .last()
+            .is_some_and(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit())
+        || !bytes
+            .iter()
+            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || *byte == b'-')
+    {
+        return Err(StorageError::ConfigurationInvalid);
+    }
+    Ok(value)
 }
 
 fn validated_public_base_url(value: &str) -> Result<Url, StorageError> {
-    let url = Url::parse(value).map_err(|_| StorageError::ConfigurationInvalid)?;
+    let value = required_value(value)?;
+    let url = Url::parse(&value).map_err(|_| StorageError::ConfigurationInvalid)?;
     if !matches!(url.scheme(), "http" | "https")
         || url.host_str().is_none()
         || !url.username().is_empty()
@@ -330,6 +367,17 @@ impl R2StorageProvider {
 
 #[async_trait]
 impl StorageProvider for R2StorageProvider {
+    async fn check_readiness(&self) -> Result<(), StorageError> {
+        self.transport
+            .head_bucket(self.config.bucket_name(StorageClass::Public))
+            .await
+            .map_err(map_transport_error)?;
+        self.transport
+            .head_bucket(self.config.bucket_name(StorageClass::Private))
+            .await
+            .map_err(map_transport_error)
+    }
+
     async fn put(&self, object: &StoredObject, body: bytes::Bytes) -> Result<(), StorageError> {
         self.transport
             .put(PutRequest {
@@ -498,8 +546,9 @@ mod tests {
     };
     use uuid::Uuid;
 
-    #[derive(Clone, Eq, PartialEq)]
+    #[derive(Clone, Debug, Eq, PartialEq)]
     enum CapturedR2Request {
+        Bucket(String),
         Put(PutRequest),
         Get(GetRequest),
         Head(ObjectRequest),
@@ -524,6 +573,7 @@ mod tests {
     #[derive(Default)]
     struct CapturedR2Client {
         requests: Mutex<Vec<CapturedR2Request>>,
+        bucket_results: Mutex<VecDeque<Result<(), R2ClientError>>>,
         put_results: Mutex<VecDeque<Result<(), R2ClientError>>>,
         get_results: Mutex<VecDeque<Result<Bytes, R2ClientError>>>,
         head_results: Mutex<VecDeque<Result<ObjectMetadata, R2ClientError>>>,
@@ -533,6 +583,18 @@ mod tests {
 
     #[async_trait]
     impl R2Transport for CapturedR2Client {
+        async fn head_bucket(&self, bucket: &str) -> Result<(), R2ClientError> {
+            self.requests
+                .lock()
+                .unwrap()
+                .push(CapturedR2Request::Bucket(bucket.to_string()));
+            self.bucket_results
+                .lock()
+                .unwrap()
+                .pop_front()
+                .unwrap_or(Ok(()))
+        }
+
         async fn put(&self, request: PutRequest) -> Result<(), R2ClientError> {
             self.requests
                 .lock()
@@ -619,6 +681,39 @@ mod tests {
             ),
             client,
         )
+    }
+
+    #[tokio::test]
+    async fn readiness_verifies_both_configured_buckets() {
+        let client = Arc::new(CapturedR2Client::default());
+        let provider = provider(Arc::clone(&client));
+
+        provider.check_readiness().await.unwrap();
+
+        assert_eq!(
+            *client.requests.lock().unwrap(),
+            vec![
+                CapturedR2Request::Bucket("public-assets".to_string()),
+                CapturedR2Request::Bucket("private-files".to_string()),
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn readiness_fails_closed_when_either_bucket_is_unavailable() {
+        let client = Arc::new(CapturedR2Client::default());
+        client
+            .bucket_results
+            .lock()
+            .unwrap()
+            .extend([Ok(()), Err(R2ClientError::Failed)]);
+        let provider = provider(Arc::clone(&client));
+
+        assert_eq!(
+            provider.check_readiness().await,
+            Err(StorageError::OperationFailed)
+        );
+        assert_eq!(client.requests.lock().unwrap().len(), 2);
     }
 
     #[tokio::test]
@@ -773,6 +868,94 @@ mod tests {
         ] {
             assert!(R2StorageConfig::from_values(
                 "account", "access", "secret", "auto", "public", "private", url
+            )
+            .is_err());
+        }
+    }
+
+    #[test]
+    fn configuration_rejects_example_placeholders() {
+        for (account_id, access_key_id, secret_access_key, public_bucket, private_bucket, url) in [
+            (
+                "your-cloudflare-account-id",
+                "access",
+                "secret",
+                "public",
+                "private",
+                "https://cdn.example.invalid/files/",
+            ),
+            (
+                "account",
+                "your-r2-access-key-id",
+                "secret",
+                "public",
+                "private",
+                "https://cdn.example.invalid/files/",
+            ),
+            (
+                "account",
+                "access",
+                "change-this-r2-secret",
+                "public",
+                "private",
+                "https://cdn.example.invalid/files/",
+            ),
+            (
+                "account",
+                "access",
+                "secret",
+                "your-public-bucket",
+                "private",
+                "https://cdn.example.invalid/files/",
+            ),
+            (
+                "account",
+                "access",
+                "secret",
+                "public",
+                "your-private-bucket",
+                "https://cdn.example.invalid/files/",
+            ),
+            (
+                "account",
+                "access",
+                "secret",
+                "public",
+                "private",
+                "https://pub-xxxxx.r2.dev",
+            ),
+        ] {
+            assert!(R2StorageConfig::from_values(
+                account_id,
+                access_key_id,
+                secret_access_key,
+                "auto",
+                public_bucket,
+                private_bucket,
+                url,
+            )
+            .is_err());
+        }
+    }
+
+    #[test]
+    fn configuration_rejects_invalid_bucket_names() {
+        for bucket in [
+            "ab",
+            "Public-Files",
+            "-private-files",
+            "private-files-",
+            "private files",
+            "private_files",
+        ] {
+            assert!(R2StorageConfig::from_values(
+                "account",
+                "access",
+                "secret",
+                "auto",
+                "public-files",
+                bucket,
+                "https://cdn.example.invalid/files/",
             )
             .is_err());
         }

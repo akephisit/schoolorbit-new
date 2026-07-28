@@ -15,14 +15,12 @@ use super::{
     purpose_registry::{
         derivative_object_key, original_object_key, purpose_definition, PurposeRegistryError,
     },
-    reconciler::bounded_retry_delay,
     repository::{
         derivative_is_required, DeliveryRecord, FileRepository, NewDerivative, NewUpload,
         ObjectTarget, PlatformFile, RepositoryError,
     },
-    storage_provider::{
-        StorageError, StorageProvider, StoredObject, MAX_PRIVATE_DOWNLOAD_GRANT_TTL,
-    },
+    runtime_config::FilePlatformRuntimeConfig,
+    storage_provider::{StorageError, StorageProvider, StoredObject},
 };
 
 #[derive(Clone)]
@@ -110,11 +108,24 @@ impl From<StorageError> for FilePlatformError {
 pub struct FilePlatform {
     provider: Arc<dyn StorageProvider>,
     scanner: Arc<dyn MalwareScanner>,
+    runtime_config: FilePlatformRuntimeConfig,
 }
 
 impl FilePlatform {
     pub fn new(provider: Arc<dyn StorageProvider>, scanner: Arc<dyn MalwareScanner>) -> Self {
-        Self { provider, scanner }
+        Self::with_config(provider, scanner, FilePlatformRuntimeConfig::default())
+    }
+
+    pub fn with_config(
+        provider: Arc<dyn StorageProvider>,
+        scanner: Arc<dyn MalwareScanner>,
+        runtime_config: FilePlatformRuntimeConfig,
+    ) -> Self {
+        Self {
+            provider,
+            scanner,
+            runtime_config,
+        }
     }
 
     pub async fn upload(
@@ -200,7 +211,7 @@ impl FilePlatform {
                     file_id,
                     "file_original_finalize_failed",
                     Utc::now()
-                        + chrono::Duration::from_std(bounded_retry_delay(1))
+                        + chrono::Duration::from_std(self.runtime_config.retry_delay(1))
                             .unwrap_or_else(|_| chrono::Duration::seconds(5)),
                 )
                 .await;
@@ -229,8 +240,10 @@ impl FilePlatform {
                                 file_id,
                                 "file_derivative_finalize_failed",
                                 Utc::now()
-                                    + chrono::Duration::from_std(bounded_retry_delay(1))
-                                        .unwrap_or_else(|_| chrono::Duration::seconds(5)),
+                                    + chrono::Duration::from_std(
+                                        self.runtime_config.retry_delay(1),
+                                    )
+                                    .unwrap_or_else(|_| chrono::Duration::seconds(5)),
                             )
                             .await;
                         if derivative.metadata.required {
@@ -246,7 +259,7 @@ impl FilePlatform {
                             derivative.metadata.operation_id,
                             error.log_safe_code(),
                             Utc::now()
-                                + chrono::Duration::from_std(bounded_retry_delay(1))
+                                + chrono::Duration::from_std(self.runtime_config.retry_delay(1))
                                     .unwrap_or_else(|_| chrono::Duration::seconds(5)),
                             false,
                         )
@@ -272,7 +285,7 @@ impl FilePlatform {
                     file_id,
                     "file_ready_finalize_failed",
                     Utc::now()
-                        + chrono::Duration::from_std(bounded_retry_delay(1))
+                        + chrono::Duration::from_std(self.runtime_config.retry_delay(1))
                             .unwrap_or_else(|_| chrono::Duration::seconds(5)),
                 )
                 .await;
@@ -338,7 +351,7 @@ impl FilePlatform {
             .private_download_grant(
                 &object,
                 &delivery.file.display_filename,
-                MAX_PRIVATE_DOWNLOAD_GRANT_TTL,
+                self.runtime_config.private_download_grant_ttl,
             )
             .await
             .map_err(Into::into)
@@ -359,7 +372,7 @@ impl FilePlatform {
                         object.operation_id,
                         error.log_safe_code(),
                         Utc::now()
-                            + chrono::Duration::from_std(bounded_retry_delay(1))
+                            + chrono::Duration::from_std(self.runtime_config.retry_delay(1))
                                 .unwrap_or_else(|_| chrono::Duration::seconds(5)),
                         false,
                     )
@@ -374,15 +387,20 @@ impl FilePlatform {
     }
 
     pub async fn check_readiness(&self) -> Result<(), FilePlatformError> {
-        if self.scanner.scan(&[]).await == ScanOutcome::Clean {
-            Ok(())
-        } else {
-            Err(FilePlatformError::ScannerUnavailable)
+        let (storage, scan) = tokio::join!(self.provider.check_readiness(), self.scanner.scan(&[]));
+        storage.map_err(|_| FilePlatformError::StorageUnavailable)?;
+        match scan {
+            ScanOutcome::Clean => Ok(()),
+            _ => Err(FilePlatformError::ScannerUnavailable),
         }
     }
 
     pub(crate) fn provider(&self) -> &Arc<dyn StorageProvider> {
         &self.provider
+    }
+
+    pub(crate) const fn runtime_config(&self) -> FilePlatformRuntimeConfig {
+        self.runtime_config
     }
 
     pub(crate) async fn commit_reconciled_derivative(
@@ -406,7 +424,7 @@ impl FilePlatform {
                             ObjectTarget::Derivative(derivative_id),
                             error.log_safe_code(),
                             Utc::now()
-                                + chrono::Duration::from_std(bounded_retry_delay(1))
+                                + chrono::Duration::from_std(self.runtime_config.retry_delay(1))
                                     .unwrap_or_else(|_| chrono::Duration::seconds(5)),
                         )
                         .await?;
@@ -551,6 +569,7 @@ mod tests {
 
     #[derive(Default)]
     struct FakeProvider {
+        readiness_error: Mutex<Option<StorageError>>,
         put_results: Mutex<VecDeque<Result<(), StorageError>>>,
         delete_results: Mutex<VecDeque<Result<(), StorageError>>>,
         puts: Mutex<Vec<StorageClass>>,
@@ -559,6 +578,13 @@ mod tests {
 
     #[async_trait]
     impl StorageProvider for FakeProvider {
+        async fn check_readiness(&self) -> Result<(), StorageError> {
+            match *self.readiness_error.lock().unwrap() {
+                Some(error) => Err(error),
+                None => Ok(()),
+            }
+        }
+
         async fn put(&self, object: &StoredObject, _body: Bytes) -> Result<(), StorageError> {
             self.puts.lock().unwrap().push(object.storage_class());
             self.put_results
@@ -751,6 +777,25 @@ mod tests {
 
     fn platform(scan: ScanOutcome, provider: Arc<FakeProvider>) -> FilePlatform {
         FilePlatform::new(provider, Arc::new(FakeScanner(scan)))
+    }
+
+    #[tokio::test]
+    async fn readiness_requires_both_storage_and_scanner() {
+        let storage_unavailable = Arc::new(FakeProvider::default());
+        *storage_unavailable.readiness_error.lock().unwrap() = Some(StorageError::OperationFailed);
+        assert_eq!(
+            platform(ScanOutcome::Clean, storage_unavailable)
+                .check_readiness()
+                .await,
+            Err(FilePlatformError::StorageUnavailable)
+        );
+
+        assert_eq!(
+            platform(ScanOutcome::Unavailable, Arc::new(FakeProvider::default()))
+                .check_readiness()
+                .await,
+            Err(FilePlatformError::ScannerUnavailable)
+        );
     }
 
     fn command(purpose: FilePurpose) -> UploadCommand {

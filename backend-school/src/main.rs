@@ -175,11 +175,23 @@ async fn main() {
             std::process::exit(1);
         }
     };
-    let file_platform = Arc::new(modules::files::platform_service::FilePlatform::new(
+    let file_runtime_config =
+        match modules::files::runtime_config::FilePlatformRuntimeConfig::from_env() {
+            Ok(config) => config,
+            Err(error) => {
+                tracing::error!(
+                    error_code = error.log_safe_code(),
+                    "File Platform runtime configuration is invalid"
+                );
+                std::process::exit(1);
+            }
+        };
+    let file_platform = Arc::new(modules::files::platform_service::FilePlatform::with_config(
         storage_provider,
         Arc::new(modules::files::malware_scanner::ClamdScanner::new(
             scanner_config,
         )),
+        file_runtime_config,
     ));
 
     // Create shared state

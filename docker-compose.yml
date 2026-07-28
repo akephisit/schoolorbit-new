@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   postgres:
     image: postgres:15-alpine
@@ -86,11 +84,25 @@ services:
       - R2_ACCOUNT_ID=${R2_ACCOUNT_ID:-}
       - R2_ACCESS_KEY_ID=${R2_ACCESS_KEY_ID:-}
       - R2_SECRET_ACCESS_KEY=${R2_SECRET_ACCESS_KEY:-}
-      - R2_BUCKET_NAME=${R2_BUCKET_NAME:-schoolorbit-files}
+      - R2_PUBLIC_BUCKET_NAME=${R2_PUBLIC_BUCKET_NAME:-}
+      - R2_PRIVATE_BUCKET_NAME=${R2_PRIVATE_BUCKET_NAME:-}
       - R2_PUBLIC_URL=${R2_PUBLIC_URL:-}
       - R2_REGION=${R2_REGION:-auto}
       - AWS_REGION=auto
-      - CDN_URL=${CDN_URL:-}
+      # File Platform scanner and lifecycle controls
+      - CLAMD_ENDPOINT=${CLAMD_ENDPOINT:-clamd:3310}
+      - CLAMD_CONNECT_TIMEOUT_MS=${CLAMD_CONNECT_TIMEOUT_MS:-1000}
+      - CLAMD_WRITE_TIMEOUT_MS=${CLAMD_WRITE_TIMEOUT_MS:-10000}
+      - CLAMD_READ_TIMEOUT_MS=${CLAMD_READ_TIMEOUT_MS:-30000}
+      - CLAMD_MAX_CHUNK_BYTES=${CLAMD_MAX_CHUNK_BYTES:-65536}
+      - CLAMD_MAX_RESPONSE_BYTES=${CLAMD_MAX_RESPONSE_BYTES:-4096}
+      - CLAMD_MAX_CONCURRENT_SCANS=${CLAMD_MAX_CONCURRENT_SCANS:-8}
+      - FILE_PRIVATE_GRANT_TTL_SECONDS=${FILE_PRIVATE_GRANT_TTL_SECONDS:-120}
+      - FILE_RECONCILE_LEASE_SECONDS=${FILE_RECONCILE_LEASE_SECONDS:-60}
+      - FILE_RECONCILE_BATCH_SIZE=${FILE_RECONCILE_BATCH_SIZE:-25}
+      - FILE_RECONCILE_MAX_ATTEMPTS=${FILE_RECONCILE_MAX_ATTEMPTS:-8}
+      - FILE_RECONCILE_RETRY_BASE_SECONDS=${FILE_RECONCILE_RETRY_BASE_SECONDS:-5}
+      - FILE_RECONCILE_RETRY_MAX_SECONDS=${FILE_RECONCILE_RETRY_MAX_SECONDS:-3600}
       # File Upload Limits
       - MAX_FILE_SIZE_MB=${MAX_FILE_SIZE_MB:-10}
       - MAX_PROFILE_IMAGE_SIZE_MB=${MAX_PROFILE_IMAGE_SIZE_MB:-5}
@@ -112,14 +124,44 @@ services:
         condition: service_healthy
       backend-admin:
         condition: service_healthy
+      clamd:
+        condition: service_healthy
     networks:
       - schoolorbit-network
+      - file-platform-internal
     restart: unless-stopped
+
+  clamd:
+    image: clamav/clamav-debian:1.5.3
+    container_name: schoolorbit-clamd
+    restart: unless-stopped
+    volumes:
+      - clamav_signatures:/var/lib/clamav
+    networks:
+      - file-platform-internal
+      - clamav-egress
+    healthcheck:
+      test: ["CMD", "clamdcheck.sh"]
+      interval: 20s
+      timeout: 10s
+      retries: 18
+      start_period: 6m
+    mem_limit: 1536m
+    cpus: 1.0
+    pids_limit: 256
+    security_opt:
+      - no-new-privileges:true
 
 volumes:
   postgres_data:
     driver: local
+  clamav_signatures:
+    driver: local
 
 networks:
   schoolorbit-network:
+    driver: bridge
+  file-platform-internal:
+    internal: true
+  clamav-egress:
     driver: bridge

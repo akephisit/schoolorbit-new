@@ -116,14 +116,52 @@ Do not use legacy PostgreSQL `pgcrypto`, `ALTER ROLE`, or database session setti
 
 ## File Storage
 
-Backend-school uses Cloudflare R2-compatible object storage. Runtime configuration includes:
+Backend-school owns a provider-neutral File Platform. Business modules and frontends store a logical file ID; they never store an R2 key, bucket, provider URL, or signed URL. The platform selects storage from the registered purpose:
 
-- `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, and `R2_SECRET_ACCESS_KEY`;
-- `R2_BUCKET_NAME`, `R2_REGION`, and `R2_PUBLIC_URL`;
-- optional `CDN_URL`;
-- upload size/type limits from the `MAX_*` and `ALLOWED_*` variables in Compose.
+- `R2_PUBLIC_BUCKET_NAME` contains only public purposes such as school branding. `R2_PUBLIC_URL` is the delivery base for this bucket.
+- `R2_PRIVATE_BUCKET_NAME` contains profiles, achievements, admissions, question-bank images, and documents. It must have no public custom domain or `r2.dev` access.
+- The two bucket names must be present and different. `R2_BUCKET_NAME` and `CDN_URL` are not compatibility fallbacks.
 
-Keep database metadata and object lifecycle consistent. Validate MIME type and size before upload, authorize reads/deletes, keep private objects out of public exposure, and treat cleanup failures as operationally visible. Back up or retain source objects during migrations until metadata and object counts are reconciled.
+Object keys are immutable and server-generated:
+
+```text
+tenants/{tenant_id}/{domain}/{purpose}/{file_id}/v{version}/original.{ext}
+tenants/{tenant_id}/{domain}/{purpose}/{file_id}/v{version}/derivatives/{variant}.{ext}
+```
+
+The `domain` and `purpose` segments come only from the purpose registry. This looks like folders in R2, but the database remains the source of metadata and lifecycle state. A future document system should reference file IDs and add its authorization relationship; it must not invent another key layout.
+
+Required runtime configuration:
+
+- R2: `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_REGION`, `R2_PUBLIC_BUCKET_NAME`, `R2_PRIVATE_BUCKET_NAME`, and `R2_PUBLIC_URL`.
+- Scanner: `CLAMD_ENDPOINT`, `CLAMD_CONNECT_TIMEOUT_MS`, `CLAMD_WRITE_TIMEOUT_MS`, `CLAMD_READ_TIMEOUT_MS`, `CLAMD_MAX_CHUNK_BYTES`, `CLAMD_MAX_RESPONSE_BYTES`, and `CLAMD_MAX_CONCURRENT_SCANS`.
+- Lifecycle: `FILE_PRIVATE_GRANT_TTL_SECONDS`, `FILE_RECONCILE_LEASE_SECONDS`, `FILE_RECONCILE_BATCH_SIZE`, `FILE_RECONCILE_MAX_ATTEMPTS`, `FILE_RECONCILE_RETRY_BASE_SECONDS`, and `FILE_RECONCILE_RETRY_MAX_SECONDS`.
+
+Configuration fails closed at startup for missing, placeholder, shared-bucket, or out-of-range values. `/health` remains process liveness. `/ready` requires backend-admin, both R2 buckets, and a clean clamd probe; deployment must gate traffic on `/ready`.
+
+### Bucket and scanner rollout
+
+1. Preserve the existing public bucket and set it as `R2_PUBLIC_BUCKET_NAME`.
+2. List buckets with the configured R2 credentials without printing credentials. Create `R2_PRIVATE_BUCKET_NAME` only when the exact name is absent.
+3. Do not attach a public domain, public bucket policy, or `r2.dev` access to the private bucket. Verify `HeadBucket` succeeds for both buckets.
+4. Start the pinned `clamav/clamav-debian` runtime. Persist `/var/lib/clamav`, expose no host port, and wait for its healthcheck before backend-school.
+5. Deploy backend-school only, then wait for `/ready`. Deploy frontend-school after backend readiness.
+
+The backend-school workflow performs the list-before-create check through the pinned AWS CLI image, uploads an isolated backend-school Compose definition, and recreates only `schoolorbit-backend-school`. It does not replace the production stack Compose or restart unrelated services.
+
+### Durable lifecycle and recovery
+
+Uploads scan and inspect bytes before reserving public delivery. Originals and derivatives use immutable versions. Delete revokes delivery in metadata first, then removes objects. Provider or metadata failures leave durable operations for the background reconciler; retries use leases, bounded exponential backoff, and a terminal attempt limit.
+
+When reconciliation is unhealthy:
+
+1. keep the backend running only if `/ready` is healthy;
+2. inspect safe reconciliation counters and error codes, never raw keys or signed URLs;
+3. restore scanner or bucket access before retrying terminal work;
+4. compare file/version/derivative rows with object counts using file IDs and tenant/purpose aggregates;
+5. do not manually delete metadata rows or reuse object keys.
+
+Rollback is additive: keep migration `031`, the private bucket, and scanner volume. Retag the previous backend image and recreate backend-school only. Extra schema/configuration is safe for the previous binary; do not move private objects into the public bucket. Roll frontend-school back separately if its file-ID API contract is not compatible.
 
 ## Focused Troubleshooting
 
@@ -134,6 +172,7 @@ Keep database metadata and object lifecycle consistent. Validate MIME type and s
 - Permission changes stale: verify migration rows, generated registry versions, cache invalidation, and the `permission_changed` client refresh.
 - Migration checksum failure: restore the original migration file; add a new migration for the intended change.
 - National IDs unreadable or unsearchable: stop writes and verify key/version configuration. Do not guess keys or overwrite ciphertext/blind indexes.
-- Upload failure: verify R2 credentials, bucket/region/public URL, upload limits, and whether DB metadata or objects need reconciliation.
+- File Platform not ready: inspect the safe `filePlatform` readiness field, then verify both bucket `HeadBucket` calls and `clamdcheck.sh` inside `schoolorbit-clamd`.
+- Upload failure: verify R2 credentials, distinct bucket names, scanner health, purpose limits, and durable reconciliation state.
 
 Use structured logs with correlation context, but redact secrets, cookies, national IDs, request bodies, and raw realtime query strings.

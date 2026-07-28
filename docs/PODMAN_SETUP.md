@@ -114,7 +114,7 @@ chmod 600 .env
 - internal services: `BACKEND_ADMIN_URL`, `BACKEND_SCHOOL_URL` และ timeout/retry variables;
 - admin database/Neon: `DATABASE_URL`, `NEON_API_KEY`, `NEON_PROJECT_ID`, `NEON_BRANCH_ID`, `NEON_HOST`, `NEON_DB_PASSWORD`;
 - deployment: `API_URL`, Cloudflare variables และ GitHub variables;
-- storage: `R2_*`, `CDN_URL`, upload limits และ allowed file types;
+- File Platform: `R2_PUBLIC_BUCKET_NAME`, `R2_PRIVATE_BUCKET_NAME`, `R2_PUBLIC_URL`, credentials, `CLAMD_*`, `FILE_PRIVATE_GRANT_TTL_SECONDS` และ `FILE_RECONCILE_*`;
 - notifications: `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`.
 
 ข้อกำหนดสำคัญ:
@@ -124,6 +124,8 @@ chmod 600 .env
 - `ENCRYPTION_KEY` และ `BLIND_INDEX_KEY` ต้องสำรองอย่างปลอดภัยและคงเดิมหลังมีข้อมูลแล้ว การเปลี่ยน key ต้องทำผ่านงาน re-encryption/reindex ที่ตรวจสอบแยกต่างหาก;
 - ห้าม commit `.env`, แสดงค่า secret ใน log หรือส่งไฟล์นี้ผ่านช่องทางสนทนา;
 - ใช้ URL ของ container/service บน network เดียวกัน ห้ามใช้ `localhost` เพื่อให้ container หนึ่งเรียกอีก container หนึ่ง.
+- public/private R2 bucket ต้องเป็นคนละ bucket และ private bucket ห้ามเปิด public domain หรือ `r2.dev`;
+- `CLAMD_ENDPOINT` ใช้ `clamd:3310`; Compose ไม่ publish port นี้ออกสู่ host และ backend-school จะไม่ ready จน scanner กับทั้งสอง bucket พร้อม.
 
 ตรวจ syntax โดยไม่พิมพ์ค่าที่ resolve แล้วออกหน้าจอ:
 

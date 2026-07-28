@@ -163,6 +163,68 @@ Alternatively, copy `.env.smoke.example` to the ignored `.env.smoke.local`. The 
 
 If credentials are absent, authenticated checks are skipped. Report that limitation rather than describing the smoke suite as fully passing.
 
+### File Platform smoke
+
+Run this only against an isolated tenant with no retained files. The authenticated account must be allowed to update school settings for the public-logo case; the private-profile case operates on the logged-in user. Supply a small valid PNG through `FILE_SMOKE_PNG` and a temporary cookie jar through `FILE_SMOKE_COOKIE_JAR`. Never commit either file.
+
+1. Upload `school_logo` through `POST /api/files`; retain only the returned file ID.
+2. Confirm authenticated metadata from `GET /api/files/{id}` contains `publicContentUrl` but no bucket, object key, storage path, provider URL, or signed URL.
+3. Confirm anonymous `GET /api/public/files/{id}/content` redirects and delivers the PNG.
+4. Upload `profile_image` through `POST /api/files`; confirm anonymous metadata/download fails.
+5. Confirm authenticated `POST /api/files/{id}/download` follows a short-lived redirect and writes bytes to a temporary output file. Do not print response headers because `Location` is sensitive.
+6. Delete each file with `DELETE /api/files/{id}`. Repeat delete through the owning domain workflow where supported, and confirm delivery remains revoked even if object cleanup is pending.
+7. Search backend and proxy logs for leaked signed-query markers, object-key prefixes, filenames, or content. A file ID and safe error code are allowed.
+
+Representative requests, with credentials and IDs supplied only at runtime:
+
+```bash
+curl -fsS -b "$FILE_SMOKE_COOKIE_JAR" \
+  -H "X-School-Subdomain: $SMOKE_SUBDOMAIN" \
+  -F purpose=school_logo \
+  -F "file=@$FILE_SMOKE_PNG;type=image/png" \
+  "$SMOKE_API_URL/api/files"
+
+curl -fsSL \
+  -H "X-School-Subdomain: $SMOKE_SUBDOMAIN" \
+  "$SMOKE_API_URL/api/public/files/$PUBLIC_FILE_ID/content" \
+  -o /dev/null
+
+curl -fsS -b "$FILE_SMOKE_COOKIE_JAR" \
+  -H "X-School-Subdomain: $SMOKE_SUBDOMAIN" \
+  -F purpose=profile_image \
+  -F "file=@$FILE_SMOKE_PNG;type=image/png" \
+  "$SMOKE_API_URL/api/files"
+
+curl -fsS -L --data '' -b "$FILE_SMOKE_COOKIE_JAR" \
+  -H "X-School-Subdomain: $SMOKE_SUBDOMAIN" \
+  "$SMOKE_API_URL/api/files/$PRIVATE_FILE_ID/download" \
+  -o "$FILE_SMOKE_DOWNLOAD"
+
+curl -fsS -X DELETE -b "$FILE_SMOKE_COOKIE_JAR" \
+  -H "X-School-Subdomain: $SMOKE_SUBDOMAIN" \
+  "$SMOKE_API_URL/api/files/$FILE_ID" \
+  -o /dev/null
+```
+
+For scanner failure behavior in a non-production environment:
+
+1. stop `schoolorbit-clamd`;
+2. confirm `/health` remains `200` and `/ready` becomes `503`;
+3. confirm a valid upload returns `503` and creates neither ready metadata nor an object;
+4. restart clamd, wait for `clamdcheck.sh`, and confirm `/ready` returns `200`;
+5. upload the standard EICAR anti-malware test file and confirm it is rejected without becoming ready or publicly deliverable.
+
+Run the focused adapter tests as well:
+
+```bash
+cd backend-school
+cargo test modules::files::runtime_config --bin backend-school -- --nocapture
+cargo test modules::files::malware_scanner --bin backend-school -- --nocapture
+cargo test modules::files::r2_storage_provider --bin backend-school -- --nocapture
+cargo test modules::files::platform_service --bin backend-school -- --nocapture
+cargo test modules::files::reconciler --bin backend-school -- --nocapture
+```
+
 ## Browser E2E
 
 From `frontend-school`:

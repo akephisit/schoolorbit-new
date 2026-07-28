@@ -63,6 +63,19 @@ jobs:
     needs: build-and-push
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Upload isolated backend-school runtime definition
+        uses: appleboy/scp-action@v1.0.0
+        with:
+          host: ${{ secrets.SERVER_IP }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          source: backend-school/docker-compose.yml
+          target: /opt/stack/file-platform-runtime
+          strip_components: 1
+
       - name: Deploy to Server via SSH
         uses: appleboy/ssh-action@v1.2.5
         with:
@@ -70,39 +83,123 @@ jobs:
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
+            set -eu
             echo "${{ secrets.GITHUB_TOKEN }}" | podman login ghcr.io -u ${{ github.actor }} --password-stdin
             cd /opt/stack
-            
-            # 1. Pull latest image specifically
-            podman pull ghcr.io/akephisit/schoolorbit-backend-school:latest
-            
-            # 2. Force Stop & Remove old container
+
+            runtime_compose=/opt/stack/file-platform-runtime/docker-compose.yml
+            runtime_env=/opt/stack/.env
+            test -f "$runtime_compose"
+            test -f "$runtime_env"
+            for required_name in \
+              R2_ACCOUNT_ID \
+              R2_ACCESS_KEY_ID \
+              R2_SECRET_ACCESS_KEY \
+              R2_PUBLIC_BUCKET_NAME \
+              R2_PRIVATE_BUCKET_NAME \
+              R2_PUBLIC_URL
+            do
+              if ! grep -Eq "^${required_name}=.+" "$runtime_env"; then
+                echo "Missing required File Platform configuration: ${required_name}"
+                exit 1
+              fi
+            done
+            public_bucket="$(sed -n 's/^R2_PUBLIC_BUCKET_NAME=//p' "$runtime_env" | tail -n 1)"
+            private_bucket="$(sed -n 's/^R2_PRIVATE_BUCKET_NAME=//p' "$runtime_env" | tail -n 1)"
+            if [ "$public_bucket" = "$private_bucket" ]; then
+              echo "Public and private File Platform buckets must be different"
+              exit 1
+            fi
+
+            export AWS_ACCESS_KEY_ID="$(sed -n 's/^R2_ACCESS_KEY_ID=//p' "$runtime_env" | tail -n 1)"
+            export AWS_SECRET_ACCESS_KEY="$(sed -n 's/^R2_SECRET_ACCESS_KEY=//p' "$runtime_env" | tail -n 1)"
+            export AWS_DEFAULT_REGION=auto
+            export AWS_EC2_METADATA_DISABLED=true
+            r2_account_id="$(sed -n 's/^R2_ACCOUNT_ID=//p' "$runtime_env" | tail -n 1)"
+            r2_endpoint="https://${r2_account_id}.r2.cloudflarestorage.com"
+            r2_cli() {
+              podman run --rm \
+                -e AWS_ACCESS_KEY_ID \
+                -e AWS_SECRET_ACCESS_KEY \
+                -e AWS_DEFAULT_REGION \
+                -e AWS_EC2_METADATA_DISABLED \
+                amazon/aws-cli:2.36.9 \
+                --endpoint-url "$r2_endpoint" \
+                "$@"
+            }
+            podman pull amazon/aws-cli:2.36.9
+            bucket_list="$(r2_cli s3api list-buckets --query 'Buckets[].Name' --output text)"
+            bucket_exists() {
+              printf '%s\n' "$bucket_list" | tr '\t' '\n' | grep -Fqx -- "$1"
+            }
+            if ! bucket_exists "$public_bucket"; then
+              echo "Configured public File Platform bucket does not exist"
+              exit 1
+            fi
+            if ! bucket_exists "$private_bucket"; then
+              r2_cli s3api create-bucket --bucket "$private_bucket" >/dev/null
+            fi
+            r2_cli s3api head-bucket --bucket "$public_bucket" >/dev/null
+            r2_cli s3api head-bucket --bucket "$private_bucket" >/dev/null
+            unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY
+
+            ln -sfn "$runtime_env" /opt/stack/file-platform-runtime/.env
+            compose() {
+              podman-compose -f "$runtime_compose" "$@"
+            }
+            compose config >/dev/null
+
+            # The scanner gets an isolated container network and no published port.
+            podman pull clamav/clamav-debian:1.5.3
+            compose up -d clamd
+            scanner_ready=false
+            for attempt in $(seq 1 60); do
+              scanner_status="$(podman inspect --format '{{.State.Health.Status}}' schoolorbit-clamd 2>/dev/null || true)"
+              if [ "$scanner_status" = "healthy" ]; then
+                scanner_ready=true
+                break
+              fi
+              if [ "$attempt" -lt 60 ]; then
+                sleep 10
+              fi
+            done
+            if [ "$scanner_ready" != "true" ]; then
+              podman logs --tail 100 schoolorbit-clamd
+              exit 1
+            fi
+
+            backend_image=ghcr.io/akephisit/schoolorbit-backend-school
+            if podman image exists "${backend_image}:latest"; then
+              podman tag "${backend_image}:latest" "${backend_image}:rollback"
+            fi
+            podman pull "${backend_image}:${{ github.sha }}"
+            podman tag "${backend_image}:${{ github.sha }}" "${backend_image}:latest"
+
+            # Recreate backend-school only; do not restart unrelated services.
             podman stop schoolorbit-backend-school || true
             podman rm schoolorbit-backend-school || true
-            
-            # 3. Start new container using podman-compose (it will recreate because container is gone)
-            # We don't specify service name argument if it causes issues, 
-            # or we rely on the fact that missing container forces recreation.
-            podman-compose up -d backend-school
+            compose up -d backend-school
 
-            # 4. Wait for control-plane readiness (maximum 60 seconds)
-            if ! timeout 60 bash -c '
-              for attempt in $(seq 1 12); do
+            # /ready checks control plane, both R2 buckets, and clamd.
+            if ! timeout 180 bash -c '
+              for attempt in $(seq 1 36); do
                 if curl -fsS "$1" >/dev/null; then
                   exit 0
                 fi
-                if [ "$attempt" -lt 12 ]; then
+                if [ "$attempt" -lt 36 ]; then
                   sleep 5
                 fi
               done
               exit 1
             ' _ http://127.0.0.1:8081/ready; then
               podman logs --tail 100 schoolorbit-backend-school
+              podman stop schoolorbit-backend-school || true
+              podman rm schoolorbit-backend-school || true
+              if podman image exists "${backend_image}:rollback"; then
+                podman tag "${backend_image}:rollback" "${backend_image}:latest"
+                compose up -d backend-school
+              fi
               exit 1
             fi
-            
-            # 5. Clean up
-            podman image prune -f
-            
-            # 6. Reload Nginx to update DNS/IPs
+
             podman exec schoolorbit-nginx nginx -s reload || true

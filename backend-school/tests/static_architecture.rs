@@ -4383,7 +4383,8 @@ fn backend_school_registers_separate_liveness_and_readiness_routes() {
     assert!(main.contains("handlers::health::health_check"));
     assert!(main.contains("handlers::health::readiness_check"));
     assert!(main.contains("GET  /ready"));
-    assert!(health.contains("check_readiness().await"));
+    assert!(health.contains("state.admin_client.check_readiness()"));
+    assert!(health.contains("state.file_platform.check_readiness()"));
     assert!(!health.contains("get_pool("));
     assert!(!health.contains("PgPool"));
 }
@@ -4406,9 +4407,9 @@ fn deployment_and_smoke_checks_use_backend_readiness() {
     }
     assert!(school_deploy.contains("http://127.0.0.1:8081/ready"));
     assert!(admin_deploy.contains("http://127.0.0.1:8080/ready"));
-    assert!(school_deploy.contains("seq 1 12"));
+    assert!(school_deploy.contains("seq 1 36"));
     assert!(admin_deploy.contains("seq 1 12"));
-    assert!(school_deploy.contains("timeout 60 bash -c"));
+    assert!(school_deploy.contains("timeout 180 bash -c"));
     assert!(admin_deploy.contains("timeout 60 bash -c"));
     assert!(smoke.contains("$SMOKE_ADMIN_API_URL/ready"));
     assert!(smoke.contains("$SMOKE_API_URL/ready"));

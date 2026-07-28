@@ -84,6 +84,7 @@ impl std::error::Error for StorageError {}
 
 #[async_trait]
 pub trait StorageProvider: Send + Sync {
+    async fn check_readiness(&self) -> Result<(), StorageError>;
     async fn put(&self, object: &StoredObject, body: Bytes) -> Result<(), StorageError>;
     async fn get(&self, object: &StoredObject, max_bytes: u64) -> Result<Bytes, StorageError>;
     async fn head(&self, object: &StoredObject) -> Result<Option<ObjectMetadata>, StorageError>;
@@ -132,6 +133,10 @@ mod tests {
 
     #[async_trait]
     impl StorageProvider for FakeStorageProvider {
+        async fn check_readiness(&self) -> Result<(), StorageError> {
+            Ok(())
+        }
+
         async fn put(&self, object: &StoredObject, _body: Bytes) -> Result<(), StorageError> {
             self.selected_classes
                 .lock()

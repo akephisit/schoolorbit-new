@@ -1398,7 +1398,7 @@ mod tests {
             .map(|value| value.trim().is_empty())
             .unwrap_or(true)
         {
-            eprintln!(
+            tracing::warn!(
                 "SKIPPED: TEST_DATABASE_URL is not set; repository lease tests require PostgreSQL"
             );
             return None;
