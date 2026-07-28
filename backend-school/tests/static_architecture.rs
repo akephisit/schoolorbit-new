@@ -4395,6 +4395,7 @@ fn deployment_and_smoke_checks_use_backend_readiness() {
     let podman_compose = read_source(repo_root().join("podman-compose.yml"));
     let school_deploy =
         read_source(repo_root().join(".github/workflows/deploy-backend-school.yml"));
+    let frontend_deploy = read_source(repo_root().join(".github/workflows/deploy-all-schools.yml"));
     let admin_deploy = read_source(repo_root().join(".github/workflows/deploy-backend-admin.yml"));
     let smoke = read_source(repo_root().join("scripts/smoke_test.sh"));
 
@@ -4411,6 +4412,9 @@ fn deployment_and_smoke_checks_use_backend_readiness() {
     assert!(admin_deploy.contains("seq 1 12"));
     assert!(school_deploy.contains("timeout 180 bash -c"));
     assert!(admin_deploy.contains("timeout 60 bash -c"));
+    assert!(frontend_deploy.contains("BACKEND_SCHOOL_URL: ${{ secrets.BACKEND_SCHOOL_URL }}"));
+    assert!(frontend_deploy.contains("${BACKEND_SCHOOL_URL%/}/ready"));
+    assert!(frontend_deploy.contains(r#".filePlatform == "ready""#));
     assert!(smoke.contains("$SMOKE_ADMIN_API_URL/ready"));
     assert!(smoke.contains("$SMOKE_API_URL/ready"));
 }

@@ -38,14 +38,6 @@ This file is the single active backlog for verified, unfinished technical work t
   - Move internal secrets out of tracked configuration and fail deployment when required values are missing or placeholders.
   - Done when anonymous callers cannot read migration status or trigger migrations in direct and reverse-proxy tests.
 
-- [ ] **SEC-005: Make sensitive file storage private and authorization-driven.**
-  - Require exact upload/read/delete permissions by file purpose in the [files service](./backend-school/src/modules/files/services.rs).
-  - Move ID cards, transcripts, certificates, admission documents, and other private records out of public object paths.
-  - Serve downloads through an authorization check or short-lived signed URL using opaque object identifiers.
-  - Validate file signatures and size limits, quarantine uploads, scan for malware, and guard image decoding against decompression bombs.
-  - Reconcile database rows and object storage after partial failures so neither orphan objects nor dangling records accumulate.
-  - Done when private files cannot be fetched anonymously and upload/download denial paths have integration tests.
-
 - [ ] **SEC-006: Stop persisting credentials and personal identifiers in browser storage.**
   - Remove full-form local storage from [staff creation](./frontend-school/src/routes/%28app%29/staff/manage/new/+page.svelte).
   - Remove national ID and birth date session storage from the [public application status flow](./frontend-school/src/routes/%28public%29/apply/status/+page.svelte).
@@ -143,6 +135,11 @@ This file is the single active backlog for verified, unfinished technical work t
   - Add versioned types or validation to stable JSONB payloads and index only demonstrated query paths.
   - Standardize `updated_at`, archival, retention, legal hold, and hard/soft deletion behavior.
   - Plan growth management for audit logs and notifications, including retention and partitioning when measurements justify it.
+
+- [ ] **DB-004: Remove File Platform compatibility columns after the verified rollback window.**
+  - Confirm every tenant and consumer uses opaque file IDs, with zero legacy locator reads or writes.
+  - Reconcile file metadata and object counts, retain rollback evidence, then add a new forward-only migration that drops the legacy locator columns.
+  - Do not edit an applied migration or remove compatibility columns while any deployed version still depends on them.
 
 - [ ] **FE-001: Reduce school frontend data waterfalls and auth flashes.**
   - Move session bootstrap and suitable route-specific loading toward SvelteKit server hooks/layouts/loaders in incremental slices.

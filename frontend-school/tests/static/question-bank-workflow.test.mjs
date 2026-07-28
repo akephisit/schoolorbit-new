@@ -45,8 +45,8 @@ test('question bank defers image uploads until save and cleans failed temporary 
 
 	assert.match(selection, /URL\.createObjectURL\(file\)/);
 	assert.doesNotMatch(selection, /uploadFile\(/);
-	assert.match(save, /uploadFile\(image\.file, 'course_material', true\)/);
-	assert.match(save, /uploadedFileIds\.set\(image\.pendingId, response\.file\.id\)/);
+	assert.match(save, /uploadFile\(image\.file, 'question_bank_image', draft\.subjectId\)/);
+	assert.match(save, /uploadedFileIds\.set\(image\.pendingId, response\.id\)/);
 	assert.match(save, /if \(!saveRequestStarted\)/);
 	assert.match(save, /Promise\.allSettled\(uploadedIds\.map\(\(id\) => deleteFile\(id\)\)\)/);
 	assert.match(save, /เก็บกวาดอัตโนมัติภายใน 24 ชั่วโมง/);
@@ -162,7 +162,6 @@ test('question bank exports selected questions with editable native Word Math eq
 	const backendServices = await readProjectFile(
 		'../backend-school/src/modules/question_bank/services.rs'
 	);
-	const r2Client = await readProjectFile('../backend-school/src/services/r2_client.rs');
 
 	assert.match(packageJson, /"docx":/);
 	assert.match(packageJson, /"mathml2omml":/);
@@ -232,11 +231,13 @@ test('question bank exports selected questions with editable native Word Math eq
 	assert.match(exporter, /TH Sarabun New/);
 	assert.doesNotMatch(page, /สูตรจะเป็นภาพ PNG/);
 	assert.match(backendRoutes, /questions\/\{question_id\}\/files\/\{file_id\}/);
-	assert.match(backendHandlers, /get_question_file_source/);
-	assert.match(backendHandlers, /private, max-age=300/);
-	assert.match(backendServices, /referenced_file_ids\.contains\(&file_id\)/);
-	assert.match(backendServices, /mime_type LIKE 'image\/%'/);
-	assert.match(r2Client, /pub async fn download_file/);
+	assert.match(backendHandlers, /pub async fn get_question_file/);
+	assert.match(backendHandlers, /file_access_policy::authorize_existing/);
+	assert.match(backendHandlers, /Some\(question_id\)/);
+	assert.match(backendHandlers, /\.file_platform[\s\S]*?\.private_download\(/);
+	assert.match(backendServices, /collect_payload_image_file_ids/);
+	assert.match(backendServices, /FilePurpose::QuestionBankImage/);
+	assert.doesNotMatch(backendHandlers, /\br2_client\b|R2Client/);
 });
 
 test('question bank Word math conversion preserves structured formulas as OMML', () => {

@@ -90,7 +90,7 @@ test('frontend auth consumes the shared envelope through apiClient', async () =>
 	assert.doesNotMatch(source, /userData\.user_type/);
 	assert.doesNotMatch(source, /\.\.\.userData/);
 	assert.match(source, /nationalId:\s*userData\.nationalId\s*\?\?\s*undefined/);
-	assert.match(source, /profileImageUrl:\s*userData\.profileImageUrl\s*\?\?\s*undefined/);
+	assert.match(source, /profileImageFileId:\s*userData\.profileImageFileId\s*\?\?\s*undefined/);
 	assert.doesNotMatch(source, /\bfetch\s*\(/);
 	assert.doesNotMatch(source, /\b(getRaw|postRaw|putRaw)\b/);
 	assert.match(source, /\.data\?\.user/);
@@ -720,11 +720,15 @@ test('admission application detail contract returns application and documents in
 	assert.match(portalService, /get_status[\s\S]*?Result<PortalStatusResult,\s*AppError>/);
 	assert.doesNotMatch(portalService, /get_status[\s\S]*?Result<serde_json::Value,\s*AppError>/);
 	assert.match(applicationService, /struct\s+DocumentUploadResponse/);
-	assert.match(
-		applicationService,
-		/document_upload_response[\s\S]*?Result<DocumentUploadResponse,\s*AppError>/
-	);
+	assert.match(applicationService, /document_upload_response[\s\S]*?->\s*DocumentUploadResponse/);
 	assert.doesNotMatch(applicationService, /document_upload_response_json/);
+	assert.match(backendHandler, /file_access_policy::authorize_create/);
+	assert.match(backendHandler, /state[\s\S]*?\.file_platform[\s\S]*?\.upload\(/);
+	assert.match(backendHandler, /application_service::attach_document/);
+	assert.match(
+		backendHandler,
+		/request_deletions\(state\.file_platform\.as_ref\(\),\s*&pool,\s*\[file\.id\]\)/
+	);
 });
 
 test('parent self-service API uses typed student and timetable responses', async () => {
