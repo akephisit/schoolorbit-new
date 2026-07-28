@@ -14,6 +14,8 @@ use super::{file_inspector::inspect_file, platform_types::FilePurpose};
 
 struct ProcessedFileData {
     data: Vec<u8>,
+    canonical_mime_type: Option<&'static str>,
+    canonical_extension: Option<&'static str>,
     width: Option<i32>,
     height: Option<i32>,
     thumbnail_data: Option<Vec<u8>>,
@@ -86,7 +88,8 @@ pub async fn upload_file(
         file_data.ok_or_else(|| AppError::BadRequest("No file provided".to_string()))?;
     let original_filename =
         file_name.ok_or_else(|| AppError::BadRequest("No filename provided".to_string()))?;
-    let mime_type = content_type.unwrap_or_else(|| "application/octet-stream".to_string());
+    let submitted_mime_type =
+        content_type.unwrap_or_else(|| "application/octet-stream".to_string());
     let file_type = FileType::from_str(&file_type_str);
 
     let max_size = file_type.max_size_mb();
@@ -106,18 +109,16 @@ pub async fn upload_file(
     }
 
     let processed = process_file_data(file_data, &file_type)?;
+    let (mime_type, extension) =
+        canonical_upload_metadata(&processed, &original_filename, &submitted_mime_type);
     let file_id = Uuid::new_v4();
-    let extension = std::path::Path::new(&original_filename)
-        .extension()
-        .and_then(|extension| extension.to_str())
-        .unwrap_or("bin");
     let storage_folder = file_type.storage_folder();
     let storage_path = storage_path(
         subdomain,
         storage_folder,
         user_id,
         file_id,
-        extension,
+        &extension,
         &file_type,
     );
     let thumbnail_path = processed.thumbnail_data.as_ref().map(|_| {
@@ -274,6 +275,8 @@ fn process_file_data(
     ) {
         return Ok(ProcessedFileData {
             data: file_data,
+            canonical_mime_type: None,
+            canonical_extension: None,
             width: None,
             height: None,
             thumbnail_data: None,
@@ -305,10 +308,34 @@ fn process_file_data(
 
     Ok(ProcessedFileData {
         data: resized,
+        canonical_mime_type: Some("image/jpeg"),
+        canonical_extension: Some("jpg"),
         width: Some(original_width as i32),
         height: Some(original_height as i32),
         thumbnail_data: thumbnail,
     })
+}
+
+fn canonical_upload_metadata(
+    processed: &ProcessedFileData,
+    submitted_filename: &str,
+    submitted_mime_type: &str,
+) -> (String, String) {
+    let mime_type = processed
+        .canonical_mime_type
+        .unwrap_or(submitted_mime_type)
+        .to_string();
+    let extension = processed
+        .canonical_extension
+        .map(str::to_string)
+        .or_else(|| {
+            std::path::Path::new(submitted_filename)
+                .extension()
+                .and_then(|extension| extension.to_str())
+                .map(str::to_string)
+        })
+        .unwrap_or_else(|| "bin".to_string());
+    (mime_type, extension)
 }
 
 fn storage_path(
@@ -338,6 +365,50 @@ fn storage_path(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use image::{DynamicImage, ImageFormat, Rgba, RgbaImage};
+    use std::io::Cursor;
+
+    fn encoded_image(format: ImageFormat) -> Vec<u8> {
+        let image = DynamicImage::ImageRgba8(RgbaImage::from_pixel(2, 2, Rgba([4, 8, 15, 255])));
+        let mut bytes = Vec::new();
+        image
+            .write_to(&mut Cursor::new(&mut bytes), format)
+            .expect("synthetic image fixture must encode");
+        bytes
+    }
+
+    #[test]
+    fn processed_images_store_jpeg_metadata_independent_of_submitted_values() {
+        let cases = [
+            (ImageFormat::Png, "spoofed.webp", "application/pdf"),
+            (ImageFormat::WebP, "spoofed.jpeg", "image/jpeg"),
+            (ImageFormat::Jpeg, "spoofed.png", "image/png"),
+        ];
+        let user_id = Uuid::parse_str("11111111-1111-1111-1111-111111111111").unwrap();
+        let file_id = Uuid::parse_str("22222222-2222-2222-2222-222222222222").unwrap();
+
+        for (format, submitted_filename, submitted_mime_type) in cases {
+            let processed = process_file_data(encoded_image(format), &FileType::ProfileImage)
+                .expect("validated image fixture must process");
+            let (mime_type, extension) =
+                canonical_upload_metadata(&processed, submitted_filename, submitted_mime_type);
+            let object_path = storage_path(
+                "snwsb",
+                "profile-images",
+                user_id,
+                file_id,
+                &extension,
+                &FileType::ProfileImage,
+            );
+            let stored_filename = format!("{file_id}.{extension}");
+
+            assert!(processed.data.starts_with(&[0xff, 0xd8]));
+            assert_eq!(mime_type, "image/jpeg");
+            assert_eq!(extension, "jpg");
+            assert!(object_path.ends_with(".jpg"));
+            assert_eq!(stored_filename, "22222222-2222-2222-2222-222222222222.jpg");
+        }
+    }
 
     #[test]
     fn storage_path_for_documents_scopes_file_under_user_folder() {

@@ -5034,4 +5034,16 @@ fn file_platform_derivatives_require_the_validated_payload_boundary() {
         legacy_service.contains("inspect_file("),
         "legacy derivative path must create a validated payload before processing"
     );
+
+    for file in backend_rs_files() {
+        let file_name = relative(&file);
+        if file_name == "src/modules/files/file_inspector.rs" {
+            continue;
+        }
+        let source = strip_comments(&read_source(&file));
+        assert!(
+            !source.contains("image::load_from_memory") && !source.contains("ImageReader"),
+            "{file_name} bypasses the validated image decoder boundary"
+        );
+    }
 }

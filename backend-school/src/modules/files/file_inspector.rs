@@ -10,6 +10,7 @@ use super::{
 const PNG_SIGNATURE: &[u8; 8] = b"\x89PNG\r\n\x1a\n";
 const PDF_HEADER_PREFIX: &[u8] = b"%PDF-";
 const PDF_STRUCTURE_WINDOW_BYTES: usize = 64 * 1024;
+const MAX_PDF_OBJECTS: u32 = 1_000_000;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct InspectedFile {
@@ -271,26 +272,44 @@ fn validate_pdf_structure(data: &[u8]) -> Result<(), FileInspectionError> {
         return Err(FileInspectionError::MalformedContent);
     }
 
-    let before_eof = &tail[..eof];
-    let startxref = find_last_subsequence(before_eof, b"startxref")
-        .ok_or(FileInspectionError::MalformedContent)?;
-    let offset = parse_decimal(&before_eof[startxref + b"startxref".len()..])?;
-    if offset >= data.len() {
+    let document =
+        lopdf::Document::load_mem(data).map_err(|_| FileInspectionError::MalformedContent)?;
+    validate_pdf_cross_references(&document, data.len())?;
+
+    let root_id = document
+        .trailer
+        .get(b"Root")
+        .and_then(lopdf::Object::as_reference)
+        .map_err(|_| FileInspectionError::MalformedContent)?;
+    let root = document
+        .get_object(root_id)
+        .and_then(lopdf::Object::as_dict)
+        .map_err(|_| FileInspectionError::MalformedContent)?;
+    let root_type = root
+        .get(b"Type")
+        .and_then(lopdf::Object::as_name)
+        .map_err(|_| FileInspectionError::MalformedContent)?;
+    if root_type != b"Catalog" {
         return Err(FileInspectionError::MalformedContent);
     }
 
-    let target = &data[offset..];
-    if target.starts_with(b"xref") {
-        validate_xref_table(target)
+    let pages_id = root
+        .get(b"Pages")
+        .and_then(lopdf::Object::as_reference)
+        .map_err(|_| FileInspectionError::MalformedContent)?;
+    let pages = document
+        .get_object(pages_id)
+        .and_then(lopdf::Object::as_dict)
+        .map_err(|_| FileInspectionError::MalformedContent)?;
+    if pages
+        .get(b"Type")
+        .and_then(lopdf::Object::as_name)
+        .is_ok_and(|object_type| object_type == b"Pages")
+    {
+        Ok(())
     } else {
-        validate_xref_stream(target)
+        Err(FileInspectionError::MalformedContent)
     }
-}
-
-fn find_subsequence(haystack: &[u8], needle: &[u8]) -> Option<usize> {
-    haystack
-        .windows(needle.len())
-        .position(|window| window == needle)
 }
 
 fn find_last_subsequence(haystack: &[u8], needle: &[u8]) -> Option<usize> {
@@ -299,126 +318,50 @@ fn find_last_subsequence(haystack: &[u8], needle: &[u8]) -> Option<usize> {
         .rposition(|window| window == needle)
 }
 
-fn parse_decimal(bytes: &[u8]) -> Result<usize, FileInspectionError> {
-    let bytes = trim_ascii_whitespace(bytes);
-    if bytes.is_empty() || !bytes.iter().all(u8::is_ascii_digit) {
-        return Err(FileInspectionError::MalformedContent);
-    }
-    std::str::from_utf8(bytes)
+fn validate_pdf_cross_references(
+    document: &lopdf::Document,
+    source_len: usize,
+) -> Result<(), FileInspectionError> {
+    let declared_size = document
+        .trailer
+        .get(b"Size")
+        .and_then(lopdf::Object::as_i64)
         .ok()
-        .and_then(|value| value.parse::<usize>().ok())
-        .ok_or(FileInspectionError::MalformedContent)
-}
-
-fn validate_xref_table(target: &[u8]) -> Result<(), FileInspectionError> {
-    let trailer =
-        find_subsequence(target, b"trailer").ok_or(FileInspectionError::MalformedContent)?;
-    let mut table = &target[b"xref".len()..trailer];
-    let (_, rest) = take_decimal_token(table)?;
-    let (entry_count, rest) = take_decimal_token(rest)?;
-    if entry_count == 0 || entry_count > 1_000_000 {
+        .and_then(|size| u32::try_from(size).ok())
+        .filter(|size| *size > 0 && *size <= MAX_PDF_OBJECTS)
+        .ok_or(FileInspectionError::MalformedContent)?;
+    if declared_size != document.reference_table.size {
         return Err(FileInspectionError::MalformedContent);
     }
-    table = rest;
-    for _ in 0..entry_count {
-        let (_, rest) = take_decimal_token(table)?;
-        let (_, rest) = take_decimal_token(rest)?;
-        let rest = trim_leading_ascii_whitespace(rest);
-        if !matches!(rest.first(), Some(b'n' | b'f')) {
-            return Err(FileInspectionError::MalformedContent);
+
+    for (object_number, entry) in &document.reference_table.entries {
+        match entry {
+            lopdf::xref::XrefEntry::Normal { offset, generation } => {
+                if usize::try_from(*offset)
+                    .ok()
+                    .is_none_or(|offset| offset >= source_len)
+                    || !document
+                        .objects
+                        .contains_key(&(*object_number, *generation))
+                {
+                    return Err(FileInspectionError::MalformedContent);
+                }
+            }
+            lopdf::xref::XrefEntry::Compressed { container, .. } => {
+                if !document.objects.contains_key(&(*object_number, 0))
+                    || document
+                        .get_object((*container, 0))
+                        .and_then(lopdf::Object::as_stream)
+                        .is_err()
+                {
+                    return Err(FileInspectionError::MalformedContent);
+                }
+            }
+            lopdf::xref::XrefEntry::Free | lopdf::xref::XrefEntry::UnusableFree => {}
         }
-        table = rest.get(1..).ok_or(FileInspectionError::MalformedContent)?;
     }
 
-    validate_trailer_dictionary(&target[trailer + b"trailer".len()..])
-}
-
-fn validate_xref_stream(target: &[u8]) -> Result<(), FileInspectionError> {
-    let (_, rest) = take_decimal_token(target)?;
-    let (_, rest) = take_decimal_token(rest)?;
-    let rest = trim_leading_ascii_whitespace(rest);
-    let rest = rest
-        .strip_prefix(b"obj")
-        .ok_or(FileInspectionError::MalformedContent)?;
-    let dictionary = dictionary_at_start(rest)?;
-    if find_subsequence(dictionary, b"/Type /XRef").is_none()
-        || find_subsequence(dictionary, b"/W").is_none()
-        || find_subsequence(dictionary, b"/Length").is_none()
-        || !has_indirect_root(dictionary)
-    {
-        return Err(FileInspectionError::MalformedContent);
-    }
-
-    let after_dictionary = &rest[dictionary.len() + 4..];
-    if find_subsequence(after_dictionary, b"stream").is_none()
-        || find_subsequence(after_dictionary, b"endstream").is_none()
-        || find_subsequence(after_dictionary, b"endobj").is_none()
-    {
-        return Err(FileInspectionError::MalformedContent);
-    }
     Ok(())
-}
-
-fn validate_trailer_dictionary(bytes: &[u8]) -> Result<(), FileInspectionError> {
-    let dictionary = dictionary_at_start(bytes)?;
-    if has_indirect_root(dictionary) {
-        Ok(())
-    } else {
-        Err(FileInspectionError::MalformedContent)
-    }
-}
-
-fn dictionary_at_start(bytes: &[u8]) -> Result<&[u8], FileInspectionError> {
-    let bytes = trim_leading_ascii_whitespace(bytes);
-    let body = bytes
-        .strip_prefix(b"<<")
-        .ok_or(FileInspectionError::MalformedContent)?;
-    let end = find_subsequence(body, b">>").ok_or(FileInspectionError::MalformedContent)?;
-    Ok(&body[..end])
-}
-
-fn has_indirect_root(dictionary: &[u8]) -> bool {
-    let Some(root) = find_subsequence(dictionary, b"/Root") else {
-        return false;
-    };
-    let Ok((_, rest)) = take_decimal_token(&dictionary[root + b"/Root".len()..]) else {
-        return false;
-    };
-    let Ok((_, rest)) = take_decimal_token(rest) else {
-        return false;
-    };
-    trim_leading_ascii_whitespace(rest).starts_with(b"R")
-}
-
-fn take_decimal_token(bytes: &[u8]) -> Result<(usize, &[u8]), FileInspectionError> {
-    let bytes = trim_leading_ascii_whitespace(bytes);
-    let end = bytes
-        .iter()
-        .position(|byte| !byte.is_ascii_digit())
-        .unwrap_or(bytes.len());
-    if end == 0 {
-        return Err(FileInspectionError::MalformedContent);
-    }
-    let value = parse_decimal(&bytes[..end])?;
-    Ok((value, &bytes[end..]))
-}
-
-fn trim_leading_ascii_whitespace(bytes: &[u8]) -> &[u8] {
-    let first = bytes
-        .iter()
-        .position(|byte| !byte.is_ascii_whitespace())
-        .unwrap_or(bytes.len());
-    &bytes[first..]
-}
-
-fn trim_ascii_whitespace(bytes: &[u8]) -> &[u8] {
-    let bytes = trim_leading_ascii_whitespace(bytes);
-    let last = bytes
-        .iter()
-        .rposition(|byte| !byte.is_ascii_whitespace())
-        .map(|index| index + 1)
-        .unwrap_or(0);
-    &bytes[..last]
 }
 
 #[cfg(test)]
@@ -445,23 +388,46 @@ mod tests {
     }
 
     fn xref_table_pdf() -> Vec<u8> {
-        let mut pdf = b"%PDF-1.7\n1 0 obj\n<< /Type /Catalog >>\nendobj\n".to_vec();
+        let mut pdf = b"%PDF-1.7\n".to_vec();
+        let catalog_offset = pdf.len();
+        pdf.extend_from_slice(b"1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n");
+        let pages_offset = pdf.len();
+        pdf.extend_from_slice(b"2 0 obj\n<< /Type /Pages /Count 0 /Kids [] >>\nendobj\n");
         let xref_offset = pdf.len();
         pdf.extend_from_slice(
             format!(
-                "xref\n0 2\n0000000000 65535 f \n0000000009 00000 n \ntrailer\n<< /Size 2 /Root 1 0 R >>\nstartxref\n{xref_offset}\n%%EOF\n"
+                "xref\n0 3\n0000000000 65535 f \n{catalog_offset:010} 00000 n \n{pages_offset:010} 00000 n \ntrailer\n<< /Size 3 /Root 1 0 R >>\nstartxref\n{xref_offset}\n%%EOF\n"
             )
             .as_bytes(),
         );
         pdf
     }
 
+    fn xref_stream_entry(entry_type: u8, offset: usize, generation: u16) -> [u8; 7] {
+        let offset =
+            u32::try_from(offset).expect("synthetic PDF offsets must fit the four-byte xref field");
+        let mut entry = [0_u8; 7];
+        entry[0] = entry_type;
+        entry[1..5].copy_from_slice(&offset.to_be_bytes());
+        entry[5..7].copy_from_slice(&generation.to_be_bytes());
+        entry
+    }
+
     fn xref_stream_pdf() -> Vec<u8> {
-        let mut pdf = b"%PDF-1.7\n1 0 obj\n<< /Type /Catalog >>\nendobj\n".to_vec();
+        let mut pdf = b"%PDF-1.7\n".to_vec();
+        let catalog_offset = pdf.len();
+        pdf.extend_from_slice(b"1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n");
+        let pages_offset = pdf.len();
+        pdf.extend_from_slice(b"2 0 obj\n<< /Type /Pages /Count 0 /Kids [] >>\nendobj\n");
         let xref_offset = pdf.len();
         pdf.extend_from_slice(
-            b"2 0 obj\n<< /Type /XRef /Size 3 /Root 1 0 R /W [1 1 1] /Length 3 >>\nstream\n\0\0\0\nendstream\nendobj\n",
+            b"3 0 obj\n<< /Type /XRef /Size 4 /Root 1 0 R /W [1 4 2] /Index [0 4] /Length 28 >>\nstream\n",
         );
+        pdf.extend_from_slice(&xref_stream_entry(0, 0, u16::MAX));
+        pdf.extend_from_slice(&xref_stream_entry(1, catalog_offset, 0));
+        pdf.extend_from_slice(&xref_stream_entry(1, pages_offset, 0));
+        pdf.extend_from_slice(&xref_stream_entry(1, xref_offset, 0));
+        pdf.extend_from_slice(b"\nendstream\nendobj\n");
         pdf.extend_from_slice(format!("startxref\n{xref_offset}\n%%EOF\n").as_bytes());
         pdf
     }
@@ -532,19 +498,43 @@ mod tests {
     }
 
     #[test]
-    fn rejects_invalid_pdf_offsets_and_accepts_a_bounded_xref_stream() {
-        let mut invalid_offset = xref_table_pdf();
-        let offset_start = invalid_offset
-            .windows(b"startxref\n".len())
-            .position(|window| window == b"startxref\n")
-            .expect("fixture contains startxref")
-            + b"startxref\n".len();
-        invalid_offset[offset_start..offset_start + 2].copy_from_slice(b"99");
+    fn rejects_invalid_pdf_references_and_accepts_a_valid_xref_stream() {
+        let mut invalid_object_offset = xref_table_pdf();
+        let first_in_use_entry = invalid_object_offset
+            .windows(b" 00000 n ".len())
+            .position(|window| window == b" 00000 n ")
+            .expect("fixture contains an in-use xref entry")
+            - 10;
+        invalid_object_offset[first_in_use_entry..first_in_use_entry + 10]
+            .copy_from_slice(b"0009999999");
 
         assert_eq!(
-            inspect_file(FilePurpose::Transcript, &invalid_offset),
+            inspect_file(FilePurpose::Transcript, &invalid_object_offset),
             Err(FileInspectionError::MalformedContent)
         );
+
+        let mut missing_root = xref_table_pdf();
+        let root = missing_root
+            .windows(b"/Root 1 0 R".len())
+            .position(|window| window == b"/Root 1 0 R")
+            .expect("fixture contains trailer root");
+        missing_root[root..root + b"/Root 1 0 R".len()].copy_from_slice(b"/Root 9 0 R");
+        assert_eq!(
+            inspect_file(FilePurpose::Transcript, &missing_root),
+            Err(FileInspectionError::MalformedContent)
+        );
+
+        let mut inconsistent_stream = xref_stream_pdf();
+        let length = inconsistent_stream
+            .windows(b"/Length 28".len())
+            .position(|window| window == b"/Length 28")
+            .expect("fixture contains xref stream length");
+        inconsistent_stream[length..length + b"/Length 28".len()].copy_from_slice(b"/Length 27");
+        assert_eq!(
+            inspect_file(FilePurpose::Transcript, &inconsistent_stream),
+            Err(FileInspectionError::MalformedContent)
+        );
+
         assert!(inspect_file(FilePurpose::Transcript, &xref_stream_pdf()).is_ok());
     }
 
