@@ -149,8 +149,13 @@ pub enum ScanRequirement {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProviderObjectReference {
     pub provider_code: String,
-    pub storage_class: StorageClass,
     pub object_key: ObjectKey,
+}
+
+impl ProviderObjectReference {
+    pub const fn storage_class(&self) -> StorageClass {
+        self.object_key.storage_class()
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -239,13 +244,13 @@ mod tests {
         .expect("registry must create provider object keys");
         let reference = ProviderObjectReference {
             provider_code: "r2".to_string(),
-            storage_class: StorageClass::Private,
             object_key,
         };
         assert_eq!(
             reference.object_key.as_str(),
             "tenants/11111111-1111-1111-1111-111111111111/identity/profile-image/22222222-2222-2222-2222-222222222222/v1/original.png"
         );
+        assert_eq!(reference.storage_class(), StorageClass::Private);
 
         let grant = DownloadGrant::Redirect {
             location: "https://provider.example/download".to_string(),

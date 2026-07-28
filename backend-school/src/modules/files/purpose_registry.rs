@@ -3,7 +3,8 @@ use std::fmt;
 use uuid::Uuid;
 
 use super::platform_types::{
-    DerivativeRecipe, DetectedContent, FilePurpose, FileVisibility, RetentionClass, ScanRequirement,
+    DerivativeRecipe, DetectedContent, FilePurpose, FileVisibility, RetentionClass,
+    ScanRequirement, StorageClass,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -49,11 +50,15 @@ pub enum PurposeRegistryError {
 /// Immutable storage identity constructed only by the purpose registry.
 /// Its tuple field remains private so other modules cannot inject raw key text.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ObjectKey(String);
+pub struct ObjectKey(String, StorageClass);
 
 impl ObjectKey {
     pub fn as_str(&self) -> &str {
         &self.0
+    }
+
+    pub const fn storage_class(&self) -> StorageClass {
+        self.1
     }
 }
 
@@ -252,12 +257,15 @@ pub fn original_object_key(
         return Err(PurposeRegistryError::UnsupportedDetectedContent);
     }
 
-    Ok(ObjectKey(format!(
-        "tenants/{tenant_id}/{}/{}/{file_id}/v{version}/original.{}",
-        definition.domain_segment,
-        definition.purpose_segment,
-        detected_content.canonical_extension(),
-    )))
+    Ok(ObjectKey(
+        format!(
+            "tenants/{tenant_id}/{}/{}/{file_id}/v{version}/original.{}",
+            definition.domain_segment,
+            definition.purpose_segment,
+            detected_content.canonical_extension(),
+        ),
+        definition.visibility.into(),
+    ))
 }
 
 pub fn derivative_object_key(
@@ -275,20 +283,23 @@ pub fn derivative_object_key(
         return Err(PurposeRegistryError::DerivativeNotAllowed);
     }
 
-    Ok(ObjectKey(format!(
-        "tenants/{tenant_id}/{}/{}/{file_id}/v{version}/derivatives/{}.{}",
-        definition.domain_segment,
-        definition.purpose_segment,
-        derivative.variant(),
-        derivative.detected_content().canonical_extension(),
-    )))
+    Ok(ObjectKey(
+        format!(
+            "tenants/{tenant_id}/{}/{}/{file_id}/v{version}/derivatives/{}.{}",
+            definition.domain_segment,
+            definition.purpose_segment,
+            derivative.variant(),
+            derivative.detected_content().canonical_extension(),
+        ),
+        definition.visibility.into(),
+    ))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::modules::files::platform_types::{
-        DetectedContent, FilePurpose, FileVisibility, RetentionClass, ScanRequirement,
+        DetectedContent, FilePurpose, FileVisibility, RetentionClass, ScanRequirement, StorageClass,
     };
     use uuid::Uuid;
 
@@ -514,6 +525,21 @@ mod tests {
             key.as_str(),
             "tenants/11111111-1111-1111-1111-111111111111/school/logo/22222222-2222-2222-2222-222222222222/v1/original.webp"
         );
+        assert_eq!(key.storage_class(), StorageClass::Public);
+    }
+
+    #[test]
+    fn registry_key_keeps_its_server_owned_storage_class() {
+        let key = original_object_key(
+            Uuid::parse_str("11111111-1111-1111-1111-111111111111").unwrap(),
+            FilePurpose::ProfileImage,
+            Uuid::parse_str("22222222-2222-2222-2222-222222222222").unwrap(),
+            1,
+            DetectedContent::Png,
+        )
+        .unwrap();
+
+        assert_eq!(key.storage_class(), StorageClass::Private);
     }
 
     #[test]

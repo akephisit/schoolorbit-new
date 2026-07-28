@@ -15,16 +15,147 @@ use super::{
     },
 };
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum StorageBucket {
-    Public,
-    Private,
+#[derive(Clone, Eq, PartialEq)]
+struct ObjectRequest {
+    bucket: String,
+    key: String,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum R2OperationError {
+enum R2ClientError {
     NotFound,
+    AlreadyExists,
     Failed,
+}
+
+#[derive(Clone, Eq, PartialEq)]
+struct PutRequest {
+    bucket: String,
+    key: String,
+    body: bytes::Bytes,
+    content_type: String,
+    if_none_match: String,
+}
+
+#[derive(Clone, Eq, PartialEq)]
+struct PresignRequest {
+    bucket: String,
+    key: String,
+    content_disposition: String,
+    ttl: Duration,
+    issued_at: chrono::DateTime<Utc>,
+}
+
+#[async_trait]
+trait R2Transport: Send + Sync {
+    async fn put(&self, request: PutRequest) -> Result<(), R2ClientError>;
+    async fn head(&self, request: ObjectRequest) -> Result<ObjectMetadata, R2ClientError>;
+    async fn delete(&self, request: ObjectRequest) -> Result<(), R2ClientError>;
+    async fn presign_get(&self, request: PresignRequest) -> Result<Url, R2ClientError>;
+}
+
+struct AwsR2Transport {
+    client: S3Client,
+}
+
+#[async_trait]
+impl R2Transport for AwsR2Transport {
+    async fn put(&self, request: PutRequest) -> Result<(), R2ClientError> {
+        self.client
+            .put_object()
+            .bucket(request.bucket)
+            .key(request.key)
+            .body(ByteStream::from(request.body))
+            .content_type(request.content_type)
+            .if_none_match(request.if_none_match)
+            .send()
+            .await
+            .map(|_| ())
+            .map_err(|error| {
+                classify_write_status(
+                    error
+                        .raw_response()
+                        .map(|response| response.status().as_u16()),
+                )
+            })
+    }
+
+    async fn head(&self, request: ObjectRequest) -> Result<ObjectMetadata, R2ClientError> {
+        self.client
+            .head_object()
+            .bucket(request.bucket)
+            .key(request.key)
+            .send()
+            .await
+            .map(|output| ObjectMetadata {
+                content_type: output.content_type().map(ToOwned::to_owned),
+                content_length: output
+                    .content_length()
+                    .and_then(|length| length.try_into().ok()),
+            })
+            .map_err(|error| {
+                if error
+                    .as_service_error()
+                    .is_some_and(|service_error| service_error.is_not_found())
+                    || error
+                        .raw_response()
+                        .is_some_and(|response| response.status().as_u16() == 404)
+                {
+                    R2ClientError::NotFound
+                } else {
+                    R2ClientError::Failed
+                }
+            })
+    }
+
+    async fn delete(&self, request: ObjectRequest) -> Result<(), R2ClientError> {
+        self.client
+            .delete_object()
+            .bucket(request.bucket)
+            .key(request.key)
+            .send()
+            .await
+            .map(|_| ())
+            .map_err(|error| {
+                classify_missing_status(
+                    error
+                        .raw_response()
+                        .map(|response| response.status().as_u16()),
+                )
+            })
+    }
+
+    async fn presign_get(&self, request: PresignRequest) -> Result<Url, R2ClientError> {
+        let presigning = PresigningConfig::builder()
+            .start_time(request.issued_at.into())
+            .expires_in(request.ttl)
+            .build()
+            .map_err(|_| R2ClientError::Failed)?;
+        let request = self
+            .client
+            .get_object()
+            .bucket(request.bucket)
+            .key(request.key)
+            .response_content_disposition(request.content_disposition)
+            .presigned(presigning)
+            .await
+            .map_err(|_| R2ClientError::Failed)?;
+        Url::parse(&request.uri().to_string()).map_err(|_| R2ClientError::Failed)
+    }
+}
+
+fn classify_write_status(status: Option<u16>) -> R2ClientError {
+    match status {
+        Some(409 | 412) => R2ClientError::AlreadyExists,
+        _ => R2ClientError::Failed,
+    }
+}
+
+fn classify_missing_status(status: Option<u16>) -> R2ClientError {
+    match status {
+        Some(404) => R2ClientError::NotFound,
+        _ => R2ClientError::Failed,
+    }
 }
 
 /// R2 configuration owned entirely by server environment variables.
@@ -41,19 +172,40 @@ pub struct R2StorageConfig {
 
 impl R2StorageConfig {
     pub fn from_env() -> Result<Self, StorageError> {
-        let public_base_url = env::var("R2_PUBLIC_URL")
-            .ok()
-            .and_then(|value| Url::parse(&value).ok())
-            .ok_or(StorageError::ConfigurationInvalid)?;
+        Self::from_values(
+            &required_env("R2_ACCOUNT_ID")?,
+            &required_env("R2_ACCESS_KEY_ID")?,
+            &required_env("R2_SECRET_ACCESS_KEY")?,
+            &env::var("R2_REGION").unwrap_or_else(|_| "auto".to_string()),
+            &required_env("R2_PUBLIC_BUCKET_NAME")?,
+            &required_env("R2_PRIVATE_BUCKET_NAME")?,
+            &required_env("R2_PUBLIC_URL")?,
+        )
+    }
+
+    fn from_values(
+        account_id: &str,
+        access_key_id: &str,
+        secret_access_key: &str,
+        region: &str,
+        public_bucket_name: &str,
+        private_bucket_name: &str,
+        public_base_url: &str,
+    ) -> Result<Self, StorageError> {
+        let public_bucket_name = normalized_bucket(public_bucket_name)?;
+        let private_bucket_name = normalized_bucket(private_bucket_name)?;
+        if public_bucket_name == private_bucket_name {
+            return Err(StorageError::ConfigurationInvalid);
+        }
 
         Ok(Self {
-            account_id: required_env("R2_ACCOUNT_ID")?,
-            access_key_id: required_env("R2_ACCESS_KEY_ID")?,
-            secret_access_key: required_env("R2_SECRET_ACCESS_KEY")?,
-            region: env::var("R2_REGION").unwrap_or_else(|_| "auto".to_string()),
-            public_bucket_name: required_env("R2_PUBLIC_BUCKET_NAME")?,
-            private_bucket_name: required_env("R2_PRIVATE_BUCKET_NAME")?,
-            public_base_url,
+            account_id: required_value(account_id)?,
+            access_key_id: required_value(access_key_id)?,
+            secret_access_key: required_value(secret_access_key)?,
+            region: required_value(region)?,
+            public_bucket_name,
+            private_bucket_name,
+            public_base_url: validated_public_base_url(public_base_url)?,
         })
     }
 
@@ -61,24 +213,47 @@ impl R2StorageConfig {
         format!("https://{}.r2.cloudflarestorage.com", self.account_id)
     }
 
-    fn bucket_name(&self, bucket: StorageBucket) -> &str {
-        match bucket {
-            StorageBucket::Public => &self.public_bucket_name,
-            StorageBucket::Private => &self.private_bucket_name,
+    fn bucket_name(&self, storage_class: StorageClass) -> &str {
+        match storage_class {
+            StorageClass::Public => &self.public_bucket_name,
+            StorageClass::Private => &self.private_bucket_name,
         }
     }
 }
 
 fn required_env(name: &str) -> Result<String, StorageError> {
-    env::var(name)
-        .ok()
-        .filter(|value| !value.trim().is_empty())
+    env::var(name).map_err(|_| StorageError::ConfigurationInvalid)
+}
+
+fn required_value(value: &str) -> Result<String, StorageError> {
+    let value = value.trim();
+    (!value.is_empty())
+        .then(|| value.to_string())
         .ok_or(StorageError::ConfigurationInvalid)
+}
+
+fn normalized_bucket(value: &str) -> Result<String, StorageError> {
+    required_value(value)
+}
+
+fn validated_public_base_url(value: &str) -> Result<Url, StorageError> {
+    let url = Url::parse(value).map_err(|_| StorageError::ConfigurationInvalid)?;
+    if !matches!(url.scheme(), "http" | "https")
+        || url.host_str().is_none()
+        || !url.username().is_empty()
+        || url.password().is_some()
+        || url.query().is_some()
+        || url.fragment().is_some()
+        || url.cannot_be_a_base()
+    {
+        return Err(StorageError::ConfigurationInvalid);
+    }
+    Ok(url)
 }
 
 /// Cloudflare R2 implementation of the provider-neutral storage port.
 pub struct R2StorageProvider {
-    client: S3Client,
+    transport: std::sync::Arc<dyn R2Transport>,
     config: R2StorageConfig,
 }
 
@@ -105,73 +280,55 @@ impl R2StorageProvider {
             .build();
 
         Ok(Self {
-            client: S3Client::from_conf(s3_config),
+            transport: std::sync::Arc::new(AwsR2Transport {
+                client: S3Client::from_conf(s3_config),
+            }),
             config,
         })
+    }
+
+    #[cfg(test)]
+    fn with_transport(config: R2StorageConfig, transport: std::sync::Arc<dyn R2Transport>) -> Self {
+        Self { transport, config }
     }
 }
 
 #[async_trait]
 impl StorageProvider for R2StorageProvider {
     async fn put(&self, object: &StoredObject, body: bytes::Bytes) -> Result<(), StorageError> {
-        self.client
-            .put_object()
-            .bucket(self.config.bucket_name(select_bucket(object)))
-            .key(object.object_key.as_str())
-            .body(ByteStream::from(body))
-            .content_type(&object.content_type)
-            .send()
+        self.transport
+            .put(PutRequest {
+                bucket: self.config.bucket_name(object.storage_class()).to_string(),
+                key: object.object_key.as_str().to_string(),
+                body,
+                content_type: object.content_type.clone(),
+                if_none_match: "*".to_string(),
+            })
             .await
-            .map_err(|_| StorageError::OperationFailed)?;
-        Ok(())
+            .map_err(map_transport_error)
     }
 
     async fn head(&self, object: &StoredObject) -> Result<Option<ObjectMetadata>, StorageError> {
         match self
-            .client
-            .head_object()
-            .bucket(self.config.bucket_name(select_bucket(object)))
-            .key(object.object_key.as_str())
-            .send()
+            .transport
+            .head(object_request(&self.config, object))
             .await
         {
-            Ok(output) => Ok(Some(ObjectMetadata {
-                content_type: output.content_type().map(ToOwned::to_owned),
-                content_length: output
-                    .content_length()
-                    .and_then(|length| length.try_into().ok()),
-            })),
-            Err(error)
-                if error
-                    .as_service_error()
-                    .is_some_and(|service_error| service_error.is_not_found()) =>
-            {
-                Ok(None)
-            }
-            Err(_) => Err(StorageError::OperationFailed),
+            Ok(metadata) => Ok(Some(metadata)),
+            Err(R2ClientError::NotFound) => Ok(None),
+            Err(error) => Err(map_transport_error(error)),
         }
     }
 
     async fn delete(&self, object: &StoredObject) -> Result<(), StorageError> {
-        let result = self
-            .client
-            .delete_object()
-            .bucket(self.config.bucket_name(select_bucket(object)))
-            .key(object.object_key.as_str())
-            .send()
+        match self
+            .transport
+            .delete(object_request(&self.config, object))
             .await
-            .map(|_| ())
-            .map_err(|error| {
-                if error
-                    .raw_response()
-                    .is_some_and(|response| response.status().as_u16() == 404)
-                {
-                    R2OperationError::NotFound
-                } else {
-                    R2OperationError::Failed
-                }
-            });
-        delete_outcome(result)
+        {
+            Ok(()) | Err(R2ClientError::NotFound) => Ok(()),
+            Err(error) => Err(map_transport_error(error)),
+        }
     }
 
     async fn private_download_grant(
@@ -180,7 +337,7 @@ impl StorageProvider for R2StorageProvider {
         filename: &str,
         ttl: Duration,
     ) -> Result<DownloadGrant, StorageError> {
-        if object.storage_class != StorageClass::Private {
+        if object.storage_class() != StorageClass::Private {
             return Err(StorageError::PrivateGrantRequiresPrivateObject);
         }
         if ttl.is_zero() {
@@ -188,20 +345,19 @@ impl StorageProvider for R2StorageProvider {
         }
 
         let ttl = bounded_grant_ttl(ttl);
-        let presigning =
-            PresigningConfig::expires_in(ttl).map_err(|_| StorageError::InvalidDownloadGrantTtl)?;
-        let request = self
-            .client
-            .get_object()
-            .bucket(self.config.bucket_name(StorageBucket::Private))
-            .key(object.object_key.as_str())
-            .response_content_disposition(content_disposition(filename))
-            .presigned(presigning)
+        let issued_at = Utc::now();
+        let location = self
+            .transport
+            .presign_get(PresignRequest {
+                bucket: self.config.bucket_name(StorageClass::Private).to_string(),
+                key: object.object_key.as_str().to_string(),
+                content_disposition: content_disposition(filename),
+                ttl,
+                issued_at,
+            })
             .await
-            .map_err(|_| StorageError::OperationFailed)?;
-        let location =
-            Url::parse(&request.uri().to_string()).map_err(|_| StorageError::OperationFailed)?;
-        let expires_at = Utc::now()
+            .map_err(map_transport_error)?;
+        let expires_at = issued_at
             + chrono::Duration::from_std(ttl).map_err(|_| StorageError::InvalidDownloadGrantTtl)?;
 
         Ok(DownloadGrant::Redirect {
@@ -215,17 +371,17 @@ impl StorageProvider for R2StorageProvider {
     }
 }
 
-fn select_bucket(object: &StoredObject) -> StorageBucket {
-    match object.storage_class {
-        StorageClass::Public => StorageBucket::Public,
-        StorageClass::Private => StorageBucket::Private,
+fn object_request(config: &R2StorageConfig, object: &StoredObject) -> ObjectRequest {
+    ObjectRequest {
+        bucket: config.bucket_name(object.storage_class()).to_string(),
+        key: object.object_key.as_str().to_string(),
     }
 }
 
-fn delete_outcome(result: Result<(), R2OperationError>) -> Result<(), StorageError> {
-    match result {
-        Ok(()) | Err(R2OperationError::NotFound) => Ok(()),
-        Err(R2OperationError::Failed) => Err(StorageError::OperationFailed),
+fn map_transport_error(error: R2ClientError) -> StorageError {
+    match error {
+        R2ClientError::AlreadyExists => StorageError::AlreadyExists,
+        R2ClientError::NotFound | R2ClientError::Failed => StorageError::OperationFailed,
     }
 }
 
@@ -251,90 +407,308 @@ fn content_disposition(filename: &str) -> String {
 }
 
 fn public_location_for(base_url: &Url, object: &StoredObject) -> Result<Url, StorageError> {
-    if object.storage_class != StorageClass::Public {
+    if object.storage_class() != StorageClass::Public {
         return Err(StorageError::PublicLocationRequiresPublicObject);
     }
 
-    base_url
-        .join(object.object_key.as_str())
-        .map_err(|_| StorageError::OperationFailed)
+    let mut location = base_url.clone();
+    let mut segments = location
+        .path_segments_mut()
+        .map_err(|_| StorageError::OperationFailed)?;
+    segments.pop_if_empty();
+    for segment in object.object_key.as_str().split('/') {
+        segments.push(segment);
+    }
+    drop(segments);
+    Ok(location)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::modules::files::{
-        platform_types::{DetectedContent, FilePurpose, StorageClass},
+        platform_types::{DetectedContent, FilePurpose},
         purpose_registry::original_object_key,
         storage_provider::{StoredObject, MAX_PRIVATE_DOWNLOAD_GRANT_TTL},
     };
-    use std::time::Duration;
+    use bytes::Bytes;
+    use std::{
+        collections::VecDeque,
+        sync::{Arc, Mutex},
+        time::Duration,
+    };
     use uuid::Uuid;
 
-    fn object(storage_class: StorageClass) -> StoredObject {
-        StoredObject {
-            storage_class,
-            object_key: original_object_key(
+    #[derive(Clone, Eq, PartialEq)]
+    enum CapturedR2Request {
+        Put(PutRequest),
+        Head(ObjectRequest),
+        Delete(ObjectRequest),
+        Presign(PresignRequest),
+    }
+
+    fn object(purpose: FilePurpose) -> StoredObject {
+        StoredObject::new(
+            original_object_key(
                 Uuid::parse_str("11111111-1111-1111-1111-111111111111").unwrap(),
-                FilePurpose::ProfileImage,
+                purpose,
                 Uuid::parse_str("22222222-2222-2222-2222-222222222222").unwrap(),
                 1,
                 DetectedContent::Png,
             )
             .unwrap(),
-            content_type: "image/png".to_string(),
+            "image/png",
+        )
+    }
+
+    #[derive(Default)]
+    struct CapturedR2Client {
+        requests: Mutex<Vec<CapturedR2Request>>,
+        put_results: Mutex<VecDeque<Result<(), R2ClientError>>>,
+        head_results: Mutex<VecDeque<Result<ObjectMetadata, R2ClientError>>>,
+        delete_results: Mutex<VecDeque<Result<(), R2ClientError>>>,
+        presign_results: Mutex<VecDeque<Result<Url, R2ClientError>>>,
+    }
+
+    #[async_trait]
+    impl R2Transport for CapturedR2Client {
+        async fn put(&self, request: PutRequest) -> Result<(), R2ClientError> {
+            self.requests
+                .lock()
+                .unwrap()
+                .push(CapturedR2Request::Put(request));
+            self.put_results
+                .lock()
+                .unwrap()
+                .pop_front()
+                .unwrap_or(Ok(()))
+        }
+
+        async fn head(&self, request: ObjectRequest) -> Result<ObjectMetadata, R2ClientError> {
+            self.requests
+                .lock()
+                .unwrap()
+                .push(CapturedR2Request::Head(request));
+            self.head_results
+                .lock()
+                .unwrap()
+                .pop_front()
+                .unwrap_or(Err(R2ClientError::NotFound))
+        }
+
+        async fn delete(&self, request: ObjectRequest) -> Result<(), R2ClientError> {
+            self.requests
+                .lock()
+                .unwrap()
+                .push(CapturedR2Request::Delete(request));
+            self.delete_results
+                .lock()
+                .unwrap()
+                .pop_front()
+                .unwrap_or(Ok(()))
+        }
+
+        async fn presign_get(&self, request: PresignRequest) -> Result<Url, R2ClientError> {
+            self.requests
+                .lock()
+                .unwrap()
+                .push(CapturedR2Request::Presign(request));
+            self.presign_results
+                .lock()
+                .unwrap()
+                .pop_front()
+                .unwrap_or_else(|| {
+                    Url::parse("https://private.example.invalid/grant?signature=test")
+                        .map_err(|_| R2ClientError::Failed)
+                })
         }
     }
 
-    #[test]
-    fn r2_selects_only_the_public_bucket_for_public_objects() {
-        assert_eq!(
-            select_bucket(&object(StorageClass::Public)),
-            StorageBucket::Public
-        );
+    fn config(public_bucket: &str, private_bucket: &str, base_url: &str) -> R2StorageConfig {
+        R2StorageConfig::from_values(
+            "account",
+            "access",
+            "secret",
+            "auto",
+            public_bucket,
+            private_bucket,
+            base_url,
+        )
+        .unwrap()
     }
 
-    #[test]
-    fn r2_selects_only_the_private_bucket_for_private_objects() {
-        assert_eq!(
-            select_bucket(&object(StorageClass::Private)),
-            StorageBucket::Private
-        );
+    fn provider(client: Arc<CapturedR2Client>) -> R2StorageProvider {
+        R2StorageProvider::with_transport(
+            config(
+                "public-assets",
+                "private-files",
+                "https://cdn.example.invalid/media/v1",
+            ),
+            client,
+        )
     }
 
-    #[test]
-    fn r2_delete_treats_not_found_as_success() {
-        assert_eq!(delete_outcome(Err(R2OperationError::NotFound)), Ok(()));
-    }
+    #[tokio::test]
+    async fn provider_operations_select_buckets_and_preserve_immutable_private_uploads() {
+        let client = Arc::new(CapturedR2Client::default());
+        client
+            .head_results
+            .lock()
+            .unwrap()
+            .push_back(Ok(ObjectMetadata {
+                content_type: Some("image/png".to_string()),
+                content_length: Some(4),
+            }));
+        let provider = provider(Arc::clone(&client));
+        let private = object(FilePurpose::ProfileImage);
 
-    #[test]
-    fn r2_private_grants_cap_ttl_and_sanitize_content_disposition() {
+        provider
+            .put(&private, Bytes::from_static(b"data"))
+            .await
+            .unwrap();
         assert_eq!(
-            bounded_grant_ttl(MAX_PRIVATE_DOWNLOAD_GRANT_TTL + Duration::from_secs(1)),
-            MAX_PRIVATE_DOWNLOAD_GRANT_TTL
+            provider
+                .head(&private)
+                .await
+                .unwrap()
+                .unwrap()
+                .content_length,
+            Some(4)
         );
-        let disposition = content_disposition("report\"\r\nX-Injected: true.pdf");
-        assert!(disposition.starts_with("attachment; filename=\"report"));
-        let filename = disposition
+        provider.delete(&private).await.unwrap();
+        let grant = provider
+            .private_download_grant(&private, "Résumé\r\nX-Evil: yes.pdf", Duration::MAX)
+            .await
+            .unwrap();
+
+        let requests = client.requests.lock().unwrap();
+        assert!(matches!(
+            &requests[0],
+            CapturedR2Request::Put(PutRequest { bucket, if_none_match, .. })
+                if bucket == "private-files" && if_none_match == "*"
+        ));
+        assert!(
+            matches!(&requests[1], CapturedR2Request::Head(ObjectRequest { bucket, .. }) if bucket == "private-files")
+        );
+        assert!(
+            matches!(&requests[2], CapturedR2Request::Delete(ObjectRequest { bucket, .. }) if bucket == "private-files")
+        );
+        let CapturedR2Request::Presign(request) = &requests[3] else {
+            panic!("expected presign request")
+        };
+        assert_eq!(request.bucket, "private-files");
+        assert_eq!(request.ttl, MAX_PRIVATE_DOWNLOAD_GRANT_TTL);
+        let filename = request
+            .content_disposition
             .strip_prefix("attachment; filename=\"")
             .and_then(|value| value.strip_suffix('"'))
             .expect("content disposition must contain a quoted filename");
         assert!(!filename.contains(['\r', '\n', '"']));
+        assert!(filename.is_ascii());
+        let DownloadGrant::Redirect { expires_at, .. } = grant else {
+            panic!("expected redirect")
+        };
+        assert_eq!(
+            expires_at,
+            request.issued_at + chrono::Duration::from_std(request.ttl).unwrap()
+        );
+    }
+
+    #[tokio::test]
+    async fn provider_handles_missing_objects_and_safe_provider_failures() {
+        let client = Arc::new(CapturedR2Client::default());
+        client
+            .put_results
+            .lock()
+            .unwrap()
+            .push_back(Err(R2ClientError::AlreadyExists));
+        client
+            .delete_results
+            .lock()
+            .unwrap()
+            .push_back(Err(R2ClientError::NotFound));
+        let provider = provider(Arc::clone(&client));
+        let public = object(FilePurpose::SchoolLogo);
+
+        let error = provider.put(&public, Bytes::new()).await.unwrap_err();
+        assert_eq!(error, StorageError::AlreadyExists);
+        assert!(!error.to_string().contains(public.object_key.as_str()));
+        assert_eq!(provider.head(&public).await.unwrap(), None);
+        provider.delete(&public).await.unwrap();
+
+        let location = provider.public_location(&public).unwrap();
+        assert_eq!(location.path(), "/media/v1/tenants/11111111-1111-1111-1111-111111111111/school/logo/22222222-2222-2222-2222-222222222222/v1/original.png");
+        let requests = client.requests.lock().unwrap();
+        assert!(
+            matches!(&requests[0], CapturedR2Request::Put(PutRequest { bucket, .. }) if bucket == "public-assets")
+        );
+        assert!(
+            matches!(&requests[1], CapturedR2Request::Head(ObjectRequest { bucket, .. }) if bucket == "public-assets")
+        );
+        assert!(
+            matches!(&requests[2], CapturedR2Request::Delete(ObjectRequest { bucket, .. }) if bucket == "public-assets")
+        );
     }
 
     #[test]
-    fn r2_public_location_rejects_private_objects() {
-        let base_url = Url::parse("https://public.example.invalid/").unwrap();
+    fn configuration_rejects_unsafe_or_ambiguous_bucket_topology() {
+        for (public_bucket, private_bucket) in
+            [("", "private"), ("public", "  "), ("same", " same ")]
+        {
+            assert!(R2StorageConfig::from_values(
+                "account",
+                "access",
+                "secret",
+                "auto",
+                public_bucket,
+                private_bucket,
+                "https://cdn.example.invalid/files/"
+            )
+            .is_err());
+        }
+        for url in [
+            "ftp://cdn.example.invalid/files/",
+            "https://user:password@cdn.example.invalid/files/",
+            "https://cdn.example.invalid/files/?token=secret",
+            "https://cdn.example.invalid/files/#fragment",
+        ] {
+            assert!(R2StorageConfig::from_values(
+                "account", "access", "secret", "auto", "public", "private", url
+            )
+            .is_err());
+        }
+    }
 
+    #[tokio::test]
+    async fn private_grant_rejects_zero_ttl_without_calling_transport() {
+        let client = Arc::new(CapturedR2Client::default());
+        let provider = provider(Arc::clone(&client));
         assert_eq!(
-            public_location_for(&base_url, &object(StorageClass::Private)),
-            Err(StorageError::PublicLocationRequiresPublicObject)
+            provider
+                .private_download_grant(
+                    &object(FilePurpose::ProfileImage),
+                    "file.pdf",
+                    Duration::ZERO
+                )
+                .await,
+            Err(StorageError::InvalidDownloadGrantTtl)
         );
+        assert!(client.requests.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn conditional_write_conflicts_never_become_retries_or_leak_details() {
+        for status in [409, 412] {
+            assert_eq!(
+                classify_write_status(Some(status)),
+                R2ClientError::AlreadyExists
+            );
+        }
         assert_eq!(
-            public_location_for(&base_url, &object(StorageClass::Public))
-                .unwrap()
-                .host_str(),
-            Some("public.example.invalid")
+            map_transport_error(R2ClientError::AlreadyExists),
+            StorageError::AlreadyExists
         );
+        assert!(!StorageError::AlreadyExists.to_string().contains("bucket"));
+        assert!(!StorageError::AlreadyExists.log_safe_code().contains("key"));
     }
 }

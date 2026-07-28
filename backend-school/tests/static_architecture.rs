@@ -4946,6 +4946,7 @@ fn file_platform_blocks_new_provider_coupling_and_locator_responses() {
         "src/modules/files/models.rs: FileResponse exposes storage_path".to_string(),
         "src/modules/files/models.rs: FileResponse exposes thumbnail_url".to_string(),
         "src/modules/files/models.rs: FileResponse exposes url".to_string(),
+        "src/modules/files/r2_storage_provider.rs: direct R2 client use".to_string(),
         "src/modules/files/services.rs: constructs a tenant object prefix".to_string(),
         "src/modules/files/services.rs: direct R2 client use".to_string(),
         "src/modules/parents/models.rs: ChildDto exposes profile_image_url".to_string(),
@@ -4976,8 +4977,19 @@ fn file_platform_object_keys_can_only_be_constructed_by_the_purpose_registry() {
         "platform types must not expose raw object-key construction"
     );
     assert!(
-        registry.contains("pub struct ObjectKey(String);"),
-        "purpose registry must own the private raw object-key constructor"
+        registry.contains("pub struct ObjectKey(String, StorageClass);"),
+        "purpose registry must own the private raw object-key constructor and storage class"
+    );
+
+    let storage_provider =
+        read_source(manifest_dir().join("src/modules/files/storage_provider.rs"));
+    assert!(
+        !storage_provider.contains("pub storage_class: StorageClass"),
+        "stored objects must derive storage class from registry-created object keys"
+    );
+    assert!(
+        storage_provider.contains("self.object_key.storage_class()"),
+        "stored objects must retain the storage class carried by their object key"
     );
 
     for file in backend_rs_files() {
