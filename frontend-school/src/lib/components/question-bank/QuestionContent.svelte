@@ -1,15 +1,17 @@
 <script lang="ts">
 	import type { QuestionFile, RichContent, RichInlineNode } from '$lib/api/questionBank';
+	import PrivateFileImage from '$lib/components/files/PrivateFileImage.svelte';
 	import MathContent from './MathContent.svelte';
 
 	interface Props {
 		content?: RichContent | null;
 		files?: QuestionFile[];
+		questionId?: string;
 		compact?: boolean;
 	}
 
-	let { content = null, files = [], compact = false }: Props = $props();
-	let fileUrls = $derived(new Map(files.map((file) => [file.id, file.thumbnailUrl ?? file.url])));
+	let { content = null, files = [], questionId, compact = false }: Props = $props();
+	let fileIds = $derived(new Set(files.map((file) => file.id)));
 
 	function hasMark(node: Extract<RichInlineNode, { type: 'text' }>, type: 'bold' | 'italic') {
 		return node.marks?.some((mark) => mark.type === type) ?? false;
@@ -61,7 +63,7 @@
 				<span class="inline text-muted-foreground">
 					{block.attrs.altText?.trim() || block.attrs.caption?.trim() || 'โจทย์รูปภาพ'}
 				</span>
-			{:else if fileUrls.get(block.attrs.fileId)}
+			{:else if questionId && fileIds.has(block.attrs.fileId)}
 				<figure
 					class="space-y-1"
 					class:mr-auto={block.attrs.alignment === 'left'}
@@ -69,8 +71,9 @@
 					class:ml-auto={block.attrs.alignment === 'right'}
 					style:width={`${imageWidth(block.attrs.widthPercent)}%`}
 				>
-					<img
-						src={fileUrls.get(block.attrs.fileId)}
+					<PrivateFileImage
+						fileId={block.attrs.fileId}
+						resourceId={questionId}
 						alt={block.attrs.altText ?? ''}
 						class="max-h-96 max-w-full rounded-md border object-contain"
 					/>

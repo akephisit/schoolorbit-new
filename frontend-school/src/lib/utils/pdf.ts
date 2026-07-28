@@ -6,6 +6,7 @@ import type {
 } from 'pdfmake/interfaces';
 import type { TimetableEntry } from '$lib/api/timetable';
 import { getSchoolSettings } from '$lib/api/school';
+import { publicFileUrl } from '$lib/api/files';
 
 interface PdfPeriod {
 	id: string;
@@ -990,8 +991,8 @@ export const generateTimetablePDF = async (
 	let logoDataUrl: string | null = null;
 	try {
 		const settings = await getSchoolSettings();
-		if (settings.logoUrl) {
-			logoDataUrl = await fetchImageDataUrl(settings.logoUrl);
+		if (settings.logoFileId) {
+			logoDataUrl = await fetchImageDataUrl(publicFileUrl(settings.logoFileId));
 		}
 	} catch {
 		/* ไม่มี logo ก็ไม่เป็นไร */

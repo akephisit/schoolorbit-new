@@ -42,9 +42,13 @@ export function deleteFile(fileId: string, resourceId?: string): Promise<FileDel
 		.then((response) => requireApiData(response, 'ลบไฟล์ไม่สำเร็จ'));
 }
 
-export function downloadFile(fileId: string, resourceId?: string): Promise<Blob> {
+export function downloadFile(
+	fileId: string,
+	resourceId?: string,
+	signal?: AbortSignal
+): Promise<Blob> {
 	return apiClient
-		.postBlob(`/api/files/${fileId}/download${resourceQuery(resourceId)}`)
+		.postBlob(`/api/files/${fileId}/download${resourceQuery(resourceId)}`, { signal })
 		.then((response) => requireApiData(response, 'ดาวน์โหลดไฟล์ไม่สำเร็จ'));
 }
 

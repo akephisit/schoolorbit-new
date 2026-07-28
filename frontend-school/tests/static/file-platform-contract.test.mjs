@@ -69,3 +69,69 @@ test('typed file helper uses generated DTOs and file IDs as identity', async () 
 		assert.doesNotMatch(source, new RegExp(forbidden.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
 	}
 });
+
+test('school frontend consumers use file IDs instead of provider paths or persisted URLs', async () => {
+	const consumerPaths = [
+		'frontend-school/src/lib/api/admission.ts',
+		'frontend-school/src/lib/api/auth.ts',
+		'frontend-school/src/lib/api/school.ts',
+		'frontend-school/src/lib/components/achievement/AchievementCard.svelte',
+		'frontend-school/src/lib/components/achievement/AchievementDialog.svelte',
+		'frontend-school/src/lib/components/files/PortalFileImage.svelte',
+		'frontend-school/src/lib/components/files/PrivateFileImage.svelte',
+		'frontend-school/src/lib/components/forms/ProfileImageUpload.svelte',
+		'frontend-school/src/lib/components/question-bank/QuestionContent.svelte',
+		'frontend-school/src/lib/stores/auth.ts',
+		'frontend-school/src/routes/(app)/parent/+page.svelte',
+		'frontend-school/src/routes/(app)/parent/student/[id]/+page.svelte',
+		'frontend-school/src/routes/(app)/staff/academic/admission/[id]/applications/[appId]/+page.svelte',
+		'frontend-school/src/routes/(app)/staff/academic/question-bank/+page.svelte',
+		'frontend-school/src/routes/(app)/staff/achievements/+page.svelte',
+		'frontend-school/src/routes/(app)/staff/manage/[id]/+page.svelte',
+		'frontend-school/src/routes/(app)/staff/manage/[id]/edit/+page.svelte',
+		'frontend-school/src/routes/(app)/staff/profile/+page.svelte',
+		'frontend-school/src/routes/(app)/staff/school-settings/+page.svelte',
+		'frontend-school/src/routes/(app)/staff/view/[id]/+page.svelte',
+		'frontend-school/src/routes/(public)/apply/+page.svelte',
+		'frontend-school/src/routes/(public)/apply/[id]/+page.svelte',
+		'frontend-school/src/routes/(public)/apply/status/+page.svelte'
+	];
+	const sources = await Promise.all(consumerPaths.map(readRepoFile));
+	const source = sources.join('\n');
+
+	for (const forbidden of [
+		'storage_path',
+		'thumbnail_path',
+		'/api/files?path=',
+		"formData.append('file_type'",
+		'profile_image_url',
+		'profileImageUrl',
+		'image_path',
+		'fileUrl',
+		'logoPath',
+		'logoUrl'
+	]) {
+		assert.doesNotMatch(
+			source,
+			new RegExp(forbidden.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')),
+			`legacy file locator remains: ${forbidden}`
+		);
+	}
+
+	assert.match(source, /profileImageFileId/);
+	assert.match(source, /image_file_id|imageFileId/);
+	assert.match(source, /logoFileId/);
+	assert.match(source, /publicFileUrl/);
+	assert.match(source, /downloadFile/);
+});
+
+test('portal document credentials stay in request bodies and downloads use blob delivery', async () => {
+	const admission = await readRepoFile('frontend-school/src/lib/api/admission.ts');
+	const client = await readRepoFile('frontend-school/src/lib/api/client.ts');
+
+	assert.match(client, /postBlobWithBody/);
+	assert.match(admission, /apiClient\.deleteWithBody/);
+	assert.match(admission, /apiClient\.postBlobWithBody/);
+	assert.doesNotMatch(admission, /URLSearchParams\(\{\s*nationalId/);
+	assert.doesNotMatch(admission, /national_id=.*date_of_birth=/);
+});

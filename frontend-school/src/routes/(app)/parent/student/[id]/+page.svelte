@@ -12,6 +12,7 @@
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { formatDate } from '$lib/utils/date';
+	import PrivateFileImage from '$lib/components/files/PrivateFileImage.svelte';
 
 	let { params }: PageProps = $props();
 	let studentId = $derived(params.id);
@@ -63,9 +64,10 @@
 			<div
 				class="w-32 h-32 rounded-full bg-muted flex items-center justify-center overflow-hidden border-4 border-background shadow-lg"
 			>
-				{#if student.profile_image_url}
-					<img
-						src={student.profile_image_url}
+				{#if student.profile_image_file_id}
+					<PrivateFileImage
+						fileId={student.profile_image_file_id}
+						resourceId={student.id}
 						alt={student.first_name}
 						class="w-full h-full object-cover"
 					/>
@@ -138,9 +140,7 @@
 				<Button
 					variant="link"
 					class="px-0 mt-2 text-purple-600"
-					onclick={() =>
-						// eslint-disable-next-line @typescript-eslint/no-explicit-any -- dynamic typed-route interpolation
-						goto(resolve(`/parent/student/${studentId}/timetable` as any))}
+					onclick={() => goto(resolve(`/parent/student/${studentId}/timetable`))}
 				>
 					ดูทั้งหมด
 				</Button>

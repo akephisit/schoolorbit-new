@@ -14,7 +14,7 @@ export interface User {
 	status: string;
 	createdAt: string;
 	primaryRoleName?: string; // ชื่อบทบาทหลักจากฐานข้อมูล
-	profileImageUrl?: string;
+	profileImageFileId?: string;
 	permissions?: string[]; // Permissions from /api/auth/me
 }
 

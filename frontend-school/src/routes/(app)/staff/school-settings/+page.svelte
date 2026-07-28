@@ -16,10 +16,8 @@
 	import { Save, Upload, ImageOff, X } from 'lucide-svelte';
 	import { toast } from 'svelte-sonner';
 	import { getSchoolSettings, updateSchoolSettings, deleteSchoolLogo } from '$lib/api/school';
-	import { uploadFile } from '$lib/api/files';
+	import { publicFileUrl, uploadFile } from '$lib/api/files';
 
-	let logoUrl = $state<string | undefined>(undefined); // URL สำหรับ preview (จาก backend)
-	let logoPath = $state<string | undefined>(undefined); // storage_path ที่เก็บใน DB
 	let logoFileId = $state<string | undefined>(undefined); // file ID สำหรับลบ
 	let saving = $state(false);
 	let loading = $state(true);
@@ -37,7 +35,6 @@
 
 		try {
 			const s = await getSchoolSettings();
-			logoUrl = s.logoUrl;
 			logoFileId = s.logoFileId;
 		} catch {
 			toast.error('ไม่สามารถโหลดข้อมูลได้');
@@ -63,18 +60,14 @@
 
 		saving = true;
 		try {
-			let pathToSave = logoPath;
 			if (pendingFile) {
-				const uploaded = (await uploadFile(pendingFile, 'school_logo')).file;
-				pathToSave = uploaded.storage_path;
-				logoUrl = uploaded.url;
+				const uploaded = await uploadFile(pendingFile, 'school_logo');
 				logoFileId = uploaded.id;
 				if (previewUrl) URL.revokeObjectURL(previewUrl);
 				previewUrl = undefined;
 				pendingFile = undefined;
 			}
-			await updateSchoolSettings({ logoPath: pathToSave, logoFileId });
-			logoPath = pathToSave;
+			await updateSchoolSettings({ logoFileId: logoFileId ?? null });
 			toast.success('บันทึกการตั้งค่าสำเร็จ');
 		} catch (err) {
 			toast.error(err instanceof Error ? err.message : 'บันทึกไม่สำเร็จ');
@@ -92,8 +85,6 @@
 		saving = true;
 		try {
 			await deleteSchoolLogo();
-			logoUrl = undefined;
-			logoPath = undefined;
 			logoFileId = undefined;
 			toast.success('ลบ logo สำเร็จ');
 		} catch (err) {
@@ -130,9 +121,11 @@
 					<div
 						class="w-24 h-24 rounded-2xl border-2 border-dashed border-border flex items-center justify-center bg-muted overflow-hidden"
 					>
-						{#if previewUrl ?? logoUrl}
+						{#if previewUrl}
+							<img src={previewUrl} alt="school logo" class="w-full h-full object-contain p-1" />
+						{:else if logoFileId}
 							<img
-								src={previewUrl ?? logoUrl}
+								src={publicFileUrl(logoFileId)}
 								alt="school logo"
 								class="w-full h-full object-contain p-1"
 							/>
@@ -190,7 +183,7 @@
 							>
 								<X class="w-4 h-4" /> ยกเลิก
 							</Button>
-						{:else if logoUrl}
+						{:else if logoFileId}
 							<Button
 								variant="ghost"
 								class="text-destructive hover:text-destructive"

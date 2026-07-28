@@ -10,20 +10,18 @@ export type SchoolSettings = OptionalNonNull<SchoolSettingsDto>;
 export type PublicSchoolInfo = OptionalNonNull<PublicSchoolInfoDto>;
 
 export interface UpdateSchoolSettingsRequest {
-	logoPath?: string;
-	logoFileId?: string;
+	logoFileId?: string | null;
 }
 
 function schoolSettingsFromDto(dto: SchoolSettingsDto): SchoolSettings {
 	return {
-		...(dto.logoUrl === null ? {} : { logoUrl: dto.logoUrl }),
 		...(dto.logoFileId === null ? {} : { logoFileId: dto.logoFileId })
 	};
 }
 
 function publicSchoolInfoFromDto(dto: PublicSchoolInfoDto): PublicSchoolInfo {
 	return {
-		...(dto.logoUrl === null ? {} : { logoUrl: dto.logoUrl }),
+		...(dto.logoFileId === null ? {} : { logoFileId: dto.logoFileId }),
 		...(dto.schoolName === null ? {} : { schoolName: dto.schoolName })
 	};
 }

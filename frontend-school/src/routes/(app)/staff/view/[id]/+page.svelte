@@ -12,7 +12,6 @@
 		CardTitle,
 		CardDescription
 	} from '$lib/components/ui/card';
-	import { Avatar } from '$lib/components/ui/avatar';
 	import { Badge } from '$lib/components/ui/badge';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import {
@@ -23,8 +22,7 @@
 		Calendar,
 		Award,
 		User,
-		FileText,
-		ExternalLink
+		FileText
 	} from 'lucide-svelte';
 	import { getPublicStaffProfile } from '$lib/api/staff';
 	import { getAchievements } from '$lib/api/achievement';
@@ -32,6 +30,7 @@
 	import type { Achievement } from '$lib/types/achievement';
 	import { toast } from 'svelte-sonner';
 	import { LoaderCircle } from 'lucide-svelte';
+	import PrivateFileImage from '$lib/components/files/PrivateFileImage.svelte';
 
 	const { params }: PageProps = $props();
 	let staffId = $derived(params.id);
@@ -43,25 +42,13 @@
 
 	// File Preview State
 	let showFileDialog = $state(false);
-	let viewingFileUrl = $state('');
-	let viewingFileType = $state('');
-	let isImageLoading = $state(false);
+	let viewingFileId = $state('');
+	let viewingResourceId = $state('');
 
-	function viewFile(path: string) {
-		if (!path) return;
-
-		const url = path.startsWith('http') ? path : `/api/files?path=${path}`;
-		viewingFileUrl = url;
-
-		const ext = path.split('.').pop()?.toLowerCase();
-		if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'heic', 'bmp', 'svg'].includes(ext || '')) {
-			viewingFileType = 'image';
-			isImageLoading = true;
-			showFileDialog = true;
-		} else {
-			// Fallback: open in new tab for other types
-			window.open(url, '_blank');
-		}
+	function viewFile(fileId: string, resourceId: string) {
+		viewingFileId = fileId;
+		viewingResourceId = resourceId;
+		showFileDialog = true;
 	}
 
 	async function loadStaffProfile() {
@@ -140,13 +127,20 @@
 						<div
 							class="absolute -inset-1 rounded-full bg-gradient-to-r from-primary to-primary/50 opacity-30 blur group-hover:opacity-60 transition-opacity"
 						></div>
-						<Avatar
-							src={staff.profile_image_url}
-							alt={staff.first_name}
-							initials={staff.first_name[0] + (staff.last_name[0] || '')}
-							size="xl"
-							class="w-32 h-32 border-4 border-background relative shadow-xl"
-						/>
+						<div
+							class="w-32 h-32 overflow-hidden rounded-full border-4 border-background relative shadow-xl bg-muted flex items-center justify-center"
+						>
+							{#if staff.profile_image_file_id}
+								<PrivateFileImage
+									fileId={staff.profile_image_file_id}
+									resourceId={staff.id}
+									alt={staff.first_name}
+									class="w-full h-full object-cover"
+								/>
+							{:else}
+								<User class="w-14 h-14 text-muted-foreground/50" />
+							{/if}
+						</div>
 					</div>
 
 					<!-- Basic Info -->
@@ -290,9 +284,9 @@
 												</div>
 											{/if}
 
-											{#if item.image_path}
+											{#if item.image_file_id}
 												<button
-													onclick={() => viewFile(item.image_path!)}
+													onclick={() => viewFile(item.image_file_id!, item.id)}
 													class="inline-flex items-center gap-1.5 text-xs font-medium text-primary hover:text-primary/80 transition-colors bg-primary/5 px-2.5 py-1.5 rounded-md cursor-pointer border-0"
 												>
 													<FileText class="w-3.5 h-3.5" />
@@ -324,28 +318,16 @@
 			<div
 				class="relative flex-1 bg-muted/30 min-h-[200px] flex items-center justify-center overflow-auto p-4"
 			>
-				{#if viewingFileType === 'image'}
-					{#if isImageLoading}
-						<div class="absolute inset-0 flex items-center justify-center pointer-events-none">
-							<LoaderCircle class="w-10 h-10 animate-spin text-primary" />
-						</div>
-					{/if}
-					<img
-						src={viewingFileUrl}
+				{#if viewingFileId}
+					<PrivateFileImage
+						fileId={viewingFileId}
+						resourceId={viewingResourceId}
 						alt="Preview"
-						class="max-w-full max-h-[80vh] object-contain shadow-sm rounded-sm transition-opacity duration-300 {isImageLoading
-							? 'opacity-0'
-							: 'opacity-100'}"
-						onload={() => (isImageLoading = false)}
-						onerror={() => (isImageLoading = false)}
+						class="max-w-full max-h-[80vh] object-contain shadow-sm rounded-sm"
 					/>
 				{:else}
 					<div class="text-center p-8">
 						<p class="mb-4 text-muted-foreground">ไม่สามารถแสดงตัวอย่างไฟล์ประเภทนี้ได้</p>
-						<Button href={viewingFileUrl} target="_blank" variant="outline">
-							<ExternalLink class="w-4 h-4 mr-2" />
-							ดาวน์โหลด / เปิดในหน้าต่างใหม่
-						</Button>
 					</div>
 				{/if}
 			</div>

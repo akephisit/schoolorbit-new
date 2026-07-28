@@ -53,6 +53,7 @@
 	} from 'lucide-svelte';
 	import { can } from '$lib/stores/permissions';
 	import { PERMISSIONS } from '$lib/permissions/registry';
+	import PrivateFileImage from '$lib/components/files/PrivateFileImage.svelte';
 
 	import type { PageProps } from './$types';
 	let { params }: PageProps = $props();
@@ -102,7 +103,16 @@
 		initialCorners?: [CropPoint, CropPoint, CropPoint, CropPoint];
 	} | null>(null);
 	let cropperOpen = $state(false);
-	let fileInputRefs = $state<Record<string, HTMLInputElement>>({});
+	const fileInputRefs: Record<string, HTMLInputElement> = {};
+
+	function captureFileInput(docType: string) {
+		return (node: HTMLInputElement) => {
+			fileInputRefs[docType] = node;
+			return () => {
+				if (fileInputRefs[docType] === node) delete fileInputRefs[docType];
+			};
+		};
+	}
 
 	// Navigation
 	let navIds: string[] = $state([]);
@@ -117,7 +127,12 @@
 	let savingTrack = $state(false);
 
 	// Lightbox
-	let lightboxDoc = $state<ApplicationDocument | null>(null);
+	type LightboxDocument = {
+		docType: string;
+		fileId?: string;
+		previewUrl?: string;
+	};
+	let lightboxDoc = $state<LightboxDocument | null>(null);
 	let lbZoom = $state(1);
 	let lbPan = $state({ x: 0, y: 0 });
 	let lbDragging = $state(false);
@@ -269,12 +284,11 @@
 						applicationId: application.id,
 						fileId: result.fileId,
 						docType: result.docType,
-						fileUrl: result.fileUrl,
 						fileSize: result.fileSize,
 						createdAt: new Date().toISOString()
 					}
 				];
-				docSlots[docType] = { preview: result.fileUrl, uploading: false };
+				docSlots[docType] = { ...slot, blob: undefined, uploading: false };
 			}
 
 			// 3. Delete pending deletes
@@ -372,8 +386,14 @@
 		};
 	}
 
-	function openLightboxUrl(url: string, docType: string) {
-		lightboxDoc = { id: '', applicationId: '', fileId: '', docType, fileUrl: url, createdAt: '' };
+	function openLightboxPreview(previewUrl: string, docType: string) {
+		lightboxDoc = { docType, previewUrl };
+		lbZoom = 1;
+		lbPan = { x: 0, y: 0 };
+	}
+
+	function openLightboxDocument(fileId: string, docType: string) {
+		lightboxDoc = { docType, fileId };
 		lbZoom = 1;
 		lbPan = { x: 0, y: 0 };
 	}
@@ -1213,19 +1233,22 @@
 							{#each Object.entries(DOC_TYPE_LABELS) as [docType, info] (docType)}
 								{@const existingDoc = documents.find((d) => d.docType === docType)}
 								{@const slot = docSlots[docType]}
-								{@const previewUrl = slot?.pendingDelete
-									? undefined
-									: (slot?.preview ?? existingDoc?.fileUrl)}
+								{@const previewUrl = slot?.pendingDelete ? undefined : slot?.preview}
+								{@const existingFileId = slot?.pendingDelete ? undefined : existingDoc?.fileId}
 								<div class="flex flex-col gap-2">
 									<!-- Thumbnail -->
 									<button
 										type="button"
 										class="group focus:outline-none"
-										onclick={() => previewUrl && openLightboxUrl(previewUrl, docType)}
-										disabled={!previewUrl}
+										onclick={() => {
+											if (previewUrl) openLightboxPreview(previewUrl, docType);
+											else if (existingFileId) openLightboxDocument(existingFileId, docType);
+										}}
+										disabled={!previewUrl && !existingFileId}
 									>
 										<div
-											class="aspect-[3/4] rounded-lg overflow-hidden border bg-muted relative {previewUrl
+											class="aspect-[3/4] rounded-lg overflow-hidden border bg-muted relative {previewUrl ||
+											existingFileId
 												? 'group-hover:ring-2 group-hover:ring-primary transition-all'
 												: ''}"
 										>
@@ -1235,6 +1258,13 @@
 												</div>
 											{:else if previewUrl}
 												<img src={previewUrl} alt={info.label} class="w-full h-full object-cover" />
+											{:else if existingFileId}
+												<PrivateFileImage
+													fileId={existingFileId}
+													resourceId={appId}
+													alt={info.label}
+													class="w-full h-full object-cover"
+												/>
 												<div
 													class="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center"
 												>
@@ -1259,7 +1289,7 @@
 									<!-- Action buttons (edit mode only) -->
 									{#if editMode}
 										<div class="flex gap-1">
-											{#if previewUrl}
+											{#if previewUrl || existingFileId}
 												<Button
 													size="sm"
 													variant="outline"
@@ -1292,7 +1322,7 @@
 												type="file"
 												accept="image/*"
 												class="hidden"
-												bind:this={fileInputRefs[docType]}
+												{@attach captureFileInput(docType)}
 												onchange={(e) => handleDocFileSelected(docType, e)}
 											/>
 										</div>
@@ -1569,15 +1599,22 @@
 			onmousedown={onLbMouseDown}
 			role="presentation"
 		>
-			{#if lightboxDoc.fileUrl}
+			{#if lightboxDoc.previewUrl}
 				<img
-					src={lightboxDoc.fileUrl}
+					src={lightboxDoc.previewUrl}
 					alt={DOC_TYPE_LABELS[lightboxDoc.docType]?.label ?? lightboxDoc.docType}
 					class="max-w-none pointer-events-none select-none"
 					style="transform: translate({lbPan.x}px, {lbPan.y}px) scale({lbZoom}); transition: {lbDragging
 						? 'none'
 						: 'transform 0.1s ease'}; max-height: 80vh; max-width: 90vw;"
 					draggable="false"
+				/>
+			{:else if lightboxDoc.fileId}
+				<PrivateFileImage
+					fileId={lightboxDoc.fileId}
+					resourceId={appId}
+					alt={DOC_TYPE_LABELS[lightboxDoc.docType]?.label ?? lightboxDoc.docType}
+					class="max-w-none pointer-events-none select-none"
 				/>
 			{/if}
 		</div>

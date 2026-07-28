@@ -8,6 +8,7 @@
 	import { User, ChevronRight } from 'lucide-svelte';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
+	import PrivateFileImage from '$lib/components/files/PrivateFileImage.svelte';
 
 	let profile = $state<ParentProfile | null>(null);
 	let loading = $state(true);
@@ -72,9 +73,10 @@
 									<div
 										class="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center overflow-hidden border-2 border-background shadow-sm"
 									>
-										{#if child.profile_image_url}
-											<img
-												src={child.profile_image_url}
+										{#if child.profile_image_file_id}
+											<PrivateFileImage
+												fileId={child.profile_image_file_id}
+												resourceId={child.id}
 												alt={child.first_name}
 												class="w-full h-full object-cover"
 											/>

@@ -34,6 +34,7 @@
 		ZoomOut
 	} from 'lucide-svelte';
 	import DocumentCropperModal from '$lib/components/DocumentCropperModal.svelte';
+	import PortalFileImage from '$lib/components/files/PortalFileImage.svelte';
 
 	let round = $state<AdmissionRound | null>(null);
 	let tracks = $state<AdmissionTrack[]>([]);
@@ -44,8 +45,8 @@
 	let successResult: { applicationNumber?: string; message?: string } | null = $state(null);
 
 	let isEditMode = $state(false);
-	let authNid = '';
-	let authDob = '';
+	let authNid = $state('');
+	let authDob = $state('');
 
 	// ===== ข้อมูลผู้สมัคร =====
 	let trackId = $state('');
@@ -159,7 +160,6 @@
 		tempFileId?: string;
 		name?: string;
 		size?: number;
-		url?: string;
 		preview?: string; // local blob URL for thumbnail display
 		blob?: Blob; // pending blob — uploaded at submit time
 		originalBlob?: Blob; // original uncropped file — for re-crop
@@ -181,6 +181,7 @@
 	let cropperOpen = $state(false);
 	// Lightbox
 	let lightboxSrc = $state<string | null>(null);
+	let lightboxFileId = $state<string | null>(null);
 	let lightboxLabel = $state('');
 	let lbZoom = $state(1);
 	let lbPan = $state({ x: 0, y: 0 });
@@ -189,6 +190,15 @@
 
 	function openLightbox(src: string, label: string) {
 		lightboxSrc = src;
+		lightboxFileId = null;
+		lightboxLabel = label;
+		lbZoom = 1;
+		lbPan = { x: 0, y: 0 };
+	}
+
+	function openExistingLightbox(fileId: string, label: string) {
+		lightboxSrc = null;
+		lightboxFileId = fileId;
 		lightboxLabel = label;
 		lbZoom = 1;
 		lbPan = { x: 0, y: 0 };
@@ -196,6 +206,7 @@
 
 	function closeLightbox() {
 		lightboxSrc = null;
+		lightboxFileId = null;
 	}
 
 	function onLbWheel(e: WheelEvent) {
@@ -225,10 +236,19 @@
 	}
 
 	function onLbKeyDown(e: KeyboardEvent) {
-		if (lightboxSrc && e.key === 'Escape') closeLightbox();
+		if ((lightboxSrc || lightboxFileId) && e.key === 'Escape') closeLightbox();
 	}
 	// File input refs per docType
-	let fileInputRefs = $state<Record<string, HTMLInputElement>>({});
+	const fileInputRefs: Record<string, HTMLInputElement> = {};
+
+	function captureFileInput(docType: string) {
+		return (node: HTMLInputElement) => {
+			fileInputRefs[docType] = node;
+			return () => {
+				if (fileInputRefs[docType] === node) delete fileInputRefs[docType];
+			};
+		};
+	}
 
 	const DOC_TYPE_ORDER = Object.keys(DOC_TYPE_LABELS);
 
@@ -631,7 +651,7 @@
 						...slot,
 						uploading: false,
 						blob: undefined,
-						preview: result.fileUrl
+						tempFileId: result.fileId
 					};
 				}
 				// 2. update form data เท่านั้น (docs linked แล้ว)
@@ -1321,14 +1341,14 @@
 								{@const existing = existingDocs.find((d) => d.docType === docType)}
 								{@const newDoc = uploadedDocs[docType]}
 								{@const hasFile = existing || (newDoc && (newDoc.blob || newDoc.tempFileId))}
-								{@const thumbSrc = newDoc?.preview ?? existing?.fileUrl}
+								{@const localPreview = newDoc?.preview}
 
 								<!-- Hidden file input -->
 								<input
 									type="file"
 									class="hidden"
 									accept="image/*"
-									bind:this={fileInputRefs[docType]}
+									{@attach captureFileInput(docType)}
 									onchange={(e) => handleDocFileSelected(docType, e)}
 								/>
 
@@ -1336,15 +1356,30 @@
 									class="flex items-center gap-3 p-3 rounded-lg border bg-card hover:bg-muted/20 transition-colors"
 								>
 									<!-- Thumbnail or icon -->
-									{#if thumbSrc}
+									{#if localPreview}
 										<button
 											type="button"
 											class="w-12 h-12 rounded-md overflow-hidden border bg-gray-100 shrink-0 cursor-zoom-in hover:ring-2 hover:ring-blue-400 transition-all"
-											onclick={() => openLightbox(thumbSrc!, info.label)}
+											onclick={() => openLightbox(localPreview, info.label)}
 											title="กดดูรูป"
 										>
 											<img
-												src={thumbSrc}
+												src={localPreview}
+												alt={info.label}
+												class="w-full h-full object-cover pointer-events-none"
+											/>
+										</button>
+									{:else if existing}
+										<button
+											type="button"
+											class="w-12 h-12 rounded-md overflow-hidden border bg-gray-100 shrink-0 cursor-zoom-in hover:ring-2 hover:ring-blue-400 transition-all"
+											onclick={() => openExistingLightbox(existing.fileId, info.label)}
+											title="กดดูรูป"
+										>
+											<PortalFileImage
+												fileId={existing.fileId}
+												nationalId={authNid}
+												dateOfBirth={authDob}
 												alt={info.label}
 												class="w-full h-full object-cover pointer-events-none"
 											/>
@@ -1451,7 +1486,7 @@
 					/>
 
 					<!-- Lightbox -->
-					{#if lightboxSrc}
+					{#if lightboxSrc || lightboxFileId}
 						<div
 							class="fixed inset-0 z-50 bg-black/90 flex flex-col"
 							role="dialog"
@@ -1502,15 +1537,25 @@
 								onmousedown={onLbMouseDown}
 								role="presentation"
 							>
-								<img
-									src={lightboxSrc}
-									alt={lightboxLabel}
-									class="max-w-none pointer-events-none select-none"
-									style="transform: translate({lbPan.x}px, {lbPan.y}px) scale({lbZoom}); transition: {lbDragging
-										? 'none'
-										: 'transform 0.1s ease'}; max-height: 80vh; max-width: 90vw;"
-									draggable="false"
-								/>
+								{#if lightboxSrc}
+									<img
+										src={lightboxSrc}
+										alt={lightboxLabel}
+										class="max-w-none pointer-events-none select-none"
+										style="transform: translate({lbPan.x}px, {lbPan.y}px) scale({lbZoom}); transition: {lbDragging
+											? 'none'
+											: 'transform 0.1s ease'}; max-height: 80vh; max-width: 90vw;"
+										draggable="false"
+									/>
+								{:else if lightboxFileId}
+									<PortalFileImage
+										fileId={lightboxFileId}
+										nationalId={authNid}
+										dateOfBirth={authDob}
+										alt={lightboxLabel}
+										class="max-w-none pointer-events-none select-none"
+									/>
+								{/if}
 							</div>
 							<!-- Backdrop close -->
 							<button

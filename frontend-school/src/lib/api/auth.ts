@@ -26,7 +26,7 @@ function normalizeCurrentUser(userData: CurrentUserDto): User {
 		status: userData.status,
 		createdAt: userData.createdAt,
 		primaryRoleName: userData.primaryRoleName,
-		profileImageUrl: userData.profileImageUrl ?? undefined,
+		profileImageFileId: userData.profileImageFileId ?? undefined,
 		permissions: userData.permissions
 	};
 }

@@ -1,4 +1,4 @@
-import { apiClient, requireApiData } from '$lib/api/client';
+import { apiClient, BACKEND_URL, requireApiData } from '$lib/api/client';
 
 export type QuestionType = 'single_choice' | 'multiple_choice' | 'short_answer' | 'essay';
 export type QuestionDifficulty = 'easy' | 'medium' | 'hard';
@@ -68,8 +68,6 @@ export interface QuestionSummary {
 
 export interface QuestionFile {
 	id: string;
-	url: string;
-	thumbnailUrl?: string | null;
 }
 
 export interface QuestionDetail extends QuestionSummary {
@@ -183,6 +181,10 @@ export async function getQuestionBankQuestionFile(
 		`/api/academic/question-bank/questions/${encodeURIComponent(questionId)}/files/${encodeURIComponent(fileId)}`
 	);
 	return requireApiData(response, 'ดาวน์โหลดรูปประกอบข้อสอบไม่สำเร็จ');
+}
+
+export function questionBankFileContentUrl(questionId: string, fileId: string): string {
+	return `${BACKEND_URL}/api/academic/question-bank/questions/${encodeURIComponent(questionId)}/files/${encodeURIComponent(fileId)}`;
 }
 
 export async function createQuestionBankQuestion(

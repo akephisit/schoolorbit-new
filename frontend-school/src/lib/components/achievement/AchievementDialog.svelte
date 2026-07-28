@@ -17,6 +17,7 @@
 	import type { Achievement } from '$lib/types/achievement';
 	import { toast } from 'svelte-sonner';
 	import { achievementSchema } from '$lib/validation/schemas';
+	import PrivateFileImage from '$lib/components/files/PrivateFileImage.svelte';
 	import Compressor from 'compressorjs';
 
 	interface Props {
@@ -45,7 +46,7 @@
 	let date = $state(new Date().toISOString().split('T')[0]);
 	let imageFile = $state<File | null>(null);
 	let imagePreview = $state<string | null>(null);
-	let currentImagePath = $state<string | null>(null);
+	let currentImageFileId = $state<string | null>(null);
 	let targetUserId = $state(''); // For selecting user
 
 	// Validation State
@@ -78,7 +79,7 @@
 				title = achievement.title;
 				description = achievement.description || '';
 				date = achievement.achievement_date;
-				currentImagePath = achievement.image_path || null;
+				currentImageFileId = achievement.image_file_id;
 				targetUserId = achievement.user_id;
 				imagePreview = null;
 				imageFile = null;
@@ -87,7 +88,7 @@
 				title = '';
 				description = '';
 				date = new Date().toISOString().split('T')[0];
-				currentImagePath = null;
+				currentImageFileId = null;
 				targetUserId = userId || '';
 				imagePreview = null;
 				imageFile = null;
@@ -174,9 +175,10 @@
 	}
 
 	function removeImage() {
+		if (imagePreview) URL.revokeObjectURL(imagePreview);
 		imageFile = null;
 		imagePreview = null;
-		currentImagePath = null;
+		currentImageFileId = null;
 	}
 
 	// Helper to get selected staff name
@@ -200,7 +202,7 @@
 			title,
 			achievement_date: date,
 			description,
-			image_path: currentImagePath || ''
+			image_file_id: currentImageFileId
 		});
 
 		if (!result.success) {
@@ -220,16 +222,12 @@
 
 		loading = true;
 		try {
-			let imagePath = currentImagePath;
+			let imageFileId = currentImageFileId;
 
 			// Upload image if selected
 			if (imageFile) {
-				const uploadData = await uploadFile(imageFile, 'other', false);
-
-				if (!uploadData.success) {
-					throw new Error('Failed to upload image');
-				}
-				imagePath = uploadData.file.url;
+				const uploadData = await uploadFile(imageFile, 'achievement_image', targetUserId);
+				imageFileId = uploadData.id;
 			}
 
 			onsave?.({
@@ -238,7 +236,7 @@
 				title,
 				description,
 				achievement_date: date,
-				image_path: imagePath ?? undefined
+				image_file_id: imageFileId
 			});
 
 			loading = false;
@@ -358,18 +356,20 @@
 			<div class="grid gap-2">
 				<Label>รูปภาพประกอบ / เกียรติบัตร</Label>
 
-				{#if imagePreview || currentImagePath}
+				{#if imagePreview || currentImageFileId}
 					<div
 						class="relative aspect-video w-full rounded-lg overflow-hidden border bg-muted group"
 					>
-						<img
-							src={imagePreview ||
-								(currentImagePath?.startsWith('http')
-									? currentImagePath
-									: `/api/files?path=${currentImagePath}`)}
-							alt="Preview"
-							class="w-full h-full object-cover rounded-md"
-						/>
+						{#if imagePreview}
+							<img src={imagePreview} alt="Preview" class="w-full h-full object-cover rounded-md" />
+						{:else if currentImageFileId}
+							<PrivateFileImage
+								fileId={currentImageFileId}
+								resourceId={achievement?.id}
+								alt="Preview"
+								class="w-full h-full object-cover rounded-md"
+							/>
+						{/if}
 						<button
 							type="button"
 							class="absolute top-2 right-2 bg-destructive text-white p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity z-10"

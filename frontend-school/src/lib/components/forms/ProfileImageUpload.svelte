@@ -6,21 +6,24 @@
 	import { Pencil, Camera, Trash2, UserCircle, LoaderCircle } from 'lucide-svelte';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
 	import ImageCropper from './ImageCropper.svelte';
+	import PrivateFileImage from '$lib/components/files/PrivateFileImage.svelte';
 	import { cn } from '$lib/utils';
 	import Compressor from 'compressorjs';
 
 	interface Props {
-		currentImage?: string | null;
+		currentFileId?: string | null;
+		resourceId?: string;
 		disabled?: boolean;
 		maxSizeMB?: number;
-		onsuccess?: (data: { url: string; fileId: string }) => void;
+		onsuccess?: (data: { fileId: string | null }) => void;
 		onerror?: (error: string) => void;
 		helper?: Snippet;
 		className?: string;
 	}
 
 	let {
-		currentImage = null,
+		currentFileId = null,
+		resourceId,
 		disabled = false,
 		maxSizeMB = 10,
 		onsuccess,
@@ -31,17 +34,11 @@
 
 	// State
 	let uploading = $state(false);
-	let imageUrl = $state<string | null>(null);
+	let localFileId = $state<string | null | undefined>(undefined);
+	let imageFileId = $derived(localFileId === undefined ? currentFileId : localFileId);
 	let showCropper = $state(false);
 	let tempImageSrc = $state<string | null>(null);
 	let fileInput = $state<HTMLInputElement>();
-
-	// Update when prop changes
-	$effect(() => {
-		if (currentImage !== imageUrl) {
-			imageUrl = currentImage;
-		}
-	});
 
 	// 1. Handle File Selection
 	async function handleFileSelect(event: Event) {
@@ -130,16 +127,9 @@
 		const file = new File([croppedBlob], 'profile_avatar.jpg', { type: 'image/jpeg' });
 
 		try {
-			const response = await uploadProfileImage(file);
-
-			if (response.success) {
-				imageUrl = response.file.url;
-
-				onsuccess?.({
-					url: response.file.url,
-					fileId: response.file.id
-				});
-			}
+			const response = await uploadProfileImage(file, resourceId);
+			localFileId = response.id;
+			onsuccess?.({ fileId: response.id });
 		} catch (error) {
 			const errorMessage = error instanceof Error ? error.message : 'เกิดข้อผิดพลาด';
 			toast.error(`ไม่สามารถอัปโหลดรูปภาพได้: ${errorMessage}`);
@@ -151,12 +141,19 @@
 
 	// Handle Remove
 	function handleRemove() {
-		imageUrl = null;
-		onsuccess?.({ url: '', fileId: '' });
+		localFileId = null;
+		onsuccess?.({ fileId: null });
 	}
 
 	function triggerFileInput() {
 		fileInput?.click();
+	}
+
+	function captureFileInput(node: HTMLInputElement) {
+		fileInput = node;
+		return () => {
+			if (fileInput === node) fileInput = undefined;
+		};
 	}
 </script>
 
@@ -175,8 +172,13 @@
 				</div>
 			{/if}
 
-			{#if imageUrl}
-				<img src={imageUrl} alt="Profile" class="w-full h-full object-cover" />
+			{#if imageFileId}
+				<PrivateFileImage
+					fileId={imageFileId}
+					{resourceId}
+					alt="Profile"
+					class="w-full h-full object-cover"
+				/>
 			{:else}
 				<UserCircle class="w-20 h-20 text-muted-foreground/50" />
 			{/if}
@@ -200,7 +202,7 @@
 						<span>อัปโหลดรูปภาพ...</span>
 					</DropdownMenu.Item>
 
-					{#if imageUrl}
+					{#if imageFileId}
 						<DropdownMenu.Separator />
 						<DropdownMenu.Item
 							onclick={handleRemove}
@@ -217,7 +219,7 @@
 
 	<!-- Hidden File Input -->
 	<input
-		bind:this={fileInput}
+		{@attach captureFileInput}
 		type="file"
 		accept="image/png, image/jpeg, image/webp, .heic, image/heic, image/heif"
 		class="hidden"

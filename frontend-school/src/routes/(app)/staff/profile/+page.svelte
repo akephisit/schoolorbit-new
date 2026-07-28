@@ -38,7 +38,7 @@
 		date_of_birth: '',
 		gender: 'male',
 		address: '',
-		profile_image_url: ''
+		profile_image_file_id: ''
 	});
 
 	// Read-only data - ข้อมูลที่แสดงผลเฉยๆ แก้ไม่ได้
@@ -77,7 +77,7 @@
 				date_of_birth: profile.dateOfBirth || '',
 				gender: profile.gender || 'male',
 				address: profile.address || '',
-				profile_image_url: profile.profileImageUrl || ''
+				profile_image_file_id: profile.profileImageFileId || ''
 			};
 		} catch (error) {
 			profileLoadError = error instanceof Error ? error.message : 'ไม่สามารถโหลดข้อมูลได้';
@@ -115,7 +115,7 @@
 				dateOfBirth: formData.date_of_birth || undefined,
 				gender: formData.gender || undefined,
 				address: formData.address || undefined,
-				profileImageUrl: formData.profile_image_url || undefined
+				profileImageFileId: formData.profile_image_file_id || null
 			});
 
 			// Update local profile state
@@ -199,11 +199,12 @@
 						<!-- Image Upload Component (Shows Avatar + Edit Button) -->
 						<div class="flex-shrink-0">
 							<ProfileImageUpload
-								currentImage={formData.profile_image_url}
-								onsuccess={async ({ url }: { url: string; fileId: string }) => {
-									formData.profile_image_url = url;
+								currentFileId={formData.profile_image_file_id}
+								resourceId={profile?.id}
+								onsuccess={async ({ fileId }: { fileId: string | null }) => {
+									formData.profile_image_file_id = fileId ?? '';
 									try {
-										await authAPI.updateProfile({ profileImageUrl: url });
+										await authAPI.updateProfile({ profileImageFileId: fileId });
 										await authAPI.checkAuth(); // Refresh header avatar
 										toast.success('อัปเดตรูปโปรไฟล์เรียบร้อยแล้ว');
 									} catch (e) {

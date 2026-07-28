@@ -18,6 +18,7 @@
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { getPublicSchoolInfo, type PublicSchoolInfo } from '$lib/api/school';
+	import { publicFileUrl } from '$lib/api/files';
 	import {
 		GraduationCap,
 		Search,
@@ -50,7 +51,7 @@
 
 	// ถ้าเป็นตัวเลขล้วน 13 หลัก → format X-XXXX-XXXXX-XX-X
 	// ถ้ามีตัวอักษร → แสดงตามที่กรอก (ไม่ format)
-	const nationalIdDisplay = $derived(() => {
+	const nationalIdDisplay = $derived.by(() => {
 		const d = nationalId;
 		const isAllDigits = /^\d+$/.test(d);
 		if (!isAllDigits) return d;
@@ -90,7 +91,7 @@
 
 	// effective status สำหรับแสดงผล
 	// ถ้า app.status = 'accepted' แต่ round ยังไม่ประกาศ → แสดงเป็น 'pending_result' แทน
-	const effectiveStatus = $derived(() => {
+	const effectiveStatus = $derived.by(() => {
 		const rs = portalData?.roundStatus ?? '';
 		const as = portalData?.application?.status ?? '';
 		if ((as === 'accepted' || as === 'scored') && !RESULT_ANNOUNCED_STATUSES.includes(rs)) {
@@ -330,8 +331,12 @@
 					<ArrowLeft class="w-4 h-4" />
 				</Button>
 			</div>
-			{#if schoolInfo.logoUrl}
-				<img src={schoolInfo.logoUrl} alt="school logo" class="w-24 h-24 object-contain mb-4" />
+			{#if schoolInfo.logoFileId}
+				<img
+					src={publicFileUrl(schoolInfo.logoFileId)}
+					alt="school logo"
+					class="w-24 h-24 object-contain mb-4"
+				/>
 			{:else}
 				<div class="inline-flex p-3 bg-white rounded-2xl shadow-md mb-4">
 					<GraduationCap class="w-10 h-10 text-blue-600" />
@@ -352,7 +357,7 @@
 						>
 						<Input
 							id="national-id"
-							value={nationalIdDisplay()}
+							value={nationalIdDisplay}
 							oninput={handleNationalIdInput}
 							maxlength={17}
 							placeholder="เลขบัตร 13 หลัก หรือ รหัส G"
@@ -410,19 +415,19 @@
 					</div>
 
 					<div
-						class="border rounded-xl p-4 {statusColor[effectiveStatus()] ??
+						class="border rounded-xl p-4 {statusColor[effectiveStatus] ??
 							'bg-gray-50 border-gray-200'}"
 					>
 						<div class="flex flex-col gap-2">
 							<div class="flex items-center gap-2">
-								{#if effectiveStatus() === 'accepted' || effectiveStatus() === 'enrolled'}
+								{#if effectiveStatus === 'accepted' || effectiveStatus === 'enrolled'}
 									<Check class="w-5 h-5" />
-								{:else if effectiveStatus() === 'rejected'}
+								{:else if effectiveStatus === 'rejected'}
 									<X class="w-5 h-5" />
 								{:else}
 									<Clock class="w-5 h-5" />
 								{/if}
-								<p class="font-semibold">{statusLabel[effectiveStatus()] ?? app.status}</p>
+								<p class="font-semibold">{statusLabel[effectiveStatus] ?? app.status}</p>
 							</div>
 
 							<!-- แสดงเหตุผลถ้าถูกปฏิเสธ -->
@@ -452,7 +457,7 @@
 					</div>
 
 					<!-- Result (if accepted) -->
-					{#if assignment && (effectiveStatus() === 'accepted' || effectiveStatus() === 'enrolled')}
+					{#if assignment && (effectiveStatus === 'accepted' || effectiveStatus === 'enrolled')}
 						<div class="border border-green-200 bg-green-50 rounded-xl p-4 space-y-2">
 							<p class="font-semibold text-green-800 flex items-center gap-2">
 								<GraduationCap class="w-4 h-4" />
@@ -498,7 +503,7 @@
 					{/if}
 
 					<!-- Exam Seat -->
-					{#if examSeat && effectiveStatus() !== 'absent'}
+					{#if examSeat && effectiveStatus !== 'absent'}
 						<div class="border border-blue-200 bg-blue-50 rounded-xl p-4 space-y-2">
 							<p class="font-semibold text-blue-800 flex items-center gap-2">
 								<FileText class="w-4 h-4" /> ที่นั่งสอบ

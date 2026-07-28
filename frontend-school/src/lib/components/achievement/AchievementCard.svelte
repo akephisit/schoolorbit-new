@@ -2,6 +2,7 @@
 	import type { Achievement } from '$lib/types/achievement';
 	import { Calendar, Trash2, Pencil } from 'lucide-svelte';
 	import { Button } from '$lib/components/ui/button';
+	import PrivateFileImage from '$lib/components/files/PrivateFileImage.svelte';
 	import {
 		Card,
 		CardContent,
@@ -40,12 +41,11 @@
 </script>
 
 <Card class="overflow-hidden hover:shadow-md transition-shadow">
-	{#if achievement.image_path}
+	{#if achievement.image_file_id}
 		<div class="aspect-video w-full overflow-hidden bg-muted relative">
-			<img
-				src={achievement.image_path.startsWith('http')
-					? achievement.image_path
-					: `/api/files?path=${achievement.image_path}`}
+			<PrivateFileImage
+				fileId={achievement.image_file_id}
+				resourceId={achievement.id}
 				alt={achievement.title}
 				class="w-full h-full object-cover transition-transform hover:scale-105"
 			/>

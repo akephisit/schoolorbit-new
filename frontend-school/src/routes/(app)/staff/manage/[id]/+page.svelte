@@ -31,6 +31,7 @@
 	} from '$lib/api/achievement';
 	import AchievementCard from '$lib/components/achievement/AchievementCard.svelte';
 	import AchievementDialog from '$lib/components/achievement/AchievementDialog.svelte';
+	import PrivateFileImage from '$lib/components/files/PrivateFileImage.svelte';
 	import { toast } from 'svelte-sonner';
 
 	let staff: StaffProfileResponse | null = $state(null);
@@ -110,7 +111,7 @@
 				title: payload.title ?? '',
 				description: payload.description,
 				achievement_date: payload.achievement_date ?? '',
-				image_path: payload.image_path
+				image_file_id: payload.image_file_id
 			});
 		} else {
 			if (!canCreateAchievementForStaff) return;
@@ -119,7 +120,7 @@
 				title: payload.title ?? '',
 				description: payload.description,
 				achievement_date: payload.achievement_date ?? '',
-				image_path: payload.image_path
+				image_file_id: payload.image_file_id
 			});
 		}
 
@@ -200,9 +201,10 @@
 						<div
 							class="w-24 h-24 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-4 overflow-hidden"
 						>
-							{#if staff.profile_image_url}
-								<img
-									src={staff.profile_image_url}
+							{#if staff.profile_image_file_id}
+								<PrivateFileImage
+									fileId={staff.profile_image_file_id}
+									resourceId={staff.id}
 									alt={`${staff.first_name} ${staff.last_name}`}
 									class="w-full h-full object-cover"
 								/>

@@ -5,6 +5,7 @@
 	import { authAPI } from '$lib/api/auth';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
+	import PrivateFileImage from '$lib/components/files/PrivateFileImage.svelte';
 
 	const user = $derived($authStore.user);
 	const isLoading = $derived($authStore.isLoading);
@@ -65,9 +66,10 @@
 		>
 			<!-- Avatar Only -->
 			<!-- Avatar Or Initials -->
-			{#if user.profileImageUrl}
-				<img
-					src={user.profileImageUrl}
+			{#if user.profileImageFileId}
+				<PrivateFileImage
+					fileId={user.profileImageFileId}
+					resourceId={user.id}
 					alt="Profile"
 					class="w-10 h-10 rounded-full object-cover shadow-sm ring-2 ring-background bg-muted"
 				/>

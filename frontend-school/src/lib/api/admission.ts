@@ -1,4 +1,8 @@
 import { apiClient, requireApiData } from './client';
+import type { components } from '$lib/api/generated/school-api';
+
+type Schemas = components['schemas'];
+type PortalCredentials = Schemas['PortalCredentials'];
 
 // ==========================================
 // Types
@@ -160,7 +164,6 @@ export interface ApplicationDocument {
 	fileId: string;
 	docType: string;
 	createdAt: string;
-	fileUrl?: string;
 	originalFilename?: string;
 	fileSize?: number;
 	mimeType?: string;
@@ -988,19 +991,17 @@ export async function portalUploadTempFile(
 	docType: string,
 	authNationalId?: string,
 	authDateOfBirth?: string
-): Promise<{ fileId: string; fileUrl: string; fileSize: number; docType: string }> {
+): Promise<Schemas['PortalUploadDocumentData']> {
 	const formData = new FormData();
-	formData.append('file', file);
 	formData.append('doc_type', docType);
 	if (authNationalId) formData.append('national_id', authNationalId);
 	if (authDateOfBirth) formData.append('date_of_birth', authDateOfBirth);
+	formData.append('file', file);
 
-	const response = await apiClient.postMultipart<{
-		fileId: string;
-		fileUrl: string;
-		fileSize: number;
-		docType: string;
-	}>('/api/admission/portal/upload', formData);
+	const response = await apiClient.postMultipart<Schemas['PortalUploadDocumentData']>(
+		'/api/admission/portal/upload',
+		formData
+	);
 	return requireApiData(response, 'ไม่สามารถอัปโหลดไฟล์ได้');
 }
 
@@ -1008,13 +1009,7 @@ export async function portalUploadTempFile(
 // Staff Document Management API
 // ==========================================
 
-export interface StaffDocumentUploadResponse {
-	id: string;
-	fileId: string;
-	docType: string;
-	fileUrl: string;
-	fileSize: number;
-}
+export type StaffDocumentUploadResponse = Schemas['DocumentUploadResponse'];
 
 export async function staffUploadDocument(
 	appId: string,
@@ -1044,11 +1039,25 @@ export async function portalDeleteDocument(
 	dateOfBirth: string,
 	docType: string
 ): Promise<void> {
-	const params = new URLSearchParams({ national_id: nationalId, date_of_birth: dateOfBirth });
-	const res = await apiClient.delete<Record<string, never>>(
-		`/api/admission/portal/documents/${docType}?${params}`
+	const credentials: PortalCredentials = { nationalId, dateOfBirth };
+	const res = await apiClient.deleteWithBody<Record<string, never>>(
+		`/api/admission/portal/documents/${docType}`,
+		credentials
 	);
 	if (!res.success) throw new Error(res.error || 'ไม่สามารถลบเอกสารได้');
+}
+
+export async function portalDownloadDocument(
+	fileId: string,
+	nationalId: string,
+	dateOfBirth: string
+): Promise<Blob> {
+	const credentials: PortalCredentials = { nationalId, dateOfBirth };
+	const response = await apiClient.postBlobWithBody(
+		`/api/admission/portal/documents/${fileId}/download`,
+		credentials
+	);
+	return requireApiData(response, 'ไม่สามารถดาวน์โหลดเอกสารได้');
 }
 
 // ==========================================

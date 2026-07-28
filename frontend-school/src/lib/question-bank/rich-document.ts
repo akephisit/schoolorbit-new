@@ -49,7 +49,7 @@ export function emptyEditorRichContent(): EditorRichContent {
 
 export function toEditorRichContent(
 	content: RichContent | null | undefined,
-	fileUrls: ReadonlyMap<string, string>
+	previewUrls: ReadonlyMap<string, string>
 ): EditorRichContent {
 	const blocks = (content ?? emptyRichContent()).document.content.map((block): EditorRichBlock => {
 		if (block.type !== 'image') return cloneBlock(block);
@@ -58,7 +58,7 @@ export function toEditorRichContent(
 			attrs: {
 				...block.attrs,
 				pendingId: null,
-				previewUrl: fileUrls.get(block.attrs.fileId) ?? null
+				previewUrl: previewUrls.get(block.attrs.fileId) ?? null
 			}
 		};
 	});

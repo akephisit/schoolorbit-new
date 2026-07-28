@@ -9,6 +9,7 @@
 	import { getPublicSchoolInfo, type PublicSchoolInfo } from '$lib/api/school';
 	import { Button } from '$lib/components/ui/button';
 	import { GraduationCap, CalendarDays, ArrowRight, Search } from 'lucide-svelte';
+	import { publicFileUrl } from '$lib/api/files';
 
 	let loadingRounds = $state(true);
 	let publicRounds: AdmissionRound[] = $state([]);
@@ -35,9 +36,9 @@
 	<div class="w-full max-w-2xl space-y-6">
 		<!-- Header -->
 		<div class="text-center">
-			{#if schoolInfo.logoUrl}
+			{#if schoolInfo.logoFileId}
 				<img
-					src={schoolInfo.logoUrl}
+					src={publicFileUrl(schoolInfo.logoFileId)}
 					alt="school logo"
 					class="w-24 h-24 object-contain mx-auto mb-4"
 				/>

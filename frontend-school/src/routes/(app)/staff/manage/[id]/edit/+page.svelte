@@ -46,7 +46,7 @@
 	// Form data
 	let formData = $state({
 		// Personal Information
-		profile_image_url: '',
+		profile_image_file_id: '',
 		username: '',
 		title: '',
 		first_name: '',
@@ -96,7 +96,7 @@
 
 				// Populate form
 				formData = {
-					profile_image_url: staff.profile_image_url || '',
+					profile_image_file_id: staff.profile_image_file_id || '',
 					username: staff.username || '',
 					title: staff.title || 'นาย',
 					first_name: staff.first_name,
@@ -297,7 +297,7 @@
 
 		try {
 			const payload = {
-				profile_image_url: formData.profile_image_url || undefined,
+				profile_image_file_id: formData.profile_image_file_id || null,
 				title: formData.title || undefined,
 				first_name: formData.first_name,
 				last_name: formData.last_name,
@@ -485,14 +485,17 @@
 
 						<div class="flex justify-center mb-8">
 							<ProfileImageUpload
-								currentImage={formData.profile_image_url}
-								onsuccess={async (data: { url: string; fileId: string }) => {
+								currentFileId={formData.profile_image_file_id}
+								resourceId={staffId}
+								onsuccess={async (data: { fileId: string | null }) => {
 									if (!staffId) return;
 									const toastId = toast.loading('กำลังอัปเดตรูปโปรไฟล์...');
 									try {
-										const res = await updateStaff(staffId, { profile_image_url: data.url });
+										const res = await updateStaff(staffId, {
+											profile_image_file_id: data.fileId
+										});
 										if (res.success) {
-											formData.profile_image_url = data.url;
+											formData.profile_image_file_id = data.fileId ?? '';
 											toast.success('อัปเดตรูปโปรไฟล์เรียบร้อยแล้ว', { id: toastId });
 										} else {
 											toast.error('ไม่สำเร็จ: ' + (res.error || 'ไม่ทราบสาเหตุ'), { id: toastId });

@@ -163,7 +163,7 @@ export const achievementSchema = z.object({
 	title: z.string().min(2, 'ชื่อผลงานต้องมีอย่างน้อย 2 ตัวอักษร'),
 	achievement_date: z.string().min(1, 'กรุณาเลือกวันที่ได้รับ'),
 	description: z.string().optional().or(z.literal('')),
-	image_path: z.string().optional().or(z.literal(''))
+	image_file_id: z.string().uuid().optional().nullable()
 });
 
 export type AchievementInput = z.infer<typeof achievementSchema>;

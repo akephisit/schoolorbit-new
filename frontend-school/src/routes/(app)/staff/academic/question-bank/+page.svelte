@@ -9,6 +9,7 @@
 		getQuestionBankOptions,
 		getQuestionBankQuestion,
 		listQuestionBankQuestions,
+		questionBankFileContentUrl,
 		updateQuestionBankQuestion,
 		type QuestionBankSubjectOption,
 		type QuestionDetail,
@@ -236,10 +237,10 @@
 
 	function contentDraftFrom(
 		content: RichContent | null | undefined,
-		fileUrls: Map<string, string>
+		previewUrls: Map<string, string>
 	): ContentDraft {
 		return {
-			content: toEditorRichContent(content, fileUrls),
+			content: toEditorRichContent(content, previewUrls),
 			pendingImages: []
 		};
 	}
@@ -247,21 +248,21 @@
 	function choiceDraftFromDetail(
 		choice: QuestionDetail['choices'][number],
 		index: number,
-		fileUrls: Map<string, string>
+		previewUrls: Map<string, string>
 	): ChoiceDraft {
 		return {
 			key: choice.id,
 			id: choice.id,
 			label: choice.label,
-			content: contentDraftFrom(choice.content, fileUrls),
+			content: contentDraftFrom(choice.content, previewUrls),
 			isCorrect: choice.isCorrect,
 			sortOrder: choice.sortOrder || index + 1
 		};
 	}
 
 	function draftFromDetail(question: QuestionDetail): QuestionDraft {
-		const fileUrls = new Map(
-			question.files.map((file) => [file.id, file.thumbnailUrl ?? file.url])
+		const previewUrls = new Map(
+			question.files.map((file) => [file.id, questionBankFileContentUrl(question.id, file.id)])
 		);
 		return {
 			id: question.id,
@@ -270,12 +271,12 @@
 			difficulty: question.difficulty,
 			points: question.points,
 			status: question.status,
-			stem: contentDraftFrom(question.stemContent, fileUrls),
-			explanation: contentDraftFrom(question.explanationContent, fileUrls),
-			rubric: contentDraftFrom(question.rubricContent, fileUrls),
+			stem: contentDraftFrom(question.stemContent, previewUrls),
+			explanation: contentDraftFrom(question.explanationContent, previewUrls),
+			rubric: contentDraftFrom(question.rubricContent, previewUrls),
 			tagsText: question.tags.join(', '),
 			choices: question.choices.map((choice, index) =>
-				choiceDraftFromDetail(choice, index, fileUrls)
+				choiceDraftFromDetail(choice, index, previewUrls)
 			)
 		};
 	}
@@ -723,9 +724,9 @@
 				for (const image of content.pendingImages.filter((candidate) =>
 					referencedImageIds.has(candidate.pendingId)
 				)) {
-					const response = await uploadFile(image.file, 'course_material', true);
-					uploadedFileIds.set(image.pendingId, response.file.id);
-					uploadedIds.push(response.file.id);
+					const response = await uploadFile(image.file, 'question_bank_image', draft.subjectId);
+					uploadedFileIds.set(image.pendingId, response.id);
+					uploadedIds.push(response.id);
 				}
 			}
 			const payload = buildPayload(uploadedFileIds);
@@ -1105,7 +1106,11 @@
 				</div>
 				<section class="rounded-lg border p-4">
 					<h3 class="mb-3 font-medium">โจทย์</h3>
-					<QuestionContent content={detail.stemContent} files={detail.files} />
+					<QuestionContent
+						content={detail.stemContent}
+						files={detail.files}
+						questionId={detail.id}
+					/>
 				</section>
 				{#if detail.choices.length}
 					<section class="space-y-2">
@@ -1114,7 +1119,11 @@
 							<div class="flex gap-3 rounded-lg border p-3" class:border-primary={choice.isCorrect}>
 								<Badge variant={choice.isCorrect ? 'default' : 'outline'}>{choice.label}</Badge>
 								<div class="min-w-0 flex-1">
-									<QuestionContent content={choice.content} files={detail.files} />
+									<QuestionContent
+										content={choice.content}
+										files={detail.files}
+										questionId={detail.id}
+									/>
 								</div>
 							</div>
 						{/each}
@@ -1123,13 +1132,21 @@
 				{#if detail.explanationContent && richContentHasBody(detail.explanationContent)}
 					<section class="rounded-lg border p-4">
 						<h3 class="mb-2 font-medium">เฉลย/คำอธิบาย</h3>
-						<QuestionContent content={detail.explanationContent} files={detail.files} />
+						<QuestionContent
+							content={detail.explanationContent}
+							files={detail.files}
+							questionId={detail.id}
+						/>
 					</section>
 				{/if}
 				{#if detail.rubricContent && richContentHasBody(detail.rubricContent)}
 					<section class="rounded-lg border p-4">
 						<h3 class="mb-2 font-medium">เกณฑ์ให้คะแนน</h3>
-						<QuestionContent content={detail.rubricContent} files={detail.files} />
+						<QuestionContent
+							content={detail.rubricContent}
+							files={detail.files}
+							questionId={detail.id}
+						/>
 					</section>
 				{/if}
 				{#if detail.tags.length}
