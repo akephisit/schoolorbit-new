@@ -18,6 +18,43 @@ pub struct InspectedFile {
     height: Option<u32>,
 }
 
+/// A purpose-validated inspection bound to the exact borrowed upload payload.
+/// It intentionally cannot be constructed by callers outside this module.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ValidatedFile<'a> {
+    data: &'a [u8],
+    inspection: InspectedFile,
+}
+
+impl<'a> ValidatedFile<'a> {
+    pub const fn detected_content(self) -> DetectedContent {
+        self.inspection.detected_content()
+    }
+
+    pub const fn dimensions(self) -> Option<(u32, u32)> {
+        self.inspection.dimensions()
+    }
+
+    pub const fn canonical_extension(self) -> &'static str {
+        self.inspection.canonical_extension()
+    }
+
+    pub const fn canonical_mime_type(self) -> &'static str {
+        self.inspection.canonical_mime_type()
+    }
+
+    pub const fn is_image(self) -> bool {
+        self.inspection.is_image()
+    }
+
+    pub(crate) fn decode_image(self) -> Result<image::DynamicImage, FileInspectionError> {
+        let format =
+            image_format(self.detected_content()).ok_or(FileInspectionError::MalformedContent)?;
+        image::load_from_memory_with_format(self.data, format)
+            .map_err(|_| FileInspectionError::MalformedContent)
+    }
+}
+
 impl InspectedFile {
     pub const fn detected_content(self) -> DetectedContent {
         self.detected_content
@@ -62,7 +99,7 @@ pub enum FileInspectionError {
 pub fn inspect_file(
     purpose: FilePurpose,
     data: &[u8],
-) -> Result<InspectedFile, FileInspectionError> {
+) -> Result<ValidatedFile<'_>, FileInspectionError> {
     let definition =
         purpose_definition(purpose).map_err(|_| FileInspectionError::UnsupportedContent)?;
     if data.len() as u64 > definition.limits.max_bytes {
@@ -77,10 +114,13 @@ pub fn inspect_file(
     match detected_content {
         DetectedContent::Pdf => {
             validate_pdf_structure(data)?;
-            Ok(InspectedFile {
-                detected_content,
-                width: None,
-                height: None,
+            Ok(ValidatedFile {
+                data,
+                inspection: InspectedFile {
+                    detected_content,
+                    width: None,
+                    height: None,
+                },
             })
         }
         DetectedContent::Png | DetectedContent::Jpeg | DetectedContent::Webp => {
@@ -95,10 +135,13 @@ pub fn inspect_file(
             )
             .map_err(|_| FileInspectionError::MalformedContent)?;
 
-            Ok(InspectedFile {
-                detected_content,
-                width: Some(width),
-                height: Some(height),
+            Ok(ValidatedFile {
+                data,
+                inspection: InspectedFile {
+                    detected_content,
+                    width: Some(width),
+                    height: Some(height),
+                },
             })
         }
     }
@@ -220,20 +263,27 @@ fn validate_pdf_structure(data: &[u8]) -> Result<(), FileInspectionError> {
 
     let tail_start = data.len().saturating_sub(PDF_STRUCTURE_WINDOW_BYTES);
     let tail = &data[tail_start..];
-    let trailer =
-        find_subsequence(tail, b"trailer").ok_or(FileInspectionError::MalformedContent)?;
-    let root = find_subsequence(&tail[trailer..], b"/Root")
-        .ok_or(FileInspectionError::MalformedContent)?;
-    let startxref = find_subsequence(&tail[trailer + root..], b"startxref")
-        .ok_or(FileInspectionError::MalformedContent)?;
-    let eof = find_subsequence(&tail[trailer + root + startxref..], b"%%EOF")
-        .ok_or(FileInspectionError::MalformedContent)?;
-    let after_eof = &tail[trailer + root + startxref + eof + b"%%EOF".len()..];
+    let eof = find_last_subsequence(tail, b"%%EOF").ok_or(FileInspectionError::MalformedContent)?;
+    if !tail[eof + b"%%EOF".len()..]
+        .iter()
+        .all(u8::is_ascii_whitespace)
+    {
+        return Err(FileInspectionError::MalformedContent);
+    }
 
-    if after_eof.iter().all(u8::is_ascii_whitespace) {
-        Ok(())
+    let before_eof = &tail[..eof];
+    let startxref = find_last_subsequence(before_eof, b"startxref")
+        .ok_or(FileInspectionError::MalformedContent)?;
+    let offset = parse_decimal(&before_eof[startxref + b"startxref".len()..])?;
+    if offset >= data.len() {
+        return Err(FileInspectionError::MalformedContent);
+    }
+
+    let target = &data[offset..];
+    if target.starts_with(b"xref") {
+        validate_xref_table(target)
     } else {
-        Err(FileInspectionError::MalformedContent)
+        validate_xref_stream(target)
     }
 }
 
@@ -241,6 +291,134 @@ fn find_subsequence(haystack: &[u8], needle: &[u8]) -> Option<usize> {
     haystack
         .windows(needle.len())
         .position(|window| window == needle)
+}
+
+fn find_last_subsequence(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+    haystack
+        .windows(needle.len())
+        .rposition(|window| window == needle)
+}
+
+fn parse_decimal(bytes: &[u8]) -> Result<usize, FileInspectionError> {
+    let bytes = trim_ascii_whitespace(bytes);
+    if bytes.is_empty() || !bytes.iter().all(u8::is_ascii_digit) {
+        return Err(FileInspectionError::MalformedContent);
+    }
+    std::str::from_utf8(bytes)
+        .ok()
+        .and_then(|value| value.parse::<usize>().ok())
+        .ok_or(FileInspectionError::MalformedContent)
+}
+
+fn validate_xref_table(target: &[u8]) -> Result<(), FileInspectionError> {
+    let trailer =
+        find_subsequence(target, b"trailer").ok_or(FileInspectionError::MalformedContent)?;
+    let mut table = &target[b"xref".len()..trailer];
+    let (_, rest) = take_decimal_token(table)?;
+    let (entry_count, rest) = take_decimal_token(rest)?;
+    if entry_count == 0 || entry_count > 1_000_000 {
+        return Err(FileInspectionError::MalformedContent);
+    }
+    table = rest;
+    for _ in 0..entry_count {
+        let (_, rest) = take_decimal_token(table)?;
+        let (_, rest) = take_decimal_token(rest)?;
+        let rest = trim_leading_ascii_whitespace(rest);
+        if !matches!(rest.first(), Some(b'n' | b'f')) {
+            return Err(FileInspectionError::MalformedContent);
+        }
+        table = rest.get(1..).ok_or(FileInspectionError::MalformedContent)?;
+    }
+
+    validate_trailer_dictionary(&target[trailer + b"trailer".len()..])
+}
+
+fn validate_xref_stream(target: &[u8]) -> Result<(), FileInspectionError> {
+    let (_, rest) = take_decimal_token(target)?;
+    let (_, rest) = take_decimal_token(rest)?;
+    let rest = trim_leading_ascii_whitespace(rest);
+    let rest = rest
+        .strip_prefix(b"obj")
+        .ok_or(FileInspectionError::MalformedContent)?;
+    let dictionary = dictionary_at_start(rest)?;
+    if find_subsequence(dictionary, b"/Type /XRef").is_none()
+        || find_subsequence(dictionary, b"/W").is_none()
+        || find_subsequence(dictionary, b"/Length").is_none()
+        || !has_indirect_root(dictionary)
+    {
+        return Err(FileInspectionError::MalformedContent);
+    }
+
+    let after_dictionary = &rest[dictionary.len() + 4..];
+    if find_subsequence(after_dictionary, b"stream").is_none()
+        || find_subsequence(after_dictionary, b"endstream").is_none()
+        || find_subsequence(after_dictionary, b"endobj").is_none()
+    {
+        return Err(FileInspectionError::MalformedContent);
+    }
+    Ok(())
+}
+
+fn validate_trailer_dictionary(bytes: &[u8]) -> Result<(), FileInspectionError> {
+    let dictionary = dictionary_at_start(bytes)?;
+    if has_indirect_root(dictionary) {
+        Ok(())
+    } else {
+        Err(FileInspectionError::MalformedContent)
+    }
+}
+
+fn dictionary_at_start(bytes: &[u8]) -> Result<&[u8], FileInspectionError> {
+    let bytes = trim_leading_ascii_whitespace(bytes);
+    let body = bytes
+        .strip_prefix(b"<<")
+        .ok_or(FileInspectionError::MalformedContent)?;
+    let end = find_subsequence(body, b">>").ok_or(FileInspectionError::MalformedContent)?;
+    Ok(&body[..end])
+}
+
+fn has_indirect_root(dictionary: &[u8]) -> bool {
+    let Some(root) = find_subsequence(dictionary, b"/Root") else {
+        return false;
+    };
+    let Ok((_, rest)) = take_decimal_token(&dictionary[root + b"/Root".len()..]) else {
+        return false;
+    };
+    let Ok((_, rest)) = take_decimal_token(rest) else {
+        return false;
+    };
+    trim_leading_ascii_whitespace(rest).starts_with(b"R")
+}
+
+fn take_decimal_token(bytes: &[u8]) -> Result<(usize, &[u8]), FileInspectionError> {
+    let bytes = trim_leading_ascii_whitespace(bytes);
+    let end = bytes
+        .iter()
+        .position(|byte| !byte.is_ascii_digit())
+        .unwrap_or(bytes.len());
+    if end == 0 {
+        return Err(FileInspectionError::MalformedContent);
+    }
+    let value = parse_decimal(&bytes[..end])?;
+    Ok((value, &bytes[end..]))
+}
+
+fn trim_leading_ascii_whitespace(bytes: &[u8]) -> &[u8] {
+    let first = bytes
+        .iter()
+        .position(|byte| !byte.is_ascii_whitespace())
+        .unwrap_or(bytes.len());
+    &bytes[first..]
+}
+
+fn trim_ascii_whitespace(bytes: &[u8]) -> &[u8] {
+    let bytes = trim_leading_ascii_whitespace(bytes);
+    let last = bytes
+        .iter()
+        .rposition(|byte| !byte.is_ascii_whitespace())
+        .map(|index| index + 1)
+        .unwrap_or(0);
+    &bytes[..last]
 }
 
 #[cfg(test)]
@@ -254,6 +432,7 @@ mod tests {
         platform_types::{DetectedContent, FilePurpose},
         purpose_registry::ContentLimits,
     };
+    use crate::utils::file_processor::ImageProcessor;
 
     fn encoded_image(format: ImageFormat, width: u32, height: u32) -> Vec<u8> {
         let image =
@@ -265,6 +444,28 @@ mod tests {
         bytes
     }
 
+    fn xref_table_pdf() -> Vec<u8> {
+        let mut pdf = b"%PDF-1.7\n1 0 obj\n<< /Type /Catalog >>\nendobj\n".to_vec();
+        let xref_offset = pdf.len();
+        pdf.extend_from_slice(
+            format!(
+                "xref\n0 2\n0000000000 65535 f \n0000000009 00000 n \ntrailer\n<< /Size 2 /Root 1 0 R >>\nstartxref\n{xref_offset}\n%%EOF\n"
+            )
+            .as_bytes(),
+        );
+        pdf
+    }
+
+    fn xref_stream_pdf() -> Vec<u8> {
+        let mut pdf = b"%PDF-1.7\n1 0 obj\n<< /Type /Catalog >>\nendobj\n".to_vec();
+        let xref_offset = pdf.len();
+        pdf.extend_from_slice(
+            b"2 0 obj\n<< /Type /XRef /Size 3 /Root 1 0 R /W [1 1 1] /Length 3 >>\nstream\n\0\0\0\nendstream\nendobj\n",
+        );
+        pdf.extend_from_slice(format!("startxref\n{xref_offset}\n%%EOF\n").as_bytes());
+        pdf
+    }
+
     #[test]
     fn detects_supported_content_from_bytes_and_returns_canonical_metadata() {
         let cases = [
@@ -274,10 +475,9 @@ mod tests {
         ];
 
         for (format, content, extension) in cases {
-            let inspection =
-                inspect_file(FilePurpose::QuestionBankImage, &encoded_image(format, 2, 3)).expect(
-                    "valid image bytes must be inspected independently of multipart metadata",
-                );
+            let bytes = encoded_image(format, 2, 3);
+            let inspection = inspect_file(FilePurpose::QuestionBankImage, &bytes)
+                .expect("valid image bytes must be inspected independently of multipart metadata");
 
             assert_eq!(inspection.detected_content(), content);
             assert_eq!(inspection.canonical_extension(), extension);
@@ -288,11 +488,9 @@ mod tests {
 
     #[test]
     fn detects_structurally_bounded_pdf_from_bytes() {
-        let inspection = inspect_file(
-            FilePurpose::Transcript,
-            b"%PDF-1.7\n1 0 obj\n<< /Type /Catalog >>\nendobj\ntrailer\n<< /Root 1 0 R >>\nstartxref\n0\n%%EOF\n",
-        )
-        .expect("bounded PDF header, root trailer, and EOF must be accepted");
+        let pdf = xref_table_pdf();
+        let inspection = inspect_file(FilePurpose::Transcript, &pdf)
+            .expect("xref table, trailer root, and final startxref must be accepted");
 
         assert_eq!(inspection.detected_content(), DetectedContent::Pdf);
         assert_eq!(inspection.canonical_extension(), "pdf");
@@ -302,6 +500,8 @@ mod tests {
     #[test]
     fn rejects_spoofed_unsupported_and_truncated_content() {
         let png = encoded_image(ImageFormat::Png, 2, 2);
+        let jpeg = encoded_image(ImageFormat::Jpeg, 2, 2);
+        let webp = encoded_image(ImageFormat::WebP, 2, 2);
         assert_eq!(
             inspect_file(FilePurpose::Transcript, &png),
             Err(FileInspectionError::ContentNotAllowed)
@@ -317,10 +517,44 @@ mod tests {
         assert_eq!(
             inspect_file(
                 FilePurpose::Transcript,
-                b"%PDF-1.7\n1 0 obj\n<<>>\nendobj\n"
+                b"%PDF-1.7\ntrailer /Root startxref %%EOF"
             ),
             Err(FileInspectionError::MalformedContent)
         );
+        assert_eq!(
+            inspect_file(FilePurpose::ProfileImage, &jpeg[..jpeg.len() - 1]),
+            Err(FileInspectionError::MalformedContent)
+        );
+        assert_eq!(
+            inspect_file(FilePurpose::ProfileImage, &webp[..webp.len() - 1]),
+            Err(FileInspectionError::MalformedContent)
+        );
+    }
+
+    #[test]
+    fn rejects_invalid_pdf_offsets_and_accepts_a_bounded_xref_stream() {
+        let mut invalid_offset = xref_table_pdf();
+        let offset_start = invalid_offset
+            .windows(b"startxref\n".len())
+            .position(|window| window == b"startxref\n")
+            .expect("fixture contains startxref")
+            + b"startxref\n".len();
+        invalid_offset[offset_start..offset_start + 2].copy_from_slice(b"99");
+
+        assert_eq!(
+            inspect_file(FilePurpose::Transcript, &invalid_offset),
+            Err(FileInspectionError::MalformedContent)
+        );
+        assert!(inspect_file(FilePurpose::Transcript, &xref_stream_pdf()).is_ok());
+    }
+
+    #[test]
+    fn validated_image_borrows_the_exact_inspected_payload_for_derivative_decode() {
+        let safe = encoded_image(ImageFormat::Png, 2, 2);
+        let validated =
+            inspect_file(FilePurpose::ProfileImage, &safe).expect("safe fixture must inspect");
+
+        assert!(ImageProcessor::decode_inspected_image(&validated).is_ok());
     }
 
     #[test]

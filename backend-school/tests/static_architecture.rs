@@ -5003,3 +5003,35 @@ fn file_platform_object_keys_can_only_be_constructed_by_the_purpose_registry() {
         );
     }
 }
+
+#[test]
+fn file_platform_derivatives_require_the_validated_payload_boundary() {
+    let inspector = read_source(manifest_dir().join("src/modules/files/file_inspector.rs"));
+    let processor = read_source(manifest_dir().join("src/utils/file_processor.rs"));
+    let legacy_service = read_source(manifest_dir().join("src/modules/files/services.rs"));
+
+    assert!(
+        inspector.contains("pub struct ValidatedFile<'a>"),
+        "inspection must bind validation metadata to a borrowed payload"
+    );
+    assert!(
+        processor.contains("pub fn decode_inspected_image(")
+            && processor.contains("validated: &ValidatedFile"),
+        "derivative decoding must receive the validated payload instead of separate bytes and metadata"
+    );
+    for legacy_raw_decoder in [
+        "ImageProcessor::is_valid_image(",
+        "ImageProcessor::get_dimensions(",
+        "ImageProcessor::resize_image(",
+        "ImageProcessor::create_thumbnail(",
+    ] {
+        assert!(
+            !legacy_service.contains(legacy_raw_decoder),
+            "legacy derivative path must not decode uninspected bytes through {legacy_raw_decoder}"
+        );
+    }
+    assert!(
+        legacy_service.contains("inspect_file("),
+        "legacy derivative path must create a validated payload before processing"
+    );
+}

@@ -2,43 +2,32 @@ use image::{imageops::FilterType, DynamicImage, ImageFormat};
 use std::io::Cursor;
 use tracing::info;
 
-use crate::modules::files::file_inspector::{image_format, InspectedFile};
+use crate::modules::files::file_inspector::ValidatedFile;
 
 /// Image processing utilities
 pub struct ImageProcessor;
 
 impl ImageProcessor {
-    /// Decodes only content that has already passed the purpose-bound inspector.
-    #[allow(dead_code)] // Task 6 routes derivative work through the staged inspection boundary.
-    pub fn decode_inspected_image(
-        data: &[u8],
-        inspection: InspectedFile,
-    ) -> Result<DynamicImage, String> {
-        if !inspection.is_image() {
+    /// Decodes only the exact payload borrowed by a successful purpose-bound inspection.
+    pub fn decode_inspected_image(validated: &ValidatedFile<'_>) -> Result<DynamicImage, String> {
+        if !validated.is_image() {
             return Err("Inspected content is not an image".to_string());
         }
 
-        let format = image_format(inspection.detected_content())
-            .ok_or_else(|| "Inspected content is not an image".to_string())?;
-        image::load_from_memory_with_format(data, format)
+        validated
+            .decode_image()
             .map_err(|_| "Inspected image could not be decoded".to_string())
     }
 
-    /// Resize an image to fit within max dimensions while maintaining aspect ratio
-    ///
-    /// # Arguments
-    /// * `data` - Original image data
-    /// * `max_width` - Maximum width
-    /// * `max_height` - Maximum height
-    ///
-    /// # Returns
-    /// Resized image data as Vec<u8>
-    pub fn resize_image(data: &[u8], max_width: u32, max_height: u32) -> Result<Vec<u8>, String> {
+    /// Resizes a purpose-validated image while preserving its bounded decode boundary.
+    pub fn resize_validated_image(
+        validated: &ValidatedFile<'_>,
+        max_width: u32,
+        max_height: u32,
+    ) -> Result<DynamicImage, String> {
         info!("Resizing image to max {}x{}", max_width, max_height);
 
-        // Load image
-        let img =
-            image::load_from_memory(data).map_err(|e| format!("Failed to load image: {}", e))?;
+        let img = Self::decode_inspected_image(validated)?;
 
         // Calculate new dimensions maintaining aspect ratio
         let width = img.width();
@@ -55,69 +44,37 @@ impl ImageProcessor {
 
         if new_width == width && new_height == height {
             info!("Image already within size limits, no resize needed");
-            return Ok(data.to_vec());
+            return Ok(img);
         }
 
-        // Resize
         let resized = img.resize(new_width, new_height, FilterType::Lanczos3);
-
-        // Encode back to JPEG
-        let mut buffer = Vec::new();
-        let mut cursor = Cursor::new(&mut buffer);
-
-        resized
-            .write_to(&mut cursor, ImageFormat::Jpeg)
-            .map_err(|e| format!("Failed to encode resized image: {}", e))?;
 
         info!(
             "Image resized from {}x{} to {}x{}",
             width, height, new_width, new_height
         );
 
+        Ok(resized)
+    }
+
+    pub fn encode_jpeg(image: &DynamicImage) -> Result<Vec<u8>, String> {
+        let mut buffer = Vec::new();
+        image
+            .write_to(&mut Cursor::new(&mut buffer), ImageFormat::Jpeg)
+            .map_err(|_| "Validated image could not be encoded".to_string())?;
         Ok(buffer)
     }
 
-    /// Create a thumbnail from an image
-    ///
-    /// # Arguments
-    /// * `data` - Original image data
-    /// * `size` - Thumbnail size (will be square)
-    ///
-    /// # Returns
-    /// Thumbnail image data as Vec<u8>
-    pub fn create_thumbnail(data: &[u8], size: u32) -> Result<Vec<u8>, String> {
+    /// Creates a thumbnail from a decoded image that came through the validated boundary.
+    pub fn create_thumbnail_from_image(image: &DynamicImage, size: u32) -> Result<Vec<u8>, String> {
         info!("Creating {}x{} thumbnail", size, size);
 
-        let img = image::load_from_memory(data)
-            .map_err(|e| format!("Failed to load image for thumbnail: {}", e))?;
-
-        // Create square thumbnail by cropping to center
-        let thumbnail = img.resize_to_fill(size, size, FilterType::Lanczos3);
-
-        // Encode as JPEG
-        let mut buffer = Vec::new();
-        let mut cursor = Cursor::new(&mut buffer);
-
-        thumbnail
-            .write_to(&mut cursor, ImageFormat::Jpeg)
-            .map_err(|e| format!("Failed to encode thumbnail: {}", e))?;
+        let thumbnail = image.resize_to_fill(size, size, FilterType::Lanczos3);
+        let buffer = Self::encode_jpeg(&thumbnail)?;
 
         info!("Thumbnail created successfully");
 
         Ok(buffer)
-    }
-
-    /// Get image dimensions
-    pub fn get_dimensions(data: &[u8]) -> Result<(u32, u32), String> {
-        let img =
-            image::load_from_memory(data).map_err(|e| format!("Failed to load image: {}", e))?;
-
-        Ok((img.width(), img.height()))
-    }
-
-    /// Validate if data is a valid image
-    pub fn is_valid_image(data: &[u8]) -> bool {
-        image::load_from_memory(data).is_ok()
     }
 }
 

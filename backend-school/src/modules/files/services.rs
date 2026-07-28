@@ -10,6 +10,7 @@ use crate::{
 };
 
 use super::models::{File, FileListResponse, FileResponse, FileType, FileValidationConfig};
+use super::{file_inspector::inspect_file, platform_types::FilePurpose};
 
 struct ProcessedFileData {
     data: Vec<u8>,
@@ -279,20 +280,25 @@ fn process_file_data(
         });
     }
 
-    info!("Processing image file");
+    info!("Processing inspected image file");
 
-    if !ImageProcessor::is_valid_image(&file_data) {
-        return Err(AppError::BadRequest("Invalid image file".to_string()));
-    }
-
-    let (original_width, original_height) =
-        ImageProcessor::get_dimensions(&file_data).map_err(|e| {
-            error!("Failed to get image dimensions: {}", e);
-            AppError::BadRequest("Invalid image".to_string())
-        })?;
-    let resized = ImageProcessor::resize_image(&file_data, 2048, 2048).unwrap_or(file_data);
+    let purpose = match file_type {
+        FileType::ProfileImage => FilePurpose::ProfileImage,
+        FileType::SchoolLogo => FilePurpose::SchoolLogo,
+        FileType::SchoolBanner => FilePurpose::SchoolBanner,
+        _ => return Err(AppError::BadRequest("Invalid image file".to_string())),
+    };
+    let validated = inspect_file(purpose, &file_data)
+        .map_err(|_| AppError::BadRequest("Invalid image file".to_string()))?;
+    let (original_width, original_height) = validated
+        .dimensions()
+        .ok_or_else(|| AppError::BadRequest("Invalid image file".to_string()))?;
+    let resized_image = ImageProcessor::resize_validated_image(&validated, 2048, 2048)
+        .map_err(|_| AppError::BadRequest("Invalid image file".to_string()))?;
+    let resized = ImageProcessor::encode_jpeg(&resized_image)
+        .map_err(|_| AppError::BadRequest("Invalid image file".to_string()))?;
     let thumbnail = if *file_type == FileType::ProfileImage {
-        ImageProcessor::create_thumbnail(&resized, 150).ok()
+        ImageProcessor::create_thumbnail_from_image(&resized_image, 150).ok()
     } else {
         None
     };
