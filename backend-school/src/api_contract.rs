@@ -55,6 +55,12 @@ use crate::modules::academic::services::study_plan_service::GenerateActivitiesFr
 use crate::modules::achievement::models::{
     Achievement, AchievementListFilter, CreateAchievementRequest, UpdateAchievementRequest,
 };
+use crate::modules::admission::handlers::applications::StaffDocumentMultipart;
+use crate::modules::admission::handlers::portal::{
+    PortalDocumentMultipart, PortalUploadDocumentData,
+};
+use crate::modules::admission::models::applications::PortalCredentials;
+use crate::modules::admission::services::application_service::DocumentUploadResponse;
 use crate::modules::auth::models::{
     ChangePasswordRequest, LoginData, LoginRequest, ProfileResponse, UpdateProfileRequest,
     UserResponse,
@@ -130,6 +136,11 @@ use utoipa::OpenApi;
         crate::modules::files::handlers::download_file,
         crate::modules::files::handlers::delete_file,
         crate::modules::files::handlers::get_public_file_content,
+        crate::modules::admission::handlers::applications::staff_upload_document,
+        crate::modules::admission::handlers::applications::staff_delete_document,
+        crate::modules::admission::handlers::portal::portal_upload_document,
+        crate::modules::admission::handlers::portal::portal_delete_document,
+        crate::modules::admission::handlers::portal::portal_download_document,
         crate::modules::menu::handlers::public::get_user_menu,
         crate::modules::system::handlers::feature_toggles::list_features,
         crate::modules::system::handlers::feature_toggles::get_feature,
@@ -626,6 +637,13 @@ use utoipa::OpenApi;
         FileDeleteResult,
         ApiResponse<FileMetadata>,
         ApiResponse<FileDeleteResult>,
+        StaffDocumentMultipart,
+        PortalDocumentMultipart,
+        PortalCredentials,
+        PortalUploadDocumentData,
+        DocumentUploadResponse,
+        ApiResponse<PortalUploadDocumentData>,
+        ApiResponse<DocumentUploadResponse>,
         Notification,
         ListNotificationsResponse,
         ApiResponse<ListNotificationsResponse>,
@@ -646,6 +664,7 @@ use utoipa::OpenApi;
         (name = "calendar", description = "Calendar reads"),
         (name = "school", description = "School settings and public branding reads"),
         (name = "files", description = "Authorized provider-neutral file operations"),
+        (name = "admission", description = "Admission document attachment operations"),
         (name = "notifications", description = "Current-user notification reads"),
         (name = "achievement", description = "Scoped staff achievement operations")
     )
@@ -762,7 +781,7 @@ mod tests {
                 "lastName",
                 "nationalId",
                 "phone",
-                "profileImageUrl",
+                "profileImageFileId",
                 "status",
                 "userType",
                 "username",
@@ -775,7 +794,7 @@ mod tests {
         assert_eq!(properties["id"]["format"], "uuid");
         assert_eq!(properties["createdAt"]["format"], "date-time");
 
-        for field in ["nationalId", "email", "phone", "profileImageUrl"] {
+        for field in ["nationalId", "email", "phone", "profileImageFileId"] {
             assert!(
                 contains_null(&properties[field]),
                 "{field} must accept null"
@@ -867,7 +886,7 @@ mod tests {
             "dateOfBirth",
             "gender",
             "address",
-            "profileImageUrl",
+            "profileImageFileId",
             "hiredDate",
         ] {
             assert!(
@@ -885,7 +904,7 @@ mod tests {
         let update = &schemas["UpdateProfileRequest"]["properties"];
         assert!(update.get("emergencyContact").is_some());
         assert!(update.get("dateOfBirth").is_some());
-        assert!(update.get("profileImageUrl").is_some());
+        assert!(update.get("profileImageFileId").is_some());
         let change = &schemas["ChangePasswordRequest"];
         assert_eq!(required(change), vec!["currentPassword", "newPassword"]);
         assert_eq!(
@@ -1186,11 +1205,11 @@ mod tests {
         let achievement = &document["components"]["schemas"]["Achievement"];
         for field in [
             "description",
-            "image_path",
+            "image_file_id",
             "created_by",
             "user_first_name",
             "user_last_name",
-            "user_profile_image_url",
+            "user_profile_image_file_id",
         ] {
             assert!(required(achievement).contains(&field));
             assert!(contains_null(&achievement["properties"][field]));
@@ -1338,7 +1357,7 @@ mod tests {
             .flat_map(|path| path.as_object().expect("path item").values())
             .filter(|operation| operation.get("operationId").is_some())
             .count();
-        assert_eq!(operation_count, 197);
+        assert_eq!(operation_count, 202);
     }
 
     #[test]
@@ -1484,7 +1503,7 @@ mod tests {
             .flat_map(|path| path.as_object().expect("path item").values())
             .filter(|operation| operation.get("operationId").is_some())
             .count();
-        assert_eq!(operation_count, 197);
+        assert_eq!(operation_count, 202);
     }
 
     #[test]
@@ -1666,7 +1685,7 @@ mod tests {
             .flat_map(|path| path.as_object().expect("path item").values())
             .filter(|operation| operation.get("operationId").is_some())
             .count();
-        assert_eq!(operation_count, 197);
+        assert_eq!(operation_count, 202);
     }
 
     #[test]
@@ -1949,7 +1968,7 @@ mod tests {
             .flat_map(|path| path.as_object().expect("path item").values())
             .filter(|operation| operation.get("operationId").is_some())
             .count();
-        assert_eq!(operation_count, 197);
+        assert_eq!(operation_count, 202);
     }
 
     #[test]
@@ -2024,10 +2043,10 @@ mod tests {
             .flat_map(|path| path.as_object().expect("path item").values())
             .filter_map(|operation| operation["operationId"].as_str())
             .collect();
-        assert_eq!(operation_ids.len(), 197);
+        assert_eq!(operation_ids.len(), 202);
         assert_eq!(
             operation_ids.iter().copied().collect::<HashSet<_>>().len(),
-            197
+            202
         );
 
         for (path, method, request_schema) in [
@@ -2804,7 +2823,7 @@ mod tests {
                 }
             }
         }
-        assert_eq!(operation_ids.len(), 197);
+        assert_eq!(operation_ids.len(), 202);
 
         let schemas = &document["components"]["schemas"];
         let delegation = &schemas["DelegationItem"];
@@ -2850,6 +2869,31 @@ mod tests {
                     "/api/public/files/{id}/content",
                     "get",
                     "getPublicFileContent",
+                ),
+                (
+                    "/api/admission/applications/{application_id}/documents",
+                    "post",
+                    "staffUploadAdmissionDocument",
+                ),
+                (
+                    "/api/admission/applications/{application_id}/documents/{doc_type}",
+                    "delete",
+                    "staffDeleteAdmissionDocument",
+                ),
+                (
+                    "/api/admission/portal/upload",
+                    "post",
+                    "portalUploadAdmissionDocument",
+                ),
+                (
+                    "/api/admission/portal/documents/{doc_type}",
+                    "delete",
+                    "portalDeleteAdmissionDocument",
+                ),
+                (
+                    "/api/admission/portal/documents/{file_id}/download",
+                    "post",
+                    "portalDownloadAdmissionDocument",
                 ),
             ],
         );
@@ -2899,5 +2943,23 @@ mod tests {
                 ["content"]
                 .is_null()
         );
+        for (path, method) in [
+            ("/api/admission/portal/documents/{doc_type}", "delete"),
+            ("/api/admission/portal/documents/{file_id}/download", "post"),
+        ] {
+            let operation = &document["paths"][path][method];
+            assert_eq!(
+                operation["requestBody"]["content"]["application/json"]["schema"]["$ref"],
+                "#/components/schemas/PortalCredentials"
+            );
+            let parameter_names = operation["parameters"]
+                .as_array()
+                .expect("portal document parameters")
+                .iter()
+                .filter_map(|parameter| parameter["name"].as_str())
+                .collect::<Vec<_>>();
+            assert!(!parameter_names.contains(&"national_id"));
+            assert!(!parameter_names.contains(&"date_of_birth"));
+        }
     }
 }

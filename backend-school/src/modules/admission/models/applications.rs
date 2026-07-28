@@ -2,6 +2,7 @@ use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::types::Json;
 use sqlx::FromRow;
+use utoipa::ToSchema;
 use uuid::Uuid;
 
 // ==========================================
@@ -274,20 +275,11 @@ pub struct ApplicationDocument {
     pub deleted_at: Option<DateTime<Utc>>,
     // Joined from files
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub file_url: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub original_filename: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub file_size: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mime_type: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PortalDeleteDocumentQuery {
-    pub national_id: String,
-    pub date_of_birth: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -425,7 +417,7 @@ pub struct EnrollmentForm {
 
 /// Credentials ที่ผู้สมัครส่งมาทุก request (stateless)
 /// ใช้ national_id + date_of_birth (format DDMMYYYY) เพื่อยืนยันตัวตน
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct PortalCredentials {
     pub national_id: String,

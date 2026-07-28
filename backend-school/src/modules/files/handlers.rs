@@ -16,6 +16,7 @@ use crate::{
 };
 
 use super::{
+    consumer_service::map_platform_error,
     models::{FileAccessQuery, FileDeleteResult, FileMetadata, FileUploadMultipart},
     platform_service::{FilePlatformError, UploadCommand},
     platform_types::DownloadGrant,
@@ -101,8 +102,8 @@ pub async fn upload_file(
             &repository,
             UploadCommand {
                 tenant_id: context.tenant.tenant_id,
-                actor_user_id: context.actor.user_id,
-                owner_user_id,
+                actor_user_id: Some(context.actor.user_id),
+                owner_user_id: Some(owner_user_id),
                 purpose,
                 display_filename,
                 bytes,
@@ -329,31 +330,7 @@ async fn read_file_field(mut field: Field<'_>, max_bytes: u64) -> Result<Bytes, 
     Ok(bytes.freeze())
 }
 
-fn map_platform_error(error: FilePlatformError) -> AppError {
-    match error {
-        FilePlatformError::InspectionRejected => {
-            AppError::BadRequest("ชนิดหรือโครงสร้างไฟล์ไม่ถูกต้อง".to_string())
-        }
-        FilePlatformError::MalwareDetected => {
-            AppError::BadRequest("ไฟล์ไม่ผ่านการตรวจสอบความปลอดภัย".to_string())
-        }
-        FilePlatformError::NotFound => AppError::NotFound("ไม่พบไฟล์".to_string()),
-        FilePlatformError::NotReady => AppError::Conflict("ไฟล์ยังไม่พร้อมใช้งาน".to_string()),
-        FilePlatformError::VisibilityMismatch => {
-            AppError::Forbidden("ไม่อนุญาตให้ส่งไฟล์ด้วยช่องทางนี้".to_string())
-        }
-        FilePlatformError::ScannerUnavailable
-        | FilePlatformError::StorageUnavailable
-        | FilePlatformError::RequiredDerivativeUnavailable => {
-            AppError::ServiceUnavailable(error.log_safe_code().to_string())
-        }
-        FilePlatformError::MetadataUnavailable => {
-            AppError::InternalServerError(error.log_safe_code().to_string())
-        }
-    }
-}
-
-fn map_public_platform_error(error: FilePlatformError) -> AppError {
+fn map_public_platform_error(error: super::platform_service::FilePlatformError) -> AppError {
     match error {
         FilePlatformError::NotFound
         | FilePlatformError::NotReady

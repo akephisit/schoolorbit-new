@@ -11,6 +11,7 @@ use super::platform_types::{
 pub enum PolicyKey {
     SchoolBranding,
     ProfileImage,
+    AchievementImage,
     AdmissionApplicationDocument,
     IdentityDocument,
     QuestionBankImage,
@@ -126,7 +127,7 @@ pub fn purpose_definition(purpose: FilePurpose) -> Result<PurposeDefinition, Pur
             limits: image_limits(2 * 1024 * 1024, 2048, 2048),
             scan_requirement: ScanRequirement::RequiredClean,
             derivatives: THUMBNAIL_256,
-            retention_class: RetentionClass::Standard,
+            retention_class: RetentionClass::Temporary,
             policy_key: PolicyKey::SchoolBranding,
         },
         FilePurpose::SchoolBanner => PurposeDefinition {
@@ -137,7 +138,7 @@ pub fn purpose_definition(purpose: FilePurpose) -> Result<PurposeDefinition, Pur
             limits: image_limits(5 * 1024 * 1024, 4096, 2048),
             scan_requirement: ScanRequirement::RequiredClean,
             derivatives: THUMBNAIL_1024,
-            retention_class: RetentionClass::Standard,
+            retention_class: RetentionClass::Temporary,
             policy_key: PolicyKey::SchoolBranding,
         },
         FilePurpose::ProfileImage => PurposeDefinition {
@@ -148,8 +149,19 @@ pub fn purpose_definition(purpose: FilePurpose) -> Result<PurposeDefinition, Pur
             limits: image_limits(5 * 1024 * 1024, 2048, 2048),
             scan_requirement: ScanRequirement::RequiredClean,
             derivatives: THUMBNAIL_256,
-            retention_class: RetentionClass::Standard,
+            retention_class: RetentionClass::Temporary,
             policy_key: PolicyKey::ProfileImage,
+        },
+        FilePurpose::AchievementImage => PurposeDefinition {
+            domain_segment: "achievement",
+            purpose_segment: "image",
+            visibility: FileVisibility::Private,
+            allowed_content: IMAGE_CONTENT,
+            limits: image_limits(5 * 1024 * 1024, 4096, 4096),
+            scan_requirement: ScanRequirement::RequiredClean,
+            derivatives: THUMBNAIL_1024,
+            retention_class: RetentionClass::Temporary,
+            policy_key: PolicyKey::AchievementImage,
         },
         FilePurpose::AdmissionApplicationDocument => PurposeDefinition {
             domain_segment: "admission",
@@ -159,7 +171,7 @@ pub fn purpose_definition(purpose: FilePurpose) -> Result<PurposeDefinition, Pur
             limits: image_limits(20 * 1024 * 1024, 4096, 4096),
             scan_requirement: ScanRequirement::RequiredClean,
             derivatives: &[],
-            retention_class: RetentionClass::Standard,
+            retention_class: RetentionClass::Temporary,
             policy_key: PolicyKey::AdmissionApplicationDocument,
         },
         FilePurpose::Transcript => PurposeDefinition {
@@ -398,6 +410,23 @@ mod tests {
                 PolicyKey::ProfileImage,
             ),
             (
+                FilePurpose::AchievementImage,
+                "achievement",
+                "image",
+                FileVisibility::Private,
+                &[
+                    DetectedContent::Jpeg,
+                    DetectedContent::Png,
+                    DetectedContent::Webp,
+                ][..],
+                5 * 1024 * 1024,
+                Some(4096),
+                Some(4096),
+                Some(4096 * 4096),
+                &[DerivativeRecipe::Thumbnail1024Webp][..],
+                PolicyKey::AchievementImage,
+            ),
+            (
                 FilePurpose::AdmissionApplicationDocument,
                 "admission",
                 "application-document",
@@ -539,7 +568,15 @@ mod tests {
             assert_eq!(definition.derivatives, derivatives);
             assert_eq!(
                 definition.retention_class,
-                if purpose == FilePurpose::QuestionBankImage {
+                if matches!(
+                    purpose,
+                    FilePurpose::SchoolLogo
+                        | FilePurpose::SchoolBanner
+                        | FilePurpose::ProfileImage
+                        | FilePurpose::AchievementImage
+                        | FilePurpose::AdmissionApplicationDocument
+                        | FilePurpose::QuestionBankImage
+                ) {
                     RetentionClass::Temporary
                 } else {
                     RetentionClass::Standard

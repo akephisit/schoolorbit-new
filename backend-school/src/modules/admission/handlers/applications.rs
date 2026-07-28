@@ -5,16 +5,22 @@ use axum::{
     Json,
 };
 use serde::Serialize;
+use utoipa::ToSchema;
 use uuid::Uuid;
 
-use crate::api_response::ApiResponse;
+use crate::api_response::{ApiErrorResponse, ApiResponse};
 use crate::error::AppError;
 use crate::modules::admission::models::applications::*;
 use crate::modules::admission::services::application_service;
+use crate::modules::files::{
+    consumer_service::{map_platform_error, request_deletions},
+    platform_service::UploadCommand,
+    platform_types::FilePurpose,
+    repository::SqlFileRepository,
+};
 use crate::permissions::registry::codes;
-use crate::services::r2_client::R2Client;
+use crate::policies::file_access_policy;
 use crate::utils::request_context::{actor_tenant_context, tenant_pool};
-use crate::utils::subdomain::extract_subdomain_from_request;
 use crate::AppState;
 
 #[derive(Debug, Serialize)]
@@ -46,6 +52,14 @@ struct UpdatedData<T> {
 #[derive(Debug, Serialize)]
 struct AssignedData<T> {
     assigned: T,
+}
+
+#[derive(Debug, ToSchema)]
+#[allow(dead_code)]
+pub struct StaffDocumentMultipart {
+    pub doc_type: String,
+    #[schema(value_type = String, format = Binary)]
+    pub file: Vec<u8>,
 }
 
 // ==========================================
@@ -198,17 +212,8 @@ pub async fn delete_application(
     let actor = context.actor;
     actor.require_permission(codes::ADMISSION_MANAGE_ALL)?;
 
-    let files_to_delete =
-        application_service::fetch_application_files_then_delete(&pool, id).await?;
-
-    // ลบไฟล์ใน R2 (best-effort, ไม่ blocking response)
-    if !files_to_delete.is_empty() {
-        if let Ok(r2) = R2Client::new().await {
-            for (_, storage_path) in &files_to_delete {
-                r2.delete_file(storage_path).await.ok();
-            }
-        }
-    }
+    let file_ids = application_service::fetch_application_files_then_delete(&pool, id).await?;
+    request_deletions(state.file_platform.as_ref(), &pool, file_ids).await?;
 
     Ok(Json(ApiResponse::empty_with_message("ลบใบสมัครแล้ว")).into_response())
 }
@@ -286,24 +291,44 @@ pub async fn update_admission_track(
 // Documents
 // ==========================================
 
+#[utoipa::path(
+    post,
+    path = "/api/admission/applications/{application_id}/documents",
+    operation_id = "staffUploadAdmissionDocument",
+    tag = "admission",
+    params(("application_id" = Uuid, Path, description = "Application ID")),
+    request_body(content = StaffDocumentMultipart, content_type = "multipart/form-data"),
+    responses(
+        (status = 200, description = "Document attached by file ID", body = ApiResponse<application_service::DocumentUploadResponse>),
+        (status = 400, description = "Invalid document or multipart payload", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Admission verification permission required", body = ApiErrorResponse),
+        (status = 404, description = "Application not found", body = ApiErrorResponse),
+        (status = 503, description = "Scanner or storage unavailable", body = ApiErrorResponse)
+    )
+)]
 pub async fn staff_upload_document(
     State(state): State<AppState>,
     headers: HeaderMap,
     Path(application_id): Path<Uuid>,
     mut multipart: Multipart,
 ) -> Result<impl IntoResponse, AppError> {
-    let subdomain = extract_subdomain_from_request(&headers)
-        .map_err(|_| AppError::BadRequest("Missing subdomain".to_string()))?;
     let context = actor_tenant_context(&state, &headers).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ADMISSION_VERIFY_ALL)?;
+    file_access_policy::authorize_create(
+        &pool,
+        &actor,
+        FilePurpose::AdmissionApplicationDocument,
+        Some(application_id),
+    )
+    .await?;
 
     // Parse multipart in handler (Multipart can't cross service boundary)
     let mut doc_type: Option<String> = None;
     let mut file_data: Option<Vec<u8>> = None;
     let mut original_filename: Option<String> = None;
-    let mut mime_type = "application/octet-stream".to_string();
 
     while let Some(field) = multipart
         .next_field()
@@ -321,9 +346,6 @@ pub async fn staff_upload_document(
                     .file_name()
                     .map(|s| s.to_string())
                     .or(Some("document".to_string()));
-                if let Some(ct) = field.content_type() {
-                    mime_type = ct.to_string();
-                }
                 file_data = Some(
                     field
                         .bytes()
@@ -349,65 +371,55 @@ pub async fn staff_upload_document(
         )));
     }
 
-    let ext = std::path::Path::new(&original_filename)
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("bin")
-        .to_lowercase();
-    if !application_service::ALLOWED_EXTENSIONS.contains(&ext.as_str()) {
-        return Err(AppError::BadRequest(format!(
-            "File extension .{} not allowed. Use: jpg, png, pdf",
-            ext
-        )));
-    }
-
-    if file_data.len() > 20 * 1024 * 1024 {
-        return Err(AppError::BadRequest("File size exceeds 20MB".to_string()));
-    }
-
-    let input = application_service::DocumentUploadInput {
-        doc_type: doc_type.clone(),
-        file_data: file_data.clone(),
-        original_filename,
-        mime_type: mime_type.clone(),
-        ext,
-    };
-
-    // R2 ใส่ใน handler — service ทำแค่ DB
-    let r2_client = R2Client::new()
+    let repository = SqlFileRepository::new(pool.clone());
+    let file = state
+        .file_platform
+        .upload(
+            &repository,
+            UploadCommand {
+                tenant_id: context.tenant.tenant_id,
+                actor_user_id: Some(actor.user_id),
+                owner_user_id: Some(actor.user_id),
+                purpose: FilePurpose::AdmissionApplicationDocument,
+                display_filename: original_filename,
+                bytes: file_data.into(),
+            },
+        )
         .await
-        .map_err(|_| AppError::InternalServerError("Storage service unavailable".to_string()))?;
-
-    // Upload R2 ก่อน (ถ้าพัง = old file ยังอยู่)
-    // คำนวณ storage_path ใน service โดยใช้ Uuid::new_v4() — ต้อง call service ก่อน R2 upload
-    // เพราะ service ต้องสร้าง file_id และ storage_path matching DB record
-    // แต่ถ้าทำ DB ก่อนแล้ว R2 fail = orphan record. Better order:
-    //   1. Generate paths in service (insert DB only after R2 success)
-    // Simplification: trust ordering — DB insert first, then R2 (mirror original code)
-
+        .map_err(map_platform_error)?;
     let result =
-        application_service::save_document_record(&pool, &subdomain, application_id, input).await?;
-
-    // Upload to R2 (DB record มีอยู่แล้ว — ถ้าพังต้อง manual cleanup)
-    if r2_client
-        .upload_file(&result.storage_path, file_data, &mime_type)
-        .await
-        .is_err()
-    {
-        return Err(AppError::InternalServerError(
-            "Failed to upload file".to_string(),
-        ));
+        match application_service::attach_document(&pool, application_id, &doc_type, &file).await {
+            Ok(result) => result,
+            Err(error) => {
+                request_deletions(state.file_platform.as_ref(), &pool, [file.id]).await?;
+                return Err(error);
+            }
+        };
+    if let Some(old_file_id) = result.replaced_file_id {
+        request_deletions(state.file_platform.as_ref(), &pool, [old_file_id]).await?;
     }
 
-    // Delete old file from R2 (DB update succeeded)
-    if let Some(old_path) = &result.old_storage_path {
-        r2_client.delete_file(old_path).await.ok();
-    }
-
-    let response = application_service::document_upload_response(&result, &doc_type)?;
+    let response = application_service::document_upload_response(&result, &doc_type);
     Ok(Json(ApiResponse::ok(response)).into_response())
 }
 
+#[utoipa::path(
+    delete,
+    path = "/api/admission/applications/{application_id}/documents/{doc_type}",
+    operation_id = "staffDeleteAdmissionDocument",
+    tag = "admission",
+    params(
+        ("application_id" = Uuid, Path, description = "Application ID"),
+        ("doc_type" = String, Path, description = "Admission document type")
+    ),
+    responses(
+        (status = 200, description = "Document detached and deletion requested", body = ApiResponse<crate::api_response::EmptyData>),
+        (status = 400, description = "Invalid document type", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Admission verification permission required", body = ApiErrorResponse),
+        (status = 404, description = "Application document not found", body = ApiErrorResponse)
+    )
+)]
 pub async fn staff_delete_document(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -425,13 +437,9 @@ pub async fn staff_delete_document(
         )));
     }
 
-    let storage_path =
+    let file_id =
         application_service::delete_document_record(&pool, application_id, &doc_type).await?;
-
-    let r2_client = R2Client::new()
-        .await
-        .map_err(|_| AppError::InternalServerError("Storage service unavailable".to_string()))?;
-    r2_client.delete_file(&storage_path).await.ok();
+    request_deletions(state.file_platform.as_ref(), &pool, [file_id]).await?;
 
     Ok(Json(ApiResponse::empty()).into_response())
 }

@@ -1,11 +1,15 @@
 use crate::error::AppError;
 use crate::modules::admission::models::applications::*;
 use crate::modules::admission::services::pii;
-use crate::utils::file_url::FileUrlBuilder;
+use crate::modules::files::{
+    platform_types::{FileLifecycleStatus, FilePurpose},
+    repository::PlatformFile,
+};
 use chrono::{Datelike, FixedOffset, Utc};
 use serde::Serialize;
 use sqlx::{types::Json, PgPool};
 use std::collections::HashSet;
+use utoipa::ToSchema;
 use uuid::Uuid;
 
 fn pii_error(context: &str, error: String) -> AppError {
@@ -471,7 +475,6 @@ pub async fn get_application_with_documents(
     let documents = sqlx::query_as::<_, ApplicationDocument>(
         r#"
         SELECT d.id, d.application_id, d.file_id, d.doc_type, d.created_at, d.deleted_at,
-               f.storage_path AS file_url,
                f.original_filename, f.file_size, f.mime_type
         FROM admission_application_documents d
         JOIN files f ON f.id = d.file_id
@@ -483,17 +486,6 @@ pub async fn get_application_with_documents(
     .fetch_all(pool)
     .await
     .unwrap_or_default();
-
-    let url_builder = FileUrlBuilder::new().unwrap_or_default();
-    let documents: Vec<ApplicationDocument> = documents
-        .into_iter()
-        .map(|mut doc| {
-            if let Some(path) = doc.file_url.as_deref() {
-                doc.file_url = Some(url_builder.build_url(path));
-            }
-            doc
-        })
-        .collect();
 
     Ok((application, documents))
 }
@@ -672,48 +664,46 @@ pub async fn unverify_application(pool: &PgPool, id: Uuid) -> Result<(), AppErro
     Ok(())
 }
 
-/// Return files (id, storage_path) ที่ต้องลบ R2 — handler รับผิดชอบ R2 cleanup
 pub async fn fetch_application_files_then_delete(
     pool: &PgPool,
     id: Uuid,
-) -> Result<Vec<(Uuid, String)>, AppError> {
-    let app_number: Option<String> =
-        sqlx::query_scalar("SELECT application_number FROM admission_applications WHERE id = $1")
-            .bind(id)
-            .fetch_optional(pool)
-            .await
-            .map_err(|e| {
-                tracing::error!("Failed to fetch application {}: {}", id, e);
-                AppError::InternalServerError("ไม่สามารถลบใบสมัครได้".to_string())
-            })?;
+) -> Result<Vec<Uuid>, AppError> {
+    let mut transaction = pool.begin().await.map_err(|error| {
+        tracing::error!("Failed to start application deletion: {}", error);
+        AppError::InternalServerError("ไม่สามารถลบใบสมัครได้".to_string())
+    })?;
+    let app_number: Option<String> = sqlx::query_scalar(
+        "SELECT application_number FROM admission_applications WHERE id = $1 FOR UPDATE",
+    )
+    .bind(id)
+    .fetch_optional(&mut *transaction)
+    .await
+    .map_err(|error| {
+        tracing::error!("Failed to fetch application {}: {}", id, error);
+        AppError::InternalServerError("ไม่สามารถลบใบสมัครได้".to_string())
+    })?;
 
     if app_number.is_none() {
         return Err(AppError::NotFound("ไม่พบใบสมัคร".to_string()));
     }
 
-    let file_rows: Vec<(Uuid, String)> = sqlx::query_as(
-        r#"SELECT f.id, f.storage_path
+    let file_ids: Vec<Uuid> = sqlx::query_scalar(
+        r#"SELECT f.id
            FROM admission_application_documents aad
            JOIN files f ON f.id = aad.file_id
            WHERE aad.application_id = $1 AND aad.deleted_at IS NULL"#,
     )
     .bind(id)
-    .fetch_all(pool)
+    .fetch_all(&mut *transaction)
     .await
-    .unwrap_or_default();
-
-    if !file_rows.is_empty() {
-        let file_ids: Vec<Uuid> = file_rows.iter().map(|(fid, _)| *fid).collect();
-        sqlx::query("DELETE FROM files WHERE id = ANY($1)")
-            .bind(&file_ids)
-            .execute(pool)
-            .await
-            .ok();
-    }
+    .map_err(|error| {
+        tracing::error!("Failed to list application document files: {}", error);
+        AppError::InternalServerError("ไม่สามารถลบใบสมัครได้".to_string())
+    })?;
 
     let result = sqlx::query("DELETE FROM admission_applications WHERE id = $1")
         .bind(id)
-        .execute(pool)
+        .execute(&mut *transaction)
         .await
         .map_err(|e| {
             tracing::error!("Failed to delete application {}: {}", id, e);
@@ -724,7 +714,11 @@ pub async fn fetch_application_files_then_delete(
         return Err(AppError::NotFound("ไม่พบใบสมัคร".to_string()));
     }
 
-    Ok(file_rows)
+    transaction.commit().await.map_err(|error| {
+        tracing::error!("Failed to commit application deletion: {}", error);
+        AppError::InternalServerError("ไม่สามารถลบใบสมัครได้".to_string())
+    })?;
+    Ok(file_ids)
 }
 
 // ==========================================
@@ -1232,93 +1226,63 @@ pub const VALID_DOC_TYPES: &[&str] = &[
     "birth_cert",
 ];
 
-pub const ALLOWED_EXTENSIONS: &[&str] = &["jpg", "jpeg", "png", "pdf", "webp"];
-
-pub struct DocumentUploadInput {
-    pub doc_type: String,
-    pub file_data: Vec<u8>,
-    pub original_filename: String,
-    pub mime_type: String,
-    pub ext: String,
-}
-
 pub struct DocumentUploadResult {
     pub doc_id: Uuid,
     pub file_id: Uuid,
-    pub storage_path: String,
     pub file_size: i64,
-    pub old_storage_path: Option<String>,
+    pub replaced_file_id: Option<Uuid>,
 }
 
-/// Save file metadata + soft-delete old doc + link new doc.
-/// Caller (handler) จัดการ R2 upload/delete จริง — return paths สำหรับ cleanup
-pub async fn save_document_record(
+/// Finalize the domain relationship in one transaction after File Platform upload.
+pub async fn attach_document(
     pool: &PgPool,
-    subdomain: &str,
     application_id: Uuid,
-    input: DocumentUploadInput,
+    doc_type: &str,
+    file: &PlatformFile,
 ) -> Result<DocumentUploadResult, AppError> {
-    let app_info: Option<(String, Uuid)> = sqlx::query_as(
-        "SELECT application_number, admission_round_id FROM admission_applications WHERE id = $1",
+    if file.purpose != FilePurpose::AdmissionApplicationDocument
+        || file.lifecycle_status != FileLifecycleStatus::Ready
+    {
+        return Err(AppError::ValidationError(
+            "ไฟล์เอกสารยังไม่พร้อมใช้งาน".to_string(),
+        ));
+    }
+
+    let mut transaction = pool.begin().await.map_err(document_relationship_error)?;
+    let application_exists = sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS(SELECT 1 FROM admission_applications WHERE id = $1)",
     )
     .bind(application_id)
-    .fetch_optional(pool)
+    .fetch_one(&mut *transaction)
     .await
-    .unwrap_or(None);
+    .map_err(document_relationship_error)?;
+    if !application_exists {
+        return Err(AppError::NotFound("ไม่พบใบสมัคร".to_string()));
+    }
 
-    let (app_number, round_id) = app_info.ok_or(AppError::NotFound("ไม่พบใบสมัคร".to_string()))?;
-
-    let old_doc: Option<(String, Uuid)> = sqlx::query_as(
-        r#"SELECT f.storage_path, f.id
-           FROM admission_application_documents aad
-           JOIN files f ON f.id = aad.file_id
-           WHERE aad.application_id = $1 AND aad.doc_type = $2 AND aad.deleted_at IS NULL
-           LIMIT 1"#,
-    )
-    .bind(application_id)
-    .bind(&input.doc_type)
-    .fetch_optional(pool)
-    .await
-    .unwrap_or(None);
-
-    let file_id = Uuid::new_v4();
-    let storage_path = format!(
-        "school-{}/admission/{}/{}/{}.{}",
-        subdomain, round_id, app_number, file_id, input.ext
-    );
-
-    let file_size = input.file_data.len() as i64;
-    sqlx::query(
+    let replaced_file_id = sqlx::query_scalar::<_, Uuid>(
         r#"
-        INSERT INTO files (id, user_id, school_id, filename, original_filename,
-            file_size, mime_type, storage_path, file_type,
-            is_temporary, is_public, uploaded_by)
-        VALUES ($1, NULL, $2, $3, $4, $5, $6, $7, 'document',
-            false, false, NULL)
-        "#,
+SELECT file_id
+FROM admission_application_documents
+WHERE application_id = $1 AND doc_type = $2 AND deleted_at IS NULL
+LIMIT 1
+FOR UPDATE
+"#,
     )
-    .bind(file_id)
-    .bind(subdomain)
-    .bind(format!("{}.{}", file_id, input.ext))
-    .bind(&input.original_filename)
-    .bind(file_size)
-    .bind(&input.mime_type)
-    .bind(&storage_path)
-    .execute(pool)
+    .bind(application_id)
+    .bind(doc_type)
+    .fetch_optional(&mut *transaction)
     .await
-    .map_err(|e| {
-        tracing::error!("Failed to save file metadata: {}", e);
-        AppError::InternalServerError("Failed to save file metadata".to_string())
-    })?;
+    .map_err(document_relationship_error)?;
 
     sqlx::query(
         "UPDATE admission_application_documents SET deleted_at = NOW() WHERE application_id = $1 AND doc_type = $2 AND deleted_at IS NULL",
     )
     .bind(application_id)
-    .bind(&input.doc_type)
-    .execute(pool)
+    .bind(doc_type)
+    .execute(&mut *transaction)
     .await
-    .ok();
+    .map_err(document_relationship_error)?;
 
     let doc_id = Uuid::new_v4();
     sqlx::query(
@@ -1329,62 +1293,66 @@ pub async fn save_document_record(
     )
     .bind(doc_id)
     .bind(application_id)
-    .bind(file_id)
-    .bind(&input.doc_type)
-    .execute(pool)
+    .bind(file.id)
+    .bind(doc_type)
+    .execute(&mut *transaction)
     .await
-    .map_err(|e| {
-        tracing::error!("Failed to link document: {}", e);
-        AppError::InternalServerError("Failed to link document".to_string())
-    })?;
+    .map_err(document_relationship_error)?;
+    sqlx::query(
+        "UPDATE files SET is_temporary = false, retention_class = 'standard', expires_at = NULL, updated_at = NOW() WHERE id = $1",
+    )
+    .bind(file.id)
+    .execute(&mut *transaction)
+    .await
+    .map_err(document_relationship_error)?;
+
+    transaction
+        .commit()
+        .await
+        .map_err(document_relationship_error)?;
 
     Ok(DocumentUploadResult {
         doc_id,
-        file_id,
-        storage_path,
-        file_size,
-        old_storage_path: old_doc.map(|(p, _)| p),
+        file_id: file.id,
+        file_size: file.byte_size,
+        replaced_file_id: (replaced_file_id != Some(file.id))
+            .then_some(replaced_file_id)
+            .flatten(),
     })
 }
 
-/// Delete document record + return storage_path สำหรับ R2 cleanup
 pub async fn delete_document_record(
     pool: &PgPool,
     application_id: Uuid,
     doc_type: &str,
-) -> Result<String, AppError> {
-    let doc_info: Option<(String, Uuid)> = sqlx::query_as(
-        r#"SELECT f.storage_path, f.id
-           FROM admission_application_documents aad
-           JOIN files f ON f.id = aad.file_id
-           WHERE aad.application_id = $1 AND aad.doc_type = $2 AND aad.deleted_at IS NULL
-           LIMIT 1"#,
+) -> Result<Uuid, AppError> {
+    sqlx::query_scalar::<_, Uuid>(
+        r#"
+UPDATE admission_application_documents
+SET deleted_at = NOW()
+WHERE id = (
+    SELECT id
+    FROM admission_application_documents
+    WHERE application_id = $1 AND doc_type = $2 AND deleted_at IS NULL
+    LIMIT 1
+)
+RETURNING file_id
+"#,
     )
     .bind(application_id)
     .bind(doc_type)
     .fetch_optional(pool)
     .await
-    .map_err(|_| AppError::InternalServerError("Database error".to_string()))?;
+    .map_err(document_relationship_error)?
+    .ok_or_else(|| AppError::NotFound("ไม่พบเอกสารที่ต้องการลบ".to_string()))
+}
 
-    let (storage_path, file_id) =
-        doc_info.ok_or_else(|| AppError::NotFound("ไม่พบเอกสารที่ต้องการลบ".to_string()))?;
-
-    sqlx::query(
-        "DELETE FROM admission_application_documents WHERE application_id = $1 AND doc_type = $2 AND deleted_at IS NULL",
-    )
-    .bind(application_id)
-    .bind(doc_type)
-    .execute(pool)
-    .await
-    .map_err(|_| AppError::InternalServerError("Database error".to_string()))?;
-
-    sqlx::query("DELETE FROM files WHERE id = $1")
-        .bind(file_id)
-        .execute(pool)
-        .await
-        .ok();
-
-    Ok(storage_path)
+fn document_relationship_error(error: sqlx::Error) -> AppError {
+    tracing::error!(
+        "Failed to update admission document relationship: {}",
+        error
+    );
+    AppError::InternalServerError("ไม่สามารถบันทึกความสัมพันธ์เอกสารได้".to_string())
 }
 
 // ==========================================
@@ -1659,12 +1627,6 @@ pub async fn batch_update_student_ids(
     })
 }
 
-pub fn build_full_file_url(storage_path: &str) -> Result<String, AppError> {
-    let url_builder = FileUrlBuilder::new()
-        .map_err(|_| AppError::InternalServerError("Configuration error".to_string()))?;
-    Ok(format!("{}/{}", url_builder.base_url(), storage_path))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1753,26 +1715,23 @@ mod tests {
     }
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct DocumentUploadResponse {
     pub id: Uuid,
     pub file_id: Uuid,
     pub doc_type: String,
-    pub file_url: String,
     pub file_size: i64,
 }
 
 pub fn document_upload_response(
     result: &DocumentUploadResult,
     doc_type: &str,
-) -> Result<DocumentUploadResponse, AppError> {
-    let file_url = build_full_file_url(&result.storage_path)?;
-    Ok(DocumentUploadResponse {
+) -> DocumentUploadResponse {
+    DocumentUploadResponse {
         id: result.doc_id,
         file_id: result.file_id,
         doc_type: doc_type.to_string(),
-        file_url,
         file_size: result.file_size,
-    })
+    }
 }

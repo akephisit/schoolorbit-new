@@ -4,13 +4,18 @@ use crate::utils::field_encryption;
 use sqlx::PgPool;
 use uuid::Uuid;
 
+pub struct ProfileUpdateResult {
+    pub user: User,
+    pub replaced_file_id: Option<Uuid>,
+}
+
 pub async fn find_active_login_user_by_username(
     pool: &PgPool,
     username: &str,
 ) -> Result<LoginUser, AppError> {
     sqlx::query_as::<_, LoginUser>(
         r#"
-        SELECT id, username, password_hash, status, user_type, first_name, last_name, email, date_of_birth, profile_image_url
+        SELECT id, username, password_hash, status, user_type, first_name, last_name, email, date_of_birth, profile_image_file_id
         FROM users
         WHERE username = $1 AND status = 'active'
         "#,
@@ -29,7 +34,7 @@ pub async fn find_active_login_user_by_id(
 ) -> Result<LoginUser, AppError> {
     sqlx::query_as::<_, LoginUser>(
         r#"
-        SELECT id, username, password_hash, status, user_type, first_name, last_name, email, date_of_birth, profile_image_url
+        SELECT id, username, password_hash, status, user_type, first_name, last_name, email, date_of_birth, profile_image_file_id
         FROM users
         WHERE id = $1 AND status = 'active'
         "#,
@@ -65,7 +70,7 @@ pub async fn find_user_by_id(pool: &PgPool, user_id: Uuid) -> Result<User, AppEr
             emergency_contact,
             line_id,
             gender,
-            profile_image_url,
+            profile_image_file_id,
             hired_date,
             resigned_date
          FROM users 
@@ -112,8 +117,49 @@ pub async fn update_profile(
     pool: &PgPool,
     user_id: Uuid,
     payload: UpdateProfileRequest,
-) -> Result<User, AppError> {
+) -> Result<ProfileUpdateResult, AppError> {
     let date_of_birth = parse_profile_date(payload.date_of_birth.as_deref());
+    let mut transaction = pool.begin().await?;
+
+    if let Some(file_id) = payload.profile_image_file_id {
+        let valid = sqlx::query_scalar::<_, bool>(
+            r#"
+SELECT EXISTS(
+    SELECT 1
+    FROM files
+    WHERE id = $1
+      AND user_id = $2
+      AND purpose_code = 'profile_image'
+      AND lifecycle_status = 'ready'
+      AND deleted_at IS NULL
+)
+"#,
+        )
+        .bind(file_id)
+        .bind(user_id)
+        .fetch_one(&mut *transaction)
+        .await?;
+        if !valid {
+            return Err(AppError::ValidationError(
+                "ไฟล์รูปโปรไฟล์ไม่พร้อมใช้งาน".to_string(),
+            ));
+        }
+        sqlx::query(
+            "UPDATE files SET is_temporary = false, retention_class = 'standard', expires_at = NULL, updated_at = NOW() WHERE id = $1",
+        )
+        .bind(file_id)
+        .execute(&mut *transaction)
+        .await?;
+    }
+
+    let old_file_id = sqlx::query_as::<_, (Option<Uuid>,)>(
+        "SELECT profile_image_file_id FROM users WHERE id = $1 FOR UPDATE",
+    )
+    .bind(user_id)
+    .fetch_optional(&mut *transaction)
+    .await?
+    .ok_or_else(|| AppError::NotFound("ไม่พบผู้ใช้".to_string()))?
+    .0;
 
     sqlx::query(
         "UPDATE users 
@@ -126,7 +172,7 @@ pub async fn update_profile(
              date_of_birth = COALESCE($7, date_of_birth),
              gender = COALESCE($8, gender),
              address = COALESCE($9, address),
-             profile_image_url = COALESCE($10, profile_image_url),
+             profile_image_file_id = COALESCE($10, profile_image_file_id),
              updated_at = NOW()
          WHERE id = $11",
     )
@@ -139,12 +185,19 @@ pub async fn update_profile(
     .bind(date_of_birth)
     .bind(&payload.gender)
     .bind(&payload.address)
-    .bind(&payload.profile_image_url)
+    .bind(&payload.profile_image_file_id)
     .bind(user_id)
-    .execute(pool)
+    .execute(&mut *transaction)
     .await?;
 
-    find_user_by_id(pool, user_id).await
+    transaction.commit().await?;
+    let new_file_id = payload.profile_image_file_id.or(old_file_id);
+    Ok(ProfileUpdateResult {
+        user: find_user_by_id(pool, user_id).await?,
+        replaced_file_id: (payload.profile_image_file_id.is_some() && old_file_id != new_file_id)
+            .then_some(old_file_id)
+            .flatten(),
+    })
 }
 
 pub async fn update_password_hash(
@@ -199,7 +252,7 @@ mod tests {
             emergency_contact: None,
             line_id: None,
             gender: None,
-            profile_image_url: None,
+            profile_image_file_id: None,
             hired_date: None,
             resigned_date: None,
         }

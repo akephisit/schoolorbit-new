@@ -6,6 +6,7 @@ use uuid::Uuid;
 
 use crate::error::AppError;
 use crate::middleware::permission::ActorContext;
+use crate::modules::files::platform_types::FilePurpose;
 use crate::modules::question_bank::models::{
     QuestionBankListQuery, QuestionBankOptions, QuestionBankPage, QuestionBankSubjectOption,
     QuestionBankSummary, QuestionBankSummaryRow, QuestionChoice, QuestionChoiceRow, QuestionDetail,
@@ -13,7 +14,6 @@ use crate::modules::question_bank::models::{
     UpsertQuestionChoiceRequest, UpsertQuestionRequest,
 };
 use crate::policies::question_bank_access_policy::{self, QuestionBankAccess};
-use crate::utils::file_url::FileUrlBuilder;
 
 const VALID_QUESTION_TYPES: &[&str] =
     &["single_choice", "multiple_choice", "short_answer", "essay"];
@@ -53,19 +53,18 @@ struct PageParams {
     offset: i64,
 }
 
+pub struct QuestionMutationResult {
+    pub question: QuestionDetail,
+    pub detached_file_ids: Vec<Uuid>,
+}
+
 #[derive(Debug, sqlx::FromRow)]
 struct PayloadFileRow {
     id: Uuid,
     user_id: Option<Uuid>,
-    mime_type: String,
-    file_type: String,
+    purpose_code: Option<String>,
+    lifecycle_status: String,
     is_temporary: bool,
-}
-
-#[derive(Debug, Clone, sqlx::FromRow)]
-pub struct QuestionFileSource {
-    pub storage_path: String,
-    pub mime_type: String,
 }
 
 pub async fn list_questions(
@@ -197,38 +196,6 @@ pub async fn get_question(
     fetch_question_detail(pool, question_id, &access).await
 }
 
-pub async fn get_question_file_source(
-    pool: &PgPool,
-    actor: &ActorContext,
-    question_id: Uuid,
-    file_id: Uuid,
-) -> Result<QuestionFileSource, AppError> {
-    let scope = fetch_question_scope(pool, question_id).await?;
-    question_bank_access_policy::require_question_read_access(pool, actor, &scope).await?;
-    let referenced_file_ids = fetch_question_file_ids(pool, question_id).await?;
-    if !referenced_file_ids.contains(&file_id) {
-        return Err(AppError::NotFound("ไม่พบรูปประกอบในข้อสอบนี้".to_string()));
-    }
-
-    sqlx::query_as::<_, QuestionFileSource>(
-        r#"
-SELECT storage_path, mime_type
-FROM files
-WHERE id = $1
-  AND mime_type LIKE 'image/%'
-  AND deleted_at IS NULL
-"#,
-    )
-    .bind(file_id)
-    .fetch_optional(pool)
-    .await
-    .map_err(|error| {
-        tracing::error!("Failed to fetch question image source: {}", error);
-        AppError::InternalServerError("ไม่สามารถดึงรูปประกอบข้อสอบได้".to_string())
-    })?
-    .ok_or_else(|| AppError::NotFound("ไม่พบรูปประกอบในข้อสอบนี้".to_string()))
-}
-
 pub async fn create_question(
     pool: &PgPool,
     actor: &ActorContext,
@@ -307,7 +274,7 @@ pub async fn update_question(
     question_id: Uuid,
     actor_id: Uuid,
     mut payload: UpsertQuestionRequest,
-) -> Result<QuestionDetail, AppError> {
+) -> Result<QuestionMutationResult, AppError> {
     normalize_payload(&mut payload);
     validate_question_payload(&payload)?;
     let scope = fetch_question_scope(pool, question_id).await?;
@@ -319,6 +286,10 @@ pub async fn update_question(
 
     let existing_file_ids = fetch_question_file_ids(pool, question_id).await?;
     let image_file_ids = collect_payload_image_file_ids(&payload);
+    let detached_file_ids = existing_file_ids
+        .difference(&image_file_ids)
+        .copied()
+        .collect();
     let temporary_image_file_ids =
         validate_payload_files(pool, actor_id, &image_file_ids, &existing_file_ids).await?;
     let stem_search_text = payload.stem_content.search_text();
@@ -384,16 +355,23 @@ WHERE id = $1
     })?;
 
     let access = question_bank_access_policy::resolve_access(pool, actor).await?;
-    fetch_question_detail(pool, question_id, &access).await
+    Ok(QuestionMutationResult {
+        question: fetch_question_detail(pool, question_id, &access).await?,
+        detached_file_ids,
+    })
 }
 
 pub async fn delete_question(
     pool: &PgPool,
     actor: &ActorContext,
     question_id: Uuid,
-) -> Result<(), AppError> {
+) -> Result<Vec<Uuid>, AppError> {
     let scope = fetch_question_scope(pool, question_id).await?;
     question_bank_access_policy::require_question_manage_access(pool, actor, &scope).await?;
+    let file_ids = fetch_question_file_ids(pool, question_id)
+        .await?
+        .into_iter()
+        .collect();
 
     sqlx::query(
         r#"
@@ -411,7 +389,7 @@ WHERE id = $1
         AppError::InternalServerError("ลบข้อสอบไม่สำเร็จ".to_string())
     })?;
 
-    Ok(())
+    Ok(file_ids)
 }
 
 fn normalize_page_params(page: Option<i64>, page_size: Option<i64>) -> PageParams {
@@ -559,10 +537,11 @@ async fn validate_payload_files(
     let requested: Vec<Uuid> = file_ids.iter().copied().collect();
     let rows = sqlx::query_as::<_, PayloadFileRow>(
         r#"
-SELECT id, user_id, mime_type, file_type, is_temporary
+SELECT id, user_id, purpose_code, lifecycle_status, is_temporary
 FROM files
 WHERE id = ANY($1)
   AND deleted_at IS NULL
+  AND lifecycle_status = 'ready'
   AND (is_temporary = false OR expires_at IS NULL OR expires_at > NOW())
 "#,
     )
@@ -584,7 +563,9 @@ WHERE id = ANY($1)
         if !existing_file_ids.contains(&row.id) && row.user_id != Some(actor_id) {
             return Err(AppError::Forbidden("ไม่มีสิทธิ์ใช้ไฟล์รูปนี้ในข้อสอบ".to_string()));
         }
-        if !row.mime_type.starts_with("image/") || row.file_type != "course_material" {
+        if row.purpose_code.as_deref() != Some(FilePurpose::QuestionBankImage.code())
+            || row.lifecycle_status != "ready"
+        {
             return Err(AppError::ValidationError(
                 "ไฟล์ประกอบข้อสอบต้องเป็นรูปภาพ".to_string(),
             ));
@@ -615,6 +596,7 @@ async fn finalize_temporary_files(
 UPDATE files
 SET is_temporary = false,
     expires_at = NULL,
+    retention_class = 'standard',
     updated_at = NOW()
 WHERE id = ANY($1)
   AND user_id = $2
@@ -893,11 +875,13 @@ async fn fetch_question_files(
         return Ok(Vec::new());
     }
     let file_ids: Vec<Uuid> = file_ids.iter().copied().collect();
-    let rows = sqlx::query_as::<_, (Uuid, String, Option<String>)>(
+    let rows = sqlx::query_scalar::<_, Uuid>(
         r#"
-SELECT id, storage_path, thumbnail_path
+SELECT id
 FROM files
 WHERE id = ANY($1)
+  AND purpose_code = 'question_bank_image'
+  AND lifecycle_status = 'ready'
   AND deleted_at IS NULL
 "#,
     )
@@ -908,18 +892,10 @@ WHERE id = ANY($1)
         tracing::error!("Failed to fetch question file URLs: {}", error);
         AppError::InternalServerError("ไม่สามารถดึงรูปประกอบข้อสอบได้".to_string())
     })?;
-    let url_builder = FileUrlBuilder::new().map_err(|error| {
-        tracing::error!("Failed to build question file URLs: {}", error);
-        AppError::InternalServerError("ไม่สามารถสร้าง URL รูปข้อสอบได้".to_string())
-    })?;
-    Ok(rows
-        .into_iter()
-        .map(|(id, storage_path, thumbnail_path)| QuestionFile {
-            id,
-            url: url_builder.build_url(&storage_path),
-            thumbnail_url: thumbnail_path.map(|path| url_builder.build_url(&path)),
-        })
-        .collect())
+    if rows.len() != file_ids.len() {
+        return Err(AppError::NotFound("ไม่พบรูปประกอบข้อสอบบางไฟล์".to_string()));
+    }
+    Ok(rows.into_iter().map(|id| QuestionFile { id }).collect())
 }
 
 fn push_list_filters(

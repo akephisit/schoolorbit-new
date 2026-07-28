@@ -13,7 +13,7 @@ pub struct Achievement {
     pub description: Option<String>,
     pub achievement_date: NaiveDate,
     #[schema(required = true)]
-    pub image_path: Option<String>,
+    pub image_file_id: Option<Uuid>,
     #[schema(required = true)]
     pub created_by: Option<Uuid>,
     pub created_at: DateTime<Utc>,
@@ -27,7 +27,7 @@ pub struct Achievement {
     pub user_last_name: Option<String>,
     #[sqlx(default)]
     #[schema(required = true)]
-    pub user_profile_image_url: Option<String>,
+    pub user_profile_image_file_id: Option<Uuid>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
@@ -36,7 +36,7 @@ pub struct CreateAchievementRequest {
     pub title: String,
     pub description: Option<String>,
     pub achievement_date: NaiveDate,
-    pub image_path: Option<String>,
+    pub image_file_id: Option<Uuid>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
@@ -44,7 +44,7 @@ pub struct UpdateAchievementRequest {
     pub title: Option<String>,
     pub description: Option<String>,
     pub achievement_date: Option<NaiveDate>,
-    pub image_path: Option<String>,
+    pub image_file_id: Option<Uuid>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, IntoParams, ToSchema)]

@@ -44,7 +44,7 @@ pub struct StudentDbRow {
     #[schema(required = true)]
     pub address: Option<String>,
     #[schema(required = true)]
-    pub profile_image_url: Option<String>,
+    pub profile_image_file_id: Option<Uuid>,
 
     // Student info fields
     #[schema(required = true)]

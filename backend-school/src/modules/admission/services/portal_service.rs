@@ -2,7 +2,6 @@ use crate::error::AppError;
 use crate::modules::admission::models::applications::*;
 use crate::modules::admission::models::rounds::SelectionSettings;
 use crate::modules::admission::services::pii;
-use crate::utils::file_url::FileUrlBuilder;
 use serde_json::json;
 use sqlx::{types::Json, PgPool};
 use uuid::Uuid;
@@ -35,8 +34,6 @@ pub const VALID_DOC_TYPES: &[&str] = &[
     "name_change_doc",
     "birth_cert",
 ];
-
-pub const ALLOWED_EXTENSIONS: &[&str] = &["jpg", "jpeg", "png", "pdf", "webp"];
 
 pub async fn verify_credentials(
     pool: &PgPool,
@@ -203,7 +200,7 @@ pub async fn get_status(
 
     let documents = sqlx::query_as::<_, ApplicationDocument>(
         r#"SELECT d.id, d.application_id, d.file_id, d.doc_type, d.created_at, d.deleted_at,
-                  f.storage_path AS file_url, f.original_filename, f.file_size, f.mime_type
+                  f.original_filename, f.file_size, f.mime_type
            FROM admission_application_documents d
            JOIN files f ON f.id = d.file_id
            WHERE d.application_id = $1 AND d.deleted_at IS NULL
@@ -213,17 +210,6 @@ pub async fn get_status(
     .fetch_all(pool)
     .await
     .unwrap_or_default();
-
-    let url_builder = FileUrlBuilder::new().unwrap_or_default();
-    let documents: Vec<ApplicationDocument> = documents
-        .into_iter()
-        .map(|mut doc| {
-            if let Some(path) = doc.file_url.as_deref() {
-                doc.file_url = Some(url_builder.build_url(path));
-            }
-            doc
-        })
-        .collect();
 
     Ok(PortalStatusResult {
         application,
@@ -435,202 +421,50 @@ pub async fn update_application(
     Ok(())
 }
 
-pub struct PortalUploadInput {
-    pub doc_type: String,
-    pub file_data: Vec<u8>,
-    pub original_filename: String,
-    pub mime_type: String,
-    pub ext: String,
-    pub national_id: Option<String>,
-    pub date_of_birth: Option<String>,
-}
-
-pub struct PortalUploadDbResult {
-    pub file_id: Uuid,
-    pub storage_path: String,
-    pub file_size: i64,
-    pub old_storage_path: Option<String>,
-}
-
-/// DB-side ของ portal upload — R2 client อยู่ที่ handler
-pub async fn save_portal_upload(
+pub async fn authorize_document_change(
     pool: &PgPool,
-    subdomain: &str,
-    input: &PortalUploadInput,
-) -> Result<
-    (
-        PortalUploadDbResult,
-        String, /* storage_path to upload */
-    ),
-    AppError,
-> {
-    let file_id = Uuid::new_v4();
-    let file_size = input.file_data.len() as i64;
-
-    if let (Some(nid), Some(dob)) = (&input.national_id, &input.date_of_birth) {
-        let application_id = verify_credentials(pool, nid, dob).await?;
-        let round_status = get_round_status(pool, application_id).await?;
-        if !["open", "enrolling"].contains(&round_status.as_str()) {
-            return Err(AppError::BadRequest(
-                "ไม่สามารถอัปโหลดเอกสารได้ในช่วงเวลานี้".to_string(),
-            ));
-        }
-        let (app_number, round_id): (String, Uuid) = sqlx::query_as(
-            "SELECT application_number, admission_round_id FROM admission_applications WHERE id = $1"
-        )
-        .bind(application_id).fetch_one(pool).await
-        .map_err(|_| AppError::NotFound("ไม่พบใบสมัคร".to_string()))?;
-
-        let storage_path = format!(
-            "school-{}/admission/{}/{}/{}.{}",
-            subdomain, round_id, app_number, file_id, input.ext
-        );
-
-        // Find old doc
-        let old_doc = sqlx::query_as::<_, (Uuid, Uuid, String)>(
-            r#"SELECT aad.id, aad.file_id, f.storage_path
-               FROM admission_application_documents aad
-               JOIN files f ON f.id = aad.file_id
-               WHERE aad.application_id = $1 AND aad.doc_type = $2 AND aad.deleted_at IS NULL
-               LIMIT 1"#,
-        )
-        .bind(application_id)
-        .bind(&input.doc_type)
-        .fetch_optional(pool)
-        .await
-        .ok()
-        .flatten();
-
-        let old_storage = old_doc.as_ref().map(|(_, _, p)| p.clone());
-
-        // Insert file metadata (after R2 upload caller will do)
-        sqlx::query(
-            r#"INSERT INTO files (id, user_id, school_id, filename, original_filename,
-                file_size, mime_type, storage_path, file_type,
-                is_temporary, is_public, expires_at, uploaded_by)
-               VALUES ($1, NULL, $2, $3, $4, $5, $6, $7, 'document', false, false, NULL, NULL)"#,
-        )
-        .bind(file_id)
-        .bind(subdomain)
-        .bind(format!("{}.{}", file_id, input.ext))
-        .bind(&input.original_filename)
-        .bind(file_size)
-        .bind(&input.mime_type)
-        .bind(&storage_path)
-        .execute(pool)
-        .await
-        .map_err(|e| {
-            tracing::error!("Failed to save file metadata: {}", e);
-            AppError::InternalServerError("Failed to save file metadata".to_string())
-        })?;
-
-        // Delete old DB records
-        if let Some((old_aad_id, old_file_id, _)) = old_doc {
-            let _ = sqlx::query("DELETE FROM admission_application_documents WHERE id = $1")
-                .bind(old_aad_id)
-                .execute(pool)
-                .await;
-            let _ = sqlx::query("DELETE FROM files WHERE id = $1")
-                .bind(old_file_id)
-                .execute(pool)
-                .await;
-        }
-
-        // Link new
-        let _ = sqlx::query(
-            "INSERT INTO admission_application_documents (application_id, file_id, doc_type) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING"
-        )
-        .bind(application_id).bind(file_id).bind(&input.doc_type).execute(pool).await;
-
-        Ok((
-            PortalUploadDbResult {
-                file_id,
-                storage_path: storage_path.clone(),
-                file_size,
-                old_storage_path: old_storage,
-            },
-            storage_path,
-        ))
-    } else {
-        // Anonymous upload — flat path
-        let storage_path = format!(
-            "school-{}/admission/documents/{}.{}",
-            subdomain, file_id, input.ext
-        );
-        sqlx::query(
-            r#"INSERT INTO files (id, user_id, school_id, filename, original_filename,
-                file_size, mime_type, storage_path, file_type,
-                is_temporary, is_public, expires_at, uploaded_by)
-               VALUES ($1, NULL, $2, $3, $4, $5, $6, $7, 'document', false, false, NULL, NULL)"#,
-        )
-        .bind(file_id)
-        .bind(subdomain)
-        .bind(format!("{}.{}", file_id, input.ext))
-        .bind(&input.original_filename)
-        .bind(file_size)
-        .bind(&input.mime_type)
-        .bind(&storage_path)
-        .execute(pool)
-        .await
-        .map_err(|e| {
-            tracing::error!("Failed to save file metadata: {}", e);
-            AppError::InternalServerError("Failed to save file metadata".to_string())
-        })?;
-
-        Ok((
-            PortalUploadDbResult {
-                file_id,
-                storage_path: storage_path.clone(),
-                file_size,
-                old_storage_path: None,
-            },
-            storage_path,
-        ))
-    }
-}
-
-/// Return storage_path สำหรับ R2 cleanup
-pub async fn delete_portal_document(
-    pool: &PgPool,
-    doc_type: &str,
-    query: PortalDeleteDocumentQuery,
-) -> Result<String, AppError> {
-    let application_id = verify_credentials(pool, &query.national_id, &query.date_of_birth).await?;
+    national_id: &str,
+    date_of_birth: &str,
+) -> Result<Uuid, AppError> {
+    let application_id = verify_credentials(pool, national_id, date_of_birth).await?;
     let round_status = get_round_status(pool, application_id).await?;
     if !["open", "enrolling"].contains(&round_status.as_str()) {
         return Err(AppError::BadRequest(
-            "ไม่สามารถลบเอกสารได้ในช่วงเวลานี้".to_string(),
+            "ไม่สามารถแก้ไขเอกสารได้ในช่วงเวลานี้".to_string(),
         ));
     }
+    Ok(application_id)
+}
 
-    let doc_row = sqlx::query_as::<_, (Uuid, Uuid, String)>(
-        r#"SELECT aad.id, aad.file_id, f.storage_path
-           FROM admission_application_documents aad
-           JOIN files f ON f.id = aad.file_id
-           WHERE aad.application_id = $1 AND aad.doc_type = $2 AND aad.deleted_at IS NULL
-           LIMIT 1"#,
+pub async fn authorize_document_download(
+    pool: &PgPool,
+    national_id: &str,
+    date_of_birth: &str,
+    file_id: Uuid,
+) -> Result<Uuid, AppError> {
+    let application_id = verify_credentials(pool, national_id, date_of_birth).await?;
+    let related = sqlx::query_scalar::<_, bool>(
+        r#"
+SELECT EXISTS(
+    SELECT 1
+    FROM admission_application_documents
+    WHERE application_id = $1 AND file_id = $2 AND deleted_at IS NULL
+)
+"#,
     )
     .bind(application_id)
-    .bind(doc_type)
-    .fetch_optional(pool)
+    .bind(file_id)
+    .fetch_one(pool)
     .await
-    .map_err(|_| AppError::InternalServerError("Database error".to_string()))?;
-
-    let (doc_id, file_id, storage_path) =
-        doc_row.ok_or_else(|| AppError::NotFound("ไม่พบเอกสารที่ต้องการลบ".to_string()))?;
-
-    sqlx::query("DELETE FROM admission_application_documents WHERE id = $1")
-        .bind(doc_id)
-        .execute(pool)
-        .await
-        .map_err(|_| AppError::InternalServerError("Failed to delete document".to_string()))?;
-    sqlx::query("DELETE FROM files WHERE id = $1")
-        .bind(file_id)
-        .execute(pool)
-        .await
-        .ok();
-
-    Ok(storage_path)
+    .map_err(|error| {
+        tracing::error!("Failed to verify portal document relationship: {}", error);
+        AppError::InternalServerError("ไม่สามารถตรวจสอบเอกสารได้".to_string())
+    })?;
+    if related {
+        Ok(application_id)
+    } else {
+        Err(AppError::NotFound("ไม่พบเอกสาร".to_string()))
+    }
 }
 
 #[derive(serde::Deserialize)]
@@ -676,12 +510,6 @@ pub async fn get_exam_seat(
     .fetch_optional(pool)
     .await
     .map_err(|_| AppError::InternalServerError("Database error".to_string()))
-}
-
-pub fn build_file_url_full(storage_path: &str) -> Result<String, AppError> {
-    let url_builder = FileUrlBuilder::new()
-        .map_err(|_| AppError::InternalServerError("Configuration error".to_string()))?;
-    Ok(format!("{}/{}", url_builder.base_url(), storage_path))
 }
 
 fn parse_portal_birth_date(date_of_birth: &str) -> Result<chrono::NaiveDate, AppError> {

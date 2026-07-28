@@ -332,8 +332,6 @@ pub struct QuestionDetail {
 #[serde(rename_all = "camelCase")]
 pub struct QuestionFile {
     pub id: Uuid,
-    pub url: String,
-    pub thumbnail_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]

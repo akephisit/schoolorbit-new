@@ -1,6 +1,5 @@
 use crate::error::AppError;
 use crate::modules::admission::models::rounds::*;
-use crate::services::r2_client::R2Client;
 use chrono::{DateTime, Utc};
 use sqlx::{types::Json, FromRow, PgPool};
 use uuid::Uuid;
@@ -254,36 +253,29 @@ pub async fn update_round_status(pool: &PgPool, id: Uuid, status: &str) -> Resul
     Ok(())
 }
 
-pub async fn delete_round(pool: &PgPool, id: Uuid) -> Result<(), AppError> {
-    let file_rows: Vec<(Uuid, String)> = sqlx::query_as(
-        r#"SELECT f.id, f.storage_path
+pub async fn delete_round(pool: &PgPool, id: Uuid) -> Result<Vec<Uuid>, AppError> {
+    let mut transaction = pool.begin().await.map_err(|error| {
+        tracing::error!("Failed to start round deletion transaction: {}", error);
+        AppError::InternalServerError("Failed to delete round".to_string())
+    })?;
+    let file_ids: Vec<Uuid> = sqlx::query_scalar(
+        r#"SELECT f.id
            FROM admission_applications aa
            JOIN admission_application_documents aad ON aad.application_id = aa.id
            JOIN files f ON f.id = aad.file_id
            WHERE aa.admission_round_id = $1 AND aad.deleted_at IS NULL"#,
     )
     .bind(id)
-    .fetch_all(pool)
+    .fetch_all(&mut *transaction)
     .await
-    .unwrap_or_default();
-
-    if !file_rows.is_empty() {
-        if let Ok(r2) = R2Client::new().await {
-            for (_, storage_path) in &file_rows {
-                r2.delete_file(storage_path).await.ok();
-            }
-        }
-        let file_ids: Vec<Uuid> = file_rows.into_iter().map(|(fid, _)| fid).collect();
-        sqlx::query("DELETE FROM files WHERE id = ANY($1)")
-            .bind(&file_ids)
-            .execute(pool)
-            .await
-            .ok();
-    }
+    .map_err(|error| {
+        tracing::error!("Failed to list round document files: {}", error);
+        AppError::InternalServerError("Failed to delete round".to_string())
+    })?;
 
     sqlx::query("DELETE FROM admission_applications WHERE admission_round_id = $1")
         .bind(id)
-        .execute(pool)
+        .execute(&mut *transaction)
         .await
         .map_err(|e| {
             tracing::error!("Failed to delete applications: {}", e);
@@ -292,13 +284,17 @@ pub async fn delete_round(pool: &PgPool, id: Uuid) -> Result<(), AppError> {
 
     sqlx::query("DELETE FROM admission_rounds WHERE id = $1")
         .bind(id)
-        .execute(pool)
+        .execute(&mut *transaction)
         .await
         .map_err(|e| {
             tracing::error!("Failed to delete round: {}", e);
             AppError::InternalServerError("Failed to delete round".to_string())
         })?;
-    Ok(())
+    transaction.commit().await.map_err(|error| {
+        tracing::error!("Failed to commit round deletion: {}", error);
+        AppError::InternalServerError("Failed to delete round".to_string())
+    })?;
+    Ok(file_ids)
 }
 
 pub async fn toggle_round_visibility(

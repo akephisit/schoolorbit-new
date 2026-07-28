@@ -4893,7 +4893,7 @@ fn file_platform_blocks_new_provider_coupling_and_locator_responses() {
 
     for file in backend_rs_files() {
         let file_name = relative(&file);
-        if file_name == "src/services/r2_client.rs" {
+        if file_name == "src/modules/files/r2_storage_provider.rs" {
             continue;
         }
 
@@ -4930,39 +4930,56 @@ fn file_platform_blocks_new_provider_coupling_and_locator_responses() {
         }
     }
 
-    // Compatibility window: Task 8 must remove every entry below, leaving only the provider
-    // adapter and provider-focused tests able to reference R2 or storage locators.
-    let compatibility_allowlist = BTreeSet::from([
-        "src/modules/admission/handlers/applications.rs: direct R2 client use".to_string(),
-        "src/modules/admission/handlers/portal.rs: PortalUploadDocumentData exposes file_url"
-            .to_string(),
-        "src/modules/admission/handlers/portal.rs: direct R2 client use".to_string(),
-        "src/modules/admission/models/applications.rs: ApplicationDocument exposes file_url"
-            .to_string(),
-        "src/modules/admission/services/application_service.rs: DocumentUploadResponse exposes file_url"
-            .to_string(),
-        "src/modules/admission/services/application_service.rs: constructs a tenant object prefix"
-            .to_string(),
-        "src/modules/admission/services/portal_service.rs: constructs a tenant object prefix"
-            .to_string(),
-        "src/modules/admission/services/round_service.rs: direct R2 client use".to_string(),
-        "src/modules/auth/models.rs: ProfileResponse exposes profile_image_url".to_string(),
-        "src/modules/auth/models.rs: UserResponse exposes profile_image_url".to_string(),
-        "src/modules/files/r2_storage_provider.rs: direct R2 client use".to_string(),
-        "src/modules/parents/models.rs: ChildDto exposes profile_image_url".to_string(),
-        "src/modules/question_bank/handlers.rs: direct R2 client use".to_string(),
-        "src/modules/question_bank/models.rs: QuestionFile exposes thumbnail_url".to_string(),
-        "src/modules/question_bank/models.rs: QuestionFile exposes url".to_string(),
-        "src/modules/school/handlers.rs: PublicSchoolInfoData exposes logo_url".to_string(),
-        "src/modules/school/models.rs: SchoolSettingsResponse exposes logo_url".to_string(),
-        "src/modules/school/services.rs: direct R2 client use".to_string(),
-        "src/modules/staff/models.rs: StaffProfileResponse exposes profile_image_url".to_string(),
-    ]);
-
     assert_eq!(
-        violations, compatibility_allowlist,
-        "new file-platform provider coupling or API locators must not bypass the exact compatibility allowlist"
+        violations,
+        BTreeSet::new(),
+        "business modules must use File Platform IDs without provider coupling or API locators"
     );
+}
+
+#[test]
+fn file_platform_domain_relationships_own_attachment_and_lifecycle_deletion() {
+    let migration = strip_comments(&read_source(
+        manifest_dir().join("migrations/031_file_platform_domain_references.sql"),
+    ));
+    assert!(migration.contains("profile_image_file_id UUID REFERENCES files(id)"));
+    assert!(migration.contains("image_file_id UUID REFERENCES files(id)"));
+
+    for relative_path in [
+        "src/modules/school/services.rs",
+        "src/modules/admission/services/application_service.rs",
+        "src/modules/question_bank/services.rs",
+        "src/modules/auth/services.rs",
+        "src/modules/staff/services/staff_service.rs",
+        "src/modules/achievement/services.rs",
+    ] {
+        let source = strip_comments(&read_source(manifest_dir().join(relative_path)));
+        assert!(
+            source.contains("retention_class = 'standard'"),
+            "{relative_path} must finalize temporary uploads in its relationship transaction"
+        );
+        assert!(
+            !source.contains("DELETE FROM files"),
+            "{relative_path} must not bypass File Platform lifecycle deletion"
+        );
+    }
+
+    for relative_path in [
+        "src/modules/school/handlers.rs",
+        "src/modules/admission/handlers/applications.rs",
+        "src/modules/admission/handlers/portal.rs",
+        "src/modules/admission/handlers/rounds.rs",
+        "src/modules/question_bank/handlers.rs",
+        "src/modules/auth/handlers.rs",
+        "src/modules/staff/handlers/staff.rs",
+        "src/modules/achievement/handlers.rs",
+    ] {
+        let source = strip_comments(&read_source(manifest_dir().join(relative_path)));
+        assert!(
+            source.contains("request_deletions"),
+            "{relative_path} must route detached/replaced files through durable deletion"
+        );
+    }
 }
 
 #[test]

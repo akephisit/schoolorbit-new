@@ -132,7 +132,8 @@
             "format": "uuid",
             "type": "string"
           },
-          "image_path": {
+          "image_file_id": {
+            "format": "uuid",
             "type": [
               "string",
               "null"
@@ -161,7 +162,8 @@
               "null"
             ]
           },
-          "user_profile_image_url": {
+          "user_profile_image_file_id": {
+            "format": "uuid",
             "type": [
               "string",
               "null"
@@ -174,13 +176,13 @@
           "title",
           "description",
           "achievement_date",
-          "image_path",
+          "image_file_id",
           "created_by",
           "created_at",
           "updated_at",
           "user_first_name",
           "user_last_name",
-          "user_profile_image_url"
+          "user_profile_image_file_id"
         ],
         "type": "object"
       },
@@ -1148,7 +1150,8 @@
                 "format": "uuid",
                 "type": "string"
               },
-              "image_path": {
+              "image_file_id": {
+                "format": "uuid",
                 "type": [
                   "string",
                   "null"
@@ -1177,7 +1180,8 @@
                   "null"
                 ]
               },
-              "user_profile_image_url": {
+              "user_profile_image_file_id": {
+                "format": "uuid",
                 "type": [
                   "string",
                   "null"
@@ -1190,13 +1194,13 @@
               "title",
               "description",
               "achievement_date",
-              "image_path",
+              "image_file_id",
               "created_by",
               "created_at",
               "updated_at",
               "user_first_name",
               "user_last_name",
-              "user_profile_image_url"
+              "user_profile_image_file_id"
             ],
             "type": "object"
           },
@@ -1934,6 +1938,47 @@
             },
             "required": [
               "delegation_id"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_DocumentUploadResponse": {
+        "properties": {
+          "data": {
+            "properties": {
+              "docType": {
+                "type": "string"
+              },
+              "fileId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "fileSize": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "id": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "fileId",
+              "docType",
+              "fileSize"
             ],
             "type": "object"
           },
@@ -2999,6 +3044,46 @@
         ],
         "type": "object"
       },
+      "ApiResponse_PortalUploadDocumentData": {
+        "properties": {
+          "data": {
+            "properties": {
+              "docType": {
+                "type": "string"
+              },
+              "fileId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "fileSize": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "originalFilename": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "fileId",
+              "originalFilename",
+              "fileSize",
+              "docType"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
       "ApiResponse_ProfileResponse": {
         "properties": {
           "data": {
@@ -3082,7 +3167,8 @@
               "primaryRoleName": {
                 "type": "string"
               },
-              "profileImageUrl": {
+              "profileImageFileId": {
+                "format": "uuid",
                 "type": [
                   "string",
                   "null"
@@ -3127,7 +3213,7 @@
               "dateOfBirth",
               "gender",
               "address",
-              "profileImageUrl",
+              "profileImageFileId",
               "hiredDate"
             ],
             "type": "object"
@@ -3149,7 +3235,8 @@
         "properties": {
           "data": {
             "properties": {
-              "logoUrl": {
+              "logoFileId": {
+                "format": "uuid",
                 "type": [
                   "string",
                   "null"
@@ -3163,7 +3250,7 @@
               }
             },
             "required": [
-              "logoUrl",
+              "logoFileId",
               "schoolName"
             ],
             "type": "object"
@@ -3226,7 +3313,8 @@
                   "null"
                 ]
               },
-              "profile_image_url": {
+              "profile_image_file_id": {
+                "format": "uuid",
                 "type": [
                   "string",
                   "null"
@@ -3264,7 +3352,7 @@
               "email",
               "phone",
               "hired_date",
-              "profile_image_url",
+              "profile_image_file_id",
               "user_type",
               "status",
               "roles",
@@ -3371,7 +3459,6 @@
       "ApiResponse_SchoolSettingsResponse": {
         "properties": {
           "data": {
-            "description": "Response to frontend — logoUrl built from path",
             "properties": {
               "logoFileId": {
                 "format": "uuid",
@@ -3379,16 +3466,9 @@
                   "string",
                   "null"
                 ]
-              },
-              "logoUrl": {
-                "type": [
-                  "string",
-                  "null"
-                ]
               }
             },
             "required": [
-              "logoUrl",
               "logoFileId"
             ],
             "type": "object"
@@ -3639,7 +3719,8 @@
                   "null"
                 ]
               },
-              "profile_image_url": {
+              "profile_image_file_id": {
+                "format": "uuid",
                 "type": [
                   "string",
                   "null"
@@ -3701,7 +3782,7 @@
               "hired_date",
               "user_type",
               "status",
-              "profile_image_url",
+              "profile_image_file_id",
               "staff_info",
               "roles",
               "organization_units",
@@ -4257,7 +4338,8 @@
               "primaryRoleName": {
                 "type": "string"
               },
-              "profileImageUrl": {
+              "profileImageFileId": {
+                "format": "uuid",
                 "type": [
                   "string",
                   "null"
@@ -4284,7 +4366,7 @@
               "phone",
               "status",
               "createdAt",
-              "profileImageUrl"
+              "profileImageFileId"
             ],
             "type": "object"
           },
@@ -4403,7 +4485,8 @@
                   "format": "uuid",
                   "type": "string"
                 },
-                "image_path": {
+                "image_file_id": {
+                  "format": "uuid",
                   "type": [
                     "string",
                     "null"
@@ -4432,7 +4515,8 @@
                     "null"
                   ]
                 },
-                "user_profile_image_url": {
+                "user_profile_image_file_id": {
+                  "format": "uuid",
                   "type": [
                     "string",
                     "null"
@@ -4445,13 +4529,13 @@
                 "title",
                 "description",
                 "achievement_date",
-                "image_path",
+                "image_file_id",
                 "created_by",
                 "created_at",
                 "updated_at",
                 "user_first_name",
                 "user_last_name",
-                "user_profile_image_url"
+                "user_profile_image_file_id"
               ],
               "type": "object"
             },
@@ -8913,7 +8997,8 @@
           "last_name": {
             "type": "string"
           },
-          "profile_image_url": {
+          "profile_image_file_id": {
+            "format": "uuid",
             "type": [
               "string",
               "null"
@@ -8936,7 +9021,7 @@
           "student_id",
           "grade_level",
           "class_room",
-          "profile_image_url",
+          "profile_image_file_id",
           "relationship"
         ],
         "type": "object"
@@ -9355,7 +9440,8 @@
               "null"
             ]
           },
-          "image_path": {
+          "image_file_id": {
+            "format": "uuid",
             "type": [
               "string",
               "null"
@@ -10092,7 +10178,8 @@
               "null"
             ]
           },
-          "profile_image_url": {
+          "profile_image_file_id": {
+            "format": "uuid",
             "type": [
               "string",
               "null"
@@ -10499,6 +10586,32 @@
         ],
         "type": "object"
       },
+      "DocumentUploadResponse": {
+        "properties": {
+          "docType": {
+            "type": "string"
+          },
+          "fileId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "fileSize": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "fileId",
+          "docType",
+          "fileSize"
+        ],
+        "type": "object"
+      },
       "EmptyData": {
         "type": "object"
       },
@@ -10698,6 +10811,7 @@
           "school_logo",
           "school_banner",
           "profile_image",
+          "achievement_image",
           "admission_application_document",
           "transcript",
           "certificate",
@@ -12060,6 +12174,71 @@
         },
         "type": "object"
       },
+      "PortalCredentials": {
+        "description": "Credentials ที่ผู้สมัครส่งมาทุก request (stateless)\nใช้ national_id + date_of_birth (format DDMMYYYY) เพื่อยืนยันตัวตน",
+        "properties": {
+          "dateOfBirth": {
+            "type": "string"
+          },
+          "nationalId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "nationalId",
+          "dateOfBirth"
+        ],
+        "type": "object"
+      },
+      "PortalDocumentMultipart": {
+        "properties": {
+          "date_of_birth": {
+            "type": "string"
+          },
+          "doc_type": {
+            "type": "string"
+          },
+          "file": {
+            "format": "binary",
+            "type": "string"
+          },
+          "national_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "doc_type",
+          "national_id",
+          "date_of_birth",
+          "file"
+        ],
+        "type": "object"
+      },
+      "PortalUploadDocumentData": {
+        "properties": {
+          "docType": {
+            "type": "string"
+          },
+          "fileId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "fileSize": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "originalFilename": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "fileId",
+          "originalFilename",
+          "fileSize",
+          "docType"
+        ],
+        "type": "object"
+      },
       "ProfileResponse": {
         "properties": {
           "address": {
@@ -12141,7 +12320,8 @@
           "primaryRoleName": {
             "type": "string"
           },
-          "profileImageUrl": {
+          "profileImageFileId": {
+            "format": "uuid",
             "type": [
               "string",
               "null"
@@ -12186,14 +12366,15 @@
           "dateOfBirth",
           "gender",
           "address",
-          "profileImageUrl",
+          "profileImageFileId",
           "hiredDate"
         ],
         "type": "object"
       },
       "PublicSchoolInfoData": {
         "properties": {
-          "logoUrl": {
+          "logoFileId": {
+            "format": "uuid",
             "type": [
               "string",
               "null"
@@ -12207,7 +12388,7 @@
           }
         },
         "required": [
-          "logoUrl",
+          "logoFileId",
           "schoolName"
         ],
         "type": "object"
@@ -12286,7 +12467,8 @@
               "null"
             ]
           },
-          "profile_image_url": {
+          "profile_image_file_id": {
+            "format": "uuid",
             "type": [
               "string",
               "null"
@@ -12324,7 +12506,7 @@
           "email",
           "phone",
           "hired_date",
-          "profile_image_url",
+          "profile_image_file_id",
           "user_type",
           "status",
           "roles",
@@ -12646,7 +12828,6 @@
         "type": "object"
       },
       "SchoolSettingsResponse": {
-        "description": "Response to frontend — logoUrl built from path",
         "properties": {
           "logoFileId": {
             "format": "uuid",
@@ -12654,16 +12835,9 @@
               "string",
               "null"
             ]
-          },
-          "logoUrl": {
-            "type": [
-              "string",
-              "null"
-            ]
           }
         },
         "required": [
-          "logoUrl",
           "logoFileId"
         ],
         "type": "object"
@@ -12794,6 +12968,22 @@
           "totalStaff",
           "totalStudents",
           "activeClassrooms"
+        ],
+        "type": "object"
+      },
+      "StaffDocumentMultipart": {
+        "properties": {
+          "doc_type": {
+            "type": "string"
+          },
+          "file": {
+            "format": "binary",
+            "type": "string"
+          }
+        },
+        "required": [
+          "doc_type",
+          "file"
         ],
         "type": "object"
       },
@@ -13015,7 +13205,8 @@
               "null"
             ]
           },
-          "profile_image_url": {
+          "profile_image_file_id": {
+            "format": "uuid",
             "type": [
               "string",
               "null"
@@ -13077,7 +13268,7 @@
           "hired_date",
           "user_type",
           "status",
-          "profile_image_url",
+          "profile_image_file_id",
           "staff_info",
           "roles",
           "organization_units",
@@ -13415,7 +13606,8 @@
               "null"
             ]
           },
-          "profile_image_url": {
+          "profile_image_file_id": {
+            "format": "uuid",
             "type": [
               "string",
               "null"
@@ -13463,7 +13655,7 @@
           "date_of_birth",
           "gender",
           "address",
-          "profile_image_url",
+          "profile_image_file_id",
           "student_id",
           "student_number",
           "blood_type",
@@ -14452,7 +14644,8 @@
               "null"
             ]
           },
-          "image_path": {
+          "image_file_id": {
+            "format": "uuid",
             "type": [
               "string",
               "null"
@@ -15106,7 +15299,8 @@
               "null"
             ]
           },
-          "profileImageUrl": {
+          "profileImageFileId": {
+            "format": "uuid",
             "type": [
               "string",
               "null"
@@ -15295,7 +15489,8 @@
               "null"
             ]
           },
-          "profile_image_url": {
+          "profile_image_file_id": {
+            "format": "uuid",
             "type": [
               "string",
               "null"
@@ -15659,7 +15854,8 @@
           "primaryRoleName": {
             "type": "string"
           },
-          "profileImageUrl": {
+          "profileImageFileId": {
+            "format": "uuid",
             "type": [
               "string",
               "null"
@@ -15686,7 +15882,7 @@
           "phone",
           "status",
           "createdAt",
-          "profileImageUrl"
+          "profileImageFileId"
         ],
         "type": "object"
       },
@@ -24759,6 +24955,395 @@
         ]
       }
     },
+    "/api/admission/applications/{application_id}/documents": {
+      "post": {
+        "operationId": "staffUploadAdmissionDocument",
+        "parameters": [
+          {
+            "description": "Application ID",
+            "in": "path",
+            "name": "application_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/StaffDocumentMultipart"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_DocumentUploadResponse"
+                }
+              }
+            },
+            "description": "Document attached by file ID"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid document or multipart payload"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Admission verification permission required"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Application not found"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Scanner or storage unavailable"
+          }
+        },
+        "tags": [
+          "admission"
+        ]
+      }
+    },
+    "/api/admission/applications/{application_id}/documents/{doc_type}": {
+      "delete": {
+        "operationId": "staffDeleteAdmissionDocument",
+        "parameters": [
+          {
+            "description": "Application ID",
+            "in": "path",
+            "name": "application_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Admission document type",
+            "in": "path",
+            "name": "doc_type",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_EmptyData"
+                }
+              }
+            },
+            "description": "Document detached and deletion requested"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid document type"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Admission verification permission required"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Application document not found"
+          }
+        },
+        "tags": [
+          "admission"
+        ]
+      }
+    },
+    "/api/admission/portal/documents/{doc_type}": {
+      "delete": {
+        "operationId": "portalDeleteAdmissionDocument",
+        "parameters": [
+          {
+            "description": "Admission document type",
+            "in": "path",
+            "name": "doc_type",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PortalCredentials"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_EmptyData"
+                }
+              }
+            },
+            "description": "Applicant document detached and deletion requested"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid document state or type"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Applicant credentials rejected"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Application document not found"
+          }
+        },
+        "tags": [
+          "admission"
+        ]
+      }
+    },
+    "/api/admission/portal/documents/{file_id}/download": {
+      "post": {
+        "operationId": "portalDownloadAdmissionDocument",
+        "parameters": [
+          {
+            "description": "Logical file ID",
+            "in": "path",
+            "name": "file_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PortalCredentials"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "303": {
+            "description": "Short-lived private document redirect"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid portal credential format"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Applicant credentials rejected"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Application document not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "File is not ready"
+          }
+        },
+        "tags": [
+          "admission"
+        ]
+      }
+    },
+    "/api/admission/portal/upload": {
+      "post": {
+        "operationId": "portalUploadAdmissionDocument",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/PortalDocumentMultipart"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_PortalUploadDocumentData"
+                }
+              }
+            },
+            "description": "Applicant document attached by file ID"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid credentials, document, or multipart payload"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Applicant credentials rejected"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Application not found"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Scanner or storage unavailable"
+          }
+        },
+        "tags": [
+          "admission"
+        ]
+      }
+    },
     "/api/auth/login": {
       "post": {
         "operationId": "login",
@@ -28664,7 +29249,7 @@
             "description": "Public school branding"
           }
         },
-        "summary": "GET /api/school/public — no auth required\nReturns logoUrl (built from logo_path) + schoolName (from backend-admin)",
+        "summary": "GET /api/school/public — no auth required\nReturns the public File Platform identity + schoolName (from backend-admin)",
         "tags": [
           "school"
         ]
@@ -29972,6 +30557,10 @@
     {
       "description": "Authorized provider-neutral file operations",
       "name": "files"
+    },
+    {
+      "description": "Admission document attachment operations",
+      "name": "admission"
     },
     {
       "description": "Current-user notification reads",

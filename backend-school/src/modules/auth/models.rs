@@ -1,4 +1,3 @@
-use crate::utils::file_url::get_file_url_from_string;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
@@ -30,7 +29,7 @@ pub struct User {
     pub emergency_contact: Option<String>,
     pub line_id: Option<String>,
     pub gender: Option<String>,
-    pub profile_image_url: Option<String>,
+    pub profile_image_file_id: Option<Uuid>,
     pub hired_date: Option<chrono::NaiveDate>,
     pub resigned_date: Option<chrono::NaiveDate>,
 }
@@ -48,7 +47,7 @@ pub struct LoginUser {
     pub last_name: String,
     pub email: Option<String>,
     pub date_of_birth: Option<chrono::NaiveDate>,
-    pub profile_image_url: Option<String>,
+    pub profile_image_file_id: Option<Uuid>,
 }
 
 // Login request
@@ -73,7 +72,7 @@ pub struct UpdateProfileRequest {
     pub date_of_birth: Option<String>, // Will be parsed to NaiveDate
     pub gender: Option<String>,
     pub address: Option<String>,
-    pub profile_image_url: Option<String>,
+    pub profile_image_file_id: Option<Uuid>,
 }
 
 // Change password request
@@ -108,7 +107,7 @@ pub struct UserResponse {
     pub primary_role_name: Option<String>,
 
     #[schema(required = true)]
-    pub profile_image_url: Option<String>,
+    pub profile_image_file_id: Option<Uuid>,
 
     // User permissions
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -130,7 +129,7 @@ impl From<User> for UserResponse {
             status: user.status,
             created_at: user.created_at,
             primary_role_name: None, // Will be populated separately
-            profile_image_url: get_file_url_from_string(&user.profile_image_url),
+            profile_image_file_id: user.profile_image_file_id,
             permissions: None, // Will be populated separately
         }
     }
@@ -177,7 +176,7 @@ pub struct ProfileResponse {
     #[schema(required = true)]
     pub address: Option<String>,
     #[schema(required = true)]
-    pub profile_image_url: Option<String>,
+    pub profile_image_file_id: Option<Uuid>,
     #[schema(required = true)]
     pub hired_date: Option<chrono::NaiveDate>,
 }
@@ -204,7 +203,7 @@ impl From<User> for ProfileResponse {
             date_of_birth: user.date_of_birth,
             gender: user.gender,
             address: user.address,
-            profile_image_url: get_file_url_from_string(&user.profile_image_url),
+            profile_image_file_id: user.profile_image_file_id,
             hired_date: user.hired_date,
         }
     }

@@ -1269,6 +1269,86 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/api/admission/applications/{application_id}/documents': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['staffUploadAdmissionDocument'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/admission/applications/{application_id}/documents/{doc_type}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post?: never;
+		delete: operations['staffDeleteAdmissionDocument'];
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/admission/portal/documents/{doc_type}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post?: never;
+		delete: operations['portalDeleteAdmissionDocument'];
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/admission/portal/documents/{file_id}/download': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['portalDownloadAdmissionDocument'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/admission/portal/upload': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['portalUploadAdmissionDocument'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/api/auth/login': {
 		parameters: {
 			query?: never;
@@ -2080,7 +2160,7 @@ export interface paths {
 		};
 		/**
 		 * GET /api/school/public — no auth required
-		 *     Returns logoUrl (built from logo_path) + schoolName (from backend-admin)
+		 *     Returns the public File Platform identity + schoolName (from backend-admin)
 		 */
 		get: operations['getPublicSchoolInfo'];
 		put?: never;
@@ -2371,7 +2451,8 @@ export interface components {
 			description: string | null;
 			/** Format: uuid */
 			id: string;
-			image_path: string | null;
+			/** Format: uuid */
+			image_file_id: string | null;
 			title: string;
 			/** Format: date-time */
 			updated_at: string;
@@ -2379,7 +2460,8 @@ export interface components {
 			/** Format: uuid */
 			user_id: string;
 			user_last_name: string | null;
-			user_profile_image_url: string | null;
+			/** Format: uuid */
+			user_profile_image_file_id: string | null;
 		};
 		AchievementListFilter: {
 			/** Format: date */
@@ -2639,7 +2721,8 @@ export interface components {
 				description: string | null;
 				/** Format: uuid */
 				id: string;
-				image_path: string | null;
+				/** Format: uuid */
+				image_file_id: string | null;
 				title: string;
 				/** Format: date-time */
 				updated_at: string;
@@ -2647,7 +2730,8 @@ export interface components {
 				/** Format: uuid */
 				user_id: string;
 				user_last_name: string | null;
-				user_profile_image_url: string | null;
+				/** Format: uuid */
+				user_profile_image_file_id: string | null;
 			};
 			message?: string;
 			success: boolean;
@@ -2846,6 +2930,19 @@ export interface components {
 			data: {
 				/** Format: uuid */
 				delegation_id: string;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_DocumentUploadResponse: {
+			data: {
+				docType: string;
+				/** Format: uuid */
+				fileId: string;
+				/** Format: int64 */
+				fileSize: number;
+				/** Format: uuid */
+				id: string;
 			};
 			message?: string;
 			success: boolean;
@@ -3137,6 +3234,18 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
+		ApiResponse_PortalUploadDocumentData: {
+			data: {
+				docType: string;
+				/** Format: uuid */
+				fileId: string;
+				/** Format: int64 */
+				fileSize: number;
+				originalFilename: string;
+			};
+			message?: string;
+			success: boolean;
+		};
 		ApiResponse_ProfileResponse: {
 			data: {
 				address: string | null;
@@ -3158,7 +3267,8 @@ export interface components {
 				nickname: string | null;
 				phone: string | null;
 				primaryRoleName?: string;
-				profileImageUrl: string | null;
+				/** Format: uuid */
+				profileImageFileId: string | null;
 				status: string;
 				title: string | null;
 				/** Format: date-time */
@@ -3171,7 +3281,8 @@ export interface components {
 		};
 		ApiResponse_PublicSchoolInfoData: {
 			data: {
-				logoUrl: string | null;
+				/** Format: uuid */
+				logoFileId: string | null;
 				schoolName: string | null;
 			};
 			message?: string;
@@ -3189,7 +3300,8 @@ export interface components {
 				nickname: string | null;
 				organization_units: components['schemas']['PublicStaffOrganizationUnit'][];
 				phone: string | null;
-				profile_image_url: string | null;
+				/** Format: uuid */
+				profile_image_file_id: string | null;
 				roles: components['schemas']['PublicStaffRole'][];
 				status: string;
 				title: string | null;
@@ -3222,11 +3334,9 @@ export interface components {
 			success: boolean;
 		};
 		ApiResponse_SchoolSettingsResponse: {
-			/** @description Response to frontend — logoUrl built from path */
 			data: {
 				/** Format: uuid */
 				logoFileId: string | null;
-				logoUrl: string | null;
 			};
 			message?: string;
 			success: boolean;
@@ -3295,7 +3405,8 @@ export interface components {
 				organization_units: components['schemas']['OrganizationUnitResponse'][];
 				permissions: string[];
 				phone: string | null;
-				profile_image_url: string | null;
+				/** Format: uuid */
+				profile_image_file_id: string | null;
 				roles: components['schemas']['RoleResponse'][];
 				staff_info: null | components['schemas']['StaffInfoResponse'];
 				status: string;
@@ -3450,7 +3561,8 @@ export interface components {
 				permissions?: string[];
 				phone: string | null;
 				primaryRoleName?: string;
-				profileImageUrl: string | null;
+				/** Format: uuid */
+				profileImageFileId: string | null;
 				status: string;
 				username: string;
 				userType: string;
@@ -3490,7 +3602,8 @@ export interface components {
 				description: string | null;
 				/** Format: uuid */
 				id: string;
-				image_path: string | null;
+				/** Format: uuid */
+				image_file_id: string | null;
 				title: string;
 				/** Format: date-time */
 				updated_at: string;
@@ -3498,7 +3611,8 @@ export interface components {
 				/** Format: uuid */
 				user_id: string;
 				user_last_name: string | null;
-				user_profile_image_url: string | null;
+				/** Format: uuid */
+				user_profile_image_file_id: string | null;
 			}[];
 			message?: string;
 			success: boolean;
@@ -4675,7 +4789,8 @@ export interface components {
 			/** Format: uuid */
 			id: string;
 			last_name: string;
-			profile_image_url: string | null;
+			/** Format: uuid */
+			profile_image_file_id: string | null;
 			relationship: string;
 			student_id: string | null;
 		};
@@ -4801,7 +4916,8 @@ export interface components {
 			/** Format: date */
 			achievement_date: string;
 			description?: string | null;
-			image_path?: string | null;
+			/** Format: uuid */
+			image_file_id?: string | null;
 			title: string;
 			/** Format: uuid */
 			user_id?: string | null;
@@ -4983,7 +5099,8 @@ export interface components {
 			phone?: string | null;
 			/** Format: uuid */
 			primary_role_id?: string | null;
-			profile_image_url?: string | null;
+			/** Format: uuid */
+			profile_image_file_id?: string | null;
 			role_ids: string[];
 			staff_info?: null | components['schemas']['CreateStaffInfoRequest'];
 			title?: string | null;
@@ -5084,6 +5201,15 @@ export interface components {
 			to_user_id: string;
 			to_user_name: string;
 		};
+		DocumentUploadResponse: {
+			docType: string;
+			/** Format: uuid */
+			fileId: string;
+			/** Format: int64 */
+			fileSize: number;
+			/** Format: uuid */
+			id: string;
+		};
 		EmptyData: Record<string, never>;
 		EnrollStudentRequest: {
 			/** Format: uuid */
@@ -5142,6 +5268,7 @@ export interface components {
 			| 'school_logo'
 			| 'school_banner'
 			| 'profile_image'
+			| 'achievement_image'
 			| 'admission_application_document'
 			| 'transcript'
 			| 'certificate'
@@ -5516,6 +5643,29 @@ export interface components {
 			/** Format: uuid */
 			subject_id?: string | null;
 		};
+		/**
+		 * @description Credentials ที่ผู้สมัครส่งมาทุก request (stateless)
+		 *     ใช้ national_id + date_of_birth (format DDMMYYYY) เพื่อยืนยันตัวตน
+		 */
+		PortalCredentials: {
+			dateOfBirth: string;
+			nationalId: string;
+		};
+		PortalDocumentMultipart: {
+			date_of_birth: string;
+			doc_type: string;
+			/** Format: binary */
+			file: string;
+			national_id: string;
+		};
+		PortalUploadDocumentData: {
+			docType: string;
+			/** Format: uuid */
+			fileId: string;
+			/** Format: int64 */
+			fileSize: number;
+			originalFilename: string;
+		};
 		ProfileResponse: {
 			address: string | null;
 			/** Format: date-time */
@@ -5536,7 +5686,8 @@ export interface components {
 			nickname: string | null;
 			phone: string | null;
 			primaryRoleName?: string;
-			profileImageUrl: string | null;
+			/** Format: uuid */
+			profileImageFileId: string | null;
 			status: string;
 			title: string | null;
 			/** Format: date-time */
@@ -5545,7 +5696,8 @@ export interface components {
 			userType: string;
 		};
 		PublicSchoolInfoData: {
-			logoUrl: string | null;
+			/** Format: uuid */
+			logoFileId: string | null;
 			schoolName: string | null;
 		};
 		PublicStaffOrganizationUnit: {
@@ -5567,7 +5719,8 @@ export interface components {
 			nickname: string | null;
 			organization_units: components['schemas']['PublicStaffOrganizationUnit'][];
 			phone: string | null;
-			profile_image_url: string | null;
+			/** Format: uuid */
+			profile_image_file_id: string | null;
 			roles: components['schemas']['PublicStaffRole'][];
 			status: string;
 			title: string | null;
@@ -5657,11 +5810,9 @@ export interface components {
 			/** Format: date-time */
 			updated_at: string;
 		};
-		/** @description Response to frontend — logoUrl built from path */
 		SchoolSettingsResponse: {
 			/** Format: uuid */
 			logoFileId: string | null;
-			logoUrl: string | null;
 		};
 		Semester: {
 			/** Format: uuid */
@@ -5705,6 +5856,11 @@ export interface components {
 			totalStaff: number;
 			/** Format: int64 */
 			totalStudents: number;
+		};
+		StaffDocumentMultipart: {
+			doc_type: string;
+			/** Format: binary */
+			file: string;
 		};
 		StaffInfoResponse: {
 			education_level: string | null;
@@ -5758,7 +5914,8 @@ export interface components {
 			organization_units: components['schemas']['OrganizationUnitResponse'][];
 			permissions: string[];
 			phone: string | null;
-			profile_image_url: string | null;
+			/** Format: uuid */
+			profile_image_file_id: string | null;
 			roles: components['schemas']['RoleResponse'][];
 			staff_info: null | components['schemas']['StaffInfoResponse'];
 			status: string;
@@ -5853,7 +6010,8 @@ export interface components {
 			national_id: string | null;
 			nickname: string | null;
 			phone: string | null;
-			profile_image_url: string | null;
+			/** Format: uuid */
+			profile_image_file_id: string | null;
 			status: string | null;
 			student_id: string | null;
 			/** Format: int32 */
@@ -6141,7 +6299,8 @@ export interface components {
 			/** Format: date */
 			achievement_date?: string | null;
 			description?: string | null;
-			image_path?: string | null;
+			/** Format: uuid */
+			image_file_id?: string | null;
 			title?: string | null;
 		};
 		UpdateActivityGroupRequest: {
@@ -6289,7 +6448,8 @@ export interface components {
 			lineId?: string | null;
 			nickname?: string | null;
 			phone?: string | null;
-			profileImageUrl?: string | null;
+			/** Format: uuid */
+			profileImageFileId?: string | null;
 			title?: string | null;
 		};
 		UpdateRoleRequest: {
@@ -6328,7 +6488,8 @@ export interface components {
 			phone?: string | null;
 			/** Format: uuid */
 			primary_role_id?: string | null;
-			profile_image_url?: string | null;
+			/** Format: uuid */
+			profile_image_file_id?: string | null;
 			role_ids?: string[] | null;
 			staff_info?: null | components['schemas']['CreateStaffInfoRequest'];
 			status?: string | null;
@@ -6410,7 +6571,8 @@ export interface components {
 			permissions?: string[];
 			phone: string | null;
 			primaryRoleName?: string;
-			profileImageUrl: string | null;
+			/** Format: uuid */
+			profileImageFileId: string | null;
 			status: string;
 			username: string;
 			userType: string;
@@ -13619,6 +13781,314 @@ export interface operations {
 			};
 			/** @description Menu update permission required */
 			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	staffUploadAdmissionDocument: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Application ID */
+				application_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'multipart/form-data': components['schemas']['StaffDocumentMultipart'];
+			};
+		};
+		responses: {
+			/** @description Document attached by file ID */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_DocumentUploadResponse'];
+				};
+			};
+			/** @description Invalid document or multipart payload */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Admission verification permission required */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Application not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Scanner or storage unavailable */
+			503: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	staffDeleteAdmissionDocument: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Application ID */
+				application_id: string;
+				/** @description Admission document type */
+				doc_type: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Document detached and deletion requested */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_EmptyData'];
+				};
+			};
+			/** @description Invalid document type */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Admission verification permission required */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Application document not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	portalDeleteAdmissionDocument: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Admission document type */
+				doc_type: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['PortalCredentials'];
+			};
+		};
+		responses: {
+			/** @description Applicant document detached and deletion requested */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_EmptyData'];
+				};
+			};
+			/** @description Invalid document state or type */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Applicant credentials rejected */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Application document not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	portalDownloadAdmissionDocument: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Logical file ID */
+				file_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['PortalCredentials'];
+			};
+		};
+		responses: {
+			/** @description Short-lived private document redirect */
+			303: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content?: never;
+			};
+			/** @description Invalid portal credential format */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Applicant credentials rejected */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Application document not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description File is not ready */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	portalUploadAdmissionDocument: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'multipart/form-data': components['schemas']['PortalDocumentMultipart'];
+			};
+		};
+		responses: {
+			/** @description Applicant document attached by file ID */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_PortalUploadDocumentData'];
+				};
+			};
+			/** @description Invalid credentials, document, or multipart payload */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Applicant credentials rejected */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Application not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Scanner or storage unavailable */
+			503: {
 				headers: {
 					[name: string]: unknown;
 				};

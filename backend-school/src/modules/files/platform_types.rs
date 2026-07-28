@@ -10,6 +10,7 @@ pub enum FilePurpose {
     SchoolLogo,
     SchoolBanner,
     ProfileImage,
+    AchievementImage,
     AdmissionApplicationDocument,
     Transcript,
     Certificate,
@@ -21,10 +22,11 @@ pub enum FilePurpose {
 }
 
 impl FilePurpose {
-    pub const ALL: [Self; 11] = [
+    pub const ALL: [Self; 12] = [
         Self::SchoolLogo,
         Self::SchoolBanner,
         Self::ProfileImage,
+        Self::AchievementImage,
         Self::AdmissionApplicationDocument,
         Self::Transcript,
         Self::Certificate,
@@ -40,6 +42,7 @@ impl FilePurpose {
             Self::SchoolLogo => "school_logo",
             Self::SchoolBanner => "school_banner",
             Self::ProfileImage => "profile_image",
+            Self::AchievementImage => "achievement_image",
             Self::AdmissionApplicationDocument => "admission_application_document",
             Self::Transcript => "transcript",
             Self::Certificate => "certificate",

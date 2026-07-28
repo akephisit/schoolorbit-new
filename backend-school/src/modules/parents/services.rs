@@ -63,7 +63,7 @@ pub async fn get_child_profile(
         r#"
         SELECT
             u.id, u.username, u.national_id, u.email, u.first_name, u.last_name,
-            u.title, u.nickname, u.phone, u.date_of_birth, u.gender, u.address, u.profile_image_url, u.status,
+            u.title, u.nickname, u.phone, u.date_of_birth, u.gender, u.address, u.profile_image_file_id, u.status,
             si.student_id,
             CASE gl.level_type
                 WHEN 'kindergarten' THEN CONCAT('อ.', gl.year)
@@ -200,7 +200,7 @@ async fn list_children(pool: &PgPool, parent_id: Uuid) -> Result<Vec<ChildDto>, 
     sqlx::query_as::<_, ChildDto>(
         r#"
         SELECT
-            u.id, u.first_name, u.last_name, u.profile_image_url,
+            u.id, u.first_name, u.last_name, u.profile_image_file_id,
             si.student_id,
             CASE gl.level_type
                 WHEN 'kindergarten' THEN CONCAT('อ.', gl.year)

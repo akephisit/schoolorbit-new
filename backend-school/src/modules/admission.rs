@@ -188,6 +188,10 @@ pub fn admission_routes() -> Router<AppState> {
             "/portal/documents/{doc_type}",
             delete(handlers::portal::portal_delete_document),
         )
+        .route(
+            "/portal/documents/{file_id}/download",
+            post(handlers::portal::portal_download_document),
+        )
         // === Staff Document Management ===
         .route(
             "/applications/{id}/documents",

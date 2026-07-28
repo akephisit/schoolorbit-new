@@ -28,7 +28,7 @@ struct UserBasicRow {
     hired_date: Option<NaiveDate>,
     user_type: String,
     status: String,
-    profile_image_url: Option<String>,
+    profile_image_file_id: Option<Uuid>,
 }
 
 #[derive(Debug, FromRow)]
@@ -309,7 +309,7 @@ pub struct PublicStaffProfile {
     #[schema(required = true)]
     pub hired_date: Option<NaiveDate>,
     #[schema(required = true)]
-    pub profile_image_url: Option<String>,
+    pub profile_image_file_id: Option<Uuid>,
     pub user_type: String,
     pub status: String,
     pub roles: Vec<PublicStaffRole>,
@@ -511,7 +511,7 @@ pub async fn get_staff_profile(
     let mut user = sqlx::query_as::<_, UserBasicRow>(
         "SELECT id, username, national_id, email, title, first_name, last_name, nickname, phone,
                 emergency_contact, line_id, date_of_birth, gender, address, hired_date,
-                user_type, status, profile_image_url
+                user_type, status, profile_image_file_id
          FROM users
          WHERE id = $1 AND user_type = 'staff'",
     )
@@ -702,7 +702,7 @@ pub async fn get_staff_profile(
         hired_date: user.hired_date.map(|d| d.to_string()),
         user_type: user.user_type,
         status: user.status,
-        profile_image_url: user.profile_image_url,
+        profile_image_file_id: user.profile_image_file_id,
         staff_info: staff_info.map(|si| StaffInfoResponse {
             education_level: si.education_level,
             major: si.major,
@@ -718,6 +718,11 @@ pub async fn get_staff_profile(
 
 /// Create staff — encrypt national_id, insert user + staff_info + roles + organization memberships in transaction
 pub async fn create_staff(pool: &PgPool, payload: CreateStaffRequest) -> Result<Uuid, AppError> {
+    if payload.profile_image_file_id.is_some() {
+        return Err(AppError::ValidationError(
+            "กรุณาสร้างบุคลากรก่อนอัปโหลดรูปโปรไฟล์".to_string(),
+        ));
+    }
     let password_hash = bcrypt::hash(&payload.password, bcrypt::DEFAULT_COST).map_err(|e| {
         tracing::error!("❌ Password hashing failed: {}", e);
         AppError::InternalServerError("เกิดข้อผิดพลาดในการสร้างรหัสผ่าน".to_string())
@@ -771,7 +776,7 @@ pub async fn create_staff(pool: &PgPool, payload: CreateStaffRequest) -> Result<
         "INSERT INTO users (
             username, national_id, national_id_hash, email, password_hash, title, first_name, last_name, nickname,
             phone, emergency_contact, line_id, date_of_birth, gender, address,
-            user_type, hired_date, status, profile_image_url
+            user_type, hired_date, status, profile_image_file_id
         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, 'staff', $16, 'active', $17)
         RETURNING id",
     )
@@ -791,7 +796,7 @@ pub async fn create_staff(pool: &PgPool, payload: CreateStaffRequest) -> Result<
     .bind(&payload.gender)
     .bind(&payload.address)
     .bind(payload.hired_date)
-    .bind(&payload.profile_image_url)
+    .bind(&payload.profile_image_file_id)
     .fetch_one(&mut *tx)
     .await
     .map_err(|e| {
@@ -855,7 +860,7 @@ pub async fn update_staff(
     pool: &PgPool,
     staff_id: Uuid,
     payload: UpdateStaffRequest,
-) -> Result<(), AppError> {
+) -> Result<Option<Uuid>, AppError> {
     let mut tx = pool.begin().await.map_err(|e| {
         tracing::error!("❌ Failed to start transaction: {}", e);
         AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
@@ -866,6 +871,56 @@ pub async fn update_staff(
     }
     if let Some(organization_assignments) = &payload.organization_assignments {
         validate_active_organization_assignments(&mut tx, organization_assignments).await?;
+    }
+    let old_file_id = sqlx::query_as::<_, (Option<Uuid>,)>(
+        "SELECT profile_image_file_id FROM users WHERE id = $1 AND user_type = 'staff' FOR UPDATE",
+    )
+    .bind(staff_id)
+    .fetch_optional(&mut *tx)
+    .await
+    .map_err(|error| {
+        tracing::error!("Failed to lock staff profile image relationship: {}", error);
+        AppError::InternalServerError("เกิดข้อผิดพลาดในการอัปเดตข้อมูล".to_string())
+    })?
+    .ok_or_else(|| AppError::NotFound("ไม่พบบุคลากร".to_string()))?
+    .0;
+    if let Some(file_id) = payload.profile_image_file_id {
+        let valid = sqlx::query_scalar::<_, bool>(
+            r#"
+SELECT EXISTS(
+    SELECT 1
+    FROM files
+    WHERE id = $1
+      AND user_id = $2
+      AND purpose_code = 'profile_image'
+      AND lifecycle_status = 'ready'
+      AND deleted_at IS NULL
+)
+"#,
+        )
+        .bind(file_id)
+        .bind(staff_id)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(|error| {
+            tracing::error!("Failed to validate staff profile image: {}", error);
+            AppError::InternalServerError("เกิดข้อผิดพลาดในการอัปเดตข้อมูล".to_string())
+        })?;
+        if !valid {
+            return Err(AppError::ValidationError(
+                "ไฟล์รูปโปรไฟล์ไม่พร้อมใช้งาน".to_string(),
+            ));
+        }
+        sqlx::query(
+            "UPDATE files SET is_temporary = false, retention_class = 'standard', expires_at = NULL, updated_at = NOW() WHERE id = $1",
+        )
+        .bind(file_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|error| {
+            tracing::error!("Failed to finalize staff profile image: {}", error);
+            AppError::InternalServerError("เกิดข้อผิดพลาดในการอัปเดตข้อมูล".to_string())
+        })?;
     }
 
     let result = sqlx::query(
@@ -884,7 +939,7 @@ pub async fn update_staff(
             address = COALESCE($12, address),
             hired_date = COALESCE($13, hired_date),
             status = COALESCE($14, status),
-            profile_image_url = COALESCE($15, profile_image_url),
+            profile_image_file_id = COALESCE($15, profile_image_file_id),
             updated_at = NOW()
          WHERE id = $1 AND user_type = 'staff'",
     )
@@ -902,7 +957,7 @@ pub async fn update_staff(
     .bind(&payload.address)
     .bind(payload.hired_date)
     .bind(&payload.status)
-    .bind(&payload.profile_image_url)
+    .bind(&payload.profile_image_file_id)
     .execute(&mut *tx)
     .await
     .map_err(|e| {
@@ -996,7 +1051,11 @@ pub async fn update_staff(
         AppError::InternalServerError("เกิดข้อผิดพลาดในการบันทึกข้อมูล".to_string())
     })?;
 
-    Ok(())
+    Ok(
+        (payload.profile_image_file_id.is_some() && old_file_id != payload.profile_image_file_id)
+            .then_some(old_file_id)
+            .flatten(),
+    )
 }
 
 /// Soft-delete staff (set status='inactive')
@@ -1036,14 +1095,14 @@ pub async fn get_public_staff_profile(
         email: Option<String>,
         user_type: String,
         status: String,
-        profile_image_url: Option<String>,
+        profile_image_file_id: Option<Uuid>,
         title: Option<String>,
         phone: Option<String>,
         hired_date: Option<NaiveDate>,
     }
 
     let user_rec = sqlx::query_as::<_, PublicUserRow>(
-        "SELECT id, username, first_name, last_name, nickname, email, user_type, status, profile_image_url, title, phone, hired_date
+        "SELECT id, username, first_name, last_name, nickname, email, user_type, status, profile_image_file_id, title, phone, hired_date
          FROM users WHERE id = $1 AND user_type = 'staff'",
     )
     .bind(staff_id)
@@ -1104,7 +1163,7 @@ pub async fn get_public_staff_profile(
         email: user_rec.email,
         phone: user_rec.phone,
         hired_date: user_rec.hired_date,
-        profile_image_url: user_rec.profile_image_url,
+        profile_image_file_id: user_rec.profile_image_file_id,
         user_type: user_rec.user_type,
         status: user_rec.status,
         roles: roles

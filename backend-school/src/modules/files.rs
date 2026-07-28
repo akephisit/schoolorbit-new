@@ -1,4 +1,5 @@
 // These staged contracts are consumed by the FilePlatform application service in Task 6.
+pub mod consumer_service;
 #[allow(dead_code)]
 pub mod file_inspector;
 pub mod handlers;

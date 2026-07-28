@@ -28,8 +28,8 @@ use super::{
 #[derive(Clone)]
 pub struct UploadCommand {
     pub tenant_id: Uuid,
-    pub actor_user_id: Uuid,
-    pub owner_user_id: Uuid,
+    pub actor_user_id: Option<Uuid>,
+    pub owner_user_id: Option<Uuid>,
     pub purpose: FilePurpose,
     pub display_filename: String,
     pub bytes: Bytes,
@@ -281,7 +281,7 @@ impl FilePlatform {
 
         Ok(PlatformFile {
             id: file_id,
-            owner_user_id: Some(command.owner_user_id),
+            owner_user_id: command.owner_user_id,
             purpose: command.purpose,
             visibility: definition.visibility,
             lifecycle_status: FileLifecycleStatus::Ready,
@@ -616,6 +616,7 @@ mod tests {
     #[derive(Default)]
     struct FakeRepository {
         events: Mutex<Vec<&'static str>>,
+        upload_identity: Mutex<Option<(Option<Uuid>, Option<Uuid>)>>,
         finalize_fails: Mutex<bool>,
         derivative_store_error: Mutex<Option<RepositoryError>>,
         delivery: Mutex<Option<DeliveryRecord>>,
@@ -624,7 +625,8 @@ mod tests {
 
     #[async_trait]
     impl FileRepository for FakeRepository {
-        async fn reserve_upload(&self, _upload: &NewUpload) -> Result<(), RepositoryError> {
+        async fn reserve_upload(&self, upload: &NewUpload) -> Result<(), RepositoryError> {
+            *self.upload_identity.lock().unwrap() = Some((upload.owner_user_id, upload.created_by));
             self.events.lock().unwrap().push("processing");
             Ok(())
         }
@@ -754,8 +756,8 @@ mod tests {
     fn command(purpose: FilePurpose) -> UploadCommand {
         UploadCommand {
             tenant_id: Uuid::parse_str("11111111-1111-1111-1111-111111111111").unwrap(),
-            actor_user_id: Uuid::parse_str("22222222-2222-2222-2222-222222222222").unwrap(),
-            owner_user_id: Uuid::parse_str("22222222-2222-2222-2222-222222222222").unwrap(),
+            actor_user_id: Some(Uuid::parse_str("22222222-2222-2222-2222-222222222222").unwrap()),
+            owner_user_id: Some(Uuid::parse_str("22222222-2222-2222-2222-222222222222").unwrap()),
             purpose,
             display_filename: "../../unsafe ชื่อ.png".to_string(),
             bytes: png(),
@@ -785,6 +787,26 @@ mod tests {
         assert_eq!(
             *provider.puts.lock().unwrap(),
             vec![StorageClass::Public, StorageClass::Public]
+        );
+    }
+
+    #[tokio::test]
+    async fn portal_upload_can_persist_without_a_user_identity() {
+        let provider = Arc::new(FakeProvider::default());
+        let repository = FakeRepository::default();
+        let mut command = command(FilePurpose::AdmissionApplicationDocument);
+        command.actor_user_id = None;
+        command.owner_user_id = None;
+
+        let file = platform(ScanOutcome::Clean, provider)
+            .upload(&repository, command)
+            .await
+            .unwrap();
+
+        assert_eq!(file.owner_user_id, None);
+        assert_eq!(
+            *repository.upload_identity.lock().unwrap(),
+            Some((None, None))
         );
     }
 

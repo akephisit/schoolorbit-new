@@ -14,7 +14,7 @@ use crate::AppState;
 #[serde(rename_all = "camelCase")]
 pub struct PublicSchoolInfoData {
     #[schema(required = true)]
-    pub logo_url: Option<String>,
+    pub logo_file_id: Option<uuid::Uuid>,
     #[schema(required = true)]
     pub school_name: Option<String>,
 }
@@ -54,13 +54,22 @@ pub async fn update_settings(
         .actor
         .require_permission(codes::SETTINGS_UPDATE_ALL)?;
 
-    school_service::update_settings(&context.tenant.pool, payload).await?;
+    let old_file_id =
+        school_service::replace_logo(&context.tenant.pool, payload.logo_file_id).await?;
+    if let Some(old_file_id) = old_file_id {
+        crate::modules::files::consumer_service::request_deletions(
+            state.file_platform.as_ref(),
+            &context.tenant.pool,
+            [old_file_id],
+        )
+        .await?;
+    }
 
     Ok(Json(ApiResponse::empty()).into_response())
 }
 
 /// GET /api/school/public — no auth required
-/// Returns logoUrl (built from logo_path) + schoolName (from backend-admin)
+/// Returns the public File Platform identity + schoolName (from backend-admin)
 #[utoipa::path(
     get,
     path = "/api/school/public",
@@ -76,9 +85,9 @@ pub async fn get_public_info(
 ) -> Result<impl IntoResponse, AppError> {
     let tenant = tenant_context(&state, &headers).await?;
 
-    let logo_url = school_service::get_settings_response(&tenant.pool)
+    let logo_file_id = school_service::get_settings_response(&tenant.pool)
         .await?
-        .logo_url;
+        .logo_file_id;
     let school_name = state
         .admin_client
         .get_school_name(&tenant.subdomain)
@@ -86,14 +95,14 @@ pub async fn get_public_info(
         .ok();
 
     Ok(Json(ApiResponse::ok(PublicSchoolInfoData {
-        logo_url,
+        logo_file_id,
         school_name,
     }))
     .into_response())
 }
 
 /// DELETE /api/school/settings/logo — staff only (SETTINGS_UPDATE_ALL)
-/// ลบ logo จาก R2 และล้าง logo_path/logo_file_id ใน school_settings
+/// Detach the logo and request durable File Platform deletion.
 pub async fn delete_logo(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -103,7 +112,14 @@ pub async fn delete_logo(
         .actor
         .require_permission(codes::SETTINGS_UPDATE_ALL)?;
 
-    school_service::delete_logo(&context.tenant.pool).await?;
+    if let Some(file_id) = school_service::detach_logo(&context.tenant.pool).await? {
+        crate::modules::files::consumer_service::request_deletions(
+            state.file_platform.as_ref(),
+            &context.tenant.pool,
+            [file_id],
+        )
+        .await?;
+    }
 
     Ok(Json(ApiResponse::empty()).into_response())
 }

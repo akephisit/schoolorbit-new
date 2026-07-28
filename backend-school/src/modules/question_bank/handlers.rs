@@ -1,17 +1,21 @@
 use axum::{
     extract::{Path, Query, State},
-    http::{header, HeaderMap, HeaderValue, StatusCode},
-    response::IntoResponse,
+    http::{HeaderMap, StatusCode},
+    response::{IntoResponse, Redirect},
     Json,
 };
 use uuid::Uuid;
 
 use crate::api_response::ApiResponse;
 use crate::error::AppError;
+use crate::modules::files::{
+    consumer_service::{map_platform_error, request_deletions},
+    platform_types::DownloadGrant,
+    repository::SqlFileRepository,
+};
 use crate::modules::question_bank::models::{QuestionBankListQuery, UpsertQuestionRequest};
 use crate::modules::question_bank::services as question_bank_service;
-use crate::policies::question_bank_access_policy;
-use crate::services::r2_client::R2Client;
+use crate::policies::{file_access_policy, question_bank_access_policy};
 use crate::utils::request_context::actor_tenant_context;
 use crate::AppState;
 
@@ -56,38 +60,31 @@ pub async fn get_question_file(
     Path((question_id, file_id)): Path<(Uuid, Uuid)>,
 ) -> Result<impl IntoResponse, AppError> {
     let context = actor_tenant_context(&state, &headers).await?;
-    let source = question_bank_service::get_question_file_source(
-        &context.tenant.pool,
+    let repository = SqlFileRepository::new(context.tenant.pool);
+    let file = state
+        .file_platform
+        .metadata(&repository, file_id)
+        .await
+        .map_err(map_platform_error)?;
+    file_access_policy::authorize_existing(
+        repository.pool(),
         &context.actor,
-        question_id,
-        file_id,
+        &file,
+        file_access_policy::FilePolicyAction::Read,
+        Some(question_id),
     )
     .await?;
-    let storage = R2Client::new().await.map_err(|error| {
-        tracing::error!("Failed to initialize question image storage: {}", error);
-        AppError::InternalServerError("ไม่สามารถเชื่อมต่อพื้นที่เก็บรูปได้".to_string())
-    })?;
-    let data = storage
-        .download_file(&source.storage_path)
+    match state
+        .file_platform
+        .private_download(&repository, file_id)
         .await
-        .map_err(|error| {
-            tracing::error!("Failed to download question image: {}", error);
-            AppError::InternalServerError("ไม่สามารถดาวน์โหลดรูปประกอบข้อสอบได้".to_string())
-        })?;
-    let content_type = HeaderValue::from_str(&source.mime_type)
-        .unwrap_or_else(|_| HeaderValue::from_static("application/octet-stream"));
-
-    Ok((
-        [
-            (header::CONTENT_TYPE, content_type),
-            (
-                header::CACHE_CONTROL,
-                HeaderValue::from_static("private, max-age=300"),
-            ),
-        ],
-        data,
-    )
-        .into_response())
+        .map_err(map_platform_error)?
+    {
+        DownloadGrant::Redirect { location, .. } => Ok(Redirect::to(&location).into_response()),
+        DownloadGrant::Stream { .. } => Err(AppError::InternalServerError(
+            "file_stream_grant_not_supported".to_string(),
+        )),
+    }
 }
 
 pub async fn create_question(
@@ -113,7 +110,7 @@ pub async fn update_question(
     Json(payload): Json<UpsertQuestionRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let context = actor_tenant_context(&state, &headers).await?;
-    let question = question_bank_service::update_question(
+    let result = question_bank_service::update_question(
         &context.tenant.pool,
         &context.actor,
         id,
@@ -121,7 +118,13 @@ pub async fn update_question(
         payload,
     )
     .await?;
-    Ok(Json(ApiResponse::ok(question)).into_response())
+    request_deletions(
+        state.file_platform.as_ref(),
+        &context.tenant.pool,
+        result.detached_file_ids,
+    )
+    .await?;
+    Ok(Json(ApiResponse::ok(result.question)).into_response())
 }
 
 pub async fn delete_question(
@@ -130,6 +133,8 @@ pub async fn delete_question(
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
     let context = actor_tenant_context(&state, &headers).await?;
-    question_bank_service::delete_question(&context.tenant.pool, &context.actor, id).await?;
+    let file_ids =
+        question_bank_service::delete_question(&context.tenant.pool, &context.actor, id).await?;
+    request_deletions(state.file_platform.as_ref(), &context.tenant.pool, file_ids).await?;
     Ok(Json(ApiResponse::empty()).into_response())
 }

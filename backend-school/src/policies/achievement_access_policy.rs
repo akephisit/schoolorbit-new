@@ -58,6 +58,15 @@ pub fn can_create_achievement_for(
     )
 }
 
+pub fn can_read_achievement(actor: &ActorContext, owner_user_id: Uuid) -> Result<(), AppError> {
+    require_direct_user_resource_access(
+        actor,
+        owner_user_id,
+        ACHIEVEMENT_READ_ACCESS,
+        "คุณไม่มีสิทธิ์ดูผลงานนี้",
+    )
+}
+
 pub fn can_update_achievement(actor: &ActorContext, owner_user_id: Uuid) -> Result<(), AppError> {
     require_direct_user_resource_access(
         actor,

@@ -6,7 +6,6 @@ use super::services;
 use crate::api_response::{ApiErrorResponse, ApiResponse, EmptyData};
 use crate::error::AppError;
 use crate::middleware::permission::get_cached_user_permissions;
-use crate::utils::file_url::get_file_url_from_string;
 use crate::utils::jwt::JwtService;
 use crate::utils::request_context::{
     current_user_tenant_context_from_claims, current_user_tenant_context_from_headers,
@@ -93,7 +92,7 @@ pub async fn login(
         status: user.status.clone(),
         created_at: chrono::Utc::now(),
         primary_role_name,
-        profile_image_url: get_file_url_from_string(&user.profile_image_url),
+        profile_image_file_id: user.profile_image_file_id,
         permissions: Some(permissions),
     };
 
@@ -271,7 +270,16 @@ pub async fn update_profile(
     let pool = context.tenant.pool;
     let user_id = context.user_id;
 
-    let user = services::update_profile(&pool, user_id, payload).await?;
+    let result = services::update_profile(&pool, user_id, payload).await?;
+    if let Some(file_id) = result.replaced_file_id {
+        crate::modules::files::consumer_service::request_deletions(
+            state.file_platform.as_ref(),
+            &pool,
+            [file_id],
+        )
+        .await?;
+    }
+    let user = result.user;
     let primary_role_name = services::get_primary_role_name(&pool, user.id).await?;
 
     // Return updated profile

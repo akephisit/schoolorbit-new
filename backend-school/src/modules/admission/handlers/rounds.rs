@@ -135,7 +135,13 @@ pub async fn delete_round(
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ADMISSION_MANAGE_ALL)?;
-    round_service::delete_round(&pool, id).await?;
+    let file_ids = round_service::delete_round(&pool, id).await?;
+    crate::modules::files::consumer_service::request_deletions(
+        state.file_platform.as_ref(),
+        &pool,
+        file_ids,
+    )
+    .await?;
     Ok(Json(ApiResponse::empty_with_message(
         "ลบรอบรับสมัครและใบสมัครที่เกี่ยวข้องเรียบร้อยแล้ว",
     ))

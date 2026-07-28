@@ -25,7 +25,7 @@ pub async fn get_own_profile(
         SELECT
             u.id, u.username, u.national_id as national_id, u.email, u.first_name, u.last_name,
             u.title, u.nickname, u.phone, u.date_of_birth, u.gender,
-            u.address, u.profile_image_url,
+            u.address, u.profile_image_file_id,
             s.student_id,
             CASE gl.level_type
                 WHEN 'kindergarten' THEN CONCAT('อ.', gl.year)
@@ -310,7 +310,7 @@ pub async fn get_student(
         SELECT
             u.id, u.username, u.national_id as national_id, u.email, u.first_name, u.last_name,
             u.title, u.nickname, u.phone, u.date_of_birth, u.gender,
-            u.address, u.profile_image_url, u.status,
+            u.address, u.profile_image_file_id, u.status,
             s.student_id,
             CASE gl.level_type
                 WHEN 'kindergarten' THEN CONCAT('อ.', gl.year)
@@ -943,7 +943,7 @@ mod tests {
             date_of_birth: None,
             gender: None,
             address: Some("address".to_string()),
-            profile_image_url: None,
+            profile_image_file_id: None,
             student_id: Some("S001".to_string()),
             student_number: Some(1),
             blood_type: Some("O".to_string()),

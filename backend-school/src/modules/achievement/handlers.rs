@@ -83,11 +83,19 @@ pub async fn update_achievement(
     Json(payload): Json<UpdateAchievementRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let context = actor_tenant_context(&state, &headers).await?;
-    let achievement =
+    let result =
         achievement_service::update_achievement(&context.tenant.pool, &context.actor, id, payload)
             .await?;
+    if let Some(file_id) = result.replaced_file_id {
+        crate::modules::files::consumer_service::request_deletions(
+            state.file_platform.as_ref(),
+            &context.tenant.pool,
+            [file_id],
+        )
+        .await?;
+    }
 
-    Ok((StatusCode::OK, Json(ApiResponse::ok(achievement))).into_response())
+    Ok((StatusCode::OK, Json(ApiResponse::ok(result.achievement))).into_response())
 }
 
 #[utoipa::path(
@@ -109,7 +117,16 @@ pub async fn delete_achievement(
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
     let context = actor_tenant_context(&state, &headers).await?;
-    achievement_service::delete_achievement(&context.tenant.pool, &context.actor, id).await?;
+    if let Some(file_id) =
+        achievement_service::delete_achievement(&context.tenant.pool, &context.actor, id).await?
+    {
+        crate::modules::files::consumer_service::request_deletions(
+            state.file_platform.as_ref(),
+            &context.tenant.pool,
+            [file_id],
+        )
+        .await?;
+    }
 
     Ok((StatusCode::OK, Json(ApiResponse::empty())).into_response())
 }

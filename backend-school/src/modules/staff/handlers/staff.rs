@@ -183,7 +183,15 @@ pub async fn update_staff(
     let actor = context.actor;
     actor.require_permission(codes::STAFF_UPDATE_ALL)?;
 
-    staff_service::update_staff(&pool, staff_id, payload).await?;
+    let replaced_file_id = staff_service::update_staff(&pool, staff_id, payload).await?;
+    if let Some(file_id) = replaced_file_id {
+        crate::modules::files::consumer_service::request_deletions(
+            state.file_platform.as_ref(),
+            &pool,
+            [file_id],
+        )
+        .await?;
+    }
 
     // Roles/organization memberships may have changed — invalidate this user's permission cache
     state.permission_cache.invalidate_user(&tenant, staff_id);

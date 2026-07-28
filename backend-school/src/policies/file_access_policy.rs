@@ -9,7 +9,10 @@ use crate::{
         question_bank::services as question_bank_service,
     },
     permissions::registry::codes,
-    policies::{question_bank_access_policy, staff_access_policy, student_access_policy},
+    policies::{
+        achievement_access_policy, question_bank_access_policy, staff_access_policy,
+        student_access_policy,
+    },
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -64,6 +67,7 @@ pub fn simple_file_access(
                 }
             }
         }
+        FilePurpose::AchievementImage => None,
         FilePurpose::AdmissionApplicationDocument => Some(match action {
             FilePolicyAction::Read => actor.has_any_permission(&[
                 codes::ADMISSION_READ_ALL,
@@ -132,6 +136,12 @@ pub async fn authorize_create(
             question_bank_access_policy::require_subject_create_access(pool, actor, subject_id)
                 .await?;
             Ok(actor.user_id)
+        }
+        FilePurpose::AchievementImage => {
+            let owner_user_id = resource_id.unwrap_or(actor.user_id);
+            require_user_exists(pool, owner_user_id).await?;
+            achievement_access_policy::can_create_achievement_for(actor, owner_user_id)?;
+            Ok(owner_user_id)
         }
         FilePurpose::Transcript
         | FilePurpose::Certificate
@@ -238,6 +248,36 @@ pub async fn authorize_existing(
                 Err(unrelated_resource())
             }
         }
+        FilePurpose::AchievementImage => {
+            if let Some(achievement_id) = resource_id {
+                let relationship = sqlx::query_as::<_, (Uuid, Option<Uuid>)>(
+                    "SELECT user_id, image_file_id FROM staff_achievements WHERE id = $1",
+                )
+                .bind(achievement_id)
+                .fetch_optional(pool)
+                .await?
+                .ok_or_else(unrelated_resource)?;
+                if relationship.1 != Some(file.id) {
+                    return Err(unrelated_resource());
+                }
+                return match action {
+                    FilePolicyAction::Read => {
+                        achievement_access_policy::can_read_achievement(actor, relationship.0)
+                    }
+                    FilePolicyAction::Create => {
+                        achievement_access_policy::can_create_achievement_for(actor, relationship.0)
+                    }
+                    FilePolicyAction::Delete => {
+                        achievement_access_policy::can_update_achievement(actor, relationship.0)
+                    }
+                };
+            }
+            let owner_user_id = file.owner_user_id.ok_or_else(unrelated_resource)?;
+            if owner_user_id != actor.user_id {
+                return Err(unrelated_resource());
+            }
+            achievement_access_policy::can_create_achievement_for(actor, owner_user_id)
+        }
         FilePurpose::Transcript
         | FilePurpose::Certificate
         | FilePurpose::IdentityCard
@@ -247,7 +287,6 @@ pub async fn authorize_existing(
     }
 }
 
-#[allow(dead_code)] // Portal handlers adopt this boundary during the consumer migration.
 pub async fn authorize_portal_application(
     pool: &PgPool,
     authenticated_application_id: Uuid,
@@ -306,6 +345,18 @@ async fn require_application_exists(pool: &PgPool, application_id: Uuid) -> Resu
         Ok(())
     } else {
         Err(AppError::NotFound("ไม่พบใบสมัคร".to_string()))
+    }
+}
+
+async fn require_user_exists(pool: &PgPool, user_id: Uuid) -> Result<(), AppError> {
+    let exists = sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM users WHERE id = $1)")
+        .bind(user_id)
+        .fetch_one(pool)
+        .await?;
+    if exists {
+        Ok(())
+    } else {
+        Err(AppError::NotFound("ไม่พบผู้ใช้".to_string()))
     }
 }
 
