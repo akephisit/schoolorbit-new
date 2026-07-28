@@ -1,4 +1,5 @@
 use regex::Regex;
+use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -4872,4 +4873,111 @@ fn auto_scheduler_backend_and_schema_are_removed_without_deleting_timetable_entr
     assert!(!normalized.contains("delete from academic_timetable_entries"));
     assert!(!normalized.contains("truncate academic_timetable_entries"));
     assert!(!normalized.contains("drop table academic_timetable_entries"));
+}
+
+#[test]
+fn file_platform_blocks_new_provider_coupling_and_locator_responses() {
+    let r2_import = Regex::new(r"use\s+crate::services::r2_client::R2Client").unwrap();
+    let r2_constructor = Regex::new(r"R2Client::new\s*\(").unwrap();
+    let tenant_object_prefix = Regex::new(r#"(?s)format!\s*\(\s*"school-\{\}[^"\n]*"#).unwrap();
+    let mut violations = BTreeSet::new();
+
+    for file in backend_rs_files() {
+        let file_name = relative(&file);
+        if file_name == "src/services/r2_client.rs" {
+            continue;
+        }
+
+        let source = strip_comments(&read_source(&file));
+        if r2_import.is_match(&source) || r2_constructor.is_match(&source) {
+            violations.insert(format!("{file_name}: direct R2 client use"));
+        }
+        if tenant_object_prefix.is_match(&source) {
+            violations.insert(format!("{file_name}: constructs a tenant object prefix"));
+        }
+    }
+
+    let locator_fields = [
+        (
+            "src/modules/files/models.rs",
+            "FileResponse",
+            "storage_path",
+        ),
+        ("src/modules/files/models.rs", "FileResponse", "url"),
+        (
+            "src/modules/files/models.rs",
+            "FileResponse",
+            "thumbnail_url",
+        ),
+        ("src/modules/question_bank/models.rs", "QuestionFile", "url"),
+        (
+            "src/modules/question_bank/models.rs",
+            "QuestionFile",
+            "thumbnail_url",
+        ),
+        (
+            "src/modules/admission/models/applications.rs",
+            "ApplicationDocument",
+            "file_url",
+        ),
+        (
+            "src/modules/admission/services/application_service.rs",
+            "DocumentUploadResponse",
+            "file_url",
+        ),
+    ];
+
+    for (path, response_name, field_name) in locator_fields {
+        let source = strip_comments(&read_source(manifest_dir().join(path)));
+        let response = Regex::new(&format!(
+            r"(?s)pub struct {}\s*\{{(?P<body>.*?)\n\}}",
+            regex::escape(response_name)
+        ))
+        .unwrap();
+        let field =
+            Regex::new(&format!(r"(?m)^\s*pub\s+{}\s*:", regex::escape(field_name))).unwrap();
+        let body = response
+            .captures(&source)
+            .unwrap_or_else(|| {
+                panic!("missing file API response struct {response_name} for {path}")
+            })
+            .name("body")
+            .unwrap()
+            .as_str();
+
+        if field.is_match(body) {
+            violations.insert(format!("{path}: {response_name} exposes {field_name}"));
+        }
+    }
+
+    // Compatibility window: Task 8 must remove every entry below, leaving only the provider
+    // adapter and provider-focused tests able to reference R2 or storage locators.
+    let compatibility_allowlist = BTreeSet::from([
+        "src/modules/admission/handlers/applications.rs: direct R2 client use".to_string(),
+        "src/modules/admission/handlers/portal.rs: direct R2 client use".to_string(),
+        "src/modules/admission/models/applications.rs: ApplicationDocument exposes file_url"
+            .to_string(),
+        "src/modules/admission/services/application_service.rs: DocumentUploadResponse exposes file_url"
+            .to_string(),
+        "src/modules/admission/services/application_service.rs: constructs a tenant object prefix"
+            .to_string(),
+        "src/modules/admission/services/portal_service.rs: constructs a tenant object prefix"
+            .to_string(),
+        "src/modules/admission/services/round_service.rs: direct R2 client use".to_string(),
+        "src/modules/files/models.rs: FileResponse exposes storage_path".to_string(),
+        "src/modules/files/models.rs: FileResponse exposes thumbnail_url".to_string(),
+        "src/modules/files/models.rs: FileResponse exposes url".to_string(),
+        "src/modules/files/services.rs: constructs a tenant object prefix".to_string(),
+        "src/modules/files/services.rs: direct R2 client use".to_string(),
+        "src/modules/question_bank/handlers.rs: direct R2 client use".to_string(),
+        "src/modules/question_bank/models.rs: QuestionFile exposes thumbnail_url".to_string(),
+        "src/modules/question_bank/models.rs: QuestionFile exposes url".to_string(),
+        "src/modules/school/services.rs: direct R2 client use".to_string(),
+        "src/services/cleaner.rs: direct R2 client use".to_string(),
+    ]);
+
+    assert_eq!(
+        violations, compatibility_allowlist,
+        "new file-platform provider coupling or API locators must not bypass the exact compatibility allowlist"
+    );
 }
