@@ -4964,3 +4964,30 @@ fn file_platform_blocks_new_provider_coupling_and_locator_responses() {
         "new file-platform provider coupling or API locators must not bypass the exact compatibility allowlist"
     );
 }
+
+#[test]
+fn file_platform_object_keys_can_only_be_constructed_by_the_purpose_registry() {
+    let platform_types = read_source(manifest_dir().join("src/modules/files/platform_types.rs"));
+    let registry_path = manifest_dir().join("src/modules/files/purpose_registry.rs");
+    let registry = read_source(&registry_path);
+
+    assert!(
+        !platform_types.contains("struct ObjectKey"),
+        "platform types must not expose raw object-key construction"
+    );
+    assert!(
+        registry.contains("pub struct ObjectKey(String);"),
+        "purpose registry must own the private raw object-key constructor"
+    );
+
+    for file in backend_rs_files() {
+        if file == registry_path {
+            continue;
+        }
+        assert!(
+            !read_source(&file).contains("ObjectKey::new"),
+            "{} bypasses purpose-registry object-key construction",
+            relative(&file)
+        );
+    }
+}

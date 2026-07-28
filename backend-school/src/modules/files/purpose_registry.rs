@@ -3,8 +3,7 @@ use std::fmt;
 use uuid::Uuid;
 
 use super::platform_types::{
-    DerivativeRecipe, DetectedContent, FilePurpose, FileVisibility, ObjectKey, RetentionClass,
-    ScanRequirement,
+    DerivativeRecipe, DetectedContent, FilePurpose, FileVisibility, RetentionClass, ScanRequirement,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -47,6 +46,17 @@ pub enum PurposeRegistryError {
     DerivativeNotAllowed,
 }
 
+/// Immutable storage identity constructed only by the purpose registry.
+/// Its tuple field remains private so other modules cannot inject raw key text.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ObjectKey(String);
+
+impl ObjectKey {
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
 impl fmt::Display for PurposeRegistryError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(match self {
@@ -66,6 +76,11 @@ const IMAGE_CONTENT: &[DetectedContent] = &[
     DetectedContent::Webp,
 ];
 const PDF_CONTENT: &[DetectedContent] = &[DetectedContent::Pdf];
+const ADMISSION_CONTENT: &[DetectedContent] = &[
+    DetectedContent::Jpeg,
+    DetectedContent::Png,
+    DetectedContent::Pdf,
+];
 const THUMBNAIL_256: &[DerivativeRecipe] = &[DerivativeRecipe::Thumbnail256Webp];
 const THUMBNAIL_1024: &[DerivativeRecipe] = &[DerivativeRecipe::Thumbnail1024Webp];
 
@@ -133,8 +148,8 @@ pub fn purpose_definition(purpose: FilePurpose) -> Result<PurposeDefinition, Pur
             domain_segment: "admission",
             purpose_segment: "application-document",
             visibility: FileVisibility::Private,
-            allowed_content: PDF_CONTENT,
-            limits: document_limits(20 * 1024 * 1024),
+            allowed_content: ADMISSION_CONTENT,
+            limits: image_limits(20 * 1024 * 1024, 4096, 4096),
             scan_requirement: ScanRequirement::RequiredClean,
             derivatives: &[],
             retention_class: RetentionClass::Standard,
@@ -237,7 +252,7 @@ pub fn original_object_key(
         return Err(PurposeRegistryError::UnsupportedDetectedContent);
     }
 
-    Ok(ObjectKey::new(format!(
+    Ok(ObjectKey(format!(
         "tenants/{tenant_id}/{}/{}/{file_id}/v{version}/original.{}",
         definition.domain_segment,
         definition.purpose_segment,
@@ -260,7 +275,7 @@ pub fn derivative_object_key(
         return Err(PurposeRegistryError::DerivativeNotAllowed);
     }
 
-    Ok(ObjectKey::new(format!(
+    Ok(ObjectKey(format!(
         "tenants/{tenant_id}/{}/{}/{file_id}/v{version}/derivatives/{}.{}",
         definition.domain_segment,
         definition.purpose_segment,
@@ -285,7 +300,15 @@ mod tests {
                 "school",
                 "logo",
                 FileVisibility::Public,
+                &[
+                    DetectedContent::Jpeg,
+                    DetectedContent::Png,
+                    DetectedContent::Webp,
+                ][..],
                 2 * 1024 * 1024,
+                Some(2048),
+                Some(2048),
+                Some(2048 * 2048),
                 &[DerivativeRecipe::Thumbnail256Webp][..],
                 PolicyKey::SchoolBranding,
             ),
@@ -294,7 +317,15 @@ mod tests {
                 "school",
                 "banner",
                 FileVisibility::Public,
+                &[
+                    DetectedContent::Jpeg,
+                    DetectedContent::Png,
+                    DetectedContent::Webp,
+                ][..],
                 5 * 1024 * 1024,
+                Some(4096),
+                Some(2048),
+                Some(4096 * 2048),
                 &[DerivativeRecipe::Thumbnail1024Webp][..],
                 PolicyKey::SchoolBranding,
             ),
@@ -303,7 +334,15 @@ mod tests {
                 "identity",
                 "profile-image",
                 FileVisibility::Private,
+                &[
+                    DetectedContent::Jpeg,
+                    DetectedContent::Png,
+                    DetectedContent::Webp,
+                ][..],
                 5 * 1024 * 1024,
+                Some(2048),
+                Some(2048),
+                Some(2048 * 2048),
                 &[DerivativeRecipe::Thumbnail256Webp][..],
                 PolicyKey::ProfileImage,
             ),
@@ -312,7 +351,15 @@ mod tests {
                 "admission",
                 "application-document",
                 FileVisibility::Private,
+                &[
+                    DetectedContent::Jpeg,
+                    DetectedContent::Png,
+                    DetectedContent::Pdf,
+                ][..],
                 20 * 1024 * 1024,
+                Some(4096),
+                Some(4096),
+                Some(4096 * 4096),
                 &[],
                 PolicyKey::AdmissionApplicationDocument,
             ),
@@ -321,7 +368,11 @@ mod tests {
                 "identity",
                 "transcript",
                 FileVisibility::Private,
+                &[DetectedContent::Pdf][..],
                 20 * 1024 * 1024,
+                None,
+                None,
+                None,
                 &[],
                 PolicyKey::IdentityDocument,
             ),
@@ -330,7 +381,11 @@ mod tests {
                 "identity",
                 "certificate",
                 FileVisibility::Private,
+                &[DetectedContent::Pdf][..],
                 20 * 1024 * 1024,
+                None,
+                None,
+                None,
                 &[],
                 PolicyKey::IdentityDocument,
             ),
@@ -339,7 +394,11 @@ mod tests {
                 "identity",
                 "id-card",
                 FileVisibility::Private,
+                &[DetectedContent::Pdf][..],
                 5 * 1024 * 1024,
+                None,
+                None,
+                None,
                 &[],
                 PolicyKey::IdentityDocument,
             ),
@@ -348,7 +407,15 @@ mod tests {
                 "question-bank",
                 "image",
                 FileVisibility::Private,
+                &[
+                    DetectedContent::Jpeg,
+                    DetectedContent::Png,
+                    DetectedContent::Webp,
+                ][..],
                 10 * 1024 * 1024,
+                Some(4096),
+                Some(4096),
+                Some(4096 * 4096),
                 &[DerivativeRecipe::Thumbnail1024Webp][..],
                 PolicyKey::QuestionBankImage,
             ),
@@ -357,7 +424,11 @@ mod tests {
                 "academic",
                 "course-material",
                 FileVisibility::Private,
+                &[DetectedContent::Pdf][..],
                 10 * 1024 * 1024,
+                None,
+                None,
+                None,
                 &[],
                 PolicyKey::CourseworkAttachment,
             ),
@@ -366,7 +437,11 @@ mod tests {
                 "academic",
                 "assignment-attachment",
                 FileVisibility::Private,
+                &[DetectedContent::Pdf][..],
                 10 * 1024 * 1024,
+                None,
+                None,
+                None,
                 &[],
                 PolicyKey::CourseworkAttachment,
             ),
@@ -375,19 +450,40 @@ mod tests {
                 "document",
                 "private-document",
                 FileVisibility::Private,
+                &[DetectedContent::Pdf][..],
                 20 * 1024 * 1024,
+                None,
+                None,
+                None,
                 &[],
                 PolicyKey::ExplicitOwningResource,
             ),
         ];
 
-        for (purpose, domain, segment, visibility, max_bytes, derivatives, policy_key) in cases {
+        for (
+            purpose,
+            domain,
+            segment,
+            visibility,
+            allowed_content,
+            max_bytes,
+            max_width,
+            max_height,
+            max_decoded_pixels,
+            derivatives,
+            policy_key,
+        ) in cases
+        {
             let definition = purpose_definition(purpose).expect("initial purpose must resolve");
 
             assert_eq!(definition.domain_segment, domain);
             assert_eq!(definition.purpose_segment, segment);
             assert_eq!(definition.visibility, visibility);
+            assert_eq!(definition.allowed_content, allowed_content);
             assert_eq!(definition.limits.max_bytes, max_bytes);
+            assert_eq!(definition.limits.max_width, max_width);
+            assert_eq!(definition.limits.max_height, max_height);
+            assert_eq!(definition.limits.max_decoded_pixels, max_decoded_pixels);
             assert_eq!(definition.scan_requirement, ScanRequirement::RequiredClean);
             assert_eq!(definition.derivatives, derivatives);
             assert_eq!(definition.retention_class, RetentionClass::Standard);
@@ -462,6 +558,53 @@ mod tests {
         assert_eq!(
             key.as_str(),
             "tenants/11111111-1111-1111-1111-111111111111/question-bank/image/22222222-2222-2222-2222-222222222222/v3/derivatives/thumbnail-1024.webp"
+        );
+    }
+
+    #[test]
+    fn key_generation_rejects_invalid_versions_and_unapproved_content_or_derivatives() {
+        let tenant_id = Uuid::parse_str("11111111-1111-1111-1111-111111111111").unwrap();
+        let file_id = Uuid::parse_str("22222222-2222-2222-2222-222222222222").unwrap();
+
+        assert_eq!(
+            original_object_key(
+                tenant_id,
+                FilePurpose::SchoolLogo,
+                file_id,
+                0,
+                DetectedContent::Png,
+            ),
+            Err(PurposeRegistryError::InvalidVersion),
+        );
+        assert_eq!(
+            derivative_object_key(
+                tenant_id,
+                FilePurpose::SchoolLogo,
+                file_id,
+                0,
+                DerivativeRecipe::Thumbnail256Webp,
+            ),
+            Err(PurposeRegistryError::InvalidVersion),
+        );
+        assert_eq!(
+            original_object_key(
+                tenant_id,
+                FilePurpose::SchoolLogo,
+                file_id,
+                1,
+                DetectedContent::Pdf,
+            ),
+            Err(PurposeRegistryError::UnsupportedDetectedContent),
+        );
+        assert_eq!(
+            derivative_object_key(
+                tenant_id,
+                FilePurpose::QuestionBankImage,
+                file_id,
+                1,
+                DerivativeRecipe::Thumbnail256Webp,
+            ),
+            Err(PurposeRegistryError::DerivativeNotAllowed),
         );
     }
 }

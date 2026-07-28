@@ -1,6 +1,8 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
+use super::purpose_registry::ObjectKey;
+
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum FilePurpose {
@@ -152,19 +154,6 @@ pub struct ProviderObjectReference {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ObjectKey(String);
-
-impl ObjectKey {
-    pub(crate) fn new(value: String) -> Self {
-        Self(value)
-    }
-
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum DownloadGrant {
     Redirect {
         location: String,
@@ -201,12 +190,24 @@ mod tests {
         );
         for server_owned_property in [
             "provider",
+            "providerCode",
             "bucket",
+            "bucketName",
             "visibility",
             "storageClass",
             "objectKey",
+            "key",
+            "owner",
             "ownerUserId",
+            "resourceOwner",
+            "createdBy",
+            "lifecycle",
             "lifecycleStatus",
+            "scanPolicy",
+            "scanRequirement",
+            "scanStatus",
+            "retention",
+            "retentionClass",
         ] {
             let mut request = serde_json::json!({"purpose": "profile_image"});
             request[server_owned_property] = json!("client-controlled");
@@ -228,12 +229,23 @@ mod tests {
 
     #[test]
     fn provider_references_and_download_grants_stay_provider_neutral() {
+        let object_key = crate::modules::files::purpose_registry::original_object_key(
+            uuid::Uuid::parse_str("11111111-1111-1111-1111-111111111111").unwrap(),
+            FilePurpose::ProfileImage,
+            uuid::Uuid::parse_str("22222222-2222-2222-2222-222222222222").unwrap(),
+            1,
+            DetectedContent::Png,
+        )
+        .expect("registry must create provider object keys");
         let reference = ProviderObjectReference {
             provider_code: "r2".to_string(),
             storage_class: StorageClass::Private,
-            object_key: ObjectKey::new("tenants/tenant/object".to_string()),
+            object_key,
         };
-        assert_eq!(reference.object_key.as_str(), "tenants/tenant/object");
+        assert_eq!(
+            reference.object_key.as_str(),
+            "tenants/11111111-1111-1111-1111-111111111111/identity/profile-image/22222222-2222-2222-2222-222222222222/v1/original.png"
+        );
 
         let grant = DownloadGrant::Redirect {
             location: "https://provider.example/download".to_string(),
