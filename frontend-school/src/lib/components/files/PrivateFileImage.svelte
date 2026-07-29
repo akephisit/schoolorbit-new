@@ -20,14 +20,25 @@
 		return (node) => {
 			let objectUrl: string | null = null;
 			const controller = new AbortController();
+			node.style.visibility = 'hidden';
+
+			function revealImage() {
+				if (!controller.signal.aborted) {
+					node.style.visibility = 'visible';
+				}
+			}
+
+			node.addEventListener('load', revealImage);
 
 			function cleanup() {
 				controller.abort();
+				node.removeEventListener('load', revealImage);
 				if (objectUrl) {
 					URL.revokeObjectURL(objectUrl);
 					objectUrl = null;
 				}
 				node.removeAttribute('src');
+				node.style.visibility = 'hidden';
 			}
 
 			async function load() {
@@ -49,4 +60,9 @@
 	}
 </script>
 
-<img {@attach privateFileImage({ fileId, resourceId })} {alt} class={className} />
+<img
+	style:visibility="hidden"
+	{@attach privateFileImage({ fileId, resourceId })}
+	{alt}
+	class={className}
+/>
