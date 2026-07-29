@@ -5007,7 +5007,10 @@ fn file_platform_blocks_new_provider_coupling_and_locator_responses() {
                     "storage_path" | "thumbnail_path" | "bucket" | "object_key"
                 );
                 let is_provider_url = field_name == "url" || field_name.ends_with("_url");
-                if is_storage_locator || is_provider_url {
+                let is_bounded_download_grant_url = file_name == "src/modules/files/models.rs"
+                    && response_name == "FileDownloadGrantResponse"
+                    && field_name == "url";
+                if (is_storage_locator || is_provider_url) && !is_bounded_download_grant_url {
                     violations.insert(format!("{file_name}: {response_name} exposes {field_name}"));
                 }
             }

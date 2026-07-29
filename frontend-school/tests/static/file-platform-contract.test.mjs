@@ -89,6 +89,7 @@ test('backend deployment validates and installs the tracked school API proxy con
 
 test('typed file helper uses generated DTOs and file IDs as identity', async () => {
 	const source = await readRepoFile('frontend-school/src/lib/api/files.ts');
+	const client = await readRepoFile('frontend-school/src/lib/api/client.ts');
 
 	assert.match(
 		source,
@@ -105,9 +106,12 @@ test('typed file helper uses generated DTOs and file IDs as identity', async () 
 	assert.match(source, /apiClient\s*\.\s*get<FileMetadata>\(`\/api\/files\/\$\{fileId\}/);
 	assert.match(source, /apiClient\s*\.\s*delete<FileDeleteResult>\(`\/api\/files\/\$\{fileId\}/);
 	assert.match(source, /apiClient\s*\.\s*post<FileDownloadGrantResponse>/);
-	assert.match(source, /fetch\(grant\.url/);
-	assert.match(source, /credentials:\s*'omit'/);
-	assert.match(source, /referrerPolicy:\s*'no-referrer'/);
+	assert.match(source, /apiClient\.getExternalBlob\(grant\.url/);
+	assert.doesNotMatch(source, /\bfetch\s*\(/);
+	assert.match(client, /async\s+getExternalBlob/);
+	assert.match(client, /fetch\(url/);
+	assert.match(client, /credentials:\s*'omit'/);
+	assert.match(client, /referrerPolicy:\s*'no-referrer'/);
 	assert.doesNotMatch(source, /\.postBlob\(/);
 	assert.match(source, /\/api\/public\/files\/\$\{fileId\}\/content/);
 	assert.match(source, /\/api\/files\/\$\{fileId\}\/download/);

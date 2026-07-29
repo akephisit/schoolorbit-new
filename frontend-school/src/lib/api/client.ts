@@ -187,6 +187,22 @@ class APIClient {
 		};
 	}
 
+	async getExternalBlob(url: string, options: ApiRequestOptions = {}): Promise<ApiResponse<Blob>> {
+		const response = await fetch(url, {
+			method: 'GET',
+			mode: 'cors',
+			credentials: 'omit',
+			referrerPolicy: 'no-referrer',
+			signal: options.signal
+		});
+		if (response.ok) return { success: true, data: await response.blob() };
+
+		return {
+			success: false,
+			error: `ดาวน์โหลดไฟล์ไม่สำเร็จ (${response.status})`
+		};
+	}
+
 	async post<T>(endpoint: string, body?: unknown): Promise<ApiResponse<T>> {
 		return this.request<T>(endpoint, {
 			method: 'POST',

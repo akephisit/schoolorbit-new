@@ -47,17 +47,8 @@ export async function downloadGrantedFile(
 	grant: FileDownloadGrantResponse,
 	signal?: AbortSignal
 ): Promise<Blob> {
-	const response = await fetch(grant.url, {
-		method: 'GET',
-		mode: 'cors',
-		credentials: 'omit',
-		referrerPolicy: 'no-referrer',
-		signal
-	});
-	if (!response.ok) {
-		throw new Error(`ดาวน์โหลดไฟล์ไม่สำเร็จ (${response.status})`);
-	}
-	return response.blob();
+	const response = await apiClient.getExternalBlob(grant.url, { signal });
+	return requireApiData(response, 'ดาวน์โหลดไฟล์ไม่สำเร็จ');
 }
 
 export async function downloadFile(
