@@ -62,7 +62,12 @@ After deployment, verify readiness first, then run the smoke test and the releva
 
 ## Reverse Proxy and Realtime
 
-The current school API proxy reference is [`nginx-configs/school-api.schoolorbit.app.conf`](../nginx-configs/school-api.schoolorbit.app.conf); [`backend-admin/nginx.conf.example`](../backend-admin/nginx.conf.example) is the admin reference. Review the active host configuration before applying repository examples.
+The current proxy references are
+[`nginx-configs/school-api.schoolorbit.app.conf`](../nginx-configs/school-api.schoolorbit.app.conf)
+for the school API and
+[`nginx-configs/admin-api.schoolorbit.app.conf`](../nginx-configs/admin-api.schoolorbit.app.conf)
+for the admin API. The backend deployment workflows install and validate these tracked
+definitions before reloading Nginx.
 
 Preserve:
 

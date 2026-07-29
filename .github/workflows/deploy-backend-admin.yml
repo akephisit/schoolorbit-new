@@ -2,10 +2,11 @@ name: Deploy Backend Admin
 
 on:
   push:
-    branches: [ "main" ]
+    branches: ["main"]
     paths:
-      - 'backend-admin/**'
-      - '.github/workflows/deploy-backend-admin.yml'
+      - "backend-admin/**"
+      - "nginx-configs/admin-api.schoolorbit.app.conf"
+      - ".github/workflows/deploy-backend-admin.yml"
   workflow_dispatch:
 
 env:
@@ -63,6 +64,19 @@ jobs:
     needs: build-and-push
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Upload admin API proxy definition
+        uses: appleboy/scp-action@v1.0.0
+        with:
+          host: ${{ secrets.SERVER_IP }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          source: nginx-configs/admin-api.schoolorbit.app.conf
+          target: /opt/stack/backend-admin-runtime
+          strip_components: 1
+
       - name: Deploy to Server via SSH
         uses: appleboy/ssh-action@v1.2.5
         with:
@@ -70,20 +84,20 @@ jobs:
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
+            set -eu
             echo "${{ secrets.GITHUB_TOKEN }}" | podman login ghcr.io -u ${{ github.actor }} --password-stdin
             cd /opt/stack
-            
-            # 1. Pull latest image specifically
+
+            proxy_source=/opt/stack/backend-admin-runtime/admin-api.schoolorbit.app.conf
+            proxy_target=/opt/stack/nginx/conf.d/admin-api.schoolorbit.app.conf
+            test -f "$proxy_source" || { echo "Staged admin API proxy config is missing"; exit 1; }
+
             podman pull ghcr.io/akephisit/schoolorbit-backend-admin:latest
-            
-            # 2. Force Stop & Remove old container
+
             podman stop schoolorbit-backend-admin || true
             podman rm schoolorbit-backend-admin || true
-            
-            # 3. Start new container using podman-compose
             podman-compose up -d backend-admin
 
-            # 4. Wait for database readiness (maximum 60 seconds)
             if ! timeout 60 bash -c '
               for attempt in $(seq 1 12); do
                 if curl -fsS "$1" >/dev/null; then
@@ -98,9 +112,80 @@ jobs:
               podman logs --tail 100 schoolorbit-backend-admin
               exit 1
             fi
-            
-            # 5. Clean up
+
+            proxy_matches="$(
+              grep -l 'server_name admin-api\.schoolorbit\.app;' \
+                /opt/stack/nginx/conf.d/*.conf 2>/dev/null || true
+            )"
+            proxy_match_count="$(printf '%s\n' "$proxy_matches" | sed '/^$/d' | wc -l | tr -d ' ')"
+            if [ "$proxy_match_count" -gt 1 ]; then
+              echo "Multiple active admin API proxy configs were found"
+              exit 1
+            fi
+            if [ "$proxy_match_count" -eq 1 ] && [ "$proxy_matches" != "$proxy_target" ]; then
+              echo "Admin API proxy exists at an unexpected path: ${proxy_matches}"
+              exit 1
+            fi
+
+            proxy_backup=""
+            proxy_existed=0
+            if [ -f "$proxy_target" ]; then
+              proxy_backup="$(mktemp /opt/stack/nginx/conf.d/.admin-api.schoolorbit.app.conf.XXXXXX)"
+              cp "$proxy_target" "$proxy_backup"
+              proxy_existed=1
+            fi
+
+            restore_proxy() {
+              if [ "$proxy_existed" -eq 1 ]; then
+                cp "$proxy_backup" "$proxy_target"
+              else
+                rm -f "$proxy_target"
+              fi
+              if ! podman exec schoolorbit-nginx nginx -t; then
+                echo "Restored admin API proxy configuration is invalid"
+                return 1
+              fi
+              if ! podman exec schoolorbit-nginx nginx -s reload; then
+                echo "Restored admin API proxy configuration could not be reloaded"
+                return 1
+              fi
+            }
+
+            cp "$proxy_source" "$proxy_target"
+            if ! podman exec schoolorbit-nginx nginx -t; then
+              restore_proxy
+              echo "Admin API proxy configuration is invalid"
+              exit 1
+            fi
+            if ! podman exec schoolorbit-nginx nginx -s reload; then
+              restore_proxy
+              echo "Admin API proxy configuration could not be reloaded"
+              exit 1
+            fi
+
+            public_identity_ready=0
+            for attempt in $(seq 1 12); do
+              public_identity="$(
+                curl --fail --silent --show-error --max-time 10 \
+                  https://admin-api.schoolorbit.app/ 2>/dev/null || true
+              )"
+              if printf '%s' "$public_identity" |
+                grep -Fq '"service":"SchoolOrbit Backend Admin"'
+              then
+                public_identity_ready=1
+                break
+              fi
+              if [ "$attempt" -lt 12 ]; then
+                sleep 5
+              fi
+            done
+            if [ "$public_identity_ready" -ne 1 ]; then
+              restore_proxy
+              echo "Public admin API did not resolve to SchoolOrbit Backend Admin"
+              exit 1
+            fi
+
+            if [ -n "$proxy_backup" ]; then
+              rm -f "$proxy_backup"
+            fi
             podman image prune -f
-            
-            # 6. Reload Nginx to update DNS/IPs
-            podman exec schoolorbit-nginx nginx -s reload || true

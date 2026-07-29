@@ -7,6 +7,7 @@ on:
       - main
     paths:
       - "frontend-school/**"
+      - "scripts/discover_school_tenants.sh"
       - ".github/workflows/deploy-all-schools.yml"
 
   # หรือ trigger manual
@@ -25,6 +26,9 @@ jobs:
       schools: ${{ steps.fetch-schools.outputs.schools }}
 
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
       - name: Wait for File Platform-ready backend
         env:
           BACKEND_SCHOOL_URL: ${{ secrets.BACKEND_SCHOOL_URL }}
@@ -50,38 +54,10 @@ jobs:
 
       - name: Fetch school list from API
         id: fetch-schools
-        run: |
-          echo "Fetching schools from API..."
-
-          # Call internal API endpoint to get list of active schools
-          RESPONSE=$(curl -s -X GET \
-            "${{ secrets.BACKEND_ADMIN_URL }}/internal/schools?status=active" \
-            -H "X-Internal-Secret: ${{ secrets.INTERNAL_API_SECRET }}" \
-            -w "\n%{http_code}")
-
-          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
-          BODY=$(echo "$RESPONSE" | sed '$d')
-
-          echo "HTTP Status: $HTTP_CODE"
-
-          if [ "$HTTP_CODE" != "200" ]; then
-            echo "❌ API request failed with status $HTTP_CODE"
-            echo "Response: $BODY"
-            echo "schools=[]" >> $GITHUB_OUTPUT
-            exit 0
-          fi
-
-          # Parse response and extract schools
-          SCHOOLS=$(echo "$BODY" | jq -c '.schools // [] | map({subdomain: .subdomain, school_id: .id})')
-
-          if [ -z "$SCHOOLS" ] || [ "$SCHOOLS" = "null" ]; then
-            echo "⚠️  No schools found or invalid response"
-            echo "schools=[]" >> $GITHUB_OUTPUT
-          else
-            echo "schools=$SCHOOLS" >> $GITHUB_OUTPUT
-            echo "✅ Found schools to deploy:"
-            echo "$SCHOOLS" | jq '.'
-          fi
+        env:
+          BACKEND_ADMIN_URL: ${{ secrets.BACKEND_ADMIN_URL }}
+          INTERNAL_API_SECRET: ${{ secrets.INTERNAL_API_SECRET }}
+        run: bash scripts/discover_school_tenants.sh
 
   deploy:
     needs: get-schools
@@ -133,7 +109,6 @@ jobs:
             ],
             "vars": {
               "PUBLIC_BACKEND_URL": "${{ secrets.BACKEND_SCHOOL_URL }}",
-              "SCHOOL_ID": "${{ matrix.school.school_id }}",
               "SUBDOMAIN": "${{ matrix.school.subdomain }}",
               "PUBLIC_VAPID_KEY": "${{ secrets.VAPID_PUBLIC_KEY }}"
             }

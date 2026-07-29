@@ -167,7 +167,7 @@ DNS ต้อง resolve มายัง server และพอร์ต `80` �
 ใช้ไฟล์ repository เป็น reference:
 
 - [school-api.schoolorbit.app.conf](../nginx-configs/school-api.schoolorbit.app.conf) สำหรับ school API, uploads, SSE และ WebSocket;
-- [backend-admin/nginx.conf.example](../backend-admin/nginx.conf.example) สำหรับ admin API.
+- [admin-api.schoolorbit.app.conf](../nginx-configs/admin-api.schoolorbit.app.conf) สำหรับ admin API.
 
 ตรวจ server names, CORS origins, certificate paths และ upload limits ก่อนนำไปไว้ใน `/opt/stack/nginx/conf.d`. เมื่อ Nginx รันเป็น container บน network เดียวกัน `proxy_pass` ต้องใช้ `schoolorbit-backend-school:8081` หรือ `schoolorbit-backend-admin:8080` ไม่ใช่ `localhost`.
 
