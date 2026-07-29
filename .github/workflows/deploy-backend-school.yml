@@ -102,7 +102,6 @@ jobs:
             test -f "$runtime_env" || { echo "Backend runtime environment is missing"; exit 1; }
             test -f "$proxy_source" || { echo "Staged school API proxy config is missing"; exit 1; }
             test -f "$maintenance_proxy_source" || { echo "Staged school API maintenance config is missing"; exit 1; }
-            command -v jq >/dev/null || { echo "jq is required for migration verification"; exit 1; }
             proxy_matches="$(grep -l 'server_name school-api\.schoolorbit\.app;' /opt/stack/nginx/conf.d/*.conf 2>/dev/null || true)"
             proxy_match_count="$(printf '%s\n' "$proxy_matches" | sed '/^$/d' | wc -l | tr -d ' ')"
             if [ "$proxy_match_count" -ne 1 ]; then
@@ -211,6 +210,8 @@ jobs:
               exit 1
             fi
 
+            jq_image=ghcr.io/jqlang/jq:1.7.1
+            podman pull "$jq_image"
             backend_image=ghcr.io/akephisit/schoolorbit-backend-school
             podman pull "${backend_image}:${{ github.sha }}"
 
@@ -289,19 +290,19 @@ jobs:
             fi
             unset internal_api_secret
 
-            if ! jq -e '
-              .latest_version as $latest
-              | $latest >= 32
-              and .total > 0
-              and .failed == 0
-              and .success == .total
-              and all(
-                .results[];
-                .version == $latest
-                and .error == null
-                and (.status == "migrated" or .status == "already_migrated")
-              )
-            ' "$migration_response" >/dev/null
+            if ! podman run --rm -i "$jq_image" -e '
+                .latest_version as $latest
+                | $latest >= 32
+                and .total > 0
+                and .failed == 0
+                and .success == .total
+                and all(
+                  .results[];
+                  .version == $latest
+                  and .error == null
+                  and (.status == "migrated" or .status == "already_migrated")
+                )
+              ' < "$migration_response" >/dev/null
             then
               echo "Tenant migration verification failed; maintenance remains enabled"
               exit 1
