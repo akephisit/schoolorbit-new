@@ -22,7 +22,7 @@
 ### Task 1: Hide Private Images Until Browser Load
 
 **Files:**
-- Modify: `frontend-school/tests/static/file-platform-contract.test.mjs`
+- Create: `frontend-school/tests/e2e/private-file-image.spec.ts`
 - Modify: `frontend-school/src/lib/components/files/PrivateFileImage.svelte`
 
 **Interfaces:**
@@ -30,20 +30,124 @@
 - Preserves: `PrivateFileImage` props `fileId`, `resourceId`, `alt`, and `class`.
 - Produces: an `<img>` that is hidden initially and becomes visible only after its blob source loads successfully.
 
-- [ ] **Step 1: Add the focused regression test**
+- [ ] **Step 1: Add a browser-level regression test**
 
-Add this test to `frontend-school/tests/static/file-platform-contract.test.mjs`:
+Create `frontend-school/tests/e2e/private-file-image.spec.ts`. The test starts a
+local Vite server with a virtual page that mounts the real component, holds the
+real component's grant request, and controls a valid one-pixel image response:
 
-```javascript
-test('private file images remain hidden until the downloaded blob loads', async () => {
-	const source = await readRepoFile(
-		'frontend-school/src/lib/components/files/PrivateFileImage.svelte'
+```typescript
+import { expect, test } from '@playwright/test';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { createServer, type Plugin, type ViteDevServer } from 'vite';
+
+const frontendRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+const harnessPath = '/__private-file-image-test';
+const virtualModuleId = 'virtual:private-file-image-test';
+const resolvedVirtualModuleId = `\0${virtualModuleId}`;
+const png = Buffer.from(
+	'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+	'base64'
+);
+
+function harnessPlugin(): Plugin {
+	return {
+		name: 'private-file-image-test-harness',
+		resolveId(id) {
+			if (id === virtualModuleId) return resolvedVirtualModuleId;
+		},
+		load(id) {
+			if (id !== resolvedVirtualModuleId) return;
+			return `
+				import { mount } from 'svelte';
+				import PrivateFileImage from '/src/lib/components/files/PrivateFileImage.svelte';
+				mount(PrivateFileImage, {
+					target: document.querySelector('#app'),
+					props: { fileId: 'test-file', alt: 'Profile' }
+				});
+			`;
+		},
+		configureServer(server) {
+			server.middlewares.use((request, response, next) => {
+				const pathname = new URL(request.url ?? '/', 'http://test').pathname;
+				if (pathname !== harnessPath) return next();
+				response.setHeader('Content-Type', 'text/html; charset=utf-8');
+				response.end(
+					`<div id="app"></div><script type="module" src="/@id/${virtualModuleId}"></script>`
+				);
+			});
+		}
+	};
+}
+
+let devServer: ViteDevServer;
+let baseUrl: string;
+
+test.beforeAll(async () => {
+	devServer = await createServer({
+		root: frontendRoot,
+		logLevel: 'silent',
+		plugins: [harnessPlugin()],
+		server: { host: '127.0.0.1', port: 0 }
+	});
+	await devServer.listen();
+	const address = devServer.httpServer?.address();
+	if (!address || typeof address === 'string') throw new Error('Vite test server did not start');
+	baseUrl = `http://127.0.0.1:${address.port}`;
+});
+
+test.afterAll(async () => {
+	await devServer.close();
+});
+
+test('keeps a private image hidden until the downloaded blob loads', async ({ page }) => {
+	let releaseGrant = () => {};
+	const heldGrant = new Promise<void>((resolve) => {
+		releaseGrant = resolve;
+	});
+	let markGrantRequested = () => {};
+	const grantRequested = new Promise<void>((resolve) => {
+		markGrantRequested = resolve;
+	});
+
+	await page.route('https://school-api.schoolorbit.app/api/files/test-file/download', async (route) => {
+		markGrantRequested();
+		await heldGrant;
+		await route.fulfill({
+			status: 200,
+			contentType: 'application/json',
+			headers: {
+				'Access-Control-Allow-Origin': baseUrl,
+				'Access-Control-Allow-Credentials': 'true'
+			},
+			body: JSON.stringify({
+				success: true,
+				data: {
+					url: `${baseUrl}/__private-file-image.png`,
+					expiresAt: '2099-01-01T00:00:00Z'
+				}
+			})
+		});
+	});
+	await page.route(`${baseUrl}/__private-file-image.png`, (route) =>
+		route.fulfill({ status: 200, contentType: 'image/png', body: png })
 	);
 
-	assert.match(source, /<img[^>]*style:visibility=["']hidden["']/s);
-	assert.match(source, /node\.addEventListener\(['"]load['"],\s*revealImage\)/);
-	assert.match(source, /node\.style\.visibility\s*=\s*['"]visible['"]/);
-	assert.match(source, /node\.removeEventListener\(['"]load['"],\s*revealImage\)/);
+	await page.goto(`${baseUrl}${harnessPath}`);
+	await grantRequested;
+	const image = page.locator('img[alt="Profile"]');
+
+	try {
+		await expect(image).toHaveCSS('visibility', 'hidden');
+	} finally {
+		releaseGrant();
+	}
+
+	await expect(image).toHaveCSS('visibility', 'visible');
+	await expect
+		.poll(() => image.evaluate((node) => (node as HTMLImageElement).naturalWidth))
+		.toBe(1);
 });
 ```
 
@@ -53,10 +157,11 @@ Run:
 
 ```bash
 cd frontend-school
-node --test tests/static/file-platform-contract.test.mjs
+npx playwright test tests/e2e/private-file-image.spec.ts
 ```
 
-Expected: the new test fails because the current image is not initially hidden and has no load listener.
+Expected: the browser test fails at `visibility: hidden` because the current image
+is visible while its grant request is held.
 
 - [ ] **Step 3: Validate the Svelte pattern before editing**
 
@@ -112,15 +217,16 @@ Run:
 
 ```bash
 cd frontend-school
-node --test tests/static/file-platform-contract.test.mjs
+npx playwright test tests/e2e/private-file-image.spec.ts
 ```
 
-Expected: all file-platform contract tests pass.
+Expected: the component is hidden while the grant is held, becomes visible after
+the valid PNG loads, and the focused browser test passes.
 
 - [ ] **Step 7: Commit the implementation**
 
 ```bash
-git add frontend-school/tests/static/file-platform-contract.test.mjs \
+git add frontend-school/tests/e2e/private-file-image.spec.ts \
   frontend-school/src/lib/components/files/PrivateFileImage.svelte
 git commit -m "fix: hide private images until loaded"
 ```
