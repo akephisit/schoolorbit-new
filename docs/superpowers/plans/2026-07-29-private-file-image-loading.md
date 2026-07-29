@@ -274,7 +274,7 @@ npm run test:static
 
 Expected: Svelte Check reports 0 errors and 0 warnings; lint and all static tests pass.
 
-- [ ] **Step 2: Review the completed diff**
+- [x] **Step 2: Review the completed diff**
 
 Run:
 
@@ -286,7 +286,7 @@ git status --short
 
 Expected: no whitespace errors; only the test and shared component are changed after the design/plan documentation commits; the worktree is clean.
 
-- [ ] **Step 3: Push the verified commits**
+- [x] **Step 3: Push the verified commits**
 
 Run:
 
@@ -296,7 +296,7 @@ git push origin main
 
 Expected: `origin/main` advances to the local verified commit.
 
-- [ ] **Step 4: Deploy only the affected tenant**
+- [x] **Step 4: Deploy only the affected tenant**
 
 Run:
 
@@ -311,7 +311,7 @@ Watch the dispatched run with `gh run watch <run-id> --exit-status`.
 
 Expected: the workflow finishes successfully and deploys `snwsb`.
 
-- [ ] **Step 5: Verify the production loading transition**
+- [x] **Step 5: Verify the production loading transition**
 
 Use Playwright with an authenticated `snwsb` session. Hold requests matching
 `https://school-api.schoolorbit.app/api/files/*/download*`, refresh the page, and assert:
@@ -332,7 +332,7 @@ await expect
 
 Also confirm the private download grant returns `200` and the R2 image fetch has no CORS failure. Do not print or persist its signed URL.
 
-- [ ] **Step 6: Confirm final repository state**
+- [x] **Step 6: Confirm final repository state**
 
 Run:
 
