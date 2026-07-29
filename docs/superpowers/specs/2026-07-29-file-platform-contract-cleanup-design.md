@@ -1,63 +1,66 @@
-# File Platform Contract Cleanup Design
+# File Platform Contract Cutover Design
 
 **Date:** 2026-07-29
 **Backlog item:** DB-004
-**Scope:** `backend-school`, tenant migrations, File Platform tests, and operational rollback guidance
+**Scope:** `backend-school`, tenant migrations, File Platform tests, deployment workflow, and operational guidance
 **Out of scope:** `backend-admin`, `frontend-admin`, new File Platform features, and API contract changes
 
 ## Context
 
 Migrations `030_file_platform.sql` and
-`031_file_platform_domain_references.sql` deliberately left the original
-path-based file columns in place. That additive window made the first File
-Platform deployment reversible, but the current backend still duplicates data
-into those columns and several services still read them:
+`031_file_platform_domain_references.sql` introduced the provider-neutral File
+Platform without removing the original path-based schema. The current backend
+therefore still duplicates metadata and several services still consume the old
+columns:
 
-- upload reservation writes object locators, MIME type, size, checksum, owner,
+- upload reservation writes object locators, MIME type, size, checksum,
   visibility, and retention state to both `files` and `file_versions`;
-- delivery reads the legacy owner, filename, and size fields;
-- admission document queries read legacy filename, size, and MIME fields;
-- question-bank ownership and temporary-file handling use `user_id` and
+- delivery and admission documents read legacy filename, size, and MIME fields;
+- question-bank ownership uses `user_id`;
+- question-bank, domain attachment flows, and the expiry cleaner use
   `is_temporary`;
-- the expiry cleaner and domain attachment flows still update or filter
-  `is_temporary`;
-- `active_files` and `generate_storage_path` preserve the old locator model;
-- `users.profile_image_url` and `staff_achievements.image_path` remain even
-  though current domain code uses file IDs.
+- `active_files` and `generate_storage_path` preserve the old path model;
+- `users.profile_image_url` and `staff_achievements.image_path` remain beside
+  their file-ID replacements.
 
-The production system has no retained user files that need a bespoke data
-conversion. Short-lived smoke-test or recently replaced image rows may still
-exist, including soft-deleted rows, so the migration must verify actual rows
-rather than relying on that operational expectation.
+There are no retained user files requiring a bespoke conversion. Smoke-test,
+replaced-image, or soft-deleted File Platform rows may still exist, so the
+cutover must validate actual rows and must preserve canonical file/version
+records.
 
-The cleanup must never edit migrations `001` through `031`. It must preserve a
-known rollback target, must not expose object keys or signed URLs during audit,
-and must leave the provider-neutral file-ID boundary intact.
+The requested outcome is a clean cutover. The new backend will use only the new
+schema; it will not dual-write, install compatibility triggers, or support a
+backend binary that still expects the old columns.
 
 ## Decision
 
-Use a two-release expand-and-contract rollout.
+Perform one coordinated forward-only contract cutover.
 
-Release A introduces the final logical column names, migrates every runtime
-consumer to the canonical File Platform model, and installs temporary database
-compatibility synchronization. Legacy columns remain in this release so the
-immediately previous backend image can still run.
+A new migration renames the three legacy columns that still represent useful
+logical concepts, drops path-based and duplicated metadata, and tightens the
+final File Platform schema. The same release changes every runtime consumer to
+the final names.
 
-Release B runs only after Release A is deployed and verified. It fails closed
-when legacy-only data is found, then removes the compatibility synchronization
-and old columns. The Release A backend image becomes the rollback target for
-Release B because it no longer references any removed column.
+The migration fails closed before destructive DDL if any row depends only on
+legacy metadata. Because the migration is transactional per tenant, a failed
+tenant keeps its pre-cutover schema unchanged and receives no application
+traffic until the cause is resolved.
 
-This is preferable to dropping columns in one deployment because the current
-binary still depends on them. It is also preferable to retaining duplicate
-columns indefinitely because duplicated locator and lifecycle state can drift
-and makes future document-system integration harder.
+This intentionally gives up rollback to a pre-cutover backend. Recovery after a
+tenant applies the migration is fix-forward with the cutover image or a newer
+image.
+
+The previously proposed two-release compatibility window is rejected because
+the owner does not require old-binary support and there are no retained files
+that justify temporary dual schemas and synchronization triggers. Dropping
+columns without a data guard is also rejected because operational expectations
+must not substitute for database evidence.
 
 ## Final Data Ownership
 
-### Logical file identity
+### `files`: logical identity only
 
-After Release B, `files` owns only logical, provider-neutral state:
+After migration, `files` owns:
 
 - `id`;
 - `owner_user_id`;
@@ -72,14 +75,23 @@ After Release B, `files` owns only logical, provider-neutral state:
 - `created_by`;
 - `created_at`, `updated_at`, and `deleted_at`.
 
-`display_filename` and `purpose_code` are required for every logical file.
-Owner and creator remain nullable because their user foreign keys use
-`ON DELETE SET NULL`. `current_version_id` remains nullable while an upload is
-processing or failed before publication.
+The migration preserves data by renaming:
 
-### Immutable object metadata
+- `user_id` to `owner_user_id`;
+- `filename` to `display_filename`;
+- `uploaded_by` to `created_by`.
 
-`file_versions` remains the sole owner of original-object metadata:
+`owner_user_id` remains nullable and its renamed foreign key changes to
+`ON DELETE SET NULL`; deleting a user must not cascade into immutable file
+versions or retention records. `created_by` keeps `ON DELETE SET NULL`.
+`display_filename` remains required, and `purpose_code` becomes required after
+the preflight guard passes.
+
+The per-tenant `school_id` column is redundant and is removed.
+
+### `file_versions`: original object metadata
+
+`file_versions` is the sole owner of:
 
 - provider and storage class;
 - internal object key;
@@ -88,160 +100,137 @@ processing or failed before publication.
 - scan and storage state;
 - version creator and timestamp.
 
-`file_derivatives` remains the sole owner of derivative locators and metadata.
-The legacy `width` and `height` columns are not part of an API or current
-consumer and will be removed rather than promoted to the logical file row.
-Image dimensions remain an inspection-time safety input. If a future consumer
-needs persisted dimensions, they belong on the immutable version or derivative
-record and will be added with an explicit contract and migration.
+### `file_derivatives`: generated object metadata
+
+`file_derivatives` is the sole owner of derivative locators, MIME type, size,
+checksum, and lifecycle state. Legacy thumbnail flags and paths are removed.
+
+The old `width` and `height` fields have no API or current consumer and are
+removed. Image dimensions remain an upload-inspection safety input. A future
+consumer that needs persisted dimensions will add them to immutable version or
+derivative rows with an explicit contract.
 
 ### Domain relationships
 
-Domain tables continue to reference opaque file IDs:
+Business modules keep only opaque file IDs, including:
 
 - `users.profile_image_file_id`;
 - `staff_achievements.image_file_id`;
 - school-settings branding file IDs;
-- admission document rows;
+- admission document relationships;
 - question-bank rich-content file IDs;
-- future document or attachment tables.
+- future document or attachment relationships.
 
-No business module may store an R2 key, provider URL, bucket, signed URL, or a
-second path field. A future document system will add its own authorized
-relationship to `files(id)`.
+No domain table or API stores an R2 key, bucket, provider URL, signed URL, or
+another path. A future document system will reference `files(id)` and own its
+authorization relationship.
 
-## Release A: Contract Preparation
+## Forward Migration
 
-Add forward-only migration `032_file_platform_contract_preparation.sql`.
+Add `032_file_platform_contract_cutover.sql`. Migrations `001` through `031`
+remain byte-for-byte unchanged.
 
-The migration will:
+Before any rename or drop, a transactional guard verifies:
 
-1. add `files.owner_user_id`, `files.display_filename`, and
-   `files.created_by` with user foreign keys matching the old deletion
-   behavior;
-2. backfill those fields from `user_id`, `filename`, and `uploaded_by`;
-3. add canonical owner and temporary-expiry indexes;
-4. make legacy required metadata columns nullable so the new repository can
-   stop inserting them;
-5. require nonblank `display_filename` and `purpose_code` after backfill;
-6. install bounded compatibility triggers that synchronize old and new logical
-   fields during the rollback window;
-7. populate legacy version metadata after a `file_versions` insert so the
-   previous binary can still read files created by Release A;
-8. populate legacy thumbnail flags after a derivative insert for the same
-   rollback window.
-
-The synchronization covers only deterministic mappings:
-
-- `owner_user_id` ↔ `user_id`;
-- `display_filename` ↔ `filename`/`original_filename`;
-- `created_by` ↔ `uploaded_by`;
-- `visibility` ↔ `is_public`;
-- `retention_class` ↔ `is_temporary`;
-- `purpose_code` → the existing bounded `file_type` values;
-- current version byte size, MIME type, object key, and checksum → their
-  legacy copies;
-- derivative existence and key → the legacy thumbnail fields.
-
-On update, a change made through one side is copied to the other side only when
-the counterpart did not also change. Conflicting dual updates are rejected
-rather than silently choosing one representation. Trigger errors use fixed
-messages and never include filenames, object keys, user IDs, or provider data.
-
-Release A application code then stops depending on compatibility fields:
-
-- the SQL repository inserts and reads the new logical names;
-- delivery size and MIME type come from the joined current version;
-- admission document queries join `current_version_id` and read
-  `display_filename`, `file_versions.byte_size`, and
-  `file_versions.detected_mime_type`;
-- question-bank ownership uses `owner_user_id`;
-- temporary-file validation, finalization, and expiry use
-  `retention_class = 'temporary'`;
-- domain attachment flows update only `retention_class` and `expires_at`;
-- the old `legacy_file_type` application mapping is removed.
-
-No HTTP request or response shape changes. Frontend code and generated API
-contracts remain untouched.
-
-## Release A Verification and Rollback Evidence
-
-Release A tests must demonstrate behavior, not only search source text:
-
-- an isolated database migrated through `032` contains both schemas and
-  backfilled canonical values;
-- a legacy-shaped insert produces canonical values;
-- a canonical-shaped insert plus version insert produces the legacy values
-  needed by the previous backend;
-- conflicting compatibility updates fail;
-- the SQL repository reserves, finalizes, loads, and deletes a file without
-  directly supplying legacy metadata;
-- admission, question-bank, domain attachment, and expiry paths operate on the
-  canonical columns.
-
-After focused and backend verification passes, deploy Release A. Production
-verification uses readiness, authenticated smoke, and temporary public/private
-upload-download-delete flows. It records only commit/image identity, file IDs,
-safe counts, and safe error codes. It never records credentials, object keys,
-signed URLs, filenames, or raw provider responses.
-
-During this window, rolling back to the pre-Release A backend remains supported
-because migration `032` retains and synchronizes the legacy schema.
-
-## Release B: Contract Cleanup
-
-After Release A is stable, add forward-only migration
-`033_remove_file_platform_compatibility_columns.sql`.
-
-Before destructive DDL, one transactional guard checks:
-
-- every file has a nonblank canonical display filename and purpose;
-- every file has at least one `file_versions` row;
-- every ready file points to a current version belonging to that file;
+- every `files` row has a nonblank filename and `purpose_code`;
+- every `files` row has at least one `file_versions` row;
+- every ready file points to a current version that belongs to that file;
 - no user has a nonblank `profile_image_url` without
   `profile_image_file_id`;
 - no achievement has a nonblank `image_path` without `image_file_id`.
 
-The guard raises fixed, count-free messages. It does not print row values or
-locators. A tenant that fails the guard keeps its old schema unchanged and does
-not receive traffic until the data is reviewed.
+The guard raises fixed messages without row values, counts, filenames, user
+identifiers, object keys, or provider details.
 
-When the guard passes, migration `033`:
+When the guard passes, migration `032`:
 
 1. drops `active_files` and `generate_storage_path`;
-2. drops the temporary compatibility triggers and functions;
-3. drops `users.profile_image_url` and
+2. drops the old owner foreign key, renames `user_id` to `owner_user_id`, and
+   creates `files_owner_user_id_fkey` with `ON DELETE SET NULL`;
+3. renames `filename` to `display_filename` and `uploaded_by` to
+   `created_by`, including their useful index/constraint names;
+4. makes `purpose_code` non-null and adds a nonblank
+   `display_filename` check;
+5. replaces the temporary expiry index with one filtered by
+   `retention_class = 'temporary'`;
+6. drops `users.profile_image_url` and
    `staff_achievements.image_path`;
-4. drops these legacy `files` columns:
-   `user_id`, `school_id`, `filename`, `original_filename`, `file_size`,
-   `mime_type`, `storage_path`, `file_type`, `width`, `height`,
-   `has_thumbnail`, `thumbnail_path`, `is_temporary`, `is_public`,
-   `checksum`, and `uploaded_by`;
-5. retains and verifies the canonical owner and temporary-expiry indexes.
+7. drops these duplicated or path-based `files` columns:
+   `school_id`, `original_filename`, `file_size`, `mime_type`,
+   `storage_path`, `file_type`, `width`, `height`, `has_thumbnail`,
+   `thumbnail_path`, `is_temporary`, `is_public`, and `checksum`.
 
-The migration is transactional and does not delete file, version, derivative,
-operation, or domain-reference rows.
+The migration does not delete logical files, versions, derivatives, operations,
+or domain-reference rows.
 
-After Release B, rolling back to a binary older than Release A is unsupported
-because that binary requires removed columns. The pinned Release A image is the
-minimum supported backend rollback target. `docs/OPERATIONS.md` will state this
-boundary and the required image/commit evidence.
+## Application Cutover
 
-## Security and Failure Behavior
+The same release updates all backend-school consumers:
 
-- Authorization remains in the existing purpose registry and domain policies;
-  schema cleanup does not weaken access checks.
-- Public/private delivery behavior and signed-grant handling do not change.
-- No API or log exposes provider locators.
-- Migration audit failures are fail-closed and log only fixed safe messages.
-- Applied migration files remain immutable; all work is in `032` and `033`.
-- The cleanup does not touch national-ID data, encryption keys, permissions, or
-  admin applications.
+- upload reservation inserts only logical fields into `files` and immutable
+  object metadata into `file_versions`/`file_derivatives`;
+- delivery loads owner and display name from `files`, then MIME type and byte
+  size from the current `file_versions` row;
+- admission document queries join the current version and expose the existing
+  response fields from canonical sources;
+- question-bank ownership uses `owner_user_id`;
+- temporary-file validation, finalization, and expiry use
+  `retention_class = 'temporary'`;
+- profile, school branding, achievement, admission, question-bank, and staff
+  attachment flows update only `retention_class` and `expires_at`;
+- the application-side `legacy_file_type` mapping is removed;
+- test fixtures insert final-schema rows.
 
-## Verification Matrix
+HTTP routes, authorization policies, JSON envelopes, and generated API
+contracts do not change. No frontend change is required.
 
-Each release runs focused database and File Platform tests plus the repository
-backend-school matrix:
+## Deployment and Recovery
+
+This is a schema contract boundary and uses a maintenance cutover:
+
+1. verify the new image and migration against the isolated test database;
+2. audit safe aggregate File Platform row/object state and confirm no retained
+   legacy-only data;
+3. prevent tenant traffic from racing the cutover;
+4. start the new backend image and migrate every active tenant to `032`;
+5. confirm every active tenant reports migration success before restoring
+   traffic;
+6. run readiness, authentication, and temporary public/private
+   upload-download-delete smoke checks.
+
+The deployment path must not automatically restore the pre-cutover image after
+any tenant has applied `032`. The recovery floor is the cutover image itself.
+Failure recovery is:
+
+- before any tenant applies `032`: the old image remains usable;
+- after the first tenant applies `032`: keep the cutover schema and fix
+  forward;
+- if one tenant's preflight guard fails: leave that tenant unavailable, review
+  safe aggregates, correct the data through an explicit forward migration, and
+  retry.
+
+`docs/OPERATIONS.md` will record the minimum compatible image commit and the
+no-old-binary rollback boundary. Credentials, database URLs, object keys,
+signed URLs, filenames, and raw provider responses are never recorded.
+
+## Testing
+
+Implementation follows test-driven development with real migrated schema
+behavior:
+
+- a pre-cutover fixture with canonical File Platform rows migrates successfully
+  and retains logical IDs and version relationships;
+- a legacy-only file row is rejected before any column is dropped;
+- a ready file with a cross-file or missing current version is rejected;
+- legacy path-only profile and achievement references are rejected;
+- the final schema contains the renamed logical columns and none of the removed
+  columns, view, or function;
+- repository reserve/finalize/load/delete behavior works against the final
+  schema;
+- admission, question-bank, attachment finalization, and expiry paths work
+  against canonical fields.
+
+Focused and required verification:
 
 ```bash
 cd backend-school
@@ -252,7 +241,6 @@ cargo test --test static_architecture
 cargo check
 ```
 
-The database URL comes from the ignored test environment and is never printed.
 The final review also runs:
 
 ```bash
@@ -261,6 +249,5 @@ git status --short
 ```
 
 Production verification follows the File Platform smoke procedure in
-`docs/TESTING.md` against the isolated school tenant. DB-004 is removed from
-`TODO.md` only after Release B deploy, migration, readiness, and smoke evidence
-all pass.
+`docs/TESTING.md`. DB-004 is removed from `TODO.md` only after every active
+tenant has applied `032` and readiness plus smoke verification pass.
