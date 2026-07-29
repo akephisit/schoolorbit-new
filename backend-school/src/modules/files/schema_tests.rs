@@ -832,15 +832,23 @@ async fn file_platform_contract_cutover_rejects_legacy_achievement_path() {
 }
 
 async fn relation_exists(pool: &PgPool, relation: &str) -> bool {
-    sqlx::query_scalar("SELECT to_regclass($1) IS NOT NULL")
-        .bind(relation)
-        .fetch_one(pool)
-        .await
-        .expect("relation existence query should execute")
+    sqlx::query_scalar(
+        "SELECT EXISTS (
+            SELECT 1
+            FROM pg_class AS rel
+            JOIN pg_namespace AS nsp ON nsp.oid = rel.relnamespace
+            WHERE nsp.nspname = current_schema()
+              AND rel.relname = $1
+         )",
+    )
+    .bind(relation)
+    .fetch_one(pool)
+    .await
+    .expect("relation existence query should execute")
 }
 
 async fn function_exists(pool: &PgPool, signature: &str) -> bool {
-    sqlx::query_scalar("SELECT to_regprocedure($1) IS NOT NULL")
+    sqlx::query_scalar("SELECT to_regprocedure(format('%I.%s', current_schema(), $1)) IS NOT NULL")
         .bind(signature)
         .fetch_one(pool)
         .await
