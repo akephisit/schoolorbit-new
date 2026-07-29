@@ -91,11 +91,16 @@ jobs:
             runtime_compose=/opt/stack/file-platform-runtime/docker-compose.yml
             runtime_env=/opt/stack/.env
             proxy_source=/opt/stack/file-platform-runtime/school-api.schoolorbit.app.conf
-            proxy_target=/opt/stack/nginx/conf.d/school-api.schoolorbit.app.conf
-            test -f "$runtime_compose"
-            test -f "$runtime_env"
-            test -f "$proxy_source"
-            test -f "$proxy_target"
+            test -f "$runtime_compose" || { echo "Backend runtime definition is missing"; exit 1; }
+            test -f "$runtime_env" || { echo "Backend runtime environment is missing"; exit 1; }
+            test -f "$proxy_source" || { echo "Staged school API proxy config is missing"; exit 1; }
+            proxy_matches="$(grep -l 'server_name school-api\.schoolorbit\.app;' /opt/stack/nginx/conf.d/*.conf 2>/dev/null || true)"
+            proxy_match_count="$(printf '%s\n' "$proxy_matches" | sed '/^$/d' | wc -l | tr -d ' ')"
+            if [ "$proxy_match_count" -ne 1 ]; then
+              echo "Expected exactly one active school API proxy config, found ${proxy_match_count}"
+              exit 1
+            fi
+            proxy_target="$proxy_matches"
             bash /opt/stack/file-platform-runtime/scripts/upgrade_file_platform_env.sh "$runtime_env"
             for required_name in \
               R2_ACCOUNT_ID \

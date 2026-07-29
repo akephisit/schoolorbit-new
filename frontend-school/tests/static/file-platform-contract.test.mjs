@@ -65,8 +65,11 @@ test('backend deployment validates and installs the tracked school API proxy con
 	assert.match(workflow, /nginx-configs\/school-api\.schoolorbit\.app\.conf/);
 	assert.match(
 		workflow,
-		/proxy_target=\/opt\/stack\/nginx\/conf\.d\/school-api\.schoolorbit\.app\.conf/
+		/proxy_matches="\$\(grep -l 'server_name school-api\\\.schoolorbit\\\.app;' \/opt\/stack\/nginx\/conf\.d\/\*\.conf/
 	);
+	assert.match(workflow, /proxy_match_count=/);
+	assert.match(workflow, /\[ "\$proxy_match_count" -ne 1 \]/);
+	assert.match(workflow, /proxy_target="\$proxy_matches"/);
 	assert.match(workflow, /podman exec schoolorbit-nginx nginx -t/);
 	assert.match(workflow, /cp "\$proxy_backup" "\$proxy_target"/);
 	assert.match(workflow, /podman exec schoolorbit-nginx nginx -s reload/);
