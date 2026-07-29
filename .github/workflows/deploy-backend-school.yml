@@ -2,10 +2,11 @@ name: Deploy Backend School
 
 on:
   push:
-    branches: [ "main" ]
+    branches: ["main"]
     paths:
-      - 'backend-school/**'
-      - '.github/workflows/deploy-backend-school.yml'
+      - "backend-school/**"
+      - "nginx-configs/school-api.schoolorbit.app.conf"
+      - ".github/workflows/deploy-backend-school.yml"
   workflow_dispatch:
 
 env:
@@ -66,13 +67,13 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v6
 
-      - name: Upload isolated backend-school runtime definition
+      - name: Upload backend-school runtime and proxy definition
         uses: appleboy/scp-action@v1.0.0
         with:
           host: ${{ secrets.SERVER_IP }}
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
-          source: backend-school/docker-compose.yml,backend-school/scripts/upgrade_file_platform_env.sh
+          source: backend-school/docker-compose.yml,backend-school/scripts/upgrade_file_platform_env.sh,nginx-configs/school-api.schoolorbit.app.conf
           target: /opt/stack/file-platform-runtime
           strip_components: 1
 
@@ -89,8 +90,12 @@ jobs:
 
             runtime_compose=/opt/stack/file-platform-runtime/docker-compose.yml
             runtime_env=/opt/stack/.env
+            proxy_source=/opt/stack/file-platform-runtime/school-api.schoolorbit.app.conf
+            proxy_target=/opt/stack/nginx/conf.d/school-api.schoolorbit.app.conf
             test -f "$runtime_compose"
             test -f "$runtime_env"
+            test -f "$proxy_source"
+            test -f "$proxy_target"
             bash /opt/stack/file-platform-runtime/scripts/upgrade_file_platform_env.sh "$runtime_env"
             for required_name in \
               R2_ACCOUNT_ID \
@@ -201,4 +206,19 @@ jobs:
               exit 1
             fi
 
-            podman exec schoolorbit-nginx nginx -s reload || true
+            proxy_backup="$(mktemp /opt/stack/nginx/conf.d/.school-api.schoolorbit.app.conf.XXXXXX)"
+            cp "$proxy_target" "$proxy_backup"
+            cp "$proxy_source" "$proxy_target"
+            if ! podman exec schoolorbit-nginx nginx -t; then
+              cp "$proxy_backup" "$proxy_target"
+              rm -f "$proxy_backup"
+              exit 1
+            fi
+            if ! podman exec schoolorbit-nginx nginx -s reload; then
+              cp "$proxy_backup" "$proxy_target"
+              podman exec schoolorbit-nginx nginx -t
+              podman exec schoolorbit-nginx nginx -s reload || true
+              rm -f "$proxy_backup"
+              exit 1
+            fi
+            rm -f "$proxy_backup"

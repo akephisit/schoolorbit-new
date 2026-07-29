@@ -41,6 +41,37 @@ test('generated contract publishes the provider-neutral file platform routes', a
 	}
 });
 
+test('canonical file upload path is proxied without a trailing-slash redirect', async () => {
+	const contract = JSON.parse(await readRepoFile('contracts/openapi/school-api.json'));
+	const nginx = await readRepoFile('nginx-configs/school-api.schoolorbit.app.conf');
+	const uploadPath = Object.entries(contract.paths).find(
+		([, operations]) => operations.post?.operationId === 'uploadFile'
+	)?.[0];
+
+	assert.equal(uploadPath, '/api/files');
+
+	const locations = [
+		...nginx.matchAll(/^\s*location\s+(?:(?:=|\^~|~\*?)\s+)?([^\s{]+)\s*\{/gm)
+	].map((match) => match[1]);
+	assert.ok(
+		locations.includes(uploadPath),
+		`${uploadPath} must have a slash-safe upload location; a proxy location ending in / redirects POST as GET`
+	);
+});
+
+test('backend deployment validates and installs the tracked school API proxy config', async () => {
+	const workflow = await readRepoFile('.github/workflows/deploy-backend-school.yml');
+
+	assert.match(workflow, /nginx-configs\/school-api\.schoolorbit\.app\.conf/);
+	assert.match(
+		workflow,
+		/proxy_target=\/opt\/stack\/nginx\/conf\.d\/school-api\.schoolorbit\.app\.conf/
+	);
+	assert.match(workflow, /podman exec schoolorbit-nginx nginx -t/);
+	assert.match(workflow, /cp "\$proxy_backup" "\$proxy_target"/);
+	assert.match(workflow, /podman exec schoolorbit-nginx nginx -s reload/);
+});
+
 test('typed file helper uses generated DTOs and file IDs as identity', async () => {
 	const source = await readRepoFile('frontend-school/src/lib/api/files.ts');
 
