@@ -78,7 +78,7 @@ jobs:
           host: ${{ secrets.SERVER_IP }}
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
-          source: backend-school/docker-compose.yml,backend-school/scripts/upgrade_file_platform_env.sh,nginx-configs/school-api.schoolorbit.app.conf,nginx-configs/school-api.schoolorbit.app.maintenance.conf
+          source: backend-school/docker-compose.yml,nginx-configs/school-api.schoolorbit.app.conf,nginx-configs/school-api.schoolorbit.app.maintenance.conf
           target: /opt/stack/file-platform-runtime
           strip_components: 1
 
@@ -109,20 +109,7 @@ jobs:
               exit 1
             fi
             proxy_target="$proxy_matches"
-            bash /opt/stack/file-platform-runtime/scripts/upgrade_file_platform_env.sh "$runtime_env"
-            for required_name in \
-              R2_ACCOUNT_ID \
-              R2_ACCESS_KEY_ID \
-              R2_SECRET_ACCESS_KEY \
-              R2_PUBLIC_BUCKET_NAME \
-              R2_PRIVATE_BUCKET_NAME \
-              R2_PUBLIC_URL
-            do
-              if ! grep -Eq "^${required_name}=.+" "$runtime_env"; then
-                echo "Missing required File Platform configuration: ${required_name}"
-                exit 1
-              fi
-            done
+            rm -f /opt/stack/file-platform-runtime/scripts/upgrade_file_platform_env.sh
             public_bucket="$(sed -n 's/^R2_PUBLIC_BUCKET_NAME=//p' "$runtime_env" | tail -n 1)"
             private_bucket="$(sed -n 's/^R2_PRIVATE_BUCKET_NAME=//p' "$runtime_env" | tail -n 1)"
             if [ "$public_bucket" = "$private_bucket" ]; then

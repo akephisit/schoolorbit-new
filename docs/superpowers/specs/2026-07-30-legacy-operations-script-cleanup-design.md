@@ -38,8 +38,9 @@ Keep these operational boundaries:
 The Backend School workflow will stop uploading and executing
 `upgrade_file_platform_env.sh`. It will use the already-cut-over
 `R2_PUBLIC_BUCKET_NAME` and `R2_PRIVATE_BUCKET_NAME` values directly.
-No replacement preflight will be added for those values; missing configuration
-will fail through the existing deployment or application readiness path.
+The existing completeness preflight will be removed rather than replaced;
+missing configuration will fail through the deployment operations that consume
+it or the application readiness path.
 
 The workflow will remove the known stale staged copy at
 `/opt/stack/file-platform-runtime/scripts/upgrade_file_platform_env.sh` so the
@@ -48,11 +49,11 @@ pattern-based deletion is allowed.
 
 ## Tests and Documentation
 
-Replace the compatibility-upgrade test with a static deployment contract that
-rejects references to `upgrade_file_platform_env.sh` and the legacy
-`R2_BUCKET_NAME`. Remove documentation describing the first-rollout upgrader.
-Repository searches must confirm that deleted utility names and plaintext
-bootstrap credentials are not retained by the deleted scripts.
+Remove the compatibility-upgrade test and the documentation describing the
+first-rollout upgrader. Do not add a permanent source-text test for deleted
+symbols. Focused repository audits, workflow formatting, backend checks, and
+the production smoke test verify the cleanup without preserving another
+compatibility contract.
 
 No applied migration will be changed.
 

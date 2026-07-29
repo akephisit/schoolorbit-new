@@ -170,13 +170,6 @@ The backend-school workflow performs exact-name checks before creation through t
 
 To diagnose private browser delivery, request a fresh typed grant through the authenticated file-download endpoint and keep `data.url` in memory. Fetch that URL separately with the tenant `Origin`, credentials omitted, and referrer disabled. Confirm the R2 response includes a matching `Access-Control-Allow-Origin`; never print, persist, or paste the grant URL because its query string is a temporary bearer credential.
 
-For the first production rollout, `upgrade_file_platform_env.sh` performs the
-public-bucket rename idempotently when the server still has only
-`R2_BUCKET_NAME`, then derives a deployment-specific private bucket name from
-the R2 account ID. This upgrades the environment file once; backend-school
-still requires the new public/private settings and never accepts the legacy
-variable as a runtime fallback.
-
 ### File Platform contract cutover
 
 Migration `032_file_platform_contract_cutover.sql` is the clean boundary from
