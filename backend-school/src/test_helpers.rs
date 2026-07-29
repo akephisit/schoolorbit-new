@@ -8,15 +8,15 @@ static MIGRATION_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(()
 static TEST_SCHEMA: OnceLock<String> = OnceLock::new();
 static TEST_SCHEMA_READY: OnceLock<()> = OnceLock::new();
 
-fn test_schema_name(process_id: u32) -> String {
-    format!("schoolorbit_test_{process_id}")
+fn test_schema_name(_process_id: u32) -> String {
+    "schoolorbit_test_shared".to_string()
 }
 
 fn set_search_path_sql(schema: &str) -> String {
     format!(r#"SET search_path TO "{schema}", public"#)
 }
 
-fn named_test_schema(test_name: &str, process_id: u32) -> String {
+fn named_test_schema(test_name: &str, _process_id: u32) -> String {
     let sanitized = test_name
         .chars()
         .filter(|ch| ch.is_ascii_alphanumeric() || *ch == '_')
@@ -26,7 +26,7 @@ fn named_test_schema(test_name: &str, process_id: u32) -> String {
         !sanitized.is_empty(),
         "named test schema requires an identifier-safe test name"
     );
-    format!("schoolorbit_test_{process_id}_{sanitized}")
+    format!("schoolorbit_test_{sanitized}")
 }
 
 fn explicit_test_database_url() -> String {
@@ -227,10 +227,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn schema_name_is_stable_and_identifier_safe_for_process() {
+    fn shared_schema_name_is_stable_across_processes() {
         let schema = test_schema_name(12345);
 
-        assert_eq!(schema, "schoolorbit_test_12345");
+        assert_eq!(schema, "schoolorbit_test_shared");
         assert!(schema
             .chars()
             .all(|ch| ch.is_ascii_alphanumeric() || ch == '_'));
@@ -245,10 +245,10 @@ mod tests {
     }
 
     #[test]
-    fn named_schema_is_process_scoped_and_identifier_safe() {
+    fn named_schema_is_stable_across_processes_and_identifier_safe() {
         assert_eq!(
             named_test_schema("file-platform cutover!", 12345),
-            "schoolorbit_test_12345_fileplatformcutover"
+            "schoolorbit_test_fileplatformcutover"
         );
     }
 
