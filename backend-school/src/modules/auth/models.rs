@@ -1,8 +1,16 @@
 use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use sqlx::FromRow;
 use utoipa::ToSchema;
 use uuid::Uuid;
+
+fn deserialize_optional_nullable<'de, D, T>(deserializer: D) -> Result<Option<Option<T>>, D::Error>
+where
+    D: Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    Option::<T>::deserialize(deserializer).map(Some)
+}
 
 // User model (from database)
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
@@ -72,7 +80,8 @@ pub struct UpdateProfileRequest {
     pub date_of_birth: Option<String>, // Will be parsed to NaiveDate
     pub gender: Option<String>,
     pub address: Option<String>,
-    pub profile_image_file_id: Option<Uuid>,
+    #[serde(default, deserialize_with = "deserialize_optional_nullable")]
+    pub profile_image_file_id: Option<Option<Uuid>>,
 }
 
 // Change password request
@@ -228,4 +237,28 @@ pub struct Claims {
     pub token_version: u8,
     pub exp: i64,
     pub iat: i64,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::UpdateProfileRequest;
+
+    #[test]
+    fn update_profile_distinguishes_omitted_image_from_explicit_null() {
+        let omitted: UpdateProfileRequest =
+            serde_json::from_value(serde_json::json!({})).expect("omitted request should parse");
+        let clear: UpdateProfileRequest =
+            serde_json::from_value(serde_json::json!({ "profileImageFileId": null }))
+                .expect("explicit-null request should parse");
+
+        assert!(
+            omitted.profile_image_file_id.is_none(),
+            "omitting profileImageFileId must preserve the current image"
+        );
+        assert!(
+            clear.profile_image_file_id.is_some(),
+            "explicit null must request clearing the current image"
+        );
+        assert_eq!(clear.profile_image_file_id, Some(None));
+    }
 }

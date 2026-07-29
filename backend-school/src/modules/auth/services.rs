@@ -121,7 +121,7 @@ pub async fn update_profile(
     let date_of_birth = parse_profile_date(payload.date_of_birth.as_deref());
     let mut transaction = pool.begin().await?;
 
-    if let Some(file_id) = payload.profile_image_file_id {
+    if let Some(Some(file_id)) = payload.profile_image_file_id {
         let valid = sqlx::query_scalar::<_, bool>(
             r#"
 SELECT EXISTS(
@@ -161,6 +161,9 @@ SELECT EXISTS(
     .ok_or_else(|| AppError::NotFound("ไม่พบผู้ใช้".to_string()))?
     .0;
 
+    let profile_image_update_requested = payload.profile_image_file_id.is_some();
+    let new_file_id = payload.profile_image_file_id.unwrap_or(old_file_id);
+
     sqlx::query(
         "UPDATE users 
          SET title = COALESCE($1, title),
@@ -172,9 +175,9 @@ SELECT EXISTS(
              date_of_birth = COALESCE($7, date_of_birth),
              gender = COALESCE($8, gender),
              address = COALESCE($9, address),
-             profile_image_file_id = COALESCE($10, profile_image_file_id),
+             profile_image_file_id = CASE WHEN $10 THEN $11 ELSE profile_image_file_id END,
              updated_at = NOW()
-         WHERE id = $11",
+         WHERE id = $12",
     )
     .bind(&payload.title)
     .bind(&payload.nickname)
@@ -185,16 +188,16 @@ SELECT EXISTS(
     .bind(date_of_birth)
     .bind(&payload.gender)
     .bind(&payload.address)
-    .bind(&payload.profile_image_file_id)
+    .bind(profile_image_update_requested)
+    .bind(new_file_id)
     .bind(user_id)
     .execute(&mut *transaction)
     .await?;
 
     transaction.commit().await?;
-    let new_file_id = payload.profile_image_file_id.or(old_file_id);
     Ok(ProfileUpdateResult {
         user: find_user_by_id(pool, user_id).await?,
-        replaced_file_id: (payload.profile_image_file_id.is_some() && old_file_id != new_file_id)
+        replaced_file_id: (profile_image_update_requested && old_file_id != new_file_id)
             .then_some(old_file_id)
             .flatten(),
     })
@@ -229,6 +232,45 @@ fn parse_profile_date(value: Option<&str>) -> Option<chrono::NaiveDate> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_helpers::{create_test_pool, create_test_user, run_test_migrations};
+
+    fn profile_update(profile_image_file_id: Option<Option<Uuid>>) -> UpdateProfileRequest {
+        UpdateProfileRequest {
+            title: None,
+            nickname: None,
+            email: None,
+            phone: None,
+            emergency_contact: None,
+            line_id: None,
+            date_of_birth: None,
+            gender: None,
+            address: None,
+            profile_image_file_id,
+        }
+    }
+
+    async fn insert_ready_profile_image(pool: &PgPool, user_id: Uuid, temporary: bool) -> Uuid {
+        sqlx::query_scalar(
+            r#"
+INSERT INTO files (
+    user_id, filename, original_filename, file_size, mime_type, storage_path,
+    file_type, is_temporary, expires_at, purpose_code, lifecycle_status,
+    retention_class
+) VALUES (
+    $1, 'profile.jpg', 'profile.jpg', 1, 'image/jpeg', $2,
+    'profile_image', $3, CASE WHEN $3 THEN now() + INTERVAL '1 hour' ELSE NULL END,
+    'profile_image', 'ready', CASE WHEN $3 THEN 'temporary' ELSE 'standard' END
+)
+RETURNING id
+"#,
+        )
+        .bind(user_id)
+        .bind(format!("profile-test/{}", Uuid::new_v4()))
+        .bind(temporary)
+        .fetch_one(pool)
+        .await
+        .expect("profile image fixture should insert")
+    }
 
     fn user_with_national_id(national_id: Option<&str>) -> User {
         User {
@@ -309,5 +351,49 @@ mod tests {
         decrypt_national_id(&mut user);
 
         assert_eq!(user.national_id.as_deref(), Some("1234567890123"));
+    }
+
+    #[tokio::test]
+    async fn update_profile_preserves_replaces_and_clears_profile_image() {
+        let pool = create_test_pool().await;
+        run_test_migrations(&pool).await;
+        let email = format!("profile-update-{}@test.example", Uuid::new_v4());
+        let user_id = create_test_user(&pool, &email, "TestPassword123!")
+            .await
+            .expect("test user should insert");
+        let old_file_id = insert_ready_profile_image(&pool, user_id, false).await;
+        let new_file_id = insert_ready_profile_image(&pool, user_id, true).await;
+        sqlx::query("UPDATE users SET profile_image_file_id = $1 WHERE id = $2")
+            .bind(old_file_id)
+            .bind(user_id)
+            .execute(&pool)
+            .await
+            .expect("old profile image should attach");
+
+        let preserved = update_profile(&pool, user_id, profile_update(None))
+            .await
+            .expect("omitted image should preserve");
+        assert_eq!(preserved.user.profile_image_file_id, Some(old_file_id));
+        assert_eq!(preserved.replaced_file_id, None);
+
+        let replaced = update_profile(&pool, user_id, profile_update(Some(Some(new_file_id))))
+            .await
+            .expect("new image should replace old image");
+        assert_eq!(replaced.user.profile_image_file_id, Some(new_file_id));
+        assert_eq!(replaced.replaced_file_id, Some(old_file_id));
+        let promoted = sqlx::query_as::<_, (bool, String, Option<chrono::DateTime<chrono::Utc>>)>(
+            "SELECT is_temporary, retention_class, expires_at FROM files WHERE id = $1",
+        )
+        .bind(new_file_id)
+        .fetch_one(&pool)
+        .await
+        .expect("new image should remain available");
+        assert_eq!(promoted, (false, "standard".to_string(), None));
+
+        let cleared = update_profile(&pool, user_id, profile_update(Some(None)))
+            .await
+            .expect("explicit null should clear image");
+        assert_eq!(cleared.user.profile_image_file_id, None);
+        assert_eq!(cleared.replaced_file_id, Some(new_file_id));
     }
 }
