@@ -109,7 +109,6 @@ jobs:
               exit 1
             fi
             proxy_target="$proxy_matches"
-            rm -f /opt/stack/file-platform-runtime/scripts/upgrade_file_platform_env.sh
             public_bucket="$(sed -n 's/^R2_PUBLIC_BUCKET_NAME=//p' "$runtime_env" | tail -n 1)"
             private_bucket="$(sed -n 's/^R2_PRIVATE_BUCKET_NAME=//p' "$runtime_env" | tail -n 1)"
             if [ "$public_bucket" = "$private_bucket" ]; then
