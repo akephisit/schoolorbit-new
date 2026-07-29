@@ -199,7 +199,7 @@ SELECT EXISTS(
     SELECT 1
     FROM files
     WHERE id = $1
-      AND user_id = $2
+      AND owner_user_id = $2
       AND purpose_code = 'achievement_image'
       AND lifecycle_status = 'ready'
       AND deleted_at IS NULL
@@ -231,7 +231,7 @@ async fn finalize_achievement_image(
         return Ok(());
     };
     sqlx::query(
-        "UPDATE files SET is_temporary = false, retention_class = 'standard', expires_at = NULL, updated_at = NOW() WHERE id = $1",
+        "UPDATE files SET retention_class = 'standard', expires_at = NULL, updated_at = NOW() WHERE id = $1",
     )
     .bind(file_id)
     .execute(&mut **transaction)

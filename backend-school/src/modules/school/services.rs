@@ -61,7 +61,7 @@ SELECT EXISTS(
             ));
         }
         sqlx::query(
-            "UPDATE files SET is_temporary = false, retention_class = 'standard', expires_at = NULL, updated_at = NOW() WHERE id = $1",
+            "UPDATE files SET retention_class = 'standard', expires_at = NULL, updated_at = NOW() WHERE id = $1",
         )
         .bind(file_id)
         .execute(&mut *transaction)

@@ -475,9 +475,13 @@ pub async fn get_application_with_documents(
     let documents = sqlx::query_as::<_, ApplicationDocument>(
         r#"
         SELECT d.id, d.application_id, d.file_id, d.doc_type, d.created_at, d.deleted_at,
-               f.original_filename, f.file_size, f.mime_type
+               f.display_filename AS original_filename,
+               v.byte_size AS file_size,
+               v.detected_mime_type AS mime_type
         FROM admission_application_documents d
         JOIN files f ON f.id = d.file_id
+        JOIN file_versions v
+          ON v.id = f.current_version_id AND v.file_id = f.id
         WHERE d.application_id = $1 AND d.deleted_at IS NULL
         ORDER BY d.created_at ASC
         "#,
@@ -1299,7 +1303,7 @@ FOR UPDATE
     .await
     .map_err(document_relationship_error)?;
     sqlx::query(
-        "UPDATE files SET is_temporary = false, retention_class = 'standard', expires_at = NULL, updated_at = NOW() WHERE id = $1",
+        "UPDATE files SET retention_class = 'standard', expires_at = NULL, updated_at = NOW() WHERE id = $1",
     )
     .bind(file.id)
     .execute(&mut *transaction)

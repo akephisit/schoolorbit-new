@@ -53,7 +53,7 @@ impl FileCleaner {
             r#"
 SELECT id
 FROM files
-WHERE is_temporary = true
+WHERE retention_class = 'temporary'
   AND expires_at <= now()
   AND deleted_at IS NULL
   AND lifecycle_status <> 'deleted'

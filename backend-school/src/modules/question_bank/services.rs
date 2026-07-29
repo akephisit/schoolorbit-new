@@ -61,10 +61,10 @@ pub struct QuestionMutationResult {
 #[derive(Debug, sqlx::FromRow)]
 struct PayloadFileRow {
     id: Uuid,
-    user_id: Option<Uuid>,
-    purpose_code: Option<String>,
+    owner_user_id: Option<Uuid>,
+    purpose_code: String,
     lifecycle_status: String,
-    is_temporary: bool,
+    retention_class: String,
 }
 
 pub async fn list_questions(
@@ -537,12 +537,16 @@ async fn validate_payload_files(
     let requested: Vec<Uuid> = file_ids.iter().copied().collect();
     let rows = sqlx::query_as::<_, PayloadFileRow>(
         r#"
-SELECT id, user_id, purpose_code, lifecycle_status, is_temporary
+SELECT id, owner_user_id, purpose_code, lifecycle_status, retention_class
 FROM files
 WHERE id = ANY($1)
   AND deleted_at IS NULL
   AND lifecycle_status = 'ready'
-  AND (is_temporary = false OR expires_at IS NULL OR expires_at > NOW())
+  AND (
+      retention_class <> 'temporary'
+      OR expires_at IS NULL
+      OR expires_at > NOW()
+  )
 "#,
     )
     .bind(&requested)
@@ -560,18 +564,18 @@ WHERE id = ANY($1)
     }
     let mut temporary_file_ids = HashSet::new();
     for row in rows {
-        if !existing_file_ids.contains(&row.id) && row.user_id != Some(actor_id) {
+        if !existing_file_ids.contains(&row.id) && row.owner_user_id != Some(actor_id) {
             return Err(AppError::Forbidden("ไม่มีสิทธิ์ใช้ไฟล์รูปนี้ในข้อสอบ".to_string()));
         }
-        if row.purpose_code.as_deref() != Some(FilePurpose::QuestionBankImage.code())
+        if row.purpose_code != FilePurpose::QuestionBankImage.code()
             || row.lifecycle_status != "ready"
         {
             return Err(AppError::ValidationError(
                 "ไฟล์ประกอบข้อสอบต้องเป็นรูปภาพ".to_string(),
             ));
         }
-        if row.is_temporary {
-            if row.user_id != Some(actor_id) {
+        if row.retention_class == "temporary" {
+            if row.owner_user_id != Some(actor_id) {
                 return Err(AppError::Forbidden(
                     "ไม่สามารถยืนยันไฟล์ชั่วคราวของผู้ใช้อื่นได้".to_string(),
                 ));
@@ -594,13 +598,12 @@ async fn finalize_temporary_files(
     let result = sqlx::query(
         r#"
 UPDATE files
-SET is_temporary = false,
+SET retention_class = 'standard',
     expires_at = NULL,
-    retention_class = 'standard',
     updated_at = NOW()
 WHERE id = ANY($1)
-  AND user_id = $2
-  AND is_temporary = true
+  AND owner_user_id = $2
+  AND retention_class = 'temporary'
   AND deleted_at IS NULL
 "#,
     )

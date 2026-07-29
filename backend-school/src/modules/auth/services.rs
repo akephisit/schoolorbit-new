@@ -128,7 +128,7 @@ SELECT EXISTS(
     SELECT 1
     FROM files
     WHERE id = $1
-      AND user_id = $2
+      AND owner_user_id = $2
       AND purpose_code = 'profile_image'
       AND lifecycle_status = 'ready'
       AND deleted_at IS NULL
@@ -145,7 +145,7 @@ SELECT EXISTS(
             ));
         }
         sqlx::query(
-            "UPDATE files SET is_temporary = false, retention_class = 'standard', expires_at = NULL, updated_at = NOW() WHERE id = $1",
+            "UPDATE files SET retention_class = 'standard', expires_at = NULL, updated_at = NOW() WHERE id = $1",
         )
         .bind(file_id)
         .execute(&mut *transaction)
@@ -250,26 +250,64 @@ mod tests {
     }
 
     async fn insert_ready_profile_image(pool: &PgPool, user_id: Uuid, temporary: bool) -> Uuid {
-        sqlx::query_scalar(
+        let file_id = Uuid::new_v4();
+        let version_id = Uuid::new_v4();
+        let mut transaction = pool
+            .begin()
+            .await
+            .expect("profile image fixture transaction should begin");
+        sqlx::query(
             r#"
 INSERT INTO files (
-    user_id, filename, original_filename, file_size, mime_type, storage_path,
-    file_type, is_temporary, expires_at, purpose_code, lifecycle_status,
-    retention_class
+    id, owner_user_id, display_filename, created_by, purpose_code, visibility,
+    lifecycle_status, retention_class, expires_at
 ) VALUES (
-    $1, 'profile.jpg', 'profile.jpg', 1, 'image/jpeg', $2,
-    'profile_image', $3, CASE WHEN $3 THEN now() + INTERVAL '1 hour' ELSE NULL END,
-    'profile_image', 'ready', CASE WHEN $3 THEN 'temporary' ELSE 'standard' END
+    $1, $2, 'profile.jpg', $2, 'profile_image', 'private', 'processing',
+    CASE WHEN $3 THEN 'temporary' ELSE 'standard' END,
+    CASE WHEN $3 THEN now() + INTERVAL '1 hour' ELSE NULL END
 )
-RETURNING id
 "#,
         )
+        .bind(file_id)
         .bind(user_id)
-        .bind(format!("profile-test/{}", Uuid::new_v4()))
         .bind(temporary)
-        .fetch_one(pool)
+        .execute(&mut *transaction)
         .await
-        .expect("profile image fixture should insert")
+        .expect("profile image fixture should insert");
+        sqlx::query(
+            r#"
+INSERT INTO file_versions (
+    id, file_id, version_number, provider_code, storage_class, storage_status,
+    object_key, detected_mime_type, canonical_extension, byte_size, checksum,
+    scan_status, scanner_result_code, scanned_at, created_by
+) VALUES (
+    $1, $2, 1, 'test', 'private', 'stored', $3, 'image/jpeg', 'jpg', 1,
+    repeat('a', 64), 'clean', 'clean', now(), $4
+)
+"#,
+        )
+        .bind(version_id)
+        .bind(file_id)
+        .bind(format!("profile-test/{}", Uuid::new_v4()))
+        .bind(user_id)
+        .execute(&mut *transaction)
+        .await
+        .expect("profile image version fixture should insert");
+        sqlx::query(
+            "UPDATE files
+             SET current_version_id = $1, lifecycle_status = 'ready'
+             WHERE id = $2",
+        )
+        .bind(version_id)
+        .bind(file_id)
+        .execute(&mut *transaction)
+        .await
+        .expect("profile image fixture should become ready");
+        transaction
+            .commit()
+            .await
+            .expect("profile image fixture transaction should commit");
+        file_id
     }
 
     fn user_with_national_id(national_id: Option<&str>) -> User {
@@ -381,14 +419,14 @@ RETURNING id
             .expect("new image should replace old image");
         assert_eq!(replaced.user.profile_image_file_id, Some(new_file_id));
         assert_eq!(replaced.replaced_file_id, Some(old_file_id));
-        let promoted = sqlx::query_as::<_, (bool, String, Option<chrono::DateTime<chrono::Utc>>)>(
-            "SELECT is_temporary, retention_class, expires_at FROM files WHERE id = $1",
+        let promoted = sqlx::query_as::<_, (String, Option<chrono::DateTime<chrono::Utc>>)>(
+            "SELECT retention_class, expires_at FROM files WHERE id = $1",
         )
         .bind(new_file_id)
         .fetch_one(&pool)
         .await
         .expect("new image should remain available");
-        assert_eq!(promoted, (false, "standard".to_string(), None));
+        assert_eq!(promoted, ("standard".to_string(), None));
 
         let cleared = update_profile(&pool, user_id, profile_update(Some(None)))
             .await
