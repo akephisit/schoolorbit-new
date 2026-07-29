@@ -56,11 +56,6 @@ This file is the single active backlog for verified, unfinished technical work t
   - Use server-owned templates, validate recipients, and allowlist internal links.
   - Done when an ordinary authenticated user cannot send arbitrary content to another user.
 
-- [ ] **SEC-009: Stop build-time route synchronization from deleting school-owned menus.**
-  - Add explicit ownership such as `managed_by` or `source` to distinguish system routes from school-managed menu records.
-  - Replace unscoped cleanup in [route registration](./backend-school/src/modules/system/services/route_registration_service.rs) with a transactional desired-state diff limited to frontend-owned rows.
-  - Run synchronization as an explicit deployment step, fail visibly on partial scans, and test preservation of custom placement and labels.
-
 ## P1 — Identity, Data Integrity, and Durable Operations
 
 - [ ] **AUTH-001: Introduce revocable sessions and consistent active-user enforcement.**

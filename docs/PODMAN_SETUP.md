@@ -120,7 +120,8 @@ chmod 600 .env
 ข้อกำหนดสำคัญ:
 
 - `INTERNAL_API_SECRET` ต้องตรงกันระหว่าง backend ทั้งสอง;
-- `DEPLOY_KEY` ต้องตรงกับ `VITE_DEPLOY_KEY` ของ tenant frontend build;
+- `DEPLOY_KEY` ต้องตรงกับ server-only `DEPLOY_KEY` ที่ GitHub tenant deployment
+  ใช้ในขั้น `Synchronize menu routes`; ห้ามส่ง key นี้เข้า Vite build หรือ Worker variables;
 - `ENCRYPTION_KEY` และ `BLIND_INDEX_KEY` ต้องสำรองอย่างปลอดภัยและคงเดิมหลังมีข้อมูลแล้ว การเปลี่ยน key ต้องทำผ่านงาน re-encryption/reindex ที่ตรวจสอบแยกต่างหาก;
 - ห้าม commit `.env`, แสดงค่า secret ใน log หรือส่งไฟล์นี้ผ่านช่องทางสนทนา;
 - ใช้ URL ของ container/service บน network เดียวกัน ห้ามใช้ `localhost` เพื่อให้ container หนึ่งเรียกอีก container หนึ่ง.

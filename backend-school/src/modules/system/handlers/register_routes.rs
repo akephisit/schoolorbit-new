@@ -13,8 +13,7 @@ use axum::{
     Json as JsonResponse,
 };
 
-/// Register routes from frontend build
-/// This endpoint is called during frontend build to auto-sync menu items
+/// Synchronize the complete frontend route inventory after tenant deployment.
 pub async fn register_routes(
     State(state): State<AppState>,
     headers: HeaderMap,

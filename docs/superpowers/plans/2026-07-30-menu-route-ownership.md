@@ -20,10 +20,12 @@
 ### Task 1: Transactional route ownership
 
 **Files:**
+
 - Create: `backend-school/migrations/033_menu_route_ownership.sql`
 - Modify: `backend-school/src/modules/system/services/route_registration_service.rs`
 
 **Interfaces:**
+
 - Consumes: `RouteRegistration.routes`
 - Produces: `sync_routes(&PgPool, &RouteRegistration) -> Result<RouteRegistrationOutcome, AppError>`
 
@@ -57,13 +59,17 @@ Run the focused backend test command from Step 2 and confirm every ownership and
 ### Task 2: Explicit fail-closed route scan command
 
 **Files:**
+
 - Create: `frontend-school/scripts/register-menu-routes.ts`
 - Create: `frontend-school/tests/runtime/menu-route-registration.test.mjs`
 - Modify: `frontend-school/scripts/menu-helpers.ts`
 - Modify: `frontend-school/package.json`
 - Modify: `frontend-school/vite.config.ts`
+- Modify: `backend-school/src/main.rs`
+- Modify: `backend-school/src/modules/system/handlers/register_routes.rs`
 
 **Interfaces:**
+
 - Consumes: `PUBLIC_BACKEND_URL`, `DEPLOY_KEY`, `SUBDOMAIN`, and route `_meta.menu`
 - Produces: `npm run sync:menu-routes`
 
@@ -84,7 +90,10 @@ Expected: failure because the explicit registration module and fail-closed scann
 
 - [ ] **Step 3: Implement the scanner and registration command**
 
-Make metadata parse failures throw with a file-specific error, validate non-empty unique routes, post them to the backend without logging secrets, and exit non-zero for any failure.
+Make metadata parse failures throw with a file-specific error, validate non-empty unique routes,
+post them to the new ownership-aware `/api/admin/routes/sync` endpoint without logging secrets,
+and exit non-zero for any failure. Do not retain the legacy endpoint path, so an old backend
+fails safely without applying its unscoped cleanup.
 
 - [ ] **Step 4: Remove the Vite build side effect**
 
@@ -105,6 +114,7 @@ Expected: all tests pass.
 ### Task 3: Deployment and operational contract
 
 **Files:**
+
 - Modify: `.github/workflows/deploy-school-tenant.yml`
 - Modify: `.github/workflows/deploy-all-schools.yml`
 - Modify: `frontend-school/.env.example`
@@ -113,6 +123,7 @@ Expected: all tests pass.
 - Modify: `TODO.md`
 
 **Interfaces:**
+
 - Consumes: deployed tenant, backend URL, deploy secret, subdomain
 - Produces: post-deployment menu synchronization that fails the workflow on error
 

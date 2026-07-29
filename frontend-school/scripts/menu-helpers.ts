@@ -1,10 +1,11 @@
 import { glob } from 'glob';
 import fs from 'fs';
+import path from 'node:path';
 import {
 	PERMISSION_MODULES,
 	PERMISSIONS,
 	WILDCARD_PERMISSION
-} from '../src/lib/permissions/registry';
+} from '../src/lib/permissions/registry.generated.ts';
 
 /**
  * Route metadata structure
@@ -23,17 +24,27 @@ export interface RouteMetadata {
 /**
  * Scan all route files and extract metadata
  */
-export async function scanRoutes(): Promise<RouteMetadata[]> {
+export async function scanRoutes(projectRoot = process.cwd()): Promise<RouteMetadata[]> {
 	const routes: RouteMetadata[] = [];
 
 	// Find all +page.ts files in (app) routes
 	const files = glob.sync('src/routes/(app)/**/+page.ts', {
+		cwd: projectRoot,
 		ignore: ['**/node_modules/**', '**/.svelte-kit/**']
 	});
 
 	for (const file of files) {
-		const content = fs.readFileSync(file, 'utf-8');
-		const meta = extractMeta(content);
+		const content = fs.readFileSync(path.join(projectRoot, file), 'utf-8');
+		let meta: { menu?: unknown } | null;
+		try {
+			meta = extractMeta(content);
+			if (!meta && /\bexport\s+const\s+_meta\b/.test(content) && /\bmenu\s*:/.test(content)) {
+				throw new Error('Menu metadata declaration could not be extracted');
+			}
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			throw new Error(`Failed to parse menu metadata in ${file}: ${message}`);
+		}
 
 		if (meta?.menu) {
 			const menu = meta.menu as {
@@ -65,66 +76,55 @@ export async function scanRoutes(): Promise<RouteMetadata[]> {
  * Extract _meta.menu from file content
  */
 export function extractMeta(content: string): { menu?: unknown } | null {
-	try {
-		// Match: export const _meta = { ... }
-		const metaMatch = content.match(/export\s+const\s+_meta\s*=\s*({[\s\S]*?});/);
-		if (!metaMatch) return null;
+	// Match: export const _meta = { ... }
+	const metaMatch = content.match(/export\s+const\s+_meta\s*=\s*({[\s\S]*?});/);
+	if (!metaMatch) return null;
 
-		const metaCode = metaMatch[1];
+	const metaCode = metaMatch[1];
 
-		// Match: menu: { ... }
-		const menuMatch = metaCode.match(/menu:\s*({[\s\S]*?})\s*(?:,|\})/);
-		if (!menuMatch) return null;
+	// Match: menu: { ... }
+	const menuMatch = metaCode.match(/menu:\s*({[\s\S]*?})\s*(?:,|\})/);
+	if (!menuMatch) return null;
 
-		// Convert JavaScript object syntax to valid JSON
-		let menuStr = menuMatch[1];
+	// Convert JavaScript object syntax to valid JSON
+	let menuStr = menuMatch[1];
 
-		// Step 0: Remove JavaScript comments (JSON doesn't support comments)
-		menuStr = menuStr.replace(/\/\/.*$/gm, ''); // Remove single-line comments
-		menuStr = menuStr.replace(/\/\*[\s\S]*?\*\//g, ''); // Remove multi-line comments
+	// Step 0: Remove JavaScript comments (JSON doesn't support comments)
+	menuStr = menuStr.replace(/\/\/.*$/gm, ''); // Remove single-line comments
+	menuStr = menuStr.replace(/\/\*[\s\S]*?\*\//g, ''); // Remove multi-line comments
 
-		menuStr = menuStr.replace(
-			/\b(PERMISSIONS|PERMISSION_MODULES)\.([A-Z0-9_]+)\b/g,
-			(_, namespace: 'PERMISSIONS' | 'PERMISSION_MODULES', key: string) => {
-				const values = (namespace === 'PERMISSIONS' ? PERMISSIONS : PERMISSION_MODULES) as Record<
-					string,
-					string
-				>;
-				const value = values[key];
-				if (!value) {
-					throw new Error(`Unknown menu permission constant ${namespace}.${key}`);
-				}
-				return JSON.stringify(value);
+	menuStr = menuStr.replace(
+		/\b(PERMISSIONS|PERMISSION_MODULES)\.([A-Z0-9_]+)\b/g,
+		(_, namespace: 'PERMISSIONS' | 'PERMISSION_MODULES', key: string) => {
+			const values = (namespace === 'PERMISSIONS' ? PERMISSIONS : PERMISSION_MODULES) as Record<
+				string,
+				string
+			>;
+			const value = values[key];
+			if (!value) {
+				throw new Error(`Unknown menu permission constant ${namespace}.${key}`);
 			}
-		);
-		menuStr = menuStr.replace(/\bWILDCARD_PERMISSION\b/g, JSON.stringify(WILDCARD_PERMISSION));
-
-		// Step 1: Replace single quotes with double quotes for string values
-		// But be careful with quotes inside strings
-		menuStr = menuStr.replace(/'([^']*)'/g, '"$1"');
-
-		// Step 2: Wrap unquoted keys in double quotes
-		menuStr = menuStr.replace(/(\w+):/g, '"$1":');
-
-		// Step 3: Remove trailing commas before closing braces/brackets
-		menuStr = menuStr.replace(/,(\s*[}\]])/g, '$1');
-
-		// Try to parse as JSON
-		try {
-			const menuObj = JSON.parse(menuStr);
-			return { menu: menuObj };
-		} catch (parseError) {
-			// If JSON.parse fails, log detailed error for debugging
-			console.error(`Failed to parse menu metadata as JSON:`, {
-				error: parseError,
-				converted: menuStr,
-				original: menuMatch[1]
-			});
-			return null;
+			return JSON.stringify(value);
 		}
+	);
+	menuStr = menuStr.replace(/\bWILDCARD_PERMISSION\b/g, JSON.stringify(WILDCARD_PERMISSION));
+
+	// Step 1: Replace single quotes with double quotes for string values
+	// But be careful with quotes inside strings
+	menuStr = menuStr.replace(/'([^']*)'/g, '"$1"');
+
+	// Step 2: Wrap unquoted keys in double quotes
+	menuStr = menuStr.replace(/(\w+):/g, '"$1":');
+
+	// Step 3: Remove trailing commas before closing braces/brackets
+	menuStr = menuStr.replace(/,(\s*[}\]])/g, '$1');
+
+	try {
+		const menuObj = JSON.parse(menuStr);
+		return { menu: menuObj };
 	} catch (error) {
-		console.error(`Failed to extract meta from content:`, error);
-		return null;
+		const message = error instanceof Error ? error.message : String(error);
+		throw new Error(`Menu metadata is not valid JSON-compatible syntax: ${message}`);
 	}
 }
 

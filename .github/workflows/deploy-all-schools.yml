@@ -6,16 +6,16 @@ on:
     branches:
       - main
     paths:
-      - 'frontend-school/**'
-      - '.github/workflows/deploy-all-schools.yml'
-  
+      - "frontend-school/**"
+      - ".github/workflows/deploy-all-schools.yml"
+
   # หรือ trigger manual
   workflow_dispatch:
     inputs:
       force_deploy:
-        description: 'Force deploy to all schools'
+        description: "Force deploy to all schools"
         required: false
-        default: 'false'
+        default: "false"
 
 jobs:
   get-schools:
@@ -23,7 +23,7 @@ jobs:
     timeout-minutes: 35
     outputs:
       schools: ${{ steps.fetch-schools.outputs.schools }}
-    
+
     steps:
       - name: Wait for File Platform-ready backend
         env:
@@ -52,28 +52,28 @@ jobs:
         id: fetch-schools
         run: |
           echo "Fetching schools from API..."
-          
+
           # Call internal API endpoint to get list of active schools
           RESPONSE=$(curl -s -X GET \
             "${{ secrets.BACKEND_ADMIN_URL }}/internal/schools?status=active" \
             -H "X-Internal-Secret: ${{ secrets.INTERNAL_API_SECRET }}" \
             -w "\n%{http_code}")
-          
+
           HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
           BODY=$(echo "$RESPONSE" | sed '$d')
-          
+
           echo "HTTP Status: $HTTP_CODE"
-          
+
           if [ "$HTTP_CODE" != "200" ]; then
             echo "❌ API request failed with status $HTTP_CODE"
             echo "Response: $BODY"
             echo "schools=[]" >> $GITHUB_OUTPUT
             exit 0
           fi
-          
+
           # Parse response and extract schools
           SCHOOLS=$(echo "$BODY" | jq -c '.schools // [] | map({subdomain: .subdomain, school_id: .id})')
-          
+
           if [ -z "$SCHOOLS" ] || [ "$SCHOOLS" = "null" ]; then
             echo "⚠️  No schools found or invalid response"
             echo "schools=[]" >> $GITHUB_OUTPUT
@@ -92,24 +92,24 @@ jobs:
     strategy:
       matrix:
         school: ${{ fromJson(needs.get-schools.outputs.schools) }}
-      max-parallel: 3  # Deploy สูงสุด 3 โรงเรียนพร้อมกัน
-      fail-fast: false  # ถ้า deploy โรงเรียนใดล้มเหลว ให้ deploy โรงเรียนอื่นต่อ
-    
+      max-parallel: 3 # Deploy สูงสุด 3 โรงเรียนพร้อมกัน
+      fail-fast: false # ถ้า deploy โรงเรียนใดล้มเหลว ให้ deploy โรงเรียนอื่นต่อ
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
-      
+
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
-          node-version: '22'
-          cache: 'npm'
+          node-version: "22"
+          cache: "npm"
           cache-dependency-path: frontend-school/package-lock.json
-      
+
       - name: Install dependencies
         working-directory: frontend-school
         run: npm ci
-      
+
       - name: Create Wrangler configuration
         working-directory: frontend-school
         run: |
@@ -135,21 +135,19 @@ jobs:
               "PUBLIC_BACKEND_URL": "${{ secrets.BACKEND_SCHOOL_URL }}",
               "SCHOOL_ID": "${{ matrix.school.school_id }}",
               "SUBDOMAIN": "${{ matrix.school.subdomain }}",
-              "VITE_DEPLOY_KEY": "${{ secrets.DEPLOY_KEY }}",
               "PUBLIC_VAPID_KEY": "${{ secrets.VAPID_PUBLIC_KEY }}"
             }
           }
           EOF
-      
+
       - name: Build frontend
         working-directory: frontend-school
         env:
           PUBLIC_BACKEND_URL: ${{ secrets.BACKEND_SCHOOL_URL }}
-          VITE_DEPLOY_KEY: ${{ secrets.DEPLOY_KEY }}
           SUBDOMAIN: ${{ matrix.school.subdomain }}
           PUBLIC_VAPID_KEY: ${{ secrets.VAPID_PUBLIC_KEY }}
         run: npm run build
-      
+
       - name: Deploy to Cloudflare Workers
         uses: cloudflare/wrangler-action@v3.14.1
         env:
@@ -158,13 +156,21 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           workingDirectory: frontend-school
           command: deploy
-      
+
+      - name: Synchronize menu routes
+        working-directory: frontend-school
+        env:
+          PUBLIC_BACKEND_URL: ${{ secrets.BACKEND_SCHOOL_URL }}
+          DEPLOY_KEY: ${{ secrets.DEPLOY_KEY }}
+          SUBDOMAIN: ${{ matrix.school.subdomain }}
+        run: npm run sync:menu-routes
+
       - name: Report deployment status
         if: success()
         run: |
           echo "✅ Successfully deployed ${{ matrix.school.subdomain }}"
           echo "URL: https://${{ matrix.school.subdomain }}.schoolorbit.app"
-      
+
       - name: Report deployment failure
         if: failure()
         run: |
@@ -174,7 +180,7 @@ jobs:
     needs: [get-schools, deploy]
     runs-on: ubuntu-latest
     if: always()
-    
+
     steps:
       - name: Deployment summary
         run: |

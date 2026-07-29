@@ -4,15 +4,15 @@ on:
   workflow_dispatch:
     inputs:
       subdomain:
-        description: 'School subdomain (e.g., test-school)'
+        description: "School subdomain (e.g., test-school)"
         required: true
         type: string
       school_id:
-        description: 'School UUID from database'
+        description: "School UUID from database"
         required: true
         type: string
       api_url:
-        description: 'Backend API URL for this tenant'
+        description: "Backend API URL for this tenant"
         required: true
         type: string
 
@@ -25,18 +25,18 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
-      
+
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
-          node-version: '22'
-          cache: 'npm'
+          node-version: "22"
+          cache: "npm"
           cache-dependency-path: frontend-school/package-lock.json
-      
+
       - name: Install dependencies
         working-directory: frontend-school
         run: npm ci
-      
+
       - name: Create Wrangler configuration
         working-directory: frontend-school
         run: |
@@ -62,21 +62,19 @@ jobs:
               "PUBLIC_BACKEND_URL": "${{ secrets.BACKEND_SCHOOL_URL }}",
               "PUBLIC_VAPID_KEY": "${{ secrets.VAPID_PUBLIC_KEY }}",
               "SCHOOL_ID": "${{ inputs.school_id }}",
-              "SUBDOMAIN": "${{ inputs.subdomain }}",
-              "VITE_DEPLOY_KEY": "${{ secrets.DEPLOY_KEY }}"
+              "SUBDOMAIN": "${{ inputs.subdomain }}"
             }
           }
           EOF
-      
+
       - name: Build frontend
         working-directory: frontend-school
         env:
           PUBLIC_BACKEND_URL: ${{ secrets.BACKEND_SCHOOL_URL }}
           PUBLIC_VAPID_KEY: ${{ secrets.VAPID_PUBLIC_KEY }}
-          VITE_DEPLOY_KEY: ${{ secrets.DEPLOY_KEY }}
           SUBDOMAIN: ${{ inputs.subdomain }}
         run: npm run build
-      
+
       - name: Deploy to Cloudflare Workers
         uses: cloudflare/wrangler-action@v3.14.1
         env:
@@ -85,7 +83,15 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           workingDirectory: frontend-school
           command: deploy
-      
+
+      - name: Synchronize menu routes
+        working-directory: frontend-school
+        env:
+          PUBLIC_BACKEND_URL: ${{ secrets.BACKEND_SCHOOL_URL }}
+          DEPLOY_KEY: ${{ secrets.DEPLOY_KEY }}
+          SUBDOMAIN: ${{ inputs.subdomain }}
+        run: npm run sync:menu-routes
+
       - name: Report deployment status
         if: always()
         run: |

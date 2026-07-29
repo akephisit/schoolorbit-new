@@ -767,7 +767,7 @@ async fn main() {
         )
         // Route registration (no auth - uses deploy key)
         .route(
-            "/api/admin/routes/register",
+            "/api/admin/routes/sync",
             post(modules::system::handlers::register_routes::register_routes),
         )
         // WebSocket authentication runs in the handler; query selects semester only

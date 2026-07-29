@@ -61,6 +61,7 @@ From `frontend-school`:
 ```bash
 npm run lint
 PUBLIC_BACKEND_URL=http://localhost:3000 PUBLIC_VAPID_KEY=test npm run check
+npm run test:menu-sync
 npm run test:static
 ```
 

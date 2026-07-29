@@ -29,6 +29,11 @@ Route scanning and registration move out of the Vite build hook into `npm run sy
 
 The deployment key is supplied only to this explicit command. It is removed from Vite-prefixed build variables and Cloudflare Worker runtime variables.
 
+The explicit command uses the new `/api/admin/routes/sync` endpoint instead of the legacy
+build-hook endpoint. If tenant frontend and backend deployments overlap, an old backend
+returns `404` without mutating menus; synchronization can be retried after the ownership-aware
+backend is ready.
+
 ## Testing
 
 Backend database tests prove:
@@ -43,4 +48,4 @@ Frontend runtime tests prove malformed metadata and incomplete scans fail, and t
 
 ## Rollout
 
-Migration `033` is forward-only and safe before the new backend runs. Existing menu items remain school-owned until a complete successful route synchronization claims current frontend routes. Deploy backend-school and apply the migration before tenant frontend workflows begin using the explicit synchronization command.
+Migration `033` is forward-only and safe before the new backend runs. Existing menu items remain school-owned until a complete successful route synchronization claims current frontend routes. Deploy backend-school and apply the migration before tenant frontend workflows begin using the explicit synchronization command. The new endpoint path makes an overlapping frontend deployment fail safely rather than reaching the old unscoped cleanup behavior.

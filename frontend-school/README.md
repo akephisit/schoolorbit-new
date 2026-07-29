@@ -46,7 +46,8 @@ API and permission types are generated contracts. Follow the workflows in [`.rul
 - `PUBLIC_BACKEND_URL` selects backend-school.
 - `PUBLIC_SCHOOL_SUBDOMAIN` is an optional explicit tenant override.
 - `PUBLIC_VAPID_KEY` configures Web Push.
-- production menu registration requires both `VITE_DEPLOY_KEY` and `SUBDOMAIN`.
+- `npm run sync:menu-routes` requires server-only `DEPLOY_KEY` and `SUBDOMAIN`; deployment
+  workflows run it after the Worker deploys and fail if synchronization is incomplete.
 
 Do not expose backend secrets through `PUBLIC_*` or Vite variables.
 

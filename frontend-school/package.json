@@ -6,6 +6,7 @@
 	"scripts": {
 		"dev": "vite dev",
 		"build": "vite build",
+		"sync:menu-routes": "node --experimental-strip-types scripts/register-menu-routes.ts",
 		"preview": "vite preview",
 		"prepare": "svelte-kit sync || echo ''",
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
@@ -18,6 +19,7 @@
 		"test:permissions": "node --test ../scripts/tests/generate-permissions.test.mjs",
 		"check:docs": "node --test tests/static/documentation-policy.test.mjs",
 		"test:static": "node --test tests/static/*.test.mjs",
+		"test:menu-sync": "node --test tests/runtime/menu-route-registration.test.mjs",
 		"test:e2e": "playwright test",
 		"test:e2e:headed": "playwright test --headed",
 		"format": "prettier --write .",

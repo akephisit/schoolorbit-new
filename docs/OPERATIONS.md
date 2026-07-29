@@ -53,7 +53,10 @@ Current workflows:
 - [smoke-test.yml](../.github/workflows/smoke-test.yml)
 - [e2e-sandbox.yml](../.github/workflows/e2e-sandbox.yml)
 
-Backend deploys wait for `/ready` before declaring success. Tenant frontend builds register route/menu metadata only when both `VITE_DEPLOY_KEY` and `SUBDOMAIN` are present. Missing either value intentionally skips registration; production deploys must provide both.
+Backend deploys wait for `/ready` before declaring success. Tenant workflows deploy the
+frontend first, then run `npm run sync:menu-routes` as an explicit step with server-only
+`DEPLOY_KEY` and `SUBDOMAIN`. Missing configuration, an incomplete scan, or a rejected
+request fails the deployment workflow instead of being hidden inside the frontend build.
 
 After deployment, verify readiness first, then run the smoke test and the relevant browser workflow with runtime credentials.
 
@@ -104,7 +107,13 @@ After permission changes:
 4. invalidate affected permission caches and confirm `permission_changed` refresh behavior;
 5. rebuild tenant frontends when route metadata changed.
 
-Menu records originate from frontend route metadata during production builds. Provide matching `VITE_DEPLOY_KEY`, backend `DEPLOY_KEY`, and `SUBDOMAIN`; verify registration did not silently skip.
+Frontend route metadata is synchronized explicitly after each successful tenant frontend
+deployment. Provide matching backend and workflow `DEPLOY_KEY` values plus `SUBDOMAIN`.
+Synchronization is transactional: frontend route identity is marked `managed_by =
+'frontend'`, cleanup is limited to stale frontend-owned rows, and school-owned names,
+icons, placement, active state, ordering, and custom menu records remain unchanged. Treat a
+failed synchronization step as a failed deployment and fix the scan or backend error before
+rerunning it.
 
 ## Encryption and Key Rotation
 
@@ -209,7 +218,8 @@ separately if its file-ID API contract is not compatible.
 - Process unavailable: check container state and `/health`.
 - Process healthy but not serving traffic: inspect `/ready` and its dependency, then service-network DNS/URLs.
 - Backend-school cannot resolve tenants: check `BACKEND_ADMIN_URL`, internal secret/caller headers, request origin/subdomain consistency, and backend-admin readiness.
-- Menu changes missing: confirm production build logs, `VITE_DEPLOY_KEY`, `DEPLOY_KEY`, and `SUBDOMAIN`.
+- Menu changes missing: confirm the post-deployment `Synchronize menu routes` step,
+  `DEPLOY_KEY`, `SUBDOMAIN`, and backend route-registration response.
 - Permission changes stale: verify migration rows, generated registry versions, cache invalidation, and the `permission_changed` client refresh.
 - Migration checksum failure: restore the original migration file; add a new migration for the intended change.
 - National IDs unreadable or unsearchable: stop writes and verify key/version configuration. Do not guess keys or overwrite ciphertext/blind indexes.
