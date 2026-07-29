@@ -30,7 +30,7 @@
 - Preserves: `PrivateFileImage` props `fileId`, `resourceId`, `alt`, and `class`.
 - Produces: an `<img>` that is hidden initially and becomes visible only after its blob source loads successfully.
 
-- [ ] **Step 1: Add a browser-level regression test**
+- [x] **Step 1: Add a browser-level regression test**
 
 Create `frontend-school/tests/e2e/private-file-image.spec.ts`. The test starts a
 local Vite server with a virtual page that mounts the real component, holds the
@@ -46,6 +46,19 @@ const frontendRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), 
 const harnessPath = '/__private-file-image-test';
 const virtualModuleId = 'virtual:private-file-image-test';
 const resolvedVirtualModuleId = `\0${virtualModuleId}`;
+const stubModulePrefix = '\0private-file-image-test-stub:';
+const stubModules = new Map([
+	[
+		'$app/environment',
+		'export const browser = true; export const building = false; export const dev = true;'
+	],
+	[
+		'$app/paths',
+		"export const base = ''; export const assets = ''; export const resolve = (path) => path;"
+	],
+	['$env/dynamic/public', 'export const env = {};'],
+	['$env/static/public', "export const PUBLIC_BACKEND_URL = 'https://school-api.schoolorbit.app';"]
+]);
 const png = Buffer.from(
 	'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
 	'base64'
@@ -54,10 +67,15 @@ const png = Buffer.from(
 function harnessPlugin(): Plugin {
 	return {
 		name: 'private-file-image-test-harness',
+		enforce: 'pre',
 		resolveId(id) {
 			if (id === virtualModuleId) return resolvedVirtualModuleId;
+			if (stubModules.has(id)) return `${stubModulePrefix}${id}`;
 		},
 		load(id) {
+			if (id.startsWith(stubModulePrefix)) {
+				return stubModules.get(id.slice(stubModulePrefix.length));
+			}
 			if (id !== resolvedVirtualModuleId) return;
 			return `
 				import { mount } from 'svelte';
@@ -151,7 +169,7 @@ test('keeps a private image hidden until the downloaded blob loads', async ({ pa
 });
 ```
 
-- [ ] **Step 2: Run the focused test and confirm RED**
+- [x] **Step 2: Run the focused test and confirm RED**
 
 Run:
 
@@ -163,11 +181,11 @@ npx playwright test tests/e2e/private-file-image.spec.ts
 Expected: the browser test fails at `visibility: hidden` because the current image
 is visible while its grant request is held.
 
-- [ ] **Step 3: Validate the Svelte pattern before editing**
+- [x] **Step 3: Validate the Svelte pattern before editing**
 
 Use the official Svelte documentation tools to confirm attachment cleanup and DOM event handling. Run the official Svelte autofixer against the current component and retain any relevant diagnostics.
 
-- [ ] **Step 4: Implement the minimal load-state behavior**
+- [x] **Step 4: Implement the minimal load-state behavior**
 
 In `PrivateFileImage.svelte`, initialize the node as hidden, register the image load listener before assigning the object URL, and fully clean up:
 
@@ -207,11 +225,11 @@ Render the initial hidden state in the markup so it is present before the attach
 
 Keep the current download error logging. A failed download leaves the image hidden and exposes the existing consumer background.
 
-- [ ] **Step 5: Run the official Svelte autofixer again**
+- [x] **Step 5: Run the official Svelte autofixer again**
 
 Run the official Svelte autofixer against the corrected component. Apply only diagnostics relevant to this change and repeat until it reports no issue.
 
-- [ ] **Step 6: Run the focused test and confirm GREEN**
+- [x] **Step 6: Run the focused test and confirm GREEN**
 
 Run:
 
@@ -223,7 +241,7 @@ npx playwright test tests/e2e/private-file-image.spec.ts
 Expected: the component is hidden while the grant is held, becomes visible after
 the valid PNG loads, and the focused browser test passes.
 
-- [ ] **Step 7: Commit the implementation**
+- [x] **Step 7: Commit the implementation**
 
 ```bash
 git add frontend-school/tests/e2e/private-file-image.spec.ts \
@@ -243,7 +261,7 @@ git commit -m "fix: hide private images until loaded"
 - Consumes: the Task 1 `PrivateFileImage` behavior.
 - Produces: the verified frontend deployment at `https://snwsb.schoolorbit.app`.
 
-- [ ] **Step 1: Run frontend verification**
+- [x] **Step 1: Run frontend verification**
 
 Run:
 
