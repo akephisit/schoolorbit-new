@@ -150,6 +150,31 @@ jobs:
               fi
             fi
             r2_cli s3api head-bucket --bucket "$private_bucket" >/dev/null
+
+            private_cors_policy='{"CORSRules":[{"AllowedOrigins":["https://*.schoolorbit.app"],"AllowedMethods":["GET","HEAD"],"AllowedHeaders":["Range"],"ExposeHeaders":["Accept-Ranges","Content-Length","Content-Range","Content-Type","ETag"],"MaxAgeSeconds":3600}]}'
+            r2_cli s3api put-bucket-cors \
+              --bucket "$private_bucket" \
+              --cors-configuration "$private_cors_policy" >/dev/null
+            private_cors_origins="$(
+              r2_cli s3api get-bucket-cors \
+                --bucket "$private_bucket" \
+                --query 'CORSRules[0].AllowedOrigins' \
+                --output text
+            )"
+            private_cors_methods="$(
+              r2_cli s3api get-bucket-cors \
+                --bucket "$private_bucket" \
+                --query 'CORSRules[0].AllowedMethods' \
+                --output text
+            )"
+            printf '%s\n' "$private_cors_origins" |
+              tr '\t' '\n' |
+              grep -Fqx 'https://*.schoolorbit.app'
+            for required_method in GET HEAD; do
+              printf '%s\n' "$private_cors_methods" |
+                tr '\t' '\n' |
+                grep -Fqx "$required_method"
+            done
             unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY
 
             ln -sfn "$runtime_env" /opt/stack/file-platform-runtime/.env

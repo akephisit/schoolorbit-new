@@ -120,6 +120,7 @@ Backend-school owns a provider-neutral File Platform. Business modules and front
 
 - `R2_PUBLIC_BUCKET_NAME` contains only public purposes such as school branding. `R2_PUBLIC_URL` is the delivery base for this bucket.
 - `R2_PRIVATE_BUCKET_NAME` contains profiles, achievements, admissions, question-bank images, and documents. It must have no public custom domain or `r2.dev` access.
+- `R2_PRIVATE_BUCKET_NAME` allows browser delivery only through short-lived signed `GET`/`HEAD` requests from `https://*.schoolorbit.app`. The backend-school deployment applies and verifies this CORS policy without making the bucket public.
 - The two bucket names must be present and different. `R2_BUCKET_NAME` and `CDN_URL` are not compatibility fallbacks.
 
 Object keys are immutable and server-generated:
@@ -143,11 +144,13 @@ Configuration fails closed at startup for missing, placeholder, shared-bucket, o
 
 1. Preserve the existing public bucket and set it as `R2_PUBLIC_BUCKET_NAME`.
 2. Check the configured public and private bucket names directly with `HeadBucket`, without requiring account-wide bucket-list access or printing credentials. Create `R2_PRIVATE_BUCKET_NAME` only when that exact private name is absent.
-3. Do not attach a public domain, public bucket policy, or `r2.dev` access to the private bucket. Verify `HeadBucket` succeeds for both buckets.
+3. Do not attach a public domain, public bucket policy, or `r2.dev` access to the private bucket. Verify `HeadBucket` succeeds for both buckets. Apply the private-bucket CORS policy for `https://*.schoolorbit.app` with `GET` and `HEAD`, then read the policy back before deployment continues.
 4. Start the pinned `docker.io/clamav/clamav-debian` runtime. Persist `/var/lib/clamav`, expose no host port, and wait for its healthcheck before backend-school.
 5. Deploy backend-school only, then wait for `/ready`. Deploy frontend-school after backend readiness.
 
 The backend-school workflow performs exact-name checks before creation through the pinned AWS CLI image, uploads an isolated backend-school Compose definition, and recreates only `schoolorbit-backend-school`. It does not replace the production stack Compose or restart unrelated services.
+
+To diagnose private browser delivery, request a fresh grant through the authenticated file-download endpoint and send an `Origin` header when testing the resulting redirect. Confirm the R2 response includes a matching `Access-Control-Allow-Origin`; never print or paste the signed redirect URL because its query string is a temporary bearer credential.
 
 For the first production rollout, `upgrade_file_platform_env.sh` performs the
 public-bucket rename idempotently when the server still has only
