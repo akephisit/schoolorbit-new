@@ -4803,7 +4803,7 @@ fn question_bank_subject_contract_and_temporary_file_lifecycle_are_explicit() {
     assert!(registry.contains("retention_class: RetentionClass::Temporary"));
     assert!(repository.contains("INTERVAL '24 hours'"));
     assert!(cleaner.contains("request_expired_file_deletions"));
-    assert!(cleaner.contains("is_temporary = true"));
+    assert!(cleaner.contains("retention_class = 'temporary'"));
 }
 
 #[test]
@@ -5066,6 +5066,39 @@ fn file_platform_domain_relationships_own_attachment_and_lifecycle_deletion() {
             source.contains("request_deletions"),
             "{relative_path} must route detached/replaced files through durable deletion"
         );
+    }
+}
+
+#[test]
+fn file_platform_runtime_uses_only_canonical_schema_columns() {
+    for relative_path in [
+        "src/services/cleaner.rs",
+        "src/modules/files/repository.rs",
+        "src/modules/school/services.rs",
+        "src/modules/admission/services/application_service.rs",
+        "src/modules/admission/services/portal_service.rs",
+        "src/modules/question_bank/services.rs",
+        "src/modules/auth/services.rs",
+        "src/modules/staff/services/staff_service.rs",
+        "src/modules/achievement/services.rs",
+    ] {
+        let source = strip_comments(&read_source(manifest_dir().join(relative_path)));
+        for legacy_pattern in [
+            "is_temporary",
+            "profile_image_url",
+            "image_path",
+            "legacy_file_type",
+            "f.original_filename",
+            "f.file_size",
+            "f.mime_type",
+            "files.user_id",
+            "SELECT id, user_id, purpose_code",
+        ] {
+            assert!(
+                !source.contains(legacy_pattern),
+                "{relative_path} still depends on removed File Platform compatibility field {legacy_pattern}"
+            );
+        }
     }
 }
 

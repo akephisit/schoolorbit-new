@@ -1367,7 +1367,7 @@ mod tests {
             platform_types::{DerivativeRecipe, DetectedContent},
             purpose_registry::{derivative_object_key, original_object_key},
         },
-        test_helpers::{create_test_pool, run_test_migrations},
+        test_helpers::{create_named_test_pool, run_test_migrations},
     };
 
     static REPOSITORY_TEST_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
@@ -1383,7 +1383,7 @@ mod tests {
             );
             return None;
         }
-        let pool = create_test_pool().await;
+        let pool = create_named_test_pool("file_repository").await;
         run_test_migrations(&pool).await;
         Some(SqlFileRepository::new(pool))
     }
