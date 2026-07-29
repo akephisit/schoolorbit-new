@@ -171,7 +171,7 @@ Run this only against an isolated tenant with no retained files. The authenticat
 2. Confirm authenticated metadata from `GET /api/files/{id}` contains `publicContentUrl` but no bucket, object key, storage path, provider URL, or signed URL.
 3. Confirm anonymous `GET /api/public/files/{id}/content` redirects and delivers the PNG.
 4. Upload `profile_image` through `POST /api/files`; confirm anonymous metadata/download fails.
-5. Confirm authenticated `POST /api/files/{id}/download` follows a short-lived redirect and writes bytes to a temporary output file. Do not print response headers because `Location` is sensitive.
+5. Confirm authenticated `POST /api/files/{id}/download` returns a `200` typed grant without bucket, object-key, or provider details. Keep `data.url` in memory, fetch it separately with the tenant `Origin` and credentials omitted, and confirm it writes bytes to a temporary output file. Never print the response body or grant URL because the URL is a temporary bearer credential.
 6. Delete each file with `DELETE /api/files/{id}`. Repeat delete through the owning domain workflow where supported, and confirm delivery remains revoked even if object cleanup is pending.
 7. Search backend and proxy logs for leaked signed-query markers, object-key prefixes, filenames, or content. A file ID and safe error code are allowed.
 
@@ -195,16 +195,15 @@ curl -fsS -b "$FILE_SMOKE_COOKIE_JAR" \
   -F "file=@$FILE_SMOKE_PNG;type=image/png" \
   "$SMOKE_API_URL/api/files"
 
-curl -fsS -L --data '' -b "$FILE_SMOKE_COOKIE_JAR" \
-  -H "X-School-Subdomain: $SMOKE_SUBDOMAIN" \
-  "$SMOKE_API_URL/api/files/$PRIVATE_FILE_ID/download" \
-  -o "$FILE_SMOKE_DOWNLOAD"
-
 curl -fsS -X DELETE -b "$FILE_SMOKE_COOKIE_JAR" \
   -H "X-School-Subdomain: $SMOKE_SUBDOMAIN" \
   "$SMOKE_API_URL/api/files/$FILE_ID" \
   -o /dev/null
 ```
+
+Exercise private delivery through the typed frontend helper or an in-memory test harness that
+parses the grant and provider response without writing or printing the URL. Do not pipe the
+grant envelope through verbose shell output or enable HTTP tracing.
 
 For scanner failure behavior in a non-production environment:
 
