@@ -1,4 +1,5 @@
 import { apiClient, requireApiData } from './client';
+import { downloadGrantedFile, type FileDownloadGrantResponse } from './files';
 import type { components } from '$lib/api/generated/school-api';
 
 type Schemas = components['schemas'];
@@ -1053,11 +1054,12 @@ export async function portalDownloadDocument(
 	dateOfBirth: string
 ): Promise<Blob> {
 	const credentials: PortalCredentials = { nationalId, dateOfBirth };
-	const response = await apiClient.postBlobWithBody(
+	const response = await apiClient.post<FileDownloadGrantResponse>(
 		`/api/admission/portal/documents/${fileId}/download`,
 		credentials
 	);
-	return requireApiData(response, 'ไม่สามารถดาวน์โหลดเอกสารได้');
+	const grant = requireApiData(response, 'ไม่สามารถดาวน์โหลดเอกสารได้');
+	return downloadGrantedFile(grant);
 }
 
 // ==========================================

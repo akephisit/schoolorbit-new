@@ -39,6 +39,18 @@ test('generated contract publishes the provider-neutral file platform routes', a
 	]) {
 		assert.doesNotMatch(metadata, new RegExp(forbidden, 'i'));
 	}
+
+	const grant = contract.components?.schemas?.FileDownloadGrantResponse;
+	assert.deepEqual(grant?.required?.toSorted(), ['expiresAt', 'url']);
+	assert.equal(grant?.properties?.expiresAt?.format, 'date-time');
+	for (const path of [
+		'/api/files/{id}/download',
+		'/api/admission/portal/documents/{file_id}/download'
+	]) {
+		const responses = contract.paths?.[path]?.post?.responses;
+		assert.ok(responses?.['200']?.content?.['application/json']);
+		assert.equal(responses?.['303'], undefined);
+	}
 });
 
 test('canonical file upload path is proxied without a trailing-slash redirect', async () => {
@@ -84,10 +96,19 @@ test('typed file helper uses generated DTOs and file IDs as identity', async () 
 	);
 	assert.match(source, /type\s+Schemas\s*=\s*components\['schemas'\]/);
 	assert.match(source, /export\s+type\s+FileMetadata\s*=\s*Schemas\['FileMetadata'\]/);
+	assert.match(
+		source,
+		/export\s+type\s+FileDownloadGrantResponse\s*=\s*Schemas\['FileDownloadGrantResponse'\]/
+	);
 	assert.match(source, /formData\.append\('purpose',\s*purpose\)/);
 	assert.match(source, /apiClient\.postMultipart<FileMetadata>\('\/api\/files'/);
 	assert.match(source, /apiClient\s*\.\s*get<FileMetadata>\(`\/api\/files\/\$\{fileId\}/);
 	assert.match(source, /apiClient\s*\.\s*delete<FileDeleteResult>\(`\/api\/files\/\$\{fileId\}/);
+	assert.match(source, /apiClient\s*\.\s*post<FileDownloadGrantResponse>/);
+	assert.match(source, /fetch\(grant\.url/);
+	assert.match(source, /credentials:\s*'omit'/);
+	assert.match(source, /referrerPolicy:\s*'no-referrer'/);
+	assert.doesNotMatch(source, /\.postBlob\(/);
 	assert.match(source, /\/api\/public\/files\/\$\{fileId\}\/content/);
 	assert.match(source, /\/api\/files\/\$\{fileId\}\/download/);
 
@@ -161,11 +182,11 @@ test('school frontend consumers use file IDs instead of provider paths or persis
 
 test('portal document credentials stay in request bodies and downloads use blob delivery', async () => {
 	const admission = await readRepoFile('frontend-school/src/lib/api/admission.ts');
-	const client = await readRepoFile('frontend-school/src/lib/api/client.ts');
 
-	assert.match(client, /postBlobWithBody/);
 	assert.match(admission, /apiClient\.deleteWithBody/);
-	assert.match(admission, /apiClient\.postBlobWithBody/);
+	assert.match(admission, /apiClient\.post<FileDownloadGrantResponse>/);
+	assert.match(admission, /downloadGrantedFile/);
+	assert.doesNotMatch(admission, /apiClient\.postBlobWithBody/);
 	assert.doesNotMatch(admission, /URLSearchParams\(\{\s*nationalId/);
 	assert.doesNotMatch(admission, /national_id=.*date_of_birth=/);
 });
