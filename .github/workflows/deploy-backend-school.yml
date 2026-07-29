@@ -129,18 +129,16 @@ jobs:
                 "$@"
             }
             podman pull docker.io/amazon/aws-cli:2.36.9
-            bucket_list="$(r2_cli s3api list-buckets --query 'Buckets[].Name' --output text)"
-            bucket_exists() {
-              printf '%s\n' "$bucket_list" | tr '\t' '\n' | grep -Fqx -- "$1"
-            }
-            if ! bucket_exists "$public_bucket"; then
-              echo "Configured public File Platform bucket does not exist"
+            if ! r2_cli s3api head-bucket --bucket "$public_bucket" >/dev/null 2>&1; then
+              echo "Configured public File Platform bucket is not accessible"
               exit 1
             fi
-            if ! bucket_exists "$private_bucket"; then
-              r2_cli s3api create-bucket --bucket "$private_bucket" >/dev/null
+            if ! r2_cli s3api head-bucket --bucket "$private_bucket" >/dev/null 2>&1; then
+              if ! r2_cli s3api create-bucket --bucket "$private_bucket" >/dev/null; then
+                echo "Private File Platform bucket is absent and could not be created"
+                exit 1
+              fi
             fi
-            r2_cli s3api head-bucket --bucket "$public_bucket" >/dev/null
             r2_cli s3api head-bucket --bucket "$private_bucket" >/dev/null
             unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY
 

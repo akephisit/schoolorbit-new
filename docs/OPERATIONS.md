@@ -142,12 +142,12 @@ Configuration fails closed at startup for missing, placeholder, shared-bucket, o
 ### Bucket and scanner rollout
 
 1. Preserve the existing public bucket and set it as `R2_PUBLIC_BUCKET_NAME`.
-2. List buckets with the configured R2 credentials without printing credentials. Create `R2_PRIVATE_BUCKET_NAME` only when the exact name is absent.
+2. Check the configured public and private bucket names directly with `HeadBucket`, without requiring account-wide bucket-list access or printing credentials. Create `R2_PRIVATE_BUCKET_NAME` only when that exact private name is absent.
 3. Do not attach a public domain, public bucket policy, or `r2.dev` access to the private bucket. Verify `HeadBucket` succeeds for both buckets.
 4. Start the pinned `docker.io/clamav/clamav-debian` runtime. Persist `/var/lib/clamav`, expose no host port, and wait for its healthcheck before backend-school.
 5. Deploy backend-school only, then wait for `/ready`. Deploy frontend-school after backend readiness.
 
-The backend-school workflow performs the list-before-create check through the pinned AWS CLI image, uploads an isolated backend-school Compose definition, and recreates only `schoolorbit-backend-school`. It does not replace the production stack Compose or restart unrelated services.
+The backend-school workflow performs exact-name checks before creation through the pinned AWS CLI image, uploads an isolated backend-school Compose definition, and recreates only `schoolorbit-backend-school`. It does not replace the production stack Compose or restart unrelated services.
 
 For the first production rollout, `upgrade_file_platform_env.sh` performs the
 public-bucket rename idempotently when the server still has only
