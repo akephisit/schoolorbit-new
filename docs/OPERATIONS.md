@@ -146,7 +146,11 @@ Configuration fails closed at startup for missing, placeholder, shared-bucket, o
 2. Check the configured public and private bucket names directly with `HeadBucket`, without requiring account-wide bucket-list access or printing credentials. Create `R2_PRIVATE_BUCKET_NAME` only when that exact private name is absent.
 3. Do not attach a public domain, public bucket policy, or `r2.dev` access to the private bucket. Verify `HeadBucket` succeeds for both buckets. Apply the private-bucket CORS policy for `https://*.schoolorbit.app` with `GET` and `HEAD`, then read the policy back before deployment continues.
 4. Start the pinned `docker.io/clamav/clamav-debian` runtime. Persist `/var/lib/clamav`, expose no host port, and wait for its healthcheck before backend-school.
-5. Deploy backend-school only, then wait for `/ready`. Deploy frontend-school after backend readiness.
+5. For a normal release, deploy backend-school only and wait for `/ready`. For
+   the File Platform contract cutover, the backend-school workflow first places
+   school-api in maintenance mode, starts the cutover image, waits for
+   `/ready`, migrates every active tenant, verifies every tenant reached the
+   latest migration, and only then restores the normal proxy.
 
 The backend-school workflow performs exact-name checks before creation through the pinned AWS CLI image, uploads an isolated backend-school Compose definition, and recreates only `schoolorbit-backend-school`. It does not replace the production stack Compose or restart unrelated services.
 
@@ -158,6 +162,28 @@ public-bucket rename idempotently when the server still has only
 the R2 account ID. This upgrades the environment file once; backend-school
 still requires the new public/private settings and never accepts the legacy
 variable as a runtime fallback.
+
+### File Platform contract cutover
+
+Migration `032_file_platform_contract_cutover.sql` is the clean boundary from
+the path-based compatibility schema to the final provider-neutral schema. Its
+transactional preflight refuses to drop legacy columns when a logical file has
+no version, a ready file has no matching current version, or a legacy profile
+or achievement path lacks its file-ID replacement.
+
+The backend-school deployment workflow performs this cutover while the school
+API returns a CORS-safe `503` maintenance response. It starts the new image,
+waits for `/ready`, calls the internal all-tenant migration endpoint, and
+restores normal traffic only when every active tenant reports the same latest
+migration version with no failures. The raw migration response is kept in a
+mode-`0600` temporary file and must never be printed because it can contain
+tenant-specific failure details.
+
+If readiness, migration, or proxy restoration fails, leave maintenance mode
+and the cutover image in place, inspect only safe aggregate/error information,
+and fix forward. After any tenant applies migration `032`, never run a
+backend-school image older than commit `1bdeb0c5`; those binaries still query
+columns that no longer exist.
 
 ### Durable lifecycle and recovery
 
@@ -171,7 +197,12 @@ When reconciliation is unhealthy:
 4. compare file/version/derivative rows with object counts using file IDs and tenant/purpose aggregates;
 5. do not manually delete metadata rows or reuse object keys.
 
-Rollback is additive: keep migration `031`, the private bucket, and scanner volume. Retag the previous backend image and recreate backend-school only. Extra schema/configuration is safe for the previous binary; do not move private objects into the public bucket. Roll frontend-school back separately if its file-ID API contract is not compatible.
+The `rollback` image tag is advanced only after readiness and every active
+tenant migration succeeds. For releases after the contract cutover, it may be
+used only when its source commit is `1bdeb0c5` or newer. Keep migration `032`,
+the private bucket, and the scanner volume; never restore a pre-cutover image
+or move private objects into the public bucket. Roll frontend-school back
+separately if its file-ID API contract is not compatible.
 
 ## Focused Troubleshooting
 
