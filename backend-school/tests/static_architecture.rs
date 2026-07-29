@@ -4415,6 +4415,9 @@ fn deployment_and_smoke_checks_use_backend_readiness() {
     assert!(!school_deploy.contains("list-buckets"));
     assert!(school_deploy.contains(r#"r2_cli s3api head-bucket --bucket "$public_bucket""#));
     assert!(school_deploy.contains(r#"r2_cli s3api head-bucket --bucket "$private_bucket""#));
+    assert!(!school_deploy.contains("compose config"));
+    assert!(school_deploy
+        .contains(r#"podman-compose -f "$runtime_compose" --dry-run up -d clamd backend-school"#));
     assert!(school_deploy.contains("http://127.0.0.1:8081/ready"));
     assert!(admin_deploy.contains("http://127.0.0.1:8080/ready"));
     assert!(school_deploy.contains("seq 1 36"));
