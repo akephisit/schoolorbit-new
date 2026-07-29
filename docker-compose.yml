@@ -132,7 +132,7 @@ services:
     restart: unless-stopped
 
   clamd:
-    image: clamav/clamav-debian:1.5.3
+    image: docker.io/clamav/clamav-debian:1.5.3
     container_name: schoolorbit-clamd
     restart: unless-stopped
     volumes:

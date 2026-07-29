@@ -124,11 +124,11 @@ jobs:
                 -e AWS_SECRET_ACCESS_KEY \
                 -e AWS_DEFAULT_REGION \
                 -e AWS_EC2_METADATA_DISABLED \
-                amazon/aws-cli:2.36.9 \
+                docker.io/amazon/aws-cli:2.36.9 \
                 --endpoint-url "$r2_endpoint" \
                 "$@"
             }
-            podman pull amazon/aws-cli:2.36.9
+            podman pull docker.io/amazon/aws-cli:2.36.9
             bucket_list="$(r2_cli s3api list-buckets --query 'Buckets[].Name' --output text)"
             bucket_exists() {
               printf '%s\n' "$bucket_list" | tr '\t' '\n' | grep -Fqx -- "$1"
@@ -151,7 +151,7 @@ jobs:
             compose config >/dev/null
 
             # The scanner gets an isolated container network and no published port.
-            podman pull clamav/clamav-debian:1.5.3
+            podman pull docker.io/clamav/clamav-debian:1.5.3
             compose up -d clamd
             scanner_ready=false
             for attempt in $(seq 1 60); do
