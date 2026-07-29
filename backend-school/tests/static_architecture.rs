@@ -2,6 +2,7 @@ use regex::Regex;
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
 fn manifest_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -4417,6 +4418,69 @@ fn deployment_and_smoke_checks_use_backend_readiness() {
     assert!(frontend_deploy.contains(r#".filePlatform == "ready""#));
     assert!(smoke.contains("$SMOKE_ADMIN_API_URL/ready"));
     assert!(smoke.contains("$SMOKE_API_URL/ready"));
+}
+
+#[test]
+fn file_platform_runtime_config_upgrade_is_safe_and_idempotent() {
+    let script = manifest_dir().join("scripts/upgrade_file_platform_env.sh");
+    let temp_dir = std::env::temp_dir().join(format!(
+        "schoolorbit-file-platform-config-upgrade-{}",
+        std::process::id()
+    ));
+    fs::create_dir(&temp_dir).expect("create isolated config-upgrade test directory");
+    let runtime_env = temp_dir.join(".env");
+    fs::write(
+        &runtime_env,
+        concat!(
+            "R2_ACCOUNT_ID=0123456789abcdef0123456789abcdef\n",
+            "R2_BUCKET_NAME=schoolorbit-existing-public\n",
+            "R2_ACCESS_KEY_ID=test-access-key\n",
+            "R2_SECRET_ACCESS_KEY=test-secret-key\n",
+            "R2_PUBLIC_URL=https://files.example.test\n",
+        ),
+    )
+    .expect("write isolated legacy runtime configuration");
+
+    for _ in 0..2 {
+        let output = Command::new("bash")
+            .arg(&script)
+            .arg(&runtime_env)
+            .output()
+            .expect("run File Platform runtime config upgrade");
+        assert!(
+            output.status.success(),
+            "config upgrade failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(
+            output.stdout.is_empty() && output.stderr.is_empty(),
+            "config upgrade must not log configuration values"
+        );
+    }
+
+    let upgraded = read_source(&runtime_env);
+    assert_eq!(
+        upgraded
+            .lines()
+            .filter(|line| line.starts_with("R2_PUBLIC_BUCKET_NAME="))
+            .count(),
+        1,
+        "public bucket setting must be appended exactly once"
+    );
+    assert_eq!(
+        upgraded
+            .lines()
+            .filter(|line| line.starts_with("R2_PRIVATE_BUCKET_NAME="))
+            .count(),
+        1,
+        "private bucket setting must be appended exactly once"
+    );
+    assert!(upgraded.contains("R2_PUBLIC_BUCKET_NAME=schoolorbit-existing-public"));
+    assert!(upgraded
+        .contains("R2_PRIVATE_BUCKET_NAME=schoolorbit-files-private-0123456789abcdef01234567"));
+
+    fs::remove_file(&runtime_env).expect("remove isolated runtime configuration");
+    fs::remove_dir(&temp_dir).expect("remove isolated config-upgrade test directory");
 }
 
 #[test]

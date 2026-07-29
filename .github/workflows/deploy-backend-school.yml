@@ -72,7 +72,7 @@ jobs:
           host: ${{ secrets.SERVER_IP }}
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
-          source: backend-school/docker-compose.yml
+          source: backend-school/docker-compose.yml,backend-school/scripts/upgrade_file_platform_env.sh
           target: /opt/stack/file-platform-runtime
           strip_components: 1
 
@@ -91,6 +91,7 @@ jobs:
             runtime_env=/opt/stack/.env
             test -f "$runtime_compose"
             test -f "$runtime_env"
+            bash /opt/stack/file-platform-runtime/scripts/upgrade_file_platform_env.sh "$runtime_env"
             for required_name in \
               R2_ACCOUNT_ID \
               R2_ACCESS_KEY_ID \

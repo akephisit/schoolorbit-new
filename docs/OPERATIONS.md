@@ -149,6 +149,13 @@ Configuration fails closed at startup for missing, placeholder, shared-bucket, o
 
 The backend-school workflow performs the list-before-create check through the pinned AWS CLI image, uploads an isolated backend-school Compose definition, and recreates only `schoolorbit-backend-school`. It does not replace the production stack Compose or restart unrelated services.
 
+For the first production rollout, `upgrade_file_platform_env.sh` performs the
+public-bucket rename idempotently when the server still has only
+`R2_BUCKET_NAME`, then derives a deployment-specific private bucket name from
+the R2 account ID. This upgrades the environment file once; backend-school
+still requires the new public/private settings and never accepts the legacy
+variable as a runtime fallback.
+
 ### Durable lifecycle and recovery
 
 Uploads scan and inspect bytes before reserving public delivery. Originals and derivatives use immutable versions. Delete revokes delivery in metadata first, then removes objects. Provider or metadata failures leave durable operations for the background reconciler; retries use leases, bounded exponential backoff, and a terminal attempt limit.
