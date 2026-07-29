@@ -1,6 +1,8 @@
-use crate::test_helpers::{create_test_pool, run_test_migrations};
+use crate::test_helpers::{create_named_test_pool, create_test_pool, run_test_migrations};
 use sha2::{Digest, Sha256};
+use sqlx::migrate::Migrator;
 use sqlx::PgPool;
+use std::borrow::Cow;
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -130,6 +132,7 @@ fn migrations_dir() -> PathBuf {
 }
 
 fn has_test_database_url() -> bool {
+    dotenvy::dotenv().ok();
     env::var("TEST_DATABASE_URL")
         .map(|url| !url.trim().is_empty())
         .unwrap_or(false)
@@ -689,12 +692,192 @@ async fn file_platform_schema_rejects_invalid_locator_values_and_physical_identi
     );
 }
 
+#[tokio::test]
+async fn file_platform_contract_cutover_preserves_canonical_identity() {
+    let Some(pool) = pre_cutover_pool_or_skip("cutover_success").await else {
+        return;
+    };
+    let file_id = insert_pre_cutover_file(&pool, "processing").await;
+    let version_id = insert_version(&pool, file_id, "stored")
+        .await
+        .expect("pre-cutover version should insert");
+    sqlx::query(
+        "UPDATE files
+         SET current_version_id = $1, lifecycle_status = 'ready'
+         WHERE id = $2",
+    )
+    .bind(version_id)
+    .bind(file_id)
+    .execute(&pool)
+    .await
+    .expect("pre-cutover file should become ready");
+
+    apply_contract_cutover(&pool)
+        .await
+        .expect("valid File Platform state should pass contract cutover");
+
+    assert_columns(
+        &pool,
+        "files",
+        &[
+            "owner_user_id",
+            "display_filename",
+            "created_by",
+            "purpose_code",
+            "retention_class",
+            "current_version_id",
+        ],
+    )
+    .await;
+    for removed in [
+        "user_id",
+        "filename",
+        "uploaded_by",
+        "storage_path",
+        "file_size",
+        "mime_type",
+        "is_temporary",
+        "is_public",
+    ] {
+        assert!(
+            !column_exists(&pool, "files", removed).await,
+            "contract cutover must remove files.{removed}"
+        );
+    }
+    assert!(
+        !relation_exists(&pool, "active_files").await,
+        "contract cutover must remove active_files"
+    );
+    assert!(
+        !function_exists(
+            &pool,
+            "generate_storage_path(character varying,character varying,uuid,character varying)"
+        )
+        .await,
+        "contract cutover must remove generate_storage_path"
+    );
+    assert!(
+        !column_is_nullable(&pool, "files", "purpose_code").await,
+        "files.purpose_code must be required after contract cutover"
+    );
+
+    let persisted_version =
+        sqlx::query_scalar::<_, Uuid>("SELECT current_version_id FROM files WHERE id = $1")
+            .bind(file_id)
+            .fetch_one(&pool)
+            .await
+            .expect("cutover file identity should remain queryable");
+    assert_eq!(persisted_version, version_id);
+}
+
+#[tokio::test]
+async fn file_platform_contract_cutover_rejects_file_without_version() {
+    let Some(pool) = pre_cutover_pool_or_skip("cutover_missing_version").await else {
+        return;
+    };
+    insert_pre_cutover_file(&pool, "processing").await;
+
+    assert_cutover_rejected_without_schema_change(&pool).await;
+}
+
+#[tokio::test]
+async fn file_platform_contract_cutover_rejects_ready_file_without_current_version() {
+    let Some(pool) = pre_cutover_pool_or_skip("cutover_missing_current").await else {
+        return;
+    };
+    let file_id = insert_pre_cutover_file(&pool, "ready").await;
+    insert_version(&pool, file_id, "stored")
+        .await
+        .expect("pre-cutover version should insert");
+
+    assert_cutover_rejected_without_schema_change(&pool).await;
+}
+
+#[tokio::test]
+async fn file_platform_contract_cutover_rejects_legacy_profile_path() {
+    let Some(pool) = pre_cutover_pool_or_skip("cutover_profile_path").await else {
+        return;
+    };
+    sqlx::query(
+        "INSERT INTO users (
+            username, email, password_hash, first_name, last_name, user_type,
+            status, profile_image_url
+         ) VALUES ($1, $1, 'test-hash', 'Test', 'User', 'staff', 'active', 'legacy-profile')",
+    )
+    .bind(format!("cutover-profile-{}@example.test", Uuid::new_v4()))
+    .execute(&pool)
+    .await
+    .expect("pre-cutover user should insert");
+
+    assert_cutover_rejected_without_schema_change(&pool).await;
+}
+
+#[tokio::test]
+async fn file_platform_contract_cutover_rejects_legacy_achievement_path() {
+    let Some(pool) = pre_cutover_pool_or_skip("cutover_achievement_path").await else {
+        return;
+    };
+    let user_id = insert_pre_cutover_user(&pool, "achievement").await;
+    sqlx::query(
+        "INSERT INTO staff_achievements (
+            user_id, title, achievement_date, image_path
+         ) VALUES ($1, 'Test achievement', CURRENT_DATE, 'legacy-achievement')",
+    )
+    .bind(user_id)
+    .execute(&pool)
+    .await
+    .expect("pre-cutover achievement should insert");
+
+    assert_cutover_rejected_without_schema_change(&pool).await;
+}
+
 async fn relation_exists(pool: &PgPool, relation: &str) -> bool {
     sqlx::query_scalar("SELECT to_regclass($1) IS NOT NULL")
         .bind(relation)
         .fetch_one(pool)
         .await
         .expect("relation existence query should execute")
+}
+
+async fn function_exists(pool: &PgPool, signature: &str) -> bool {
+    sqlx::query_scalar("SELECT to_regprocedure($1) IS NOT NULL")
+        .bind(signature)
+        .fetch_one(pool)
+        .await
+        .expect("function existence query should execute")
+}
+
+async fn column_exists(pool: &PgPool, table: &str, column: &str) -> bool {
+    sqlx::query_scalar(
+        "SELECT EXISTS (
+            SELECT 1
+            FROM information_schema.columns
+            WHERE table_schema = current_schema()
+              AND table_name = $1
+              AND column_name = $2
+         )",
+    )
+    .bind(table)
+    .bind(column)
+    .fetch_one(pool)
+    .await
+    .expect("column existence query should execute")
+}
+
+async fn column_is_nullable(pool: &PgPool, table: &str, column: &str) -> bool {
+    sqlx::query_scalar::<_, String>(
+        "SELECT is_nullable
+         FROM information_schema.columns
+         WHERE table_schema = current_schema()
+           AND table_name = $1
+           AND column_name = $2",
+    )
+    .bind(table)
+    .bind(column)
+    .fetch_one(pool)
+    .await
+    .expect("column nullability query should execute")
+        == "YES"
 }
 
 async fn assert_columns(pool: &PgPool, table: &str, expected: &[&str]) {
@@ -782,6 +965,82 @@ async fn test_pool_or_skip() -> Option<PgPool> {
     let pool = create_test_pool().await;
     run_test_migrations(&pool).await;
     Some(pool)
+}
+
+async fn pre_cutover_pool_or_skip(test_name: &str) -> Option<PgPool> {
+    if !has_test_database_url() {
+        eprintln!("SKIPPED: TEST_DATABASE_URL is not set; File Platform contract cutover assertions require an isolated test database.");
+        return None;
+    }
+
+    let pool = create_named_test_pool(test_name).await;
+    let base = sqlx::migrate!("./migrations");
+    let migrator = Migrator {
+        migrations: Cow::Owned(
+            base.iter()
+                .filter(|migration| migration.version <= 31)
+                .cloned()
+                .collect(),
+        ),
+        locking: false,
+        ..base
+    };
+    migrator
+        .run(&pool)
+        .await
+        .expect("pre-cutover migrations should apply");
+    Some(pool)
+}
+
+async fn apply_contract_cutover(pool: &PgPool) -> Result<(), sqlx::Error> {
+    let migration =
+        fs::read_to_string(migrations_dir().join("032_file_platform_contract_cutover.sql"))
+            .expect("migration 032 must exist before contract cutover tests can pass");
+    sqlx::raw_sql(&migration).execute(pool).await.map(|_| ())
+}
+
+async fn assert_cutover_rejected_without_schema_change(pool: &PgPool) {
+    assert!(
+        apply_contract_cutover(pool).await.is_err(),
+        "unsafe legacy-only state must fail the contract cutover"
+    );
+    assert!(
+        column_exists(pool, "files", "storage_path").await,
+        "failed transactional cutover must preserve the pre-cutover schema"
+    );
+}
+
+async fn insert_pre_cutover_file(pool: &PgPool, lifecycle_status: &str) -> Uuid {
+    sqlx::query_scalar(
+        "INSERT INTO files (
+            filename, original_filename, file_size, mime_type, storage_path,
+            file_type, purpose_code, visibility, lifecycle_status,
+            retention_class
+         ) VALUES (
+            'contract-test.bin', 'contract-test.bin', 1,
+            'application/octet-stream', $1, 'other', 'generic_private_document',
+            'private', $2, 'standard'
+         )
+         RETURNING id",
+    )
+    .bind(format!("contract-test/{}", Uuid::new_v4()))
+    .bind(lifecycle_status)
+    .fetch_one(pool)
+    .await
+    .expect("pre-cutover file should insert")
+}
+
+async fn insert_pre_cutover_user(pool: &PgPool, label: &str) -> Uuid {
+    sqlx::query_scalar(
+        "INSERT INTO users (
+            username, email, password_hash, first_name, last_name, user_type, status
+         ) VALUES ($1, $1, 'test-hash', 'Test', 'User', 'staff', 'active')
+         RETURNING id",
+    )
+    .bind(format!("cutover-{label}-{}@example.test", Uuid::new_v4()))
+    .fetch_one(pool)
+    .await
+    .expect("pre-cutover user should insert")
 }
 
 async fn insert_file(pool: &PgPool) -> Uuid {

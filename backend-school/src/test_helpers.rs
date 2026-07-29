@@ -16,6 +16,19 @@ fn set_search_path_sql(schema: &str) -> String {
     format!(r#"SET search_path TO "{schema}", public"#)
 }
 
+fn named_test_schema(test_name: &str, process_id: u32) -> String {
+    let sanitized = test_name
+        .chars()
+        .filter(|ch| ch.is_ascii_alphanumeric() || *ch == '_')
+        .take(32)
+        .collect::<String>();
+    assert!(
+        !sanitized.is_empty(),
+        "named test schema requires an identifier-safe test name"
+    );
+    format!("schoolorbit_test_{process_id}_{sanitized}")
+}
+
 fn explicit_test_database_url() -> String {
     dotenvy::dotenv().ok();
     let database_url = env::var("TEST_DATABASE_URL")
@@ -82,15 +95,30 @@ async fn ensure_test_schema(database_url: &str, schema: &str) {
     let _ = TEST_SCHEMA_READY.set(());
 }
 
-/// Create a test database pool
-pub async fn create_test_pool() -> PgPool {
-    let database_url = explicit_test_database_url();
-    let schema = shared_test_schema();
-    ensure_test_schema(&database_url, &schema).await;
-    let search_path_sql = set_search_path_sql(&schema);
+async fn reset_test_schema(database_url: &str, schema: &str) {
+    let admin_pool = PgPoolOptions::new()
+        .max_connections(1)
+        .connect(database_url)
+        .await
+        .expect("Failed to connect to TEST_DATABASE_URL for named test schema setup");
 
+    sqlx::query(&format!(r#"DROP SCHEMA IF EXISTS "{schema}" CASCADE"#))
+        .execute(&admin_pool)
+        .await
+        .expect("Failed to reset named test schema");
+
+    sqlx::query(&format!(r#"CREATE SCHEMA "{schema}""#))
+        .execute(&admin_pool)
+        .await
+        .expect("Failed to create named test schema");
+
+    admin_pool.close().await;
+}
+
+fn pool_with_search_path(schema: &str, max_connections: u32) -> PgPoolOptions {
+    let search_path_sql = set_search_path_sql(schema);
     PgPoolOptions::new()
-        .max_connections(5)
+        .max_connections(max_connections)
         .after_connect(move |connection, _metadata| {
             let search_path_sql = search_path_sql.clone();
             Box::pin(async move {
@@ -98,9 +126,30 @@ pub async fn create_test_pool() -> PgPool {
                 Ok(())
             })
         })
+}
+
+/// Create a test database pool
+pub async fn create_test_pool() -> PgPool {
+    let database_url = explicit_test_database_url();
+    let schema = shared_test_schema();
+    ensure_test_schema(&database_url, &schema).await;
+
+    pool_with_search_path(&schema, 5)
         .connect(&database_url)
         .await
         .expect("Failed to connect to test database")
+}
+
+/// Create a fresh schema-isolated pool for a destructive migration scenario.
+pub async fn create_named_test_pool(test_name: &str) -> PgPool {
+    let database_url = explicit_test_database_url();
+    let schema = named_test_schema(test_name, process::id());
+    reset_test_schema(&database_url, &schema).await;
+
+    pool_with_search_path(&schema, 1)
+        .connect(&database_url)
+        .await
+        .expect("Failed to connect to named test schema")
 }
 
 /// Run migrations on test database
@@ -192,6 +241,14 @@ mod tests {
         assert_eq!(
             set_search_path_sql("schoolorbit_test_12345"),
             r#"SET search_path TO "schoolorbit_test_12345", public"#
+        );
+    }
+
+    #[test]
+    fn named_schema_is_process_scoped_and_identifier_safe() {
+        assert_eq!(
+            named_test_schema("file-platform cutover!", 12345),
+            "schoolorbit_test_12345_fileplatformcutover"
         );
     }
 
