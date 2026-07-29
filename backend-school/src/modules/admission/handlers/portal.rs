@@ -1,7 +1,7 @@
 use axum::{
     extract::{Multipart, Path, State},
     http::HeaderMap,
-    response::{IntoResponse, Redirect, Response},
+    response::{IntoResponse, Response},
     Json,
 };
 use serde::Serialize;
@@ -14,8 +14,9 @@ use crate::modules::admission::models::applications::*;
 use crate::modules::admission::services::{application_service, portal_service};
 use crate::modules::files::{
     consumer_service::{map_platform_error, request_deletions},
+    models::FileDownloadGrantResponse,
     platform_service::UploadCommand,
-    platform_types::{DownloadGrant, FilePurpose},
+    platform_types::FilePurpose,
     repository::SqlFileRepository,
 };
 use crate::policies::file_access_policy;
@@ -284,7 +285,7 @@ pub async fn portal_delete_document(
     params(("file_id" = Uuid, Path, description = "Logical file ID")),
     request_body = PortalCredentials,
     responses(
-        (status = 303, description = "Short-lived private document redirect"),
+        (status = 200, description = "Short-lived private document grant", body = ApiResponse<FileDownloadGrantResponse>),
         (status = 400, description = "Invalid portal credential format", body = ApiErrorResponse),
         (status = 401, description = "Applicant credentials rejected", body = ApiErrorResponse),
         (status = 404, description = "Application document not found", body = ApiErrorResponse),
@@ -313,17 +314,15 @@ pub async fn portal_download_document(
     )
     .await?;
     let repository = SqlFileRepository::new(pool);
-    match state
+    let grant = state
         .file_platform
         .private_download(&repository, file_id)
         .await
-        .map_err(map_platform_error)?
-    {
-        DownloadGrant::Redirect { location, .. } => Ok(Redirect::to(&location).into_response()),
-        DownloadGrant::Stream { .. } => Err(AppError::InternalServerError(
-            "file_stream_grant_not_supported".to_string(),
-        )),
-    }
+        .map_err(map_platform_error)?;
+    let response = FileDownloadGrantResponse::try_from(grant).map_err(|()| {
+        AppError::InternalServerError("file_stream_grant_not_supported".to_string())
+    })?;
+    Ok(Json(ApiResponse::ok(response)).into_response())
 }
 
 pub async fn portal_get_exam_seat(

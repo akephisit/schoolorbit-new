@@ -2959,6 +2959,15 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
+		ApiResponse_FileDownloadGrantResponse: {
+			data: {
+				/** Format: date-time */
+				expiresAt: string;
+				url: string;
+			};
+			message?: string;
+			success: boolean;
+		};
 		ApiResponse_FileMetadata: {
 			data: {
 				/** Format: int64 */
@@ -5240,6 +5249,11 @@ export interface components {
 		};
 		FileDeleteResult: {
 			pendingRetry: boolean;
+		};
+		FileDownloadGrantResponse: {
+			/** Format: date-time */
+			expiresAt: string;
+			url: string;
 		};
 		/** @enum {string} */
 		FileLifecycleStatus:
@@ -13993,12 +14007,14 @@ export interface operations {
 			};
 		};
 		responses: {
-			/** @description Short-lived private document redirect */
-			303: {
+			/** @description Short-lived private document grant */
+			200: {
 				headers: {
 					[name: string]: unknown;
 				};
-				content?: never;
+				content: {
+					'application/json': components['schemas']['ApiResponse_FileDownloadGrantResponse'];
+				};
 			};
 			/** @description Invalid portal credential format */
 			400: {
@@ -14636,12 +14652,14 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
-			/** @description Short-lived private download redirect */
-			303: {
+			/** @description Short-lived private download grant */
+			200: {
 				headers: {
 					[name: string]: unknown;
 				};
-				content?: never;
+				content: {
+					'application/json': components['schemas']['ApiResponse_FileDownloadGrantResponse'];
+				};
 			};
 			/** @description Authentication required */
 			401: {

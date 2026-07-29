@@ -1,9 +1,10 @@
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
 use super::{
-    platform_types::{FileLifecycleStatus, FilePurpose, FileVisibility},
+    platform_types::{DownloadGrant, FileLifecycleStatus, FilePurpose, FileVisibility},
     repository::PlatformFile,
 };
 
@@ -21,6 +22,30 @@ pub struct FileUploadMultipart {
 #[into_params(parameter_in = Query)]
 pub struct FileAccessQuery {
     pub resource_id: Option<Uuid>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct FileDownloadGrantResponse {
+    pub url: String,
+    pub expires_at: DateTime<Utc>,
+}
+
+impl TryFrom<DownloadGrant> for FileDownloadGrantResponse {
+    type Error = ();
+
+    fn try_from(grant: DownloadGrant) -> Result<Self, Self::Error> {
+        match grant {
+            DownloadGrant::Redirect {
+                location,
+                expires_at,
+            } => Ok(Self {
+                url: location,
+                expires_at,
+            }),
+            DownloadGrant::Stream { .. } => Err(()),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, ToSchema)]
@@ -99,5 +124,29 @@ mod tests {
         ] {
             assert!(json.get(forbidden).is_none());
         }
+    }
+
+    #[test]
+    fn download_grant_response_exposes_only_temporary_delivery_fields() {
+        let expires_at = Utc::now();
+        let response = FileDownloadGrantResponse::try_from(DownloadGrant::Redirect {
+            location: "https://provider.example/private?temporary=1".to_string(),
+            expires_at,
+        })
+        .unwrap();
+        let json = serde_json::to_value(response).unwrap();
+
+        assert_eq!(json["url"], "https://provider.example/private?temporary=1");
+        assert!(json.get("expiresAt").is_some());
+        assert_eq!(json.as_object().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn download_grant_response_rejects_unsupported_stream_delivery() {
+        assert!(FileDownloadGrantResponse::try_from(DownloadGrant::Stream {
+            content_type: "image/jpeg".to_string(),
+            content_length: Some(1),
+        })
+        .is_err());
     }
 }

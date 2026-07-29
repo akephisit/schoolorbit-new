@@ -70,7 +70,9 @@ use crate::modules::calendar::models::{
     CalendarPublicEvent, CalendarTag, CalendarViewerEvent,
 };
 use crate::modules::facility::models::Room;
-use crate::modules::files::models::{FileDeleteResult, FileMetadata, FileUploadMultipart};
+use crate::modules::files::models::{
+    FileDeleteResult, FileDownloadGrantResponse, FileMetadata, FileUploadMultipart,
+};
 use crate::modules::files::platform_types::{FileLifecycleStatus, FilePurpose};
 use crate::modules::lookup::models::{
     AcademicYearLookupItem, ClassroomLookupItem, GradeLevelLookupItem, LookupItem,
@@ -635,8 +637,10 @@ use utoipa::OpenApi;
         FileUploadMultipart,
         FileMetadata,
         FileDeleteResult,
+        FileDownloadGrantResponse,
         ApiResponse<FileMetadata>,
         ApiResponse<FileDeleteResult>,
+        ApiResponse<FileDownloadGrantResponse>,
         StaffDocumentMultipart,
         PortalDocumentMultipart,
         PortalCredentials,
@@ -2928,6 +2932,17 @@ mod tests {
             );
         }
 
+        let grant = &schemas["FileDownloadGrantResponse"];
+        assert!(required(grant).contains(&"url"));
+        assert!(required(grant).contains(&"expiresAt"));
+        assert_eq!(grant["properties"]["expiresAt"]["format"], "date-time");
+        for forbidden in ["bucket", "objectKey", "provider"] {
+            assert!(
+                grant["properties"].get(forbidden).is_none(),
+                "download grant must not expose {forbidden}"
+            );
+        }
+
         assert_eq!(
             document["paths"]["/api/files"]["post"]["responses"]["201"]["content"]
                 ["application/json"]["schema"]["$ref"],
@@ -2938,6 +2953,22 @@ mod tests {
                 ["application/json"]["schema"]["$ref"],
             "#/components/schemas/ApiResponse_FileMetadata",
         );
+        for path in [
+            "/api/files/{id}/download",
+            "/api/admission/portal/documents/{file_id}/download",
+        ] {
+            assert_eq!(
+                document["paths"][path]["post"]["responses"]["200"]["content"]["application/json"]
+                    ["schema"]["$ref"],
+                "#/components/schemas/ApiResponse_FileDownloadGrantResponse",
+            );
+            assert!(
+                document["paths"][path]["post"]["responses"]
+                    .get("303")
+                    .is_none(),
+                "{path} must return a typed grant instead of a browser redirect"
+            );
+        }
         assert!(
             document["paths"]["/api/public/files/{id}/content"]["get"]["responses"]["307"]
                 ["content"]

@@ -2039,6 +2039,37 @@
         ],
         "type": "object"
       },
+      "ApiResponse_FileDownloadGrantResponse": {
+        "properties": {
+          "data": {
+            "properties": {
+              "expiresAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "url": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "url",
+              "expiresAt"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
       "ApiResponse_FileMetadata": {
         "properties": {
           "data": {
@@ -10742,6 +10773,22 @@
         },
         "required": [
           "pendingRetry"
+        ],
+        "type": "object"
+      },
+      "FileDownloadGrantResponse": {
+        "properties": {
+          "expiresAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "url",
+          "expiresAt"
         ],
         "type": "object"
       },
@@ -25225,8 +25272,15 @@
           "required": true
         },
         "responses": {
-          "303": {
-            "description": "Short-lived private document redirect"
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_FileDownloadGrantResponse"
+                }
+              }
+            },
+            "description": "Short-lived private document grant"
           },
           "400": {
             "content": {
@@ -26032,8 +26086,15 @@
           }
         ],
         "responses": {
-          "303": {
-            "description": "Short-lived private download redirect"
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_FileDownloadGrantResponse"
+                }
+              }
+            },
+            "description": "Short-lived private download grant"
           },
           "401": {
             "content": {

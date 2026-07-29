@@ -17,9 +17,11 @@ use crate::{
 
 use super::{
     consumer_service::map_platform_error,
-    models::{FileAccessQuery, FileDeleteResult, FileMetadata, FileUploadMultipart},
+    models::{
+        FileAccessQuery, FileDeleteResult, FileDownloadGrantResponse, FileMetadata,
+        FileUploadMultipart,
+    },
     platform_service::{FilePlatformError, UploadCommand},
-    platform_types::DownloadGrant,
     purpose_registry::{purpose_definition, purpose_from_code},
     repository::SqlFileRepository,
 };
@@ -179,7 +181,7 @@ pub async fn get_file_metadata(
         FileAccessQuery
     ),
     responses(
-        (status = 303, description = "Short-lived private download redirect"),
+        (status = 200, description = "Short-lived private download grant", body = ApiResponse<FileDownloadGrantResponse>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "File policy denied", body = ApiErrorResponse),
         (status = 404, description = "File or resource relationship not found", body = ApiErrorResponse),
@@ -214,12 +216,10 @@ pub async fn download_file(
         .map_err(map_platform_error)?;
     audit_allowed(context.actor.user_id, &file, "download");
 
-    match grant {
-        DownloadGrant::Redirect { location, .. } => Ok(Redirect::to(&location).into_response()),
-        DownloadGrant::Stream { .. } => Err(AppError::InternalServerError(
-            "file_stream_grant_not_supported".to_string(),
-        )),
-    }
+    let response = FileDownloadGrantResponse::try_from(grant).map_err(|()| {
+        AppError::InternalServerError("file_stream_grant_not_supported".to_string())
+    })?;
+    Ok(Json(ApiResponse::ok(response)).into_response())
 }
 
 #[utoipa::path(
