@@ -136,11 +136,6 @@ This file is the single active backlog for verified, unfinished technical work t
   - Standardize `updated_at`, archival, retention, legal hold, and hard/soft deletion behavior.
   - Plan growth management for audit logs and notifications, including retention and partitioning when measurements justify it.
 
-- [ ] **DB-004: Remove File Platform compatibility columns after the verified rollback window.**
-  - Confirm every tenant and consumer uses opaque file IDs, with zero legacy locator reads or writes.
-  - Reconcile file metadata and object counts, retain rollback evidence, then add a new forward-only migration that drops the legacy locator columns.
-  - Do not edit an applied migration or remove compatibility columns while any deployed version still depends on them.
-
 - [ ] **FE-001: Reduce school frontend data waterfalls and auth flashes.**
   - Move session bootstrap and suitable route-specific loading toward SvelteKit server hooks/layouts/loaders in incremental slices.
   - Keep backend authorization authoritative and add deep-link, expired-session, and denied-route browser tests.
