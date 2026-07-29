@@ -163,13 +163,6 @@ impl FilePlatform {
             .collect::<Vec<_>>();
         let byte_size = i64::try_from(command.bytes.len())
             .map_err(|_| FilePlatformError::InspectionRejected)?;
-        let (width, height) = match inspected.dimensions() {
-            Some((width, height)) => (
-                Some(i32::try_from(width).map_err(|_| FilePlatformError::InspectionRejected)?),
-                Some(i32::try_from(height).map_err(|_| FilePlatformError::InspectionRejected)?),
-            ),
-            None => (None, None),
-        };
         let display_filename = sanitized_display_filename(&command.display_filename);
         let upload = NewUpload {
             file_id,
@@ -185,8 +178,6 @@ impl FilePlatform {
             original: original.clone(),
             byte_size,
             checksum: FileHasher::sha256(&command.bytes),
-            width,
-            height,
             derivatives: derivatives
                 .iter()
                 .map(|derivative| derivative.metadata.clone())

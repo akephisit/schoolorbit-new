@@ -66,8 +66,6 @@ pub struct NewUpload {
     pub original: StoredObject,
     pub byte_size: i64,
     pub checksum: String,
-    pub width: Option<i32>,
-    pub height: Option<i32>,
     pub derivatives: Vec<NewDerivative>,
 }
 
@@ -463,30 +461,17 @@ impl FileRepository for SqlFileRepository {
         sqlx::query(
             r#"
 INSERT INTO files (
-    id, user_id, filename, original_filename, file_size, mime_type,
-    storage_path, file_type, width, height, has_thumbnail, is_temporary,
-    is_public, checksum, uploaded_by, purpose_code, visibility,
-    lifecycle_status, retention_class, expires_at
+    id, owner_user_id, display_filename, created_by, purpose_code,
+    visibility, lifecycle_status, retention_class, expires_at
 ) VALUES (
-    $1, $2, $3, $3, $4, $5, $6, $7, $8, $9, $10, $11,
-    $12, $13, $14, $15, $16, 'processing', $17,
-    CASE WHEN $11 THEN now() + INTERVAL '24 hours' ELSE NULL END
+    $1, $2, $3, $4, $5, $6, 'processing', $7,
+    CASE WHEN $7 = 'temporary' THEN now() + INTERVAL '24 hours' ELSE NULL END
 )
 "#,
         )
         .bind(upload.file_id)
         .bind(upload.owner_user_id)
         .bind(&upload.display_filename)
-        .bind(upload.byte_size)
-        .bind(&upload.original.content_type)
-        .bind(upload.original.object_key.as_str())
-        .bind(legacy_file_type(upload.purpose))
-        .bind(upload.width)
-        .bind(upload.height)
-        .bind(!upload.derivatives.is_empty())
-        .bind(upload.retention_class == RetentionClass::Temporary)
-        .bind(upload.visibility == FileVisibility::Public)
-        .bind(&upload.checksum)
         .bind(upload.created_by)
         .bind(upload.purpose.code())
         .bind(visibility)
@@ -820,12 +805,24 @@ WHERE file_id = $1 AND operation_type = 'reconcile' AND status <> 'succeeded'
     ) -> Result<Option<DeliveryRecord>, RepositoryError> {
         let row = sqlx::query(
             r#"
-SELECT f.id, f.user_id, f.purpose_code, f.visibility, f.lifecycle_status,
-       f.filename, f.file_size, f.current_version_id,
-       v.version_number, v.object_key, v.storage_class, v.detected_mime_type
+SELECT f.id, f.owner_user_id, f.purpose_code, f.visibility, f.lifecycle_status,
+       f.display_filename, f.current_version_id,
+       current_version.version_number, current_version.object_key,
+       current_version.storage_class, metadata.detected_mime_type,
+       metadata.byte_size
 FROM files f
-LEFT JOIN file_versions v
-  ON v.id = f.current_version_id AND v.file_id = f.id
+LEFT JOIN file_versions current_version
+  ON current_version.id = f.current_version_id
+ AND current_version.file_id = f.id
+LEFT JOIN LATERAL (
+    SELECT candidate.detected_mime_type, candidate.byte_size
+    FROM file_versions candidate
+    WHERE candidate.file_id = f.id
+    ORDER BY
+        CASE WHEN candidate.id = f.current_version_id THEN 0 ELSE 1 END,
+        candidate.version_number DESC
+    LIMIT 1
+) metadata ON true
 WHERE f.id = $1 AND f.deleted_at IS NULL
 "#,
         )
@@ -1268,21 +1265,21 @@ fn delivery_from_row(row: sqlx::postgres::PgRow) -> Result<DeliveryRecord, Repos
                 .try_get("id")
                 .map_err(SqlFileRepository::database_error)?,
             owner_user_id: row
-                .try_get("user_id")
+                .try_get("owner_user_id")
                 .map_err(SqlFileRepository::database_error)?,
             purpose,
             visibility,
             lifecycle_status,
             current_version,
             display_filename: row
-                .try_get("filename")
+                .try_get("display_filename")
                 .map_err(SqlFileRepository::database_error)?,
             detected_mime_type: object
                 .as_ref()
                 .map(|object| object.content_type.clone())
                 .unwrap_or_default(),
             byte_size: row
-                .try_get("file_size")
+                .try_get("byte_size")
                 .map_err(SqlFileRepository::database_error)?,
         },
         object,
@@ -1308,24 +1305,6 @@ fn canonical_extension_from_mime(mime: &str) -> Result<&'static str, RepositoryE
         "image/webp" => Ok("webp"),
         "application/pdf" => Ok("pdf"),
         _ => Err(RepositoryError::InvalidPersistedState),
-    }
-}
-
-fn legacy_file_type(purpose: FilePurpose) -> &'static str {
-    match purpose {
-        FilePurpose::SchoolLogo => "school_logo",
-        FilePurpose::SchoolBanner => "school_banner",
-        FilePurpose::ProfileImage => "profile_image",
-        FilePurpose::AchievementImage => "other",
-        FilePurpose::Transcript => "transcript",
-        FilePurpose::Certificate => "certificate",
-        FilePurpose::IdentityCard => "id_card",
-        FilePurpose::CourseMaterial => "course_material",
-        FilePurpose::AssignmentAttachment => "assignment",
-        FilePurpose::AdmissionApplicationDocument | FilePurpose::GenericPrivateDocument => {
-            "document"
-        }
-        FilePurpose::QuestionBankImage => "other",
     }
 }
 
@@ -1394,6 +1373,7 @@ mod tests {
     static REPOSITORY_TEST_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
     async fn repository_or_skip() -> Option<SqlFileRepository> {
+        dotenvy::dotenv().ok();
         if std::env::var("TEST_DATABASE_URL")
             .map(|value| value.trim().is_empty())
             .unwrap_or(true)
@@ -1454,8 +1434,6 @@ VALUES ($1, 'test-only-hash', 'Synthetic', 'User', 'staff', 'active')
             original,
             byte_size: 4,
             checksum: "a".repeat(64),
-            width: Some(2),
-            height: Some(2),
             derivatives: Vec::new(),
         };
 
@@ -1468,6 +1446,17 @@ VALUES ($1, 'test-only-hash', 'Synthetic', 'User', 'staff', 'active')
                 .unwrap(),
             "processing"
         );
+        let processing = repository
+            .load_delivery(file_id)
+            .await
+            .expect("processing file metadata should load")
+            .expect("processing file should exist");
+        assert_eq!(
+            processing.file.lifecycle_status,
+            FileLifecycleStatus::Processing
+        );
+        assert_eq!(processing.file.byte_size, 4);
+        assert!(processing.object.is_none());
 
         let now = Utc::now();
         let first = repository
@@ -1603,8 +1592,6 @@ VALUES ($1, 'test-only-hash', 'Synthetic', 'User', 'staff', 'active')
             ),
             byte_size: 4,
             checksum: "a".repeat(64),
-            width: Some(2),
-            height: Some(2),
             derivatives: vec![NewDerivative {
                 id: derivative_id,
                 operation_id: Uuid::new_v4(),

@@ -1054,11 +1054,11 @@ async fn insert_pre_cutover_user(pool: &PgPool, label: &str) -> Uuid {
 async fn insert_file(pool: &PgPool) -> Uuid {
     sqlx::query_scalar(
         "INSERT INTO files (
-            filename, original_filename, file_size, mime_type, storage_path, file_type
-         ) VALUES ('platform-test.bin', 'platform-test.bin', 1, 'application/octet-stream', $1, 'other')
+            display_filename, purpose_code, visibility, lifecycle_status,
+            retention_class
+         ) VALUES ('platform-test.bin', 'generic_private_document', 'private', 'processing', 'standard')
          RETURNING id",
     )
-    .bind(format!("platform-test/{}", Uuid::new_v4()))
     .fetch_one(pool)
     .await
     .expect("test file should insert")
