@@ -17,7 +17,25 @@ export interface CalendarMonthCell {
 
 export const CALENDAR_WEEKDAY_LABELS = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'] as const;
 export const CALENDAR_FALLBACK_COLOR = '#64748b';
+export const CALENDAR_EMBED_HEIGHT = 760;
 const BUDDHIST_YEAR_OFFSET = 543;
+
+export function buildCalendarEmbedUrl(origin: string): string {
+	return new URL('/calendar/embed', origin).toString();
+}
+
+export function buildCalendarEmbedCode(origin: string): string {
+	return `<iframe
+  src="${buildCalendarEmbedUrl(origin)}"
+  title="ปฏิทินโรงเรียน"
+  width="100%"
+  height="${CALENDAR_EMBED_HEIGHT}"
+  loading="lazy"
+  sandbox="allow-scripts allow-same-origin"
+  referrerpolicy="strict-origin-when-cross-origin"
+  style="border:0;border-radius:12px"
+></iframe>`;
+}
 
 export interface CalendarColorKeyEvent {
 	id: string;

@@ -3,6 +3,8 @@ import { describe, it } from 'node:test';
 
 import {
 	CALENDAR_WEEKDAY_LABELS,
+	buildCalendarEmbedCode,
+	buildCalendarEmbedUrl,
 	buildCalendarMonth,
 	buildCalendarMonthWeeks,
 	buildCalendarColorKey,
@@ -61,6 +63,30 @@ describe('calendar helpers', () => {
 	it('formats dates with Thai month labels and Buddhist years', () => {
 		assert.equal(formatCalendarDate('2026-07-03'), '3 ก.ค. 2569');
 		assert.equal(formatCalendarMonth('2026-07-03'), 'กรกฎาคม 2569');
+	});
+
+	it('builds a tenant-local calendar embed URL', () => {
+		assert.equal(
+			buildCalendarEmbedUrl('https://snwsb.schoolorbit.app'),
+			'https://snwsb.schoolorbit.app/calendar/embed'
+		);
+		assert.equal(
+			buildCalendarEmbedUrl('https://snwsb.schoolorbit.app/'),
+			'https://snwsb.schoolorbit.app/calendar/embed'
+		);
+	});
+
+	it('builds a WordPress-safe calendar iframe snippet', () => {
+		const code = buildCalendarEmbedCode('https://snwsb.schoolorbit.app');
+
+		assert.match(code, /src="https:\/\/snwsb\.schoolorbit\.app\/calendar\/embed"/);
+		assert.match(code, /title="ปฏิทินโรงเรียน"/);
+		assert.match(code, /width="100%"/);
+		assert.match(code, /height="760"/);
+		assert.match(code, /loading="lazy"/);
+		assert.match(code, /sandbox="allow-scripts allow-same-origin"/);
+		assert.match(code, /referrerpolicy="strict-origin-when-cross-origin"/);
+		assert.match(code, /style="border:0;border-radius:12px"/);
 	});
 
 	it('splits a multi-day event into continuous weekly segments', () => {
