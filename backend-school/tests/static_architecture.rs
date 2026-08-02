@@ -4409,7 +4409,9 @@ fn deployment_and_smoke_checks_use_backend_readiness() {
     }
     assert!(school_deploy.contains("docker.io/amazon/aws-cli:2.36.9"));
     assert!(school_deploy.contains("docker.io/clamav/clamav-debian:1.5.3"));
-    assert!(!repo_root().join("backend-school/docker-compose.yml").exists());
+    assert!(!repo_root()
+        .join("backend-school/docker-compose.yml")
+        .exists());
     assert!(!school_deploy.contains("list-buckets"));
     assert!(school_deploy.contains(r#"r2_cli s3api head-bucket --bucket "$public_bucket""#));
     assert!(school_deploy.contains(r#"r2_cli s3api head-bucket --bucket "$private_bucket""#));
