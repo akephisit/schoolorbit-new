@@ -37,6 +37,7 @@ printf "\n" >>"$FAKE_COMMAND_LOG"
 case "${1-} ${2-}" in
     "auth status") exit 0 ;;
     "api repos/owner/repo/actions/permissions/workflow") printf "write\n" ;;
+    "api repos/owner/repo/actions/variables/RUNTIME_DEPLOY_ENABLED") printf "true\n" ;;
     "secret set") cat >"$CAPTURED_STDIN" ;;
     "run list") cat "$GITHUB_RUN_FIXTURE" ;;
     "run watch") exit 0 ;;
@@ -95,6 +96,12 @@ teardown() {
     grep -F 'secret set SERVER_PORT --repo owner/repo' "$FAKE_COMMAND_LOG"
     run grep -F -- '--body ssh-private-value-kept-on-stdin' "$FAKE_COMMAND_LOG"
     [ "$status" -eq 1 ]
+}
+
+@test "GitHub rollout gate verification uses the Actions variable API" {
+    github_variable_equals RUNTIME_DEPLOY_ENABLED true
+
+    grep -F 'gh api repos/owner/repo/actions/variables/RUNTIME_DEPLOY_ENABLED --jq .value' "$FAKE_COMMAND_LOG"
 }
 
 @test "workflow dispatch waits for exactly correlated display title" {

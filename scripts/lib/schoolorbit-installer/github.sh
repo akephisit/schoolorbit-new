@@ -100,7 +100,7 @@ github_dispatch_and_wait() {
 github_variable_equals() {
     local name=$1 expected=$2 actual
     _github_valid_name "$name" || die 64 'Invalid GitHub variable name' || return
-    actual=$(gh variable get "$name" --repo "${SO_CONFIG[repository]}" --json value --jq '.value' 2>/dev/null) || die 69 "Unable to read GitHub variable $name" || return
+    actual=$(gh api "repos/${SO_CONFIG[repository]}/actions/variables/$name" --jq '.value' 2>/dev/null) || die 69 "Unable to read GitHub variable $name" || return
     [[ $actual == "$expected" ]] || die 78 "GitHub variable $name does not match the verified value"
 }
 
