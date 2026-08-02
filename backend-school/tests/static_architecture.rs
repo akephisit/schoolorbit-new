@@ -4430,7 +4430,7 @@ fn deployment_and_smoke_checks_use_backend_readiness() {
     assert!(admin_deploy.contains("seq 1 12"));
     assert!(school_deploy.contains("timeout 180 bash -c"));
     assert!(admin_deploy.contains("timeout 60 bash -c"));
-    assert!(frontend_deploy.contains("BACKEND_SCHOOL_URL: ${{ secrets.BACKEND_SCHOOL_URL }}"));
+    assert!(frontend_deploy.contains("BACKEND_SCHOOL_URL: ${{ vars.BACKEND_SCHOOL_URL }}"));
     assert!(frontend_deploy.contains("${BACKEND_SCHOOL_URL%/}/ready"));
     assert!(frontend_deploy.contains(r#".filePlatform == "ready""#));
     assert!(smoke.contains("$SMOKE_ADMIN_API_URL/ready"));

@@ -1,16 +1,16 @@
 <script lang="ts">
 	import { authStore } from '$lib/stores/auth.svelte';
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { toast } from 'svelte-sonner';
 
 	let nationalId = $state('');
 	let password = $state('');
 
-
 	// Redirect if already authenticated (after initialization)
 	$effect(() => {
 		if (!authStore.isLoading && authStore.isAuthenticated) {
-			goto('/dashboard');
+			goto(resolve('/dashboard'));
 		}
 	});
 

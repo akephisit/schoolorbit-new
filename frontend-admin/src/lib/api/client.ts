@@ -32,10 +32,7 @@ class ApiClient {
 		this.baseUrl = baseUrl;
 	}
 
-	private async request<T>(
-		endpoint: string,
-		options: RequestInit = {}
-	): Promise<ApiResponse<T>> {
+	private async request<T>(endpoint: string, options: RequestInit = {}): Promise<ApiResponse<T>> {
 		const url = `${this.baseUrl}${endpoint}`;
 
 		try {
@@ -170,7 +167,13 @@ export interface CreateSchool {
 export interface UpdateSchool {
 	name?: string;
 	status?: string;
-	config?: Record<string, any>;
+	config?: SchoolConfig;
+}
+
+export interface SchoolConfig {
+	deployment_url?: string;
+	error?: string;
+	[key: string]: unknown;
 }
 
 export interface School {
@@ -180,7 +183,7 @@ export interface School {
 	dbName: string;
 	dbConnectionString: string | null;
 	status: string;
-	config: Record<string, any>;
+	config: SchoolConfig;
 	createdAt: string;
 	updatedAt: string;
 	// Deployment tracking

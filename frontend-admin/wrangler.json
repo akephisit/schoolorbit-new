@@ -1,21 +1,13 @@
 {
 	"name": "schoolorbit-frontend-admin",
-	"account_id": "4b8287e143531729dec988559f6721ef",
 	"main": "build/index.js",
 	"build": {
 		"command": "npm run build"
 	},
 	"compatibility_date": "2025-09-15",
-	"compatibility_flags": [
-		"nodejs_compat"
-	],
+	"compatibility_flags": ["nodejs_compat"],
 	"assets": {
 		"directory": "build/client",
 		"binding": "ASSETS"
-	},
-	"vars": {
-		"PUBLIC_API_URL": "https://admin-api.schoolorbit.app",
-		"BACKEND_SCHOOL_URL": "https://school-api.schoolorbit.app",
-		"INTERNAL_API_SECRET": "your-internal-secret-change-this-in-production"
 	}
 }

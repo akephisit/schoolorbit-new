@@ -120,3 +120,31 @@ test('backend workflows deploy the canonical target and verify the selected orig
     assert.doesNotMatch(workflow, /curl[^\n]*https:\/\/(?:admin-api|school-api)\.schoolorbit\.app/);
   }
 });
+
+test('frontend deployments keep environment values out of committed Worker configuration', async () => {
+  const wrangler = JSON.parse(await readRepo('frontend-admin/wrangler.json'));
+  assert.equal(wrangler.account_id, undefined);
+  assert.equal(wrangler.vars, undefined);
+
+  const admin = await readRepo('.github/workflows/deploy-frontend-admin.yml');
+  assert.match(admin, /secrets:\s*\|\s*\n\s*INTERNAL_API_SECRET/);
+  assert.match(admin, /vars\.BACKEND_ADMIN_URL/);
+  assert.match(admin, /vars\.BACKEND_SCHOOL_URL/);
+  assert.match(admin, /vars\.BASE_DOMAIN/);
+  assert.match(admin, /vars\.CLOUDFLARE_ACCOUNT_ID/);
+  assert.match(admin, /wrangler\.deploy\.json/);
+  assert.match(admin, /FRONTEND_DEPLOY_ENABLED/);
+
+  for (const file of [
+    '.github/workflows/deploy-all-schools.yml',
+    '.github/workflows/deploy-school-tenant.yml'
+  ]) {
+    const workflow = await readRepo(file);
+    assert.match(workflow, /vars\.BASE_DOMAIN/);
+    assert.match(workflow, /vars\.BACKEND_SCHOOL_URL/);
+    assert.match(workflow, /vars\.CLOUDFLARE_ACCOUNT_ID/);
+    assert.match(workflow, /jq -n/);
+    assert.doesNotMatch(workflow, /\.schoolorbit\.app\/\*/);
+    assert.doesNotMatch(workflow, /secrets\.(?:BACKEND_SCHOOL_URL|VAPID_PUBLIC_KEY|CLOUDFLARE_ACCOUNT_ID)/);
+  }
+});

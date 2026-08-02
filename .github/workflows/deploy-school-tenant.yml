@@ -39,55 +39,47 @@ jobs:
 
       - name: Create Wrangler configuration
         working-directory: frontend-school
+        env:
+          SUBDOMAIN: ${{ inputs.subdomain }}
+          SCHOOL_ID: ${{ inputs.school_id }}
+          BASE_DOMAIN: ${{ vars.BASE_DOMAIN }}
+          BACKEND_SCHOOL_URL: ${{ vars.BACKEND_SCHOOL_URL }}
+          VAPID_PUBLIC_KEY: ${{ vars.VAPID_PUBLIC_KEY }}
         run: |
-          cat > wrangler.json <<EOF
-          {
-            "name": "schoolorbit-school-${{ inputs.subdomain }}",
-            "account_id": "${{ secrets.CLOUDFLARE_ACCOUNT_ID }}",
-            "main": "build/index.js",
-
-            "compatibility_date": "2025-09-15",
-            "compatibility_flags": ["nodejs_compat"],
-            "assets": {
-              "directory": "build/client",
-              "binding": "ASSETS"
-            },
-            "routes": [
-              {
-                "pattern": "${{ inputs.subdomain }}.schoolorbit.app/*",
-                "zone_name": "schoolorbit.app"
-              }
-            ],
-            "vars": {
-              "PUBLIC_BACKEND_URL": "${{ secrets.BACKEND_SCHOOL_URL }}",
-              "PUBLIC_VAPID_KEY": "${{ secrets.VAPID_PUBLIC_KEY }}",
-              "SCHOOL_ID": "${{ inputs.school_id }}",
-              "SUBDOMAIN": "${{ inputs.subdomain }}"
-            }
-          }
-          EOF
+          set -eu
+          : "${BASE_DOMAIN:?BASE_DOMAIN repository variable is required}"
+          : "${BACKEND_SCHOOL_URL:?BACKEND_SCHOOL_URL repository variable is required}"
+          jq -n \
+            --arg name "schoolorbit-school-${SUBDOMAIN}" \
+            --arg route "${SUBDOMAIN}.${BASE_DOMAIN}/*" \
+            --arg zone "$BASE_DOMAIN" \
+            --arg backend "$BACKEND_SCHOOL_URL" \
+            --arg vapid "$VAPID_PUBLIC_KEY" \
+            --arg school_id "$SCHOOL_ID" \
+            --arg subdomain "$SUBDOMAIN" \
+            '{name:$name,main:"build/index.js",compatibility_date:"2025-09-15",compatibility_flags:["nodejs_compat"],assets:{directory:"build/client",binding:"ASSETS"},routes:[{pattern:$route,zone_name:$zone}],vars:{PUBLIC_BACKEND_URL:$backend,PUBLIC_VAPID_KEY:$vapid,SCHOOL_ID:$school_id,SUBDOMAIN:$subdomain}}' \
+            >wrangler.json
 
       - name: Build frontend
         working-directory: frontend-school
         env:
-          PUBLIC_BACKEND_URL: ${{ secrets.BACKEND_SCHOOL_URL }}
-          PUBLIC_VAPID_KEY: ${{ secrets.VAPID_PUBLIC_KEY }}
+          PUBLIC_BACKEND_URL: ${{ vars.BACKEND_SCHOOL_URL }}
+          PUBLIC_VAPID_KEY: ${{ vars.VAPID_PUBLIC_KEY }}
           SUBDOMAIN: ${{ inputs.subdomain }}
         run: npm run build
 
       - name: Deploy to Cloudflare Workers
         uses: cloudflare/wrangler-action@v3.14.1
-        env:
-          PUBLIC_BACKEND_URL: ${{ secrets.BACKEND_SCHOOL_URL }}
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: frontend-school
           command: deploy
 
       - name: Synchronize menu routes
         working-directory: frontend-school
         env:
-          PUBLIC_BACKEND_URL: ${{ secrets.BACKEND_SCHOOL_URL }}
+          PUBLIC_BACKEND_URL: ${{ vars.BACKEND_SCHOOL_URL }}
           DEPLOY_KEY: ${{ secrets.DEPLOY_KEY }}
           SUBDOMAIN: ${{ inputs.subdomain }}
         run: npm run sync:menu-routes
@@ -97,7 +89,7 @@ jobs:
         run: |
           if [ ${{ job.status }} == 'success' ]; then
             echo "✅ Successfully deployed ${{ inputs.subdomain }}"
-            echo "URL: https://${{ inputs.subdomain }}.schoolorbit.app"
+            echo "URL: https://${{ inputs.subdomain }}.${{ vars.BASE_DOMAIN }}"
           else
             echo "❌ Deployment failed for ${{ inputs.subdomain }}"
             exit 1

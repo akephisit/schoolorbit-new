@@ -1,4 +1,5 @@
 name: Deploy Frontend School to All Tenants
+run-name: Deploy Frontend Schools (${{ inputs.deployment_id || github.sha }})
 
 on:
   # Trigger เมื่อ push ไป main และมีการแก้ไข frontend-school
@@ -17,9 +18,14 @@ on:
         description: "Force deploy to all schools"
         required: false
         default: "false"
+      deployment_id:
+        description: "Installer run identifier"
+        required: false
+        type: string
 
 jobs:
   get-schools:
+    if: github.event_name == 'workflow_dispatch' || vars.FRONTEND_DEPLOY_ENABLED == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 35
     outputs:
@@ -31,7 +37,7 @@ jobs:
 
       - name: Wait for File Platform-ready backend
         env:
-          BACKEND_SCHOOL_URL: ${{ secrets.BACKEND_SCHOOL_URL }}
+          BACKEND_SCHOOL_URL: ${{ vars.BACKEND_SCHOOL_URL }}
         run: |
           set -eu
           for attempt in $(seq 1 180); do
@@ -55,7 +61,7 @@ jobs:
       - name: Fetch school list from API
         id: fetch-schools
         env:
-          BACKEND_ADMIN_URL: ${{ secrets.BACKEND_ADMIN_URL }}
+          BACKEND_ADMIN_URL: ${{ vars.BACKEND_ADMIN_URL }}
           INTERNAL_API_SECRET: ${{ secrets.INTERNAL_API_SECRET }}
         run: bash scripts/discover_school_tenants.sh
 
@@ -88,54 +94,45 @@ jobs:
 
       - name: Create Wrangler configuration
         working-directory: frontend-school
+        env:
+          SUBDOMAIN: ${{ matrix.school.subdomain }}
+          BASE_DOMAIN: ${{ vars.BASE_DOMAIN }}
+          BACKEND_SCHOOL_URL: ${{ vars.BACKEND_SCHOOL_URL }}
+          VAPID_PUBLIC_KEY: ${{ vars.VAPID_PUBLIC_KEY }}
         run: |
-          cat > wrangler.json <<EOF
-          {
-            "name": "schoolorbit-school-${{ matrix.school.subdomain }}",
-            "account_id": "${{ secrets.CLOUDFLARE_ACCOUNT_ID }}",
-            "main": "build/index.js",
-
-            "compatibility_date": "2025-09-15",
-            "compatibility_flags": ["nodejs_compat"],
-            "assets": {
-              "directory": "build/client",
-              "binding": "ASSETS"
-            },
-            "routes": [
-              {
-                "pattern": "${{ matrix.school.subdomain }}.schoolorbit.app/*",
-                "zone_name": "schoolorbit.app"
-              }
-            ],
-            "vars": {
-              "PUBLIC_BACKEND_URL": "${{ secrets.BACKEND_SCHOOL_URL }}",
-              "SUBDOMAIN": "${{ matrix.school.subdomain }}",
-              "PUBLIC_VAPID_KEY": "${{ secrets.VAPID_PUBLIC_KEY }}"
-            }
-          }
-          EOF
+          set -eu
+          : "${BASE_DOMAIN:?BASE_DOMAIN repository variable is required}"
+          : "${BACKEND_SCHOOL_URL:?BACKEND_SCHOOL_URL repository variable is required}"
+          jq -n \
+            --arg name "schoolorbit-school-${SUBDOMAIN}" \
+            --arg route "${SUBDOMAIN}.${BASE_DOMAIN}/*" \
+            --arg zone "$BASE_DOMAIN" \
+            --arg backend "$BACKEND_SCHOOL_URL" \
+            --arg vapid "$VAPID_PUBLIC_KEY" \
+            --arg subdomain "$SUBDOMAIN" \
+            '{name:$name,main:"build/index.js",compatibility_date:"2025-09-15",compatibility_flags:["nodejs_compat"],assets:{directory:"build/client",binding:"ASSETS"},routes:[{pattern:$route,zone_name:$zone}],vars:{PUBLIC_BACKEND_URL:$backend,PUBLIC_VAPID_KEY:$vapid,SUBDOMAIN:$subdomain}}' \
+            >wrangler.json
 
       - name: Build frontend
         working-directory: frontend-school
         env:
-          PUBLIC_BACKEND_URL: ${{ secrets.BACKEND_SCHOOL_URL }}
+          PUBLIC_BACKEND_URL: ${{ vars.BACKEND_SCHOOL_URL }}
           SUBDOMAIN: ${{ matrix.school.subdomain }}
-          PUBLIC_VAPID_KEY: ${{ secrets.VAPID_PUBLIC_KEY }}
+          PUBLIC_VAPID_KEY: ${{ vars.VAPID_PUBLIC_KEY }}
         run: npm run build
 
       - name: Deploy to Cloudflare Workers
         uses: cloudflare/wrangler-action@v3.14.1
-        env:
-          PUBLIC_BACKEND_URL: ${{ secrets.BACKEND_SCHOOL_URL }}
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: frontend-school
           command: deploy
 
       - name: Synchronize menu routes
         working-directory: frontend-school
         env:
-          PUBLIC_BACKEND_URL: ${{ secrets.BACKEND_SCHOOL_URL }}
+          PUBLIC_BACKEND_URL: ${{ vars.BACKEND_SCHOOL_URL }}
           DEPLOY_KEY: ${{ secrets.DEPLOY_KEY }}
           SUBDOMAIN: ${{ matrix.school.subdomain }}
         run: npm run sync:menu-routes
@@ -144,7 +141,7 @@ jobs:
         if: success()
         run: |
           echo "✅ Successfully deployed ${{ matrix.school.subdomain }}"
-          echo "URL: https://${{ matrix.school.subdomain }}.schoolorbit.app"
+          echo "URL: https://${{ matrix.school.subdomain }}.${{ vars.BASE_DOMAIN }}"
 
       - name: Report deployment failure
         if: failure()
