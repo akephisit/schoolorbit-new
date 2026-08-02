@@ -6,7 +6,11 @@
     {
       "id": "zone-123",
       "name": "schoolorbit.app",
-      "status": "active"
+      "status": "active",
+      "account": {
+        "id": "account-456",
+        "name": "SchoolOrbit"
+      }
     }
   ],
   "result_info": {

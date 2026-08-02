@@ -33,11 +33,12 @@ github_set_secret() {
 
 github_configure_repository() {
     github_preflight || return
+    [[ -n ${SO_CF_ACCOUNT_ID-} ]] || die 78 'Cloudflare account ID is not loaded' || return
 
     github_set_variable BASE_DOMAIN "${SO_CONFIG[base_domain]}" || return
     github_set_variable BACKEND_ADMIN_URL "https://admin-api.${SO_CONFIG[base_domain]}" || return
     github_set_variable BACKEND_SCHOOL_URL "https://school-api.${SO_CONFIG[base_domain]}" || return
-    github_set_variable CLOUDFLARE_ACCOUNT_ID "${SO_CONFIG["runtime:R2_ACCOUNT_ID"]}" || return
+    github_set_variable CLOUDFLARE_ACCOUNT_ID "$SO_CF_ACCOUNT_ID" || return
     github_set_variable VAPID_PUBLIC_KEY "${SO_CONFIG["runtime:VAPID_PUBLIC_KEY"]}" || return
     github_set_variable RUNTIME_DEPLOY_ENABLED false || return
     github_set_variable FRONTEND_DEPLOY_ENABLED false || return

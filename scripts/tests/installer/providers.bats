@@ -18,6 +18,7 @@ setup() {
     SO_CONFIG[server_user]=schoolorbit
     SO_CONFIG[runtime:R2_ACCOUNT_ID]=9a8b7c6d5e4f32100123456789abcdef
     SO_CONFIG[runtime:VAPID_PUBLIC_KEY]=BHT7mN3qP9vK5xT2rL8wC4sF6dG1hJ0kZyUeIoaS
+    SO_CF_ACCOUNT_ID=account-456
 
     SO_SECRETS[SCHOOLORBIT_CLOUDFLARE_BOOTSTRAP_TOKEN]=cf-bootstrap-7vK9nM3qR8wX2zLp6tY4
     SO_SECRETS[SCHOOLORBIT_CLOUDFLARE_DEPLOY_TOKEN]=cf-deploy-8wL2pN4rT7xZ5cV9mQ3s
@@ -86,6 +87,7 @@ teardown() {
     github_configure_repository
 
     grep -F 'variable set BASE_DOMAIN --body schoolorbit.app --repo owner/repo' "$FAKE_COMMAND_LOG"
+    grep -F 'variable set CLOUDFLARE_ACCOUNT_ID --body account-456 --repo owner/repo' "$FAKE_COMMAND_LOG"
     grep -F 'variable set RUNTIME_DEPLOY_ENABLED --body false --repo owner/repo' "$FAKE_COMMAND_LOG"
     grep -F 'variable set FRONTEND_DEPLOY_ENABLED --body false --repo owner/repo' "$FAKE_COMMAND_LOG"
     grep -F 'secret set SSH_PRIVATE_KEY --repo owner/repo' "$FAKE_COMMAND_LOG"
@@ -112,9 +114,11 @@ teardown() {
 }
 
 @test "Cloudflare preflight requires strict mode and unambiguous A records" {
+    SO_CF_ACCOUNT_ID=
     cf_preflight
 
     [ "$SO_CF_ZONE_ID" = zone-123 ]
+    [ "$SO_CF_ACCOUNT_ID" = account-456 ]
     [ "$SO_CF_ADMIN_RECORD_ID" = dns-admin-1 ]
     [ "$SO_CF_SCHOOL_RECORD_ID" = dns-school-1 ]
     run grep -F 'cf-bootstrap-7vK9nM3qR8wX2zLp6tY4' "$FAKE_COMMAND_LOG"

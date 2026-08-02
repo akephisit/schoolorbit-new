@@ -3,6 +3,7 @@
 CF_API_BASE_URL=${CF_API_BASE_URL:-https://api.cloudflare.com/client/v4}
 CF_CERTIFICATE=
 SO_CF_ZONE_ID=
+SO_CF_ACCOUNT_ID=
 SO_CF_ADMIN_RECORD_ID=
 SO_CF_SCHOOL_RECORD_ID=
 SO_CF_CERTIFICATE_ID=
@@ -105,6 +106,12 @@ cf_preflight() {
     SO_CF_ZONE_ID=$(jq -er --arg name "${SO_CONFIG[base_domain]}" '.result[] | select(.name == $name and .status == "active") | .id' "$response") || {
         command rm -f "$response"
         return 69
+    }
+    # shellcheck disable=SC2034 # Used by GitHub configuration and VPS runtime rendering.
+    SO_CF_ACCOUNT_ID=$(jq -er --arg name "${SO_CONFIG[base_domain]}" '.result[] | select(.name == $name and .status == "active") | .account.id | strings | select(length > 0)' "$response") || {
+        command rm -f "$response"
+        die 69 'Cloudflare zone account ID is missing'
+        return
     }
     command rm -f "$response"
 
