@@ -379,3 +379,26 @@ test('calendar embed route is public, compact, and explicitly frameable', async 
 	assert.match(embedServer, /frame-ancestors 'self' https:/);
 	assert.doesNotMatch(embedServer, /X-Frame-Options|x-frame-options/);
 });
+
+test('staff calendar provides a WordPress embed dialog with manual copy fallback', async () => {
+	const staffPage = await readProjectFile('src/routes/(app)/staff/calendar/+page.svelte');
+	const embedDialog = await readProjectFile(
+		'src/lib/components/calendar/CalendarEmbedDialog.svelte'
+	);
+
+	assert.match(staffPage, /CalendarEmbedDialog/);
+	assert.match(staffPage, /let embedDialogOpen = \$state\(false\)/);
+	assert.match(staffPage, /ฝังในเว็บไซต์/);
+	assert.match(staffPage, /embedDialogOpen = true/);
+	assert.match(staffPage, /bind:open=\{embedDialogOpen\}/);
+	assert.match(staffPage, /origin=\{page\.url\.origin\}/);
+	assert.match(embedDialog, /buildCalendarEmbedUrl/);
+	assert.match(embedDialog, /buildCalendarEmbedCode/);
+	assert.match(embedDialog, /บล็อก Custom HTML/);
+	assert.match(embedDialog, /<iframe/);
+	assert.match(embedDialog, /src=\{embedUrl\}/);
+	assert.match(embedDialog, /readonly/);
+	assert.match(embedDialog, /await navigator\.clipboard\.writeText\(embedCode\)/);
+	assert.match(embedDialog, /คัดลอกโค้ดแล้ว/);
+	assert.match(embedDialog, /เลือกและคัดลอกโค้ดด้านล่างด้วยตนเอง/);
+});
