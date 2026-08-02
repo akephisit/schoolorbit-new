@@ -363,3 +363,19 @@ test('public calendar route delegates to the shared page-mode view', async () =>
 	assert.match(timelineDialog, /timedEvents/);
 	assert.match(timelineDialog, /overflow-y-auto/);
 });
+
+test('calendar embed route is public, compact, and explicitly frameable', async () => {
+	const embedPage = await readProjectFile('src/routes/(public)/calendar/embed/+page.svelte');
+	const embedServer = await readProjectFile(
+		'src/routes/(public)/calendar/embed/+page.server.ts'
+	);
+
+	assert.match(embedPage, /PublicCalendarView/);
+	assert.match(embedPage, /mode="embed"/);
+	assert.match(embedPage, /<title>\{data\.title\}<\/title>/);
+	assert.doesNotMatch(embedPage, /listCalendarEvents|listMyCalendarEvents|listChildCalendarEvents/);
+	assert.match(embedServer, /setHeaders/);
+	assert.match(embedServer, /content-security-policy/);
+	assert.match(embedServer, /frame-ancestors 'self' https:/);
+	assert.doesNotMatch(embedServer, /X-Frame-Options|x-frame-options/);
+});
