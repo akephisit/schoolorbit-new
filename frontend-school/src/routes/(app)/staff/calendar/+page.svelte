@@ -737,7 +737,7 @@
 			onsave={saveEvent}
 		/>
 	{/key}
-		<CalendarCategoryDialog
+	<CalendarCategoryDialog
 		bind:open={categoryDialogOpen}
 		{categories}
 		{tags}
@@ -745,7 +745,7 @@
 		onsavecategory={saveCategory}
 		ondeletecategory={deleteCategory}
 		onsavetag={saveTag}
-			ondeletetag={deleteTag}
-		/>
-		<CalendarEmbedDialog bind:open={embedDialogOpen} origin={page.url.origin} />
-	</PageShell>
+		ondeletetag={deleteTag}
+	/>
+	<CalendarEmbedDialog bind:open={embedDialogOpen} origin={page.url.origin} />
+</PageShell>

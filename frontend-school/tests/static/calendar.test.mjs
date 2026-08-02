@@ -294,9 +294,7 @@ test('calendar read-only pages sort selected-day events consistently', async () 
 		);
 	}
 
-	const publicView = await readProjectFile(
-		'src/lib/components/calendar/PublicCalendarView.svelte'
-	);
+	const publicView = await readProjectFile('src/lib/components/calendar/PublicCalendarView.svelte');
 	assert.match(publicView, /Number\(right\.allDay\) - Number\(left\.allDay\)/);
 	assert.match(
 		publicView,
@@ -306,9 +304,7 @@ test('calendar read-only pages sort selected-day events consistently', async () 
 
 test('public calendar route delegates to the shared page-mode view', async () => {
 	const publicPage = await readProjectFile('src/routes/(public)/calendar/+page.svelte');
-	const publicView = await readProjectFile(
-		'src/lib/components/calendar/PublicCalendarView.svelte'
-	);
+	const publicView = await readProjectFile('src/lib/components/calendar/PublicCalendarView.svelte');
 	const timelineDialog = await readProjectFile(
 		'src/lib/components/calendar/CalendarDayTimelineDialog.svelte'
 	);
@@ -366,9 +362,7 @@ test('public calendar route delegates to the shared page-mode view', async () =>
 
 test('calendar embed route is public, compact, and explicitly frameable', async () => {
 	const embedPage = await readProjectFile('src/routes/(public)/calendar/embed/+page.svelte');
-	const embedServer = await readProjectFile(
-		'src/routes/(public)/calendar/embed/+page.server.ts'
-	);
+	const embedServer = await readProjectFile('src/routes/(public)/calendar/embed/+page.server.ts');
 
 	assert.match(embedPage, /PublicCalendarView/);
 	assert.match(embedPage, /mode="embed"/);

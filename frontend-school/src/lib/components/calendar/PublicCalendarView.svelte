@@ -88,7 +88,9 @@
 	});
 </script>
 
-<main class={embedded ? 'h-dvh overflow-hidden bg-background' : 'h-dvh overflow-hidden bg-muted/20'}>
+<main
+	class={embedded ? 'h-dvh overflow-hidden bg-background' : 'h-dvh overflow-hidden bg-muted/20'}
+>
 	<section
 		data-calendar-mode={mode}
 		class={embedded
