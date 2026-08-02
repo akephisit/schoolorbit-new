@@ -294,40 +294,55 @@ test('calendar read-only pages sort selected-day events consistently', async () 
 		);
 	}
 
-	const publicPage = await readProjectFile('src/routes/(public)/calendar/+page.svelte');
-	assert.match(publicPage, /Number\(right\.allDay\) - Number\(left\.allDay\)/);
+	const publicView = await readProjectFile(
+		'src/lib/components/calendar/PublicCalendarView.svelte'
+	);
+	assert.match(publicView, /Number\(right\.allDay\) - Number\(left\.allDay\)/);
 	assert.match(
-		publicPage,
+		publicView,
 		/\(left\.startTime \?\? ''\)\.localeCompare\(right\.startTime \?\? ''\)/
 	);
 });
 
-test('public calendar fills mobile viewport and opens selected days in a timeline dialog', async () => {
+test('public calendar route delegates to the shared page-mode view', async () => {
 	const publicPage = await readProjectFile('src/routes/(public)/calendar/+page.svelte');
+	const publicView = await readProjectFile(
+		'src/lib/components/calendar/PublicCalendarView.svelte'
+	);
 	const timelineDialog = await readProjectFile(
 		'src/lib/components/calendar/CalendarDayTimelineDialog.svelte'
 	);
-	const monthGridPosition = publicPage.indexOf('<CalendarMonthGrid');
-	const colorKeyPosition = publicPage.indexOf('<CalendarColorKey items={colorKeyItems} />');
-	const detailPanelPosition = publicPage.indexOf('<aside');
+	const monthGridPosition = publicView.indexOf('<CalendarMonthGrid');
+	const colorKeyPosition = publicView.indexOf('<CalendarColorKey items={colorKeyItems} />');
+	const detailPanelPosition = publicView.indexOf('<aside');
 
-	assert.match(publicPage, /max-w-screen-2xl/);
-	assert.match(publicPage, /h-dvh overflow-hidden/);
-	assert.match(publicPage, /fillHeight/);
-	assert.match(publicPage, /CalendarDayTimelineDialog/);
-	assert.match(publicPage, /CalendarColorKey/);
-	assert.match(publicPage, /buildCalendarColorKey/);
+	assert.match(publicPage, /PublicCalendarView/);
+	assert.match(publicPage, /mode="page"/);
+	assert.match(publicPage, /<title>\{data\.title\}<\/title>/);
+	assert.doesNotMatch(publicPage, /listPublicCalendarEvents/);
+	assert.match(publicView, /type PublicCalendarMode = 'page' \| 'embed'/);
+	assert.match(publicView, /listPublicCalendarEvents/);
+	assert.match(publicView, /CalendarPublicEvent/);
+	assert.match(publicView, /Number\(right\.allDay\) - Number\(left\.allDay\)/);
+	assert.match(publicView, /window\.matchMedia\('\(max-width: 1023px\)'\)/);
+	assert.match(publicView, /mode === 'embed'/);
+	assert.match(publicView, /data-calendar-mode=\{mode\}/);
+	assert.match(publicView, /max-w-screen-2xl/);
+	assert.match(publicView, /h-dvh overflow-hidden/);
+	assert.match(publicView, /fillHeight/);
+	assert.match(publicView, /CalendarDayTimelineDialog/);
+	assert.match(publicView, /CalendarColorKey/);
+	assert.match(publicView, /buildCalendarColorKey/);
 	assert.match(
-		publicPage,
+		publicView,
 		/const colorKeyItems = \$derived\(buildCalendarColorKey\(selectedMonth, events\)\)/
 	);
-	assert.match(publicPage, /<CalendarColorKey items=\{colorKeyItems\} \/>/);
-	assert.match(publicPage, /function selectDate\(date: string\)/);
-	assert.match(publicPage, /window\.matchMedia\('\(max-width: 1023px\)'\)/);
-	assert.match(publicPage, /hidden min-h-0[\s\S]*lg:flex/);
-	assert.doesNotMatch(publicPage, /grid-rows-\[minmax\(0,2fr\)/);
-	assert.match(publicPage, /lg:grid-cols-\[minmax\(0,1fr\)_22rem\]/);
-	assert.match(publicPage, /xl:grid-cols-\[minmax\(0,1fr\)_24rem\]/);
+	assert.match(publicView, /<CalendarColorKey items=\{colorKeyItems\} \/>/);
+	assert.match(publicView, /function selectDate\(date: string\)/);
+	assert.match(publicView, /hidden min-h-0[\s\S]*lg:flex/);
+	assert.doesNotMatch(publicView, /grid-rows-\[minmax\(0,2fr\)/);
+	assert.match(publicView, /lg:grid-cols-\[minmax\(0,1fr\)_22rem\]/);
+	assert.match(publicView, /xl:grid-cols-\[minmax\(0,1fr\)_24rem\]/);
 	assert.ok(monthGridPosition >= 0, 'Expected the public month grid');
 	assert.ok(
 		colorKeyPosition > monthGridPosition,
@@ -337,10 +352,10 @@ test('public calendar fills mobile viewport and opens selected days in a timelin
 		detailPanelPosition > colorKeyPosition,
 		'Expected the color key in the left calendar column'
 	);
-	assert.match(publicPage, /class="flex min-h-0 min-w-0 flex-col gap-3"/);
-	assert.match(publicPage, /class="min-h-0 flex-1"[\s\S]*<CalendarMonthGrid/);
-	assert.match(publicPage, /showFullDescription/);
-	assert.match(publicPage, /function goToToday\(\)/);
+	assert.match(publicView, /class="flex min-h-0 min-w-0 flex-col gap-3"/);
+	assert.match(publicView, /class="min-h-0 flex-1"[\s\S]*<CalendarMonthGrid/);
+	assert.match(publicView, /showFullDescription/);
+	assert.match(publicView, /function goToToday\(\)/);
 
 	assert.match(timelineDialog, /from '\$lib\/components\/ui\/dialog'/);
 	assert.match(timelineDialog, /bind:open/);
