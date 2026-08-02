@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIRECTORY=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck disable=SC2034 # Provider/VPS modules use the repository root once loaded.
+REPOSITORY_ROOT=$(cd -- "$SCRIPT_DIRECTORY/.." && pwd)
+INSTALLER_LIBRARY="$SCRIPT_DIRECTORY/lib/schoolorbit-installer"
+
+# shellcheck disable=SC1091 # Modules are resolved from this script's absolute directory.
+source "$INSTALLER_LIBRARY/common.sh"
+# shellcheck disable=SC1091
+source "$INSTALLER_LIBRARY/config.sh"
+# shellcheck disable=SC1091
+source "$INSTALLER_LIBRARY/state.sh"
+
+usage() {
+    cat <<'USAGE'
+Usage:
+  scripts/schoolorbit-installer migrate-vps --repository OWNER/REPOSITORY --target IPV4 [options]
+  scripts/schoolorbit-installer migrate-vps --resume RUN_ID
+  scripts/schoolorbit-installer rollback-dns --run-id RUN_ID
+
+Options for a new migration:
+  --base-domain DOMAIN       Default: schoolorbit.app
+  --ref REF                  Default: main
+  --bootstrap-user USER      Default: root
+  --server-user USER         Default: schoolorbit
+  --ssh-port PORT            Default: 22
+  --dry-run                  Validate inputs and print a non-mutating plan
+  --secrets-stdin            Read all required inputs from one JSON object on stdin
+
+Secrets are accepted only through environment variables, JSON stdin, or hidden prompts.
+USAGE
+}
+
+schoolorbit_main() {
+    if (($# == 1)) && [[ $1 == --help || $1 == help ]]; then
+        usage
+        return 0
+    fi
+
+    parse_args "$@"
+
+    if [[ $SO_COMMAND == migrate-vps && -z $SO_RESUME_RUN_ID && $SO_DRY_RUN == true ]]; then
+        require_command jq
+        load_inputs
+        info 'Dry-run plan'
+        info "  Repository: ${SO_CONFIG[repository]}"
+        info "  Target: ${SO_CONFIG[target]}:${SO_CONFIG[ssh_port]}"
+        info "  Base domain: ${SO_CONFIG[base_domain]}"
+        info "  Ref: ${SO_CONFIG[ref]}"
+        info '  Secrets: loaded in memory and omitted from output'
+        return 0
+    fi
+
+    die 69 'Installer phases are not loaded'
+}
+
+schoolorbit_main "$@"
