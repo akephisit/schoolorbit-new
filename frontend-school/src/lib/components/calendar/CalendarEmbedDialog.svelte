@@ -32,8 +32,8 @@
 		<Dialog.Header>
 			<Dialog.Title>ฝังปฏิทินในเว็บไซต์</Dialog.Title>
 			<Dialog.Description>
-				เพิ่มบล็อก Custom HTML ใน WordPress แล้ววางโค้ด ปฏิทินจะอัปเดตตามข้อมูลสาธารณะ ใน
-				SchoolOrbit โดยอัตโนมัติ
+				เพิ่มบล็อก Custom HTML ใน WordPress แล้ววางโค้ด กิจกรรมสาธารณะใน SchoolOrbit
+				จะอัปเดตบนเว็บไซต์โดยอัตโนมัติ
 			</Dialog.Description>
 		</Dialog.Header>
 
