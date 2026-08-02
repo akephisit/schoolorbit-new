@@ -78,6 +78,7 @@ _verify_remote_runtime() {
 
     _vps_ssh "$remote_command" <<'REMOTE_SCRIPT'
 set -euo pipefail
+export XDG_RUNTIME_DIR="/run/user/$(id -u)"
 cd /opt/stack
 podman-compose -f podman-compose.yml config >/dev/null
 podman exec schoolorbit-nginx nginx -t

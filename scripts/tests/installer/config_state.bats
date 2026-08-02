@@ -69,6 +69,32 @@ teardown() {
     [ "${SO_CONFIG[runtime:R2_PUBLIC_BUCKET_NAME]}" = 'schoolorbit-public-assets' ]
 }
 
+@test "resume reuses checkpointed public runtime values while reloading secrets" {
+    local name
+    parse_args migrate-vps --repository owner/repo --target 192.0.2.20 --secrets-stdin
+    load_inputs <"$BATS_TEST_DIRNAME/fixtures/secrets.json"
+    for name in "${SO_REQUIRED_SECRETS[@]}"; do
+        export "$name=${SO_SECRETS[$name]}"
+    done
+    SO_SECRETS=()
+    SO_SECRETS_STDIN=false
+
+    load_inputs </dev/null
+
+    [ "${SO_CONFIG[runtime:NEON_PROJECT_ID]}" = silent-moon-24680 ]
+    [ "${SO_SECRETS[INTERNAL_API_SECRET]}" = internal-api-7vK9nM3qR8wX2zLp ]
+}
+
+@test "DNS rollback reloads only the Cloudflare bootstrap credential" {
+    export SCHOOLORBIT_CLOUDFLARE_BOOTSTRAP_TOKEN=cf-bootstrap-7vK9nM3qR8wX2zLp6tY4
+    SO_SECRETS=()
+
+    load_cloudflare_bootstrap_token </dev/null
+
+    [ "${SO_SECRETS[SCHOOLORBIT_CLOUDFLARE_BOOTSTRAP_TOKEN]}" = cf-bootstrap-7vK9nM3qR8wX2zLp6tY4 ]
+    [ "${#SO_SECRETS[@]}" -eq 1 ]
+}
+
 @test "rejects shared public and private buckets" {
     local input="$TEST_ROOT/shared-buckets.json"
     jq '.R2_PRIVATE_BUCKET_NAME = .R2_PUBLIC_BUCKET_NAME' \
@@ -122,6 +148,15 @@ teardown() {
     state_phase_done preflight
 }
 
+@test "new state refuses to overwrite an existing run checkpoint" {
+    SO_CONFIG[repository]=owner/repo
+    SO_CONFIG[target]=192.0.2.20
+    state_init run-123
+
+    run state_init run-123
+    [ "$status" -eq 78 ]
+}
+
 @test "phase details containing a loaded secret are rejected" {
     SO_CONFIG[repository]=owner/repo
     SO_CONFIG[target]=192.0.2.20
@@ -154,9 +189,10 @@ teardown() {
     [ "$status" -eq 78 ]
 }
 
-@test "entry point dry-run prints a sanitized plan without loading phases" {
-    run bash -c 'scripts/schoolorbit-installer migrate-vps --repository owner/repo --target 192.0.2.20 --dry-run --secrets-stdin <scripts/tests/installer/fixtures/secrets.json'
+@test "entry point help documents safe input channels without secret flags" {
+    run scripts/schoolorbit-installer --help
     [ "$status" -eq 0 ]
-    [[ "$output" == *'Dry-run plan'* ]]
-    [[ "$output" != *'internal-api-7vK9nM3qR8wX2zLp'* ]]
+    [[ "$output" == *'--secrets-stdin'* ]]
+    [[ "$output" == *'environment variables'* ]]
+    [[ "$output" != *'--internal-api-secret'* ]]
 }

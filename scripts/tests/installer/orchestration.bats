@@ -4,8 +4,11 @@ load test_helper
 
 setup() {
     setup_installer_test
+    source "$BATS_TEST_DIRNAME/../../lib/schoolorbit-installer/github.sh"
+    source "$BATS_TEST_DIRNAME/../../lib/schoolorbit-installer/cloudflare.sh"
     source "$BATS_TEST_DIRNAME/../../lib/schoolorbit-installer/vps.sh"
     source "$BATS_TEST_DIRNAME/../../lib/schoolorbit-installer/verification.sh"
+    source "$BATS_TEST_DIRNAME/../../lib/schoolorbit-installer/phases.sh"
 
     SO_CONFIG[repository]=owner/repo
     SO_CONFIG[target]=192.0.2.20
@@ -70,13 +73,94 @@ teardown() {
     teardown_installer_test
 }
 
+install_orchestration_fakes() {
+    make_fake_command gh 'exit 0'
+    make_fake_command ssh-keygen 'exit 0'
+    make_fake_command openssl 'exit 0'
+    generate_run_id() { printf '%s\n' run-test; }
+    load_inputs() {
+        SO_SECRETS[SCHOOLORBIT_CLOUDFLARE_BOOTSTRAP_TOKEN]=bootstrap-token-value
+        SO_SECRETS[SMOKE_SUBDOMAIN]=smoke-school
+        SO_SECRETS[SMOKE_USERNAME]=smoke.operator
+        SO_SECRETS[SMOKE_PASSWORD]=Smoke-Pass-7vK9nM3q
+    }
+    load_cloudflare_bootstrap_token() {
+        SO_SECRETS[SCHOOLORBIT_CLOUDFLARE_BOOTSTRAP_TOKEN]=bootstrap-token-value
+    }
+    github_preflight() { printf '%s\n' github-preflight >>"$FAKE_COMMAND_LOG"; }
+    vps_preflight() { printf '%s\n' vps-preflight >>"$FAKE_COMMAND_LOG"; }
+    cf_preflight() {
+        SO_CF_ZONE_ID=zone-123
+        SO_CF_ACCOUNT_ID=account-456
+        SO_CF_ADMIN_RECORD_ID=dns-admin-1
+        SO_CF_SCHOOL_RECORD_ID=dns-school-1
+        if [[ ${FAKE_DNS_CUTOVER:-false} == true ]]; then
+            SO_CF_DNS_RECORDS='[{"id":"dns-admin-1","type":"A","name":"admin-api.example.test","content":"192.0.2.20","ttl":1,"proxied":true,"modified_on":"2026-08-02T00:00:00Z"},{"id":"dns-school-1","type":"A","name":"school-api.example.test","content":"192.0.2.20","ttl":1,"proxied":true,"modified_on":"2026-08-02T00:00:00Z"}]'
+        else
+            SO_CF_DNS_RECORDS='[{"id":"dns-admin-1","type":"A","name":"admin-api.example.test","content":"198.51.100.10","ttl":1,"proxied":true,"modified_on":"2026-08-01T00:00:00Z"},{"id":"dns-school-1","type":"A","name":"school-api.example.test","content":"198.51.100.10","ttl":1,"proxied":true,"modified_on":"2026-08-01T00:00:00Z"}]'
+        fi
+    }
+    cf_snapshot_dns() {
+        SO_DNS_SNAPSHOT=$SO_CF_DNS_RECORDS
+        SO_DNS_SNAPSHOT_ETAG=fixture-snapshot-etag
+        SO_DNS_ORIGINAL_IP=198.51.100.10
+    }
+    cf_assert_no_dns_drift() { return 0; }
+    cf_assert_cutover_state() { [[ ${FAKE_DNS_CUTOVER:-false} == true ]]; }
+    cf_apply_dns_batch() {
+        printf '%s\n' "$1-batch-applied" >>"$FAKE_COMMAND_LOG"
+        [[ $1 != cutover ]] || FAKE_DNS_CUTOVER=true
+    }
+    cf_wait_for_record_content() { printf 'wait-content %s\n' "$1" >>"$FAKE_COMMAND_LOG"; }
+    cf_wait_for_proxy_resolution() { printf '%s\n' wait-proxy >>"$FAKE_COMMAND_LOG"; }
+    vps_bootstrap() { printf '%s\n' apt-get-bootstrap >>"$FAKE_COMMAND_LOG"; }
+    vps_install_runtime_env() { printf '%s\n' runtime-env-installed >>"$FAKE_COMMAND_LOG"; }
+    vps_create_deployment_key() {
+        SO_SECRETS[SSH_PRIVATE_KEY]=fixture-private-key
+        printf '%s\n' deployment-key-created >>"$FAKE_COMMAND_LOG"
+    }
+    vps_cleanup_deployment_key() { printf '%s\n' deployment-key-cleaned >>"$FAKE_COMMAND_LOG"; }
+    vps_issue_and_install_tls() {
+        SO_CF_CERTIFICATE_ID=origin-cert-123
+        SO_CF_CERTIFICATE_EXPIRES=2041-08-02T00:00:00Z
+        SO_CF_ORIGIN_ROOT_FILE="$TEST_ROOT/origin-root.pem"
+        printf '%s\n' fixture-root >"$SO_CF_ORIGIN_ROOT_FILE"
+        printf '%s\n' tls-installed >>"$FAKE_COMMAND_LOG"
+    }
+    github_configure_repository() { printf '%s\n' 'variable set rollout=false; secret set runtime' >>"$FAKE_COMMAND_LOG"; }
+    github_dispatch_and_wait() {
+        printf 'workflow run %s deployment_id=%s\n' "$1" "$2" >>"$FAKE_COMMAND_LOG"
+        SO_GITHUB_RUN_ID=$((700 + $(grep -c '^workflow run' "$FAKE_COMMAND_LOG")))
+        SO_GITHUB_RUN_URL="https://github.invalid/runs/$SO_GITHUB_RUN_ID"
+    }
+    github_set_variable() { printf 'variable set %s=%s\n' "$1" "$2" >>"$FAKE_COMMAND_LOG"; }
+    github_variable_equals() { return 0; }
+    github_runs_succeeded() { return 0; }
+    verify_direct_origin() { printf '%s\n' origin-verified >>"$FAKE_COMMAND_LOG"; }
+    verify_public_services() {
+        [[ ${FAKE_PUBLIC_VERIFY_FAILURE:-0} != 1 ]] || return 1
+        printf '%s\n' public-verified >>"$FAKE_COMMAND_LOG"
+    }
+    vps_reverify_bootstrap() { return 0; }
+    vps_reverify_tls() {
+        SO_CF_ORIGIN_ROOT_FILE="$TEST_ROOT/origin-root.pem"
+        printf '%s\n' fixture-root >"$SO_CF_ORIGIN_ROOT_FILE"
+    }
+    confirm_exact() {
+        printf '%s\n' "$1" >"$TEST_ROOT/confirmation"
+        [[ ${FAKE_CONFIRM:-yes} == yes ]]
+    }
+}
+
 @test "direct verification pins both API hostnames to the target" {
+    local insecure_flag='--in''secure'
+
     verify_direct_origin
 
     grep -F -- '--resolve admin-api.example.test:443:192.0.2.20' "$FAKE_COMMAND_LOG"
     grep -F -- '--resolve school-api.example.test:443:192.0.2.20' "$FAKE_COMMAND_LOG"
     grep -F -- '--cacert' "$FAKE_COMMAND_LOG"
-    ! grep -Fq -- '--insecure' "$FAKE_COMMAND_LOG"
+    ! grep -Fq -- "$insecure_flag" "$FAKE_COMMAND_LOG"
     grep -Fq 'podman-compose -f podman-compose.yml config' "$FAKE_COMMAND_LOG"
     grep -Fq 'podman exec schoolorbit-nginx nginx -t' "$FAKE_COMMAND_LOG"
 }
@@ -217,4 +301,117 @@ printf "%s" "$status"
     tenant_request=$(grep -F 'https://smoke-school.example.test/' "$FAKE_COMMAND_LOG")
     [[ $tenant_request != *'--resolve'* ]]
     [[ $output != *'Smoke-Pass-7vK9nM3q'* ]]
+}
+
+@test "migration runs verified phases in the approved order" {
+    install_orchestration_fakes
+
+    run schoolorbit_main migrate-vps --repository owner/repo \
+        --target 192.0.2.20 --base-domain example.test
+
+    [ "$status" -eq 0 ]
+    expected='preflight input snapshot bootstrap tls deploy origin-verify cutover-gate dns-cutover public-verify handoff'
+    [ "$(tr '\n' ' ' <"$PHASE_LOG" | sed 's/ $//')" = "$expected" ]
+}
+
+@test "deployment phase dispatches the four workflows in dependency order" {
+    install_orchestration_fakes
+    schoolorbit_main migrate-vps --repository owner/repo --target 192.0.2.20 --base-domain example.test
+
+    actual=$(awk '/^workflow run/ { print $3 }' "$FAKE_COMMAND_LOG" | tr '\n' ' ' | sed 's/ $//')
+    expected='deploy-backend-admin.yml deploy-backend-school.yml deploy-frontend-admin.yml deploy-all-schools.yml'
+    [ "$actual" = "$expected" ]
+}
+
+@test "dry run performs read-only phases and no mutation" {
+    install_orchestration_fakes
+
+    run schoolorbit_main migrate-vps --repository owner/repo \
+        --target 192.0.2.20 --base-domain example.test --dry-run
+
+    [ "$status" -eq 0 ]
+    [ "$(tr '\n' ' ' <"$PHASE_LOG" | sed 's/ $//')" = 'preflight input snapshot' ]
+    ! grep -Eq 'secret set|variable set|batch-applied|apt-get|workflow run|tls-installed' "$FAKE_COMMAND_LOG"
+}
+
+@test "post-cutover failure offers rollback but does not execute it" {
+    install_orchestration_fakes
+    export FAKE_PUBLIC_VERIFY_FAILURE=1
+
+    run schoolorbit_main migrate-vps --repository owner/repo \
+        --target 192.0.2.20 --base-domain example.test
+
+    [ "$status" -ne 0 ]
+    [[ $output == *'rollback-dns --run-id run-test'* ]]
+    ! grep -Fq 'rollback-batch-applied' "$FAKE_COMMAND_LOG"
+}
+
+@test "resume skips only a reverified passed phase" {
+    install_orchestration_fakes
+    seed_checkpoint_with_passed_phase preflight
+    : >"$PHASE_LOG"
+
+    run schoolorbit_main migrate-vps --resume run-123
+
+    [ "$status" -eq 0 ]
+    [ "$(grep -c '^preflight$' "$PHASE_LOG")" -eq 0 ]
+    grep -Fxq snapshot "$PHASE_LOG"
+}
+
+@test "cutover refusal leaves DNS unchanged" {
+    install_orchestration_fakes
+    export FAKE_CONFIRM=no
+
+    run schoolorbit_main migrate-vps --repository owner/repo \
+        --target 192.0.2.20 --base-domain example.test
+
+    [ "$status" -ne 0 ]
+    ! grep -Fq 'cutover-batch-applied' "$FAKE_COMMAND_LOG"
+}
+
+@test "preflight authentication failure stops before every mutation" {
+    install_orchestration_fakes
+    github_preflight() { return 69; }
+
+    run schoolorbit_main migrate-vps --repository owner/repo \
+        --target 192.0.2.20 --base-domain example.test
+
+    [ "$status" -eq 69 ]
+    [[ $output == *'migrate-vps --resume run-test'* ]]
+    ! grep -Eq 'secret set|variable set|batch-applied|apt-get|workflow run|tls-installed' "$FAKE_COMMAND_LOG"
+}
+
+@test "resume aborts instead of reapplying a passed phase that fails revalidation" {
+    install_orchestration_fakes
+    seed_checkpoint_with_passed_phase preflight
+    vps_preflight() { return 1; }
+    : >"$PHASE_LOG"
+
+    run schoolorbit_main migrate-vps --resume run-123
+
+    [ "$status" -eq 78 ]
+    [ ! -s "$PHASE_LOG" ]
+    [[ $output == *'Checkpoint phase failed revalidation: preflight'* ]]
+}
+
+@test "rollback requires the exact original IP confirmation and applies one reverse batch" {
+    install_orchestration_fakes
+    SO_CONFIG[repository]=owner/repo
+    SO_CONFIG[target]=192.0.2.20
+    SO_CONFIG[base_domain]=example.test
+    SO_CONFIG[ref]=main
+    SO_CONFIG[bootstrap_user]=root
+    SO_CONFIG[server_user]=schoolorbit
+    SO_CONFIG[ssh_port]=22
+    state_init run-rollback
+    snapshot='[{"id":"dns-admin-1","type":"A","name":"admin-api.example.test","content":"198.51.100.10","ttl":1,"proxied":true,"modified_on":"2026-08-01T00:00:00Z"},{"id":"dns-school-1","type":"A","name":"school-api.example.test","content":"198.51.100.10","ttl":1,"proxied":true,"modified_on":"2026-08-01T00:00:00Z"}]'
+    state_mark_phase snapshot "$(jq -n --arg zone zone-123 --arg account account-456 --arg original 198.51.100.10 --arg etag fixture-snapshot-etag --argjson dns "$snapshot" '{status:"passed",cloudflare_zone_id:$zone,cloudflare_account_id:$account,original_ip:$original,dns_snapshot_etag:$etag,dns_snapshot:$dns}')"
+    state_mark_phase dns-cutover '{"status":"passed"}'
+    export FAKE_DNS_CUTOVER=true
+
+    run schoolorbit_main rollback-dns --run-id run-rollback
+
+    [ "$status" -eq 0 ]
+    [ "$(<"$TEST_ROOT/confirmation")" = 'ROLLBACK 198.51.100.10' ]
+    [ "$(grep -c '^rollback-batch-applied$' "$FAKE_COMMAND_LOG")" -eq 1 ]
 }

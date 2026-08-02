@@ -16,6 +16,7 @@ setup() {
     SO_CONFIG[base_domain]=schoolorbit.app
     SO_CONFIG[ref]=main
     SO_CONFIG[server_user]=schoolorbit
+    SO_CONFIG[ssh_port]=22
     SO_CONFIG[runtime:R2_ACCOUNT_ID]=9a8b7c6d5e4f32100123456789abcdef
     SO_CONFIG[runtime:VAPID_PUBLIC_KEY]=BHT7mN3qP9vK5xT2rL8wC4sF6dG1hJ0kZyUeIoaS
     SO_CF_ACCOUNT_ID=account-456
@@ -91,6 +92,7 @@ teardown() {
     grep -F 'variable set RUNTIME_DEPLOY_ENABLED --body false --repo owner/repo' "$FAKE_COMMAND_LOG"
     grep -F 'variable set FRONTEND_DEPLOY_ENABLED --body false --repo owner/repo' "$FAKE_COMMAND_LOG"
     grep -F 'secret set SSH_PRIVATE_KEY --repo owner/repo' "$FAKE_COMMAND_LOG"
+    grep -F 'secret set SERVER_PORT --repo owner/repo' "$FAKE_COMMAND_LOG"
     run grep -F -- '--body ssh-private-value-kept-on-stdin' "$FAKE_COMMAND_LOG"
     [ "$status" -eq 1 ]
 }
@@ -169,8 +171,19 @@ teardown() {
     jq -e '
         .patches | length == 2 and
         any(.[]; .id == "dns-admin-1" and .content == "198.51.100.10" and .ttl == 1 and .proxied == true) and
-        any(.[]; .id == "dns-school-1" and .content == "198.51.100.11" and .ttl == 1 and .proxied == true)
+        any(.[]; .id == "dns-school-1" and .content == "198.51.100.10" and .ttl == 1 and .proxied == true)
     ' "$CAPTURED_REQUEST_BODY"
+}
+
+@test "Cloudflare snapshot rejects API records on different original IPs" {
+    local split_dns="$TEST_ROOT/split-dns.json"
+    jq '(.result[] | select(.name == "school-api.schoolorbit.app") | .content) = "198.51.100.11"' \
+        "$FIXTURE_DIR/cloudflare-dns.json" >"$split_dns"
+    export CF_DNS_FIXTURE=$split_dns
+    cf_preflight
+
+    run cf_snapshot_dns
+    [ "$status" -eq 78 ]
 }
 
 @test "DNS drift blocks cutover" {
@@ -188,6 +201,22 @@ teardown() {
     cf_preflight
 
     cf_wait_for_record_content 192.0.2.20
+}
+
+@test "cutover revalidation compares record identity target proxy and TTL" {
+    local cutover_dns="$TEST_ROOT/cutover-state.json"
+    cf_preflight
+    cf_snapshot_dns
+    jq '(.result[].content) = "192.0.2.20"' "$FIXTURE_DIR/cloudflare-dns.json" >"$cutover_dns"
+    export CF_DNS_FIXTURE=$cutover_dns
+
+    cf_assert_cutover_state
+
+    jq '(.result[] | select(.name == "school-api.schoolorbit.app") | .ttl) = 300' \
+        "$cutover_dns" >"$TEST_ROOT/cutover-drift.json"
+    export CF_DNS_FIXTURE="$TEST_ROOT/cutover-drift.json"
+    run cf_assert_cutover_state
+    [ "$status" -eq 78 ]
 }
 
 @test "proxied DNS polling accepts Cloudflare addresses and rejects the origin address" {

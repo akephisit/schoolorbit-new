@@ -18,7 +18,7 @@
       "zone_id": "zone-123",
       "type": "A",
       "name": "school-api.schoolorbit.app",
-      "content": "198.51.100.11",
+      "content": "198.51.100.10",
       "ttl": 1,
       "proxied": true,
       "modified_on": "2026-08-01T10:00:01Z"

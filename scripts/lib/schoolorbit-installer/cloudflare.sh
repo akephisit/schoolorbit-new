@@ -12,6 +12,7 @@ SO_CF_DNS_RECORDS=
 SO_DNS_SNAPSHOT=
 SO_DNS_SNAPSHOT_ETAG=
 SO_DNS_CURRENT_ETAG=
+SO_DNS_ORIGINAL_IP=
 
 _cf_temporary_file() {
     local temporary
@@ -184,9 +185,51 @@ _cf_dns_etag() {
 
 cf_snapshot_dns() {
     [[ -n $SO_CF_DNS_RECORDS ]] || _cf_refresh_dns || return
+    if ! SO_DNS_ORIGINAL_IP=$(jq -er 'map(.content) | unique | if length == 1 then .[0] else error("split origin") end' <<<"$SO_CF_DNS_RECORDS"); then
+        die 78 'API DNS records must share one original IPv4 address'
+        return
+    fi
     SO_DNS_SNAPSHOT=$SO_CF_DNS_RECORDS
     SO_DNS_SNAPSHOT_ETAG=$(_cf_dns_etag "$SO_DNS_SNAPSHOT")
     SO_DNS_CURRENT_ETAG=
+}
+
+cf_restore_snapshot() {
+    local zone_id=$1 account_id=$2 snapshot=$3 snapshot_etag=$4 original_ip=$5
+    jq -e --arg base "${SO_CONFIG[base_domain]}" --arg original "$original_ip" '
+        type == "array" and length == 2 and
+        all(.[];
+            (.id | type == "string" and length > 0) and
+            .type == "A" and
+            (.name == "admin-api.\($base)" or .name == "school-api.\($base)") and
+            .content == $original and
+            (.ttl | type == "number") and
+            (.proxied | type == "boolean") and
+            (.modified_on | type == "string")
+        ) and
+        ([.[].name] | unique | length == 2)
+    ' <<<"$snapshot" >/dev/null || die 78 'Checkpoint DNS snapshot is invalid' || return
+    [[ -n $zone_id && -n $account_id && -n $snapshot_etag ]] || die 78 'Checkpoint Cloudflare metadata is incomplete' || return
+    SO_CF_ZONE_ID=$zone_id
+    # shellcheck disable=SC2034 # Restored provider outputs are consumed by later phases.
+    SO_CF_ACCOUNT_ID=$account_id
+    SO_DNS_SNAPSHOT=$(jq -c 'sort_by(.name)' <<<"$snapshot")
+    SO_DNS_SNAPSHOT_ETAG=$snapshot_etag
+    # shellcheck disable=SC2034
+    SO_DNS_ORIGINAL_IP=$original_ip
+    # shellcheck disable=SC2034
+    SO_CF_ADMIN_RECORD_ID=$(jq -er --arg name "admin-api.${SO_CONFIG[base_domain]}" '.[] | select(.name == $name) | .id' <<<"$SO_DNS_SNAPSHOT") || return 78
+    # shellcheck disable=SC2034
+    SO_CF_SCHOOL_RECORD_ID=$(jq -er --arg name "school-api.${SO_CONFIG[base_domain]}" '.[] | select(.name == $name) | .id' <<<"$SO_DNS_SNAPSHOT") || return 78
+}
+
+cf_assert_cutover_state() {
+    [[ -n $SO_DNS_SNAPSHOT ]] || die 78 'Cloudflare DNS snapshot is missing' || return
+    _cf_refresh_dns || return
+    local expected current
+    expected=$(jq -c --arg target "${SO_CONFIG[target]}" '[.[] | {id,type,name,content:$target,ttl,proxied:true}] | sort_by(.name)' <<<"$SO_DNS_SNAPSHOT")
+    current=$(jq -c '[.[] | {id,type,name,content,ttl,proxied}] | sort_by(.name)' <<<"$SO_CF_DNS_RECORDS")
+    [[ $current == "$expected" ]] || die 78 'Cloudflare API records do not match the verified cutover state'
 }
 
 cf_assert_no_dns_drift() {

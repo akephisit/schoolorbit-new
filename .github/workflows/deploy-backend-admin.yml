@@ -83,6 +83,7 @@ jobs:
         with:
           host: ${{ secrets.SERVER_IP }}
           username: ${{ secrets.SERVER_USER }}
+          port: ${{ secrets.SERVER_PORT }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           source: podman-compose.yml,scripts/render_nginx_config.sh,nginx-configs/admin-api.conf.template,nginx-configs/school-api.conf.template,nginx-configs/school-api.maintenance.conf.template
           target: /opt/stack/deployment
@@ -92,6 +93,7 @@ jobs:
         with:
           host: ${{ secrets.SERVER_IP }}
           username: ${{ secrets.SERVER_USER }}
+          port: ${{ secrets.SERVER_PORT }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
             set -eu

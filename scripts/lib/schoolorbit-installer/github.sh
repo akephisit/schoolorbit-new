@@ -45,6 +45,7 @@ github_configure_repository() {
 
     github_set_secret SERVER_IP "${SO_CONFIG[target]}" || return
     github_set_secret SERVER_USER "${SO_CONFIG[server_user]}" || return
+    github_set_secret SERVER_PORT "${SO_CONFIG[ssh_port]}" || return
     github_set_secret SSH_PRIVATE_KEY "${SO_SECRETS[SSH_PRIVATE_KEY]-}" || return
     github_set_secret CLOUDFLARE_API_TOKEN "${SO_SECRETS[SCHOOLORBIT_CLOUDFLARE_DEPLOY_TOKEN]-}" || return
     github_set_secret INTERNAL_API_SECRET "${SO_SECRETS[INTERNAL_API_SECRET]-}" || return
@@ -94,4 +95,25 @@ github_dispatch_and_wait() {
         warn "GitHub workflow failed: $SO_GITHUB_RUN_URL"
         return 1
     fi
+}
+
+github_variable_equals() {
+    local name=$1 expected=$2 actual
+    _github_valid_name "$name" || die 64 'Invalid GitHub variable name' || return
+    actual=$(gh variable get "$name" --repo "${SO_CONFIG[repository]}" --json value --jq '.value' 2>/dev/null) || die 69 "Unable to read GitHub variable $name" || return
+    [[ $actual == "$expected" ]] || die 78 "GitHub variable $name does not match the verified value"
+}
+
+github_runs_succeeded() {
+    local workflow_runs=$1 encoded run run_id expected_url response conclusion actual_url
+    jq -e 'type == "array" and length == 4' <<<"$workflow_runs" >/dev/null || die 78 'Deployment workflow checkpoint is invalid' || return
+    while IFS= read -r encoded; do
+        run=$(printf '%s' "$encoded" | base64 -d) || return 78
+        run_id=$(jq -er '.id | numbers' <<<"$run") || return 78
+        expected_url=$(jq -er '.url | strings' <<<"$run") || return 78
+        response=$(gh run view "$run_id" --repo "${SO_CONFIG[repository]}" --json conclusion,url 2>/dev/null) || die 69 'Unable to reverify a deployment workflow run' || return
+        conclusion=$(jq -er '.conclusion | strings' <<<"$response") || return 78
+        actual_url=$(jq -er '.url | strings' <<<"$response") || return 78
+        [[ $conclusion == success && $actual_url == "$expected_url" ]] || die 78 'A checkpointed deployment workflow is no longer verified successful' || return
+    done < <(jq -r '.[] | @base64' <<<"$workflow_runs")
 }

@@ -40,6 +40,7 @@ state_init() {
     mkdir -p "$SCHOOLORBIT_STATE_HOME/runs"
     chmod 0700 "$SCHOOLORBIT_STATE_HOME" "$SCHOOLORBIT_STATE_HOME/runs"
     run_directory="$SCHOOLORBIT_STATE_HOME/runs/$run_id"
+    [[ ! -e $run_directory/state.json ]] || die 78 'Installer run ID already has a checkpoint' || return
     mkdir -p "$run_directory"
     chmod 0700 "$run_directory"
 
@@ -91,8 +92,10 @@ _state_sanitize_details() {
         if type != "object" then error("phase details must be an object") else . end
         | with_entries(select(.key | IN(
             "status", "code", "workflow_run_id", "workflow_run_url", "workflow_runs",
-            "cloudflare_zone_id", "cloudflare_record_ids", "cloudflare_certificate_id",
-            "certificate_expiry", "dns_snapshot", "verification_codes", "completed_at"
+            "cloudflare_zone_id", "cloudflare_account_id", "cloudflare_record_ids",
+            "cloudflare_certificate_id", "certificate_expiry", "dns_snapshot",
+            "dns_snapshot_etag", "original_ip", "target_ip", "deployment_gates",
+            "verification_codes", "completed_at"
         )))
     ' <<<"$1"
 }

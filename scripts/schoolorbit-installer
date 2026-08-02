@@ -12,6 +12,16 @@ source "$INSTALLER_LIBRARY/common.sh"
 source "$INSTALLER_LIBRARY/config.sh"
 # shellcheck disable=SC1091
 source "$INSTALLER_LIBRARY/state.sh"
+# shellcheck disable=SC1091
+source "$INSTALLER_LIBRARY/github.sh"
+# shellcheck disable=SC1091
+source "$INSTALLER_LIBRARY/cloudflare.sh"
+# shellcheck disable=SC1091
+source "$INSTALLER_LIBRARY/vps.sh"
+# shellcheck disable=SC1091
+source "$INSTALLER_LIBRARY/verification.sh"
+# shellcheck disable=SC1091
+source "$INSTALLER_LIBRARY/phases.sh"
 
 usage() {
     cat <<'USAGE'
@@ -33,27 +43,10 @@ Secrets are accepted only through environment variables, JSON stdin, or hidden p
 USAGE
 }
 
-schoolorbit_main() {
-    if (($# == 1)) && [[ $1 == --help || $1 == help ]]; then
-        usage
-        return 0
-    fi
+if (($# == 1)) && [[ $1 == --help || $1 == help ]]; then
+    usage
+    exit 0
+fi
 
-    parse_args "$@"
-
-    if [[ $SO_COMMAND == migrate-vps && -z $SO_RESUME_RUN_ID && $SO_DRY_RUN == true ]]; then
-        require_command jq
-        load_inputs
-        info 'Dry-run plan'
-        info "  Repository: ${SO_CONFIG[repository]}"
-        info "  Target: ${SO_CONFIG[target]}:${SO_CONFIG[ssh_port]}"
-        info "  Base domain: ${SO_CONFIG[base_domain]}"
-        info "  Ref: ${SO_CONFIG[ref]}"
-        info '  Secrets: loaded in memory and omitted from output'
-        return 0
-    fi
-
-    die 69 'Installer phases are not loaded'
-}
-
+trap vps_cleanup_transients EXIT
 schoolorbit_main "$@"

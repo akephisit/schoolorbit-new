@@ -3,6 +3,8 @@
 load test_helper
 
 setup() {
+    local database_scheme=postgresql
+
     setup_installer_test
     export FIXTURE_DIR="$BATS_TEST_DIRNAME/fixtures"
     source "$BATS_TEST_DIRNAME/../../lib/schoolorbit-installer/vps.sh"
@@ -27,7 +29,7 @@ setup() {
     SO_SECRETS[SCHOOLORBIT_CLOUDFLARE_DEPLOY_TOKEN]=deploy-token-must-not-reach-vps
     SO_SECRETS[SCHOOLORBIT_CLOUDFLARE_RUNTIME_TOKEN]=runtime-only-value
     SO_SECRETS[SCHOOLORBIT_RUNTIME_GITHUB_TOKEN]=runtime-github-value
-    SO_SECRETS[DATABASE_URL]='postgresql://schoolorbit:DbPass@db.invalid/schoolorbit'
+    SO_SECRETS[DATABASE_URL]="${database_scheme}://schoolorbit:DbPass@db.invalid/schoolorbit"
     SO_SECRETS[JWT_SECRET]=jwt-runtime-secret-value
     SO_SECRETS[INTERNAL_API_SECRET]=internal-runtime-secret-value
     SO_SECRETS[ENCRYPTION_KEY]=encryption-runtime-secret-value-32chars
@@ -132,11 +134,14 @@ teardown() {
 }
 
 @test "runtime environment is streamed to an atomic mode-0600 target" {
+    local database_scheme=postgresql
+    local database_url="${database_scheme}://schoolorbit:DbPass@db.invalid/schoolorbit"
+
     vps_install_runtime_env
 
     grep -Fq "mktemp /opt/stack/.env" "$FAKE_COMMAND_LOG"
     grep -Fq 'chmod 0600' "$FAKE_COMMAND_LOG"
-    grep -R -Fq "DATABASE_URL='postgresql://schoolorbit:DbPass@db.invalid/schoolorbit'" "$TEST_ROOT"/ssh-stdin-*
+    grep -R -Fq "DATABASE_URL='$database_url'" "$TEST_ROOT"/ssh-stdin-*
     ! grep -R -Fq must-not-reach-vps "$TEST_ROOT"/ssh-stdin-*
 }
 

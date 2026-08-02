@@ -283,6 +283,7 @@ load_inputs() {
 
     for name in "${SO_REQUIRED_RUNTIME_VALUES[@]}"; do
         value=${!name-}
+        [[ -n $value ]] || value=${SO_CONFIG["runtime:$name"]-}
         if [[ -z $value && $SO_SECRETS_STDIN == true ]]; then
             value=$(jq -er --arg name "$name" '.[$name] | strings | select(length > 0)' <<<"$input_json" 2>/dev/null) || die 64 "Missing required input: $name" || return
         elif [[ -z $value ]]; then
@@ -295,4 +296,16 @@ load_inputs() {
     if [[ ${SO_CONFIG["runtime:R2_PUBLIC_BUCKET_NAME"]} == "${SO_CONFIG["runtime:R2_PRIVATE_BUCKET_NAME"]}" ]]; then
         die 64 'Public and private R2 buckets must be different'
     fi
+}
+
+load_cloudflare_bootstrap_token() {
+    local name=SCHOOLORBIT_CLOUDFLARE_BOOTSTRAP_TOKEN value
+    value=${!name-}
+    [[ -n $value ]] || value=${SO_SECRETS[$name]-}
+    if [[ -z $value ]]; then
+        value=$(_read_prompted_value "$name" secret) || return
+    fi
+    _validate_secret "$name" "$value" || return
+    # shellcheck disable=SC2034 # Consumed by the Cloudflare provider boundary.
+    SO_SECRETS[$name]=$value
 }

@@ -91,7 +91,7 @@ _vps_remove_private_temp_dir() {
     local directory=${1-}
     [[ -n $directory && -d $directory ]] || return 0
     case ${directory##*/} in
-        schoolorbit-installer.*) command rm -rf -- "$directory" ;;
+        schoolorbit-installer.*) command rm -r -- "$directory" ;;
         *) die 78 'Refusing to remove an unexpected temporary directory' ;;
     esac
 }
@@ -100,6 +100,18 @@ vps_cleanup_transients() {
     _vps_remove_private_temp_dir "$SO_VPS_DEPLOYMENT_KEY_DIR"
     _vps_remove_private_temp_dir "$SO_VPS_TLS_TEMP_DIR"
     SO_VPS_DEPLOYMENT_KEY_DIR=
+    SO_VPS_TLS_TEMP_DIR=
+    SO_CF_ORIGIN_ROOT_FILE=
+}
+
+vps_cleanup_deployment_key() {
+    _vps_remove_private_temp_dir "$SO_VPS_DEPLOYMENT_KEY_DIR" || return
+    SO_VPS_DEPLOYMENT_KEY_DIR=
+    unset 'SO_SECRETS[SSH_PRIVATE_KEY]'
+}
+
+vps_cleanup_tls_material() {
+    _vps_remove_private_temp_dir "$SO_VPS_TLS_TEMP_DIR" || return
     SO_VPS_TLS_TEMP_DIR=
     SO_CF_ORIGIN_ROOT_FILE=
 }
@@ -230,10 +242,41 @@ trap - EXIT'
     _vps_ssh "$remote_command" <"$source_file" || die 69 "Unable to install TLS file ${destination##*/}"
 }
 
+_vps_download_origin_root() {
+    local destination=$1 root_hash
+    curl --silent --show-error --fail --location "$CF_ORIGIN_RSA_ROOT_URL" --output "$destination" || die 69 'Unable to download the Cloudflare Origin CA root' || return
+    root_hash=$(sha256sum "$destination" | awk '{print $1}')
+    [[ $root_hash == "$CF_ORIGIN_RSA_ROOT_SHA256" ]] || die 78 'Cloudflare Origin CA root checksum is invalid'
+}
+
+vps_prepare_verified_origin_root() {
+    require_command curl || return
+    if [[ -n $SO_CF_ORIGIN_ROOT_FILE && -r $SO_CF_ORIGIN_ROOT_FILE ]]; then
+        return 0
+    fi
+    [[ -n $SO_VPS_TLS_TEMP_DIR && -d $SO_VPS_TLS_TEMP_DIR ]] || SO_VPS_TLS_TEMP_DIR=$(_vps_make_private_temp_dir) || return
+    SO_CF_ORIGIN_ROOT_FILE="$SO_VPS_TLS_TEMP_DIR/cloudflare-origin-rsa-root.pem"
+    _vps_download_origin_root "$SO_CF_ORIGIN_ROOT_FILE"
+}
+
+vps_reverify_bootstrap() {
+    vps_preflight || return
+    local prefix
+    prefix=$(_vps_privileged_prefix)
+    _vps_ssh "${prefix}bash -c 'id \"${SO_CONFIG[server_user]}\" >/dev/null && test -s /opt/stack/.env && test \"\$(stat -c %a /opt/stack/.env)\" = 600'" >/dev/null || die 78 'VPS bootstrap checkpoint no longer matches the target'
+}
+
+vps_reverify_tls() {
+    local prefix
+    prefix=$(_vps_privileged_prefix)
+    _vps_ssh "${prefix}bash -c 'test -s /opt/stack/nginx/ssl/schoolorbit-origin.pem && test -s /opt/stack/nginx/ssl/schoolorbit-origin.key && openssl x509 -checkend 86400 -noout -in /opt/stack/nginx/ssl/schoolorbit-origin.pem'" >/dev/null || die 78 'VPS Origin TLS checkpoint no longer matches the target' || return
+    vps_prepare_verified_origin_root
+}
+
 vps_issue_and_install_tls() {
     require_command curl || return
     require_command openssl || return
-    local private_key csr certificate root root_hash certificate_key_hash private_key_hash admin_host school_host
+    local private_key csr certificate root certificate_key_hash private_key_hash admin_host school_host
     _vps_remove_private_temp_dir "$SO_VPS_TLS_TEMP_DIR" || return
     SO_VPS_TLS_TEMP_DIR=
     SO_CF_ORIGIN_ROOT_FILE=
@@ -254,9 +297,7 @@ vps_issue_and_install_tls() {
     printf '%s\n' "$CF_CERTIFICATE" >"$certificate"
     chmod 0644 "$certificate"
 
-    curl --silent --show-error --fail --location "$CF_ORIGIN_RSA_ROOT_URL" --output "$root" || die 69 'Unable to download the Cloudflare Origin CA root' || return
-    root_hash=$(sha256sum "$root" | awk '{print $1}')
-    [[ $root_hash == "$CF_ORIGIN_RSA_ROOT_SHA256" ]] || die 78 'Cloudflare Origin CA root checksum is invalid' || return
+    _vps_download_origin_root "$root" || return
     openssl verify -CAfile "$root" "$certificate" >/dev/null || die 78 'Origin certificate verification failed' || return
     openssl x509 -in "$certificate" -noout -checkhost "$admin_host" >/dev/null || die 78 'Origin certificate is missing the admin API host' || return
     openssl x509 -in "$certificate" -noout -checkhost "$school_host" >/dev/null || die 78 'Origin certificate is missing the school API host' || return
