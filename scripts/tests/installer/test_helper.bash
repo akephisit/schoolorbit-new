@@ -14,6 +14,8 @@ setup_installer_test() {
     : >"$CAPTURED_STDIN"
     export PATH="$FAKE_BIN:$ORIGINAL_PATH"
     export SCHOOLORBIT_STATE_HOME="$HOME/.local/state/schoolorbit-installer"
+    export SO_PROVIDER_POLL_ATTEMPTS=1
+    export SO_PROVIDER_POLL_DELAY=0
 
     local name
     for name in \

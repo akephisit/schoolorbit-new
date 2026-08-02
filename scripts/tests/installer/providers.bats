@@ -227,3 +227,19 @@ teardown() {
     run cf_wait_for_proxy_resolution 192.0.2.20
     [ "$status" -eq 75 ]
 }
+
+@test "provider failure fixture performs one poll without retry backoff" {
+    make_fake_command getent '
+printf "%s %s\n" "192.0.2.20" "STREAM fake"
+printf "%s\n" getent >>"$FAKE_COMMAND_LOG"
+'
+    sleep() {
+        printf 'sleep %s\n' "$*" >>"$FAKE_COMMAND_LOG"
+    }
+
+    run cf_wait_for_proxy_resolution 192.0.2.20
+
+    [ "$status" -eq 75 ]
+    [ "$(grep -c '^getent$' "$FAKE_COMMAND_LOG")" -eq 1 ]
+    ! grep -q '^sleep ' "$FAKE_COMMAND_LOG"
+}
