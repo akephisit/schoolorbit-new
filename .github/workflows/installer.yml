@@ -1,0 +1,69 @@
+name: Installer Verification
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "scripts/schoolorbit-installer"
+      - "scripts/render_nginx_config.sh"
+      - "scripts/lib/schoolorbit-installer/**"
+      - "scripts/tests/installer/**"
+      - "podman-compose.yml"
+      - "nginx-configs/**"
+      - ".github/workflows/**"
+      - ".rules"
+      - "docs/OPERATIONS.md"
+      - "docs/PODMAN_SETUP.md"
+      - "docs/TESTING.md"
+      - "frontend-admin/README.md"
+      - "frontend-school/tests/static/deployment-installer.test.mjs"
+  pull_request:
+    paths:
+      - "scripts/schoolorbit-installer"
+      - "scripts/render_nginx_config.sh"
+      - "scripts/lib/schoolorbit-installer/**"
+      - "scripts/tests/installer/**"
+      - "podman-compose.yml"
+      - "nginx-configs/**"
+      - ".github/workflows/**"
+      - ".rules"
+      - "docs/OPERATIONS.md"
+      - "docs/PODMAN_SETUP.md"
+      - "docs/TESTING.md"
+      - "frontend-admin/README.md"
+      - "frontend-school/tests/static/deployment-installer.test.mjs"
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Install verification dependencies
+        run: sudo apt-get update && sudo apt-get install -y bats shellcheck shfmt podman-compose
+
+      - name: Check installer shell
+        run: shellcheck scripts/schoolorbit-installer scripts/render_nginx_config.sh scripts/lib/schoolorbit-installer/*.sh scripts/lib/schoolorbit-installer/remote/*.sh
+
+      - name: Check installer formatting
+        run: shfmt -d -i 4 -ci scripts/schoolorbit-installer scripts/render_nginx_config.sh scripts/lib/schoolorbit-installer/*.sh scripts/lib/schoolorbit-installer/remote/*.sh
+
+      - name: Test installer behavior
+        run: bats scripts/tests/installer
+
+      - name: Verify deployment invariants
+        run: node --test frontend-school/tests/static/deployment-installer.test.mjs
+
+      - name: Resolve canonical production topology
+        run: |
+          # shellcheck disable=SC2046
+          env $(grep -v '^#' scripts/tests/installer/fixtures/runtime.env | xargs) podman-compose -f podman-compose.yml config >/dev/null
+
+      - name: Lint GitHub Actions workflows
+        run: docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:1.7.7

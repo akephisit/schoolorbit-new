@@ -81,6 +81,26 @@ npm run check
 npm run build
 ```
 
+## Installer and Production Topology
+
+When the VPS installer, canonical Compose runtime, Nginx templates, deployment workflows, or their durable documentation changes, run from the repository root:
+
+```bash
+shellcheck scripts/schoolorbit-installer scripts/render_nginx_config.sh \
+  scripts/lib/schoolorbit-installer/*.sh \
+  scripts/lib/schoolorbit-installer/remote/*.sh
+shfmt -d -i 4 -ci scripts/schoolorbit-installer scripts/render_nginx_config.sh \
+  scripts/lib/schoolorbit-installer/*.sh \
+  scripts/lib/schoolorbit-installer/remote/*.sh
+bats scripts/tests/installer
+node --test frontend-school/tests/static/deployment-installer.test.mjs
+env $(grep -v '^#' scripts/tests/installer/fixtures/runtime.env | xargs) \
+  podman-compose -f podman-compose.yml config >/dev/null
+docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:1.7.7
+```
+
+The deployment static guard renders a proxy template into a temporary target, rejects invalid domains without replacing existing output, enforces the single production Compose owner, and confirms backend workflows verify the selected origin rather than the public hostname. Report an unavailable Bats, Podman Compose, or Docker dependency as unrun; do not replace its check with a narrower command.
+
 ## Permission Contract
 
 `contracts/permissions.json` is the handwritten permission source. The registries and lock are generated files; do not edit generated files directly.

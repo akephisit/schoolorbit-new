@@ -15,6 +15,43 @@
 
 [`podman-compose.yml`](../podman-compose.yml) เป็น source of truth ของ backend containers ห้ามคัดลอก Compose ทั้งไฟล์ไปไว้ในคู่มือนี้แล้วแก้แยกกัน
 
+Network และ volume ของ production ใช้ชื่อคงที่จาก Compose เพื่อไม่ขึ้นกับชื่อ directory หรือ Compose project:
+
+- `schoolorbit-web` สำหรับ Nginx และ backend ทั้งสอง;
+- `schoolorbit-file-platform-internal` ระหว่าง backend-school กับ clamd;
+- `schoolorbit-clamav-egress` สำหรับการอัปเดต signature ของ clamd;
+- `schoolorbit-clamav-signatures` สำหรับ signature volume.
+
+## วิธีที่แนะนำ: Replacement VPS Installer
+
+สำหรับย้ายไป VPS ใหม่ ให้รัน installer จากเครื่องผู้ดูแลผ่าน WSL/Linux/macOS แทนการทำขั้นตอนด้านล่างทีละส่วน เครื่องเป้าหมายต้องเป็น Debian หรือ Ubuntu และเข้า SSH ด้วย key ได้ ทดสอบแบบ read-only ก่อน:
+
+```bash
+./scripts/schoolorbit-installer migrate-vps \
+  --repository akephisit/schoolorbit-new \
+  --target "$TARGET_IP" \
+  --base-domain schoolorbit.app \
+  --dry-run
+```
+
+เมื่อ preflight ผ่านแล้วจึงรันคำสั่งเดิมโดยตัด `--dry-run` ออก ส่ง secret ผ่าน environment, hidden prompt หรือ `--secrets-stdin` เท่านั้น ห้ามใส่ secret ต่อท้าย command ตัว installer จะติดตั้ง Podman แบบ rootless, สร้าง `/opt/stack`, ตั้ง GitHub variables/secrets, ติดตั้ง Cloudflare Origin CA, dispatch backend/frontend workflows, ตรวจ origin ใหม่โดยตรง และขอคำยืนยันก่อนย้าย DNS.
+
+ถ้าหยุดกลางทาง ให้ใช้ run ID ที่พิมพ์ไว้:
+
+```bash
+./scripts/schoolorbit-installer migrate-vps --resume RUN_ID
+```
+
+ถ้าตรวจหลัง cutover ไม่ผ่านและตัดสินใจย้อน DNS ให้ใช้คำสั่งที่ installer รายงาน ห้ามเดา run ID:
+
+```bash
+./scripts/schoolorbit-installer rollback-dns --run-id RUN_ID
+```
+
+รายละเอียด checkpoint, คำยืนยัน และ rollback อยู่ใน [Operations](./OPERATIONS.md). ขั้นตอนถัดไปเป็น manual path สำหรับกรณีที่ installer ใช้ไม่ได้หรือผู้ดูแลต้องตรวจแต่ละส่วนเอง อย่าผสมสองวิธีใน run เดียวโดยไม่มี checkpoint ที่ชัดเจน.
+
+## ติดตั้งด้วยตนเอง
+
 ## 1. เตรียม Server
 
 ใช้ Debian/Ubuntu รุ่นที่ยังได้รับ security updates และบัญชีผู้ดูแลปกติที่ใช้ `sudo` ได้:
@@ -92,8 +129,7 @@ git pull --ff-only
 ```bash
 install -d -m 0750 \
   /opt/stack/nginx/conf.d \
-  /opt/stack/nginx/ssl \
-  /opt/stack/nginx/certbot
+  /opt/stack/nginx/ssl
 ```
 
 ## 4. เตรียม Environment Variables
@@ -144,30 +180,24 @@ podman-compose -f podman-compose.yml config >/dev/null
 - `school-api.schoolorbit.app`;
 - admin API domain ที่เลือกใช้จริง.
 
-เลือกเปิดหรือปิด Cloudflare proxy ตาม TLS, WebSocket, SSE และ caching policy ของ environment นั้น อย่าถือว่า proxy mode แบบใดถูกต้องกับทุกระบบ.
+API records ของ production ที่ installer รองรับต้องเป็น Cloudflare Proxied ทั้งคู่และชี้ origin IPv4 เดียวกันก่อน cutover.
 
 ### TLS ครั้งแรก
 
-ก่อนเริ่ม Nginx ขอ certificate ด้วย ACME client ที่องค์กรอนุมัติ ตัวอย่าง Certbot แบบ standalone:
+สำหรับ API origins หลัง Cloudflare proxy ให้สร้าง Cloudflare Origin CA certificate ที่มีเฉพาะ `school-api.<base-domain>` และ `admin-api.<base-domain>` แล้วติดตั้งเป็น:
 
-```bash
-podman run --rm -it \
-  -p 80:80 \
-  -v /opt/stack/nginx/ssl:/etc/letsencrypt \
-  docker.io/certbot/certbot certonly \
-  --standalone \
-  -d school-api.schoolorbit.app \
-  -d admin-api.schoolorbit.app
-```
+- `/opt/stack/nginx/ssl/schoolorbit-origin.pem` โหมด `0644`;
+- `/opt/stack/nginx/ssl/schoolorbit-origin.key` โหมด `0600`;
+- `/opt/stack/nginx/ssl/cloudflare-origin-rsa-root.pem` โหมด `0644`.
 
-DNS ต้อง resolve มายัง server และพอร์ต `80` ต้องว่างระหว่างรัน เปลี่ยน domains ให้ตรง production จริง ตั้ง automated renewal และทดสอบ renewal ก่อน certificate หมดอายุ.
+ห้ามส่ง private key ผ่าน log หรือ commit ลง repository ตรวจ certificate กับ Cloudflare Origin CA root และ hostname ทั้งสองก่อนเปิด traffic จากนั้นตั้ง Cloudflare SSL/TLS encryption mode เป็น `Full (strict)`. บันทึกวันหมดอายุไว้ในระบบติดตามของผู้ดูแล เพราะ Cloudflare ไม่แจ้งเตือน Origin CA expiry; installer จะบันทึกค่า `certificate_expiry` ใน checkpoint ให้.
 
 ### Nginx configuration
 
 ใช้ไฟล์ repository เป็น reference:
 
-- [school-api.schoolorbit.app.conf](../nginx-configs/school-api.schoolorbit.app.conf) สำหรับ school API, uploads, SSE และ WebSocket;
-- [admin-api.schoolorbit.app.conf](../nginx-configs/admin-api.schoolorbit.app.conf) สำหรับ admin API.
+- [school-api.conf.template](../nginx-configs/school-api.conf.template) สำหรับ school API, uploads, SSE และ WebSocket;
+- [admin-api.conf.template](../nginx-configs/admin-api.conf.template) สำหรับ admin API.
 
 ตรวจ server names, CORS origins, certificate paths และ upload limits ก่อนนำไปไว้ใน `/opt/stack/nginx/conf.d`. เมื่อ Nginx รันเป็น container บน network เดียวกัน `proxy_pass` ต้องใช้ `schoolorbit-backend-school:8081` หรือ `schoolorbit-backend-admin:8080` ไม่ใช่ `localhost`.
 
@@ -186,43 +216,18 @@ podman-compose -f podman-compose.yml up -d
 podman ps
 ```
 
-ชื่อ network จริงอาจถูก `podman-compose` เติม project prefix ให้ตรวจจาก backend container แทนการเดา:
+ตรวจ explicit production networks ที่ Compose เป็นเจ้าของ:
 
 ```bash
-schoolorbit_podman_network="$(
-  podman inspect schoolorbit-backend-school \
-    --format '{{range $network, $_ := .NetworkSettings.Networks}}{{$network}}{{"\n"}}{{end}}' \
-    | head -n 1
-)"
-test -n "$schoolorbit_podman_network"
-printf 'SchoolOrbit Podman network: %s\n' "$schoolorbit_podman_network"
-podman network inspect "$schoolorbit_podman_network" >/dev/null
+podman network inspect schoolorbit-web >/dev/null
+podman network inspect schoolorbit-file-platform-internal >/dev/null
+podman network inspect schoolorbit-clamav-egress >/dev/null
 ```
 
-ตรวจ Nginx config บน network เดียวกับ backend:
+ตรวจ Nginx ที่ Compose สร้างไว้บน network เดียวกับ backend:
 
 ```bash
-podman run --rm \
-  --network "$schoolorbit_podman_network" \
-  -v /opt/stack/nginx/conf.d:/etc/nginx/conf.d:ro \
-  -v /opt/stack/nginx/ssl:/etc/letsencrypt:ro \
-  docker.io/library/nginx:stable-alpine \
-  nginx -t
-```
-
-จากนั้นเริ่ม Nginx:
-
-```bash
-podman run -d \
-  --name schoolorbit-nginx \
-  --restart unless-stopped \
-  --network "$schoolorbit_podman_network" \
-  -p 80:80 \
-  -p 443:443 \
-  -v /opt/stack/nginx/conf.d:/etc/nginx/conf.d:ro \
-  -v /opt/stack/nginx/ssl:/etc/letsencrypt:ro \
-  -v /opt/stack/nginx/certbot:/var/www/certbot:ro \
-  docker.io/library/nginx:stable-alpine
+podman exec schoolorbit-nginx nginx -t
 ```
 
 ถ้ามี `schoolorbit-nginx` อยู่แล้ว อย่ารันคำสั่งสร้างซ้ำ ให้ตรวจ config ด้วย `nginx -t` แล้ว reload:
@@ -238,7 +243,7 @@ podman exec schoolorbit-nginx nginx -s reload
 
 ```bash
 podman ps
-podman network inspect "$schoolorbit_podman_network"
+podman network inspect schoolorbit-web
 podman logs --tail 100 schoolorbit-backend-admin
 podman logs --tail 100 schoolorbit-backend-school
 podman logs --tail 100 schoolorbit-nginx
@@ -265,7 +270,7 @@ Backend workflows ปัจจุบัน:
 - [deploy-backend-admin.yml](../.github/workflows/deploy-backend-admin.yml);
 - [deploy-backend-school.yml](../.github/workflows/deploy-backend-school.yml).
 
-Repository/organization secrets ต้องมีอย่างน้อย `SERVER_IP`, `SERVER_USER` และ `SSH_PRIVATE_KEY`; package login ใช้ GitHub token ภายใน workflow. Service user บน server ต้อง:
+Repository/organization secrets ต้องมีอย่างน้อย `SERVER_IP`, `SERVER_PORT`, `SERVER_USER` และ `SSH_PRIVATE_KEY`; package login ใช้ GitHub token ภายใน workflow. Service user บน server ต้อง:
 
 - SSH ด้วย key ได้;
 - ใช้ rootless Podman และอ่าน `/opt/stack/.env` ได้;

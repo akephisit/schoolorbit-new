@@ -223,6 +223,8 @@ Use `ApiResponse` and `ApiErrorResponse`; do not return raw feature DTOs or ad-h
 ## 10. Deployment Constraints
 
 - Runtime configuration is environment-driven; do not bake environment URLs, credentials, keys, or tenant identifiers into images.
+- `podman-compose.yml` is the sole production Compose owner for backend-admin, backend-school, Nginx, clamd, their networks, and their volumes. Deployment workflows may recreate only the selected service and its declared dependencies; do not add a second production Compose definition.
+- Before DNS cutover, deployment workflows must verify the selected target origin with the intended hostname and pinned Origin CA trust. Do not verify a still-public hostname that may reach the old origin.
 - Containers bind application ports to `0.0.0.0`.
 - `/health` is liveness; `/ready` verifies dependencies and is the deployment/smoke readiness gate.
 - Keep Docker/Podman service networking, reverse-proxy routes, CORS origins, cookies, and public backend URLs aligned.
@@ -279,6 +281,24 @@ For backend-admin changes:
 cargo fmt --all -- --check
 cargo check
 ```
+
+For installer, production topology, proxy template, or deployment-workflow changes, from the repository root:
+
+```bash
+shellcheck scripts/schoolorbit-installer scripts/render_nginx_config.sh \
+  scripts/lib/schoolorbit-installer/*.sh \
+  scripts/lib/schoolorbit-installer/remote/*.sh
+shfmt -d -i 4 -ci scripts/schoolorbit-installer scripts/render_nginx_config.sh \
+  scripts/lib/schoolorbit-installer/*.sh \
+  scripts/lib/schoolorbit-installer/remote/*.sh
+bats scripts/tests/installer
+node --test frontend-school/tests/static/deployment-installer.test.mjs
+env $(grep -v '^#' scripts/tests/installer/fixtures/runtime.env | xargs) \
+  podman-compose -f podman-compose.yml config >/dev/null
+docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:1.7.7
+```
+
+The deployment static guard renders the proxy template and checks direct-origin deployment behavior. All commands above are required; do not replace unavailable checks with weaker substitutes.
 
 Run `scripts/smoke_test.sh` when authentication, CORS, readiness, proxying, deployment, or cross-service behavior changes. Run Playwright from `frontend-school` when browser auth or user workflows change. Credentials must come from `SMOKE_*` or `E2E_*` environment variables and must never be committed.
 
