@@ -1,12 +1,13 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { onMount } from 'svelte';
 	import { authStore } from '$lib/stores/auth.svelte';
 
 	// Redirect to dashboard if already authenticated.
 	onMount(() => {
 		if (authStore.isAuthenticated) {
-			goto('/dashboard');
+			goto(resolve('/dashboard'));
 		}
 	});
 
@@ -18,7 +19,7 @@
 	});
 
 	function handleLogin() {
-		goto('/login');
+		goto(resolve('/login'));
 	}
 </script>
 

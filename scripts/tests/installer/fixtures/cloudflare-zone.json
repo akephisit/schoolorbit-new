@@ -1,0 +1,20 @@
+{
+  "success": true,
+  "errors": [],
+  "messages": [],
+  "result": [
+    {
+      "id": "zone-123",
+      "name": "schoolorbit.app",
+      "status": "active",
+      "account": {
+        "id": "account-456",
+        "name": "SchoolOrbit"
+      }
+    }
+  ],
+  "result_info": {
+    "count": 1,
+    "total_count": 1
+  }
+}

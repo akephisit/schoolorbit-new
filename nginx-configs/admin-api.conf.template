@@ -1,18 +1,14 @@
 map $http_origin $admin_allow_origin {
     default "";
-    "https://admin.schoolorbit.app" $http_origin;
-    "https://schoolorbit.app" $http_origin;
+    "https://admin.${BASE_DOMAIN}" $http_origin;
+    "https://${BASE_DOMAIN}" $http_origin;
     "http://localhost:5173" $http_origin;
     "http://127.0.0.1:5173" $http_origin;
 }
 
 server {
     listen 80;
-    server_name admin-api.schoolorbit.app;
-
-    location /.well-known/acme-challenge/ {
-        root /var/www/certbot;
-    }
+    server_name admin-api.${BASE_DOMAIN};
 
     location / {
         return 301 https://$host$request_uri;
@@ -21,11 +17,10 @@ server {
 
 server {
     listen 443 ssl;
-    server_name admin-api.schoolorbit.app;
+    server_name admin-api.${BASE_DOMAIN};
 
-    # The production bootstrap requests one certificate containing both API names.
-    ssl_certificate /etc/letsencrypt/live/school-api.schoolorbit.app/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/school-api.schoolorbit.app/privkey.pem;
+    ssl_certificate /etc/nginx/ssl/schoolorbit-origin.pem;
+    ssl_certificate_key /etc/nginx/ssl/schoolorbit-origin.key;
     ssl_protocols TLSv1.2 TLSv1.3;
 
     client_max_body_size 5M;

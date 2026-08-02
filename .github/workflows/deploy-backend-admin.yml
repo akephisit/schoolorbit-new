@@ -1,13 +1,21 @@
 name: Deploy Backend Admin
+run-name: Deploy Backend Admin (${{ inputs.deployment_id || github.sha }})
 
 on:
   push:
     branches: ["main"]
     paths:
       - "backend-admin/**"
-      - "nginx-configs/admin-api.schoolorbit.app.conf"
+      - "podman-compose.yml"
+      - "nginx-configs/admin-api.conf.template"
+      - "scripts/render_nginx_config.sh"
       - ".github/workflows/deploy-backend-admin.yml"
   workflow_dispatch:
+    inputs:
+      deployment_id:
+        description: "Installer run identifier"
+        required: false
+        type: string
 
 env:
   REGISTRY: ghcr.io
@@ -15,6 +23,7 @@ env:
 
 jobs:
   build-and-push:
+    if: github.event_name == 'workflow_dispatch' || vars.RUNTIME_DEPLOY_ENABLED == 'true'
     runs-on: ubuntu-latest
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -42,7 +51,6 @@ jobs:
             type=raw,value=latest
             type=sha,prefix=,format=long
 
-      # Re-enable Buildx with robust config
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
         with:
@@ -63,129 +71,152 @@ jobs:
   deploy:
     needs: build-and-push
     runs-on: ubuntu-latest
+    concurrency:
+      group: deploy-schoolorbit-runtime
+      cancel-in-progress: false
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
 
-      - name: Upload admin API proxy definition
+      - name: Upload canonical runtime and proxy templates
         uses: appleboy/scp-action@v1.0.0
         with:
           host: ${{ secrets.SERVER_IP }}
           username: ${{ secrets.SERVER_USER }}
+          port: ${{ secrets.SERVER_PORT }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
-          source: nginx-configs/admin-api.schoolorbit.app.conf
-          target: /opt/stack/backend-admin-runtime
-          strip_components: 1
+          source: podman-compose.yml,scripts/render_nginx_config.sh,nginx-configs/admin-api.conf.template,nginx-configs/school-api.conf.template,nginx-configs/school-api.maintenance.conf.template
+          target: /opt/stack/deployment
 
-      - name: Deploy to Server via SSH
+      - name: Deploy selected commit to the target origin
         uses: appleboy/ssh-action@v1.2.5
         with:
           host: ${{ secrets.SERVER_IP }}
           username: ${{ secrets.SERVER_USER }}
+          port: ${{ secrets.SERVER_PORT }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
             set -eu
-            echo "${{ secrets.GITHUB_TOKEN }}" | podman login ghcr.io -u ${{ github.actor }} --password-stdin
+            echo "${{ secrets.GITHUB_TOKEN }}" | podman login ghcr.io -u "${{ github.actor }}" --password-stdin
             cd /opt/stack
 
-            proxy_source=/opt/stack/backend-admin-runtime/admin-api.schoolorbit.app.conf
-            proxy_target=/opt/stack/nginx/conf.d/admin-api.schoolorbit.app.conf
-            test -f "$proxy_source" || { echo "Staged admin API proxy config is missing"; exit 1; }
+            base_domain="${{ vars.BASE_DOMAIN || 'schoolorbit.app' }}"
+            deployment_root=/opt/stack/deployment
+            runtime_source="$deployment_root/podman-compose.yml"
+            runtime_compose=/opt/stack/podman-compose.yml
+            renderer_source="$deployment_root/scripts/render_nginx_config.sh"
+            renderer="$deployment_root/render-nginx"
+            proxy_template="$deployment_root/nginx-configs/admin-api.conf.template"
+            proxy_target=/opt/stack/nginx/conf.d/admin-api.conf
+            origin_root=/opt/stack/nginx/ssl/cloudflare-origin-rsa-root.pem
 
-            podman pull ghcr.io/akephisit/schoolorbit-backend-admin:latest
+            test -f /opt/stack/.env || { echo "Backend runtime environment is missing"; exit 1; }
+            test -f "$runtime_source" || { echo "Canonical runtime definition is missing"; exit 1; }
+            test -f "$renderer_source" || { echo "Proxy renderer is missing"; exit 1; }
+            test -f "$proxy_template" || { echo "Admin API proxy template is missing"; exit 1; }
+            test -f "$origin_root" || { echo "Cloudflare Origin CA root is missing"; exit 1; }
 
+            install -m 0755 "$renderer_source" "$renderer"
+            cp "$runtime_source" "${runtime_compose}.next"
+            podman-compose -f "${runtime_compose}.next" config >/dev/null
+            mv "${runtime_compose}.next" "$runtime_compose"
+
+            proxy_next="$(mktemp /opt/stack/nginx/conf.d/.admin-api.conf.XXXXXX)"
+            "$renderer" "$proxy_template" "$proxy_next" "$base_domain"
+            chmod 0644 "$proxy_next"
+
+            proxy_matches="$(
+              grep -lF "server_name admin-api.${base_domain};" \
+                /opt/stack/nginx/conf.d/*.conf 2>/dev/null || true
+            )"
+            proxy_match_count="$(printf '%s\n' "$proxy_matches" | sed '/^$/d' | wc -l | tr -d ' ')"
+            if [ "$proxy_match_count" -gt 1 ]; then
+              rm -f "$proxy_next"
+              echo "Multiple active admin API proxy configs were found"
+              exit 1
+            fi
+            if [ "$proxy_match_count" -eq 1 ] && [ "$proxy_matches" != "$proxy_target" ]; then
+              rm -f "$proxy_next"
+              echo "Admin API proxy exists at an unexpected path: ${proxy_matches}"
+              exit 1
+            fi
+
+            backend_image=ghcr.io/akephisit/schoolorbit-backend-admin
+            podman pull "${backend_image}:${{ github.sha }}"
+            podman tag "${backend_image}:${{ github.sha }}" "${backend_image}:latest"
             podman stop schoolorbit-backend-admin || true
             podman rm schoolorbit-backend-admin || true
-            podman-compose up -d backend-admin
+            podman-compose -f "$runtime_compose" up -d backend-admin
 
             if ! timeout 60 bash -c '
               for attempt in $(seq 1 12); do
                 if curl -fsS "$1" >/dev/null; then
                   exit 0
                 fi
-                if [ "$attempt" -lt 12 ]; then
-                  sleep 5
-                fi
+                if [ "$attempt" -lt 12 ]; then sleep 5; fi
               done
               exit 1
             ' _ http://127.0.0.1:8080/ready; then
+              rm -f "$proxy_next"
               podman logs --tail 100 schoolorbit-backend-admin
-              exit 1
-            fi
-
-            proxy_matches="$(
-              grep -l 'server_name admin-api\.schoolorbit\.app;' \
-                /opt/stack/nginx/conf.d/*.conf 2>/dev/null || true
-            )"
-            proxy_match_count="$(printf '%s\n' "$proxy_matches" | sed '/^$/d' | wc -l | tr -d ' ')"
-            if [ "$proxy_match_count" -gt 1 ]; then
-              echo "Multiple active admin API proxy configs were found"
-              exit 1
-            fi
-            if [ "$proxy_match_count" -eq 1 ] && [ "$proxy_matches" != "$proxy_target" ]; then
-              echo "Admin API proxy exists at an unexpected path: ${proxy_matches}"
               exit 1
             fi
 
             proxy_backup=""
             proxy_existed=0
             if [ -f "$proxy_target" ]; then
-              proxy_backup="$(mktemp /opt/stack/nginx/conf.d/.admin-api.schoolorbit.app.conf.XXXXXX)"
+              proxy_backup="$(mktemp /opt/stack/nginx/conf.d/.admin-api.backup.XXXXXX)"
               cp "$proxy_target" "$proxy_backup"
               proxy_existed=1
             fi
-
             restore_proxy() {
               if [ "$proxy_existed" -eq 1 ]; then
                 cp "$proxy_backup" "$proxy_target"
               else
                 rm -f "$proxy_target"
               fi
-              if ! podman exec schoolorbit-nginx nginx -t; then
-                echo "Restored admin API proxy configuration is invalid"
-                return 1
-              fi
-              if ! podman exec schoolorbit-nginx nginx -s reload; then
-                echo "Restored admin API proxy configuration could not be reloaded"
-                return 1
-              fi
+              podman-compose -f "$runtime_compose" up -d nginx
+              podman exec schoolorbit-nginx nginx -t
+              podman exec schoolorbit-nginx nginx -s reload
             }
 
-            cp "$proxy_source" "$proxy_target"
-            if ! podman exec schoolorbit-nginx nginx -t; then
+            mv "$proxy_next" "$proxy_target"
+            if ! podman-compose -f "$runtime_compose" up -d nginx ||
+              ! podman exec schoolorbit-nginx nginx -t ||
+              ! podman exec schoolorbit-nginx nginx -s reload
+            then
               restore_proxy
-              echo "Admin API proxy configuration is invalid"
-              exit 1
-            fi
-            if ! podman exec schoolorbit-nginx nginx -s reload; then
-              restore_proxy
-              echo "Admin API proxy configuration could not be reloaded"
-              exit 1
-            fi
-
-            public_identity_ready=0
-            for attempt in $(seq 1 12); do
-              public_identity="$(
-                curl --fail --silent --show-error --max-time 10 \
-                  https://admin-api.schoolorbit.app/ 2>/dev/null || true
-              )"
-              if printf '%s' "$public_identity" |
-                grep -Fq '"service":"SchoolOrbit Backend Admin"'
-              then
-                public_identity_ready=1
-                break
-              fi
-              if [ "$attempt" -lt 12 ]; then
-                sleep 5
-              fi
-            done
-            if [ "$public_identity_ready" -ne 1 ]; then
-              restore_proxy
-              echo "Public admin API did not resolve to SchoolOrbit Backend Admin"
+              echo "Admin API proxy configuration could not be activated"
               exit 1
             fi
 
-            if [ -n "$proxy_backup" ]; then
-              rm -f "$proxy_backup"
+            admin_host="admin-api.${base_domain}"
+            direct_ready="$(
+              curl --fail --silent --show-error --max-time 10 \
+                --cacert "$origin_root" \
+                --resolve "${admin_host}:443:127.0.0.1" \
+                "https://${admin_host}/ready"
+            )"
+            if ! printf '%s' "$direct_ready" | jq -e \
+              '.status == "ready" and .database == "connected"' >/dev/null
+            then
+              restore_proxy
+              echo "Direct admin API readiness verification failed"
+              exit 1
             fi
+            direct_identity="$(
+              curl --fail --silent --show-error --max-time 10 \
+                --cacert "$origin_root" \
+                --resolve "${admin_host}:443:127.0.0.1" \
+                "https://${admin_host}/"
+            )"
+            if ! printf '%s' "$direct_identity" | jq -e \
+              '.service == "SchoolOrbit Backend Admin"' >/dev/null
+            then
+              restore_proxy
+              echo "Direct admin API identity verification failed"
+              exit 1
+            fi
+
+            [ -z "$proxy_backup" ] || rm -f "$proxy_backup"
             podman image prune -f

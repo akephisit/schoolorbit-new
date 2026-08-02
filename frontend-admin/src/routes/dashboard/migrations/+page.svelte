@@ -3,9 +3,9 @@
 	import { migrationAPI, type MigrationStatusResponse } from '$lib/api/migration';
 	import { toast } from 'svelte-sonner';
 
-	let status: MigrationStatusResponse | null = null;
-	let loading = false;
-	let migrating = false;
+	let status = $state<MigrationStatusResponse | null>(null);
+	let loading = $state(false);
+	let migrating = $state(false);
 
 	onMount(async () => {
 		await loadStatus();
@@ -81,7 +81,7 @@
 <div class="migration-dashboard">
 	<header>
 		<h1>Database Migrations</h1>
-		<button class="btn-primary" on:click={migrateAll} disabled={migrating || loading}>
+		<button class="btn-primary" onclick={migrateAll} disabled={migrating || loading}>
 			{#if migrating}
 				<span class="spinner"></span>
 				Migrating...
@@ -136,7 +136,7 @@
 					</tr>
 				</thead>
 				<tbody>
-					{#each status.schools as school}
+					{#each status.schools as school (school.subdomain)}
 						<tr>
 							<td class="school-name">{school.subdomain}</td>
 							<td>

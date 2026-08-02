@@ -4,12 +4,12 @@ This guide describes production-facing procedures and invariants. Development co
 
 ## Runtime Topology
 
-- `backend-admin` listens on `0.0.0.0:8080`, owns the admin database, school records, tenant database provisioning metadata, and deployment coordination.
-- `backend-school` listens on `0.0.0.0:8081`, calls backend-admin over the internal network, resolves the tenant from the request, and connects to that tenant's PostgreSQL database.
+- `backend-admin` listens on container port `8080`, owns the admin database, school records, tenant database provisioning metadata, and deployment coordination.
+- `backend-school` listens on container port `8081`, calls backend-admin over the internal network, resolves the tenant from the request, and connects to that tenant's PostgreSQL database.
 - `frontend-admin` is the administrative web application.
 - `frontend-school` is built and deployed per tenant/subdomain and calls the school API.
 
-Local topology is defined in [`docker-compose.yml`](../docker-compose.yml). The prebuilt production-oriented Podman topology is in [`podman-compose.yml`](../podman-compose.yml). Containers use service DNS names internally; do not use `localhost` for one container to reach another.
+Local topology is defined in [`docker-compose.yml`](../docker-compose.yml). [`podman-compose.yml`](../podman-compose.yml) is the sole production Compose owner for both backends, Nginx, clamd, their explicitly named networks, and the scanner volume. The production host publishes backend ports only on `127.0.0.1`; containers use service DNS names internally and must not use `localhost` to reach another container.
 
 For first-time production server bootstrap, follow [Podman server setup](./PODMAN_SETUP.md).
 
@@ -52,6 +52,19 @@ Current workflows:
 - [api-contract.yml](../.github/workflows/api-contract.yml)
 - [smoke-test.yml](../.github/workflows/smoke-test.yml)
 - [e2e-sandbox.yml](../.github/workflows/e2e-sandbox.yml)
+- [installer.yml](../.github/workflows/installer.yml)
+
+Backend workflows stage the tracked canonical Compose file, validate it, atomically replace
+`/opt/stack/podman-compose.yml`, and recreate only the selected service plus its declared
+dependency. An admin deployment does not restart backend-school or clamd. A school deployment
+starts clamd when required and recreates backend-school without restarting backend-admin.
+Both workflows verify the selected target origin with the intended hostname and pinned
+Cloudflare Origin CA root; they do not use the still-public hostname as proof of the new origin.
+
+`RUNTIME_DEPLOY_ENABLED` gates push-triggered backend deployments and
+`FRONTEND_DEPLOY_ENABLED` gates push-triggered frontend deployments. Manual workflow dispatch
+remains available while either gate is `false`. The replacement-VPS installer keeps both gates
+disabled during migration and enables them only in the final handoff after public verification.
 
 Backend deploys wait for `/ready` before declaring success. Tenant workflows deploy the
 frontend first, then run `npm run sync:menu-routes` as an explicit step with server-only
@@ -62,12 +75,12 @@ After deployment, verify readiness first, then run the smoke test and the releva
 
 ## Reverse Proxy and Realtime
 
-The current proxy references are
-[`nginx-configs/school-api.schoolorbit.app.conf`](../nginx-configs/school-api.schoolorbit.app.conf)
+The current proxy sources are
+[`nginx-configs/school-api.conf.template`](../nginx-configs/school-api.conf.template)
 for the school API and
-[`nginx-configs/admin-api.schoolorbit.app.conf`](../nginx-configs/admin-api.schoolorbit.app.conf)
-for the admin API. The backend deployment workflows install and validate these tracked
-definitions before reloading Nginx.
+[`nginx-configs/admin-api.conf.template`](../nginx-configs/admin-api.conf.template)
+for the admin API. The backend deployment workflows render them with the validated base domain,
+install the result, validate Nginx, and then reload it.
 
 Preserve:
 
@@ -78,6 +91,55 @@ Preserve:
 - access-log redaction so tokens, cookies, raw query strings, and PII are not recorded.
 
 Validate WebSocket heartbeat, reconnect, and authenticated server-owned identity through the same proxy path clients use.
+
+## Replacement VPS Migration and DNS Rollback
+
+Use [`scripts/schoolorbit-installer`](../scripts/schoolorbit-installer) from an administrator
+machine running Bash 4.4 or newer. The target may be Debian or Ubuntu. Supply credentials only
+through environment variables, hidden prompts, or `--secrets-stdin`; the installer never accepts
+secret values as command-line arguments. Run the read-only provider and target preflight first:
+
+```bash
+./scripts/schoolorbit-installer migrate-vps \
+  --repository akephisit/schoolorbit-new \
+  --target "$TARGET_IP" \
+  --base-domain schoolorbit.app \
+  --dry-run
+```
+
+Remove `--dry-run` for the real migration. The installer creates a mode-`0600` checkpoint under
+`~/.local/state/schoolorbit-installer/`, prints its run ID, and records only non-secret state.
+After correcting a failure before or during migration, resume the same run without repeating a
+verified phase:
+
+```bash
+./scripts/schoolorbit-installer migrate-vps --resume RUN_ID
+```
+
+The migration bootstraps the target, installs runtime configuration and Origin CA material,
+dispatches the two backend workflows followed by the two frontend workflows, and verifies both
+APIs directly with `curl --resolve` and pinned Origin CA trust. It then prints the DNS diff and
+requires the exact phrase `CUTOVER <target-ip>` before one two-record Cloudflare batch. Public
+verification covers API identity, both frontends, authenticated SSE, and the File Platform before
+the deployment gates are enabled. A failed post-cutover verification reports recovery commands;
+it never performs an automatic rollback.
+
+Rollback restores the complete checkpointed record content, TTL, and proxy state. Confirm that
+the current records still represent this run, then execute:
+
+```bash
+./scripts/schoolorbit-installer rollback-dns --run-id RUN_ID
+```
+
+The command prints the reverse diff and requires the exact phrase `ROLLBACK <original-ip>` before
+applying one reverse batch. It changes DNS only; the replacement VPS and GitHub configuration are
+retained for diagnosis or a later retry. Keep the old VPS available until the rollback window has
+been closed explicitly.
+
+The TLS checkpoint stores the Cloudflare Origin CA certificate ID and `certificate_expiry`, but
+never the private key. Monitor that expiry independently and schedule replacement in advance;
+Cloudflare does not send Origin CA expiry notifications. Keep Cloudflare SSL/TLS mode at
+`Full (strict)` for installer-managed API origins.
 
 ## Tenant Migration and Cutover
 
@@ -166,7 +228,7 @@ Configuration fails closed at startup for missing, placeholder, shared-bucket, o
    `/ready`, migrates every active tenant, verifies every tenant reached the
    latest migration, and only then restores the normal proxy.
 
-The backend-school workflow performs exact-name checks before creation through the pinned AWS CLI image, uploads an isolated backend-school Compose definition, and recreates only `schoolorbit-backend-school`. It does not replace the production stack Compose or restart unrelated services.
+The backend-school workflow performs exact-name checks before creation through the pinned AWS CLI image, validates and promotes the canonical production Compose definition, starts `schoolorbit-clamd` when required, and recreates `schoolorbit-backend-school`. It does not restart backend-admin or create a second production topology.
 
 To diagnose private browser delivery, request a fresh typed grant through the authenticated file-download endpoint and keep `data.url` in memory. Fetch that URL separately with the tenant `Origin`, credentials omitted, and referrer disabled. Confirm the R2 response includes a matching `Access-Control-Allow-Origin`; never print, persist, or paste the grant URL because its query string is a temporary bearer credential.
 

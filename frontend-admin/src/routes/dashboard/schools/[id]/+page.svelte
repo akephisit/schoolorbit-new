@@ -3,26 +3,27 @@
 	import { apiClient, type School } from '$lib/api/client';
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
-	
+	import { resolve } from '$app/paths';
+
 	let schoolId = $derived($page.params.id);
 	let school = $state<School | null>(null);
 	let loading = $state(true);
 	let error = $state('');
-	
+
 	onMount(async () => {
 		await loadSchool();
 	});
-	
+
 	async function loadSchool() {
 		loading = true;
 		error = '';
-		
+
 		if (!schoolId) {
 			error = 'Invalid school ID';
 			loading = false;
 			return;
 		}
-		
+
 		try {
 			const response = await apiClient.getSchool(schoolId);
 			if (response.success && response.data) {
@@ -30,35 +31,43 @@
 			} else {
 				error = response.error || 'Failed to load school';
 			}
-		} catch (e: any) {
-			error = e.message || 'Failed to load school';
+		} catch (caught) {
+			error = caught instanceof Error ? caught.message : 'Failed to load school';
 		} finally {
 			loading = false;
 		}
 	}
-	
+
 	function formatDate(dateString: string) {
 		return new Date(dateString).toLocaleString('th-TH', {
 			dateStyle: 'medium',
 			timeStyle: 'short'
 		});
 	}
-	
+
 	function getStatusColor(status: string) {
 		switch (status) {
-			case 'active': return 'bg-green-100 text-green-800';
-			case 'provisioning': return 'bg-blue-100 text-blue-800';
-			case 'deployment_failed': return 'bg-red-100 text-red-800';
-			default: return 'bg-gray-100 text-gray-800';
+			case 'active':
+				return 'bg-green-100 text-green-800';
+			case 'provisioning':
+				return 'bg-blue-100 text-blue-800';
+			case 'deployment_failed':
+				return 'bg-red-100 text-red-800';
+			default:
+				return 'bg-gray-100 text-gray-800';
 		}
 	}
-	
+
 	function getStatusText(status: string) {
 		switch (status) {
-			case 'active': return '✅ พร้อมใช้งาน';
-			case 'provisioning': return '⏳ กำลังสร้าง';
-			case 'deployment_failed': return '❌ ล้มเหลว';
-			default: return status;
+			case 'active':
+				return '✅ พร้อมใช้งาน';
+			case 'provisioning':
+				return '⏳ กำลังสร้าง';
+			case 'deployment_failed':
+				return '❌ ล้มเหลว';
+			default:
+				return status;
 		}
 	}
 </script>
@@ -72,14 +81,16 @@
 	<div class="error-container">
 		<h2>เกิดข้อผิดพลาด</h2>
 		<p>{error}</p>
-		<button onclick={() => goto('/dashboard/schools')} class="btn-primary">
+		<button onclick={() => goto(resolve('/dashboard/schools'))} class="btn-primary">
 			กลับไปหน้ารายการโรงเรียน
 		</button>
 	</div>
 {:else if school}
 	<div class="school-detail">
 		<div class="header">
-			<button onclick={() => goto('/dashboard/schools')} class="back-button"> ← กลับ </button>
+			<button onclick={() => goto(resolve('/dashboard/schools'))} class="back-button">
+				← กลับ
+			</button>
 			<h1>{school.name}</h1>
 			<span class="status-badge {getStatusColor(school.status)}">
 				{getStatusText(school.status)}
@@ -114,6 +125,7 @@
 				{#if school.subdomainUrl || (school.config && school.config.deployment_url)}
 					<div class="info-row">
 						<span class="label">Frontend URL:</span>
+						<!-- eslint-disable svelte/no-navigation-without-resolve -->
 						<a
 							href={school.subdomainUrl || school.config.deployment_url}
 							target="_blank"
@@ -122,6 +134,7 @@
 						>
 							{school.subdomainUrl || school.config.deployment_url} ↗
 						</a>
+						<!-- eslint-enable svelte/no-navigation-without-resolve -->
 					</div>
 				{:else}
 					<p class="text-gray-500">ยังไม่มี deployment URL</p>
@@ -154,7 +167,7 @@
 
 		<!-- Actions -->
 		<div class="actions">
-			<button onclick={() => goto(`/dashboard/schools`)} class="btn-secondary">
+			<button onclick={() => goto(resolve('/dashboard/schools'))} class="btn-secondary">
 				กลับไปหน้ารายการ
 			</button>
 			{#if school.status === 'deployment_failed' && school.config && school.config.error}
@@ -187,7 +200,9 @@
 	}
 
 	@keyframes spin {
-		to { transform: rotate(360deg); }
+		to {
+			transform: rotate(360deg);
+		}
 	}
 
 	.error-container {
@@ -323,7 +338,8 @@
 		align-items: center;
 	}
 
-	.btn-primary, .btn-secondary {
+	.btn-primary,
+	.btn-secondary {
 		padding: 0.75rem 1.5rem;
 		border-radius: 8px;
 		font-weight: 600;

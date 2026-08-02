@@ -6,21 +6,21 @@
 	import InlineConsole from '$lib/components/InlineConsole.svelte';
 	import { PUBLIC_API_URL } from '$env/static/public';
 	import { toast } from 'svelte-sonner';
-	
+	import { resolve } from '$app/paths';
+
 	interface SchoolWithLogs extends School {
 		logs?: LogMessage[];
 		progress?: Progress;
 		isDeploying?: boolean;
 		isDeleting?: boolean;
 	}
-	
+
 	let schools = $state<SchoolWithLogs[]>([]);
 	let total = $state(0);
 	let page = $state(1);
 	let totalPages = $state(0);
 	let loading = $state(true);
 
-	
 	// Create school form
 	let showCreateForm = $state(false);
 	let createData = $state<CreateSchool>({
@@ -34,27 +34,28 @@
 	});
 	let creating = $state(false);
 	let validationErrors = $state<Record<string, string>>({});
-	
+
 	// Zod Schema
 	const createSchoolSchema = z.object({
 		name: z.string().min(1, 'กรุณากรอกชื่อโรงเรียน'),
-		subdomain: z.string()
+		subdomain: z
+			.string()
 			.min(1, 'กรุณากรอก subdomain')
-			.regex(/^[a-z0-9\-]+$/, 'ใช้ได้เฉพาะ a-z, 0-9, และ - เท่านั้น'),
+			.regex(/^[a-z0-9-]+$/, 'ใช้ได้เฉพาะ a-z, 0-9, และ - เท่านั้น'),
 		// adminUsername removed - auto generated
 		adminTitle: z.string().min(1, 'กรุณาเลือกคำนำหน้า'),
 		adminFirstName: z.string().min(1, 'กรุณากรอกชื่อจริง'),
 		adminLastName: z.string().min(1, 'กรุณากรอกนามสกุล'),
 		adminPassword: z.string().min(6, 'รหัสผ่านต้องมีอย่างน้อย 6 ตัวอักษร')
 	});
-	
+
 	onMount(async () => {
 		await loadSchools();
 	});
-	
+
 	async function loadSchools() {
 		loading = true;
-		
+
 		try {
 			const response = await apiClient.listSchools(page, 10);
 			if (response.success && response.data) {
@@ -65,22 +66,22 @@
 			} else {
 				toast.error(response.error || 'Failed to load schools');
 			}
-		} catch (e: any) {
-			toast.error(e.message || 'Failed to load schools');
+		} catch (error) {
+			toast.error(error instanceof Error ? error.message : 'Failed to load schools');
 		} finally {
 			loading = false;
 		}
 	}
-	
+
 	async function handleCreateSchool(e: Event) {
 		e.preventDefault();
 		creating = true;
 		validationErrors = {};
-		
+
 		try {
 			// Validate with Zod
 			const validated = createSchoolSchema.parse(createData);
-			
+
 			// Create temporary school entry with loading state
 			const tempSchoolId = crypto.randomUUID();
 			const tempSchool: SchoolWithLogs = {
@@ -94,149 +95,143 @@
 				dbName: `schoolorbit_${validated.subdomain}`,
 				dbConnectionString: '',
 				logs: [],
-				isDeploying: true,
+				isDeploying: true
 			};
-			
+
 			schools = [tempSchool, ...schools];
-			
+
 			// Use SSE to stream logs
-			
-			await createSchoolSSE(
-				PUBLIC_API_URL,
-				validated,
-				{
-					onLog: (level, message) => {
-						schools = schools.map(s => 
-							s.id === tempSchoolId
-								? { ...s, logs: [...(s.logs || []), { level: level as any, message, timestamp: new Date() }] }
-								: s
-						);
-					},
-					
-					onProgress: (step, total, message) => {
-						schools = schools.map(s =>
-							s.id === tempSchoolId
-								? { ...s, progress: { step, total, message } }
-								: s
-						);
-					},
-					
-					onComplete: (data) => {
-						schools = schools.map(s =>
-							s.id === tempSchoolId
-								? { ...data, logs: undefined, isDeploying: false }
-								: s
-						);
-						
-						// Show success toast
-						toast.success('สร้างโรงเรียนสำเร็จ');
-						
-						// Reset form
-						showCreateForm = false;
-						createData = {
-							name: '',
-							subdomain: '',
-							adminUsername: '',
-							adminPassword: '',
-							adminTitle: '',
-							adminFirstName: '',
-							adminLastName: ''
-						};
-					},
-					
-					onError: (errorMsg) => {
-						schools = schools.map(s =>
-							s.id === tempSchoolId
-								? { ...s, logs: [...(s.logs || []), { level: 'error', message: errorMsg, timestamp: new Date() }], isDeploying: false }
-								: s
-						);
-						errorMsg = errorMsg.includes('Subdomain') ? 'Subdomain นี้มีในระบบแล้ว' : errorMsg;
-						toast.error(errorMsg);
-					}
+
+			await createSchoolSSE<School>(PUBLIC_API_URL, validated, {
+				onLog: (level, message) => {
+					schools = schools.map((s) =>
+						s.id === tempSchoolId
+							? { ...s, logs: [...(s.logs || []), { level, message, timestamp: new Date() }] }
+							: s
+					);
+				},
+
+				onProgress: (step, total, message) => {
+					schools = schools.map((s) =>
+						s.id === tempSchoolId ? { ...s, progress: { step, total, message } } : s
+					);
+				},
+
+				onComplete: (data) => {
+					schools = schools.map((s) =>
+						s.id === tempSchoolId ? { ...data, logs: undefined, isDeploying: false } : s
+					);
+
+					// Show success toast
+					toast.success('สร้างโรงเรียนสำเร็จ');
+
+					// Reset form
+					showCreateForm = false;
+					createData = {
+						name: '',
+						subdomain: '',
+						adminUsername: '',
+						adminPassword: '',
+						adminTitle: '',
+						adminFirstName: '',
+						adminLastName: ''
+					};
+				},
+
+				onError: (errorMsg) => {
+					schools = schools.map((s) =>
+						s.id === tempSchoolId
+							? {
+									...s,
+									logs: [
+										...(s.logs || []),
+										{ level: 'error', message: errorMsg, timestamp: new Date() }
+									],
+									isDeploying: false
+								}
+							: s
+					);
+					errorMsg = errorMsg.includes('Subdomain') ? 'Subdomain นี้มีในระบบแล้ว' : errorMsg;
+					toast.error(errorMsg);
 				}
-			);
-		} catch (e: any) {
-			if (e instanceof z.ZodError) {
+			});
+		} catch (error) {
+			if (error instanceof z.ZodError) {
 				// Handle Zod validation errors
-				e.issues.forEach((err: z.ZodIssue) => {
+				error.issues.forEach((err: z.ZodIssue) => {
 					if (err.path[0]) {
 						validationErrors[err.path[0] as string] = err.message;
 					}
 				});
 				toast.error('กรุณาตรวจสอบข้อมูลที่กรอก');
 			} else {
-				toast.error(e.message || 'Failed to create school');
+				toast.error(error instanceof Error ? error.message : 'Failed to create school');
 			}
 		} finally {
 			creating = false;
 		}
 	}
-	
+
 	async function deleteSchool(id: string, name: string) {
 		if (!confirm(`คุณแน่ใจหรือไม่ที่จะลบโรงเรียน "${name}"?`)) return;
-		
-		const school = schools.find(s => s.id === id);
+
+		const school = schools.find((s) => s.id === id);
 		if (!school) return;
 		// Update school state to show it's deleting
-		schools = schools.map(s =>
-			s.id === id
-				? { ...s, isDeleting: true, logs: [] }
-				: s
-		);
-		
+		schools = schools.map((s) => (s.id === id ? { ...s, isDeleting: true, logs: [] } : s));
+
 		try {
-			await deleteSchoolSSE(
-				PUBLIC_API_URL,
-				id,
-				{
-					onLog: (level, message) => {
-						schools = schools.map(s =>
-							s.id === id
-								? { ...s, logs: [...(s.logs || []), { level: level as any, message, timestamp: new Date() }] }
-								: s
-						);
-					},
-					
-					onProgress: (step, total, message) => {
-						schools = schools.map(s =>
-							s.id === id
-								? { ...s, progress: { step, total, message } }
-								: s
-						);
-					},
-					
-					onComplete: () => {
-						// Remove school from list
-						schools = schools.filter(s => s.id !== id);
-						toast.success('ลบโรงเรียนสำเร็จ');
-					},
-					
-					onError: (errorMsg) => {
-						schools = schools.map(s =>
-							s.id === id
-								? { ...s, logs: [...(s.logs || []), { level: 'error', message: errorMsg, timestamp: new Date() }], isDeleting: false }
-								: s
-						);
-						toast.error(errorMsg);
-					}
+			await deleteSchoolSSE(PUBLIC_API_URL, id, {
+				onLog: (level, message) => {
+					schools = schools.map((s) =>
+						s.id === id
+							? { ...s, logs: [...(s.logs || []), { level, message, timestamp: new Date() }] }
+							: s
+					);
+				},
+
+				onProgress: (step, total, message) => {
+					schools = schools.map((s) =>
+						s.id === id ? { ...s, progress: { step, total, message } } : s
+					);
+				},
+
+				onComplete: () => {
+					// Remove school from list
+					schools = schools.filter((s) => s.id !== id);
+					toast.success('ลบโรงเรียนสำเร็จ');
+				},
+
+				onError: (errorMsg) => {
+					schools = schools.map((s) =>
+						s.id === id
+							? {
+									...s,
+									logs: [
+										...(s.logs || []),
+										{ level: 'error', message: errorMsg, timestamp: new Date() }
+									],
+									isDeleting: false
+								}
+							: s
+					);
+					toast.error(errorMsg);
 				}
+			});
+		} catch (error) {
+			schools = schools.map((s) =>
+				s.id === id ? { ...s, isDeleting: false, logs: undefined } : s
 			);
-		} catch (e: any) {
-			schools = schools.map(s =>
-				s.id === id
-					? { ...s, isDeleting: false, logs: undefined }
-					: s
-			);
-			toast.error(e.message || 'Failed to delete school');
+			toast.error(error instanceof Error ? error.message : 'Failed to delete school');
 		}
 	}
-	
+
 	// Deploy functionality
 	let deploying = $state<string | null>(null);
-	
+
 	async function handleDeploy(schoolId: string, schoolName: string) {
 		deploying = schoolId;
-		
+
 		try {
 			const response = await apiClient.deploySchool(schoolId);
 			if (response.success && response.data) {
@@ -245,20 +240,20 @@
 			} else {
 				toast.error(response.error || 'Deployment failed');
 			}
-		} catch (e: any) {
-			toast.error(e.message || 'Deployment failed');
+		} catch (error) {
+			toast.error(error instanceof Error ? error.message : 'Deployment failed');
 		} finally {
 			deploying = null;
 		}
 	}
-	
+
 	function nextPage() {
 		if (page < totalPages) {
 			page++;
 			loadSchools();
 		}
 	}
-	
+
 	function prevPage() {
 		if (page > 1) {
 			page--;
@@ -380,7 +375,7 @@
 		</div>
 	{:else}
 		<div class="schools-grid">
-			{#each schools as school}
+			{#each schools as school (school.id)}
 				<div class="school-card">
 					<div class="school-header">
 						<h3>{school.name}</h3>
@@ -418,6 +413,7 @@
 						{#if school.subdomainUrl || (school.config && school.config.deployment_url)}
 							<p class="subdomain-url">
 								<strong>URL:</strong>
+								<!-- eslint-disable svelte/no-navigation-without-resolve -->
 								<a
 									href={school.subdomainUrl || school.config.deployment_url}
 									target="_blank"
@@ -426,6 +422,7 @@
 									{school.subdomainUrl || school.config.deployment_url}
 									<span class="external-link">↗</span>
 								</a>
+								<!-- eslint-enable svelte/no-navigation-without-resolve -->
 							</p>
 						{/if}
 
@@ -444,7 +441,12 @@
 					</div>
 
 					<div class="school-actions">
-						<a href="/dashboard/schools/{school.id}" class="btn-secondary btn-sm"> ดูรายละเอียด </a>
+						<a
+							href={resolve('/dashboard/schools/[id]', { id: school.id })}
+							class="btn-secondary btn-sm"
+						>
+							ดูรายละเอียด
+						</a>
 						<button
 							class="btn-primary btn-sm"
 							onclick={() => handleDeploy(school.id, school.name)}
@@ -486,20 +488,20 @@
 		max-width: 1400px;
 		margin: 0 auto;
 	}
-	
+
 	.header {
 		display: flex;
 		justify-content: space-between;
 		align-items: center;
 		margin-bottom: 2rem;
 	}
-	
+
 	h1 {
 		font-size: 2rem;
 		font-weight: 700;
 		color: #1a202c;
 	}
-	
+
 	.btn-primary {
 		background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
 		color: white;
@@ -510,29 +512,29 @@
 		cursor: pointer;
 		transition: transform 0.2s;
 	}
-	
+
 	.btn-primary:hover:not(:disabled) {
 		transform: translateY(-2px);
 		box-shadow: 0 8px 16px rgba(102, 126, 234, 0.3);
 	}
-	
+
 	.btn-primary:disabled {
 		opacity: 0.6;
 		cursor: not-allowed;
 	}
-	
+
 	.btn-secondary {
 		background: white;
 		color: #667eea;
 		border: 2px solid #667eea;
 	}
-	
+
 	.btn-danger {
 		background: #e53e3e;
 		color: white;
 		border: none;
 	}
-	
+
 	.btn-sm {
 		padding: 0.5rem 1rem;
 		border-radius: 6px;
@@ -541,13 +543,11 @@
 		cursor: pointer;
 		transition: all 0.2s;
 	}
-	
+
 	.full-width {
 		width: 100%;
 	}
-	
 
-	
 	.create-form-card {
 		background: white;
 		padding: 2rem;
@@ -555,23 +555,23 @@
 		box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
 		margin-bottom: 2rem;
 	}
-	
+
 	.create-form-card h2 {
 		margin-bottom: 1.5rem;
 		color: #2d3748;
 	}
-	
+
 	.form-group {
 		margin-bottom: 1.5rem;
 	}
-	
+
 	label {
 		display: block;
 		margin-bottom: 0.5rem;
 		font-weight: 600;
 		color: #4a5568;
 	}
-	
+
 	input {
 		width: 100%;
 		padding: 0.75rem;
@@ -580,25 +580,25 @@
 		font-size: 1rem;
 		transition: border-color 0.2s;
 	}
-	
+
 	input:focus {
 		outline: none;
 		border-color: #667eea;
 	}
-	
+
 	small {
 		display: block;
 		margin-top: 0.25rem;
 		color: #718096;
 		font-size: 0.875rem;
 	}
-	
+
 	.loading {
 		text-align: center;
 		padding: 4rem;
 		color: #718096;
 	}
-	
+
 	.error-text {
 		display: block;
 		margin-top: 0.25rem;
@@ -606,20 +606,20 @@
 		font-size: 0.875rem;
 		font-weight: 500;
 	}
-	
+
 	.empty-state {
 		text-align: center;
 		padding: 4rem;
 		color: #a0aec0;
 	}
-	
+
 	.schools-grid {
 		display: grid;
 		grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
 		gap: 1.5rem;
 		margin-bottom: 2rem;
 	}
-	
+
 	.school-card {
 		background: white;
 		padding: 1.5rem;
@@ -627,32 +627,32 @@
 		box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
 		transition: transform 0.2s;
 	}
-	
+
 	.school-card:hover {
 		transform: translateY(-4px);
 		box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
 	}
-	
+
 	.school-header {
 		display: flex;
 		justify-content: space-between;
 		align-items: start;
 		margin-bottom: 1rem;
 	}
-	
+
 	.school-header h3 {
 		font-size: 1.25rem;
 		color: #2d3748;
 		margin: 0;
 		flex: 1;
 	}
-	
+
 	.status-badges {
 		display: flex;
 		gap: 0.5rem;
 		align-items: center;
 	}
-	
+
 	.status {
 		padding: 0.25rem 0.75rem;
 		border-radius: 12px;
@@ -665,32 +665,33 @@
 		align-items: center;
 		gap: 0.25rem;
 	}
-	
+
 	.status.active {
 		background: #c6f6d5;
 		color: #22543d;
 	}
-	
+
 	.status.provisioning {
 		background: #bee3f8;
 		color: #2c5282;
 		animation: pulse 2s ease-in-out infinite;
 	}
-	
+
 	.status.failed {
 		background: #fed7d7;
 		color: #c53030;
 	}
-	
+
 	@keyframes pulse {
-		0%, 100% {
+		0%,
+		100% {
 			opacity: 1;
 		}
 		50% {
 			opacity: 0.7;
 		}
 	}
-	
+
 	.spinner {
 		width: 12px;
 		height: 12px;
@@ -700,23 +701,23 @@
 		display: inline-block;
 		animation: spin 0.8s linear infinite;
 	}
-	
+
 	@keyframes spin {
 		to {
 			transform: rotate(360deg);
 		}
 	}
-	
+
 	.school-info {
 		margin-bottom: 1rem;
 	}
-	
+
 	.school-info p {
 		margin: 0.5rem 0;
 		color: #4a5568;
 		font-size: 0.875rem;
 	}
-	
+
 	.subdomain-url a {
 		color: #667eea;
 		text-decoration: none;
@@ -726,16 +727,16 @@
 		gap: 0.25rem;
 		transition: color 0.2s;
 	}
-	
+
 	.subdomain-url a:hover {
 		color: #764ba2;
 		text-decoration: underline;
 	}
-	
+
 	.external-link {
 		font-size: 0.75rem;
 	}
-	
+
 	.error-message {
 		margin-top: 0.75rem;
 		padding: 0.75rem;
@@ -745,19 +746,19 @@
 		font-size: 0.875rem;
 		border-left: 3px solid #e53e3e;
 	}
-	
+
 	.school-actions {
 		display: flex;
 		gap: 0.5rem;
 	}
-	
+
 	.school-actions a,
 	.school-actions button {
 		flex: 1;
 		text-align: center;
 		text-decoration: none;
 	}
-	
+
 	.pagination {
 		display: flex;
 		justify-content: center;
@@ -765,7 +766,7 @@
 		gap: 1rem;
 		margin-top: 2rem;
 	}
-	
+
 	.pagination button {
 		padding: 0.5rem 1rem;
 		border: 2px solid #e2e8f0;
@@ -775,22 +776,22 @@
 		font-weight: 600;
 		transition: all 0.2s;
 	}
-	
+
 	.pagination button:hover:not(:disabled) {
 		border-color: #667eea;
 		color: #667eea;
 	}
-	
+
 	.pagination button:disabled {
 		opacity: 0.5;
 		cursor: not-allowed;
 	}
-	
+
 	.pagination span {
 		color: #4a5568;
 		font-weight: 500;
 	}
-	
+
 	/* Status badges animations */
 	.status.deploying,
 	.status.deleting {
@@ -811,7 +812,8 @@
 	}
 
 	@keyframes pulse {
-		0%, 100% {
+		0%,
+		100% {
 			opacity: 1;
 		}
 		50% {

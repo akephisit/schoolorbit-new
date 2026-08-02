@@ -1,8 +1,9 @@
 // Auth Store using Svelte 5 runes
 
-import { apiClient, type LoginRequest, type LoginResponse } from '$lib/api/client';
+import { apiClient, type LoginRequest } from '$lib/api/client';
 import { goto } from '$app/navigation';
 import { browser } from '$app/environment';
+import { resolve } from '$app/paths';
 
 interface User {
 	id: string;
@@ -92,7 +93,7 @@ class AuthStore {
 				this.state.isAuthenticated = true;
 
 				// Redirect to dashboard
-				await goto('/dashboard');
+				await goto(resolve('/dashboard'));
 
 				return { success: true };
 			} else {
@@ -121,7 +122,7 @@ class AuthStore {
 		this.state.error = null;
 
 		if (browser) {
-			goto('/login');
+			goto(resolve('/login'));
 		}
 	}
 

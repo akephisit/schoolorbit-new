@@ -153,6 +153,11 @@ test('project rules own durable development and verification workflows', async (
 		'npm run check:api-contracts',
 		'npm run test:api-contracts',
 		'cargo test --test static_architecture',
+		'podman-compose.yml` is the sole production Compose owner',
+		'bats scripts/tests/installer',
+		'shellcheck scripts/schoolorbit-installer',
+		'shfmt -d -i 4 -ci scripts/schoolorbit-installer',
+		'node --test frontend-school/tests/static/deployment-installer.test.mjs',
 		'git diff --check'
 	];
 

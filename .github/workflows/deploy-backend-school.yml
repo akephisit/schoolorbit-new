@@ -1,25 +1,30 @@
 name: Deploy Backend School
+run-name: Deploy Backend School (${{ inputs.deployment_id || github.sha }})
 
 on:
   push:
     branches: ["main"]
     paths:
       - "backend-school/**"
-      - "nginx-configs/school-api.schoolorbit.app.conf"
-      - "nginx-configs/school-api.schoolorbit.app.maintenance.conf"
+      - "podman-compose.yml"
+      - "nginx-configs/school-api.conf.template"
+      - "nginx-configs/school-api.maintenance.conf.template"
+      - "scripts/render_nginx_config.sh"
       - ".github/workflows/deploy-backend-school.yml"
   workflow_dispatch:
+    inputs:
+      deployment_id:
+        description: "Installer run identifier"
+        required: false
+        type: string
 
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: akephisit/schoolorbit-backend-school
 
-concurrency:
-  group: deploy-backend-school
-  cancel-in-progress: false
-
 jobs:
   build-and-push:
+    if: github.event_name == 'workflow_dispatch' || vars.RUNTIME_DEPLOY_ENABLED == 'true'
     runs-on: ubuntu-latest
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -68,25 +73,29 @@ jobs:
   deploy:
     needs: build-and-push
     runs-on: ubuntu-latest
+    concurrency:
+      group: deploy-schoolorbit-runtime
+      cancel-in-progress: false
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
 
-      - name: Upload backend-school runtime and proxy definition
+      - name: Upload canonical runtime and proxy templates
         uses: appleboy/scp-action@v1.0.0
         with:
           host: ${{ secrets.SERVER_IP }}
           username: ${{ secrets.SERVER_USER }}
+          port: ${{ secrets.SERVER_PORT }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
-          source: backend-school/docker-compose.yml,nginx-configs/school-api.schoolorbit.app.conf,nginx-configs/school-api.schoolorbit.app.maintenance.conf
-          target: /opt/stack/file-platform-runtime
-          strip_components: 1
+          source: podman-compose.yml,scripts/render_nginx_config.sh,nginx-configs/admin-api.conf.template,nginx-configs/school-api.conf.template,nginx-configs/school-api.maintenance.conf.template
+          target: /opt/stack/deployment
 
       - name: Deploy to Server via SSH
         uses: appleboy/ssh-action@v1.2.5
         with:
           host: ${{ secrets.SERVER_IP }}
           username: ${{ secrets.SERVER_USER }}
+          port: ${{ secrets.SERVER_PORT }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           command_timeout: 30m
           script: |
@@ -94,21 +103,43 @@ jobs:
             echo "${{ secrets.GITHUB_TOKEN }}" | podman login ghcr.io -u ${{ github.actor }} --password-stdin
             cd /opt/stack
 
-            runtime_compose=/opt/stack/file-platform-runtime/docker-compose.yml
+            base_domain="${{ vars.BASE_DOMAIN || 'schoolorbit.app' }}"
+            deployment_root=/opt/stack/deployment
+            runtime_source="$deployment_root/podman-compose.yml"
+            runtime_compose=/opt/stack/podman-compose.yml
             runtime_env=/opt/stack/.env
-            proxy_source=/opt/stack/file-platform-runtime/school-api.schoolorbit.app.conf
-            maintenance_proxy_source=/opt/stack/file-platform-runtime/school-api.schoolorbit.app.maintenance.conf
-            test -f "$runtime_compose" || { echo "Backend runtime definition is missing"; exit 1; }
+            renderer_source="$deployment_root/scripts/render_nginx_config.sh"
+            renderer="$deployment_root/render-nginx"
+            proxy_template="$deployment_root/nginx-configs/school-api.conf.template"
+            maintenance_proxy_template="$deployment_root/nginx-configs/school-api.maintenance.conf.template"
+            proxy_source="$deployment_root/school-api.conf"
+            maintenance_proxy_source="$deployment_root/school-api.maintenance.conf"
+            proxy_target=/opt/stack/nginx/conf.d/school-api.conf
+            origin_root=/opt/stack/nginx/ssl/cloudflare-origin-rsa-root.pem
+            test -f "$runtime_source" || { echo "Canonical runtime definition is missing"; exit 1; }
             test -f "$runtime_env" || { echo "Backend runtime environment is missing"; exit 1; }
-            test -f "$proxy_source" || { echo "Staged school API proxy config is missing"; exit 1; }
-            test -f "$maintenance_proxy_source" || { echo "Staged school API maintenance config is missing"; exit 1; }
-            proxy_matches="$(grep -l 'server_name school-api\.schoolorbit\.app;' /opt/stack/nginx/conf.d/*.conf 2>/dev/null || true)"
+            test -f "$renderer_source" || { echo "Proxy renderer is missing"; exit 1; }
+            test -f "$proxy_template" || { echo "School API proxy template is missing"; exit 1; }
+            test -f "$maintenance_proxy_template" || { echo "School API maintenance template is missing"; exit 1; }
+            test -f "$origin_root" || { echo "Cloudflare Origin CA root is missing"; exit 1; }
+
+            install -m 0755 "$renderer_source" "$renderer"
+            cp "$runtime_source" "${runtime_compose}.next"
+            podman-compose -f "${runtime_compose}.next" config >/dev/null
+            mv "${runtime_compose}.next" "$runtime_compose"
+            "$renderer" "$proxy_template" "$proxy_source" "$base_domain"
+            "$renderer" "$maintenance_proxy_template" "$maintenance_proxy_source" "$base_domain"
+
+            proxy_matches="$(grep -lF "server_name school-api.${base_domain};" /opt/stack/nginx/conf.d/*.conf 2>/dev/null || true)"
             proxy_match_count="$(printf '%s\n' "$proxy_matches" | sed '/^$/d' | wc -l | tr -d ' ')"
-            if [ "$proxy_match_count" -ne 1 ]; then
-              echo "Expected exactly one active school API proxy config, found ${proxy_match_count}"
+            if [ "$proxy_match_count" -gt 1 ]; then
+              echo "Expected at most one active school API proxy config, found ${proxy_match_count}"
               exit 1
             fi
-            proxy_target="$proxy_matches"
+            if [ "$proxy_match_count" -eq 1 ] && [ "$proxy_matches" != "$proxy_target" ]; then
+              echo "School API proxy exists at an unexpected path: ${proxy_matches}"
+              exit 1
+            fi
             public_bucket="$(sed -n 's/^R2_PUBLIC_BUCKET_NAME=//p' "$runtime_env" | tail -n 1)"
             private_bucket="$(sed -n 's/^R2_PRIVATE_BUCKET_NAME=//p' "$runtime_env" | tail -n 1)"
             if [ "$public_bucket" = "$private_bucket" ]; then
@@ -145,7 +176,11 @@ jobs:
             fi
             r2_cli s3api head-bucket --bucket "$private_bucket" >/dev/null
 
-            private_cors_policy='{"CORSRules":[{"AllowedOrigins":["https://*.schoolorbit.app"],"AllowedMethods":["GET","HEAD"],"AllowedHeaders":["Range"],"ExposeHeaders":["Accept-Ranges","Content-Length","Content-Range","Content-Type","ETag"],"MaxAgeSeconds":3600}]}'
+            private_cors_origin="https://*.${base_domain}"
+            private_cors_policy="$(
+              jq -cn --arg origin "$private_cors_origin" \
+                '{CORSRules:[{AllowedOrigins:[$origin],AllowedMethods:["GET","HEAD"],AllowedHeaders:["Range"],ExposeHeaders:["Accept-Ranges","Content-Length","Content-Range","Content-Type","ETag"],MaxAgeSeconds:3600}]}'
+            )"
             r2_cli s3api put-bucket-cors \
               --bucket "$private_bucket" \
               --cors-configuration "$private_cors_policy" >/dev/null
@@ -163,7 +198,7 @@ jobs:
             )"
             printf '%s\n' "$private_cors_origins" |
               tr '\t' '\n' |
-              grep -Fqx 'https://*.schoolorbit.app'
+              grep -Fqx "$private_cors_origin"
             for required_method in GET HEAD; do
               printf '%s\n' "$private_cors_methods" |
                 tr '\t' '\n' |
@@ -171,7 +206,6 @@ jobs:
             done
             unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY
 
-            ln -sfn "$runtime_env" /opt/stack/file-platform-runtime/.env
             compose() {
               podman-compose -f "$runtime_compose" "$@"
             }
@@ -201,21 +235,31 @@ jobs:
             backend_image=ghcr.io/akephisit/schoolorbit-backend-school
             podman pull "${backend_image}:${{ github.sha }}"
 
-            proxy_backup="$(mktemp /opt/stack/nginx/conf.d/.school-api.schoolorbit.app.conf.XXXXXX)"
-            cp "$proxy_target" "$proxy_backup"
-            cp "$maintenance_proxy_source" "$proxy_target"
-            if ! podman exec schoolorbit-nginx nginx -t; then
-              cp "$proxy_backup" "$proxy_target"
-              rm -f "$proxy_backup"
-              echo "School API maintenance proxy configuration is invalid"
-              exit 1
+            proxy_backup=""
+            proxy_existed=0
+            if [ -f "$proxy_target" ]; then
+              proxy_backup="$(mktemp /opt/stack/nginx/conf.d/.school-api.backup.XXXXXX)"
+              cp "$proxy_target" "$proxy_backup"
+              proxy_existed=1
             fi
-            if ! podman exec schoolorbit-nginx nginx -s reload; then
-              cp "$proxy_backup" "$proxy_target"
+            restore_pre_maintenance_proxy() {
+              if [ "$proxy_existed" -eq 1 ]; then
+                cp "$proxy_backup" "$proxy_target"
+              else
+                rm -f "$proxy_target"
+              fi
+              compose up -d nginx
               podman exec schoolorbit-nginx nginx -t
-              podman exec schoolorbit-nginx nginx -s reload || true
-              rm -f "$proxy_backup"
-              echo "School API could not enter maintenance mode"
+              podman exec schoolorbit-nginx nginx -s reload
+            }
+            cp "$maintenance_proxy_source" "$proxy_target"
+            if ! compose up -d nginx ||
+              ! podman exec schoolorbit-nginx nginx -t ||
+              ! podman exec schoolorbit-nginx nginx -s reload
+            then
+              restore_pre_maintenance_proxy
+              [ -z "$proxy_backup" ] || rm -f "$proxy_backup"
+              echo "School API could not enter validated maintenance mode"
               exit 1
             fi
 
@@ -274,8 +318,6 @@ jobs:
               echo "Tenant migration request failed; maintenance remains enabled"
               exit 1
             fi
-            unset internal_api_secret
-
             if ! podman run --rm -i "$jq_image" -e '
                 .latest_version as $latest
                 | $latest >= 32
@@ -293,24 +335,74 @@ jobs:
               echo "Tenant migration verification failed; maintenance remains enabled"
               exit 1
             fi
+
+            if ! curl \
+              --fail \
+              --silent \
+              --show-error \
+              --connect-timeout 10 \
+              --max-time 120 \
+              -H "X-Internal-Secret: ${internal_api_secret}" \
+              -o "$migration_response" \
+              http://127.0.0.1:8081/internal/migration-status
+            then
+              echo "Tenant migration status request failed; maintenance remains enabled"
+              exit 1
+            fi
+            unset internal_api_secret
+
+            if ! podman run --rm -i "$jq_image" -e '
+                .latest_version as $latest
+                | $latest >= 32
+                and .total_schools > 0
+                and .migrated == .total_schools
+                and .pending == 0 and .failed == 0 and .outdated == 0
+                and all(
+                  .schools[];
+                  .migration_version == $latest
+                  and .migration_status == "migrated"
+                  and .migration_error == null
+                )
+              ' < "$migration_response" >/dev/null
+            then
+              echo "Tenant migration status verification failed; maintenance remains enabled"
+              exit 1
+            fi
             rm -f "$migration_response"
             trap - EXIT
 
             cp "$proxy_source" "$proxy_target"
             if ! podman exec schoolorbit-nginx nginx -t; then
-              cp "$proxy_backup" "$proxy_target"
+              cp "$maintenance_proxy_source" "$proxy_target"
               podman exec schoolorbit-nginx nginx -t
               podman exec schoolorbit-nginx nginx -s reload || true
-              rm -f "$proxy_backup"
+              [ -z "$proxy_backup" ] || rm -f "$proxy_backup"
               echo "Normal school API proxy configuration is invalid after migration"
               exit 1
             fi
             if ! podman exec schoolorbit-nginx nginx -s reload; then
-              cp "$proxy_backup" "$proxy_target"
+              cp "$maintenance_proxy_source" "$proxy_target"
               podman exec schoolorbit-nginx nginx -t
               podman exec schoolorbit-nginx nginx -s reload || true
-              rm -f "$proxy_backup"
+              [ -z "$proxy_backup" ] || rm -f "$proxy_backup"
               exit 1
             fi
-            rm -f "$proxy_backup"
+            [ -z "$proxy_backup" ] || rm -f "$proxy_backup"
+
+            school_host="school-api.${base_domain}"
+            direct_ready="$(
+              curl --fail --silent --show-error --max-time 15 \
+                --cacert "$origin_root" \
+                --resolve "${school_host}:443:127.0.0.1" \
+                "https://${school_host}/ready"
+            )"
+            if ! printf '%s' "$direct_ready" | jq -e \
+              '.status == "ready" and .controlPlane == "connected" and .filePlatform == "ready"' >/dev/null
+            then
+              cp "$maintenance_proxy_source" "$proxy_target"
+              podman exec schoolorbit-nginx nginx -t
+              podman exec schoolorbit-nginx nginx -s reload || true
+              echo "Direct school API readiness verification failed; maintenance remains enabled"
+              exit 1
+            fi
             podman tag "${backend_image}:${{ github.sha }}" "${backend_image}:rollback"

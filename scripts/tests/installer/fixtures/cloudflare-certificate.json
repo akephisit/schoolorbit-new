@@ -1,0 +1,14 @@
+{
+  "success": true,
+  "errors": [],
+  "messages": [],
+  "result": {
+    "id": "origin-cert-123",
+    "certificate": "-----BEGIN CERTIFICATE-----\nfixture-origin-certificate\n-----END CERTIFICATE-----\n",
+    "expires_on": "2041-08-02T00:00:00Z",
+    "hostnames": [
+      "admin-api.schoolorbit.app",
+      "school-api.schoolorbit.app"
+    ]
+  }
+}

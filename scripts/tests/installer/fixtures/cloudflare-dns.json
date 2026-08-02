@@ -1,0 +1,31 @@
+{
+  "success": true,
+  "errors": [],
+  "messages": [],
+  "result": [
+    {
+      "id": "dns-admin-1",
+      "zone_id": "zone-123",
+      "type": "A",
+      "name": "admin-api.schoolorbit.app",
+      "content": "198.51.100.10",
+      "ttl": 1,
+      "proxied": true,
+      "modified_on": "2026-08-01T10:00:00Z"
+    },
+    {
+      "id": "dns-school-1",
+      "zone_id": "zone-123",
+      "type": "A",
+      "name": "school-api.schoolorbit.app",
+      "content": "198.51.100.10",
+      "ttl": 1,
+      "proxied": true,
+      "modified_on": "2026-08-01T10:00:01Z"
+    }
+  ],
+  "result_info": {
+    "count": 2,
+    "total_count": 2
+  }
+}
