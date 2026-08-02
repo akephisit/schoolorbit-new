@@ -6,6 +6,7 @@ mod middleware;
 mod modules;
 mod permissions;
 mod policies;
+mod scheduling;
 mod services;
 mod utils;
 
@@ -28,7 +29,7 @@ use serde_json::json;
 use std::env;
 use std::sync::Arc;
 use tokio::sync::broadcast;
-use tokio_cron_scheduler::{Job, JobScheduler};
+use tokio_cron_scheduler::JobScheduler;
 use tower_cookies::CookieManagerLayer;
 use uuid::Uuid;
 
@@ -829,8 +830,8 @@ async fn main() {
         }
     };
 
-    // Initialize the scheduler. File operations are reconciled every five minutes.
-    let sched = JobScheduler::new()
+    // Initialize the scheduler. File operations are reconciled at the top of every hour.
+    let mut sched = JobScheduler::new()
         .await
         .expect("Failed to initialize job scheduler");
 
@@ -839,77 +840,89 @@ async fn main() {
     let pool_manager_for_job = Arc::clone(&state.pool_manager);
     let file_platform_for_job = Arc::clone(&state.file_platform);
 
-    let cleaner_job = Job::new_async("0 */5 * * * *", move |_uuid, _l| {
-        let admin_client = Arc::clone(&admin_client_for_job);
-        let pool_manager = pool_manager_for_job.clone();
-        let file_platform = Arc::clone(&file_platform_for_job);
+    let cleaner_job = scheduling::new_school_cron_job(
+        scheduling::FILE_PLATFORM_RECONCILIATION_CRON,
+        move |_uuid, _l| {
+            let admin_client = Arc::clone(&admin_client_for_job);
+            let pool_manager = pool_manager_for_job.clone();
+            let file_platform = Arc::clone(&file_platform_for_job);
 
-        Box::pin(async move {
-            tracing::info!("Starting scheduled File Platform reconciliation");
+            Box::pin(async move {
+                tracing::info!("Starting scheduled File Platform reconciliation");
 
-            // 1. Get list of all active schools from backend-admin
-            let schools = match admin_client.list_active_schools().await {
-                Ok(s) => s,
-                Err(e) => {
-                    tracing::error!("Failed to fetch schools list for cleanup: {}", e);
-                    return;
-                }
-            };
-
-            tracing::info!("Found {} active schools to reconcile.", schools.len());
-
-            for school in schools {
-                let db_url = match school.db_connection_string {
-                    Some(ref url) if !url.is_empty() => url.clone(),
-                    _ => {
-                        tracing::warn!("Skipping school '{}': no database URL", school.subdomain);
-                        continue;
+                // 1. Get list of all active schools from backend-admin
+                let schools = match admin_client.list_active_schools().await {
+                    Ok(s) => s,
+                    Err(e) => {
+                        tracing::error!("Failed to fetch schools list for cleanup: {}", e);
+                        return;
                     }
                 };
 
-                tracing::info!("Reconciling File Platform operations for tenant");
+                tracing::info!("Found {} active schools to reconcile.", schools.len());
 
-                // 2. Get Connection Pool (Reuse existing logic)
-                match pool_manager.get_pool(&db_url, &school.subdomain).await {
-                    Ok(pool) => {
-                        // 3. Reconcile durable file operations.
-                        let cleaner =
-                            services::cleaner::FileCleaner::new(pool, Arc::clone(&file_platform));
-                        cleaner.reconcile_file_operations().await;
-                    }
-                    Err(e) => {
-                        tracing::error!(
-                            "Failed to get database connection for {}: {}",
-                            school.subdomain,
-                            e
-                        );
+                for school in schools {
+                    let db_url = match school.db_connection_string {
+                        Some(ref url) if !url.is_empty() => url.clone(),
+                        _ => {
+                            tracing::warn!(
+                                "Skipping school '{}': no database URL",
+                                school.subdomain
+                            );
+                            continue;
+                        }
+                    };
+
+                    tracing::info!("Reconciling File Platform operations for tenant");
+
+                    // 2. Get Connection Pool (Reuse existing logic)
+                    match pool_manager.get_pool(&db_url, &school.subdomain).await {
+                        Ok(pool) => {
+                            // 3. Reconcile durable file operations.
+                            let cleaner = services::cleaner::FileCleaner::new(
+                                pool,
+                                Arc::clone(&file_platform),
+                            );
+                            cleaner.reconcile_file_operations().await;
+                        }
+                        Err(e) => {
+                            tracing::error!(
+                                "Failed to get database connection for {}: {}",
+                                school.subdomain,
+                                e
+                            );
+                        }
                     }
                 }
-            }
-            tracing::info!("Scheduled File Platform reconciliation completed");
-        })
-    })
+                tracing::info!("Scheduled File Platform reconciliation completed");
+            })
+        },
+    )
     .expect("Failed to create cleaner job");
 
     let admin_client_for_calendar_job = Arc::clone(&state.admin_client);
     let pool_manager_for_calendar_job = Arc::clone(&state.pool_manager);
     let notification_channel_for_calendar_job = state.notification_channel.clone();
 
-    let calendar_reminder_job = Job::new_async("0 0 7 * * *", move |_uuid, _l| {
-        let admin_client = Arc::clone(&admin_client_for_calendar_job);
-        let pool_manager = Arc::clone(&pool_manager_for_calendar_job);
-        let notification_channel = notification_channel_for_calendar_job.clone();
+    let calendar_reminder_job =
+        scheduling::new_school_cron_job(scheduling::CALENDAR_REMINDER_CRON, move |_uuid, _l| {
+            let admin_client = Arc::clone(&admin_client_for_calendar_job);
+            let pool_manager = Arc::clone(&pool_manager_for_calendar_job);
+            let notification_channel = notification_channel_for_calendar_job.clone();
 
-        Box::pin(async move {
-            modules::calendar::services::process_due_calendar_reminders_for_all_tenants(
-                admin_client,
-                pool_manager,
-                notification_channel,
-            )
-            .await;
+            Box::pin(async move {
+                modules::calendar::services::process_due_calendar_reminders_for_all_tenants(
+                    admin_client,
+                    pool_manager,
+                    notification_channel,
+                )
+                .await;
+            })
         })
-    })
-    .expect("Failed to create calendar reminder job");
+        .expect("Failed to create calendar reminder job");
+
+    let cleaner_job_id = cleaner_job.guid();
+    let calendar_reminder_job_id = calendar_reminder_job.guid();
 
     sched
         .add(cleaner_job)
@@ -919,6 +932,23 @@ async fn main() {
         .add(calendar_reminder_job)
         .await
         .expect("Failed to add calendar reminder job");
+
+    let cleaner_next_run = scheduling::next_run_for_job(&mut sched, cleaner_job_id)
+        .await
+        .expect("Failed to resolve next File Platform reconciliation");
+    scheduling::log_next_run(
+        "file_platform_reconciliation",
+        scheduling::FILE_PLATFORM_RECONCILIATION_CRON,
+        cleaner_next_run,
+    );
+    let calendar_next_run = scheduling::next_run_for_job(&mut sched, calendar_reminder_job_id)
+        .await
+        .expect("Failed to resolve next calendar reminder");
+    scheduling::log_next_run(
+        "calendar_reminder",
+        scheduling::CALENDAR_REMINDER_CRON,
+        calendar_next_run,
+    );
     sched.start().await.expect("Failed to start scheduler");
 
     axum::serve(listener, app).await.expect("Server failed");

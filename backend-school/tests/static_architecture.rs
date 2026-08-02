@@ -4440,6 +4440,18 @@ fn deployment_and_smoke_checks_use_backend_readiness() {
 }
 
 #[test]
+fn scheduled_jobs_use_explicit_bangkok_timezone() {
+    let main = read_source(&repo_root().join("backend-school/src/main.rs"));
+    let scheduling = read_source(&repo_root().join("backend-school/src/scheduling.rs"));
+
+    assert!(!main.contains("Job::new_async("));
+    assert!(scheduling.contains("Job::new_async_tz"));
+    assert!(scheduling.contains("chrono_tz::Asia::Bangkok"));
+    assert!(scheduling.contains("0 0 * * * *"));
+    assert!(!scheduling.contains("0 */5 * * * *"));
+}
+
+#[test]
 fn course_instructor_batch_endpoint_accepts_post_body() {
     let routes = read_source(manifest_dir().join("src/modules/academic.rs"));
     let handler =
