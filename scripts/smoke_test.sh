@@ -15,6 +15,9 @@ if [[ -f "$smoke_env_file" ]]; then
         SMOKE_USERNAME
         SMOKE_PASSWORD
         SMOKE_REMEMBER_ME
+        SMOKE_REQUIRE_AUTH
+        SMOKE_RESOLVE_IP
+        FILE_SMOKE_PNG
     )
     declare -A smoke_env_overrides=()
 
@@ -43,17 +46,48 @@ SMOKE_TIMEOUT_SECONDS="${SMOKE_TIMEOUT_SECONDS:-20}"
 SMOKE_USERNAME="${SMOKE_USERNAME:-}"
 SMOKE_PASSWORD="${SMOKE_PASSWORD:-}"
 SMOKE_REMEMBER_ME="${SMOKE_REMEMBER_ME:-true}"
+SMOKE_REQUIRE_AUTH="${SMOKE_REQUIRE_AUTH:-false}"
+SMOKE_RESOLVE_IP="${SMOKE_RESOLVE_IP:-}"
+FILE_SMOKE_PNG="${FILE_SMOKE_PNG:-}"
 
 SMOKE_API_URL="${SMOKE_API_URL%/}"
 SMOKE_ADMIN_API_URL="${SMOKE_ADMIN_API_URL%/}"
 SMOKE_TENANT_URL="${SMOKE_TENANT_URL%/}"
 SMOKE_ORIGIN="${SMOKE_ORIGIN%/}"
 
+admin_api_host=${SMOKE_ADMIN_API_URL#https://}
+admin_api_host=${admin_api_host%%/*}
+school_api_host=${SMOKE_API_URL#https://}
+school_api_host=${school_api_host%%/*}
+declare -a admin_api_curl_options=()
+declare -a school_api_curl_options=()
+if [[ -n $SMOKE_RESOLVE_IP ]]; then
+    if [[ $SMOKE_ADMIN_API_URL != https://* || $SMOKE_API_URL != https://* ]] ||
+        [[ ! $admin_api_host =~ ^[A-Za-z0-9.-]+$ || ! $school_api_host =~ ^[A-Za-z0-9.-]+$ ]] ||
+        [[ ! $SMOKE_RESOLVE_IP =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]]; then
+        printf 'SMOKE_RESOLVE_IP requires valid HTTPS API hostnames and an IPv4 address.\n' >&2
+        exit 64
+    fi
+    admin_api_curl_options+=(--resolve "${admin_api_host}:443:${SMOKE_RESOLVE_IP}")
+    school_api_curl_options+=(--resolve "${school_api_host}:443:${SMOKE_RESOLVE_IP}")
+fi
+
 failures=0
 cookie_jar="$(mktemp)"
 tmp_dir="$(mktemp -d)"
+file_smoke_id=
 
 cleanup() {
+    if [[ -n $file_smoke_id ]]; then
+        curl -sS --max-time "$SMOKE_TIMEOUT_SECONDS" \
+            "${school_api_curl_options[@]}" \
+            -X DELETE \
+            -b "$cookie_jar" \
+            -H "Origin: $SMOKE_ORIGIN" \
+            -H "X-School-Subdomain: $SMOKE_SUBDOMAIN" \
+            -o /dev/null \
+            "$SMOKE_API_URL/api/files/$file_smoke_id" || true
+    fi
     rm -f "$cookie_jar"
     rm -rf "$tmp_dir"
 }
@@ -68,16 +102,19 @@ fail() {
     printf 'FAIL %s\n' "$1" >&2
 }
 
-request() {
-    local name="$1"
-    local method="$2"
-    local url="$3"
-    local headers_file="$4"
-    local body_file="$5"
-    shift 5
+request_with_options() {
+    local options_name="$1"
+    local name="$2"
+    local method="$3"
+    local url="$4"
+    local headers_file="$5"
+    local body_file="$6"
+    shift 6
+    local -n request_curl_options="$options_name"
 
     local status
     if ! status="$(curl -sS --max-time "$SMOKE_TIMEOUT_SECONDS" \
+        "${request_curl_options[@]}" \
         -X "$method" \
         -D "$headers_file" \
         -o "$body_file" \
@@ -90,6 +127,20 @@ request() {
     fi
 
     printf '%s' "$status"
+}
+
+request() {
+    # shellcheck disable=SC2034 # Read through the nameref in request_with_options.
+    local -a default_curl_options=()
+    request_with_options default_curl_options "$@"
+}
+
+admin_api_request() {
+    request_with_options admin_api_curl_options "$@"
+}
+
+school_api_request() {
+    request_with_options school_api_curl_options "$@"
 }
 
 header_value() {
@@ -174,11 +225,13 @@ expect_json_username() {
     local body_file="$2"
     local username="$3"
 
-    if python3 - "$body_file" "$username" <<'PY'
+    if EXPECTED_SMOKE_USERNAME="$username" python3 - "$body_file" <<'PY'; then
 import json
+import os
 import sys
 
-path, expected_username = sys.argv[1], sys.argv[2]
+path = sys.argv[1]
+expected_username = os.environ["EXPECTED_SMOKE_USERNAME"]
 with open(path, encoding="utf-8") as handle:
     data = json.load(handle)
 
@@ -189,7 +242,6 @@ user = data.get("user", data) if isinstance(data, dict) else {}
 actual = user.get("username") if isinstance(user, dict) else None
 raise SystemExit(0 if actual == expected_username else 1)
 PY
-    then
         pass "$name username"
     else
         fail "$name username mismatch"
@@ -214,31 +266,32 @@ expect_body_contains "tenant page" "$tenant_body" "<!doctype html>"
 
 admin_health_headers="$tmp_dir/admin-health.headers"
 admin_health_body="$tmp_dir/admin-health.body"
-status="$(request "admin health" GET "$SMOKE_ADMIN_API_URL/health" "$admin_health_headers" "$admin_health_body")"
+status="$(admin_api_request "admin health" GET "$SMOKE_ADMIN_API_URL/health" "$admin_health_headers" "$admin_health_body")"
 expect_status "admin health" "$status" "200"
 
 admin_ready_headers="$tmp_dir/admin-ready.headers"
 admin_ready_body="$tmp_dir/admin-ready.body"
-status="$(request "admin readiness" GET "$SMOKE_ADMIN_API_URL/ready" "$admin_ready_headers" "$admin_ready_body")"
+status="$(admin_api_request "admin readiness" GET "$SMOKE_ADMIN_API_URL/ready" "$admin_ready_headers" "$admin_ready_body")"
 expect_status "admin readiness" "$status" "200"
 expect_body_contains "admin readiness" "$admin_ready_body" '"status":"ready"'
 
 health_headers="$tmp_dir/health.headers"
 health_body="$tmp_dir/health.body"
-status="$(request "school API health" GET "$SMOKE_API_URL/health" "$health_headers" "$health_body")"
+status="$(school_api_request "school API health" GET "$SMOKE_API_URL/health" "$health_headers" "$health_body")"
 expect_status "school API health" "$status" "200"
 expect_body_contains "school API health" "$health_body" '"status":"healthy"'
 
 ready_headers="$tmp_dir/ready.headers"
 ready_body="$tmp_dir/ready.body"
-status="$(request "school API readiness" GET "$SMOKE_API_URL/ready" "$ready_headers" "$ready_body")"
+status="$(school_api_request "school API readiness" GET "$SMOKE_API_URL/ready" "$ready_headers" "$ready_body")"
 expect_status "school API readiness" "$status" "200"
 expect_body_contains "school API readiness" "$ready_body" '"status":"ready"'
 expect_body_contains "school API readiness" "$ready_body" '"controlPlane":"connected"'
+expect_body_contains "school API readiness" "$ready_body" '"filePlatform":"ready"'
 
 me_unauth_headers="$tmp_dir/me-unauth.headers"
 me_unauth_body="$tmp_dir/me-unauth.body"
-status="$(request "unauthenticated /me" GET "$SMOKE_API_URL/api/auth/me" "$me_unauth_headers" "$me_unauth_body" \
+status="$(school_api_request "unauthenticated /me" GET "$SMOKE_API_URL/api/auth/me" "$me_unauth_headers" "$me_unauth_body" \
     -H "Origin: $SMOKE_ORIGIN" \
     -H "X-School-Subdomain: $SMOKE_SUBDOMAIN")"
 expect_status "unauthenticated /me" "$status" "401"
@@ -246,7 +299,7 @@ expect_header "unauthenticated /me" "$me_unauth_headers" "access-control-allow-o
 
 preflight_headers="$tmp_dir/preflight.headers"
 preflight_body="$tmp_dir/preflight.body"
-status="$(request "login preflight" OPTIONS "$SMOKE_API_URL/api/auth/login" "$preflight_headers" "$preflight_body" \
+status="$(school_api_request "login preflight" OPTIONS "$SMOKE_API_URL/api/auth/login" "$preflight_headers" "$preflight_body" \
     -H "Origin: $SMOKE_ORIGIN" \
     -H "Access-Control-Request-Method: POST" \
     -H "Access-Control-Request-Headers: content-type,authorization,x-school-subdomain")"
@@ -257,20 +310,24 @@ expect_header_contains_ci "login preflight" "$preflight_headers" "access-control
 if [[ -z "$SMOKE_USERNAME" || -z "$SMOKE_PASSWORD" ]]; then
     login_validation_headers="$tmp_dir/login-validation.headers"
     login_validation_body="$tmp_dir/login-validation.body"
-    status="$(request "login validation" POST "$SMOKE_API_URL/api/auth/login" "$login_validation_headers" "$login_validation_body" \
+    status="$(school_api_request "login validation" POST "$SMOKE_API_URL/api/auth/login" "$login_validation_headers" "$login_validation_body" \
         -H "Origin: $SMOKE_ORIGIN" \
         -H "X-School-Subdomain: $SMOKE_SUBDOMAIN" \
         -H "Content-Type: application/json" \
         --data '{}')"
     expect_status "login validation" "$status" "422"
     expect_header "login validation" "$login_validation_headers" "access-control-allow-origin" "$SMOKE_ORIGIN"
-    printf '\nSKIP authenticated checks: set SMOKE_USERNAME and SMOKE_PASSWORD to test login.\n'
+    if [[ $SMOKE_REQUIRE_AUTH == true ]]; then
+        fail "authenticated checks are required but smoke credentials are missing"
+    else
+        printf '\nSKIP authenticated checks: set SMOKE_USERNAME and SMOKE_PASSWORD to test login.\n'
+    fi
 else
     login_payload="$tmp_dir/login.json"
     SMOKE_USERNAME="$SMOKE_USERNAME" \
-    SMOKE_PASSWORD="$SMOKE_PASSWORD" \
-    SMOKE_REMEMBER_ME="$SMOKE_REMEMBER_ME" \
-    python3 - <<'PY' > "$login_payload"
+        SMOKE_PASSWORD="$SMOKE_PASSWORD" \
+        SMOKE_REMEMBER_ME="$SMOKE_REMEMBER_ME" \
+        python3 - <<'PY' >"$login_payload"
 import json
 import os
 
@@ -284,7 +341,7 @@ PY
 
     login_headers="$tmp_dir/login.headers"
     login_body="$tmp_dir/login.body"
-    status="$(request "login" POST "$SMOKE_API_URL/api/auth/login" "$login_headers" "$login_body" \
+    status="$(school_api_request "login" POST "$SMOKE_API_URL/api/auth/login" "$login_headers" "$login_body" \
         -c "$cookie_jar" \
         -H "Origin: $SMOKE_ORIGIN" \
         -H "X-School-Subdomain: $SMOKE_SUBDOMAIN" \
@@ -302,13 +359,135 @@ PY
 
     me_headers="$tmp_dir/me.headers"
     me_body="$tmp_dir/me.body"
-    status="$(request "authenticated /me" GET "$SMOKE_API_URL/api/auth/me" "$me_headers" "$me_body" \
+    status="$(school_api_request "authenticated /me" GET "$SMOKE_API_URL/api/auth/me" "$me_headers" "$me_body" \
         -b "$cookie_jar" \
         -H "Origin: $SMOKE_ORIGIN" \
         -H "X-School-Subdomain: $SMOKE_SUBDOMAIN")"
     expect_status "authenticated /me" "$status" "200"
     expect_header "authenticated /me" "$me_headers" "access-control-allow-origin" "$SMOKE_ORIGIN"
     expect_json_username "authenticated /me" "$me_body" "$SMOKE_USERNAME"
+
+    sse_headers="$tmp_dir/notifications-sse.headers"
+    set +e
+    sse_status="$(curl -sS --no-buffer --max-time 5 \
+        "${school_api_curl_options[@]}" \
+        -X GET \
+        -D "$sse_headers" \
+        -o /dev/null \
+        -w '%{http_code}' \
+        -b "$cookie_jar" \
+        -H "Origin: $SMOKE_ORIGIN" \
+        -H "X-School-Subdomain: $SMOKE_SUBDOMAIN" \
+        "$SMOKE_API_URL/api/notifications/stream")"
+    sse_curl_status=$?
+    set -e
+    if [[ $sse_status == 200 && ($sse_curl_status -eq 0 || $sse_curl_status -eq 28) ]]; then
+        pass "notification SSE status 200"
+    else
+        fail "notification SSE expected status 200 with a bounded stream"
+    fi
+    expect_header_contains_ci "notification SSE" "$sse_headers" "content-type" "text/event-stream"
+    expect_header "notification SSE" "$sse_headers" "access-control-allow-origin" "$SMOKE_ORIGIN"
+    expect_header "notification SSE" "$sse_headers" "access-control-allow-credentials" "true"
+
+    if [[ -n $FILE_SMOKE_PNG ]]; then
+        if [[ ! -r $FILE_SMOKE_PNG ]]; then
+            fail "private file smoke PNG is not readable"
+        else
+            upload_headers="$tmp_dir/file-upload.headers"
+            upload_body="$tmp_dir/file-upload.body"
+            status="$(school_api_request "private file upload" POST "$SMOKE_API_URL/api/files" "$upload_headers" "$upload_body" \
+                -b "$cookie_jar" \
+                -H "Origin: $SMOKE_ORIGIN" \
+                -H "X-School-Subdomain: $SMOKE_SUBDOMAIN" \
+                -F 'purpose=profile_image' \
+                -F "file=@$FILE_SMOKE_PNG;type=image/png")"
+            expect_status "private file upload" "$status" "201"
+            expect_header "private file upload" "$upload_headers" "access-control-allow-origin" "$SMOKE_ORIGIN"
+
+            if file_smoke_id="$(
+                python3 - "$upload_body" <<'PY'
+import json
+import sys
+import uuid
+
+try:
+    with open(sys.argv[1], encoding="utf-8") as handle:
+        payload = json.load(handle)
+    value = payload["data"]["id"]
+    uuid.UUID(value)
+except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError):
+    raise SystemExit(1)
+print(value)
+PY
+            )"; then
+                pass "private file upload identity"
+            else
+                file_smoke_id=
+                fail "private file upload response identity"
+            fi
+
+            if [[ -n $file_smoke_id ]]; then
+                grant_headers="$tmp_dir/file-grant.headers"
+                grant_body="$tmp_dir/file-grant.body"
+                : >"$grant_body"
+                chmod 0600 "$grant_body"
+                status="$(school_api_request "private file download grant" POST "$SMOKE_API_URL/api/files/$file_smoke_id/download" "$grant_headers" "$grant_body" \
+                    -b "$cookie_jar" \
+                    -H "Origin: $SMOKE_ORIGIN" \
+                    -H "X-School-Subdomain: $SMOKE_SUBDOMAIN")"
+                expect_status "private file download grant" "$status" "200"
+                expect_header "private file download grant" "$grant_headers" "access-control-allow-origin" "$SMOKE_ORIGIN"
+
+                downloaded_file="$tmp_dir/file-download.png"
+                if python3 - "$grant_body" "$downloaded_file" "$SMOKE_ORIGIN" <<'PY'; then
+import json
+import sys
+import urllib.parse
+import urllib.request
+
+grant_path, output_path, origin = sys.argv[1:]
+try:
+    with open(grant_path, encoding="utf-8") as handle:
+        url = json.load(handle)["data"]["url"]
+    parsed = urllib.parse.urlsplit(url)
+    if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password:
+        raise ValueError("invalid grant URL")
+    request = urllib.request.Request(
+        url,
+        headers={"Origin": origin, "User-Agent": "SchoolOrbit-Smoke/1.0"},
+    )
+    with urllib.request.urlopen(request, timeout=20) as response:
+        content = response.read()
+    with open(output_path, "wb") as handle:
+        handle.write(content)
+except Exception:
+    raise SystemExit(1)
+PY
+                    pass "private file external grant fetch"
+                else
+                    fail "private file external grant fetch"
+                fi
+
+                if [[ -f $downloaded_file ]] && cmp -s "$FILE_SMOKE_PNG" "$downloaded_file"; then
+                    pass "private file downloaded bytes"
+                else
+                    fail "private file downloaded bytes mismatch"
+                fi
+
+                delete_headers="$tmp_dir/file-delete.headers"
+                delete_body="$tmp_dir/file-delete.body"
+                status="$(school_api_request "private file delete" DELETE "$SMOKE_API_URL/api/files/$file_smoke_id" "$delete_headers" "$delete_body" \
+                    -b "$cookie_jar" \
+                    -H "Origin: $SMOKE_ORIGIN" \
+                    -H "X-School-Subdomain: $SMOKE_SUBDOMAIN")"
+                expect_status "private file delete" "$status" "200"
+                if [[ $status == 200 ]]; then
+                    file_smoke_id=
+                fi
+            fi
+        fi
+    fi
 fi
 
 if [[ "$failures" -eq 0 ]]; then

@@ -6,6 +6,7 @@ CF_ORIGIN_RSA_ROOT_URL=https://developers.cloudflare.com/ssl/static/origin_ca_rs
 CF_ORIGIN_RSA_ROOT_SHA256=91a8a5567efa6bf941162aa806b3ba476aaddf7867640e53053b35fb225a5dae
 SO_VPS_DEPLOYMENT_KEY_DIR=
 SO_VPS_TLS_TEMP_DIR=
+SO_CF_ORIGIN_ROOT_FILE=
 
 _vps_ssh() {
     ssh \
@@ -100,6 +101,7 @@ vps_cleanup_transients() {
     _vps_remove_private_temp_dir "$SO_VPS_TLS_TEMP_DIR"
     SO_VPS_DEPLOYMENT_KEY_DIR=
     SO_VPS_TLS_TEMP_DIR=
+    SO_CF_ORIGIN_ROOT_FILE=
 }
 
 vps_create_deployment_key() {
@@ -232,6 +234,9 @@ vps_issue_and_install_tls() {
     require_command curl || return
     require_command openssl || return
     local private_key csr certificate root root_hash certificate_key_hash private_key_hash admin_host school_host
+    _vps_remove_private_temp_dir "$SO_VPS_TLS_TEMP_DIR" || return
+    SO_VPS_TLS_TEMP_DIR=
+    SO_CF_ORIGIN_ROOT_FILE=
     SO_VPS_TLS_TEMP_DIR=$(_vps_make_private_temp_dir) || return
     private_key="$SO_VPS_TLS_TEMP_DIR/schoolorbit-origin.key"
     csr="$SO_VPS_TLS_TEMP_DIR/schoolorbit-origin.csr"
@@ -262,6 +267,6 @@ vps_issue_and_install_tls() {
     _vps_stream_file "$certificate" /opt/stack/nginx/ssl/schoolorbit-origin.pem 0644 || return
     _vps_stream_file "$private_key" /opt/stack/nginx/ssl/schoolorbit-origin.key 0600 || return
     _vps_stream_file "$root" /opt/stack/nginx/ssl/cloudflare-origin-rsa-root.pem 0644 || return
-    _vps_remove_private_temp_dir "$SO_VPS_TLS_TEMP_DIR"
-    SO_VPS_TLS_TEMP_DIR=
+    # shellcheck disable=SC2034 # Consumed by direct-origin verification before cleanup.
+    SO_CF_ORIGIN_ROOT_FILE=$root
 }

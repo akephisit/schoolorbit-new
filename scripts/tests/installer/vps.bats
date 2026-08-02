@@ -187,6 +187,7 @@ fi
 
     vps_issue_and_install_tls
 
+    [ -r "$SO_CF_ORIGIN_ROOT_FILE" ]
     grep -Fq 'schoolorbit-origin.pem 0644' "$FAKE_COMMAND_LOG"
     grep -Fq 'schoolorbit-origin.key 0600' "$FAKE_COMMAND_LOG"
     grep -Fq 'cloudflare-origin-rsa-root.pem 0644' "$FAKE_COMMAND_LOG"
