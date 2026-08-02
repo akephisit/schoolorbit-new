@@ -3,6 +3,7 @@ import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
+import { renderProxy } from './helpers/render-proxy.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '../../..');
@@ -1805,10 +1806,7 @@ test('tenant routing uses Origin by default with explicit X-School-Subdomain ove
 		path.join(repoRoot, 'frontend-school/src/lib/api/client.ts'),
 		'utf8'
 	);
-	const nginxConfig = await readFile(
-		path.join(repoRoot, 'nginx-configs/school-api.schoolorbit.app.conf'),
-		'utf8'
-	);
+	const nginxConfig = await renderProxy('nginx-configs/school-api.conf.template');
 	const smokeTest = await readFile(path.join(repoRoot, 'scripts/smoke_test.sh'), 'utf8');
 
 	assert.match(subdomainResolver, /SCHOOL_SUBDOMAIN_HEADER/);

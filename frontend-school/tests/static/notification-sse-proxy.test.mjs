@@ -1,10 +1,6 @@
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import test from 'node:test';
-
-const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
+import { renderProxy } from './helpers/render-proxy.mjs';
 
 function extractLocationBlocks(source) {
 	const blocks = [];
@@ -51,10 +47,7 @@ function resolveLocation(blocks, requestPath) {
 }
 
 test('notification stream resolves to the unbuffered credentialed SSE proxy', async () => {
-	const source = await readFile(
-		path.join(repoRoot, 'nginx-configs/school-api.schoolorbit.app.conf'),
-		'utf8'
-	);
+	const source = await renderProxy('nginx-configs/school-api.conf.template');
 	const location = resolveLocation(extractLocationBlocks(source), '/api/notifications/stream');
 
 	assert.ok(location, 'notification stream must resolve to an nginx location');

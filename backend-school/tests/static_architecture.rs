@@ -3654,7 +3654,7 @@ fn deleting_staff_revokes_cached_and_active_permissions_after_soft_delete() {
 
 #[test]
 fn timetable_websocket_proxy_does_not_log_query_identity() {
-    let nginx = read_source(repo_root().join("nginx-configs/school-api.schoolorbit.app.conf"));
+    let nginx = read_source(repo_root().join("nginx-configs/school-api.conf.template"));
     let websocket_location = extract_braced_block(&nginx, "location /ws/ {", true);
     let access_log_directives = websocket_location
         .lines()
@@ -4393,7 +4393,6 @@ fn backend_school_registers_separate_liveness_and_readiness_routes() {
 fn deployment_and_smoke_checks_use_backend_readiness() {
     let docker_compose = read_source(repo_root().join("docker-compose.yml"));
     let podman_compose = read_source(repo_root().join("podman-compose.yml"));
-    let school_runtime_compose = read_source(repo_root().join("backend-school/docker-compose.yml"));
     let school_deploy =
         read_source(repo_root().join(".github/workflows/deploy-backend-school.yml"));
     let frontend_deploy = read_source(repo_root().join(".github/workflows/deploy-all-schools.yml"));
@@ -4410,7 +4409,7 @@ fn deployment_and_smoke_checks_use_backend_readiness() {
     }
     assert!(school_deploy.contains("docker.io/amazon/aws-cli:2.36.9"));
     assert!(school_deploy.contains("docker.io/clamav/clamav-debian:1.5.3"));
-    assert!(school_runtime_compose.contains("docker.io/clamav/clamav-debian:1.5.3"));
+    assert!(!repo_root().join("backend-school/docker-compose.yml").exists());
     assert!(!school_deploy.contains("list-buckets"));
     assert!(school_deploy.contains(r#"r2_cli s3api head-bucket --bucket "$public_bucket""#));
     assert!(school_deploy.contains(r#"r2_cli s3api head-bucket --bucket "$private_bucket""#));

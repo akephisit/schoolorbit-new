@@ -4,8 +4,8 @@
 map $http_origin $allow_origin {
     default ""; # ค่าเริ่มต้นคือ "ไม่ให้เข้า"
 
-    # ✅ กฎที่ 1: อนุญาต *.schoolorbit.app ทั้งหมด (Regex) และยอมรับ port อะไรก็ได้
-    "~^https://([\w-]+\.)?schoolorbit\.app(:[0-9]+)?$" $http_origin;
+    # ✅ กฎที่ 1: อนุญาต *.${BASE_DOMAIN} ทั้งหมด (Regex) และยอมรับ port อะไรก็ได้
+    "~^https://([\w-]+\.)?${BASE_DOMAIN_REGEX}(:[0-9]+)?$" $http_origin;
 
     # ✅ กฎที่ 2: อนุญาต Localhost (เผื่อ Dev ในเครื่องตัวเอง)
     "http://localhost:3000" $http_origin;
@@ -23,17 +23,16 @@ map $http_origin $allow_origin {
 # --------------------------------------------------------
 server {
     listen 80;
-    server_name school-api.schoolorbit.app;
-    location /.well-known/acme-challenge/ { root /var/www/certbot; }
+    server_name school-api.${BASE_DOMAIN};
     location / { return 301 https://$host$request_uri; }
 }
 
 server {
     listen 443 ssl;
-    server_name school-api.schoolorbit.app;
+    server_name school-api.${BASE_DOMAIN};
 
-    ssl_certificate /etc/letsencrypt/live/school-api.schoolorbit.app/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/school-api.schoolorbit.app/privkey.pem;
+    ssl_certificate /etc/nginx/ssl/schoolorbit-origin.pem;
+    ssl_certificate_key /etc/nginx/ssl/schoolorbit-origin.key;
 
     # ========================================
     # 🔥 GLOBAL FILE UPLOAD SETTINGS (สำคัญมาก!)
