@@ -153,11 +153,6 @@ services:
     volumes:
       - ./nginx/conf.d:/etc/nginx/conf.d:ro
       - ./nginx/ssl:/etc/nginx/ssl:ro
-    depends_on:
-      backend-admin:
-        condition: service_healthy
-      backend-school:
-        condition: service_healthy
     networks:
       - schoolorbit-net
 

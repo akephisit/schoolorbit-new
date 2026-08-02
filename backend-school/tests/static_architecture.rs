@@ -4415,13 +4415,17 @@ fn deployment_and_smoke_checks_use_backend_readiness() {
     assert!(school_deploy.contains(r#"r2_cli s3api head-bucket --bucket "$private_bucket""#));
     assert!(school_deploy.contains("put-bucket-cors"));
     assert!(school_deploy.contains("get-bucket-cors"));
-    assert!(school_deploy.contains(r#"https://*.schoolorbit.app"#));
-    assert!(school_deploy.contains(r#""AllowedMethods":["GET","HEAD"]"#));
-    assert!(!school_deploy.contains("compose config"));
+    assert!(school_deploy.contains(r#"private_cors_origin="https://*.${base_domain}""#));
+    assert!(school_deploy.contains(r#"AllowedMethods:["GET","HEAD"]"#));
+    assert!(school_deploy.contains(r#"podman-compose -f "${runtime_compose}.next" config"#));
     assert!(school_deploy
         .contains(r#"podman-compose -f "$runtime_compose" --dry-run up -d clamd backend-school"#));
     assert!(school_deploy.contains("http://127.0.0.1:8081/ready"));
     assert!(admin_deploy.contains("http://127.0.0.1:8080/ready"));
+    assert!(school_deploy.contains(r#"--resolve "${school_host}:443:127.0.0.1""#));
+    assert!(admin_deploy.contains(r#"--resolve "${admin_host}:443:127.0.0.1""#));
+    assert!(school_deploy.contains("cloudflare-origin-rsa-root.pem"));
+    assert!(admin_deploy.contains("cloudflare-origin-rsa-root.pem"));
     assert!(school_deploy.contains("seq 1 36"));
     assert!(admin_deploy.contains("seq 1 12"));
     assert!(school_deploy.contains("timeout 180 bash -c"));

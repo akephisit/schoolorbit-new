@@ -8,6 +8,7 @@ import test from 'node:test';
 
 const execFileAsync = promisify(execFile);
 const repoRoot = path.resolve(import.meta.dirname, '../../..');
+const readRepo = (file) => readFile(path.join(repoRoot, file), 'utf8');
 
 test('the resolved production topology has one owner and private backend ports', async () => {
   const { stdout } = await execFileAsync(
@@ -45,6 +46,7 @@ test('the resolved production topology has one owner and private backend ports',
   );
   assert.equal(topology.networks['clamav-egress'].name, 'schoolorbit-clamav-egress');
   assert.equal(topology.volumes.clamav_signatures.name, 'schoolorbit-clamav-signatures');
+  assert.equal(topology.services.nginx.depends_on, undefined);
 
   for (const [service, target] of [
     ['backend-admin', 8080],
@@ -96,4 +98,25 @@ test('the proxy renderer rejects an invalid domain without replacing its output'
     (error) => error.code === 64 && error.stderr === 'Invalid base domain\n'
   );
   assert.equal(await readFile(output, 'utf8'), 'known-good\n');
+});
+
+test('backend workflows deploy the canonical target and verify the selected origin', async () => {
+  for (const file of [
+    '.github/workflows/deploy-backend-admin.yml',
+    '.github/workflows/deploy-backend-school.yml'
+  ]) {
+    const workflow = await readRepo(file);
+    assert.match(workflow, /podman-compose\.yml/);
+    assert.match(workflow, /scripts\/render_nginx_config\.sh/);
+    assert.match(workflow, /deployment_id/);
+    assert.match(workflow, /RUNTIME_DEPLOY_ENABLED/);
+    assert.match(workflow, /--resolve/);
+    assert.match(workflow, /cloudflare-origin-rsa-root\.pem/);
+    assert.match(workflow, /\/opt\/stack\/deployment/);
+    assert.match(workflow, /grep -lF "server_name/);
+    assert.match(workflow, /group: deploy-schoolorbit-runtime/);
+    assert.doesNotMatch(workflow, /backend-(?:admin|school)\/docker-compose\.yml/);
+    assert.doesNotMatch(workflow, /file-platform-runtime/);
+    assert.doesNotMatch(workflow, /curl[^\n]*https:\/\/(?:admin-api|school-api)\.schoolorbit\.app/);
+  }
 });

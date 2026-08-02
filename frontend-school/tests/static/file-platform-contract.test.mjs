@@ -75,17 +75,22 @@ test('canonical file upload path is proxied without a trailing-slash redirect', 
 test('backend deployment validates and installs the tracked school API proxy config', async () => {
 	const workflow = await readRepoFile('.github/workflows/deploy-backend-school.yml');
 
-	assert.match(workflow, /nginx-configs\/school-api\.schoolorbit\.app\.conf/);
-	assert.match(
-		workflow,
-		/proxy_matches="\$\(grep -l 'server_name school-api\\\.schoolorbit\\\.app;' \/opt\/stack\/nginx\/conf\.d\/\*\.conf/
-	);
+	assert.match(workflow, /nginx-configs\/school-api\.conf\.template/);
+	assert.match(workflow, /nginx-configs\/school-api\.maintenance\.conf\.template/);
+	assert.match(workflow, /scripts\/render_nginx_config\.sh/);
+	assert.match(workflow, /podman-compose\.yml/);
+	assert.match(workflow, /grep -lF "server_name school-api\.\$\{base_domain\};"/);
 	assert.match(workflow, /proxy_match_count=/);
-	assert.match(workflow, /\[ "\$proxy_match_count" -ne 1 \]/);
-	assert.match(workflow, /proxy_target="\$proxy_matches"/);
+	assert.match(workflow, /\[ "\$proxy_match_count" -gt 1 \]/);
+	assert.match(workflow, /proxy_target=\/opt\/stack\/nginx\/conf\.d\/school-api\.conf/);
 	assert.match(workflow, /podman exec schoolorbit-nginx nginx -t/);
-	assert.match(workflow, /cp "\$proxy_backup" "\$proxy_target"/);
+	assert.match(workflow, /cp "\$maintenance_proxy_source" "\$proxy_target"/);
 	assert.match(workflow, /podman exec schoolorbit-nginx nginx -s reload/);
+	assert.match(workflow, /--resolve "\$\{school_host\}:443:127\.0\.0\.1"/);
+	assert.match(workflow, /\.controlPlane == "connected"/);
+	assert.match(workflow, /\.filePlatform == "ready"/);
+	assert.match(workflow, /\/internal\/migration-status/);
+	assert.match(workflow, /\.pending == 0 and \.failed == 0 and \.outdated == 0/);
 });
 
 test('typed file helper uses generated DTOs and file IDs as identity', async () => {
