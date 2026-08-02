@@ -15,6 +15,7 @@
 	import CalendarEventList from '$lib/components/calendar/CalendarEventList.svelte';
 	import CalendarEventDialog from '$lib/components/calendar/CalendarEventDialog.svelte';
 	import CalendarCategoryDialog from '$lib/components/calendar/CalendarCategoryDialog.svelte';
+	import CalendarEmbedDialog from '$lib/components/calendar/CalendarEmbedDialog.svelte';
 	import CalendarColorKey from '$lib/components/calendar/CalendarColorKey.svelte';
 	import {
 		type CalendarAudienceType,
@@ -52,6 +53,7 @@
 		CalendarDays,
 		ChevronLeft,
 		ChevronRight,
+		Code2,
 		Copy,
 		FolderPlus,
 		Plus,
@@ -81,6 +83,7 @@
 	let eventDialogOpen = $state(false);
 	let eventDialogSession = $state(0);
 	let categoryDialogOpen = $state(false);
+	let embedDialogOpen = $state(false);
 	let editingEvent = $state<CalendarEvent | null>(null);
 	let saving = $state(false);
 	let error = $state('');
@@ -515,6 +518,10 @@
 					<Copy class="size-4" />
 					คัดลอกลิงก์สาธารณะ
 				</Button>
+				<Button variant="outline" onclick={() => (embedDialogOpen = true)}>
+					<Code2 class="size-4" />
+					ฝังในเว็บไซต์
+				</Button>
 			{/if}
 			{#if canManageCalendar}
 				<Button variant="outline" onclick={openCategoryDialog}>
@@ -730,7 +737,7 @@
 			onsave={saveEvent}
 		/>
 	{/key}
-	<CalendarCategoryDialog
+		<CalendarCategoryDialog
 		bind:open={categoryDialogOpen}
 		{categories}
 		{tags}
@@ -738,6 +745,7 @@
 		onsavecategory={saveCategory}
 		ondeletecategory={deleteCategory}
 		onsavetag={saveTag}
-		ondeletetag={deleteTag}
-	/>
-</PageShell>
+			ondeletetag={deleteTag}
+		/>
+		<CalendarEmbedDialog bind:open={embedDialogOpen} origin={page.url.origin} />
+	</PageShell>
