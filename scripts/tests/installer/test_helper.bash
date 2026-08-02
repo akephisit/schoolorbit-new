@@ -5,11 +5,13 @@ setup_installer_test() {
     export FAKE_COMMAND_LOG="$TEST_ROOT/commands.log"
     export PHASE_LOG="$TEST_ROOT/phases.log"
     export CAPTURED_REQUEST_BODY="$TEST_ROOT/request.json"
+    export CAPTURED_STDIN="$TEST_ROOT/stdin.txt"
     export FAKE_BIN="$TEST_ROOT/bin"
     export ORIGINAL_PATH=${ORIGINAL_PATH:-$PATH}
     mkdir -p "$HOME" "$FAKE_BIN"
     : >"$FAKE_COMMAND_LOG"
     : >"$PHASE_LOG"
+    : >"$CAPTURED_STDIN"
     export PATH="$FAKE_BIN:$ORIGINAL_PATH"
     export SCHOOLORBIT_STATE_HOME="$HOME/.local/state/schoolorbit-installer"
 
