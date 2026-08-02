@@ -32,8 +32,8 @@
 		<Dialog.Header>
 			<Dialog.Title>ฝังปฏิทินในเว็บไซต์</Dialog.Title>
 			<Dialog.Description>
-				เพิ่มบล็อก Custom HTML ใน WordPress แล้ววางโค้ด ปฏิทินจะอัปเดตตามข้อมูลสาธารณะ
-				ใน SchoolOrbit โดยอัตโนมัติ
+				เพิ่มบล็อก Custom HTML ใน WordPress แล้ววางโค้ด ปฏิทินจะอัปเดตตามข้อมูลสาธารณะ ใน
+				SchoolOrbit โดยอัตโนมัติ
 			</Dialog.Description>
 		</Dialog.Header>
 
@@ -91,9 +91,7 @@
 					class="font-mono text-xs leading-relaxed"
 					onfocus={(event) => event.currentTarget.select()}
 				/>
-				<p class="text-xs text-muted-foreground">
-					โค้ดนี้แสดงเฉพาะกิจกรรมที่ตั้งสถานะเป็นสาธารณะ
-				</p>
+				<p class="text-xs text-muted-foreground">โค้ดนี้แสดงเฉพาะกิจกรรมที่ตั้งสถานะเป็นสาธารณะ</p>
 			</div>
 		</div>
 
