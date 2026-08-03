@@ -175,12 +175,12 @@ jobs:
             compose_up_quiet backend-admin
             reconnect_backend_network schoolorbit-backend-admin backend-admin
 
-            if ! timeout 60 bash -c '
-              for attempt in $(seq 1 12); do
+            if ! timeout 180 bash -c '
+              for attempt in $(seq 1 36); do
                 if curl -fsS "$1" >/dev/null; then
                   exit 0
                 fi
-                if [ "$attempt" -lt 12 ]; then sleep 5; fi
+                if [ "$attempt" -lt 36 ]; then sleep 5; fi
               done
               exit 1
             ' _ http://127.0.0.1:8080/ready; then

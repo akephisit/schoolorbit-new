@@ -136,6 +136,7 @@ test('backend workflows deploy the canonical target and verify the selected orig
 		assert.match(workflow, /reconnect_backend_network\(\)/);
 		assert.match(workflow, /podman network connect --alias "\$service_alias" --alias "\$container" schoolorbit-web "\$container"/);
 		assert.match(workflow, /podman rm schoolorbit-nginx >\/dev\/null 2>&1 \|\| true/);
+		assert.match(workflow, /timeout 180 bash/);
 		assert.match(workflow, /grep -lF "server_name/);
 		assert.match(workflow, /group: deploy-schoolorbit-runtime/);
 		assert.equal((workflow.match(/port: \$\{\{ secrets\.SERVER_PORT \}\}/g) ?? []).length, 2);
