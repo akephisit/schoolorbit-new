@@ -220,30 +220,33 @@ jobs:
             fi
 
             admin_host="admin-api.${base_domain}"
-            direct_ready="$(
-              curl --fail --silent --show-error --max-time 10 \
-                --cacert "$origin_root" \
-                --resolve "${admin_host}:443:127.0.0.1" \
-                "https://${admin_host}/ready"
-            )"
-            if ! printf '%s' "$direct_ready" | jq -e \
-              '.status == "ready" and .database == "connected"' >/dev/null
-            then
+            direct_admin_ok=false
+            for attempt in $(seq 1 12); do
+              if direct_ready="$(
+                curl --fail --silent --show-error --max-time 10 \
+                  --cacert "$origin_root" \
+                  --resolve "${admin_host}:443:127.0.0.1" \
+                  "https://${admin_host}/ready"
+              )" && printf '%s' "$direct_ready" | jq -e \
+                '.status == "ready" and .database == "connected"' >/dev/null &&
+                direct_identity="$(
+                  curl --fail --silent --show-error --max-time 10 \
+                    --cacert "$origin_root" \
+                    --resolve "${admin_host}:443:127.0.0.1" \
+                    "https://${admin_host}/"
+                )" && printf '%s' "$direct_identity" | jq -e \
+                '.service == "SchoolOrbit Backend Admin"' >/dev/null
+              then
+                direct_admin_ok=true
+                break
+              fi
+              if [ "$attempt" -lt 12 ]; then
+                sleep 2
+              fi
+            done
+            if [ "$direct_admin_ok" != true ]; then
               restore_proxy
-              echo "Direct admin API readiness verification failed"
-              exit 1
-            fi
-            direct_identity="$(
-              curl --fail --silent --show-error --max-time 10 \
-                --cacert "$origin_root" \
-                --resolve "${admin_host}:443:127.0.0.1" \
-                "https://${admin_host}/"
-            )"
-            if ! printf '%s' "$direct_identity" | jq -e \
-              '.service == "SchoolOrbit Backend Admin"' >/dev/null
-            then
-              restore_proxy
-              echo "Direct admin API identity verification failed"
+              echo "Direct admin API verification failed"
               exit 1
             fi
 

@@ -35,6 +35,8 @@ test('backend-admin deployment installs and verifies the tracked proxy fail-clos
 	assert.match(workflow, /restore_proxy/);
 	assert.match(workflow, /cloudflare-origin-rsa-root\.pem/);
 	assert.match(workflow, /--resolve "\$\{admin_host\}:443:127\.0\.0\.1"/);
+	assert.match(workflow, /direct_admin_ok=false/);
+	assert.match(workflow, /for attempt in \$\(seq 1 12\)/);
 	assert.doesNotMatch(workflow, /nginx -s reload \|\| true/);
 	assert.doesNotMatch(workflow, /https:\/\/admin-api\.schoolorbit\.app\//);
 });
