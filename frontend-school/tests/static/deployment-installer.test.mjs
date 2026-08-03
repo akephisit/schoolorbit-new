@@ -178,6 +178,17 @@ test('frontend deployments keep environment values out of committed Worker confi
 	}
 });
 
+test('runtime diagnostics expose container state without environment or application logs', async () => {
+	const workflow = await readRepo('.github/workflows/runtime-diagnostics.yml');
+
+	assert.match(workflow, /workflow_dispatch/);
+	assert.match(workflow, /State\.ExitCode/);
+	assert.match(workflow, /State\.OOMKilled/);
+	assert.match(workflow, /NetworkSettings\.Networks/);
+	assert.doesNotMatch(workflow, /Config\.Env/);
+	assert.doesNotMatch(workflow, /podman logs/);
+});
+
 test('installer CI enforces shell provider topology and workflow guards', async () => {
 	const workflow = await readRepo('.github/workflows/installer.yml');
 

@@ -1,0 +1,35 @@
+name: Runtime Diagnostics
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Inspect runtime state
+        uses: appleboy/ssh-action@v1.2.5
+        with:
+          host: ${{ secrets.SERVER_IP }}
+          username: ${{ secrets.SERVER_USER }}
+          port: ${{ secrets.SERVER_PORT }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            set -eu
+            for container in \
+              schoolorbit-backend-admin \
+              schoolorbit-backend-school \
+              schoolorbit-clamd \
+              schoolorbit-nginx
+            do
+              if podman container exists "$container"; then
+                podman inspect --format \
+                  'container={{.Name}} status={{.State.Status}} running={{.State.Running}} exit={{.State.ExitCode}} oom={{.State.OOMKilled}} error={{.State.Error}} health={{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}} networks={{range $name, $_ := .NetworkSettings.Networks}}{{$name}};{{end}}' \
+                  "$container"
+              else
+                printf 'container=%s status=missing\n' "$container"
+              fi
+            done
