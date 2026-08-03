@@ -451,15 +451,24 @@ jobs:
             [ -z "$proxy_backup" ] || rm -f "$proxy_backup"
 
             school_host="school-api.${base_domain}"
-            direct_ready="$(
-              curl --fail --silent --show-error --max-time 15 \
-                --cacert "$origin_root" \
-                --resolve "${school_host}:443:127.0.0.1" \
-                "https://${school_host}/ready"
-            )"
-            if ! printf '%s' "$direct_ready" | jq -e \
-              '.status == "ready" and .controlPlane == "connected" and .filePlatform == "ready"' >/dev/null
-            then
+            direct_ready_ok=false
+            for attempt in $(seq 1 12); do
+              if direct_ready="$(
+                curl --fail --silent --show-error --max-time 15 \
+                  --cacert "$origin_root" \
+                  --resolve "${school_host}:443:127.0.0.1" \
+                  "https://${school_host}/ready"
+              )" && printf '%s' "$direct_ready" | jq -e \
+                '.status == "ready" and .controlPlane == "connected" and .filePlatform == "ready"' >/dev/null
+              then
+                direct_ready_ok=true
+                break
+              fi
+              if [ "$attempt" -lt 12 ]; then
+                sleep 2
+              fi
+            done
+            if [ "$direct_ready_ok" != true ]; then
               cp "$maintenance_proxy_source" "$proxy_target"
               podman exec schoolorbit-nginx nginx -t
               podman exec schoolorbit-nginx nginx -s reload || true

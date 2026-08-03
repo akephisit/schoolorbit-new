@@ -95,6 +95,8 @@ test('backend deployment validates and installs the tracked school API proxy con
 	assert.match(workflow, /Runtime environment value has invalid escaping/);
 	assert.doesNotMatch(workflow, /\|\s*\n\s+R2_PUBLIC_BUCKET_NAME/);
 	assert.doesNotMatch(workflow, /sed -n 's\/\^R2_[A-Z_]+=\/\/p'/);
+	assert.match(workflow, /direct_ready_ok=false/);
+	assert.match(workflow, /for attempt in \$\(seq 1 12\)/);
 });
 
 test('typed file helper uses generated DTOs and file IDs as identity', async () => {
