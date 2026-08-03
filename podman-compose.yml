@@ -45,7 +45,9 @@ services:
       retries: 3
       start_period: 40s
     networks:
-      - schoolorbit-net
+      schoolorbit-net:
+        aliases:
+          - schoolorbit-backend-admin
 
   backend-school:
     image: ghcr.io/akephisit/schoolorbit-backend-school:latest
@@ -119,8 +121,10 @@ services:
       clamd:
         condition: service_healthy
     networks:
-      - schoolorbit-net
-      - file-platform-internal
+      schoolorbit-net:
+        aliases:
+          - schoolorbit-backend-school
+      file-platform-internal: {}
 
   clamd:
     image: docker.io/clamav/clamav-debian:1.5.3

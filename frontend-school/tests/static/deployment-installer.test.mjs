@@ -47,6 +47,12 @@ test('the resolved production topology has one owner and private backend ports',
 	assert.equal(topology.networks['clamav-egress'].name, 'schoolorbit-clamav-egress');
 	assert.equal(topology.volumes.clamav_signatures.name, 'schoolorbit-clamav-signatures');
 	assert.equal(topology.services.nginx.depends_on, undefined);
+	assert.deepEqual(topology.services['backend-admin'].networks['schoolorbit-net'].aliases, [
+		'schoolorbit-backend-admin'
+	]);
+	assert.deepEqual(topology.services['backend-school'].networks['schoolorbit-net'].aliases, [
+		'schoolorbit-backend-school'
+	]);
 
 	for (const [service, target] of [
 		['backend-admin', 8080],
