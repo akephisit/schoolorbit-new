@@ -102,6 +102,18 @@ test('the proxy renderer rejects an invalid domain without replacing its output'
 });
 
 test('backend workflows deploy the canonical target and verify the selected origin', async () => {
+	const originRootInstaller = await readRepo(
+		'scripts/lib/schoolorbit-installer/remote/install_origin_root.sh'
+	);
+	assert.match(
+		originRootInstaller,
+		/https:\/\/developers\.cloudflare\.com\/ssl\/static\/origin_ca_rsa_root\.pem/
+	);
+	assert.match(
+		originRootInstaller,
+		/91a8a5567efa6bf941162aa806b3ba476aaddf7867640e53053b35fb225a5dae/
+	);
+
 	for (const file of [
 		'.github/workflows/deploy-backend-admin.yml',
 		'.github/workflows/deploy-backend-school.yml'
@@ -109,6 +121,8 @@ test('backend workflows deploy the canonical target and verify the selected orig
 		const workflow = await readRepo(file);
 		assert.match(workflow, /podman-compose\.yml/);
 		assert.match(workflow, /scripts\/render_nginx_config\.sh/);
+		assert.match(workflow, /scripts\/lib\/schoolorbit-installer\/remote\/install_origin_root\.sh/);
+		assert.match(workflow, /"\$origin_root_installer" "\$origin_root"/);
 		assert.match(workflow, /deployment_id/);
 		assert.match(workflow, /RUNTIME_DEPLOY_ENABLED/);
 		assert.match(workflow, /--resolve/);

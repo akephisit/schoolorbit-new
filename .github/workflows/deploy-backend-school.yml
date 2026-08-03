@@ -87,7 +87,7 @@ jobs:
           username: ${{ secrets.SERVER_USER }}
           port: ${{ secrets.SERVER_PORT }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
-          source: podman-compose.yml,scripts/render_nginx_config.sh,nginx-configs/admin-api.conf.template,nginx-configs/school-api.conf.template,nginx-configs/school-api.maintenance.conf.template
+          source: podman-compose.yml,scripts/render_nginx_config.sh,scripts/lib/schoolorbit-installer/remote/install_origin_root.sh,nginx-configs/admin-api.conf.template,nginx-configs/school-api.conf.template,nginx-configs/school-api.maintenance.conf.template
           target: /opt/stack/deployment
 
       - name: Deploy to Server via SSH
@@ -110,6 +110,8 @@ jobs:
             runtime_env=/opt/stack/.env
             renderer_source="$deployment_root/scripts/render_nginx_config.sh"
             renderer="$deployment_root/render-nginx"
+            origin_root_installer_source="$deployment_root/scripts/lib/schoolorbit-installer/remote/install_origin_root.sh"
+            origin_root_installer="$deployment_root/install-origin-root"
             proxy_template="$deployment_root/nginx-configs/school-api.conf.template"
             maintenance_proxy_template="$deployment_root/nginx-configs/school-api.maintenance.conf.template"
             proxy_source="$deployment_root/school-api.conf"
@@ -119,11 +121,13 @@ jobs:
             test -f "$runtime_source" || { echo "Canonical runtime definition is missing"; exit 1; }
             test -f "$runtime_env" || { echo "Backend runtime environment is missing"; exit 1; }
             test -f "$renderer_source" || { echo "Proxy renderer is missing"; exit 1; }
+            test -f "$origin_root_installer_source" || { echo "Origin CA root installer is missing"; exit 1; }
             test -f "$proxy_template" || { echo "School API proxy template is missing"; exit 1; }
             test -f "$maintenance_proxy_template" || { echo "School API maintenance template is missing"; exit 1; }
-            test -f "$origin_root" || { echo "Cloudflare Origin CA root is missing"; exit 1; }
 
             install -m 0755 "$renderer_source" "$renderer"
+            install -m 0755 "$origin_root_installer_source" "$origin_root_installer"
+            "$origin_root_installer" "$origin_root"
             cp "$runtime_source" "${runtime_compose}.next"
             podman-compose -f "${runtime_compose}.next" config >/dev/null
             mv "${runtime_compose}.next" "$runtime_compose"
