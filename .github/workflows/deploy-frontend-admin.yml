@@ -75,3 +75,5 @@ jobs:
             INTERNAL_API_SECRET
         env:
           INTERNAL_API_SECRET: ${{ secrets.INTERNAL_API_SECRET }}
+          PUBLIC_API_URL: ${{ vars.BACKEND_ADMIN_URL }}
+          BACKEND_SCHOOL_URL: ${{ vars.BACKEND_SCHOOL_URL }}

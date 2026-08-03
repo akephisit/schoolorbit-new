@@ -160,6 +160,9 @@ test('frontend deployments keep environment values out of committed Worker confi
 	assert.match(admin, /vars\.CLOUDFLARE_ACCOUNT_ID/);
 	assert.match(admin, /wrangler\.deploy\.json/);
 	assert.match(admin, /FRONTEND_DEPLOY_ENABLED/);
+	const adminWorkerDeploy = admin.slice(admin.indexOf('- name: Deploy frontend-admin Worker'));
+	assert.match(adminWorkerDeploy, /PUBLIC_API_URL: \$\{\{ vars\.BACKEND_ADMIN_URL \}\}/);
+	assert.match(adminWorkerDeploy, /BACKEND_SCHOOL_URL: \$\{\{ vars\.BACKEND_SCHOOL_URL \}\}/);
 
 	for (const file of [
 		'.github/workflows/deploy-all-schools.yml',
