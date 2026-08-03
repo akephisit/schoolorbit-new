@@ -134,6 +134,11 @@ test('backend workflows deploy the canonical target and verify the selected orig
 		assert.match(workflow, /compose_up_quiet\(\)/);
 		assert.match(workflow, /podman-compose -f "\$runtime_compose" up -d "\$@" >\/dev\/null 2>&1/);
 		assert.match(workflow, /reconnect_backend_network\(\)/);
+		assert.match(workflow, /validate_nginx_config_with_retry\(\)/);
+		assert.ok(
+			(workflow.match(/validate_nginx_config_with_retry/g) ?? []).length >= 3,
+			`${file} must retry Nginx validation during activation and recovery`
+		);
 		assert.match(workflow, /podman network connect --alias "\$service_alias" --alias "\$container" schoolorbit-web "\$container"/);
 		assert.match(workflow, /podman rm schoolorbit-nginx >\/dev\/null 2>&1 \|\| true/);
 		assert.match(workflow, /timeout 180 bash/);

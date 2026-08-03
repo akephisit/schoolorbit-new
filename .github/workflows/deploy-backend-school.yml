@@ -267,6 +267,20 @@ jobs:
               podman rm schoolorbit-nginx >/dev/null 2>&1 || true
               compose_up_quiet nginx
             }
+            validate_nginx_config_with_retry() {
+              nginx_test_output=""
+              for nginx_test_attempt in $(seq 1 30); do
+                if nginx_test_output="$(podman exec schoolorbit-nginx nginx -t 2>&1)"; then
+                  printf '%s\n' "$nginx_test_output"
+                  return 0
+                fi
+                if [ "$nginx_test_attempt" -lt 30 ]; then
+                  sleep 2
+                fi
+              done
+              printf '%s\n' "$nginx_test_output" >&2
+              return 1
+            }
             podman-compose -f "$runtime_compose" --dry-run up -d clamd backend-school >/dev/null 2>&1
 
             # The scanner gets an isolated container network and no published port.
@@ -306,7 +320,7 @@ jobs:
                 cp "$proxy_backup" "$proxy_previous_target"
               fi
               recreate_nginx
-              podman exec schoolorbit-nginx nginx -t
+              validate_nginx_config_with_retry
               podman exec schoolorbit-nginx nginx -s reload
             }
             if [ "$proxy_previous_target" != "$proxy_target" ]; then
@@ -314,7 +328,7 @@ jobs:
             fi
             cp "$maintenance_proxy_source" "$proxy_target"
             if ! recreate_nginx ||
-              ! podman exec schoolorbit-nginx nginx -t ||
+              ! validate_nginx_config_with_retry ||
               ! podman exec schoolorbit-nginx nginx -s reload
             then
               restore_pre_maintenance_proxy
@@ -433,9 +447,9 @@ jobs:
             trap - EXIT
 
             cp "$proxy_source" "$proxy_target"
-            if ! podman exec schoolorbit-nginx nginx -t; then
+            if ! validate_nginx_config_with_retry; then
               cp "$maintenance_proxy_source" "$proxy_target"
-              podman exec schoolorbit-nginx nginx -t
+              validate_nginx_config_with_retry
               podman exec schoolorbit-nginx nginx -s reload || true
               [ -z "$proxy_backup" ] || rm -f "$proxy_backup"
               echo "Normal school API proxy configuration is invalid after migration"
@@ -443,7 +457,7 @@ jobs:
             fi
             if ! podman exec schoolorbit-nginx nginx -s reload; then
               cp "$maintenance_proxy_source" "$proxy_target"
-              podman exec schoolorbit-nginx nginx -t
+              validate_nginx_config_with_retry
               podman exec schoolorbit-nginx nginx -s reload || true
               [ -z "$proxy_backup" ] || rm -f "$proxy_backup"
               exit 1
@@ -470,7 +484,7 @@ jobs:
             done
             if [ "$direct_ready_ok" != true ]; then
               cp "$maintenance_proxy_source" "$proxy_target"
-              podman exec schoolorbit-nginx nginx -t
+              validate_nginx_config_with_retry
               podman exec schoolorbit-nginx nginx -s reload || true
               echo "Direct school API readiness verification failed; maintenance remains enabled"
               exit 1

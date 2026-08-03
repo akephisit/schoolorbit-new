@@ -126,6 +126,20 @@ jobs:
               podman rm schoolorbit-nginx >/dev/null 2>&1 || true
               compose_up_quiet nginx
             }
+            validate_nginx_config_with_retry() {
+              nginx_test_output=""
+              for nginx_test_attempt in $(seq 1 30); do
+                if nginx_test_output="$(podman exec schoolorbit-nginx nginx -t 2>&1)"; then
+                  printf '%s\n' "$nginx_test_output"
+                  return 0
+                fi
+                if [ "$nginx_test_attempt" -lt 30 ]; then
+                  sleep 2
+                fi
+              done
+              printf '%s\n' "$nginx_test_output" >&2
+              return 1
+            }
 
             test -f /opt/stack/.env || { echo "Backend runtime environment is missing"; exit 1; }
             test -f "$runtime_source" || { echo "Canonical runtime definition is missing"; exit 1; }
@@ -202,7 +216,7 @@ jobs:
                 cp "$proxy_backup" "$proxy_previous_target"
               fi
               recreate_nginx
-              podman exec schoolorbit-nginx nginx -t
+              validate_nginx_config_with_retry
               podman exec schoolorbit-nginx nginx -s reload
             }
 
@@ -211,7 +225,7 @@ jobs:
             fi
             mv "$proxy_next" "$proxy_target"
             if ! recreate_nginx ||
-              ! podman exec schoolorbit-nginx nginx -t ||
+              ! validate_nginx_config_with_retry ||
               ! podman exec schoolorbit-nginx nginx -s reload
             then
               restore_proxy
