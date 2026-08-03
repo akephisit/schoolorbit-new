@@ -66,11 +66,16 @@ _github_expected_title() {
 }
 
 github_dispatch_and_wait() {
-    local workflow=$1 deployment_id=$2 expected_title runs matches count attempt
+    local workflow=$1 deployment_id=$2 expected_title runs baseline_ids matches count attempt
     local attempts=${SO_PROVIDER_POLL_ATTEMPTS:-20}
     local delay=${SO_PROVIDER_POLL_DELAY:-3}
     _valid_run_id "$deployment_id" || die 64 'Invalid deployment ID' || return
     expected_title=$(_github_expected_title "$workflow" "$deployment_id") || return
+
+    runs=$(gh run list --repo "${SO_CONFIG[repository]}" --workflow "$workflow" \
+        --event workflow_dispatch --json databaseId,displayTitle,status,conclusion,url 2>/dev/null) || die 69 "Unable to list runs for $workflow" || return
+    baseline_ids=$(jq -c --arg title "$expected_title" \
+        '[.[] | select(.displayTitle == $title) | .databaseId]' <<<"$runs") || die 69 'GitHub returned an invalid workflow run response' || return
 
     gh workflow run "$workflow" --repo "${SO_CONFIG[repository]}" \
         --ref "${SO_CONFIG[ref]}" -f "deployment_id=$deployment_id" >/dev/null || die 69 "Unable to dispatch $workflow" || return
@@ -78,7 +83,8 @@ github_dispatch_and_wait() {
     for ((attempt = 1; attempt <= attempts; attempt++)); do
         runs=$(gh run list --repo "${SO_CONFIG[repository]}" --workflow "$workflow" \
             --event workflow_dispatch --json databaseId,displayTitle,status,conclusion,url 2>/dev/null) || die 69 "Unable to list runs for $workflow" || return
-        matches=$(jq -c --arg title "$expected_title" '[.[] | select(.displayTitle == $title)]' <<<"$runs") || die 69 'GitHub returned an invalid workflow run response' || return
+        matches=$(jq -c --arg title "$expected_title" --argjson baseline "$baseline_ids" \
+            '[.[] | select(.displayTitle == $title) | select((.databaseId as $id | $baseline | index($id)) == null)]' <<<"$runs") || die 69 'GitHub returned an invalid workflow run response' || return
         count=$(jq 'length' <<<"$matches")
         if ((count == 1)); then
             break

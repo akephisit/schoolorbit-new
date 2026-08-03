@@ -6,6 +6,11 @@ setup() {
     setup_installer_test
     export FIXTURE_DIR="$BATS_TEST_DIRNAME/fixtures"
     export GITHUB_RUN_FIXTURE="$FIXTURE_DIR/github-runs.json"
+    export GITHUB_DISPATCH_MARKER="$TEST_ROOT/github-dispatched"
+    export GITHUB_RUN_BEFORE_DISPATCH_FIXTURE="$TEST_ROOT/github-runs-before-dispatch.json"
+    export GITHUB_RUN_AFTER_DISPATCH_FIXTURE="$GITHUB_RUN_FIXTURE"
+    jq '[.[] | select(.displayTitle != "Deploy Backend Admin (deploy-123)")]' \
+        "$GITHUB_RUN_FIXTURE" >"$GITHUB_RUN_BEFORE_DISPATCH_FIXTURE"
     export CF_DNS_FIXTURE="$FIXTURE_DIR/cloudflare-dns.json"
 
     source "$BATS_TEST_DIRNAME/../../lib/schoolorbit-installer/github.sh"
@@ -39,7 +44,14 @@ case "${1-} ${2-}" in
     "api repos/owner/repo/actions/permissions/workflow") printf "write\n" ;;
     "api repos/owner/repo/actions/variables/RUNTIME_DEPLOY_ENABLED") printf "true\n" ;;
     "secret set") cat >"$CAPTURED_STDIN" ;;
-    "run list") cat "$GITHUB_RUN_FIXTURE" ;;
+    "workflow run") touch "$GITHUB_DISPATCH_MARKER" ;;
+    "run list")
+        if [ -f "$GITHUB_DISPATCH_MARKER" ]; then
+            cat "$GITHUB_RUN_AFTER_DISPATCH_FIXTURE"
+        else
+            cat "$GITHUB_RUN_BEFORE_DISPATCH_FIXTURE"
+        fi
+        ;;
     "run watch") exit 0 ;;
 esac
 '
@@ -116,10 +128,25 @@ teardown() {
 @test "workflow dispatch rejects ambiguous correlated runs" {
     local duplicate="$TEST_ROOT/duplicate-runs.json"
     jq '. + [.[0]]' "$FIXTURE_DIR/github-runs.json" >"$duplicate"
-    export GITHUB_RUN_FIXTURE=$duplicate
+    export GITHUB_RUN_AFTER_DISPATCH_FIXTURE=$duplicate
 
     run github_dispatch_and_wait deploy-backend-admin.yml deploy-123
     [ "$status" -eq 78 ]
+}
+
+@test "workflow dispatch ignores a prior run with the same deployment title" {
+    local before="$TEST_ROOT/prior-runs.json"
+    local after="$TEST_ROOT/new-runs.json"
+    jq '[.[0] | .databaseId = 730 | .status = "completed" | .conclusion = "failure"]' \
+        "$FIXTURE_DIR/github-runs.json" >"$before"
+    jq --slurp '.[0] + .[1]' "$before" "$FIXTURE_DIR/github-runs.json" >"$after"
+    export GITHUB_RUN_BEFORE_DISPATCH_FIXTURE=$before
+    export GITHUB_RUN_AFTER_DISPATCH_FIXTURE=$after
+
+    github_dispatch_and_wait deploy-backend-admin.yml deploy-123
+
+    [ "$SO_GITHUB_RUN_ID" = 731 ]
+    grep -F 'run watch 731 --repo owner/repo --exit-status' "$FAKE_COMMAND_LOG"
 }
 
 @test "Cloudflare preflight requires strict mode and unambiguous A records" {
