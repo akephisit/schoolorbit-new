@@ -47,13 +47,6 @@ test('the resolved production topology has one owner and private backend ports',
 	assert.equal(topology.networks['clamav-egress'].name, 'schoolorbit-clamav-egress');
 	assert.equal(topology.volumes.clamav_signatures.name, 'schoolorbit-clamav-signatures');
 	assert.equal(topology.services.nginx.depends_on, undefined);
-	assert.deepEqual(topology.services['backend-admin'].networks['schoolorbit-net'].aliases, [
-		'schoolorbit-backend-admin'
-	]);
-	assert.deepEqual(topology.services['backend-school'].networks['schoolorbit-net'].aliases, [
-		'schoolorbit-backend-school'
-	]);
-
 	for (const [service, target] of [
 		['backend-admin', 8080],
 		['backend-school', 8081]
@@ -140,6 +133,8 @@ test('backend workflows deploy the canonical target and verify the selected orig
 		assert.match(workflow, /rm -f "\$proxy_previous_target"/);
 		assert.match(workflow, /compose_up_quiet\(\)/);
 		assert.match(workflow, /podman-compose -f "\$runtime_compose" up -d "\$@" >\/dev\/null 2>&1/);
+		assert.match(workflow, /reconnect_backend_network\(\)/);
+		assert.match(workflow, /podman network connect --alias "\$service_alias" --alias "\$container" schoolorbit-web "\$container"/);
 		assert.match(workflow, /podman rm schoolorbit-nginx >\/dev\/null 2>&1 \|\| true/);
 		assert.match(workflow, /grep -lF "server_name/);
 		assert.match(workflow, /group: deploy-schoolorbit-runtime/);

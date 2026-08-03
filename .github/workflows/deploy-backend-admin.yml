@@ -115,6 +115,12 @@ jobs:
             compose_up_quiet() {
               podman-compose -f "$runtime_compose" up -d "$@" >/dev/null 2>&1
             }
+            reconnect_backend_network() {
+              container=$1
+              service_alias=$2
+              podman network disconnect -f schoolorbit-web "$container" >/dev/null 2>&1 || true
+              podman network connect --alias "$service_alias" --alias "$container" schoolorbit-web "$container" >/dev/null 2>&1
+            }
             recreate_nginx() {
               podman stop schoolorbit-nginx >/dev/null 2>&1 || true
               podman rm schoolorbit-nginx >/dev/null 2>&1 || true
@@ -167,6 +173,7 @@ jobs:
             podman stop schoolorbit-backend-admin || true
             podman rm schoolorbit-backend-admin || true
             compose_up_quiet backend-admin
+            reconnect_backend_network schoolorbit-backend-admin backend-admin
 
             if ! timeout 60 bash -c '
               for attempt in $(seq 1 12); do
