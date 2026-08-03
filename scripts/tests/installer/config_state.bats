@@ -69,6 +69,17 @@ teardown() {
     [ "${SO_CONFIG[runtime:R2_PUBLIC_BUCKET_NAME]}" = 'schoolorbit-public-assets' ]
 }
 
+@test "accepts a non-empty existing smoke password without imposing creation policy" {
+    local input="$TEST_ROOT/short-smoke-password.json"
+    jq '.SMOKE_PASSWORD = "short-ok"' \
+        "$BATS_TEST_DIRNAME/fixtures/secrets.json" >"$input"
+    parse_args migrate-vps --repository owner/repo --target 192.0.2.20 --secrets-stdin
+
+    load_inputs <"$input"
+
+    [ "${SO_SECRETS[SMOKE_PASSWORD]}" = short-ok ]
+}
+
 @test "resume reuses checkpointed public runtime values while reloading secrets" {
     local name
     parse_args migrate-vps --repository owner/repo --target 192.0.2.20 --secrets-stdin

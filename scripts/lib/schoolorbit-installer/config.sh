@@ -207,8 +207,11 @@ _validate_secret() {
         ENCRYPTION_KEY | BLIND_INDEX_KEY)
             minimum=32
             ;;
-        NEON_DB_PASSWORD | SMOKE_PASSWORD)
+        NEON_DB_PASSWORD)
             minimum=12
+            ;;
+        SMOKE_PASSWORD)
+            minimum=1
             ;;
         SMOKE_SUBDOMAIN)
             minimum=2
