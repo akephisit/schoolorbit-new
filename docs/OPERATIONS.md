@@ -117,8 +117,10 @@ verified phase:
 ```
 
 The migration bootstraps the target, installs runtime configuration and Origin CA material,
-dispatches the two backend workflows followed by the two frontend workflows, and verifies both
-APIs directly with `curl --resolve` and pinned Origin CA trust. It then prints the DNS diff and
+dispatches the two backend workflows followed by the two frontend workflows, and pins frontend
+deployment discovery, readiness, and menu synchronization to the selected origin until DNS is
+changed. It verifies both APIs directly with `curl --resolve` and pinned Origin CA trust, then
+prints the DNS diff and
 requires the exact phrase `CUTOVER <target-ip>` before one two-record Cloudflare batch. Public
 verification covers API identity, both frontends, authenticated SSE, and the File Platform before
 the deployment gates are enabled. A failed post-cutover verification reports recovery commands;

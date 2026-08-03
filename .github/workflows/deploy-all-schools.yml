@@ -9,6 +9,7 @@ on:
     paths:
       - "frontend-school/**"
       - "scripts/discover_school_tenants.sh"
+      - "scripts/lib/schoolorbit-installer/configure_pre_cutover_origin.sh"
       - ".github/workflows/deploy-all-schools.yml"
 
   # หรือ trigger manual
@@ -20,6 +21,10 @@ on:
         default: "false"
       deployment_id:
         description: "Installer run identifier"
+        required: false
+        type: string
+      target_origin_ip:
+        description: "Temporary origin IPv4 for deployment before DNS cutover"
         required: false
         type: string
 
@@ -35,14 +40,38 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v6
 
+      - name: Configure pre-cutover origin routing
+        id: origin-routing
+        if: inputs.target_origin_ip != ''
+        env:
+          TARGET_ORIGIN_IP: ${{ inputs.target_origin_ip }}
+          BASE_DOMAIN: ${{ vars.BASE_DOMAIN }}
+        run: |
+          bash scripts/lib/schoolorbit-installer/configure_pre_cutover_origin.sh \
+            "$TARGET_ORIGIN_IP" \
+            "$BASE_DOMAIN" \
+            "$RUNNER_TEMP/cloudflare-origin-rsa-root.pem"
+
       - name: Wait for File Platform-ready backend
         env:
           BACKEND_SCHOOL_URL: ${{ vars.BACKEND_SCHOOL_URL }}
+          BASE_DOMAIN: ${{ vars.BASE_DOMAIN }}
+          TARGET_ORIGIN_IP: ${{ inputs.target_origin_ip }}
+          ORIGIN_CA_ROOT: ${{ steps.origin-routing.outputs.origin_ca_root }}
         run: |
           set -eu
+          curl_origin_args=()
+          if [ -n "$TARGET_ORIGIN_IP" ]; then
+            school_origin="school-api.${BASE_DOMAIN}"
+            curl_origin_args=(
+              --resolve "$school_origin:443:$TARGET_ORIGIN_IP"
+              --cacert "$ORIGIN_CA_ROOT"
+            )
+          fi
           for attempt in $(seq 1 180); do
             readiness="$(
               curl --fail --silent --show-error --max-time 10 \
+                "${curl_origin_args[@]}" \
                 "${BACKEND_SCHOOL_URL%/}/ready" 2>/dev/null || true
             )"
             if printf '%s' "$readiness" \
@@ -63,6 +92,7 @@ jobs:
         env:
           BACKEND_ADMIN_URL: ${{ vars.BACKEND_ADMIN_URL }}
           INTERNAL_API_SECRET: ${{ secrets.INTERNAL_API_SECRET }}
+          CURL_CA_BUNDLE: ${{ steps.origin-routing.outputs.origin_ca_root }}
         run: bash scripts/discover_school_tenants.sh
 
   deploy:
@@ -80,6 +110,18 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
+
+      - name: Configure pre-cutover origin routing
+        id: origin-routing
+        if: inputs.target_origin_ip != ''
+        env:
+          TARGET_ORIGIN_IP: ${{ inputs.target_origin_ip }}
+          BASE_DOMAIN: ${{ vars.BASE_DOMAIN }}
+        run: |
+          bash scripts/lib/schoolorbit-installer/configure_pre_cutover_origin.sh \
+            "$TARGET_ORIGIN_IP" \
+            "$BASE_DOMAIN" \
+            "$RUNNER_TEMP/cloudflare-origin-rsa-root.pem"
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
@@ -135,6 +177,7 @@ jobs:
           PUBLIC_BACKEND_URL: ${{ vars.BACKEND_SCHOOL_URL }}
           DEPLOY_KEY: ${{ secrets.DEPLOY_KEY }}
           SUBDOMAIN: ${{ matrix.school.subdomain }}
+          NODE_EXTRA_CA_CERTS: ${{ steps.origin-routing.outputs.origin_ca_root }}
         run: npm run sync:menu-routes
 
       - name: Report deployment status

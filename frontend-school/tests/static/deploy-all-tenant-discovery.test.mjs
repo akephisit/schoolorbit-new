@@ -11,6 +11,36 @@ const testDirectory = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(testDirectory, '../../..');
 const discoveryScript = path.join(repoRoot, 'scripts/discover_school_tenants.sh');
 
+test('pre-cutover frontend deployment pins API traffic to the selected origin', async () => {
+	const workflow = await readFile(
+		path.join(repoRoot, '.github/workflows/deploy-all-schools.yml'),
+		'utf8'
+	);
+	const originRouting = await readFile(
+		path.join(repoRoot, 'scripts/lib/schoolorbit-installer/configure_pre_cutover_origin.sh'),
+		'utf8'
+	);
+
+	assert.match(workflow, /target_origin_ip:/);
+	assert.match(
+		workflow,
+		/scripts\/lib\/schoolorbit-installer\/configure_pre_cutover_origin\.sh/
+	);
+	assert.match(workflow, /--resolve "\$school_origin:443:\$TARGET_ORIGIN_IP"/);
+	assert.match(workflow, /CURL_CA_BUNDLE: \$\{\{ steps\.origin-routing\.outputs\.origin_ca_root \}\}/);
+	assert.match(workflow, /NODE_EXTRA_CA_CERTS: \$\{\{ steps\.origin-routing\.outputs\.origin_ca_root \}\}/);
+	assert.match(
+		originRouting,
+		/https:\/\/developers\.cloudflare\.com\/ssl\/static\/origin_ca_rsa_root\.pem/
+	);
+	assert.match(
+		originRouting,
+		/91a8a5567efa6bf941162aa806b3ba476aaddf7867640e53053b35fb225a5dae/
+	);
+	assert.match(originRouting, /admin-api\.\$base_domain/);
+	assert.match(originRouting, /school-api\.\$base_domain/);
+});
+
 async function runDiscovery(handler, environment = {}) {
 	const server = createServer(handler);
 	await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));

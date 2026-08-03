@@ -125,6 +125,20 @@ teardown() {
     grep -F 'run watch 731 --repo owner/repo --exit-status' "$FAKE_COMMAND_LOG"
 }
 
+@test "all-school frontend dispatch pins pre-cutover traffic to the selected origin" {
+    local before="$TEST_ROOT/frontend-runs-before.json"
+    local after="$TEST_ROOT/frontend-runs-after.json"
+    printf '%s\n' '[]' >"$before"
+    jq '[.[0] | .displayTitle = "Deploy Frontend Schools (deploy-123)"]' \
+        "$FIXTURE_DIR/github-runs.json" >"$after"
+    export GITHUB_RUN_BEFORE_DISPATCH_FIXTURE=$before
+    export GITHUB_RUN_AFTER_DISPATCH_FIXTURE=$after
+
+    github_dispatch_and_wait deploy-all-schools.yml deploy-123
+
+    grep -F 'workflow run deploy-all-schools.yml --repo owner/repo --ref main -f deployment_id=deploy-123 -f target_origin_ip=192.0.2.20' "$FAKE_COMMAND_LOG"
+}
+
 @test "workflow dispatch rejects ambiguous correlated runs" {
     local duplicate="$TEST_ROOT/duplicate-runs.json"
     jq '. + [.[0]]' "$FIXTURE_DIR/github-runs.json" >"$duplicate"

@@ -77,8 +77,16 @@ github_dispatch_and_wait() {
     baseline_ids=$(jq -c --arg title "$expected_title" \
         '[.[] | select(.displayTitle == $title) | .databaseId]' <<<"$runs") || die 69 'GitHub returned an invalid workflow run response' || return
 
-    gh workflow run "$workflow" --repo "${SO_CONFIG[repository]}" \
-        --ref "${SO_CONFIG[ref]}" -f "deployment_id=$deployment_id" >/dev/null || die 69 "Unable to dispatch $workflow" || return
+    local -a dispatch_args=(
+        workflow run "$workflow"
+        --repo "${SO_CONFIG[repository]}"
+        --ref "${SO_CONFIG[ref]}"
+        -f "deployment_id=$deployment_id"
+    )
+    if [[ $workflow == deploy-all-schools.yml ]]; then
+        dispatch_args+=(-f "target_origin_ip=${SO_CONFIG[target]}")
+    fi
+    gh "${dispatch_args[@]}" >/dev/null || die 69 "Unable to dispatch $workflow" || return
 
     for ((attempt = 1; attempt <= attempts; attempt++)); do
         runs=$(gh run list --repo "${SO_CONFIG[repository]}" --workflow "$workflow" \
