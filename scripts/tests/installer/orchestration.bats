@@ -162,7 +162,8 @@ install_orchestration_fakes() {
     grep -F -- '--cacert' "$FAKE_COMMAND_LOG"
     ! grep -Fq -- "$insecure_flag" "$FAKE_COMMAND_LOG"
     grep -Fq 'podman-compose -f podman-compose.yml --dry-run up -d' "$FAKE_COMMAND_LOG"
-    grep -Fq 'podman exec schoolorbit-nginx nginx -t' "$FAKE_COMMAND_LOG"
+    grep -Fq "podman inspect --format '{{if .State.Health.Status}}" "$FAKE_COMMAND_LOG"
+    ! grep -Fq 'podman exec schoolorbit-nginx nginx -t' "$FAKE_COMMAND_LOG"
 }
 
 @test "direct verification fails when either service identity is wrong" {

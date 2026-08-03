@@ -81,11 +81,14 @@ set -euo pipefail
 export XDG_RUNTIME_DIR="/run/user/$(id -u)"
 cd /opt/stack
 podman-compose -f podman-compose.yml --dry-run up -d >/dev/null
-podman exec schoolorbit-nginx nginx -t
+# The deployment workflow already validates Nginx from a direct server-user SSH
+# session. A root-to-user runuser session cannot create the cgroup required by
+# podman exec on Debian; the running state and resolve-pinned HTTPS checks below
+# revalidate the active proxy without mutating the target.
 deadline=$((SECONDS + 720))
 for container in schoolorbit-backend-admin schoolorbit-backend-school schoolorbit-clamd schoolorbit-nginx; do
     while true; do
-        status=$(podman inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$container")
+        status=$(podman inspect --format '{{if .State.Health.Status}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$container")
         case "$status" in
             healthy) break ;;
             running)
