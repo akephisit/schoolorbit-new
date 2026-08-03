@@ -130,7 +130,7 @@ jobs:
             install -m 0755 "$origin_root_installer_source" "$origin_root_installer"
             "$origin_root_installer" "$origin_root"
             cp "$runtime_source" "${runtime_compose}.next"
-            podman-compose -f "${runtime_compose}.next" --dry-run up -d backend-school >/dev/null
+            podman-compose -f "${runtime_compose}.next" --dry-run up -d backend-school >/dev/null 2>&1
             mv "${runtime_compose}.next" "$runtime_compose"
             "$renderer" "$proxy_template" "$proxy_source" "$base_domain"
             "$renderer" "$maintenance_proxy_template" "$maintenance_proxy_source" "$base_domain"
@@ -218,14 +218,19 @@ jobs:
             done
             unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY
 
-            compose() {
-              podman-compose -f "$runtime_compose" "$@"
+            compose_up_quiet() {
+              podman-compose -f "$runtime_compose" up -d "$@" >/dev/null 2>&1
             }
-            podman-compose -f "$runtime_compose" --dry-run up -d clamd backend-school >/dev/null
+            recreate_nginx() {
+              podman stop schoolorbit-nginx >/dev/null 2>&1 || true
+              podman rm schoolorbit-nginx >/dev/null 2>&1 || true
+              compose_up_quiet nginx
+            }
+            podman-compose -f "$runtime_compose" --dry-run up -d clamd backend-school >/dev/null 2>&1
 
             # The scanner gets an isolated container network and no published port.
             podman pull docker.io/clamav/clamav-debian:1.5.3
-            compose up -d clamd
+            compose_up_quiet clamd
             scanner_ready=false
             for attempt in $(seq 1 60); do
               scanner_status="$(podman inspect --format '{{.State.Health.Status}}' schoolorbit-clamd 2>/dev/null || true)"
@@ -259,7 +264,7 @@ jobs:
               if [ "$proxy_existed" -eq 1 ]; then
                 cp "$proxy_backup" "$proxy_previous_target"
               fi
-              compose up -d nginx
+              recreate_nginx
               podman exec schoolorbit-nginx nginx -t
               podman exec schoolorbit-nginx nginx -s reload
             }
@@ -267,7 +272,7 @@ jobs:
               rm -f "$proxy_previous_target"
             fi
             cp "$maintenance_proxy_source" "$proxy_target"
-            if ! compose up -d nginx ||
+            if ! recreate_nginx ||
               ! podman exec schoolorbit-nginx nginx -t ||
               ! podman exec schoolorbit-nginx nginx -s reload
             then
@@ -282,7 +287,7 @@ jobs:
             # Recreate backend-school only; do not restart unrelated services.
             podman stop schoolorbit-backend-school || true
             podman rm schoolorbit-backend-school || true
-            compose up -d backend-school
+            compose_up_quiet backend-school
 
             # /ready checks control plane, both R2 buckets, and clamd.
             if ! timeout 180 bash -c '

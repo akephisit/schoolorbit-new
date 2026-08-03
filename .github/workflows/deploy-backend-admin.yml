@@ -112,6 +112,14 @@ jobs:
             proxy_target=/opt/stack/nginx/conf.d/admin-api.conf
             legacy_proxy_target=/opt/stack/nginx/conf.d/admin-api.${base_domain}.conf
             origin_root=/opt/stack/nginx/ssl/cloudflare-origin-rsa-root.pem
+            compose_up_quiet() {
+              podman-compose -f "$runtime_compose" up -d "$@" >/dev/null 2>&1
+            }
+            recreate_nginx() {
+              podman stop schoolorbit-nginx >/dev/null 2>&1 || true
+              podman rm schoolorbit-nginx >/dev/null 2>&1 || true
+              compose_up_quiet nginx
+            }
 
             test -f /opt/stack/.env || { echo "Backend runtime environment is missing"; exit 1; }
             test -f "$runtime_source" || { echo "Canonical runtime definition is missing"; exit 1; }
@@ -123,7 +131,7 @@ jobs:
             install -m 0755 "$origin_root_installer_source" "$origin_root_installer"
             "$origin_root_installer" "$origin_root"
             cp "$runtime_source" "${runtime_compose}.next"
-            podman-compose -f "${runtime_compose}.next" --dry-run up -d backend-admin >/dev/null
+            podman-compose -f "${runtime_compose}.next" --dry-run up -d backend-admin >/dev/null 2>&1
             mv "${runtime_compose}.next" "$runtime_compose"
 
             proxy_next="$(mktemp /opt/stack/nginx/conf.d/.admin-api.conf.XXXXXX)"
@@ -158,7 +166,7 @@ jobs:
             podman tag "${backend_image}:${{ github.sha }}" "${backend_image}:latest"
             podman stop schoolorbit-backend-admin || true
             podman rm schoolorbit-backend-admin || true
-            podman-compose -f "$runtime_compose" up -d backend-admin
+            compose_up_quiet backend-admin
 
             if ! timeout 60 bash -c '
               for attempt in $(seq 1 12); do
@@ -186,7 +194,7 @@ jobs:
               if [ "$proxy_existed" -eq 1 ]; then
                 cp "$proxy_backup" "$proxy_previous_target"
               fi
-              podman-compose -f "$runtime_compose" up -d nginx
+              recreate_nginx
               podman exec schoolorbit-nginx nginx -t
               podman exec schoolorbit-nginx nginx -s reload
             }
@@ -195,7 +203,7 @@ jobs:
               rm -f "$proxy_previous_target"
             fi
             mv "$proxy_next" "$proxy_target"
-            if ! podman-compose -f "$runtime_compose" up -d nginx ||
+            if ! recreate_nginx ||
               ! podman exec schoolorbit-nginx nginx -t ||
               ! podman exec schoolorbit-nginx nginx -s reload
             then

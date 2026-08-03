@@ -132,6 +132,9 @@ test('backend workflows deploy the canonical target and verify the selected orig
 		assert.match(workflow, /legacy_proxy_target=\/opt\/stack\/nginx\/conf\.d\/(?:admin|school)-api\.\$\{base_domain\}\.conf/);
 		assert.match(workflow, /proxy_previous_target="\$proxy_target"/);
 		assert.match(workflow, /rm -f "\$proxy_previous_target"/);
+		assert.match(workflow, /compose_up_quiet\(\)/);
+		assert.match(workflow, /podman-compose -f "\$runtime_compose" up -d "\$@" >\/dev\/null 2>&1/);
+		assert.match(workflow, /podman rm schoolorbit-nginx >\/dev\/null 2>&1 \|\| true/);
 		assert.match(workflow, /grep -lF "server_name/);
 		assert.match(workflow, /group: deploy-schoolorbit-runtime/);
 		assert.equal((workflow.match(/port: \$\{\{ secrets\.SERVER_PORT \}\}/g) ?? []).length, 2);
