@@ -34,7 +34,10 @@ jobs:
               fi
             done
             podman port schoolorbit-nginx || true
-            podman exec schoolorbit-nginx nginx -t
+            podman exec schoolorbit-nginx nginx -t || true
+            podman network inspect --format \
+              'network={{.Name}} dns={{.DNSEnabled}} {{range .Containers}}container={{.Name}} aliases={{json .Aliases}};{{end}}' \
+              schoolorbit-web
             for endpoint in \
               http://127.0.0.1:8080/live \
               http://127.0.0.1:8080/ready \

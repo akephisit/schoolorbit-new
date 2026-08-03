@@ -187,6 +187,7 @@ test('runtime diagnostics expose container state without environment or applicat
 	assert.match(workflow, /NetworkSettings\.Networks/);
 	assert.match(workflow, /podman port schoolorbit-nginx/);
 	assert.match(workflow, /podman exec schoolorbit-nginx nginx -t/);
+	assert.match(workflow, /podman network inspect/);
 	assert.doesNotMatch(workflow, /Config\.Env/);
 	assert.doesNotMatch(workflow, /podman logs/);
 	assert.doesNotMatch(workflow, /curl[^\n]*-[^\n]*k/);
