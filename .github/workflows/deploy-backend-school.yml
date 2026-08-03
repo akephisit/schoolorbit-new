@@ -117,6 +117,7 @@ jobs:
             proxy_source="$deployment_root/school-api.conf"
             maintenance_proxy_source="$deployment_root/school-api.maintenance.conf"
             proxy_target=/opt/stack/nginx/conf.d/school-api.conf
+            legacy_proxy_target=/opt/stack/nginx/conf.d/school-api.${base_domain}.conf
             origin_root=/opt/stack/nginx/ssl/cloudflare-origin-rsa-root.pem
             test -f "$runtime_source" || { echo "Canonical runtime definition is missing"; exit 1; }
             test -f "$runtime_env" || { echo "Backend runtime environment is missing"; exit 1; }
@@ -140,9 +141,16 @@ jobs:
               echo "Expected at most one active school API proxy config, found ${proxy_match_count}"
               exit 1
             fi
-            if [ "$proxy_match_count" -eq 1 ] && [ "$proxy_matches" != "$proxy_target" ]; then
+            if [ "$proxy_match_count" -eq 1 ] &&
+              [ "$proxy_matches" != "$proxy_target" ] &&
+              [ "$proxy_matches" != "$legacy_proxy_target" ]
+            then
               echo "School API proxy exists at an unexpected path: ${proxy_matches}"
               exit 1
+            fi
+            proxy_previous_target="$proxy_target"
+            if [ "$proxy_match_count" -eq 1 ]; then
+              proxy_previous_target="$proxy_matches"
             fi
             public_bucket="$(sed -n 's/^R2_PUBLIC_BUCKET_NAME=//p' "$runtime_env" | tail -n 1)"
             private_bucket="$(sed -n 's/^R2_PRIVATE_BUCKET_NAME=//p' "$runtime_env" | tail -n 1)"
@@ -241,21 +249,23 @@ jobs:
 
             proxy_backup=""
             proxy_existed=0
-            if [ -f "$proxy_target" ]; then
+            if [ -f "$proxy_previous_target" ]; then
               proxy_backup="$(mktemp /opt/stack/nginx/conf.d/.school-api.backup.XXXXXX)"
-              cp "$proxy_target" "$proxy_backup"
+              cp "$proxy_previous_target" "$proxy_backup"
               proxy_existed=1
             fi
             restore_pre_maintenance_proxy() {
+              rm -f "$proxy_target"
               if [ "$proxy_existed" -eq 1 ]; then
-                cp "$proxy_backup" "$proxy_target"
-              else
-                rm -f "$proxy_target"
+                cp "$proxy_backup" "$proxy_previous_target"
               fi
               compose up -d nginx
               podman exec schoolorbit-nginx nginx -t
               podman exec schoolorbit-nginx nginx -s reload
             }
+            if [ "$proxy_previous_target" != "$proxy_target" ]; then
+              rm -f "$proxy_previous_target"
+            fi
             cp "$maintenance_proxy_source" "$proxy_target"
             if ! compose up -d nginx ||
               ! podman exec schoolorbit-nginx nginx -t ||

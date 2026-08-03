@@ -110,6 +110,7 @@ jobs:
             origin_root_installer="$deployment_root/install-origin-root"
             proxy_template="$deployment_root/nginx-configs/admin-api.conf.template"
             proxy_target=/opt/stack/nginx/conf.d/admin-api.conf
+            legacy_proxy_target=/opt/stack/nginx/conf.d/admin-api.${base_domain}.conf
             origin_root=/opt/stack/nginx/ssl/cloudflare-origin-rsa-root.pem
 
             test -f /opt/stack/.env || { echo "Backend runtime environment is missing"; exit 1; }
@@ -139,10 +140,17 @@ jobs:
               echo "Multiple active admin API proxy configs were found"
               exit 1
             fi
-            if [ "$proxy_match_count" -eq 1 ] && [ "$proxy_matches" != "$proxy_target" ]; then
+            if [ "$proxy_match_count" -eq 1 ] &&
+              [ "$proxy_matches" != "$proxy_target" ] &&
+              [ "$proxy_matches" != "$legacy_proxy_target" ]
+            then
               rm -f "$proxy_next"
               echo "Admin API proxy exists at an unexpected path: ${proxy_matches}"
               exit 1
+            fi
+            proxy_previous_target="$proxy_target"
+            if [ "$proxy_match_count" -eq 1 ]; then
+              proxy_previous_target="$proxy_matches"
             fi
 
             backend_image=ghcr.io/akephisit/schoolorbit-backend-admin
@@ -168,22 +176,24 @@ jobs:
 
             proxy_backup=""
             proxy_existed=0
-            if [ -f "$proxy_target" ]; then
+            if [ -f "$proxy_previous_target" ]; then
               proxy_backup="$(mktemp /opt/stack/nginx/conf.d/.admin-api.backup.XXXXXX)"
-              cp "$proxy_target" "$proxy_backup"
+              cp "$proxy_previous_target" "$proxy_backup"
               proxy_existed=1
             fi
             restore_proxy() {
+              rm -f "$proxy_target"
               if [ "$proxy_existed" -eq 1 ]; then
-                cp "$proxy_backup" "$proxy_target"
-              else
-                rm -f "$proxy_target"
+                cp "$proxy_backup" "$proxy_previous_target"
               fi
               podman-compose -f "$runtime_compose" up -d nginx
               podman exec schoolorbit-nginx nginx -t
               podman exec schoolorbit-nginx nginx -s reload
             }
 
+            if [ "$proxy_previous_target" != "$proxy_target" ]; then
+              rm -f "$proxy_previous_target"
+            fi
             mv "$proxy_next" "$proxy_target"
             if ! podman-compose -f "$runtime_compose" up -d nginx ||
               ! podman exec schoolorbit-nginx nginx -t ||
