@@ -122,7 +122,7 @@ jobs:
             install -m 0755 "$origin_root_installer_source" "$origin_root_installer"
             "$origin_root_installer" "$origin_root"
             cp "$runtime_source" "${runtime_compose}.next"
-            podman-compose -f "${runtime_compose}.next" config >/dev/null
+            podman-compose -f "${runtime_compose}.next" --dry-run up -d backend-admin >/dev/null
             mv "${runtime_compose}.next" "$runtime_compose"
 
             proxy_next="$(mktemp /opt/stack/nginx/conf.d/.admin-api.conf.XXXXXX)"

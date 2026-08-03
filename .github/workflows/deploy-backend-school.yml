@@ -129,7 +129,7 @@ jobs:
             install -m 0755 "$origin_root_installer_source" "$origin_root_installer"
             "$origin_root_installer" "$origin_root"
             cp "$runtime_source" "${runtime_compose}.next"
-            podman-compose -f "${runtime_compose}.next" config >/dev/null
+            podman-compose -f "${runtime_compose}.next" --dry-run up -d backend-school >/dev/null
             mv "${runtime_compose}.next" "$runtime_compose"
             "$renderer" "$proxy_template" "$proxy_source" "$base_domain"
             "$renderer" "$maintenance_proxy_template" "$maintenance_proxy_source" "$base_domain"
