@@ -294,7 +294,7 @@ shfmt -d -i 4 -ci scripts/schoolorbit-installer scripts/render_nginx_config.sh \
 bats scripts/tests/installer
 node --test frontend-school/tests/static/deployment-installer.test.mjs
 env $(grep -v '^#' scripts/tests/installer/fixtures/runtime.env | xargs) \
-  podman-compose -f podman-compose.yml config >/dev/null
+  podman-compose -f podman-compose.yml --dry-run up -d >/dev/null
 docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:1.7.7
 ```
 

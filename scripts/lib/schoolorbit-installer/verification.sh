@@ -80,7 +80,7 @@ _verify_remote_runtime() {
 set -euo pipefail
 export XDG_RUNTIME_DIR="/run/user/$(id -u)"
 cd /opt/stack
-podman-compose -f podman-compose.yml config >/dev/null
+podman-compose -f podman-compose.yml --dry-run up -d >/dev/null
 podman exec schoolorbit-nginx nginx -t
 deadline=$((SECONDS + 720))
 for container in schoolorbit-backend-admin schoolorbit-backend-school schoolorbit-clamd schoolorbit-nginx; do

@@ -63,7 +63,7 @@ jobs:
       - name: Resolve canonical production topology
         run: |
           # shellcheck disable=SC2046
-          env $(grep -v '^#' scripts/tests/installer/fixtures/runtime.env | xargs) podman-compose -f podman-compose.yml config >/dev/null
+          env $(grep -v '^#' scripts/tests/installer/fixtures/runtime.env | xargs) podman-compose -f podman-compose.yml --dry-run up -d >/dev/null
 
       - name: Lint GitHub Actions workflows
         run: docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:1.7.7

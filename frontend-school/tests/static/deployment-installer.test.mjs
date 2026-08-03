@@ -224,7 +224,7 @@ test('installer CI enforces shell provider topology and workflow guards', async 
 		'shfmt -d -i 4 -ci scripts/schoolorbit-installer',
 		'bats scripts/tests/installer',
 		'node --test frontend-school/tests/static/deployment-installer.test.mjs',
-		'podman-compose -f podman-compose.yml config',
+		'podman-compose -f podman-compose.yml --dry-run up -d',
 		'rhysd/actionlint:1.7.7'
 	]) {
 		assert.ok(workflow.includes(check), `installer workflow must run ${check}`);

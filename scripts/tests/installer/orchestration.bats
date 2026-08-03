@@ -161,7 +161,7 @@ install_orchestration_fakes() {
     grep -F -- '--resolve school-api.example.test:443:192.0.2.20' "$FAKE_COMMAND_LOG"
     grep -F -- '--cacert' "$FAKE_COMMAND_LOG"
     ! grep -Fq -- "$insecure_flag" "$FAKE_COMMAND_LOG"
-    grep -Fq 'podman-compose -f podman-compose.yml config' "$FAKE_COMMAND_LOG"
+    grep -Fq 'podman-compose -f podman-compose.yml --dry-run up -d' "$FAKE_COMMAND_LOG"
     grep -Fq 'podman exec schoolorbit-nginx nginx -t' "$FAKE_COMMAND_LOG"
 }
 

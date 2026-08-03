@@ -168,7 +168,7 @@ chmod 600 .env
 
 ```bash
 cd /opt/stack
-podman-compose -f podman-compose.yml config >/dev/null
+podman-compose -f podman-compose.yml --dry-run up -d >/dev/null
 ```
 
 ## 5. เตรียม Nginx, DNS และ TLS
@@ -210,7 +210,7 @@ Login GHCR ด้วย credential ที่อ่าน package ได้ แ�
 ```bash
 cd /opt/stack
 podman login ghcr.io
-podman-compose -f podman-compose.yml config >/dev/null
+podman-compose -f podman-compose.yml --dry-run up -d >/dev/null
 podman-compose -f podman-compose.yml pull
 podman-compose -f podman-compose.yml up -d
 podman ps
@@ -288,7 +288,7 @@ Workflow จะ pull image, recreate backend ที่เกี่ยวข้�
 ```bash
 cd /opt/stack
 git pull --ff-only
-podman-compose -f podman-compose.yml config >/dev/null
+podman-compose -f podman-compose.yml --dry-run up -d >/dev/null
 podman-compose -f podman-compose.yml pull
 podman-compose -f podman-compose.yml up -d
 ```
@@ -310,7 +310,7 @@ podman image inspect \
 
 ## 10. แก้ปัญหาเบื้องต้น
 
-- `podman-compose config` ล้มเหลว: ตรวจตัวแปรที่ขาดใน `.env` โดยไม่พิมพ์ค่า secret.
+- `podman-compose --dry-run up -d` ล้มเหลว: ตรวจตัวแปรที่ขาดใน `.env` โดยไม่พิมพ์ค่า secret.
 - backend-admin ไม่ ready: ตรวจ `DATABASE_URL`, Neon connectivity และ log 100 บรรทัดท้าย.
 - backend-school ไม่ ready: ตรวจ backend-admin readiness, `BACKEND_ADMIN_URL`, internal secret และ container network.
 - Nginx ได้ `502`: ตรวจว่า Nginx อยู่ network เดียวกับ backend และ `proxy_pass` ใช้ container name.
