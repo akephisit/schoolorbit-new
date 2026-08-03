@@ -33,3 +33,14 @@ jobs:
                 printf 'container=%s status=missing\n' "$container"
               fi
             done
+            podman port schoolorbit-nginx || true
+            podman exec schoolorbit-nginx nginx -t
+            for endpoint in \
+              http://127.0.0.1:8080/live \
+              http://127.0.0.1:8080/ready \
+              http://127.0.0.1:8081/ready \
+              http://127.0.0.1:80/
+            do
+              status="$(curl --silent --output /dev/null --write-out '%{http_code}' --max-time 5 "$endpoint" || true)"
+              printf 'endpoint=%s status=%s\n' "$endpoint" "$status"
+            done

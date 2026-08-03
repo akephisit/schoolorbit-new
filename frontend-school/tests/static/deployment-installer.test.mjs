@@ -185,8 +185,11 @@ test('runtime diagnostics expose container state without environment or applicat
 	assert.match(workflow, /State\.ExitCode/);
 	assert.match(workflow, /State\.OOMKilled/);
 	assert.match(workflow, /NetworkSettings\.Networks/);
+	assert.match(workflow, /podman port schoolorbit-nginx/);
+	assert.match(workflow, /podman exec schoolorbit-nginx nginx -t/);
 	assert.doesNotMatch(workflow, /Config\.Env/);
 	assert.doesNotMatch(workflow, /podman logs/);
+	assert.doesNotMatch(workflow, /curl[^\n]*-[^\n]*k/);
 });
 
 test('installer CI enforces shell provider topology and workflow guards', async () => {
