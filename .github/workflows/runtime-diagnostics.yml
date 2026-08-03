@@ -27,7 +27,7 @@ jobs:
             do
               if podman container exists "$container"; then
                 podman inspect --format \
-                  'container={{.Name}} status={{.State.Status}} running={{.State.Running}} exit={{.State.ExitCode}} oom={{.State.OOMKilled}} error={{.State.Error}} health={{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}} networks={{range $name, $_ := .NetworkSettings.Networks}}{{$name}};{{end}}' \
+                  'container={{.Name}} status={{.State.Status}} running={{.State.Running}} exit={{.State.ExitCode}} oom={{.State.OOMKilled}} error={{.State.Error}} health={{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}} networks={{range $name, $network := .NetworkSettings.Networks}}{{$name}} aliases={{json $network.Aliases}};{{end}}' \
                   "$container"
               else
                 printf 'container=%s status=missing\n' "$container"
@@ -35,9 +35,6 @@ jobs:
             done
             podman port schoolorbit-nginx || true
             podman exec schoolorbit-nginx nginx -t || true
-            podman network inspect --format \
-              'network={{.Name}} dns={{.DNSEnabled}} {{range .Containers}}container={{.Name}} aliases={{json .Aliases}};{{end}}' \
-              schoolorbit-web
             for endpoint in \
               http://127.0.0.1:8080/live \
               http://127.0.0.1:8080/ready \
