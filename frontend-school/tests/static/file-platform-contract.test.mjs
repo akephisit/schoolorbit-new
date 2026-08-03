@@ -91,6 +91,9 @@ test('backend deployment validates and installs the tracked school API proxy con
 	assert.match(workflow, /\.filePlatform == "ready"/);
 	assert.match(workflow, /\/internal\/migration-status/);
 	assert.match(workflow, /\.pending == 0 and \.failed == 0 and \.outdated == 0/);
+	assert.match(workflow, /runtime_env_value\(\)/);
+	assert.match(workflow, /Runtime environment value has invalid escaping/);
+	assert.doesNotMatch(workflow, /sed -n 's\/\^R2_[A-Z_]+=\/\/p'/);
 });
 
 test('typed file helper uses generated DTOs and file IDs as identity', async () => {
