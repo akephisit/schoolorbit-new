@@ -151,6 +151,23 @@ teardown() {
     [ "$(grep -Ec -- '--request PATCH .*dns_records/cockpit-record-old' "$FAKE_COMMAND_LOG")" -eq 1 ]
 }
 
+@test "new CNAME publication is recovered if the process stopped before journaling" {
+    cf_cockpit_preflight
+    cf_cockpit_snapshot
+    SO_CF_COCKPIT_TUNNEL_ID=11111111-1111-4111-8111-111111111111
+
+    local published="$TEST_ROOT/uncheckpointed-published-cockpit-dns.json"
+    jq --arg id cockpit-record-recovered --arg target '11111111-1111-4111-8111-111111111111.cfargotunnel.com' '
+      .result = [{id:$id,type:"CNAME",name:"server.schoolorbit.app",content:$target,ttl:1,proxied:true,comment:"SchoolOrbit Cockpit Cloudflare Tunnel",tags:["schoolorbit:management"],settings:{},modified_on:"2026-08-04T01:00:00Z"}]
+    ' "$FIXTURE_DIR/cloudflare-cockpit-dns-none.json" >"$published"
+    export CF_COCKPIT_DNS_FIXTURE=$published
+
+    cf_cockpit_publish
+
+    [ "$SO_CF_COCKPIT_RECORD_ID" = cockpit-record-recovered ]
+    ! grep -Eq -- '--request POST .*zones/zone-123/dns_records($| )' "$FAKE_COMMAND_LOG"
+}
+
 @test "new CNAME rollback deletes only the run-owned record and retains the Tunnel" {
     cf_cockpit_preflight
     cf_cockpit_snapshot

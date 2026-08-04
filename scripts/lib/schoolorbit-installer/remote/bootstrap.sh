@@ -61,6 +61,41 @@ ufw_has_rule() {
     LC_ALL=C ufw status | grep -Eq "^${port}/tcp[[:space:]]+${action}([[:space:]]|$)"
 }
 
+ufw_cockpit_allow_rule_numbers() {
+    LC_ALL=C ufw status numbered | awk '
+        /^\[[[:space:]]*[0-9]+\][[:space:]]+9090\/tcp([[:space:]]|\(v6\))/ &&
+        /[[:space:]]ALLOW([[:space:]]|$)/ {
+            line = $0
+            sub(/^\[[[:space:]]*/, "", line)
+            sub(/\].*$/, "", line)
+            gsub(/[[:space:]]/, "", line)
+            print line
+        }
+    ' | sort -rn
+}
+
+close_public_cockpit_firewall() {
+    local attempts=0 rule_number
+    while ((attempts < 32)) && ufw --force delete allow 9090/tcp >/dev/null 2>&1; do
+        ((attempts += 1))
+    done
+    ((attempts < 32)) || {
+        printf 'Too many public Cockpit firewall rules\n' >&2
+        return 78
+    }
+
+    if LC_ALL=C ufw status | grep -Fq 'Status: active'; then
+        while IFS= read -r rule_number; do
+            [[ $rule_number =~ ^[0-9]+$ ]] || continue
+            ufw --force delete "$rule_number" >/dev/null
+        done < <(ufw_cockpit_allow_rule_numbers)
+        if LC_ALL=C ufw status | grep -Eq '^9090/tcp([[:space:]]+\(v6\))?[[:space:]]+ALLOW([[:space:]]|$)'; then
+            printf 'Unable to close public Cockpit firewall access\n' >&2
+            return 78
+        fi
+    fi
+}
+
 schoolorbit_bootstrap_main() {
     local ssh_port=${1:?SSH port is required} server_user=${2:?server user is required}
     local package sysctl_file desired_sysctl temporary
@@ -119,9 +154,11 @@ schoolorbit_bootstrap_main() {
     ufw_has_rule 443 ALLOW || ufw allow 443/tcp
     ufw_has_rule 8080 DENY || ufw deny 8080/tcp
     ufw_has_rule 8081 DENY || ufw deny 8081/tcp
+    close_public_cockpit_firewall
     if LC_ALL=C ufw status | grep -Fq 'Status: inactive'; then
         ufw --force enable
     fi
+    close_public_cockpit_firewall
 }
 
 if [[ -z ${BASH_SOURCE[0]-} || ${BASH_SOURCE[0]} == "$0" ]]; then

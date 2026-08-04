@@ -231,14 +231,36 @@ _cf_cockpit_publish_body() {
     fi
 }
 
+_cf_cockpit_adopt_unjournaled_published_record() {
+    local current expected record_id
+    [[ $SO_CF_COCKPIT_RECORD_EXISTED == false && -z $SO_CF_COCKPIT_RECORD_ID ]] || return 1
+    [[ $SO_CF_COCKPIT_CURRENT_RECORD != null ]] || return 1
+    current=$(jq -c '{type,name,content,ttl,proxied,comment,tags,settings}' \
+        <<<"$SO_CF_COCKPIT_CURRENT_RECORD") || return 69
+    expected=$(_cf_cockpit_publish_body) || return 69
+    [[ $current == "$expected" ]] || return 1
+    record_id=$(jq -er '.id | strings | select(length > 0)' \
+        <<<"$SO_CF_COCKPIT_CURRENT_RECORD") || return 69
+    _cf_cockpit_valid_record_id "$record_id" || die 69 'Cloudflare returned an invalid Cockpit DNS record ID' || return
+    SO_CF_COCKPIT_RECORD_ID=$record_id
+}
+
 cf_cockpit_publish() {
-    local request response method path
+    local request response method path adoption_status
     _cf_cockpit_valid_uuid "$SO_CF_COCKPIT_TUNNEL_ID" || die 78 'Cockpit Tunnel is not provisioned' || return
     if _cf_cockpit_valid_record_id "$SO_CF_COCKPIT_RECORD_ID"; then
         _cf_cockpit_refresh_dns || return
         if _cf_cockpit_assert_published_record; then
             return 0
         fi
+    elif [[ $SO_CF_COCKPIT_RECORD_EXISTED == false ]]; then
+        _cf_cockpit_refresh_dns || return
+        if _cf_cockpit_adopt_unjournaled_published_record; then
+            return 0
+        else
+            adoption_status=$?
+        fi
+        ((adoption_status == 1)) || return "$adoption_status"
     fi
     cf_cockpit_assert_no_dns_drift || return
     request=$(_cf_temporary_file) || return

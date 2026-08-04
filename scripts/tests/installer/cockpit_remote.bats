@@ -98,3 +98,29 @@ run_remote_configure() {
     [[ "$output" == *$'cockpit\ncockpit-podman'* ]]
     ! grep -Eq 'ufw allow (9090|"?\$\{?COCKPIT)' "$BOOTSTRAP_SCRIPT"
 }
+
+@test "bootstrap removes a previous public Cockpit firewall allow" {
+    local firewall_state="$TEST_ROOT/ufw-9090-open"
+    touch "$firewall_state"
+    export FIREWALL_STATE=$firewall_state
+    make_fake_command ufw '
+printf "ufw %s\n" "$*" >>"$FAKE_COMMAND_LOG"
+if [ "$*" = "--force delete allow 9090/tcp" ]; then
+    if [ -f "$FIREWALL_STATE" ]; then
+        rm -f "$FIREWALL_STATE"
+        exit 0
+    fi
+    exit 1
+fi
+if [ "$*" = "status" ]; then
+    printf "%s\n" "Status: active"
+    [ ! -f "$FIREWALL_STATE" ] || printf "%s\n" "9090/tcp ALLOW Anywhere"
+fi
+'
+
+    run bash -c 'source "$1"; close_public_cockpit_firewall' _ "$BOOTSTRAP_SCRIPT"
+
+    [ "$status" -eq 0 ]
+    [ ! -e "$firewall_state" ]
+    grep -Fq 'ufw --force delete allow 9090/tcp' "$FAKE_COMMAND_LOG"
+}
