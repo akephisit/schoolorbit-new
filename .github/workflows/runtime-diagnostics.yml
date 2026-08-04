@@ -34,7 +34,27 @@ jobs:
               fi
             done
             podman port schoolorbit-nginx || true
+            podman inspect --format \
+              'nginx_restarts={{.RestartCount}} ports={{json .HostConfig.PortBindings}}' \
+              schoolorbit-nginx || true
             podman exec schoolorbit-nginx nginx -t || true
+            podman run --rm \
+              --network schoolorbit-web \
+              -v /opt/stack/nginx/conf.d:/etc/nginx/conf.d:ro \
+              -v /opt/stack/nginx/ssl:/etc/nginx/ssl:ro \
+              docker.io/library/nginx:stable-alpine nginx -t || true
+            database_url=""
+            if [ -r /opt/stack/.env ]; then
+              database_url="$(sed -n 's/^DATABASE_URL=//p' /opt/stack/.env | tail -n 1)"
+            fi
+            if [ -n "$database_url" ]; then
+              podman run --rm docker.io/library/postgres:17-alpine \
+                psql "$database_url" -X -A -t -v ON_ERROR_STOP=1 \
+                -c "SELECT pid, state, coalesce(wait_event_type, '-'), coalesce(wait_event, '-'), coalesce(extract(epoch from now() - xact_start)::bigint, 0) FROM pg_stat_activity WHERE datname = current_database() AND pid <> pg_backend_pid() ORDER BY pid;" || true
+            else
+              printf '%s\n' 'database_activity=status_unavailable reason=database_url_missing'
+            fi
+            unset database_url
             for endpoint in \
               http://127.0.0.1:8080/live \
               http://127.0.0.1:8080/ready \

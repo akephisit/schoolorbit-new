@@ -196,6 +196,12 @@ test('runtime diagnostics expose container state without environment or applicat
 	assert.match(workflow, /\.Aliases/);
 	assert.match(workflow, /podman port schoolorbit-nginx/);
 	assert.match(workflow, /podman exec schoolorbit-nginx nginx -t/);
+	assert.match(workflow, /nginx:stable-alpine nginx -t/);
+	assert.match(workflow, /pg_stat_activity/);
+	assert.match(workflow, /'nginx_restarts=[^']*'\s*\\\s*schoolorbit-nginx\s*\|\| true/);
+	assert.match(workflow, /if \[ -r \/opt\/stack\/\.env \]; then/);
+	assert.match(workflow, /if \[ -n "\$database_url" \]; then/);
+	assert.match(workflow, /database_activity=status_unavailable reason=database_url_missing/);
 	assert.doesNotMatch(workflow, /Config\.Env/);
 	assert.doesNotMatch(workflow, /podman logs/);
 	assert.doesNotMatch(workflow, /curl[^\n]*-[^\n]*k/);
