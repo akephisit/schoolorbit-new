@@ -17,6 +17,8 @@ source "$INSTALLER_LIBRARY/github.sh"
 # shellcheck disable=SC1091
 source "$INSTALLER_LIBRARY/cloudflare.sh"
 # shellcheck disable=SC1091
+source "$INSTALLER_LIBRARY/cloudflare_tunnel.sh"
+# shellcheck disable=SC1091
 source "$INSTALLER_LIBRARY/vps.sh"
 # shellcheck disable=SC1091
 source "$INSTALLER_LIBRARY/verification.sh"

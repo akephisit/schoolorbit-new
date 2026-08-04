@@ -1,0 +1,24 @@
+{
+  "success": true,
+  "errors": [],
+  "messages": [],
+  "result": [
+    {
+      "id": "cockpit-record-old",
+      "zone_id": "zone-123",
+      "type": "CNAME",
+      "name": "server.schoolorbit.app",
+      "content": "old-cockpit.cfargotunnel.com",
+      "ttl": 1,
+      "proxied": true,
+      "comment": "operator-managed",
+      "tags": ["schoolorbit:management"],
+      "settings": {},
+      "modified_on": "2026-08-03T10:00:00Z"
+    }
+  ],
+  "result_info": {
+    "count": 1,
+    "total_count": 1
+  }
+}

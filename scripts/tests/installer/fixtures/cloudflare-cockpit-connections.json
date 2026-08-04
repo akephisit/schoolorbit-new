@@ -1,0 +1,13 @@
+{
+  "success": true,
+  "errors": [],
+  "messages": [],
+  "result": [
+    {
+      "id": "connector-1",
+      "origin_ip": "192.0.2.20",
+      "is_pending_reconnect": false,
+      "opened_at": "2026-08-04T00:00:00Z"
+    }
+  ]
+}
