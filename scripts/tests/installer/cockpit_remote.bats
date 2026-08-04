@@ -106,11 +106,48 @@ run_remote_configure() {
     [ "$status" -eq 69 ]
 }
 
-@test "bootstrap package contract includes Cockpit Podman without opening 9090" {
+@test "bootstrap package contract includes sudo and Cockpit Podman without opening 9090" {
     run bash -c 'source "$1"; printf "%s\n" "${SCHOOLORBIT_BOOTSTRAP_PACKAGES[@]}"' _ "$BOOTSTRAP_SCRIPT"
     [ "$status" -eq 0 ]
+    [[ "$output" == *$'sudo\n'* ]]
     [[ "$output" == *$'cockpit\ncockpit-podman'* ]]
     ! grep -Eq 'ufw allow (9090|"?\$\{?COCKPIT)' "$BOOTSTRAP_SCRIPT"
+}
+
+@test "bootstrap grants the server user password-backed sudo access exactly once" {
+    local admin_group_state="$TEST_ROOT/admin-group-state"
+    export ADMIN_GROUP_STATE=$admin_group_state
+
+    make_fake_command id '
+case "$*" in
+    "-nG schoolorbit")
+        if [ -f "$ADMIN_GROUP_STATE" ]; then
+            printf "%s\n" "schoolorbit sudo"
+        else
+            printf "%s\n" "schoolorbit"
+        fi
+        ;;
+    *) exit 1 ;;
+esac
+'
+    make_fake_command getent '
+[ "$*" = "group sudo" ]
+printf "%s\n" "sudo:x:27:"
+'
+    make_fake_command usermod '
+[ "$*" = "--append --groups sudo schoolorbit" ]
+printf "usermod %s\n" "$*" >>"$FAKE_COMMAND_LOG"
+touch "$ADMIN_GROUP_STATE"
+'
+
+    run env PATH="$FAKE_BIN:$ORIGINAL_PATH" \
+        FAKE_COMMAND_LOG="$FAKE_COMMAND_LOG" ADMIN_GROUP_STATE="$ADMIN_GROUP_STATE" \
+        bash -c 'source "$1"; ensure_server_user_administrator schoolorbit; ensure_server_user_administrator schoolorbit' \
+        _ "$BOOTSTRAP_SCRIPT"
+
+    [ "$status" -eq 0 ]
+    [ -f "$admin_group_state" ]
+    [ "$(grep -c '^usermod --append --groups sudo schoolorbit$' "$FAKE_COMMAND_LOG")" -eq 1 ]
 }
 
 @test "bootstrap removes a previous public Cockpit firewall allow" {

@@ -161,7 +161,11 @@ Cockpit and cloudflared run as host systemd services; they are not Compose servi
 the application Nginx container. The host firewall must not allow inbound `9090/tcp`. Cockpit keeps
 `root` in `/etc/cockpit/disallowed-users`; log in at `https://server.schoolorbit.app` as
 `schoolorbit` so Cockpit Podman sees the same rootless containers as production. A root Cockpit
-session would use a different Podman namespace and is intentionally unsupported.
+session would use a different Podman namespace and is intentionally unsupported. Cockpit starts a
+new browser profile in Limited access mode by design. Select **Administrative access** and enter the
+same `schoolorbit` password when host administration is needed. The installer adds `schoolorbit` to
+the standard `sudo` group but does not create a `NOPASSWD` rule. After a group-membership repair,
+sign out of Cockpit and sign in again so the new login session receives the group.
 
 This deployment intentionally has no Cloudflare Access, OTP, or account-member gate. It is a
 public login and the login page is therefore publicly reachable. Use a unique strong password, retain SSH key access for recovery,

@@ -84,6 +84,8 @@ server_user=$1
 id "$server_user" >/dev/null
 test "$(dpkg-query -W -f='${db:Status-Abbrev}\n' cockpit cockpit-podman | grep -c '^ii ')" = 2
 cloudflared --version | grep -Fq '2026.7.3'
+id -nG "$server_user" | tr ' ' '\n' | grep -Fxq sudo
+sudo -l -U "$server_user" >/dev/null 2>&1
 REMOTE_SCRIPT
     )
     remote_command=$(_vps_remote_bash_command "$remote_script" "${SO_CONFIG[server_user]}") || return

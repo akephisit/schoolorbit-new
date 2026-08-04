@@ -109,7 +109,10 @@ podman-compose version
 อย่าเปิด Cockpit ด้วย IP ของเครื่อง ก่อน start socket ต้องติดตั้ง override ให้มีเพียง
 `ListenStream=127.0.0.1:9090` และให้ cloudflared ใช้ token file แบบ root mode `0600` ตาม tracked
 installer การเข้าใช้งานปกติคือ `https://server.schoolorbit.app` ด้วยบัญชี `schoolorbit` ซึ่งเป็น
-เจ้าของ rootless Podman; คง `root` ไว้ใน `/etc/cockpit/disallowed-users`.
+เจ้าของ rootless Podman; คง `root` ไว้ใน `/etc/cockpit/disallowed-users`. Installer เพิ่มบัญชีนี้ใน
+กลุ่ม `sudo` แต่ไม่สร้างกฎ `NOPASSWD`. Cockpit จะแสดง Limited access ใน browser profile ใหม่ตามปกติ;
+เมื่อต้องดูแล host ให้กด **Administrative access** แล้วใส่รหัส `schoolorbit` อีกครั้ง. หากเพิ่งแก้
+group membership ให้ sign out แล้ว sign in ใหม่ก่อนกดเพิ่มสิทธิ์.
 
 หน้า login นี้เป็น public login โดยตั้งใจและไม่ได้ใช้ Cloudflare Access จึงต้องใช้รหัสผ่านเฉพาะที่
 แข็งแรง อัปเดต Cockpit/cloudflared ตาม security releases และเก็บ SSH key ไว้สำหรับ recovery ห้าม

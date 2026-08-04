@@ -120,6 +120,8 @@ teardown() {
     grep -Fq 'cockpit cockpit-podman' "$FAKE_COMMAND_LOG"
     grep -Fq 'cloudflared --version' "$FAKE_COMMAND_LOG"
     grep -Fq '2026.7.3' "$FAKE_COMMAND_LOG"
+    grep -Fq 'id -nG' "$FAKE_COMMAND_LOG"
+    grep -Fq 'sudo -l -U' "$FAKE_COMMAND_LOG"
 }
 
 @test "Cockpit script and secrets use separate SSH stdin streams and a fresh verification session" {

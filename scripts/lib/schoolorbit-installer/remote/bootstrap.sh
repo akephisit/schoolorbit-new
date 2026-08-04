@@ -13,6 +13,7 @@ declare -ga SCHOOLORBIT_BOOTSTRAP_PACKAGES=(
     openssl
     gettext-base
     ca-certificates
+    sudo
     ufw
     cockpit
     cockpit-podman
@@ -88,6 +89,21 @@ close_public_cockpit_firewall() {
     fi
 }
 
+ensure_server_user_administrator() {
+    local server_user=${1:?Server user is required}
+    getent group sudo >/dev/null || {
+        printf 'The sudo administrator group is unavailable\n' >&2
+        return 78
+    }
+    if ! id -nG "$server_user" | tr ' ' '\n' | grep -Fxq sudo; then
+        usermod --append --groups sudo "$server_user"
+    fi
+    id -nG "$server_user" | tr ' ' '\n' | grep -Fxq sudo || {
+        printf 'Unable to grant the server user administrative access\n' >&2
+        return 78
+    }
+}
+
 schoolorbit_bootstrap_main() {
     local ssh_port=${1:?SSH port is required} server_user=${2:?server user is required}
     local package sysctl_file desired_sysctl temporary
@@ -120,6 +136,7 @@ schoolorbit_bootstrap_main() {
     if ! id "$server_user" >/dev/null 2>&1; then
         useradd --create-home --shell /bin/bash "$server_user"
     fi
+    ensure_server_user_administrator "$server_user"
     if [[ ! -e /var/lib/systemd/linger/$server_user ]]; then
         loginctl enable-linger "$server_user"
     fi
