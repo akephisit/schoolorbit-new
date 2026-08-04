@@ -95,7 +95,9 @@ _state_sanitize_details() {
             "cloudflare_zone_id", "cloudflare_account_id", "cloudflare_record_ids",
             "cloudflare_certificate_id", "certificate_expiry", "dns_snapshot",
             "dns_snapshot_etag", "original_ip", "target_ip", "deployment_gates",
-            "verification_codes", "completed_at"
+            "verification_codes", "completed_at", "management_hostname",
+            "management_dns_snapshot", "management_record_id",
+            "management_record_existed", "management_tunnel_id", "management_tunnel_name"
         )))
     ' <<<"$1"
 }

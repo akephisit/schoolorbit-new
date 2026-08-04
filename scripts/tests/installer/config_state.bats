@@ -59,6 +59,40 @@ teardown() {
     [ "$status" -eq 64 ]
 }
 
+@test "configure-cockpit accepts validated new and exclusive resume forms" {
+    parse_args configure-cockpit --repository owner/repo --target 192.0.2.20 \
+        --base-domain example.test --dry-run --secrets-stdin
+
+    [ "${SO_COMMAND}" = configure-cockpit ]
+    [ "${SO_CONFIG[repository]}" = owner/repo ]
+    [ "${SO_CONFIG[target]}" = 192.0.2.20 ]
+    [ "${SO_CONFIG[server_user]}" = schoolorbit ]
+    [ "${SO_DRY_RUN}" = true ]
+    [ "${SO_SECRETS_STDIN}" = true ]
+
+    parse_args configure-cockpit --resume cockpit-run-1
+    [ "${SO_COCKPIT_RESUME_RUN_ID}" = cockpit-run-1 ]
+
+    run parse_args configure-cockpit --resume cockpit-run-1 --dry-run
+    [ "$status" -eq 64 ]
+}
+
+@test "cockpit rollback accepts only a validated run ID" {
+    parse_args rollback-cockpit --run-id cockpit-run-2
+    [ "${SO_COCKPIT_ROLLBACK_RUN_ID}" = cockpit-run-2 ]
+
+    run parse_args rollback-cockpit --run-id cockpit-run-2 --target 192.0.2.20
+    [ "$status" -eq 64 ]
+}
+
+@test "cockpit commands reject command-line secrets without echoing values" {
+    run parse_args configure-cockpit --repository owner/repo --target 192.0.2.20 \
+        --server-password exposed-cockpit-password
+
+    [ "$status" -eq 64 ]
+    [[ "$output" != *exposed-cockpit-password* ]]
+}
+
 @test "loads secret and public runtime values from one stdin JSON object" {
     parse_args migrate-vps --repository owner/repo --target 192.0.2.20 --secrets-stdin
     load_inputs <"$BATS_TEST_DIRNAME/fixtures/secrets.json"
@@ -104,6 +138,28 @@ teardown() {
 
     [ "${SO_SECRETS[SCHOOLORBIT_CLOUDFLARE_BOOTSTRAP_TOKEN]}" = cf-bootstrap-7vK9nM3qR8wX2zLp6tY4 ]
     [ "${#SO_SECRETS[@]}" -eq 1 ]
+}
+
+@test "standalone cockpit loading requires only bootstrap token and a strong password" {
+    export SCHOOLORBIT_CLOUDFLARE_BOOTSTRAP_TOKEN=cf-bootstrap-7vK9nM3qR8wX2zLp6tY4
+    export SCHOOLORBIT_SERVER_PASSWORD=short
+
+    run load_cockpit_inputs </dev/null
+    [ "$status" -eq 64 ]
+
+    export SCHOOLORBIT_SERVER_PASSWORD='Strong-Cockpit-Password-2026'
+    load_cockpit_inputs </dev/null
+
+    [ "${SO_SECRETS[SCHOOLORBIT_CLOUDFLARE_BOOTSTRAP_TOKEN]}" = cf-bootstrap-7vK9nM3qR8wX2zLp6tY4 ]
+    [ "${SO_SECRETS[SCHOOLORBIT_SERVER_PASSWORD]}" = Strong-Cockpit-Password-2026 ]
+    [ "${#SO_SECRETS[@]}" -eq 2 ]
+}
+
+@test "full migration loads the cockpit password with its other secrets" {
+    parse_args migrate-vps --repository owner/repo --target 192.0.2.20 --secrets-stdin
+    load_inputs <"$BATS_TEST_DIRNAME/fixtures/secrets.json"
+
+    [ "${SO_SECRETS[SCHOOLORBIT_SERVER_PASSWORD]}" = Strong-Cockpit-Password-2026 ]
 }
 
 @test "rejects shared public and private buckets" {
@@ -181,6 +237,32 @@ teardown() {
     [ "$status" -eq 1 ]
 }
 
+@test "checkpoint retains sanitized cockpit management metadata" {
+    SO_CONFIG[repository]=owner/repo
+    SO_CONFIG[target]=192.0.2.20
+    SO_CONFIG[base_domain]=example.test
+    SO_CONFIG[ref]=main
+    SO_CONFIG[bootstrap_user]=root
+    SO_CONFIG[server_user]=schoolorbit
+    SO_CONFIG[ssh_port]=22
+    state_init cockpit-run-1
+
+    state_mark_phase management-snapshot '{
+      "status":"passed",
+      "management_hostname":"server.example.test",
+      "management_dns_snapshot":{"type":"CNAME","content":"old.cfargotunnel.com"},
+      "management_record_id":"record-1",
+      "management_record_existed":true,
+      "management_tunnel_id":"11111111-1111-4111-8111-111111111111",
+      "management_tunnel_name":"schoolorbit-cockpit-cockpit-run-1",
+      "tunnel_token":"must-not-be-checkpointed"
+    }'
+
+    [ "$(jq -r '.phases["management-snapshot"].management_hostname' "$SO_STATE_FILE")" = server.example.test ]
+    [ "$(jq -r '.phases["management-snapshot"].management_record_existed' "$SO_STATE_FILE")" = true ]
+    [ "$(jq -r '.phases["management-snapshot"].tunnel_token // "absent"' "$SO_STATE_FILE")" = absent ]
+}
+
 @test "resume loads a checkpoint and rejects a changed non-secret fingerprint" {
     SO_CONFIG[repository]=owner/repo
     SO_CONFIG[target]=192.0.2.20
@@ -205,5 +287,8 @@ teardown() {
     [ "$status" -eq 0 ]
     [[ "$output" == *'--secrets-stdin'* ]]
     [[ "$output" == *'environment variables'* ]]
+    [[ "$output" == *'configure-cockpit --repository OWNER/REPOSITORY --target IPV4'* ]]
+    [[ "$output" == *'configure-cockpit --resume RUN_ID'* ]]
+    [[ "$output" == *'rollback-cockpit --run-id RUN_ID'* ]]
     [[ "$output" != *'--internal-api-secret'* ]]
 }

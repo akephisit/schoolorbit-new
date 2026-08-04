@@ -29,8 +29,11 @@ Usage:
   scripts/schoolorbit-installer migrate-vps --repository OWNER/REPOSITORY --target IPV4 [options]
   scripts/schoolorbit-installer migrate-vps --resume RUN_ID
   scripts/schoolorbit-installer rollback-dns --run-id RUN_ID
+  scripts/schoolorbit-installer configure-cockpit --repository OWNER/REPOSITORY --target IPV4 [options]
+  scripts/schoolorbit-installer configure-cockpit --resume RUN_ID
+  scripts/schoolorbit-installer rollback-cockpit --run-id RUN_ID
 
-Options for a new migration:
+Options for a new migration or Cockpit setup:
   --base-domain DOMAIN       Default: schoolorbit.app
   --ref REF                  Default: main
   --bootstrap-user USER      Default: root

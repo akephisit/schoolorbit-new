@@ -6,6 +6,7 @@ declare -ga SO_REQUIRED_SECRETS=(
     SCHOOLORBIT_CLOUDFLARE_BOOTSTRAP_TOKEN
     SCHOOLORBIT_CLOUDFLARE_DEPLOY_TOKEN
     SCHOOLORBIT_CLOUDFLARE_RUNTIME_TOKEN
+    SCHOOLORBIT_SERVER_PASSWORD
     DATABASE_URL
     JWT_SECRET
     INTERNAL_API_SECRET
@@ -22,6 +23,10 @@ declare -ga SO_REQUIRED_SECRETS=(
     SMOKE_USERNAME
     SMOKE_PASSWORD
 )
+declare -ga SO_REQUIRED_COCKPIT_SECRETS=(
+    SCHOOLORBIT_CLOUDFLARE_BOOTSTRAP_TOKEN
+    SCHOOLORBIT_SERVER_PASSWORD
+)
 declare -ga SO_REQUIRED_RUNTIME_VALUES=(
     NEON_PROJECT_ID
     NEON_HOST
@@ -37,7 +42,10 @@ SO_DRY_RUN=false
 SO_SECRETS_STDIN=false
 SO_RESUME_RUN_ID=
 SO_ROLLBACK_RUN_ID=
+SO_COCKPIT_RESUME_RUN_ID=
+SO_COCKPIT_ROLLBACK_RUN_ID=
 
+# shellcheck disable=SC2034 # Resume IDs are consumed by the orchestration module after parsing.
 _config_reset() {
     SO_CONFIG=()
     SO_SECRETS=()
@@ -46,6 +54,8 @@ _config_reset() {
     SO_SECRETS_STDIN=false
     SO_RESUME_RUN_ID=
     SO_ROLLBACK_RUN_ID=
+    SO_COCKPIT_RESUME_RUN_ID=
+    SO_COCKPIT_ROLLBACK_RUN_ID=
 }
 
 _valid_domain() {
@@ -93,8 +103,14 @@ parse_args() {
         migrate-vps)
             _parse_migrate_args "$@" || return
             ;;
+        configure-cockpit)
+            _parse_cockpit_args "$@" || return
+            ;;
         rollback-dns)
             _parse_rollback_args "$@" || return
+            ;;
+        rollback-cockpit)
+            _parse_cockpit_rollback_args "$@" || return
             ;;
         *)
             die 64 'Unsupported installer command'
@@ -104,6 +120,18 @@ parse_args() {
 }
 
 _parse_migrate_args() {
+    _parse_connection_args SO_RESUME_RUN_ID migrate-vps "$@"
+}
+
+_parse_cockpit_args() {
+    _parse_connection_args SO_COCKPIT_RESUME_RUN_ID configure-cockpit "$@"
+}
+
+_parse_connection_args() {
+    local resume_variable=$1 command=$2
+    local -n resume_run_id=$resume_variable
+    shift 2
+
     SO_CONFIG[base_domain]=schoolorbit.app
     SO_CONFIG[ref]=main
     SO_CONFIG[bootstrap_user]=root
@@ -125,7 +153,7 @@ _parse_migrate_args() {
             --resume)
                 shift
                 _parse_value_option --resume "$@" || return
-                SO_RESUME_RUN_ID=$1
+                resume_run_id=$1
                 shift
                 ;;
             --dry-run)
@@ -141,14 +169,14 @@ _parse_migrate_args() {
                 return
                 ;;
             *)
-                die 64 'Unsupported migrate-vps option'
+                die 64 "Unsupported $command option"
                 return
                 ;;
         esac
     done
 
-    if [[ -n $SO_RESUME_RUN_ID ]]; then
-        _valid_run_id "$SO_RESUME_RUN_ID" || die 64 'Invalid resume run ID' || return
+    if [[ -n $resume_run_id ]]; then
+        _valid_run_id "$resume_run_id" || die 64 'Invalid resume run ID' || return
         ((${#SO_CONFIG[@]} == 5)) || die 64 'Resume accepts only --resume RUN_ID' || return
         [[ $SO_DRY_RUN == false && $SO_SECRETS_STDIN == false ]] || die 64 'Resume accepts only --resume RUN_ID' || return
         return 0
@@ -167,23 +195,35 @@ _parse_migrate_args() {
 }
 
 _parse_rollback_args() {
+    _parse_run_id_only_args SO_ROLLBACK_RUN_ID rollback-dns "$@"
+}
+
+_parse_cockpit_rollback_args() {
+    _parse_run_id_only_args SO_COCKPIT_ROLLBACK_RUN_ID rollback-cockpit "$@"
+}
+
+_parse_run_id_only_args() {
+    local run_id_variable=$1 command=$2
+    local -n rollback_run_id=$run_id_variable
+    shift 2
+
     while (($# > 0)); do
         case "$1" in
             --run-id)
                 shift
                 _parse_value_option --run-id "$@" || return
-                SO_ROLLBACK_RUN_ID=$1
+                rollback_run_id=$1
                 shift
                 ;;
             *)
-                die 64 'rollback-dns accepts only --run-id RUN_ID'
+                die 64 "$command accepts only --run-id RUN_ID"
                 return
                 ;;
         esac
     done
 
-    [[ -n $SO_ROLLBACK_RUN_ID ]] || die 64 'Rollback run ID is required' || return
-    _valid_run_id "$SO_ROLLBACK_RUN_ID" || die 64 'Invalid rollback run ID'
+    [[ -n $rollback_run_id ]] || die 64 'Rollback run ID is required' || return
+    _valid_run_id "$rollback_run_id" || die 64 'Invalid rollback run ID'
 }
 
 _contains_unsafe_input() {
@@ -209,6 +249,9 @@ _validate_secret() {
             ;;
         NEON_DB_PASSWORD)
             minimum=12
+            ;;
+        SCHOOLORBIT_SERVER_PASSWORD)
+            minimum=16
             ;;
         SMOKE_PASSWORD)
             minimum=1
@@ -265,15 +308,21 @@ _read_prompted_value() {
     printf '%s' "$value"
 }
 
-load_inputs() {
-    local input_json='' name value
+_read_input_json() {
+    local input_json=''
     if [[ $SO_SECRETS_STDIN == true ]]; then
         input_json=$(cat)
         jq -e 'type == "object"' <<<"$input_json" >/dev/null 2>&1 || die 64 'Secret input must be one JSON object' || return
     fi
+    printf '%s' "$input_json"
+}
 
-    for name in "${SO_REQUIRED_SECRETS[@]}"; do
+_load_named_secrets() {
+    local input_json=$1 name value
+    shift
+    for name in "$@"; do
         value=${!name-}
+        [[ -n $value ]] || value=${SO_SECRETS[$name]-}
         if [[ -z $value && $SO_SECRETS_STDIN == true ]]; then
             value=$(jq -er --arg name "$name" '.[$name] | strings | select(length > 0)' <<<"$input_json" 2>/dev/null) || die 64 "Missing required input: $name" || return
         elif [[ -z $value ]]; then
@@ -283,6 +332,12 @@ load_inputs() {
         # shellcheck disable=SC2034 # Consumed by later installer modules and redaction.
         SO_SECRETS["$name"]=$value
     done
+}
+
+load_inputs() {
+    local input_json name value
+    input_json=$(_read_input_json) || return
+    _load_named_secrets "$input_json" "${SO_REQUIRED_SECRETS[@]}" || return
 
     for name in "${SO_REQUIRED_RUNTIME_VALUES[@]}"; do
         value=${!name-}
@@ -299,6 +354,12 @@ load_inputs() {
     if [[ ${SO_CONFIG["runtime:R2_PUBLIC_BUCKET_NAME"]} == "${SO_CONFIG["runtime:R2_PRIVATE_BUCKET_NAME"]}" ]]; then
         die 64 'Public and private R2 buckets must be different'
     fi
+}
+
+load_cockpit_inputs() {
+    local input_json
+    input_json=$(_read_input_json) || return
+    _load_named_secrets "$input_json" "${SO_REQUIRED_COCKPIT_SECRETS[@]}"
 }
 
 load_cloudflare_bootstrap_token() {
