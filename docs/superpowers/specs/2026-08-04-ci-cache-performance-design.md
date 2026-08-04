@@ -2,8 +2,7 @@
 
 ## Status
 
-Draft for final review on 2026-08-04. The design outline and warm-run targets have been
-approved.
+Approved on 2026-08-04.
 
 ## Problem
 
