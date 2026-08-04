@@ -47,8 +47,9 @@ Cloudflare Tunnel hides the origin port and carries requests over outbound conne
 does not make the published hostname private. Anyone can reach the Cockpit login page. The
 operator must therefore use a unique, strong `schoolorbit` password. The installer accepts that
 password only from an environment variable, hidden prompt, or the existing `--secrets-stdin`
-object, validates it, streams it to the privileged bootstrap script, and never writes it to the
-checkpoint or GitHub.
+object, requires at least 10 characters, streams it to the privileged bootstrap script, and never
+writes it to the checkpoint or GitHub. Ten characters is the operator-approved compatibility
+floor; uniqueness and greater length remain recommended because this login page is public.
 
 Cockpit keeps `root` in `/etc/cockpit/disallowed-users`. This is both a security boundary and a
 runtime ownership boundary: a root Cockpit session would inspect root's Podman namespace rather
@@ -153,6 +154,8 @@ Tests cover:
   drift rejection, and confirmed rollback;
 - absence of Tunnel tokens and the `schoolorbit` password from logs, command arguments, state,
   and runtime application environment;
+- consistent password validation at both installer and remote boundaries, rejecting 9 characters
+  and accepting 10 or more;
 - Debian and Ubuntu package/bootstrap idempotency;
 - loopback-only Cockpit socket configuration, proxy origin/header configuration, root-login
   prohibition, and service enablement;
