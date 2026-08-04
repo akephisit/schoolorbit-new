@@ -176,6 +176,66 @@ test('backend image workflows use distinct BuildKit cache scopes', async () => {
 	}
 });
 
+test('contract workflows share a main-writable Rust dependency cache without removing gates', async () => {
+	const requiredCommands = new Map([
+		[
+			'.github/workflows/api-contract.yml',
+			[
+				'npm run test:api-contracts',
+				'npm run check:api-contracts',
+				'cargo fmt --all -- --check',
+				'cargo test api_contract::tests --bin backend-school',
+				'env -i PATH="$PATH" HOME="$HOME" cargo run --quiet --bin backend-school -- export-openapi',
+				'cargo test structured_logging --test static_architecture',
+				'cargo check --bin backend-school',
+				'node --test tests/static/api-response-contract.test.mjs',
+				'npm run check'
+			]
+		],
+		[
+			'.github/workflows/permission-contract.yml',
+			[
+				'node scripts/generate-permissions.mjs --check',
+				'node --test scripts/tests/generate-permissions.test.mjs',
+				'cargo fmt --all -- --check',
+				'cargo check --bin backend-school',
+				'cargo test --test static_architecture',
+				'npm run test:static',
+				'npm run check'
+			]
+		]
+	]);
+
+	for (const [file, commands] of requiredCommands) {
+		const workflow = await readRepo(file);
+		const setupRustIndex = workflow.indexOf('- name: Setup Rust');
+		const rustCacheIndex = workflow.indexOf('- name: Restore Rust dependency cache');
+		const firstCargoCommandIndex = workflow.indexOf('cargo ');
+
+		assert.ok(setupRustIndex >= 0 && setupRustIndex < rustCacheIndex);
+		assert.ok(rustCacheIndex >= 0 && rustCacheIndex < firstCargoCommandIndex);
+		assert.match(
+			workflow,
+			/uses: Swatinem\/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32/
+		);
+		assert.match(workflow, /id: rust_cache/);
+		assert.match(workflow, /shared-key: backend-school-contracts/);
+		assert.match(workflow, /workspaces: backend-school -> target/);
+		assert.match(workflow, /save-if: \$\{\{ github\.ref == 'refs\/heads\/main' \}\}/);
+		assert.match(workflow, /steps\.rust_cache\.outputs\.cache-hit/);
+		assert.match(workflow, />> "\$GITHUB_STEP_SUMMARY"/);
+		assert.match(workflow, /cache: npm/);
+		assert.match(workflow, /cache-dependency-path: frontend-school\/package-lock\.json/);
+		for (const command of commands) {
+			assert.ok(workflow.includes(command), `${file} must retain ${command}`);
+		}
+	}
+
+	const rules = await readRepo('.rules');
+	assert.match(rules, /distinct GHA BuildKit cache scopes/);
+	assert.match(rules, /Only trusted `main` runs may save the shared Rust dependency cache/);
+});
+
 test('frontend deployments keep environment values out of committed Worker configuration', async () => {
 	const wrangler = JSON.parse(await readRepo('frontend-admin/wrangler.json'));
 	assert.equal(wrangler.account_id, undefined);

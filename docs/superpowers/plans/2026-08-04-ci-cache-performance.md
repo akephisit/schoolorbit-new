@@ -266,11 +266,13 @@ In `.github/workflows/api-contract.yml`, immediately after `Setup Rust` and befo
 
       - name: Summarize Rust cache
         if: always()
+        env:
+          RUST_CACHE_HIT: ${{ steps.rust_cache.outputs.cache-hit }}
         run: |
           printf '%s\n' \
             '### Rust build cache' \
-            '- Shared key: `backend-school-contracts`' \
-            '- Exact cache hit: `${{ steps.rust_cache.outputs.cache-hit }}`' \
+            '- Shared key: backend-school-contracts' \
+            "- Exact cache hit: ${RUST_CACHE_HIT:-false}" \
             >> "$GITHUB_STEP_SUMMARY"
 ```
 
@@ -291,11 +293,13 @@ In `.github/workflows/permission-contract.yml`, immediately after `Setup Rust` a
 
       - name: Summarize Rust cache
         if: always()
+        env:
+          RUST_CACHE_HIT: ${{ steps.rust_cache.outputs.cache-hit }}
         run: |
           printf '%s\n' \
             '### Rust build cache' \
-            '- Shared key: `backend-school-contracts`' \
-            '- Exact cache hit: `${{ steps.rust_cache.outputs.cache-hit }}`' \
+            '- Shared key: backend-school-contracts' \
+            "- Exact cache hit: ${RUST_CACHE_HIT:-false}" \
             >> "$GITHUB_STEP_SUMMARY"
 ```
 
@@ -306,13 +310,13 @@ Keep generated permission checks, generator tests, backend formatting/check/arch
 Add this bullet to `.rules` under `## 10. Deployment Constraints`, immediately after the canonical production Compose ownership bullet:
 
 ```markdown
-- Backend image workflows use distinct GHA BuildKit cache scopes. API and permission contract workflows share only the dependency-oriented backend-school Rust cache; pull requests are restore-only, and only trusted `main` runs may save the shared Rust dependency cache. A cache miss must run every existing build, contract, test, migration, readiness, and deployment gate.
+- Backend image workflows use distinct GHA BuildKit cache scopes. API and permission contract workflows share only the dependency-oriented backend-school Rust cache; pull requests are restore-only. Only trusted `main` runs may save the shared Rust dependency cache. A cache miss must run every existing build, contract, test, migration, readiness, and deployment gate.
 ```
 
 Add this paragraph after the deployment static guard description in `docs/TESTING.md`:
 
 ```markdown
-The guard also owns CI cache policy: backend-admin and backend-school use distinct BuildKit scopes, while API and permission contract jobs share a dependency-oriented backend-school Rust cache that only trusted `main` runs may save. Pull requests are restore-only, and a cache miss must execute the complete workflow rather than bypassing a gate.
+The guard also owns CI cache policy: backend-admin and backend-school use distinct BuildKit scopes, while API and permission contract jobs share a dependency-oriented backend-school Rust cache. Pull requests are restore-only, and only trusted `main` runs may save it. A cache miss must execute the complete workflow rather than bypassing a gate.
 ```
 
 - [ ] **Step 6: Run the focused test and verify GREEN**

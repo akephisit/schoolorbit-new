@@ -69,6 +69,25 @@ jobs:
         with:
           components: rustfmt
 
+      - name: Restore Rust dependency cache
+        id: rust_cache
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32
+        with:
+          shared-key: backend-school-contracts
+          workspaces: backend-school -> target
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Summarize Rust cache
+        if: always()
+        env:
+          RUST_CACHE_HIT: ${{ steps.rust_cache.outputs.cache-hit }}
+        run: |
+          printf '%s\n' \
+            '### Rust build cache' \
+            '- Shared key: backend-school-contracts' \
+            "- Exact cache hit: ${RUST_CACHE_HIT:-false}" \
+            >> "$GITHUB_STEP_SUMMARY"
+
       - name: Install frontend dependencies
         working-directory: frontend-school
         run: npm ci
