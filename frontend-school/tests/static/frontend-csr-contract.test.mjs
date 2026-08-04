@@ -39,6 +39,25 @@ test('protected app layout sends logged-out sessions to login instead of forbidd
 	);
 });
 
+test('protected routes expose one shared authentication checking boundary', async () => {
+	const appLayout = await readProjectFile('src/routes/(app)/+layout.svelte');
+	const loginPage = await readProjectFile('src/routes/login/+page.svelte');
+
+	assert.match(appLayout, /<AuthCheckingState\b/);
+	assert.match(loginPage, /<AuthCheckingState\b/);
+
+	for (const portal of ['staff', 'student', 'parent']) {
+		const portalLayout = await readProjectFile(`src/routes/(app)/${portal}/+layout.svelte`);
+		assert.doesNotMatch(portalLayout, /\bauthStore\b/, `${portal} must not recheck auth state`);
+		assert.doesNotMatch(portalLayout, /\bgoto\b/, `${portal} must not own auth redirects`);
+		assert.doesNotMatch(
+			portalLayout,
+			/กำลังตรวจสอบ|fixed inset-0/,
+			`${portal} must not render another full-screen checking state`
+		);
+	}
+});
+
 test('svelte DOM bind:this refs use stateful variables when reassigned', async () => {
 	const studentIdsPage = await readProjectFile(
 		'src/routes/(app)/staff/academic/admission/[id]/student-ids/+page.svelte'

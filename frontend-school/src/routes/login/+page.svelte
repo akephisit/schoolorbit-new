@@ -3,6 +3,7 @@
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import { Checkbox } from '$lib/components/ui/checkbox';
+	import { AuthCheckingState } from '$lib/components/app-state';
 	import { GraduationCap, ArrowLeft } from 'lucide-svelte';
 	import { authAPI } from '$lib/api/auth';
 	import { goto } from '$app/navigation';
@@ -22,7 +23,13 @@
 	// Check if user is already authenticated
 	onMount(async () => {
 		// Get redirect URL from sessionStorage (set by route guards)
-		redirectUrl = sessionStorage.getItem('redirectAfterLogin');
+		const storedRedirectUrl = sessionStorage.getItem('redirectAfterLogin');
+		redirectUrl =
+			storedRedirectUrl?.startsWith('/') &&
+			!storedRedirectUrl.startsWith('//') &&
+			storedRedirectUrl[1] !== '\\'
+				? storedRedirectUrl
+				: null;
 
 		// Check if we just logged out using a simple flag (optional, but good for UX to skip check)
 		// Or we can just let it fail quietly. But strictly speaking, if we just came here,
@@ -45,7 +52,8 @@
 
 			if (redirectUrl) {
 				sessionStorage.removeItem('redirectAfterLogin');
-				await goto(redirectUrl, { replaceState: true });
+				window.location.replace(redirectUrl);
+				return;
 			} else if (user?.user_type === 'parent') {
 				await goto(resolve('/parent'), { replaceState: true });
 			} else if (user?.user_type === 'student') {
@@ -86,7 +94,8 @@
 
 			// Redirect to intended URL or default dashboard
 			if (redirectUrl) {
-				await goto(redirectUrl, { invalidateAll: true });
+				window.location.assign(redirectUrl);
+				return;
 			} else if (user.user_type === 'parent') {
 				await goto(resolve('/parent'), { invalidateAll: true });
 			} else if (user.user_type === 'student') {
@@ -112,18 +121,10 @@
 	<title>เข้าสู่ระบบ - SchoolOrbit</title>
 </svelte:head>
 
-<div class="min-h-screen bg-background flex items-center justify-center p-4">
-	{#if isCheckingAuth}
-		<!-- Loading state while checking auth -->
-		<div class="text-center">
-			<div
-				class="w-16 h-16 bg-primary rounded-lg flex items-center justify-center mx-auto mb-4 animate-pulse"
-			>
-				<GraduationCap class="w-8 h-8 text-primary-foreground" />
-			</div>
-			<p class="text-muted-foreground">กำลังตรวจสอบ...</p>
-		</div>
-	{:else}
+{#if isCheckingAuth}
+	<AuthCheckingState message="กำลังตรวจสอบสิทธิ์..." />
+{:else}
+	<div class="min-h-screen bg-background flex items-center justify-center p-4">
 		<div class="w-full max-w-md">
 			<!-- Back Button -->
 			<Button variant="ghost" onclick={goBack} class="mb-6">
@@ -202,5 +203,5 @@
 				</div>
 			</div>
 		</div>
-	{/if}
-</div>
+	</div>
+{/if}

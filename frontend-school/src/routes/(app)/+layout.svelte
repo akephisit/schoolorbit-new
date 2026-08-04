@@ -9,6 +9,7 @@
 	import { userCanAccessRoute } from '$lib/auth/route-access';
 	import { authStore } from '$lib/stores/auth';
 	import { userPermissions } from '$lib/stores/permissions';
+	import { AuthCheckingState } from '$lib/components/app-state';
 
 	import { uiPreferences } from '$lib/stores/ui-preferences';
 	import { notificationStore } from '$lib/stores/notification';
@@ -109,10 +110,7 @@
 		</div>
 	</div>
 {:else}
-	<div class="h-screen bg-background flex items-center justify-center" aria-live="polite">
-		<div class="flex flex-col items-center gap-4 text-muted-foreground">
-			<div class="h-10 w-10 rounded-full border-2 border-muted border-t-primary animate-spin"></div>
-			<p>{authStatus === 'redirecting' ? 'กำลังเปลี่ยนหน้า...' : 'กำลังตรวจสอบสิทธิ์...'}</p>
-		</div>
-	</div>
+	<AuthCheckingState
+		message={authStatus === 'redirecting' ? 'กำลังเปลี่ยนหน้า...' : 'กำลังตรวจสอบสิทธิ์...'}
+	/>
 {/if}
