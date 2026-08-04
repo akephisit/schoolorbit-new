@@ -234,6 +234,12 @@ _cf_cockpit_publish_body() {
 cf_cockpit_publish() {
     local request response method path
     _cf_cockpit_valid_uuid "$SO_CF_COCKPIT_TUNNEL_ID" || die 78 'Cockpit Tunnel is not provisioned' || return
+    if _cf_cockpit_valid_record_id "$SO_CF_COCKPIT_RECORD_ID"; then
+        _cf_cockpit_refresh_dns || return
+        if _cf_cockpit_assert_published_record; then
+            return 0
+        fi
+    fi
     cf_cockpit_assert_no_dns_drift || return
     request=$(_cf_temporary_file) || return
     response=$(_cf_temporary_file) || {
@@ -294,6 +300,14 @@ _cf_cockpit_assert_published_record() {
     [[ $current == "$expected" ]]
 }
 
+cf_cockpit_assert_published_state() {
+    [[ $SO_CF_COCKPIT_SNAPSHOT_READY == true ]] || die 78 'Cockpit DNS snapshot is missing' || return
+    _cf_cockpit_valid_uuid "$SO_CF_COCKPIT_TUNNEL_ID" || die 78 'Cockpit Tunnel is not provisioned' || return
+    _cf_cockpit_valid_record_id "$SO_CF_COCKPIT_RECORD_ID" || die 78 'Cockpit DNS record ID is invalid' || return
+    _cf_cockpit_refresh_dns || return
+    _cf_cockpit_assert_published_record || die 78 'Cockpit DNS no longer matches this run'
+}
+
 cf_cockpit_restore_dns() {
     local response request=
     [[ $SO_CF_COCKPIT_SNAPSHOT_READY == true ]] || die 78 'Cockpit DNS snapshot is missing' || return
@@ -325,8 +339,10 @@ cf_cockpit_restore_checkpoint() {
     local expected_hostname="server.${SO_CONFIG[base_domain]}"
     [[ $hostname == "$expected_hostname" ]] || die 78 'Checkpoint Cockpit hostname is invalid' || return
     [[ $record_existed == true || $record_existed == false ]] || die 78 'Checkpoint Cockpit record ownership is invalid' || return
-    _cf_cockpit_valid_uuid "$tunnel_id" || die 78 'Checkpoint Cockpit Tunnel ID is invalid' || return
-    [[ $tunnel_name == "schoolorbit-cockpit-${SO_RUN_ID}" ]] || die 78 'Checkpoint Cockpit Tunnel name is invalid' || return
+    if [[ -n $tunnel_id || -n $tunnel_name ]]; then
+        _cf_cockpit_valid_uuid "$tunnel_id" || die 78 'Checkpoint Cockpit Tunnel ID is invalid' || return
+        [[ $tunnel_name == "schoolorbit-cockpit-${SO_RUN_ID}" ]] || die 78 'Checkpoint Cockpit Tunnel name is invalid' || return
+    fi
 
     if [[ $record_existed == true ]]; then
         _cf_cockpit_valid_record_id "$record_id" || die 78 'Checkpoint Cockpit record ID is invalid' || return

@@ -3,6 +3,7 @@
 SCHOOLORBIT_STATE_HOME=${SCHOOLORBIT_STATE_HOME:-"$HOME/.local/state/schoolorbit-installer"}
 SO_RUN_ID=
 SO_STATE_FILE=
+SO_STATE_OPERATION=
 
 _state_fingerprint_input() {
     local key
@@ -34,7 +35,7 @@ _state_runtime_json() {
 }
 
 state_init() {
-    local run_id=$1 now runtime fingerprint run_directory temporary
+    local run_id=$1 now runtime fingerprint run_directory temporary operation
     _valid_run_id "$run_id" || die 64 'Invalid state run ID' || return
     umask 077
     mkdir -p "$SCHOOLORBIT_STATE_HOME/runs"
@@ -50,9 +51,12 @@ state_init() {
     now=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
     runtime=$(_state_runtime_json)
     fingerprint=$(state_fingerprint)
+    operation=${SO_COMMAND:-migrate-vps}
+    [[ $operation == migrate-vps || $operation == configure-cockpit ]] || die 64 'Invalid installer checkpoint operation' || return
     temporary=$(mktemp "$run_directory/state.json.XXXXXX")
     jq -n \
         --arg run_id "$run_id" \
+        --arg operation "$operation" \
         --arg created_at "$now" \
         --arg repository "${SO_CONFIG[repository]-}" \
         --arg target "${SO_CONFIG[target]-}" \
@@ -63,7 +67,7 @@ state_init() {
         --arg ssh_port "${SO_CONFIG[ssh_port]-22}" \
         --arg fingerprint "$fingerprint" \
         --argjson runtime "$runtime" \
-        '{schema_version:1,run_id:$run_id,created_at:$created_at,updated_at:$created_at,configuration:{repository:$repository,target:$target,base_domain:$base_domain,ref:$ref,bootstrap_user:$bootstrap_user,server_user:$server_user,ssh_port:$ssh_port,runtime:$runtime},configuration_fingerprint:$fingerprint,phases:{}}' \
+        '{schema_version:1,run_id:$run_id,operation:$operation,created_at:$created_at,updated_at:$created_at,configuration:{repository:$repository,target:$target,base_domain:$base_domain,ref:$ref,bootstrap_user:$bootstrap_user,server_user:$server_user,ssh_port:$ssh_port,runtime:$runtime},configuration_fingerprint:$fingerprint,phases:{}}' \
         >"$temporary"
     chmod 0600 "$temporary"
     mv "$temporary" "$SO_STATE_FILE"
@@ -77,6 +81,7 @@ state_load() {
     SO_STATE_FILE="$SCHOOLORBIT_STATE_HOME/runs/$run_id/state.json"
     [[ -f $SO_STATE_FILE ]] || die 78 'Installer checkpoint was not found' || return
     jq -e '.schema_version == 1 and (.configuration | type == "object") and (.phases | type == "object")' "$SO_STATE_FILE" >/dev/null || die 78 'Installer checkpoint is invalid' || return
+    SO_STATE_OPERATION=$(jq -er '.operation // "migrate-vps" | select(. == "migrate-vps" or . == "configure-cockpit")' "$SO_STATE_FILE") || die 78 'Installer checkpoint operation is invalid' || return
 
     for key in repository target base_domain ref bootstrap_user server_user ssh_port; do
         value=$(jq -er --arg key "$key" '.configuration[$key] | strings' "$SO_STATE_FILE") || die 78 'Installer checkpoint configuration is incomplete' || return
@@ -85,6 +90,14 @@ state_load() {
     while IFS=$'\t' read -r key value; do
         SO_CONFIG["runtime:$key"]=$value
     done < <(jq -r '.configuration.runtime // {} | to_entries[] | [.key, .value] | @tsv' "$SO_STATE_FILE")
+}
+
+state_assert_operation() {
+    local allowed
+    for allowed in "$@"; do
+        [[ $SO_STATE_OPERATION == "$allowed" ]] && return 0
+    done
+    die 78 'Installer checkpoint belongs to a different operation'
 }
 
 _state_sanitize_details() {

@@ -134,6 +134,23 @@ teardown() {
     ! grep -Eq 'PATCH .*/dns_records/|POST .*/dns_records($| )' "$FAKE_COMMAND_LOG"
 }
 
+@test "management publication is idempotent after a journaled cutover" {
+    export CF_COCKPIT_DNS_FIXTURE="$FIXTURE_DIR/cloudflare-cockpit-dns-existing.json"
+    cf_cockpit_preflight
+    cf_cockpit_snapshot
+    SO_CF_COCKPIT_TUNNEL_ID=11111111-1111-4111-8111-111111111111
+    cf_cockpit_publish
+
+    local published="$TEST_ROOT/idempotent-published-cockpit-dns.json"
+    jq '(.result[0].content) = "11111111-1111-4111-8111-111111111111.cfargotunnel.com"' \
+        "$FIXTURE_DIR/cloudflare-cockpit-dns-existing.json" >"$published"
+    export CF_COCKPIT_DNS_FIXTURE=$published
+
+    cf_cockpit_publish
+
+    [ "$(grep -Ec -- '--request PATCH .*dns_records/cockpit-record-old' "$FAKE_COMMAND_LOG")" -eq 1 ]
+}
+
 @test "new CNAME rollback deletes only the run-owned record and retains the Tunnel" {
     cf_cockpit_preflight
     cf_cockpit_snapshot
@@ -204,5 +221,35 @@ teardown() {
         attacker.example.test null '' false \
         11111111-1111-4111-8111-111111111111 \
         schoolorbit-cockpit-cockpit-run-1
+    [ "$status" -eq 78 ]
+}
+
+@test "checkpoint restore accepts a pre-provision snapshot without Tunnel metadata" {
+    cf_cockpit_restore_checkpoint \
+        server.schoolorbit.app null '' false '' ''
+
+    [ "$SO_CF_COCKPIT_SNAPSHOT_READY" = true ]
+    [ "$SO_CF_COCKPIT_DNS_SNAPSHOT" = null ]
+    [ -z "$SO_CF_COCKPIT_TUNNEL_ID" ]
+}
+
+@test "published-state verification requires the exact run-owned CNAME" {
+    local published="$TEST_ROOT/published-state.json"
+    jq '
+      (.result[0].content) = "11111111-1111-4111-8111-111111111111.cfargotunnel.com"
+    ' "$FIXTURE_DIR/cloudflare-cockpit-dns-existing.json" >"$published"
+    export CF_COCKPIT_DNS_FIXTURE=$published
+    cf_cockpit_restore_checkpoint \
+        server.schoolorbit.app \
+        '{"id":"cockpit-record-old","type":"CNAME","name":"server.schoolorbit.app","content":"old-cockpit.cfargotunnel.com","ttl":1,"proxied":true,"comment":"operator-managed","tags":["schoolorbit:management"],"settings":{},"modified_on":"2026-08-03T10:00:00Z"}' \
+        cockpit-record-old true \
+        11111111-1111-4111-8111-111111111111 \
+        schoolorbit-cockpit-cockpit-run-1
+
+    cf_cockpit_assert_published_state
+
+    jq '(.result[0].ttl) = 300' "$published" >"$TEST_ROOT/published-state-drift.json"
+    export CF_COCKPIT_DNS_FIXTURE="$TEST_ROOT/published-state-drift.json"
+    run cf_cockpit_assert_published_state
     [ "$status" -eq 78 ]
 }

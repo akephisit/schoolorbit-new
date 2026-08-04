@@ -6,6 +6,7 @@ setup() {
     setup_installer_test
     source "$BATS_TEST_DIRNAME/../../lib/schoolorbit-installer/github.sh"
     source "$BATS_TEST_DIRNAME/../../lib/schoolorbit-installer/cloudflare.sh"
+    source "$BATS_TEST_DIRNAME/../../lib/schoolorbit-installer/cloudflare_tunnel.sh"
     source "$BATS_TEST_DIRNAME/../../lib/schoolorbit-installer/vps.sh"
     source "$BATS_TEST_DIRNAME/../../lib/schoolorbit-installer/verification.sh"
     source "$BATS_TEST_DIRNAME/../../lib/schoolorbit-installer/phases.sh"
@@ -31,9 +32,11 @@ printf " %s" "$@" >>"$FAKE_COMMAND_LOG"
 printf "\n" >>"$FAKE_COMMAND_LOG"
 output=
 url=
+write_out=
 while [ "$#" -gt 0 ]; do
     case "$1" in
         --output|-o) output=$2; shift 2 ;;
+        --write-out) write_out=$2; shift 2 ;;
         http://*|https://*) url=$1; shift ;;
         *) shift ;;
     esac
@@ -44,9 +47,16 @@ case "$url" in
     https://school-api.example.test/ready) printf "%s\n" "{\"status\":\"ready\",\"controlPlane\":\"connected\",\"filePlatform\":\"ready\"}" >"$output" ;;
     https://school-api.example.test/) printf "{\"service\":\"%s\"}\n" "$FAKE_SCHOOL_IDENTITY" >"$output" ;;
     https://admin.example.test/|https://smoke-school.example.test/) printf "%s\n" "<!doctype html><html></html>" >"$output" ;;
+    https://server.example.test/ping) printf "%s\n" "{\"service\":\"cockpit\"}" >"$output" ;;
+    https://server.example.test/) printf "%s\n" "<!doctype html><html><title>Cockpit Login</title></html>" >"$output" ;;
+    http://192.0.2.20:9090/ping) exit 7 ;;
     *) printf "%s\n" "{}" >"$output" ;;
 esac
-printf 200
+if [[ $write_out == *url_effective* ]]; then
+    printf "200\\n%s" "${FAKE_COCKPIT_EFFECTIVE_URL:-$url}"
+else
+    printf 200
+fi
 '
 
     make_fake_command ssh '
@@ -87,6 +97,10 @@ install_orchestration_fakes() {
     load_cloudflare_bootstrap_token() {
         SO_SECRETS[SCHOOLORBIT_CLOUDFLARE_BOOTSTRAP_TOKEN]=bootstrap-token-value
     }
+    load_cockpit_inputs() {
+        SO_SECRETS[SCHOOLORBIT_CLOUDFLARE_BOOTSTRAP_TOKEN]=bootstrap-token-value
+        SO_SECRETS[SCHOOLORBIT_SERVER_PASSWORD]=Strong-Cockpit-Password-2026
+    }
     github_preflight() { printf '%s\n' github-preflight >>"$FAKE_COMMAND_LOG"; }
     vps_preflight() { printf '%s\n' vps-preflight >>"$FAKE_COMMAND_LOG"; }
     cf_preflight() {
@@ -105,6 +119,51 @@ install_orchestration_fakes() {
         SO_DNS_SNAPSHOT_ETAG=fixture-snapshot-etag
         SO_DNS_ORIGINAL_IP=198.51.100.10
     }
+    cf_cockpit_preflight() {
+        SO_CF_COCKPIT_HOSTNAME=server.example.test
+        SO_CF_COCKPIT_CURRENT_RECORD=null
+        if [[ ${SO_CF_COCKPIT_SNAPSHOT_READY:-false} != true ]]; then
+            SO_CF_COCKPIT_RECORD_ID=
+            SO_CF_COCKPIT_RECORD_EXISTED=false
+        fi
+    }
+    cf_cockpit_snapshot() {
+        SO_CF_COCKPIT_DNS_SNAPSHOT=$SO_CF_COCKPIT_CURRENT_RECORD
+        SO_CF_COCKPIT_SNAPSHOT_READY=true
+    }
+    cf_cockpit_restore_checkpoint() {
+        SO_CF_COCKPIT_HOSTNAME=$1
+        SO_CF_COCKPIT_DNS_SNAPSHOT=$2
+        SO_CF_COCKPIT_RECORD_ID=$3
+        SO_CF_COCKPIT_RECORD_EXISTED=$4
+        SO_CF_COCKPIT_TUNNEL_ID=$5
+        SO_CF_COCKPIT_TUNNEL_NAME=$6
+        SO_CF_COCKPIT_SNAPSHOT_READY=true
+    }
+    cf_cockpit_provision_tunnel() {
+        SO_CF_COCKPIT_TUNNEL_ID=11111111-1111-4111-8111-111111111111
+        SO_CF_COCKPIT_TUNNEL_NAME="schoolorbit-cockpit-$SO_RUN_ID"
+        printf '%s\n' cockpit-tunnel-provisioned >>"$FAKE_COMMAND_LOG"
+    }
+    cf_cockpit_get_token() {
+        SO_SECRETS[SCHOOLORBIT_COCKPIT_TUNNEL_TOKEN]=fixture-cockpit-tunnel-token-value
+    }
+    cf_cockpit_wait_connector() { printf '%s\n' cockpit-connector-ready >>"$FAKE_COMMAND_LOG"; }
+    cf_cockpit_publish() {
+        SO_CF_COCKPIT_RECORD_ID=cockpit-record-1
+        if [[ ${FAKE_MANAGEMENT_PUBLISHED:-false} == true ]]; then
+            printf '%s\n' cockpit-cname-reused >>"$FAKE_COMMAND_LOG"
+        else
+            FAKE_MANAGEMENT_PUBLISHED=true
+            printf '%s\n' cockpit-cname-published >>"$FAKE_COMMAND_LOG"
+        fi
+    }
+    cf_cockpit_assert_no_dns_drift() { return 0; }
+    cf_cockpit_assert_published_state() { [[ ${FAKE_MANAGEMENT_PUBLISHED:-false} == true ]]; }
+    cf_cockpit_restore_dns() {
+        FAKE_MANAGEMENT_PUBLISHED=false
+        printf '%s\n' cockpit-cname-restored >>"$FAKE_COMMAND_LOG"
+    }
     cf_assert_no_dns_drift() { return 0; }
     cf_assert_cutover_state() { [[ ${FAKE_DNS_CUTOVER:-false} == true ]]; }
     cf_apply_dns_batch() {
@@ -115,6 +174,8 @@ install_orchestration_fakes() {
     cf_wait_for_proxy_resolution() { printf '%s\n' wait-proxy >>"$FAKE_COMMAND_LOG"; }
     vps_bootstrap() { printf '%s\n' apt-get-bootstrap >>"$FAKE_COMMAND_LOG"; }
     vps_install_runtime_env() { printf '%s\n' runtime-env-installed >>"$FAKE_COMMAND_LOG"; }
+    vps_configure_cockpit() { printf '%s\n' cockpit-configured >>"$FAKE_COMMAND_LOG"; }
+    vps_reverify_cockpit() { return 0; }
     vps_create_deployment_key() {
         SO_SECRETS[SSH_PRIVATE_KEY]=fixture-private-key
         printf '%s\n' deployment-key-created >>"$FAKE_COMMAND_LOG"
@@ -140,6 +201,10 @@ install_orchestration_fakes() {
     verify_public_services() {
         [[ ${FAKE_PUBLIC_VERIFY_FAILURE:-0} != 1 ]] || return 1
         printf '%s\n' public-verified >>"$FAKE_COMMAND_LOG"
+    }
+    verify_public_cockpit() {
+        [[ ${FAKE_MANAGEMENT_VERIFY_FAILURE:-0} != 1 ]] || return 1
+        printf '%s\n' cockpit-public-verified >>"$FAKE_COMMAND_LOG"
     }
     vps_reverify_bootstrap() { return 0; }
     vps_reverify_tls() {
@@ -202,6 +267,22 @@ install_orchestration_fakes() {
     [[ $output == *'[REDACTED]'* ]]
     [[ $output != *'smoke-school'* ]]
     [[ $output != *'Smoke-Pass-7vK9nM3q'* ]]
+}
+
+@test "public Cockpit verification checks the edge and rejects direct target access" {
+    verify_public_cockpit
+
+    grep -Fq 'https://server.example.test/ping' "$FAKE_COMMAND_LOG"
+    grep -Fq 'https://server.example.test/' "$FAKE_COMMAND_LOG"
+    grep -Fq 'http://192.0.2.20:9090/ping' "$FAKE_COMMAND_LOG"
+    ! grep -Eq 'Strong-Cockpit-Password|Authorization:|Cookie:' "$FAKE_COMMAND_LOG"
+}
+
+@test "public Cockpit verification rejects a Cloudflare Access redirect" {
+    export FAKE_COCKPIT_EFFECTIVE_URL=https://schoolorbit.cloudflareaccess.com/cdn-cgi/access/login
+
+    run verify_public_cockpit
+    [ "$status" -eq 78 ]
 }
 
 @test "smoke script covers resolve-pinned APIs SSE CORS and optional private files" {
@@ -311,8 +392,61 @@ printf "%s" "$status"
         --target 192.0.2.20 --base-domain example.test
 
     [ "$status" -eq 0 ]
-    expected='preflight input snapshot bootstrap tls deploy origin-verify cutover-gate dns-cutover public-verify handoff'
+    expected='preflight input snapshot bootstrap tls deploy origin-verify cutover-gate dns-cutover public-verify management-provision management-publish handoff'
     [ "$(tr '\n' ' ' <"$PHASE_LOG" | sed 's/ $//')" = "$expected" ]
+}
+
+@test "standalone Cockpit setup avoids application DNS and GitHub deployment mutations" {
+    install_orchestration_fakes
+
+    run schoolorbit_main configure-cockpit --repository owner/repo \
+        --target 192.0.2.20 --base-domain example.test
+
+    [ "$status" -eq 0 ]
+    expected='preflight input management-snapshot bootstrap management-provision management-publish management-handoff'
+    [ "$(tr '\n' ' ' <"$PHASE_LOG" | sed 's/ $//')" = "$expected" ]
+    ! grep -Eq 'workflow run|cutover-batch-applied|rollback-batch-applied|tls-installed' "$FAKE_COMMAND_LOG"
+}
+
+@test "standalone Cockpit dry run is read-only" {
+    install_orchestration_fakes
+
+    run schoolorbit_main configure-cockpit --repository owner/repo \
+        --target 192.0.2.20 --base-domain example.test --dry-run
+
+    [ "$status" -eq 0 ]
+    [ "$(tr '\n' ' ' <"$PHASE_LOG" | sed 's/ $//')" = 'preflight input management-snapshot' ]
+    ! grep -Eq 'cockpit-tunnel-provisioned|cockpit-configured|cockpit-cname-published|workflow run|batch-applied' "$FAKE_COMMAND_LOG"
+}
+
+@test "standalone management failure reports only Cockpit rollback" {
+    install_orchestration_fakes
+    export FAKE_MANAGEMENT_VERIFY_FAILURE=1
+
+    run schoolorbit_main configure-cockpit --repository owner/repo \
+        --target 192.0.2.20 --base-domain example.test
+
+    [ "$status" -ne 0 ]
+    [[ $output == *'rollback-cockpit --run-id run-test'* ]]
+    [[ $output != *'rollback-dns --run-id'* ]]
+}
+
+@test "standalone resume reuses a journaled management publication" {
+    install_orchestration_fakes
+    export FAKE_MANAGEMENT_VERIFY_FAILURE=1
+    run schoolorbit_main configure-cockpit --repository owner/repo \
+        --target 192.0.2.20 --base-domain example.test
+    [ "$status" -ne 0 ]
+    [ "$(jq -r '.phases["management-publish"].status' "$SCHOOLORBIT_STATE_HOME/runs/run-test/state.json")" = published ]
+
+    export FAKE_MANAGEMENT_VERIFY_FAILURE=0
+    export FAKE_MANAGEMENT_PUBLISHED=true
+    run schoolorbit_main configure-cockpit --resume run-test
+
+    [ "$status" -eq 0 ]
+    [ "$(grep -c '^cockpit-cname-published$' "$FAKE_COMMAND_LOG")" -eq 1 ]
+    grep -Fxq cockpit-cname-reused "$FAKE_COMMAND_LOG"
+    [ "$(jq -r '.phases["management-publish"].status' "$SCHOOLORBIT_STATE_HOME/runs/run-test/state.json")" = passed ]
 }
 
 @test "deployment phase dispatches the four workflows in dependency order" {
@@ -415,4 +549,51 @@ printf "%s" "$status"
     [ "$status" -eq 0 ]
     [ "$(<"$TEST_ROOT/confirmation")" = 'ROLLBACK 198.51.100.10' ]
     [ "$(grep -c '^rollback-batch-applied$' "$FAKE_COMMAND_LOG")" -eq 1 ]
+}
+
+@test "Cockpit rollback requires exact hostname confirmation and changes no API DNS" {
+    install_orchestration_fakes
+    SO_CONFIG[repository]=owner/repo
+    SO_CONFIG[target]=192.0.2.20
+    SO_CONFIG[base_domain]=example.test
+    SO_CONFIG[ref]=main
+    SO_CONFIG[bootstrap_user]=root
+    SO_CONFIG[server_user]=schoolorbit
+    SO_CONFIG[ssh_port]=22
+    state_init cockpit-rollback
+    state_mark_phase management-snapshot '{"status":"passed","cloudflare_zone_id":"zone-123","cloudflare_account_id":"account-456","management_hostname":"server.example.test","management_dns_snapshot":null,"management_record_id":"","management_record_existed":false}'
+    state_mark_phase management-provision '{"status":"passed","management_hostname":"server.example.test","management_dns_snapshot":null,"management_record_id":"","management_record_existed":false,"management_tunnel_id":"11111111-1111-4111-8111-111111111111","management_tunnel_name":"schoolorbit-cockpit-cockpit-rollback"}'
+    state_mark_phase management-publish '{"status":"passed","management_hostname":"server.example.test","management_dns_snapshot":null,"management_record_id":"cockpit-record-1","management_record_existed":false,"management_tunnel_id":"11111111-1111-4111-8111-111111111111","management_tunnel_name":"schoolorbit-cockpit-cockpit-rollback"}'
+    export FAKE_MANAGEMENT_PUBLISHED=true
+
+    run schoolorbit_main rollback-cockpit --run-id cockpit-rollback
+
+    [ "$status" -eq 0 ]
+    [ "$(<"$TEST_ROOT/confirmation")" = 'ROLLBACK COCKPIT server.example.test' ]
+    grep -Fxq cockpit-cname-restored "$FAKE_COMMAND_LOG"
+    ! grep -Eq 'cutover-batch-applied|rollback-batch-applied' "$FAKE_COMMAND_LOG"
+}
+
+@test "full DNS rollback also restores a published management CNAME" {
+    install_orchestration_fakes
+    SO_CONFIG[repository]=owner/repo
+    SO_CONFIG[target]=192.0.2.20
+    SO_CONFIG[base_domain]=example.test
+    SO_CONFIG[ref]=main
+    SO_CONFIG[bootstrap_user]=root
+    SO_CONFIG[server_user]=schoolorbit
+    SO_CONFIG[ssh_port]=22
+    state_init full-rollback
+    snapshot='[{"id":"dns-admin-1","type":"A","name":"admin-api.example.test","content":"198.51.100.10","ttl":1,"proxied":true,"modified_on":"2026-08-01T00:00:00Z"},{"id":"dns-school-1","type":"A","name":"school-api.example.test","content":"198.51.100.10","ttl":1,"proxied":true,"modified_on":"2026-08-01T00:00:00Z"}]'
+    state_mark_phase snapshot "$(jq -n --arg zone zone-123 --arg account account-456 --arg original 198.51.100.10 --arg etag fixture-snapshot-etag --argjson dns "$snapshot" --arg management_hostname server.example.test '{status:"passed",cloudflare_zone_id:$zone,cloudflare_account_id:$account,original_ip:$original,dns_snapshot_etag:$etag,dns_snapshot:$dns,management_hostname:$management_hostname,management_dns_snapshot:null,management_record_id:"",management_record_existed:false}')"
+    state_mark_phase dns-cutover '{"status":"passed"}'
+    state_mark_phase management-publish '{"status":"passed","management_hostname":"server.example.test","management_dns_snapshot":null,"management_record_id":"cockpit-record-1","management_record_existed":false,"management_tunnel_id":"11111111-1111-4111-8111-111111111111","management_tunnel_name":"schoolorbit-cockpit-full-rollback"}'
+    export FAKE_DNS_CUTOVER=true
+    export FAKE_MANAGEMENT_PUBLISHED=true
+
+    run schoolorbit_main rollback-dns --run-id full-rollback
+
+    [ "$status" -eq 0 ]
+    grep -Fxq rollback-batch-applied "$FAKE_COMMAND_LOG"
+    grep -Fxq cockpit-cname-restored "$FAKE_COMMAND_LOG"
 }

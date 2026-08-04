@@ -166,3 +166,51 @@ verify_public_services() {
     fi
     info "$smoke_output"
 }
+
+_verify_cockpit_login_page() {
+    local host=$1 body response status effective_url
+    body=$(_verification_temp_file) || return
+    if ! response=$(curl --silent --show-error --location --max-redirs 3 \
+        --connect-timeout 10 --max-time 30 --output "$body" \
+        --write-out $'%{http_code}\n%{url_effective}' "https://$host/"); then
+        command rm -f "$body"
+        die 69 'Cockpit login request failed'
+        return
+    fi
+    status=${response%%$'\n'*}
+    effective_url=${response#*$'\n'}
+    if [[ $status != 200 ]]; then
+        command rm -f "$body"
+        die 69 "Cockpit login returned HTTP $status"
+        return
+    fi
+    case "$effective_url" in
+        "https://$host" | "https://$host/"*) ;;
+        *)
+            command rm -f "$body"
+            die 78 'Cockpit login redirected outside the management hostname'
+            return
+            ;;
+    esac
+    if ! grep -Eiq '<!doctype[[:space:]]+html' "$body" ||
+        ! grep -Eiq 'cockpit|login' "$body" ||
+        grep -Eiq 'cloudflare[[:space:]]+access|cdn-cgi/access' "$body"; then
+        command rm -f "$body"
+        die 78 'Cockpit login page marker is invalid'
+        return
+    fi
+    command rm -f "$body"
+}
+
+verify_public_cockpit() {
+    require_command curl || return
+    require_command jq || return
+    local host="server.${SO_CONFIG[base_domain]}"
+    _verify_https_json "$host" /ping public '.service == "cockpit"' 'Cockpit ping' || return
+    _verify_cockpit_login_page "$host" || return
+    if curl --silent --show-error --connect-timeout 3 --max-time 5 \
+        --output /dev/null "http://${SO_CONFIG[target]}:9090/ping"; then
+        die 78 'Cockpit port 9090 is reachable directly on the target'
+        return
+    fi
+}

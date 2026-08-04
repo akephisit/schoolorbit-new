@@ -114,6 +114,14 @@ teardown() {
     [ "$(grep -c 'root@192.0.2.20 true' "$FAKE_COMMAND_LOG")" -eq 2 ]
 }
 
+@test "Cockpit bootstrap revalidation checks user packages and pinned cloudflared" {
+    vps_reverify_cockpit_bootstrap
+
+    grep -Fq 'cockpit cockpit-podman' "$FAKE_COMMAND_LOG"
+    grep -Fq 'cloudflared --version' "$FAKE_COMMAND_LOG"
+    grep -Fq '2026.7.3' "$FAKE_COMMAND_LOG"
+}
+
 @test "Cockpit script and secrets use separate SSH stdin streams and a fresh verification session" {
     vps_configure_cockpit
     vps_reverify_cockpit

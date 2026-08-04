@@ -74,6 +74,22 @@ vps_bootstrap() {
     _vps_ssh true >/dev/null || die 69 'Fresh SSH session failed after VPS bootstrap'
 }
 
+vps_reverify_cockpit_bootstrap() {
+    vps_preflight || return
+    local remote_script remote_command
+    remote_script=$(
+        cat <<'REMOTE_SCRIPT'
+set -euo pipefail
+server_user=$1
+id "$server_user" >/dev/null
+test "$(dpkg-query -W -f='${db:Status-Abbrev}\n' cockpit cockpit-podman | grep -c '^ii ')" = 2
+cloudflared --version | grep -Fq '2026.7.3'
+REMOTE_SCRIPT
+    )
+    remote_command=$(_vps_remote_bash_command "$remote_script" "${SO_CONFIG[server_user]}") || return
+    _vps_ssh "$remote_command" >/dev/null || die 78 'Cockpit bootstrap checkpoint no longer matches the target'
+}
+
 _vps_render_cockpit_payload() (
     export SO_COCKPIT_PAYLOAD_SERVER_USER=${SO_CONFIG[server_user]}
     export SO_COCKPIT_PAYLOAD_HOSTNAME=$SO_CF_COCKPIT_HOSTNAME

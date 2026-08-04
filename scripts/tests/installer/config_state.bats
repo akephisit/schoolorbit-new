@@ -282,6 +282,23 @@ teardown() {
     [ "$status" -eq 78 ]
 }
 
+@test "checkpoint operation prevents cross-command resume" {
+    SO_COMMAND=configure-cockpit
+    SO_CONFIG[repository]=owner/repo
+    SO_CONFIG[target]=192.0.2.20
+    SO_CONFIG[base_domain]=example.test
+    SO_CONFIG[ref]=main
+    SO_CONFIG[bootstrap_user]=root
+    SO_CONFIG[server_user]=schoolorbit
+    SO_CONFIG[ssh_port]=22
+    state_init cockpit-operation
+
+    state_load cockpit-operation
+    state_assert_operation configure-cockpit
+    run state_assert_operation migrate-vps
+    [ "$status" -eq 78 ]
+}
+
 @test "entry point help documents safe input channels without secret flags" {
     run scripts/schoolorbit-installer --help
     [ "$status" -eq 0 ]
