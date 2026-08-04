@@ -21,9 +21,11 @@
 ### Task 1: Add the regression contract
 
 **Files:**
+
 - Modify: `frontend-school/tests/static/frontend-csr-contract.test.mjs`
 
 **Interfaces:**
+
 - Consumes: Protected, login, and portal layout source files.
 - Produces: An architecture test that fails while duplicate auth loading boundaries exist.
 
@@ -40,12 +42,14 @@ Expected: FAIL because `AuthCheckingState` is not yet consumed and portal layout
 ### Task 2: Introduce the shared checking state
 
 **Files:**
+
 - Create: `frontend-school/src/lib/components/app-state/AuthCheckingState.svelte`
 - Modify: `frontend-school/src/lib/components/app-state/index.ts`
 - Modify: `frontend-school/src/routes/(app)/+layout.svelte`
 - Modify: `frontend-school/src/routes/login/+page.svelte`
 
 **Interfaces:**
+
 - Consumes: `message: string` prop and existing theme tokens.
 - Produces: `AuthCheckingState` component exported from `$lib/components/app-state`.
 
@@ -60,11 +64,13 @@ Import `AuthCheckingState` from `$lib/components/app-state` in `(app)` and login
 ### Task 3: Remove portal-level auth loading boundaries
 
 **Files:**
+
 - Modify: `frontend-school/src/routes/(app)/staff/+layout.svelte`
 - Modify: `frontend-school/src/routes/(app)/student/+layout.svelte`
 - Modify: `frontend-school/src/routes/(app)/parent/+layout.svelte`
 
 **Interfaces:**
+
 - Consumes: `children` snippets after the parent `(app)` layout has authorized the route.
 - Produces: Presentation-only portal wrappers with no auth store or redirect ownership.
 
@@ -85,9 +91,11 @@ Expected: PASS with zero failed tests.
 ### Task 4: Validate Svelte and the frontend matrix
 
 **Files:**
+
 - Validate all Svelte files changed in Tasks 2 and 3.
 
 **Interfaces:**
+
 - Consumes: Completed implementation.
 - Produces: Verification evidence required by `.rules`.
 
