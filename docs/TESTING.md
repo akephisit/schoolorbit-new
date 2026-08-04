@@ -101,7 +101,7 @@ docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:1.7.7
 
 The deployment static guard renders a proxy template into a temporary target, rejects invalid domains without replacing existing output, enforces the single production Compose owner, and confirms backend workflows verify the selected origin rather than the public hostname. Report an unavailable Bats, Podman Compose, or Docker dependency as unrun; do not replace its check with a narrower command.
 
-The guard also owns CI cache policy: backend-admin and backend-school use distinct BuildKit scopes, while API and permission contract jobs share a dependency-oriented backend-school Rust cache. Pull requests are restore-only, and only trusted `main` runs may save it. A cache miss must execute the complete workflow rather than bypassing a gate.
+The guard also owns CI cache policy: backend-admin and backend-school use distinct BuildKit scopes, while API and permission contract jobs share a dependency-oriented backend-school Rust cache. Pull requests are restore-only, and only trusted `main` runs may save it. A cache miss must execute the complete workflow rather than bypassing a gate. API Contract keeps artifact generation/offline export, backend validation, and frontend validation in independent jobs without `needs`; the static guard owns this division and its single-writer Rust cache policy.
 
 The installer Bats directory includes focused Cockpit coverage:
 

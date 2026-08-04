@@ -249,6 +249,12 @@ test('API contract runs artifact backend and frontend gates in independent jobs'
 		1
 	);
 	assert.equal((jobs.match(/save-if: "false"/g) ?? []).length, 1);
+
+	const rules = await readRepo('.rules');
+	assert.match(
+		rules,
+		/API Contract runs artifact, backend, and frontend validation in independent jobs without `needs`/
+	);
 });
 
 test('Permission Contract keeps its cached validation gates unchanged', async () => {
