@@ -128,7 +128,10 @@ test('backend workflows deploy the canonical target and verify the selected orig
 		assert.match(workflow, /cloudflare-origin-rsa-root\.pem/);
 		assert.match(workflow, /\/opt\/stack\/deployment/);
 		assert.match(workflow, /podman-compose -f "\$\{runtime_compose\}\.next" --dry-run up -d/);
-		assert.match(workflow, /legacy_proxy_target=\/opt\/stack\/nginx\/conf\.d\/(?:admin|school)-api\.\$\{base_domain\}\.conf/);
+		assert.match(
+			workflow,
+			/legacy_proxy_target=\/opt\/stack\/nginx\/conf\.d\/(?:admin|school)-api\.\$\{base_domain\}\.conf/
+		);
 		assert.match(workflow, /proxy_previous_target="\$proxy_target"/);
 		assert.match(workflow, /rm -f "\$proxy_previous_target"/);
 		assert.match(workflow, /compose_up_quiet\(\)/);
@@ -139,7 +142,10 @@ test('backend workflows deploy the canonical target and verify the selected orig
 			(workflow.match(/validate_nginx_config_with_retry/g) ?? []).length >= 3,
 			`${file} must retry Nginx validation during activation and recovery`
 		);
-		assert.match(workflow, /podman network connect --alias "\$service_alias" --alias "\$container" schoolorbit-web "\$container"/);
+		assert.match(
+			workflow,
+			/podman network connect --alias "\$service_alias" --alias "\$container" schoolorbit-web "\$container"/
+		);
 		assert.match(workflow, /podman rm schoolorbit-nginx >\/dev\/null 2>&1 \|\| true/);
 		assert.match(workflow, /timeout 180 bash/);
 		assert.match(workflow, /grep -lF "server_name/);
