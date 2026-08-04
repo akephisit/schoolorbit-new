@@ -63,6 +63,26 @@ test('the resolved production topology has one owner and private backend ports',
 	}
 });
 
+test('local and production clamd allow 3 GiB for concurrent signature reloads', async () => {
+	for (const [file, extraArguments] of [
+		['docker-compose.yml', []],
+		['podman-compose.yml', ['--env-file', 'scripts/tests/installer/fixtures/runtime.env']]
+	]) {
+		const { stdout } = await execFileAsync(
+			'docker',
+			['compose', ...extraArguments, '-f', file, 'config', '--format', 'json'],
+			{ cwd: repoRoot }
+		);
+		const topology = JSON.parse(stdout);
+
+		assert.equal(
+			topology.services.clamd.mem_limit,
+			String(3 * 1024 * 1024 * 1024),
+			`${file} must preserve enough memory for concurrent ClamAV database reloads`
+		);
+	}
+});
+
 test('the proxy renderer substitutes only a validated base domain', async (t) => {
 	const temporary = await mkdtemp(path.join(os.tmpdir(), 'schoolorbit-nginx-'));
 	t.after(() => rm(temporary, { recursive: true, force: true }));
@@ -181,11 +201,9 @@ test('API contract runs artifact backend and frontend gates in independent jobs'
 	const jobsStart = workflow.indexOf('\njobs:\n');
 	assert.ok(jobsStart >= 0);
 	const jobs = workflow.slice(jobsStart + '\njobs:\n'.length);
-	const jobNames = [...jobs.matchAll(/^  ([a-z][a-z0-9_-]*):\s*$/gm)].map(
-		(match) => match[1]
-	);
+	const jobNames = [...jobs.matchAll(/^ {2}([a-z][a-z0-9_-]*):\s*$/gm)].map((match) => match[1]);
 	assert.deepEqual(jobNames, ['artifacts', 'backend', 'frontend']);
-	assert.doesNotMatch(jobs, /^    needs:/gm);
+	assert.doesNotMatch(jobs, /^ {4}needs:/gm);
 
 	const jobBlock = (name, nextName) => {
 		const start = jobs.indexOf(`  ${name}:\n`);
@@ -231,10 +249,7 @@ test('API contract runs artifact backend and frontend gates in independent jobs'
 
 	for (const rustJob of [artifacts, backend]) {
 		assert.match(rustJob, /uses: dtolnay\/rust-toolchain@stable/);
-		assert.match(
-			rustJob,
-			/uses: Swatinem\/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32/
-		);
+		assert.match(rustJob, /uses: Swatinem\/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32/);
 		assert.match(rustJob, /id: rust_cache/);
 		assert.match(rustJob, /shared-key: backend-school-contracts/);
 		assert.match(rustJob, /workspaces: backend-school -> target/);
@@ -259,11 +274,8 @@ test('API contract runs artifact backend and frontend gates in independent jobs'
 
 test('Permission Contract keeps its cached validation gates unchanged', async () => {
 	const workflow = await readRepo('.github/workflows/permission-contract.yml');
-	assert.match(workflow, /^  verify:\s*$/m);
-	assert.match(
-		workflow,
-		/uses: Swatinem\/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32/
-	);
+	assert.match(workflow, /^ {2}verify:\s*$/m);
+	assert.match(workflow, /uses: Swatinem\/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32/);
 	assert.match(workflow, /shared-key: backend-school-contracts/);
 	assert.match(workflow, /workspaces: backend-school -> target/);
 	assert.match(workflow, /save-if: \$\{\{ github\.ref == 'refs\/heads\/main' \}\}/);
