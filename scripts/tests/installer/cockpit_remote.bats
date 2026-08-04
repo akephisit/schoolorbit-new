@@ -120,15 +120,17 @@ run_remote_configure() {
     make_fake_command ufw '
 printf "ufw %s\n" "$*" >>"$FAKE_COMMAND_LOG"
 if [ "$*" = "--force delete allow 9090/tcp" ]; then
-    if [ -f "$FIREWALL_STATE" ]; then
-        rm -f "$FIREWALL_STATE"
-        exit 0
-    fi
-    exit 1
+    # Debian UFW exits successfully even when this exact rule does not exist.
+    exit 0
 fi
-if [ "$*" = "status" ]; then
+if [ "$*" = "status numbered" ]; then
+    printf "%s\n" "Status: active"
+    [ ! -f "$FIREWALL_STATE" ] || printf "%s\n" "[ 6] 9090/tcp ALLOW IN Anywhere"
+elif [ "$*" = "status" ]; then
     printf "%s\n" "Status: active"
     [ ! -f "$FIREWALL_STATE" ] || printf "%s\n" "9090/tcp ALLOW Anywhere"
+elif [ "$*" = "--force delete 6" ]; then
+    rm -f "$FIREWALL_STATE"
 fi
 '
 
@@ -136,5 +138,6 @@ fi
 
     [ "$status" -eq 0 ]
     [ ! -e "$firewall_state" ]
-    grep -Fq 'ufw --force delete allow 9090/tcp' "$FAKE_COMMAND_LOG"
+    grep -Fq 'ufw --force delete 6' "$FAKE_COMMAND_LOG"
+    ! grep -Fq 'ufw --force delete allow 9090/tcp' "$FAKE_COMMAND_LOG"
 }

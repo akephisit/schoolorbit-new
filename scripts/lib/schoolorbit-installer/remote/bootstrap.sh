@@ -75,15 +75,7 @@ ufw_cockpit_allow_rule_numbers() {
 }
 
 close_public_cockpit_firewall() {
-    local attempts=0 rule_number
-    while ((attempts < 32)) && ufw --force delete allow 9090/tcp >/dev/null 2>&1; do
-        ((attempts += 1))
-    done
-    ((attempts < 32)) || {
-        printf 'Too many public Cockpit firewall rules\n' >&2
-        return 78
-    }
-
+    local rule_number
     if LC_ALL=C ufw status | grep -Fq 'Status: active'; then
         while IFS= read -r rule_number; do
             [[ $rule_number =~ ^[0-9]+$ ]] || continue
