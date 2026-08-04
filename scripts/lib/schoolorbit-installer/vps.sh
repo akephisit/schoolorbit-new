@@ -74,6 +74,75 @@ vps_bootstrap() {
     _vps_ssh true >/dev/null || die 69 'Fresh SSH session failed after VPS bootstrap'
 }
 
+_vps_render_cockpit_payload() (
+    export SO_COCKPIT_PAYLOAD_SERVER_USER=${SO_CONFIG[server_user]}
+    export SO_COCKPIT_PAYLOAD_HOSTNAME=$SO_CF_COCKPIT_HOSTNAME
+    export SO_COCKPIT_PAYLOAD_SERVER_PASSWORD=${SO_SECRETS[SCHOOLORBIT_SERVER_PASSWORD]-}
+    export SO_COCKPIT_PAYLOAD_TUNNEL_TOKEN=${SO_SECRETS[SCHOOLORBIT_COCKPIT_TUNNEL_TOKEN]-}
+    jq -n '{
+        server_user:env.SO_COCKPIT_PAYLOAD_SERVER_USER,
+        server_password:env.SO_COCKPIT_PAYLOAD_SERVER_PASSWORD,
+        management_hostname:env.SO_COCKPIT_PAYLOAD_HOSTNAME,
+        tunnel_token:env.SO_COCKPIT_PAYLOAD_TUNNEL_TOKEN
+    }'
+)
+
+vps_configure_cockpit() {
+    require_command jq || return
+    local source_file destination remote_script remote_command
+    source_file="$SCHOOLORBIT_REPOSITORY_ROOT/scripts/lib/schoolorbit-installer/remote/configure_cockpit.sh"
+    destination=/usr/local/lib/schoolorbit-installer/configure_cockpit.sh
+    [[ -r $source_file ]] || die 69 'Remote Cockpit configuration script is missing' || return
+    [[ -n $SO_CF_COCKPIT_HOSTNAME ]] || die 78 'Cockpit hostname is not loaded' || return
+    [[ -n ${SO_SECRETS[SCHOOLORBIT_SERVER_PASSWORD]-} ]] || die 78 'Cockpit server password is not loaded' || return
+    [[ -n ${SO_SECRETS[SCHOOLORBIT_COCKPIT_TUNNEL_TOKEN]-} ]] || die 78 'Cockpit Tunnel token is not loaded' || return
+
+    remote_script=$(
+        cat <<'REMOTE_SCRIPT'
+set -euo pipefail
+destination=$1
+install -d -m 0755 "$(dirname "$destination")"
+temporary=$(mktemp "${destination}.XXXXXX")
+trap 'rm -f "$temporary"' EXIT
+cat >"$temporary"
+chmod 0700 "$temporary"
+chown root:root "$temporary"
+mv "$temporary" "$destination"
+trap - EXIT
+REMOTE_SCRIPT
+    )
+    remote_command=$(_vps_remote_bash_command "$remote_script" "$destination") || return
+    _vps_ssh "$remote_command" <"$source_file" || die 69 'Unable to install the remote Cockpit configuration script' || return
+
+    # shellcheck disable=SC2016 # The positional parameter expands only on the target.
+    remote_command=$(_vps_remote_bash_command 'exec "$1"' "$destination") || return
+    _vps_render_cockpit_payload | _vps_ssh "$remote_command" || die 69 'Unable to configure Cockpit on the VPS'
+}
+
+vps_reverify_cockpit() {
+    local remote_script remote_command
+    remote_script=$(
+        cat <<'REMOTE_SCRIPT'
+set -euo pipefail
+systemctl is-active cockpit.socket schoolorbit-cloudflared.service >/dev/null
+test "$(stat -c %a /etc/cloudflared/schoolorbit-cockpit.token)" = 600
+test -s /etc/cockpit/cockpit.conf
+grep -Fxq root /etc/cockpit/disallowed-users
+listeners=$(ss -ltnH '( sport = :9090 )')
+test -n "$listeners"
+while read -r _ _ _ local_address _; do
+    test "$local_address" = 127.0.0.1:9090
+done <<<"$listeners"
+curl -fsS http://127.0.0.1:9090/ping | jq -e '.service == "cockpit"' >/dev/null
+if command -v ufw >/dev/null 2>&1 && LC_ALL=C ufw status | grep -Eq '^9090/tcp[[:space:]]+ALLOW([[:space:]]|$)'; then
+    exit 78
+fi
+REMOTE_SCRIPT
+    )
+    remote_command=$(_vps_remote_bash_command "$remote_script") || return
+    _vps_ssh "$remote_command" >/dev/null || die 78 'Cockpit checkpoint no longer matches the target'
+}
+
 _vps_make_private_temp_dir() {
     local parent candidate
     for candidate in "${XDG_RUNTIME_DIR-}" /dev/shm "${TMPDIR:-/tmp}"; do

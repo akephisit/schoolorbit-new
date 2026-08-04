@@ -41,6 +41,9 @@ setup() {
     SO_SECRETS[R2_SECRET_ACCESS_KEY]=r2-secret-runtime-value
     SO_SECRETS[VAPID_PRIVATE_KEY]=vapid-private-runtime-value
     SO_SECRETS[SMOKE_PASSWORD]=smoke-password-must-not-reach-vps
+    SO_SECRETS[SCHOOLORBIT_SERVER_PASSWORD]=Strong-Cockpit-Password-2026
+    SO_SECRETS[SCHOOLORBIT_COCKPIT_TUNNEL_TOKEN]=eyJhIjoiYWNjb3VudC00NTYiLCJ0IjoiY29ja3BpdC10dW5uZWwtdG9rZW4ifQ
+    SO_CF_COCKPIT_HOSTNAME=server.schoolorbit.app
 
     make_fake_command ssh '
 set -eu
@@ -96,9 +99,9 @@ teardown() {
 @test "remote bootstrap guards package user linger sysctl and firewall mutations" {
     local bootstrap="$BATS_TEST_DIRNAME/../../lib/schoolorbit-installer/remote/bootstrap.sh"
     grep -Fq 'dpkg-query' "$bootstrap"
-    grep -Fq 'id "$SERVER_USER"' "$bootstrap"
+    grep -Fq 'id "$server_user"' "$bootstrap"
     grep -Fq 'useradd --create-home' "$bootstrap"
-    grep -Fq '/var/lib/systemd/linger/$SERVER_USER' "$bootstrap"
+    grep -Fq '/var/lib/systemd/linger/$server_user' "$bootstrap"
     grep -Fq 'ufw status' "$bootstrap"
     grep -Fq 'ufw --force enable' "$bootstrap"
 }
@@ -109,6 +112,24 @@ teardown() {
 
     [ "$(grep -c 'bash -s -- 22 schoolorbit' "$FAKE_COMMAND_LOG")" -eq 2 ]
     [ "$(grep -c 'root@192.0.2.20 true' "$FAKE_COMMAND_LOG")" -eq 2 ]
+}
+
+@test "Cockpit script and secrets use separate SSH stdin streams and a fresh verification session" {
+    vps_configure_cockpit
+    vps_reverify_cockpit
+
+    [ "$(<"$TEST_ROOT/ssh-count")" -eq 3 ]
+    grep -Fq 'SCHOOLORBIT_INSTALLER_TEST_ROOT' "$TEST_ROOT/ssh-stdin-1"
+    jq -e '
+      .server_user == "schoolorbit" and
+      .server_password == "Strong-Cockpit-Password-2026" and
+      .management_hostname == "server.schoolorbit.app" and
+      .tunnel_token == "eyJhIjoiYWNjb3VudC00NTYiLCJ0IjoiY29ja3BpdC10dW5uZWwtdG9rZW4ifQ"
+    ' "$TEST_ROOT/ssh-stdin-2"
+    [ ! -s "$TEST_ROOT/ssh-stdin-3" ]
+    grep -Fq 'systemctl is-active cockpit.socket schoolorbit-cloudflared.service' "$FAKE_COMMAND_LOG"
+    run grep -E 'Strong-Cockpit-Password|eyJhIjoiYWNjb3VudC00NTY' "$FAKE_COMMAND_LOG"
+    [ "$status" -eq 1 ]
 }
 
 @test "deployment private key stays out of SSH arguments and public key is streamed" {
