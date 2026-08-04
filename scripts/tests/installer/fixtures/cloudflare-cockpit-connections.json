@@ -5,9 +5,17 @@
   "result": [
     {
       "id": "connector-1",
-      "origin_ip": "192.0.2.20",
-      "is_pending_reconnect": false,
-      "opened_at": "2026-08-04T00:00:00Z"
+      "run_at": "2026-08-04T00:00:00Z",
+      "version": "2026.7.3",
+      "arch": "linux_amd64",
+      "conns": [
+        {
+          "id": "connection-1",
+          "origin_ip": "192.0.2.20",
+          "is_pending_reconnect": false,
+          "opened_at": "2026-08-04T00:00:00Z"
+        }
+      ]
     }
   ]
 }

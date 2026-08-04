@@ -111,7 +111,7 @@ teardown() {
     cf_cockpit_wait_connector
 
     local wrong="$TEST_ROOT/wrong-connector.json"
-    jq '(.result[0].origin_ip) = "198.51.100.30"' \
+    jq '(.result[0].conns[0].origin_ip) = "198.51.100.30"' \
         "$FIXTURE_DIR/cloudflare-cockpit-connections.json" >"$wrong"
     export CF_COCKPIT_CONNECTIONS_FIXTURE=$wrong
     run cf_cockpit_wait_connector

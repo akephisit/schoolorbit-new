@@ -196,7 +196,14 @@ _cf_cockpit_connector_ready() {
     fi
     if jq -e --arg target "${SO_CONFIG[target]}" '
         (.result | type) == "array" and
-        any(.result[]; .origin_ip == $target and (.is_pending_reconnect // false) == false)
+        any(
+            .result[];
+            if (.conns | type) == "array" then
+                any(.conns[]; .origin_ip == $target and (.is_pending_reconnect // false) == false)
+            else
+                .origin_ip == $target and (.is_pending_reconnect // false) == false
+            end
+        )
     ' "$response" >/dev/null 2>&1; then
         ready=true
     fi
