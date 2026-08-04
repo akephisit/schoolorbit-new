@@ -134,6 +134,20 @@ teardown() {
     ! grep -Eq 'PATCH .*/dns_records/|POST .*/dns_records($| )' "$FAKE_COMMAND_LOG"
 }
 
+@test "new CNAME publication uses no account-limited DNS tags" {
+    cf_cockpit_preflight
+    cf_cockpit_snapshot
+    SO_CF_COCKPIT_TUNNEL_ID=11111111-1111-4111-8111-111111111111
+
+    cf_cockpit_publish
+
+    jq -e '. == {
+      type:"CNAME",name:"server.schoolorbit.app",
+      content:"11111111-1111-4111-8111-111111111111.cfargotunnel.com",
+      ttl:1,proxied:true,comment:"SchoolOrbit Cockpit Cloudflare Tunnel",tags:[],settings:{}
+    }' "$CAPTURED_REQUEST_BODY"
+}
+
 @test "management publication is idempotent after a journaled cutover" {
     export CF_COCKPIT_DNS_FIXTURE="$FIXTURE_DIR/cloudflare-cockpit-dns-existing.json"
     cf_cockpit_preflight
@@ -158,7 +172,7 @@ teardown() {
 
     local published="$TEST_ROOT/uncheckpointed-published-cockpit-dns.json"
     jq --arg id cockpit-record-recovered --arg target '11111111-1111-4111-8111-111111111111.cfargotunnel.com' '
-      .result = [{id:$id,type:"CNAME",name:"server.schoolorbit.app",content:$target,ttl:1,proxied:true,comment:"SchoolOrbit Cockpit Cloudflare Tunnel",tags:["schoolorbit:management"],settings:{},modified_on:"2026-08-04T01:00:00Z"}]
+      .result = [{id:$id,type:"CNAME",name:"server.schoolorbit.app",content:$target,ttl:1,proxied:true,comment:"SchoolOrbit Cockpit Cloudflare Tunnel",tags:[],settings:{},modified_on:"2026-08-04T01:00:00Z"}]
     ' "$FIXTURE_DIR/cloudflare-cockpit-dns-none.json" >"$published"
     export CF_COCKPIT_DNS_FIXTURE=$published
 
@@ -176,7 +190,7 @@ teardown() {
 
     local published="$TEST_ROOT/published-cockpit-dns.json"
     jq --arg id cockpit-record-1 --arg target '11111111-1111-4111-8111-111111111111.cfargotunnel.com' '
-      .result = [{id:$id,type:"CNAME",name:"server.schoolorbit.app",content:$target,ttl:1,proxied:true,comment:"SchoolOrbit Cockpit Cloudflare Tunnel",tags:["schoolorbit:management"],settings:{},modified_on:"2026-08-04T01:00:00Z"}]
+      .result = [{id:$id,type:"CNAME",name:"server.schoolorbit.app",content:$target,ttl:1,proxied:true,comment:"SchoolOrbit Cockpit Cloudflare Tunnel",tags:[],settings:{},modified_on:"2026-08-04T01:00:00Z"}]
     ' "$FIXTURE_DIR/cloudflare-cockpit-dns-none.json" >"$published"
     export CF_COCKPIT_DNS_FIXTURE=$published
 

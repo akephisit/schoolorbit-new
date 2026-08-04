@@ -233,7 +233,7 @@ _cf_cockpit_publish_body() {
     else
         jq -cn --arg hostname "$SO_CF_COCKPIT_HOSTNAME" --arg target "$target" '{
             type:"CNAME",name:$hostname,content:$target,ttl:1,proxied:true,
-            comment:"SchoolOrbit Cockpit Cloudflare Tunnel",tags:["schoolorbit:management"],settings:{}
+            comment:"SchoolOrbit Cockpit Cloudflare Tunnel",tags:[],settings:{}
         }'
     fi
 }
@@ -323,7 +323,7 @@ _cf_cockpit_assert_published_record() {
             --arg target "$target" '{
                 id:$id,type:"CNAME",name:$hostname,content:$target,ttl:1,proxied:true,
                 comment:"SchoolOrbit Cockpit Cloudflare Tunnel",
-                tags:["schoolorbit:management"],settings:{}
+                tags:[],settings:{}
             }') || return
     fi
     [[ $current == "$expected" ]]
