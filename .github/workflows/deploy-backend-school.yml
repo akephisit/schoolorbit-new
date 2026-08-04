@@ -67,8 +67,17 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=backend-school
+          cache-to: type=gha,scope=backend-school,mode=max
+
+      - name: Summarize Docker cache scope
+        if: always()
+        run: |
+          printf '%s\n' \
+            '### Docker build cache' \
+            '- Scope: backend-school' \
+            '- Layer hits: inspect the Docker build record attached to this job.' \
+            >> "$GITHUB_STEP_SUMMARY"
 
   deploy:
     needs: build-and-push

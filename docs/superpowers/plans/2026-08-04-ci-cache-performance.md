@@ -52,7 +52,7 @@ test('backend image workflows use distinct BuildKit cache scopes', async () => {
 		assert.ok(workflow.includes(`cache-from: type=gha,scope=${scope}`));
 		assert.ok(workflow.includes(`cache-to: type=gha,scope=${scope},mode=max`));
 		assert.ok(workflow.includes('- name: Summarize Docker cache scope'));
-		assert.ok(workflow.includes(`'- Scope: \`${scope}\`'`));
+		assert.ok(workflow.includes(`'- Scope: ${scope}'`));
 		assert.ok(workflow.includes('Docker build record'));
 		assert.ok(workflow.includes('>> "$GITHUB_STEP_SUMMARY"'));
 	}
@@ -88,7 +88,7 @@ Immediately after that build step and before `deploy:`, add:
         run: |
           printf '%s\n' \
             '### Docker build cache' \
-            '- Scope: `backend-admin`' \
+            '- Scope: backend-admin' \
             '- Layer hits: inspect the Docker build record attached to this job.' \
             >> "$GITHUB_STEP_SUMMARY"
 ```
@@ -112,7 +112,7 @@ Immediately after that build step and before `deploy:`, add:
         run: |
           printf '%s\n' \
             '### Docker build cache' \
-            '- Scope: `backend-school`' \
+            '- Scope: backend-school' \
             '- Layer hits: inspect the Docker build record attached to this job.' \
             >> "$GITHUB_STEP_SUMMARY"
 ```

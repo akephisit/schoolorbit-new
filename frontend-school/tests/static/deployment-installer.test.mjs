@@ -158,6 +158,24 @@ test('backend workflows deploy the canonical target and verify the selected orig
 	}
 });
 
+test('backend image workflows use distinct BuildKit cache scopes', async () => {
+	const workflowScopes = new Map([
+		['.github/workflows/deploy-backend-admin.yml', 'backend-admin'],
+		['.github/workflows/deploy-backend-school.yml', 'backend-school']
+	]);
+
+	assert.equal(new Set(workflowScopes.values()).size, workflowScopes.size);
+	for (const [file, scope] of workflowScopes) {
+		const workflow = await readRepo(file);
+		assert.ok(workflow.includes(`cache-from: type=gha,scope=${scope}`));
+		assert.ok(workflow.includes(`cache-to: type=gha,scope=${scope},mode=max`));
+		assert.ok(workflow.includes('- name: Summarize Docker cache scope'));
+		assert.ok(workflow.includes(`'- Scope: ${scope}'`));
+		assert.ok(workflow.includes('Docker build record'));
+		assert.ok(workflow.includes('>> "$GITHUB_STEP_SUMMARY"'));
+	}
+});
+
 test('frontend deployments keep environment values out of committed Worker configuration', async () => {
 	const wrangler = JSON.parse(await readRepo('frontend-admin/wrangler.json'));
 	assert.equal(wrangler.account_id, undefined);
