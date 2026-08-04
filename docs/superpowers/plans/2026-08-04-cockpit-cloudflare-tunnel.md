@@ -813,7 +813,7 @@ env $(grep -v '^#' scripts/tests/installer/fixtures/runtime.env | xargs) \
 docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:1.7.7
 ```
 
-- [ ] **Step 6: Commit, push, and verify CI**
+- [x] **Step 6: Commit, push, and verify CI**
 
 ```bash
 git add .rules docs/OPERATIONS.md docs/PODMAN_SETUP.md \
@@ -827,7 +827,7 @@ git push origin main
 
 Wait for every workflow triggered by the commit to complete successfully before live mutation.
 
-- [ ] **Step 7: Repair and verify the current VPS without restarting containers**
+- [x] **Step 7: Repair and verify the current VPS without restarting containers**
 
 Before mutation, record the four `schoolorbit` container IDs and start timestamps. Start `user@1000.service`, enable and start `podman.socket` inside the `schoolorbit` user manager, then require:
 
