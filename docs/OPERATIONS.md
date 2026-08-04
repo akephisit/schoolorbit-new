@@ -38,7 +38,7 @@ Both backends expose:
 - `/health` for process liveness without dependency checks;
 - `/ready` for dependency readiness and deployment gating.
 
-Compose healthchecks and backend deployment workflows use `/ready`. Backend-school readiness verifies its backend-admin control-plane connection; it must not wake every tenant database. A healthy process with a failing readiness probe should not receive traffic until the dependency failure is resolved.
+Recurring Compose healthchecks use `/health` so process monitoring does not wake Neon or probe external dependencies. Backend deployment workflows and smoke tests use `/ready`; backend-school readiness verifies its backend-admin control-plane connection without waking every tenant database. External uptime monitors must use `/health`, because polling `/ready` would keep the admin Neon compute active. A dependency failure must fail the deployment readiness gate, while a live process remains diagnosable through `/health`.
 
 ## Deployment Workflows
 

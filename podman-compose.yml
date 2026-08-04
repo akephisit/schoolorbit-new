@@ -39,7 +39,7 @@ services:
 
       RUST_LOG: ${RUST_LOG:-info}
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/ready"]
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
       interval: 30s
       timeout: 20s
       retries: 3
@@ -108,7 +108,7 @@ services:
 
       RUST_LOG: ${RUST_LOG:-info}
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8081/ready"]
+      test: ["CMD", "curl", "-f", "http://localhost:8081/health"]
       interval: 30s
       timeout: 20s
       retries: 3

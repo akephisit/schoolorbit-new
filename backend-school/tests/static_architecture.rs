@@ -4390,7 +4390,7 @@ fn backend_school_registers_separate_liveness_and_readiness_routes() {
 }
 
 #[test]
-fn deployment_and_smoke_checks_use_backend_readiness() {
+fn recurring_healthchecks_use_liveness_while_deployment_and_smoke_use_readiness() {
     let docker_compose = read_source(repo_root().join("docker-compose.yml"));
     let podman_compose = read_source(repo_root().join("podman-compose.yml"));
     let school_deploy =
@@ -4400,8 +4400,10 @@ fn deployment_and_smoke_checks_use_backend_readiness() {
     let smoke = read_source(repo_root().join("scripts/smoke_test.sh"));
 
     for compose in [&docker_compose, &podman_compose] {
-        assert!(compose.contains("http://localhost:8080/ready"));
-        assert!(compose.contains("http://localhost:8081/ready"));
+        assert!(compose.contains("http://localhost:8080/health"));
+        assert!(compose.contains("http://localhost:8081/health"));
+        assert!(!compose.contains("http://localhost:8080/ready"));
+        assert!(!compose.contains("http://localhost:8081/ready"));
         assert!(compose.contains("BACKEND_ADMIN_REQUEST_TIMEOUT_MS"));
         assert!(compose.contains("BACKEND_ADMIN_RETRY_MAX_ATTEMPTS"));
         assert!(compose.contains("BACKEND_ADMIN_RETRY_BASE_DELAY_MS"));

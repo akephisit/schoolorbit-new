@@ -226,7 +226,7 @@ Use `ApiResponse` and `ApiErrorResponse`; do not return raw feature DTOs or ad-h
 - `podman-compose.yml` is the sole production Compose owner for backend-admin, backend-school, Nginx, clamd, their networks, and their volumes. Deployment workflows may recreate only the selected service and its declared dependencies; do not add a second production Compose definition.
 - Before DNS cutover, deployment workflows must verify the selected target origin with the intended hostname and pinned Origin CA trust. Do not verify a still-public hostname that may reach the old origin.
 - Containers bind application ports to `0.0.0.0`.
-- `/health` is liveness; `/ready` verifies dependencies and is the deployment/smoke readiness gate.
+- `/health` is dependency-free process liveness and owns recurring Docker/Podman and external uptime-monitor healthchecks. `/ready` verifies dependencies and is reserved for deployment, smoke, and intentional readiness checks so routine probes do not keep Neon active.
 - Keep Docker/Podman service networking, reverse-proxy routes, CORS origins, cookies, and public backend URLs aligned.
 - Required backend-school secrets include `ENCRYPTION_KEY`, `BLIND_INDEX_KEY`, `JWT_SECRET`, `INTERNAL_API_SECRET`, and `DEPLOY_KEY`.
 - Internal calls send `X-Internal-Caller`; caller-specific secrets may use `INTERNAL_API_SECRET_<CALLER>` with controlled fallback during rotation.
