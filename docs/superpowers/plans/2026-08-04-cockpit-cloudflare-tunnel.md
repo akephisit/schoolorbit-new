@@ -681,8 +681,171 @@ After CI passes, load `.env.local`, run standalone `--dry-run`, apply `configure
 
 ---
 
+### Task 10: Expose the Existing Rootless Podman Namespace to Cockpit
+
+**Files:**
+- Modify: `scripts/lib/schoolorbit-installer/remote/bootstrap.sh`
+- Modify: `scripts/lib/schoolorbit-installer/vps.sh`
+- Modify: `scripts/tests/installer/cockpit_remote.bats`
+- Modify: `scripts/tests/installer/vps.bats`
+- Modify: `.rules`
+- Modify: `docs/OPERATIONS.md`
+- Modify: `docs/PODMAN_SETUP.md`
+
+**Interfaces:**
+- Consumes: the existing `schoolorbit` account, its linger-enabled user manager, `podman.socket`, and root-privileged bootstrap execution.
+- Produces: `enable_server_user_podman_socket USER`, an active `/run/user/UID/podman/podman.sock`, and resume verification that fails closed when Cockpit cannot reach the rootless API.
+
+- [ ] **Step 1: Write failing host-boundary tests**
+
+Add a Bats case that fakes `id`, `getent`, root `systemctl`, and `runuser`. Invoke the desired helper twice and require both calls to leave the fake user socket active without invoking `podman stop`, `podman rm`, or `podman create`:
+
+```bash
+@test "bootstrap enables the server user's Podman API socket idempotently" {
+    export USER_PODMAN_STATE="$TEST_ROOT/user-podman-active"
+    make_fake_command id '
+case "$*" in
+    "-u schoolorbit") printf "%s\n" 1000 ;;
+    *) exit 1 ;;
+esac
+'
+    make_fake_command getent '
+[ "$*" = "passwd schoolorbit" ]
+printf "%s\n" "schoolorbit:x:1000:1000::/home/schoolorbit:/bin/bash"
+'
+    make_fake_command systemctl '
+[ "$*" = "start user@1000.service" ]
+printf "systemctl %s\n" "$*" >>"$FAKE_COMMAND_LOG"
+'
+    make_fake_command runuser '
+printf "runuser %s\n" "$*" >>"$FAKE_COMMAND_LOG"
+case "$*" in
+    *"systemctl --user enable --now podman.socket") touch "$USER_PODMAN_STATE" ;;
+    *"systemctl --user is-active --quiet podman.socket") [ -f "$USER_PODMAN_STATE" ] ;;
+    *) exit 1 ;;
+esac
+'
+
+    run env PATH="$FAKE_BIN:$ORIGINAL_PATH" \
+        FAKE_COMMAND_LOG="$FAKE_COMMAND_LOG" USER_PODMAN_STATE="$USER_PODMAN_STATE" \
+        bash -c 'source "$1"; enable_server_user_podman_socket schoolorbit; enable_server_user_podman_socket schoolorbit' \
+        _ "$BOOTSTRAP_SCRIPT"
+
+    [ "$status" -eq 0 ]
+    [ -f "$USER_PODMAN_STATE" ]
+    ! grep -Eq 'podman (stop|rm|create)' "$FAKE_COMMAND_LOG"
+}
+```
+
+Extend the VPS checkpoint test to require the remote script to check `podman.socket`, the per-user Unix socket, and `podman --remote` connectivity.
+
+- [ ] **Step 2: Run RED**
+
+```bash
+PATH=/tmp/schoolorbit-installer-jq-1.7.1-amd64:/tmp/schoolorbit-bats-core-v1.11.1/bin:$PATH \
+    bats --filter "Podman API socket|Cockpit bootstrap revalidation" \
+    scripts/tests/installer/cockpit_remote.bats scripts/tests/installer/vps.bats
+```
+
+Expected: FAIL because `enable_server_user_podman_socket` does not exist and checkpoint revalidation does not inspect the user socket.
+
+- [ ] **Step 3: Implement the idempotent user socket lifecycle**
+
+Add this boundary to `remote/bootstrap.sh` and call it after `loginctl enable-linger`:
+
+```bash
+enable_server_user_podman_socket() {
+    local server_user=${1:?Server user is required} server_uid server_home runtime_directory
+    server_uid=$(id -u "$server_user")
+    server_home=$(getent passwd "$server_user" | awk -F: 'NR == 1 { print $6 }')
+    [[ -n $server_home ]] || return 78
+    runtime_directory="/run/user/$server_uid"
+
+    systemctl start "user@${server_uid}.service"
+    runuser -u "$server_user" -- env \
+        HOME="$server_home" \
+        XDG_RUNTIME_DIR="$runtime_directory" \
+        DBUS_SESSION_BUS_ADDRESS="unix:path=$runtime_directory/bus" \
+        systemctl --user enable --now podman.socket
+    runuser -u "$server_user" -- env \
+        HOME="$server_home" \
+        XDG_RUNTIME_DIR="$runtime_directory" \
+        DBUS_SESSION_BUS_ADDRESS="unix:path=$runtime_directory/bus" \
+        systemctl --user is-active --quiet podman.socket
+}
+```
+
+Do not invoke Compose or any mutating Podman command in this helper.
+
+- [ ] **Step 4: Strengthen fresh-session revalidation**
+
+In `vps_reverify_cockpit_bootstrap`, derive the UID and home again, then require:
+
+```bash
+runtime_directory="/run/user/$(id -u "$server_user")"
+socket="$runtime_directory/podman/podman.sock"
+runuser -u "$server_user" -- env \
+    HOME="$(getent passwd "$server_user" | awk -F: 'NR == 1 { print $6 }')" \
+    XDG_RUNTIME_DIR="$runtime_directory" \
+    DBUS_SESSION_BUS_ADDRESS="unix:path=$runtime_directory/bus" \
+    systemctl --user is-active --quiet podman.socket
+test -S "$socket"
+runuser -u "$server_user" -- env \
+    HOME="$(getent passwd "$server_user" | awk -F: 'NR == 1 { print $6 }')" \
+    XDG_RUNTIME_DIR="$runtime_directory" \
+    podman --remote --url "unix://$socket" info >/dev/null
+```
+
+- [ ] **Step 5: Document the durable boundary and verify GREEN**
+
+Require the `schoolorbit` user socket in `.rules`. Document its systemd unit, runtime path, and read-only diagnostics in `docs/OPERATIONS.md` and `docs/PODMAN_SETUP.md`. Then run:
+
+```bash
+PATH=/tmp/schoolorbit-installer-jq-1.7.1-amd64:/tmp/schoolorbit-bats-core-v1.11.1/bin:$PATH \
+    bats scripts/tests/installer
+shellcheck scripts/schoolorbit-installer scripts/render_nginx_config.sh \
+    scripts/lib/schoolorbit-installer/*.sh scripts/lib/schoolorbit-installer/remote/*.sh
+shfmt -d -i 4 -ci scripts/schoolorbit-installer scripts/render_nginx_config.sh \
+    scripts/lib/schoolorbit-installer/*.sh scripts/lib/schoolorbit-installer/remote/*.sh
+node --test frontend-school/tests/static/deployment-installer.test.mjs
+env $(grep -v '^#' scripts/tests/installer/fixtures/runtime.env | xargs) \
+    podman-compose -f podman-compose.yml --dry-run up -d >/dev/null
+docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:1.7.7
+```
+
+- [ ] **Step 6: Commit, push, and verify CI**
+
+```bash
+git add .rules docs/OPERATIONS.md docs/PODMAN_SETUP.md \
+    docs/superpowers/plans/2026-08-04-cockpit-cloudflare-tunnel.md \
+    scripts/lib/schoolorbit-installer/remote/bootstrap.sh \
+    scripts/lib/schoolorbit-installer/vps.sh \
+    scripts/tests/installer/cockpit_remote.bats scripts/tests/installer/vps.bats
+git commit -m "fix: expose rootless podman to cockpit"
+git push origin main
+```
+
+Wait for every workflow triggered by the commit to complete successfully before live mutation.
+
+- [ ] **Step 7: Repair and verify the current VPS without restarting containers**
+
+Before mutation, record the four `schoolorbit` container IDs and start timestamps. Start `user@1000.service`, enable and start `podman.socket` inside the `schoolorbit` user manager, then require:
+
+```bash
+systemctl is-active user@1000.service
+runuser -u schoolorbit -- env XDG_RUNTIME_DIR=/run/user/1000 \
+    systemctl --user is-active podman.socket
+test -S /run/user/1000/podman/podman.sock
+runuser -u schoolorbit -- env HOME=/home/schoolorbit XDG_RUNTIME_DIR=/run/user/1000 \
+    podman --remote --url unix:///run/user/1000/podman/podman.sock ps
+```
+
+Compare the container IDs and start timestamps with the pre-mutation snapshot; all four must be unchanged. Refresh Cockpit Podman and verify it lists the same four names. Recheck Cockpit HTTPS, both API readiness endpoints, and that public TCP 9090 remains unreachable.
+
+---
+
 ## Plan Self-review
 
-- Spec coverage: Tasks 2–8 cover public Cockpit, no Access, loopback 9090, `schoolorbit`, root prohibition, secret transport, distinct Tunnels, resume, rollback, current VPS, future migrations, documentation, and live verification. Task 9 covers the operator-approved 10-character compatibility floor at both trust boundaries.
+- Spec coverage: Tasks 2–8 cover public Cockpit, no Access, loopback 9090, `schoolorbit`, root prohibition, secret transport, distinct Tunnels, resume, rollback, current VPS, future migrations, documentation, and live verification. Task 9 covers the operator-approved 10-character compatibility floor at both trust boundaries. Task 10 covers the rootless user Podman API socket, installer idempotency, fresh-session revalidation, and live no-restart repair.
 - Placeholder scan: hostnames, variables, commands, functions, version, hashes, and confirmation phrase are concrete; no deferred implementation markers remain.
 - Interface consistency: Task 2 supplies command/state contracts; Tasks 3–4 produce provider/VPS functions; Task 5 composes them; Tasks 6–8 verify and operate the same names.
