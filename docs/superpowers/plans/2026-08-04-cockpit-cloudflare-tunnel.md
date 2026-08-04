@@ -620,11 +620,11 @@ Record the management rollback command and retain the previous Tunnel/VPS throug
 - Consumes: `load_cockpit_inputs` and the exact JSON payload accepted by `configure_cockpit.sh`.
 - Produces: one consistent 10-character minimum at local validation, remote validation, tests, and operator documentation.
 
-- [ ] **Step 1: Write failing 9/10-character boundary tests**
+- [x] **Step 1: Write failing 9/10-character boundary tests**
 
 Update the local validation test to reject `123456789` and accept `1234567890`. Add a remote test that sends the same two boundary values through stdin JSON and requires nonzero/zero exit status respectively. Keep the password out of command arguments and fake command logs.
 
-- [ ] **Step 2: Run RED**
+- [x] **Step 2: Run RED**
 
 ```bash
 PATH=/tmp/schoolorbit-installer-jq-1.7.1-amd64:/tmp/schoolorbit-bats-core-v1.11.1/bin:$PATH \
@@ -633,7 +633,7 @@ PATH=/tmp/schoolorbit-installer-jq-1.7.1-amd64:/tmp/schoolorbit-bats-core-v1.11.
 
 Expected: the 10-character cases fail while both validators still require 16 characters.
 
-- [ ] **Step 3: Change both validation boundaries**
+- [x] **Step 3: Change both validation boundaries**
 
 In `config.sh` use:
 
@@ -649,11 +649,11 @@ In `remote/configure_cockpit.sh` use:
 server_password=$(jq -er '.server_password | strings | select(length >= 10)' <<<"$payload")
 ```
 
-- [ ] **Step 4: Align durable configuration and documentation**
+- [x] **Step 4: Align durable configuration and documentation**
 
 Replace only the Cockpit password minimum from 16 to 10 in `.env.example`, `.rules`, `docs/OPERATIONS.md`, and `docs/PODMAN_SETUP.md`. Retain the requirements for a unique password and secret-only transport.
 
-- [ ] **Step 5: Run GREEN and the deployment verification matrix**
+- [x] **Step 5: Run GREEN and the deployment verification matrix**
 
 ```bash
 PATH=/tmp/schoolorbit-installer-jq-1.7.1-amd64:/tmp/schoolorbit-bats-core-v1.11.1/bin:$PATH \

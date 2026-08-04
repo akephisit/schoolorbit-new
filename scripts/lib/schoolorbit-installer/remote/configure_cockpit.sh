@@ -41,7 +41,7 @@ jq -e '
     exit 64
 }
 server_user=$(jq -er '.server_user | strings | select(length > 0)' <<<"$payload")
-server_password=$(jq -er '.server_password | strings | select(length >= 16)' <<<"$payload")
+server_password=$(jq -er '.server_password | strings | select(length >= 10)' <<<"$payload")
 management_hostname=$(jq -er '.management_hostname | strings | select(length > 0)' <<<"$payload")
 tunnel_token=$(jq -er '.tunnel_token | strings | select(length >= 32)' <<<"$payload")
 unset payload

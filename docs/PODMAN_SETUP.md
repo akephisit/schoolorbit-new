@@ -38,7 +38,7 @@ Management plane ใช้ Cockpit และ cloudflared เป็น host syste
   --dry-run
 ```
 
-เมื่อ preflight ผ่านแล้วจึงรันคำสั่งเดิมโดยตัด `--dry-run` ออก ส่ง secret ผ่าน environment, hidden prompt หรือ `--secrets-stdin` เท่านั้น ห้ามใส่ secret ต่อท้าย command รวมถึงกำหนด `SCHOOLORBIT_SERVER_PASSWORD` ที่ไม่ซ้ำและยาวอย่างน้อย 16 ตัวสำหรับบัญชี `schoolorbit` ตัว installer จะติดตั้ง Podman แบบ rootless, สร้าง `/opt/stack`, ตั้ง GitHub variables/secrets, ติดตั้ง Cloudflare Origin CA, dispatch backend/frontend workflows, ตรวจ origin ใหม่โดยตรง, ขอคำยืนยันก่อนย้าย DNS แล้วจึงติดตั้ง Cockpit/cloudflared และ publish management Tunnel หลังระบบ application ผ่าน public verification.
+เมื่อ preflight ผ่านแล้วจึงรันคำสั่งเดิมโดยตัด `--dry-run` ออก ส่ง secret ผ่าน environment, hidden prompt หรือ `--secrets-stdin` เท่านั้น ห้ามใส่ secret ต่อท้าย command รวมถึงกำหนด `SCHOOLORBIT_SERVER_PASSWORD` ที่ไม่ซ้ำและยาวอย่างน้อย 10 ตัวสำหรับบัญชี `schoolorbit` ตัว installer จะติดตั้ง Podman แบบ rootless, สร้าง `/opt/stack`, ตั้ง GitHub variables/secrets, ติดตั้ง Cloudflare Origin CA, dispatch backend/frontend workflows, ตรวจ origin ใหม่โดยตรง, ขอคำยืนยันก่อนย้าย DNS แล้วจึงติดตั้ง Cockpit/cloudflared และ publish management Tunnel หลังระบบ application ผ่าน public verification.
 
 ถ้าหยุดกลางทาง ให้ใช้ run ID ที่พิมพ์ไว้:
 

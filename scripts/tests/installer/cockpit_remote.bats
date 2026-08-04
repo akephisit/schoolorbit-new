@@ -32,10 +32,24 @@ cockpit_payload() {
 }
 
 run_remote_configure() {
+    local payload
+    payload=${REMOTE_PAYLOAD-}
+    [[ -n $payload ]] || payload=$(cockpit_payload)
     run env SCHOOLORBIT_INSTALLER_TEST_ROOT="$REMOTE_ROOT" \
         PATH="$FAKE_BIN:$ORIGINAL_PATH" \
         FAKE_COMMAND_LOG="$FAKE_COMMAND_LOG" CAPTURED_STDIN="$CAPTURED_STDIN" \
-        bash "$REMOTE_SCRIPT" <<<"$(cockpit_payload)"
+        bash "$REMOTE_SCRIPT" <<<"$payload"
+}
+
+@test "remote Cockpit configuration rejects nine characters and accepts ten" {
+    REMOTE_PAYLOAD=$(cockpit_payload | jq '.server_password = "123456789"')
+    run_remote_configure
+    [ "$status" -ne 0 ]
+
+    REMOTE_PAYLOAD=$(cockpit_payload | jq '.server_password = "1234567890"')
+    run_remote_configure
+    [ "$status" -eq 0 ]
+    [ "$(<"$CAPTURED_STDIN")" = 'schoolorbit:1234567890' ]
 }
 
 @test "remote Cockpit configuration is loopback-only root-safe and token-file based" {

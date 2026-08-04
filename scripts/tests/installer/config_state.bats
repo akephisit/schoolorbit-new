@@ -140,18 +140,18 @@ teardown() {
     [ "${#SO_SECRETS[@]}" -eq 1 ]
 }
 
-@test "standalone cockpit loading requires only bootstrap token and a strong password" {
+@test "standalone cockpit loading requires only bootstrap token and a ten-character password" {
     export SCHOOLORBIT_CLOUDFLARE_BOOTSTRAP_TOKEN=cf-bootstrap-7vK9nM3qR8wX2zLp6tY4
-    export SCHOOLORBIT_SERVER_PASSWORD=short
+    export SCHOOLORBIT_SERVER_PASSWORD=123456789
 
     run load_cockpit_inputs </dev/null
     [ "$status" -eq 64 ]
 
-    export SCHOOLORBIT_SERVER_PASSWORD='Strong-Cockpit-Password-2026'
+    export SCHOOLORBIT_SERVER_PASSWORD=1234567890
     load_cockpit_inputs </dev/null
 
     [ "${SO_SECRETS[SCHOOLORBIT_CLOUDFLARE_BOOTSTRAP_TOKEN]}" = cf-bootstrap-7vK9nM3qR8wX2zLp6tY4 ]
-    [ "${SO_SECRETS[SCHOOLORBIT_SERVER_PASSWORD]}" = Strong-Cockpit-Password-2026 ]
+    [ "${SO_SECRETS[SCHOOLORBIT_SERVER_PASSWORD]}" = 1234567890 ]
     [ "${#SO_SECRETS[@]}" -eq 2 ]
 }
 

@@ -109,7 +109,7 @@ secret values as command-line arguments. Run the read-only provider and target p
 
 Remove `--dry-run` for the real migration. The installer creates a mode-`0600` checkpoint under
 `~/.local/state/schoolorbit-installer/`, prints its run ID, and records only non-secret state.
-`SCHOOLORBIT_SERVER_PASSWORD` is also required: use a unique value of at least 16 characters for
+`SCHOOLORBIT_SERVER_PASSWORD` is also required: use a unique value of at least 10 characters for
 the `schoolorbit` Linux/Cockpit account. It is installer input, not an application runtime value,
 and must remain in `.env.local`, JSON stdin, a hidden prompt, or the operator's secret manager.
 After correcting a failure before or during migration, resume the same run without repeating a

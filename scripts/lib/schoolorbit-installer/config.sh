@@ -251,7 +251,7 @@ _validate_secret() {
             minimum=12
             ;;
         SCHOOLORBIT_SERVER_PASSWORD)
-            minimum=16
+            minimum=10
             ;;
         SMOKE_PASSWORD)
             minimum=1
