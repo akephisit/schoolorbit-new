@@ -4419,7 +4419,8 @@ fn deployment_and_smoke_checks_use_backend_readiness() {
     assert!(school_deploy.contains("get-bucket-cors"));
     assert!(school_deploy.contains(r#"private_cors_origin="https://*.${base_domain}""#));
     assert!(school_deploy.contains(r#"AllowedMethods:["GET","HEAD"]"#));
-    assert!(school_deploy.contains(r#"podman-compose -f "${runtime_compose}.next" config"#));
+    assert!(school_deploy
+        .contains(r#"podman-compose -f "${runtime_compose}.next" --dry-run up -d backend-school"#));
     assert!(school_deploy
         .contains(r#"podman-compose -f "$runtime_compose" --dry-run up -d clamd backend-school"#));
     assert!(school_deploy.contains("http://127.0.0.1:8081/ready"));
@@ -4431,7 +4432,7 @@ fn deployment_and_smoke_checks_use_backend_readiness() {
     assert!(school_deploy.contains("seq 1 36"));
     assert!(admin_deploy.contains("seq 1 12"));
     assert!(school_deploy.contains("timeout 180 bash -c"));
-    assert!(admin_deploy.contains("timeout 60 bash -c"));
+    assert!(admin_deploy.contains("timeout 180 bash -c"));
     assert!(frontend_deploy.contains("BACKEND_SCHOOL_URL: ${{ vars.BACKEND_SCHOOL_URL }}"));
     assert!(frontend_deploy.contains("${BACKEND_SCHOOL_URL%/}/ready"));
     assert!(frontend_deploy.contains(r#".filePlatform == "ready""#));
