@@ -106,6 +106,10 @@ The privileged, idempotent bootstrap installs `cockpit`, `cockpit-podman`, and a
 `cloudflared` package in addition to the existing runtime packages. It:
 
 - preserves the existing `schoolorbit` user and linger configuration;
+- starts that user's systemd manager and enables `podman.socket` in the `schoolorbit` user
+  session so Cockpit Podman reaches `/run/user/$(id -u schoolorbit)/podman/podman.sock`;
+- keeps the production containers in the existing rootless `schoolorbit` namespace and does not
+  restart, recreate, or copy them into root's Podman storage;
 - updates that user's password through stdin without echoing it;
 - installs Cockpit's origin and proxy-header configuration atomically;
 - overrides `cockpit.socket` to listen only on `127.0.0.1:9090`;
@@ -140,8 +144,9 @@ local and CI checks.
   no previous record existed. It does not delete either Tunnel or VPS.
 - Re-running the same checkpoint revalidates completed work and resumes from the first incomplete
   management step.
-- A missing or unhealthy Tunnel, a non-loopback Cockpit listener, an unexpected DNS record type,
-  an origin mismatch, or a leaked secret is a hard failure.
+- A missing or unhealthy Tunnel, an inactive `schoolorbit` Podman API socket, a non-loopback
+  Cockpit listener, an unexpected DNS record type, an origin mismatch, or a leaked secret is a
+  hard failure.
 - Management-surface failure never silently triggers application DNS rollback. The operator
   chooses management rollback separately because the APIs and frontends may already be healthy.
 
@@ -157,6 +162,8 @@ Tests cover:
 - consistent password validation at both installer and remote boundaries, rejecting 9 characters
   and accepting 10 or more;
 - Debian and Ubuntu package/bootstrap idempotency;
+- idempotent enablement of the `schoolorbit` user manager and Podman API socket, including a fresh
+  check that the socket is active and exists at the expected per-user runtime path;
 - loopback-only Cockpit socket configuration, proxy origin/header configuration, root-login
   prohibition, and service enablement;
 - local Cockpit `/ping`, public login-page response, and WebSocket-compatible proxying;
@@ -168,8 +175,10 @@ Live acceptance on the current VPS additionally requires:
 1. no public listener on port 9090;
 2. a healthy Tunnel connector whose origin IP is the replacement VPS;
 3. `https://server.schoolorbit.app` displays Cockpit directly without a Cloudflare Access page;
-4. login as `schoolorbit` shows the four SchoolOrbit rootless containers; and
-5. both public APIs and tenant frontends remain healthy and unchanged.
+4. `/run/user/$(id -u schoolorbit)/podman/podman.sock` is active and its Libpod API lists the four
+   SchoolOrbit rootless containers;
+5. login as `schoolorbit` shows those same four containers in Cockpit Podman; and
+6. both public APIs and tenant frontends remain healthy and unchanged.
 
 ## Residual Risk
 
