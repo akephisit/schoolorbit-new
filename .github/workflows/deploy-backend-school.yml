@@ -294,7 +294,18 @@ jobs:
 
             # The scanner gets an isolated container network and no published port.
             podman pull docker.io/clamav/clamav-debian:1.5.3
+            if podman container exists schoolorbit-clamd; then
+              podman stop schoolorbit-clamd
+              podman rm schoolorbit-clamd
+            fi
             compose_up_quiet clamd
+
+            expected_clamd_memory_bytes=$((3 * 1024 * 1024 * 1024))
+            clamd_memory_bytes="$(podman inspect --format '{{.HostConfig.Memory}}' schoolorbit-clamd)"
+            if [ "$clamd_memory_bytes" != "$expected_clamd_memory_bytes" ]; then
+              echo "Clamd memory limit mismatch: expected ${expected_clamd_memory_bytes} bytes, got ${clamd_memory_bytes} bytes"
+              exit 1
+            fi
             scanner_ready=false
             for attempt in $(seq 1 60); do
               scanner_status="$(podman inspect --format '{{.State.Health.Status}}' schoolorbit-clamd 2>/dev/null || true)"

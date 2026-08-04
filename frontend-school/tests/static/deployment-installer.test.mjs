@@ -83,6 +83,35 @@ test('local and production clamd allow 3 GiB for concurrent signature reloads', 
 	}
 });
 
+test('backend-school deployment recreates clamd and verifies runtime memory before health', async () => {
+	const workflow = await readRepo('.github/workflows/deploy-backend-school.yml');
+	const scannerStart = workflow.indexOf(
+		'# The scanner gets an isolated container network and no published port.'
+	);
+	const scannerEnd = workflow.indexOf('\n            jq_image=', scannerStart);
+
+	assert.ok(scannerStart >= 0 && scannerEnd > scannerStart);
+	const scannerDeployment = workflow.slice(scannerStart, scannerEnd);
+	const orderedMarkers = [
+		'podman pull docker.io/clamav/clamav-debian:1.5.3',
+		'if podman container exists schoolorbit-clamd; then',
+		'podman stop schoolorbit-clamd',
+		'podman rm schoolorbit-clamd',
+		'compose_up_quiet clamd',
+		'expected_clamd_memory_bytes=$((3 * 1024 * 1024 * 1024))',
+		`clamd_memory_bytes="$(podman inspect --format '{{.HostConfig.Memory}}' schoolorbit-clamd)"`,
+		'if [ "$clamd_memory_bytes" != "$expected_clamd_memory_bytes" ]; then',
+		'scanner_ready=false'
+	];
+	let previousIndex = -1;
+	for (const marker of orderedMarkers) {
+		const markerIndex = scannerDeployment.indexOf(marker);
+		assert.ok(markerIndex > previousIndex, `${marker} must appear in deployment order`);
+		previousIndex = markerIndex;
+	}
+	assert.doesNotMatch(scannerDeployment, /podman volume (?:rm|prune)/);
+});
+
 test('the proxy renderer substitutes only a validated base domain', async (t) => {
 	const temporary = await mkdtemp(path.join(os.tmpdir(), 'schoolorbit-nginx-'));
 	t.after(() => rm(temporary, { recursive: true, force: true }));
