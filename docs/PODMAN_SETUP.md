@@ -22,6 +22,10 @@ Network และ volume ของ production ใช้ชื่อคงที�
 - `schoolorbit-clamav-egress` สำหรับการอัปเดต signature ของ clamd;
 - `schoolorbit-clamav-signatures` สำหรับ signature volume.
 
+Management plane ใช้ Cockpit และ cloudflared เป็น host systemd services แยกจาก Compose โดย Cockpit
+ฟังเฉพาะ `127.0.0.1:9090` และ Cloudflare Tunnel เผยแพร่ที่
+`https://server.schoolorbit.app` เท่านั้น
+
 ## วิธีที่แนะนำ: Replacement VPS Installer
 
 สำหรับย้ายไป VPS ใหม่ ให้รัน installer จากเครื่องผู้ดูแลผ่าน WSL/Linux/macOS แทนการทำขั้นตอนด้านล่างทีละส่วน เครื่องเป้าหมายต้องเป็น Debian หรือ Ubuntu และเข้า SSH ด้วย key ได้ ทดสอบแบบ read-only ก่อน:
@@ -34,7 +38,7 @@ Network และ volume ของ production ใช้ชื่อคงที�
   --dry-run
 ```
 
-เมื่อ preflight ผ่านแล้วจึงรันคำสั่งเดิมโดยตัด `--dry-run` ออก ส่ง secret ผ่าน environment, hidden prompt หรือ `--secrets-stdin` เท่านั้น ห้ามใส่ secret ต่อท้าย command ตัว installer จะติดตั้ง Podman แบบ rootless, สร้าง `/opt/stack`, ตั้ง GitHub variables/secrets, ติดตั้ง Cloudflare Origin CA, dispatch backend/frontend workflows, ตรวจ origin ใหม่โดยตรง และขอคำยืนยันก่อนย้าย DNS.
+เมื่อ preflight ผ่านแล้วจึงรันคำสั่งเดิมโดยตัด `--dry-run` ออก ส่ง secret ผ่าน environment, hidden prompt หรือ `--secrets-stdin` เท่านั้น ห้ามใส่ secret ต่อท้าย command รวมถึงกำหนด `SCHOOLORBIT_SERVER_PASSWORD` ที่ไม่ซ้ำและยาวอย่างน้อย 16 ตัวสำหรับบัญชี `schoolorbit` ตัว installer จะติดตั้ง Podman แบบ rootless, สร้าง `/opt/stack`, ตั้ง GitHub variables/secrets, ติดตั้ง Cloudflare Origin CA, dispatch backend/frontend workflows, ตรวจ origin ใหม่โดยตรง, ขอคำยืนยันก่อนย้าย DNS แล้วจึงติดตั้ง Cockpit/cloudflared และ publish management Tunnel หลังระบบ application ผ่าน public verification.
 
 ถ้าหยุดกลางทาง ให้ใช้ run ID ที่พิมพ์ไว้:
 
@@ -48,6 +52,20 @@ Network และ volume ของ production ใช้ชื่อคงที�
 ./scripts/schoolorbit-installer rollback-dns --run-id RUN_ID
 ```
 
+หากต้องการติดตั้งเฉพาะ management plane บน VPS ที่ย้ายเสร็จแล้ว ให้เริ่มด้วย dry-run และใช้ run ID เดิมเมื่อ resume:
+
+```bash
+./scripts/schoolorbit-installer configure-cockpit \
+  --repository akephisit/schoolorbit-new \
+  --target "$TARGET_IP" \
+  --base-domain schoolorbit.app \
+  --dry-run
+./scripts/schoolorbit-installer configure-cockpit --resume RUN_ID
+./scripts/schoolorbit-installer rollback-cockpit --run-id RUN_ID
+```
+
+`rollback-cockpit` ต้องยืนยัน `ROLLBACK COCKPIT server.schoolorbit.app` และไม่ลบ Tunnel หรือแก้ DNS ของ API
+
 รายละเอียด checkpoint, คำยืนยัน และ rollback อยู่ใน [Operations](./OPERATIONS.md). ขั้นตอนถัดไปเป็น manual path สำหรับกรณีที่ installer ใช้ไม่ได้หรือผู้ดูแลต้องตรวจแต่ละส่วนเอง อย่าผสมสองวิธีใน run เดียวโดยไม่มี checkpoint ที่ชัดเจน.
 
 ## ติดตั้งด้วยตนเอง
@@ -60,7 +78,7 @@ Network และ volume ของ production ใช้ชื่อคงที�
 2. อัปเดตระบบและ reboot หาก kernel/package manager แจ้งว่าจำเป็น.
 3. เปิด firewall สำหรับ SSH ก่อนเสมอ จากนั้นเปิด `80/tcp` และ `443/tcp`.
 4. พอร์ต `8080` และ `8081` ควรถูกจำกัดด้วย host firewall ไม่ให้เข้าจากอินเทอร์เน็ตโดยตรง.
-5. เปิด `9090/tcp` สำหรับ Cockpit เฉพาะ trusted IP/VPN หากต้องใช้ GUI.
+5. ห้ามเปิด inbound `9090/tcp`; Cloudflare Tunnel เชื่อมออกจากเครื่องไปยัง Cockpit ที่ loopback เท่านั้น.
 
 ```bash
 sudo apt update
@@ -81,14 +99,21 @@ sudo apt install -y \
   curl \
   ca-certificates
 
-sudo systemctl enable --now cockpit.socket
+sudo systemctl disable --now cockpit.socket
 sudo loginctl enable-linger "$USER"
 
 podman --version
 podman-compose version
 ```
 
-Cockpit เปิดที่ `https://<server-ip>:9090` และใช้บัญชี Linux ปกติเดียวกับที่เป็นเจ้าของ rootless containers.
+อย่าเปิด Cockpit ด้วย IP ของเครื่อง ก่อน start socket ต้องติดตั้ง override ให้มีเพียง
+`ListenStream=127.0.0.1:9090` และให้ cloudflared ใช้ token file แบบ root mode `0600` ตาม tracked
+installer การเข้าใช้งานปกติคือ `https://server.schoolorbit.app` ด้วยบัญชี `schoolorbit` ซึ่งเป็น
+เจ้าของ rootless Podman; คง `root` ไว้ใน `/etc/cockpit/disallowed-users`.
+
+หน้า login นี้เป็น public login โดยตั้งใจและไม่ได้ใช้ Cloudflare Access จึงต้องใช้รหัสผ่านเฉพาะที่
+แข็งแรง อัปเดต Cockpit/cloudflared ตาม security releases และเก็บ SSH key ไว้สำหรับ recovery ห้าม
+เปิด firewall 9090 แม้จะจำกัดเป็น trusted IP เพราะ topology ที่รองรับใช้ Cloudflare Tunnel เท่านั้น.
 
 หาก rootless Nginx ต้อง bind พอร์ต `80`/`443` โดยตรง ต้องลด privileged-port boundary ของทั้งเครื่อง การตั้งค่านี้เหมาะกับ dedicated server เท่านั้น:
 

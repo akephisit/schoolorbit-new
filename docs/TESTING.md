@@ -101,6 +101,15 @@ docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:1.7.7
 
 The deployment static guard renders a proxy template into a temporary target, rejects invalid domains without replacing existing output, enforces the single production Compose owner, and confirms backend workflows verify the selected origin rather than the public hostname. Report an unavailable Bats, Podman Compose, or Docker dependency as unrun; do not replace its check with a narrower command.
 
+The installer Bats directory includes focused Cockpit coverage:
+
+- `cockpit_provider.bats` exercises Tunnel creation/adoption, ingress, connector IP, CNAME drift, memory-only token handling, and management rollback without deleting Tunnels;
+- `cockpit_remote.bats` executes the remote configurator against an isolated filesystem and checks loopback-only listening, root prohibition, mode-`0600` token storage, pinned amd64/arm64 cloudflared artifacts, and idempotency;
+- `vps.bats` verifies separate SSH stdin streams for the tracked script and secret JSON plus a fresh verification session;
+- `orchestration.bats` verifies phase ordering, dry-run mutation absence, publish journaling, resume, standalone rollback, and full migration rollback.
+
+Do not replace these focused files with source-only assertions. The deployment static guard supplements them by preventing Compose, firewall, installer-entry-point, and canonical-document drift.
+
 ## Permission Contract
 
 `contracts/permissions.json` is the handwritten permission source. The registries and lock are generated files; do not edit generated files directly.

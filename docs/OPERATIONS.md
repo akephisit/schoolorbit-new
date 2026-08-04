@@ -109,6 +109,9 @@ secret values as command-line arguments. Run the read-only provider and target p
 
 Remove `--dry-run` for the real migration. The installer creates a mode-`0600` checkpoint under
 `~/.local/state/schoolorbit-installer/`, prints its run ID, and records only non-secret state.
+`SCHOOLORBIT_SERVER_PASSWORD` is also required: use a unique value of at least 16 characters for
+the `schoolorbit` Linux/Cockpit account. It is installer input, not an application runtime value,
+and must remain in `.env.local`, JSON stdin, a hidden prompt, or the operator's secret manager.
 After correcting a failure before or during migration, resume the same run without repeating a
 verified phase:
 
@@ -122,8 +125,10 @@ deployment discovery, readiness, and menu synchronization to the selected origin
 changed. It verifies both APIs directly with `curl --resolve` and pinned Origin CA trust, then
 prints the DNS diff and
 requires the exact phrase `CUTOVER <target-ip>` before one two-record Cloudflare batch. Public
-verification covers API identity, both frontends, authenticated SSE, and the File Platform before
-the deployment gates are enabled. A failed post-cutover verification reports recovery commands;
+verification covers API identity, both frontends, authenticated SSE, and the File Platform. Only
+after those checks pass does the migration configure the Cockpit management Tunnel, verify its
+connector came from the selected target, publish `server.schoolorbit.app`, and verify the public
+Cockpit endpoint before the deployment gates are enabled. A failed post-cutover verification reports recovery commands;
 it never performs an automatic rollback.
 
 Rollback restores the complete checkpointed record content, TTL, and proxy state. Confirm that
@@ -134,14 +139,81 @@ the current records still represent this run, then execute:
 ```
 
 The command prints the reverse diff and requires the exact phrase `ROLLBACK <original-ip>` before
-applying one reverse batch. It changes DNS only; the replacement VPS and GitHub configuration are
-retained for diagnosis or a later retry. Keep the old VPS available until the rollback window has
-been closed explicitly.
+applying one reverse API-DNS batch. If that migration published management DNS, the same rollback
+also restores or removes its management CNAME after revalidating both current states. The
+replacement VPS, GitHub configuration, and both Cloudflare Tunnels are retained for diagnosis or a
+later retry. Keep the old VPS available until the rollback window has been closed explicitly.
 
 The TLS checkpoint stores the Cloudflare Origin CA certificate ID and `certificate_expiry`, but
 never the private key. Monitor that expiry independently and schedule replacement in advance;
 Cloudflare does not send Origin CA expiry notifications. Keep Cloudflare SSL/TLS mode at
 `Full (strict)` for installer-managed API origins.
+
+## Cockpit Management over Cloudflare Tunnel
+
+The supported management path is:
+
+```text
+browser -> Cloudflare edge -> Cloudflare Tunnel -> 127.0.0.1:9090 -> Cockpit
+```
+
+Cockpit and cloudflared run as host systemd services; they are not Compose services and do not use
+the application Nginx container. The host firewall must not allow inbound `9090/tcp`. Cockpit keeps
+`root` in `/etc/cockpit/disallowed-users`; log in at `https://server.schoolorbit.app` as
+`schoolorbit` so Cockpit Podman sees the same rootless containers as production. A root Cockpit
+session would use a different Podman namespace and is intentionally unsupported.
+
+This deployment intentionally has no Cloudflare Access, OTP, or account-member gate. It is a
+public login and the login page is therefore publicly reachable. Use a unique strong password, retain SSH key access for recovery,
+monitor authentication activity, and treat Cockpit/cloudflared security updates as production
+patches. Cloudflare terminates public TLS; Cockpit accepts unencrypted HTTP only on its loopback
+listener. The Tunnel token is stored at `/etc/cloudflared/schoolorbit-cockpit.token` as root mode
+`0600` and is consumed with `--token-file`; it must never appear in a command argument or checkpoint.
+
+For an already migrated VPS, first ensure the operator environment contains
+`SCHOOLORBIT_CLOUDFLARE_BOOTSTRAP_TOKEN` with the account/zone permissions required to manage
+Cloudflare Tunnels and DNS plus `SCHOOLORBIT_SERVER_PASSWORD`. Run a read-only check:
+
+```bash
+./scripts/schoolorbit-installer configure-cockpit \
+  --repository akephisit/schoolorbit-new \
+  --target "$TARGET_IP" \
+  --base-domain schoolorbit.app \
+  --dry-run
+```
+
+Remove `--dry-run` to apply. A distinct Tunnel named from the installer run is created or safely
+adopted on resume; the management CNAME is published only after Cockpit, the loopback listener, the
+fresh SSH verification, and the connector origin IP pass. Resume the same operation with:
+
+```bash
+./scripts/schoolorbit-installer configure-cockpit --resume RUN_ID
+```
+
+If management DNS was published but validation failed, use the reported run ID:
+
+```bash
+./scripts/schoolorbit-installer rollback-cockpit --run-id RUN_ID
+```
+
+The command revalidates drift, prints the reverse management diff, and requires the exact phrase
+`ROLLBACK COCKPIT server.schoolorbit.app`. It restores an existing snapshotted CNAME or deletes only
+the record created by that run. It never deletes either Tunnel or changes application API DNS.
+
+After setup, verify on the target through a privileged SSH session:
+
+```bash
+systemctl is-active cockpit.socket schoolorbit-cloudflared.service
+ss -ltnH '( sport = :9090 )'
+curl -fsS http://127.0.0.1:9090/ping
+stat -c '%a %U:%G' /etc/cloudflared/schoolorbit-cockpit.token
+```
+
+The only listener must be `127.0.0.1:9090`, the ping service must be `cockpit`, and the token file
+must be `600 root:root`. Confirm the Cloudflare connector origin matches the target IP, the CNAME is
+proxied to the checkpointed Tunnel UUID, direct access to `<target-ip>:9090` fails, and the
+`schoolorbit` Cockpit Podman page lists `schoolorbit-backend-admin`, `schoolorbit-backend-school`,
+`schoolorbit-clamd`, and `schoolorbit-nginx`. Retain the prior Tunnel/VPS through the rollback window.
 
 ## Tenant Migration and Cutover
 

@@ -237,6 +237,63 @@ test('installer CI enforces shell provider topology and workflow guards', async 
 	}
 });
 
+test('Cockpit management stays loopback-only, secret-safe, and documented', async () => {
+	const [
+		installer,
+		bootstrap,
+		cockpitRemote,
+		cloudflareTunnel,
+		phases,
+		operations,
+		setup,
+		testing,
+		rules
+	] = await Promise.all([
+		readRepo('scripts/schoolorbit-installer'),
+		readRepo('scripts/lib/schoolorbit-installer/remote/bootstrap.sh'),
+		readRepo('scripts/lib/schoolorbit-installer/remote/configure_cockpit.sh'),
+		readRepo('scripts/lib/schoolorbit-installer/cloudflare_tunnel.sh'),
+		readRepo('scripts/lib/schoolorbit-installer/phases.sh'),
+		readRepo('docs/OPERATIONS.md'),
+		readRepo('docs/PODMAN_SETUP.md'),
+		readRepo('docs/TESTING.md'),
+		readRepo('.rules')
+	]);
+
+	assert.match(installer, /source "\$INSTALLER_LIBRARY\/cloudflare_tunnel\.sh"/);
+	assert.match(installer, /configure-cockpit --resume RUN_ID/);
+	assert.match(installer, /rollback-cockpit --run-id RUN_ID/);
+	assert.match(bootstrap, /SCHOOLORBIT_CLOUDFLARED_VERSION=2026\.7\.3/);
+	assert.match(bootstrap, /049777d30f9bf93da6df8bbe31383460eb2aa51a832c6551824d56f9fcc55974/);
+	assert.match(bootstrap, /d3ea7d22dd337b465da33d6bc1c4b3cfd381407447a2a7d29542c19783430db3/);
+	assert.doesNotMatch(bootstrap, /ufw allow (?:9090|"?\$\{?COCKPIT)/);
+	assert.match(cockpitRemote, /ListenStream=127\.0\.0\.1:9090/);
+	assert.match(cockpitRemote, /--token-file \/etc\/cloudflared\/schoolorbit-cockpit\.token/);
+	assert.match(cockpitRemote, /disallowed_content.*root/);
+	assert.match(cloudflareTunnel, /http:\/\/127\.0\.0\.1:9090/);
+	assert.doesNotMatch(cloudflareTunnel, /DELETE[^\n]*cfd_tunnel/);
+	assert.match(phases, /ROLLBACK COCKPIT \$SO_CF_COCKPIT_HOSTNAME/);
+
+	for (const value of [
+		'configure-cockpit',
+		'rollback-cockpit',
+		'server.schoolorbit.app',
+		'SCHOOLORBIT_SERVER_PASSWORD',
+		'schoolorbit',
+		'127.0.0.1:9090'
+	]) {
+		assert.ok(operations.includes(value), `operations must contain ${value}`);
+		assert.ok(setup.includes(value), `setup must contain ${value}`);
+	}
+	assert.match(operations, /public login|publicly reachable login/i);
+	assert.match(setup, /Cloudflare Tunnel/);
+	assert.doesNotMatch(setup, /https:\/\/<server-ip>:9090/);
+	for (const batsFile of ['cockpit_provider.bats', 'cockpit_remote.bats']) {
+		assert.ok(testing.includes(batsFile), `testing must contain ${batsFile}`);
+	}
+	assert.match(rules, /Cockpit management/);
+});
+
 test('durable operations docs describe the guarded replacement VPS path', async () => {
 	const [operations, setup, adminReadme] = await Promise.all([
 		readRepo('docs/OPERATIONS.md'),
