@@ -14,6 +14,7 @@
 - Do not add Cloudflare Access, OTP, identity-provider, or account-member authentication.
 - Do not open inbound TCP 9090; Cockpit listens only on `127.0.0.1:9090`.
 - Login uses `schoolorbit`; keep `root` in `/etc/cockpit/disallowed-users`.
+- Require at least 10 characters for `SCHOOLORBIT_SERVER_PASSWORD`; uniqueness and greater length remain recommended.
 - Never put the bootstrap token, Tunnel token, or `SCHOOLORBIT_SERVER_PASSWORD` in command arguments, logs, checkpoints, or Git.
 - Store the Tunnel token in a root-owned mode-0600 file and use cloudflared `--token-file`.
 - Support Debian and Ubuntu on amd64 and arm64.
@@ -95,12 +96,12 @@ git commit -m "test: align deployment readiness contract"
     [ "$SO_COCKPIT_RESUME_RUN_ID" = cockpit-run-1 ]
 }
 
-@test "cockpit password requires sixteen characters" {
+@test "cockpit password requires ten characters" {
     export SCHOOLORBIT_CLOUDFLARE_BOOTSTRAP_TOKEN=bootstrap-token-value
-    export SCHOOLORBIT_SERVER_PASSWORD=short
+    export SCHOOLORBIT_SERVER_PASSWORD=123456789
     run load_cockpit_inputs
     [ "$status" -eq 64 ]
-    SCHOOLORBIT_SERVER_PASSWORD='Strong-Cockpit-Password-2026'
+    SCHOOLORBIT_SERVER_PASSWORD=1234567890
     load_cockpit_inputs
 }
 ```
@@ -131,7 +132,7 @@ Extend validation:
 
 ```bash
 SCHOOLORBIT_SERVER_PASSWORD)
-    minimum=16
+    minimum=10
     ;;
 ```
 
@@ -539,7 +540,7 @@ Wait for final conclusions. Inspect exact logs before changing code after a fail
 
 - [ ] **Step 1: Require the operator password**
 
-Confirm `.env.local` contains a unique value of at least 16 characters named:
+Confirm `.env.local` contains a unique value of at least 10 characters named:
 
 ```text
 SCHOOLORBIT_SERVER_PASSWORD
@@ -603,8 +604,85 @@ Record the management rollback command and retain the previous Tunnel/VPS throug
 
 ---
 
+### Task 9: Lower the Operator-approved Password Compatibility Floor
+
+**Files:**
+- Modify: `scripts/tests/installer/config_state.bats`
+- Modify: `scripts/tests/installer/cockpit_remote.bats`
+- Modify: `scripts/lib/schoolorbit-installer/config.sh`
+- Modify: `scripts/lib/schoolorbit-installer/remote/configure_cockpit.sh`
+- Modify: `.env.example`
+- Modify: `.rules`
+- Modify: `docs/OPERATIONS.md`
+- Modify: `docs/PODMAN_SETUP.md`
+
+**Interfaces:**
+- Consumes: `load_cockpit_inputs` and the exact JSON payload accepted by `configure_cockpit.sh`.
+- Produces: one consistent 10-character minimum at local validation, remote validation, tests, and operator documentation.
+
+- [ ] **Step 1: Write failing 9/10-character boundary tests**
+
+Update the local validation test to reject `123456789` and accept `1234567890`. Add a remote test that sends the same two boundary values through stdin JSON and requires nonzero/zero exit status respectively. Keep the password out of command arguments and fake command logs.
+
+- [ ] **Step 2: Run RED**
+
+```bash
+PATH=/tmp/schoolorbit-installer-jq-1.7.1-amd64:/tmp/schoolorbit-bats-core-v1.11.1/bin:$PATH \
+    bats scripts/tests/installer/config_state.bats scripts/tests/installer/cockpit_remote.bats
+```
+
+Expected: the 10-character cases fail while both validators still require 16 characters.
+
+- [ ] **Step 3: Change both validation boundaries**
+
+In `config.sh` use:
+
+```bash
+SCHOOLORBIT_SERVER_PASSWORD)
+    minimum=10
+    ;;
+```
+
+In `remote/configure_cockpit.sh` use:
+
+```bash
+server_password=$(jq -er '.server_password | strings | select(length >= 10)' <<<"$payload")
+```
+
+- [ ] **Step 4: Align durable configuration and documentation**
+
+Replace only the Cockpit password minimum from 16 to 10 in `.env.example`, `.rules`, `docs/OPERATIONS.md`, and `docs/PODMAN_SETUP.md`. Retain the requirements for a unique password and secret-only transport.
+
+- [ ] **Step 5: Run GREEN and the deployment verification matrix**
+
+```bash
+PATH=/tmp/schoolorbit-installer-jq-1.7.1-amd64:/tmp/schoolorbit-bats-core-v1.11.1/bin:$PATH \
+    bats scripts/tests/installer
+node --test frontend-school/tests/static/deployment-installer.test.mjs \
+    frontend-school/tests/static/documentation-policy.test.mjs
+```
+
+Also run ShellCheck, shfmt, `git diff --check`, and every applicable installer/documentation check from `.rules`.
+
+- [ ] **Step 6: Commit, push, verify CI, and resume current-VPS setup**
+
+```bash
+git add .env.example .rules docs/OPERATIONS.md docs/PODMAN_SETUP.md \
+    docs/superpowers/plans/2026-08-04-cockpit-cloudflare-tunnel.md \
+    scripts/lib/schoolorbit-installer/config.sh \
+    scripts/lib/schoolorbit-installer/remote/configure_cockpit.sh \
+    scripts/tests/installer/config_state.bats \
+    scripts/tests/installer/cockpit_remote.bats
+git commit -m "fix: support cockpit password compatibility floor"
+git push origin main
+```
+
+After CI passes, load `.env.local`, run standalone `--dry-run`, apply `configure-cockpit`, and complete Task 8 live verification without printing the password.
+
+---
+
 ## Plan Self-review
 
-- Spec coverage: Tasks 2–8 cover public Cockpit, no Access, loopback 9090, `schoolorbit`, root prohibition, secret transport, distinct Tunnels, resume, rollback, current VPS, future migrations, documentation, and live verification.
+- Spec coverage: Tasks 2–8 cover public Cockpit, no Access, loopback 9090, `schoolorbit`, root prohibition, secret transport, distinct Tunnels, resume, rollback, current VPS, future migrations, documentation, and live verification. Task 9 covers the operator-approved 10-character compatibility floor at both trust boundaries.
 - Placeholder scan: hostnames, variables, commands, functions, version, hashes, and confirmation phrase are concrete; no deferred implementation markers remain.
 - Interface consistency: Task 2 supplies command/state contracts; Tasks 3–4 produce provider/VPS functions; Task 5 composes them; Tasks 6–8 verify and operate the same names.
