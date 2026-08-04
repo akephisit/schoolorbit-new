@@ -46,7 +46,8 @@ permissions:
   contents: read
 
 jobs:
-  verify:
+  artifacts:
+    name: Contract artifacts and offline export
     runs-on: ubuntu-24.04
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -100,6 +101,46 @@ jobs:
         working-directory: frontend-school
         run: npm run check:api-contracts
 
+      - name: Test offline OpenAPI export
+        working-directory: backend-school
+        run: |
+          env -i PATH="$PATH" HOME="$HOME" cargo run --quiet --bin backend-school -- export-openapi > /tmp/school-api.json
+          node -e "JSON.parse(require('node:fs').readFileSync('/tmp/school-api.json', 'utf8'))"
+
+  backend:
+    name: Backend contract verification
+    runs-on: ubuntu-24.04
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - name: Restore Rust dependency cache
+        id: rust_cache
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32
+        with:
+          shared-key: backend-school-contracts
+          workspaces: backend-school -> target
+          save-if: "false"
+
+      - name: Summarize Rust cache
+        if: always()
+        env:
+          RUST_CACHE_HIT: ${{ steps.rust_cache.outputs.cache-hit }}
+        run: |
+          printf '%s\n' \
+            '### Rust build cache' \
+            '- Shared key: backend-school-contracts' \
+            "- Exact cache hit: ${RUST_CACHE_HIT:-false}" \
+            >> "$GITHUB_STEP_SUMMARY"
+
       - name: Check backend formatting
         working-directory: backend-school
         run: cargo fmt --all -- --check
@@ -108,12 +149,6 @@ jobs:
         working-directory: backend-school
         run: cargo test api_contract::tests --bin backend-school
 
-      - name: Test offline OpenAPI export
-        working-directory: backend-school
-        run: |
-          env -i PATH="$PATH" HOME="$HOME" cargo run --quiet --bin backend-school -- export-openapi > /tmp/school-api.json
-          node -e "JSON.parse(require('node:fs').readFileSync('/tmp/school-api.json', 'utf8'))"
-
       - name: Test exporter logging boundary
         working-directory: backend-school
         run: cargo test structured_logging --test static_architecture
@@ -121,6 +156,29 @@ jobs:
       - name: Check backend
         working-directory: backend-school
         run: cargo check --bin backend-school
+
+  frontend:
+    name: Frontend contract verification
+    runs-on: ubuntu-24.04
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+      PUBLIC_BACKEND_URL: http://localhost:3000
+      PUBLIC_VAPID_KEY: test
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend-school/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend-school
+        run: npm ci
 
       - name: Test frontend API contract
         working-directory: frontend-school

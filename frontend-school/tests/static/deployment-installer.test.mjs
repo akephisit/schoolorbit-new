@@ -176,64 +176,104 @@ test('backend image workflows use distinct BuildKit cache scopes', async () => {
 	}
 });
 
-test('contract workflows share a main-writable Rust dependency cache without removing gates', async () => {
-	const requiredCommands = new Map([
-		[
-			'.github/workflows/api-contract.yml',
-			[
-				'npm run test:api-contracts',
-				'npm run check:api-contracts',
-				'cargo fmt --all -- --check',
-				'cargo test api_contract::tests --bin backend-school',
-				'env -i PATH="$PATH" HOME="$HOME" cargo run --quiet --bin backend-school -- export-openapi',
-				'cargo test structured_logging --test static_architecture',
-				'cargo check --bin backend-school',
-				'node --test tests/static/api-response-contract.test.mjs',
-				'npm run check'
-			]
-		],
-		[
-			'.github/workflows/permission-contract.yml',
-			[
-				'node scripts/generate-permissions.mjs --check',
-				'node --test scripts/tests/generate-permissions.test.mjs',
-				'cargo fmt --all -- --check',
-				'cargo check --bin backend-school',
-				'cargo test --test static_architecture',
-				'npm run test:static',
-				'npm run check'
-			]
-		]
-	]);
+test('API contract runs artifact backend and frontend gates in independent jobs', async () => {
+	const workflow = await readRepo('.github/workflows/api-contract.yml');
+	const jobsStart = workflow.indexOf('\njobs:\n');
+	assert.ok(jobsStart >= 0);
+	const jobs = workflow.slice(jobsStart + '\njobs:\n'.length);
+	const jobNames = [...jobs.matchAll(/^  ([a-z][a-z0-9_-]*):\s*$/gm)].map(
+		(match) => match[1]
+	);
+	assert.deepEqual(jobNames, ['artifacts', 'backend', 'frontend']);
+	assert.doesNotMatch(jobs, /^    needs:/gm);
 
-	for (const [file, commands] of requiredCommands) {
-		const workflow = await readRepo(file);
-		const setupRustIndex = workflow.indexOf('- name: Setup Rust');
-		const rustCacheIndex = workflow.indexOf('- name: Restore Rust dependency cache');
-		const firstCargoCommandIndex = workflow.indexOf('cargo ');
+	const jobBlock = (name, nextName) => {
+		const start = jobs.indexOf(`  ${name}:\n`);
+		assert.ok(start >= 0, `missing ${name} job`);
+		const end = nextName ? jobs.indexOf(`\n  ${nextName}:\n`, start) : jobs.length;
+		assert.ok(end > start, `invalid ${name} job boundary`);
+		return jobs.slice(start, end);
+	};
+	const artifacts = jobBlock('artifacts', 'backend');
+	const backend = jobBlock('backend', 'frontend');
+	const frontend = jobBlock('frontend');
 
-		assert.ok(setupRustIndex >= 0 && setupRustIndex < rustCacheIndex);
-		assert.ok(rustCacheIndex >= 0 && rustCacheIndex < firstCargoCommandIndex);
-		assert.match(
-			workflow,
-			/uses: Swatinem\/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32/
-		);
-		assert.match(workflow, /id: rust_cache/);
-		assert.match(workflow, /shared-key: backend-school-contracts/);
-		assert.match(workflow, /workspaces: backend-school -> target/);
-		assert.match(workflow, /save-if: \$\{\{ github\.ref == 'refs\/heads\/main' \}\}/);
-		assert.match(workflow, /steps\.rust_cache\.outputs\.cache-hit/);
-		assert.match(workflow, />> "\$GITHUB_STEP_SUMMARY"/);
-		assert.match(workflow, /cache: npm/);
-		assert.match(workflow, /cache-dependency-path: frontend-school\/package-lock\.json/);
-		for (const command of commands) {
-			assert.ok(workflow.includes(command), `${file} must retain ${command}`);
-		}
+	for (const command of [
+		'npm run test:api-contracts',
+		'npm run check:api-contracts',
+		'env -i PATH="$PATH" HOME="$HOME" cargo run --quiet --bin backend-school -- export-openapi'
+	]) {
+		assert.ok(artifacts.includes(command), `artifacts must retain ${command}`);
+	}
+	for (const command of [
+		'cargo fmt --all -- --check',
+		'cargo test api_contract::tests --bin backend-school',
+		'cargo test structured_logging --test static_architecture',
+		'cargo check --bin backend-school'
+	]) {
+		assert.ok(backend.includes(command), `backend must retain ${command}`);
+	}
+	for (const command of [
+		'node --test tests/static/api-response-contract.test.mjs',
+		'npm run check'
+	]) {
+		assert.ok(frontend.includes(command), `frontend must retain ${command}`);
 	}
 
-	const rules = await readRepo('.rules');
-	assert.match(rules, /distinct GHA BuildKit cache scopes/);
-	assert.match(rules, /Only trusted `main` runs may save the shared Rust dependency cache/);
+	for (const nodeJob of [artifacts, frontend]) {
+		assert.match(nodeJob, /uses: actions\/setup-node@v6/);
+		assert.match(nodeJob, /node-version: "22"/);
+		assert.match(nodeJob, /cache: npm/);
+		assert.match(nodeJob, /cache-dependency-path: frontend-school\/package-lock\.json/);
+		assert.match(nodeJob, /working-directory: frontend-school\n\s+run: npm ci/);
+	}
+	assert.doesNotMatch(backend, /uses: actions\/setup-node@v6/);
+
+	for (const rustJob of [artifacts, backend]) {
+		assert.match(rustJob, /uses: dtolnay\/rust-toolchain@stable/);
+		assert.match(
+			rustJob,
+			/uses: Swatinem\/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32/
+		);
+		assert.match(rustJob, /id: rust_cache/);
+		assert.match(rustJob, /shared-key: backend-school-contracts/);
+		assert.match(rustJob, /workspaces: backend-school -> target/);
+		assert.match(rustJob, /steps\.rust_cache\.outputs\.cache-hit/);
+		assert.match(rustJob, />> "\$GITHUB_STEP_SUMMARY"/);
+	}
+	assert.match(artifacts, /save-if: \$\{\{ github\.ref == 'refs\/heads\/main' \}\}/);
+	assert.match(backend, /save-if: "false"/);
+	assert.doesNotMatch(frontend, /Swatinem\/rust-cache/);
+	assert.equal(
+		(jobs.match(/save-if: \$\{\{ github\.ref == 'refs\/heads\/main' \}\}/g) ?? []).length,
+		1
+	);
+	assert.equal((jobs.match(/save-if: "false"/g) ?? []).length, 1);
+});
+
+test('Permission Contract keeps its cached validation gates unchanged', async () => {
+	const workflow = await readRepo('.github/workflows/permission-contract.yml');
+	assert.match(workflow, /^  verify:\s*$/m);
+	assert.match(
+		workflow,
+		/uses: Swatinem\/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32/
+	);
+	assert.match(workflow, /shared-key: backend-school-contracts/);
+	assert.match(workflow, /workspaces: backend-school -> target/);
+	assert.match(workflow, /save-if: \$\{\{ github\.ref == 'refs\/heads\/main' \}\}/);
+	assert.match(workflow, /steps\.rust_cache\.outputs\.cache-hit/);
+	assert.match(workflow, /cache: npm/);
+	for (const command of [
+		'node scripts/generate-permissions.mjs --check',
+		'node --test scripts/tests/generate-permissions.test.mjs',
+		'cargo fmt --all -- --check',
+		'cargo check --bin backend-school',
+		'cargo test --test static_architecture',
+		'npm run test:static',
+		'npm run check'
+	]) {
+		assert.ok(workflow.includes(command), `Permission Contract must retain ${command}`);
+	}
 });
 
 test('frontend deployments keep environment values out of committed Worker configuration', async () => {
