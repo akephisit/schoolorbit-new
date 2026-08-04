@@ -172,7 +172,7 @@ teardown() {
 
     local published="$TEST_ROOT/uncheckpointed-published-cockpit-dns.json"
     jq --arg id cockpit-record-recovered --arg target '11111111-1111-4111-8111-111111111111.cfargotunnel.com' '
-      .result = [{id:$id,type:"CNAME",name:"server.schoolorbit.app",content:$target,ttl:1,proxied:true,comment:"SchoolOrbit Cockpit Cloudflare Tunnel",tags:[],settings:{},modified_on:"2026-08-04T01:00:00Z"}]
+      .result = [{id:$id,type:"CNAME",name:"server.schoolorbit.app",content:$target,ttl:1,proxied:true,comment:"SchoolOrbit Cockpit Cloudflare Tunnel",tags:[],settings:{flatten_cname:false},modified_on:"2026-08-04T01:00:00Z"}]
     ' "$FIXTURE_DIR/cloudflare-cockpit-dns-none.json" >"$published"
     export CF_COCKPIT_DNS_FIXTURE=$published
 
@@ -190,7 +190,7 @@ teardown() {
 
     local published="$TEST_ROOT/published-cockpit-dns.json"
     jq --arg id cockpit-record-1 --arg target '11111111-1111-4111-8111-111111111111.cfargotunnel.com' '
-      .result = [{id:$id,type:"CNAME",name:"server.schoolorbit.app",content:$target,ttl:1,proxied:true,comment:"SchoolOrbit Cockpit Cloudflare Tunnel",tags:[],settings:{},modified_on:"2026-08-04T01:00:00Z"}]
+      .result = [{id:$id,type:"CNAME",name:"server.schoolorbit.app",content:$target,ttl:1,proxied:true,comment:"SchoolOrbit Cockpit Cloudflare Tunnel",tags:[],settings:{flatten_cname:false},modified_on:"2026-08-04T01:00:00Z"}]
     ' "$FIXTURE_DIR/cloudflare-cockpit-dns-none.json" >"$published"
     export CF_COCKPIT_DNS_FIXTURE=$published
 

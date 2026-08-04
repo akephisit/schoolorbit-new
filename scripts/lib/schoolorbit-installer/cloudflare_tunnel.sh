@@ -238,13 +238,19 @@ _cf_cockpit_publish_body() {
     fi
 }
 
+_cf_cockpit_canonical_new_record() {
+    jq -c '{
+        type,name,content,ttl,proxied,comment,tags,
+        settings:((.settings // {}) | with_entries(select(.value != false)))
+    }'
+}
+
 _cf_cockpit_adopt_unjournaled_published_record() {
     local current expected record_id
     [[ $SO_CF_COCKPIT_RECORD_EXISTED == false && -z $SO_CF_COCKPIT_RECORD_ID ]] || return 1
     [[ $SO_CF_COCKPIT_CURRENT_RECORD != null ]] || return 1
-    current=$(jq -c '{type,name,content,ttl,proxied,comment,tags,settings}' \
-        <<<"$SO_CF_COCKPIT_CURRENT_RECORD") || return 69
-    expected=$(_cf_cockpit_publish_body) || return 69
+    current=$(_cf_cockpit_canonical_new_record <<<"$SO_CF_COCKPIT_CURRENT_RECORD") || return 69
+    expected=$(_cf_cockpit_publish_body | _cf_cockpit_canonical_new_record) || return 69
     [[ $current == "$expected" ]] || return 1
     record_id=$(jq -er '.id | strings | select(length > 0)' \
         <<<"$SO_CF_COCKPIT_CURRENT_RECORD") || return 69
@@ -308,23 +314,26 @@ cf_cockpit_publish() {
 
 _cf_cockpit_assert_published_record() {
     local target="${SO_CF_COCKPIT_TUNNEL_ID}.cfargotunnel.com"
-    local current expected
+    local current current_id expected
     [[ $SO_CF_COCKPIT_CURRENT_RECORD != null ]] || return 1
-    current=$(jq -c '{id,type,name,content,ttl,proxied,comment,tags,settings}' \
-        <<<"$SO_CF_COCKPIT_CURRENT_RECORD") || return
     if [[ $SO_CF_COCKPIT_RECORD_EXISTED == true ]]; then
+        current=$(jq -c '{id,type,name,content,ttl,proxied,comment,tags,settings}' \
+            <<<"$SO_CF_COCKPIT_CURRENT_RECORD") || return
         expected=$(jq -c --arg id "$SO_CF_COCKPIT_RECORD_ID" --arg target "$target" '
             {id:$id,type,name,content:$target,ttl,proxied:true,comment,tags,settings}
         ' <<<"$SO_CF_COCKPIT_DNS_SNAPSHOT") || return
     else
+        current_id=$(jq -er '.id | strings | select(length > 0)' \
+            <<<"$SO_CF_COCKPIT_CURRENT_RECORD") || return
+        [[ $current_id == "$SO_CF_COCKPIT_RECORD_ID" ]] || return 1
+        current=$(_cf_cockpit_canonical_new_record <<<"$SO_CF_COCKPIT_CURRENT_RECORD") || return
         expected=$(jq -cn \
-            --arg id "$SO_CF_COCKPIT_RECORD_ID" \
             --arg hostname "$SO_CF_COCKPIT_HOSTNAME" \
             --arg target "$target" '{
-                id:$id,type:"CNAME",name:$hostname,content:$target,ttl:1,proxied:true,
+                type:"CNAME",name:$hostname,content:$target,ttl:1,proxied:true,
                 comment:"SchoolOrbit Cockpit Cloudflare Tunnel",
                 tags:[],settings:{}
-            }') || return
+            }' | _cf_cockpit_canonical_new_record) || return
     fi
     [[ $current == "$expected" ]]
 }
