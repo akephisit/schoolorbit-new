@@ -114,7 +114,7 @@ teardown() {
     [ "$(grep -c 'root@192.0.2.20 true' "$FAKE_COMMAND_LOG")" -eq 2 ]
 }
 
-@test "Cockpit bootstrap revalidation checks user packages and pinned cloudflared" {
+@test "Cockpit bootstrap revalidation checks packages user Podman API and pinned cloudflared" {
     vps_reverify_cockpit_bootstrap
 
     grep -Fq 'cockpit cockpit-podman' "$FAKE_COMMAND_LOG"
@@ -122,6 +122,10 @@ teardown() {
     grep -Fq '2026.7.3' "$FAKE_COMMAND_LOG"
     grep -Fq 'id -nG' "$FAKE_COMMAND_LOG"
     grep -Fq 'sudo -l -U' "$FAKE_COMMAND_LOG"
+    grep -Fq 'systemctl --user is-active --quiet podman.socket' "$FAKE_COMMAND_LOG"
+    grep -Fq '/run/user/' "$FAKE_COMMAND_LOG"
+    grep -Fq 'podman/podman.sock' "$FAKE_COMMAND_LOG"
+    grep -Fq 'podman --remote --url' "$FAKE_COMMAND_LOG"
 }
 
 @test "Cockpit script and secrets use separate SSH stdin streams and a fresh verification session" {

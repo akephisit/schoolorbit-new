@@ -696,7 +696,7 @@ After CI passes, load `.env.local`, run standalone `--dry-run`, apply `configure
 - Consumes: the existing `schoolorbit` account, its linger-enabled user manager, `podman.socket`, and root-privileged bootstrap execution.
 - Produces: `enable_server_user_podman_socket USER`, an active `/run/user/UID/podman/podman.sock`, and resume verification that fails closed when Cockpit cannot reach the rootless API.
 
-- [ ] **Step 1: Write failing host-boundary tests**
+- [x] **Step 1: Write failing host-boundary tests**
 
 Add a Bats case that fakes `id`, `getent`, root `systemctl`, and `runuser`. Invoke the desired helper twice and require both calls to leave the fake user socket active without invoking `podman stop`, `podman rm`, or `podman create`:
 
@@ -739,7 +739,7 @@ esac
 
 Extend the VPS checkpoint test to require the remote script to check `podman.socket`, the per-user Unix socket, and `podman --remote` connectivity.
 
-- [ ] **Step 2: Run RED**
+- [x] **Step 2: Run RED**
 
 ```bash
 PATH=/tmp/schoolorbit-installer-jq-1.7.1-amd64:/tmp/schoolorbit-bats-core-v1.11.1/bin:$PATH \
@@ -749,7 +749,7 @@ PATH=/tmp/schoolorbit-installer-jq-1.7.1-amd64:/tmp/schoolorbit-bats-core-v1.11.
 
 Expected: FAIL because `enable_server_user_podman_socket` does not exist and checkpoint revalidation does not inspect the user socket.
 
-- [ ] **Step 3: Implement the idempotent user socket lifecycle**
+- [x] **Step 3: Implement the idempotent user socket lifecycle**
 
 Add this boundary to `remote/bootstrap.sh` and call it after `loginctl enable-linger`:
 
@@ -777,7 +777,7 @@ enable_server_user_podman_socket() {
 
 Do not invoke Compose or any mutating Podman command in this helper.
 
-- [ ] **Step 4: Strengthen fresh-session revalidation**
+- [x] **Step 4: Strengthen fresh-session revalidation**
 
 In `vps_reverify_cockpit_bootstrap`, derive the UID and home again, then require:
 
@@ -796,7 +796,7 @@ runuser -u "$server_user" -- env \
     podman --remote --url "unix://$socket" info >/dev/null
 ```
 
-- [ ] **Step 5: Document the durable boundary and verify GREEN**
+- [x] **Step 5: Document the durable boundary and verify GREEN**
 
 Require the `schoolorbit` user socket in `.rules`. Document its systemd unit, runtime path, and read-only diagnostics in `docs/OPERATIONS.md` and `docs/PODMAN_SETUP.md`. Then run:
 

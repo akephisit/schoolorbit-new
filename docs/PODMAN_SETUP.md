@@ -101,9 +101,15 @@ sudo apt install -y \
 
 sudo systemctl disable --now cockpit.socket
 sudo loginctl enable-linger "$USER"
+server_uid=$(id -u)
+sudo systemctl start "user@${server_uid}.service"
+systemctl --user enable --now podman.socket
 
 podman --version
 podman-compose version
+systemctl --user is-active podman.socket
+test -S "$XDG_RUNTIME_DIR/podman/podman.sock"
+podman --remote --url "unix://$XDG_RUNTIME_DIR/podman/podman.sock" info >/dev/null
 ```
 
 อย่าเปิด Cockpit ด้วย IP ของเครื่อง ก่อน start socket ต้องติดตั้ง override ให้มีเพียง
@@ -113,6 +119,11 @@ installer การเข้าใช้งานปกติคือ `https://
 กลุ่ม `sudo` แต่ไม่สร้างกฎ `NOPASSWD`. Cockpit จะแสดง Limited access ใน browser profile ใหม่ตามปกติ;
 เมื่อต้องดูแล host ให้กด **Administrative access** แล้วใส่รหัส `schoolorbit` อีกครั้ง. หากเพิ่งแก้
 group membership ให้ sign out แล้ว sign in ใหม่ก่อนกดเพิ่มสิทธิ์.
+
+`podman.socket` ด้านบนต้องอยู่ใน user manager ของบัญชีที่รัน production stack เพื่อให้ Cockpit
+เห็น container ชุดเดียวกันผ่าน `/run/user/<uid>/podman/podman.sock`. Socket ของ root ที่
+`/run/podman/podman.sock` เป็นคนละ namespace และใช้แทนกันไม่ได้ การเปิด user socket ไม่ได้ restart
+หรือ recreate container ที่กำลังทำงาน.
 
 หน้า login นี้เป็น public login โดยตั้งใจและไม่ได้ใช้ Cloudflare Access จึงต้องใช้รหัสผ่านเฉพาะที่
 แข็งแรง อัปเดต Cockpit/cloudflared ตาม security releases และเก็บ SSH key ไว้สำหรับ recovery ห้าม
@@ -346,6 +357,9 @@ podman image inspect \
 - WebSocket/SSE หลุด: ตรวจ upgrade headers, buffering, timeout และ proxy/CDN policy.
 - upload ล้มเหลว: ตรวจ R2 variables, bucket access, request-size limits และ timeout.
 - container ไม่กลับมาหลัง reboot: ตรวจ linger ของ service user, restart policy และ rootless Podman user services.
+- Cockpit Podman ไม่แสดง production containers: ตรวจ `systemctl --user is-active podman.socket`,
+  `/run/user/$(id -u)/podman/podman.sock` และคำสั่ง `podman --remote --url` ตามขั้นตอนตรวจด้านบน;
+  อย่าแก้ด้วยการย้าย container ไป root.
 
 หลีกเลี่ยงการแก้โดยลบ container/volume แบบครอบจักรวาล ให้แก้จาก readiness/log และสำรองข้อมูลก่อนทำการเปลี่ยนแปลงที่ย้อนกลับยาก
 

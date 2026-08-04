@@ -167,6 +167,11 @@ same `schoolorbit` password when host administration is needed. The installer ad
 the standard `sudo` group but does not create a `NOPASSWD` rule. After a group-membership repair,
 sign out of Cockpit and sign in again so the new login session receives the group.
 
+Cockpit Podman reaches that namespace through `podman.socket` in the linger-enabled `schoolorbit`
+user manager. Its expected API path is `/run/user/<schoolorbit-uid>/podman/podman.sock`; the root
+socket under `/run/podman` belongs to a separate rootful namespace and must not be used as a
+replacement. Enabling this socket does not stop, recreate, or restart existing containers.
+
 This deployment intentionally has no Cloudflare Access, OTP, or account-member gate. It is a
 public login and the login page is therefore publicly reachable. Use a unique strong password, retain SSH key access for recovery,
 monitor authentication activity, and treat Cockpit/cloudflared security updates as production
@@ -211,10 +216,26 @@ systemctl is-active cockpit.socket schoolorbit-cloudflared.service
 ss -ltnH '( sport = :9090 )'
 curl -fsS http://127.0.0.1:9090/ping
 stat -c '%a %U:%G' /etc/cloudflared/schoolorbit-cockpit.token
+
+server_uid=$(id -u schoolorbit)
+server_home=$(getent passwd schoolorbit | awk -F: 'NR == 1 { print $6 }')
+runtime_directory="/run/user/$server_uid"
+podman_socket="$runtime_directory/podman/podman.sock"
+runuser -u schoolorbit -- env \
+  HOME="$server_home" \
+  XDG_RUNTIME_DIR="$runtime_directory" \
+  DBUS_SESSION_BUS_ADDRESS="unix:path=$runtime_directory/bus" \
+  systemctl --user is-active podman.socket
+test -S "$podman_socket"
+runuser -u schoolorbit -- env \
+  HOME="$server_home" \
+  XDG_RUNTIME_DIR="$runtime_directory" \
+  podman --remote --url "unix://$podman_socket" info >/dev/null
 ```
 
 The only listener must be `127.0.0.1:9090`, the ping service must be `cockpit`, and the token file
-must be `600 root:root`. Confirm the Cloudflare connector origin matches the target IP, the CNAME is
+must be `600 root:root`. The per-user Podman socket and remote API check must both succeed. Confirm
+the Cloudflare connector origin matches the target IP, the CNAME is
 proxied to the checkpointed Tunnel UUID, direct access to `<target-ip>:9090` fails, and the
 `schoolorbit` Cockpit Podman page lists `schoolorbit-backend-admin`, `schoolorbit-backend-school`,
 `schoolorbit-clamd`, and `schoolorbit-nginx`. Retain the prior Tunnel/VPS through the rollback window.

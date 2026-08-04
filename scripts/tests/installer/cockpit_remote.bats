@@ -150,6 +150,43 @@ touch "$ADMIN_GROUP_STATE"
     [ "$(grep -c '^usermod --append --groups sudo schoolorbit$' "$FAKE_COMMAND_LOG")" -eq 1 ]
 }
 
+@test "bootstrap enables the server user's Podman API socket idempotently without touching containers" {
+    local podman_socket_state="$TEST_ROOT/user-podman-socket-active"
+    export PODMAN_SOCKET_STATE=$podman_socket_state
+
+    make_fake_command id '
+[ "$*" = "-u schoolorbit" ]
+printf "%s\n" 1000
+'
+    make_fake_command getent '
+[ "$*" = "passwd schoolorbit" ]
+printf "%s\n" "schoolorbit:x:1000:1000::/home/schoolorbit:/bin/bash"
+'
+    make_fake_command systemctl '
+[ "$*" = "start user@1000.service" ]
+printf "systemctl %s\n" "$*" >>"$FAKE_COMMAND_LOG"
+'
+    make_fake_command runuser '
+printf "runuser %s\n" "$*" >>"$FAKE_COMMAND_LOG"
+case "$*" in
+    *"systemctl --user enable --now podman.socket") touch "$PODMAN_SOCKET_STATE" ;;
+    *"systemctl --user is-active --quiet podman.socket") [ -f "$PODMAN_SOCKET_STATE" ] ;;
+    *) exit 1 ;;
+esac
+'
+
+    run env PATH="$FAKE_BIN:$ORIGINAL_PATH" \
+        FAKE_COMMAND_LOG="$FAKE_COMMAND_LOG" PODMAN_SOCKET_STATE="$PODMAN_SOCKET_STATE" \
+        bash -c 'source "$1"; enable_server_user_podman_socket schoolorbit; enable_server_user_podman_socket schoolorbit' \
+        _ "$BOOTSTRAP_SCRIPT"
+
+    [ "$status" -eq 0 ]
+    [ -f "$podman_socket_state" ]
+    [ "$(grep -c '^systemctl start user@1000.service$' "$FAKE_COMMAND_LOG")" -eq 2 ]
+    [ "$(grep -c 'systemctl --user enable --now podman.socket' "$FAKE_COMMAND_LOG")" -eq 2 ]
+    ! grep -Eq 'podman (stop|rm|create|run)' "$FAKE_COMMAND_LOG"
+}
+
 @test "bootstrap removes a previous public Cockpit firewall allow" {
     local firewall_state="$TEST_ROOT/ufw-9090-open"
     touch "$firewall_state"

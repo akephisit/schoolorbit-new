@@ -86,6 +86,22 @@ test "$(dpkg-query -W -f='${db:Status-Abbrev}\n' cockpit cockpit-podman | grep -
 cloudflared --version | grep -Fq '2026.7.3'
 id -nG "$server_user" | tr ' ' '\n' | grep -Fxq sudo
 sudo -l -U "$server_user" >/dev/null 2>&1
+server_uid=$(id -u "$server_user")
+server_home=$(getent passwd "$server_user" | awk -F: 'NR == 1 { print $6 }')
+test -n "$server_home"
+runtime_directory="/run/user/$server_uid"
+podman_socket="$runtime_directory/podman/podman.sock"
+runuser -u "$server_user" -- env \
+    HOME="$server_home" \
+    XDG_RUNTIME_DIR="$runtime_directory" \
+    DBUS_SESSION_BUS_ADDRESS="unix:path=$runtime_directory/bus" \
+    systemctl --user is-active --quiet podman.socket
+test -S "$podman_socket"
+runuser -u "$server_user" -- env \
+    HOME="$server_home" \
+    XDG_RUNTIME_DIR="$runtime_directory" \
+    CONTAINER_HOST="unix://$podman_socket" \
+    podman --remote --url "unix://$podman_socket" info >/dev/null
 REMOTE_SCRIPT
     )
     remote_command=$(_vps_remote_bash_command "$remote_script" "${SO_CONFIG[server_user]}") || return

@@ -104,6 +104,31 @@ ensure_server_user_administrator() {
     }
 }
 
+enable_server_user_podman_socket() {
+    local server_user=${1:?Server user is required}
+    local server_uid server_home runtime_directory
+
+    server_uid=$(id -u "$server_user")
+    server_home=$(getent passwd "$server_user" | awk -F: 'NR == 1 { print $6 }')
+    [[ $server_home == /* ]] || {
+        printf 'The server user home directory is unavailable\n' >&2
+        return 78
+    }
+    runtime_directory="/run/user/$server_uid"
+
+    systemctl start "user@${server_uid}.service"
+    runuser -u "$server_user" -- env \
+        HOME="$server_home" \
+        XDG_RUNTIME_DIR="$runtime_directory" \
+        DBUS_SESSION_BUS_ADDRESS="unix:path=$runtime_directory/bus" \
+        systemctl --user enable --now podman.socket
+    runuser -u "$server_user" -- env \
+        HOME="$server_home" \
+        XDG_RUNTIME_DIR="$runtime_directory" \
+        DBUS_SESSION_BUS_ADDRESS="unix:path=$runtime_directory/bus" \
+        systemctl --user is-active --quiet podman.socket
+}
+
 schoolorbit_bootstrap_main() {
     local ssh_port=${1:?SSH port is required} server_user=${2:?server user is required}
     local package sysctl_file desired_sysctl temporary
@@ -140,6 +165,7 @@ schoolorbit_bootstrap_main() {
     if [[ ! -e /var/lib/systemd/linger/$server_user ]]; then
         loginctl enable-linger "$server_user"
     fi
+    enable_server_user_podman_socket "$server_user"
 
     install -d -m 0750 -o "$server_user" -g "$server_user" \
         /opt/stack \
