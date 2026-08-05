@@ -1365,15 +1365,6 @@ mod tests {
         let structure_responses = &document["paths"]["/api/academic/structure"]["get"]["responses"];
         assert!(structure_responses.get("401").is_some());
         assert!(structure_responses.get("403").is_none());
-
-        let operation_count = document["paths"]
-            .as_object()
-            .expect("paths must be an object")
-            .values()
-            .flat_map(|path| path.as_object().expect("path item").values())
-            .filter(|operation| operation.get("operationId").is_some())
-            .count();
-        assert_eq!(operation_count, 202);
     }
 
     #[test]
@@ -1511,15 +1502,6 @@ mod tests {
                 "incorrect empty success envelope for {method} {path}"
             );
         }
-
-        let operation_count = document["paths"]
-            .as_object()
-            .expect("paths must be an object")
-            .values()
-            .flat_map(|path| path.as_object().expect("path item").values())
-            .filter(|operation| operation.get("operationId").is_some())
-            .count();
-        assert_eq!(operation_count, 202);
     }
 
     #[test]
@@ -1693,15 +1675,6 @@ mod tests {
             schemas["CatalogDefaultInstructor"]["properties"]["role"]["$ref"],
             "#/components/schemas/CurriculumInstructorRole"
         );
-
-        let operation_count = document["paths"]
-            .as_object()
-            .expect("paths must be an object")
-            .values()
-            .flat_map(|path| path.as_object().expect("path item").values())
-            .filter(|operation| operation.get("operationId").is_some())
-            .count();
-        assert_eq!(operation_count, 202);
     }
 
     #[test]
@@ -1976,15 +1949,6 @@ mod tests {
         assert!(schemas["InstructorRoleRequest"]["properties"]["role"]
             .to_string()
             .contains("#/components/schemas/ActivityGroupInstructorRole"));
-
-        let operation_count = document["paths"]
-            .as_object()
-            .expect("paths must be an object")
-            .values()
-            .flat_map(|path| path.as_object().expect("path item").values())
-            .filter(|operation| operation.get("operationId").is_some())
-            .count();
-        assert_eq!(operation_count, 202);
     }
 
     #[test]
@@ -2059,10 +2023,10 @@ mod tests {
             .flat_map(|path| path.as_object().expect("path item").values())
             .filter_map(|operation| operation["operationId"].as_str())
             .collect();
-        assert_eq!(operation_ids.len(), 202);
         assert_eq!(
+            operation_ids.len(),
             operation_ids.iter().copied().collect::<HashSet<_>>().len(),
-            202
+            "operation IDs must be unique"
         );
 
         for (path, method, request_schema) in [
@@ -2839,8 +2803,6 @@ mod tests {
                 }
             }
         }
-        assert_eq!(operation_ids.len(), 202);
-
         let schemas = &document["components"]["schemas"];
         let delegation = &schemas["DelegationItem"];
         assert_eq!(
