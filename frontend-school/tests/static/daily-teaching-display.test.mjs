@@ -6,6 +6,8 @@ import * as dailyTeachingDisplay from '../../src/lib/utils/daily-teaching-displa
 const {
 	DAILY_TEACHING_MIN_PERIOD_COLUMN_WIDTH,
 	DAILY_TEACHING_TEACHER_COLUMN_WIDTH,
+	dailyTeachingEmptyCellLabel,
+	dailyTeachingEntryCardPresentation,
 	dailyTeachingTableMinWidth,
 	dailyTeachingTeacherCell,
 	displayGroupCountLabel,
@@ -145,5 +147,37 @@ test('teacher cell presentation excludes subject-group subtitles', () => {
 			label: 'วิภาวดี วงศ์ศรี',
 			title: 'วิภาวดี วงศ์ศรี'
 		}
+	);
+});
+
+test('maps every daily entry type to a semantic tone and content layout', () => {
+	assert.equal(typeof dailyTeachingEntryCardPresentation, 'function');
+	assert.deepEqual(dailyTeachingEntryCardPresentation('COURSE'), {
+		tone: 'course',
+		layout: 'details'
+	});
+	assert.deepEqual(dailyTeachingEntryCardPresentation('ACADEMIC'), {
+		tone: 'course',
+		layout: 'centered'
+	});
+	assert.deepEqual(dailyTeachingEntryCardPresentation('ACTIVITY'), {
+		tone: 'activity',
+		layout: 'centered'
+	});
+	assert.deepEqual(dailyTeachingEntryCardPresentation('HOMEROOM'), {
+		tone: 'activity',
+		layout: 'centered'
+	});
+	assert.deepEqual(dailyTeachingEntryCardPresentation('BREAK'), {
+		tone: 'break',
+		layout: 'centered'
+	});
+});
+
+test('builds an accessible label for a visually empty period cell', () => {
+	assert.equal(typeof dailyTeachingEmptyCellLabel, 'function');
+	assert.equal(
+		dailyTeachingEmptyCellLabel('วิภาวดี วงศ์ศรี', 'คาบที่ 1', '08:40-09:30'),
+		'วิภาวดี วงศ์ศรี คาบที่ 1 08:40-09:30: ว่าง'
 	);
 });

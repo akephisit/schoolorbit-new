@@ -25,6 +25,8 @@
 	import {
 		DAILY_TEACHING_MIN_PERIOD_COLUMN_WIDTH,
 		DAILY_TEACHING_TEACHER_COLUMN_WIDTH,
+		dailyTeachingEmptyCellLabel,
+		dailyTeachingEntryCardPresentation,
 		dailyTeachingTableMinWidth,
 		dailyTeachingTeacherCell,
 		displayGroupCountLabel,
@@ -35,8 +37,10 @@
 		ChevronLeft,
 		ChevronRight,
 		ExternalLink,
+		MapPin,
 		Printer,
 		RefreshCw,
+		School,
 		Search
 	} from 'lucide-svelte';
 
@@ -310,10 +314,6 @@
 		if (entry.subjectName) return entry.subjectName;
 		if (entry.title && entry.title !== entry.subjectCode) return entry.title;
 		return entry.subjectCode ? '' : entryTypeLabel(entry.entryType);
-	}
-
-	function entryMeta(entry: DailyTeachingEntry): string {
-		return [entry.classroomName, entry.roomCode].filter(Boolean).join(' / ');
 	}
 
 	function periodLabel(period: DailyTeachingPeriod): string {
@@ -677,55 +677,70 @@
 										<Table.Cell class="daily-teaching-period-column px-1.5 py-2 align-top">
 											<button
 												type="button"
-												class="hover:border-primary/50 hover:bg-accent/40 focus-visible:border-ring focus-visible:ring-ring/50 min-h-20 w-full rounded-md border border-dashed border-transparent p-1.5 text-left transition-colors focus-visible:ring-[3px] focus-visible:outline-none"
+												class="hover:bg-muted/30 focus-visible:border-ring focus-visible:ring-ring/50 min-h-20 w-full rounded-md p-1 text-left transition-colors focus-visible:ring-[3px] focus-visible:outline-none"
+												aria-label={cell.entries.length === 0
+													? dailyTeachingEmptyCellLabel(
+															teacherCell.label,
+															periodLabel(period),
+															periodTime(period)
+														)
+													: undefined}
 												onclick={() => openCell(teacher, period, cell.entries)}
 											>
-												{#if cell.entries.length === 0}
-													<span class="text-muted-foreground text-xs">ว่าง</span>
-												{:else}
+												{#if cell.entries.length > 0}
 													<div class="space-y-1">
 														{#each displayGroups as group (group.key)}
 															{@const entry = group.entries[0]}
+															{@const presentation = dailyTeachingEntryCardPresentation(
+																entry.entryType
+															)}
 															{@const subjectCodeLine = entrySubjectCodeLine(entry)}
 															{@const subjectNameLine = entrySubjectNameLine(entry)}
-															<div class="rounded-md border bg-muted/30 p-1.5">
-																<div class="flex flex-wrap items-center gap-1.5">
-																	<Badge
-																		variant={entryBadgeVariant(entry.entryType)}
-																		class="max-w-full truncate"
-																	>
-																		{entryTypeLabel(entry.entryType)}
-																	</Badge>
-																	{#if entry.isTeamTeaching}
-																		<Badge variant="outline">ทีมสอน</Badge>
+															<div
+																class={[
+																	'min-h-16 rounded-md border p-2',
+																	presentation.layout === 'centered' &&
+																		'flex flex-col items-center justify-center text-center',
+																	presentation.tone === 'course' &&
+																		'border-blue-200 bg-blue-50/80 text-blue-950 dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-100',
+																	presentation.tone === 'activity' &&
+																		'border-emerald-200 bg-emerald-50/80 text-emerald-950 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-100',
+																	presentation.tone === 'break' &&
+																		'border-amber-300 bg-amber-50/90 text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-100'
+																]}
+															>
+																{#if presentation.layout === 'details'}
+																	{#if subjectCodeLine}
+																		<p class="truncate text-xs font-bold">{subjectCodeLine}</p>
 																	{/if}
-																	{#if group.isSynchronizedActivity}
-																		<Badge variant="outline">พร้อมกัน</Badge>
+																	{#if subjectNameLine}
+																		<p class="line-clamp-2 text-xs opacity-75">{subjectNameLine}</p>
 																	{/if}
-																</div>
-																{#if group.isSynchronizedActivity}
-																	<p class="mt-1 line-clamp-2 text-sm font-medium">
+																	{#if entry.classroomName || entry.roomCode}
+																		<div
+																			class="mt-1.5 space-y-0.5 border-t border-current/10 pt-1 text-[10px] opacity-70"
+																		>
+																			{#if entry.classroomName}
+																				<p class="flex items-center gap-1 truncate">
+																					<School class="h-3 w-3 shrink-0" />
+																					<span class="truncate">{entry.classroomName}</span>
+																				</p>
+																			{/if}
+																			{#if entry.roomCode}
+																				<p class="flex items-center gap-1 truncate">
+																					<MapPin class="h-3 w-3 shrink-0" />
+																					<span class="truncate">{entry.roomCode}</span>
+																				</p>
+																			{/if}
+																		</div>
+																	{/if}
+																{:else}
+																	<p class="line-clamp-3 text-sm font-semibold leading-snug">
 																		{entryTitle(entry)}
 																	</p>
-																	<p class="text-muted-foreground mt-1 truncate text-xs">
-																		{displayGroupCountLabel(group)}
-																	</p>
-																{:else}
-																	<div class="mt-1 min-w-0">
-																		{#if subjectCodeLine}
-																			<p class="text-muted-foreground truncate text-xs font-medium">
-																				{subjectCodeLine}
-																			</p>
-																		{/if}
-																		{#if subjectNameLine}
-																			<p class="line-clamp-2 text-sm font-medium">
-																				{subjectNameLine}
-																			</p>
-																		{/if}
-																	</div>
-																	{#if entryMeta(entry)}
-																		<p class="text-muted-foreground mt-1 truncate text-xs">
-																			{entryMeta(entry)}
+																	{#if group.isSynchronizedActivity}
+																		<p class="mt-1 truncate text-[10px] opacity-70">
+																			{displayGroupCountLabel(group)}
 																		</p>
 																	{/if}
 																{/if}

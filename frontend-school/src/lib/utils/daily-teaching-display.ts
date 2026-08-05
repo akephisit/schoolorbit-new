@@ -7,6 +7,14 @@ type DailyTeachingTeacherIdentity = {
 	displayName: string;
 };
 
+export type DailyTeachingEntryTone = 'course' | 'activity' | 'break';
+export type DailyTeachingEntryLayout = 'details' | 'centered';
+
+export type DailyTeachingEntryCardPresentation = {
+	tone: DailyTeachingEntryTone;
+	layout: DailyTeachingEntryLayout;
+};
+
 export interface DailyTeachingDisplayGroup {
 	key: string;
 	entries: DailyTeachingEntry[];
@@ -102,4 +110,28 @@ export function dailyTeachingTeacherCell(teacher: DailyTeachingTeacherIdentity):
 		label: teacher.displayName,
 		title: teacher.displayName
 	};
+}
+
+export function dailyTeachingEntryCardPresentation(
+	entryType: DailyTeachingEntry['entryType']
+): DailyTeachingEntryCardPresentation {
+	switch (entryType) {
+		case 'COURSE':
+			return { tone: 'course', layout: 'details' };
+		case 'BREAK':
+			return { tone: 'break', layout: 'centered' };
+		case 'ACTIVITY':
+		case 'HOMEROOM':
+			return { tone: 'activity', layout: 'centered' };
+		default:
+			return { tone: 'course', layout: 'centered' };
+	}
+}
+
+export function dailyTeachingEmptyCellLabel(
+	teacherName: string,
+	periodName: string,
+	periodTime: string
+): string {
+	return `${teacherName} ${periodName} ${periodTime}: ว่าง`;
 }
