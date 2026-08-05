@@ -1193,6 +1193,12 @@ test('daily teaching overview page is table based and read only', async () => {
 	assert.match(page, /overflow-x-auto/);
 	assert.match(page, /Dialog\.Root/);
 	assert.match(page, /href="\/staff\/academic\/timetable"/);
+	assert.match(page, /from '\$lib\/components\/ui\/date-picker'/);
+	assert.match(
+		page,
+		/<DatePicker[\s\S]*id="teaching-date"[\s\S]*bind:value=\{selectedDate\}[\s\S]*placeholder="เลือกวันที่"[\s\S]*class="min-w-0 flex-1"/
+	);
+	assert.doesNotMatch(page, /<Input[\s\S]*id="teaching-date"[\s\S]*type="date"/);
 	assert.doesNotMatch(
 		page,
 		/listStaff\(|listStudents\(|createTimetableEntry|updateTimetableEntry|deleteTimetableEntry/

@@ -6,6 +6,7 @@
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
+	import { DatePicker } from '$lib/components/ui/date-picker';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
@@ -428,13 +429,25 @@
 						<Button
 							variant="outline"
 							size="icon"
+							class="shrink-0"
 							onclick={() => moveDate(-1)}
 							aria-label="วันก่อนหน้า"
 						>
 							<ChevronLeft class="h-4 w-4" />
 						</Button>
-						<Input id="teaching-date" type="date" bind:value={selectedDate} class="min-w-0" />
-						<Button variant="outline" size="icon" onclick={() => moveDate(1)} aria-label="วันถัดไป">
+						<DatePicker
+							id="teaching-date"
+							bind:value={selectedDate}
+							placeholder="เลือกวันที่"
+							class="min-w-0 flex-1"
+						/>
+						<Button
+							variant="outline"
+							size="icon"
+							class="shrink-0"
+							onclick={() => moveDate(1)}
+							aria-label="วันถัดไป"
+						>
 							<ChevronRight class="h-4 w-4" />
 						</Button>
 					</div>
