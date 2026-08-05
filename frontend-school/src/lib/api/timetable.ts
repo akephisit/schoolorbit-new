@@ -132,55 +132,12 @@ export function timetableEntryFromDto(dto: TimetableEntryDto): TimetableEntry {
 	};
 }
 
-export interface DailyTeachingPeriod {
-	id: string;
-	name: string | null;
-	startTime: string;
-	endTime: string;
-	orderIndex: number;
-}
-
-export interface DailyTeachingEntry {
-	entryId: string;
-	entryType: 'COURSE' | 'BREAK' | 'ACTIVITY' | 'HOMEROOM' | 'ACADEMIC';
-	subjectCode: string | null;
-	subjectName: string | null;
-	subjectGroupName: string | null;
-	classroomName: string | null;
-	roomCode: string | null;
-	title: string | null;
-	note: string | null;
-	isTeamTeaching: boolean;
-}
-
-export interface DailyTeachingPeriodCell {
-	periodId: string;
-	entries: DailyTeachingEntry[];
-}
-
-export interface DailyTeachingTeacher {
-	id: string;
-	displayName: string;
-	subjectGroupNames: string[];
-	periods: DailyTeachingPeriodCell[];
-}
-
-export interface DailyTeachingSummary {
-	totalTeacherCount: number;
-	displayedTeacherCount: number;
-	teachersTeachingCount: number;
-	lessonCount: number;
-	emptyTeacherCount: number;
-}
-
-export interface DailyTeachingOverview {
-	date: string;
-	dayOfWeek: string;
-	academicSemesterId: string;
-	periods: DailyTeachingPeriod[];
-	teachers: DailyTeachingTeacher[];
-	summary: DailyTeachingSummary;
-}
+export type DailyTeachingPeriod = Schemas['DailyTeachingPeriod'];
+export type DailyTeachingEntry = Schemas['DailyTeachingEntry'];
+export type DailyTeachingPeriodCell = Schemas['DailyTeachingPeriodCell'];
+export type DailyTeachingTeacher = Schemas['DailyTeachingTeacher'];
+export type DailyTeachingSummary = Schemas['DailyTeachingSummary'];
+export type DailyTeachingOverview = Schemas['DailyTeachingOverview'];
 
 export interface TimetablePeriodSummary {
 	id: string;

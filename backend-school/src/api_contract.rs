@@ -51,6 +51,10 @@ use crate::modules::academic::models::{
 };
 use crate::modules::academic::services::academic_structure_service::AcademicStructure;
 use crate::modules::academic::services::course_planning_service::ClassroomActivity;
+use crate::modules::academic::services::daily_teaching_service::{
+    DailyTeachingEntry, DailyTeachingOverview, DailyTeachingPeriod, DailyTeachingPeriodCell,
+    DailyTeachingSummary, DailyTeachingTeacher,
+};
 use crate::modules::academic::services::study_plan_service::GenerateActivitiesFromPlanOutcome;
 use crate::modules::achievement::models::{
     Achievement, AchievementListFilter, CreateAchievementRequest, UpdateAchievementRequest,
@@ -196,6 +200,7 @@ use utoipa::OpenApi;
         crate::modules::parents::handlers::get_child_exam_schedule,
         crate::modules::parents::handlers::get_child_calendar_events,
         crate::modules::academic::handlers::timetable::get_my_timetable,
+        crate::modules::academic::handlers::timetable::daily_teaching_overview,
         crate::modules::academic::handlers::exam_schedule::list_my_exam_schedule,
         crate::modules::academic::handlers::exam_schedule::list_staff_exam_schedule,
         crate::modules::academic::handlers::list_academic_structure,
@@ -606,6 +611,13 @@ use utoipa::OpenApi;
         TimetableItemsData,
         ApiResponse<Vec<TimetableEntry>>,
         ApiResponse<TimetableItemsData>,
+        DailyTeachingOverview,
+        DailyTeachingPeriod,
+        DailyTeachingTeacher,
+        DailyTeachingPeriodCell,
+        DailyTeachingEntry,
+        DailyTeachingSummary,
+        ApiResponse<DailyTeachingOverview>,
         PersonalExamScheduleRound,
         PersonalExamSessionView,
         ApiResponse<Vec<PersonalExamScheduleRound>>,

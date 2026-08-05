@@ -194,6 +194,18 @@ pub async fn list_timetable_entries(
 }
 
 /// GET /api/academic/timetable/daily-teaching
+#[utoipa::path(
+    get,
+    path = "/api/academic/timetable/daily-teaching",
+    operation_id = "getDailyTeachingOverview",
+    tag = "academic",
+    params(daily_teaching_service::DailyTeachingQuery),
+    responses(
+        (status = 200, description = "Daily teaching overview", body = ApiResponse<daily_teaching_service::DailyTeachingOverview>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Daily teaching permission required", body = ApiErrorResponse)
+    )
+)]
 pub async fn daily_teaching_overview(
     State(state): State<AppState>,
     headers: HeaderMap,

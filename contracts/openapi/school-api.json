@@ -1927,6 +1927,60 @@
         ],
         "type": "object"
       },
+      "ApiResponse_DailyTeachingOverview": {
+        "properties": {
+          "data": {
+            "properties": {
+              "academicSemesterId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "date": {
+                "format": "date",
+                "type": "string"
+              },
+              "dayOfWeek": {
+                "type": "string"
+              },
+              "periods": {
+                "items": {
+                  "$ref": "#/components/schemas/DailyTeachingPeriod"
+                },
+                "type": "array"
+              },
+              "summary": {
+                "$ref": "#/components/schemas/DailyTeachingSummary"
+              },
+              "teachers": {
+                "items": {
+                  "$ref": "#/components/schemas/DailyTeachingTeacher"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "date",
+              "dayOfWeek",
+              "academicSemesterId",
+              "periods",
+              "teachers",
+              "summary"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
       "ApiResponse_DelegationIdData": {
         "properties": {
           "data": {
@@ -10505,6 +10559,238 @@
           "secondary"
         ],
         "type": "string"
+      },
+      "DailyTeachingEntry": {
+        "properties": {
+          "activitySchedulingMode": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ActivitySchedulingMode"
+              }
+            ]
+          },
+          "activitySlotId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "classroomName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "entryId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "entryType": {
+            "type": "string"
+          },
+          "isTeamTeaching": {
+            "type": "boolean"
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "roomCode": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "subjectCode": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "subjectGroupName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "subjectName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "entryId",
+          "entryType",
+          "activitySlotId",
+          "activitySchedulingMode",
+          "isTeamTeaching"
+        ],
+        "type": "object"
+      },
+      "DailyTeachingOverview": {
+        "properties": {
+          "academicSemesterId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "date": {
+            "format": "date",
+            "type": "string"
+          },
+          "dayOfWeek": {
+            "type": "string"
+          },
+          "periods": {
+            "items": {
+              "$ref": "#/components/schemas/DailyTeachingPeriod"
+            },
+            "type": "array"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/DailyTeachingSummary"
+          },
+          "teachers": {
+            "items": {
+              "$ref": "#/components/schemas/DailyTeachingTeacher"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "date",
+          "dayOfWeek",
+          "academicSemesterId",
+          "periods",
+          "teachers",
+          "summary"
+        ],
+        "type": "object"
+      },
+      "DailyTeachingPeriod": {
+        "properties": {
+          "endTime": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "orderIndex": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "startTime": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "startTime",
+          "endTime",
+          "orderIndex"
+        ],
+        "type": "object"
+      },
+      "DailyTeachingPeriodCell": {
+        "properties": {
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/DailyTeachingEntry"
+            },
+            "type": "array"
+          },
+          "periodId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "periodId",
+          "entries"
+        ],
+        "type": "object"
+      },
+      "DailyTeachingSummary": {
+        "properties": {
+          "displayedTeacherCount": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "emptyTeacherCount": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "lessonCount": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "teachersTeachingCount": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "totalTeacherCount": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "totalTeacherCount",
+          "displayedTeacherCount",
+          "teachersTeachingCount",
+          "lessonCount",
+          "emptyTeacherCount"
+        ],
+        "type": "object"
+      },
+      "DailyTeachingTeacher": {
+        "properties": {
+          "displayName": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "periods": {
+            "items": {
+              "$ref": "#/components/schemas/DailyTeachingPeriodCell"
+            },
+            "type": "array"
+          },
+          "subjectGroupNames": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "displayName",
+          "subjectGroupNames",
+          "periods"
+        ],
+        "type": "object"
       },
       "DefaultInstructorInput": {
         "properties": {
@@ -23347,6 +23633,75 @@
             "description": "Subject groups could not be loaded"
           }
         },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
+    "/api/academic/timetable/daily-teaching": {
+      "get": {
+        "operationId": "getDailyTeachingOverview",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "date",
+            "required": false,
+            "schema": {
+              "format": "date",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "academic_semester_id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "include_empty_teachers",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_DailyTeachingOverview"
+                }
+              }
+            },
+            "description": "Daily teaching overview"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Daily teaching permission required"
+          }
+        },
+        "summary": "GET /api/academic/timetable/daily-teaching",
         "tags": [
           "academic"
         ]

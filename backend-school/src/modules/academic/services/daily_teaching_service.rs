@@ -1,8 +1,10 @@
 use crate::error::AppError;
+use crate::modules::academic::models::study_plans::ActivitySchedulingMode;
 use chrono::{Datelike, Local, NaiveDate, NaiveTime, Weekday};
 use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, PgPool};
 use std::collections::{HashMap, HashSet};
+use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
 const TEACHING_ENTRY_TYPES: [&str; 5] = ["COURSE", "ACTIVITY", "HOMEROOM", "ACADEMIC", "BREAK"];
@@ -14,14 +16,15 @@ fn teaching_entry_types() -> Vec<String> {
         .collect()
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
 pub struct DailyTeachingQuery {
     pub date: Option<NaiveDate>,
     pub academic_semester_id: Option<Uuid>,
     pub include_empty_teachers: Option<bool>,
 }
 
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, PartialEq, Eq, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct DailyTeachingOverview {
     pub date: NaiveDate,
@@ -32,7 +35,7 @@ pub struct DailyTeachingOverview {
     pub summary: DailyTeachingSummary,
 }
 
-#[derive(Debug, Clone, Serialize, PartialEq, Eq, FromRow)]
+#[derive(Debug, Clone, Serialize, PartialEq, Eq, FromRow, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct DailyTeachingPeriod {
     pub id: Uuid,
@@ -42,7 +45,7 @@ pub struct DailyTeachingPeriod {
     pub order_index: i32,
 }
 
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, PartialEq, Eq, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct DailyTeachingTeacher {
     pub id: Uuid,
@@ -51,19 +54,21 @@ pub struct DailyTeachingTeacher {
     pub periods: Vec<DailyTeachingPeriodCell>,
 }
 
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, PartialEq, Eq, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct DailyTeachingPeriodCell {
     pub period_id: Uuid,
     pub entries: Vec<DailyTeachingEntry>,
 }
 
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, PartialEq, Eq, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct DailyTeachingEntry {
     pub entry_id: Uuid,
     pub entry_type: String,
+    #[schema(required = true)]
     pub activity_slot_id: Option<Uuid>,
+    #[schema(value_type = Option<ActivitySchedulingMode>, required = true)]
     pub activity_scheduling_mode: Option<String>,
     pub subject_code: Option<String>,
     pub subject_name: Option<String>,
@@ -75,7 +80,7 @@ pub struct DailyTeachingEntry {
     pub is_team_teaching: bool,
 }
 
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, PartialEq, Eq, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct DailyTeachingSummary {
     pub total_teacher_count: i64,

@@ -981,6 +981,23 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/api/academic/timetable/daily-teaching': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		/** GET /api/academic/timetable/daily-teaching */
+		get: operations['getDailyTeachingOverview'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/api/academic/years': {
 		parameters: {
 			query?: never;
@@ -2922,6 +2939,20 @@ export interface components {
 				/** Format: uuid */
 				id: string;
 				username: string;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_DailyTeachingOverview: {
+			data: {
+				/** Format: uuid */
+				academicSemesterId: string;
+				/** Format: date */
+				date: string;
+				dayOfWeek: string;
+				periods: components['schemas']['DailyTeachingPeriod'][];
+				summary: components['schemas']['DailyTeachingSummary'];
+				teachers: components['schemas']['DailyTeachingTeacher'][];
 			};
 			message?: string;
 			success: boolean;
@@ -5176,6 +5207,65 @@ export interface components {
 		};
 		/** @enum {string} */
 		CurriculumInstructorRole: 'primary' | 'secondary';
+		DailyTeachingEntry: {
+			activitySchedulingMode: null | components['schemas']['ActivitySchedulingMode'];
+			/** Format: uuid */
+			activitySlotId: string | null;
+			classroomName?: string | null;
+			/** Format: uuid */
+			entryId: string;
+			entryType: string;
+			isTeamTeaching: boolean;
+			note?: string | null;
+			roomCode?: string | null;
+			subjectCode?: string | null;
+			subjectGroupName?: string | null;
+			subjectName?: string | null;
+			title?: string | null;
+		};
+		DailyTeachingOverview: {
+			/** Format: uuid */
+			academicSemesterId: string;
+			/** Format: date */
+			date: string;
+			dayOfWeek: string;
+			periods: components['schemas']['DailyTeachingPeriod'][];
+			summary: components['schemas']['DailyTeachingSummary'];
+			teachers: components['schemas']['DailyTeachingTeacher'][];
+		};
+		DailyTeachingPeriod: {
+			endTime: string;
+			/** Format: uuid */
+			id: string;
+			name?: string | null;
+			/** Format: int32 */
+			orderIndex: number;
+			startTime: string;
+		};
+		DailyTeachingPeriodCell: {
+			entries: components['schemas']['DailyTeachingEntry'][];
+			/** Format: uuid */
+			periodId: string;
+		};
+		DailyTeachingSummary: {
+			/** Format: int64 */
+			displayedTeacherCount: number;
+			/** Format: int64 */
+			emptyTeacherCount: number;
+			/** Format: int64 */
+			lessonCount: number;
+			/** Format: int64 */
+			teachersTeachingCount: number;
+			/** Format: int64 */
+			totalTeacherCount: number;
+		};
+		DailyTeachingTeacher: {
+			displayName: string;
+			/** Format: uuid */
+			id: string;
+			periods: components['schemas']['DailyTeachingPeriodCell'][];
+			subjectGroupNames: string[];
+		};
 		DefaultInstructorInput: {
 			/** Format: uuid */
 			instructor_id: string;
@@ -12454,6 +12544,48 @@ export interface operations {
 			};
 			/** @description Subject groups could not be loaded */
 			500: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getDailyTeachingOverview: {
+		parameters: {
+			query?: {
+				academic_semester_id?: string;
+				date?: string;
+				include_empty_teachers?: boolean;
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Daily teaching overview */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_DailyTeachingOverview'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Daily teaching permission required */
+			403: {
 				headers: {
 					[name: string]: unknown;
 				};

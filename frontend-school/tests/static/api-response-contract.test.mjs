@@ -565,6 +565,8 @@ test('staff dashboard API uses a typed aggregate-only response', async () => {
 });
 
 test('daily teaching overview API uses typed response contracts', async () => {
+	const contract = JSON.parse(await readRepoFile('contracts/openapi/school-api.json'));
+	const generated = await readRepoFile('frontend-school/src/lib/api/generated/school-api.ts');
 	const frontendTimetableApi = await readRepoFile('frontend-school/src/lib/api/timetable.ts');
 	const backendService = await readRepoFile(
 		'backend-school/src/modules/academic/services/daily_teaching_service.rs'
@@ -573,9 +575,21 @@ test('daily teaching overview API uses typed response contracts', async () => {
 		'backend-school/src/modules/academic/handlers/timetable.rs'
 	);
 
-	assert.match(frontendTimetableApi, /interface\s+DailyTeachingOverview/);
-	assert.match(frontendTimetableApi, /interface\s+DailyTeachingTeacher/);
-	assert.match(frontendTimetableApi, /interface\s+DailyTeachingEntry/);
+	const dailyTeachingPath = '/api/academic/timetable/daily-teaching';
+	assert.ok(contract.paths[dailyTeachingPath], 'daily teaching route must be generated');
+	assert.equal(contract.paths[dailyTeachingPath].get.operationId, 'getDailyTeachingOverview');
+
+	const dailyEntrySchema = extractGeneratedSchemaBlock(generated, 'DailyTeachingEntry');
+	assert.match(dailyEntrySchema, /activitySlotId:\s*string \| null/);
+	assert.match(dailyEntrySchema, /activitySchedulingMode:/);
+
+	assert.doesNotMatch(frontendTimetableApi, /interface\s+DailyTeachingOverview/);
+	assert.doesNotMatch(frontendTimetableApi, /interface\s+DailyTeachingTeacher/);
+	assert.doesNotMatch(frontendTimetableApi, /interface\s+DailyTeachingEntry/);
+	assert.match(
+		frontendTimetableApi,
+		/export\s+type\s+DailyTeachingEntry\s*=\s*Schemas\['DailyTeachingEntry'\]/
+	);
 	assert.match(frontendTimetableApi, /getDailyTeachingOverview/);
 	assert.match(frontendTimetableApi, /apiClient\.get<DailyTeachingOverview>/);
 	assert.match(frontendTimetableApi, /\/api\/academic\/timetable\/daily-teaching/);
