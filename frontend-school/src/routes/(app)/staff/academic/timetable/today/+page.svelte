@@ -674,10 +674,10 @@
 									{#each overview.periods as period (period.id)}
 										{@const cell = cellForPeriod(teacher, period.id)}
 										{@const displayGroups = groupDailyTeachingEntries(cell.entries)}
-										<Table.Cell class="daily-teaching-period-column px-1.5 py-2 align-top">
+										<Table.Cell class="daily-teaching-period-column px-1 py-1 align-top">
 											<button
 												type="button"
-												class="hover:bg-muted/30 focus-visible:border-ring focus-visible:ring-ring/50 min-h-20 w-full rounded-md p-1 text-left transition-colors focus-visible:ring-[3px] focus-visible:outline-none"
+												class="hover:bg-muted/30 focus-visible:border-ring focus-visible:ring-ring/50 min-h-20 w-full rounded-md p-0.5 text-left transition-colors focus-visible:ring-[3px] focus-visible:outline-none"
 												aria-label={cell.entries.length === 0
 													? dailyTeachingEmptyCellLabel(
 															teacherCell.label,
@@ -688,17 +688,15 @@
 												onclick={() => openCell(teacher, period, cell.entries)}
 											>
 												{#if cell.entries.length > 0}
-													<div class="space-y-1">
+													<div class="space-y-0.5">
 														{#each displayGroups as group (group.key)}
 															{@const entry = group.entries[0]}
-															{@const presentation = dailyTeachingEntryCardPresentation(
-																entry.entryType
-															)}
+															{@const presentation = dailyTeachingEntryCardPresentation(entry)}
 															{@const subjectCodeLine = entrySubjectCodeLine(entry)}
 															{@const subjectNameLine = entrySubjectNameLine(entry)}
 															<div
 																class={[
-																	'min-h-16 rounded-md border p-2',
+																	'h-[5.5rem] overflow-hidden rounded-md border p-2',
 																	presentation.layout === 'centered' &&
 																		'flex flex-col items-center justify-center text-center',
 																	presentation.tone === 'course' &&
@@ -710,15 +708,23 @@
 																]}
 															>
 																{#if presentation.layout === 'details'}
-																	{#if subjectCodeLine}
-																		<p class="truncate text-xs font-bold">{subjectCodeLine}</p>
-																	{/if}
-																	{#if subjectNameLine}
-																		<p class="line-clamp-2 text-xs opacity-75">{subjectNameLine}</p>
+																	{#if entry.entryType === 'COURSE'}
+																		{#if subjectCodeLine}
+																			<p class="truncate text-xs font-bold">{subjectCodeLine}</p>
+																		{/if}
+																		{#if subjectNameLine}
+																			<p class="truncate text-xs opacity-75">{subjectNameLine}</p>
+																		{/if}
+																	{:else}
+																		<p
+																			class="line-clamp-2 whitespace-pre-line text-xs font-semibold leading-snug"
+																		>
+																			{entryTitle(entry)}
+																		</p>
 																	{/if}
 																	{#if entry.classroomName || entry.roomCode}
 																		<div
-																			class="mt-1.5 space-y-0.5 border-t border-current/10 pt-1 text-[10px] opacity-70"
+																			class="mt-1 space-y-0.5 border-t border-current/10 pt-1 text-[10px] opacity-70"
 																		>
 																			{#if entry.classroomName}
 																				<p class="flex items-center gap-1 truncate">
@@ -735,7 +741,14 @@
 																		</div>
 																	{/if}
 																{:else}
-																	<p class="line-clamp-3 text-sm font-semibold leading-snug">
+																	<p
+																		class={[
+																			'whitespace-pre-line text-sm font-semibold leading-snug',
+																			presentation.titleLineLimit === 2
+																				? 'line-clamp-2'
+																				: 'line-clamp-3'
+																		]}
+																	>
 																		{entryTitle(entry)}
 																	</p>
 																	{#if group.isSynchronizedActivity}
@@ -796,14 +809,24 @@
 									<Badge variant="outline">พร้อมกัน</Badge>
 								{/if}
 							</div>
-							<h3 class="font-semibold">{entryTitle(entry)}</h3>
+							<h3 class="whitespace-pre-line font-semibold">{entryTitle(entry)}</h3>
 							{#if group.isSynchronizedActivity}
 								<div class="mt-3">
-									<p class="text-muted-foreground text-xs">ชั้น/ห้อง</p>
-									{#if group.classroomLabels.length > 0}
-										<div class="mt-2 flex flex-wrap gap-2">
-											{#each group.classroomLabels as classroomLabel (classroomLabel)}
-												<Badge variant="secondary">{classroomLabel}</Badge>
+									{#if group.locations.length > 0}
+										<div class="overflow-hidden rounded-md border">
+											<div
+												class="bg-muted/50 text-muted-foreground grid grid-cols-[minmax(0,1fr)_5rem] gap-2 px-3 py-1.5 text-xs"
+											>
+												<span>ชั้น/ห้อง</span>
+												<span>ห้องเรียน</span>
+											</div>
+											{#each group.locations as location (location.key)}
+												<div
+													class="grid grid-cols-[minmax(0,1fr)_5rem] gap-2 border-t px-3 py-2 text-sm"
+												>
+													<span class="truncate">{location.classroomName ?? '-'}</span>
+													<span class="truncate">{location.roomCode ?? '-'}</span>
+												</div>
 											{/each}
 										</div>
 									{:else}
