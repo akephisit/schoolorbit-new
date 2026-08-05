@@ -1,10 +1,16 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import {
+import * as dailyTeachingDisplay from '../../src/lib/utils/daily-teaching-display.ts';
+
+const {
+	DAILY_TEACHING_MIN_PERIOD_COLUMN_WIDTH,
+	DAILY_TEACHING_TEACHER_COLUMN_WIDTH,
+	dailyTeachingTableMinWidth,
+	dailyTeachingTeacherCell,
 	displayGroupCountLabel,
 	groupDailyTeachingEntries
-} from '../../src/lib/utils/daily-teaching-display.ts';
+} = dailyTeachingDisplay;
 
 function entry(overrides = {}) {
 	return {
@@ -117,4 +123,27 @@ test('falls back to an entry count when a synchronized group has no classroom la
 	]);
 
 	assert.equal(displayGroupCountLabel(groups[0]), '2 รายการ');
+});
+
+test('calculates the readable table minimum from the teacher and period columns', () => {
+	assert.equal(DAILY_TEACHING_TEACHER_COLUMN_WIDTH, 128);
+	assert.equal(DAILY_TEACHING_MIN_PERIOD_COLUMN_WIDTH, 132);
+	assert.equal(typeof dailyTeachingTableMinWidth, 'function');
+	assert.equal(dailyTeachingTableMinWidth(0), 128);
+	assert.equal(dailyTeachingTableMinWidth(4), 656);
+	assert.equal(dailyTeachingTableMinWidth(10), 1448);
+});
+
+test('teacher cell presentation excludes subject-group subtitles', () => {
+	assert.equal(typeof dailyTeachingTeacherCell, 'function');
+	assert.deepEqual(
+		dailyTeachingTeacherCell({
+			displayName: 'วิภาวดี วงศ์ศรี',
+			subjectGroupNames: ['ภาษาไทย']
+		}),
+		{
+			label: 'วิภาวดี วงศ์ศรี',
+			title: 'วิภาวดี วงศ์ศรี'
+		}
+	);
 });

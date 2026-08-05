@@ -1,5 +1,12 @@
 import type { DailyTeachingEntry } from '$lib/api/timetable';
 
+export const DAILY_TEACHING_TEACHER_COLUMN_WIDTH = 128;
+export const DAILY_TEACHING_MIN_PERIOD_COLUMN_WIDTH = 132;
+
+type DailyTeachingTeacherIdentity = {
+	displayName: string;
+};
+
 export interface DailyTeachingDisplayGroup {
 	key: string;
 	entries: DailyTeachingEntry[];
@@ -81,4 +88,18 @@ export function displayGroupCountLabel(group: DailyTeachingDisplayGroup): string
 		return `${group.entries.length} รายการ`;
 	}
 	return '';
+}
+
+export function dailyTeachingTableMinWidth(periodCount: number): number {
+	return DAILY_TEACHING_TEACHER_COLUMN_WIDTH + periodCount * DAILY_TEACHING_MIN_PERIOD_COLUMN_WIDTH;
+}
+
+export function dailyTeachingTeacherCell(teacher: DailyTeachingTeacherIdentity): {
+	label: string;
+	title: string;
+} {
+	return {
+		label: teacher.displayName,
+		title: teacher.displayName
+	};
 }

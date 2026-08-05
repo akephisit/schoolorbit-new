@@ -1181,9 +1181,11 @@ test('daily teaching overview page is table based and read only', async () => {
 	assert.match(page, /sticky top-0/);
 	assert.match(page, /overflow-y-auto/);
 	assert.match(page, /subjectGroupNames/);
-	assert.match(page, /teacherColumnWidth/);
+	assert.match(page, /DAILY_TEACHING_TEACHER_COLUMN_WIDTH/);
+	assert.match(page, /DAILY_TEACHING_MIN_PERIOD_COLUMN_WIDTH/);
+	assert.match(page, /dailyTeachingTableMinWidth/);
 	assert.match(page, /--teacher-column-width/);
-	assert.match(page, /teacher\.displayName\.length/);
+	assert.doesNotMatch(page, /teacher\.displayName\.length/);
 	assert.match(page, /entrySubjectCodeLine/);
 	assert.match(page, /entrySubjectNameLine/);
 	assert.doesNotMatch(page, /entry\.classroomName,\s*entry\.roomCode,\s*entry\.subjectGroupName/);

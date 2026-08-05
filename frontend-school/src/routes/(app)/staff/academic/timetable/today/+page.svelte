@@ -23,6 +23,10 @@
 	import { PERMISSIONS } from '$lib/permissions/registry';
 	import { can } from '$lib/stores/permissions';
 	import {
+		DAILY_TEACHING_MIN_PERIOD_COLUMN_WIDTH,
+		DAILY_TEACHING_TEACHER_COLUMN_WIDTH,
+		dailyTeachingTableMinWidth,
+		dailyTeachingTeacherCell,
 		displayGroupCountLabel,
 		groupDailyTeachingEntries
 	} from '$lib/utils/daily-teaching-display';
@@ -130,17 +134,7 @@
 			return matchesTeacher && matchesSubjectGroup && matchesSubject && matchesClassroom;
 		});
 	});
-	const teacherColumnWidth = $derived.by(() => {
-		const longestNameLength = Math.max(
-			3,
-			...filteredTeachers.map((teacher) => teacher.displayName.length)
-		);
-		return clamp(104 + longestNameLength * 7, 136, 188);
-	});
-	const periodColumnWidth = 168;
-	const tableMinWidth = $derived(
-		Math.max(680, teacherColumnWidth + (overview?.periods.length ?? 4) * periodColumnWidth)
-	);
+	const tableMinWidth = $derived(dailyTeachingTableMinWidth(overview?.periods.length ?? 4));
 
 	function currentOverviewKey(): string {
 		return [
@@ -353,10 +347,6 @@
 		const month = String(date.getMonth() + 1).padStart(2, '0');
 		const day = String(date.getDate()).padStart(2, '0');
 		return `${year}-${month}-${day}`;
-	}
-
-	function clamp(value: number, min: number, max: number): number {
-		return Math.min(max, Math.max(min, value));
 	}
 
 	function entryTypeLabel(entryType: DailyTeachingEntry['entryType']): string {
@@ -621,7 +611,9 @@
 		</div>
 
 		<section class="schedule-shell rounded-md border bg-background">
-			<div class="flex flex-col gap-2 border-b p-4 md:flex-row md:items-center md:justify-between">
+			<div
+				class="flex flex-col gap-2 border-b p-3 sm:p-4 md:flex-row md:items-center md:justify-between"
+			>
 				<div>
 					<div class="flex items-center gap-2">
 						<CalendarClock class="text-muted-foreground h-5 w-5" />
@@ -646,16 +638,18 @@
 				<div class="daily-teaching-scroll max-h-[70vh] overflow-x-auto overflow-y-auto">
 					<Table.Root
 						class="daily-teaching-table border-0"
-						style={`--teacher-column-width: ${teacherColumnWidth}px; --period-column-width: ${periodColumnWidth}px; min-width: ${tableMinWidth}px;`}
+						style={`--teacher-column-width: ${DAILY_TEACHING_TEACHER_COLUMN_WIDTH}px; --minimum-period-column-width: ${DAILY_TEACHING_MIN_PERIOD_COLUMN_WIDTH}px; min-width: ${tableMinWidth}px;`}
 					>
 						<Table.Header class="sticky top-0 z-40">
 							<Table.Row class="bg-muted/60 hover:bg-muted/60">
-								<Table.Head class="daily-teaching-teacher-column sticky left-0 top-0 z-50 bg-muted">
+								<Table.Head
+									class="daily-teaching-teacher-column sticky left-0 top-0 z-50 bg-muted px-1.5 py-2"
+								>
 									ครู
 								</Table.Head>
 								{#each overview.periods as period (period.id)}
 									<Table.Head
-										class="daily-teaching-period-column sticky top-0 z-40 bg-muted text-center"
+										class="daily-teaching-period-column sticky top-0 z-40 bg-muted px-1.5 py-2 text-center"
 									>
 										<div class="font-medium">{periodLabel(period)}</div>
 										<div class="text-muted-foreground text-xs font-normal">
@@ -667,38 +661,34 @@
 						</Table.Header>
 						<Table.Body>
 							{#each filteredTeachers as teacher (teacher.id)}
+								{@const teacherCell = dailyTeachingTeacherCell(teacher)}
 								<Table.Row>
 									<Table.Cell
-										class="daily-teaching-teacher-column sticky left-0 z-20 overflow-hidden bg-background"
+										class="daily-teaching-teacher-column sticky left-0 z-20 overflow-hidden bg-background px-1.5 py-2"
 									>
-										<div class="min-w-0">
-											<p class="truncate font-medium">{teacher.displayName}</p>
-											{#if teacher.subjectGroupNames.length > 0}
-												<p class="text-muted-foreground truncate text-xs">
-													{teacher.subjectGroupNames.join(', ')}
-												</p>
-											{/if}
+										<div class="min-w-0" title={teacherCell.title}>
+											<p class="truncate font-medium">{teacherCell.label}</p>
 										</div>
 									</Table.Cell>
 
 									{#each overview.periods as period (period.id)}
 										{@const cell = cellForPeriod(teacher, period.id)}
 										{@const displayGroups = groupDailyTeachingEntries(cell.entries)}
-										<Table.Cell class="daily-teaching-period-column align-top">
+										<Table.Cell class="daily-teaching-period-column px-1.5 py-2 align-top">
 											<button
 												type="button"
-												class="hover:border-primary/50 hover:bg-accent/40 focus-visible:border-ring focus-visible:ring-ring/50 min-h-24 w-full rounded-md border border-dashed border-transparent p-2 text-left transition-colors focus-visible:ring-[3px] focus-visible:outline-none"
+												class="hover:border-primary/50 hover:bg-accent/40 focus-visible:border-ring focus-visible:ring-ring/50 min-h-20 w-full rounded-md border border-dashed border-transparent p-1.5 text-left transition-colors focus-visible:ring-[3px] focus-visible:outline-none"
 												onclick={() => openCell(teacher, period, cell.entries)}
 											>
 												{#if cell.entries.length === 0}
 													<span class="text-muted-foreground text-xs">ว่าง</span>
 												{:else}
-													<div class="space-y-1.5">
+													<div class="space-y-1">
 														{#each displayGroups as group (group.key)}
 															{@const entry = group.entries[0]}
 															{@const subjectCodeLine = entrySubjectCodeLine(entry)}
 															{@const subjectNameLine = entrySubjectNameLine(entry)}
-															<div class="rounded-md border bg-muted/30 p-2">
+															<div class="rounded-md border bg-muted/30 p-1.5">
 																<div class="flex flex-wrap items-center gap-1.5">
 																	<Badge
 																		variant={entryBadgeVariant(entry.entryType)}
@@ -837,6 +827,11 @@
 </Dialog.Root>
 
 <style>
+	:global(.daily-teaching-table) {
+		table-layout: fixed;
+		width: 100%;
+	}
+
 	:global(.daily-teaching-table th),
 	:global(.daily-teaching-table td) {
 		border-bottom: 1px solid hsl(var(--border));
@@ -849,9 +844,8 @@
 	}
 
 	:global(.daily-teaching-period-column) {
-		width: var(--period-column-width);
-		min-width: var(--period-column-width);
-		max-width: var(--period-column-width);
+		width: var(--minimum-period-column-width);
+		min-width: var(--minimum-period-column-width);
 	}
 
 	:global(.daily-teaching-scroll [data-slot='table-container']) {
