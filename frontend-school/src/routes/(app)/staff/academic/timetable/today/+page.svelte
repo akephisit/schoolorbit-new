@@ -23,6 +23,10 @@
 	import { PERMISSIONS } from '$lib/permissions/registry';
 	import { can } from '$lib/stores/permissions';
 	import {
+		displayGroupCountLabel,
+		groupDailyTeachingEntries
+	} from '$lib/utils/daily-teaching-display';
+	import {
 		CalendarClock,
 		ChevronLeft,
 		ChevronRight,
@@ -679,6 +683,7 @@
 
 									{#each overview.periods as period (period.id)}
 										{@const cell = cellForPeriod(teacher, period.id)}
+										{@const displayGroups = groupDailyTeachingEntries(cell.entries)}
 										<Table.Cell class="daily-teaching-period-column align-top">
 											<button
 												type="button"
@@ -689,11 +694,12 @@
 													<span class="text-muted-foreground text-xs">ว่าง</span>
 												{:else}
 													<div class="space-y-1.5">
-														{#each cell.entries as entry (entry.entryId)}
+														{#each displayGroups as group (group.key)}
+															{@const entry = group.entries[0]}
 															{@const subjectCodeLine = entrySubjectCodeLine(entry)}
 															{@const subjectNameLine = entrySubjectNameLine(entry)}
 															<div class="rounded-md border bg-muted/30 p-2">
-																<div class="flex items-center gap-1.5">
+																<div class="flex flex-wrap items-center gap-1.5">
 																	<Badge
 																		variant={entryBadgeVariant(entry.entryType)}
 																		class="max-w-full truncate"
@@ -703,23 +709,35 @@
 																	{#if entry.isTeamTeaching}
 																		<Badge variant="outline">ทีมสอน</Badge>
 																	{/if}
-																</div>
-																<div class="mt-1 min-w-0">
-																	{#if subjectCodeLine}
-																		<p class="text-muted-foreground truncate text-xs font-medium">
-																			{subjectCodeLine}
-																		</p>
-																	{/if}
-																	{#if subjectNameLine}
-																		<p class="line-clamp-2 text-sm font-medium">
-																			{subjectNameLine}
-																		</p>
+																	{#if group.isSynchronizedActivity}
+																		<Badge variant="outline">พร้อมกัน</Badge>
 																	{/if}
 																</div>
-																{#if entryMeta(entry)}
-																	<p class="text-muted-foreground mt-1 truncate text-xs">
-																		{entryMeta(entry)}
+																{#if group.isSynchronizedActivity}
+																	<p class="mt-1 line-clamp-2 text-sm font-medium">
+																		{entryTitle(entry)}
 																	</p>
+																	<p class="text-muted-foreground mt-1 truncate text-xs">
+																		{displayGroupCountLabel(group)}
+																	</p>
+																{:else}
+																	<div class="mt-1 min-w-0">
+																		{#if subjectCodeLine}
+																			<p class="text-muted-foreground truncate text-xs font-medium">
+																				{subjectCodeLine}
+																			</p>
+																		{/if}
+																		{#if subjectNameLine}
+																			<p class="line-clamp-2 text-sm font-medium">
+																				{subjectNameLine}
+																			</p>
+																		{/if}
+																	</div>
+																	{#if entryMeta(entry)}
+																		<p class="text-muted-foreground mt-1 truncate text-xs">
+																			{entryMeta(entry)}
+																		</p>
+																	{/if}
 																{/if}
 															</div>
 														{/each}
@@ -757,8 +775,10 @@
 					ไม่มีคาบสอนในช่วงเวลานี้
 				</div>
 			{:else}
+				{@const displayGroups = groupDailyTeachingEntries(selectedCell.entries)}
 				<div class="space-y-3">
-					{#each selectedCell.entries as entry (entry.entryId)}
+					{#each displayGroups as group (group.key)}
+						{@const entry = group.entries[0]}
 						<div class="rounded-md border p-4">
 							<div class="mb-2 flex flex-wrap items-center gap-2">
 								<Badge variant={entryBadgeVariant(entry.entryType)}>
@@ -767,26 +787,44 @@
 								{#if entry.isTeamTeaching}
 									<Badge variant="outline">ทีมสอน</Badge>
 								{/if}
+								{#if group.isSynchronizedActivity}
+									<Badge variant="outline">พร้อมกัน</Badge>
+								{/if}
 							</div>
 							<h3 class="font-semibold">{entryTitle(entry)}</h3>
-							<div class="mt-3 grid gap-2 text-sm md:grid-cols-2">
-								<div>
+							{#if group.isSynchronizedActivity}
+								<div class="mt-3">
 									<p class="text-muted-foreground text-xs">ชั้น/ห้อง</p>
-									<p>{entry.classroomName ?? '-'}</p>
+									{#if group.classroomLabels.length > 0}
+										<div class="mt-2 flex flex-wrap gap-2">
+											{#each group.classroomLabels as classroomLabel (classroomLabel)}
+												<Badge variant="secondary">{classroomLabel}</Badge>
+											{/each}
+										</div>
+									{:else}
+										<p class="mt-1 text-sm">{displayGroupCountLabel(group)}</p>
+									{/if}
 								</div>
-								<div>
-									<p class="text-muted-foreground text-xs">ห้องเรียน</p>
-									<p>{entry.roomCode ?? '-'}</p>
+							{:else}
+								<div class="mt-3 grid gap-2 text-sm md:grid-cols-2">
+									<div>
+										<p class="text-muted-foreground text-xs">ชั้น/ห้อง</p>
+										<p>{entry.classroomName ?? '-'}</p>
+									</div>
+									<div>
+										<p class="text-muted-foreground text-xs">ห้องเรียน</p>
+										<p>{entry.roomCode ?? '-'}</p>
+									</div>
+									<div>
+										<p class="text-muted-foreground text-xs">กลุ่มสาระ</p>
+										<p>{entry.subjectGroupName ?? '-'}</p>
+									</div>
+									<div>
+										<p class="text-muted-foreground text-xs">รหัสวิชา</p>
+										<p>{entry.subjectCode ?? '-'}</p>
+									</div>
 								</div>
-								<div>
-									<p class="text-muted-foreground text-xs">กลุ่มสาระ</p>
-									<p>{entry.subjectGroupName ?? '-'}</p>
-								</div>
-								<div>
-									<p class="text-muted-foreground text-xs">รหัสวิชา</p>
-									<p>{entry.subjectCode ?? '-'}</p>
-								</div>
-							</div>
+							{/if}
 							{#if entry.note}
 								<p class="text-muted-foreground mt-3 text-sm">{entry.note}</p>
 							{/if}
