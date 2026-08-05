@@ -47,6 +47,38 @@ test('merges synchronized entries that share one activity slot', () => {
 	assert.equal(displayGroupCountLabel(groups[0]), '2 ห้อง');
 });
 
+test('sorts synchronized locations naturally by classroom then physical room', () => {
+	const groups = groupDailyTeachingEntries([
+		entry({ entryId: 'entry-10', classroomName: 'ม.1/10', roomCode: '120' }),
+		entry({ entryId: 'entry-2b', classroomName: 'ม.1/2', roomCode: '115' }),
+		entry({ entryId: 'entry-2a', classroomName: 'ม.1/2', roomCode: '101' }),
+		entry({ entryId: 'entry-duplicate', classroomName: 'ม.1/2', roomCode: '101' })
+	]);
+
+	assert.deepEqual(groups[0].locations, [
+		{
+			key: 'ม.1/2\u0000101',
+			classroomName: 'ม.1/2',
+			roomCode: '101',
+			label: 'ม.1/2 / 101'
+		},
+		{
+			key: 'ม.1/2\u0000115',
+			classroomName: 'ม.1/2',
+			roomCode: '115',
+			label: 'ม.1/2 / 115'
+		},
+		{
+			key: 'ม.1/10\u0000120',
+			classroomName: 'ม.1/10',
+			roomCode: '120',
+			label: 'ม.1/10 / 120'
+		}
+	]);
+	assert.deepEqual(groups[0].classroomLabels, ['ม.1/2 / 101', 'ม.1/2 / 115', 'ม.1/10 / 120']);
+	assert.equal(displayGroupCountLabel(groups[0]), '3 ห้อง');
+});
+
 test('keeps synchronized activities from different slots separate', () => {
 	const groups = groupDailyTeachingEntries([
 		entry(),
@@ -150,27 +182,39 @@ test('teacher cell presentation excludes subject-group subtitles', () => {
 	);
 });
 
-test('maps every daily entry type to a semantic tone and content layout', () => {
+test('uses detailed cards for courses and independent activities', () => {
 	assert.equal(typeof dailyTeachingEntryCardPresentation, 'function');
-	assert.deepEqual(dailyTeachingEntryCardPresentation('COURSE'), {
-		tone: 'course',
-		layout: 'details'
-	});
-	assert.deepEqual(dailyTeachingEntryCardPresentation('ACADEMIC'), {
-		tone: 'course',
-		layout: 'centered'
-	});
-	assert.deepEqual(dailyTeachingEntryCardPresentation('ACTIVITY'), {
+	assert.deepEqual(
+		dailyTeachingEntryCardPresentation(
+			entry({ entryType: 'COURSE', activitySchedulingMode: null, activitySlotId: null })
+		),
+		{ tone: 'course', layout: 'details', titleLineLimit: 2 }
+	);
+	assert.deepEqual(
+		dailyTeachingEntryCardPresentation(
+			entry({ entryType: 'ACTIVITY', activitySchedulingMode: 'independent' })
+		),
+		{ tone: 'activity', layout: 'details', titleLineLimit: 2 }
+	);
+	assert.deepEqual(dailyTeachingEntryCardPresentation(entry({ entryType: 'ACTIVITY' })), {
 		tone: 'activity',
-		layout: 'centered'
+		layout: 'centered',
+		titleLineLimit: 3
 	});
-	assert.deepEqual(dailyTeachingEntryCardPresentation('HOMEROOM'), {
+	assert.deepEqual(dailyTeachingEntryCardPresentation(entry({ entryType: 'ACADEMIC' })), {
+		tone: 'course',
+		layout: 'centered',
+		titleLineLimit: 3
+	});
+	assert.deepEqual(dailyTeachingEntryCardPresentation(entry({ entryType: 'HOMEROOM' })), {
 		tone: 'activity',
-		layout: 'centered'
+		layout: 'centered',
+		titleLineLimit: 3
 	});
-	assert.deepEqual(dailyTeachingEntryCardPresentation('BREAK'), {
+	assert.deepEqual(dailyTeachingEntryCardPresentation(entry({ entryType: 'BREAK' })), {
 		tone: 'break',
-		layout: 'centered'
+		layout: 'centered',
+		titleLineLimit: 3
 	});
 });
 

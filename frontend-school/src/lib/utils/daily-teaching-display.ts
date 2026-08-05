@@ -9,18 +9,33 @@ type DailyTeachingTeacherIdentity = {
 
 export type DailyTeachingEntryTone = 'course' | 'activity' | 'break';
 export type DailyTeachingEntryLayout = 'details' | 'centered';
+export type DailyTeachingTitleLineLimit = 2 | 3;
 
 export type DailyTeachingEntryCardPresentation = {
 	tone: DailyTeachingEntryTone;
 	layout: DailyTeachingEntryLayout;
+	titleLineLimit: DailyTeachingTitleLineLimit;
 };
+
+export interface DailyTeachingDisplayLocation {
+	key: string;
+	classroomName: string | null;
+	roomCode: string | null;
+	label: string;
+}
 
 export interface DailyTeachingDisplayGroup {
 	key: string;
 	entries: DailyTeachingEntry[];
 	isSynchronizedActivity: boolean;
+	locations: DailyTeachingDisplayLocation[];
 	classroomLabels: string[];
 }
+
+const thaiNaturalCollator = new Intl.Collator('th', {
+	numeric: true,
+	sensitivity: 'base'
+});
 
 function synchronizedActivityKey(entry: DailyTeachingEntry): string | null {
 	if (
@@ -34,15 +49,43 @@ function synchronizedActivityKey(entry: DailyTeachingEntry): string | null {
 	return `synchronized:${entry.activitySlotId}`;
 }
 
-function classroomLabel(entry: DailyTeachingEntry): string {
-	return [entry.classroomName, entry.roomCode].filter(Boolean).join(' / ');
+function textOrNull(value: string | null | undefined): string | null {
+	const normalized = value?.trim();
+	return normalized ? normalized : null;
 }
 
-function appendClassroomLabel(group: DailyTeachingDisplayGroup, entry: DailyTeachingEntry) {
-	const label = classroomLabel(entry);
-	if (label && !group.classroomLabels.includes(label)) {
-		group.classroomLabels.push(label);
-	}
+function locationFromEntry(entry: DailyTeachingEntry): DailyTeachingDisplayLocation | null {
+	const classroomName = textOrNull(entry.classroomName);
+	const roomCode = textOrNull(entry.roomCode);
+	if (!classroomName && !roomCode) return null;
+
+	return {
+		key: `${classroomName ?? ''}\u0000${roomCode ?? ''}`,
+		classroomName,
+		roomCode,
+		label: [classroomName, roomCode].filter(Boolean).join(' / ')
+	};
+}
+
+function compareLocations(
+	left: DailyTeachingDisplayLocation,
+	right: DailyTeachingDisplayLocation
+): number {
+	return (
+		Number(!left.classroomName) - Number(!right.classroomName) ||
+		thaiNaturalCollator.compare(left.classroomName ?? '', right.classroomName ?? '') ||
+		thaiNaturalCollator.compare(left.roomCode ?? '', right.roomCode ?? '') ||
+		left.key.localeCompare(right.key)
+	);
+}
+
+function appendLocation(group: DailyTeachingDisplayGroup, entry: DailyTeachingEntry) {
+	const location = locationFromEntry(entry);
+	if (!location || group.locations.some((item) => item.key === location.key)) return;
+
+	group.locations.push(location);
+	group.locations.sort(compareLocations);
+	group.classroomLabels = group.locations.map((item) => item.label);
 }
 
 function displayGroup(
@@ -54,9 +97,10 @@ function displayGroup(
 		key,
 		entries: [entry],
 		isSynchronizedActivity,
+		locations: [],
 		classroomLabels: []
 	};
-	appendClassroomLabel(group, entry);
+	appendLocation(group, entry);
 	return group;
 }
 
@@ -76,7 +120,7 @@ export function groupDailyTeachingEntries(
 		const existingGroup = synchronizedGroups.get(synchronizedKey);
 		if (existingGroup) {
 			existingGroup.entries.push(entry);
-			appendClassroomLabel(existingGroup, entry);
+			appendLocation(existingGroup, entry);
 			continue;
 		}
 
@@ -113,18 +157,23 @@ export function dailyTeachingTeacherCell(teacher: DailyTeachingTeacherIdentity):
 }
 
 export function dailyTeachingEntryCardPresentation(
-	entryType: DailyTeachingEntry['entryType']
+	entry: Pick<DailyTeachingEntry, 'entryType' | 'activitySchedulingMode'>
 ): DailyTeachingEntryCardPresentation {
-	switch (entryType) {
-		case 'COURSE':
-			return { tone: 'course', layout: 'details' };
+	if (entry.entryType === 'COURSE') {
+		return { tone: 'course', layout: 'details', titleLineLimit: 2 };
+	}
+	if (entry.entryType === 'ACTIVITY' && entry.activitySchedulingMode === 'independent') {
+		return { tone: 'activity', layout: 'details', titleLineLimit: 2 };
+	}
+
+	switch (entry.entryType) {
 		case 'BREAK':
-			return { tone: 'break', layout: 'centered' };
+			return { tone: 'break', layout: 'centered', titleLineLimit: 3 };
 		case 'ACTIVITY':
 		case 'HOMEROOM':
-			return { tone: 'activity', layout: 'centered' };
+			return { tone: 'activity', layout: 'centered', titleLineLimit: 3 };
 		default:
-			return { tone: 'course', layout: 'centered' };
+			return { tone: 'course', layout: 'centered', titleLineLimit: 3 };
 	}
 }
 
