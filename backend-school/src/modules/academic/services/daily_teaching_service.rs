@@ -63,6 +63,8 @@ pub struct DailyTeachingPeriodCell {
 pub struct DailyTeachingEntry {
     pub entry_id: Uuid,
     pub entry_type: String,
+    pub activity_slot_id: Option<Uuid>,
+    pub activity_scheduling_mode: Option<String>,
     pub subject_code: Option<String>,
     pub subject_name: Option<String>,
     pub subject_group_name: Option<String>,
@@ -97,6 +99,8 @@ struct DailyTeachingEntrySeed {
     period_id: Uuid,
     entry_id: Uuid,
     entry_type: String,
+    activity_slot_id: Option<Uuid>,
+    activity_scheduling_mode: Option<String>,
     subject_code: Option<String>,
     subject_name: Option<String>,
     subject_group_name: Option<String>,
@@ -124,6 +128,8 @@ fn entry_from_seed(seed: DailyTeachingEntrySeed) -> DailyTeachingEntry {
     DailyTeachingEntry {
         entry_id: seed.entry_id,
         entry_type: seed.entry_type,
+        activity_slot_id: seed.activity_slot_id,
+        activity_scheduling_mode: seed.activity_scheduling_mode,
         subject_code: seed.subject_code,
         subject_name: seed.subject_name,
         subject_group_name: seed.subject_group_name,
@@ -348,6 +354,8 @@ async fn list_daily_entries(
             te.period_id,
             te.id AS entry_id,
             te.entry_type,
+            te.activity_slot_id,
+            ac.scheduling_mode AS activity_scheduling_mode,
             s.code AS subject_code,
             s.name_th AS subject_name,
             sg.name_th AS subject_group_name,
@@ -360,6 +368,8 @@ async fn list_daily_entries(
         FROM academic_timetable_entries te
         JOIN timetable_entry_instructors tei ON tei.entry_id = te.id
         JOIN academic_periods ap ON ap.id = te.period_id
+        LEFT JOIN activity_slots activity_slot ON activity_slot.id = te.activity_slot_id
+        LEFT JOIN activity_catalog ac ON ac.id = activity_slot.activity_catalog_id
         LEFT JOIN classroom_courses cc ON cc.id = te.classroom_course_id
         LEFT JOIN subjects s ON s.id = cc.subject_id
         LEFT JOIN subject_groups sg ON sg.id = s.group_id
@@ -465,6 +475,8 @@ mod tests {
                     period_id,
                     entry_id,
                     entry_type: "COURSE".to_string(),
+                    activity_slot_id: None,
+                    activity_scheduling_mode: None,
                     subject_code: Some("ค21101".to_string()),
                     subject_name: Some("คณิตศาสตร์".to_string()),
                     subject_group_name: Some("คณิตศาสตร์".to_string()),
@@ -480,6 +492,8 @@ mod tests {
                     period_id,
                     entry_id,
                     entry_type: "COURSE".to_string(),
+                    activity_slot_id: None,
+                    activity_scheduling_mode: None,
                     subject_code: Some("ค21101".to_string()),
                     subject_name: Some("คณิตศาสตร์".to_string()),
                     subject_group_name: Some("คณิตศาสตร์".to_string()),
@@ -500,6 +514,58 @@ mod tests {
         assert_eq!(overview.teachers.len(), 2);
         assert!(overview.teachers[0].periods[0].entries[0].is_team_teaching);
         assert!(overview.teachers[1].periods[0].entries[0].is_team_teaching);
+    }
+
+    #[test]
+    fn build_overview_preserves_synchronized_activity_identity() {
+        let period_id = id(1);
+        let semester_id = id(2);
+        let teacher_id = id(10);
+        let activity_slot_id = id(20);
+
+        let overview = build_daily_teaching_overview(
+            NaiveDate::from_ymd_opt(2026, 8, 5).unwrap(),
+            "WED".to_string(),
+            semester_id,
+            vec![DailyTeachingPeriod {
+                id: period_id,
+                name: Some("คาบ 8".to_string()),
+                start_time: NaiveTime::from_hms_opt(14, 40, 0).unwrap(),
+                end_time: NaiveTime::from_hms_opt(15, 30, 0).unwrap(),
+                order_index: 8,
+            }],
+            vec![DailyTeachingTeacherSeed {
+                id: teacher_id,
+                display_name: "ครูกิจกรรม".to_string(),
+                subject_group_names: vec![],
+                sort_order: 0,
+            }],
+            vec![DailyTeachingEntrySeed {
+                teacher_id,
+                period_id,
+                entry_id: id(30),
+                entry_type: "ACTIVITY".to_string(),
+                subject_code: None,
+                subject_name: None,
+                subject_group_name: None,
+                classroom_name: Some("ป.1/1".to_string()),
+                room_code: None,
+                title: Some("ลูกเสือ เนตรนารี".to_string()),
+                note: None,
+                instructor_count: 1,
+                period_order_index: 8,
+                activity_slot_id: Some(activity_slot_id),
+                activity_scheduling_mode: Some("synchronized".to_string()),
+            }],
+            false,
+        );
+
+        let entry = &overview.teachers[0].periods[0].entries[0];
+        assert_eq!(entry.activity_slot_id, Some(activity_slot_id));
+        assert_eq!(
+            entry.activity_scheduling_mode.as_deref(),
+            Some("synchronized")
+        );
     }
 
     #[test]
@@ -534,6 +600,8 @@ mod tests {
             period_id,
             entry_id: id(3),
             entry_type: "HOMEROOM".to_string(),
+            activity_slot_id: None,
+            activity_scheduling_mode: None,
             subject_code: None,
             subject_name: None,
             subject_group_name: None,
