@@ -35,7 +35,7 @@ Create `frontend-school/tests/e2e/calendar-embed-dialog.spec.ts`:
 ```ts
 import { devices, expect, test } from '@playwright/test';
 
-test.use({ ...devices['iPhone 13'] });
+test.use({ ...devices['iPhone 13'], defaultBrowserType: 'chromium' });
 
 test('closes the embedded calendar day dialog when its overlay is tapped', async ({ page }) => {
 	await page.route('**/api/public/calendar/events?*', async (route) => {

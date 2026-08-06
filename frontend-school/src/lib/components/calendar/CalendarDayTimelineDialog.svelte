@@ -52,6 +52,7 @@
 
 <Dialog.Root bind:open>
 	<Dialog.Content
+		overlayProps={{ onclick: () => (open = false) }}
 		class="flex h-[min(90dvh,46rem)] max-h-[calc(100dvh-1rem)] max-w-[calc(100%-1rem)] flex-col gap-0 overflow-hidden rounded-2xl p-0 sm:max-w-lg"
 	>
 		<Dialog.Header class="shrink-0 border-b px-5 py-4 pr-12 text-left">
