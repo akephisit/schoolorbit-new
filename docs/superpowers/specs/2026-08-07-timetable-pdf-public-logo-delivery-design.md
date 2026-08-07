@@ -48,7 +48,7 @@ The existing `GET /api/public/files/{id}/content` redirect remains unchanged for
 
 `frontend-school/src/lib/api/files.ts` adds `downloadPublicFile(fileId, signal?)`. It requests the typed public delivery response through `apiClient`, then passes the transient URL to the existing centralized external-blob transport. Provider credentials are omitted, referrer data is suppressed, and the URL is neither logged nor persisted.
 
-The timetable PDF utility switches from the protected `getSchoolSettings` API to `getPublicSchoolInfo`, because school branding is public and PDF generation should not require settings-management permission. When `logoFileId` exists, it calls `downloadPublicFile`, converts the returned `Blob` to a data URL, and passes that value into the existing full and portrait PDF table builders.
+The school API wrapper adds `getRequiredPublicSchoolInfo()` for consumers that must surface branding failures while preserving the existing tolerant `getPublicSchoolInfo()` behavior used by public admission pages. The timetable PDF utility switches from the protected `getSchoolSettings` API to this strict public-branding helper, because PDF generation should not require settings-management permission. When `logoFileId` exists, it calls `downloadPublicFile`, converts the returned `Blob` to a data URL, and passes that value into the existing full and portrait PDF table builders.
 
 No timetable page, button, permission, or selection behavior changes. All timetable export callers receive the correction through the shared PDF generator.
 
