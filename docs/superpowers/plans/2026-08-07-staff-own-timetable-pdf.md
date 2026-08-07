@@ -22,60 +22,74 @@
 ### Task 1: Add and verify the staff timetable PDF action
 
 **Files:**
+- Create: `frontend-school/src/lib/utils/staff-own-timetable-pdf.ts`
 - Create: `frontend-school/tests/static/staff-own-timetable-pdf.test.mjs`
 - Modify: `frontend-school/src/routes/(app)/staff/timetable/+page.svelte`
 
 **Interfaces:**
 - Consumes: `entries: TimetableEntry[]`, `periods: TimetablePeriodSummary[]`, `years: AcademicYear[]`, `semesters: Semester[]`, `selectedYearId`, `selectedSemesterId`, and `userName` already owned by the page.
 - Consumes: `generateTimetablePDF(pages: TimetablePage[], fileName?: string, options?: { layout?: 'full' | 'portrait-2col' }): Promise<void>` from `$lib/utils/pdf`.
+- Produces: `buildStaffOwnTimetablePdfDownload(input): StaffOwnTimetablePdfDownload`, returning a filename and one instructor-mode PDF page whose period input is normalized to `{ id, order_index, name, start_time, end_time }`.
 - Produces: `handleDownloadPDF(): Promise<void>` and `isExportingPdf: boolean` for the `PageShell` action.
-- Produces: one instructor-mode PDF page whose period input is normalized to `{ id, order_index, name, start_time, end_time }`.
 
-- [ ] **Step 1: Write the failing static regression test**
+- [ ] **Step 1: Write the failing behavior test**
 
 Create `frontend-school/tests/static/staff-own-timetable-pdf.test.mjs`:
 
 ```js
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const projectRoot = path.resolve(__dirname, '../..');
+test('builds one instructor PDF page from the loaded self-service timetable', async () => {
+	const module = await import('../../src/lib/utils/staff-own-timetable-pdf.ts').catch(() => ({}));
+	assert.equal(typeof module.buildStaffOwnTimetablePdfDownload, 'function');
 
-test('staff can download their loaded timetable as the shared PDF format', async () => {
-	const page = await readFile(
-		path.join(projectRoot, 'src/routes/(app)/staff/timetable/+page.svelte'),
-		'utf8'
+	const entries = [{ id: 'entry-1', room_code: 'MATH-1' }];
+	const result = module.buildStaffOwnTimetablePdfDownload({
+		teacherName: 'สายใจ / วิทยา',
+		semesterName: '',
+		semesterTerm: '1',
+		academicYearName: 'ปีการศึกษา 2569',
+		entries,
+		periods: [
+			{
+				id: 'period-2',
+				name: 'คาบ 2',
+				start_time: '09:20:00',
+				end_time: '10:10:00'
+			},
+			{ id: 'period-activity', name: 'กิจกรรม' }
+		]
+	});
+
+	assert.equal(
+		result.fileName,
+		'ตารางสอน ครูสายใจ - วิทยา ภาคเรียนที่ 1 ปีการศึกษา 2569'
 	);
-
-	assert.match(page, /import \{ generateTimetablePDF \} from '\$lib\/utils\/pdf'/);
-	assert.match(page, /let isExportingPdf = \$state\(false\)/);
-	assert.match(page, /async function handleDownloadPDF\(\)/);
-
-	const handler = page.slice(
-		page.indexOf('async function handleDownloadPDF()'),
-		page.indexOf('\n\t$effect', page.indexOf('async function handleDownloadPDF()'))
-	);
-
-	assert.match(handler, /timetableEntries: entries/);
-	assert.match(handler, /viewMode: 'INSTRUCTOR'/);
-	assert.match(handler, /periods\.map\(\(period, orderIndex\) =>/);
-	assert.match(handler, /generateTimetablePDF\(/);
-	assert.match(handler, /layout: 'full'/);
-	assert.match(handler, /toast\.error\('ดาวน์โหลดตารางสอนไม่สำเร็จ'\)/);
-	assert.match(handler, /finally[\s\S]*isExportingPdf = false/);
-
-	assert.match(page, /\{#snippet actions\(\)\}/);
-	assert.match(page, /onclick=\{handleDownloadPDF\}/);
-	assert.match(page, /variant="outline"/);
-	assert.match(page, /ดาวน์โหลด PDF/);
-	assert.match(
-		page,
-		/disabled=\{loading \|\| isExportingPdf \|\| entries\.length === 0 \|\| periods\.length === 0\}/
-	);
+	assert.deepEqual(result.pages, [
+		{
+			title: 'ตารางสอน ครูสายใจ / วิทยา',
+			subTitle: 'ภาคเรียนที่ 1 ปีการศึกษา 2569',
+			periods: [
+				{
+					id: 'period-2',
+					order_index: 0,
+					name: 'คาบ 2',
+					start_time: '09:20:00',
+					end_time: '10:10:00'
+				},
+				{
+					id: 'period-activity',
+					order_index: 1,
+					name: 'กิจกรรม',
+					start_time: '',
+					end_time: ''
+				}
+			],
+			timetableEntries: entries,
+			viewMode: 'INSTRUCTOR'
+		}
+	]);
 });
 ```
 
@@ -87,9 +101,78 @@ Run from `frontend-school`:
 node --test tests/static/staff-own-timetable-pdf.test.mjs
 ```
 
-Expected: FAIL because the page does not yet import `generateTimetablePDF` or define `handleDownloadPDF`.
+Expected: FAIL with `actual: 'undefined'` because `buildStaffOwnTimetablePdfDownload` does not exist yet.
 
-- [ ] **Step 3: Add imports and action-specific export state**
+- [ ] **Step 3: Implement the pure PDF download builder**
+
+Create `frontend-school/src/lib/utils/staff-own-timetable-pdf.ts`:
+
+```ts
+import type { TimetableEntry, TimetablePeriodSummary } from '$lib/api/timetable';
+import type { TimetablePage } from '$lib/utils/pdf';
+
+export interface StaffOwnTimetablePdfInput {
+	teacherName: string;
+	semesterName?: string | null;
+	semesterTerm?: string | null;
+	academicYearName?: string | null;
+	entries: TimetableEntry[];
+	periods: TimetablePeriodSummary[];
+}
+
+export interface StaffOwnTimetablePdfDownload {
+	fileName: string;
+	pages: TimetablePage[];
+}
+
+export function buildStaffOwnTimetablePdfDownload(
+	input: StaffOwnTimetablePdfInput
+): StaffOwnTimetablePdfDownload {
+	const normalizedTeacherName = input.teacherName.trim();
+	const teacherLabel = normalizedTeacherName
+		? normalizedTeacherName.startsWith('ครู')
+			? normalizedTeacherName
+			: `ครู${normalizedTeacherName}`
+		: 'ครู';
+	const semesterName = input.semesterName?.trim();
+	const semesterTerm = input.semesterTerm?.trim();
+	const semesterLabel = semesterName || (semesterTerm ? `ภาคเรียนที่ ${semesterTerm}` : 'ภาคเรียน');
+	const academicYearLabel = input.academicYearName?.trim() || 'ปีการศึกษา';
+	const subTitle = `${semesterLabel} ${academicYearLabel}`;
+	const title = `ตารางสอน ${teacherLabel}`;
+
+	return {
+		fileName: `${title} ${subTitle}`.replaceAll('/', '-'),
+		pages: [
+			{
+				title,
+				subTitle,
+				periods: input.periods.map((period, orderIndex) => ({
+					id: period.id,
+					order_index: orderIndex,
+					name: period.name,
+					start_time: period.start_time ?? '',
+					end_time: period.end_time ?? ''
+				})),
+				timetableEntries: input.entries,
+				viewMode: 'INSTRUCTOR'
+			}
+		]
+	};
+}
+```
+
+- [ ] **Step 4: Run the focused behavior test and verify the green state**
+
+Run from `frontend-school`:
+
+```bash
+node --test tests/static/staff-own-timetable-pdf.test.mjs
+```
+
+Expected: PASS with one passing subtest. Mentally mutate teacher prefixing, slash replacement, period order, empty-time fallback, and instructor mode; the literal expectations must fail for each regression.
+
+- [ ] **Step 5: Add imports and action-specific export state**
 
 In `frontend-school/src/routes/(app)/staff/timetable/+page.svelte`, add the existing UI/export dependencies and extend the icon import:
 
@@ -98,6 +181,7 @@ In `frontend-school/src/routes/(app)/staff/timetable/+page.svelte`, add the exis
 	// existing imports remain
 	import { Button } from '$lib/components/ui/button';
 	import { generateTimetablePDF } from '$lib/utils/pdf';
+	import { buildStaffOwnTimetablePdfDownload } from '$lib/utils/staff-own-timetable-pdf';
 	import { Download, Loader2, School, MapPin } from 'lucide-svelte';
 
 	// existing page state remains
@@ -107,7 +191,7 @@ In `frontend-school/src/routes/(app)/staff/timetable/+page.svelte`, add the exis
 
 Replace the existing `{ School, MapPin }` lucide import rather than adding a duplicate import.
 
-- [ ] **Step 4: Implement the direct full-layout PDF handler**
+- [ ] **Step 6: Implement the direct full-layout PDF handler**
 
 Add this handler before the existing `$effect` in the page script:
 
@@ -117,39 +201,18 @@ async function handleDownloadPDF() {
 
 	const selectedYear = years.find((year) => year.id === selectedYearId);
 	const selectedSemester = semesters.find((semester) => semester.id === selectedSemesterId);
-	const teacherLabel = userName
-		? userName.startsWith('ครู')
-			? userName
-			: `ครู${userName}`
-		: 'ครู';
-	const semesterLabel =
-		selectedSemester?.name ||
-		(selectedSemester?.term ? `ภาคเรียนที่ ${selectedSemester.term}` : 'ภาคเรียน');
-	const academicYearLabel = selectedYear?.name || 'ปีการศึกษา';
-	const subTitle = `${semesterLabel} ${academicYearLabel}`.trim();
-	const fileName = `ตารางสอน ${teacherLabel} ${subTitle}`.replaceAll('/', '-');
+	const download = buildStaffOwnTimetablePdfDownload({
+		teacherName: userName,
+		semesterName: selectedSemester?.name,
+		semesterTerm: selectedSemester?.term,
+		academicYearName: selectedYear?.name,
+		entries,
+		periods
+	});
 
 	try {
 		isExportingPdf = true;
-		await generateTimetablePDF(
-			[
-				{
-					title: `ตารางสอน ${teacherLabel}`,
-					subTitle,
-					periods: periods.map((period, orderIndex) => ({
-						id: period.id,
-						order_index: orderIndex,
-						name: period.name,
-						start_time: period.start_time ?? '',
-						end_time: period.end_time ?? ''
-					})),
-					timetableEntries: entries,
-					viewMode: 'INSTRUCTOR'
-				}
-			],
-			fileName,
-			{ layout: 'full' }
-		);
+		await generateTimetablePDF(download.pages, download.fileName, { layout: 'full' });
 		toast.success('ดาวน์โหลดตารางสอนแล้ว');
 	} catch (error: unknown) {
 		console.error('Failed to download timetable PDF', error);
@@ -162,7 +225,7 @@ async function handleDownloadPDF() {
 
 This uses only the already loaded self-service entries. `orderIndex` preserves the sorted `periodsFromTimetableEntries` order, and empty time fallbacks retain any period whose wire payload omitted its display times.
 
-- [ ] **Step 5: Add the matching `PageShell` header action**
+- [ ] **Step 7: Add the matching `PageShell` header action**
 
 Place this named snippet immediately inside the existing `PageShell` before the selector surface:
 
@@ -185,17 +248,18 @@ Place this named snippet immediately inside the existing `PageShell` before the 
 
 Do not add a layout-selection dialog: the approved behavior is an immediate one-teacher, one-table landscape download.
 
-- [ ] **Step 6: Run the focused test and verify the green state**
+- [ ] **Step 8: Run the focused test and Svelte type check after integration**
 
 Run from `frontend-school`:
 
 ```bash
 node --test tests/static/staff-own-timetable-pdf.test.mjs
+PUBLIC_BACKEND_URL=http://localhost:3000 PUBLIC_VAPID_KEY=test npm run check
 ```
 
-Expected: PASS with one passing subtest.
+Expected: the focused behavior test and Svelte type check both pass.
 
-- [ ] **Step 7: Validate the changed Svelte component**
+- [ ] **Step 9: Validate the changed Svelte component**
 
 Run from `frontend-school`:
 
@@ -205,7 +269,7 @@ npx @sveltejs/mcp svelte-autofixer 'src/routes/(app)/staff/timetable/+page.svelt
 
 Expected: no issues. The pre-existing suggestion about calling `loadPeriodsAndEntries` from `$effect` may remain because that effect intentionally reacts to selected year/semester and authenticated-user readiness; this feature must not broaden scope into unrelated data-loading refactoring.
 
-- [ ] **Step 8: Run the frontend verification matrix**
+- [ ] **Step 10: Run the frontend verification matrix**
 
 Run from `frontend-school`:
 
@@ -218,22 +282,22 @@ npm run test:static
 
 Expected: all commands exit successfully. If an existing unrelated failure appears, record the exact command and failure without weakening or skipping the required check.
 
-- [ ] **Step 9: Review repository integrity and the final diff**
+- [ ] **Step 11: Review repository integrity and the final diff**
 
 Run from the repository root:
 
 ```bash
 git diff --check
-git diff -- frontend-school/src/routes/'(app)'/staff/timetable/+page.svelte frontend-school/tests/static/staff-own-timetable-pdf.test.mjs
+git diff -- frontend-school/src/lib/utils/staff-own-timetable-pdf.ts frontend-school/src/routes/'(app)'/staff/timetable/+page.svelte frontend-school/tests/static/staff-own-timetable-pdf.test.mjs
 git status --short
 ```
 
 Expected: `git diff --check` exits successfully; the diff contains only the approved self-service action and its focused test; status lists only those implementation files in addition to previously committed workflow artifacts.
 
-- [ ] **Step 10: Commit the implementation**
+- [ ] **Step 12: Commit the implementation**
 
 ```bash
-git add frontend-school/src/routes/'(app)'/staff/timetable/+page.svelte frontend-school/tests/static/staff-own-timetable-pdf.test.mjs
+git add frontend-school/src/lib/utils/staff-own-timetable-pdf.ts frontend-school/src/routes/'(app)'/staff/timetable/+page.svelte frontend-school/tests/static/staff-own-timetable-pdf.test.mjs
 git commit -m "feat: download own staff timetable PDF"
 ```
 
