@@ -76,6 +76,7 @@ use crate::modules::calendar::models::{
 use crate::modules::facility::models::Room;
 use crate::modules::files::models::{
     FileDeleteResult, FileDownloadGrantResponse, FileMetadata, FileUploadMultipart,
+    PublicFileDeliveryResponse,
 };
 use crate::modules::files::platform_types::{FileLifecycleStatus, FilePurpose};
 use crate::modules::lookup::models::{
@@ -142,6 +143,7 @@ use utoipa::OpenApi;
         crate::modules::files::handlers::download_file,
         crate::modules::files::handlers::delete_file,
         crate::modules::files::handlers::get_public_file_content,
+        crate::modules::files::handlers::get_public_file_delivery,
         crate::modules::admission::handlers::applications::staff_upload_document,
         crate::modules::admission::handlers::applications::staff_delete_document,
         crate::modules::admission::handlers::portal::portal_upload_document,
@@ -650,9 +652,11 @@ use utoipa::OpenApi;
         FileMetadata,
         FileDeleteResult,
         FileDownloadGrantResponse,
+        PublicFileDeliveryResponse,
         ApiResponse<FileMetadata>,
         ApiResponse<FileDeleteResult>,
         ApiResponse<FileDownloadGrantResponse>,
+        ApiResponse<PublicFileDeliveryResponse>,
         StaffDocumentMultipart,
         PortalDocumentMultipart,
         PortalCredentials,
@@ -2849,6 +2853,11 @@ mod tests {
                     "getPublicFileContent",
                 ),
                 (
+                    "/api/public/files/{id}/delivery",
+                    "get",
+                    "getPublicFileDelivery",
+                ),
+                (
                     "/api/admission/applications/{application_id}/documents",
                     "post",
                     "staffUploadAdmissionDocument",
@@ -2916,6 +2925,15 @@ mod tests {
                 "download grant must not expose {forbidden}"
             );
         }
+
+        let public_delivery = &schemas["PublicFileDeliveryResponse"];
+        assert!(required(public_delivery).contains(&"url"));
+        assert_eq!(public_delivery["properties"].as_object().unwrap().len(), 1);
+        assert_eq!(
+            document["paths"]["/api/public/files/{id}/delivery"]["get"]["responses"]["200"]
+                ["content"]["application/json"]["schema"]["$ref"],
+            "#/components/schemas/ApiResponse_PublicFileDeliveryResponse",
+        );
 
         assert_eq!(
             document["paths"]["/api/files"]["post"]["responses"]["201"]["content"]

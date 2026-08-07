@@ -4,6 +4,7 @@ use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
 use super::{
+    platform_service::PublicDelivery,
     platform_types::{DownloadGrant, FileLifecycleStatus, FilePurpose, FileVisibility},
     repository::PlatformFile,
 };
@@ -44,6 +45,20 @@ impl TryFrom<DownloadGrant> for FileDownloadGrantResponse {
                 expires_at,
             }),
             DownloadGrant::Stream { .. } => Err(()),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct PublicFileDeliveryResponse {
+    pub url: String,
+}
+
+impl From<PublicDelivery> for PublicFileDeliveryResponse {
+    fn from(delivery: PublicDelivery) -> Self {
+        Self {
+            url: delivery.location.to_string(),
         }
     }
 }
@@ -91,6 +106,7 @@ pub struct FileDeleteResult {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::modules::files::platform_service::PublicDelivery;
 
     #[test]
     fn metadata_exposes_only_platform_identity_and_authorized_fields() {
@@ -148,5 +164,17 @@ mod tests {
             content_length: Some(1),
         })
         .is_err());
+    }
+
+    #[test]
+    fn public_delivery_response_exposes_only_the_delivery_url() {
+        let response = PublicFileDeliveryResponse::from(PublicDelivery {
+            location: url::Url::parse("https://public-files.example.test/logo.png").unwrap(),
+            content_type: "image/png".to_string(),
+        });
+        let json = serde_json::to_value(response).unwrap();
+
+        assert_eq!(json["url"], "https://public-files.example.test/logo.png");
+        assert_eq!(json.as_object().unwrap().len(), 1);
     }
 }

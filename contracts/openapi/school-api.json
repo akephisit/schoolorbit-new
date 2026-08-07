@@ -3316,6 +3316,32 @@
         ],
         "type": "object"
       },
+      "ApiResponse_PublicFileDeliveryResponse": {
+        "properties": {
+          "data": {
+            "properties": {
+              "url": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "url"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
       "ApiResponse_PublicSchoolInfoData": {
         "properties": {
           "data": {
@@ -12701,6 +12727,17 @@
           "address",
           "profileImageFileId",
           "hiredDate"
+        ],
+        "type": "object"
+      },
+      "PublicFileDeliveryResponse": {
+        "properties": {
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "url"
         ],
         "type": "object"
       },
@@ -29303,6 +29340,48 @@
         "responses": {
           "307": {
             "description": "Ready public file redirect"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Public ready file not found"
+          }
+        },
+        "tags": [
+          "files"
+        ]
+      }
+    },
+    "/api/public/files/{id}/delivery": {
+      "get": {
+        "operationId": "getPublicFileDelivery",
+        "parameters": [
+          {
+            "description": "Logical public file ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_PublicFileDeliveryResponse"
+                }
+              }
+            },
+            "description": "Browser-safe public file delivery"
           },
           "404": {
             "content": {

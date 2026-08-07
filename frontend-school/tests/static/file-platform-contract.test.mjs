@@ -20,7 +20,8 @@ test('generated contract publishes the provider-neutral file platform routes', a
 		['/api/files/{id}', 'get', 'getFileMetadata'],
 		['/api/files/{id}/download', 'post', 'downloadFile'],
 		['/api/files/{id}', 'delete', 'deleteFile'],
-		['/api/public/files/{id}/content', 'get', 'getPublicFileContent']
+		['/api/public/files/{id}/content', 'get', 'getPublicFileContent'],
+		['/api/public/files/{id}/delivery', 'get', 'getPublicFileDelivery']
 	];
 
 	for (const [route, method, operationId] of expected) {
@@ -44,6 +45,10 @@ test('generated contract publishes the provider-neutral file platform routes', a
 	const grant = contract.components?.schemas?.FileDownloadGrantResponse;
 	assert.deepEqual(grant?.required?.toSorted(), ['expiresAt', 'url']);
 	assert.equal(grant?.properties?.expiresAt?.format, 'date-time');
+	const publicDelivery = contract.components?.schemas?.PublicFileDeliveryResponse;
+	assert.deepEqual(publicDelivery?.required, ['url']);
+	assert.deepEqual(Object.keys(publicDelivery?.properties ?? {}), ['url']);
+	assert.match(generated, /PublicFileDeliveryResponse:\s*\{/);
 	for (const path of [
 		'/api/files/{id}/download',
 		'/api/admission/portal/documents/{file_id}/download'

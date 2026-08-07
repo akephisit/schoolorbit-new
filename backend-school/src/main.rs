@@ -630,6 +630,10 @@ async fn main() {
             "/api/public/files/{id}/content",
             get(modules::files::handlers::get_public_file_content),
         )
+        .route(
+            "/api/public/files/{id}/delivery",
+            get(modules::files::handlers::get_public_file_delivery),
+        )
         // Academic Management routes (Protected)
         .nest(
             "/api/academic",

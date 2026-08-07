@@ -19,7 +19,7 @@ use super::{
     consumer_service::map_platform_error,
     models::{
         FileAccessQuery, FileDeleteResult, FileDownloadGrantResponse, FileMetadata,
-        FileUploadMultipart,
+        FileUploadMultipart, PublicFileDeliveryResponse,
     },
     platform_service::{FilePlatformError, UploadCommand},
     purpose_registry::{purpose_definition, purpose_from_code},
@@ -301,6 +301,33 @@ pub async fn get_public_file_content(
         HeaderValue::from_static("public, max-age=300"),
     );
     Ok(response)
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/public/files/{id}/delivery",
+    operation_id = "getPublicFileDelivery",
+    tag = "files",
+    params(("id" = Uuid, Path, description = "Logical public file ID")),
+    responses(
+        (status = 200, description = "Browser-safe public file delivery", body = ApiResponse<PublicFileDeliveryResponse>),
+        (status = 404, description = "Public ready file not found", body = ApiErrorResponse)
+    )
+)]
+pub async fn get_public_file_delivery(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(file_id): Path<Uuid>,
+) -> Result<Response, AppError> {
+    let tenant = tenant_context(&state, &headers).await?;
+    let repository = SqlFileRepository::new(tenant.pool);
+    let delivery = state
+        .file_platform
+        .public_delivery(&repository, file_id)
+        .await
+        .map_err(map_public_platform_error)?;
+
+    Ok(Json(ApiResponse::ok(PublicFileDeliveryResponse::from(delivery))).into_response())
 }
 
 async fn read_control_field(mut field: Field<'_>) -> Result<String, AppError> {

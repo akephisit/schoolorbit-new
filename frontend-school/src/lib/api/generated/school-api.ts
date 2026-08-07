@@ -2136,6 +2136,22 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/api/public/files/{id}/delivery': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getPublicFileDelivery'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/api/roles': {
 		parameters: {
 			query?: never;
@@ -3315,6 +3331,13 @@ export interface components {
 				updatedAt: string;
 				username: string;
 				userType: string;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_PublicFileDeliveryResponse: {
+			data: {
+				url: string;
 			};
 			message?: string;
 			success: boolean;
@@ -5798,6 +5821,9 @@ export interface components {
 			updatedAt: string;
 			username: string;
 			userType: string;
+		};
+		PublicFileDeliveryResponse: {
+			url: string;
 		};
 		PublicSchoolInfoData: {
 			/** Format: uuid */
@@ -16621,6 +16647,38 @@ export interface operations {
 					[name: string]: unknown;
 				};
 				content?: never;
+			};
+			/** @description Public ready file not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getPublicFileDelivery: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Logical public file ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Browser-safe public file delivery */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_PublicFileDeliveryResponse'];
+				};
 			};
 			/** @description Public ready file not found */
 			404: {
