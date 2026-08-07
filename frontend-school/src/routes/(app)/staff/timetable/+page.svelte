@@ -16,10 +16,20 @@
 	import { authStore } from '$lib/stores/auth';
 	import { PageShell } from '$lib/components/app-layout';
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
+	import { Button } from '$lib/components/ui/button';
 	import * as Select from '$lib/components/ui/select';
-	import { School, MapPin } from 'lucide-svelte';
+	import { generateTimetablePDF } from '$lib/utils/pdf';
+	import {
+		buildStaffOwnTimetablePdfDownload,
+		canDownloadStaffOwnTimetablePdf,
+		runStaffOwnTimetablePdfDownload,
+		staffOwnTimetableSelectionKey
+	} from '$lib/utils/staff-own-timetable-pdf';
+	import { Download, Loader2, School, MapPin } from 'lucide-svelte';
 
 	let loading = $state(true);
+	let isExportingPdf = $state(false);
+	let loadedSelectionKey = $state('');
 	let entries = $state<TimetableEntry[]>([]);
 	let periods = $state<TimetablePeriodSummary[]>([]);
 	let years = $state<AcademicYear[]>([]);
@@ -27,6 +37,7 @@
 	let selectedYearId = $state('');
 	let selectedSemesterId = $state('');
 	let schoolDays = $state<{ value: string; label: string; shortLabel: string }[]>([]);
+	let timetableLoadRequest = 0;
 
 	const userId = $derived($authStore.user?.id ?? '');
 	const userName = $derived(
@@ -36,6 +47,21 @@
 	);
 
 	const semestersOfYear = $derived(semesters.filter((s) => s.academic_year_id === selectedYearId));
+	const selectedSemester = $derived(
+		semesters.find((semester) => semester.id === selectedSemesterId)
+	);
+	const canDownloadPdf = $derived(
+		canDownloadStaffOwnTimetablePdf({
+			loading,
+			isExporting: isExportingPdf,
+			selectedYearId,
+			selectedSemesterId,
+			selectedSemesterYearId: selectedSemester?.academic_year_id,
+			loadedSelectionKey,
+			entryCount: entries.length,
+			periodCount: periods.length
+		})
+	);
 
 	// คอลัมน์วัน 80px + คาบละ 110px → mobile บีบไม่ได้ ต้องเลื่อน
 	const tableMinWidth = $derived(80 + periods.length * 110);
@@ -78,32 +104,74 @@
 	}
 
 	async function loadPeriodsAndEntries() {
-		if (!selectedYearId || !selectedSemesterId || !userId) {
+		const requestId = ++timetableLoadRequest;
+		const semester = semesters.find((item) => item.id === selectedSemesterId);
+		const selectionKey = staffOwnTimetableSelectionKey(selectedYearId, selectedSemesterId);
+
+		if (!selectionKey || !userId || semester?.academic_year_id !== selectedYearId) {
+			loadedSelectionKey = '';
 			periods = [];
 			entries = [];
+			if (userId && selectedYearId && selectedSemesterId) loading = false;
 			return;
 		}
+
 		try {
 			loading = true;
+			loadedSelectionKey = '';
+			periods = [];
+			entries = [];
+			const year = years.find((item) => item.id === selectedYearId);
+			if (year) schoolDays = getSchoolDays(year.school_days);
+
 			const entriesRes = await getMyTimetable({
 				academic_semester_id: selectedSemesterId,
 				include_team_ghosts: true
 			});
+			if (requestId !== timetableLoadRequest) return;
+
 			entries = entriesRes.data;
 			periods = periodsFromTimetableEntries(entries);
-			// อัปเดต schoolDays ตาม year ที่เลือก
-			const year = years.find((y) => y.id === selectedYearId);
-			if (year) schoolDays = getSchoolDays(year.school_days);
+			loadedSelectionKey = selectionKey;
 		} catch (e: unknown) {
+			if (requestId !== timetableLoadRequest) return;
+			loadedSelectionKey = '';
+			periods = [];
+			entries = [];
 			console.error(e);
 			toast.error('โหลดตารางสอนไม่สำเร็จ');
 		} finally {
-			loading = false;
+			if (requestId === timetableLoadRequest) loading = false;
 		}
 	}
 
 	function getEntry(day: string, periodId: string): TimetableEntry | undefined {
 		return entries.find((e) => e.day_of_week === day && e.period_id === periodId);
+	}
+
+	async function handleDownloadPDF() {
+		if (!canDownloadPdf) return;
+
+		const selectedYear = years.find((year) => year.id === selectedYearId);
+		const download = buildStaffOwnTimetablePdfDownload({
+			teacherName: userName,
+			semesterName: selectedSemester?.name,
+			semesterTerm: selectedSemester?.term,
+			academicYearName: selectedYear?.name,
+			entries,
+			dayValues: schoolDays.map((day) => day.value),
+			periods
+		});
+
+		await runStaffOwnTimetablePdfDownload(download, {
+			generatePdf: generateTimetablePDF,
+			setExporting: (value) => (isExportingPdf = value),
+			onSuccess: () => toast.success('ดาวน์โหลดตารางสอนแล้ว'),
+			onError: (error) => {
+				console.error('Failed to download timetable PDF', error);
+				toast.error('ดาวน์โหลดตารางสอนไม่สำเร็จ');
+			}
+		});
 	}
 
 	$effect(() => {
@@ -117,6 +185,17 @@
 </script>
 
 <PageShell title="ตารางสอน" description={userName ? `ครู${userName}` : 'ตารางสอนของฉัน'}>
+	{#snippet actions()}
+		<Button variant="outline" onclick={handleDownloadPDF} disabled={!canDownloadPdf}>
+			{#if isExportingPdf}
+				<Loader2 class="mr-2 h-4 w-4 animate-spin" />
+			{:else}
+				<Download class="mr-2 h-4 w-4" />
+			{/if}
+			ดาวน์โหลด PDF
+		</Button>
+	{/snippet}
+
 	<!-- Year + Semester selector -->
 	<div class="flex flex-wrap gap-3 rounded-xl border bg-card p-3 sm:p-4">
 		<div class="w-[220px]">

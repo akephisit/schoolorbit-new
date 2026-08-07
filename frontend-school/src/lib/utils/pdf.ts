@@ -7,6 +7,7 @@ import type {
 import type { TimetableEntry } from '$lib/api/timetable';
 import { getSchoolSettings } from '$lib/api/school';
 import { publicFileUrl } from '$lib/api/files';
+import { resolveTimetablePdfDayValues } from '$lib/utils/timetable-pdf-days';
 
 interface PdfPeriod {
 	id: string;
@@ -269,6 +270,8 @@ const DAYS = [
 export interface TimetablePage {
 	title: string;
 	subTitle: string;
+	/** Ordered school-day codes to render. Defaults to Monday-Friday for existing callers. */
+	dayValues?: string[];
 	periods: PdfPeriod[];
 	timetableEntries: TimetableEntry[];
 	viewMode?: 'CLASSROOM' | 'INSTRUCTOR';
@@ -300,8 +303,18 @@ function buildPageContent(
 	isFirst: boolean,
 	logoDataUrl: string | null
 ): Content[] {
-	const { title, subTitle, periods, timetableEntries, viewMode = 'CLASSROOM', roomNames } = page;
+	const {
+		title,
+		subTitle,
+		dayValues,
+		periods,
+		timetableEntries,
+		viewMode = 'CLASSROOM',
+		roomNames
+	} = page;
 	const tableBody: TableCell[][] = [];
+	const resolvedDayValues = new Set(resolveTimetablePdfDayValues(dayValues));
+	const renderedDays = DAYS.filter((day) => resolvedDayValues.has(day.value));
 
 	// คำนวณ width upfront เพื่อแชร์กับ text-wrap (ดู buildPageContent return)
 	const N = periods.length + 1;
@@ -450,8 +463,8 @@ function buildPageContent(
 	});
 	tableBody.push(timeRow);
 
-	// Data Rows (MON - FRI)
-	DAYS.slice(0, 5).forEach((day) => {
+	// Data rows follow the configured school week; legacy callers default to Monday-Friday.
+	renderedDays.forEach((day) => {
 		const row: TableCell[] = [];
 
 		row.push({
@@ -597,7 +610,12 @@ function buildPageContent(
 			// offsetsTotal = (paddingL + paddingR) × N + vLineWidth × (N+1)
 			// ดู: pdfmake/src/TableProcessor.js:100 + DocMeasure.js:596-614
 			widths: [DAY_COL, ...periods.map(() => periodWidth)],
-			heights: ['auto', 'auto', 'auto', 50, 50, 50, 50, 50],
+			heights: [
+				'auto',
+				'auto',
+				'auto',
+				...renderedDays.map(() => (renderedDays.length > 5 ? 40 : 50))
+			],
 			body: tableBody,
 			dontBreakRows: true
 		},
@@ -627,8 +645,10 @@ function buildMiniTable(
 	miniAreaWidth: number = 400,
 	logoDataUrl: string | null = null
 ): Content {
-	const { periods, timetableEntries, title, viewMode = 'CLASSROOM', roomNames } = page;
+	const { dayValues, periods, timetableEntries, title, viewMode = 'CLASSROOM', roomNames } = page;
 	const tableBody: TableCell[][] = [];
+	const resolvedDayValues = new Set(resolveTimetablePdfDayValues(dayValues));
+	const renderedDays = DAYS.filter((day) => resolvedDayValues.has(day.value));
 
 	// คำนวณ width upfront เพื่อแชร์กับ text-wrap
 	const N = periods.length + 1;
@@ -745,9 +765,17 @@ function buildMiniTable(
 	});
 	tableBody.push(timeRow);
 
-	// Data rows — ย่อชื่อวันเหลือ 1 ตัวอักษร ("จ" / "อ" / "พ" / "พฤ" / "ศ")
-	const dayShort: Record<string, string> = { MON: 'จ', TUE: 'อ', WED: 'พ', THU: 'พฤ', FRI: 'ศ' };
-	DAYS.slice(0, 5).forEach((day) => {
+	// Data rows — compact Thai day labels for the configured school week.
+	const dayShort: Record<string, string> = {
+		MON: 'จ',
+		TUE: 'อ',
+		WED: 'พ',
+		THU: 'พฤ',
+		FRI: 'ศ',
+		SAT: 'ส',
+		SUN: 'อา'
+	};
+	renderedDays.forEach((day) => {
 		const row: TableCell[] = [
 			{
 				text: dayShort[day.value] || day.label.slice(0, 1),
@@ -853,7 +881,12 @@ function buildMiniTable(
 		table: {
 			headerRows: 3,
 			widths,
-			heights: ['auto', 'auto', 'auto', 24, 24, 24, 24, 24],
+			heights: [
+				'auto',
+				'auto',
+				'auto',
+				...renderedDays.map(() => (renderedDays.length > 5 ? 18 : 24))
+			],
 			body: tableBody,
 			dontBreakRows: true
 		},
