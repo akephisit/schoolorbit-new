@@ -1,4 +1,5 @@
 import { expect, test, type Route } from '@playwright/test';
+import { readFileSync } from 'node:fs';
 
 test.use({ serviceWorkers: 'block' });
 
@@ -11,15 +12,43 @@ function fulfillJson(route: Route, data: unknown) {
 }
 
 test('downloads the loaded staff timetable from the PageShell action', async ({ page }) => {
+	const logoFileId = '80000000-0000-4000-8000-000000000001';
+	const logoPng = readFileSync(new URL('../../static/notification-badge.png', import.meta.url));
+	let logoDeliveryRequestCount = 0;
+	let logoBlobRequestCount = 0;
 	let releaseTimetable: ((route: Route) => void) | undefined;
 	const timetableRequest = new Promise<Route>((resolve) => {
 		releaseTimetable = resolve;
+	});
+
+	await page.route('https://public-files.example.test/logo.png', async (route) => {
+		logoBlobRequestCount += 1;
+		await route.fulfill({
+			status: 200,
+			contentType: 'image/png',
+			headers: { 'access-control-allow-origin': '*' },
+			body: logoPng
+		});
 	});
 
 	await page.route(
 		(url) => url.pathname.startsWith('/api/'),
 		async (route) => {
 			const url = new URL(route.request().url());
+			if (url.pathname === '/api/school/public') {
+				await fulfillJson(route, {
+					logoFileId,
+					schoolName: 'ซับน้อยเหนือวิทยาคม'
+				});
+				return;
+			}
+
+			if (url.pathname === `/api/public/files/${logoFileId}/delivery`) {
+				logoDeliveryRequestCount += 1;
+				await fulfillJson(route, { url: 'https://public-files.example.test/logo.png' });
+				return;
+			}
+
 			if (url.pathname === '/api/auth/me') {
 				await fulfillJson(route, {
 					id: '10000000-0000-4000-8000-000000000001',
@@ -102,7 +131,11 @@ test('downloads the loaded staff timetable from the PageShell action', async ({ 
 			}
 
 			if (url.pathname === '/api/school/settings') {
-				await fulfillJson(route, { logoFileId: null });
+				await route.fulfill({
+					status: 403,
+					contentType: 'application/json',
+					body: JSON.stringify({ success: false, error: 'forbidden' })
+				});
 				return;
 			}
 
@@ -155,4 +188,6 @@ test('downloads the loaded staff timetable from the PageShell action', async ({ 
 	);
 	await expect(page.getByText('ดาวน์โหลดตารางสอนแล้ว')).toBeVisible();
 	await expect(downloadButton).toBeEnabled();
+	expect(logoDeliveryRequestCount).toBe(1);
+	expect(logoBlobRequestCount).toBe(1);
 });

@@ -42,8 +42,20 @@ export async function deleteSchoolLogo(): Promise<void> {
 	if (!res.success) throw new Error(res.error);
 }
 
-export async function getPublicSchoolInfo(): Promise<PublicSchoolInfo> {
+async function loadPublicSchoolInfo(): Promise<
+	{ info: PublicSchoolInfo; error?: undefined } | { info: PublicSchoolInfo; error: string }
+> {
 	const res = await apiClient.get<PublicSchoolInfoDto>('/api/school/public');
-	if (!res.success) return {};
-	return res.data ? publicSchoolInfoFromDto(res.data) : {};
+	if (!res.success) return { info: {}, error: res.error };
+	return { info: res.data ? publicSchoolInfoFromDto(res.data) : {} };
+}
+
+export async function getPublicSchoolInfo(): Promise<PublicSchoolInfo> {
+	return (await loadPublicSchoolInfo()).info;
+}
+
+export async function getRequiredPublicSchoolInfo(): Promise<PublicSchoolInfo> {
+	const result = await loadPublicSchoolInfo();
+	if (result.error) throw new Error(result.error);
+	return result.info;
 }

@@ -5,9 +5,10 @@ import type {
 	Content
 } from 'pdfmake/interfaces';
 import type { TimetableEntry } from '$lib/api/timetable';
-import { getSchoolSettings } from '$lib/api/school';
-import { publicFileUrl } from '$lib/api/files';
+import { getRequiredPublicSchoolInfo } from '$lib/api/school';
+import { downloadPublicFile } from '$lib/api/files';
 import { resolveTimetablePdfDayValues } from '$lib/utils/timetable-pdf-days';
+import { blobToDataUrl, loadTimetablePdfLogoDataUrl } from '$lib/utils/timetable-pdf-logo';
 
 interface PdfPeriod {
 	id: string;
@@ -278,24 +279,6 @@ export interface TimetablePage {
 	/** room_id → name_th — ใช้แสดงชื่อห้องเต็ม (เช่น "ห้องคณิตศาสตร์ 1")
 	 *  ถ้าไม่ส่งมาจะ fallback ไปใช้ entry.room_code (รหัสสั้น) */
 	roomNames?: Record<string, string>;
-}
-
-/** Fetch image และแปลงเป็น base64 data URL — pdfmake รับเฉพาะ data URL
- *  cache: 'no-store' — กัน browser cache เก่าที่ไม่มี CORS header (หลังตั้ง CORS ตอนหลัง) */
-async function fetchImageDataUrl(url: string): Promise<string | null> {
-	try {
-		const res = await fetch(url, { cache: 'no-store' });
-		if (!res.ok) return null;
-		const blob = await res.blob();
-		return await new Promise<string>((resolve, reject) => {
-			const reader = new FileReader();
-			reader.onloadend = () => resolve(reader.result as string);
-			reader.onerror = reject;
-			reader.readAsDataURL(blob);
-		});
-	} catch {
-		return null;
-	}
 }
 
 function buildPageContent(
@@ -1020,16 +1003,12 @@ export const generateTimetablePDF = async (
 		}
 	};
 
-	// Fetch โลโก้โรงเรียน (ถ้ามี) เป็น base64 data URL
-	let logoDataUrl: string | null = null;
-	try {
-		const settings = await getSchoolSettings();
-		if (settings.logoFileId) {
-			logoDataUrl = await fetchImageDataUrl(publicFileUrl(settings.logoFileId));
-		}
-	} catch {
-		/* ไม่มี logo ก็ไม่เป็นไร */
-	}
+	// Read public branding through the File Platform delivery flow so pdfmake receives real bytes.
+	const logoDataUrl = await loadTimetablePdfLogoDataUrl({
+		getLogoFileId: async () => (await getRequiredPublicSchoolInfo()).logoFileId,
+		downloadLogo: downloadPublicFile,
+		readLogo: blobToDataUrl
+	});
 
 	let content: Content[];
 	if (layout === 'portrait-2col') {
