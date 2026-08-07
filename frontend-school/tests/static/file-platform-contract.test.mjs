@@ -118,12 +118,19 @@ test('typed file helper uses generated DTOs and file IDs as identity', async () 
 		source,
 		/export\s+type\s+FileDownloadGrantResponse\s*=\s*Schemas\['FileDownloadGrantResponse'\]/
 	);
+	assert.match(
+		source,
+		/export\s+type\s+PublicFileDeliveryResponse\s*=\s*Schemas\['PublicFileDeliveryResponse'\]/
+	);
 	assert.match(source, /formData\.append\('purpose',\s*purpose\)/);
 	assert.match(source, /apiClient\.postMultipart<FileMetadata>\('\/api\/files'/);
 	assert.match(source, /apiClient\s*\.\s*get<FileMetadata>\(`\/api\/files\/\$\{fileId\}/);
 	assert.match(source, /apiClient\s*\.\s*delete<FileDeleteResult>\(`\/api\/files\/\$\{fileId\}/);
 	assert.match(source, /apiClient\s*\.\s*post<FileDownloadGrantResponse>/);
-	assert.match(source, /apiClient\.getExternalBlob\(grant\.url/);
+	assert.match(source, /export\s+async\s+function\s+downloadPublicFile\s*\(/);
+	assert.match(source, /apiClient\.get<PublicFileDeliveryResponse>/);
+	assert.match(source, /\/api\/public\/files\/\$\{fileId\}\/delivery/);
+	assert.match(source, /apiClient\.getExternalBlob\(url/);
 	assert.doesNotMatch(source, /\bfetch\s*\(/);
 	assert.match(client, /async\s+getExternalBlob/);
 	assert.match(client, /fetch\(url/);

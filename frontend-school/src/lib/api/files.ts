@@ -6,6 +6,7 @@ type Schemas = components['schemas'];
 export type FileMetadata = Schemas['FileMetadata'];
 export type FileDeleteResult = Schemas['FileDeleteResult'];
 export type FileDownloadGrantResponse = Schemas['FileDownloadGrantResponse'];
+export type PublicFileDeliveryResponse = Schemas['PublicFileDeliveryResponse'];
 export type FilePurpose = Schemas['FilePurpose'];
 
 function resourceQuery(resourceId?: string): string {
@@ -43,12 +44,16 @@ export function deleteFile(fileId: string, resourceId?: string): Promise<FileDel
 		.then((response) => requireApiData(response, 'ลบไฟล์ไม่สำเร็จ'));
 }
 
+async function downloadExternalFile(url: string, signal?: AbortSignal): Promise<Blob> {
+	const response = await apiClient.getExternalBlob(url, { signal });
+	return requireApiData(response, 'ดาวน์โหลดไฟล์ไม่สำเร็จ');
+}
+
 export async function downloadGrantedFile(
 	grant: FileDownloadGrantResponse,
 	signal?: AbortSignal
 ): Promise<Blob> {
-	const response = await apiClient.getExternalBlob(grant.url, { signal });
-	return requireApiData(response, 'ดาวน์โหลดไฟล์ไม่สำเร็จ');
+	return downloadExternalFile(grant.url, signal);
 }
 
 export async function downloadFile(
@@ -62,6 +67,16 @@ export async function downloadFile(
 	const grant = requireApiData(response, 'ดาวน์โหลดไฟล์ไม่สำเร็จ');
 	signal?.throwIfAborted();
 	return downloadGrantedFile(grant, signal);
+}
+
+export async function downloadPublicFile(fileId: string, signal?: AbortSignal): Promise<Blob> {
+	const response = await apiClient.get<PublicFileDeliveryResponse>(
+		`/api/public/files/${fileId}/delivery`,
+		{ signal }
+	);
+	const delivery = requireApiData(response, 'ดาวน์โหลดไฟล์สาธารณะไม่สำเร็จ');
+	signal?.throwIfAborted();
+	return downloadExternalFile(delivery.url, signal);
 }
 
 export function publicFileUrl(fileId: string): string {
