@@ -8,7 +8,7 @@ use uuid::Uuid;
 
 use crate::api_response::{ApiErrorResponse, ApiResponse};
 use crate::error::AppError;
-use crate::modules::auth::models::Claims;
+use crate::modules::auth::session_service::AuthenticatedSession;
 use crate::modules::facility::models::Room;
 use crate::modules::lookup::models::{
     AcademicYearLookupItem, ClassroomLookupItem, GradeLevelLookupItem, LookupItem, LookupQuery,
@@ -17,16 +17,14 @@ use crate::modules::lookup::models::{
 use crate::modules::lookup::services as lookup_service;
 use crate::permissions::registry::codes;
 use crate::utils::request_context::{
-    actor_tenant_context, current_user_tenant_context_from_claims, CurrentUserTenantContext,
+    actor_tenant_context, current_user_tenant_context_from_session, CurrentUserTenantContext,
 };
 use crate::AppState;
 
 async fn active_lookup_context(
-    state: &AppState,
-    headers: &HeaderMap,
-    claims: &Claims,
+    session: &AuthenticatedSession,
 ) -> Result<CurrentUserTenantContext, AppError> {
-    let context = current_user_tenant_context_from_claims(state, headers, claims).await?;
+    let context = current_user_tenant_context_from_session(session);
     lookup_service::verify_active_user(&context.tenant.pool, context.user_id).await?;
 
     Ok(context)
@@ -46,12 +44,10 @@ async fn active_lookup_context(
     )
 )]
 pub async fn lookup_staff(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Extension(claims): Extension<Claims>,
+    Extension(session): Extension<AuthenticatedSession>,
     Query(query): Query<LookupQuery>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = active_lookup_context(&state, &headers, &claims).await?;
+    let context = active_lookup_context(&session).await?;
     let data = lookup_service::lookup_staff(&context.tenant.pool, query).await?;
 
     Ok((StatusCode::OK, Json(ApiResponse::ok(data))))
@@ -100,12 +96,10 @@ pub async fn lookup_roles(
     )
 )]
 pub async fn lookup_organization_units(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Extension(claims): Extension<Claims>,
+    Extension(session): Extension<AuthenticatedSession>,
     Query(query): Query<LookupQuery>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = active_lookup_context(&state, &headers, &claims).await?;
+    let context = active_lookup_context(&session).await?;
     let data =
         lookup_service::lookup_organization_units(&context.tenant.pool, context.user_id, query)
             .await?;
@@ -128,12 +122,10 @@ pub async fn lookup_organization_units(
     )
 )]
 pub async fn lookup_organization_unit_by_id(
-    State(state): State<AppState>,
     Path(id): Path<Uuid>,
-    headers: HeaderMap,
-    Extension(claims): Extension<Claims>,
+    Extension(session): Extension<AuthenticatedSession>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = active_lookup_context(&state, &headers, &claims).await?;
+    let context = active_lookup_context(&session).await?;
     let unit = lookup_service::lookup_organization_unit_by_id(&context.tenant.pool, id).await?;
 
     Ok(Json(ApiResponse::ok(unit)).into_response())
@@ -153,12 +145,10 @@ pub async fn lookup_organization_unit_by_id(
     )
 )]
 pub async fn lookup_grade_levels(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Extension(claims): Extension<Claims>,
+    Extension(session): Extension<AuthenticatedSession>,
     Query(query): Query<LookupQuery>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = active_lookup_context(&state, &headers, &claims).await?;
+    let context = active_lookup_context(&session).await?;
     let data = lookup_service::lookup_grade_levels(&context.tenant.pool, query).await?;
 
     Ok((StatusCode::OK, Json(ApiResponse::ok(data))))
@@ -178,12 +168,10 @@ pub async fn lookup_grade_levels(
     )
 )]
 pub async fn lookup_classrooms(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Extension(claims): Extension<Claims>,
+    Extension(session): Extension<AuthenticatedSession>,
     Query(query): Query<LookupQuery>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = active_lookup_context(&state, &headers, &claims).await?;
+    let context = active_lookup_context(&session).await?;
     let data = lookup_service::lookup_classrooms(&context.tenant.pool, query).await?;
 
     Ok((StatusCode::OK, Json(ApiResponse::ok(data))))
@@ -203,12 +191,10 @@ pub async fn lookup_classrooms(
     )
 )]
 pub async fn lookup_academic_years(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Extension(claims): Extension<Claims>,
+    Extension(session): Extension<AuthenticatedSession>,
     Query(query): Query<LookupQuery>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = active_lookup_context(&state, &headers, &claims).await?;
+    let context = active_lookup_context(&session).await?;
     let data = lookup_service::lookup_academic_years(&context.tenant.pool, query).await?;
 
     Ok((StatusCode::OK, Json(ApiResponse::ok(data))))
@@ -228,12 +214,10 @@ pub async fn lookup_academic_years(
     )
 )]
 pub async fn lookup_students(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Extension(claims): Extension<Claims>,
+    Extension(session): Extension<AuthenticatedSession>,
     Query(query): Query<LookupQuery>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = active_lookup_context(&state, &headers, &claims).await?;
+    let context = active_lookup_context(&session).await?;
     let data = lookup_service::lookup_students(&context.tenant.pool, query).await?;
 
     Ok((StatusCode::OK, Json(ApiResponse::ok(data))))
@@ -252,11 +236,9 @@ pub async fn lookup_students(
     )
 )]
 pub async fn lookup_rooms(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Extension(claims): Extension<Claims>,
+    Extension(session): Extension<AuthenticatedSession>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = active_lookup_context(&state, &headers, &claims).await?;
+    let context = active_lookup_context(&session).await?;
     let rooms = lookup_service::lookup_rooms(&context.tenant.pool).await?;
 
     Ok(Json(ApiResponse::ok(rooms)).into_response())
@@ -276,12 +258,10 @@ pub async fn lookup_rooms(
     )
 )]
 pub async fn lookup_subjects(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Extension(claims): Extension<Claims>,
+    Extension(session): Extension<AuthenticatedSession>,
     Query(query): Query<LookupQuery>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = active_lookup_context(&state, &headers, &claims).await?;
+    let context = active_lookup_context(&session).await?;
     let data = lookup_service::lookup_subjects(&context.tenant.pool, query).await?;
 
     Ok((StatusCode::OK, Json(ApiResponse::ok(data))))

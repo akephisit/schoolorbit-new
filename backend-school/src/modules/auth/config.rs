@@ -48,6 +48,25 @@ impl SessionConfig {
         }
     }
 
+    #[cfg(test)]
+    pub(crate) fn for_tests_with_dev_origins<'a, I>(
+        hmac_key: SessionHmacKey,
+        allowed_dev_origins: I,
+    ) -> Self
+    where
+        I: IntoIterator<Item = &'a str>,
+    {
+        Self {
+            hmac_key,
+            base_domain: "schoolorbit.test".to_string(),
+            trusted_proxy_cidrs: Vec::new(),
+            allowed_dev_origins: allowed_dev_origins
+                .into_iter()
+                .map(str::to_string)
+                .collect(),
+        }
+    }
+
     fn from_values(
         hmac_key: &str,
         base_domain: &str,

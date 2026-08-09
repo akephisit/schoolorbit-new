@@ -1,8 +1,6 @@
 use crate::db::permission_cache::PermissionCache;
 use crate::error::AppError;
 use crate::permissions::registry::codes;
-use crate::utils::jwt::authenticate_for_tenant;
-use axum::http::HeaderMap;
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -171,16 +169,12 @@ async fn fetch_user_permissions(
     .await
 }
 
-/// Verify JWT and return (user_id, permissions) without checking a specific permission.
-/// Use this when a handler needs to check multiple permissions or determine scope.
-/// Returns Err(401 Response) on auth failure only.
 pub async fn load_actor_context(
-    headers: &HeaderMap,
+    user_id: Uuid,
     tenant: &str,
     pool: &PgPool,
     cache: &PermissionCache,
 ) -> Result<ActorContext, AppError> {
-    let user_id = authenticate_for_tenant(headers, tenant)?.user_id;
     let permissions = get_cached_user_permissions(tenant, user_id, pool, cache)
         .await
         .map_err(|_| AppError::InternalServerError("ไม่สามารถตรวจสอบสิทธิ์ได้".to_string()))?;
@@ -192,12 +186,12 @@ pub async fn load_actor_context(
 }
 
 pub async fn load_actor_context_or_error(
-    headers: &HeaderMap,
+    user_id: Uuid,
     tenant: &str,
     pool: &PgPool,
     cache: &PermissionCache,
 ) -> Result<ActorContext, AppError> {
-    load_actor_context(headers, tenant, pool, cache).await
+    load_actor_context(user_id, tenant, pool, cache).await
 }
 
 #[cfg(test)]

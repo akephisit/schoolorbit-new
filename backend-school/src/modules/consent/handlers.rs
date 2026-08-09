@@ -11,10 +11,10 @@ use uuid::Uuid;
 
 use crate::api_response::ApiResponse;
 use crate::error::AppError;
-use crate::modules::auth::models::Claims;
+use crate::modules::auth::session_service::AuthenticatedSession;
 use crate::modules::consent::models::CreateConsentRequest;
 use crate::modules::consent::services::{self as consent_service, ConsentRequestContext};
-use crate::utils::request_context::{current_user_tenant_context_from_claims, tenant_pool};
+use crate::utils::request_context::{current_user_tenant_context_from_session, tenant_pool};
 use crate::AppState;
 
 #[derive(Debug, Serialize)]
@@ -59,11 +59,9 @@ pub async fn get_consent_types(
 /// Get user's consent status
 /// GET /api/consent/my-status
 pub async fn get_my_consent_status(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Extension(claims): Extension<Claims>,
+    Extension(session): Extension<AuthenticatedSession>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = current_user_tenant_context_from_claims(&state, &headers, &claims).await?;
+    let context = current_user_tenant_context_from_session(&session);
     let status =
         consent_service::get_user_consent_status(&context.tenant.pool, context.user_id).await?;
 
@@ -73,12 +71,11 @@ pub async fn get_my_consent_status(
 /// Give consent
 /// POST /api/consent
 pub async fn create_consent(
-    State(state): State<AppState>,
     headers: HeaderMap,
-    Extension(claims): Extension<Claims>,
+    Extension(session): Extension<AuthenticatedSession>,
     Json(payload): Json<CreateConsentRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = current_user_tenant_context_from_claims(&state, &headers, &claims).await?;
+    let context = current_user_tenant_context_from_session(&session);
     let consent_id = consent_service::create_consent(
         &context.tenant.pool,
         context.user_id,
@@ -99,12 +96,10 @@ pub async fn create_consent(
 /// Withdraw consent
 /// POST /api/consent/:id/withdraw
 pub async fn withdraw_consent(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Extension(claims): Extension<Claims>,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(consent_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = current_user_tenant_context_from_claims(&state, &headers, &claims).await?;
+    let context = current_user_tenant_context_from_session(&session);
     consent_service::withdraw_consent(&context.tenant.pool, context.user_id, consent_id).await?;
 
     Ok((

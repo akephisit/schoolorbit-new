@@ -1409,7 +1409,7 @@ fn staff_list_uses_resource_aware_access_scope() {
 
 #[test]
 fn staff_dashboard_endpoint_is_staff_scoped_and_aggregate_only() {
-    let routes = strip_comments(&read_source(manifest_dir().join("src/main.rs")));
+    let routes = strip_comments(&read_source(manifest_dir().join("src/app.rs")));
     let staff_handler = strip_comments(&read_source(
         manifest_dir().join("src/modules/staff/handlers/staff.rs"),
     ));
@@ -1734,14 +1734,14 @@ fn academic_exam_schedule_routes_are_registered_and_authorized() {
         &after_start[..end]
     }
 
-    fn main_route_snippet<'a>(source: &'a str, route: &str) -> &'a str {
+    fn app_route_snippet<'a>(source: &'a str, route: &str) -> &'a str {
         let start = source
             .find(route)
-            .unwrap_or_else(|| panic!("missing main route {route}"));
+            .unwrap_or_else(|| panic!("missing app route {route}"));
         source[start..]
             .split("\n        .route(")
             .next()
-            .unwrap_or_else(|| panic!("missing main route snippet {route}"))
+            .unwrap_or_else(|| panic!("missing app route snippet {route}"))
     }
 
     fn assert_handler_permission(source: &str, handler_name: &str, permission: &str) {
@@ -1771,7 +1771,7 @@ fn academic_exam_schedule_routes_are_registered_and_authorized() {
     ));
     let academic_routes =
         strip_comments(&read_source(manifest_dir().join("src/modules/academic.rs")));
-    let main_routes = strip_comments(&read_source(manifest_dir().join("src/main.rs")));
+    let app_routes = strip_comments(&read_source(manifest_dir().join("src/app.rs")));
     let parent_handlers = strip_comments(&read_source(
         manifest_dir().join("src/modules/parents/handlers.rs"),
     ));
@@ -1843,20 +1843,23 @@ fn academic_exam_schedule_routes_are_registered_and_authorized() {
         );
     }
 
-    let self_route = main_route_snippet(&main_routes, "\"/api/me/exam-schedules\"");
+    let self_route = app_route_snippet(&app_routes, "\"/api/me/exam-schedules\"");
     assert!(self_route.contains("exam_schedule::list_my_exam_schedule"));
-    assert!(self_route.contains("auth_middleware"));
 
-    let staff_route = main_route_snippet(&main_routes, "\"/api/staff/exam-schedules\"");
+    let staff_route = app_route_snippet(&app_routes, "\"/api/staff/exam-schedules\"");
     assert!(staff_route.contains("exam_schedule::list_staff_exam_schedule"));
-    assert!(staff_route.contains("auth_middleware"));
 
-    let parent_route = main_route_snippet(
-        &main_routes,
+    let parent_route = app_route_snippet(
+        &app_routes,
         "\"/api/parent/students/{student_id}/exam-schedules\"",
     );
     assert!(parent_route.contains("parents::handlers::get_child_exam_schedule"));
-    assert!(parent_route.contains("auth_middleware"));
+    assert_eq!(
+        app_routes
+            .matches("from_fn_with_state(runtime, session_middleware)")
+            .count(),
+        1
+    );
 
     for read_handler in [
         "list_rounds",
@@ -3014,7 +3017,7 @@ fn permissions_do_not_use_legacy_user_permissions_resolver() {
 
 fn authorization_handlers_from_router(router: &str) -> Vec<String> {
     let handler_pattern = Regex::new(
-        r"\bmodules::(?P<handler>(?:auth::handlers|staff::handlers::(?:roles|permissions|user_roles|organization_permissions|organization_delegations|organization_members))::[A-Za-z_][A-Za-z0-9_]*)\b",
+        r"\bmodules::(?P<handler>(?:auth::(?:handlers|session_handlers)|staff::handlers::(?:roles|permissions|user_roles|organization_permissions|organization_delegations|organization_members))::[A-Za-z_][A-Za-z0-9_]*)\b",
     )
     .expect("valid authorization handler regex");
     let router = strip_comments(router);
@@ -3128,7 +3131,7 @@ fn read_oriented_handlers_missing_from_contract(
 
 #[test]
 fn authorization_handlers_are_registered_in_the_openapi_document() {
-    let router = read_source(manifest_dir().join("src/main.rs"));
+    let router = read_source(manifest_dir().join("src/app.rs"));
     let contract = read_source(manifest_dir().join("src/api_contract.rs"));
 
     assert!(
@@ -3174,7 +3177,7 @@ fn authorization_openapi_guard_detects_a_new_router_handler() {
 
 #[test]
 fn read_oriented_handlers_are_registered_in_the_openapi_document() {
-    let main_router = read_source(manifest_dir().join("src/main.rs"));
+    let main_router = read_source(manifest_dir().join("src/app.rs"));
     let calendar_router = read_source(manifest_dir().join("src/modules/calendar.rs"));
     let contract = read_source(manifest_dir().join("src/api_contract.rs"));
 
@@ -3275,9 +3278,16 @@ fn module_handlers_use_actor_context_instead_of_raw_permission_lists() {
 fn auth_responses_use_shared_effective_permission_resolver() {
     let auth_handler = read_source(manifest_dir().join("src/modules/auth/handlers.rs"));
     let session_service = read_source(manifest_dir().join("src/modules/auth/session_service.rs"));
+    let login_snapshot =
+        extract_braced_block(&session_service, "async fn load_login_snapshot", false);
+    let current_snapshot = extract_braced_block(
+        &session_service,
+        "async fn load_active_shell_snapshot",
+        false,
+    );
 
-    assert!(auth_handler.contains("get_cached_user_permissions"));
-    assert!(session_service.contains("get_cached_user_permissions"));
+    assert!(login_snapshot.contains("get_cached_user_permissions"));
+    assert!(current_snapshot.contains("get_cached_user_permissions"));
     assert!(!auth_handler.contains("permission_delegations"));
     assert!(!auth_handler.contains("department_permissions dp"));
     assert!(!auth_handler.contains("JOIN role_permissions"));
@@ -3572,32 +3582,46 @@ fn timetable_websocket_authorization_authenticates_active_user_before_permission
         "active-user authentication must precede permission and semester authorization"
     );
 
-    let main = read_source(manifest_dir().join("src/main.rs"));
-    assert!(!main.contains("WebSocket Route (No standard middleware auth, uses Query Params)"));
+    let app = read_source(manifest_dir().join("src/app.rs"));
+    assert!(!app.contains("WebSocket Route (No standard middleware auth, uses Query Params)"));
     assert!(
-        main.contains("WebSocket authentication runs in the handler; query selects semester only")
+        app.contains("WebSocket authentication runs in the handler; query selects semester only")
     );
 }
 
 #[test]
 fn auth_me_rejects_inactive_users_before_loading_roles_or_permissions() {
-    let handler_source = read_source(manifest_dir().join("src/modules/auth/handlers.rs"));
+    let handler_source = read_source(manifest_dir().join("src/modules/auth/session_handlers.rs"));
     let handler = extract_braced_block(&handler_source, "pub async fn me", false);
-    let load_user = handler
-        .find("services::find_user_by_id(&pool, context.user_id).await?")
-        .expect("auth me must load the current user");
-    let verify_active = handler
-        .find("services::ensure_active_user_status(&user.status)?")
-        .expect("auth me must reject a non-active current user");
-    let load_role = handler
-        .find("services::get_primary_role_name(&pool, user.id).await?")
-        .expect("auth me must preserve the primary role response");
-    let load_permissions = handler
-        .find("get_cached_user_permissions(")
-        .expect("auth me must preserve the permission response");
+    let session_service = read_source(manifest_dir().join("src/modules/auth/session_service.rs"));
+    let load_current =
+        extract_braced_block(&session_service, "pub async fn load_current_user", false);
+    let snapshot = extract_braced_block(
+        &session_service,
+        "async fn load_active_shell_snapshot",
+        false,
+    );
+    let auth_services = read_source(manifest_dir().join("src/modules/auth/services.rs"));
+    let active_lookup = extract_braced_block(
+        &auth_services,
+        "pub async fn find_active_user_shell_by_id",
+        false,
+    );
+
+    assert!(handler.contains("session_service::load_current_user(&context, &session).await?"));
+    let verify_active = load_current
+        .find("find_active_user_shell_by_id")
+        .expect("auth me must load only an active user");
+    let load_snapshot = load_current
+        .find("load_active_shell_snapshot")
+        .expect("auth me must hydrate the response after active-user validation");
+    assert!(active_lookup.contains("sqlx::query_as::<_, ActiveUserShell>"));
+    assert!(auth_services.contains("WHERE id = $1 AND status = 'active'"));
+    assert!(snapshot.contains("get_primary_role_name"));
+    assert!(snapshot.contains("get_cached_user_permissions"));
 
     assert!(
-        load_user < verify_active && verify_active < load_role && verify_active < load_permissions,
+        verify_active < load_snapshot,
         "auth me must reject an inactive user before loading roles or permissions"
     );
 }
@@ -3720,6 +3744,39 @@ fn feature_modules_do_not_parse_jwt_directly() {
             relative(&path)
         );
     }
+}
+
+#[test]
+fn browser_auth_uses_one_session_boundary_and_no_jwt_runtime() {
+    let main = read_source(manifest_dir().join("src/main.rs"));
+    let app = read_source(manifest_dir().join("src/app.rs"));
+    assert!(!main.contains("auth_middleware"));
+    assert_eq!(
+        app.matches("from_fn_with_state(runtime, session_middleware)")
+            .count(),
+        1
+    );
+    assert!(!manifest_dir().join("src/utils/jwt.rs").exists());
+    assert!(!manifest_dir().join("src/middleware/auth.rs").exists());
+    assert!(!app.contains("Authorization"));
+    assert!(!read_source(manifest_dir().join("Cargo.toml")).contains("jsonwebtoken"));
+}
+
+#[test]
+fn public_and_protected_routes_are_explicitly_partitioned() {
+    let app = read_source(manifest_dir().join("src/app.rs"));
+    assert!(app.contains("public_routes()"));
+    assert!(app.contains("protected_routes()"));
+    assert!(app.contains("admission_public_routes()"));
+    assert!(app.contains("admission_staff_routes()"));
+    assert!(app.contains("/internal/migrate-all"));
+    assert!(app.contains("/api/admin/routes/sync"));
+    assert_eq!(
+        app.matches("DefaultBodyLimit::max(AUTH_JSON_BODY_LIMIT)")
+            .count(),
+        2
+    );
+    assert!(app.contains("DefaultBodyLimit::max(APPLICATION_BODY_LIMIT)"));
 }
 
 #[test]
@@ -4347,15 +4404,16 @@ fn module_handlers_resolve_tenant_pools_through_the_central_resolver() {
 #[test]
 fn backend_school_registers_separate_liveness_and_readiness_routes() {
     let main = read_source(repo_root().join("backend-school/src/main.rs"));
+    let app = read_source(repo_root().join("backend-school/src/app.rs"));
     let health =
         read_source(repo_root().join("backend-school/src/modules/system/handlers/health.rs"));
     let health_route = Regex::new(r#"\.route\(\s*"/health","#).expect("valid health regex");
     let ready_route = Regex::new(r#"\.route\(\s*"/ready","#).expect("valid ready regex");
 
-    assert!(health_route.is_match(&main));
-    assert!(ready_route.is_match(&main));
-    assert!(main.contains("handlers::health::health_check"));
-    assert!(main.contains("handlers::health::readiness_check"));
+    assert!(health_route.is_match(&app));
+    assert!(ready_route.is_match(&app));
+    assert!(app.contains("handlers::health::health_check"));
+    assert!(app.contains("handlers::health::readiness_check"));
     assert!(main.contains("GET  /ready"));
     assert!(health.contains("state.admin_client.check_readiness()"));
     assert!(health.contains("state.file_platform.check_readiness()"));
@@ -4559,7 +4617,7 @@ fn calendar_schema_routes_and_permissions_are_registered() {
     );
     let modules_root = read_source(manifest_dir().join("src/modules.rs"));
     let main_source = read_source(manifest_dir().join("src/main.rs"));
-    let main = strip_comments(&main_source);
+    let app = strip_comments(&read_source(manifest_dir().join("src/app.rs")));
 
     for required in [
         "CREATE TABLE calendar_categories",
@@ -4595,11 +4653,11 @@ fn calendar_schema_routes_and_permissions_are_registered() {
     }
 
     assert!(modules_root.contains("pub mod calendar;"));
-    assert!(main.contains("\"/api/calendar\""));
-    assert!(main.contains("modules::calendar::calendar_routes()"));
-    assert!(main.contains("\"/api/me/calendar/events\""));
-    assert!(main.contains("\"/api/parent/students/{student_id}/calendar/events\""));
-    assert!(main.contains("\"/api/public/calendar/events\""));
+    assert!(app.contains("\"/api/calendar\""));
+    assert!(app.contains("modules::calendar::calendar_routes()"));
+    assert!(app.contains("\"/api/me/calendar/events\""));
+    assert!(app.contains("\"/api/parent/students/{student_id}/calendar/events\""));
+    assert!(app.contains("\"/api/public/calendar/events\""));
     assert!(main_source.contains("process_due_calendar_reminders_for_all_tenants"));
 
     for required in [

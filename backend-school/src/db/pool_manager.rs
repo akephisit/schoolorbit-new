@@ -47,6 +47,17 @@ impl PoolManager {
         }
     }
 
+    #[cfg(test)]
+    pub(crate) async fn insert_test_pool(&self, database_url: &str, pool: PgPool) {
+        self.pools.write().await.insert(
+            database_url.to_string(),
+            PoolEntry {
+                pool,
+                last_used: Instant::now(),
+            },
+        );
+    }
+
     async fn cached_pool_at(&self, key: &str, now: Instant) -> Option<PgPool> {
         let mut pools = self.pools.write().await;
         match pools.get_mut(key) {

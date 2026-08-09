@@ -26,8 +26,8 @@ use super::{
         expire_legacy_cookie, presented_session_token, set_session_cookie, validate_csrf,
     },
     models::{
-        ChangePasswordRequest, CurrentUserResponse, LoginRequest, SessionListData,
-        SessionLoginData, SessionResponse,
+        ChangePasswordRequest, CurrentUserResponse, LoginData, LoginRequest, SessionListData,
+        SessionResponse,
     },
     runtime::AuthRuntime,
     session_crypto::RawSessionToken,
@@ -38,11 +38,11 @@ use super::{
 #[utoipa::path(
     post,
     path = "/api/auth/login",
-    operation_id = "loginWithSession",
+    operation_id = "login",
     tag = "auth",
     request_body = LoginRequest,
     responses(
-        (status = 200, description = "Authenticated session", body = ApiResponse<SessionLoginData>),
+        (status = 200, description = "Authenticated session", body = ApiResponse<LoginData>),
         (status = 400, description = "Malformed request", body = crate::api_response::ApiErrorResponse),
         (status = 401, description = "Invalid credentials", body = crate::api_response::ApiErrorResponse),
         (status = 403, description = "Origin rejected", body = crate::api_response::ApiErrorResponse),
@@ -87,7 +87,7 @@ pub(super) async fn login_with_tenant(
     )
     .await?;
 
-    let data = SessionLoginData {
+    let data = LoginData {
         user: current_user_response(result.user),
     };
     let encoded = result.credential.encoded();
@@ -107,7 +107,7 @@ pub(super) async fn login_with_tenant(
 #[utoipa::path(
     post,
     path = "/api/auth/logout",
-    operation_id = "logoutSession",
+    operation_id = "logout",
     tag = "auth",
     responses(
         (status = 200, description = "Session revoked or stale credentials cleared", body = ApiResponse<EmptyData>),
@@ -162,7 +162,7 @@ pub(super) async fn logout_with_tenant(
 #[utoipa::path(
     get,
     path = "/api/auth/me",
-    operation_id = "getSessionCurrentUser",
+    operation_id = "getCurrentUser",
     tag = "auth",
     responses(
         (status = 200, description = "Minimal current user", body = ApiResponse<CurrentUserResponse>),
@@ -269,7 +269,7 @@ pub async fn logout_all(
 #[utoipa::path(
     post,
     path = "/api/auth/me/change-password",
-    operation_id = "changeSessionPassword",
+    operation_id = "changeCurrentUserPassword",
     tag = "auth",
     request_body = ChangePasswordRequest,
     responses(

@@ -8,7 +8,51 @@ use axum::{
     Router,
 };
 
-pub fn admission_routes() -> Router<AppState> {
+pub fn admission_public_routes() -> Router<AppState> {
+    Router::new()
+        .route("/apply/rounds", get(handlers::rounds::list_public_rounds))
+        .route(
+            "/apply/round/{id}",
+            get(handlers::rounds::get_public_round_info),
+        )
+        .route(
+            "/apply/{round_id}",
+            post(handlers::applications::submit_application),
+        )
+        .route("/portal/check", post(handlers::portal::check_application))
+        .route("/portal/status", post(handlers::portal::get_status))
+        .route(
+            "/portal/confirm",
+            post(handlers::portal::confirm_enrollment),
+        )
+        .route(
+            "/portal/form",
+            post(handlers::portal::get_enrollment_form)
+                .put(handlers::portal::submit_enrollment_form),
+        )
+        .route(
+            "/portal/application",
+            put(handlers::portal::update_application),
+        )
+        .route(
+            "/portal/upload",
+            post(handlers::portal::portal_upload_document),
+        )
+        .route(
+            "/portal/documents/{doc_type}",
+            delete(handlers::portal::portal_delete_document),
+        )
+        .route(
+            "/portal/documents/{file_id}/download",
+            post(handlers::portal::portal_download_document),
+        )
+        .route(
+            "/portal/exam-seat",
+            post(handlers::portal::portal_get_exam_seat),
+        )
+}
+
+pub fn admission_staff_routes() -> Router<AppState> {
     Router::new()
         // === Rounds CRUD ===
         .route(
@@ -51,16 +95,7 @@ pub fn admission_routes() -> Router<AppState> {
             "/tracks/{id}/capacity",
             get(handlers::rounds::get_track_capacity),
         )
-        // === Applications (Public: submit ไม่ต้อง auth) ===
-        .route("/apply/rounds", get(handlers::rounds::list_public_rounds))
-        .route(
-            "/apply/round/{id}",
-            get(handlers::rounds::get_public_round_info),
-        )
-        .route(
-            "/apply/{round_id}",
-            post(handlers::applications::submit_application),
-        )
+        // === Applications ===
         .route(
             "/rounds/{id}/applications",
             get(handlers::applications::list_applications),
@@ -164,34 +199,6 @@ pub fn admission_routes() -> Router<AppState> {
             "/rounds/{id}/auto-assign-student-ids",
             post(handlers::applications::auto_assign_student_ids),
         )
-        // === Portal (Applicant Stateless — ส่ง credentials ทุก request) ===
-        .route("/portal/check", post(handlers::portal::check_application))
-        .route("/portal/status", post(handlers::portal::get_status))
-        .route(
-            "/portal/confirm",
-            post(handlers::portal::confirm_enrollment),
-        )
-        .route(
-            "/portal/form",
-            post(handlers::portal::get_enrollment_form)
-                .put(handlers::portal::submit_enrollment_form),
-        )
-        .route(
-            "/portal/application",
-            put(handlers::portal::update_application),
-        )
-        .route(
-            "/portal/upload",
-            post(handlers::portal::portal_upload_document),
-        )
-        .route(
-            "/portal/documents/{doc_type}",
-            delete(handlers::portal::portal_delete_document),
-        )
-        .route(
-            "/portal/documents/{file_id}/download",
-            post(handlers::portal::portal_download_document),
-        )
         // === Staff Document Management ===
         .route(
             "/applications/{id}/documents",
@@ -231,10 +238,5 @@ pub fn admission_routes() -> Router<AppState> {
         .route(
             "/applications/{id}/exam-seat",
             get(handlers::exam_rooms::get_application_exam_seat),
-        )
-        // Portal: ดูห้องสอบ
-        .route(
-            "/portal/exam-seat",
-            post(handlers::portal::portal_get_exam_seat),
         )
 }

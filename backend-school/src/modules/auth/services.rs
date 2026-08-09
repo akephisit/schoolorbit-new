@@ -1,4 +1,4 @@
-use super::models::{LoginUser, UpdateProfileRequest, User};
+use super::models::{UpdateProfileRequest, User};
 use crate::error::AppError;
 use crate::utils::field_encryption;
 use sqlx::PgPool;
@@ -67,44 +67,6 @@ pub async fn find_active_user_shell_by_id(
     .map_err(AppError::from)
 }
 
-pub async fn find_active_login_user_by_username(
-    pool: &PgPool,
-    username: &str,
-) -> Result<LoginUser, AppError> {
-    sqlx::query_as::<_, LoginUser>(
-        r#"
-        SELECT id, username, password_hash, status, user_type, first_name, last_name, email, date_of_birth, profile_image_file_id
-        FROM users
-        WHERE username = $1 AND status = 'active'
-        "#,
-    )
-    .bind(username)
-    .fetch_optional(pool)
-    .await?
-    .ok_or(AppError::AuthError(
-        "ไม่พบผู้ใช้หรือบัญชีถูกระงับ".to_string(),
-    ))
-}
-
-pub async fn find_active_login_user_by_id(
-    pool: &PgPool,
-    user_id: Uuid,
-) -> Result<LoginUser, AppError> {
-    sqlx::query_as::<_, LoginUser>(
-        r#"
-        SELECT id, username, password_hash, status, user_type, first_name, last_name, email, date_of_birth, profile_image_file_id
-        FROM users
-        WHERE id = $1 AND status = 'active'
-        "#,
-    )
-    .bind(user_id)
-    .fetch_optional(pool)
-    .await?
-    .ok_or(AppError::NotFound(
-        "ไม่พบผู้ใช้หรือบัญชีถูกระงับ".to_string(),
-    ))
-}
-
 pub async fn find_user_by_id(pool: &PgPool, user_id: Uuid) -> Result<User, AppError> {
     let mut user = sqlx::query_as::<_, User>(
         "SELECT 
@@ -141,14 +103,6 @@ pub async fn find_user_by_id(pool: &PgPool, user_id: Uuid) -> Result<User, AppEr
 
     decrypt_national_id(&mut user);
     Ok(user)
-}
-
-pub fn ensure_active_user_status(status: &str) -> Result<(), AppError> {
-    if status == "active" {
-        return Ok(());
-    }
-
-    Err(AppError::AuthError("บัญชีผู้ใช้ถูกระงับ".to_string()))
 }
 
 pub async fn get_primary_role_name(
@@ -259,20 +213,6 @@ SELECT EXISTS(
             .then_some(old_file_id)
             .flatten(),
     })
-}
-
-pub async fn update_password_hash(
-    pool: &PgPool,
-    user_id: Uuid,
-    password_hash: String,
-) -> Result<(), AppError> {
-    sqlx::query("UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2")
-        .bind(password_hash)
-        .bind(user_id)
-        .execute(pool)
-        .await?;
-
-    Ok(())
 }
 
 fn decrypt_national_id(user: &mut User) {
@@ -401,18 +341,6 @@ INSERT INTO file_versions (
         let parsed = parse_profile_date(Some("2026-06-06"));
 
         assert_eq!(parsed, chrono::NaiveDate::from_ymd_opt(2026, 6, 6));
-    }
-
-    #[test]
-    fn active_user_status_is_accepted_for_current_session() {
-        assert!(ensure_active_user_status("active").is_ok());
-    }
-
-    #[test]
-    fn inactive_user_status_is_rejected_for_current_session() {
-        let result = ensure_active_user_status("inactive");
-
-        assert!(matches!(result, Err(AppError::AuthError(_))));
     }
 
     #[test]

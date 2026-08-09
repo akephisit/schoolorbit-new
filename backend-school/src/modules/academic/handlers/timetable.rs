@@ -5,14 +5,15 @@ use crate::modules::academic::services::{
     daily_teaching_service, period_service, timetable_service,
 };
 use crate::modules::academic::websockets::TimetableEvent;
+use crate::modules::auth::session_service::AuthenticatedSession;
 use crate::permissions::registry::codes;
 use crate::utils::request_context::{
-    actor_tenant_context, current_user_tenant_context_from_headers, tenant_pool,
+    actor_tenant_context, current_user_tenant_context_from_headers,
 };
 use crate::utils::subdomain::extract_subdomain_from_request;
 use crate::AppState;
 use axum::{
-    extract::{Path, Query, State},
+    extract::{Extension, Path, Query, State},
     http::{HeaderMap, StatusCode},
     response::IntoResponse,
     Json,
@@ -300,21 +301,21 @@ pub struct MyTimetableQuery {
 )]
 pub async fn get_my_timetable(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Query(query): Query<MyTimetableQuery>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = tenant_pool(&state, &headers).await?;
-    let user = crate::middleware::auth::get_current_user(&headers, &pool).await?;
+    let subdomain = session.tenant.subdomain.clone();
+    let pool = session.tenant.pool.clone();
 
-    let filter = match user.user_type.as_str() {
+    let filter = match session.user_type.as_str() {
         "student" => crate::modules::academic::services::timetable_service::TimetableFilter {
-            student_id: Some(user.id),
+            student_id: Some(session.user_id),
             academic_semester_id: query.academic_semester_id,
             day_of_week: query.day_of_week,
             ..Default::default()
         },
         "staff" => crate::modules::academic::services::timetable_service::TimetableFilter {
-            instructor_id: Some(user.id),
+            instructor_id: Some(session.user_id),
             academic_semester_id: query.academic_semester_id,
             day_of_week: query.day_of_week,
             include_team_ghosts: query.include_team_ghosts.unwrap_or(false),
@@ -331,8 +332,6 @@ pub async fn get_my_timetable(
     let entries = timetable_service::list_entries(&pool, filter).await?;
 
     let current_seq = if let Some(sem_id) = query.academic_semester_id {
-        let subdomain =
-            extract_subdomain_from_request(&headers).unwrap_or_else(|_| "default".to_string());
         state.websocket_manager.current_seq(subdomain, sem_id)
     } else {
         0

@@ -3,7 +3,6 @@ pub mod client_address;
 pub mod field_encryption; // Generic encryption for any field
 pub mod file_hash;
 pub mod file_processor;
-pub mod jwt;
 pub mod logging;
 pub mod permission_sync;
 pub mod request_context;

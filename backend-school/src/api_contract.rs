@@ -67,7 +67,7 @@ use crate::modules::admission::models::applications::PortalCredentials;
 use crate::modules::admission::services::application_service::DocumentUploadResponse;
 use crate::modules::auth::models::{
     ChangePasswordRequest, CurrentUserResponse, LoginData, LoginRequest, ProfileResponse,
-    SessionListData, SessionLoginData, SessionResponse, UpdateProfileRequest, UserResponse,
+    SessionListData, SessionResponse, UpdateProfileRequest,
 };
 use crate::modules::calendar::models::{
     CalendarCategory, CalendarEvent, CalendarEventReminder, CalendarEventTag, CalendarEventTarget,
@@ -132,12 +132,15 @@ use utoipa::OpenApi;
 #[derive(OpenApi)]
 #[openapi(
     paths(
-        crate::modules::auth::handlers::login,
-        crate::modules::auth::handlers::logout,
-        crate::modules::auth::handlers::me,
+        crate::modules::auth::session_handlers::login,
+        crate::modules::auth::session_handlers::logout,
+        crate::modules::auth::session_handlers::me,
         crate::modules::auth::handlers::get_profile,
         crate::modules::auth::handlers::update_profile,
-        crate::modules::auth::handlers::change_password,
+        crate::modules::auth::session_handlers::change_password,
+        crate::modules::auth::session_handlers::list_sessions,
+        crate::modules::auth::session_handlers::revoke_session,
+        crate::modules::auth::session_handlers::logout_all,
         crate::modules::files::handlers::upload_file,
         crate::modules::files::handlers::get_file_metadata,
         crate::modules::files::handlers::download_file,
@@ -338,22 +341,18 @@ use utoipa::OpenApi;
         crate::modules::staff::handlers::organization_members::remove_member
     ),
     components(schemas(
-        UserResponse,
         LoginRequest,
         LoginData,
         ProfileResponse,
         UpdateProfileRequest,
         ChangePasswordRequest,
         CurrentUserResponse,
-        SessionLoginData,
         SessionResponse,
         SessionListData,
-        ApiResponse<SessionLoginData>,
         ApiResponse<CurrentUserResponse>,
         ApiResponse<SessionListData>,
         ApiResponse<LoginData>,
         ApiResponse<ProfileResponse>,
-        ApiResponse<UserResponse>,
         EmptyData,
         ApiResponse<EmptyData>,
         UuidIdData,
@@ -772,19 +771,19 @@ mod tests {
         assert_eq!(operation["operationId"], "getCurrentUser");
         assert_eq!(
             success_response["$ref"],
-            "#/components/schemas/ApiResponse_UserResponse"
+            "#/components/schemas/ApiResponse_CurrentUserResponse"
         );
         assert_eq!(
             error_response["$ref"],
             "#/components/schemas/ApiErrorResponse"
         );
 
-        let success_schema = &document["components"]["schemas"]["ApiResponse_UserResponse"];
+        let success_schema = &document["components"]["schemas"]["ApiResponse_CurrentUserResponse"];
         assert_eq!(required(success_schema), vec!["data", "success"]);
         assert_eq!(success_schema["properties"]["success"]["type"], "boolean");
         assert_eq!(
             success_schema["properties"]["data"],
-            document["components"]["schemas"]["UserResponse"]
+            document["components"]["schemas"]["CurrentUserResponse"]
         );
 
         let error_schema = &document["components"]["schemas"]["ApiErrorResponse"];
@@ -796,18 +795,15 @@ mod tests {
     #[test]
     fn current_user_schema_matches_serde() {
         let document = school_api_value().expect("document should serialize");
-        let schema = &document["components"]["schemas"]["UserResponse"];
+        let schema = &document["components"]["schemas"]["CurrentUserResponse"];
 
         assert_eq!(
             required(schema),
             vec![
-                "createdAt",
-                "email",
                 "firstName",
                 "id",
                 "lastName",
-                "nationalId",
-                "phone",
+                "permissions",
                 "profileImageFileId",
                 "status",
                 "userType",
@@ -819,35 +815,24 @@ mod tests {
             .as_object()
             .expect("properties must exist");
         assert_eq!(properties["id"]["format"], "uuid");
-        assert_eq!(properties["createdAt"]["format"], "date-time");
-
-        for field in ["nationalId", "email", "phone", "profileImageFileId"] {
-            assert!(
-                contains_null(&properties[field]),
-                "{field} must accept null"
-            );
+        assert!(contains_null(&properties["profileImageFileId"]));
+        for forbidden in ["nationalId", "email", "phone", "createdAt"] {
+            assert!(properties.get(forbidden).is_none());
         }
-
-        for field in ["primaryRoleName", "permissions"] {
-            assert!(!required(schema).contains(&field));
-            assert!(
-                !contains_null(&properties[field]),
-                "{field} is omitted, not null"
-            );
-        }
+        assert!(document["components"]["schemas"]["UserResponse"].is_null());
     }
 
     #[test]
-    fn registers_unwired_session_components_without_advertising_new_paths() {
+    fn registers_session_components_and_paths_after_cutover() {
         let document = school_api_value().expect("document should serialize");
         let schemas = &document["components"]["schemas"];
 
         for schema in [
             "CurrentUserResponse",
-            "SessionLoginData",
+            "LoginData",
             "SessionResponse",
             "SessionListData",
-            "ApiResponse_SessionLoginData",
+            "ApiResponse_LoginData",
             "ApiResponse_CurrentUserResponse",
             "ApiResponse_SessionListData",
         ] {
@@ -894,19 +879,20 @@ mod tests {
                 "rememberMe",
             ]
         );
-        assert_eq!(required(&schemas["SessionLoginData"]), vec!["user"]);
+        assert_eq!(required(&schemas["LoginData"]), vec!["user"]);
         assert_eq!(required(&schemas["SessionListData"]), vec!["sessions"]);
-        assert!(schemas["SessionLoginData"]["properties"]["token"].is_null());
-        assert!(schemas["SessionLoginData"]["properties"]["csrfToken"].is_null());
+        assert!(schemas["LoginData"]["properties"]["token"].is_null());
+        assert!(schemas["LoginData"]["properties"]["csrfToken"].is_null());
 
-        assert!(document["paths"]["/api/auth/sessions"].is_null());
-        assert!(document["paths"]["/api/auth/sessions/{id}"].is_null());
-        assert!(document["paths"]["/api/auth/logout-all"].is_null());
+        assert!(!document["paths"]["/api/auth/sessions"]["get"].is_null());
+        assert!(!document["paths"]["/api/auth/sessions/{id}"]["delete"].is_null());
+        assert!(!document["paths"]["/api/auth/logout-all"]["post"].is_null());
         assert_eq!(
             document["paths"]["/api/auth/me"]["get"]["responses"]["200"]["content"]
                 ["application/json"]["schema"]["$ref"],
-            "#/components/schemas/ApiResponse_UserResponse"
+            "#/components/schemas/ApiResponse_CurrentUserResponse"
         );
+        assert!(schemas["UserResponse"].is_null());
     }
 
     #[test]
@@ -953,6 +939,9 @@ mod tests {
                     "post",
                     "changeCurrentUserPassword",
                 ),
+                ("/api/auth/sessions", "get", "listAuthSessions"),
+                ("/api/auth/sessions/{id}", "delete", "revokeAuthSession"),
+                ("/api/auth/logout-all", "post", "logoutAllSessions"),
             ],
         );
 
@@ -967,11 +956,11 @@ mod tests {
             "#/components/schemas/ApiResponse_LoginData"
         );
         assert_eq!(
-            document["paths"]["/api/auth/login"]["post"]["responses"]["422"]["content"]
+            document["paths"]["/api/auth/login"]["post"]["responses"]["400"]["content"]
                 ["application/json"]["schema"]["$ref"],
             "#/components/schemas/ApiErrorResponse"
         );
-        assert!(document["paths"]["/api/auth/login"]["post"]["responses"]["400"].is_null());
+        assert!(document["paths"]["/api/auth/login"]["post"]["responses"]["422"].is_null());
 
         let profile = &schemas["ProfileResponse"];
         for field in [
@@ -1007,12 +996,12 @@ mod tests {
         let change = &schemas["ChangePasswordRequest"];
         assert_eq!(required(change), vec!["currentPassword", "newPassword"]);
         assert_eq!(
-            document["paths"]["/api/auth/me/change-password"]["post"]["responses"]["404"]
+            document["paths"]["/api/auth/me/change-password"]["post"]["responses"]["400"]
                 ["content"]["application/json"]["schema"]["$ref"],
             "#/components/schemas/ApiErrorResponse"
         );
         assert!(
-            document["paths"]["/api/auth/me/change-password"]["post"]["responses"]["400"].is_null()
+            document["paths"]["/api/auth/me/change-password"]["post"]["responses"]["404"].is_null()
         );
     }
 

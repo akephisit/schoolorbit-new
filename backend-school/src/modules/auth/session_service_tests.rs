@@ -11,6 +11,7 @@ use axum::http::StatusCode;
 use chrono::{DateTime, Duration, Timelike, Utc};
 use sqlx::PgPool;
 use tokio::sync::broadcast;
+use tracing::instrument::WithSubscriber;
 use tracing_subscriber::fmt::MakeWriter;
 use uuid::Uuid;
 
@@ -846,8 +847,8 @@ async fn logout_all_revokes_only_the_user_and_load_current_user_rechecks_status(
     assert_eq!(error.status_code(), StatusCode::UNAUTHORIZED);
 }
 
-#[test]
-fn audit_and_cleanup_logs_contain_only_fixed_allowlisted_fields() {
+#[tokio::test]
+async fn audit_and_cleanup_logs_contain_only_fixed_allowlisted_fields() {
     let captured = CapturedLogs::default();
     let subscriber = tracing_subscriber::fmt()
         .json()
@@ -855,126 +856,123 @@ fn audit_and_cleanup_logs_contain_only_fixed_allowlisted_fields() {
         .with_writer(captured.clone())
         .finish();
 
-    tracing::subscriber::with_default(subscriber, || {
-        tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .unwrap()
-            .block_on(async {
-                let fixture = AuthServiceFixture::new("service_redacted_audit").await;
-                let username = "audit-secret-user";
-                let password = "audit-secret-password";
-                let source = "198.51.100.77";
-                let user_agent = "AuditSecretBrowser/77";
-                fixture.insert_user(username, password, "active").await;
+    async {
+        let fixture = AuthServiceFixture::new("service_redacted_audit").await;
+        let username = "audit-secret-user";
+        let password = "audit-secret-password";
+        let source = "198.51.100.77";
+        let user_agent = "AuditSecretBrowser/77";
+        fixture.insert_user(username, password, "active").await;
 
-                login(
-                    &fixture.context,
-                    LoginCommand {
-                        username,
-                        password: "wrong-audit-secret-password",
-                        remember_me: false,
-                        source: source.parse().unwrap(),
-                        user_agent: Some(user_agent),
-                        now: fixture.now,
-                    },
-                    AuthServiceFixture::credentials([81; 32]),
-                )
-                .await
-                .unwrap_err();
-                let current = fixture
-                    .login_with_token(username, password, false, fixture.now, [82; 32])
-                    .await
-                    .unwrap();
-                let other = fixture
-                    .login_with_token(username, password, false, fixture.now, [83; 32])
-                    .await
-                    .unwrap();
-                revoke_selected(
-                    &fixture.context,
-                    &current.authenticated,
-                    other.authenticated.session_id,
-                    fixture.now,
-                )
-                .await
-                .unwrap();
+        login(
+            &fixture.context,
+            LoginCommand {
+                username,
+                // Exercise the typed rejection audit before database I/O;
+                // credential verification behavior is covered separately.
+                password: "",
+                remember_me: false,
+                source: source.parse().unwrap(),
+                user_agent: Some(user_agent),
+                now: fixture.now,
+            },
+            AuthServiceFixture::credentials([81; 32]),
+        )
+        .await
+        .unwrap_err();
+        let current = fixture
+            .login_with_token(username, password, false, fixture.now, [82; 32])
+            .await
+            .unwrap();
+        let other = fixture
+            .login_with_token(username, password, false, fixture.now, [83; 32])
+            .await
+            .unwrap();
+        revoke_selected(
+            &fixture.context,
+            &current.authenticated,
+            other.authenticated.session_id,
+            fixture.now,
+        )
+        .await
+        .unwrap();
 
-                sqlx::query(
-                    "INSERT INTO auth_login_throttles \
+        sqlx::query(
+            "INSERT INTO auth_login_throttles \
                      (bucket_kind, bucket_hash, failure_count, window_started_at, updated_at) \
                      VALUES ('source', decode(repeat('ab', 32), 'hex'), 1, \
                              $1 - interval '2 days', $1 - interval '2 days')",
-                )
-                .bind(fixture.now)
-                .execute(&fixture.pool)
-                .await
-                .unwrap();
-                sqlx::query(
-                    r#"
+        )
+        .bind(fixture.now)
+        .execute(&fixture.pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            r#"
                     CREATE FUNCTION reject_test_auth_cleanup() RETURNS trigger AS $$
                     BEGIN
                         RAISE EXCEPTION 'forced-cleanup-secret-error';
                     END;
                     $$ LANGUAGE plpgsql
                     "#,
-                )
-                .execute(&fixture.pool)
-                .await
-                .unwrap();
-                sqlx::query(
-                    "CREATE TRIGGER reject_test_auth_cleanup \
+        )
+        .execute(&fixture.pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "CREATE TRIGGER reject_test_auth_cleanup \
                      BEFORE DELETE ON auth_login_throttles FOR EACH ROW \
                      WHEN (OLD.bucket_hash = decode(repeat('ab', 32), 'hex')) \
                      EXECUTE FUNCTION reject_test_auth_cleanup()",
-                )
-                .execute(&fixture.pool)
-                .await
-                .unwrap();
+        )
+        .execute(&fixture.pool)
+        .await
+        .unwrap();
 
-                let listed = list_sessions(&current.authenticated, fixture.now)
-                    .await
-                    .unwrap();
-                assert_eq!(listed.len(), 1);
+        let listed = list_sessions(&current.authenticated, fixture.now)
+            .await
+            .unwrap();
+        assert_eq!(listed.len(), 1);
 
-                let identifier_hash = identifier_bucket(
-                    fixture.context.config().hmac_key(),
-                    fixture.context.tenant().tenant_id,
-                    &normalize_login_identifier(username),
-                );
-                let logs = captured.text();
-                for secret in [
-                    username,
-                    password,
-                    source,
-                    user_agent,
-                    "forced-cleanup-secret-error",
-                    &hex::encode(identifier_hash.as_bytes()),
-                ] {
-                    assert!(!logs.contains(secret), "audit leaked secret marker");
-                }
-                for required in [
-                    "login_rejected",
-                    "login_succeeded",
-                    "session_created",
-                    "session_revoked",
-                    "auth_cleanup_failed",
-                ] {
-                    assert!(logs.contains(required), "missing audit marker {required}");
-                }
+        let identifier_hash = identifier_bucket(
+            fixture.context.config().hmac_key(),
+            fixture.context.tenant().tenant_id,
+            &normalize_login_identifier(username),
+        );
+        let logs = captured.text();
+        for secret in [
+            username,
+            password,
+            source,
+            user_agent,
+            "forced-cleanup-secret-error",
+            &hex::encode(identifier_hash.as_bytes()),
+        ] {
+            assert!(!logs.contains(secret), "audit leaked secret marker");
+        }
+        for required in [
+            "login_rejected",
+            "login_succeeded",
+            "session_created",
+            "session_revoked",
+            "auth_cleanup_failed",
+        ] {
+            assert!(logs.contains(required), "missing audit marker {required}");
+        }
 
-                for line in logs.lines() {
-                    let value: serde_json::Value = serde_json::from_str(line).unwrap();
-                    let Some(fields) = value.get("fields").and_then(|fields| fields.as_object())
-                    else {
-                        continue;
-                    };
-                    if fields.get("event").is_some() {
-                        assert!(fields.keys().all(|field| matches!(
-                            field.as_str(),
-                            "event" | "tenant_id" | "user_id" | "session_id" | "reason"
-                        )));
-                    }
-                }
-            });
-    });
+        for line in logs.lines() {
+            let value: serde_json::Value = serde_json::from_str(line).unwrap();
+            let Some(fields) = value.get("fields").and_then(|fields| fields.as_object()) else {
+                continue;
+            };
+            if fields.get("event").is_some() {
+                assert!(fields.keys().all(|field| matches!(
+                    field.as_str(),
+                    "event" | "tenant_id" | "user_id" | "session_id" | "reason"
+                )));
+            }
+        }
+    }
+    .with_subscriber(subscriber)
+    .await;
 }

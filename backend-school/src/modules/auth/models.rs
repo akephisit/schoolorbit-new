@@ -42,22 +42,6 @@ pub struct User {
     pub resigned_date: Option<chrono::NaiveDate>,
 }
 
-// Lightweight user model for login (only essential fields)
-// Reduces query overhead by ~70% compared to full User struct
-#[derive(Debug, Clone, Serialize, FromRow)]
-pub struct LoginUser {
-    pub id: Uuid,
-    pub username: String, // Added field
-    pub password_hash: String,
-    pub status: String,
-    pub user_type: String,
-    pub first_name: String,
-    pub last_name: String,
-    pub email: Option<String>,
-    pub date_of_birth: Option<chrono::NaiveDate>,
-    pub profile_image_file_id: Option<Uuid>,
-}
-
 // Login request
 #[derive(Debug, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
@@ -90,58 +74,6 @@ pub struct UpdateProfileRequest {
 pub struct ChangePasswordRequest {
     pub current_password: String,
     pub new_password: String,
-}
-
-// User response (without sensitive data)
-#[derive(Debug, Serialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct UserResponse {
-    pub id: Uuid,
-    pub username: String, // Added field
-    #[schema(required = true)]
-    pub national_id: Option<String>,
-    #[schema(required = true)]
-    pub email: Option<String>,
-    pub first_name: String,
-    pub last_name: String,
-    pub user_type: String,
-    #[schema(required = true)]
-    pub phone: Option<String>,
-    pub status: String,
-    pub created_at: DateTime<Utc>,
-
-    // Primary role name from roles table (if exists)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[schema(value_type = String)]
-    pub primary_role_name: Option<String>,
-
-    #[schema(required = true)]
-    pub profile_image_file_id: Option<Uuid>,
-
-    // User permissions
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[schema(value_type = Vec<String>)]
-    pub permissions: Option<Vec<String>>,
-}
-
-impl From<User> for UserResponse {
-    fn from(user: User) -> Self {
-        Self {
-            id: user.id,
-            username: user.username,
-            national_id: user.national_id,
-            email: user.email,
-            first_name: user.first_name,
-            last_name: user.last_name,
-            user_type: user.user_type,
-            phone: user.phone,
-            status: user.status,
-            created_at: user.created_at,
-            primary_role_name: None, // Will be populated separately
-            profile_image_file_id: user.profile_image_file_id,
-            permissions: None, // Will be populated separately
-        }
-    }
 }
 
 // Full profile response (for /me/profile endpoint)
@@ -218,13 +150,6 @@ impl From<User> for ProfileResponse {
     }
 }
 
-// Login response data
-#[derive(Debug, Serialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct LoginData {
-    pub user: UserResponse,
-}
-
 #[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CurrentUserResponse {
@@ -243,7 +168,7 @@ pub struct CurrentUserResponse {
 
 #[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
-pub struct SessionLoginData {
+pub struct LoginData {
     pub user: CurrentUserResponse,
 }
 
@@ -264,20 +189,6 @@ pub struct SessionResponse {
 #[serde(rename_all = "camelCase")]
 pub struct SessionListData {
     pub sessions: Vec<SessionResponse>,
-}
-
-// JWT Claims
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct Claims {
-    pub sub: String,
-    pub username: String,
-    pub user_type: String,
-    pub tenant: String,
-    pub iss: String,
-    pub aud: String,
-    pub token_version: u8,
-    pub exp: i64,
-    pub iat: i64,
 }
 
 #[cfg(test)]

@@ -879,3 +879,668 @@ async fn protected_mutation_headers_follow_committed_results() {
     assert_eq!(unavailable.status(), StatusCode::SERVICE_UNAVAILABLE);
     assert_eq!(set_cookie_count(&unavailable), 0);
 }
+
+mod protected_router {
+    use std::{
+        collections::HashMap,
+        sync::{
+            atomic::{AtomicUsize, Ordering},
+            Arc,
+        },
+    };
+
+    use axum::{
+        body::{Body, Bytes},
+        extract::{rejection::JsonRejection, DefaultBodyLimit, Extension, Path, State},
+        http::{header, HeaderValue, Method, Request, StatusCode},
+        middleware::from_fn_with_state,
+        response::{IntoResponse, Response},
+        routing::{delete, get, patch, post, put},
+        Json, Router,
+    };
+    use chrono::{Duration, Utc};
+    use serde_json::json;
+    use tokio::{net::TcpListener, sync::broadcast, task::JoinHandle};
+    use tower::ServiceExt;
+    use uuid::Uuid;
+
+    use crate::{
+        app::{APPLICATION_BODY_LIMIT, AUTH_JSON_BODY_LIMIT},
+        db::{
+            admin_client::{AdminClient, AdminClientConfig},
+            permission_cache::PermissionCache,
+            pool_manager::PoolManager,
+        },
+        middleware::session::{maintenance_mode, session_middleware},
+        modules::auth::{
+            config::SessionConfig,
+            runtime::AuthRuntime,
+            session_crypto::{session_csrf_token, RawSessionToken, SessionHmacKey},
+            session_service::AuthenticatedSession,
+        },
+        test_helpers::{create_named_test_pool, run_test_migrations},
+    };
+
+    use super::super::session_repository::SessionMaintenanceMode;
+
+    #[derive(Clone)]
+    struct DirectoryState(Arc<HashMap<String, (Uuid, String)>>);
+
+    async fn directory_school(
+        State(state): State<DirectoryState>,
+        Path(subdomain): Path<String>,
+    ) -> Response {
+        match state.0.get(&subdomain) {
+            Some((tenant_id, database_url)) => Json(json!({
+                "id": tenant_id,
+                "db_connection_string": database_url,
+                "name": subdomain,
+            }))
+            .into_response(),
+            None => StatusCode::NOT_FOUND.into_response(),
+        }
+    }
+
+    struct ProtectedFixture {
+        runtime: AuthRuntime,
+        tenant_a_id: Uuid,
+        tenant_a_pool: sqlx::PgPool,
+        _tenant_b_pool: sqlx::PgPool,
+        server: JoinHandle<()>,
+    }
+
+    impl ProtectedFixture {
+        async fn new() -> Self {
+            let tenant_a_pool = create_named_test_pool("session_router_tenant_a").await;
+            run_test_migrations(&tenant_a_pool).await;
+            let tenant_b_pool = create_named_test_pool("session_router_tenant_b").await;
+            run_test_migrations(&tenant_b_pool).await;
+
+            let tenant_a_id = Uuid::new_v4();
+            let tenant_b_id = Uuid::new_v4();
+            let tenant_a_url = "test-pool://session-router-tenant-a".to_string();
+            let tenant_b_url = "test-pool://session-router-tenant-b".to_string();
+            let directory = DirectoryState(Arc::new(HashMap::from([
+                ("tenant-a".to_string(), (tenant_a_id, tenant_a_url.clone())),
+                ("tenant-b".to_string(), (tenant_b_id, tenant_b_url.clone())),
+            ])));
+            let listener = TcpListener::bind("127.0.0.1:0")
+                .await
+                .expect("test directory must bind");
+            let address = listener
+                .local_addr()
+                .expect("test directory address must resolve");
+            let server = tokio::spawn(async move {
+                let app = Router::new()
+                    .route("/internal/schools/{subdomain}", get(directory_school))
+                    .with_state(directory);
+                axum::serve(listener, app)
+                    .await
+                    .expect("test directory must serve");
+            });
+
+            let pool_manager = Arc::new(PoolManager::new());
+            pool_manager
+                .insert_test_pool(&tenant_a_url, tenant_a_pool.clone())
+                .await;
+            pool_manager
+                .insert_test_pool(&tenant_b_url, tenant_b_pool.clone())
+                .await;
+            let config = Arc::new(SessionConfig::for_tests_with_dev_origins(
+                SessionHmacKey::for_tests([61; 32]),
+                ["http://localhost:5173"],
+            ));
+            let (events, _) = broadcast::channel(32);
+            let runtime = AuthRuntime {
+                admin_client: Arc::new(AdminClient::new(
+                    format!("http://{address}"),
+                    "test-secret".to_string(),
+                    AdminClientConfig::for_tests(
+                        std::time::Duration::from_secs(1),
+                        1,
+                        std::time::Duration::from_millis(1),
+                    ),
+                )),
+                pool_manager,
+                permission_cache: Arc::new(PermissionCache::new()),
+                config,
+                session_events: events,
+            };
+
+            Self {
+                runtime,
+                tenant_a_id,
+                tenant_a_pool,
+                _tenant_b_pool: tenant_b_pool,
+                server,
+            }
+        }
+
+        async fn insert_user(&self, pool: &sqlx::PgPool, username: &str, status: &str) -> Uuid {
+            sqlx::query_scalar(
+                "INSERT INTO users (\
+                     username, email, password_hash, first_name, last_name, user_type, status\
+                 ) VALUES ($1, $2, 'unused-session-router-hash', 'Test', 'User', 'staff', $3)\
+                 RETURNING id",
+            )
+            .bind(username)
+            .bind(format!("{username}@example.test"))
+            .bind(status)
+            .fetch_one(pool)
+            .await
+            .expect("router test user must insert")
+        }
+
+        async fn insert_session(
+            &self,
+            pool: &sqlx::PgPool,
+            user_id: Uuid,
+            token_byte: u8,
+            rotation_due: bool,
+        ) -> (Uuid, RawSessionToken) {
+            let session_id = Uuid::new_v4();
+            let token = RawSessionToken::from_bytes([token_byte; 32]);
+            let now = Utc::now();
+            let rotated_at = if rotation_due {
+                now - Duration::minutes(16)
+            } else {
+                now
+            };
+            sqlx::query(
+                "INSERT INTO auth_sessions (\
+                     id, user_id, current_token_hash, remember_me, device_label, created_at,\
+                     last_seen_at, idle_expires_at, absolute_expires_at, rotated_at\
+                 ) VALUES ($1, $2, $3, false, 'Router test', $4, $4, $5, $6, $7)",
+            )
+            .bind(session_id)
+            .bind(user_id)
+            .bind(token.token_hash().as_bytes().as_slice())
+            .bind(now - Duration::minutes(20))
+            .bind(now + Duration::hours(2))
+            .bind(now + Duration::hours(12))
+            .bind(rotated_at)
+            .execute(pool)
+            .await
+            .expect("router test session must insert");
+            (session_id, token)
+        }
+
+        fn csrf(&self, session_id: Uuid) -> String {
+            session_csrf_token(self.runtime.config.hmac_key(), self.tenant_a_id, session_id)
+                .expose_for_header()
+        }
+    }
+
+    impl Drop for ProtectedFixture {
+        fn drop(&mut self) {
+            self.server.abort();
+        }
+    }
+
+    async fn protected_identity(
+        Extension(session): Extension<AuthenticatedSession>,
+    ) -> Json<serde_json::Value> {
+        Json(json!({
+            "sessionId": session.session_id,
+            "userId": session.user_id,
+        }))
+    }
+
+    async fn feature_cookie(Extension(_session): Extension<AuthenticatedSession>) -> Response {
+        let mut response = StatusCode::OK.into_response();
+        response.headers_mut().append(
+            header::SET_COOKIE,
+            HeaderValue::from_static("feature=value; Secure; Path=/"),
+        );
+        response
+    }
+
+    fn protected_app(runtime: AuthRuntime) -> Router {
+        Router::new()
+            .route("/protected", get(protected_identity))
+            .route("/unsafe", post(protected_identity))
+            .route("/unsafe", put(protected_identity))
+            .route("/unsafe", patch(protected_identity))
+            .route("/unsafe", delete(protected_identity))
+            .route("/api/auth/me", get(protected_identity))
+            .route("/api/notifications/stream", get(protected_identity))
+            .route("/feature-cookie", get(feature_cookie))
+            .route_layer(from_fn_with_state(runtime, session_middleware))
+    }
+
+    fn request(
+        method: Method,
+        uri: &str,
+        origin: Option<&str>,
+        token: Option<&RawSessionToken>,
+        csrf: Option<&str>,
+    ) -> Request<Body> {
+        let mut request = Request::builder().method(method).uri(uri);
+        if let Some(origin) = origin {
+            request = request.header("origin", origin);
+        }
+        if let Some(token) = token {
+            request = request.header(
+                header::COOKIE,
+                format!(
+                    "__Host-schoolorbit_session={}",
+                    token.encode().expose_for_cookie()
+                ),
+            );
+        }
+        if let Some(csrf) = csrf {
+            request = request.header("x-csrf-token", csrf);
+        }
+        request
+            .body(Body::empty())
+            .expect("protected router request must build")
+    }
+
+    fn set_cookie_count(response: &Response) -> usize {
+        response
+            .headers()
+            .get_all(header::SET_COOKIE)
+            .iter()
+            .count()
+    }
+
+    #[tokio::test]
+    async fn auth_json_limit_rejects_before_handler_while_application_payload_remains_available() {
+        let service_invocations = Arc::new(AtomicUsize::new(0));
+        let handler_service_invocations = Arc::clone(&service_invocations);
+        let app = Router::new()
+            .route(
+                "/login",
+                post(
+                    move |payload: Result<Json<serde_json::Value>, JsonRejection>| {
+                        let service_invocations = Arc::clone(&handler_service_invocations);
+                        async move {
+                            match payload {
+                                Ok(_) => {
+                                    service_invocations.fetch_add(1, Ordering::SeqCst);
+                                    StatusCode::OK.into_response()
+                                }
+                                Err(rejection) => rejection.into_response(),
+                            }
+                        }
+                    },
+                )
+                .layer(DefaultBodyLimit::max(AUTH_JSON_BODY_LIMIT)),
+            )
+            .route(
+                "/upload",
+                post(|body: Bytes| async move { (StatusCode::OK, body.len().to_string()) }),
+            )
+            .layer(DefaultBodyLimit::max(APPLICATION_BODY_LIMIT));
+
+        let oversized_auth = json!({
+            "username": "limit-test",
+            "password": "x".repeat(AUTH_JSON_BODY_LIMIT),
+        })
+        .to_string();
+        let rejected = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri("/login")
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(oversized_auth.clone()))
+                    .expect("oversized auth request must build"),
+            )
+            .await
+            .expect("oversized auth response must resolve");
+        assert_eq!(rejected.status(), StatusCode::PAYLOAD_TOO_LARGE);
+        assert_eq!(service_invocations.load(Ordering::SeqCst), 0);
+
+        let accepted = app
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri("/upload")
+                    .body(Body::from(oversized_auth))
+                    .expect("application payload request must build"),
+            )
+            .await
+            .expect("application payload response must resolve");
+        assert_eq!(accepted.status(), StatusCode::OK);
+    }
+
+    #[test]
+    fn rotation_is_deferred_only_for_the_closed_credential_mutation_set() {
+        let session_id = Uuid::new_v4();
+        for (method, path) in [
+            (Method::GET, "/api/notifications/stream".to_string()),
+            (Method::POST, "/api/auth/logout-all".to_string()),
+            (Method::POST, "/api/auth/me/change-password".to_string()),
+            (Method::DELETE, format!("/api/auth/sessions/{session_id}")),
+        ] {
+            assert_eq!(
+                maintenance_mode(&method, &path),
+                SessionMaintenanceMode::TouchOnly,
+                "{method} {path}"
+            );
+        }
+
+        for (method, path) in [
+            (Method::GET, "/api/auth/me"),
+            (Method::GET, "/api/notifications/stream/extra"),
+            (Method::DELETE, "/api/auth/sessions/not-a-uuid"),
+            (
+                Method::DELETE,
+                "/api/auth/sessions/00000000-0000-0000-0000-000000000000/extra",
+            ),
+        ] {
+            assert_eq!(
+                maintenance_mode(&method, path),
+                SessionMaintenanceMode::RotateAndTouch,
+                "{method} {path}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn opaque_session_boundary_rejects_legacy_identity_and_rotates_safely() {
+        let fixture = ProtectedFixture::new().await;
+        let active_user = fixture
+            .insert_user(&fixture.tenant_a_pool, "router-active", "active")
+            .await;
+        let inactive_user = fixture
+            .insert_user(&fixture.tenant_a_pool, "router-inactive", "inactive")
+            .await;
+        let (active_session_id, active_token) = fixture
+            .insert_session(&fixture.tenant_a_pool, active_user, 71, false)
+            .await;
+        let (_inactive_session_id, inactive_token) = fixture
+            .insert_session(&fixture.tenant_a_pool, inactive_user, 72, false)
+            .await;
+        let (other_session_id, _other_token) = fixture
+            .insert_session(&fixture.tenant_a_pool, active_user, 73, false)
+            .await;
+        let active_csrf = fixture.csrf(active_session_id);
+        let other_csrf = fixture.csrf(other_session_id);
+        let app = protected_app(fixture.runtime.clone());
+        let tenant_a_origin = "https://tenant-a.schoolorbit.test";
+
+        let no_cookie = app
+            .clone()
+            .oneshot(request(
+                Method::GET,
+                "/protected",
+                Some(tenant_a_origin),
+                None,
+                None,
+            ))
+            .await
+            .expect("no-cookie response must resolve");
+        assert_eq!(no_cookie.status(), StatusCode::UNAUTHORIZED);
+
+        let mut legacy_only = request(Method::GET, "/protected", Some(tenant_a_origin), None, None);
+        legacy_only.headers_mut().insert(
+            header::COOKIE,
+            HeaderValue::from_static("auth_token=fake.jwt"),
+        );
+        let legacy_only = app
+            .clone()
+            .oneshot(legacy_only)
+            .await
+            .expect("legacy-cookie response must resolve");
+        assert_eq!(legacy_only.status(), StatusCode::UNAUTHORIZED);
+
+        let mut bearer_only = request(Method::GET, "/protected", Some(tenant_a_origin), None, None);
+        bearer_only.headers_mut().insert(
+            header::AUTHORIZATION,
+            HeaderValue::from_static("Bearer fake.jwt"),
+        );
+        let bearer_only = app
+            .clone()
+            .oneshot(bearer_only)
+            .await
+            .expect("bearer response must resolve");
+        assert_eq!(bearer_only.status(), StatusCode::UNAUTHORIZED);
+
+        let valid = app
+            .clone()
+            .oneshot(request(
+                Method::GET,
+                "/protected",
+                Some(tenant_a_origin),
+                Some(&active_token),
+                None,
+            ))
+            .await
+            .expect("valid session response must resolve");
+        assert_eq!(valid.status(), StatusCode::OK);
+
+        let wrong_tenant = app
+            .clone()
+            .oneshot(request(
+                Method::GET,
+                "/protected",
+                Some("https://tenant-b.schoolorbit.test"),
+                Some(&active_token),
+                None,
+            ))
+            .await
+            .expect("cross-tenant response must resolve");
+        assert_eq!(wrong_tenant.status(), StatusCode::UNAUTHORIZED);
+
+        let inactive = app
+            .clone()
+            .oneshot(request(
+                Method::GET,
+                "/protected",
+                Some(tenant_a_origin),
+                Some(&inactive_token),
+                None,
+            ))
+            .await
+            .expect("inactive response must resolve");
+        assert_eq!(inactive.status(), StatusCode::UNAUTHORIZED);
+
+        for method in [Method::POST, Method::PUT, Method::PATCH, Method::DELETE] {
+            for (origin, csrf) in [
+                (None, Some(active_csrf.as_str())),
+                (Some("https://evil.test"), Some(active_csrf.as_str())),
+                (Some(tenant_a_origin), None),
+                (Some(tenant_a_origin), Some("wrong-csrf")),
+            ] {
+                let rejected = app
+                    .clone()
+                    .oneshot(request(
+                        method.clone(),
+                        "/unsafe",
+                        origin,
+                        Some(&active_token),
+                        csrf,
+                    ))
+                    .await
+                    .expect("unsafe rejection must resolve");
+                assert_eq!(
+                    rejected.status(),
+                    StatusCode::FORBIDDEN,
+                    "{method} origin={origin:?} csrf={csrf:?}"
+                );
+                assert_eq!(set_cookie_count(&rejected), 0);
+            }
+
+            let accepted = app
+                .clone()
+                .oneshot(request(
+                    method.clone(),
+                    "/unsafe",
+                    Some(tenant_a_origin),
+                    Some(&active_token),
+                    Some(&active_csrf),
+                ))
+                .await
+                .expect("unsafe success must resolve");
+            assert_eq!(accepted.status(), StatusCode::OK, "{method}");
+        }
+
+        let different_session_csrf = app
+            .clone()
+            .oneshot(request(
+                Method::POST,
+                "/unsafe",
+                Some(tenant_a_origin),
+                Some(&active_token),
+                Some(&other_csrf),
+            ))
+            .await
+            .expect("different-session CSRF response must resolve");
+        assert_eq!(different_session_csrf.status(), StatusCode::FORBIDDEN);
+
+        let (due_session_id, due_token) = fixture
+            .insert_session(&fixture.tenant_a_pool, active_user, 74, true)
+            .await;
+        let due_csrf = fixture.csrf(due_session_id);
+        let streaming = app
+            .clone()
+            .oneshot(request(
+                Method::GET,
+                "/api/notifications/stream?school_subdomain=tenant-a",
+                Some("http://localhost:5173"),
+                Some(&due_token),
+                None,
+            ))
+            .await
+            .expect("streaming response must resolve");
+        assert_eq!(streaming.status(), StatusCode::OK);
+        assert_eq!(set_cookie_count(&streaming), 0);
+        assert!(streaming.headers().get("x-csrf-token").is_none());
+
+        let duplicate_hint = app
+            .clone()
+            .oneshot(request(
+                Method::GET,
+                "/api/notifications/stream?school_subdomain=tenant-a&school_subdomain=tenant-b",
+                Some("http://localhost:5173"),
+                Some(&due_token),
+                None,
+            ))
+            .await
+            .expect("duplicate hint response must resolve");
+        assert_eq!(duplicate_hint.status(), StatusCode::FORBIDDEN);
+
+        let rotated = app
+            .clone()
+            .oneshot(request(
+                Method::GET,
+                "/api/auth/me",
+                Some(tenant_a_origin),
+                Some(&due_token),
+                None,
+            ))
+            .await
+            .expect("ordinary rotation response must resolve");
+        assert_eq!(rotated.status(), StatusCode::OK);
+        assert_eq!(set_cookie_count(&rotated), 1);
+        assert_eq!(
+            rotated
+                .headers()
+                .get("x-csrf-token")
+                .expect("rotation must expose CSRF"),
+            due_csrf.as_str()
+        );
+        let replacement_cookie = rotated
+            .headers()
+            .get_all(header::SET_COOKIE)
+            .iter()
+            .find_map(|value| {
+                value
+                    .to_str()
+                    .ok()?
+                    .strip_prefix("__Host-schoolorbit_session=")?
+                    .split(';')
+                    .next()
+            })
+            .expect("rotation must provide an opaque replacement");
+        let replacement =
+            RawSessionToken::parse(replacement_cookie).expect("replacement credential must parse");
+
+        let previous = app
+            .clone()
+            .oneshot(request(
+                Method::GET,
+                "/api/auth/me",
+                Some(tenant_a_origin),
+                Some(&due_token),
+                None,
+            ))
+            .await
+            .expect("previous credential response must resolve");
+        assert_eq!(previous.status(), StatusCode::OK);
+        assert_eq!(set_cookie_count(&previous), 0);
+        assert_eq!(
+            previous
+                .headers()
+                .get("x-csrf-token")
+                .expect("previous credential must expose stable CSRF"),
+            due_csrf.as_str()
+        );
+
+        let replacement_accepted = app
+            .clone()
+            .oneshot(request(
+                Method::POST,
+                "/unsafe",
+                Some(tenant_a_origin),
+                Some(&replacement),
+                Some(&due_csrf),
+            ))
+            .await
+            .expect("replacement credential response must resolve");
+        assert_eq!(replacement_accepted.status(), StatusCode::OK);
+
+        let (concurrent_session_id, concurrent_token) = fixture
+            .insert_session(&fixture.tenant_a_pool, active_user, 75, true)
+            .await;
+        let concurrent_csrf = fixture.csrf(concurrent_session_id);
+        let first = app.clone().oneshot(request(
+            Method::GET,
+            "/api/auth/me",
+            Some(tenant_a_origin),
+            Some(&concurrent_token),
+            None,
+        ));
+        let second = app.clone().oneshot(request(
+            Method::GET,
+            "/api/auth/me",
+            Some(tenant_a_origin),
+            Some(&concurrent_token),
+            None,
+        ));
+        let (first, second) = tokio::join!(first, second);
+        let first = first.expect("first concurrent response must resolve");
+        let second = second.expect("second concurrent response must resolve");
+        assert_eq!(first.status(), StatusCode::OK);
+        assert_eq!(second.status(), StatusCode::OK);
+        assert_eq!(set_cookie_count(&first) + set_cookie_count(&second), 1);
+        for response in [&first, &second] {
+            assert_eq!(
+                response
+                    .headers()
+                    .get("x-csrf-token")
+                    .expect("concurrent response must expose CSRF"),
+                concurrent_csrf.as_str()
+            );
+        }
+
+        let (_feature_session_id, feature_token) = fixture
+            .insert_session(&fixture.tenant_a_pool, active_user, 76, true)
+            .await;
+        let feature = app
+            .oneshot(request(
+                Method::GET,
+                "/feature-cookie",
+                Some(tenant_a_origin),
+                Some(&feature_token),
+                None,
+            ))
+            .await
+            .expect("feature-cookie response must resolve");
+        assert_eq!(feature.status(), StatusCode::OK);
+        assert_eq!(set_cookie_count(&feature), 2);
+    }
+}
