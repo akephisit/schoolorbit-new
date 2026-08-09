@@ -2,7 +2,7 @@ use crate::error::AppError;
 use crate::modules::menu::models::{RouteRegistration, RouteRegistrationResponse};
 use crate::modules::system::services::route_registration_service;
 use crate::utils::{
-    request_context::tenant_context_by_subdomain, subdomain::extract_subdomain_from_request,
+    subdomain::extract_subdomain_from_request, tenant::tenant_context_by_subdomain,
 };
 use crate::AppState;
 

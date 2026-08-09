@@ -1,6 +1,5 @@
-use axum::http::HeaderMap;
 use axum::{
-    extract::{Query, State},
+    extract::{Extension, Query, State},
     http::StatusCode,
     response::IntoResponse,
     routing::{get, post},
@@ -11,13 +10,14 @@ use uuid::Uuid;
 
 use crate::api_response::ApiResponse;
 use crate::error::AppError;
+use crate::modules::auth::session_service::AuthenticatedSession;
 use crate::modules::work::services::{
     self, CreateWorkItemInput, WorkItem, WorkItemAssigneeTargetInput, WorkItemFilter,
     WorkItemMetadata, WorkItemState,
 };
 use crate::modules::workflow;
 use crate::policies::workflow_access_policy;
-use crate::utils::request_context::actor_tenant_context;
+use crate::utils::request_context::actor_tenant_context_from_session;
 use crate::AppState;
 
 #[derive(Debug, Deserialize)]
@@ -56,10 +56,10 @@ struct WorkItemIdData {
 
 pub async fn list_my_work_items(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Query(query): Query<ListWorkItemsQuery>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let items = services::list_my_work_items(
         &context.tenant.pool,
         context.actor.user_id,
@@ -75,9 +75,9 @@ pub async fn list_my_work_items(
 
 pub async fn get_my_work_counts(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let counts = services::get_my_work_counts(&context.tenant.pool, context.actor.user_id).await?;
 
     Ok(Json(ApiResponse::ok(counts)).into_response())
@@ -85,10 +85,10 @@ pub async fn get_my_work_counts(
 
 pub async fn create_work_item(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Json(payload): Json<CreateWorkItemRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let window =
         workflow::services::get_workflow_window(&context.tenant.pool, payload.workflow_window_id)
             .await?;

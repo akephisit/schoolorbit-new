@@ -61,6 +61,24 @@ pub async fn resolve_tenant_context_by_subdomain(
     })
 }
 
+pub async fn tenant_context(
+    state: &AppState,
+    headers: &HeaderMap,
+) -> Result<TenantContext, AppError> {
+    resolve_tenant_context(state, headers).await
+}
+
+pub async fn tenant_pool(state: &AppState, headers: &HeaderMap) -> Result<PgPool, AppError> {
+    Ok(resolve_tenant_context(state, headers).await?.pool)
+}
+
+pub async fn tenant_context_by_subdomain(
+    state: &AppState,
+    subdomain: &str,
+) -> Result<TenantContext, AppError> {
+    resolve_tenant_context_by_subdomain(state, subdomain).await
+}
+
 pub async fn resolve_auth_tenant_context(
     runtime: &AuthRuntime,
     headers: &HeaderMap,

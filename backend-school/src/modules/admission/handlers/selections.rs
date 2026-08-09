@@ -1,6 +1,5 @@
 use axum::{
-    extract::{Path, Query, State},
-    http::HeaderMap,
+    extract::{Extension, Path, Query, State},
     response::IntoResponse,
     Json,
 };
@@ -14,8 +13,9 @@ use crate::modules::admission::models::applications::{
 };
 use crate::modules::admission::models::rounds::UpdateSelectionSettingsRequest;
 use crate::modules::admission::services::selection_service;
+use crate::modules::auth::session_service::AuthenticatedSession;
 use crate::permissions::registry::codes;
-use crate::utils::request_context::actor_tenant_context;
+use crate::utils::request_context::actor_tenant_context_from_session;
 use crate::AppState;
 
 #[derive(serde::Deserialize)]
@@ -36,10 +36,10 @@ struct DeletedData<T> {
 
 pub async fn get_ranking(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(round_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ADMISSION_SCORES_ALL)?;
@@ -49,11 +49,11 @@ pub async fn get_ranking(
 
 pub async fn get_track_ranking(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(track_id): Path<Uuid>,
     Query(params): Query<RankingQuery>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ADMISSION_SCORES_ALL)?;
@@ -69,11 +69,11 @@ pub async fn get_track_ranking(
 
 pub async fn assign_rooms(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(round_id): Path<Uuid>,
     Json(payload): Json<AssignRoomsRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ADMISSION_SCORES_ALL)?;
@@ -88,10 +88,10 @@ pub async fn assign_rooms(
 
 pub async fn reset_all_room_assignments(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(round_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ADMISSION_SCORES_ALL)?;
@@ -101,11 +101,11 @@ pub async fn reset_all_room_assignments(
 
 pub async fn assign_rooms_global(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(round_id): Path<Uuid>,
     Json(payload): Json<AssignRoomsGlobalRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ADMISSION_SCORES_ALL)?;
@@ -121,10 +121,10 @@ pub async fn assign_rooms_global(
 
 pub async fn get_global_ranking(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(round_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ADMISSION_SCORES_ALL)?;
@@ -134,10 +134,10 @@ pub async fn get_global_ranking(
 
 pub async fn get_round_rooms(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(round_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ADMISSION_SCORES_ALL)?;
@@ -147,11 +147,11 @@ pub async fn get_round_rooms(
 
 pub async fn update_selection_settings(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(round_id): Path<Uuid>,
     Json(payload): Json<UpdateSelectionSettingsRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ADMISSION_SCORES_ALL)?;

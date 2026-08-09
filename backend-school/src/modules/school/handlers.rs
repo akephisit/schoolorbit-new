@@ -13,7 +13,8 @@ use crate::api_response::{ApiErrorResponse, ApiResponse};
 use crate::error::AppError;
 use crate::modules::auth::session_service::AuthenticatedSession;
 use crate::permissions::registry::codes;
-use crate::utils::request_context::{actor_tenant_context_from_session, tenant_context};
+use crate::utils::request_context::actor_tenant_context_from_session;
+use crate::utils::tenant::tenant_context;
 use crate::AppState;
 
 #[derive(Debug, Serialize, ToSchema)]

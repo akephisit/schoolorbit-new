@@ -1,6 +1,5 @@
 use axum::{
-    extract::{Path, State},
-    http::HeaderMap,
+    extract::{Extension, Path, State},
     response::IntoResponse,
     Json,
 };
@@ -10,8 +9,9 @@ use uuid::Uuid;
 use crate::api_response::ApiResponse;
 use crate::error::AppError;
 use crate::modules::admission::services::exam_room_service;
+use crate::modules::auth::session_service::AuthenticatedSession;
 use crate::permissions::registry::codes;
-use crate::utils::request_context::actor_tenant_context;
+use crate::utils::request_context::actor_tenant_context_from_session;
 use crate::AppState;
 
 #[derive(Deserialize)]
@@ -65,10 +65,10 @@ struct AssignExamSeatsData {
 
 pub async fn list_exam_rooms(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(round_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ADMISSION_MANAGE_ALL)?;
@@ -83,11 +83,11 @@ pub async fn list_exam_rooms(
 
 pub async fn add_exam_room(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(round_id): Path<Uuid>,
     Json(payload): Json<AddExamRoomRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ADMISSION_MANAGE_ALL)?;
@@ -105,11 +105,11 @@ pub async fn add_exam_room(
 
 pub async fn update_exam_room(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path((round_id, room_id)): Path<(Uuid, Uuid)>,
     Json(payload): Json<UpdateExamRoomRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ADMISSION_MANAGE_ALL)?;
@@ -127,10 +127,10 @@ pub async fn update_exam_room(
 
 pub async fn remove_exam_room(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path((round_id, room_id)): Path<(Uuid, Uuid)>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ADMISSION_MANAGE_ALL)?;
@@ -140,10 +140,10 @@ pub async fn remove_exam_room(
 
 pub async fn copy_exam_rooms_from_round(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path((round_id, from_round_id)): Path<(Uuid, Uuid)>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ADMISSION_MANAGE_ALL)?;
@@ -163,11 +163,11 @@ pub async fn copy_exam_rooms_from_round(
 
 pub async fn update_exam_config(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(round_id): Path<Uuid>,
     Json(payload): Json<UpdateExamConfigRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ADMISSION_MANAGE_ALL)?;
@@ -184,10 +184,10 @@ pub async fn update_exam_config(
 
 pub async fn get_exam_config(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(round_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ADMISSION_MANAGE_ALL)?;
@@ -197,11 +197,11 @@ pub async fn get_exam_config(
 
 pub async fn assign_exam_seats(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(round_id): Path<Uuid>,
     Json(payload): Json<AssignExamSeatsRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ADMISSION_MANAGE_ALL)?;
@@ -228,10 +228,10 @@ pub async fn assign_exam_seats(
 
 pub async fn get_exam_seats(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(round_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ADMISSION_MANAGE_ALL)?;
@@ -241,10 +241,10 @@ pub async fn get_exam_seats(
 
 pub async fn get_application_exam_seat(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(application_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ADMISSION_READ_ALL)?;

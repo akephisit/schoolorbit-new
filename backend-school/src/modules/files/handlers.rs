@@ -12,7 +12,7 @@ use crate::{
     error::AppError,
     modules::auth::session_service::AuthenticatedSession,
     policies::file_access_policy::{self, FilePolicyAction},
-    utils::request_context::{actor_tenant_context_from_session, tenant_context},
+    utils::{request_context::actor_tenant_context_from_session, tenant::tenant_context},
     AppState,
 };
 

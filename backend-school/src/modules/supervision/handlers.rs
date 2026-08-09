@@ -1,6 +1,5 @@
-use axum::http::HeaderMap;
 use axum::{
-    extract::{Path, Query, State},
+    extract::{Extension, Path, Query, State},
     http::StatusCode,
     response::IntoResponse,
     routing::{get, patch, post, put},
@@ -12,6 +11,7 @@ use uuid::Uuid;
 use crate::api_response::ApiResponse;
 use crate::error::AppError;
 use crate::middleware::permission::ActorContext;
+use crate::modules::auth::session_service::AuthenticatedSession;
 use crate::modules::supervision::models::{
     AcknowledgeObservationRequest, ApproveObservationRequest, CancelObservationRequest,
     CreateSupervisionCycleRequest, CreateSupervisionTemplateRequest,
@@ -24,7 +24,7 @@ use crate::modules::supervision::models::{
 };
 use crate::modules::supervision::services;
 use crate::policies::supervision_access_policy;
-use crate::utils::request_context::actor_tenant_context;
+use crate::utils::request_context::actor_tenant_context_from_session;
 use crate::AppState;
 
 #[derive(Debug, Deserialize)]
@@ -92,9 +92,9 @@ fn redact_teacher_status_results_for_actor(
 
 pub async fn list_cycles(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     supervision_access_policy::require_supervision_access(&context.actor)?;
 
     let items = services::list_cycles(&context.tenant.pool).await?;
@@ -104,10 +104,10 @@ pub async fn list_cycles(
 
 pub async fn create_cycle(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Json(payload): Json<CreateSupervisionCycleRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     supervision_access_policy::require_manage_school(&context.actor)?;
 
     let cycle =
@@ -118,11 +118,11 @@ pub async fn create_cycle(
 
 pub async fn update_cycle(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(id): Path<Uuid>,
     Json(payload): Json<UpdateSupervisionCycleRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     supervision_access_policy::require_manage_school(&context.actor)?;
 
     let cycle = services::update_cycle(&context.tenant.pool, id, payload).await?;
@@ -132,9 +132,9 @@ pub async fn update_cycle(
 
 pub async fn list_templates(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     supervision_access_policy::require_supervision_access(&context.actor)?;
 
     let items = services::list_templates(&context.tenant.pool).await?;
@@ -144,10 +144,10 @@ pub async fn list_templates(
 
 pub async fn create_template(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Json(payload): Json<CreateSupervisionTemplateRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     supervision_access_policy::require_manage_school(&context.actor)?;
 
     let template =
@@ -158,10 +158,10 @@ pub async fn create_template(
 
 pub async fn get_template(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     supervision_access_policy::require_supervision_access(&context.actor)?;
 
     let template = services::get_template(&context.tenant.pool, id).await?;
@@ -171,11 +171,11 @@ pub async fn get_template(
 
 pub async fn update_template(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(id): Path<Uuid>,
     Json(payload): Json<UpdateSupervisionTemplateRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     supervision_access_policy::require_manage_school(&context.actor)?;
 
     let template = services::update_template(&context.tenant.pool, id, payload).await?;
@@ -185,10 +185,10 @@ pub async fn update_template(
 
 pub async fn list_observations(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Query(query): Query<ListObservationsQuery>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let access = supervision_access_policy::resolve_observation_list_access(
         &context.tenant.pool,
         &context.actor,
@@ -213,10 +213,10 @@ pub async fn list_observations(
 
 pub async fn get_observation(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let mut observation = services::get_observation(&context.tenant.pool, id).await?;
     let evaluator_user_ids = observation
         .evaluators
@@ -237,10 +237,10 @@ pub async fn get_observation(
 
 pub async fn get_observation_review(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let observation = services::get_observation(&context.tenant.pool, id).await?;
     let evaluator_user_ids = observation
         .evaluators
@@ -274,10 +274,10 @@ pub async fn get_observation_review(
 
 pub async fn evaluator_availability(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let observation = services::get_observation(&context.tenant.pool, id).await?;
     supervision_access_policy::require_observation_management_access(
         &context.tenant.pool,
@@ -298,10 +298,10 @@ pub async fn evaluator_availability(
 
 pub async fn observation_timetable_options(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let observation = services::get_observation(&context.tenant.pool, id).await?;
     let can_edit_own_request = observation.observed_user_id == context.actor.user_id
         && services::teacher_can_edit_requested_observation(observation.status)
@@ -323,10 +323,10 @@ pub async fn observation_timetable_options(
 
 pub async fn request_observation(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Json(payload): Json<RequestSupervisionObservationRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     supervision_access_policy::require_request_own(&context.actor)?;
 
     let observation =
@@ -338,11 +338,11 @@ pub async fn request_observation(
 
 pub async fn update_requested_observation(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(id): Path<Uuid>,
     Json(payload): Json<UpdateRequestedObservationRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     supervision_access_policy::require_request_own(&context.actor)?;
 
     let observation = services::update_requested_observation(
@@ -359,10 +359,10 @@ pub async fn update_requested_observation(
 
 pub async fn cancel_requested_observation(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     supervision_access_policy::require_request_own(&context.actor)?;
 
     let observation =
@@ -375,11 +375,11 @@ pub async fn cancel_requested_observation(
 
 pub async fn update_observation(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(id): Path<Uuid>,
     Json(payload): Json<UpdateSupervisionObservationRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let current = services::get_observation(&context.tenant.pool, id).await?;
     supervision_access_policy::require_observation_management_access(
         &context.tenant.pool,
@@ -398,11 +398,11 @@ pub async fn update_observation(
 
 pub async fn replace_observation_evaluators(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(id): Path<Uuid>,
     Json(payload): Json<ReplaceObservationEvaluatorsRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let current = services::get_observation(&context.tenant.pool, id).await?;
     supervision_access_policy::require_observation_management_access(
         &context.tenant.pool,
@@ -425,11 +425,11 @@ pub async fn replace_observation_evaluators(
 
 pub async fn cancel_observation(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(id): Path<Uuid>,
     Json(payload): Json<CancelObservationRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let current = services::get_observation(&context.tenant.pool, id).await?;
     supervision_access_policy::require_observation_management_access(
         &context.tenant.pool,
@@ -448,11 +448,11 @@ pub async fn cancel_observation(
 
 pub async fn approve_observation_request(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(id): Path<Uuid>,
     Json(payload): Json<ApproveObservationRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let current = services::get_observation(&context.tenant.pool, id).await?;
     supervision_access_policy::require_observation_management_access(
         &context.tenant.pool,
@@ -475,11 +475,11 @@ pub async fn approve_observation_request(
 
 pub async fn return_observation_request(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(id): Path<Uuid>,
     Json(payload): Json<ReturnObservationRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let current = services::get_observation(&context.tenant.pool, id).await?;
     supervision_access_policy::require_observation_management_access(
         &context.tenant.pool,
@@ -502,11 +502,11 @@ pub async fn return_observation_request(
 
 pub async fn submit_my_evaluation(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(id): Path<Uuid>,
     Json(payload): Json<SaveEvaluationRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     supervision_access_policy::require_evaluate_assigned(&context.actor)?;
 
     let observation =
@@ -519,10 +519,10 @@ pub async fn submit_my_evaluation(
 
 pub async fn certify_observation(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let current = services::get_observation(&context.tenant.pool, id).await?;
     supervision_access_policy::require_observation_management_access(
         &context.tenant.pool,
@@ -540,10 +540,10 @@ pub async fn certify_observation(
 
 pub async fn approve_observation(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     supervision_access_policy::require_approve_school(&context.actor)?;
 
     let observation =
@@ -555,11 +555,11 @@ pub async fn approve_observation(
 
 pub async fn acknowledge_observation(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(id): Path<Uuid>,
     Json(payload): Json<AcknowledgeObservationRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     supervision_access_policy::require_supervision_access(&context.actor)?;
 
     let observation =
@@ -572,10 +572,10 @@ pub async fn acknowledge_observation(
 
 pub async fn cycle_progress(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     supervision_access_policy::require_school_report_access(&context.actor)?;
 
     let progress = services::cycle_progress(&context.tenant.pool, id).await?;
@@ -585,10 +585,10 @@ pub async fn cycle_progress(
 
 pub async fn teacher_status_overview(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let access = supervision_access_policy::resolve_observation_list_access(
         &context.tenant.pool,
         &context.actor,

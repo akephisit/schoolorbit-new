@@ -1,15 +1,15 @@
 use crate::api_response::ApiResponse;
 use crate::error::AppError;
+use crate::modules::auth::session_service::AuthenticatedSession;
 use crate::modules::facility::models::{
     CreateBuildingRequest, CreateRoomRequest, RoomFilter, UpdateBuildingRequest, UpdateRoomRequest,
 };
 use crate::modules::facility::services;
 use crate::permissions::registry::codes;
-use crate::utils::request_context::actor_tenant_context;
+use crate::utils::request_context::actor_tenant_context_from_session;
 use crate::AppState;
 use axum::{
-    extract::{Path, Query, State},
-    http::HeaderMap,
+    extract::{Extension, Path, Query, State},
     http::StatusCode,
     response::IntoResponse,
     routing::{get, put},
@@ -23,9 +23,9 @@ use uuid::Uuid;
 
 pub async fn list_buildings(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     context.actor.require_permission(codes::FACILITY_READ_ALL)?;
     let buildings = services::list_buildings(&context.tenant.pool).await?;
 
@@ -34,10 +34,10 @@ pub async fn list_buildings(
 
 pub async fn create_building(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Json(payload): Json<CreateBuildingRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     context
         .actor
         .require_permission(codes::FACILITY_CREATE_ALL)?;
@@ -48,11 +48,11 @@ pub async fn create_building(
 
 pub async fn update_building(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(id): Path<Uuid>,
     Json(payload): Json<UpdateBuildingRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     context
         .actor
         .require_permission(codes::FACILITY_UPDATE_ALL)?;
@@ -63,10 +63,10 @@ pub async fn update_building(
 
 pub async fn delete_building(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     context
         .actor
         .require_permission(codes::FACILITY_DELETE_ALL)?;
@@ -81,11 +81,11 @@ pub async fn delete_building(
 
 pub async fn list_rooms(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Query(filter): Query<RoomFilter>,
 ) -> Result<impl IntoResponse, AppError> {
     // Any authenticated staff can list rooms (used for timetable, exam rooms, etc.)
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let rooms = services::list_rooms(&context.tenant.pool, filter).await?;
 
     Ok(Json(ApiResponse::ok(rooms)).into_response())
@@ -93,10 +93,10 @@ pub async fn list_rooms(
 
 pub async fn create_room(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Json(payload): Json<CreateRoomRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     context
         .actor
         .require_permission(codes::FACILITY_CREATE_ALL)?;
@@ -107,11 +107,11 @@ pub async fn create_room(
 
 pub async fn update_room(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(id): Path<Uuid>,
     Json(payload): Json<UpdateRoomRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     context
         .actor
         .require_permission(codes::FACILITY_UPDATE_ALL)?;
@@ -122,10 +122,10 @@ pub async fn update_room(
 
 pub async fn delete_room(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     context
         .actor
         .require_permission(codes::FACILITY_DELETE_ALL)?;

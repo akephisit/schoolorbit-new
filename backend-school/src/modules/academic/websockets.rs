@@ -2,8 +2,13 @@ use crate::error::AppError;
 use crate::modules::academic::services::timetable_realtime_service::{
     authorize_socket, TimetableSocketAccess,
 };
+use crate::modules::auth::{
+    http::presented_session_token, session_crypto::RawSessionToken,
+    session_repository::SessionMaintenanceMode, session_service,
+};
 use crate::modules::notification::events::PermissionChangeEvent;
-use crate::utils::request_context::actor_tenant_context;
+use crate::utils::request_context::actor_tenant_context_from_session;
+use crate::utils::tenant::resolve_auth_tenant_context;
 use crate::AppState;
 use axum::{
     extract::{
@@ -13,6 +18,7 @@ use axum::{
     http::HeaderMap,
     response::Response,
 };
+use chrono::Utc;
 use dashmap::DashMap;
 use futures::stream::StreamExt;
 use serde::{Deserialize, Serialize};
@@ -915,7 +921,21 @@ pub async fn timetable_websocket_handler(
     ws: WebSocketUpgrade,
 ) -> Result<Response, AppError> {
     let permission_event_receiver = state.permission_event_channel.subscribe();
-    let context = actor_tenant_context(&state, &headers).await?;
+    let tenant = resolve_auth_tenant_context(&state.auth_runtime, &headers, None).await?;
+    let token = presented_session_token(&headers)?
+        .ok_or_else(|| AppError::AuthError("กรุณาเข้าสู่ระบบ".to_string()))?;
+    let session_context = state.auth_runtime.service_context(tenant);
+    let authenticated = session_service::authenticate(
+        &session_context,
+        token.token_hash(),
+        Utc::now(),
+        SessionMaintenanceMode::TouchOnly,
+        RawSessionToken::generate,
+    )
+    .await?
+    .map(|authentication| authentication.authenticated)
+    .ok_or_else(|| AppError::AuthError("กรุณาเข้าสู่ระบบ".to_string()))?;
+    let context = actor_tenant_context_from_session(&state, &authenticated).await?;
     let access = authorize_socket(&context.tenant.pool, &context.actor, params.semester_id).await?;
     let tenant = context.tenant.subdomain;
 

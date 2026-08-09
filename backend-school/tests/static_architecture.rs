@@ -116,6 +116,62 @@ fn academic_group_b_handlers_use_typed_session_identity() {
 }
 
 #[test]
+fn remaining_vertical_handlers_use_typed_session_identity() {
+    assert_typed_session_handlers(&[
+        "src/modules/admission/handlers/applications.rs",
+        "src/modules/admission/handlers/exam_rooms.rs",
+        "src/modules/admission/handlers/rounds.rs",
+        "src/modules/admission/handlers/scores.rs",
+        "src/modules/admission/handlers/selections.rs",
+        "src/modules/calendar/handlers.rs",
+        "src/modules/facility/handlers.rs",
+        "src/modules/question_bank/handlers.rs",
+        "src/modules/supervision/handlers.rs",
+        "src/modules/work/handlers.rs",
+        "src/modules/workflow/handlers.rs",
+        "src/modules/lookup/handlers.rs",
+    ]);
+}
+
+#[test]
+fn only_auth_boundary_parses_browser_session_credentials() {
+    let credential_boundaries = [
+        "src/middleware/session.rs",
+        "src/modules/auth/http.rs",
+        "src/modules/auth/session_handlers.rs",
+        "src/modules/academic/websockets.rs",
+    ];
+    let cookie_name_owners = [
+        "src/middleware/session.rs",
+        "src/modules/auth/config.rs",
+        "src/modules/auth/http.rs",
+        "src/modules/auth/session_handlers.rs",
+        "src/modules/academic/websockets.rs",
+    ];
+
+    for file in backend_rs_files() {
+        let relative = relative(&file);
+        let source = read_source(&file);
+        if !credential_boundaries.contains(&relative.as_str()) {
+            assert!(
+                !source.contains("presented_session_token("),
+                "credential parse in {relative}"
+            );
+        }
+        if !cookie_name_owners.contains(&relative.as_str()) {
+            assert!(
+                !source.contains("SESSION_COOKIE_NAME"),
+                "cookie access in {relative}"
+            );
+        }
+    }
+
+    let context = read_source(manifest_dir().join("src/utils/request_context.rs"));
+    assert!(!context.contains("_from_headers"));
+    assert!(!context.contains("HeaderMap"));
+}
+
+#[test]
 fn exam_schedule_shared_module_is_private() {
     let facade_path = manifest_dir().join("src/modules/academic/services/exam_schedule_service.rs");
     let shared_path =
@@ -2838,7 +2894,6 @@ fn migrated_utility_handlers_use_shared_request_context() {
         "resolve_tenant_context",
         "resolve_tenant_context_by_subdomain",
         "load_actor_context",
-        "load_actor_context_or_error",
         "extract_user_id",
         "Uuid::parse_str(&claims.sub",
     ];
@@ -3048,7 +3103,7 @@ fn permission_handlers_use_actor_context_loader_apis_only() {
         let source = strip_comments(&read_source(&file));
         if legacy_permission_helpers.is_match(&source) {
             violations.push(format!(
-                "{}: use load_actor_context/load_actor_context_or_error and actor.require_* helpers",
+                "{}: use load_actor_context/load_actor_context_for_session and actor.require_* helpers",
                 relative(&file)
             ));
         }
@@ -3546,13 +3601,14 @@ fn timetable_websocket_identity_is_server_owned() {
     assert!(!params.contains("school_key"));
 
     let handler = extract_braced_block(&source, "pub async fn timetable_websocket_handler", false);
-    assert!(handler.contains("actor_tenant_context(&state, &headers)"));
+    assert!(handler.contains("session_service::authenticate("));
+    assert!(handler.contains("actor_tenant_context_from_session(&state, &authenticated)"));
     assert!(handler.contains("authorize_socket("));
     let subscribe = handler
         .find("permission_event_channel.subscribe()")
         .expect("WebSocket must subscribe to permission changes before authentication");
     let authenticate = handler
-        .find("actor_tenant_context(&state, &headers)")
+        .find("session_service::authenticate(")
         .expect("WebSocket must authenticate through the central tenant context");
     let authorize = handler
         .find("authorize_socket(")
@@ -4121,7 +4177,7 @@ fn teaching_supervision_handlers_use_request_context_and_services() {
         manifest_dir().join("src/modules/supervision/handlers.rs"),
     ));
 
-    assert!(handler.contains("actor_tenant_context"));
+    assert!(handler.contains("actor_tenant_context_from_session"));
     assert!(handler.contains("ApiResponse::ok"));
     assert!(handler.contains("supervision_access_policy"));
     assert!(handler.contains("require_observation_management_access"));
@@ -4764,7 +4820,7 @@ fn calendar_handlers_stay_thin_and_services_own_sql() {
         manifest_dir().join("src/modules/parents/services.rs"),
     ));
 
-    assert!(handlers.contains("actor_tenant_context(&state, &headers).await?"));
+    assert!(handlers.contains("actor_tenant_context_from_session(&state, &session).await?"));
     assert!(handlers.contains("codes::CALENDAR_READ_SCHOOL"));
     assert!(handlers.contains("codes::CALENDAR_MANAGE_SCHOOL"));
     assert!(!handlers.contains("sqlx::query"));

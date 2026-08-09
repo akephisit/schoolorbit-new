@@ -1,6 +1,6 @@
 use axum::{
-    extract::{Path, Query, State},
-    http::{HeaderMap, StatusCode},
+    extract::{Extension, Path, Query, State},
+    http::StatusCode,
     response::{IntoResponse, Redirect},
     Json,
 };
@@ -8,6 +8,7 @@ use uuid::Uuid;
 
 use crate::api_response::ApiResponse;
 use crate::error::AppError;
+use crate::modules::auth::session_service::AuthenticatedSession;
 use crate::modules::files::{
     consumer_service::{map_platform_error, request_deletions},
     platform_types::DownloadGrant,
@@ -16,15 +17,15 @@ use crate::modules::files::{
 use crate::modules::question_bank::models::{QuestionBankListQuery, UpsertQuestionRequest};
 use crate::modules::question_bank::services as question_bank_service;
 use crate::policies::{file_access_policy, question_bank_access_policy};
-use crate::utils::request_context::actor_tenant_context;
+use crate::utils::request_context::actor_tenant_context_from_session;
 use crate::AppState;
 
 pub async fn list_questions(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Query(query): Query<QuestionBankListQuery>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let access =
         question_bank_access_policy::resolve_access(&context.tenant.pool, &context.actor).await?;
     let questions =
@@ -34,9 +35,9 @@ pub async fn list_questions(
 
 pub async fn list_options(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let access =
         question_bank_access_policy::resolve_access(&context.tenant.pool, &context.actor).await?;
     let options = question_bank_service::list_options(&context.tenant.pool, &access).await?;
@@ -45,10 +46,10 @@ pub async fn list_options(
 
 pub async fn get_question(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let question =
         question_bank_service::get_question(&context.tenant.pool, &context.actor, id).await?;
     Ok(Json(ApiResponse::ok(question)).into_response())
@@ -56,10 +57,10 @@ pub async fn get_question(
 
 pub async fn get_question_file(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path((question_id, file_id)): Path<(Uuid, Uuid)>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let repository = SqlFileRepository::new(context.tenant.pool);
     let file = state
         .file_platform
@@ -89,10 +90,10 @@ pub async fn get_question_file(
 
 pub async fn create_question(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Json(payload): Json<UpsertQuestionRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let question = question_bank_service::create_question(
         &context.tenant.pool,
         &context.actor,
@@ -105,11 +106,11 @@ pub async fn create_question(
 
 pub async fn update_question(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(id): Path<Uuid>,
     Json(payload): Json<UpsertQuestionRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let result = question_bank_service::update_question(
         &context.tenant.pool,
         &context.actor,
@@ -129,10 +130,10 @@ pub async fn update_question(
 
 pub async fn delete_question(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let file_ids =
         question_bank_service::delete_question(&context.tenant.pool, &context.actor, id).await?;
     request_deletions(state.file_platform.as_ref(), &context.tenant.pool, file_ids).await?;

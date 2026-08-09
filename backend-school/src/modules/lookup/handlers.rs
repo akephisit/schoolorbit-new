@@ -1,6 +1,6 @@
 use axum::{
     extract::{Extension, Path, Query, State},
-    http::{HeaderMap, StatusCode},
+    http::StatusCode,
     response::IntoResponse,
     Json,
 };
@@ -17,7 +17,8 @@ use crate::modules::lookup::models::{
 use crate::modules::lookup::services as lookup_service;
 use crate::permissions::registry::codes;
 use crate::utils::request_context::{
-    actor_tenant_context, current_user_tenant_context_from_session, CurrentUserTenantContext,
+    actor_tenant_context_from_session, current_user_tenant_context_from_session,
+    CurrentUserTenantContext,
 };
 use crate::AppState;
 
@@ -69,10 +70,10 @@ pub async fn lookup_staff(
 )]
 pub async fn lookup_roles(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Query(query): Query<LookupQuery>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     lookup_service::verify_active_user(&context.tenant.pool, context.actor.user_id).await?;
     context
         .actor

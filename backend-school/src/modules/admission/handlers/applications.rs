@@ -1,5 +1,5 @@
 use axum::{
-    extract::{Multipart, Path, Query, State},
+    extract::{Extension, Multipart, Path, Query, State},
     http::{HeaderMap, StatusCode},
     response::IntoResponse,
     Json,
@@ -12,6 +12,7 @@ use crate::api_response::{ApiErrorResponse, ApiResponse};
 use crate::error::AppError;
 use crate::modules::admission::models::applications::*;
 use crate::modules::admission::services::application_service;
+use crate::modules::auth::session_service::AuthenticatedSession;
 use crate::modules::files::{
     consumer_service::{map_platform_error, request_deletions},
     platform_service::UploadCommand,
@@ -20,7 +21,8 @@ use crate::modules::files::{
 };
 use crate::permissions::registry::codes;
 use crate::policies::file_access_policy;
-use crate::utils::request_context::{actor_tenant_context, tenant_pool};
+use crate::utils::request_context::actor_tenant_context_from_session;
+use crate::utils::tenant::tenant_pool;
 use crate::AppState;
 
 #[derive(Debug, Serialize)]
@@ -94,11 +96,11 @@ pub async fn submit_application(
 
 pub async fn list_applications(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(round_id): Path<Uuid>,
     Query(filter): Query<ApplicationFilter>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ADMISSION_READ_ALL)?;
@@ -108,10 +110,10 @@ pub async fn list_applications(
 
 pub async fn get_application(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ADMISSION_READ_ALL)?;
@@ -130,10 +132,10 @@ pub async fn get_application(
 
 pub async fn verify_application(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ADMISSION_VERIFY_ALL)?;
@@ -144,11 +146,11 @@ pub async fn verify_application(
 
 pub async fn reject_application(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(id): Path<Uuid>,
     Json(payload): Json<RejectApplicationRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ADMISSION_VERIFY_ALL)?;
@@ -158,11 +160,11 @@ pub async fn reject_application(
 
 pub async fn mark_absent(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(id): Path<Uuid>,
     Json(payload): Json<MarkAbsentRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ADMISSION_SCORES_ALL)?;
@@ -177,11 +179,11 @@ pub async fn mark_absent(
 
 pub async fn update_application(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(id): Path<Uuid>,
     Json(payload): Json<UpdateApplicationRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ADMISSION_VERIFY_ALL)?;
@@ -191,10 +193,10 @@ pub async fn update_application(
 
 pub async fn unverify_application(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ADMISSION_VERIFY_ALL)?;
@@ -204,10 +206,10 @@ pub async fn unverify_application(
 
 pub async fn delete_application(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ADMISSION_MANAGE_ALL)?;
@@ -224,10 +226,10 @@ pub async fn delete_application(
 
 pub async fn list_enrollment_pending(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(round_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ADMISSION_ENROLL_ALL)?;
@@ -237,11 +239,11 @@ pub async fn list_enrollment_pending(
 
 pub async fn complete_enrollment(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(id): Path<Uuid>,
     Json(payload): Json<CompleteEnrollmentRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ADMISSION_ENROLL_ALL)?;
@@ -261,11 +263,11 @@ pub async fn complete_enrollment(
 
 pub async fn change_application_track(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(application_id): Path<Uuid>,
     Json(payload): Json<ChangeTrackRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ADMISSION_SCORES_ALL)?;
@@ -275,11 +277,11 @@ pub async fn change_application_track(
 
 pub async fn update_admission_track(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(application_id): Path<Uuid>,
     Json(payload): Json<UpdateAdmissionTrackRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ADMISSION_VERIFY_ALL)?;
@@ -309,11 +311,11 @@ pub async fn update_admission_track(
 )]
 pub async fn staff_upload_document(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(application_id): Path<Uuid>,
     mut multipart: Multipart,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ADMISSION_VERIFY_ALL)?;
@@ -422,10 +424,10 @@ pub async fn staff_upload_document(
 )]
 pub async fn staff_delete_document(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path((application_id, doc_type)): Path<(Uuid, String)>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ADMISSION_VERIFY_ALL)?;
@@ -450,10 +452,10 @@ pub async fn staff_delete_document(
 
 pub async fn sort_room_students(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(round_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ADMISSION_MANAGE_ALL)?;
@@ -469,11 +471,11 @@ pub struct AutoAssignStudentIdsRequest {
 
 pub async fn auto_assign_student_ids(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(round_id): Path<Uuid>,
     Json(payload): Json<AutoAssignStudentIdsRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ADMISSION_MANAGE_ALL)?;
@@ -484,10 +486,10 @@ pub async fn auto_assign_student_ids(
 
 pub async fn list_student_ids(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(round_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ADMISSION_MANAGE_ALL)?;
@@ -497,11 +499,11 @@ pub async fn list_student_ids(
 
 pub async fn move_application_room(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(id): Path<Uuid>,
     Json(payload): Json<MoveRoomRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ADMISSION_SCORES_ALL)?;
@@ -511,11 +513,11 @@ pub async fn move_application_room(
 
 pub async fn batch_update_student_ids(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(round_id): Path<Uuid>,
     Json(payload): Json<Vec<UpdateStudentIdItem>>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ADMISSION_MANAGE_ALL)?;

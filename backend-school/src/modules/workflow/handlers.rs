@@ -1,6 +1,5 @@
-use axum::http::HeaderMap;
 use axum::{
-    extract::{Path, Query, State},
+    extract::{Extension, Path, Query, State},
     http::StatusCode,
     response::IntoResponse,
     routing::{get, patch, post},
@@ -12,6 +11,7 @@ use uuid::Uuid;
 
 use crate::api_response::ApiResponse;
 use crate::error::AppError;
+use crate::modules::auth::session_service::AuthenticatedSession;
 use crate::modules::workflow::models::{
     WorkflowWindow, WorkflowWindowMetadata, WorkflowWindowStatus,
 };
@@ -20,7 +20,7 @@ use crate::modules::workflow::services::{
     WorkflowWindowTimeState,
 };
 use crate::policies::workflow_access_policy;
-use crate::utils::request_context::actor_tenant_context;
+use crate::utils::request_context::actor_tenant_context_from_session;
 use crate::AppState;
 
 #[derive(Debug, Deserialize)]
@@ -113,10 +113,10 @@ impl WorkflowWindowResponse {
 
 pub async fn list_manageable_workflow_windows(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Query(query): Query<ListWorkflowWindowsQuery>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let access = workflow_access_policy::resolve_workflow_window_manage_access(&context.actor);
     let items = services::list_manageable_workflow_windows(
         &context.tenant.pool,
@@ -138,10 +138,10 @@ pub async fn list_manageable_workflow_windows(
 
 pub async fn create_workflow_window(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Json(payload): Json<CreateWorkflowWindowRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     workflow_access_policy::require_workflow_window_manage_permission(
         &context.actor,
         &payload.managed_by_permission,
@@ -174,11 +174,11 @@ pub async fn create_workflow_window(
 
 pub async fn update_workflow_window(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(id): Path<Uuid>,
     Json(payload): Json<UpdateWorkflowWindowRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let existing = services::get_workflow_window(&context.tenant.pool, id).await?;
     workflow_access_policy::require_workflow_window_manage_permission(
         &context.actor,

@@ -185,7 +185,7 @@ pub async fn load_actor_context(
     })
 }
 
-pub async fn load_actor_context_or_error(
+pub async fn load_actor_context_for_session(
     user_id: Uuid,
     tenant: &str,
     pool: &PgPool,

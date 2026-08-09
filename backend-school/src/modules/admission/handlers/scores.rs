@@ -1,6 +1,5 @@
 use axum::{
-    extract::{Path, State},
-    http::HeaderMap,
+    extract::{Extension, Path, State},
     response::IntoResponse,
     Json,
 };
@@ -11,8 +10,9 @@ use crate::api_response::ApiResponse;
 use crate::error::AppError;
 use crate::modules::admission::models::applications::*;
 use crate::modules::admission::services::score_service;
+use crate::modules::auth::session_service::AuthenticatedSession;
 use crate::permissions::registry::codes;
-use crate::utils::request_context::actor_tenant_context;
+use crate::utils::request_context::actor_tenant_context_from_session;
 use crate::AppState;
 
 #[derive(Debug, Serialize)]
@@ -22,10 +22,10 @@ struct UpdatedCountData<T> {
 
 pub async fn get_all_scores(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(round_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ADMISSION_SCORES_ALL)?;
@@ -35,10 +35,10 @@ pub async fn get_all_scores(
 
 pub async fn get_application_scores(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ADMISSION_SCORES_ALL)?;
@@ -48,11 +48,11 @@ pub async fn get_application_scores(
 
 pub async fn update_scores(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(id): Path<Uuid>,
     Json(payload): Json<UpdateApplicationScoresRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ADMISSION_SCORES_ALL)?;
@@ -63,11 +63,11 @@ pub async fn update_scores(
 
 pub async fn bulk_update_scores(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(round_id): Path<Uuid>,
     Json(payload): Json<BulkUpdateScoresRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ADMISSION_SCORES_ALL)?;

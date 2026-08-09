@@ -14,7 +14,8 @@ use crate::error::AppError;
 use crate::modules::auth::session_service::AuthenticatedSession;
 use crate::modules::consent::models::CreateConsentRequest;
 use crate::modules::consent::services::{self as consent_service, ConsentRequestContext};
-use crate::utils::request_context::{current_user_tenant_context_from_session, tenant_pool};
+use crate::utils::request_context::current_user_tenant_context_from_session;
+use crate::utils::tenant::tenant_pool;
 use crate::AppState;
 
 #[derive(Debug, Serialize)]

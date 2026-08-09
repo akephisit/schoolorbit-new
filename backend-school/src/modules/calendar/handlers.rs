@@ -1,5 +1,6 @@
 use crate::api_response::{ApiErrorResponse, ApiResponse};
 use crate::error::AppError;
+use crate::modules::auth::session_service::AuthenticatedSession;
 use crate::modules::calendar::models::{
     CalendarEventQuery, UpsertCalendarCategoryRequest, UpsertCalendarEventRequest,
     UpsertCalendarTagRequest,
@@ -7,11 +8,12 @@ use crate::modules::calendar::models::{
 use crate::modules::calendar::services as calendar_service;
 use crate::permissions::registry::codes;
 use crate::utils::request_context::{
-    actor_tenant_context, current_user_tenant_context_from_headers, tenant_context,
+    actor_tenant_context_from_session, current_user_tenant_context_from_session,
 };
+use crate::utils::tenant::tenant_context;
 use crate::AppState;
 use axum::{
-    extract::{Path, Query, State},
+    extract::{Extension, Path, Query, State},
     http::{HeaderMap, StatusCode},
     response::IntoResponse,
     Json,
@@ -41,10 +43,10 @@ use uuid::Uuid;
 )]
 pub async fn list_calendar_events(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Query(query): Query<CalendarEventQuery>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     context
         .actor
         .require_permission(codes::CALENDAR_READ_SCHOOL)?;
@@ -54,10 +56,10 @@ pub async fn list_calendar_events(
 
 pub async fn create_calendar_event(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Json(payload): Json<UpsertCalendarEventRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     context
         .actor
         .require_permission(codes::CALENDAR_MANAGE_SCHOOL)?;
@@ -89,11 +91,11 @@ pub async fn create_calendar_event(
 
 pub async fn update_calendar_event(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(id): Path<Uuid>,
     Json(payload): Json<UpsertCalendarEventRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     context
         .actor
         .require_permission(codes::CALENDAR_MANAGE_SCHOOL)?;
@@ -125,10 +127,10 @@ pub async fn update_calendar_event(
 
 pub async fn delete_calendar_event(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     context
         .actor
         .require_permission(codes::CALENDAR_MANAGE_SCHOOL)?;
@@ -149,9 +151,9 @@ pub async fn delete_calendar_event(
 )]
 pub async fn list_calendar_categories(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     context
         .actor
         .require_permission(codes::CALENDAR_READ_SCHOOL)?;
@@ -161,10 +163,10 @@ pub async fn list_calendar_categories(
 
 pub async fn create_calendar_category(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Json(payload): Json<UpsertCalendarCategoryRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     context
         .actor
         .require_permission(codes::CALENDAR_MANAGE_SCHOOL)?;
@@ -174,11 +176,11 @@ pub async fn create_calendar_category(
 
 pub async fn update_calendar_category(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(id): Path<Uuid>,
     Json(payload): Json<UpsertCalendarCategoryRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     context
         .actor
         .require_permission(codes::CALENDAR_MANAGE_SCHOOL)?;
@@ -188,10 +190,10 @@ pub async fn update_calendar_category(
 
 pub async fn delete_calendar_category(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     context
         .actor
         .require_permission(codes::CALENDAR_MANAGE_SCHOOL)?;
@@ -212,9 +214,9 @@ pub async fn delete_calendar_category(
 )]
 pub async fn list_calendar_tags(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     context
         .actor
         .require_permission(codes::CALENDAR_READ_SCHOOL)?;
@@ -224,10 +226,10 @@ pub async fn list_calendar_tags(
 
 pub async fn create_calendar_tag(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Json(payload): Json<UpsertCalendarTagRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     context
         .actor
         .require_permission(codes::CALENDAR_MANAGE_SCHOOL)?;
@@ -237,11 +239,11 @@ pub async fn create_calendar_tag(
 
 pub async fn update_calendar_tag(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(id): Path<Uuid>,
     Json(payload): Json<UpsertCalendarTagRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     context
         .actor
         .require_permission(codes::CALENDAR_MANAGE_SCHOOL)?;
@@ -251,10 +253,10 @@ pub async fn update_calendar_tag(
 
 pub async fn delete_calendar_tag(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     context
         .actor
         .require_permission(codes::CALENDAR_MANAGE_SCHOOL)?;
@@ -284,11 +286,10 @@ pub async fn delete_calendar_tag(
     )
 )]
 pub async fn list_my_calendar_events(
-    State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Query(query): Query<CalendarEventQuery>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = current_user_tenant_context_from_headers(&state, &headers).await?;
+    let context = current_user_tenant_context_from_session(&session);
     let events =
         calendar_service::list_my_events(&context.tenant.pool, context.user_id, query).await?;
     Ok(Json(ApiResponse::ok(events)))

@@ -20,7 +20,7 @@ use crate::modules::files::{
     repository::SqlFileRepository,
 };
 use crate::policies::file_access_policy;
-use crate::utils::request_context::{tenant_context, tenant_pool};
+use crate::utils::tenant::{tenant_context, tenant_pool};
 use crate::AppState;
 
 #[derive(Debug, Serialize, ToSchema)]
