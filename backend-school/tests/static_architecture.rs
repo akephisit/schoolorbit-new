@@ -973,6 +973,36 @@ fn active_migrations_are_clean_sequential_timeline() {
 }
 
 #[test]
+fn auth_session_migration_is_forward_only_and_hash_only() {
+    let migration = read_source(manifest_dir().join("migrations/034_auth_sessions.sql"));
+
+    for required in [
+        "CREATE TABLE auth_sessions",
+        "current_token_hash BYTEA NOT NULL",
+        "previous_token_hash BYTEA",
+        "CREATE UNIQUE INDEX auth_sessions_current_token_hash_key",
+        "CREATE UNIQUE INDEX auth_sessions_previous_token_hash_key",
+        "CREATE TABLE auth_login_throttles",
+        "PRIMARY KEY (bucket_kind, bucket_hash)",
+    ] {
+        assert!(migration.contains(required), "missing `{required}`");
+    }
+
+    for forbidden in [
+        "raw_token",
+        "csrf_token",
+        "username TEXT",
+        "ip_address",
+        "user_agent",
+    ] {
+        assert!(
+            !migration.contains(forbidden),
+            "forbidden persisted field `{forbidden}`"
+        );
+    }
+}
+
+#[test]
 fn exam_invigilator_conflict_migration_drops_day_staff_unique_constraint() {
     let creation_migration = read_source(
         manifest_dir()
