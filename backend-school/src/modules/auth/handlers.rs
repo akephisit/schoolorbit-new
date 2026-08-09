@@ -46,8 +46,6 @@ pub async fn login(
     let subdomain = tenant.subdomain;
     let pool = tenant.pool;
 
-    tracing::info!(school = %subdomain, username = %payload.username, "Login attempt");
-
     let user = services::find_active_login_user_by_username(&pool, &payload.username).await?;
 
     // Verify password
@@ -325,7 +323,7 @@ pub async fn change_password(
 
     // Hash new password
     let new_password_hash = bcrypt::hash(&payload.new_password, 10).map_err(|e| {
-        tracing::error!("Failed to hash password: {}", e);
+        tracing::error!("Credential hashing failed: {}", e);
         AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
     })?;
 

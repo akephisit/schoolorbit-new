@@ -223,7 +223,7 @@ async fn concurrent_rotation_keeps_one_current_hash_and_one_grace_hash() {
                 old,
                 now,
                 SessionMaintenanceMode::RotateAndTouch,
-                || RawSessionToken::from_bytes([1; 32]),
+                || Ok(RawSessionToken::from_bytes([1; 32])),
             )
             .await
         },
@@ -234,7 +234,7 @@ async fn concurrent_rotation_keeps_one_current_hash_and_one_grace_hash() {
                 old,
                 now,
                 SessionMaintenanceMode::RotateAndTouch,
-                || RawSessionToken::from_bytes([2; 32]),
+                || Ok(RawSessionToken::from_bytes([2; 32])),
             )
             .await
         },
@@ -266,7 +266,7 @@ async fn current_previous_and_touch_only_maintenance_follow_the_contract() {
         old,
         now,
         SessionMaintenanceMode::RotateAndTouch,
-        || RawSessionToken::from_bytes([21; 32]),
+        || Ok(RawSessionToken::from_bytes([21; 32])),
     )
     .await
     .unwrap()
@@ -315,7 +315,7 @@ async fn current_previous_and_touch_only_maintenance_follow_the_contract() {
         SessionMaintenanceMode::TouchOnly,
         || {
             generated.store(true, Ordering::SeqCst);
-            RawSessionToken::from_bytes([22; 32])
+            Ok(RawSessionToken::from_bytes([22; 32]))
         },
     )
     .await
@@ -588,7 +588,7 @@ async fn token_collisions_roll_back_insert_and_rotation() {
         fixture.raw_token.token_hash(),
         Utc::now(),
         SessionMaintenanceMode::RotateAndTouch,
-        || RawSessionToken::from_bytes(*fixture.raw_token.as_bytes()),
+        || Ok(RawSessionToken::from_bytes(*fixture.raw_token.as_bytes())),
     )
     .await;
     let rotation_error = match rotation_result {
@@ -614,7 +614,7 @@ async fn cross_column_and_concurrent_same_digest_collisions_are_rejected() {
         old,
         now,
         SessionMaintenanceMode::RotateAndTouch,
-        || RawSessionToken::from_bytes([71; 32]),
+        || Ok(RawSessionToken::from_bytes([71; 32])),
     )
     .await
     .unwrap()
@@ -638,7 +638,7 @@ async fn cross_column_and_concurrent_same_digest_collisions_are_rejected() {
         second.token_hash(),
         now,
         SessionMaintenanceMode::RotateAndTouch,
-        || RawSessionToken::from_bytes(*fixture.raw_token.as_bytes()),
+        || Ok(RawSessionToken::from_bytes(*fixture.raw_token.as_bytes())),
     )
     .await
     .is_err());

@@ -38,6 +38,16 @@ impl SessionConfig {
         &self.hmac_key
     }
 
+    #[cfg(test)]
+    pub(crate) fn for_tests(hmac_key: SessionHmacKey) -> Self {
+        Self {
+            hmac_key,
+            base_domain: "schoolorbit.test".to_string(),
+            trusted_proxy_cidrs: Vec::new(),
+            allowed_dev_origins: HashSet::new(),
+        }
+    }
+
     fn from_values(
         hmac_key: &str,
         base_domain: &str,

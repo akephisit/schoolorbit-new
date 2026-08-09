@@ -3255,7 +3255,10 @@ fn module_handlers_use_actor_context_instead_of_raw_permission_lists() {
     let mut violations = Vec::new();
 
     for file in module_rs_files() {
-        if relative(&file) == "src/modules/auth/handlers.rs" {
+        if matches!(
+            relative(&file).as_str(),
+            "src/modules/auth/handlers.rs" | "src/modules/auth/session_service.rs"
+        ) {
             continue;
         }
 
@@ -3271,11 +3274,16 @@ fn module_handlers_use_actor_context_instead_of_raw_permission_lists() {
 #[test]
 fn auth_responses_use_shared_effective_permission_resolver() {
     let auth_handler = read_source(manifest_dir().join("src/modules/auth/handlers.rs"));
+    let session_service = read_source(manifest_dir().join("src/modules/auth/session_service.rs"));
 
     assert!(auth_handler.contains("get_cached_user_permissions"));
+    assert!(session_service.contains("get_cached_user_permissions"));
     assert!(!auth_handler.contains("permission_delegations"));
     assert!(!auth_handler.contains("department_permissions dp"));
     assert!(!auth_handler.contains("JOIN role_permissions"));
+    assert!(!session_service.contains("permission_delegations"));
+    assert!(!session_service.contains("department_permissions dp"));
+    assert!(!session_service.contains("JOIN role_permissions"));
 }
 
 #[test]

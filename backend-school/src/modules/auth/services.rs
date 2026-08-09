@@ -4,9 +4,67 @@ use crate::utils::field_encryption;
 use sqlx::PgPool;
 use uuid::Uuid;
 
+#[derive(Clone, sqlx::FromRow)]
+pub struct SessionLoginUser {
+    pub id: Uuid,
+    pub username: String,
+    pub password_hash: String,
+    pub status: String,
+    pub user_type: String,
+    pub first_name: String,
+    pub last_name: String,
+    pub profile_image_file_id: Option<Uuid>,
+}
+
+#[derive(Clone, sqlx::FromRow)]
+pub struct ActiveUserShell {
+    pub id: Uuid,
+    pub username: String,
+    pub status: String,
+    pub user_type: String,
+    pub first_name: String,
+    pub last_name: String,
+    pub profile_image_file_id: Option<Uuid>,
+}
+
 pub struct ProfileUpdateResult {
     pub user: User,
     pub replaced_file_id: Option<Uuid>,
+}
+
+pub async fn find_session_login_user_by_username(
+    pool: &PgPool,
+    username: &str,
+) -> Result<Option<SessionLoginUser>, AppError> {
+    sqlx::query_as::<_, SessionLoginUser>(
+        r#"
+        SELECT id, username, password_hash, status, user_type, first_name, last_name,
+               profile_image_file_id
+        FROM users
+        WHERE username = $1
+        "#,
+    )
+    .bind(username)
+    .fetch_optional(pool)
+    .await
+    .map_err(AppError::from)
+}
+
+pub async fn find_active_user_shell_by_id(
+    pool: &PgPool,
+    user_id: Uuid,
+) -> Result<Option<ActiveUserShell>, AppError> {
+    sqlx::query_as::<_, ActiveUserShell>(
+        r#"
+        SELECT id, username, status, user_type, first_name, last_name, profile_image_file_id
+        FROM users
+        WHERE id = $1 AND status = 'active'
+        "#,
+    )
+    .bind(user_id)
+    .fetch_optional(pool)
+    .await
+    .map_err(AppError::from)
 }
 
 pub async fn find_active_login_user_by_username(

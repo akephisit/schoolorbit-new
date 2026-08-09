@@ -88,6 +88,16 @@ pub struct MaintainedSession {
     pub replacement: Option<RawSessionToken>,
 }
 
+pub struct PasswordChangeSnapshot {
+    pub password_hash: String,
+}
+
+pub struct LockedPasswordChange {
+    pub password_hash: String,
+    pub remember_me: bool,
+    pub absolute_expires_at: DateTime<Utc>,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct CleanupResult {
     pub previous_tokens_cleared: u64,
@@ -175,7 +185,7 @@ pub async fn authenticate_and_maintain<F>(
     generate: F,
 ) -> Result<Option<MaintainedSession>, AppError>
 where
-    F: FnOnce() -> RawSessionToken,
+    F: FnOnce() -> Result<RawSessionToken, AppError>,
 {
     let Some(initial) = load_authentication_row(pool, presented_hash).await? else {
         return Ok(None);
@@ -232,7 +242,7 @@ where
     let mut replacement = None;
 
     let current_token_hash = if rotation_due {
-        let token = generate();
+        let token = generate()?;
         let token_hash = token.token_hash();
         lock_token_hash(&mut transaction, token_hash).await?;
         ensure_token_hash_available(&mut transaction, token_hash).await?;
@@ -331,6 +341,150 @@ pub async fn revalidate_session(
     .fetch_one(pool)
     .await
     .map_err(session_store_error)
+}
+
+pub async fn load_password_change_snapshot(
+    pool: &PgPool,
+    user_id: Uuid,
+    session_id: Uuid,
+    now: DateTime<Utc>,
+) -> Result<PasswordChangeSnapshot, AppError> {
+    sqlx::query_as::<_, (String,)>(
+        r#"
+        SELECT u.password_hash
+        FROM users u
+        JOIN auth_sessions s ON s.user_id = u.id
+        WHERE u.id = $1
+          AND s.id = $2
+          AND u.status = 'active'
+          AND s.revoked_at IS NULL
+          AND s.idle_expires_at > $3
+          AND s.absolute_expires_at > $3
+        "#,
+    )
+    .bind(user_id)
+    .bind(session_id)
+    .bind(now)
+    .fetch_optional(pool)
+    .await
+    .map_err(session_store_error)?
+    .map(|(password_hash,)| PasswordChangeSnapshot { password_hash })
+    .ok_or_else(authentication_required)
+}
+
+pub async fn lock_password_change<'a>(
+    transaction: &mut Transaction<'a, Postgres>,
+    user_id: Uuid,
+    session_id: Uuid,
+    now: DateTime<Utc>,
+) -> Result<LockedPasswordChange, AppError> {
+    sqlx::query_as::<_, (String, bool, DateTime<Utc>)>(
+        r#"
+        SELECT u.password_hash, s.remember_me, s.absolute_expires_at
+        FROM users u
+        JOIN auth_sessions s ON s.user_id = u.id
+        WHERE u.id = $1
+          AND s.id = $2
+          AND u.status = 'active'
+          AND s.revoked_at IS NULL
+          AND s.idle_expires_at > $3
+          AND s.absolute_expires_at > $3
+        FOR UPDATE OF u, s
+        "#,
+    )
+    .bind(user_id)
+    .bind(session_id)
+    .bind(now)
+    .fetch_optional(&mut **transaction)
+    .await
+    .map_err(session_store_error)?
+    .map(
+        |(password_hash, remember_me, absolute_expires_at)| LockedPasswordChange {
+            password_hash,
+            remember_me,
+            absolute_expires_at,
+        },
+    )
+    .ok_or_else(authentication_required)
+}
+
+pub async fn apply_password_change<'a>(
+    transaction: &mut Transaction<'a, Postgres>,
+    user_id: Uuid,
+    session_id: Uuid,
+    new_password_hash: &str,
+    new_token_hash: TokenHash,
+    now: DateTime<Utc>,
+) -> Result<Vec<Uuid>, AppError> {
+    lock_token_hash(transaction, new_token_hash).await?;
+    ensure_token_hash_available(transaction, new_token_hash).await?;
+
+    let updated_user =
+        sqlx::query("UPDATE users SET password_hash = $1, updated_at = $2 WHERE id = $3")
+            .bind(new_password_hash)
+            .bind(now)
+            .bind(user_id)
+            .execute(&mut **transaction)
+            .await
+            .map_err(session_store_error)?
+            .rows_affected();
+    if updated_user != 1 {
+        return Err(unavailable());
+    }
+
+    let mut revoked_session_ids: Vec<Uuid> = sqlx::query_scalar(
+        r#"
+        UPDATE auth_sessions
+        SET revoked_at = $1, revocation_reason = $2
+        WHERE user_id = $3
+          AND id <> $4
+          AND revoked_at IS NULL
+          AND idle_expires_at > $1
+          AND absolute_expires_at > $1
+        RETURNING id
+        "#,
+    )
+    .bind(now)
+    .bind(SessionRevocationReason::PasswordChanged.as_str())
+    .bind(user_id)
+    .bind(session_id)
+    .fetch_all(&mut **transaction)
+    .await
+    .map_err(session_store_error)?;
+
+    let updated_session = sqlx::query(
+        r#"
+        UPDATE auth_sessions
+        SET previous_token_hash = current_token_hash,
+            previous_token_valid_until = $1 + interval '60 seconds',
+            current_token_hash = $2,
+            rotated_at = $1,
+            last_seen_at = $1,
+            idle_expires_at = LEAST(
+                $1 + CASE WHEN remember_me THEN interval '7 days' ELSE interval '2 hours' END,
+                absolute_expires_at
+            )
+        WHERE id = $3
+          AND user_id = $4
+          AND revoked_at IS NULL
+          AND idle_expires_at > $1
+          AND absolute_expires_at > $1
+        "#,
+    )
+    .bind(now)
+    .bind(new_token_hash.as_bytes().as_slice())
+    .bind(session_id)
+    .bind(user_id)
+    .execute(&mut **transaction)
+    .await
+    .map_err(session_store_error)?
+    .rows_affected();
+    if updated_session != 1 {
+        return Err(authentication_required());
+    }
+
+    revoked_session_ids.sort_unstable();
+    Ok(revoked_session_ids)
 }
 
 pub async fn list_user_sessions(
@@ -663,4 +817,8 @@ fn session_store_error(_error: sqlx::Error) -> AppError {
 
 fn unavailable() -> AppError {
     AppError::ServiceUnavailable("session_store".to_string())
+}
+
+fn authentication_required() -> AppError {
+    AppError::AuthError("กรุณาเข้าสู่ระบบอีกครั้ง".to_string())
 }
