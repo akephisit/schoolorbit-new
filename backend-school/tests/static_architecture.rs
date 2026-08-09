@@ -95,6 +95,17 @@ fn people_and_platform_handlers_use_typed_session_identity() {
 }
 
 #[test]
+fn academic_group_a_handlers_use_typed_session_identity() {
+    assert_typed_session_handlers(&[
+        "src/modules/academic/handlers.rs",
+        "src/modules/academic/handlers/activity.rs",
+        "src/modules/academic/handlers/assessment.rs",
+        "src/modules/academic/handlers/course_planning.rs",
+        "src/modules/academic/handlers/subjects.rs",
+    ]);
+}
+
+#[test]
 fn exam_schedule_shared_module_is_private() {
     let facade_path = manifest_dir().join("src/modules/academic/services/exam_schedule_service.rs");
     let shared_path =
@@ -1589,7 +1600,7 @@ fn academic_structure_handlers_enforce_generated_permission_contract() {
             .unwrap_or(handler_tail);
 
         assert!(
-            handler.contains("actor_tenant_context(&state, &headers).await?"),
+            handler.contains("actor_tenant_context_from_session(&state, &session).await?"),
             "{handler_name} must load the authenticated actor and tenant together"
         );
         assert!(
@@ -1606,7 +1617,7 @@ fn academic_structure_handlers_enforce_generated_permission_contract() {
         .next()
         .expect("missing list_academic_structure handler body");
     assert!(
-        list_handler.contains("actor_tenant_context(&state, &headers).await?"),
+        list_handler.contains("actor_tenant_context_from_session(&state, &session).await?"),
         "list_academic_structure must load the authenticated actor and tenant together"
     );
     assert!(
@@ -4596,7 +4607,7 @@ fn course_planning_handlers_enforce_permission_and_service_boundaries() {
     for (handler_name, permission) in cases {
         let body = handler_body(&source, handler_name);
         assert!(
-            body.contains("actor_tenant_context(&state, &headers).await?"),
+            body.contains("actor_tenant_context_from_session(&state, &session).await?"),
             "{handler_name} must load actor and tenant through the shared request context"
         );
         assert!(

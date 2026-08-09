@@ -1,6 +1,5 @@
 use axum::{
-    extract::{Path, Query, State},
-    http::HeaderMap,
+    extract::{Extension, Path, Query, State},
     response::IntoResponse,
     Json,
 };
@@ -12,10 +11,11 @@ use crate::api_response::{ApiErrorResponse, ApiResponse};
 use crate::error::AppError;
 use crate::modules::academic::models::activity::*;
 use crate::modules::academic::services::activity_service;
+use crate::modules::auth::session_service::AuthenticatedSession;
 use crate::permissions::registry::codes;
 use crate::policies::activity_access_policy;
 use crate::utils::request_context::{
-    actor_tenant_context, current_user_tenant_context_from_headers,
+    actor_tenant_context_from_session, current_user_tenant_context_from_session,
 };
 use crate::AppState;
 
@@ -68,10 +68,10 @@ pub struct AddSlotInstructorsBatchRequest {
 )]
 pub async fn list_activity_slots(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Query(filter): Query<ActivitySlotFilter>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     let access = activity_access_policy::resolve_activity_list_access(&actor)?;
@@ -94,10 +94,10 @@ pub async fn list_activity_slots(
 )]
 pub async fn get_timetable_context(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Query(query): Query<ActivityTimetableContextQuery>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     context
         .actor
         .require_permission(codes::ACADEMIC_COURSE_PLAN_READ_ALL)?;
@@ -126,11 +126,11 @@ pub async fn get_timetable_context(
 )]
 pub async fn update_activity_slot(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(id): Path<Uuid>,
     Json(body): Json<UpdateActivitySlotRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ACTIVITY_MANAGE_ALL)?;
@@ -154,10 +154,10 @@ pub async fn update_activity_slot(
 )]
 pub async fn delete_activity_slot(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ACTIVITY_MANAGE_ALL)?;
@@ -184,10 +184,10 @@ pub async fn delete_activity_slot(
 )]
 pub async fn list_activity_groups(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Query(filter): Query<ActivityGroupFilter>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     let access = activity_access_policy::resolve_activity_list_access(&actor)?;
@@ -212,10 +212,10 @@ pub async fn list_activity_groups(
 )]
 pub async fn create_activity_group(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Json(body): Json<CreateActivityGroupRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     let outcome = activity_service::create_group(&pool, &actor, body).await?;
@@ -249,11 +249,11 @@ pub async fn create_activity_group(
 )]
 pub async fn update_activity_group(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(id): Path<Uuid>,
     Json(body): Json<UpdateActivityGroupRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     let row = activity_service::update_group(&pool, &actor, id, body).await?;
@@ -276,10 +276,10 @@ pub async fn update_activity_group(
 )]
 pub async fn delete_activity_group(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     activity_service::delete_group(&pool, &actor, id).await?;
@@ -306,10 +306,10 @@ pub async fn delete_activity_group(
 )]
 pub async fn list_members(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(group_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     activity_access_policy::can_read_activity_group(&pool, &actor, group_id).await?;
@@ -335,11 +335,11 @@ pub async fn list_members(
 )]
 pub async fn add_members(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(group_id): Path<Uuid>,
     Json(body): Json<AddMembersRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ACTIVITY_MANAGE_MEMBERS_ALL)?;
@@ -365,10 +365,9 @@ pub async fn add_members(
     )
 )]
 pub async fn my_enrollments(
-    State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = current_user_tenant_context_from_headers(&state, &headers).await?;
+    let context = current_user_tenant_context_from_session(&session);
     let pool = context.tenant.pool;
     let user_id = context.user_id;
     let ids = activity_service::my_enrollments(&pool, user_id).await?;
@@ -391,11 +390,10 @@ pub async fn my_enrollments(
     )
 )]
 pub async fn self_enroll(
-    State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(group_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = current_user_tenant_context_from_headers(&state, &headers).await?;
+    let context = current_user_tenant_context_from_session(&session);
     let pool = context.tenant.pool;
     let user_id = context.user_id;
 
@@ -435,11 +433,10 @@ pub async fn self_enroll(
     )
 )]
 pub async fn self_unenroll(
-    State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(group_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = current_user_tenant_context_from_headers(&state, &headers).await?;
+    let context = current_user_tenant_context_from_session(&session);
     let pool = context.tenant.pool;
     let user_id = context.user_id;
     activity_service::self_unenroll(&pool, group_id, user_id).await?;
@@ -465,10 +462,10 @@ pub async fn self_unenroll(
 )]
 pub async fn remove_member(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path((group_id, student_id)): Path<(Uuid, Uuid)>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ACTIVITY_MANAGE_MEMBERS_ALL)?;
@@ -494,11 +491,11 @@ pub async fn remove_member(
 )]
 pub async fn update_member_result(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(member_id): Path<Uuid>,
     Json(body): Json<UpdateMemberResultRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ACTIVITY_MANAGE_MEMBERS_ALL)?;
@@ -533,10 +530,10 @@ pub struct InstructorRoleRequest {
 )]
 pub async fn list_instructors(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(group_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     activity_access_policy::can_read_activity_group(&pool, &actor, group_id).await?;
@@ -562,11 +559,11 @@ pub async fn list_instructors(
 )]
 pub async fn add_instructor(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(group_id): Path<Uuid>,
     Json(body): Json<InstructorRoleRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     let role = body.role.unwrap_or_else(|| "assistant".to_string());
@@ -594,10 +591,10 @@ pub async fn add_instructor(
 )]
 pub async fn remove_instructor(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path((group_id, instructor_id)): Path<(Uuid, Uuid)>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     activity_service::remove_group_instructor(&pool, &actor, group_id, instructor_id).await?;
@@ -624,10 +621,10 @@ pub async fn remove_instructor(
 )]
 pub async fn list_slot_instructors(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(slot_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     activity_access_policy::can_read_activity_slot(&pool, &actor, slot_id).await?;
@@ -652,11 +649,11 @@ pub async fn list_slot_instructors(
 )]
 pub async fn add_slot_instructor(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(slot_id): Path<Uuid>,
     Json(body): Json<AddSlotInstructorRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ACTIVITY_MANAGE_ALL)?;
@@ -681,11 +678,11 @@ pub async fn add_slot_instructor(
 )]
 pub async fn add_slot_instructors_batch(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(slot_id): Path<Uuid>,
     Json(body): Json<AddSlotInstructorsBatchRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ACTIVITY_MANAGE_ALL)?;
@@ -722,10 +719,10 @@ pub async fn add_slot_instructors_batch(
 )]
 pub async fn remove_slot_instructor(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path((slot_id, user_id)): Path<(Uuid, Uuid)>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ACTIVITY_MANAGE_ALL)?;
@@ -749,10 +746,10 @@ pub async fn remove_slot_instructor(
 )]
 pub async fn delete_slot_timetable_entries(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(slot_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL)?;
@@ -780,10 +777,10 @@ pub async fn delete_slot_timetable_entries(
 )]
 pub async fn delete_all_slot_groups(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(slot_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ACTIVITY_MANAGE_ALL)?;
@@ -811,10 +808,10 @@ pub async fn delete_all_slot_groups(
 )]
 pub async fn remove_all_slot_instructors(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(slot_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ACTIVITY_MANAGE_ALL)?;
@@ -846,10 +843,10 @@ pub async fn remove_all_slot_instructors(
 )]
 pub async fn list_slot_classroom_assignments(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(slot_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     activity_access_policy::can_read_activity_slot(&pool, &actor, slot_id).await?;
@@ -874,11 +871,11 @@ pub async fn list_slot_classroom_assignments(
 )]
 pub async fn batch_upsert_slot_classroom_assignments(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(slot_id): Path<Uuid>,
     Json(body): Json<BatchUpsertSlotClassroomAssignmentsRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ACTIVITY_MANAGE_ALL)?;
@@ -906,10 +903,10 @@ pub async fn batch_upsert_slot_classroom_assignments(
 )]
 pub async fn delete_all_slot_classroom_assignments(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(slot_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ACTIVITY_MANAGE_ALL)?;
@@ -940,10 +937,10 @@ pub async fn delete_all_slot_classroom_assignments(
 )]
 pub async fn delete_slot_classroom_assignment(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path((slot_id, assignment_id)): Path<(Uuid, Uuid)>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ACTIVITY_MANAGE_ALL)?;

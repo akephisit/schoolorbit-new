@@ -1,8 +1,9 @@
 use crate::api_response::{ApiErrorResponse, ApiResponse};
 use crate::error::AppError;
 use crate::modules::academic::services::academic_structure_service;
+use crate::modules::auth::session_service::AuthenticatedSession;
 use crate::permissions::registry::codes;
-use crate::utils::request_context::actor_tenant_context;
+use crate::utils::request_context::actor_tenant_context_from_session;
 use crate::AppState;
 
 pub mod activity;
@@ -16,8 +17,8 @@ pub mod timetable_templates;
 
 use super::models::*;
 use axum::{
-    extract::{Path, Query, State},
-    http::{HeaderMap, StatusCode},
+    extract::{Extension, Path, Query, State},
+    http::StatusCode,
     response::IntoResponse,
     Json,
 };
@@ -37,9 +38,9 @@ use uuid::Uuid;
 )]
 pub async fn list_academic_structure(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let structure = academic_structure_service::list_academic_structure(&pool).await?;
 
@@ -63,10 +64,10 @@ pub async fn list_academic_structure(
 )]
 pub async fn create_academic_year(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Json(payload): Json<CreateAcademicYearRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_STRUCTURE_MANAGE_ALL)?;
@@ -94,11 +95,11 @@ pub async fn create_academic_year(
 )]
 pub async fn update_academic_year(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(id): Path<Uuid>,
     Json(payload): Json<UpdateAcademicYearRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_STRUCTURE_MANAGE_ALL)?;
@@ -123,10 +124,10 @@ pub async fn update_academic_year(
 )]
 pub async fn toggle_active_year(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_STRUCTURE_MANAGE_ALL)?;
@@ -152,10 +153,10 @@ pub async fn toggle_active_year(
 )]
 pub async fn create_semester(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Json(payload): Json<CreateSemesterRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_STRUCTURE_MANAGE_ALL)?;
@@ -183,11 +184,11 @@ pub async fn create_semester(
 )]
 pub async fn update_semester(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(id): Path<Uuid>,
     Json(payload): Json<UpdateSemesterRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_STRUCTURE_MANAGE_ALL)?;
@@ -213,10 +214,10 @@ pub async fn update_semester(
 )]
 pub async fn delete_semester(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_STRUCTURE_MANAGE_ALL)?;
@@ -240,10 +241,10 @@ pub async fn delete_semester(
 )]
 pub async fn list_classrooms(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Query(filter): Query<ClassroomQuery>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_CLASSROOM_READ_ALL)?;
@@ -269,10 +270,10 @@ pub async fn list_classrooms(
 )]
 pub async fn create_classroom(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Json(payload): Json<CreateClassroomRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_CLASSROOM_CREATE_ALL)?;
@@ -300,11 +301,11 @@ pub async fn create_classroom(
 )]
 pub async fn update_classroom(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(id): Path<Uuid>,
     Json(payload): Json<UpdateClassroomRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_CLASSROOM_UPDATE_ALL)?;
@@ -329,10 +330,10 @@ pub async fn update_classroom(
 )]
 pub async fn create_grade_level(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Json(payload): Json<CreateGradeLevelRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_STRUCTURE_MANAGE_ALL)?;
@@ -358,10 +359,10 @@ pub async fn create_grade_level(
 )]
 pub async fn delete_grade_level(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_STRUCTURE_MANAGE_ALL)?;
@@ -388,10 +389,10 @@ pub async fn delete_grade_level(
 )]
 pub async fn enroll_students(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Json(payload): Json<EnrollStudentRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_ENROLLMENT_UPDATE_ALL)?;
@@ -419,10 +420,10 @@ pub async fn enroll_students(
 )]
 pub async fn get_class_enrollments(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(class_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_ENROLLMENT_READ_ALL)?;
@@ -447,10 +448,10 @@ pub async fn get_class_enrollments(
 )]
 pub async fn remove_enrollment(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_ENROLLMENT_UPDATE_ALL)?;
@@ -482,11 +483,11 @@ pub struct UpdateEnrollmentNumberRequest {
 )]
 pub async fn update_enrollment_number(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(id): Path<Uuid>,
     Json(payload): Json<UpdateEnrollmentNumberRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_ENROLLMENT_UPDATE_ALL)?;
@@ -520,11 +521,11 @@ pub struct AutoAssignClassNumbersRequest {
 )]
 pub async fn auto_assign_class_numbers(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(class_id): Path<Uuid>,
     Json(payload): Json<AutoAssignClassNumbersRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_ENROLLMENT_UPDATE_ALL)?;
@@ -554,10 +555,10 @@ pub async fn auto_assign_class_numbers(
 )]
 pub async fn get_year_levels(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(year_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_STRUCTURE_READ_ALL)?;
@@ -588,11 +589,11 @@ pub async fn get_year_levels(
 )]
 pub async fn update_year_levels(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(year_id): Path<Uuid>,
     Json(payload): Json<UpdateYearLevelsRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_STRUCTURE_MANAGE_ALL)?;

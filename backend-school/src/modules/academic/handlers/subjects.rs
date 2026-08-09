@@ -1,6 +1,6 @@
 use axum::{
-    extract::{Path, Query, State},
-    http::{HeaderMap, StatusCode},
+    extract::{Extension, Path, Query, State},
+    http::StatusCode,
     response::IntoResponse,
     Json,
 };
@@ -13,9 +13,10 @@ use crate::modules::academic::models::curriculum::{
     SubjectFilter, SubjectGroup, UpdateSubjectDefaultInstructorRoleRequest, UpdateSubjectRequest,
 };
 use crate::modules::academic::services::subject_service;
+use crate::modules::auth::session_service::AuthenticatedSession;
 use crate::permissions::registry::codes;
 use crate::policies::curriculum_access_policy;
-use crate::utils::request_context::actor_tenant_context;
+use crate::utils::request_context::actor_tenant_context_from_session;
 use crate::AppState;
 
 #[utoipa::path(
@@ -32,9 +33,9 @@ use crate::AppState;
 )]
 pub async fn list_subject_groups(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     if curriculum_access_policy::resolve_subject_read_access(&actor, &pool)
@@ -78,10 +79,10 @@ pub async fn list_subject_groups(
 )]
 pub async fn list_subjects(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Query(filter): Query<SubjectFilter>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     let Some(access) = curriculum_access_policy::resolve_subject_read_access(&actor, &pool).await?
@@ -116,10 +117,10 @@ pub async fn list_subjects(
 )]
 pub async fn create_subject(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Json(payload): Json<CreateSubjectRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     let Some(access) = curriculum_access_policy::resolve_subject_manage_access(
@@ -167,11 +168,11 @@ pub async fn create_subject(
 )]
 pub async fn update_subject(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(id): Path<Uuid>,
     Json(payload): Json<UpdateSubjectRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     let Some(access) = curriculum_access_policy::resolve_subject_manage_access(
@@ -223,10 +224,10 @@ pub async fn update_subject(
 )]
 pub async fn delete_subject(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     let Some(access) = curriculum_access_policy::resolve_subject_manage_access(
@@ -273,10 +274,10 @@ pub async fn delete_subject(
 )]
 pub async fn list_subject_default_instructors(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(subject_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     curriculum_access_policy::ensure_subject_manage(
@@ -309,11 +310,11 @@ pub async fn list_subject_default_instructors(
 )]
 pub async fn add_subject_default_instructor(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(subject_id): Path<Uuid>,
     Json(body): Json<AddSubjectDefaultInstructorRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     curriculum_access_policy::ensure_subject_manage(
@@ -347,10 +348,10 @@ pub async fn add_subject_default_instructor(
 )]
 pub async fn remove_subject_default_instructor(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path((subject_id, instructor_id)): Path<(Uuid, Uuid)>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     curriculum_access_policy::ensure_subject_manage(
@@ -386,11 +387,11 @@ pub async fn remove_subject_default_instructor(
 )]
 pub async fn update_subject_default_instructor_role(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path((subject_id, instructor_id)): Path<(Uuid, Uuid)>,
     Json(body): Json<UpdateSubjectDefaultInstructorRoleRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     curriculum_access_policy::ensure_subject_manage(
@@ -431,10 +432,10 @@ pub struct BatchListSubjectDefaultInstructorsQuery {
 )]
 pub async fn batch_list_subject_default_instructors(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Query(query): Query<BatchListSubjectDefaultInstructorsQuery>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     let Some(access) = curriculum_access_policy::resolve_subject_read_access(&actor, &pool).await?

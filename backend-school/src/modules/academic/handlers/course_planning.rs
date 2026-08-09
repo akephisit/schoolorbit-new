@@ -1,5 +1,5 @@
 use axum::{
-    extract::{rejection::JsonRejection, Path, Query, State},
+    extract::{rejection::JsonRejection, Extension, Path, Query, State},
     http::HeaderMap,
     response::IntoResponse,
     Json,
@@ -16,8 +16,9 @@ use crate::modules::academic::models::course_planning::{
 };
 use crate::modules::academic::services::course_planning_service;
 use crate::modules::academic::websockets::TimetableEvent;
+use crate::modules::auth::session_service::AuthenticatedSession;
 use crate::permissions::registry::codes;
-use crate::utils::request_context::{actor_tenant_context, ActorTenantContext};
+use crate::utils::request_context::{actor_tenant_context_from_session, ActorTenantContext};
 use crate::utils::subdomain::extract_subdomain_from_request;
 use crate::AppState;
 
@@ -87,10 +88,10 @@ async fn broadcast_course_refresh(
 )]
 pub async fn list_classroom_courses(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Query(query): Query<PlanQuery>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_READ_ALL)?;
@@ -115,11 +116,11 @@ pub async fn list_classroom_courses(
 )]
 pub async fn assign_courses(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     payload_result: Result<Json<AssignCoursesRequest>, JsonRejection>,
 ) -> Result<impl IntoResponse, AppError> {
     let payload = parse_json_payload(payload_result)?;
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL)?;
@@ -147,10 +148,10 @@ pub async fn assign_courses(
 )]
 pub async fn remove_course(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL)?;
@@ -177,12 +178,12 @@ pub async fn remove_course(
 )]
 pub async fn update_course(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(id): Path<Uuid>,
     payload_result: Result<Json<UpdateCourseRequest>, JsonRejection>,
 ) -> Result<impl IntoResponse, AppError> {
     let payload = parse_json_payload(payload_result)?;
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL)?;
@@ -206,11 +207,11 @@ pub async fn update_course(
 )]
 pub async fn batch_list_course_instructors(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     payload_result: Result<Json<BatchListCourseInstructorsRequest>, JsonRejection>,
 ) -> Result<impl IntoResponse, AppError> {
     let payload = parse_json_payload(payload_result)?;
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_READ_ALL)?;
@@ -235,10 +236,10 @@ pub async fn batch_list_course_instructors(
 )]
 pub async fn batch_list_course_instructors_from_query(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Query(query): Query<BatchListCourseInstructorsQuery>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_READ_ALL)?;
@@ -263,10 +264,10 @@ pub async fn batch_list_course_instructors_from_query(
 )]
 pub async fn list_course_instructors(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(course_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_READ_ALL)?;
@@ -293,12 +294,13 @@ pub async fn list_course_instructors(
 )]
 pub async fn add_course_instructor(
     State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
     headers: HeaderMap,
     Path(course_id): Path<Uuid>,
     payload_result: Result<Json<AddCourseInstructorRequest>, JsonRejection>,
 ) -> Result<impl IntoResponse, AppError> {
     let body = parse_json_payload(payload_result)?;
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     context
         .actor
         .require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL)?;
@@ -334,10 +336,11 @@ pub async fn add_course_instructor(
 )]
 pub async fn remove_course_instructor(
     State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
     headers: HeaderMap,
     Path((course_id, instructor_id)): Path<(Uuid, Uuid)>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     context
         .actor
         .require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL)?;
@@ -373,12 +376,13 @@ pub async fn remove_course_instructor(
 )]
 pub async fn update_course_instructor_role(
     State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
     headers: HeaderMap,
     Path((course_id, instructor_id)): Path<(Uuid, Uuid)>,
     payload_result: Result<Json<UpdateCourseInstructorRoleRequest>, JsonRejection>,
 ) -> Result<impl IntoResponse, AppError> {
     let body = parse_json_payload(payload_result)?;
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     context
         .actor
         .require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL)?;
@@ -412,11 +416,11 @@ pub async fn update_course_instructor_role(
 )]
 pub async fn list_classroom_activities(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(classroom_id): Path<Uuid>,
     Query(query): Query<ClassroomActivityQuery>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_READ_ALL)?;
@@ -445,10 +449,10 @@ pub async fn list_classroom_activities(
 )]
 pub async fn remove_classroom_from_slot(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path((classroom_id, slot_id)): Path<(Uuid, Uuid)>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL)?;
