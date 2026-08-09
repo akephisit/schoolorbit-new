@@ -9,6 +9,7 @@ import {
 	retryAfterSeconds as parseRetryAfterSeconds,
 	withSessionSecurityHeaders
 } from '$lib/api/session-security';
+import { normalizeSchoolSubdomain } from '$lib/api/school-subdomain';
 import { authStore } from '$lib/stores/auth';
 
 export const BACKEND_URL = PUBLIC_BACKEND_URL || 'https://school-api.schoolorbit.app';
@@ -94,14 +95,7 @@ function normalizeApiResponse<T>(
 	};
 }
 
-function normalizeSchoolSubdomain(value: string | undefined): string | null {
-	const subdomain = value?.trim().toLowerCase();
-	if (!subdomain || subdomain === 'www') return null;
-	if (!/^[a-z0-9-]+$/.test(subdomain)) return null;
-	return subdomain;
-}
-
-function getRequestSubdomain(): string | null {
+export function getSchoolSubdomainHint(): string | null {
 	return normalizeSchoolSubdomain(env.PUBLIC_SCHOOL_SUBDOMAIN);
 }
 
@@ -172,7 +166,7 @@ class APIClient {
 		const callerHeaders = new Headers(options.headers);
 		callerHeaders.delete(SCHOOL_SUBDOMAIN_HEADER);
 		const headers = withSessionSecurityHeaders(method, callerHeaders);
-		const subdomain = getRequestSubdomain();
+		const subdomain = getSchoolSubdomainHint();
 		if (subdomain) headers.set(SCHOOL_SUBDOMAIN_HEADER, subdomain);
 
 		const response = await fetch(`${this.baseURL}${endpoint}`, {

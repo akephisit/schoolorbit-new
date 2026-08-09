@@ -1,6 +1,7 @@
 import { writable, type Writable } from 'svelte/store';
-import { apiClient, BACKEND_WS_URL } from '$lib/api/client';
+import { apiClient, BACKEND_WS_URL, getSchoolSubdomainHint } from '$lib/api/client';
 import type { TimetableEntry } from '$lib/api/timetable';
+import { realtimeAuthRecovery } from '$lib/realtime/auth-recovery';
 import {
 	createTimetableSocketRuntime,
 	type TimetableSocketParams
@@ -476,14 +477,23 @@ function clearRealtimeState() {
 	remoteActivities.set({});
 }
 
+async function recoverTimetableAuth() {
+	try {
+		const { authAPI } = await import('$lib/api/auth');
+		await realtimeAuthRecovery(() => authAPI.refreshCurrentUser({ silent: true }));
+	} catch (error) {
+		console.error('Failed to refresh auth after timetable policy close', error);
+	}
+}
+
 const timetableSocketRuntime = createTimetableSocketRuntime({
 	createSocket: (params) => {
 		currentUserId = params.current_user_id;
 		currentSemesterId = params.semester_id;
-		const qs = new URLSearchParams({
-			semester_id: String(params.semester_id)
-		}).toString();
-		const url = `${BACKEND_WS_URL}/ws/timetable?${qs}`;
+		const url = new URL('/ws/timetable', BACKEND_WS_URL);
+		url.searchParams.set('semester_id', String(params.semester_id));
+		const schoolSubdomain = getSchoolSubdomainHint();
+		if (schoolSubdomain) url.searchParams.set('school_subdomain', schoolSubdomain);
 		return new WebSocket(url);
 	},
 	setTimer: (callback, delay) => setTimeout(callback, delay),
@@ -502,9 +512,11 @@ const timetableSocketRuntime = createTimetableSocketRuntime({
 			console.error('WS Parse Error', error);
 		}
 	},
-	onClose: () => {
+	onClose: (event) => {
 		console.log('WS Disconnected');
 		clearRealtimeState();
+		if (event.code !== 1008) return;
+		void recoverTimetableAuth();
 	},
 	onError: (error) => {
 		console.error('WS Error', error);

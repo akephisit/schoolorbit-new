@@ -29,7 +29,7 @@ type TimetableSocketRuntimeDependencies<Timer> = {
 	random?: () => number;
 	onOpen(): void;
 	onMessage(data: unknown): void;
-	onClose(): void;
+	onClose(event: CloseEvent): void;
 	onError(error: unknown): void;
 };
 
@@ -175,7 +175,7 @@ export function createTimetableSocketRuntime<Timer>(
 		nextSocket.onclose = (event) => {
 			if (!ownsSocket(nextSocket, generation)) return;
 			retireSocket(nextSocket, false);
-			dependencies.onClose();
+			dependencies.onClose(event);
 			if (event.code === 1008) {
 				if (shouldReconnect && desiredParams && desiredIntentGeneration > intentGeneration) {
 					clearReconnectTimer();

@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import { renderProxy } from './helpers/render-proxy.mjs';
 
@@ -66,4 +67,44 @@ test('notification stream resolves to the unbuffered credentialed SSE proxy', as
 		/add_header\s+'Access-Control-Allow-Origin'\s+\$allow_origin\s+always;/
 	);
 	assert.match(location.body, /add_header\s+'Access-Control-Allow-Credentials'\s+'true'\s+always;/);
+});
+
+test('notification stream recovers through authoritative auth before bounded manual reconnects', async () => {
+	const store = await readFile(
+		new URL('../../src/lib/stores/notification.ts', import.meta.url),
+		'utf8'
+	);
+	const bell = await readFile(
+		new URL('../../src/lib/components/layout/NotificationBell.svelte', import.meta.url),
+		'utf8'
+	);
+
+	assert.match(store, /getSchoolSubdomainHint/);
+	assert.match(store, /new URL\(['"]\/api\/notifications\/stream['"],\s*BACKEND_URL\)/);
+	assert.match(store, /searchParams\.set\(['"]school_subdomain['"],\s*schoolSubdomain\)/);
+	assert.equal(
+		[...store.matchAll(/['"]school_subdomain['"]/g)].length,
+		1,
+		'the SSE URL must append the sanitized tenant hint at most once'
+	);
+
+	for (const eventName of ['session_invalid', 'session_unavailable']) {
+		assert.match(store, new RegExp(`addEventListener\\(['"]${eventName}['"]`));
+	}
+	assert.match(store, /async function recoverAfterSessionSignal/);
+	assert.match(store, /recoveryInFlight\?\.generation\s*===\s*generation/);
+	assert.match(store, /ownsEventSource\(source,\s*generation\)/);
+	assert.match(store, /function closeSSE\(\)[\s\S]*sseGeneration\s*\+=\s*1/);
+	assert.match(
+		store,
+		/realtimeAuthRecovery\(\(\)\s*=>\s*authAPI\.refreshCurrentUser\(\{\s*silent:\s*true\s*\}\)\s*\)/
+	);
+	assert.match(store, /readyState\s*!==\s*EventSource\.CLOSED[\s\S]*recoverAfterSessionSignal/);
+	assert.match(store, /recoveryAction\s*===\s*['"]reconnect['"][\s\S]*scheduleSseReconnect/);
+	assert.match(store, /recoveryAction\s*===\s*['"]retry['"][\s\S]*scheduleAuthRecovery/);
+	assert.match(store, /recoveryAction\s*===\s*['"]stop['"][\s\S]*clearReconnectTimer/);
+	assert.doesNotMatch(store, /setTimeout\([\s\S]{0,180}this\.initSSE\(\)/);
+
+	assert.match(bell, /const isAuthenticated = \$derived\(\$authStore\.isAuthenticated\)/);
+	assert.match(bell, /if \(isAuthenticated\)\s*\{[\s\S]*notificationStore\.initSSE\(\)/);
 });

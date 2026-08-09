@@ -27,9 +27,9 @@ class FakeSocket {
 		this.onmessage?.({ data });
 	}
 
-	closeFromServer(code = 1006) {
+	closeFromServer(code = 1006, reason = '') {
 		this.readyState = 3;
-		this.onclose?.({ type: 'close', code });
+		this.onclose?.({ type: 'close', code, reason });
 	}
 
 	close() {
@@ -112,6 +112,7 @@ function createHarness() {
 		opens: 0,
 		messages: [],
 		closes: 0,
+		closeEvents: [],
 		errors: []
 	};
 	const runtime = createTimetableSocketRuntime({
@@ -128,8 +129,9 @@ function createHarness() {
 		onMessage: (data) => {
 			notifications.messages.push(data);
 		},
-		onClose: () => {
+		onClose: (event) => {
 			notifications.closes += 1;
+			notifications.closeEvents.push(event);
 		},
 		onError: (error) => {
 			notifications.errors.push(error);
@@ -182,7 +184,13 @@ test('replacement detaches every old handler and ignores already captured callba
 		[socketA.onopen, socketA.onmessage, socketA.onclose, socketA.onerror],
 		[null, null, null, null]
 	);
-	assert.deepEqual(notifications, { opens: 1, messages: [], closes: 0, errors: [] });
+	assert.deepEqual(notifications, {
+		opens: 1,
+		messages: [],
+		closes: 0,
+		closeEvents: [],
+		errors: []
+	});
 });
 
 test('disconnect prevents stale socket callbacks from mutating or notifying', () => {
@@ -209,7 +217,13 @@ test('disconnect prevents stale socket callbacks from mutating or notifying', ()
 		[socket.onopen, socket.onmessage, socket.onclose, socket.onerror],
 		[null, null, null, null]
 	);
-	assert.deepEqual(notifications, { opens: 0, messages: [], closes: 0, errors: [] });
+	assert.deepEqual(notifications, {
+		opens: 0,
+		messages: [],
+		closes: 0,
+		closeEvents: [],
+		errors: []
+	});
 });
 
 test('offline close registers one listener and reconnects once after returning online', () => {
@@ -293,9 +307,11 @@ test('policy close suspends automatic reconnect until an explicit connect', () =
 	runtime.connect(semesterA);
 	environment.advanceBy(50);
 	environment.sockets[0].open();
-	environment.sockets[0].closeFromServer(1008);
+	environment.sockets[0].closeFromServer(1008, 'Authentication required');
 
 	assert.equal(notifications.closes, 1);
+	assert.equal(notifications.closeEvents[0].code, 1008);
+	assert.equal(notifications.closeEvents[0].reason, 'Authentication required');
 	assert.equal(environment.timers.size, 0);
 	assert.equal(environment.onlineListeners.size, 0);
 	environment.advanceBy(60_000);
@@ -305,6 +321,14 @@ test('policy close suspends automatic reconnect until an explicit connect', () =
 	assert.equal(environment.nextDelay(), 50);
 	environment.advanceBy(50);
 	assert.equal(environment.sockets.length, 2);
+});
+
+test('realtime auth recovery maps authoritative refresh outcomes', async () => {
+	const { realtimeAuthRecovery } = await import('../../src/lib/realtime/auth-recovery.ts');
+
+	assert.equal(await realtimeAuthRecovery(async () => 'authenticated'), 'reconnect');
+	assert.equal(await realtimeAuthRecovery(async () => 'unavailable'), 'retry');
+	assert.equal(await realtimeAuthRecovery(async () => 'unauthenticated'), 'stop');
 });
 
 test('same-params refresh intent survives a later policy close exactly once', () => {

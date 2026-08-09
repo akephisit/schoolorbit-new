@@ -152,6 +152,7 @@
 	const requestCoordinator = createRequestCoordinator();
 	const canReadTimetable = $derived($can.has(PERMISSIONS.ACADEMIC_COURSE_PLAN_READ_ALL));
 	const canManageTimetable = $derived($can.has(PERMISSIONS.ACADEMIC_COURSE_PLAN_MANAGE_ALL));
+	const realtimeUserId = $derived($authStore.user?.id ?? null);
 
 	// Helper: Generate consistent pastel color from string
 	// แสดง label fallback เมื่อ entry ไม่มี subject_code/title
@@ -3057,11 +3058,10 @@
 
 	// WebSocket Connection
 	$effect(() => {
-		if (canReadTimetable && selectedSemesterId && $authStore.user) {
-			const user = $authStore.user;
+		if (canReadTimetable && selectedSemesterId && realtimeUserId) {
 			connectTimetableSocket({
 				semester_id: selectedSemesterId,
-				current_user_id: user.id
+				current_user_id: realtimeUserId
 			});
 		} else {
 			disconnectTimetableSocket();

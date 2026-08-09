@@ -1,6 +1,7 @@
 import { PUBLIC_VAPID_KEY } from '$env/static/public';
-import { apiClient, BACKEND_URL } from '$lib/api/client';
+import { apiClient, BACKEND_URL, getSchoolSubdomainHint } from '$lib/api/client';
 import type { components } from '$lib/api/generated/school-api';
+import { realtimeAuthRecovery } from '$lib/realtime/auth-recovery';
 import { workStore } from '$lib/stores/work';
 import { toast } from 'svelte-sonner';
 import { writable } from 'svelte/store';
@@ -93,7 +94,12 @@ export interface PushNotificationDeviceStatus {
 
 let eventSource: EventSource | null = null;
 let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
-let reconnectDelay = 3000; // ms, doubles on each failure up to 60s
+const INITIAL_SSE_RECONNECT_DELAY_MS = 3000;
+const MAX_SSE_RECONNECT_DELAY_MS = 60000;
+let reconnectDelay = INITIAL_SSE_RECONNECT_DELAY_MS;
+let sseGeneration = 0;
+let shouldMaintainSSE = false;
+let recoveryInFlight: { generation: number; promise: Promise<void> } | null = null;
 
 function createNotificationStore() {
 	const { subscribe, set, update } = writable<NotificationState>({
@@ -101,6 +107,194 @@ function createNotificationStore() {
 		unreadCount: 0,
 		loading: false
 	});
+
+	function clearReconnectTimer() {
+		if (!reconnectTimeout) return;
+		clearTimeout(reconnectTimeout);
+		reconnectTimeout = null;
+	}
+
+	function closeEventSource() {
+		const source = eventSource;
+		eventSource = null;
+		if (source) source.close();
+	}
+
+	function ownsEventSource(source: EventSource, generation: number): boolean {
+		return shouldMaintainSSE && eventSource === source && sseGeneration === generation;
+	}
+
+	function notificationStreamUrl(): string {
+		const url = new URL('/api/notifications/stream', BACKEND_URL);
+		const schoolSubdomain = getSchoolSubdomainHint();
+		if (schoolSubdomain) url.searchParams.set('school_subdomain', schoolSubdomain);
+		return url.toString();
+	}
+
+	function scheduleSseTask(generation: number, callback: () => void) {
+		if (!shouldMaintainSSE || generation !== sseGeneration || reconnectTimeout !== null) {
+			return;
+		}
+
+		const delay = reconnectDelay;
+		reconnectTimeout = setTimeout(() => {
+			reconnectTimeout = null;
+			if (!shouldMaintainSSE || generation !== sseGeneration) return;
+			reconnectDelay = Math.min(reconnectDelay * 2, MAX_SSE_RECONNECT_DELAY_MS);
+			callback();
+		}, delay);
+	}
+
+	function scheduleSseReconnect(generation: number) {
+		scheduleSseTask(generation, () => openSSE(generation));
+	}
+
+	function scheduleAuthRecovery(generation: number) {
+		scheduleSseTask(generation, () => {
+			void recoverAfterSessionSignal(generation);
+		});
+	}
+
+	async function recoverAfterSessionSignal(generation = sseGeneration): Promise<void> {
+		if (!shouldMaintainSSE || generation !== sseGeneration) return;
+		if (recoveryInFlight?.generation === generation) return recoveryInFlight.promise;
+
+		clearReconnectTimer();
+		closeEventSource();
+
+		const promise = (async () => {
+			try {
+				const { authAPI } = await import('$lib/api/auth');
+				const recoveryAction = await realtimeAuthRecovery(() =>
+					authAPI.refreshCurrentUser({ silent: true })
+				);
+				if (!shouldMaintainSSE || generation !== sseGeneration) return;
+
+				if (recoveryAction === 'reconnect') {
+					scheduleSseReconnect(generation);
+				} else if (recoveryAction === 'retry') {
+					scheduleAuthRecovery(generation);
+				} else if (recoveryAction === 'stop') {
+					clearReconnectTimer();
+					shouldMaintainSSE = false;
+				}
+			} catch (error) {
+				console.error('Failed to recover notification stream authentication', error);
+				if (shouldMaintainSSE && generation === sseGeneration) {
+					scheduleAuthRecovery(generation);
+				}
+			}
+		})();
+		const recovery = { generation, promise };
+		recoveryInFlight = recovery;
+		try {
+			await promise;
+		} finally {
+			if (recoveryInFlight === recovery) recoveryInFlight = null;
+		}
+	}
+
+	function openSSE(generation: number) {
+		if (typeof EventSource === 'undefined' || !shouldMaintainSSE || generation !== sseGeneration) {
+			return;
+		}
+		if (eventSource && (eventSource.readyState === 1 || eventSource.readyState === 0)) return;
+
+		clearReconnectTimer();
+		closeEventSource();
+		const source = new EventSource(notificationStreamUrl(), { withCredentials: true });
+		eventSource = source;
+
+		source.onopen = () => {
+			if (!ownsEventSource(source, generation)) return;
+			console.log('✅ SSE Connected');
+			reconnectDelay = INITIAL_SSE_RECONNECT_DELAY_MS;
+		};
+
+		source.onmessage = (event) => {
+			if (!ownsEventSource(source, generation)) return;
+			try {
+				const newNotif: Notification = JSON.parse(event.data);
+
+				update((state) => {
+					if (state.notifications.some((notification) => notification.id === newNotif.id)) {
+						return state;
+					}
+
+					return {
+						...state,
+						notifications: [newNotif, ...state.notifications],
+						unreadCount: state.unreadCount + 1
+					};
+				});
+
+				toast.success(newNotif.title, {
+					description: newNotif.message,
+					duration: 5000,
+					action: {
+						label: 'ดู',
+						onClick: () => {
+							if (newNotif.link) window.location.href = newNotif.link;
+						}
+					}
+				});
+			} catch (error) {
+				console.error('Failed to parse SSE message', error);
+			}
+		};
+
+		source.addEventListener('permission_changed', async () => {
+			if (!ownsEventSource(source, generation)) return;
+			try {
+				const { authAPI } = await import('$lib/api/auth');
+				await authAPI.refreshCurrentUser({ silent: true });
+			} catch (error) {
+				console.error('Failed to refresh auth context after permission change', error);
+			}
+		});
+
+		source.addEventListener('work_items_changed', () => {
+			if (ownsEventSource(source, generation)) void workStore.refreshSilently();
+		});
+
+		source.addEventListener('workflow_window_changed', () => {
+			if (ownsEventSource(source, generation)) void workStore.refreshSilently();
+		});
+
+		const recover = () => {
+			if (!ownsEventSource(source, generation)) return;
+			void recoverAfterSessionSignal(generation);
+		};
+		source.addEventListener('session_invalid', recover);
+		source.addEventListener('session_unavailable', recover);
+
+		source.onerror = () => {
+			if (!ownsEventSource(source, generation)) return;
+			if (source.readyState !== EventSource.CLOSED) {
+				console.log('🔄 SSE Reconnecting...');
+				return;
+			}
+			void recoverAfterSessionSignal(generation);
+		};
+	}
+
+	function initSSE() {
+		if (typeof EventSource === 'undefined') return;
+		shouldMaintainSSE = true;
+		if (eventSource && (eventSource.readyState === 1 || eventSource.readyState === 0)) return;
+
+		clearReconnectTimer();
+		sseGeneration += 1;
+		openSSE(sseGeneration);
+	}
+
+	function closeSSE() {
+		shouldMaintainSSE = false;
+		sseGeneration += 1;
+		clearReconnectTimer();
+		closeEventSource();
+		reconnectDelay = INITIAL_SSE_RECONNECT_DELAY_MS;
+	}
 
 	return {
 		subscribe,
@@ -125,106 +319,8 @@ function createNotificationStore() {
 			}
 		},
 
-		initSSE() {
-			if (typeof EventSource === 'undefined') return;
-			// 0 = CONNECTING, 1 = OPEN
-			if (eventSource && (eventSource.readyState === 1 || eventSource.readyState === 0)) return;
-
-			// Clear any pending reconnect before creating a new connection
-			if (reconnectTimeout) {
-				clearTimeout(reconnectTimeout);
-				reconnectTimeout = null;
-			}
-
-			eventSource = new EventSource(`${BACKEND_URL}/api/notifications/stream`, {
-				withCredentials: true
-			});
-
-			eventSource.onopen = () => {
-				console.log('✅ SSE Connected');
-				reconnectDelay = 3000; // reset backoff on successful connect
-			};
-
-			eventSource.onmessage = (event) => {
-				try {
-					const newNotif: Notification = JSON.parse(event.data);
-
-					update((s) => {
-						// Avoid duplicates
-						if (s.notifications.some((n) => n.id === newNotif.id)) return s;
-
-						return {
-							...s,
-							notifications: [newNotif, ...s.notifications],
-							unreadCount: s.unreadCount + 1
-						};
-					});
-
-					// Show toast
-					toast.success(newNotif.title, {
-						description: newNotif.message,
-						duration: 5000,
-						action: {
-							label: 'ดู',
-							onClick: () => {
-								if (newNotif.link) window.location.href = newNotif.link;
-							}
-						}
-					});
-				} catch (e) {
-					console.error('Failed to parse SSE message', e);
-				}
-			};
-
-			eventSource.addEventListener('permission_changed', async () => {
-				try {
-					const { authAPI } = await import('$lib/api/auth');
-					await authAPI.refreshCurrentUser({ silent: true });
-				} catch (error) {
-					console.error('Failed to refresh auth context after permission change', error);
-				}
-			});
-
-			eventSource.addEventListener('work_items_changed', () => {
-				void workStore.refreshSilently();
-			});
-
-			eventSource.addEventListener('workflow_window_changed', () => {
-				void workStore.refreshSilently();
-			});
-
-			eventSource.onerror = () => {
-				if (!eventSource) return;
-
-				if (eventSource.readyState === 0) {
-					// Browser is actively trying to reconnect (network blip)
-					console.log('🔄 SSE Reconnecting...');
-				} else {
-					// readyState === 2 (CLOSED) — server closed or HTTP error (e.g. 401)
-					// Browser will NOT auto-retry; we must do it manually
-					console.log(`🔄 SSE closed, retrying in ${reconnectDelay / 1000}s...`);
-					eventSource.close();
-					eventSource = null;
-
-					reconnectTimeout = setTimeout(() => {
-						reconnectDelay = Math.min(reconnectDelay * 2, 60000);
-						this.initSSE();
-					}, reconnectDelay);
-				}
-			};
-		},
-
-		closeSSE() {
-			if (reconnectTimeout) {
-				clearTimeout(reconnectTimeout);
-				reconnectTimeout = null;
-			}
-			if (eventSource) {
-				eventSource.close();
-				eventSource = null;
-			}
-			reconnectDelay = 3000;
-		},
+		initSSE,
+		closeSSE,
 
 		async markAsRead(id: string) {
 			try {
