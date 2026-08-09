@@ -142,11 +142,23 @@ pub async fn create_test_pool() -> PgPool {
 
 /// Create a fresh schema-isolated pool for a destructive migration scenario.
 pub async fn create_named_test_pool(test_name: &str) -> PgPool {
+    create_named_test_pool_with_max_connections(test_name, 1).await
+}
+
+/// Create a fresh schema-isolated pool with enough connections for real concurrency tests.
+pub async fn create_named_test_pool_with_max_connections(
+    test_name: &str,
+    max_connections: u32,
+) -> PgPool {
+    assert!(
+        max_connections > 0,
+        "named test pool requires at least one connection"
+    );
     let database_url = explicit_test_database_url();
     let schema = named_test_schema(test_name, process::id());
     reset_test_schema(&database_url, &schema).await;
 
-    pool_with_search_path(&schema, 1)
+    pool_with_search_path(&schema, max_connections)
         .connect(&database_url)
         .await
         .expect("Failed to connect to named test schema")
@@ -280,5 +292,11 @@ mod tests {
             direct_test_database_url(database_url),
             "postgresql://user:pass-pooler.marker@ep-example.aws.neon.tech/db?tag=-pooler."
         );
+    }
+
+    #[tokio::test]
+    #[should_panic(expected = "named test pool requires at least one connection")]
+    async fn named_test_pool_rejects_zero_connections() {
+        create_named_test_pool_with_max_connections("zero_connections", 0).await;
     }
 }
