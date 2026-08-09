@@ -105,16 +105,16 @@ Unknown usernames run a fixed dummy bcrypt verification before returning the sam
 - Name the cookie `__Host-schoolorbit_session`.
 - Set `Secure`, `HttpOnly`, `SameSite=Lax`, and `Path=/`; never set `Domain`.
 - A normal session cookie has no persistent `Max-Age`. The server still enforces a two-hour idle and twelve-hour absolute lifetime.
-- A remembered session cookie has a maximum age of thirty days. The server enforces a seven-day idle and thirty-day absolute lifetime.
+- A remembered session cookie starts with a maximum age of thirty days. Replacement cookies use only the remaining whole seconds to the fixed absolute expiry, so rotation never extends that lifetime. The server enforces a seven-day idle and thirty-day absolute lifetime.
 - Never return the session token outside its `Set-Cookie` header or include it in JSON, other headers, logs, errors, audit payloads, or realtime events.
 
-Rotate the opaque token when the current token has not rotated for fifteen minutes. In one transaction, move the current hash to `previous_token_hash`, set its grace expiry to sixty seconds, and store the new current hash. Return the new cookie only after the transaction commits. Requests presenting the previous token during the grace window authenticate against the same session but cannot rotate it again. After the grace window, clear both previous-token fields during normal session activity or cleanup.
+Rotate the opaque token on an ordinary HTTP request when the current token has not rotated for fifteen minutes. In one transaction, move the current hash to `previous_token_hash`, set its grace expiry to sixty seconds, and store the new current hash. Return the new cookie only after the transaction commits. Requests presenting the previous token during the grace window authenticate against the same session but cannot rotate it again. After the grace window, clear both previous-token fields during normal session activity or cleanup.
 
 ## CSRF and Origin Contract
 
-Use `SESSION_HMAC_KEY` with a separate domain label to derive a CSRF token from the raw session token. The database does not need the raw CSRF value or a separate reversible secret.
+Use `SESSION_HMAC_KEY` with a separate domain label to derive a stable CSRF token from the tenant UUID plus session UUID. The database does not need the raw CSRF value or a separate reversible secret. Binding the token to the logical session instead of the rotating credential keeps multiple tabs coherent: they share the backend cookie but intentionally keep independent in-memory CSRF copies.
 
-- Login and `/api/auth/me` expose the current CSRF token through `X-CSRF-Token`.
+- Login and `/api/auth/me` expose the session CSRF token through `X-CSRF-Token`.
 - CORS exposes only that response header to the exact configured tenant frontend origin.
 - `frontend-school` retains the value only in module memory and never writes it to local or session storage.
 - Every cookie-authenticated `POST`, `PUT`, `PATCH`, and `DELETE` sends `X-CSRF-Token`. The only exception is idempotent logout when no valid session exists, where the backend may expire stale cookies after exact-Origin validation.
@@ -122,7 +122,9 @@ Use `SESSION_HMAC_KEY` with a separate domain label to derive a CSRF token from 
 - Safe methods do not require the CSRF header but still require normal session and tenant validation when protected.
 - Login requires exact tenant Origin/Referer validation even though it has no session-bound CSRF token yet.
 
-When token rotation succeeds, the response includes both the new cookie and the new CSRF response header. A concurrent request using the previous token and previous CSRF value remains valid during the same grace window.
+Production tenant identity is derived from the exact frontend Origin hostname. For explicitly allowlisted local-development Origins that do not encode a tenant hostname, ordinary `fetch` requests must provide the sanitized `X-School-Subdomain` hint. Browser `EventSource` and `WebSocket` APIs cannot set that header, so their handshake URLs may carry the same sanitized value once as `school_subdomain`; the backend accepts it as authority only for an exact development allowlist match. Production always derives the tenant from Origin and rejects malformed, duplicate, or conflicting hints.
+
+When token rotation succeeds, the response includes both the new cookie and the stable session CSRF response header. A concurrent request using the previous credential and the same session CSRF value remains valid during the grace window.
 
 ## Central Authentication Boundary
 
@@ -133,7 +135,7 @@ Replace the stateless JWT parser with a state-aware session validator shared by 
 3. loads a non-revoked, non-expired session and its owning user;
 4. rejects the request unless the user status is exactly `active`;
 5. enforces idle and absolute expiry;
-6. rotates the token when due;
+6. rotates the token when due, except for SSE/WebSocket handshakes as described under Realtime Authentication;
 7. updates `last_seen_at` and idle expiry at most once every five minutes;
 8. inserts a typed `AuthenticatedSession` containing tenant context, session ID, user ID, username, and user type into request extensions.
 
@@ -189,11 +191,11 @@ Add a shared authenticated `/account/security` route available to staff, student
 
 ## Password Change
 
-Password change runs in one tenant database transaction:
+Password change keeps every database mutation in one tenant transaction without holding row locks during expensive bcrypt work. New passwords contain 8–128 Unicode scalar values and at most 71 UTF-8 bytes, and hashing uses bcrypt's non-truncating API. Existing bcrypt hashes remain verifiable during login; this prevents silent 72-byte truncation without introducing a password-format migration.
 
-1. lock and load the active user and current session;
-2. verify the current password;
-3. validate and hash the new password;
+1. load a password/current-session snapshot;
+2. verify the current password, validate/hash the new password, and generate the replacement credential outside the write transaction;
+3. begin the transaction, lock the active user and current session, and require their state/hash to match the verified snapshot;
 4. update the password hash;
 5. revoke every other active session with reason `password_changed`;
 6. rotate the current session token;
@@ -204,6 +206,8 @@ A later password-reset or account-recovery flow will revoke every session includ
 ## Realtime Authentication
 
 SSE and WebSocket handshakes call the same session service and bind the authenticated tenant, user ID, and session ID server-side. Clients cannot supply or replace identity after connection establishment.
+
+Realtime handshakes validate and may touch activity, but they do not rotate the session credential. Browser `EventSource` and `WebSocket` APIs do not give application code a normal fetch response through which to observe and test credential-maintenance outcomes, so a due rotation is deferred to the next ordinary HTTP request. The CSRF value itself remains stable for the logical session.
 
 - Revocation publishes a process-local session/user signal so matching connections on the same replica close immediately.
 - Long-lived connections revalidate the session and active-user status from the tenant database every thirty-second heartbeat.
@@ -271,7 +275,7 @@ The migration is additive, so an emergency rollback can leave the new tables in 
 ### Frontend tests
 
 - generated DTO ownership for every auth/session endpoint;
-- CSRF capture, memory-only storage, mutation injection, rotation update, and clearing;
+- CSRF capture, memory-only storage, mutation injection, stable two-tab behavior across credential rotation, and clearing;
 - differentiated `401`, `403`, `429`, and `503` state transitions;
 - session list and ownership-safe revoke actions;
 - login/logout and password-change behavior;
