@@ -106,6 +106,16 @@ fn academic_group_a_handlers_use_typed_session_identity() {
 }
 
 #[test]
+fn academic_group_b_handlers_use_typed_session_identity() {
+    assert_typed_session_handlers(&[
+        "src/modules/academic/handlers/exam_schedule.rs",
+        "src/modules/academic/handlers/study_plans.rs",
+        "src/modules/academic/handlers/timetable.rs",
+        "src/modules/academic/handlers/timetable_templates.rs",
+    ]);
+}
+
+#[test]
 fn exam_schedule_shared_module_is_private() {
     let facade_path = manifest_dir().join("src/modules/academic/services/exam_schedule_service.rs");
     let shared_path =
@@ -1521,7 +1531,7 @@ fn daily_teaching_overview_endpoint_is_read_only_and_pii_safe() {
         "daily teaching route must be registered before /timetable/{{id}}"
     );
 
-    assert!(daily_handler.contains("actor_tenant_context(&state, &headers).await?"));
+    assert!(daily_handler.contains("actor_tenant_context_from_session(&state, &session).await?"));
     assert!(daily_handler.contains("ACADEMIC_TIMETABLE_TODAY_READ_SCHOOL"));
     assert!(daily_handler.contains("ACADEMIC_COURSE_PLAN_READ_ALL"));
     assert!(!daily_handler.contains("ACADEMIC_COURSE_PLAN_MANAGE_ALL"));
@@ -1662,7 +1672,7 @@ fn academic_core_study_plan_handlers_enforce_curriculum_permission_contract() {
             .unwrap_or(handler_tail);
 
         assert!(
-            handler.contains("actor_tenant_context(&state, &headers).await?"),
+            handler.contains("actor_tenant_context_from_session(&state, &session).await?"),
             "{handler_name} must load the authenticated actor and tenant together"
         );
         assert!(
@@ -1682,7 +1692,7 @@ fn academic_core_study_plan_handlers_enforce_curriculum_permission_contract() {
         .split("pub async fn ")
         .next()
         .unwrap_or("");
-    assert!(generate_handler.contains("actor_tenant_context(&state, &headers).await?"));
+    assert!(generate_handler.contains("actor_tenant_context_from_session(&state, &session).await?"));
     assert!(generate_handler
         .contains("actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL)?"));
     assert!(generate_handler.contains("Some(actor.user_id)"));
@@ -1736,7 +1746,7 @@ fn academic_activity_template_handlers_enforce_permission_contract() {
             .unwrap_or(handler_tail);
 
         assert!(
-            handler.contains("actor_tenant_context(&state, &headers).await?"),
+            handler.contains("actor_tenant_context_from_session(&state, &session).await?"),
             "{handler_name} must load the authenticated actor and tenant together"
         );
         assert!(
@@ -1756,7 +1766,7 @@ fn academic_activity_template_handlers_enforce_permission_contract() {
         .split("pub async fn ")
         .next()
         .unwrap_or("");
-    assert!(generate_handler.contains("actor_tenant_context(&state, &headers).await?"));
+    assert!(generate_handler.contains("actor_tenant_context_from_session(&state, &session).await?"));
     assert!(generate_handler.contains("curriculum_access_policy::ensure_curriculum_read(&actor)?"));
     assert!(generate_handler.contains("actor.require_permission(codes::ACTIVITY_MANAGE_ALL)?"));
     assert!(generate_handler.contains("Some(actor.user_id)"));

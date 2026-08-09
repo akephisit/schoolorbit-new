@@ -3,14 +3,15 @@ use crate::error::AppError;
 use crate::modules::academic::services::study_plan_service::{
     self, GenerateActivitiesFromPlanOutcome,
 };
+use crate::modules::auth::session_service::AuthenticatedSession;
 use crate::permissions::registry::codes;
 use crate::policies::curriculum_access_policy;
-use crate::utils::request_context::actor_tenant_context;
+use crate::utils::request_context::actor_tenant_context_from_session;
 use crate::AppState;
 
 use axum::{
-    extract::{Path, Query, State},
-    http::{HeaderMap, StatusCode},
+    extract::{Extension, Path, Query, State},
+    http::StatusCode,
     response::IntoResponse,
     Json,
 };
@@ -53,10 +54,10 @@ pub(crate) struct GenerateCoursesData {
 )]
 pub async fn list_study_plans(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Query(query): Query<StudyPlanQuery>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     curriculum_access_policy::ensure_curriculum_read(&actor)?;
@@ -80,10 +81,10 @@ pub async fn list_study_plans(
 )]
 pub async fn get_study_plan(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(plan_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     curriculum_access_policy::ensure_curriculum_read(&actor)?;
@@ -108,10 +109,10 @@ pub async fn get_study_plan(
 )]
 pub async fn create_study_plan(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Json(req): Json<CreateStudyPlanRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     curriculum_access_policy::ensure_curriculum_create(&actor)?;
@@ -138,11 +139,11 @@ pub async fn create_study_plan(
 )]
 pub async fn update_study_plan(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(plan_id): Path<Uuid>,
     Json(req): Json<UpdateStudyPlanRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     curriculum_access_policy::ensure_curriculum_update(&actor)?;
@@ -166,10 +167,10 @@ pub async fn update_study_plan(
 )]
 pub async fn delete_study_plan(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(plan_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     curriculum_access_policy::ensure_curriculum_delete(&actor)?;
@@ -199,10 +200,10 @@ pub async fn delete_study_plan(
 )]
 pub async fn list_study_plan_versions(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Query(query): Query<StudyPlanVersionQuery>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     curriculum_access_policy::ensure_curriculum_read(&actor)?;
@@ -226,10 +227,10 @@ pub async fn list_study_plan_versions(
 )]
 pub async fn get_study_plan_version(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(version_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     curriculum_access_policy::ensure_curriculum_read(&actor)?;
@@ -255,10 +256,10 @@ pub async fn get_study_plan_version(
 )]
 pub async fn create_study_plan_version(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Json(req): Json<CreateStudyPlanVersionRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     curriculum_access_policy::ensure_curriculum_create(&actor)?;
@@ -285,11 +286,11 @@ pub async fn create_study_plan_version(
 )]
 pub async fn update_study_plan_version(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(version_id): Path<Uuid>,
     Json(req): Json<UpdateStudyPlanVersionRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     curriculum_access_policy::ensure_curriculum_update(&actor)?;
@@ -313,10 +314,10 @@ pub async fn update_study_plan_version(
 )]
 pub async fn delete_study_plan_version(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(version_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     curriculum_access_policy::ensure_curriculum_delete(&actor)?;
@@ -348,11 +349,11 @@ pub async fn delete_study_plan_version(
 )]
 pub async fn list_study_plan_subjects(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(version_id): Path<Uuid>,
     Query(mut query): Query<StudyPlanSubjectQuery>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     curriculum_access_policy::ensure_curriculum_read(&actor)?;
@@ -379,11 +380,11 @@ pub async fn list_study_plan_subjects(
 )]
 pub async fn add_subjects_to_version(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(version_id): Path<Uuid>,
     Json(req): Json<AddSubjectsToVersionRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     curriculum_access_policy::ensure_curriculum_update(&actor)?;
@@ -410,10 +411,10 @@ pub async fn add_subjects_to_version(
 )]
 pub async fn delete_study_plan_subject(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(sps_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     curriculum_access_policy::ensure_curriculum_delete(&actor)?;
@@ -442,10 +443,10 @@ pub async fn delete_study_plan_subject(
 )]
 pub async fn generate_courses_from_plan(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Json(req): Json<GenerateCoursesFromPlanRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL)?;
@@ -492,10 +493,10 @@ pub async fn generate_courses_from_plan(
 )]
 pub async fn list_plan_activities(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(version_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     curriculum_access_policy::ensure_curriculum_read(&actor)?;
@@ -521,11 +522,11 @@ pub async fn list_plan_activities(
 )]
 pub async fn add_plan_activity(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(version_id): Path<Uuid>,
     Json(req): Json<CreatePlanActivityRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     curriculum_access_policy::ensure_curriculum_update(&actor)?;
@@ -550,11 +551,11 @@ pub async fn add_plan_activity(
 )]
 pub async fn update_plan_activity(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(id): Path<Uuid>,
     Json(req): Json<UpdatePlanActivityRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     curriculum_access_policy::ensure_curriculum_update(&actor)?;
@@ -578,10 +579,10 @@ pub async fn update_plan_activity(
 )]
 pub async fn delete_plan_activity(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     curriculum_access_policy::ensure_curriculum_delete(&actor)?;
@@ -605,10 +606,10 @@ pub async fn delete_plan_activity(
 )]
 pub async fn generate_activities_from_plan(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Json(req): Json<GenerateActivitiesFromPlanRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     curriculum_access_policy::ensure_curriculum_read(&actor)?;
@@ -637,10 +638,10 @@ pub async fn generate_activities_from_plan(
 )]
 pub async fn list_activity_catalog(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Query(filter): Query<study_plan_service::ActivityCatalogFilter>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     curriculum_access_policy::ensure_curriculum_read(&actor)?;
@@ -666,10 +667,10 @@ pub async fn list_activity_catalog(
 )]
 pub async fn create_activity_catalog(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Json(req): Json<CreateCatalogRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     curriculum_access_policy::ensure_curriculum_create(&actor)?;
@@ -694,11 +695,11 @@ pub async fn create_activity_catalog(
 )]
 pub async fn update_activity_catalog(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(id): Path<Uuid>,
     Json(req): Json<UpdateCatalogRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     curriculum_access_policy::ensure_curriculum_update(&actor)?;
@@ -723,10 +724,10 @@ pub async fn update_activity_catalog(
 )]
 pub async fn delete_activity_catalog(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     curriculum_access_policy::ensure_curriculum_delete(&actor)?;
@@ -754,10 +755,10 @@ pub async fn delete_activity_catalog(
 )]
 pub async fn list_catalog_default_instructors(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(catalog_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     curriculum_access_policy::ensure_curriculum_read(&actor)?;
@@ -783,11 +784,11 @@ pub async fn list_catalog_default_instructors(
 )]
 pub async fn add_catalog_default_instructor(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(catalog_id): Path<Uuid>,
     Json(body): Json<AddCatalogDefaultInstructorRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     curriculum_access_policy::ensure_curriculum_update(&actor)?;
@@ -821,10 +822,10 @@ pub async fn add_catalog_default_instructor(
 )]
 pub async fn remove_catalog_default_instructor(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path((catalog_id, instructor_id)): Path<(Uuid, Uuid)>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     curriculum_access_policy::ensure_curriculum_update(&actor)?;
@@ -853,11 +854,11 @@ pub async fn remove_catalog_default_instructor(
 )]
 pub async fn update_catalog_default_instructor_role(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path((catalog_id, instructor_id)): Path<(Uuid, Uuid)>,
     Json(body): Json<UpdateCatalogDefaultInstructorRoleRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     curriculum_access_policy::ensure_curriculum_update(&actor)?;

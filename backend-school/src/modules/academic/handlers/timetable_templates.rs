@@ -1,5 +1,5 @@
 use axum::{
-    extract::{Path, State},
+    extract::{Extension, Path, State},
     http::HeaderMap,
     response::IntoResponse,
     Json,
@@ -11,8 +11,9 @@ use crate::api_response::{ApiResponse, IdData};
 use crate::error::AppError;
 use crate::modules::academic::services::timetable_template_service;
 use crate::modules::academic::websockets::TimetableEvent;
+use crate::modules::auth::session_service::AuthenticatedSession;
 use crate::permissions::registry::codes;
-use crate::utils::request_context::actor_tenant_context;
+use crate::utils::request_context::actor_tenant_context_from_session;
 use crate::utils::subdomain::extract_subdomain_from_request;
 use crate::AppState;
 
@@ -74,9 +75,9 @@ fn default_non_course_types() -> Vec<String> {
 
 pub async fn list_templates(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_READ_ALL)?;
@@ -86,10 +87,10 @@ pub async fn list_templates(
 
 pub async fn get_template(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_READ_ALL)?;
@@ -103,10 +104,10 @@ pub async fn get_template(
 
 pub async fn create_template(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Json(payload): Json<CreateTemplateRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL)?;
@@ -123,11 +124,11 @@ pub async fn create_template(
 
 pub async fn update_template(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(id): Path<Uuid>,
     Json(payload): Json<UpdateTemplateRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL)?;
@@ -143,10 +144,10 @@ pub async fn update_template(
 
 pub async fn delete_template(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL)?;
@@ -156,10 +157,10 @@ pub async fn delete_template(
 
 pub async fn from_current(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Json(payload): Json<FromCurrentRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL)?;
@@ -181,11 +182,12 @@ pub async fn from_current(
 
 pub async fn apply_template(
     State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
     headers: HeaderMap,
     Path(template_id): Path<Uuid>,
     Json(payload): Json<ApplyTemplateRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL)?;
@@ -214,10 +216,11 @@ pub async fn apply_template(
 
 pub async fn clear_timetable(
     State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
     headers: HeaderMap,
     Json(payload): Json<ClearTimetableRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL)?;

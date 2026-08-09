@@ -8,7 +8,7 @@ use crate::modules::academic::websockets::TimetableEvent;
 use crate::modules::auth::session_service::AuthenticatedSession;
 use crate::permissions::registry::codes;
 use crate::utils::request_context::{
-    actor_tenant_context, current_user_tenant_context_from_headers,
+    actor_tenant_context_from_session, current_user_tenant_context_from_session,
 };
 use crate::utils::subdomain::extract_subdomain_from_request;
 use crate::AppState;
@@ -87,10 +87,10 @@ struct BatchCreateSummary {
 /// GET /api/academic/periods
 pub async fn list_periods(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Query(query): Query<PeriodQuery>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_STRUCTURE_READ_ALL)?;
@@ -102,10 +102,10 @@ pub async fn list_periods(
 /// POST /api/academic/periods
 pub async fn create_period(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Json(payload): Json<CreatePeriodRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_STRUCTURE_MANAGE_ALL)?;
@@ -117,11 +117,11 @@ pub async fn create_period(
 /// PUT /api/academic/periods/{id}
 pub async fn update_period(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(id): Path<Uuid>,
     Json(payload): Json<UpdatePeriodRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_STRUCTURE_MANAGE_ALL)?;
@@ -133,10 +133,10 @@ pub async fn update_period(
 /// DELETE /api/academic/periods/{id}
 pub async fn delete_period(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_STRUCTURE_MANAGE_ALL)?;
@@ -148,10 +148,10 @@ pub async fn delete_period(
 /// POST /api/academic/periods/reorder
 pub async fn reorder_periods(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Json(payload): Json<ReorderPeriodsRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_STRUCTURE_MANAGE_ALL)?;
@@ -167,10 +167,11 @@ pub async fn reorder_periods(
 /// GET /api/academic/timetable
 pub async fn list_timetable_entries(
     State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
     headers: HeaderMap,
     Query(query): Query<TimetableQuery>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_READ_ALL)?;
@@ -209,10 +210,10 @@ pub async fn list_timetable_entries(
 )]
 pub async fn daily_teaching_overview(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Query(query): Query<daily_teaching_service::DailyTeachingQuery>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
 
@@ -243,10 +244,11 @@ pub struct ReplayQuery {
 
 pub async fn replay_events(
     State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
     headers: HeaderMap,
     Query(query): Query<ReplayQuery>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_READ_ALL)?;
 
@@ -304,18 +306,19 @@ pub async fn get_my_timetable(
     Extension(session): Extension<AuthenticatedSession>,
     Query(query): Query<MyTimetableQuery>,
 ) -> Result<impl IntoResponse, AppError> {
-    let subdomain = session.tenant.subdomain.clone();
-    let pool = session.tenant.pool.clone();
+    let context = current_user_tenant_context_from_session(&session);
+    let subdomain = context.tenant.subdomain.clone();
+    let pool = context.tenant.pool;
 
     let filter = match session.user_type.as_str() {
         "student" => crate::modules::academic::services::timetable_service::TimetableFilter {
-            student_id: Some(session.user_id),
+            student_id: Some(context.user_id),
             academic_semester_id: query.academic_semester_id,
             day_of_week: query.day_of_week,
             ..Default::default()
         },
         "staff" => crate::modules::academic::services::timetable_service::TimetableFilter {
-            instructor_id: Some(session.user_id),
+            instructor_id: Some(context.user_id),
             academic_semester_id: query.academic_semester_id,
             day_of_week: query.day_of_week,
             include_team_ghosts: query.include_team_ghosts.unwrap_or(false),
@@ -347,10 +350,11 @@ pub async fn get_my_timetable(
 /// POST /api/academic/timetable
 pub async fn create_timetable_entry(
     State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
     headers: HeaderMap,
     Json(payload): Json<CreateTimetableEntryRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL)?;
@@ -442,10 +446,11 @@ pub async fn create_timetable_entry(
 /// Deletes all entries matching activity_slot_id + day_of_week + semester
 pub async fn delete_batch_timetable_entries(
     State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
     headers: HeaderMap,
     Json(payload): Json<DeleteBatchTimetableEntriesRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL)?;
@@ -473,10 +478,11 @@ pub async fn delete_batch_timetable_entries(
 /// DELETE /api/academic/timetable/{id}
 pub async fn delete_timetable_entry(
     State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
     headers: HeaderMap,
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL)?;
@@ -503,10 +509,11 @@ pub async fn delete_timetable_entry(
 /// DELETE /api/academic/timetable/batch-group/{batch_id}
 pub async fn delete_batch_group(
     State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
     headers: HeaderMap,
     Path(batch_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL)?;
@@ -533,11 +540,12 @@ pub async fn delete_batch_group(
 /// PUT /api/academic/timetable/{id}
 pub async fn update_timetable_entry(
     State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
     headers: HeaderMap,
     Path(id): Path<Uuid>,
     Json(payload): Json<UpdateTimetableEntryRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL)?;
@@ -617,10 +625,11 @@ pub async fn update_timetable_entry(
 /// POST /api/academic/timetable/batch
 pub async fn create_batch_timetable_entries(
     State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
     headers: HeaderMap,
     Json(payload): Json<CreateBatchTimetableEntriesRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL)?;
@@ -651,11 +660,10 @@ pub async fn create_batch_timetable_entries(
 /// GET /api/academic/timetable/{id}/my-activity
 /// Returns the activity group the current user is enrolled in for a given timetable entry's slot
 pub async fn get_my_activity_for_entry(
-    State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(entry_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = current_user_tenant_context_from_headers(&state, &headers).await?;
+    let context = current_user_tenant_context_from_session(&session);
     let pool = context.tenant.pool;
     let user_id = context.user_id;
 
@@ -672,11 +680,12 @@ pub struct AddEntryInstructorRequest {
 
 pub async fn add_entry_instructor(
     State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
     headers: HeaderMap,
     Path(entry_id): Path<Uuid>,
     Json(body): Json<AddEntryInstructorRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL)?;
@@ -713,10 +722,11 @@ pub async fn add_entry_instructor(
 /// DELETE /api/academic/timetable/:id/instructors/:uid
 pub async fn remove_entry_instructor(
     State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
     headers: HeaderMap,
     Path((entry_id, instructor_id)): Path<(Uuid, Uuid)>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL)?;
@@ -745,10 +755,10 @@ pub async fn remove_entry_instructor(
 /// POST /api/academic/timetable/slots/:slot_id/instructors/:uid/restore
 pub async fn restore_instructor_to_slot_entries(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path((slot_id, instructor_id)): Path<(Uuid, Uuid)>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL)?;
@@ -760,10 +770,11 @@ pub async fn restore_instructor_to_slot_entries(
 /// DELETE /api/academic/timetable/slots/:slot_id/instructors/:uid
 pub async fn hide_instructor_from_slot_entries(
     State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
     headers: HeaderMap,
     Path((slot_id, instructor_id)): Path<(Uuid, Uuid)>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL)?;
@@ -793,11 +804,12 @@ pub struct HideSlotPeriodQuery {
 
 pub async fn hide_instructor_from_slot_period_entries(
     State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
     headers: HeaderMap,
     Path((slot_id, instructor_id)): Path<(Uuid, Uuid)>,
     Query(q): Query<HideSlotPeriodQuery>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL)?;
@@ -833,10 +845,11 @@ pub async fn hide_instructor_from_slot_period_entries(
 /// Validates both entries don't conflict at their new positions.
 pub async fn swap_timetable_entries(
     State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
     headers: HeaderMap,
     Json(body): Json<SwapTimetableEntriesRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_MANAGE_ALL)?;
@@ -882,10 +895,10 @@ pub async fn swap_timetable_entries(
 /// Returns map so frontend can colorize drop targets before release.
 pub async fn validate_timetable_moves(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Json(body): Json<ValidateMovesRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_READ_ALL)?;
@@ -902,10 +915,10 @@ pub struct OccupancyQuery {
 /// GET /api/academic/timetable/occupancy?semester_id=X
 pub async fn get_timetable_occupancy(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Query(q): Query<OccupancyQuery>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_COURSE_PLAN_READ_ALL)?;
