@@ -22,13 +22,15 @@ export interface AuthState {
 	user: User | null;
 	isAuthenticated: boolean;
 	isLoading: boolean;
+	isUnavailable: boolean;
 }
 
 function createAuthStore() {
 	const { subscribe, set, update } = writable<AuthState>({
 		user: null,
 		isAuthenticated: false,
-		isLoading: true
+		isLoading: true,
+		isUnavailable: false
 	});
 
 	return {
@@ -37,7 +39,8 @@ function createAuthStore() {
 			set({
 				user,
 				isAuthenticated: true,
-				isLoading: false
+				isLoading: false,
+				isUnavailable: false
 			});
 
 			// Sync permissions from user object (from /api/auth/me)
@@ -48,7 +51,8 @@ function createAuthStore() {
 			set({
 				user: null,
 				isAuthenticated: false,
-				isLoading: false
+				isLoading: false,
+				isUnavailable: false
 			});
 
 			// Auto-clear permissions when user logs out
@@ -56,6 +60,13 @@ function createAuthStore() {
 		},
 		setLoading: (loading: boolean) => {
 			update((state) => ({ ...state, isLoading: loading }));
+		},
+		setUnavailable: () => {
+			update((state) => ({
+				...state,
+				isLoading: false,
+				isUnavailable: true
+			}));
 		}
 	};
 }

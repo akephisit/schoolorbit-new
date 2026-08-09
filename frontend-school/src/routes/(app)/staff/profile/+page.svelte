@@ -205,8 +205,12 @@
 									formData.profile_image_file_id = fileId ?? '';
 									try {
 										await authAPI.updateProfile({ profileImageFileId: fileId });
-										await authAPI.checkAuth(); // Refresh header avatar
-										toast.success('อัปเดตรูปโปรไฟล์เรียบร้อยแล้ว');
+										const result = await authAPI.refreshCurrentUser({ silent: true });
+										if (result === 'authenticated') {
+											toast.success('อัปเดตรูปโปรไฟล์เรียบร้อยแล้ว');
+										} else if (result === 'unavailable') {
+											toast.warning('บันทึกรูปแล้ว แต่ยังรีเฟรชรูปบนแถบเมนูไม่ได้');
+										}
 									} catch (e) {
 										console.error(e);
 										toast.warning('อัปโหลดสำเร็จ แต่การบันทึกข้อมูลมีปัญหา');

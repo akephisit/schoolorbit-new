@@ -1,6 +1,7 @@
 import { ApiClientError, apiClient, requireApiData } from '$lib/api/client';
 import type { components } from '$lib/api/generated/school-api';
 import { clearSessionSecurity } from '$lib/api/session-security';
+import { authRefreshDecision, type AuthRefreshResult } from '$lib/auth/auth-refresh-policy';
 import { authStore, type User } from '$lib/stores/auth';
 import { toast } from 'svelte-sonner';
 
@@ -97,29 +98,31 @@ class AuthAPI {
 		authStore.clearUser();
 	}
 
-	/**
-	 * Check authentication status - Direct to backend through the shared client-side API wrapper.
-	 */
-	async checkAuth(): Promise<boolean> {
-		return this.refreshCurrentUser({ silent: false });
-	}
-
-	async refreshCurrentUser(options: { silent?: boolean } = {}): Promise<boolean> {
+	async refreshCurrentUser(options: { silent?: boolean } = {}): Promise<AuthRefreshResult> {
 		const silent = options.silent ?? true;
 		if (!silent) authStore.setLoading(true);
 		try {
 			const response = await apiClient.get<CurrentUserDto>('/api/auth/me');
-			const userData = requireApiData(response, 'Failed to check auth');
-			const user = normalizeCurrentUser(userData);
+			const decision = authRefreshDecision(response.status);
 
-			authStore.setUser(user);
-			return true;
+			if (decision.result === 'authenticated') {
+				if (!response.success || response.data === undefined) {
+					authStore.setUnavailable();
+					return 'unavailable';
+				}
+				authStore.setUser(normalizeCurrentUser(response.data));
+				return 'authenticated';
+			}
+
+			if (decision.clear) {
+				authStore.clearUser();
+			} else {
+				authStore.setUnavailable();
+			}
+			return decision.result;
 		} catch {
-			// Only log actual errors, not 401/403 which are expected state checks
-			// Or just suppress log for auth check entirely to keep console clean
-			// console.error('Auth check error:', error);
-			authStore.clearUser();
-			return false;
+			authStore.setUnavailable();
+			return 'unavailable';
 		} finally {
 			if (!silent) authStore.setLoading(false);
 		}

@@ -6,16 +6,18 @@
 	import { page } from '$app/state';
 	import { onMount } from 'svelte';
 	import { authAPI } from '$lib/api/auth';
+	import type { AuthRefreshResult } from '$lib/auth/auth-refresh-policy';
 	import { userCanAccessRoute } from '$lib/auth/route-access';
 	import { authStore } from '$lib/stores/auth';
 	import { userPermissions } from '$lib/stores/permissions';
-	import { AuthCheckingState } from '$lib/components/app-state';
+	import { AuthCheckingState, PageState } from '$lib/components/app-state';
+	import { toast } from 'svelte-sonner';
 
 	import { uiPreferences } from '$lib/stores/ui-preferences';
 	import { notificationStore } from '$lib/stores/notification';
 	let { children } = $props();
 
-	type AuthStatus = 'checking' | 'authenticated' | 'redirecting';
+	type AuthStatus = 'checking' | 'authenticated' | 'unavailable' | 'redirecting';
 
 	let sidebarRef = $state<{ toggleMobileSidebar?: () => void }>();
 	let isSidebarCollapsed = $state($uiPreferences.sidebarCollapsed);
@@ -54,12 +56,22 @@
 		return userCanAccessRoute($authStore.user, $userPermissions, page.route.id);
 	}
 
-	// Check authentication for protected routes
-	onMount(async () => {
-		const isAuthenticated = await authAPI.checkAuth();
+	async function applyAuthenticationResult(
+		result: AuthRefreshResult,
+		rememberCurrentPath: boolean
+	) {
+		if (result === 'unauthenticated') {
+			await redirectToLogin(rememberCurrentPath);
+			return;
+		}
 
-		if (!isAuthenticated) {
-			await redirectToLogin(true);
+		if (result === 'unavailable') {
+			if ($authStore.isAuthenticated) {
+				authStatus = 'authenticated';
+				toast.warning('ระบบยืนยันตัวตนไม่พร้อมใช้งาน กรุณาลองใหม่อีกครั้ง');
+			} else {
+				authStatus = 'unavailable';
+			}
 			return;
 		}
 
@@ -70,6 +82,20 @@
 
 		authStatus = 'authenticated';
 		notificationStore.syncExistingPushSubscription();
+	}
+
+	async function authenticate(rememberCurrentPath: boolean) {
+		const result = await authAPI.refreshCurrentUser({ silent: false });
+		await applyAuthenticationResult(result, rememberCurrentPath);
+	}
+
+	async function retryAuthentication() {
+		authStatus = 'checking';
+		await authenticate(true);
+	}
+
+	onMount(async () => {
+		await authenticate(true);
 	});
 
 	$effect(() => {
@@ -79,7 +105,7 @@
 
 		if (authStatus !== 'authenticated') return;
 		if (!user) {
-			void redirectToLogin();
+			void redirectToLogin(true);
 			return;
 		}
 		if (userCanAccessRoute(user, permissions, routeId)) return;
@@ -108,6 +134,17 @@
 				</div>
 			</main>
 		</div>
+	</div>
+{:else if authStatus === 'unavailable'}
+	<div class="flex min-h-screen items-center justify-center bg-background p-4">
+		<PageState
+			variant="error"
+			title="ระบบยืนยันตัวตนไม่พร้อมใช้งาน"
+			description="ระบบยังตรวจสอบสถานะการเข้าสู่ระบบไม่ได้ กรุณาลองใหม่อีกครั้ง"
+			actionLabel="ลองอีกครั้ง"
+			onaction={retryAuthentication}
+			class="w-full max-w-lg"
+		/>
 	</div>
 {:else}
 	<AuthCheckingState

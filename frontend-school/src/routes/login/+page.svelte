@@ -45,8 +45,8 @@
 		// The user complained about it appearing "when logging out".
 
 		// Let's modify valid check logic:
-		const isAuthenticated = await authAPI.checkAuth();
-		if (isAuthenticated) {
+		const result = await authAPI.refreshCurrentUser({ silent: false });
+		if (result === 'authenticated') {
 			// Already logged in, redirect based on user type or to redirectUrl
 			const user = $authStore.user;
 
@@ -61,6 +61,8 @@
 			} else {
 				await goto(resolve('/staff'), { replaceState: true });
 			}
+		} else if (result === 'unavailable') {
+			toast.warning('ระบบยืนยันตัวตนไม่พร้อมใช้งาน กรุณาลองใหม่อีกครั้ง');
 		}
 		isCheckingAuth = false;
 	});

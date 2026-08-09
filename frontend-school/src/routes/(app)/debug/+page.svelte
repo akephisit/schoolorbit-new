@@ -4,12 +4,17 @@
 	import { Card, CardContent, CardHeader, CardTitle } from '$lib/components/ui/card';
 	import { Button } from '$lib/components/ui/button';
 	import { authAPI } from '$lib/api/auth';
+	import { toast } from 'svelte-sonner';
 
 	const authState = $derived($authStore);
 
 	async function forceRefresh() {
-		await authAPI.checkAuth();
-		window.location.reload();
+		const result = await authAPI.refreshCurrentUser({ silent: false });
+		if (result === 'authenticated') {
+			window.location.reload();
+		} else if (result === 'unavailable') {
+			toast.warning('ระบบยืนยันตัวตนไม่พร้อมใช้งาน กรุณาลองใหม่อีกครั้ง');
+		}
 	}
 </script>
 
