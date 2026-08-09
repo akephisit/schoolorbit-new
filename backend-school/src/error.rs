@@ -1,5 +1,5 @@
 use axum::{
-    http::StatusCode,
+    http::{header::RETRY_AFTER, HeaderValue, StatusCode},
     response::{IntoResponse, Response},
     Json,
 };
@@ -37,73 +37,116 @@ pub enum AppError {
 
     #[error("Service unavailable: {0}")]
     ServiceUnavailable(String),
+
+    #[error("Rate limited")]
+    RateLimited { retry_after_seconds: u64 },
+
+    #[error("Payload too large")]
+    PayloadTooLarge,
+}
+
+impl AppError {
+    pub fn status_code(&self) -> StatusCode {
+        match self {
+            AppError::DbError(sqlx::Error::RowNotFound) => StatusCode::NOT_FOUND,
+            AppError::DbError(sqlx::Error::Database(error))
+                if matches!(error.code().as_deref(), Some("23503" | "23001")) =>
+            {
+                StatusCode::BAD_REQUEST
+            }
+            AppError::DbError(sqlx::Error::Database(error))
+                if error.code().as_deref() == Some("23505") =>
+            {
+                StatusCode::CONFLICT
+            }
+            AppError::DbError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            AppError::AuthError(_) => StatusCode::UNAUTHORIZED,
+            AppError::Forbidden(_) => StatusCode::FORBIDDEN,
+            AppError::NotFound(_) => StatusCode::NOT_FOUND,
+            AppError::ValidationError(_) => StatusCode::UNPROCESSABLE_ENTITY,
+            AppError::InternalServerError(_) | AppError::ConfigError(_) => {
+                StatusCode::INTERNAL_SERVER_ERROR
+            }
+            AppError::BadRequest(_) => StatusCode::BAD_REQUEST,
+            AppError::Conflict(_) => StatusCode::CONFLICT,
+            AppError::ServiceUnavailable(_) => StatusCode::SERVICE_UNAVAILABLE,
+            AppError::RateLimited { .. } => StatusCode::TOO_MANY_REQUESTS,
+            AppError::PayloadTooLarge => StatusCode::PAYLOAD_TOO_LARGE,
+        }
+    }
+
+    pub fn public_message(&self) -> &str {
+        match self {
+            AppError::DbError(sqlx::Error::RowNotFound) => "ไม่พบข้อมูล",
+            AppError::DbError(sqlx::Error::Database(error))
+                if matches!(error.code().as_deref(), Some("23503" | "23001")) =>
+            {
+                "ไม่สามารถทำรายการได้ (ข้อมูลอ้างอิงไม่ถูกต้องหรือถูกใช้งานอยู่)"
+            }
+            AppError::DbError(sqlx::Error::Database(error))
+                if error.code().as_deref() == Some("23505") =>
+            {
+                "ข้อมูลซ้ำกับที่มีอยู่ในระบบแล้ว"
+            }
+            AppError::DbError(_) => "เกิดข้อผิดพลาดในการเชื่อมต่อฐานข้อมูล",
+            AppError::AuthError(message)
+            | AppError::Forbidden(message)
+            | AppError::NotFound(message)
+            | AppError::ValidationError(message)
+            | AppError::BadRequest(message)
+            | AppError::Conflict(message) => message,
+            AppError::InternalServerError(_) => "Internal server error",
+            AppError::ConfigError(_) => "System configuration error",
+            AppError::ServiceUnavailable(_) => "Service temporarily unavailable",
+            AppError::RateLimited { .. } => "Too many attempts; try again later",
+            AppError::PayloadTooLarge => "Request payload is too large",
+        }
+    }
+
+    pub fn retry_after_seconds(&self) -> Option<u64> {
+        match self {
+            AppError::RateLimited {
+                retry_after_seconds,
+            } => Some((*retry_after_seconds).clamp(1, 30)),
+            _ => None,
+        }
+    }
 }
 
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
-        let (status, error_message) = match &self {
-            AppError::DbError(err) => {
-                // Log the actual db error
-                tracing::error!("Database error: {:?}", err);
-                match err {
-                    sqlx::Error::RowNotFound => (StatusCode::NOT_FOUND, "ไม่พบข้อมูล".to_string()),
-                    sqlx::Error::Database(db_err) => {
-                        let code = db_err.code().unwrap_or_default();
-                        if code == "23503" || code == "23001" {
-                            (
-                                StatusCode::BAD_REQUEST,
-                                format!(
-                                    "ไม่สามารถทำรายการได้ (ข้อมูลอ้างอิงไม่ถูกต้องหรือถูกใช้งานอยู่): {}",
-                                    db_err.message()
-                                ),
-                            )
-                        } else if code == "23505" {
-                            (StatusCode::CONFLICT, "ข้อมูลซ้ำกับที่มีอยู่ในระบบแล้ว".to_string())
-                        } else {
-                            (
-                                StatusCode::INTERNAL_SERVER_ERROR,
-                                "เกิดข้อผิดพลาดในการเชื่อมต่อฐานข้อมูล".to_string(),
-                            )
-                        }
-                    }
-                    _ => (
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        "เกิดข้อผิดพลาดในการเชื่อมต่อฐานข้อมูล".to_string(),
-                    ),
-                }
+        match &self {
+            AppError::DbError(error) => {
+                let database_code = match error {
+                    sqlx::Error::Database(error) => error.code(),
+                    _ => None,
+                };
+                tracing::error!(reason = "database_error", database_code = ?database_code);
             }
-            AppError::AuthError(msg) => (StatusCode::UNAUTHORIZED, msg.clone()),
-            AppError::Forbidden(msg) => (StatusCode::FORBIDDEN, msg.clone()),
-            AppError::NotFound(msg) => (StatusCode::NOT_FOUND, msg.clone()),
-            AppError::ValidationError(msg) => (StatusCode::UNPROCESSABLE_ENTITY, msg.clone()),
-            AppError::BadRequest(msg) => (StatusCode::BAD_REQUEST, msg.clone()),
-            AppError::Conflict(msg) => (StatusCode::CONFLICT, msg.clone()),
-            AppError::ConfigError(msg) => {
-                tracing::error!("Configuration error: {}", msg);
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "System configuration error".to_string(),
-                )
+            AppError::ConfigError(reason) => {
+                tracing::error!(reason = %reason, "configuration error");
             }
-            AppError::ServiceUnavailable(msg) => {
-                tracing::warn!("Service unavailable: {}", msg);
-                (
-                    StatusCode::SERVICE_UNAVAILABLE,
-                    "Service temporarily unavailable".to_string(),
-                )
+            AppError::ServiceUnavailable(reason) => {
+                tracing::warn!(reason = %reason, "service unavailable");
             }
-            AppError::InternalServerError(msg) => {
-                tracing::error!("Internal server error: {}", msg);
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "Internal server error".to_string(),
-                )
+            AppError::InternalServerError(reason) => {
+                tracing::error!(reason = %reason, "internal server error");
             }
-        };
+            _ => {}
+        }
 
-        let body = Json(ApiErrorResponse::new(error_message));
+        let status = self.status_code();
+        let retry_after = self.retry_after_seconds();
+        let body = Json(ApiErrorResponse::new(self.public_message().to_string()));
+        let mut response = (status, body).into_response();
 
-        (status, body).into_response()
+        if let Some(seconds) = retry_after {
+            response
+                .headers_mut()
+                .insert(RETRY_AFTER, HeaderValue::from(seconds));
+        }
+
+        response
     }
 }
 
@@ -116,5 +159,27 @@ mod tests {
         let response = AppError::Conflict("สถานะทรัพยากรขัดแย้ง".to_string()).into_response();
 
         assert_eq!(response.status(), StatusCode::CONFLICT);
+    }
+
+    #[test]
+    fn rate_limited_error_caps_retry_after_and_uses_standard_status() {
+        let error = AppError::RateLimited {
+            retry_after_seconds: 99,
+        };
+
+        assert_eq!(error.status_code(), StatusCode::TOO_MANY_REQUESTS);
+        assert_eq!(error.retry_after_seconds(), Some(30));
+
+        let response = error.into_response();
+        assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
+        assert_eq!(response.headers().get("retry-after").unwrap(), "30");
+    }
+
+    #[test]
+    fn payload_too_large_uses_413_without_reflecting_input() {
+        let error = AppError::PayloadTooLarge;
+
+        assert_eq!(error.status_code(), StatusCode::PAYLOAD_TOO_LARGE);
+        assert_eq!(error.public_message(), "Request payload is too large");
     }
 }
