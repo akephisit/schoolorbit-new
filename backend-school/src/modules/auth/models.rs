@@ -225,6 +225,47 @@ pub struct LoginData {
     pub user: UserResponse,
 }
 
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct CurrentUserResponse {
+    pub id: Uuid,
+    pub username: String,
+    pub first_name: String,
+    pub last_name: String,
+    pub user_type: String,
+    pub status: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub primary_role_name: Option<String>,
+    #[schema(required = true)]
+    pub profile_image_file_id: Option<Uuid>,
+    pub permissions: Vec<String>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionLoginData {
+    pub user: CurrentUserResponse,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionResponse {
+    pub id: Uuid,
+    pub device_label: String,
+    pub remember_me: bool,
+    pub created_at: DateTime<Utc>,
+    pub last_seen_at: DateTime<Utc>,
+    pub idle_expires_at: DateTime<Utc>,
+    pub absolute_expires_at: DateTime<Utc>,
+    pub is_current: bool,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionListData {
+    pub sessions: Vec<SessionResponse>,
+}
+
 // JWT Claims
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Claims {

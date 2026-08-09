@@ -66,8 +66,8 @@ use crate::modules::admission::handlers::portal::{
 use crate::modules::admission::models::applications::PortalCredentials;
 use crate::modules::admission::services::application_service::DocumentUploadResponse;
 use crate::modules::auth::models::{
-    ChangePasswordRequest, LoginData, LoginRequest, ProfileResponse, UpdateProfileRequest,
-    UserResponse,
+    ChangePasswordRequest, CurrentUserResponse, LoginData, LoginRequest, ProfileResponse,
+    SessionListData, SessionLoginData, SessionResponse, UpdateProfileRequest, UserResponse,
 };
 use crate::modules::calendar::models::{
     CalendarCategory, CalendarEvent, CalendarEventReminder, CalendarEventTag, CalendarEventTarget,
@@ -344,6 +344,13 @@ use utoipa::OpenApi;
         ProfileResponse,
         UpdateProfileRequest,
         ChangePasswordRequest,
+        CurrentUserResponse,
+        SessionLoginData,
+        SessionResponse,
+        SessionListData,
+        ApiResponse<SessionLoginData>,
+        ApiResponse<CurrentUserResponse>,
+        ApiResponse<SessionListData>,
         ApiResponse<LoginData>,
         ApiResponse<ProfileResponse>,
         ApiResponse<UserResponse>,
@@ -828,6 +835,78 @@ mod tests {
                 "{field} is omitted, not null"
             );
         }
+    }
+
+    #[test]
+    fn registers_unwired_session_components_without_advertising_new_paths() {
+        let document = school_api_value().expect("document should serialize");
+        let schemas = &document["components"]["schemas"];
+
+        for schema in [
+            "CurrentUserResponse",
+            "SessionLoginData",
+            "SessionResponse",
+            "SessionListData",
+            "ApiResponse_SessionLoginData",
+            "ApiResponse_CurrentUserResponse",
+            "ApiResponse_SessionListData",
+        ] {
+            assert!(!schemas[schema].is_null(), "missing schema {schema}");
+        }
+
+        let current_user = &schemas["CurrentUserResponse"];
+        assert_eq!(
+            required(current_user),
+            vec![
+                "firstName",
+                "id",
+                "lastName",
+                "permissions",
+                "profileImageFileId",
+                "status",
+                "userType",
+                "username",
+            ]
+        );
+        for forbidden in [
+            "nationalId",
+            "email",
+            "phone",
+            "dateOfBirth",
+            "address",
+            "createdAt",
+        ] {
+            assert!(
+                current_user["properties"][forbidden].is_null(),
+                "unexpected current-user field {forbidden}"
+            );
+        }
+        assert_eq!(
+            required(&schemas["SessionResponse"]),
+            vec![
+                "absoluteExpiresAt",
+                "createdAt",
+                "deviceLabel",
+                "id",
+                "idleExpiresAt",
+                "isCurrent",
+                "lastSeenAt",
+                "rememberMe",
+            ]
+        );
+        assert_eq!(required(&schemas["SessionLoginData"]), vec!["user"]);
+        assert_eq!(required(&schemas["SessionListData"]), vec!["sessions"]);
+        assert!(schemas["SessionLoginData"]["properties"]["token"].is_null());
+        assert!(schemas["SessionLoginData"]["properties"]["csrfToken"].is_null());
+
+        assert!(document["paths"]["/api/auth/sessions"].is_null());
+        assert!(document["paths"]["/api/auth/sessions/{id}"].is_null());
+        assert!(document["paths"]["/api/auth/logout-all"].is_null());
+        assert_eq!(
+            document["paths"]["/api/auth/me"]["get"]["responses"]["200"]["content"]
+                ["application/json"]["schema"]["$ref"],
+            "#/components/schemas/ApiResponse_UserResponse"
+        );
     }
 
     #[test]

@@ -44,6 +44,7 @@ pub struct AppState {
     pub work_event_channel: broadcast::Sender<WorkChangeEvent>,
     pub permission_cache: Arc<PermissionCache>,
     pub file_platform: Arc<modules::files::platform_service::FilePlatform>,
+    pub auth_runtime: modules::auth::runtime::AuthRuntime,
 }
 
 impl AppState {
@@ -144,6 +145,7 @@ async fn main() {
     let (notification_tx, _) = broadcast::channel(100);
     let (permission_event_tx, _) = broadcast::channel(100);
     let (work_event_tx, _) = broadcast::channel(100);
+    let (session_event_tx, _) = broadcast::channel(100);
 
     // Start cleanup task
     let pool_manager_cleanup = Arc::clone(&pool_manager);
@@ -195,6 +197,22 @@ async fn main() {
         file_runtime_config,
     ));
 
+    let session_config = match modules::auth::config::SessionConfig::from_env() {
+        Ok(config) => Arc::new(config),
+        Err(_) => {
+            tracing::error!(reason = "session_config_invalid");
+            std::process::exit(1);
+        }
+    };
+    let permission_cache = Arc::new(PermissionCache::new());
+    let auth_runtime = modules::auth::runtime::AuthRuntime {
+        admin_client: Arc::clone(&admin_client),
+        pool_manager: Arc::clone(&pool_manager),
+        permission_cache: Arc::clone(&permission_cache),
+        config: session_config,
+        session_events: session_event_tx,
+    };
+
     // Create shared state
     let state = AppState {
         admin_client,
@@ -203,8 +221,9 @@ async fn main() {
         notification_channel: notification_tx,
         permission_event_channel: permission_event_tx,
         work_event_channel: work_event_tx,
-        permission_cache: Arc::new(PermissionCache::new()),
+        permission_cache,
         file_platform,
+        auth_runtime,
     };
 
     // Build application

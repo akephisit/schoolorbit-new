@@ -63,7 +63,7 @@ impl AdminClientConfig {
     }
 
     #[cfg(test)]
-    fn for_tests(
+    pub(crate) fn for_tests(
         request_timeout: Duration,
         max_attempts: usize,
         retry_base_delay: Duration,

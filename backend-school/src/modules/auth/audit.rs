@@ -20,6 +20,8 @@ impl LoginRejectionReason {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SessionFailureReason {
     CredentialGeneration,
+    InvalidCsrf,
+    InvalidOrigin,
     SessionStore,
 }
 
@@ -27,6 +29,8 @@ impl SessionFailureReason {
     fn as_str(self) -> &'static str {
         match self {
             Self::CredentialGeneration => "credential_generation",
+            Self::InvalidCsrf => "invalid_csrf",
+            Self::InvalidOrigin => "invalid_origin",
             Self::SessionStore => "session_store",
         }
     }
