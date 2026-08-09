@@ -1,15 +1,16 @@
 use crate::api_response::{ApiErrorResponse, ApiResponse};
 use crate::error::AppError;
+use crate::modules::auth::session_service::AuthenticatedSession;
 use crate::modules::notification::models::{
     CreateNotificationRequest, ListNotificationsQuery, SubscribePushRequest,
 };
 use crate::modules::notification::services as notification_service;
-use crate::utils::request_context::current_user_tenant_context_from_headers;
+use crate::utils::request_context::current_user_tenant_context_from_session;
 use crate::AppState;
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::{
-    extract::{Path, Query, State},
-    http::{HeaderMap, StatusCode},
+    extract::{Extension, Path, Query, State},
+    http::StatusCode,
     response::IntoResponse,
     Json,
 };
@@ -31,11 +32,10 @@ use uuid::Uuid;
     )
 )]
 pub async fn list_notifications(
-    State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Query(query): Query<ListNotificationsQuery>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = current_user_tenant_context_from_headers(&state, &headers).await?;
+    let context = current_user_tenant_context_from_session(&session);
     let notifications =
         notification_service::list_notifications(&context.tenant.pool, context.user_id, query)
             .await?;
@@ -45,11 +45,10 @@ pub async fn list_notifications(
 
 /// Mark a notification as read
 pub async fn mark_as_read(
-    State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = current_user_tenant_context_from_headers(&state, &headers).await?;
+    let context = current_user_tenant_context_from_session(&session);
     notification_service::mark_as_read(&context.tenant.pool, context.user_id, id).await?;
 
     Ok((
@@ -60,10 +59,9 @@ pub async fn mark_as_read(
 
 /// Mark all notifications as read
 pub async fn mark_all_as_read(
-    State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = current_user_tenant_context_from_headers(&state, &headers).await?;
+    let context = current_user_tenant_context_from_session(&session);
     notification_service::mark_all_as_read(&context.tenant.pool, context.user_id).await?;
 
     Ok((
@@ -75,9 +73,9 @@ pub async fn mark_all_as_read(
 // SSE Handler
 pub async fn stream_notifications(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
 ) -> Result<Sse<impl Stream<Item = Result<Event, Infallible>>>, AppError> {
-    let context = current_user_tenant_context_from_headers(&state, &headers).await?;
+    let context = current_user_tenant_context_from_session(&session);
     let user_id = context.user_id;
     let tenant = context.tenant.subdomain;
 
@@ -136,10 +134,10 @@ pub async fn stream_notifications(
 /// Create manual notification (For testing/internal use)
 pub async fn create_notification(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Json(payload): Json<CreateNotificationRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = current_user_tenant_context_from_headers(&state, &headers).await?;
+    let context = current_user_tenant_context_from_session(&session);
     notification_service::create_notification(
         &context.tenant.pool,
         &state.notification_channel,
@@ -157,11 +155,10 @@ pub async fn create_notification(
 
 /// Subscribe to Web Push Notifications
 pub async fn subscribe_push(
-    State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Json(payload): Json<SubscribePushRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = current_user_tenant_context_from_headers(&state, &headers).await?;
+    let context = current_user_tenant_context_from_session(&session);
     notification_service::subscribe_push(&context.tenant.pool, context.user_id, payload).await?;
 
     Ok((

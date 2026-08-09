@@ -1,6 +1,6 @@
 use axum::{
-    extract::{Path, Query, State},
-    http::{HeaderMap, StatusCode},
+    extract::{Extension, Path, Query, State},
+    http::StatusCode,
     response::IntoResponse,
     Json,
 };
@@ -13,9 +13,10 @@ use super::models::{
 use super::services as student_service;
 use crate::api_response::{ApiErrorResponse, ApiResponse};
 use crate::error::AppError;
+use crate::modules::auth::session_service::AuthenticatedSession;
 use crate::permissions::registry::codes;
 use crate::policies::student_access_policy;
-use crate::utils::request_context::actor_tenant_context;
+use crate::utils::request_context::actor_tenant_context_from_session;
 use crate::AppState;
 
 /// GET /api/student/profile - นักเรียนดูข้อมูลตนเอง
@@ -33,9 +34,9 @@ use crate::AppState;
 )]
 pub async fn get_own_profile(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     student_access_policy::can_read_student_profile(&pool, &actor, actor.user_id).await?;
@@ -61,10 +62,10 @@ pub async fn get_own_profile(
 )]
 pub async fn update_own_profile(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Json(payload): Json<UpdateOwnProfileRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     student_service::update_own_profile(&pool, actor.user_id, payload).await?;
@@ -78,10 +79,10 @@ pub async fn update_own_profile(
 /// GET /api/students - รายชื่อนักเรียนทั้งหมด
 pub async fn list_students(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Query(filter): Query<ListStudentsQuery>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     let access = student_access_policy::resolve_student_list_access(&actor)?;
@@ -107,10 +108,10 @@ pub async fn list_students(
 )]
 pub async fn create_student(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Json(payload): Json<CreateStudentRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::STUDENT_CREATE_ALL)?;
@@ -126,10 +127,10 @@ pub async fn create_student(
 /// GET /api/students/:id - ดูข้อมูลนักเรียน
 pub async fn get_student(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(student_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     student_access_policy::can_read_student_profile(&pool, &actor, student_id).await?;
@@ -158,11 +159,11 @@ pub async fn get_student(
 )]
 pub async fn update_student(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(student_id): Path<Uuid>,
     Json(payload): Json<UpdateStudentRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::STUDENT_UPDATE_ALL)?;
@@ -191,10 +192,10 @@ pub async fn update_student(
 )]
 pub async fn delete_student(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(student_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let tenant = context.tenant.subdomain.clone();
     let pool = context.tenant.pool;
     let actor = context.actor;

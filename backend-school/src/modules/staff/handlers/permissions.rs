@@ -1,13 +1,14 @@
 use crate::api_response::{ApiErrorResponse, ApiResponse};
 use crate::error::AppError;
+use crate::modules::auth::session_service::AuthenticatedSession;
 use crate::modules::staff::models::Permission;
 use crate::modules::staff::services::permission_service;
 use crate::permissions::registry::codes;
-use crate::utils::request_context::actor_tenant_context;
+use crate::utils::request_context::actor_tenant_context_from_session;
 use crate::AppState;
 use axum::{
-    extract::State,
-    http::{HeaderMap, StatusCode},
+    extract::{Extension, State},
+    http::StatusCode,
     response::IntoResponse,
     Json,
 };
@@ -29,9 +30,9 @@ use axum::{
 )]
 pub async fn list_permissions(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::SETTINGS_READ_ALL)?;
@@ -62,9 +63,9 @@ pub async fn list_permissions(
 )]
 pub async fn list_permissions_by_module(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::SETTINGS_READ_ALL)?;

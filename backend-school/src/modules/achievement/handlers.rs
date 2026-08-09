@@ -2,11 +2,12 @@ use crate::api_response::{ApiErrorResponse, ApiResponse};
 use crate::error::AppError;
 use crate::modules::achievement::models::*;
 use crate::modules::achievement::services as achievement_service;
-use crate::utils::request_context::actor_tenant_context;
+use crate::modules::auth::session_service::AuthenticatedSession;
+use crate::utils::request_context::actor_tenant_context_from_session;
 use crate::AppState;
 use axum::{
-    extract::{Path, Query, State},
-    http::{HeaderMap, StatusCode},
+    extract::{Extension, Path, Query, State},
+    http::StatusCode,
     response::IntoResponse,
     Json,
 };
@@ -26,10 +27,10 @@ use uuid::Uuid;
 )]
 pub async fn list_achievements(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Query(filter): Query<AchievementListFilter>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let items =
         achievement_service::list_achievements(&context.tenant.pool, &context.actor, filter)
             .await?;
@@ -51,10 +52,10 @@ pub async fn list_achievements(
 )]
 pub async fn create_achievement(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Json(payload): Json<CreateAchievementRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let achievement =
         achievement_service::create_achievement(&context.tenant.pool, &context.actor, payload)
             .await?;
@@ -78,11 +79,11 @@ pub async fn create_achievement(
 )]
 pub async fn update_achievement(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(id): Path<Uuid>,
     Json(payload): Json<UpdateAchievementRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let result =
         achievement_service::update_achievement(&context.tenant.pool, &context.actor, id, payload)
             .await?;
@@ -113,10 +114,10 @@ pub async fn update_achievement(
 )]
 pub async fn delete_achievement(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     if let Some(file_id) =
         achievement_service::delete_achievement(&context.tenant.pool, &context.actor, id).await?
     {

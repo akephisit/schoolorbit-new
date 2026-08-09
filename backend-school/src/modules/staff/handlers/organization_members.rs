@@ -1,6 +1,6 @@
 use axum::{
-    extract::{Path, Query, State},
-    http::{HeaderMap, StatusCode},
+    extract::{Extension, Path, Query, State},
+    http::StatusCode,
     response::IntoResponse,
     Json,
 };
@@ -11,9 +11,12 @@ use uuid::Uuid;
 
 use crate::api_response::{ApiErrorResponse, ApiResponse, EmptyData};
 use crate::error::AppError;
+use crate::modules::auth::session_service::AuthenticatedSession;
 use crate::modules::staff::services::organization_member_service;
 use crate::permissions::registry::codes;
-use crate::utils::request_context::{actor_tenant_context, tenant_pool};
+use crate::utils::request_context::{
+    actor_tenant_context_from_session, current_user_tenant_context_from_session,
+};
 use crate::AppState;
 
 #[derive(Serialize, ToSchema)]
@@ -70,12 +73,12 @@ pub struct UpdateMemberRequest {
     )
 )]
 pub async fn list_members(
-    State(state): State<AppState>,
     Path(organization_unit_id): Path<Uuid>,
     Query(query): Query<ListMembersQuery>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
 ) -> Result<impl IntoResponse, AppError> {
-    let pool = tenant_pool(&state, &headers).await?;
+    let context = current_user_tenant_context_from_session(&session);
+    let pool = context.tenant.pool;
     let members = organization_member_service::list_members(
         &pool,
         organization_unit_id,
@@ -102,10 +105,10 @@ pub async fn list_members(
 pub async fn add_member(
     State(state): State<AppState>,
     Path(organization_unit_id): Path<Uuid>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Json(body): Json<AddMemberRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let tenant = context.tenant.subdomain.clone();
     let pool = context.tenant.pool;
     let actor = context.actor;
@@ -159,10 +162,10 @@ pub async fn add_member(
 pub async fn update_member(
     State(state): State<AppState>,
     Path((organization_unit_id, user_id)): Path<(Uuid, Uuid)>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Json(body): Json<UpdateMemberRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let tenant = context.tenant.subdomain.clone();
     let pool = context.tenant.pool;
     let actor = context.actor;
@@ -216,9 +219,9 @@ pub async fn update_member(
 pub async fn remove_member(
     State(state): State<AppState>,
     Path((organization_unit_id, user_id)): Path<(Uuid, Uuid)>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let tenant = context.tenant.subdomain.clone();
     let pool = context.tenant.pool;
     let actor = context.actor;

@@ -1,4 +1,9 @@
-use axum::{extract::State, http::HeaderMap, response::IntoResponse, Json};
+use axum::{
+    extract::{Extension, State},
+    http::HeaderMap,
+    response::IntoResponse,
+    Json,
+};
 use serde::Serialize;
 use utoipa::ToSchema;
 
@@ -6,8 +11,9 @@ use super::models::UpdateSchoolSettingsRequest;
 use super::services as school_service;
 use crate::api_response::{ApiErrorResponse, ApiResponse};
 use crate::error::AppError;
+use crate::modules::auth::session_service::AuthenticatedSession;
 use crate::permissions::registry::codes;
-use crate::utils::request_context::{actor_tenant_context, tenant_context};
+use crate::utils::request_context::{actor_tenant_context_from_session, tenant_context};
 use crate::AppState;
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -33,9 +39,9 @@ pub struct PublicSchoolInfoData {
 )]
 pub async fn get_settings(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     context.actor.require_permission(codes::SETTINGS_READ_ALL)?;
 
     let response = school_service::get_settings_response(&context.tenant.pool).await?;
@@ -46,10 +52,10 @@ pub async fn get_settings(
 /// PATCH /api/school/settings — staff only (SETTINGS_UPDATE_ALL)
 pub async fn update_settings(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Json(payload): Json<UpdateSchoolSettingsRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     context
         .actor
         .require_permission(codes::SETTINGS_UPDATE_ALL)?;
@@ -105,9 +111,9 @@ pub async fn get_public_info(
 /// Detach the logo and request durable File Platform deletion.
 pub async fn delete_logo(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     context
         .actor
         .require_permission(codes::SETTINGS_UPDATE_ALL)?;

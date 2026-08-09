@@ -1,6 +1,6 @@
 use axum::{
-    extract::{Path, State},
-    http::{HeaderMap, StatusCode},
+    extract::{Extension, Path, State},
+    http::StatusCode,
     response::IntoResponse,
     Json,
 };
@@ -8,9 +8,10 @@ use uuid::Uuid;
 
 use crate::api_response::{ApiErrorResponse, ApiResponse};
 use crate::error::AppError;
+use crate::modules::auth::session_service::AuthenticatedSession;
 use crate::modules::students::services as student_service;
 use crate::permissions::registry::codes;
-use crate::utils::request_context::actor_tenant_context;
+use crate::utils::request_context::actor_tenant_context_from_session;
 use crate::AppState;
 
 use super::models::CreateParentRequest;
@@ -36,11 +37,11 @@ use super::models::CreateParentRequest;
 )]
 pub async fn add_parent_to_student(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(student_id): Path<Uuid>,
     Json(payload): Json<CreateParentRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::STUDENT_UPDATE_ALL)?;
@@ -73,10 +74,10 @@ pub async fn add_parent_to_student(
 )]
 pub async fn remove_parent_from_student(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path((student_id, parent_id)): Path<(Uuid, Uuid)>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::STUDENT_UPDATE_ALL)?;

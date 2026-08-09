@@ -1,6 +1,6 @@
 use axum::{
-    extract::State,
-    http::{HeaderMap, StatusCode},
+    extract::{Extension, State},
+    http::StatusCode,
     response::{IntoResponse, Json},
 };
 use serde::Serialize;
@@ -8,9 +8,10 @@ use utoipa::ToSchema;
 
 use crate::api_response::{ApiErrorResponse, ApiResponse};
 use crate::error::AppError;
+use crate::modules::auth::session_service::AuthenticatedSession;
 use crate::modules::menu::models::*;
 use crate::modules::menu::services::public_menu_service;
-use crate::utils::request_context::actor_tenant_context;
+use crate::utils::request_context::actor_tenant_context_from_session;
 use crate::AppState;
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -30,9 +31,9 @@ pub struct UserMenuData {
 )]
 pub async fn get_user_menu(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers)
+    let context = actor_tenant_context_from_session(&state, &session)
         .await
         .map_err(|_| AppError::AuthError("ไม่สามารถดึงข้อมูล permissions ได้".to_string()))?;
     let pool = context.tenant.pool;

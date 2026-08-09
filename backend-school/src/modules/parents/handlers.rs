@@ -1,12 +1,13 @@
 use crate::api_response::{ApiErrorResponse, ApiResponse};
 use crate::error::AppError;
+use crate::modules::auth::session_service::AuthenticatedSession;
 use crate::modules::parents::models::ParentProfile;
 use crate::modules::parents::services as parent_service;
-use crate::utils::request_context::actor_tenant_context;
+use crate::utils::request_context::actor_tenant_context_from_session;
 use crate::AppState;
 use axum::{
-    extract::{Path, Query, State},
-    http::{HeaderMap, StatusCode},
+    extract::{Extension, Path, Query, State},
+    http::StatusCode,
     response::IntoResponse,
     Json,
 };
@@ -27,9 +28,9 @@ use uuid::Uuid;
 )]
 pub async fn get_own_parent_profile(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     let profile = parent_service::get_own_parent_profile(&pool, actor.user_id).await?;
@@ -53,10 +54,10 @@ pub async fn get_own_parent_profile(
 )]
 pub async fn get_child_profile(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(student_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     let student = parent_service::get_child_profile(&pool, actor.user_id, student_id).await?;
@@ -95,11 +96,11 @@ pub struct ChildExamScheduleQuery {
 )]
 pub async fn get_child_timetable(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(student_id): Path<Uuid>,
     Query(query): Query<ChildTimetableQuery>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     let entries = parent_service::get_child_timetable(
@@ -132,11 +133,11 @@ pub async fn get_child_timetable(
 )]
 pub async fn get_child_exam_schedule(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(student_id): Path<Uuid>,
     Query(query): Query<ChildExamScheduleQuery>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     let schedule = parent_service::get_child_exam_schedule(
@@ -175,11 +176,11 @@ pub async fn get_child_exam_schedule(
 )]
 pub async fn get_child_calendar_events(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(student_id): Path<Uuid>,
     Query(query): Query<crate::modules::calendar::models::CalendarEventQuery>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let events = parent_service::get_child_calendar_events(
         &context.tenant.pool,
         context.actor.user_id,

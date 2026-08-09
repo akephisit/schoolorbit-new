@@ -1,16 +1,17 @@
 use crate::api_response::{ApiErrorResponse, ApiResponse, IdData};
 use crate::error::AppError;
+use crate::modules::auth::session_service::AuthenticatedSession;
 use crate::modules::staff::models::*;
 use crate::modules::staff::services::{dashboard_service, staff_service};
 use crate::permissions::registry::codes;
 use crate::policies::staff_access_policy;
 use crate::utils::request_context::{
-    actor_tenant_context, current_user_tenant_context_from_headers,
+    actor_tenant_context_from_session, current_user_tenant_context_from_session,
 };
 use crate::AppState;
 use axum::{
-    extract::{Path, Query, State},
-    http::{HeaderMap, StatusCode},
+    extract::{Extension, Path, Query, State},
+    http::StatusCode,
     response::IntoResponse,
     Json,
 };
@@ -44,9 +45,9 @@ pub struct StaffListData {
 )]
 pub async fn get_staff_dashboard(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
 
@@ -70,10 +71,10 @@ pub async fn get_staff_dashboard(
 )]
 pub async fn list_staff(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Query(filter): Query<StaffListFilter>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     let access = staff_access_policy::resolve_staff_profile_list_access(&actor)?;
@@ -109,10 +110,10 @@ pub async fn list_staff(
 )]
 pub async fn get_staff_profile(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(staff_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     staff_access_policy::can_read_staff_profile(&pool, &actor, staff_id).await?;
@@ -137,10 +138,10 @@ pub async fn get_staff_profile(
 )]
 pub async fn create_staff(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Json(payload): Json<CreateStaffRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::STAFF_CREATE_ALL)?;
@@ -173,11 +174,11 @@ pub async fn create_staff(
 )]
 pub async fn update_staff(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(staff_id): Path<Uuid>,
     Json(payload): Json<UpdateStaffRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let tenant = context.tenant.subdomain.clone();
     let pool = context.tenant.pool;
     let actor = context.actor;
@@ -219,10 +220,10 @@ pub async fn update_staff(
 )]
 pub async fn delete_staff(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(staff_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let tenant = context.tenant.subdomain.clone();
     let pool = context.tenant.pool;
     let actor = context.actor;
@@ -253,11 +254,10 @@ pub async fn delete_staff(
     )
 )]
 pub async fn get_public_staff_profile(
-    State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(staff_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = current_user_tenant_context_from_headers(&state, &headers).await?;
+    let context = current_user_tenant_context_from_session(&session);
     let pool = context.tenant.pool;
 
     let data = staff_service::get_public_staff_profile(&pool, staff_id).await?;

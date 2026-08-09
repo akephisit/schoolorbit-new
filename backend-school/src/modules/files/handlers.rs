@@ -1,5 +1,5 @@
 use axum::{
-    extract::{multipart::Field, Multipart, Path, Query, State},
+    extract::{multipart::Field, Extension, Multipart, Path, Query, State},
     http::{header, HeaderMap, HeaderValue, StatusCode},
     response::{IntoResponse, Redirect, Response},
     Json,
@@ -10,8 +10,9 @@ use uuid::Uuid;
 use crate::{
     api_response::{ApiErrorResponse, ApiResponse},
     error::AppError,
+    modules::auth::session_service::AuthenticatedSession,
     policies::file_access_policy::{self, FilePolicyAction},
-    utils::request_context::{actor_tenant_context, tenant_context},
+    utils::request_context::{actor_tenant_context_from_session, tenant_context},
     AppState,
 };
 
@@ -44,10 +45,10 @@ const MAX_CONTROL_FIELD_BYTES: usize = 128;
 )]
 pub async fn upload_file(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     mut multipart: Multipart,
 ) -> Result<Response, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let mut purpose = None;
     let mut resource_id = None;
     let mut upload = None;
@@ -147,11 +148,11 @@ pub async fn upload_file(
 )]
 pub async fn get_file_metadata(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(file_id): Path<Uuid>,
     Query(query): Query<FileAccessQuery>,
 ) -> Result<Response, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let repository = SqlFileRepository::new(context.tenant.pool);
     let file = state
         .file_platform
@@ -190,11 +191,11 @@ pub async fn get_file_metadata(
 )]
 pub async fn download_file(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(file_id): Path<Uuid>,
     Query(query): Query<FileAccessQuery>,
 ) -> Result<Response, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let repository = SqlFileRepository::new(context.tenant.pool);
     let file = state
         .file_platform
@@ -240,11 +241,11 @@ pub async fn download_file(
 )]
 pub async fn delete_file(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(file_id): Path<Uuid>,
     Query(query): Query<FileAccessQuery>,
 ) -> Result<Response, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let repository = SqlFileRepository::new(context.tenant.pool);
     let file = state
         .file_platform

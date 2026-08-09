@@ -1,6 +1,6 @@
 use axum::{
-    extract::{Path, State},
-    http::{HeaderMap, StatusCode},
+    extract::{Extension, Path, State},
+    http::StatusCode,
     response::{IntoResponse, Response},
     Json,
 };
@@ -8,10 +8,11 @@ use uuid::Uuid;
 
 use crate::api_response::{ApiErrorResponse, ApiResponse, EmptyData, IdData, UuidIdData};
 use crate::error::AppError;
+use crate::modules::auth::session_service::AuthenticatedSession;
 use crate::modules::staff::models::*;
 use crate::modules::staff::services::user_role_service::{self, AssignRoleOutcome};
 use crate::permissions::registry::codes;
-use crate::utils::request_context::actor_tenant_context;
+use crate::utils::request_context::actor_tenant_context_from_session;
 use crate::AppState;
 
 #[utoipa::path(
@@ -28,10 +29,10 @@ use crate::AppState;
 )]
 pub async fn get_user_roles(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(user_id): Path<Uuid>,
 ) -> Result<Response, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ROLES_READ_ALL)?;
@@ -60,11 +61,11 @@ pub async fn get_user_roles(
 )]
 pub async fn assign_user_role(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(user_id): Path<Uuid>,
     Json(payload): Json<AssignRoleRequest>,
 ) -> Result<Response, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let tenant = context.tenant.subdomain.clone();
     let pool = context.tenant.pool;
     let actor = context.actor;
@@ -130,10 +131,10 @@ pub async fn assign_user_role(
 )]
 pub async fn remove_user_role(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path((user_id, role_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Response, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let tenant = context.tenant.subdomain.clone();
     let pool = context.tenant.pool;
     let actor = context.actor;
@@ -174,10 +175,10 @@ pub async fn remove_user_role(
 )]
 pub async fn get_user_permissions(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Path(user_id): Path<Uuid>,
 ) -> Result<Response, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ROLES_READ_ALL)?;

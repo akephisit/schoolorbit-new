@@ -1,14 +1,15 @@
 use crate::api_response::{ApiErrorResponse, ApiResponse, EmptyData};
 use crate::error::AppError;
+use crate::modules::auth::session_service::AuthenticatedSession;
 use crate::modules::menu::models::{MenuGroup, MenuItem, MenuWorkspace};
 use crate::modules::menu::services::menu_service;
 use crate::permissions::registry::codes;
-use crate::utils::request_context::{actor_tenant_context, ActorTenantContext};
+use crate::utils::request_context::{actor_tenant_context_from_session, ActorTenantContext};
 use crate::AppState;
 
 use axum::{
-    extract::{Path, Query, State},
-    http::{HeaderMap, StatusCode},
+    extract::{Extension, Path, Query, State},
+    http::StatusCode,
     response::{IntoResponse, Json as JsonResponse},
 };
 use serde::{Deserialize, Serialize};
@@ -125,10 +126,10 @@ pub struct MoveItemToGroupRequest {
 
 async fn auth_with_permission(
     state: &AppState,
-    headers: &HeaderMap,
+    session: &AuthenticatedSession,
     permission: &str,
 ) -> Result<ActorTenantContext, AppError> {
-    let context = actor_tenant_context(state, headers).await?;
+    let context = actor_tenant_context_from_session(state, session).await?;
     context.actor.require_permission(permission)?;
     Ok(context)
 }
@@ -148,9 +149,9 @@ async fn auth_with_permission(
 )]
 pub async fn list_menu_workspaces(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = auth_with_permission(&state, &headers, codes::MENU_READ_ALL).await?;
+    let context = auth_with_permission(&state, &session, codes::MENU_READ_ALL).await?;
     let workspaces = menu_service::list_menu_workspaces(&context.tenant.pool).await?;
     Ok((StatusCode::OK, JsonResponse(ApiResponse::ok(workspaces))))
 }
@@ -169,10 +170,10 @@ pub async fn list_menu_workspaces(
 )]
 pub async fn create_menu_workspace(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     JsonResponse(data): JsonResponse<CreateMenuWorkspaceRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = auth_with_permission(&state, &headers, codes::MENU_CREATE_ALL).await?;
+    let context = auth_with_permission(&state, &session, codes::MENU_CREATE_ALL).await?;
     let workspace = menu_service::create_menu_workspace(
         &context.tenant.pool,
         menu_service::CreateMenuWorkspaceInput {
@@ -211,10 +212,10 @@ pub async fn create_menu_workspace(
 pub async fn update_menu_workspace(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     JsonResponse(data): JsonResponse<UpdateMenuWorkspaceRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = auth_with_permission(&state, &headers, codes::MENU_UPDATE_ALL).await?;
+    let context = auth_with_permission(&state, &session, codes::MENU_UPDATE_ALL).await?;
     let workspace = menu_service::update_menu_workspace(
         &context.tenant.pool,
         id,
@@ -253,9 +254,9 @@ pub async fn update_menu_workspace(
 pub async fn delete_menu_workspace(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = auth_with_permission(&state, &headers, codes::MENU_DELETE_ALL).await?;
+    let context = auth_with_permission(&state, &session, codes::MENU_DELETE_ALL).await?;
     let moved = menu_service::delete_menu_workspace(&context.tenant.pool, id).await?;
     Ok((
         StatusCode::OK,
@@ -283,10 +284,10 @@ pub async fn delete_menu_workspace(
 )]
 pub async fn reorder_menu_workspaces(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     JsonResponse(data): JsonResponse<ReorderWorkspacesRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = auth_with_permission(&state, &headers, codes::MENU_UPDATE_ALL).await?;
+    let context = auth_with_permission(&state, &session, codes::MENU_UPDATE_ALL).await?;
     let workspaces = data
         .workspaces
         .into_iter()
@@ -317,9 +318,9 @@ pub async fn reorder_menu_workspaces(
 )]
 pub async fn list_menu_groups(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = auth_with_permission(&state, &headers, codes::MENU_READ_ALL).await?;
+    let context = auth_with_permission(&state, &session, codes::MENU_READ_ALL).await?;
     let groups = menu_service::list_menu_groups(&context.tenant.pool).await?;
     Ok((StatusCode::OK, JsonResponse(ApiResponse::ok(groups))))
 }
@@ -338,10 +339,10 @@ pub async fn list_menu_groups(
 )]
 pub async fn create_menu_group(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     JsonResponse(data): JsonResponse<CreateMenuGroupRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = auth_with_permission(&state, &headers, codes::MENU_CREATE_ALL).await?;
+    let context = auth_with_permission(&state, &session, codes::MENU_CREATE_ALL).await?;
     let group = menu_service::create_menu_group(
         &context.tenant.pool,
         menu_service::CreateMenuGroupInput {
@@ -381,10 +382,10 @@ pub async fn create_menu_group(
 pub async fn update_menu_group(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     JsonResponse(data): JsonResponse<UpdateMenuGroupRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = auth_with_permission(&state, &headers, codes::MENU_UPDATE_ALL).await?;
+    let context = auth_with_permission(&state, &session, codes::MENU_UPDATE_ALL).await?;
     let group = menu_service::update_menu_group(
         &context.tenant.pool,
         id,
@@ -424,9 +425,9 @@ pub async fn update_menu_group(
 pub async fn delete_menu_group(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = auth_with_permission(&state, &headers, codes::MENU_DELETE_ALL).await?;
+    let context = auth_with_permission(&state, &session, codes::MENU_DELETE_ALL).await?;
     let moved = menu_service::delete_menu_group(&context.tenant.pool, id).await?;
     Ok((
         StatusCode::OK,
@@ -453,10 +454,10 @@ pub async fn delete_menu_group(
 )]
 pub async fn list_menu_items(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Query(filter): Query<MenuItemFilter>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = auth_with_permission(&state, &headers, codes::MENU_READ_ALL).await?;
+    let context = auth_with_permission(&state, &session, codes::MENU_READ_ALL).await?;
     let items = menu_service::list_menu_items(&context.tenant.pool, filter.group_id).await?;
     Ok((StatusCode::OK, JsonResponse(ApiResponse::ok(items))))
 }
@@ -475,10 +476,10 @@ pub async fn list_menu_items(
 )]
 pub async fn create_menu_item(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     JsonResponse(data): JsonResponse<CreateMenuItemRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = auth_with_permission(&state, &headers, codes::MENU_CREATE_ALL).await?;
+    let context = auth_with_permission(&state, &session, codes::MENU_CREATE_ALL).await?;
     let item = menu_service::create_menu_item(
         &context.tenant.pool,
         menu_service::CreateMenuItemInput {
@@ -521,10 +522,10 @@ pub async fn create_menu_item(
 pub async fn update_menu_item(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     JsonResponse(data): JsonResponse<UpdateMenuItemRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = auth_with_permission(&state, &headers, codes::MENU_UPDATE_ALL).await?;
+    let context = auth_with_permission(&state, &session, codes::MENU_UPDATE_ALL).await?;
     let item = menu_service::update_menu_item(
         &context.tenant.pool,
         id,
@@ -567,9 +568,9 @@ pub async fn update_menu_item(
 pub async fn delete_menu_item(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = auth_with_permission(&state, &headers, codes::MENU_DELETE_ALL).await?;
+    let context = auth_with_permission(&state, &session, codes::MENU_DELETE_ALL).await?;
     menu_service::delete_menu_item(&context.tenant.pool, id).await?;
     Ok((
         StatusCode::OK,
@@ -593,7 +594,7 @@ pub async fn delete_menu_item(
 )]
 pub async fn reorder_menu_items(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     JsonResponse(data): JsonResponse<ReorderRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     if data.items.is_empty() {
@@ -602,7 +603,7 @@ pub async fn reorder_menu_items(
             JsonResponse(ApiResponse::empty_with_message("No items to reorder")),
         ));
     }
-    let context = auth_with_permission(&state, &headers, codes::MENU_UPDATE_ALL).await?;
+    let context = auth_with_permission(&state, &session, codes::MENU_UPDATE_ALL).await?;
     let items: Vec<(Uuid, i32, Option<Uuid>)> = data
         .items
         .into_iter()
@@ -632,10 +633,10 @@ pub async fn reorder_menu_items(
 )]
 pub async fn reorder_menu_groups(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     JsonResponse(data): JsonResponse<ReorderGroupsRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = auth_with_permission(&state, &headers, codes::MENU_UPDATE_ALL).await?;
+    let context = auth_with_permission(&state, &session, codes::MENU_UPDATE_ALL).await?;
     let groups: Vec<(Uuid, i32)> = data
         .groups
         .into_iter()
@@ -668,10 +669,10 @@ pub async fn reorder_menu_groups(
 pub async fn move_item_to_group(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     JsonResponse(data): JsonResponse<MoveItemToGroupRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = auth_with_permission(&state, &headers, codes::MENU_UPDATE_ALL).await?;
+    let context = auth_with_permission(&state, &session, codes::MENU_UPDATE_ALL).await?;
     let item = menu_service::move_item_to_group(&context.tenant.pool, id, data.group_id).await?;
     Ok((StatusCode::OK, JsonResponse(ApiResponse::ok(item))))
 }

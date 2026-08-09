@@ -1,6 +1,6 @@
 use axum::{
-    extract::{Path, State},
-    http::{HeaderMap, StatusCode},
+    extract::{Extension, Path, State},
+    http::StatusCode,
     response::IntoResponse,
     Json,
 };
@@ -11,11 +11,12 @@ use uuid::Uuid;
 
 use crate::api_response::{ApiErrorResponse, ApiResponse, EmptyData};
 use crate::error::AppError;
+use crate::modules::auth::session_service::AuthenticatedSession;
 use crate::modules::staff::services::organization_delegation_service::{
     self, DelegatablePermission,
 };
 use crate::policies::organization_access_policy;
-use crate::utils::request_context::actor_tenant_context;
+use crate::utils::request_context::actor_tenant_context_from_session;
 use crate::AppState;
 
 #[derive(Serialize, ToSchema)]
@@ -63,9 +64,9 @@ pub struct DelegationIdData {
 pub async fn list_delegatable_permissions(
     State(state): State<AppState>,
     Path(organization_unit_id): Path<Uuid>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     organization_access_policy::can_approve_organization_work(&pool, &actor, organization_unit_id)
@@ -92,9 +93,9 @@ pub async fn list_delegatable_permissions(
 pub async fn list_delegations(
     State(state): State<AppState>,
     Path(organization_unit_id): Path<Uuid>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     organization_access_policy::can_approve_organization_work(&pool, &actor, organization_unit_id)
@@ -122,10 +123,10 @@ pub async fn list_delegations(
 pub async fn create_delegation(
     State(state): State<AppState>,
     Path(organization_unit_id): Path<Uuid>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     Json(body): Json<CreateDelegationRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let tenant = context.tenant.subdomain.clone();
     let pool = context.tenant.pool;
     let actor = context.actor;
@@ -194,9 +195,9 @@ pub async fn create_delegation(
 pub async fn revoke_delegation(
     State(state): State<AppState>,
     Path(delegation_id): Path<Uuid>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let tenant = context.tenant.subdomain.clone();
     let pool = context.tenant.pool;
     let actor = context.actor;

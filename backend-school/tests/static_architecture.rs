@@ -59,6 +59,41 @@ fn read_source(path: impl AsRef<Path>) -> String {
         .unwrap_or_else(|error| panic!("failed to read {}: {error}", path.as_ref().display()))
 }
 
+fn assert_typed_session_handlers(paths: &[&str]) {
+    for path in paths {
+        let source = read_source(manifest_dir().join(path));
+        assert!(
+            source.contains("Extension(session): Extension<AuthenticatedSession>"),
+            "{path} must extract the central authenticated session"
+        );
+        assert!(!source.contains("actor_tenant_context(&state, &headers)"));
+        assert!(!source.contains("current_user_tenant_context_from_headers"));
+    }
+}
+
+#[test]
+fn people_and_platform_handlers_use_typed_session_identity() {
+    assert_typed_session_handlers(&[
+        "src/modules/achievement/handlers.rs",
+        "src/modules/files/handlers.rs",
+        "src/modules/menu/handlers/admin.rs",
+        "src/modules/menu/handlers/public.rs",
+        "src/modules/notification/handlers.rs",
+        "src/modules/parents/handlers.rs",
+        "src/modules/school/handlers.rs",
+        "src/modules/staff/handlers/organization_delegations.rs",
+        "src/modules/staff/handlers/organization_members.rs",
+        "src/modules/staff/handlers/organization_permissions.rs",
+        "src/modules/staff/handlers/permissions.rs",
+        "src/modules/staff/handlers/roles.rs",
+        "src/modules/staff/handlers/staff.rs",
+        "src/modules/staff/handlers/user_roles.rs",
+        "src/modules/students/handlers.rs",
+        "src/modules/students/handlers_parents.rs",
+        "src/modules/system/handlers/feature_toggles.rs",
+    ]);
+}
+
 #[test]
 fn exam_schedule_shared_module_is_private() {
     let facade_path = manifest_dir().join("src/modules/academic/services/exam_schedule_service.rs");

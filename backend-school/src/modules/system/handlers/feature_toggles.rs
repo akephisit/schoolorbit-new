@@ -1,6 +1,6 @@
 use axum::{
-    extract::{Path, State},
-    http::{HeaderMap, StatusCode},
+    extract::{Extension, Path, State},
+    http::StatusCode,
     response::{IntoResponse, Json as JsonResponse},
 };
 use serde::{Deserialize, Serialize};
@@ -9,9 +9,10 @@ use uuid::Uuid;
 
 use crate::api_response::ApiErrorResponse;
 use crate::error::AppError;
+use crate::modules::auth::session_service::AuthenticatedSession;
 use crate::modules::menu::models::FeatureToggle;
 use crate::modules::system::services::feature_toggle_service;
-use crate::utils::request_context::actor_tenant_context;
+use crate::utils::request_context::actor_tenant_context_from_session;
 use crate::AppState;
 
 #[derive(Debug, Deserialize)]
@@ -46,9 +47,9 @@ pub struct FeatureListResponse {
 )]
 pub async fn list_features(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
 
@@ -86,9 +87,9 @@ pub async fn list_features(
 pub async fn get_feature(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     let feature = feature_toggle_service::get_feature(&pool, id).await?;
@@ -115,10 +116,10 @@ pub async fn get_feature(
 pub async fn update_feature(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
     JsonResponse(data): JsonResponse<UpdateFeatureRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     let existing = feature_toggle_service::get_feature(&pool, id).await?;
@@ -146,9 +147,9 @@ pub async fn update_feature(
 pub async fn toggle_feature(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
-    headers: HeaderMap,
+    Extension(session): Extension<AuthenticatedSession>,
 ) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context(&state, &headers).await?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     let existing = feature_toggle_service::get_feature(&pool, id).await?;
