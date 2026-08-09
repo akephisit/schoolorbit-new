@@ -400,4 +400,56 @@ mod tests {
 
         assert!(parse_realtime_tenant_hint(Some("school_subdomain=%2564emo")).is_err());
     }
+
+    #[test]
+    fn realtime_query_hints_are_authoritative_only_for_allowlisted_development_origins() {
+        let development =
+            TenantOriginPolicy::for_tests("schoolorbit.app", ["http://localhost:5173"]);
+        let development_headers = headers_with("origin", "http://localhost:5173");
+        assert!(development
+            .resolve_tenant(&development_headers, None)
+            .is_err());
+        assert_eq!(
+            development
+                .resolve_tenant(&development_headers, Some("demo"))
+                .unwrap(),
+            "demo"
+        );
+
+        let mut conflicting_headers = development_headers.clone();
+        conflicting_headers.insert(SCHOOL_SUBDOMAIN_HEADER, HeaderValue::from_static("other"));
+        assert!(development
+            .resolve_tenant(&conflicting_headers, Some("demo"))
+            .is_err());
+
+        let production = TenantOriginPolicy::for_tests("schoolorbit.app", []);
+        let production_headers = headers_with("origin", "https://demo.schoolorbit.app");
+        assert_eq!(
+            production
+                .resolve_tenant(&production_headers, Some("demo"))
+                .unwrap(),
+            "demo"
+        );
+        assert!(production
+            .resolve_tenant(&production_headers, Some("other"))
+            .is_err());
+    }
+
+    #[test]
+    fn realtime_query_parser_rejects_missing_values_duplicates_and_malformed_labels() {
+        assert_eq!(parse_realtime_tenant_hint(None).unwrap(), None);
+        assert_eq!(
+            parse_realtime_tenant_hint(Some("semester_id=ignored&school_subdomain=Demo"))
+                .unwrap()
+                .as_deref(),
+            Some("demo")
+        );
+        for query in [
+            "school_subdomain=",
+            "school_subdomain=bad_domain",
+            "school_subdomain=demo&school_subdomain=demo",
+        ] {
+            assert!(parse_realtime_tenant_hint(Some(query)).is_err(), "{query}");
+        }
+    }
 }

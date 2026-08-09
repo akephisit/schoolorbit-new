@@ -3,17 +3,22 @@ use crate::modules::academic::services::timetable_realtime_service::{
     authorize_socket, TimetableSocketAccess,
 };
 use crate::modules::auth::{
-    http::presented_session_token, session_crypto::RawSessionToken,
-    session_repository::SessionMaintenanceMode, session_service,
+    audit::{self, SessionFailureReason},
+    events::SessionRevocationEvent,
+    http::presented_session_token,
+    session_crypto::RawSessionToken,
+    session_repository::SessionMaintenanceMode,
+    session_service::{self, AuthenticatedSession},
 };
 use crate::modules::notification::events::PermissionChangeEvent;
 use crate::utils::request_context::actor_tenant_context_from_session;
+use crate::utils::subdomain::parse_realtime_tenant_hint;
 use crate::utils::tenant::resolve_auth_tenant_context;
 use crate::AppState;
 use axum::{
     extract::{
         ws::{CloseFrame, Message, WebSocket, WebSocketUpgrade},
-        Query, State,
+        RawQuery, State,
     },
     http::HeaderMap,
     response::Response,
@@ -22,7 +27,7 @@ use chrono::Utc;
 use dashmap::DashMap;
 use futures::stream::StreamExt;
 use serde::{Deserialize, Serialize};
-use std::collections::VecDeque;
+use std::collections::{HashSet, VecDeque};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -272,6 +277,37 @@ pub struct DragState {
 #[derive(Debug, Deserialize)]
 pub struct WsParams {
     pub semester_id: Uuid,
+    #[serde(default)]
+    pub school_subdomain: Option<String>,
+}
+
+fn parse_ws_params(
+    raw_query: Option<&str>,
+    school_subdomain: Option<String>,
+) -> Result<WsParams, AppError> {
+    let raw_query =
+        raw_query.ok_or_else(|| AppError::BadRequest("Invalid WebSocket query".to_string()))?;
+    let mut seen = HashSet::new();
+    let mut semester_id = None;
+
+    for (key, value) in url::form_urlencoded::parse(raw_query.as_bytes()) {
+        if !seen.insert(key.to_string()) {
+            return Err(AppError::BadRequest("Invalid WebSocket query".to_string()));
+        }
+        if key == "semester_id" {
+            semester_id = Some(
+                value
+                    .parse::<Uuid>()
+                    .map_err(|_| AppError::BadRequest("Invalid WebSocket query".to_string()))?,
+            );
+        }
+    }
+
+    Ok(WsParams {
+        semester_id: semester_id
+            .ok_or_else(|| AppError::BadRequest("Invalid WebSocket query".to_string()))?,
+        school_subdomain,
+    })
 }
 
 // ==========================================
@@ -641,6 +677,78 @@ fn heartbeat_timed_out(last_inbound: Instant, now: Instant) -> bool {
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
+enum SocketSessionDecision {
+    Continue,
+    Disconnect,
+    Unavailable,
+}
+
+fn session_event_decision(
+    event: Result<SessionRevocationEvent, broadcast::error::RecvError>,
+    session: &AuthenticatedSession,
+) -> SocketSessionDecision {
+    match event {
+        Ok(event)
+            if event.applies_to(
+                &session.tenant.subdomain,
+                session.user_id,
+                session.session_id,
+            ) =>
+        {
+            SocketSessionDecision::Disconnect
+        }
+        Ok(_) => SocketSessionDecision::Continue,
+        Err(broadcast::error::RecvError::Lagged(missed_events)) => {
+            tracing::warn!(
+                missed_events,
+                "Timetable WebSocket session receiver lagged; closing session"
+            );
+            SocketSessionDecision::Unavailable
+        }
+        Err(broadcast::error::RecvError::Closed) => {
+            tracing::warn!("Timetable WebSocket session channel closed; closing session");
+            SocketSessionDecision::Unavailable
+        }
+    }
+}
+
+fn queued_session_decision(
+    receiver: &mut broadcast::Receiver<SessionRevocationEvent>,
+    session: &AuthenticatedSession,
+) -> SocketSessionDecision {
+    loop {
+        match receiver.try_recv() {
+            Ok(event)
+                if event.applies_to(
+                    &session.tenant.subdomain,
+                    session.user_id,
+                    session.session_id,
+                ) =>
+            {
+                return SocketSessionDecision::Disconnect;
+            }
+            Ok(_) => continue,
+            Err(broadcast::error::TryRecvError::Empty) => {
+                return SocketSessionDecision::Continue;
+            }
+            Err(broadcast::error::TryRecvError::Lagged(missed_events)) => {
+                tracing::warn!(
+                    missed_events,
+                    "Timetable WebSocket queued session receiver lagged; closing session"
+                );
+                return SocketSessionDecision::Unavailable;
+            }
+            Err(broadcast::error::TryRecvError::Closed) => {
+                tracing::warn!(
+                    "Timetable WebSocket queued session channel closed; closing session"
+                );
+                return SocketSessionDecision::Unavailable;
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
 enum SocketPermissionDecision {
     Continue,
     Disconnect,
@@ -914,14 +1022,76 @@ async fn send_broadcast_event(
         .map_err(|_| ())
 }
 
+#[derive(Clone, Copy)]
+enum SocketCloseReason {
+    PermissionChanged,
+    SessionInvalid,
+    SessionUnavailable,
+}
+
+impl SocketCloseReason {
+    fn message(self) -> &'static str {
+        match self {
+            Self::PermissionChanged => "Permission changed",
+            Self::SessionInvalid | Self::SessionUnavailable => "Authentication required",
+        }
+    }
+
+    fn audit_reason(self) -> SessionFailureReason {
+        match self {
+            Self::PermissionChanged => SessionFailureReason::RealtimePermissionChanged,
+            Self::SessionInvalid => SessionFailureReason::RealtimeSessionInvalid,
+            Self::SessionUnavailable => SessionFailureReason::RealtimeSessionUnavailable,
+        }
+    }
+
+    fn send_failure_code(self) -> &'static str {
+        match self {
+            Self::PermissionChanged => "permission_close_send_failed",
+            Self::SessionInvalid | Self::SessionUnavailable => "session_close_send_failed",
+        }
+    }
+}
+
+async fn close_realtime_socket(
+    socket: &mut WebSocket,
+    session: &AuthenticatedSession,
+    reason: SocketCloseReason,
+) {
+    audit::session_realtime_disconnect(
+        session.tenant.tenant_id,
+        session.user_id,
+        session.session_id,
+        reason.audit_reason(),
+    );
+    if socket
+        .send(Message::Close(Some(CloseFrame {
+            code: 1008,
+            reason: reason.message().into(),
+        })))
+        .await
+        .is_err()
+    {
+        tracing::debug!(reason = reason.send_failure_code());
+    }
+}
+
 pub async fn timetable_websocket_handler(
     State(state): State<AppState>,
     headers: HeaderMap,
-    Query(params): Query<WsParams>,
+    RawQuery(raw_query): RawQuery,
     ws: WebSocketUpgrade,
 ) -> Result<Response, AppError> {
+    let parsed_dev_hint = parse_realtime_tenant_hint(raw_query.as_deref())?;
+    let params = parse_ws_params(raw_query.as_deref(), parsed_dev_hint)?;
+    let session_event_receiver = state.auth_runtime.session_events.subscribe();
     let permission_event_receiver = state.permission_event_channel.subscribe();
-    let tenant = resolve_auth_tenant_context(&state.auth_runtime, &headers, None).await?;
+    let tenant = resolve_auth_tenant_context(
+        &state.auth_runtime,
+        &headers,
+        params.school_subdomain.as_deref(),
+    )
+    .await?;
     let token = presented_session_token(&headers)?
         .ok_or_else(|| AppError::AuthError("กรุณาเข้าสู่ระบบ".to_string()))?;
     let session_context = state.auth_runtime.service_context(tenant);
@@ -937,15 +1107,18 @@ pub async fn timetable_websocket_handler(
     .ok_or_else(|| AppError::AuthError("กรุณาเข้าสู่ระบบ".to_string()))?;
     let context = actor_tenant_context_from_session(&state, &authenticated).await?;
     let access = authorize_socket(&context.tenant.pool, &context.actor, params.semester_id).await?;
-    let tenant = context.tenant.subdomain;
+    if !session_service::revalidate(&authenticated, Utc::now()).await? {
+        return Err(AppError::AuthError("กรุณาเข้าสู่ระบบ".to_string()));
+    }
 
     Ok(ws.on_upgrade(move |socket| {
         handle_socket(
             socket,
             state,
             params.semester_id,
-            tenant,
+            authenticated,
             access,
+            session_event_receiver,
             permission_event_receiver,
         )
     }))
@@ -955,10 +1128,12 @@ async fn handle_socket(
     mut socket: WebSocket,
     state: AppState,
     semester_id: Uuid,
-    tenant: String,
+    authenticated: AuthenticatedSession,
     access: TimetableSocketAccess,
+    mut session_event_receiver: broadcast::Receiver<SessionRevocationEvent>,
     mut permission_event_receiver: broadcast::Receiver<PermissionChangeEvent>,
 ) {
+    let tenant = authenticated.tenant.subdomain.clone();
     let TimetableSocketAccess {
         user_id,
         display_name,
@@ -970,6 +1145,28 @@ async fn handle_socket(
         color: generate_color_from_uuid(&user_id),
         context: None,
     };
+
+    match queued_session_decision(&mut session_event_receiver, &authenticated) {
+        SocketSessionDecision::Continue => {}
+        SocketSessionDecision::Disconnect => {
+            close_realtime_socket(
+                &mut socket,
+                &authenticated,
+                SocketCloseReason::SessionInvalid,
+            )
+            .await;
+            return;
+        }
+        SocketSessionDecision::Unavailable => {
+            close_realtime_socket(
+                &mut socket,
+                &authenticated,
+                SocketCloseReason::SessionUnavailable,
+            )
+            .await;
+            return;
+        }
+    }
 
     let initialization = initialize_socket_if_permissions_current(
         &mut permission_event_receiver,
@@ -1007,16 +1204,12 @@ async fn handle_socket(
     );
 
     let Some((tx, mut rx, is_first_tab, sync_event)) = initialization else {
-        if socket
-            .send(Message::Close(Some(CloseFrame {
-                code: 1008,
-                reason: "Permission changed".into(),
-            })))
-            .await
-            .is_err()
-        {
-            tracing::debug!("Failed to send queued timetable WebSocket permission close");
-        }
+        close_realtime_socket(
+            &mut socket,
+            &authenticated,
+            SocketCloseReason::PermissionChanged,
+        )
+        .await;
         return;
     };
 
@@ -1040,30 +1233,78 @@ async fn handle_socket(
     }
 
     if socket_ready {
-        let mut heartbeat = tokio::time::interval(HEARTBEAT_INTERVAL);
+        let mut heartbeat = tokio::time::interval_at(
+            tokio::time::Instant::now() + HEARTBEAT_INTERVAL,
+            HEARTBEAT_INTERVAL,
+        );
         heartbeat.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
-        heartbeat.tick().await;
         let mut last_inbound = Instant::now();
 
         loop {
             tokio::select! {
                 biased;
+                session_change = session_event_receiver.recv() => {
+                    match session_event_decision(session_change, &authenticated) {
+                        SocketSessionDecision::Continue => {}
+                        SocketSessionDecision::Disconnect => {
+                            close_realtime_socket(
+                                &mut socket,
+                                &authenticated,
+                                SocketCloseReason::SessionInvalid,
+                            )
+                            .await;
+                            break;
+                        }
+                        SocketSessionDecision::Unavailable => {
+                            close_realtime_socket(
+                                &mut socket,
+                                &authenticated,
+                                SocketCloseReason::SessionUnavailable,
+                            )
+                            .await;
+                            break;
+                        }
+                    }
+                },
                 permission_change = permission_event_receiver.recv() => {
                     if permission_event_decision(permission_change, &tenant, user_id)
                         == SocketPermissionDecision::Disconnect
                     {
-                        if socket
-                            .send(Message::Close(Some(CloseFrame {
-                                code: 1008,
-                                reason: "Permission changed".into(),
-                            })))
-                            .await
-                            .is_err()
-                        {
-                            tracing::debug!(
-                                "Failed to send timetable WebSocket permission close"
-                            );
+                        close_realtime_socket(
+                            &mut socket,
+                            &authenticated,
+                            SocketCloseReason::PermissionChanged,
+                        )
+                        .await;
+                        break;
+                    }
+                },
+                _ = heartbeat.tick() => {
+                    match session_service::revalidate(&authenticated, Utc::now()).await {
+                        Ok(true) => {}
+                        Ok(false) => {
+                            close_realtime_socket(
+                                &mut socket,
+                                &authenticated,
+                                SocketCloseReason::SessionInvalid,
+                            )
+                            .await;
+                            break;
                         }
+                        Err(_) => {
+                            close_realtime_socket(
+                                &mut socket,
+                                &authenticated,
+                                SocketCloseReason::SessionUnavailable,
+                            )
+                            .await;
+                            break;
+                        }
+                    }
+                    if heartbeat_timed_out(last_inbound, Instant::now()) {
+                        break;
+                    }
+                    if socket.send(Message::Ping(Vec::new().into())).await.is_err() {
                         break;
                     }
                 },
@@ -1115,14 +1356,6 @@ async fn handle_socket(
                         break;
                     }
                 },
-                _ = heartbeat.tick() => {
-                    if heartbeat_timed_out(last_inbound, Instant::now()) {
-                        break;
-                    }
-                    if socket.send(Message::Ping(Vec::new().into())).await.is_err() {
-                        break;
-                    }
-                },
             }
         }
     }
@@ -1156,7 +1389,37 @@ fn generate_color_from_uuid(id: &Uuid) -> String {
 #[cfg(test)]
 mod security_tests {
     use super::*;
+    use crate::modules::auth::events::SessionRevocationEvent;
+    use crate::modules::auth::session_service::AuthenticatedSession;
     use crate::modules::notification::events::PermissionChangeEvent;
+    use crate::utils::tenant::TenantContext;
+    use sqlx::postgres::PgPoolOptions;
+
+    fn authenticated_session(tenant: &str) -> AuthenticatedSession {
+        AuthenticatedSession {
+            tenant: TenantContext {
+                tenant_id: Uuid::new_v4(),
+                subdomain: tenant.to_string(),
+                pool: PgPoolOptions::new()
+                    .connect_lazy("postgres://invalid:invalid@127.0.0.1:1/invalid")
+                    .unwrap(),
+            },
+            session_id: Uuid::new_v4(),
+            user_id: Uuid::new_v4(),
+            username: "teacher.one".to_string(),
+            user_type: "staff".to_string(),
+        }
+    }
+
+    fn session_channel(
+        capacity: usize,
+    ) -> (
+        broadcast::Sender<SessionRevocationEvent>,
+        broadcast::Receiver<SessionRevocationEvent>,
+    ) {
+        let (sender, receiver) = broadcast::channel(capacity);
+        (sender, receiver)
+    }
 
     fn permission_channel(
         capacity: usize,
@@ -1166,6 +1429,24 @@ mod security_tests {
     ) {
         let (sender, receiver) = broadcast::channel(capacity);
         (sender, receiver)
+    }
+
+    #[tokio::test]
+    async fn websocket_session_revocation_wins_before_room_initialization() {
+        let (sender, mut receiver) = session_channel(8);
+        let session = authenticated_session("demo");
+        sender
+            .send(SessionRevocationEvent::session(
+                "demo",
+                session.user_id,
+                session.session_id,
+            ))
+            .unwrap();
+
+        assert_eq!(
+            queued_session_decision(&mut receiver, &session),
+            SocketSessionDecision::Disconnect
+        );
     }
 
     async fn receive_permission_decision(
@@ -1192,6 +1473,29 @@ mod security_tests {
             params.semester_id.to_string(),
             "8b391685-4a1c-4f25-a544-b1c5bd0d457e"
         );
+        assert_eq!(params.school_subdomain, None);
+    }
+
+    #[test]
+    fn websocket_query_uses_shared_tenant_hint_and_rejects_duplicate_keys() {
+        let semester_id = Uuid::new_v4();
+        let raw_query = format!("semester_id={semester_id}&school_subdomain=Demo");
+        let hint = parse_realtime_tenant_hint(Some(&raw_query)).unwrap();
+        let params = parse_ws_params(Some(&raw_query), hint).unwrap();
+
+        assert_eq!(params.semester_id, semester_id);
+        assert_eq!(params.school_subdomain.as_deref(), Some("demo"));
+        assert!(
+            parse_realtime_tenant_hint(Some("school_subdomain=demo&school_subdomain=other"))
+                .is_err()
+        );
+        assert!(parse_ws_params(
+            Some(&format!(
+                "semester_id={semester_id}&semester_id={semester_id}"
+            )),
+            None,
+        )
+        .is_err());
     }
 
     #[test]

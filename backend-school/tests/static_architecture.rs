@@ -172,6 +172,39 @@ fn only_auth_boundary_parses_browser_session_credentials() {
 }
 
 #[test]
+fn notification_sse_binds_stream_lifetime_to_authoritative_session() {
+    let source = read_source(manifest_dir().join("src/modules/notification/handlers.rs"));
+    let handler = extract_braced_block(&source, "pub async fn stream_notifications", false);
+
+    let notification_subscribe = handler
+        .find("notification_channel.subscribe()")
+        .expect("SSE must subscribe to notifications before session revalidation");
+    let permission_subscribe = handler
+        .find("permission_event_channel.subscribe()")
+        .expect("SSE must subscribe to permission events before session revalidation");
+    let work_subscribe = handler
+        .find("work_event_channel.subscribe()")
+        .expect("SSE must subscribe to work events before session revalidation");
+    let session_subscribe = handler
+        .find("session_events.subscribe()")
+        .expect("SSE must subscribe to session events before session revalidation");
+    let immediate_revalidation = handler
+        .find("session_service::revalidate(&session, Utc::now())")
+        .expect("SSE must immediately revalidate its authenticated session");
+    assert!(notification_subscribe < immediate_revalidation);
+    assert!(permission_subscribe < immediate_revalidation);
+    assert!(work_subscribe < immediate_revalidation);
+    assert!(session_subscribe < immediate_revalidation);
+
+    assert!(source.contains("Instant::now() + SESSION_REVALIDATION_INTERVAL"));
+    assert!(source.contains("MissedTickBehavior::Delay"));
+    assert!(source.contains("event(\"session_invalid\").data(\"{}\")"));
+    assert!(source.contains("event(\"session_unavailable\")"));
+    assert!(source.contains("HeaderValue::from_static(\"no\")"));
+    assert!(!source.contains("SessionUnavailable(error)"));
+}
+
+#[test]
 fn exam_schedule_shared_module_is_private() {
     let facade_path = manifest_dir().join("src/modules/academic/services/exam_schedule_service.rs");
     let shared_path =
@@ -3591,22 +3624,31 @@ fn structured_logging_guard_detects_spaced_macro_tokens() {
 }
 
 #[test]
-fn timetable_websocket_identity_is_server_owned() {
+fn timetable_websocket_handler_orders_session_auth_before_room_state() {
     let source = read_source(manifest_dir().join("src/modules/academic/websockets.rs"));
     let params = extract_braced_block(&source, "pub struct WsParams", false);
 
     assert!(params.contains("pub semester_id: Uuid"));
+    assert!(params.contains("pub school_subdomain: Option<String>"));
     assert!(!params.contains("user_id"));
     assert!(!params.contains("name:"));
     assert!(!params.contains("school_key"));
 
     let handler = extract_braced_block(&source, "pub async fn timetable_websocket_handler", false);
+    assert!(handler.contains("parse_realtime_tenant_hint("));
+    assert!(handler.contains("session_events.subscribe()"));
+    assert!(handler.contains("permission_event_channel.subscribe()"));
+    assert!(handler.contains("SessionMaintenanceMode::TouchOnly"));
     assert!(handler.contains("session_service::authenticate("));
+    assert!(handler.contains("session_service::revalidate("));
     assert!(handler.contains("actor_tenant_context_from_session(&state, &authenticated)"));
     assert!(handler.contains("authorize_socket("));
-    let subscribe = handler
+    let permission_subscribe = handler
         .find("permission_event_channel.subscribe()")
         .expect("WebSocket must subscribe to permission changes before authentication");
+    let session_subscribe = handler
+        .find("session_events.subscribe()")
+        .expect("WebSocket must subscribe to session changes before authentication");
     let authenticate = handler
         .find("session_service::authenticate(")
         .expect("WebSocket must authenticate through the central tenant context");
@@ -3614,15 +3656,24 @@ fn timetable_websocket_identity_is_server_owned() {
         .find("authorize_socket(")
         .expect("WebSocket must authorize timetable access before upgrade");
     assert!(
-        subscribe < authenticate && authenticate < authorize,
-        "permission subscription must precede authentication and authorization"
+        permission_subscribe < authenticate
+            && session_subscribe < authenticate
+            && authenticate < authorize,
+        "session and permission subscriptions must precede authentication and authorization"
     );
+    let immediate_revalidation = handler
+        .find("session_service::revalidate(")
+        .expect("WebSocket must immediately revalidate the authenticated session");
+    assert!(authorize < immediate_revalidation);
     assert!(handler.contains("permission_event_receiver"));
 
     let socket_loop = extract_braced_block(&source, "async fn handle_socket", false);
     assert!(socket_loop.contains("sanitize_client_event("));
     assert!(socket_loop.contains("permission_event_receiver.recv()"));
     assert!(socket_loop.contains("permission_event_decision("));
+    assert!(socket_loop.contains("session_event_receiver.recv()"));
+    assert!(socket_loop.contains("session_event_decision("));
+    assert!(socket_loop.contains("queued_session_decision("));
 
     let queued_permission_drain = socket_loop
         .find("initialize_socket_if_permissions_current(")
@@ -3650,10 +3701,18 @@ fn timetable_websocket_identity_is_server_owned() {
         .find("biased;")
         .map(|offset| select + offset)
         .expect("permission revocation must win when multiple socket branches are ready");
+    let session_branch = socket_loop[select..]
+        .find("session_change = session_event_receiver.recv()")
+        .map(|offset| select + offset)
+        .expect("select loop must receive session revocations");
     let permission_branch = socket_loop[select..]
         .find("permission_change = permission_event_receiver.recv()")
         .map(|offset| select + offset)
         .expect("select loop must receive permission changes");
+    let heartbeat_branch = socket_loop[select..]
+        .find("_ = heartbeat.tick()")
+        .map(|offset| select + offset)
+        .expect("socket must run the delayed heartbeat");
     let incoming_branch = socket_loop[select..]
         .find("incoming = socket.next()")
         .map(|offset| select + offset)
@@ -3664,11 +3723,23 @@ fn timetable_websocket_identity_is_server_owned() {
         .expect("select loop must receive room events");
     assert!(
         select < biased
-            && biased < permission_branch
-            && permission_branch < incoming_branch
+            && biased < session_branch
+            && session_branch < permission_branch
+            && permission_branch < heartbeat_branch
+            && heartbeat_branch < incoming_branch
             && incoming_branch < room_broadcast_branch,
-        "biased select must prioritize permission revocation before socket and room input"
+        "biased select must prioritize revocation and due revalidation before socket and room input"
     );
+
+    let heartbeat_revalidation = socket_loop[heartbeat_branch..]
+        .find("session_service::revalidate(")
+        .map(|offset| heartbeat_branch + offset)
+        .expect("heartbeat must revalidate the authoritative session");
+    let heartbeat_ping = socket_loop[heartbeat_branch..]
+        .find("Message::Ping")
+        .map(|offset| heartbeat_branch + offset)
+        .expect("heartbeat must send a ping after revalidation");
+    assert!(heartbeat_revalidation < heartbeat_ping);
 }
 
 #[test]
@@ -4049,7 +4120,8 @@ fn work_change_sse_supports_work_item_and_window_refresh_signals() {
         "work_event_channel.subscribe()",
         "event.applies_to(&tenant)",
         "event.event_name()",
-        ".event(event.event_name())",
+        "NotificationStreamEvent::WorkChanged(event.event_name())",
+        ".event(event_name)",
     ] {
         assert!(
             notification_handler.contains(expected),

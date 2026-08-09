@@ -23,11 +23,12 @@ use crate::{
 };
 
 use super::{
+    audit::{self, LoginRejectionReason},
     config::SessionConfig,
     events::SessionRevocationEvent,
     session_crypto::{identifier_bucket, RawSessionToken, SessionHmacKey},
     session_policy::normalize_login_identifier,
-    session_repository::SessionMaintenanceMode,
+    session_repository::{SessionMaintenanceMode, SessionRevocationReason},
     session_service::{
         authenticate, change_password, list_sessions, load_current_user, login, logout, logout_all,
         revalidate, revoke_selected, LoginCommand, LoginResult, SessionServiceContext,
@@ -243,6 +244,16 @@ impl AuthServiceFixture {
         .await
         .unwrap();
     }
+
+    async fn session_token_hashes(&self, session_id: Uuid) -> (Vec<u8>, Option<Vec<u8>>) {
+        sqlx::query_as(
+            "SELECT current_token_hash, previous_token_hash FROM auth_sessions WHERE id = $1",
+        )
+        .bind(session_id)
+        .fetch_one(&self.pool)
+        .await
+        .unwrap()
+    }
 }
 
 fn database_timestamp(value: DateTime<Utc>) -> DateTime<Utc> {
@@ -257,6 +268,10 @@ struct CapturedLogs(Arc<Mutex<Vec<u8>>>);
 impl CapturedLogs {
     fn text(&self) -> String {
         String::from_utf8(self.0.lock().unwrap().clone()).unwrap()
+    }
+
+    fn clear(&self) {
+        self.0.lock().unwrap().clear();
     }
 }
 
@@ -481,6 +496,60 @@ async fn csrf_is_stable_across_rotation_and_password_change_and_cookie_lifetime_
         late.replacement.unwrap().cookie_max_age_seconds,
         Some(86_403)
     );
+}
+
+#[tokio::test]
+async fn websocket_touch_only_handshake_defers_rotation_to_the_next_ordinary_request() {
+    let fixture = AuthServiceFixture::new("service_websocket_touch_only").await;
+    fixture
+        .insert_user("teacher.one", "correct-password", "active")
+        .await;
+    let login = fixture
+        .login_with_token(
+            "teacher.one",
+            "correct-password",
+            true,
+            fixture.now,
+            [61; 32],
+        )
+        .await
+        .unwrap();
+    let session_id = login.authenticated.session_id;
+    fixture.make_rotation_due(session_id, fixture.now).await;
+    let before_handshake = fixture.session_token_hashes(session_id).await;
+
+    let websocket = authenticate(
+        &fixture.context,
+        login.credential.token_hash(),
+        fixture.now + Duration::seconds(1),
+        SessionMaintenanceMode::TouchOnly,
+        || panic!("WebSocket touch-only authentication must not generate a credential"),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+
+    assert!(websocket.replacement.is_none());
+    assert_eq!(websocket.csrf_token, login.csrf_token);
+    let after_handshake = fixture.session_token_hashes(session_id).await;
+    assert_eq!(after_handshake, before_handshake);
+
+    let ordinary = authenticate(
+        &fixture.context,
+        login.credential.token_hash(),
+        fixture.now + Duration::seconds(2),
+        SessionMaintenanceMode::RotateAndTouch,
+        AuthServiceFixture::credentials([62; 32]),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+
+    assert!(ordinary.replacement.is_some());
+    assert_eq!(ordinary.csrf_token, login.csrf_token);
+    let after_ordinary_request = fixture.session_token_hashes(session_id).await;
+    assert_ne!(after_ordinary_request.0, after_handshake.0);
+    assert_eq!(after_ordinary_request.1, Some(after_handshake.0));
 }
 
 #[tokio::test]
@@ -850,11 +919,30 @@ async fn logout_all_revokes_only_the_user_and_load_current_user_rechecks_status(
 #[tokio::test]
 async fn audit_and_cleanup_logs_contain_only_fixed_allowlisted_fields() {
     let captured = CapturedLogs::default();
-    let subscriber = tracing_subscriber::fmt()
-        .json()
-        .without_time()
-        .with_writer(captured.clone())
-        .finish();
+    let subscriber = tracing::Dispatch::new(
+        tracing_subscriber::fmt()
+            .json()
+            .without_time()
+            .with_writer(captured.clone())
+            .finish(),
+    );
+    // Prime the audit callsites under this dispatcher before concurrent tests
+    // can cache them under the no-op default. Clear the probe output so every
+    // assertion below still proves that the service flow emitted the marker.
+    tracing::callsite::rebuild_interest_cache();
+    tracing::dispatcher::with_default(&subscriber, || {
+        audit::login_rejected(Uuid::nil(), LoginRejectionReason::InvalidCredentials);
+        audit::login_succeeded(Uuid::nil(), Uuid::nil(), Uuid::nil());
+        audit::session_created(Uuid::nil(), Uuid::nil(), Uuid::nil());
+        audit::session_revoked(
+            Uuid::nil(),
+            Uuid::nil(),
+            Uuid::nil(),
+            SessionRevocationReason::UserSelected,
+        );
+        audit::cleanup_failed();
+    });
+    captured.clear();
 
     async {
         let fixture = AuthServiceFixture::new("service_redacted_audit").await;

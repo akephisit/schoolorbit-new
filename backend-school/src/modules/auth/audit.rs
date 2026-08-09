@@ -22,6 +22,9 @@ pub enum SessionFailureReason {
     CredentialGeneration,
     InvalidCsrf,
     InvalidOrigin,
+    RealtimePermissionChanged,
+    RealtimeSessionInvalid,
+    RealtimeSessionUnavailable,
     SessionStore,
 }
 
@@ -31,6 +34,9 @@ impl SessionFailureReason {
             Self::CredentialGeneration => "credential_generation",
             Self::InvalidCsrf => "invalid_csrf",
             Self::InvalidOrigin => "invalid_origin",
+            Self::RealtimePermissionChanged => "permission_changed",
+            Self::RealtimeSessionInvalid => "session_invalid",
+            Self::RealtimeSessionUnavailable => "session_unavailable",
             Self::SessionStore => "session_store",
         }
     }

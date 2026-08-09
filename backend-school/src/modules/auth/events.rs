@@ -45,7 +45,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn revocation_targets_match_only_the_intended_tenant_user_and_session() {
+    fn revocation_event_targets_current_selected_and_user_sessions() {
         let user_id = Uuid::new_v4();
         let current = Uuid::new_v4();
         let other = Uuid::new_v4();
