@@ -157,16 +157,7 @@ TEST_DATABASE_URL='postgresql://.../schoolorbit_test' cargo test <focused-test>
 
 Tests must isolate their schema/data and clean up what they create. With Neon, use a direct database endpoint for schema/search-path migrations. Do not use a `-pooler` transaction endpoint for these tests because shared session state can expose the wrong `_sqlx_migrations` table.
 
-Read-only baseline validation:
-
-```bash
-./scripts/check_migration_rebaseline_ready.sh
-
-MIGRATION_AUDIT_DATABASE_URL='postgresql://...' \
-  ./scripts/check_migration_rebaseline_ready.sh
-```
-
-Guarded preparation/cutover procedures are documented in [Operations](./OPERATIONS.md).
+The backend static architecture suite validates that active migrations remain a contiguous timeline beginning at `001_baseline.sql`. Runtime rollout and all-tenant migration verification are documented in [Operations](./OPERATIONS.md).
 
 ## Encryption and PII
 

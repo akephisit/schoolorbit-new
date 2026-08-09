@@ -240,26 +240,15 @@ proxied to the checkpointed Tunnel UUID, direct access to `<target-ip>:9090` fai
 `schoolorbit` Cockpit Podman page lists `schoolorbit-backend-admin`, `schoolorbit-backend-school`,
 `schoolorbit-clamd`, and `schoolorbit-nginx`. Retain the prior Tunnel/VPS through the rollback window.
 
-## Tenant Migration and Cutover
+## Tenant Migrations
 
 Active tenant migrations begin at `backend-school/migrations/001_baseline.sql`. Do not modify an applied migration or hide a checksum mismatch.
 
-Before a cutover, use [`scripts/check_migration_rebaseline_ready.sh`](../scripts/check_migration_rebaseline_ready.sh) for read-only validation.
+New tenant provisioning calls the centralized runner in [`backend-school/src/db/migration.rs`](../backend-school/src/db/migration.rs), applies every pending active migration, and synchronizes the permission contract before creating the tenant administrator.
 
-For a brand-new clean target, [`scripts/prepare_clean_tenant_db.sh`](../scripts/prepare_clean_tenant_db.sh):
+Backend-school deployment keeps the school API in maintenance mode while it calls `/internal/migrate-all`. It then verifies `/internal/migration-status` reports every tenant at the repository's latest migration with no pending, failed, or outdated tenant before restoring the normal proxy.
 
-- requires an explicit target URL and confirmation;
-- refuses legacy migration history and unsafe non-empty targets;
-- applies the clean baseline under guarded conditions.
-
-For an existing-tenant move, [`scripts/cutover_tenant_data.sh`](../scripts/cutover_tenant_data.sh):
-
-- requires separately identified source and clean target;
-- keeps the target migration history at the active baseline;
-- excludes source `_sqlx_migrations`;
-- copies tenant data, then requires permission sync and row-count validation.
-
-Treat these scripts as destructive-capable operational tools. Read their validation and confirmation requirements before execution, back up the source, test on non-production data, and schedule a controlled write freeze/cutover. Never improvise by editing SQLx checksum records.
+The one-time legacy rebaseline is complete and its operational scripts are retired. If a tenant with legacy `_sqlx_migrations` history is discovered, stop the rollout and prepare a new reviewed recovery plan. Never point the current release at that database, copy migration history, or edit SQLx checksum records.
 
 ## Permission and Menu Synchronization
 

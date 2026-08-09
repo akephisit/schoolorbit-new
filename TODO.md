@@ -159,10 +159,9 @@ This file is the single active backlog for verified, unfinished technical work t
   - Add Rust advisory scanning, JavaScript audit policy, CodeQL or equivalent static analysis, secret scanning, SBOM generation, and artifact signing.
   - Define how vulnerabilities are triaged, waived with expiry, and verified after upgrades.
 
-- [ ] **OPS-002: Add production observability and repair stale verification tooling.**
+- [ ] **OPS-002: Add production observability.**
   - Propagate request/correlation IDs across frontends, services, provider calls, jobs, and deployment history.
   - Add metrics, traces, dashboards, alerts, SLOs, and runbooks for authentication, tenant resolution, database pools, file access, jobs, and deployments.
-  - Update or retire the clean-baseline readiness script whose one-migration assumption no longer matches the active migration timeline.
 
 ## P3 — School Product Roadmap
 

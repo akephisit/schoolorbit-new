@@ -151,8 +151,8 @@ Use `ApiResponse` and `ApiErrorResponse`; do not return raw feature DTOs or ad-h
 - Runtime tenant migrations start at `backend-school/migrations/001_baseline.sql`. `backend-school/migrations_legacy/` is audit history only.
 - Once any live tenant has applied the baseline, do not edit it; continue with `002_*.sql`, `003_*.sql`, and so on.
 - Never point a clean-baseline release at a tenant whose `_sqlx_migrations` still contains the legacy timeline.
-- New clean tenant databases use `scripts/prepare_clean_tenant_db.sh`.
-- Existing-tenant cutovers use `scripts/cutover_tenant_data.sh` or an equivalently reviewed process: create a clean target, apply baseline, exclude the source migration table, copy tenant data, sync permissions/menu data, and compare row counts.
+- New tenant provisioning and release deployments use the centralized runner in `backend-school/src/db/migration.rs`; do not introduce a second tenant migration path.
+- The legacy rebaseline workflow is retired. If a tenant with legacy `_sqlx_migrations` history is discovered, stop and create a new reviewed recovery plan instead of reusing one-time tooling or improvising a cutover.
 - Database-backed tests use `TEST_DATABASE_URL` and isolated test state. For Neon migration/schema tests, use a direct endpoint rather than a `-pooler` transaction endpoint.
 
 ## 7. Frontend: SvelteKit 5

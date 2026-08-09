@@ -51,4 +51,4 @@ git status --short
 
 ## Operations
 
-[Operations](./docs/OPERATIONS.md) covers topology, environment variables, health/readiness, deployment workflows, tenant cutover, encryption keys, and file storage.
+[Operations](./docs/OPERATIONS.md) covers topology, environment variables, health/readiness, deployment workflows, tenant migrations and recovery, encryption keys, and file storage.
