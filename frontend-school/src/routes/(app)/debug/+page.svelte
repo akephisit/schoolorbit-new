@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { authStore } from '$lib/stores/auth';
+	import { userPermissions } from '$lib/stores/permissions';
 	import { PageShell } from '$lib/components/app-layout';
 	import { Card, CardContent, CardHeader, CardTitle } from '$lib/components/ui/card';
 	import { Button } from '$lib/components/ui/button';
@@ -7,6 +8,7 @@
 	import { toast } from 'svelte-sonner';
 
 	const authState = $derived($authStore);
+	const permissions = $derived($userPermissions);
 
 	async function forceRefresh() {
 		const result = await authAPI.refreshCurrentUser({ silent: false });
@@ -28,15 +30,15 @@
 			<CardTitle>Raw Permissions Value</CardTitle>
 		</CardHeader>
 		<CardContent class="space-y-2">
-			<p><strong>Type:</strong> <code>{typeof authState.user?.permissions}</code></p>
-			<p><strong>Is Array:</strong> <code>{Array.isArray(authState.user?.permissions)}</code></p>
+			<p><strong>Type:</strong> <code>{typeof permissions}</code></p>
+			<p><strong>Is Array:</strong> <code>{Array.isArray(permissions)}</code></p>
 			<p>
 				<strong>Length:</strong>
-				<code>{authState.user?.permissions?.length ?? 'N/A'}</code>
+				<code>{permissions.length}</code>
 			</p>
 			<p><strong>Value:</strong></p>
 			<pre class="bg-slate-100 dark:bg-slate-800 p-4 rounded overflow-auto text-xs">{JSON.stringify(
-					authState.user?.permissions,
+					permissions,
 					null,
 					2
 				)}</pre>
@@ -62,19 +64,15 @@
 		</CardHeader>
 		<CardContent>
 			<div class="space-y-2">
-				{#if authState.user?.permissions}
-					{#if authState.user.permissions.length === 0}
-						<p class="text-orange-500">⚠️ Permissions array is empty!</p>
-					{:else}
-						<p class="text-green-600">✅ Found {authState.user.permissions.length} permissions:</p>
-						<ul class="list-disc pl-5 max-h-96 overflow-auto">
-							{#each authState.user.permissions as perm (perm)}
-								<li class="text-sm font-mono">{perm}</li>
-							{/each}
-						</ul>
-					{/if}
+				{#if permissions.length === 0}
+					<p class="text-orange-500">⚠️ Permissions array is empty!</p>
 				{:else}
-					<p class="text-red-500">❌ No permissions field found! (null or undefined)</p>
+					<p class="text-green-600">✅ Found {permissions.length} permissions:</p>
+					<ul class="list-disc pl-5 max-h-96 overflow-auto">
+						{#each permissions as perm (perm)}
+							<li class="text-sm font-mono">{perm}</li>
+						{/each}
+					</ul>
 				{/if}
 			</div>
 		</CardContent>
@@ -87,24 +85,16 @@
 		<CardContent>
 			<div class="space-y-1 text-sm font-mono">
 				<p>
-					canCreateOwn: {authState.user?.permissions?.includes('achievement.create.own')
-						? '✅ TRUE'
-						: '❌ FALSE'}
+					canCreateOwn: {permissions.includes('achievement.create.own') ? '✅ TRUE' : '❌ FALSE'}
 				</p>
 				<p>
-					canCreateAll: {authState.user?.permissions?.includes('achievement.create.all')
-						? '✅ TRUE'
-						: '❌ FALSE'}
+					canCreateAll: {permissions.includes('achievement.create.all') ? '✅ TRUE' : '❌ FALSE'}
 				</p>
 				<p>
-					canReadOwn: {authState.user?.permissions?.includes('achievement.read.own')
-						? '✅ TRUE'
-						: '❌ FALSE'}
+					canReadOwn: {permissions.includes('achievement.read.own') ? '✅ TRUE' : '❌ FALSE'}
 				</p>
 				<p>
-					canReadAll: {authState.user?.permissions?.includes('achievement.read.all')
-						? '✅ TRUE'
-						: '❌ FALSE'}
+					canReadAll: {permissions.includes('achievement.read.all') ? '✅ TRUE' : '❌ FALSE'}
 				</p>
 			</div>
 		</CardContent>

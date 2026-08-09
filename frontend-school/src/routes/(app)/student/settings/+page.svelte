@@ -1,11 +1,8 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { authAPI } from '$lib/api/auth';
 	import { Button } from '$lib/components/ui/button';
 	import { PageShell } from '$lib/components/app-layout';
 	import { LoadingButton } from '$lib/components/app-state';
-	import { Input } from '$lib/components/ui/input';
-	import { Label } from '$lib/components/ui/label';
 	import PushNotificationSettings from '$lib/components/settings/PushNotificationSettings.svelte';
 	import {
 		Card,
@@ -15,25 +12,16 @@
 		CardTitle
 	} from '$lib/components/ui/card';
 	import {
+		ArrowRight,
 		Lock,
-		Save,
-		Eye,
-		EyeOff,
 		Download,
 		Smartphone,
 		CheckCircle2,
-		BellRing
+		BellRing,
+		ShieldCheck
 	} from 'lucide-svelte';
 	import { toast } from 'svelte-sonner';
 	import { pwaStore } from '$lib/stores/pwa';
-
-	let currentPassword = $state('');
-	let newPassword = $state('');
-	let confirmPassword = $state('');
-	let showCurrentPassword = $state(false);
-	let showNewPassword = $state(false);
-	let showConfirmPassword = $state(false);
-	let saving = $state(false);
 
 	// Active tab
 	let activeTab = $state<'security' | 'app' | 'notifications'>('security');
@@ -72,48 +60,6 @@
 		} finally {
 			pwaStore.setPrompt(null);
 			isInstalling = false;
-		}
-	}
-
-	async function handleChangePassword(e: Event) {
-		e.preventDefault();
-
-		// Validation
-		if (!currentPassword || !newPassword || !confirmPassword) {
-			toast.error('กรุณากรอกข้อมูลให้ครบถ้วน');
-			return;
-		}
-
-		if (newPassword !== confirmPassword) {
-			toast.error('รหัสผ่านใหม่ไม่ตรงกัน');
-			return;
-		}
-
-		if (newPassword.length < 8) {
-			toast.error('รหัสผ่านต้องมีอย่างน้อย 8 ตัวอักษร');
-			return;
-		}
-
-		saving = true;
-
-		try {
-			await authAPI.changePassword({
-				currentPassword,
-				newPassword
-			});
-
-			toast.success('เปลี่ยนรหัสผ่านสำเร็จ');
-
-			// Clear form
-			currentPassword = '';
-			newPassword = '';
-			confirmPassword = '';
-		} catch (error) {
-			const errorMessage = error instanceof Error ? error.message : 'ไม่สามารถเปลี่ยนรหัสผ่านได้';
-			toast.error(errorMessage);
-			console.error('Failed to change password:', error);
-		} finally {
-			saving = false;
 		}
 	}
 </script>
@@ -161,160 +107,21 @@
 		<!-- Main Content -->
 		<div class="lg:col-span-3 space-y-6">
 			{#if activeTab === 'security'}
-				<!-- Change Password Section -->
 				<Card>
 					<CardHeader>
-						<CardTitle>เปลี่ยนรหัสผ่าน</CardTitle>
-						<CardDescription>อัพเดทรหัสผ่านของคุณเพื่อความปลอดภัยที่ดีขึ้น</CardDescription>
+						<div class="bg-primary/10 mb-2 flex h-10 w-10 items-center justify-center rounded-lg">
+							<ShieldCheck class="text-primary h-5 w-5" />
+						</div>
+						<CardTitle>ความปลอดภัยของบัญชี</CardTitle>
+						<CardDescription>
+							เปลี่ยนรหัสผ่าน ตรวจสอบอุปกรณ์ และออกจากระบบอุปกรณ์ที่ไม่รู้จักได้จากศูนย์กลางเดียว
+						</CardDescription>
 					</CardHeader>
 					<CardContent>
-						<form onsubmit={handleChangePassword} class="space-y-4">
-							<!-- Current Password -->
-							<div class="space-y-2">
-								<Label for="currentPassword">รหัสผ่านปัจจุบัน *</Label>
-								<div class="relative">
-									<Input
-										id="currentPassword"
-										type={showCurrentPassword ? 'text' : 'password'}
-										bind:value={currentPassword}
-										placeholder="รหัสผ่านปัจจุบัน"
-										required
-										class="pr-10"
-									/>
-									<button
-										type="button"
-										onclick={() => (showCurrentPassword = !showCurrentPassword)}
-										class="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-									>
-										{#if showCurrentPassword}
-											<EyeOff class="w-4 h-4" />
-										{:else}
-											<Eye class="w-4 h-4" />
-										{/if}
-									</button>
-								</div>
-							</div>
-
-							<!-- New Password -->
-							<div class="space-y-2">
-								<Label for="newPassword">รหัสผ่านใหม่ *</Label>
-								<div class="relative">
-									<Input
-										id="newPassword"
-										type={showNewPassword ? 'text' : 'password'}
-										bind:value={newPassword}
-										placeholder="รหัสผ่านใหม่ (อย่างน้อย 8 ตัวอักษร)"
-										required
-										minlength={8}
-										class="pr-10"
-									/>
-									<button
-										type="button"
-										onclick={() => (showNewPassword = !showNewPassword)}
-										class="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-									>
-										{#if showNewPassword}
-											<EyeOff class="w-4 h-4" />
-										{:else}
-											<Eye class="w-4 h-4" />
-										{/if}
-									</button>
-								</div>
-							</div>
-
-							<!-- Confirm Password -->
-							<div class="space-y-2">
-								<Label for="confirmPassword">ยืนยันรหัสผ่านใหม่ *</Label>
-								<div class="relative">
-									<Input
-										id="confirmPassword"
-										type={showConfirmPassword ? 'text' : 'password'}
-										bind:value={confirmPassword}
-										placeholder="ยืนยันรหัสผ่านใหม่"
-										required
-										class="pr-10"
-									/>
-									<button
-										type="button"
-										onclick={() => (showConfirmPassword = !showConfirmPassword)}
-										class="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-									>
-										{#if showConfirmPassword}
-											<EyeOff class="w-4 h-4" />
-										{:else}
-											<Eye class="w-4 h-4" />
-										{/if}
-									</button>
-								</div>
-							</div>
-
-							<!-- Password Requirements -->
-							<div class="bg-muted p-4 rounded-lg">
-								<p class="text-sm font-medium mb-2">ข้อกำหนดรหัสผ่าน:</p>
-								<ul class="text-sm text-muted-foreground space-y-1 list-disc list-inside">
-									<li>มีความยาวอย่างน้อย 8 ตัวอักษร</li>
-									<li>ควรประกอบด้วยตัวอักษรพิมพ์ใหญ่และพิมพ์เล็ก</li>
-									<li>ควรมีตัวเลขและอักขระพิเศษ</li>
-								</ul>
-							</div>
-
-							<!-- Submit Button -->
-							<div class="flex justify-end">
-								<LoadingButton
-									type="submit"
-									loading={saving}
-									loadingLabel="กำลังบันทึก..."
-									class="gap-2"
-								>
-									<Save class="h-4 w-4" />
-									เปลี่ยนรหัสผ่าน
-								</LoadingButton>
-							</div>
-						</form>
-					</CardContent>
-				</Card>
-
-				<!-- Security Tips -->
-				<Card>
-					<CardHeader>
-						<CardTitle>เคล็ดลับความปลอดภัย</CardTitle>
-					</CardHeader>
-					<CardContent class="space-y-3">
-						<div class="flex gap-3">
-							<div class="flex-shrink-0">
-								<div class="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
-									<Lock class="w-4 h-4 text-primary" />
-								</div>
-							</div>
-							<div>
-								<p class="font-medium text-sm">เปลี่ยนรหัสผ่านเป็นประจำ</p>
-								<p class="text-sm text-muted-foreground">แนะนำให้เปลี่ยนรหัสผ่านทุก 3-6 เดือน</p>
-							</div>
-						</div>
-						<div class="flex gap-3">
-							<div class="flex-shrink-0">
-								<div class="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
-									<Lock class="w-4 h-4 text-primary" />
-								</div>
-							</div>
-							<div>
-								<p class="font-medium text-sm">อย่าแชร์รหัสผ่าน</p>
-								<p class="text-sm text-muted-foreground">
-									อย่าให้รหัสผ่านของคุณกับใครก็ตาม รวมถึงผู้ดูแลระบบ
-								</p>
-							</div>
-						</div>
-						<div class="flex gap-3">
-							<div class="flex-shrink-0">
-								<div class="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
-									<Lock class="w-4 h-4 text-primary" />
-								</div>
-							</div>
-							<div>
-								<p class="font-medium text-sm">ใช้รหัสผ่านที่แข็งแรง</p>
-								<p class="text-sm text-muted-foreground">ผสมผสานตัวอักษร ตัวเลข และอักขระพิเศษ</p>
-							</div>
-						</div>
+						<Button href="/account/security" class="gap-2">
+							จัดการความปลอดภัยของบัญชี
+							<ArrowRight class="h-4 w-4" />
+						</Button>
 					</CardContent>
 				</Card>
 			{:else if activeTab === 'notifications'}

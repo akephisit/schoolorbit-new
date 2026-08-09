@@ -90,7 +90,11 @@ test('frontend auth consumes the shared envelope through apiClient', async () =>
 	);
 	assert.match(source, /export\s+type\s+SessionDto\s*=\s*Schemas\['SessionResponse'\]/);
 	assert.match(source, /type\s+SessionListData\s*=\s*Schemas\['SessionListData'\]/);
-	assert.match(source, /function\s+normalizeCurrentUser\(userData:\s*CurrentUserDto\):\s*User/);
+	assert.match(
+		source,
+		/function\s+normalizeCurrentUser\(userData:\s*CurrentUserDto\):\s*\{[\s\S]*user:\s*User;[\s\S]*permissions:\s*string\[\];[\s\S]*\}/
+	);
+	assert.match(source, /authStore\.setUser\(currentUser\.user,\s*currentUser\.permissions\)/);
 	assert.doesNotMatch(source, /interface\s+BackendUser/);
 	assert.doesNotMatch(source, /userData\.user_type/);
 	assert.doesNotMatch(source, /\.\.\.userData/);

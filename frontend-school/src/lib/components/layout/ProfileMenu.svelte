@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Settings, LogOut, UserCircle } from 'lucide-svelte';
+	import { Settings, LogOut, ShieldCheck, UserCircle } from 'lucide-svelte';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
 	import { authStore } from '$lib/stores/auth';
 	import { authAPI } from '$lib/api/auth';
@@ -48,6 +48,10 @@
 			goto(resolve('/staff/settings'));
 		}
 	}
+
+	function goToSecurity() {
+		void goto(resolve('/account/security'));
+	}
 </script>
 
 {#if isLoading}
@@ -94,11 +98,6 @@
 				<p class="text-xs text-muted-foreground mt-0.5">
 					{getDisplayRole()}
 				</p>
-				{#if user.email}
-					<p class="text-xs text-muted-foreground mt-0.5 truncate">
-						{user.email}
-					</p>
-				{/if}
 			</div>
 
 			<!-- Menu Items -->
@@ -111,6 +110,11 @@
 				<DropdownMenu.Item class="cursor-pointer" onclick={goToSettings}>
 					<Settings class="w-4 h-4 mr-2" />
 					<span>การตั้งค่า</span>
+				</DropdownMenu.Item>
+
+				<DropdownMenu.Item class="cursor-pointer" onclick={goToSecurity}>
+					<ShieldCheck class="w-4 h-4 mr-2" />
+					<span>ความปลอดภัยของบัญชี</span>
 				</DropdownMenu.Item>
 			</DropdownMenu.Group>
 

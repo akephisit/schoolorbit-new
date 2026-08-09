@@ -45,12 +45,12 @@
 	let readOnlyData = $derived({
 		id: profile?.id || user?.id || '',
 		username: profile?.username || user?.username || '',
-		national_id: profile?.nationalId || user?.nationalId || '',
+		national_id: profile?.nationalId || '',
 		first_name: profile?.firstName || user?.firstName || '',
 		last_name: profile?.lastName || user?.lastName || '',
 		user_type: profile?.userType || user?.role || '',
 		status: profile?.status || user?.status || '',
-		created_at: profile?.createdAt || user?.createdAt || '',
+		created_at: profile?.createdAt || '',
 		updated_at: profile?.updatedAt || '',
 		primary_role_name: profile?.primaryRoleName || user?.primaryRoleName || ''
 	});

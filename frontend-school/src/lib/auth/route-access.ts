@@ -7,6 +7,7 @@ import {
 } from '$lib/stores/permissions';
 
 type RouteAccessMeta = {
+	authenticated?: boolean;
 	user_type?: string;
 	permission?: RoutePermission | RoutePermission[];
 	workflowManage?: boolean;
@@ -20,6 +21,7 @@ type RouteMetaModule = {
 };
 
 export type RouteAccess = {
+	authenticated?: boolean;
 	userType?: string;
 	permission?: RoutePermission | RoutePermission[];
 	workflowManage?: boolean;
@@ -35,10 +37,18 @@ const routeAccessById = new Map<string, RouteAccess>();
 
 for (const [filePath, module] of Object.entries(routeModules)) {
 	const access = module._meta?.access ?? module._meta?.menu;
-	if (!access?.user_type && !access?.permission && !access?.workflowManage) continue;
+	if (
+		!access?.authenticated &&
+		!access?.user_type &&
+		!access?.permission &&
+		!access?.workflowManage
+	) {
+		continue;
+	}
 
 	const routeId = filePath.replace('/src/routes', '').replace('/+page.ts', '');
 	routeAccessById.set(routeId, {
+		authenticated: access.authenticated,
 		userType: access.user_type,
 		permission: access.permission,
 		workflowManage: access.workflowManage
@@ -82,9 +92,10 @@ export function userCanAccessRoute(
 	permissions: string[],
 	routeId: string | null
 ): boolean {
+	if (!user) return false;
+
 	const access = getRouteAccess(routeId);
 	if (!access) return true;
-	if (!user) return false;
 
 	if (access.userType && user.user_type !== access.userType) {
 		return false;

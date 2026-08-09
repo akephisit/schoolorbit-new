@@ -4,18 +4,13 @@ import { setPermissions, clearPermissions } from './permissions';
 export interface User {
 	id: string;
 	username?: string;
-	nationalId?: string;
-	email?: string;
 	firstName: string;
 	lastName: string;
 	role: string;
 	user_type?: string; // 'staff' | 'student'
-	phone?: string;
 	status: string;
-	createdAt?: string;
 	primaryRoleName?: string; // ชื่อบทบาทหลักจากฐานข้อมูล
 	profileImageFileId?: string;
-	permissions?: string[]; // Permissions from /api/auth/me
 }
 
 export interface AuthState {
@@ -35,7 +30,7 @@ function createAuthStore() {
 
 	return {
 		subscribe,
-		setUser: (user: User) => {
+		setUser: (user: User, permissions: string[]) => {
 			set({
 				user,
 				isAuthenticated: true,
@@ -43,9 +38,7 @@ function createAuthStore() {
 				isUnavailable: false
 			});
 
-			// Sync permissions from user object (from /api/auth/me)
-			// This avoids 403 error from /api/users/{id}/permissions
-			setPermissions(user?.permissions);
+			setPermissions(permissions);
 		},
 		clearUser: () => {
 			set({

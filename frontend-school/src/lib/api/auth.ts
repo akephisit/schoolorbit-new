@@ -16,17 +16,22 @@ type UpdateProfileRequestDto = Schemas['UpdateProfileRequest'];
 type ChangePasswordRequestDto = Schemas['ChangePasswordRequest'];
 type EmptyData = Schemas['EmptyData'];
 
-function normalizeCurrentUser(userData: CurrentUserDto): User {
+function normalizeCurrentUser(userData: CurrentUserDto): {
+	user: User;
+	permissions: string[];
+} {
 	return {
-		id: userData.id,
-		username: userData.username,
-		firstName: userData.firstName,
-		lastName: userData.lastName,
-		role: userData.primaryRoleName ?? userData.userType,
-		user_type: userData.userType,
-		status: userData.status,
-		primaryRoleName: userData.primaryRoleName ?? undefined,
-		profileImageFileId: userData.profileImageFileId ?? undefined,
+		user: {
+			id: userData.id,
+			username: userData.username,
+			firstName: userData.firstName,
+			lastName: userData.lastName,
+			role: userData.primaryRoleName ?? userData.userType,
+			user_type: userData.userType,
+			status: userData.status,
+			primaryRoleName: userData.primaryRoleName ?? undefined,
+			profileImageFileId: userData.profileImageFileId ?? undefined
+		},
 		permissions: userData.permissions
 	};
 }
@@ -40,14 +45,14 @@ class AuthAPI {
 
 		try {
 			const response = await apiClient.post<LoginData>('/api/auth/login', data);
-			const user = normalizeCurrentUser(
+			const currentUser = normalizeCurrentUser(
 				requireApiData(response, 'เกิดข้อผิดพลาดในการเข้าสู่ระบบ').user
 			);
 
-			authStore.setUser(user);
+			authStore.setUser(currentUser.user, currentUser.permissions);
 			toast.success(response.message || 'เข้าสู่ระบบสำเร็จ');
 
-			return user;
+			return currentUser.user;
 		} catch (error: unknown) {
 			if (error instanceof ApiClientError && error.status === 429) {
 				const message = error.retryAfterSeconds
@@ -110,7 +115,8 @@ class AuthAPI {
 					authStore.setUnavailable();
 					return 'unavailable';
 				}
-				authStore.setUser(normalizeCurrentUser(response.data));
+				const currentUser = normalizeCurrentUser(response.data);
+				authStore.setUser(currentUser.user, currentUser.permissions);
 				return 'authenticated';
 			}
 

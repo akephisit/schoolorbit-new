@@ -1737,7 +1737,6 @@ test('frontend current-user permission checks go through the can store', async (
 		/\.(svelte|ts)$/.test(file)
 	);
 	const allowedFiles = new Set([
-		'frontend-school/src/routes/(app)/debug/+page.svelte',
 		'frontend-school/src/lib/stores/permissions.ts',
 		'frontend-school/src/lib/auth/route-access.ts'
 	]);
