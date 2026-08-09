@@ -52,14 +52,17 @@ test('project rules require a single JSON API response envelope', async () => {
 });
 
 test('backend auth success handlers return enveloped data', async () => {
-	const source = await readRepoFile('backend-school/src/modules/auth/handlers.rs');
+	const sessionSource = await readRepoFile('backend-school/src/modules/auth/session_handlers.rs');
+	const profileSource = await readRepoFile('backend-school/src/modules/auth/handlers.rs');
 
-	assert.doesNotMatch(source, /Json\(user_response\)/);
-	assert.doesNotMatch(source, /Json\(profile_response\)/);
-	assert.doesNotMatch(source, /Json\(LoginResponse\s*\{/);
-	assert.match(source, /ApiResponse::with_message\(\s*LoginData\s*\{[\s\S]*?\buser:/);
-	assert.match(source, /ApiResponse::ok\(user_response\)/);
-	assert.match(source, /ApiResponse::ok\(profile_response\)/);
+	assert.doesNotMatch(sessionSource, /Json\(current_user_response\)/);
+	assert.doesNotMatch(profileSource, /Json\(profile_response\)/);
+	assert.doesNotMatch(sessionSource, /Json\(LoginResponse\s*\{/);
+	assert.match(sessionSource, /LoginData\s*\{\s*user:\s*current_user_response/);
+	assert.match(sessionSource, /Json\(ApiResponse::ok\(data\)\)/);
+	assert.match(sessionSource, /ApiResponse::ok\(current_user_response\(user\)\)/);
+	assert.match(sessionSource, /ApiResponse::ok\(SessionListData\s*\{\s*sessions\s*\}\)/);
+	assert.match(profileSource, /ApiResponse::ok\(profile_response\)/);
 });
 
 test('backend app errors return the shared error envelope', async () => {
@@ -69,7 +72,7 @@ test('backend app errors return the shared error envelope', async () => {
 	assert.match(responseSource, /struct\s+ApiErrorResponse/);
 	assert.match(responseSource, /success:\s*false/);
 	assert.match(responseSource, /pub\s+error:\s+String/);
-	assert.match(errorSource, /ApiErrorResponse::new\(error_message\)/);
+	assert.match(errorSource, /ApiErrorResponse::new\(self\.public_message\(\)\.to_string\(\)\)/);
 	assert.doesNotMatch(errorSource, /json!\s*\(\s*\{/);
 });
 
@@ -83,32 +86,37 @@ test('frontend auth consumes the shared envelope through apiClient', async () =>
 	);
 	assert.match(
 		source,
-		/type\s+Schemas\s*=\s*components\['schemas'\][\s\S]*export\s+type\s+CurrentUserDto\s*=\s*Schemas\['UserResponse'\]/
+		/type\s+Schemas\s*=\s*components\['schemas'\][\s\S]*export\s+type\s+CurrentUserDto\s*=\s*Schemas\['CurrentUserResponse'\]/
 	);
+	assert.match(source, /export\s+type\s+SessionDto\s*=\s*Schemas\['SessionResponse'\]/);
+	assert.match(source, /type\s+SessionListData\s*=\s*Schemas\['SessionListData'\]/);
 	assert.match(source, /function\s+normalizeCurrentUser\(userData:\s*CurrentUserDto\):\s*User/);
 	assert.doesNotMatch(source, /interface\s+BackendUser/);
 	assert.doesNotMatch(source, /userData\.user_type/);
 	assert.doesNotMatch(source, /\.\.\.userData/);
-	assert.match(source, /nationalId:\s*userData\.nationalId\s*\?\?\s*undefined/);
+	assert.doesNotMatch(source, /\b(?:nationalId|email|phone|createdAt):\s*userData\./);
 	assert.match(source, /profileImageFileId:\s*userData\.profileImageFileId\s*\?\?\s*undefined/);
 	assert.doesNotMatch(source, /\bfetch\s*\(/);
 	assert.doesNotMatch(source, /\b(getRaw|postRaw|putRaw)\b/);
-	assert.match(source, /\.data\?\.user/);
+	assert.match(source, /requireApiData\([\s\S]*?\)\.user/);
 });
 
 test('generated current-user schemas keep concrete envelope and payload types', async () => {
 	const generated = await readRepoFile('frontend-school/src/lib/api/generated/school-api.ts');
-	const userResponse = extractGeneratedSchemaBlock(generated, 'UserResponse');
-	const successEnvelope = extractGeneratedSchemaBlock(generated, 'ApiResponse_UserResponse');
+	const userResponse = extractGeneratedSchemaBlock(generated, 'CurrentUserResponse');
+	const successEnvelope = extractGeneratedSchemaBlock(generated, 'ApiResponse_CurrentUserResponse');
 
 	for (const block of [userResponse, successEnvelope]) {
 		assert.doesNotMatch(block, /\b(?:any|unknown)\b/);
+	}
+	for (const schemaName of ['SessionResponse', 'SessionListData']) {
+		assert.doesNotMatch(extractGeneratedSchemaBlock(generated, schemaName), /\b(?:any|unknown)\b/);
 	}
 	assert.match(successEnvelope, /data:\s*\{/);
 	assert.match(successEnvelope, /success:\s*boolean/);
 	assert.match(
 		generated,
-		/'application\/json':\s*components\['schemas'\]\['ApiResponse_UserResponse'\]/
+		/'application\/json':\s*components\['schemas'\]\['ApiResponse_CurrentUserResponse'\]/
 	);
 	assert.match(generated, /'application\/json':\s*components\['schemas'\]\['ApiErrorResponse'\]/);
 });
@@ -123,6 +131,9 @@ test('generated authorization contracts cover implemented routes and frontend DT
 		['/api/auth/login', 'post', 'login'],
 		['/api/auth/logout', 'post', 'logout'],
 		['/api/auth/me', 'get', 'getCurrentUser'],
+		['/api/auth/sessions', 'get', 'listAuthSessions'],
+		['/api/auth/sessions/{id}', 'delete', 'revokeAuthSession'],
+		['/api/auth/logout-all', 'post', 'logoutAllSessions'],
 		['/api/auth/me/profile', 'get', 'getCurrentUserProfile'],
 		['/api/auth/me/profile', 'put', 'updateCurrentUserProfile'],
 		['/api/auth/me/change-password', 'post', 'changeCurrentUserPassword'],
@@ -154,13 +165,16 @@ test('generated authorization contracts cover implemented routes and frontend DT
 		['/api/organization/units/{id}/members/{user_id}', 'delete', 'removeOrganizationMember']
 	];
 
-	assert.equal(expected.length, 32);
+	assert.equal(expected.length, 35);
 	for (const [route, method, operationId] of expected) {
 		assert.equal(contract.paths?.[route]?.[method]?.operationId, operationId, `${method} ${route}`);
 	}
 
 	for (const schemaName of [
 		'LoginRequest',
+		'CurrentUserResponse',
+		'SessionResponse',
+		'SessionListData',
 		'ProfileResponse',
 		'Role',
 		'Permission',
@@ -1193,10 +1207,7 @@ test('facility API returns typed loaded envelope data without helper casts', asy
 
 	assert.match(facilityApi, /type\s+LoadedApiResponse<T>/);
 	assert.match(facilityApi, /Promise<LoadedApiResponse<T>>/);
-	assert.match(
-		facilityApi,
-		/return \{ success: true, data: response\.data, message: response\.message \}/
-	);
+	assert.match(facilityApi, /return \{ \.\.\.response, success: true, data: response\.data \}/);
 	assert.match(facilityApi, /fetchApi<Building\[\]>/);
 	assert.match(facilityApi, /fetchApi<Room\[\]>/);
 	assert.match(facilityApi, /fetchApi<Record<string, never>>/);
@@ -1282,10 +1293,7 @@ test('academic API uses typed loaded responses and unwraps generate-plan payload
 
 	assert.match(academicApi, /type\s+LoadedApiResponse<T>/);
 	assert.match(academicApi, /Promise<LoadedApiResponse<T>>/);
-	assert.match(
-		academicApi,
-		/return \{ success: true, data: response\.data, message: response\.message \}/
-	);
+	assert.match(academicApi, /return \{ \.\.\.response, success: true, data: response\.data \}/);
 	assert.match(academicApi, /fetchApi<AcademicStructureData>/);
 	assert.match(academicApi, /fetchApi<ClassroomCourse\[\]>/);
 	assert.match(academicApi, /fetchApi<StudyPlan\[\]>/);

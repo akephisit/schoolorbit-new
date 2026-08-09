@@ -24,7 +24,7 @@ async function fetchApi<T = EmptyResponseData>(
 
 	if (!response.success) throw new Error(response.error || 'Request failed');
 	if (response.data === undefined) throw new Error('Response data missing');
-	return { success: true, data: response.data, message: response.message };
+	return { ...response, success: true, data: response.data };
 }
 
 // Types

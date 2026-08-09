@@ -1,13 +1,16 @@
-import { apiClient, requireApiData } from '$lib/api/client';
+import { ApiClientError, apiClient, requireApiData } from '$lib/api/client';
 import type { components } from '$lib/api/generated/school-api';
+import { clearSessionSecurity } from '$lib/api/session-security';
 import { authStore, type User } from '$lib/stores/auth';
 import { toast } from 'svelte-sonner';
 
 type Schemas = components['schemas'];
 export type LoginRequest = Schemas['LoginRequest'];
 export type ProfileResponse = Schemas['ProfileResponse'];
-export type CurrentUserDto = Schemas['UserResponse'];
+export type CurrentUserDto = Schemas['CurrentUserResponse'];
+export type SessionDto = Schemas['SessionResponse'];
 type LoginData = Schemas['LoginData'];
+type SessionListData = Schemas['SessionListData'];
 type UpdateProfileRequestDto = Schemas['UpdateProfileRequest'];
 type ChangePasswordRequestDto = Schemas['ChangePasswordRequest'];
 type EmptyData = Schemas['EmptyData'];
@@ -16,16 +19,12 @@ function normalizeCurrentUser(userData: CurrentUserDto): User {
 	return {
 		id: userData.id,
 		username: userData.username,
-		nationalId: userData.nationalId ?? undefined,
-		email: userData.email ?? undefined,
 		firstName: userData.firstName,
 		lastName: userData.lastName,
 		role: userData.primaryRoleName ?? userData.userType,
 		user_type: userData.userType,
-		phone: userData.phone ?? undefined,
 		status: userData.status,
-		createdAt: userData.createdAt,
-		primaryRoleName: userData.primaryRoleName,
+		primaryRoleName: userData.primaryRoleName ?? undefined,
 		profileImageFileId: userData.profileImageFileId ?? undefined,
 		permissions: userData.permissions
 	};
@@ -40,16 +39,23 @@ class AuthAPI {
 
 		try {
 			const response = await apiClient.post<LoginData>('/api/auth/login', data);
-			if (!response.success || !response.data?.user) {
-				throw new Error(response.error || 'เกิดข้อผิดพลาดในการเข้าสู่ระบบ');
-			}
-			const user = normalizeCurrentUser(response.data.user);
+			const user = normalizeCurrentUser(
+				requireApiData(response, 'เกิดข้อผิดพลาดในการเข้าสู่ระบบ').user
+			);
 
 			authStore.setUser(user);
 			toast.success(response.message || 'เข้าสู่ระบบสำเร็จ');
 
 			return user;
 		} catch (error: unknown) {
+			if (error instanceof ApiClientError && error.status === 429) {
+				const message = error.retryAfterSeconds
+					? `มีคำขอเข้าสู่ระบบมากเกินไป กรุณาลองใหม่อีกครั้งใน ${error.retryAfterSeconds} วินาที`
+					: 'มีคำขอเข้าสู่ระบบมากเกินไป กรุณาลองใหม่ภายหลัง';
+				const sanitizedError = new ApiClientError(message, error.status, error.retryAfterSeconds);
+				toast.error(message);
+				throw sanitizedError;
+			}
 			const message =
 				error instanceof Error ? error.message : 'ไม่สามารถเชื่อมต่อกับเซิร์ฟเวอร์ได้';
 			toast.error(message);
@@ -63,15 +69,32 @@ class AuthAPI {
 	 * Logout - Direct to backend through the shared client-side API wrapper.
 	 */
 	async logout(): Promise<void> {
-		try {
-			const response = await apiClient.post<EmptyData>('/api/auth/logout');
-			if (!response.success) throw new Error(response.error || 'ออกจากระบบไม่สำเร็จ');
-			toast.success(response.message || 'ออกจากระบบสำเร็จ');
-		} catch (error) {
-			console.error('Logout error:', error);
-		} finally {
+		const response = await apiClient.post<EmptyData>('/api/auth/logout');
+		requireApiData(response, 'ออกจากระบบไม่สำเร็จ');
+		clearSessionSecurity();
+		authStore.clearUser();
+		toast.success(response.message || 'ออกจากระบบสำเร็จ');
+	}
+
+	async listSessions(): Promise<SessionDto[]> {
+		const response = await apiClient.get<SessionListData>('/api/auth/sessions');
+		return requireApiData(response, 'ไม่สามารถโหลดรายการอุปกรณ์ได้').sessions;
+	}
+
+	async revokeSession(sessionId: string, options: { current?: boolean } = {}): Promise<void> {
+		const response = await apiClient.delete<EmptyData>(`/api/auth/sessions/${sessionId}`);
+		requireApiData(response, 'ไม่สามารถเพิกถอนเซสชันได้');
+		if (options.current === true) {
+			clearSessionSecurity();
 			authStore.clearUser();
 		}
+	}
+
+	async logoutAll(): Promise<void> {
+		const response = await apiClient.post<EmptyData>('/api/auth/logout-all');
+		requireApiData(response, 'ไม่สามารถออกจากระบบทุกอุปกรณ์ได้');
+		clearSessionSecurity();
+		authStore.clearUser();
 	}
 
 	/**

@@ -10,6 +10,10 @@ import type { components } from '$lib/api/generated/school-api';
 type Schemas = components['schemas'];
 type EmptyData = Schemas['EmptyData'];
 
+function networkErrorResponse<T>(): ApiResponse<T> {
+	return { success: false, error: 'Network error', status: 0 };
+}
+
 export async function getAchievements(
 	filter?: AchievementListFilter
 ): Promise<ApiResponse<Achievement[]>> {
@@ -22,7 +26,7 @@ export async function getAchievements(
 		return await apiClient.get<Achievement[]>(`/api/achievements?${params.toString()}`);
 	} catch (e) {
 		console.error('Fetch achievements error:', e);
-		return { success: false, error: 'Network error' };
+		return networkErrorResponse();
 	}
 }
 
@@ -33,7 +37,7 @@ export async function createAchievement(
 		return await apiClient.post<Achievement>('/api/achievements', payload);
 	} catch (e) {
 		console.error('Create achievement error:', e);
-		return { success: false, error: 'Network error' };
+		return networkErrorResponse();
 	}
 }
 
@@ -45,7 +49,7 @@ export async function updateAchievement(
 		return await apiClient.put<Achievement>(`/api/achievements/${id}`, payload);
 	} catch (e) {
 		console.error('Update achievement error:', e);
-		return { success: false, error: 'Network error' };
+		return networkErrorResponse();
 	}
 }
 
@@ -54,6 +58,6 @@ export async function deleteAchievement(id: string): Promise<ApiResponse<EmptyDa
 		return await apiClient.delete<EmptyData>(`/api/achievements/${id}`);
 	} catch (e) {
 		console.error('Delete achievement error:', e);
-		return { success: false, error: 'Network error' };
+		return networkErrorResponse();
 	}
 }

@@ -12,7 +12,7 @@ export interface User {
 	user_type?: string; // 'staff' | 'student'
 	phone?: string;
 	status: string;
-	createdAt: string;
+	createdAt?: string;
 	primaryRoleName?: string; // ชื่อบทบาทหลักจากฐานข้อมูล
 	profileImageFileId?: string;
 	permissions?: string[]; // Permissions from /api/auth/me

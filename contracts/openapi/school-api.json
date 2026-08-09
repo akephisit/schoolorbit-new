@@ -1927,6 +1927,74 @@
         ],
         "type": "object"
       },
+      "ApiResponse_CurrentUserResponse": {
+        "properties": {
+          "data": {
+            "properties": {
+              "firstName": {
+                "type": "string"
+              },
+              "id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "lastName": {
+                "type": "string"
+              },
+              "permissions": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "primaryRoleName": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "profileImageFileId": {
+                "format": "uuid",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "status": {
+                "type": "string"
+              },
+              "username": {
+                "type": "string"
+              },
+              "userType": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "username",
+              "firstName",
+              "lastName",
+              "userType",
+              "status",
+              "profileImageFileId",
+              "permissions"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
       "ApiResponse_DailyTeachingOverview": {
         "properties": {
           "data": {
@@ -2612,7 +2680,7 @@
           "data": {
             "properties": {
               "user": {
-                "$ref": "#/components/schemas/UserResponse"
+                "$ref": "#/components/schemas/CurrentUserResponse"
               }
             },
             "required": [
@@ -3652,6 +3720,35 @@
         ],
         "type": "object"
       },
+      "ApiResponse_SessionListData": {
+        "properties": {
+          "data": {
+            "properties": {
+              "sessions": {
+                "items": {
+                  "$ref": "#/components/schemas/SessionResponse"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "sessions"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
       "ApiResponse_StaffDashboardOverview": {
         "properties": {
           "data": {
@@ -4388,96 +4485,6 @@
             },
             "required": [
               "groups"
-            ],
-            "type": "object"
-          },
-          "message": {
-            "type": "string"
-          },
-          "success": {
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "success",
-          "data"
-        ],
-        "type": "object"
-      },
-      "ApiResponse_UserResponse": {
-        "properties": {
-          "data": {
-            "properties": {
-              "createdAt": {
-                "format": "date-time",
-                "type": "string"
-              },
-              "email": {
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
-              "firstName": {
-                "type": "string"
-              },
-              "id": {
-                "format": "uuid",
-                "type": "string"
-              },
-              "lastName": {
-                "type": "string"
-              },
-              "nationalId": {
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
-              "permissions": {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
-              },
-              "phone": {
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
-              "primaryRoleName": {
-                "type": "string"
-              },
-              "profileImageFileId": {
-                "format": "uuid",
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
-              "status": {
-                "type": "string"
-              },
-              "username": {
-                "type": "string"
-              },
-              "userType": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "id",
-              "username",
-              "nationalId",
-              "email",
-              "firstName",
-              "lastName",
-              "userType",
-              "phone",
-              "status",
-              "createdAt",
-              "profileImageFileId"
             ],
             "type": "object"
           },
@@ -10579,6 +10586,59 @@
         ],
         "type": "object"
       },
+      "CurrentUserResponse": {
+        "properties": {
+          "firstName": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "lastName": {
+            "type": "string"
+          },
+          "permissions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "primaryRoleName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "profileImageFileId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "type": "string"
+          },
+          "username": {
+            "type": "string"
+          },
+          "userType": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "username",
+          "firstName",
+          "lastName",
+          "userType",
+          "status",
+          "profileImageFileId",
+          "permissions"
+        ],
+        "type": "object"
+      },
       "CurriculumInstructorRole": {
         "enum": [
           "primary",
@@ -11544,7 +11604,7 @@
       "LoginData": {
         "properties": {
           "user": {
-            "$ref": "#/components/schemas/UserResponse"
+            "$ref": "#/components/schemas/CurrentUserResponse"
           }
         },
         "required": [
@@ -13249,6 +13309,64 @@
           "start_date",
           "end_date",
           "is_active"
+        ],
+        "type": "object"
+      },
+      "SessionListData": {
+        "properties": {
+          "sessions": {
+            "items": {
+              "$ref": "#/components/schemas/SessionResponse"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "sessions"
+        ],
+        "type": "object"
+      },
+      "SessionResponse": {
+        "properties": {
+          "absoluteExpiresAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "deviceLabel": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "idleExpiresAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "isCurrent": {
+            "type": "boolean"
+          },
+          "lastSeenAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "rememberMe": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "deviceLabel",
+          "rememberMe",
+          "createdAt",
+          "lastSeenAt",
+          "idleExpiresAt",
+          "absoluteExpiresAt",
+          "isCurrent"
         ],
         "type": "object"
       },
@@ -16178,81 +16296,6 @@
         },
         "required": [
           "groups"
-        ],
-        "type": "object"
-      },
-      "UserResponse": {
-        "properties": {
-          "createdAt": {
-            "format": "date-time",
-            "type": "string"
-          },
-          "email": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "firstName": {
-            "type": "string"
-          },
-          "id": {
-            "format": "uuid",
-            "type": "string"
-          },
-          "lastName": {
-            "type": "string"
-          },
-          "nationalId": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "permissions": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "phone": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "primaryRoleName": {
-            "type": "string"
-          },
-          "profileImageFileId": {
-            "format": "uuid",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "status": {
-            "type": "string"
-          },
-          "username": {
-            "type": "string"
-          },
-          "userType": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "username",
-          "nationalId",
-          "email",
-          "firstName",
-          "lastName",
-          "userType",
-          "phone",
-          "status",
-          "createdAt",
-          "profileImageFileId"
         ],
         "type": "object"
       },
@@ -25812,7 +25855,17 @@
                 }
               }
             },
-            "description": "Authenticated user"
+            "description": "Authenticated session"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Malformed request"
           },
           "401": {
             "content": {
@@ -25824,7 +25877,7 @@
             },
             "description": "Invalid credentials"
           },
-          "422": {
+          "403": {
             "content": {
               "application/json": {
                 "schema": {
@@ -25832,10 +25885,29 @@
                 }
               }
             },
-            "description": "Malformed or invalid JSON request"
+            "description": "Origin rejected"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Login rate limited"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication service unavailable"
           }
         },
-        "summary": "Login handler",
         "tags": [
           "auth"
         ]
@@ -25853,10 +25925,69 @@
                 }
               }
             },
-            "description": "Authentication cookie cleared"
+            "description": "Session revoked or stale credentials cleared"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Ambiguous session credential"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Origin or CSRF rejected"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Session store unavailable"
           }
         },
-        "summary": "Logout handler",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/auth/logout-all": {
+      "post": {
+        "operationId": "logoutAllSessions",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_EmptyData"
+                }
+              }
+            },
+            "description": "All owned sessions revoked"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Session store unavailable"
+          }
+        },
         "tags": [
           "auth"
         ]
@@ -25870,11 +26001,11 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_UserResponse"
+                  "$ref": "#/components/schemas/ApiResponse_CurrentUserResponse"
                 }
               }
             },
-            "description": "Current authenticated user"
+            "description": "Minimal current user"
           },
           "401": {
             "content": {
@@ -25884,10 +26015,19 @@
                 }
               }
             },
-            "description": "Authentication required or invalid"
+            "description": "Authentication required"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Identity or permission store unavailable"
           }
         },
-        "summary": "Get current user handler (protected)",
         "tags": [
           "auth"
         ]
@@ -25915,7 +26055,17 @@
                 }
               }
             },
-            "description": "Password changed"
+            "description": "Password changed and current credential replaced"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Password validation failed"
           },
           "401": {
             "content": {
@@ -25925,9 +26075,9 @@
                 }
               }
             },
-            "description": "Authentication required or current password invalid"
+            "description": "Authentication required"
           },
-          "404": {
+          "409": {
             "content": {
               "application/json": {
                 "schema": {
@@ -25935,10 +26085,19 @@
                 }
               }
             },
-            "description": "Active user not found"
+            "description": "Concurrent password change"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Session store unavailable"
           }
         },
-        "summary": "Change password handler (POST /me/change-password)\nChanges user's password after verifying current password\nChange password handler (POST /me/change-password)\nChanges user's password after verifying current password",
         "tags": [
           "auth"
         ]
@@ -25979,7 +26138,7 @@
             "description": "User not found"
           }
         },
-        "summary": "Get full profile handler (GET /me/profile)\nReturns complete user profile with all fields\nGet full profile handler (GET /me/profile)\nReturns complete user profile with all fields",
+        "summary": "Get full profile handler (GET /me/profile).",
         "tags": [
           "auth"
         ]
@@ -26038,7 +26197,99 @@
             "description": "User not found"
           }
         },
-        "summary": "Update profile handler (PUT /me/profile)\nUpdates user's editable fields only\nUpdate profile handler (PUT /me/profile)\nUpdates user's editable fields only\nUpdate profile handler (PUT /me/profile)\nUpdates user's editable fields only",
+        "summary": "Update profile handler (PUT /me/profile).",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/auth/sessions": {
+      "get": {
+        "operationId": "listAuthSessions",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_SessionListData"
+                }
+              }
+            },
+            "description": "Active sessions"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Session store unavailable"
+          }
+        },
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/auth/sessions/{id}": {
+      "delete": {
+        "operationId": "revokeAuthSession",
+        "parameters": [
+          {
+            "description": "Owned session identifier",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_EmptyData"
+                }
+              }
+            },
+            "description": "Owned session revoked"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Owned session not found"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Session store unavailable"
+          }
+        },
         "tags": [
           "auth"
         ]

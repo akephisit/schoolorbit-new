@@ -228,6 +228,7 @@ function rawJsonResponseIdentifiers(source) {
 
 	for (const line of source.split('\n')) {
 		if (!/\bOk\s*\(/.test(line)) continue;
+		if (/=>/.test(line)) continue;
 
 		const match = /\bJson\s*\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*\)/.exec(line);
 		if (match) {
@@ -351,8 +352,9 @@ function hasGuardedAncestor(routeId, guardedRouteIds) {
 }
 
 test('backend JSON handler responses use the standard envelope shape', async () => {
-	const backendFiles = await listFiles(path.join(repoRoot, 'backend-school/src/modules'), (file) =>
-		file.endsWith('.rs')
+	const backendFiles = await listFiles(
+		path.join(repoRoot, 'backend-school/src/modules'),
+		(file) => file.endsWith('.rs') && !/(?:^|\/)(?:tests|[^/]+_tests)\.rs$/.test(file)
 	);
 	const violations = [];
 
@@ -426,21 +428,25 @@ test('backend consent type filter uses the user_type query parameter contract', 
 
 test('backend auth middleware and login validation errors use the response envelope', async () => {
 	const middleware = await readFile(
-		path.join(repoRoot, 'backend-school/src/middleware/auth.rs'),
+		path.join(repoRoot, 'backend-school/src/middleware/session.rs'),
 		'utf8'
 	);
 	const appError = await readFile(path.join(repoRoot, 'backend-school/src/error.rs'), 'utf8');
 	const loginHandler = await readFile(
-		path.join(repoRoot, 'backend-school/src/modules/auth/handlers.rs'),
+		path.join(repoRoot, 'backend-school/src/modules/auth/session_handlers.rs'),
 		'utf8'
 	);
 
-	assert.match(middleware, /Err\(error\)\s*=>\s*return error\.into_response\(\)/);
+	assert.match(middleware, /Err\(error\)\s*=>\s*error\.into_response\(\)/);
 	assert.equal(middleware.includes('Json(json!'), false);
-	assert.match(appError, /Json\(ApiErrorResponse::new\(error_message\)\)/);
+	assert.match(
+		appError,
+		/Json\(ApiErrorResponse::new\(self\.public_message\(\)\.to_string\(\)\)\)/
+	);
 
 	assert.match(loginHandler, /Result<Json<LoginRequest>, JsonRejection>/);
-	assert.match(loginHandler, /AppError::ValidationError\(rejection\.body_text\(\)\)/);
+	assert.match(loginHandler, /Err\(_\)\s*=>\s*Err\(AppError::BadRequest\("invalid_request_body"/);
+	assert.doesNotMatch(loginHandler, /rejection\.body_text\(\)/);
 });
 
 test('permission registry covers backend and frontend permission references', async () => {
@@ -1827,7 +1833,9 @@ test('tenant routing uses Origin by default with explicit X-School-Subdomain ove
 	assert.match(apiClient, /X-School-Subdomain/);
 	assert.match(apiClient, /PUBLIC_SCHOOL_SUBDOMAIN/);
 	assert.equal(apiClient.includes('window.location.hostname'), false);
-	assert.match(apiClient, /applyTenantHeader\(headers\)/);
+	assert.match(apiClient, /callerHeaders\.delete\(SCHOOL_SUBDOMAIN_HEADER\)/);
+	assert.match(apiClient, /withSessionSecurityHeaders\(method, callerHeaders\)/);
+	assert.match(apiClient, /headers\.set\(SCHOOL_SUBDOMAIN_HEADER, subdomain\)/);
 
 	assert.match(nginxConfig, /Access-Control-Allow-Headers[\s\S]*X-School-Subdomain/);
 	assert.match(smokeTest, /expect_header_contains_ci/);

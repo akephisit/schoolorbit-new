@@ -1375,7 +1375,6 @@ export interface paths {
 		};
 		get?: never;
 		put?: never;
-		/** Login handler */
 		post: operations['login'];
 		delete?: never;
 		options?: never;
@@ -1392,8 +1391,23 @@ export interface paths {
 		};
 		get?: never;
 		put?: never;
-		/** Logout handler */
 		post: operations['logout'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/auth/logout-all': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['logoutAllSessions'];
 		delete?: never;
 		options?: never;
 		head?: never;
@@ -1407,7 +1421,6 @@ export interface paths {
 			path?: never;
 			cookie?: never;
 		};
-		/** Get current user handler (protected) */
 		get: operations['getCurrentUser'];
 		put?: never;
 		post?: never;
@@ -1426,12 +1439,6 @@ export interface paths {
 		};
 		get?: never;
 		put?: never;
-		/**
-		 * Change password handler (POST /me/change-password)
-		 *     Changes user's password after verifying current password
-		 *     Change password handler (POST /me/change-password)
-		 *     Changes user's password after verifying current password
-		 */
 		post: operations['changeCurrentUserPassword'];
 		delete?: never;
 		options?: never;
@@ -1446,24 +1453,44 @@ export interface paths {
 			path?: never;
 			cookie?: never;
 		};
-		/**
-		 * Get full profile handler (GET /me/profile)
-		 *     Returns complete user profile with all fields
-		 *     Get full profile handler (GET /me/profile)
-		 *     Returns complete user profile with all fields
-		 */
+		/** Get full profile handler (GET /me/profile). */
 		get: operations['getCurrentUserProfile'];
-		/**
-		 * Update profile handler (PUT /me/profile)
-		 *     Updates user's editable fields only
-		 *     Update profile handler (PUT /me/profile)
-		 *     Updates user's editable fields only
-		 *     Update profile handler (PUT /me/profile)
-		 *     Updates user's editable fields only
-		 */
+		/** Update profile handler (PUT /me/profile). */
 		put: operations['updateCurrentUserProfile'];
 		post?: never;
 		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/auth/sessions': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listAuthSessions'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/auth/sessions/{id}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post?: never;
+		delete: operations['revokeAuthSession'];
 		options?: never;
 		head?: never;
 		patch?: never;
@@ -2959,6 +2986,23 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
+		ApiResponse_CurrentUserResponse: {
+			data: {
+				firstName: string;
+				/** Format: uuid */
+				id: string;
+				lastName: string;
+				permissions: string[];
+				primaryRoleName?: string | null;
+				/** Format: uuid */
+				profileImageFileId: string | null;
+				status: string;
+				username: string;
+				userType: string;
+			};
+			message?: string;
+			success: boolean;
+		};
 		ApiResponse_DailyTeachingOverview: {
 			data: {
 				/** Format: uuid */
@@ -3154,7 +3198,7 @@ export interface components {
 		};
 		ApiResponse_LoginData: {
 			data: {
-				user: components['schemas']['UserResponse'];
+				user: components['schemas']['CurrentUserResponse'];
 			};
 			message?: string;
 			success: boolean;
@@ -3422,6 +3466,13 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
+		ApiResponse_SessionListData: {
+			data: {
+				sessions: components['schemas']['SessionResponse'][];
+			};
+			message?: string;
+			success: boolean;
+		};
 		ApiResponse_StaffDashboardOverview: {
 			data: {
 				/** Format: int64 */
@@ -3607,28 +3658,6 @@ export interface components {
 		ApiResponse_UserMenuData: {
 			data: {
 				groups: components['schemas']['MenuGroupResponse'][];
-			};
-			message?: string;
-			success: boolean;
-		};
-		ApiResponse_UserResponse: {
-			data: {
-				/** Format: date-time */
-				createdAt: string;
-				email: string | null;
-				firstName: string;
-				/** Format: uuid */
-				id: string;
-				lastName: string;
-				nationalId: string | null;
-				permissions?: string[];
-				phone: string | null;
-				primaryRoleName?: string;
-				/** Format: uuid */
-				profileImageFileId: string | null;
-				status: string;
-				username: string;
-				userType: string;
 			};
 			message?: string;
 			success: boolean;
@@ -5228,6 +5257,19 @@ export interface components {
 			term?: string | null;
 			type: components['schemas']['SubjectType'];
 		};
+		CurrentUserResponse: {
+			firstName: string;
+			/** Format: uuid */
+			id: string;
+			lastName: string;
+			permissions: string[];
+			primaryRoleName?: string | null;
+			/** Format: uuid */
+			profileImageFileId: string | null;
+			status: string;
+			username: string;
+			userType: string;
+		};
 		/** @enum {string} */
 		CurriculumInstructorRole: 'primary' | 'secondary';
 		DailyTeachingEntry: {
@@ -5512,7 +5554,7 @@ export interface components {
 			unread_count: number;
 		};
 		LoginData: {
-			user: components['schemas']['UserResponse'];
+			user: components['schemas']['CurrentUserResponse'];
 		};
 		LoginRequest: {
 			password: string;
@@ -5957,6 +5999,24 @@ export interface components {
 			/** Format: date */
 			start_date: string;
 			term: string;
+		};
+		SessionListData: {
+			sessions: components['schemas']['SessionResponse'][];
+		};
+		SessionResponse: {
+			/** Format: date-time */
+			absoluteExpiresAt: string;
+			/** Format: date-time */
+			createdAt: string;
+			deviceLabel: string;
+			/** Format: uuid */
+			id: string;
+			/** Format: date-time */
+			idleExpiresAt: string;
+			isCurrent: boolean;
+			/** Format: date-time */
+			lastSeenAt: string;
+			rememberMe: boolean;
 		};
 		SlotClassroomAssignment: {
 			/** Format: uuid */
@@ -6688,24 +6748,6 @@ export interface components {
 		};
 		UserMenuData: {
 			groups: components['schemas']['MenuGroupResponse'][];
-		};
-		UserResponse: {
-			/** Format: date-time */
-			createdAt: string;
-			email: string | null;
-			firstName: string;
-			/** Format: uuid */
-			id: string;
-			lastName: string;
-			nationalId: string | null;
-			permissions?: string[];
-			phone: string | null;
-			primaryRoleName?: string;
-			/** Format: uuid */
-			profileImageFileId: string | null;
-			status: string;
-			username: string;
-			userType: string;
 		};
 		UserRoleAssignmentResponse: {
 			/** Format: date-time */
@@ -14285,13 +14327,22 @@ export interface operations {
 			};
 		};
 		responses: {
-			/** @description Authenticated user */
+			/** @description Authenticated session */
 			200: {
 				headers: {
 					[name: string]: unknown;
 				};
 				content: {
 					'application/json': components['schemas']['ApiResponse_LoginData'];
+				};
+			};
+			/** @description Malformed request */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
 			/** @description Invalid credentials */
@@ -14303,8 +14354,26 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
-			/** @description Malformed or invalid JSON request */
-			422: {
+			/** @description Origin rejected */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Login rate limited */
+			429: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication service unavailable */
+			503: {
 				headers: {
 					[name: string]: unknown;
 				};
@@ -14323,13 +14392,69 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
-			/** @description Authentication cookie cleared */
+			/** @description Session revoked or stale credentials cleared */
 			200: {
 				headers: {
 					[name: string]: unknown;
 				};
 				content: {
 					'application/json': components['schemas']['ApiResponse_EmptyData'];
+				};
+			};
+			/** @description Ambiguous session credential */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Origin or CSRF rejected */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Session store unavailable */
+			503: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	logoutAllSessions: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description All owned sessions revoked */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_EmptyData'];
+				};
+			};
+			/** @description Session store unavailable */
+			503: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
 		};
@@ -14343,17 +14468,26 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
-			/** @description Current authenticated user */
+			/** @description Minimal current user */
 			200: {
 				headers: {
 					[name: string]: unknown;
 				};
 				content: {
-					'application/json': components['schemas']['ApiResponse_UserResponse'];
+					'application/json': components['schemas']['ApiResponse_CurrentUserResponse'];
 				};
 			};
-			/** @description Authentication required or invalid */
+			/** @description Authentication required */
 			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Identity or permission store unavailable */
+			503: {
 				headers: {
 					[name: string]: unknown;
 				};
@@ -14376,7 +14510,7 @@ export interface operations {
 			};
 		};
 		responses: {
-			/** @description Password changed */
+			/** @description Password changed and current credential replaced */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -14385,7 +14519,16 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_EmptyData'];
 				};
 			};
-			/** @description Authentication required or current password invalid */
+			/** @description Password validation failed */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -14394,8 +14537,17 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
-			/** @description Active user not found */
-			404: {
+			/** @description Concurrent password change */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Session store unavailable */
+			503: {
 				headers: {
 					[name: string]: unknown;
 				};
@@ -14485,6 +14637,85 @@ export interface operations {
 			};
 			/** @description User not found */
 			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	listAuthSessions: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Active sessions */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_SessionListData'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Session store unavailable */
+			503: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	revokeAuthSession: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Owned session identifier */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Owned session revoked */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_EmptyData'];
+				};
+			};
+			/** @description Owned session not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Session store unavailable */
+			503: {
 				headers: {
 					[name: string]: unknown;
 				};

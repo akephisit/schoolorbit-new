@@ -3,6 +3,13 @@ import { browser } from '$app/environment';
 import { resolve } from '$app/paths';
 import { env } from '$env/dynamic/public';
 import { PUBLIC_BACKEND_URL } from '$env/static/public';
+import {
+	captureSessionSecurityHeaders,
+	clearSessionSecurity,
+	retryAfterSeconds as parseRetryAfterSeconds,
+	withSessionSecurityHeaders
+} from '$lib/api/session-security';
+import { authStore } from '$lib/stores/auth';
 
 export const BACKEND_URL = PUBLIC_BACKEND_URL || 'https://school-api.schoolorbit.app';
 export const BACKEND_WS_URL = BACKEND_URL.replace(/^http/, 'ws');
@@ -13,10 +20,23 @@ export interface ApiResponse<T> {
 	data?: T;
 	error?: string;
 	message?: string;
+	status: number;
+	retryAfterSeconds?: number;
 }
 
 export interface ApiRequestOptions {
 	signal?: AbortSignal;
+}
+
+export class ApiClientError extends Error {
+	constructor(
+		message: string,
+		readonly status: number,
+		readonly retryAfterSeconds?: number
+	) {
+		super(message);
+		this.name = 'ApiClientError';
+	}
 }
 
 const INVALID_API_RESPONSE_ERROR = 'รูปแบบข้อมูลจากเซิร์ฟเวอร์ไม่ถูกต้อง';
@@ -25,16 +45,26 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 	return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
-function normalizeApiResponse<T>(data: unknown): ApiResponse<T> {
+function normalizeApiResponse<T>(
+	data: unknown,
+	status: number,
+	retryAfterSeconds?: number
+): ApiResponse<T> {
 	if (!isRecord(data)) {
-		return { success: false, error: INVALID_API_RESPONSE_ERROR };
+		return { success: false, error: INVALID_API_RESPONSE_ERROR, status, retryAfterSeconds };
 	}
 
 	const payload = data;
 	const message = typeof payload.message === 'string' ? payload.message : undefined;
 
 	if (typeof payload.success !== 'boolean') {
-		return { success: false, error: INVALID_API_RESPONSE_ERROR, message };
+		return {
+			success: false,
+			error: INVALID_API_RESPONSE_ERROR,
+			message,
+			status,
+			retryAfterSeconds
+		};
 	}
 
 	if (!payload.success) {
@@ -42,14 +72,26 @@ function normalizeApiResponse<T>(data: unknown): ApiResponse<T> {
 			typeof payload.error === 'string' && payload.error
 				? payload.error
 				: (message ?? 'เกิดข้อผิดพลาด');
-		return { success: false, error, message };
+		return { success: false, error, message, status, retryAfterSeconds };
 	}
 
 	if (!('data' in payload)) {
-		return { success: false, error: INVALID_API_RESPONSE_ERROR, message };
+		return {
+			success: false,
+			error: INVALID_API_RESPONSE_ERROR,
+			message,
+			status,
+			retryAfterSeconds
+		};
 	}
 
-	return { success: true, data: payload.data as T, message };
+	return {
+		success: true,
+		data: payload.data as T,
+		message,
+		status,
+		retryAfterSeconds
+	};
 }
 
 function normalizeSchoolSubdomain(value: string | undefined): string | null {
@@ -65,7 +107,11 @@ function getRequestSubdomain(): string | null {
 
 export function requireApiData<T>(response: ApiResponse<T>, fallbackError: string): T {
 	if (!response.success || response.data === undefined) {
-		throw new Error(response.error || fallbackError);
+		throw new ApiClientError(
+			response.error || fallbackError,
+			response.status,
+			response.retryAfterSeconds
+		);
 	}
 
 	return response.data;
@@ -82,15 +128,13 @@ class APIClient {
 		const contentType = response.headers.get('content-type') ?? '';
 		const text = await response.text();
 
-		if (!text) {
-			return {};
-		}
+		if (!text) return {};
 
 		if (contentType.includes('application/json')) {
 			try {
 				return JSON.parse(text);
 			} catch {
-				return { error: 'รูปแบบข้อมูลจากเซิร์ฟเวอร์ไม่ถูกต้อง' };
+				return { error: INVALID_API_RESPONSE_ERROR };
 			}
 		}
 
@@ -98,67 +142,99 @@ class APIClient {
 	}
 
 	private errorMessage(data: unknown): string {
-		if (data && typeof data === 'object') {
-			const payload = data as { error?: unknown; message?: unknown };
-			if (typeof payload.error === 'string' && payload.error) return payload.error;
-			if (typeof payload.message === 'string' && payload.message) return payload.message;
+		if (isRecord(data)) {
+			if (typeof data.error === 'string' && data.error) return data.error;
+			if (typeof data.message === 'string' && data.message) return data.message;
 		}
 
 		return 'เกิดข้อผิดพลาด';
 	}
 
-	private handleUnauthorized() {
+	private handleUnauthorized(): void {
+		clearSessionSecurity();
+		authStore.clearUser();
 		if (!browser) return;
 
 		const loginPath = resolve('/login');
-		const currentPath = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+		const currentUrl = new URL(window.location.href);
+		if (currentUrl.pathname === loginPath || currentUrl.pathname === `${loginPath}/`) return;
 
-		if (currentPath.startsWith(loginPath)) return;
-
-		sessionStorage.setItem('redirectAfterLogin', currentPath);
+		const currentPath = `${currentUrl.pathname}${currentUrl.search}${currentUrl.hash}`;
+		const redirectTarget = new URL(currentPath, window.location.origin);
+		if (redirectTarget.origin === window.location.origin && currentPath.startsWith('/')) {
+			sessionStorage.setItem('redirectAfterLogin', currentPath);
+		}
 		window.location.assign(loginPath);
 	}
 
-	private applyTenantHeader(headers: Headers) {
-		if (headers.has(SCHOOL_SUBDOMAIN_HEADER)) return;
-
+	private async fetchBackend(endpoint: string, options: RequestInit = {}): Promise<Response> {
+		const method = (options.method ?? 'GET').toUpperCase();
+		const callerHeaders = new Headers(options.headers);
+		callerHeaders.delete(SCHOOL_SUBDOMAIN_HEADER);
+		const headers = withSessionSecurityHeaders(method, callerHeaders);
 		const subdomain = getRequestSubdomain();
-		if (subdomain) {
-			headers.set(SCHOOL_SUBDOMAIN_HEADER, subdomain);
-		}
+		if (subdomain) headers.set(SCHOOL_SUBDOMAIN_HEADER, subdomain);
+
+		const response = await fetch(`${this.baseURL}${endpoint}`, {
+			...options,
+			method,
+			credentials: 'include',
+			headers
+		});
+		captureSessionSecurityHeaders(response.headers);
+		if (response.status === 401) this.handleUnauthorized();
+		return response;
+	}
+
+	private responseMetadata(response: Response): {
+		status: number;
+		retryAfterSeconds?: number;
+	} {
+		return {
+			status: response.status,
+			retryAfterSeconds: parseRetryAfterSeconds(response.headers)
+		};
 	}
 
 	private async request<T>(endpoint: string, options: RequestInit = {}): Promise<ApiResponse<T>> {
-		const url = `${this.baseURL}${endpoint}`;
-
 		const headers = new Headers(options.headers);
 		if (options.body !== undefined && !headers.has('Content-Type')) {
 			headers.set('Content-Type', 'application/json');
 		}
-		this.applyTenantHeader(headers);
 
-		const response = await fetch(url, {
-			...options,
-			credentials: 'include',
-			headers
-		});
-
+		const response = await this.fetchBackend(endpoint, { ...options, headers });
 		const data = await this.parseResponse(response);
-		const normalized = normalizeApiResponse<T>(data);
+		const metadata = this.responseMetadata(response);
+		const normalized = normalizeApiResponse<T>(data, metadata.status, metadata.retryAfterSeconds);
 
 		if (!response.ok) {
-			if (response.status === 401) {
-				this.handleUnauthorized();
-			}
-
 			return {
+				...normalized,
 				success: false,
-				error: normalized.error ?? this.errorMessage(data),
-				message: normalized.message
+				error: normalized.error ?? this.errorMessage(data)
 			};
 		}
 
 		return normalized;
+	}
+
+	private async blobResponse(response: Response): Promise<ApiResponse<Blob>> {
+		const metadata = this.responseMetadata(response);
+		if (response.ok) {
+			return { success: true, data: await response.blob(), ...metadata };
+		}
+
+		const data = await this.parseResponse(response);
+		const normalized = normalizeApiResponse<Blob>(
+			data,
+			metadata.status,
+			metadata.retryAfterSeconds
+		);
+		return {
+			...normalized,
+			success: false,
+			error: normalized.error ?? this.errorMessage(data)
+		};
 	}
 
 	async get<T>(endpoint: string, options: ApiRequestOptions = {}): Promise<ApiResponse<T>> {
@@ -166,25 +242,11 @@ class APIClient {
 	}
 
 	async getBlob(endpoint: string, options: ApiRequestOptions = {}): Promise<ApiResponse<Blob>> {
-		const url = `${this.baseURL}${endpoint}`;
-		const headers = new Headers();
-		this.applyTenantHeader(headers);
-		const response = await fetch(url, {
+		const response = await this.fetchBackend(endpoint, {
 			method: 'GET',
-			credentials: 'include',
-			headers,
 			signal: options.signal
 		});
-		if (response.ok) return { success: true, data: await response.blob() };
-
-		const data = await this.parseResponse(response);
-		const normalized = normalizeApiResponse<Blob>(data);
-		if (response.status === 401) this.handleUnauthorized();
-		return {
-			success: false,
-			error: normalized.error ?? this.errorMessage(data),
-			message: normalized.message
-		};
+		return this.blobResponse(response);
 	}
 
 	async getExternalBlob(url: string, options: ApiRequestOptions = {}): Promise<ApiResponse<Blob>> {
@@ -195,41 +257,29 @@ class APIClient {
 			referrerPolicy: 'no-referrer',
 			signal: options.signal
 		});
-		if (response.ok) return { success: true, data: await response.blob() };
+		const metadata = this.responseMetadata(response);
+		if (response.ok) return { success: true, data: await response.blob(), ...metadata };
 
 		return {
 			success: false,
-			error: `ดาวน์โหลดไฟล์ไม่สำเร็จ (${response.status})`
+			error: `ดาวน์โหลดไฟล์ไม่สำเร็จ (${response.status})`,
+			...metadata
 		};
 	}
 
 	async post<T>(endpoint: string, body?: unknown): Promise<ApiResponse<T>> {
 		return this.request<T>(endpoint, {
 			method: 'POST',
-			body: body ? JSON.stringify(body) : undefined
+			body: body === undefined ? undefined : JSON.stringify(body)
 		});
 	}
 
 	async postBlob(endpoint: string, options: ApiRequestOptions = {}): Promise<ApiResponse<Blob>> {
-		const url = `${this.baseURL}${endpoint}`;
-		const headers = new Headers();
-		this.applyTenantHeader(headers);
-		const response = await fetch(url, {
+		const response = await this.fetchBackend(endpoint, {
 			method: 'POST',
-			credentials: 'include',
-			headers,
 			signal: options.signal
 		});
-		if (response.ok) return { success: true, data: await response.blob() };
-
-		const data = await this.parseResponse(response);
-		const normalized = normalizeApiResponse<Blob>(data);
-		if (response.status === 401) this.handleUnauthorized();
-		return {
-			success: false,
-			error: normalized.error ?? this.errorMessage(data),
-			message: normalized.message
-		};
+		return this.blobResponse(response);
 	}
 
 	async postBlobWithBody(
@@ -237,39 +287,26 @@ class APIClient {
 		body: unknown,
 		options: ApiRequestOptions = {}
 	): Promise<ApiResponse<Blob>> {
-		const url = `${this.baseURL}${endpoint}`;
-		const headers = new Headers({ 'Content-Type': 'application/json' });
-		this.applyTenantHeader(headers);
-		const response = await fetch(url, {
+		const response = await this.fetchBackend(endpoint, {
 			method: 'POST',
-			credentials: 'include',
-			headers,
+			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify(body),
 			signal: options.signal
 		});
-		if (response.ok) return { success: true, data: await response.blob() };
-
-		const data = await this.parseResponse(response);
-		const normalized = normalizeApiResponse<Blob>(data);
-		if (response.status === 401) this.handleUnauthorized();
-		return {
-			success: false,
-			error: normalized.error ?? this.errorMessage(data),
-			message: normalized.message
-		};
+		return this.blobResponse(response);
 	}
 
 	async put<T>(endpoint: string, body?: unknown): Promise<ApiResponse<T>> {
 		return this.request<T>(endpoint, {
 			method: 'PUT',
-			body: body ? JSON.stringify(body) : undefined
+			body: body === undefined ? undefined : JSON.stringify(body)
 		});
 	}
 
 	async patch<T>(endpoint: string, body?: unknown): Promise<ApiResponse<T>> {
 		return this.request<T>(endpoint, {
 			method: 'PATCH',
-			body: body ? JSON.stringify(body) : undefined
+			body: body === undefined ? undefined : JSON.stringify(body)
 		});
 	}
 
@@ -285,27 +322,18 @@ class APIClient {
 	}
 
 	async postMultipart<T>(endpoint: string, body: FormData): Promise<ApiResponse<T>> {
-		const url = `${this.baseURL}${endpoint}`;
-		const headers = new Headers();
-		this.applyTenantHeader(headers);
-		// Do NOT set Content-Type — browser sets it with the multipart boundary automatically
-		const response = await fetch(url, {
+		const response = await this.fetchBackend(endpoint, {
 			method: 'POST',
-			credentials: 'include',
-			headers,
 			body
 		});
 		const data = await this.parseResponse(response);
-		const normalized = normalizeApiResponse<T>(data);
+		const metadata = this.responseMetadata(response);
+		const normalized = normalizeApiResponse<T>(data, metadata.status, metadata.retryAfterSeconds);
 		if (!response.ok) {
-			if (response.status === 401) {
-				this.handleUnauthorized();
-			}
-
 			return {
+				...normalized,
 				success: false,
-				error: normalized.error ?? this.errorMessage(data),
-				message: normalized.message
+				error: normalized.error ?? this.errorMessage(data)
 			};
 		}
 		return normalized;

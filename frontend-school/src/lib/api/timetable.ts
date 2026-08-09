@@ -36,7 +36,7 @@ async function fetchApi<T = EmptyResponseData>(
 
 	if (!response.success) throw new Error(response.error || 'Request failed');
 	if (response.data === undefined) throw new Error('Response data missing');
-	return { success: true, data: response.data, message: response.message };
+	return { ...response, success: true, data: response.data };
 }
 
 // ============================================
@@ -387,7 +387,7 @@ export const getDailyTeachingOverview = async (
 		`/api/academic/timetable/daily-teaching${queryString}`
 	);
 	const data = requireApiData(response, 'ไม่สามารถโหลดตารางสอนวันนี้ได้');
-	return { success: true, data, message: response.message };
+	return { ...response, success: true, data };
 };
 
 /**
@@ -548,7 +548,7 @@ export const createTimetableEntry = async (
 	if (!response.success) return normalizeConflictResponse(response);
 	const entry = requireApiData(response, 'Request failed');
 	if (isConflictPayload(entry)) return normalizeConflictResponse({ ...response, success: false });
-	return { success: true, data: timetableEntryFromDto(entry), message: response.message };
+	return { ...response, success: true, data: timetableEntryFromDto(entry) };
 };
 
 export const updateTimetableEntry = async (
@@ -562,7 +562,7 @@ export const updateTimetableEntry = async (
 	if (!response.success) return normalizeConflictResponse(response);
 	const entry = requireApiData(response, 'Request failed');
 	if (isConflictPayload(entry)) return normalizeConflictResponse({ ...response, success: false });
-	return { success: true, data: timetableEntryFromDto(entry), message: response.message };
+	return { ...response, success: true, data: timetableEntryFromDto(entry) };
 };
 
 export const deleteTimetableEntry = async (id: string) => {
