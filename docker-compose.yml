@@ -76,7 +76,11 @@ services:
       - BACKEND_ADMIN_RETRY_MAX_ATTEMPTS=${BACKEND_ADMIN_RETRY_MAX_ATTEMPTS:-3}
       - BACKEND_ADMIN_RETRY_BASE_DELAY_MS=${BACKEND_ADMIN_RETRY_BASE_DELAY_MS:-100}
       - INTERNAL_API_SECRET=${INTERNAL_API_SECRET:-internal-secret-change-this}
-      - JWT_SECRET=${JWT_SECRET:-your-secret-key-change-this-in-production}
+      - JWT_SECRET=${SCHOOL_ROLLBACK_JWT_SECRET:-local-school-rollback-jwt-change-me-minimum-32-chars}
+      - SESSION_HMAC_KEY=${SESSION_HMAC_KEY:-local-session-hmac-key-change-me-minimum-32-chars}
+      - BASE_DOMAIN=${BASE_DOMAIN:-schoolorbit.app}
+      - TRUSTED_PROXY_CIDRS=${TRUSTED_PROXY_CIDRS:-10.0.0.0/8,172.16.0.0/12}
+      - SCHOOL_ALLOWED_DEV_ORIGINS=${SCHOOL_ALLOWED_DEV_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173}
       - ENCRYPTION_KEY=${ENCRYPTION_KEY:-change-this-encryption-key-in-production}
       - BLIND_INDEX_KEY=${BLIND_INDEX_KEY:-change-this-blind-index-key-in-production}
       - DEPLOY_KEY=${DEPLOY_KEY:-local-dev-key-change-me}

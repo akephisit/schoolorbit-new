@@ -10,6 +10,67 @@ const execFileAsync = promisify(execFile);
 const repoRoot = path.resolve(import.meta.dirname, '../../..');
 const readRepo = (file) => readFile(path.join(repoRoot, file), 'utf8');
 
+test('school session runtime is required and isolated from admin JWT', async () => {
+	for (const file of ['docker-compose.yml', 'podman-compose.yml']) {
+		const compose = await readRepo(file);
+		const adminStart = compose.indexOf('  backend-admin:');
+		const schoolStart = compose.indexOf('  backend-school:');
+		const schoolEnd = compose.indexOf('  clamd:', schoolStart);
+		assert.ok(adminStart >= 0 && schoolStart > adminStart && schoolEnd > schoolStart);
+
+		const admin = compose.slice(adminStart, schoolStart);
+		const school = compose.slice(schoolStart, schoolEnd);
+		assert.match(admin, /JWT_SECRET[^\n]*\$\{JWT_SECRET/);
+		assert.match(school, /JWT_SECRET[^\n]*\$\{SCHOOL_ROLLBACK_JWT_SECRET/);
+		assert.doesNotMatch(school, /JWT_SECRET[^\n]*\$\{JWT_SECRET/);
+		assert.match(school, /SESSION_HMAC_KEY[^\n]*\$\{SESSION_HMAC_KEY/);
+		assert.match(school, /BASE_DOMAIN[^\n]*\$\{BASE_DOMAIN/);
+		assert.match(school, /TRUSTED_PROXY_CIDRS/);
+		assert.match(school, /SCHOOL_ALLOWED_DEV_ORIGINS/);
+	}
+
+	const config = await readRepo('scripts/lib/schoolorbit-installer/config.sh');
+	const vps = await readRepo('scripts/lib/schoolorbit-installer/vps.sh');
+	assert.match(config, /SO_REQUIRED_SECRETS[\s\S]*SESSION_HMAC_KEY/);
+	assert.match(config, /SO_REQUIRED_SECRETS[\s\S]*SCHOOL_ROLLBACK_JWT_SECRET/);
+	assert.match(vps, /_dotenv_line SESSION_HMAC_KEY/);
+	assert.match(vps, /_dotenv_line SCHOOL_ROLLBACK_JWT_SECRET/);
+});
+
+test('backend-school deployment validates session runtime before compose activation', async () => {
+	const workflow = await readRepo('.github/workflows/deploy-backend-school.yml');
+	const validatorStart = workflow.indexOf('            runtime_env_value() {');
+	const composeActivation = workflow.indexOf(
+		'            cp "$runtime_source" "${runtime_compose}.next"'
+	);
+
+	assert.ok(validatorStart >= 0, 'runtime environment decoder must exist');
+	assert.ok(
+		composeActivation > validatorStart,
+		'session runtime validation must run before the canonical Compose file is activated'
+	);
+	const guard = workflow.slice(validatorStart, composeActivation);
+	for (const name of [
+		'JWT_SECRET',
+		'SESSION_HMAC_KEY',
+		'SCHOOL_ROLLBACK_JWT_SECRET',
+		'BASE_DOMAIN',
+		'TRUSTED_PROXY_CIDRS',
+		'SCHOOL_ALLOWED_DEV_ORIGINS'
+	]) {
+		assert.match(guard, new RegExp(`runtime_env_value ${name}`));
+	}
+	assert.match(guard, /\$\{#session_hmac_key\}[^\n]*-lt 32/);
+	assert.match(guard, /\$\{#school_rollback_jwt_secret\}[^\n]*-lt 32/);
+	assert.match(guard, /session_hmac_key[^\n]*school_rollback_jwt_secret/);
+	assert.match(guard, /school_rollback_jwt_secret[^\n]*admin_jwt_secret/);
+	assert.match(guard, /runtime_base_domain[^\n]*base_domain/);
+	assert.doesNotMatch(
+		guard,
+		/echo[^\n]*(?:session_hmac_key|school_rollback_jwt_secret|admin_jwt_secret)/
+	);
+});
+
 test('the resolved production topology has one owner and private backend ports', async () => {
 	const { stdout } = await execFileAsync(
 		'docker',
@@ -147,6 +208,21 @@ test('the proxy renderer rejects an invalid domain without replacing its output'
 		(error) => error.code === 64 && error.stderr === 'Invalid base domain\n'
 	);
 	assert.equal(await readFile(output, 'utf8'), 'known-good\n');
+});
+
+test('school proxy permits and exposes the memory-only CSRF header', async () => {
+	for (const file of [
+		'nginx-configs/school-api.conf.template',
+		'nginx-configs/school-api.maintenance.conf.template'
+	]) {
+		const source = await readRepo(file);
+		const allowHeaderLines = source
+			.split('\n')
+			.filter((line) => line.includes('Access-Control-Allow-Headers'));
+		assert.ok(allowHeaderLines.length > 0, `${file} must define allowed CORS headers`);
+		for (const line of allowHeaderLines) assert.match(line, /X-CSRF-Token/);
+		assert.match(source, /Access-Control-Expose-Headers[^\n]*X-CSRF-Token/);
+	}
 });
 
 test('backend workflows deploy the canonical target and verify the selected origin', async () => {

@@ -29,7 +29,7 @@
 - Preserve `ApiResponse<T>`, generated OpenAPI/TypeScript ownership, permission behavior (`401` authentication, `403` authorization/Origin/CSRF, `429` throttle, `503` session-store availability), and existing resource policies.
 - Keep the frontend and backend on different origins. Bootstrap remains client-side, the session cookie remains host-only on the backend origin, and no BFF or parent-domain cookie is introduced.
 - Do not redesign the public admission portal, account activation, password recovery, MFA, notification authorization, or shared multi-replica event delivery.
-- At cutover, keep backend-admin on existing `JWT_SECRET`; map a separately rotated `SCHOOL_LEGACY_JWT_SECRET` only to backend-school for emergency rollback. The session-enabled backend does not read either JWT key, and old school JWTs are never accepted.
+- At cutover, keep backend-admin on existing `JWT_SECRET`; map a separately rotated `SCHOOL_ROLLBACK_JWT_SECRET` only to backend-school for emergency rollback. The session-enabled backend does not read either JWT key, and old school JWTs are never accepted.
 - Run the exact change-type verification matrix in `.rules`; runtime smoke/E2E credentials come only from environment variables.
 
 ---
@@ -2479,15 +2479,17 @@ git commit -m "feat(auth): stop realtime reconnect after revocation"
 - Modify: `nginx-configs/school-api.maintenance.conf.template`
 - Modify: `scripts/lib/schoolorbit-installer/config.sh`
 - Modify: `scripts/lib/schoolorbit-installer/vps.sh`
+- Create: `scripts/lib/schoolorbit-installer/remote/provision_school_session_runtime.sh`
 - Modify: `scripts/tests/installer/fixtures/secrets.json`
 - Modify: `scripts/tests/installer/fixtures/runtime.env`
 - Modify: `scripts/tests/installer/config_state.bats`
 - Modify: `scripts/tests/installer/vps.bats`
+- Create: `scripts/tests/installer/provision_school_session_runtime.bats`
 - Modify: `frontend-school/tests/static/deployment-installer.test.mjs`
 - Modify: `backend-school/tests/static_architecture.rs`
 
 **Interfaces:**
-- Consumes: required `SESSION_HMAC_KEY`, rollback-only `SCHOOL_LEGACY_JWT_SECRET`, `BASE_DOMAIN`, `TRUSTED_PROXY_CIDRS`, optional `SCHOOL_ALLOWED_DEV_ORIGINS`, canonical Compose ownership, and Nginx-owned CORS.
+- Consumes: required `SESSION_HMAC_KEY`, rollback-only `SCHOOL_ROLLBACK_JWT_SECRET`, `BASE_DOMAIN`, `TRUSTED_PROXY_CIDRS`, optional `SCHOOL_ALLOWED_DEV_ORIGINS`, canonical Compose ownership, and Nginx-owned CORS.
 - Produces: backend-school receives stable session config and its own rotated rollback JWT key; backend-admin continues receiving existing `JWT_SECRET`; browser CORS permits and exposes `X-CSRF-Token`.
 
 - [ ] **Step 1: Write failing installer, Compose, proxy, and secret-separation tests**
@@ -2500,14 +2502,14 @@ test('school session runtime is required and isolated from admin JWT', async () 
 	const config = await readRepo('scripts/lib/schoolorbit-installer/config.sh');
 	const vps = await readRepo('scripts/lib/schoolorbit-installer/vps.sh');
 	assert.match(compose, /backend-admin:[\s\S]*JWT_SECRET:\s*\$\{JWT_SECRET\}/);
-	assert.match(compose, /backend-school:[\s\S]*JWT_SECRET:\s*\$\{SCHOOL_LEGACY_JWT_SECRET\}/);
+	assert.match(compose, /backend-school:[\s\S]*JWT_SECRET:\s*\$\{SCHOOL_ROLLBACK_JWT_SECRET\}/);
 	assert.match(compose, /SESSION_HMAC_KEY:\s*\$\{SESSION_HMAC_KEY\}/);
 	assert.match(compose, /BASE_DOMAIN:\s*\$\{BASE_DOMAIN/);
 	assert.match(compose, /TRUSTED_PROXY_CIDRS:/);
 	assert.match(config, /SESSION_HMAC_KEY/);
-	assert.match(config, /SCHOOL_LEGACY_JWT_SECRET/);
+	assert.match(config, /SCHOOL_ROLLBACK_JWT_SECRET/);
 	assert.match(vps, /_dotenv_line SESSION_HMAC_KEY/);
-	assert.match(vps, /_dotenv_line SCHOOL_LEGACY_JWT_SECRET/);
+	assert.match(vps, /_dotenv_line SCHOOL_ROLLBACK_JWT_SECRET/);
 });
 
 test('school proxy permits and exposes only memory CSRF header additions', async () => {
@@ -2540,7 +2542,7 @@ Expected: tests fail because session secrets/config and CSRF proxy headers are a
 
 - [ ] **Step 3: Wire exact production/local configuration and CORS headers**
 
-Add `SESSION_HMAC_KEY` and `SCHOOL_LEGACY_JWT_SECRET` to `SO_REQUIRED_SECRETS`; validate both with minimum length 32. They are operator-supplied stable random values and are never generated or echoed by the installer. Add both to `render_runtime_env` and the remote required-name loop.
+Add `SESSION_HMAC_KEY` and `SCHOOL_ROLLBACK_JWT_SECRET` to `SO_REQUIRED_SECRETS`; validate both with minimum length 32. The primary installer accepts operator-supplied stable random values and never echoes them. Add both to `render_runtime_env` and the remote required-name loop. Provide a standalone operator-run VPS helper for the current cutover that generates both values on the target without displaying them, preserves the existing admin `JWT_SECRET`, creates a mode-`0600` backup, writes atomically, and refuses an accidental second rotation.
 
 Render non-secret runtime values exactly:
 
@@ -2559,7 +2561,7 @@ backend-admin:
 
 backend-school:
   environment:
-    JWT_SECRET: ${SCHOOL_LEGACY_JWT_SECRET}
+    JWT_SECRET: ${SCHOOL_ROLLBACK_JWT_SECRET}
     SESSION_HMAC_KEY: ${SESSION_HMAC_KEY}
     BASE_DOMAIN: ${BASE_DOMAIN:-schoolorbit.app}
     TRUSTED_PROXY_CIDRS: ${TRUSTED_PROXY_CIDRS:-10.0.0.0/8,172.16.0.0/12}
@@ -2750,7 +2752,7 @@ test('canonical docs own the school session and cutover contract', async () => {
 	assert.doesNotMatch(rules, /current_user_tenant_context_from_claims/);
 	assert.match(testing, /X-CSRF-Token/);
 	assert.match(testing, /session-security\.spec\.ts/);
-	assert.match(operations, /SCHOOL_LEGACY_JWT_SECRET/);
+	assert.match(operations, /SCHOOL_ROLLBACK_JWT_SECRET/);
 	assert.match(operations, /thirty-day|30-day/i);
 	assert.match(podmanSetup, /SESSION_HMAC_KEY/);
 });
@@ -2779,21 +2781,21 @@ Authenticated browser handlers receive AuthenticatedSession from the single rout
 
 Add that CSRF is the stable domain-separated HMAC of tenant UUID plus session UUID (not the rotating raw credential), realtime handshakes use `TouchOnly`, remembered replacement cookies use remaining absolute lifetime, and new bcrypt passwords must pass the shared 8–128-scalar/71-byte non-truncating validator.
 
-Replace required backend-school `JWT_SECRET` wording with required `SESSION_HMAC_KEY`, while documenting `SCHOOL_LEGACY_JWT_SECRET` as rollback-only and `JWT_SECRET` as backend-admin-owned. Add session/realtime verification commands and keep the generated-contract requirements unchanged.
+Replace required backend-school `JWT_SECRET` wording with required `SESSION_HMAC_KEY`, while documenting `SCHOOL_ROLLBACK_JWT_SECRET` as rollback-only and `JWT_SECRET` as backend-admin-owned. Add session/realtime verification commands and keep the generated-contract requirements unchanged.
 
 In `docs/TESTING.md`, replace `auth_token` examples with the new cookie, explain private CSRF capture, list focused Rust session/schema/service/HTTP/realtime commands, list `session-auth-contract`, account-security, auth-state, and Playwright commands, and retain environment-only credentials. Document that `E2E_SESSION_USERNAME`/`E2E_SESSION_PASSWORD` must identify a dedicated disposable account because the suite intentionally exercises logout-all; never reuse `SMOKE_*` or an operator account.
 
 In `docs/OPERATIONS.md`, document stable session HMAC ownership, trusted proxy CIDRs, normal/remembered/rotation/retention limits, redacted observability, and this cutover order:
 
 ```text
-1. Enter backend-school maintenance and provision SESSION_HMAC_KEY plus a newly generated SCHOOL_LEGACY_JWT_SECRET without printing either.
+1. Enter backend-school maintenance and provision SESSION_HMAC_KEY plus a newly generated SCHOOL_ROLLBACK_JWT_SECRET without printing either.
 2. Run the centralized all-tenant migration gate through migration 034 and stop on any tenant failure.
 3. Deploy session-enabled backend-school while maintenance remains active; backend-admin keeps JWT_SECRET unchanged.
 4. Deploy frontend-school, validate Nginx CORS/preflight, then run login, /me, protected read, CSRF mutation, session list/revoke, logout-all, SSE, WebSocket, smoke, and two-context Playwright.
 5. Leave maintenance only after all checks pass. Every school user performs one clean login.
 ```
 
-Rollback keeps migration `034`, deploys the prior backend-school image with `SCHOOL_LEGACY_JWT_SECRET` mapped to its `JWT_SECRET`, rolls back frontend-school, and requires another clean login. Never restore the old shared school JWT key and never modify `_sqlx_migrations`.
+Rollback keeps migration `034`, deploys the prior backend-school image with `SCHOOL_ROLLBACK_JWT_SECRET` mapped to its `JWT_SECRET`, rolls back frontend-school, and requires another clean login. Never restore the old shared school JWT key and never modify `_sqlx_migrations`.
 
 Update `docs/PODMAN_SETUP.md` and `backend-school/README.md` to list the new runtime variables and local allowed-origin behavior. Do not duplicate the full runbook outside Operations.
 

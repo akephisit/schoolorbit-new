@@ -24,7 +24,8 @@ server {
     add_header Access-Control-Allow-Origin $maintenance_allow_origin always;
     add_header Access-Control-Allow-Credentials "true" always;
     add_header Access-Control-Allow-Methods "GET, POST, PUT, PATCH, DELETE, OPTIONS" always;
-    add_header Access-Control-Allow-Headers "DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization,X-School-Subdomain" always;
+    add_header Access-Control-Allow-Headers "DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization,X-School-Subdomain,X-CSRF-Token" always;
+    add_header Access-Control-Expose-Headers "X-CSRF-Token" always;
     add_header Retry-After "60" always;
     add_header Cache-Control "no-store" always;
 

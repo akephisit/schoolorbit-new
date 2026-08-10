@@ -9,6 +9,8 @@ declare -ga SO_REQUIRED_SECRETS=(
     SCHOOLORBIT_SERVER_PASSWORD
     DATABASE_URL
     JWT_SECRET
+    SESSION_HMAC_KEY
+    SCHOOL_ROLLBACK_JWT_SECRET
     INTERNAL_API_SECRET
     ENCRYPTION_KEY
     BLIND_INDEX_KEY
@@ -244,7 +246,7 @@ _validate_secret() {
             minimum=24
             [[ $value =~ ^postgres(ql)?:// ]] || die 64 'DATABASE_URL must be a PostgreSQL URL' || return
             ;;
-        ENCRYPTION_KEY | BLIND_INDEX_KEY)
+        ENCRYPTION_KEY | BLIND_INDEX_KEY | SESSION_HMAC_KEY | SCHOOL_ROLLBACK_JWT_SECRET)
             minimum=32
             ;;
         NEON_DB_PASSWORD)
@@ -338,6 +340,12 @@ load_inputs() {
     local input_json name value
     input_json=$(_read_input_json) || return
     _load_named_secrets "$input_json" "${SO_REQUIRED_SECRETS[@]}" || return
+    if [[ ${SO_SECRETS[SESSION_HMAC_KEY]} == "${SO_SECRETS[SCHOOL_ROLLBACK_JWT_SECRET]}" ||
+        ${SO_SECRETS[SESSION_HMAC_KEY]} == "${SO_SECRETS[JWT_SECRET]}" ||
+        ${SO_SECRETS[SCHOOL_ROLLBACK_JWT_SECRET]} == "${SO_SECRETS[JWT_SECRET]}" ]]; then
+        die 64 'School session secrets must be distinct from each other and admin JWT_SECRET'
+        return
+    fi
 
     for name in "${SO_REQUIRED_RUNTIME_VALUES[@]}"; do
         value=${!name-}

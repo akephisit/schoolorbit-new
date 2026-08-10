@@ -135,37 +135,13 @@ jobs:
             test -f "$proxy_template" || { echo "School API proxy template is missing"; exit 1; }
             test -f "$maintenance_proxy_template" || { echo "School API maintenance template is missing"; exit 1; }
 
-            install -m 0755 "$renderer_source" "$renderer"
-            install -m 0755 "$origin_root_installer_source" "$origin_root_installer"
-            "$origin_root_installer" "$origin_root"
-            cp "$runtime_source" "${runtime_compose}.next"
-            podman-compose -f "${runtime_compose}.next" --dry-run up -d backend-school >/dev/null 2>&1
-            mv "${runtime_compose}.next" "$runtime_compose"
-            "$renderer" "$proxy_template" "$proxy_source" "$base_domain"
-            "$renderer" "$maintenance_proxy_template" "$maintenance_proxy_source" "$base_domain"
-
-            proxy_matches="$(grep -lF "server_name school-api.${base_domain};" /opt/stack/nginx/conf.d/*.conf 2>/dev/null || true)"
-            proxy_match_count="$(printf '%s\n' "$proxy_matches" | sed '/^$/d' | wc -l | tr -d ' ')"
-            if [ "$proxy_match_count" -gt 1 ]; then
-              echo "Expected at most one active school API proxy config, found ${proxy_match_count}"
-              exit 1
-            fi
-            if [ "$proxy_match_count" -eq 1 ] &&
-              [ "$proxy_matches" != "$proxy_target" ] &&
-              [ "$proxy_matches" != "$legacy_proxy_target" ]
-            then
-              echo "School API proxy exists at an unexpected path: ${proxy_matches}"
-              exit 1
-            fi
-            proxy_previous_target="$proxy_target"
-            if [ "$proxy_match_count" -eq 1 ]; then
-              proxy_previous_target="$proxy_matches"
-            fi
             runtime_env_value() {
               local key=$1 line value decoded char
               local -i index=0
               case "$key" in
-                R2_ACCOUNT_ID | R2_ACCESS_KEY_ID | R2_SECRET_ACCESS_KEY | \
+                JWT_SECRET | SESSION_HMAC_KEY | SCHOOL_ROLLBACK_JWT_SECRET | \
+                  BASE_DOMAIN | TRUSTED_PROXY_CIDRS | SCHOOL_ALLOWED_DEV_ORIGINS | \
+                  R2_ACCOUNT_ID | R2_ACCESS_KEY_ID | R2_SECRET_ACCESS_KEY | \
                   R2_PUBLIC_BUCKET_NAME | R2_PRIVATE_BUCKET_NAME) ;;
                 *) return 64 ;;
               esac
@@ -196,6 +172,80 @@ jobs:
               done
               printf '%s' "$decoded"
             }
+            if ! session_hmac_key="$(runtime_env_value SESSION_HMAC_KEY)"; then
+              echo "Required backend-school runtime value is unavailable: SESSION_HMAC_KEY"
+              exit 1
+            fi
+            if ! school_rollback_jwt_secret="$(runtime_env_value SCHOOL_ROLLBACK_JWT_SECRET)"; then
+              echo "Required backend-school runtime value is unavailable: SCHOOL_ROLLBACK_JWT_SECRET"
+              exit 1
+            fi
+            if ! admin_jwt_secret="$(runtime_env_value JWT_SECRET)"; then
+              echo "Required backend-admin runtime value is unavailable: JWT_SECRET"
+              exit 1
+            fi
+            if [ "${#session_hmac_key}" -lt 32 ]; then
+              echo "Backend-school runtime value is too short: SESSION_HMAC_KEY"
+              exit 1
+            fi
+            if [ "${#school_rollback_jwt_secret}" -lt 32 ]; then
+              echo "Backend-school runtime value is too short: SCHOOL_ROLLBACK_JWT_SECRET"
+              exit 1
+            fi
+            if [ "$session_hmac_key" = "$school_rollback_jwt_secret" ] ||
+              [ "$session_hmac_key" = "$admin_jwt_secret" ] ||
+              [ "$school_rollback_jwt_secret" = "$admin_jwt_secret" ]
+            then
+              echo "School session secrets must be distinct from each other and admin JWT_SECRET"
+              exit 1
+            fi
+            if ! runtime_base_domain="$(runtime_env_value BASE_DOMAIN)"; then
+              echo "Required backend-school runtime value is unavailable: BASE_DOMAIN"
+              exit 1
+            fi
+            if [ "$runtime_base_domain" != "$base_domain" ]; then
+              echo "Backend-school runtime BASE_DOMAIN does not match the deployment domain"
+              exit 1
+            fi
+            if ! trusted_proxy_cidrs="$(runtime_env_value TRUSTED_PROXY_CIDRS)" ||
+              [ -z "$trusted_proxy_cidrs" ]
+            then
+              echo "Required backend-school runtime value is unavailable: TRUSTED_PROXY_CIDRS"
+              exit 1
+            fi
+            if ! runtime_env_value SCHOOL_ALLOWED_DEV_ORIGINS >/dev/null; then
+              echo "Required backend-school runtime value is unavailable: SCHOOL_ALLOWED_DEV_ORIGINS"
+              exit 1
+            fi
+            unset session_hmac_key school_rollback_jwt_secret admin_jwt_secret
+            unset runtime_base_domain trusted_proxy_cidrs
+
+            install -m 0755 "$renderer_source" "$renderer"
+            install -m 0755 "$origin_root_installer_source" "$origin_root_installer"
+            "$origin_root_installer" "$origin_root"
+            cp "$runtime_source" "${runtime_compose}.next"
+            podman-compose -f "${runtime_compose}.next" --dry-run up -d backend-school >/dev/null 2>&1
+            mv "${runtime_compose}.next" "$runtime_compose"
+            "$renderer" "$proxy_template" "$proxy_source" "$base_domain"
+            "$renderer" "$maintenance_proxy_template" "$maintenance_proxy_source" "$base_domain"
+
+            proxy_matches="$(grep -lF "server_name school-api.${base_domain};" /opt/stack/nginx/conf.d/*.conf 2>/dev/null || true)"
+            proxy_match_count="$(printf '%s\n' "$proxy_matches" | sed '/^$/d' | wc -l | tr -d ' ')"
+            if [ "$proxy_match_count" -gt 1 ]; then
+              echo "Expected at most one active school API proxy config, found ${proxy_match_count}"
+              exit 1
+            fi
+            if [ "$proxy_match_count" -eq 1 ] &&
+              [ "$proxy_matches" != "$proxy_target" ] &&
+              [ "$proxy_matches" != "$legacy_proxy_target" ]
+            then
+              echo "School API proxy exists at an unexpected path: ${proxy_matches}"
+              exit 1
+            fi
+            proxy_previous_target="$proxy_target"
+            if [ "$proxy_match_count" -eq 1 ]; then
+              proxy_previous_target="$proxy_matches"
+            fi
             public_bucket="$(runtime_env_value R2_PUBLIC_BUCKET_NAME)"
             private_bucket="$(runtime_env_value R2_PRIVATE_BUCKET_NAME)"
             if [ "$public_bucket" = "$private_bucket" ]; then

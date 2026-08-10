@@ -98,9 +98,46 @@ teardown() {
     load_inputs <"$BATS_TEST_DIRNAME/fixtures/secrets.json"
 
     [ "${SO_SECRETS[INTERNAL_API_SECRET]}" = 'internal-api-7vK9nM3qR8wX2zLp' ]
+    [ "${SO_SECRETS[SESSION_HMAC_KEY]}" = 'session-hmac-7Qp2Vm9Kx4Ld8Ns5Rc3Ty6Wz' ]
+    [ "${SO_SECRETS[SCHOOL_ROLLBACK_JWT_SECRET]}" = 'school-rollback-jwt-8Fn3Qa6Uv1Jk5Pe9Xs2M' ]
     [ "${SO_SECRETS[SMOKE_PASSWORD]}" = 'Smoke-Pass-7vK9nM3q' ]
     [ "${SO_CONFIG[runtime:NEON_PROJECT_ID]}" = 'silent-moon-24680' ]
     [ "${SO_CONFIG[runtime:R2_PUBLIC_BUCKET_NAME]}" = 'schoolorbit-public-assets' ]
+}
+
+@test "school session secrets require at least 32 characters" {
+    local name
+    local short_value=1234567890123456789012345678901
+    local minimum_value=12345678901234567890123456789012
+
+    for name in SESSION_HMAC_KEY SCHOOL_ROLLBACK_JWT_SECRET; do
+        run _validate_secret "$name" "$short_value"
+        [ "$status" -eq 64 ]
+        [[ "$output" != *"$short_value"* ]]
+
+        _validate_secret "$name" "$minimum_value"
+    done
+}
+
+@test "school session secrets are distinct from each other and admin JWT" {
+    local input="$TEST_ROOT/duplicate-session-secret.json"
+    local shared_value=12345678901234567890123456789012
+    local filter
+    local -a filters=(
+        '.JWT_SECRET = $value | .SESSION_HMAC_KEY = $value'
+        '.JWT_SECRET = $value | .SCHOOL_ROLLBACK_JWT_SECRET = $value'
+        '.SESSION_HMAC_KEY = $value | .SCHOOL_ROLLBACK_JWT_SECRET = $value'
+    )
+
+    for filter in "${filters[@]}"; do
+        jq --arg value "$shared_value" "$filter" \
+            "$BATS_TEST_DIRNAME/fixtures/secrets.json" >"$input"
+        parse_args migrate-vps --repository owner/repo --target 192.0.2.20 --secrets-stdin
+
+        run load_inputs <"$input"
+        [ "$status" -eq 64 ]
+        [[ "$output" != *"$shared_value"* ]]
+    done
 }
 
 @test "accepts a non-empty existing smoke password without imposing creation policy" {

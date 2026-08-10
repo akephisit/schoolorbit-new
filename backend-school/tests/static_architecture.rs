@@ -4606,6 +4606,43 @@ fn backend_school_registers_separate_liveness_and_readiness_routes() {
 }
 
 #[test]
+fn school_session_runtime_is_deployment_owned() {
+    let main = read_source(repo_root().join("backend-school/src/main.rs"));
+    let session_config = main
+        .find("modules::auth::config::SessionConfig::from_env()")
+        .expect("backend-school must initialize session configuration");
+    let app = main
+        .find("app::build_app(state.clone())")
+        .expect("backend-school must build the application");
+    assert!(session_config < app);
+
+    for file in ["docker-compose.yml", "podman-compose.yml"] {
+        let compose = read_source(repo_root().join(file));
+        let admin_start = compose
+            .find("  backend-admin:")
+            .expect("compose must define backend-admin");
+        let school_start = compose
+            .find("  backend-school:")
+            .expect("compose must define backend-school");
+        let school_end = compose[school_start..]
+            .find("\n  clamd:")
+            .map(|offset| school_start + offset)
+            .expect("compose must define clamd after backend-school");
+        let admin = &compose[admin_start..school_start];
+        let school = &compose[school_start..school_end];
+
+        assert!(admin.contains("${JWT_SECRET"));
+        assert!(!admin.contains("${SCHOOL_ROLLBACK_JWT_SECRET"));
+        assert!(school.contains("${SCHOOL_ROLLBACK_JWT_SECRET"));
+        assert!(!school.contains("${JWT_SECRET"));
+        assert!(school.contains("${SESSION_HMAC_KEY"));
+        assert!(school.contains("${BASE_DOMAIN"));
+        assert!(school.contains("TRUSTED_PROXY_CIDRS"));
+        assert!(school.contains("SCHOOL_ALLOWED_DEV_ORIGINS"));
+    }
+}
+
+#[test]
 fn recurring_healthchecks_use_liveness_while_deployment_and_smoke_use_readiness() {
     let docker_compose = read_source(repo_root().join("docker-compose.yml"));
     let podman_compose = read_source(repo_root().join("podman-compose.yml"));
