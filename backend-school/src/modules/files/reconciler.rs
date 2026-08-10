@@ -1,5 +1,3 @@
-use chrono::{DateTime, Utc};
-
 use crate::utils::file_hash::FileHasher;
 
 use super::{
@@ -30,20 +28,10 @@ pub async fn reconcile_due_operations(
     repository: &dyn FileRepository,
     worker: &str,
 ) -> Result<ReconcileSummary, super::repository::RepositoryError> {
-    reconcile_due_operations_at(platform, repository, worker, Utc::now()).await
-}
-
-async fn reconcile_due_operations_at(
-    platform: &FilePlatform,
-    repository: &dyn FileRepository,
-    worker: &str,
-    now: DateTime<Utc>,
-) -> Result<ReconcileSummary, super::repository::RepositoryError> {
     let runtime_config = platform.runtime_config();
     let operations = repository
         .lease_due_operations(
             worker,
-            now,
             runtime_config.reconciliation_lease,
             runtime_config.reconciliation_batch_size,
         )
@@ -84,7 +72,6 @@ async fn reconcile_due_operations_at(
                             operation.attempt_count,
                             error_code,
                             terminal,
-                            now,
                             runtime_config,
                         )
                         .await
@@ -106,7 +93,6 @@ async fn reconcile_due_operations_at(
                         operation.attempt_count,
                         error.log_safe_code(),
                         terminal,
-                        now,
                         runtime_config,
                     )
                     .await
@@ -130,7 +116,6 @@ async fn reconcile_due_operations_at(
                                         work.derivative_id,
                                         "file_derivative_identity_mismatch",
                                         true,
-                                        now,
                                         runtime_config,
                                     )
                                     .await
@@ -165,7 +150,6 @@ async fn reconcile_due_operations_at(
                                                         work.derivative_id,
                                                         "storage_object_conflict",
                                                         terminal,
-                                                        now,
                                                         runtime_config,
                                                     )
                                                     .await
@@ -179,7 +163,6 @@ async fn reconcile_due_operations_at(
                                                 work.derivative_id,
                                                 error.log_safe_code(),
                                                 terminal,
-                                                now,
                                                 runtime_config,
                                             )
                                             .await
@@ -194,7 +177,6 @@ async fn reconcile_due_operations_at(
                                     work.derivative_id,
                                     error.log_safe_code(),
                                     true,
-                                    now,
                                     runtime_config,
                                 )
                                 .await
@@ -208,7 +190,6 @@ async fn reconcile_due_operations_at(
                             work.derivative_id,
                             error.log_safe_code(),
                             terminal,
-                            now,
                             runtime_config,
                         )
                         .await
@@ -228,7 +209,6 @@ async fn reconcile_due_operations_at(
                             operation.attempt_count,
                             error.log_safe_code(),
                             terminal,
-                            now,
                             runtime_config,
                         )
                         .await
@@ -280,15 +260,13 @@ async fn retry(
     attempt: i32,
     error_code: &'static str,
     terminal: bool,
-    now: DateTime<Utc>,
     runtime_config: FilePlatformRuntimeConfig,
 ) -> Result<OperationDisposition, super::repository::RepositoryError> {
     repository
         .retry_operation(
             operation_id,
             error_code,
-            now + chrono::Duration::from_std(runtime_config.retry_delay(attempt))
-                .unwrap_or_else(|_| chrono::Duration::hours(1)),
+            runtime_config.retry_delay(attempt),
             terminal,
         )
         .await
@@ -307,7 +285,6 @@ async fn retry_derivative(
     derivative_id: uuid::Uuid,
     error_code: &'static str,
     terminal: bool,
-    now: DateTime<Utc>,
     runtime_config: FilePlatformRuntimeConfig,
 ) -> Result<OperationDisposition, super::repository::RepositoryError> {
     repository
@@ -316,8 +293,7 @@ async fn retry_derivative(
             derivative_id,
             operation.id,
             error_code,
-            now + chrono::Duration::from_std(runtime_config.retry_delay(operation.attempt_count))
-                .unwrap_or_else(|_| chrono::Duration::hours(1)),
+            runtime_config.retry_delay(operation.attempt_count),
             terminal,
         )
         .await

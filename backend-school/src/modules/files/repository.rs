@@ -1,5 +1,4 @@
 use async_trait::async_trait;
-use chrono::{DateTime, Utc};
 use sqlx::{PgPool, Row};
 use std::{fmt, time::Duration};
 use uuid::Uuid;
@@ -160,7 +159,7 @@ pub trait FileRepository: Send + Sync {
         derivative_id: Uuid,
         operation_id: Uuid,
         error_code: &'static str,
-        next_retry_at: DateTime<Utc>,
+        retry_delay: Duration,
         terminal: bool,
     ) -> Result<(), RepositoryError>;
     async fn finalize_ready(
@@ -173,7 +172,7 @@ pub trait FileRepository: Send + Sync {
         &self,
         file_id: Uuid,
         error_code: &'static str,
-        next_retry_at: DateTime<Utc>,
+        retry_delay: Duration,
     ) -> Result<(), RepositoryError>;
     async fn load_delivery(&self, file_id: Uuid)
         -> Result<Option<DeliveryRecord>, RepositoryError>;
@@ -182,7 +181,6 @@ pub trait FileRepository: Send + Sync {
     async fn lease_due_operations(
         &self,
         worker: &str,
-        now: DateTime<Utc>,
         lease_duration: Duration,
         limit: i64,
     ) -> Result<Vec<LeasedOperation>, RepositoryError>;
@@ -190,7 +188,7 @@ pub trait FileRepository: Send + Sync {
         &self,
         operation_id: Uuid,
         error_code: &'static str,
-        next_retry_at: DateTime<Utc>,
+        retry_delay: Duration,
         terminal: bool,
     ) -> Result<(), RepositoryError>;
     async fn queue_delete_retry(
@@ -198,7 +196,7 @@ pub trait FileRepository: Send + Sync {
         file_id: Uuid,
         target: ObjectTarget,
         error_code: &'static str,
-        next_retry_at: DateTime<Utc>,
+        retry_delay: Duration,
     ) -> Result<(), RepositoryError>;
 }
 
@@ -451,6 +449,10 @@ WHERE d.id = $2 AND d.file_id = $1
     }
 }
 
+fn duration_microseconds(duration: Duration) -> Result<i64, RepositoryError> {
+    i64::try_from(duration.as_micros()).map_err(|_| RepositoryError::InvalidPersistedState)
+}
+
 #[async_trait]
 impl FileRepository for SqlFileRepository {
     async fn reserve_upload(&self, upload: &NewUpload) -> Result<(), RepositoryError> {
@@ -679,9 +681,10 @@ WHERE d.id = $1
         derivative_id: Uuid,
         operation_id: Uuid,
         error_code: &'static str,
-        next_retry_at: DateTime<Utc>,
+        retry_delay: Duration,
         terminal: bool,
     ) -> Result<(), RepositoryError> {
+        let retry_microseconds = duration_microseconds(retry_delay)?;
         let mut transaction = self.pool.begin().await.map_err(Self::database_error)?;
         sqlx::query(
             "UPDATE file_derivatives SET storage_status = 'failed', lifecycle_status = 'failed' WHERE id = $1 AND file_id = $2 AND storage_status <> 'deleted'",
@@ -695,7 +698,7 @@ WHERE d.id = $1
             &mut transaction,
             operation_id,
             error_code,
-            next_retry_at,
+            retry_microseconds,
             terminal,
         )
         .await?;
@@ -780,19 +783,21 @@ WHERE file_id = $1 AND operation_type = 'reconcile' AND status <> 'succeeded'
         &self,
         file_id: Uuid,
         error_code: &'static str,
-        next_retry_at: DateTime<Utc>,
+        retry_delay: Duration,
     ) -> Result<(), RepositoryError> {
+        let retry_microseconds = duration_microseconds(retry_delay)?;
         sqlx::query(
             r#"
 UPDATE file_operations
-SET status = 'retryable_failure', last_error_code = $2, next_retry_at = $3,
+SET status = 'retryable_failure', last_error_code = $2,
+    next_retry_at = statement_timestamp() + ($3 * INTERVAL '1 microsecond'),
     lease_owner = NULL, leased_at = NULL, lease_expires_at = NULL
 WHERE file_id = $1 AND operation_type = 'reconcile' AND status <> 'succeeded'
 "#,
         )
         .bind(file_id)
         .bind(error_code)
-        .bind(next_retry_at)
+        .bind(retry_microseconds)
         .execute(&self.pool)
         .await
         .map_err(Self::database_error)?;
@@ -1008,43 +1013,44 @@ ORDER BY created_at, id
     async fn lease_due_operations(
         &self,
         worker: &str,
-        now: DateTime<Utc>,
         lease_duration: Duration,
         limit: i64,
     ) -> Result<Vec<LeasedOperation>, RepositoryError> {
         if worker.trim().is_empty() || !(1..=100).contains(&limit) {
             return Err(RepositoryError::InvalidPersistedState);
         }
-        let lease_expires_at = now
-            + chrono::Duration::from_std(lease_duration)
-                .map_err(|_| RepositoryError::InvalidPersistedState)?;
+        let lease_microseconds = duration_microseconds(lease_duration)?;
         let rows = sqlx::query(
             r#"
 WITH due AS (
     SELECT id
     FROM file_operations
     WHERE (
-        status IN ('pending', 'retryable_failure') AND next_retry_at <= $1
+        status IN ('pending', 'retryable_failure')
+        AND next_retry_at <= statement_timestamp()
     ) OR (
-        status = 'leased' AND lease_expires_at <= $1
+        status = 'leased'
+        AND lease_expires_at <= statement_timestamp()
     )
     ORDER BY next_retry_at, created_at, id
     FOR UPDATE SKIP LOCKED
-    LIMIT $2
+    LIMIT $1
 )
 UPDATE file_operations o
 SET status = 'leased', attempt_count = attempt_count + 1,
-    lease_owner = $3, leased_at = $1, lease_expires_at = $4,
-    started_at = COALESCE(started_at, $1)
+    lease_owner = $2,
+    leased_at = statement_timestamp(),
+    lease_expires_at = statement_timestamp()
+        + ($3 * INTERVAL '1 microsecond'),
+    started_at = COALESCE(started_at, statement_timestamp())
 FROM due
 WHERE o.id = due.id AND o.attempt_count < 100
 RETURNING o.id
 "#,
         )
-        .bind(now)
         .bind(limit)
         .bind(worker)
-        .bind(lease_expires_at)
+        .bind(lease_microseconds)
         .fetch_all(&self.pool)
         .await
         .map_err(Self::database_error)?;
@@ -1063,15 +1069,16 @@ RETURNING o.id
         &self,
         operation_id: Uuid,
         error_code: &'static str,
-        next_retry_at: DateTime<Utc>,
+        retry_delay: Duration,
         terminal: bool,
     ) -> Result<(), RepositoryError> {
+        let retry_microseconds = duration_microseconds(retry_delay)?;
         let mut transaction = self.pool.begin().await.map_err(Self::database_error)?;
         retry_operation_query(
             &mut transaction,
             operation_id,
             error_code,
-            next_retry_at,
+            retry_microseconds,
             terminal,
         )
         .await?;
@@ -1083,8 +1090,9 @@ RETURNING o.id
         file_id: Uuid,
         target: ObjectTarget,
         error_code: &'static str,
-        next_retry_at: DateTime<Utc>,
+        retry_delay: Duration,
     ) -> Result<(), RepositoryError> {
+        let retry_microseconds = duration_microseconds(retry_delay)?;
         let (version_id, derivative_id) = match target {
             ObjectTarget::Version(version_id) => (Some(version_id), None),
             ObjectTarget::Derivative(derivative_id) => (None, Some(derivative_id)),
@@ -1095,13 +1103,16 @@ INSERT INTO file_operations (
     file_id, file_version_id, file_derivative_id, operation_type,
     status, next_retry_at, last_error_code
 )
-VALUES ($1, $2, $3, 'delete_object', 'retryable_failure', $4, $5)
+VALUES (
+    $1, $2, $3, 'delete_object', 'retryable_failure',
+    statement_timestamp() + ($4 * INTERVAL '1 microsecond'), $5
+)
 "#,
         )
         .bind(file_id)
         .bind(version_id)
         .bind(derivative_id)
-        .bind(next_retry_at)
+        .bind(retry_microseconds)
         .bind(error_code)
         .execute(&self.pool)
         .await
@@ -1133,22 +1144,23 @@ async fn retry_operation_query(
     transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     operation_id: Uuid,
     error_code: &'static str,
-    next_retry_at: DateTime<Utc>,
+    retry_microseconds: i64,
     terminal: bool,
 ) -> Result<(), RepositoryError> {
     sqlx::query(
         r#"
 UPDATE file_operations
 SET status = CASE WHEN $4 THEN 'failed' ELSE 'retryable_failure' END,
-    last_error_code = $2, next_retry_at = $3,
-    completed_at = CASE WHEN $4 THEN now() ELSE NULL END,
+    last_error_code = $2,
+    next_retry_at = statement_timestamp() + ($3 * INTERVAL '1 microsecond'),
+    completed_at = CASE WHEN $4 THEN statement_timestamp() ELSE NULL END,
     lease_owner = NULL, leased_at = NULL, lease_expires_at = NULL
 WHERE id = $1
 "#,
     )
     .bind(operation_id)
     .bind(error_code)
-    .bind(next_retry_at)
+    .bind(retry_microseconds)
     .bind(terminal)
     .execute(&mut **transaction)
     .await
@@ -1388,6 +1400,15 @@ mod tests {
         Some(SqlFileRepository::new(pool))
     }
 
+    #[test]
+    fn duration_microseconds_is_checked_before_sql_binding() {
+        assert_eq!(duration_microseconds(Duration::from_micros(25)), Ok(25));
+        assert_eq!(
+            duration_microseconds(Duration::MAX),
+            Err(RepositoryError::InvalidPersistedState)
+        );
+    }
+
     #[tokio::test]
     async fn sql_repository_reserves_reclaims_finalizes_and_deletes_durably() {
         let _guard = REPOSITORY_TEST_LOCK.lock().await;
@@ -1458,26 +1479,31 @@ VALUES ($1, 'test-only-hash', 'Synthetic', 'User', 'staff', 'active')
         assert_eq!(processing.file.byte_size, 4);
         assert!(processing.object.is_none());
 
-        let now = Utc::now();
         let first = repository
-            .lease_due_operations("worker-one", now, Duration::from_secs(60), 10)
+            .lease_due_operations("worker-one", Duration::from_secs(60), 10)
             .await
             .unwrap();
         assert_eq!(first.len(), 1);
         assert_eq!(first[0].attempt_count, 1);
         assert!(repository
-            .lease_due_operations("worker-two", now, Duration::from_secs(60), 10)
+            .lease_due_operations("worker-two", Duration::from_secs(60), 10)
             .await
             .unwrap()
             .is_empty());
 
+        sqlx::query(
+            "UPDATE file_operations \
+             SET leased_at = statement_timestamp() - INTERVAL '61 seconds', \
+                 lease_expires_at = statement_timestamp() - INTERVAL '1 second' \
+             WHERE id = $1",
+        )
+        .bind(first[0].id)
+        .execute(repository.pool())
+        .await
+        .unwrap();
+
         let reclaimed = repository
-            .lease_due_operations(
-                "worker-two",
-                now + chrono::Duration::seconds(61),
-                Duration::from_secs(60),
-                10,
-            )
+            .lease_due_operations("worker-two", Duration::from_secs(60), 10)
             .await
             .unwrap();
         assert_eq!(reclaimed.len(), 1);
@@ -1518,17 +1544,22 @@ VALUES ($1, 'test-only-hash', 'Synthetic', 'User', 'staff', 'active')
                 file_id,
                 ObjectTarget::Version(version_id),
                 "storage_operation_failed",
-                Utc::now(),
+                Duration::ZERO,
             )
             .await
             .unwrap();
         let terminal = repository
-            .lease_due_operations("terminal-worker", Utc::now(), Duration::from_secs(60), 10)
+            .lease_due_operations("terminal-worker", Duration::from_secs(60), 10)
             .await
             .unwrap();
         assert_eq!(terminal.len(), 1);
         repository
-            .retry_operation(terminal[0].id, "storage_operation_failed", Utc::now(), true)
+            .retry_operation(
+                terminal[0].id,
+                "storage_operation_failed",
+                Duration::ZERO,
+                true,
+            )
             .await
             .unwrap();
         assert_eq!(

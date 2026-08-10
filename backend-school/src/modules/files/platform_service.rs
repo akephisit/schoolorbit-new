@@ -1,5 +1,4 @@
 use bytes::Bytes;
-use chrono::Utc;
 use std::{fmt, sync::Arc};
 use url::Url;
 use uuid::Uuid;
@@ -201,9 +200,7 @@ impl FilePlatform {
                 .mark_reconcile_pending(
                     file_id,
                     "file_original_finalize_failed",
-                    Utc::now()
-                        + chrono::Duration::from_std(self.runtime_config.retry_delay(1))
-                            .unwrap_or_else(|_| chrono::Duration::seconds(5)),
+                    self.runtime_config.retry_delay(1),
                 )
                 .await;
             return Err(FilePlatformError::MetadataUnavailable);
@@ -230,11 +227,7 @@ impl FilePlatform {
                             .mark_reconcile_pending(
                                 file_id,
                                 "file_derivative_finalize_failed",
-                                Utc::now()
-                                    + chrono::Duration::from_std(
-                                        self.runtime_config.retry_delay(1),
-                                    )
-                                    .unwrap_or_else(|_| chrono::Duration::seconds(5)),
+                                self.runtime_config.retry_delay(1),
                             )
                             .await;
                         if derivative.metadata.required {
@@ -249,9 +242,7 @@ impl FilePlatform {
                             derivative.metadata.id,
                             derivative.metadata.operation_id,
                             error.log_safe_code(),
-                            Utc::now()
-                                + chrono::Duration::from_std(self.runtime_config.retry_delay(1))
-                                    .unwrap_or_else(|_| chrono::Duration::seconds(5)),
+                            self.runtime_config.retry_delay(1),
                             false,
                         )
                         .await;
@@ -275,9 +266,7 @@ impl FilePlatform {
                 .mark_reconcile_pending(
                     file_id,
                     "file_ready_finalize_failed",
-                    Utc::now()
-                        + chrono::Duration::from_std(self.runtime_config.retry_delay(1))
-                            .unwrap_or_else(|_| chrono::Duration::seconds(5)),
+                    self.runtime_config.retry_delay(1),
                 )
                 .await;
             return Err(FilePlatformError::MetadataUnavailable);
@@ -362,9 +351,7 @@ impl FilePlatform {
                     .retry_operation(
                         object.operation_id,
                         error.log_safe_code(),
-                        Utc::now()
-                            + chrono::Duration::from_std(self.runtime_config.retry_delay(1))
-                                .unwrap_or_else(|_| chrono::Duration::seconds(5)),
+                        self.runtime_config.retry_delay(1),
                         false,
                     )
                     .await;
@@ -414,9 +401,7 @@ impl FilePlatform {
                             file_id,
                             ObjectTarget::Derivative(derivative_id),
                             error.log_safe_code(),
-                            Utc::now()
-                                + chrono::Duration::from_std(self.runtime_config.retry_delay(1))
-                                    .unwrap_or_else(|_| chrono::Duration::seconds(5)),
+                            self.runtime_config.retry_delay(1),
                         )
                         .await?;
                 }
@@ -536,7 +521,8 @@ mod tests {
         malware_scanner::MalwareScanner,
         platform_types::StorageClass,
         purpose_registry::original_object_key,
-        repository::{DeleteWork, LeasedOperation, ObjectTarget, RepositoryError},
+        reconciler::reconcile_due_operations,
+        repository::{DeleteWork, LeasedOperation, ObjectTarget, OperationWork, RepositoryError},
         storage_provider::{ObjectMetadata, StorageError},
     };
 
@@ -638,6 +624,9 @@ mod tests {
         derivative_store_error: Mutex<Option<RepositoryError>>,
         delivery: Mutex<Option<DeliveryRecord>>,
         delete_work: Mutex<Vec<DeleteWork>>,
+        leased_operations: Mutex<Vec<LeasedOperation>>,
+        lease_durations: Mutex<Vec<Duration>>,
+        retry_delays: Mutex<Vec<Duration>>,
     }
 
     #[async_trait]
@@ -686,9 +675,10 @@ mod tests {
             _derivative_id: Uuid,
             _operation_id: Uuid,
             _error_code: &'static str,
-            _next_retry_at: chrono::DateTime<Utc>,
+            retry_delay: Duration,
             _terminal: bool,
         ) -> Result<(), RepositoryError> {
+            self.retry_delays.lock().unwrap().push(retry_delay);
             self.events.lock().unwrap().push("derivative_retry");
             Ok(())
         }
@@ -710,8 +700,9 @@ mod tests {
             &self,
             _file_id: Uuid,
             _error_code: &'static str,
-            _next_retry_at: chrono::DateTime<Utc>,
+            retry_delay: Duration,
         ) -> Result<(), RepositoryError> {
+            self.retry_delays.lock().unwrap().push(retry_delay);
             self.events.lock().unwrap().push("reconcile_pending");
             Ok(())
         }
@@ -736,20 +727,21 @@ mod tests {
         async fn lease_due_operations(
             &self,
             _worker: &str,
-            _now: chrono::DateTime<Utc>,
-            _lease_duration: Duration,
+            lease_duration: Duration,
             _limit: i64,
         ) -> Result<Vec<LeasedOperation>, RepositoryError> {
-            Ok(Vec::new())
+            self.lease_durations.lock().unwrap().push(lease_duration);
+            Ok(std::mem::take(&mut *self.leased_operations.lock().unwrap()))
         }
 
         async fn retry_operation(
             &self,
             _operation_id: Uuid,
             _error_code: &'static str,
-            _next_retry_at: chrono::DateTime<Utc>,
+            retry_delay: Duration,
             _terminal: bool,
         ) -> Result<(), RepositoryError> {
+            self.retry_delays.lock().unwrap().push(retry_delay);
             self.events.lock().unwrap().push("operation_retry");
             Ok(())
         }
@@ -759,8 +751,9 @@ mod tests {
             _file_id: Uuid,
             _target: ObjectTarget,
             _error_code: &'static str,
-            _next_retry_at: chrono::DateTime<Utc>,
+            retry_delay: Duration,
         ) -> Result<(), RepositoryError> {
+            self.retry_delays.lock().unwrap().push(retry_delay);
             self.events.lock().unwrap().push("delete_retry_queued");
             Ok(())
         }
@@ -899,6 +892,64 @@ mod tests {
             .lock()
             .unwrap()
             .contains(&"reconcile_pending"));
+        assert_eq!(
+            *repository.retry_delays.lock().unwrap(),
+            vec![FilePlatformRuntimeConfig::default().retry_delay(1)]
+        );
+    }
+
+    #[tokio::test]
+    async fn reconciler_passes_relative_lease_and_retry_durations() {
+        let provider = Arc::new(FakeProvider::default());
+        provider
+            .delete_results
+            .lock()
+            .unwrap()
+            .push_back(Err(StorageError::OperationFailed));
+        let repository = FakeRepository::default();
+        let file_id = Uuid::new_v4();
+        let object = StoredObject::new(
+            original_object_key(
+                Uuid::parse_str("11111111-1111-1111-1111-111111111111").unwrap(),
+                FilePurpose::ProfileImage,
+                file_id,
+                1,
+                crate::modules::files::platform_types::DetectedContent::Png,
+            )
+            .unwrap(),
+            "image/png",
+        );
+        repository
+            .leased_operations
+            .lock()
+            .unwrap()
+            .push(LeasedOperation {
+                id: Uuid::new_v4(),
+                file_id,
+                attempt_count: 1,
+                work: OperationWork::DeleteObject(DeleteWork {
+                    operation_id: Uuid::new_v4(),
+                    file_id,
+                    target: ObjectTarget::Version(Uuid::new_v4()),
+                    object,
+                }),
+            });
+        let platform = platform(ScanOutcome::Clean, provider);
+
+        let summary = reconcile_due_operations(&platform, &repository, "worker-one")
+            .await
+            .unwrap();
+
+        assert_eq!(summary.leased, 1);
+        assert_eq!(summary.retried, 1);
+        assert_eq!(
+            *repository.lease_durations.lock().unwrap(),
+            vec![FilePlatformRuntimeConfig::default().reconciliation_lease]
+        );
+        assert_eq!(
+            *repository.retry_delays.lock().unwrap(),
+            vec![FilePlatformRuntimeConfig::default().retry_delay(1)]
+        );
     }
 
     #[tokio::test]
