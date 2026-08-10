@@ -184,7 +184,8 @@ chmod 600 .env
 
 แก้ `/opt/stack/.env` และแทนค่าตัวอย่างทั้งหมดด้วยค่าจาก secret manager ของ production กลุ่มสำคัญคือ:
 
-- security: `JWT_SECRET`, `INTERNAL_API_SECRET`, `DEPLOY_KEY`;
+- security: backend-admin `JWT_SECRET`, backend-school `SESSION_HMAC_KEY`, rollback-only `SCHOOL_ROLLBACK_JWT_SECRET`, `INTERNAL_API_SECRET`, `DEPLOY_KEY`;
+- school session boundary: `BASE_DOMAIN`, `TRUSTED_PROXY_CIDRS` และ `SCHOOL_ALLOWED_DEV_ORIGINS`;
 - encryption: `ENCRYPTION_KEY`, `BLIND_INDEX_KEY`;
 - internal services: `BACKEND_ADMIN_URL`, `BACKEND_SCHOOL_URL` และ timeout/retry variables;
 - admin database/Neon: `DATABASE_URL`, `NEON_API_KEY`, `NEON_PROJECT_ID`, `NEON_BRANCH_ID`, `NEON_HOST`, `NEON_DB_PASSWORD`;
@@ -195,6 +196,9 @@ chmod 600 .env
 ข้อกำหนดสำคัญ:
 
 - `INTERNAL_API_SECRET` ต้องตรงกันระหว่าง backend ทั้งสอง;
+- `SESSION_HMAC_KEY` ต้องสุ่มเฉพาะระบบนี้อย่างน้อย 32 ตัวอักษรและคงเดิมระหว่างทุก backend-school replica; การเปลี่ยนค่าจะทำให้ school session ปัจจุบันทั้งหมดใช้ต่อไม่ได้;
+- `SESSION_HMAC_KEY`, `SCHOOL_ROLLBACK_JWT_SECRET` และ backend-admin `JWT_SECRET` ต้องเป็นคนละค่า โดย Compose จะ map rollback key เข้า `JWT_SECRET` ของ process backend-school เพื่อรองรับการย้อนกลับเท่านั้น;
+- `BASE_DOMAIN` ต้องตรงกับ tenant domain จริง, `TRUSTED_PROXY_CIDRS` ต้องอนุญาตเฉพาะ proxy network ที่เชื่อถือได้ และ production ต้องตั้ง `SCHOOL_ALLOWED_DEV_ORIGINS=` เป็นค่าว่าง; local Compose จึงค่อย allowlist `http://localhost:5173,http://127.0.0.1:5173`;
 - `DEPLOY_KEY` ต้องตรงกับ server-only `DEPLOY_KEY` ที่ GitHub tenant deployment
   ใช้ในขั้น `Synchronize menu routes`; ห้ามส่ง key นี้เข้า Vite build หรือ Worker variables;
 - `ENCRYPTION_KEY` และ `BLIND_INDEX_KEY` ต้องสำรองอย่างปลอดภัยและคงเดิมหลังมีข้อมูลแล้ว การเปลี่ยน key ต้องทำผ่านงาน re-encryption/reindex ที่ตรวจสอบแยกต่างหาก;
@@ -351,7 +355,7 @@ podman image inspect \
 
 - `podman-compose --dry-run up -d` ล้มเหลว: ตรวจตัวแปรที่ขาดใน `.env` โดยไม่พิมพ์ค่า secret.
 - backend-admin ไม่ ready: ตรวจ `DATABASE_URL`, Neon connectivity และ log 100 บรรทัดท้าย.
-- backend-school ไม่ ready: ตรวจ backend-admin readiness, `BACKEND_ADMIN_URL`, internal secret และ container network.
+- backend-school ไม่ ready: ตรวจ backend-admin readiness, `BACKEND_ADMIN_URL`, internal secret, `SESSION_HMAC_KEY`, `BASE_DOMAIN`, `TRUSTED_PROXY_CIDRS` และ container network โดยไม่พิมพ์ค่า secret.
 - Nginx ได้ `502`: ตรวจว่า Nginx อยู่ network เดียวกับ backend และ `proxy_pass` ใช้ container name.
 - TLS ล้มเหลว: ตรวจ DNS, certificate path, สิทธิ์อ่าน volume และ `podman exec schoolorbit-nginx nginx -t`.
 - WebSocket/SSE หลุด: ตรวจ upgrade headers, buffering, timeout และ proxy/CDN policy.

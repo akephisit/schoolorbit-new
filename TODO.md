@@ -58,14 +58,10 @@ This file is the single active backlog for verified, unfinished technical work t
 
 ## P1 — Identity, Data Integrity, and Durable Operations
 
-- [ ] **AUTH-001: Introduce revocable sessions and consistent active-user enforcement.**
-  - Add session or token revision, unique session identifiers, logout/revocation, password-change revocation, and shorter access-token lifetime.
-  - Check active/suspended state through the shared request context for every authenticated operation.
-  - Align cookie lifetime with token/session lifetime and add CSRF/origin protection for cookie-authenticated mutations.
-
-- [ ] **AUTH-002: Minimize the current-user response.**
-  - Remove decrypted national IDs and unnecessary personal fields from the default `/api/auth/me` response.
-  - Provide separate PII endpoints guarded by exact permissions, resource policy, audit logging, and step-up authentication where appropriate.
+- [ ] **AUTH-002: Harden explicit current-user profile PII access.**
+  - Default `/api/auth/me` minimization is complete; do not re-plan personal fields or permissions into that bootstrap response.
+  - Review `/api/auth/me/profile` as the explicit PII boundary and return only fields required by the profile workflow.
+  - Guard profile PII with exact permissions, resource policy, immutable audit logging, and step-up authentication where appropriate.
   - Fail closed and redact when encrypted-field decryption fails; never return ciphertext as user data.
 
 - [ ] **ADM-001: Replace repeated national-ID-plus-birth-date admission access with a portal session.**

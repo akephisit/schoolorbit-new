@@ -42,6 +42,31 @@ cargo test api_contract::tests -- --nocapture
 
 The static architecture suite owns backend-only boundaries such as tenant request context, thin handlers, service/database separation, permission invalidation, structured logging, and realtime identity.
 
+### School session authentication
+
+Session changes require the schema, repository, service, HTTP/middleware, and realtime boundaries—not only a login happy path. From `backend-school`, with an isolated direct `TEST_DATABASE_URL` available:
+
+```bash
+cargo test modules::auth::session_schema_tests --bin backend-school -- --nocapture
+cargo test modules::auth::session_repository_tests --bin backend-school -- --nocapture
+cargo test modules::auth::session_service_tests --bin backend-school -- --nocapture
+cargo test modules::auth::session_http_tests --bin backend-school -- --nocapture
+cargo test modules::academic::websockets::tests --bin backend-school -- --nocapture
+```
+
+From `frontend-school`, verify the browser security boundary and client state:
+
+```bash
+node --test tests/static/session-auth-contract.test.mjs \
+  tests/static/account-security.test.mjs \
+  tests/static/auth-session-state.test.mjs
+E2E_SESSION_USERNAME='dedicated-disposable-account' \
+E2E_SESSION_PASSWORD='provided-at-runtime' \
+npx playwright test --list tests/e2e/login.spec.ts tests/e2e/session-security.spec.ts
+```
+
+The destructive `session-security.spec.ts` account must be dedicated and disposable because the suite intentionally revokes a selected browser and then logs out every session. Never fall back to `SMOKE_*`, normal `E2E_USERNAME`/`E2E_PASSWORD`, or an operator account for that file.
+
 ## Backend Admin
 
 From `backend-admin`:
@@ -173,7 +198,7 @@ These focused tests use test-only keys. Never put a real national ID, `ENCRYPTIO
 
 ## Smoke Tests
 
-The repository smoke script checks frontend reachability, backend liveness/readiness, CORS, login preflight, authentication, and `/api/auth/me`.
+The repository smoke script checks frontend reachability, backend liveness/readiness, CORS and CSRF preflight, legacy-cookie rejection, opaque-session login, `/api/auth/me`, the active-session list, realtime SSE, optional private files, and current-session logout.
 
 ```bash
 SMOKE_SUBDOMAIN=sandbox \
@@ -186,9 +211,19 @@ Alternatively, copy `.env.smoke.example` to the ignored `.env.smoke.local`. The 
 
 If credentials are absent, authenticated checks are skipped. Report that limitation rather than describing the smoke suite as fully passing.
 
+The API-domain cookie is `__Host-schoolorbit_session`; it is opaque and unavailable to frontend JavaScript. Login and authenticated `/api/auth/me` responses expose `X-CSRF-Token`. The smoke script captures that value only in a shell variable, updates it after rotation-capable responses, and sends it on every authenticated `POST`, `PUT`, `PATCH`, or `DELETE`. Never print, export, persist, or enable trace output for the CSRF value. A manual flow should use private temporary files:
+
+```bash
+cookie_jar=$(mktemp)
+headers_file=$(mktemp)
+chmod 0600 "$cookie_jar" "$headers_file"
+# Capture X-CSRF-Token from login or /api/auth/me into csrf_token without printing it.
+# Remove both files and unset csrf_token when the check ends.
+```
+
 ### File Platform smoke
 
-Run this only against an isolated tenant with no retained files. The authenticated account must be allowed to update school settings for the public-logo case; the private-profile case operates on the logged-in user. Supply a small valid PNG through `FILE_SMOKE_PNG` and a temporary cookie jar through `FILE_SMOKE_COOKIE_JAR`. Never commit either file.
+Run this only against an isolated tenant with no retained files. The authenticated account must be allowed to update school settings for the public-logo case; the private-profile case operates on the logged-in user. Supply a small valid PNG through `FILE_SMOKE_PNG`; the repository smoke script creates and removes its own private cookie jar. Never commit the PNG, cookie jar, or captured CSRF value.
 
 1. Upload `school_logo` through `POST /api/files`; retain only the returned file ID.
 2. Confirm authenticated metadata from `GET /api/files/{id}` contains `publicContentUrl` but no bucket, object key, storage path, provider URL, or signed URL.
@@ -202,7 +237,9 @@ Representative requests, with credentials and IDs supplied only at runtime:
 
 ```bash
 curl -fsS -b "$FILE_SMOKE_COOKIE_JAR" \
+  -H "Origin: $SMOKE_ORIGIN" \
   -H "X-School-Subdomain: $SMOKE_SUBDOMAIN" \
+  -H "X-CSRF-Token: $csrf_token" \
   -F purpose=school_logo \
   -F "file=@$FILE_SMOKE_PNG;type=image/png" \
   "$SMOKE_API_URL/api/files"
@@ -213,13 +250,17 @@ curl -fsSL \
   -o /dev/null
 
 curl -fsS -b "$FILE_SMOKE_COOKIE_JAR" \
+  -H "Origin: $SMOKE_ORIGIN" \
   -H "X-School-Subdomain: $SMOKE_SUBDOMAIN" \
+  -H "X-CSRF-Token: $csrf_token" \
   -F purpose=profile_image \
   -F "file=@$FILE_SMOKE_PNG;type=image/png" \
   "$SMOKE_API_URL/api/files"
 
 curl -fsS -X DELETE -b "$FILE_SMOKE_COOKIE_JAR" \
+  -H "Origin: $SMOKE_ORIGIN" \
   -H "X-School-Subdomain: $SMOKE_SUBDOMAIN" \
+  -H "X-CSRF-Token: $csrf_token" \
   "$SMOKE_API_URL/api/files/$FILE_ID" \
   -o /dev/null
 ```
@@ -258,7 +299,19 @@ E2E_PASSWORD='provided-at-runtime' \
 npm run test:e2e
 ```
 
-`SMOKE_TENANT_URL`, `SMOKE_SUBDOMAIN`, `SMOKE_USERNAME`, and `SMOKE_PASSWORD` are accepted fallbacks. The backend sets `auth_token` for the API domain, so assertions must inspect Playwright browser-context cookies rather than only cookies visible for the tenant page domain.
+`SMOKE_TENANT_URL`, `SMOKE_SUBDOMAIN`, `SMOKE_USERNAME`, and `SMOKE_PASSWORD` are accepted fallbacks only for the non-destructive login spec. The backend sets `__Host-schoolorbit_session` for the API domain, so assertions inspect Playwright browser-context cookies rather than only cookies visible for the tenant page domain.
+
+Run destructive multi-context session coverage separately with a dedicated disposable account:
+
+```bash
+E2E_BASE_URL='https://sandbox.schoolorbit.app' \
+E2E_API_URL='https://school-api.schoolorbit.app' \
+E2E_SESSION_USERNAME='dedicated-disposable-account' \
+E2E_SESSION_PASSWORD='provided-at-runtime' \
+npx playwright test tests/e2e/session-security.spec.ts
+```
+
+Set `E2E_OTHER_TENANT_URL` to another tenant when tenant-isolation proof is available; only that optional case skips when the variable is absent. The suite never changes the account password.
 
 Use `npm run test:e2e:headed` only when interactive debugging is needed. Retain traces, screenshots, and videos only when they contain no sensitive data.
 

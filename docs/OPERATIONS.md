@@ -19,13 +19,13 @@ All secrets and environment-specific URLs come from the runtime environment or d
 
 Core backend-school secrets:
 
-- `JWT_SECRET`
+- `SESSION_HMAC_KEY`
 - `INTERNAL_API_SECRET`
 - `ENCRYPTION_KEY`
 - `BLIND_INDEX_KEY`
 - `DEPLOY_KEY`
 
-Backend-admin also needs its admin `DATABASE_URL` and the provider credentials required by the operations it performs. Tenant provisioning uses the configured Neon values; deployment/DNS operations use the configured GitHub and Cloudflare values.
+Backend-school also requires `BASE_DOMAIN` and `TRUSTED_PROXY_CIDRS`; `SCHOOL_ALLOWED_DEV_ORIGINS` must be empty in production. `SCHOOL_ROLLBACK_JWT_SECRET` is a separate rollback-only secret and must differ from both `SESSION_HMAC_KEY` and the backend-admin `JWT_SECRET`. Backend-admin retains ownership of `JWT_SECRET`, its admin `DATABASE_URL`, and the provider credentials required by the operations it performs. Tenant provisioning uses the configured Neon values; deployment/DNS operations use the configured GitHub and Cloudflare values.
 
 Internal service calls identify the caller with `X-Internal-Caller`. A caller-specific `INTERNAL_API_SECRET_<CALLER>` may override the shared `INTERNAL_API_SECRET`; the shared value is the controlled fallback during rotation. Keep both sides synchronized while rotating and remove the old value only after all callers are confirmed.
 
@@ -91,6 +91,32 @@ Preserve:
 - access-log redaction so tokens, cookies, raw query strings, and PII are not recorded.
 
 Validate WebSocket heartbeat, reconnect, and authenticated server-owned identity through the same proxy path clients use.
+
+## School Session Runtime and Cutover
+
+`SESSION_HMAC_KEY` is the stable backend-school owner for opaque browser-session hashes and domain-separated CSRF HMACs. Generate a unique random value of at least 32 characters in the deployment secret store, never print it, and keep it unchanged across replicas and ordinary deployments. Replacing it invalidates every current school session. It must never equal the admin JWT or rollback key.
+
+`BASE_DOMAIN` owns the production tenant-domain boundary. `TRUSTED_PROXY_CIDRS` must contain only the networks of proxies that are allowed to supply forwarded client addresses; broad or unverified networks let clients spoof rate-limit identity. `SCHOOL_ALLOWED_DEV_ORIGINS` is only for explicit local origins such as `http://localhost:5173` and `http://127.0.0.1:5173`; leave it empty in production. Nginx must allow credentials and expose `X-CSRF-Token` while preserving exact tenant-origin validation.
+
+Session policy is fixed in backend-school:
+
+- normal sessions: two-hour idle and twelve-hour absolute lifetime;
+- remembered sessions: seven-day idle and thirty-day (30-day) absolute lifetime;
+- credential rotation: every 15 minutes with a 60-second previous-token grace window;
+- last-seen/idle touch interval: five minutes;
+- revoked or expired session retention: 30 days.
+
+Replacement cookies never outlive the remaining absolute lifetime. SSE and WebSocket authentication use touch-only maintenance; the next ordinary request performs any due credential rotation. Login, creation, revocation, rotation failure, CSRF/origin rejection, and realtime disconnect logs use structured event/reason fields. Never log passwords, raw session credentials, cookies, CSRF values, request bodies, or database URLs.
+
+For the one-time JWT-to-session cutover:
+
+1. Enter backend-school maintenance and provision `SESSION_HMAC_KEY` plus a newly generated `SCHOOL_ROLLBACK_JWT_SECRET` without printing either.
+2. Run the centralized all-tenant migration gate through migration `034_auth_sessions.sql`; stop on any tenant failure.
+3. Deploy the session-enabled backend-school while maintenance remains active. Keep backend-admin and its `JWT_SECRET` unchanged.
+4. Deploy frontend-school. Validate Nginx CORS/preflight, then run login, `/api/auth/me`, a protected read, a CSRF mutation, session list/revoke, logout-all, SSE, WebSocket, the repository smoke script, and two-context Playwright.
+5. Leave maintenance only after every check passes. Every school user then performs one clean login.
+
+A rollback keeps migration `034_auth_sessions.sql` applied. Deploy the prior backend-school image with `SCHOOL_ROLLBACK_JWT_SECRET` mapped to that process's `JWT_SECRET`, roll back frontend-school, and require another clean login. Never restore the old shared school JWT key, never modify `_sqlx_migrations`, and never change backend-admin's `JWT_SECRET`. Remove the rollback mapping only after the rollback window closes.
 
 ## Replacement VPS Migration and DNS Rollback
 

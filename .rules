@@ -62,11 +62,11 @@ Feature toggles are optional. Add one only for staged rollout or operational con
 ### Request context and architecture
 
 - Share pools and configuration through `Arc<AppState>`.
-- Authenticated tenant handlers use `backend-school/src/utils/request_context.rs`, normally `actor_tenant_context(&state, &headers).await?`.
+- Authenticated browser handlers receive `AuthenticatedSession` from the single router-level session middleware. Feature handlers pass it to `actor_tenant_context_from_session` or `current_user_tenant_context_from_session`; they never parse `Cookie`, `Authorization`, session tokens, or CSRF headers.
 - Public tenant handlers use `tenant_context`, `tenant_pool`, or `tenant_context_by_subdomain` as appropriate.
-- Current-user helpers include `current_user_tenant_context_from_claims`, `current_user_tenant_context_from_headers`, and `optional_user_id_from_headers`.
 - Do not add handler-local pool, JWT, actor, or tenant-resolution helpers. Do not call `get_school_database_url`, `pool_manager.get_pool`, `PgPool::connect`, lower-level tenant resolvers, or `load_actor_context` directly from feature handlers. The explicit manual migration operation is the exception.
 - Browser tenant resolution defaults to `Origin`/`Referer`. `X-School-Subdomain` is an explicit override for non-browser, local/custom-host, script, and test clients; if tenant origin data is present, both must match.
+- Browser mutations require the exact tenant `Origin` plus `X-CSRF-Token`. The backend-host-only `__Host-schoolorbit_session` cookie is opaque, `HttpOnly`, `Secure`, `SameSite=Lax`, `Path=/`, and has no `Domain` attribute.
 - Keep handlers thin: request context → permission/policy → service → typed response → realtime signal when required.
 - Feature handlers must not contain `sqlx::query*`, `.fetch_*`, `.execute`, `.begin`, `sqlx::FromRow`, or database helpers typed as `PgPool`.
 - Business logic and SQL belong in `modules/<feature>/services/`; DB-facing types belong in services/models. Services receive `&PgPool` and return `Result<T, AppError>` or a meaningful outcome enum.
@@ -217,6 +217,9 @@ Use `ApiResponse` and `ApiErrorResponse`; do not return raw feature DTOs or ad-h
 - Keep both keys stable after data exists. Rotation requires a dedicated, reviewed re-encryption/reindex operation.
 - Do not reintroduce PostgreSQL `pgcrypto` helpers or database-role encryption settings for application fields.
 - Secrets come from environment variables or the deployment secret store. Never commit them, print them, or include them in test fixtures.
+- School-session CSRF is the stable domain-separated HMAC of tenant UUID plus session UUID, never the rotating raw credential. Realtime handshakes use `TouchOnly` session maintenance so they do not rotate credentials during an upgrade or long-lived stream.
+- A remembered-session replacement cookie uses only the remaining absolute session lifetime; rotation must never extend that boundary.
+- New bcrypt passwords must pass the shared non-truncating validator: 8–128 Unicode scalar values and at most 71 UTF-8 bytes.
 - Validate and authorize file access. Keep private uploads out of public static roots and return only authorized downloads.
 - Minimize sensitive data in API responses, analytics, errors, audit payloads, and realtime events.
 
@@ -230,7 +233,8 @@ Use `ApiResponse` and `ApiErrorResponse`; do not return raw feature DTOs or ad-h
 - Containers bind application ports to `0.0.0.0`.
 - `/health` is dependency-free process liveness and owns recurring Docker/Podman and external uptime-monitor healthchecks. `/ready` verifies dependencies and is reserved for deployment, smoke, and intentional readiness checks so routine probes do not keep Neon active.
 - Keep Docker/Podman service networking, reverse-proxy routes, CORS origins, cookies, and public backend URLs aligned.
-- Required backend-school secrets include `ENCRYPTION_KEY`, `BLIND_INDEX_KEY`, `JWT_SECRET`, `INTERNAL_API_SECRET`, and `DEPLOY_KEY`.
+- Required backend-school runtime values include `SESSION_HMAC_KEY`, `ENCRYPTION_KEY`, `BLIND_INDEX_KEY`, `INTERNAL_API_SECRET`, `DEPLOY_KEY`, `BASE_DOMAIN`, and `TRUSTED_PROXY_CIDRS`; `SCHOOL_ALLOWED_DEV_ORIGINS` is an explicit local-development allowlist.
+- `SCHOOL_ROLLBACK_JWT_SECRET` exists only for a time-bounded backend-school rollback. The normal school runtime must not use it; `JWT_SECRET` is owned by backend-admin.
 - Internal calls send `X-Internal-Caller`; caller-specific secrets may use `INTERNAL_API_SECRET_<CALLER>` with controlled fallback during rotation.
 - Treat permission/menu sync, tenant migrations, encryption keys, file storage, and data cutover as deployment concerns. Follow `docs/OPERATIONS.md`.
 - Cockpit management is host-managed, not part of Compose or the application Nginx proxy. It listens only on `127.0.0.1:9090` and is published as `https://server.<base-domain>` through a distinct Cloudflare Tunnel connector running on the target VPS.
@@ -281,6 +285,8 @@ cargo fmt --all -- --check
 cargo test --test static_architecture
 cargo check
 ```
+
+For school authentication, session, or realtime identity changes, also run the focused Rust auth/realtime tests, `frontend-school` auth/session static tests, session Playwright discovery or execution with a dedicated disposable account, and `scripts/smoke_test.sh` through the deployed proxy path as described in `docs/TESTING.md`.
 
 For backend-admin changes:
 

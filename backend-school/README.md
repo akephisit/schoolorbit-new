@@ -44,13 +44,14 @@ Run focused module/service tests for changed behavior. Database-backed tests use
 Required groups include:
 
 - `BACKEND_ADMIN_URL` and `INTERNAL_API_SECRET`;
-- `JWT_SECRET`, `ENCRYPTION_KEY`, `BLIND_INDEX_KEY`, and `DEPLOY_KEY`;
+- `SESSION_HMAC_KEY`, `BASE_DOMAIN`, `TRUSTED_PROXY_CIDRS`, `ENCRYPTION_KEY`, `BLIND_INDEX_KEY`, and `DEPLOY_KEY`;
+- optional `SCHOOL_ALLOWED_DEV_ORIGINS` for exact local origins only; production leaves it empty;
 - optional backend-admin timeout/retry tuning;
 - R2-compatible storage credentials and upload limits;
 - Web Push VAPID values;
 - `HOST`, `PORT`, and `RUST_LOG`.
 
-See `.env.example` for names. Keep encryption and blind-index keys stable after data exists.
+See `.env.example` for names. Keep the session HMAC, encryption, and blind-index keys stable after data exists. Root Compose owns `SCHOOL_ROLLBACK_JWT_SECRET` and maps it to the process-level `JWT_SECRET` for image compatibility; the current session runtime ignores that variable, and only a pre-session backend-school rollback image consumes it. Backend-admin keeps its separate `JWT_SECRET`. See [Operations](../docs/OPERATIONS.md) for the full cutover and rollback procedure.
 
 ## Health
 

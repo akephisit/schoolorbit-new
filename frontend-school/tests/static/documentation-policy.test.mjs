@@ -165,3 +165,30 @@ test('project rules own durable development and verification workflows', async (
 		assert.ok(rules.includes(value), `.rules must contain: ${value}`);
 	}
 });
+
+test('canonical docs own the school session and cutover contract', async () => {
+	const [rules, testing, operations, podmanSetup, backendReadme, todo] = await Promise.all([
+		readFile(path.join(repoRoot, '.rules'), 'utf8'),
+		readFile(path.join(repoRoot, 'docs/TESTING.md'), 'utf8'),
+		readFile(path.join(repoRoot, 'docs/OPERATIONS.md'), 'utf8'),
+		readFile(path.join(repoRoot, 'docs/PODMAN_SETUP.md'), 'utf8'),
+		readFile(path.join(repoRoot, 'backend-school/README.md'), 'utf8'),
+		readFile(path.join(repoRoot, 'TODO.md'), 'utf8')
+	]);
+
+	assert.match(rules, /AuthenticatedSession/);
+	assert.match(rules, /__Host-schoolorbit_session/);
+	assert.match(rules, /SESSION_HMAC_KEY/);
+	assert.doesNotMatch(rules, /current_user_tenant_context_from_claims/);
+	assert.match(testing, /X-CSRF-Token/);
+	assert.match(testing, /session-security\.spec\.ts/);
+	assert.match(operations, /SCHOOL_ROLLBACK_JWT_SECRET/);
+	assert.match(operations, /thirty-day|30-day/i);
+	assert.match(podmanSetup, /SESSION_HMAC_KEY/);
+	assert.match(backendReadme, /SESSION_HMAC_KEY/);
+	assert.doesNotMatch(todo, /\bAUTH-001\b/);
+
+	const auth002 = todo.match(/AUTH-002[\s\S]*?(?=\n- \[[ x]\] \*\*|\n##|$)/)?.[0] ?? '';
+	assert.match(auth002, /\/api\/auth\/me\/profile/);
+	assert.match(auth002, /default `\/api\/auth\/me` minimization is complete/i);
+});
