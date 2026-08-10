@@ -173,7 +173,7 @@ test('backend-school deployment recreates clamd and verifies runtime memory befo
 	assert.doesNotMatch(scannerDeployment, /podman volume (?:rm|prune)/);
 });
 
-test('backend-school replacement fails closed when Podman stop leaves a running container', async () => {
+test('backend-school replacement force-removes the stale container without a restart-policy stop', async () => {
 	const workflow = await readRepo('.github/workflows/deploy-backend-school.yml');
 	const replacementStart = workflow.indexOf(
 		'# Recreate backend-school only; do not restart unrelated services.'
@@ -187,11 +187,6 @@ test('backend-school replacement fails closed when Podman stop leaves a running 
 	const replacement = workflow.slice(replacementStart, readinessStart);
 	const orderedMarkers = [
 		'if podman container exists schoolorbit-backend-school; then',
-		'podman update --restart=no schoolorbit-backend-school',
-		'if ! podman stop --time 20 schoolorbit-backend-school; then',
-		`container_running="$(podman inspect --format '{{.State.Running}}' schoolorbit-backend-school)"`,
-		'if [ "$container_running" = true ]; then',
-		'podman kill schoolorbit-backend-school',
 		'podman rm --force schoolorbit-backend-school'
 	];
 	let previousIndex = -1;
@@ -221,7 +216,9 @@ test('backend-school replacement fails closed when Podman stop leaves a running 
 		composeUp > staleContainerError,
 		'compose must run only after stale-container verification'
 	);
-	assert.doesNotMatch(replacement, /podman (?:stop|rm) schoolorbit-backend-school \|\| true/);
+	assert.doesNotMatch(replacement, /podman update .*schoolorbit-backend-school/);
+	assert.doesNotMatch(replacement, /podman stop .*schoolorbit-backend-school/);
+	assert.doesNotMatch(replacement, /podman rm schoolorbit-backend-school \|\| true/);
 });
 
 test('the proxy renderer substitutes only a validated base domain', async (t) => {
