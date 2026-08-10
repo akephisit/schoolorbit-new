@@ -86,6 +86,10 @@ test('session security panel owns loading, retry, session mutations, and passwor
 	assert.match(panel, /revokeSession\(session\.id,\s*\{\s*current:\s*true\s*\}\)/);
 	assert.match(panel, /authAPI\.logoutAll\(\)/);
 	assert.match(panel, /keepCurrentSession\(sessions\)/);
+	assert.match(panel, /data-testid="session-list"/);
+	assert.match(panel, /data-testid=\{`session-row-\$\{session\.id\}`\}/);
+	assert.match(panel, /data-current=\{session\.isCurrent\}/);
+	assert.match(panel, /data-testid="logout-all-sessions"/);
 	assert.match(panel, /passwordValidation\(currentPassword,\s*newPassword,\s*confirmPassword\)/);
 	assert.match(
 		panel,
@@ -93,6 +97,16 @@ test('session security panel owns loading, retry, session mutations, and passwor
 	);
 	assert.ok((panel.match(/<AlertDialog\.Root/g) ?? []).length >= 2);
 	assert.ok((panel.match(/<LoadingButton/g) ?? []).length >= 4);
+});
+
+test('destructive session E2E requires a dedicated disposable account', async () => {
+	const spec = await readFrontendFile('tests/e2e/session-security.spec.ts');
+
+	assert.match(spec, /process\.env\.E2E_SESSION_USERNAME/);
+	assert.match(spec, /process\.env\.E2E_SESSION_PASSWORD/);
+	assert.doesNotMatch(spec, /process\.env\.(?:E2E_USERNAME|E2E_PASSWORD)/);
+	assert.doesNotMatch(spec, /process\.env\.(?:SMOKE_USERNAME|SMOKE_PASSWORD)/);
+	assert.doesNotMatch(spec, /changePassword|change-password/);
 });
 
 test('settings and profile menu point to one shared account-security page', async () => {

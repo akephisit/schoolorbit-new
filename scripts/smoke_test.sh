@@ -76,15 +76,22 @@ failures=0
 cookie_jar="$(mktemp)"
 tmp_dir="$(mktemp -d)"
 file_smoke_id=
+csrf_token=
 
 cleanup() {
     if [[ -n $file_smoke_id ]]; then
+        local -a cleanup_csrf_options=()
+        if [[ -n $csrf_token ]]; then
+            cleanup_csrf_options=(-H "X-CSRF-Token: $csrf_token")
+        fi
         curl -sS --max-time "$SMOKE_TIMEOUT_SECONDS" \
             "${school_api_curl_options[@]}" \
             -X DELETE \
             -b "$cookie_jar" \
+            -c "$cookie_jar" \
             -H "Origin: $SMOKE_ORIGIN" \
             -H "X-School-Subdomain: $SMOKE_SUBDOMAIN" \
+            "${cleanup_csrf_options[@]}" \
             -o /dev/null \
             "$SMOKE_API_URL/api/files/$file_smoke_id" || true
     fi
@@ -159,6 +166,43 @@ header_value() {
             }
         }
     ' "$headers_file"
+}
+
+capture_csrf() {
+    local headers_file="$1"
+    local value
+
+    value="$(awk '
+        {
+            line = $0
+            sub(/\r$/, "", line)
+            lower = tolower(line)
+            if (index(lower, "x-csrf-token:") == 1) {
+                sub(/^[^:]+:[ \t]*/, "", line)
+                print line
+            }
+        }
+    ' "$headers_file" | tail -n 1)"
+    [[ -n $value ]] || return 1
+    csrf_token="$value"
+}
+
+refresh_csrf_if_present() {
+    local headers_file="$1"
+    local value
+
+    value="$(awk '
+        {
+            line = $0
+            sub(/\r$/, "", line)
+            lower = tolower(line)
+            if (index(lower, "x-csrf-token:") == 1) {
+                sub(/^[^:]+:[ \t]*/, "", line)
+                print line
+            }
+        }
+    ' "$headers_file" | tail -n 1)"
+    [[ -z $value ]] || csrf_token="$value"
 }
 
 expect_status() {
@@ -248,6 +292,31 @@ PY
     fi
 }
 
+expect_json_one_current_session() {
+    local name="$1"
+    local body_file="$2"
+
+    if python3 - "$body_file" <<'PY'; then
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as handle:
+    payload = json.load(handle)
+
+sessions = payload.get("data", {}).get("sessions", [])
+is_valid = (
+    isinstance(sessions, list)
+    and len(sessions) >= 1
+    and sum(session.get("isCurrent") is True for session in sessions if isinstance(session, dict)) == 1
+)
+raise SystemExit(0 if is_valid else 1)
+PY
+        pass "$name exactly one current session"
+    else
+        fail "$name expected exactly one current session"
+    fi
+}
+
 print_section() {
     printf '\n== %s ==\n' "$1"
 }
@@ -297,15 +366,26 @@ status="$(school_api_request "unauthenticated /me" GET "$SMOKE_API_URL/api/auth/
 expect_status "unauthenticated /me" "$status" "401"
 expect_header "unauthenticated /me" "$me_unauth_headers" "access-control-allow-origin" "$SMOKE_ORIGIN"
 
+legacy_me_headers="$tmp_dir/me-legacy-cookie.headers"
+legacy_me_body="$tmp_dir/me-legacy-cookie.body"
+status="$(school_api_request "legacy cookie /me" GET "$SMOKE_API_URL/api/auth/me" "$legacy_me_headers" "$legacy_me_body" \
+    -b 'auth_token=synthetic.legacy.jwt' \
+    -H "Origin: $SMOKE_ORIGIN" \
+    -H "X-School-Subdomain: $SMOKE_SUBDOMAIN")"
+expect_status "legacy cookie /me" "$status" "401"
+expect_header "legacy cookie /me" "$legacy_me_headers" "access-control-allow-origin" "$SMOKE_ORIGIN"
+: >"$cookie_jar"
+
 preflight_headers="$tmp_dir/preflight.headers"
 preflight_body="$tmp_dir/preflight.body"
 status="$(school_api_request "login preflight" OPTIONS "$SMOKE_API_URL/api/auth/login" "$preflight_headers" "$preflight_body" \
     -H "Origin: $SMOKE_ORIGIN" \
     -H "Access-Control-Request-Method: POST" \
-    -H "Access-Control-Request-Headers: content-type,authorization,x-school-subdomain")"
+    -H "Access-Control-Request-Headers: content-type,x-school-subdomain,x-csrf-token")"
 expect_status "login preflight" "$status" "204"
 expect_header "login preflight" "$preflight_headers" "access-control-allow-origin" "$SMOKE_ORIGIN"
 expect_header_contains_ci "login preflight" "$preflight_headers" "access-control-allow-headers" "x-school-subdomain"
+expect_header_contains_ci "login preflight" "$preflight_headers" "access-control-allow-headers" "x-csrf-token"
 
 if [[ -z "$SMOKE_USERNAME" || -z "$SMOKE_PASSWORD" ]]; then
     login_validation_headers="$tmp_dir/login-validation.headers"
@@ -349,23 +429,53 @@ PY
         --data-binary "@$login_payload")"
     expect_status "login" "$status" "200"
     expect_header "login" "$login_headers" "access-control-allow-origin" "$SMOKE_ORIGIN"
+    expect_header_contains_ci "login" "$login_headers" "access-control-expose-headers" "x-csrf-token"
     expect_json_username "login" "$login_body" "$SMOKE_USERNAME"
 
-    if grep -q 'auth_token' "$cookie_jar"; then
-        pass "login auth_token cookie"
+    if capture_csrf "$login_headers"; then
+        pass "login CSRF response header"
     else
-        fail "login auth_token cookie missing"
+        fail "login CSRF response header missing"
+    fi
+
+    if grep -Eq '[[:space:]]__Host-schoolorbit_session[[:space:]]' "$cookie_jar"; then
+        pass "login opaque session cookie"
+    else
+        fail "login opaque session cookie missing"
+    fi
+    if grep -Eq '[[:space:]]auth_token[[:space:]]' "$cookie_jar"; then
+        fail "login retained legacy auth_token cookie"
+    else
+        pass "login legacy auth_token cookie absent"
     fi
 
     me_headers="$tmp_dir/me.headers"
     me_body="$tmp_dir/me.body"
     status="$(school_api_request "authenticated /me" GET "$SMOKE_API_URL/api/auth/me" "$me_headers" "$me_body" \
         -b "$cookie_jar" \
+        -c "$cookie_jar" \
         -H "Origin: $SMOKE_ORIGIN" \
         -H "X-School-Subdomain: $SMOKE_SUBDOMAIN")"
     expect_status "authenticated /me" "$status" "200"
     expect_header "authenticated /me" "$me_headers" "access-control-allow-origin" "$SMOKE_ORIGIN"
     expect_json_username "authenticated /me" "$me_body" "$SMOKE_USERNAME"
+    if capture_csrf "$me_headers"; then
+        pass "authenticated /me CSRF response header"
+    else
+        fail "authenticated /me CSRF response header missing"
+    fi
+
+    sessions_headers="$tmp_dir/sessions.headers"
+    sessions_body="$tmp_dir/sessions.body"
+    status="$(school_api_request "session list" GET "$SMOKE_API_URL/api/auth/sessions" "$sessions_headers" "$sessions_body" \
+        -b "$cookie_jar" \
+        -c "$cookie_jar" \
+        -H "Origin: $SMOKE_ORIGIN" \
+        -H "X-School-Subdomain: $SMOKE_SUBDOMAIN")"
+    expect_status "session list" "$status" "200"
+    expect_header "session list" "$sessions_headers" "access-control-allow-origin" "$SMOKE_ORIGIN"
+    expect_json_one_current_session "session list" "$sessions_body"
+    refresh_csrf_if_present "$sessions_headers"
 
     sse_headers="$tmp_dir/notifications-sse.headers"
     set +e
@@ -376,6 +486,7 @@ PY
         -o /dev/null \
         -w '%{http_code}' \
         -b "$cookie_jar" \
+        -c "$cookie_jar" \
         -H "Origin: $SMOKE_ORIGIN" \
         -H "X-School-Subdomain: $SMOKE_SUBDOMAIN" \
         "$SMOKE_API_URL/api/notifications/stream")"
@@ -389,6 +500,7 @@ PY
     expect_header_contains_ci "notification SSE" "$sse_headers" "content-type" "text/event-stream"
     expect_header "notification SSE" "$sse_headers" "access-control-allow-origin" "$SMOKE_ORIGIN"
     expect_header "notification SSE" "$sse_headers" "access-control-allow-credentials" "true"
+    refresh_csrf_if_present "$sse_headers"
 
     if [[ -n $FILE_SMOKE_PNG ]]; then
         if [[ ! -r $FILE_SMOKE_PNG ]]; then
@@ -398,12 +510,15 @@ PY
             upload_body="$tmp_dir/file-upload.body"
             status="$(school_api_request "private file upload" POST "$SMOKE_API_URL/api/files" "$upload_headers" "$upload_body" \
                 -b "$cookie_jar" \
+                -c "$cookie_jar" \
                 -H "Origin: $SMOKE_ORIGIN" \
                 -H "X-School-Subdomain: $SMOKE_SUBDOMAIN" \
+                -H "X-CSRF-Token: $csrf_token" \
                 -F 'purpose=profile_image' \
                 -F "file=@$FILE_SMOKE_PNG;type=image/png")"
             expect_status "private file upload" "$status" "201"
             expect_header "private file upload" "$upload_headers" "access-control-allow-origin" "$SMOKE_ORIGIN"
+            refresh_csrf_if_present "$upload_headers"
 
             if file_smoke_id="$(
                 python3 - "$upload_body" <<'PY'
@@ -434,10 +549,13 @@ PY
                 chmod 0600 "$grant_body"
                 status="$(school_api_request "private file download grant" POST "$SMOKE_API_URL/api/files/$file_smoke_id/download" "$grant_headers" "$grant_body" \
                     -b "$cookie_jar" \
+                    -c "$cookie_jar" \
                     -H "Origin: $SMOKE_ORIGIN" \
-                    -H "X-School-Subdomain: $SMOKE_SUBDOMAIN")"
+                    -H "X-School-Subdomain: $SMOKE_SUBDOMAIN" \
+                    -H "X-CSRF-Token: $csrf_token")"
                 expect_status "private file download grant" "$status" "200"
                 expect_header "private file download grant" "$grant_headers" "access-control-allow-origin" "$SMOKE_ORIGIN"
+                refresh_csrf_if_present "$grant_headers"
 
                 downloaded_file="$tmp_dir/file-download.png"
                 if python3 - "$grant_body" "$downloaded_file" "$SMOKE_ORIGIN" <<'PY'; then
@@ -479,15 +597,29 @@ PY
                 delete_body="$tmp_dir/file-delete.body"
                 status="$(school_api_request "private file delete" DELETE "$SMOKE_API_URL/api/files/$file_smoke_id" "$delete_headers" "$delete_body" \
                     -b "$cookie_jar" \
+                    -c "$cookie_jar" \
                     -H "Origin: $SMOKE_ORIGIN" \
-                    -H "X-School-Subdomain: $SMOKE_SUBDOMAIN")"
+                    -H "X-School-Subdomain: $SMOKE_SUBDOMAIN" \
+                    -H "X-CSRF-Token: $csrf_token")"
                 expect_status "private file delete" "$status" "200"
+                refresh_csrf_if_present "$delete_headers"
                 if [[ $status == 200 ]]; then
                     file_smoke_id=
                 fi
             fi
         fi
     fi
+
+    logout_headers="$tmp_dir/logout.headers"
+    logout_body="$tmp_dir/logout.body"
+    status="$(school_api_request "current session logout" POST "$SMOKE_API_URL/api/auth/logout" "$logout_headers" "$logout_body" \
+        -b "$cookie_jar" \
+        -c "$cookie_jar" \
+        -H "Origin: $SMOKE_ORIGIN" \
+        -H "X-School-Subdomain: $SMOKE_SUBDOMAIN" \
+        -H "X-CSRF-Token: $csrf_token")"
+    expect_status "current session logout" "$status" "200"
+    expect_header "current session logout" "$logout_headers" "access-control-allow-origin" "$SMOKE_ORIGIN"
 fi
 
 if [[ "$failures" -eq 0 ]]; then

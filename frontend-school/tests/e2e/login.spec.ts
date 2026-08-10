@@ -24,6 +24,11 @@ test.describe('sandbox login', () => {
 		await expect(page).toHaveURL(/\/(staff|student|parent)\/?(?:[?#].*)?$/);
 
 		const cookies = await context.cookies();
-		expect(cookies.some((cookie) => cookie.name === 'auth_token')).toBe(true);
+		const session = cookies.find((cookie) => cookie.name === '__Host-schoolorbit_session');
+		expect(session).toBeDefined();
+		expect(session?.httpOnly).toBe(true);
+		expect(session?.secure).toBe(true);
+		expect(session?.sameSite).toBe('Lax');
+		expect(cookies.some((cookie) => cookie.name === 'auth_token')).toBe(false);
 	});
 });

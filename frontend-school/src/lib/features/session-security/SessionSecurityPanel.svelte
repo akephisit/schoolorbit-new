@@ -151,6 +151,7 @@
 				</CardDescription>
 			</div>
 			<Button
+				data-testid="logout-all-sessions"
 				variant="destructive"
 				size="sm"
 				disabled={isLoading || sessions.length === 0}
@@ -177,9 +178,13 @@
 					description="เมื่อมีการเข้าสู่ระบบ อุปกรณ์จะแสดงที่นี่"
 				/>
 			{:else}
-				<div class="divide-y rounded-lg border">
+				<div data-testid="session-list" class="divide-y rounded-lg border">
 					{#each sessions as session (session.id)}
-						<div class="flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between">
+						<div
+							data-testid={`session-row-${session.id}`}
+							data-current={session.isCurrent}
+							class="flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between"
+						>
 							<div class="min-w-0 space-y-2">
 								<div class="flex flex-wrap items-center gap-2">
 									<p class="truncate font-medium">{session.deviceLabel}</p>

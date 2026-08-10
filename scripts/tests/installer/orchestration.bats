@@ -294,6 +294,11 @@ install_orchestration_fakes() {
     grep -Fq 'FILE_SMOKE_PNG' "$smoke"
     grep -Fq '/api/files' "$smoke"
     grep -Fq 'expect_status "login validation" "$status" "400"' "$smoke"
+    grep -Fq '__Host-schoolorbit_session' "$smoke"
+    grep -Fq 'X-CSRF-Token' "$smoke"
+    grep -Fq '/api/auth/sessions' "$smoke"
+    grep -Fq '/api/auth/logout' "$smoke"
+    ! grep -Fq 'pass "login auth_token cookie"' "$smoke"
 }
 
 @test "smoke resolve pins only API calls and accepts a bounded authenticated SSE stream" {
@@ -306,7 +311,10 @@ method=GET
 headers=
 output=
 cookie_output=
-had_cookie=false
+cookie_input=
+has_session_cookie=false
+has_legacy_cookie=false
+has_csrf_header=false
 url=
 while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -314,17 +322,33 @@ while [ "$#" -gt 0 ]; do
         -D) headers=$2; shift 2 ;;
         -o|--output) output=$2; shift 2 ;;
         -c) cookie_output=$2; shift 2 ;;
-        -b) had_cookie=true; shift 2 ;;
-        -H|-F|-w|--write-out|--resolve|--max-time|--data|--data-binary) shift 2 ;;
+        -b)
+            cookie_input=$2
+            case "$cookie_input" in
+                auth_token=*) has_legacy_cookie=true ;;
+            esac
+            shift 2
+            ;;
+        -H)
+            case "$2" in
+                X-CSRF-Token:*) has_csrf_header=true ;;
+            esac
+            shift 2
+            ;;
+        -F|-w|--write-out|--resolve|--max-time|--data|--data-binary) shift 2 ;;
         http://*|https://*) url=$1; shift ;;
         *) shift ;;
     esac
 done
+if [ -n "$cookie_input" ] && [ -f "$cookie_input" ] && grep -q "__Host-schoolorbit_session" "$cookie_input"; then
+    has_session_cookie=true
+fi
 [ -z "$headers" ] || {
     printf "%s\n" "HTTP/2 200" >"$headers"
     case "$url" in
         https://school-api.example.test/*)
             printf "%s\n" "Access-Control-Allow-Origin: https://smoke-school.example.test" >>"$headers"
+            printf "%s\n" "Access-Control-Expose-Headers: x-csrf-token" >>"$headers"
             ;;
     esac
 }
@@ -337,8 +361,9 @@ case "$url" in
     https://school-api.example.test/health) body="{\"status\":\"healthy\"}" ;;
     https://school-api.example.test/ready) body="{\"status\":\"ready\",\"controlPlane\":\"connected\",\"filePlatform\":\"ready\"}" ;;
     https://school-api.example.test/api/auth/me)
-        if [ "$had_cookie" = true ]; then
+        if [ "$has_session_cookie" = true ]; then
             body="{\"data\":{\"user\":{\"username\":\"smoke.operator\"}}}"
+            printf "%s\n" "X-CSRF-Token: fixture-csrf-token" >>"$headers"
         else
             status=401
         fi
@@ -346,10 +371,26 @@ case "$url" in
     https://school-api.example.test/api/auth/login)
         if [ "$method" = OPTIONS ]; then
             status=204
-            printf "%s\n" "Access-Control-Allow-Headers: content-type,authorization,x-school-subdomain" >>"$headers"
+            printf "%s\n" "Access-Control-Allow-Headers: content-type,x-school-subdomain,x-csrf-token" >>"$headers"
         else
             body="{\"data\":{\"user\":{\"username\":\"smoke.operator\"}}}"
-            printf "%s\n" "#HttpOnly_example.test TRUE / TRUE 0 auth_token fixture" >"$cookie_output"
+            printf "%s\n" "X-CSRF-Token: fixture-csrf-token" >>"$headers"
+            printf "%s\n" "#HttpOnly_school-api.example.test FALSE / TRUE 0 __Host-schoolorbit_session fixture" >"$cookie_output"
+        fi
+        ;;
+    https://school-api.example.test/api/auth/sessions)
+        if [ "$has_session_cookie" = true ]; then
+            body="{\"data\":{\"sessions\":[{\"id\":\"00000000-0000-0000-0000-000000000001\",\"isCurrent\":true}]}}"
+        else
+            status=401
+        fi
+        ;;
+    https://school-api.example.test/api/auth/logout)
+        if [ "$has_session_cookie" = true ] && [ "$has_csrf_header" = true ]; then
+            body="{\"data\":{}}"
+            [ -z "$cookie_output" ] || : >"$cookie_output"
+        else
+            status=403
         fi
         ;;
     https://school-api.example.test/api/notifications/stream)
@@ -379,8 +420,14 @@ printf "%s" "$status"
 
     [ "$status" -eq 0 ]
     [[ $output == *'notification SSE status 200'* ]]
+    [[ $output == *'legacy cookie /me status 401'* ]]
+    [[ $output == *'session list exactly one current session'* ]]
+    [[ $output == *'current session logout status 200'* ]]
     grep -F -- '--resolve admin-api.example.test:443:192.0.2.20' "$FAKE_COMMAND_LOG"
     grep -F -- '--resolve school-api.example.test:443:192.0.2.20' "$FAKE_COMMAND_LOG"
+    grep -Fq -- '/api/auth/sessions' "$FAKE_COMMAND_LOG"
+    grep -Fq -- '/api/auth/logout' "$FAKE_COMMAND_LOG"
+    grep -Fq -- 'X-CSRF-Token: fixture-csrf-token' "$FAKE_COMMAND_LOG"
     tenant_request=$(grep -F 'https://smoke-school.example.test/' "$FAKE_COMMAND_LOG")
     [[ $tenant_request != *'--resolve'* ]]
     [[ $output != *'Smoke-Pass-7vK9nM3q'* ]]
