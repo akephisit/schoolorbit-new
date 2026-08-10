@@ -25,7 +25,11 @@ const primaryOrigin = new URL(baseURL).origin;
 const schoolSubdomain =
 	process.env.SMOKE_SUBDOMAIN || new URL(primaryOrigin).hostname.split('.')[0];
 
-async function login(context: BrowserContext, page?: Page): Promise<Page> {
+async function login(
+	context: BrowserContext,
+	page?: Page,
+	expectedLanding: RegExp = /\/(staff|student|parent)\/?(?:[?#].*)?$/
+): Promise<Page> {
 	const loginPage = page ?? (await context.newPage());
 	await loginPage.goto(`${primaryOrigin}/login`);
 	await expect(loginPage.getByRole('heading', { name: 'เข้าสู่ระบบ' })).toBeVisible();
@@ -33,7 +37,7 @@ async function login(context: BrowserContext, page?: Page): Promise<Page> {
 	await loginPage.getByLabel('รหัสผ่าน').fill(sessionPassword);
 
 	await Promise.all([
-		loginPage.waitForURL(/\/(staff|student|parent)\/?(?:[?#].*)?$/, { timeout: 15_000 }),
+		loginPage.waitForURL(expectedLanding, { timeout: 15_000 }),
 		loginPage.getByRole('button', { name: 'เข้าสู่ระบบ' }).click()
 	]);
 
@@ -92,7 +96,7 @@ test.describe.serial('school session security', () => {
 			await expect(sessionB).toHaveCount(0);
 
 			await expectProtectedNavigationToRequireLogin(pageB);
-			await login(contextB, pageB);
+			await login(contextB, pageB, /\/account\/security\/?(?:[?#].*)?$/);
 
 			await pageA.goto(`${primaryOrigin}/account/security`);
 			await pageA.getByTestId('logout-all-sessions').click();
