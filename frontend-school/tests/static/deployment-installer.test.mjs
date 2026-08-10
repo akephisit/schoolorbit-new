@@ -27,6 +27,10 @@ test('school session runtime is required and isolated from admin JWT', async () 
 		assert.match(school, /BASE_DOMAIN[^\n]*\$\{BASE_DOMAIN/);
 		assert.match(school, /TRUSTED_PROXY_CIDRS/);
 		assert.match(school, /SCHOOL_ALLOWED_DEV_ORIGINS/);
+		if (file === 'podman-compose.yml') {
+			assert.match(school, /SCHOOL_ALLOWED_DEV_ORIGINS:\s*\$\{SCHOOL_ALLOWED_DEV_ORIGINS\}/);
+			assert.doesNotMatch(school, /SCHOOL_ALLOWED_DEV_ORIGINS[^\n]*\$\{[^\n]*:-\}/);
+		}
 	}
 
 	const config = await readRepo('scripts/lib/schoolorbit-installer/config.sh');
@@ -40,6 +44,7 @@ test('school session runtime is required and isolated from admin JWT', async () 
 test('backend-school deployment validates session runtime before compose activation', async () => {
 	const workflow = await readRepo('.github/workflows/deploy-backend-school.yml');
 	const validatorStart = workflow.indexOf('            runtime_env_value() {');
+	const exportDefinition = workflow.indexOf('            export_school_compose_env() {');
 	const composeActivation = workflow.indexOf(
 		'            cp "$runtime_source" "${runtime_compose}.next"'
 	);
@@ -68,6 +73,40 @@ test('backend-school deployment validates session runtime before compose activat
 	assert.doesNotMatch(
 		guard,
 		/echo[^\n]*(?:session_hmac_key|school_rollback_jwt_secret|admin_jwt_secret)/
+	);
+
+	assert.ok(exportDefinition > validatorStart, 'the decoded runtime bridge must be defined');
+	const exportDefinitionEnd = workflow.indexOf('            }', exportDefinition);
+	const exportBridge = workflow.slice(exportDefinition, exportDefinitionEnd);
+	for (const name of [
+		'SESSION_HMAC_KEY',
+		'SCHOOL_ROLLBACK_JWT_SECRET',
+		'BASE_DOMAIN',
+		'TRUSTED_PROXY_CIDRS',
+		'SCHOOL_ALLOWED_DEV_ORIGINS'
+	]) {
+		assert.match(exportBridge, new RegExp(`export ${name}=`));
+	}
+
+	const firstExport = workflow.indexOf(
+		'            export_school_compose_env\n',
+		exportDefinitionEnd
+	);
+	const composeDryRun = workflow.indexOf('            podman-compose -f', firstExport);
+	const firstUnset = workflow.indexOf('            unset_school_compose_env\n', composeDryRun);
+	const backendCompose = workflow.indexOf('            compose_up_quiet backend-school');
+	const secondExport = workflow.lastIndexOf(
+		'            export_school_compose_env\n',
+		backendCompose
+	);
+	const secondUnset = workflow.indexOf('            unset_school_compose_env\n', backendCompose);
+	assert.ok(
+		firstExport > exportDefinitionEnd && composeDryRun > firstExport && firstUnset > composeDryRun,
+		'the canonical dry run must use and then clear decoded school runtime values'
+	);
+	assert.ok(
+		secondExport > firstUnset && backendCompose > secondExport && secondUnset > backendCompose,
+		'the backend replacement must use and then clear decoded school runtime values'
 	);
 });
 

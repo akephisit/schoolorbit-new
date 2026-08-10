@@ -172,6 +172,17 @@ jobs:
               done
               printf '%s' "$decoded"
             }
+            export_school_compose_env() {
+              export SESSION_HMAC_KEY="$session_hmac_key"
+              export SCHOOL_ROLLBACK_JWT_SECRET="$school_rollback_jwt_secret"
+              export BASE_DOMAIN="$runtime_base_domain"
+              export TRUSTED_PROXY_CIDRS="$trusted_proxy_cidrs"
+              export SCHOOL_ALLOWED_DEV_ORIGINS="$school_allowed_dev_origins"
+            }
+            unset_school_compose_env() {
+              unset SESSION_HMAC_KEY SCHOOL_ROLLBACK_JWT_SECRET BASE_DOMAIN
+              unset TRUSTED_PROXY_CIDRS SCHOOL_ALLOWED_DEV_ORIGINS
+            }
             if ! session_hmac_key="$(runtime_env_value SESSION_HMAC_KEY)"; then
               echo "Required backend-school runtime value is unavailable: SESSION_HMAC_KEY"
               exit 1
@@ -213,18 +224,19 @@ jobs:
               echo "Required backend-school runtime value is unavailable: TRUSTED_PROXY_CIDRS"
               exit 1
             fi
-            if ! runtime_env_value SCHOOL_ALLOWED_DEV_ORIGINS >/dev/null; then
+            if ! school_allowed_dev_origins="$(runtime_env_value SCHOOL_ALLOWED_DEV_ORIGINS)"; then
               echo "Required backend-school runtime value is unavailable: SCHOOL_ALLOWED_DEV_ORIGINS"
               exit 1
             fi
-            unset session_hmac_key school_rollback_jwt_secret admin_jwt_secret
-            unset runtime_base_domain trusted_proxy_cidrs
+            unset admin_jwt_secret
 
             install -m 0755 "$renderer_source" "$renderer"
             install -m 0755 "$origin_root_installer_source" "$origin_root_installer"
             "$origin_root_installer" "$origin_root"
+            export_school_compose_env
             cp "$runtime_source" "${runtime_compose}.next"
             podman-compose -f "${runtime_compose}.next" --dry-run up -d backend-school >/dev/null 2>&1
+            unset_school_compose_env
             mv "${runtime_compose}.next" "$runtime_compose"
             "$renderer" "$proxy_template" "$proxy_source" "$base_domain"
             "$renderer" "$maintenance_proxy_template" "$maintenance_proxy_source" "$base_domain"
@@ -417,7 +429,11 @@ jobs:
                 exit 1
               fi
             fi
+            export_school_compose_env
             compose_up_quiet backend-school
+            unset_school_compose_env
+            unset session_hmac_key school_rollback_jwt_secret
+            unset runtime_base_domain trusted_proxy_cidrs school_allowed_dev_origins
             reconnect_backend_network schoolorbit-backend-school backend-school
 
             # /ready checks control plane, both R2 buckets, and clamd.
