@@ -63,7 +63,7 @@ impl ThrottlePolicy {
 }
 
 pub fn normalize_login_identifier(value: &str) -> String {
-    value.trim().to_lowercase()
+    value.trim().to_string()
 }
 
 pub fn device_label(user_agent: Option<&str>) -> String {
@@ -233,8 +233,8 @@ mod tests {
     }
 
     #[test]
-    fn login_identifier_normalization_trims_and_lowercases_unicode() {
-        assert_eq!(normalize_login_identifier("  Teacher.หนึ่ง  "), "teacher.หนึ่ง");
+    fn login_identifier_normalization_trims_and_preserves_case() {
+        assert_eq!(normalize_login_identifier("  Teacher.หนึ่ง  "), "Teacher.หนึ่ง");
     }
 
     #[test]

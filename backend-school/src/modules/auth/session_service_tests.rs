@@ -322,6 +322,20 @@ async fn unknown_wrong_and_inactive_logins_share_one_public_error() {
 }
 
 #[tokio::test]
+async fn uppercase_username_login_uses_the_existing_password_hash() {
+    let fixture = AuthServiceFixture::new("service_uppercase_username_login").await;
+    let user_id = fixture
+        .insert_user("T0001", "correct-password", "active")
+        .await;
+
+    let result = fixture.login("T0001", "correct-password").await.unwrap();
+
+    assert_eq!(result.user.id, user_id);
+    assert_eq!(result.user.username, "T0001");
+    assert_eq!(fixture.session_count().await, 1);
+}
+
+#[tokio::test]
 async fn fifth_identifier_failure_and_twentieth_source_failure_return_retry_after() {
     let fixture = AuthServiceFixture::new("service_login_throttle_thresholds").await;
     fixture
