@@ -410,8 +410,20 @@ jobs:
             podman tag "${backend_image}:${{ github.sha }}" "${backend_image}:latest"
 
             # Recreate backend-school only; do not restart unrelated services.
-            podman stop schoolorbit-backend-school || true
-            podman rm schoolorbit-backend-school || true
+            if podman container exists schoolorbit-backend-school; then
+              podman update --restart=no schoolorbit-backend-school
+              if ! podman stop --time 20 schoolorbit-backend-school; then
+                container_running="$(podman inspect --format '{{.State.Running}}' schoolorbit-backend-school)"
+                if [ "$container_running" = true ]; then
+                  podman kill schoolorbit-backend-school
+                fi
+              fi
+              podman rm --force schoolorbit-backend-school
+              if podman container exists schoolorbit-backend-school; then
+                echo "Stale backend-school container remains after forced removal"
+                exit 1
+              fi
+            fi
             compose_up_quiet backend-school
             reconnect_backend_network schoolorbit-backend-school backend-school
 

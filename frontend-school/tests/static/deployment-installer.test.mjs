@@ -173,6 +173,57 @@ test('backend-school deployment recreates clamd and verifies runtime memory befo
 	assert.doesNotMatch(scannerDeployment, /podman volume (?:rm|prune)/);
 });
 
+test('backend-school replacement fails closed when Podman stop leaves a running container', async () => {
+	const workflow = await readRepo('.github/workflows/deploy-backend-school.yml');
+	const replacementStart = workflow.indexOf(
+		'# Recreate backend-school only; do not restart unrelated services.'
+	);
+	const readinessStart = workflow.indexOf(
+		'# /ready checks control plane, both R2 buckets, and clamd.',
+		replacementStart
+	);
+
+	assert.ok(replacementStart >= 0 && readinessStart > replacementStart);
+	const replacement = workflow.slice(replacementStart, readinessStart);
+	const orderedMarkers = [
+		'if podman container exists schoolorbit-backend-school; then',
+		'podman update --restart=no schoolorbit-backend-school',
+		'if ! podman stop --time 20 schoolorbit-backend-school; then',
+		`container_running="$(podman inspect --format '{{.State.Running}}' schoolorbit-backend-school)"`,
+		'if [ "$container_running" = true ]; then',
+		'podman kill schoolorbit-backend-school',
+		'podman rm --force schoolorbit-backend-school'
+	];
+	let previousIndex = -1;
+	for (const marker of orderedMarkers) {
+		const markerIndex = replacement.indexOf(marker);
+		assert.ok(markerIndex > previousIndex, `${marker} must appear in replacement order`);
+		previousIndex = markerIndex;
+	}
+	const staleContainerCheck = replacement.indexOf(
+		'if podman container exists schoolorbit-backend-school; then',
+		previousIndex
+	);
+	const staleContainerError = replacement.indexOf(
+		'echo "Stale backend-school container remains after forced removal"',
+		staleContainerCheck
+	);
+	const composeUp = replacement.indexOf('compose_up_quiet backend-school', staleContainerError);
+	assert.ok(
+		staleContainerCheck > previousIndex,
+		'the forced removal must verify the container is gone'
+	);
+	assert.ok(
+		staleContainerError > staleContainerCheck,
+		'a stale container must fail the deployment'
+	);
+	assert.ok(
+		composeUp > staleContainerError,
+		'compose must run only after stale-container verification'
+	);
+	assert.doesNotMatch(replacement, /podman (?:stop|rm) schoolorbit-backend-school \|\| true/);
+});
+
 test('the proxy renderer substitutes only a validated base domain', async (t) => {
 	const temporary = await mkdtemp(path.join(os.tmpdir(), 'schoolorbit-nginx-'));
 	t.after(() => rm(temporary, { recursive: true, force: true }));
