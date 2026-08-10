@@ -293,6 +293,7 @@ install_orchestration_fakes() {
     grep -Fq 'access-control-allow-credentials' "$smoke"
     grep -Fq 'FILE_SMOKE_PNG' "$smoke"
     grep -Fq '/api/files' "$smoke"
+    grep -Fq 'expect_status "login validation" "$status" "400"' "$smoke"
 }
 
 @test "smoke resolve pins only API calls and accepts a bounded authenticated SSE stream" {

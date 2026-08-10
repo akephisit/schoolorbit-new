@@ -315,7 +315,7 @@ if [[ -z "$SMOKE_USERNAME" || -z "$SMOKE_PASSWORD" ]]; then
         -H "X-School-Subdomain: $SMOKE_SUBDOMAIN" \
         -H "Content-Type: application/json" \
         --data '{}')"
-    expect_status "login validation" "$status" "422"
+    expect_status "login validation" "$status" "400"
     expect_header "login validation" "$login_validation_headers" "access-control-allow-origin" "$SMOKE_ORIGIN"
     if [[ $SMOKE_REQUIRE_AUTH == true ]]; then
         fail "authenticated checks are required but smoke credentials are missing"
