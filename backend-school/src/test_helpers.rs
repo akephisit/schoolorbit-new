@@ -128,16 +128,22 @@ fn pool_with_search_path(schema: &str, max_connections: u32) -> PgPoolOptions {
         })
 }
 
+fn lazy_pool_with_search_path(
+    database_url: &str,
+    schema: &str,
+    max_connections: u32,
+) -> Result<PgPool, sqlx::Error> {
+    pool_with_search_path(schema, max_connections).connect_lazy(database_url)
+}
+
 /// Create a test database pool
 pub async fn create_test_pool() -> PgPool {
     let database_url = explicit_test_database_url();
     let schema = shared_test_schema();
     ensure_test_schema(&database_url, &schema).await;
 
-    pool_with_search_path(&schema, 5)
-        .connect(&database_url)
-        .await
-        .expect("Failed to connect to test database")
+    lazy_pool_with_search_path(&database_url, &schema, 5)
+        .expect("Failed to configure shared test database pool")
 }
 
 /// Create a fresh schema-isolated pool for a destructive migration scenario.
@@ -158,10 +164,8 @@ pub async fn create_named_test_pool_with_max_connections(
     let schema = named_test_schema(test_name, process::id());
     reset_test_schema(&database_url, &schema).await;
 
-    pool_with_search_path(&schema, max_connections)
-        .connect(&database_url)
-        .await
-        .expect("Failed to connect to named test schema")
+    lazy_pool_with_search_path(&database_url, &schema, max_connections)
+        .expect("Failed to configure named test schema pool")
 }
 
 /// Run migrations on test database
@@ -292,6 +296,18 @@ mod tests {
             direct_test_database_url(database_url),
             "postgresql://user:pass-pooler.marker@ep-example.aws.neon.tech/db?tag=-pooler."
         );
+    }
+
+    #[tokio::test]
+    async fn test_application_pool_creation_does_not_open_a_connection() {
+        let pool = lazy_pool_with_search_path(
+            "postgresql://invalid:invalid@127.0.0.1:1/unreachable",
+            "schoolorbit_test_lazy_pool",
+            2,
+        )
+        .expect("lazy test pool construction must not access the network");
+
+        assert_eq!(pool.options().get_max_connections(), 2);
     }
 
     #[tokio::test]
