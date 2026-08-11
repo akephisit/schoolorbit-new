@@ -51,7 +51,15 @@ case "\$command_name" in
         ;;
     exec)
         case " \$* " in
-            *' pg_isready '*) exit "\${FAKE_DOCKER_READY_STATUS:-0}" ;;
+            *' pg_isready '*)
+                if [[ \${FAKE_DOCKER_REQUIRE_TCP_PROBE:-false} == true ]]; then
+                    case " \$* " in
+                        *' --host 127.0.0.1 '*) ;;
+                        *) exit 1 ;;
+                    esac
+                fi
+                exit "\${FAKE_DOCKER_READY_STATUS:-0}"
+                ;;
             *' psql '*) exit "\${FAKE_DOCKER_BOOTSTRAP_STATUS:-0}" ;;
             *) exit 64 ;;
         esac
@@ -198,6 +206,14 @@ test('container exit during readiness fails immediately and prints local logs', 
     assert.match(result.stderr, /fake postgres startup log/);
     assert.match(result.stderr, /PostgreSQL exited before becoming ready/);
     assert.equal((await read(f.dockerLog)).match(/^command=exec$/gm)?.length, 1);
+});
+
+test('readiness waits for the final local TCP server instead of the init socket', async (t) => {
+    const f = await fixture(t);
+    const result = runRunner(f, [], { FAKE_DOCKER_REQUIRE_TCP_PROBE: 'true' });
+
+    assert.equal(result.status, 0, result.error?.message ?? result.stderr);
+    assert.match(await read(f.cargoLog), /arg=backend-school/);
 });
 
 test('runner provisions baseline extensions in public before cargo starts', async (t) => {

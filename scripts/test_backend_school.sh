@@ -105,7 +105,8 @@ fi
 postgres_ready=false
 for _attempt in {1..120}; do
     if docker exec "$CONTAINER_NAME" \
-        pg_isready --quiet --username "$POSTGRES_USER" --dbname "$POSTGRES_DATABASE" \
+        pg_isready --quiet --host 127.0.0.1 \
+        --username "$POSTGRES_USER" --dbname "$POSTGRES_DATABASE" \
         >/dev/null 2>&1; then
         postgres_ready=true
         break

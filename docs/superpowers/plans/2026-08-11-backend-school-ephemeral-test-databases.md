@@ -418,7 +418,9 @@ if ! docker run --detach \
 fi
 ```
 
-Poll `docker exec "$CONTAINER_NAME" pg_isready --quiet --username "$POSTGRES_USER" --dbname "$POSTGRES_DATABASE"` at 250 ms for at most 30 seconds. After a failed readiness probe, inspect
+Poll `docker exec "$CONTAINER_NAME" pg_isready --quiet --host 127.0.0.1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DATABASE"` at 250 ms for at most 30 seconds. The explicit TCP host prevents
+the PostgreSQL image's temporary Unix-socket initialization server from satisfying readiness before
+the requested database exists. After a failed readiness probe, inspect
 `.State.Running`; if PostgreSQL exited, print the last 50 local container log lines and fail
 immediately. On timeout, print the same bounded logs and exit non-zero.
 
