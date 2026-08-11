@@ -94,6 +94,8 @@ The implementation adds these repository-owned artifacts:
     schoolorbit-verifier.toml
 frontend-school/tests/static/
   schoolorbit-agent-workflow.test.mjs
+.github/workflows/
+  documentation.yml
 ```
 
 Update `.rules` and `frontend-school/tests/static/documentation-policy.test.mjs` in the same
@@ -346,6 +348,11 @@ fresh-context samples before the skill is treated as stable.
 - `.rules` and the documentation allowlist recognize the repository skill without permitting
   unrelated Markdown.
 
+Extend `.github/workflows/documentation.yml` so changes under the owned `.agents/` skill,
+`.codex/` configuration, the agent-workflow static test, its fixtures, `.rules`, or the workflow
+itself run both documentation-policy and SchoolOrbit agent-workflow tests. The path filter and job
+command are part of the tested contract so a configuration-only change cannot bypass CI.
+
 The implementation also forward-tests the completed skill with fresh subagents and manually
 reviews every flagged result. Test agents operate only in disposable fixtures or worktrees and
 never receive real secrets or national IDs.
@@ -358,6 +365,7 @@ Run focused checks first, then the repository-owned gates:
 node --test frontend-school/tests/static/documentation-policy.test.mjs
 node --test frontend-school/tests/static/schoolorbit-agent-workflow.test.mjs
 cd frontend-school && npm run test:static
+docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:1.7.7
 git diff --check
 git status --short
 ```
@@ -379,5 +387,6 @@ do not infer success from an agent summary.
   serialized.
 - Every task and integrated change receives review plus fresh verification evidence.
 - Any material plan change returns to user approval.
+- Changes to the skill, agent configuration, workflow tests, or `.rules` trigger their CI guard.
 - The repository policy, static tests, and skill forward tests all pass without weakening an
   existing SchoolOrbit invariant.
