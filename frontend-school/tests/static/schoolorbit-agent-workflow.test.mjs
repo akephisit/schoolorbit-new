@@ -10,6 +10,59 @@ const skillPath = '.agents/skills/schoolorbit-workflow/SKILL.md';
 const metadataPath = '.agents/skills/schoolorbit-workflow/agents/openai.yaml';
 const fixturePath =
 	'frontend-school/tests/static/fixtures/schoolorbit-agent-workflow-scenarios.json';
+const agentConfigPath = '.codex/config.toml';
+
+const expectedProfiles = {
+	schoolorbit_planner: ['gpt-5.6-sol', 'max', 'read-only'],
+	schoolorbit_explorer: ['gpt-5.6-terra', 'xhigh', 'read-only'],
+	schoolorbit_implementer: ['gpt-5.6-sol', 'xhigh', 'workspace-write'],
+	schoolorbit_high_risk_implementer: ['gpt-5.6-sol', 'max', 'workspace-write'],
+	schoolorbit_reviewer: ['gpt-5.6-sol', 'max', 'read-only'],
+	schoolorbit_verifier: ['gpt-5.6-terra', 'high', 'workspace-write']
+};
+
+const registeredProfiles = {
+	schoolorbit_planner: {
+		configFile: 'agents/schoolorbit-planner.toml',
+		description: 'Read-only lead planner for impact analysis and approval-ready SchoolOrbit plans.'
+	},
+	schoolorbit_explorer: {
+		configFile: 'agents/schoolorbit-explorer.toml',
+		description: 'Read-only explorer for one bounded SchoolOrbit code or documentation domain.'
+	},
+	schoolorbit_implementer: {
+		configFile: 'agents/schoolorbit-implementer.toml',
+		description: 'Implementation worker for one approved normal-risk task in an isolated worktree.'
+	},
+	schoolorbit_high_risk_implementer: {
+		configFile: 'agents/schoolorbit-high-risk-implementer.toml',
+		description: 'Implementation worker for an approved high-risk SchoolOrbit task.'
+	},
+	schoolorbit_reviewer: {
+		configFile: 'agents/schoolorbit-reviewer.toml',
+		description: 'Read-only independent reviewer for approved SchoolOrbit requirements and diffs.'
+	},
+	schoolorbit_verifier: {
+		configFile: 'agents/schoolorbit-verifier.toml',
+		description:
+			'Verification worker that runs approved SchoolOrbit checks without changing source.'
+	}
+};
+
+const roleInstructionMarkers = {
+	schoolorbit_planner: ['planner role', 'Do not edit repository files'],
+	schoolorbit_explorer: ['assigned repository domain', 'Do not propose fixes, edit files'],
+	schoolorbit_implementer: ['approved normal-risk brief', 'Do not edit protected or unowned paths'],
+	schoolorbit_high_risk_implementer: [
+		'approved high-risk brief',
+		'Never edit an applied migration or generated artifact directly'
+	],
+	schoolorbit_reviewer: ['approved requirements', 'Do not edit files'],
+	schoolorbit_verifier: [
+		'named focused and repository verification commands',
+		'Never modify source, tests, configuration, snapshots, or expectations'
+	]
+};
 
 const REQUIRED_HEADINGS = [
 	'# SchoolOrbit Workflow',
@@ -74,6 +127,45 @@ function normalizeWhitespace(source) {
 	return source.replace(/\s+/g, ' ').trim();
 }
 
+function escapeRegExp(value) {
+	return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function tomlString(source, key) {
+	const match = new RegExp(`^${escapeRegExp(key)}\\s*=\\s*"([^"]*)"\\s*$`, 'm').exec(source);
+	assert.ok(match, `missing TOML string: ${key}`);
+	return match[1];
+}
+
+function tomlInteger(source, key) {
+	const match = new RegExp(`^${escapeRegExp(key)}\\s*=\\s*(\\d+)\\s*$`, 'm').exec(source);
+	assert.ok(match, `missing TOML integer: ${key}`);
+	return Number(match[1]);
+}
+
+function tomlBoolean(source, key) {
+	const match = new RegExp(`^${escapeRegExp(key)}\\s*=\\s*(true|false)\\s*$`, 'm').exec(source);
+	assert.ok(match, `missing TOML boolean: ${key}`);
+	return match[1] === 'true';
+}
+
+function tomlSection(source, name) {
+	const heading = new RegExp(`^\\[${escapeRegExp(name)}\\]\\s*$`, 'm');
+	const match = heading.exec(source);
+	assert.ok(match, `missing TOML section: ${name}`);
+	const rest = source.slice(match.index + match[0].length);
+	const next = rest.search(/^\[[^\n]+\]\s*$/m);
+	return next === -1 ? rest : rest.slice(0, next);
+}
+
+function tomlMultilineString(source, key) {
+	const match = new RegExp(`^${escapeRegExp(key)}\\s*=\\s*"""\\n([\\s\\S]*?)\\n"""\\s*$`, 'm').exec(
+		source
+	);
+	assert.ok(match, `missing TOML multiline string: ${key}`);
+	return match[1];
+}
+
 function section(source, heading, nextHeading) {
 	const start = source.indexOf(heading);
 	assert.notEqual(start, -1, `missing section: ${heading}`);
@@ -134,11 +226,7 @@ test('workflow state machine places approval before every execution state', asyn
 	const headings = skill.match(/^#{1,2} .+$/gm) ?? [];
 
 	assert.deepEqual(headings, REQUIRED_HEADINGS);
-	const stateMachine = section(
-		skill,
-		'## Workflow State Machine',
-		'## Classify the Request'
-	);
+	const stateMachine = section(skill, '## Workflow State Machine', '## Classify the Request');
 	assertMarkersInOrder(stateMachine, [
 		'DISCOVER',
 		'DRAFT_PLAN',
@@ -188,7 +276,10 @@ test('readiness, routing, isolation, and work-graph contracts are explicit', asy
 	]) {
 		assert.ok(routing.includes(row), `model routing must contain: ${row}`);
 	}
-	assert.match(routing, /named custom role[\s\S]*unavailable[\s\S]*complete `developer_instructions`/i);
+	assert.match(
+		routing,
+		/named custom role[\s\S]*unavailable[\s\S]*complete `developer_instructions`/i
+	);
 	assert.match(routing, /never (?:rely on|use) silent inheritance/i);
 
 	assert.match(execution, /live parent sandbox[\s\S]*override/i);
@@ -211,7 +302,10 @@ test('workflow composes required Superpowers and owns parallel writer waves', as
 			`missing required composition marker for ${subSkill}`
 		);
 	}
-	assert.match(skill, /superpowers:subagent-driven-development[\s\S]*forbids concurrent implementers/i);
+	assert.match(
+		skill,
+		/superpowers:subagent-driven-development[\s\S]*forbids concurrent implementers/i
+	);
 });
 
 test('status and measured anti-rationalization contracts remain inspectable', async () => {
@@ -250,5 +344,39 @@ test('status and measured anti-rationalization contracts remain inspectable', as
 			normalizedRationalizations.includes(observedPressure),
 			`measured rationalization must be addressed: ${observedPressure}`
 		);
+	}
+});
+
+test('agent registry enables six model-pinned roles with bounded concurrency', async () => {
+	const config = await repositoryFile(agentConfigPath);
+	const features = tomlSection(config, 'features');
+	const agents = tomlSection(config, 'agents');
+
+	assert.equal(tomlBoolean(features, 'multi_agent'), true);
+	assert.equal(tomlBoolean(agents, 'enabled'), true);
+	assert.equal(tomlInteger(agents, 'max_concurrent_threads_per_session'), 3);
+
+	for (const [profile, expected] of Object.entries(registeredProfiles)) {
+		const registration = tomlSection(config, `agents.${profile}`);
+		assert.equal(tomlString(registration, 'description'), expected.description);
+		assert.equal(tomlString(registration, 'config_file'), expected.configFile);
+	}
+});
+
+test('agent profiles pin routing and enforce bounded write contracts', async () => {
+	for (const [profile, [model, effort, sandbox]] of Object.entries(expectedProfiles)) {
+		const registration = registeredProfiles[profile];
+		const source = await repositoryFile(path.join('.codex', registration.configFile));
+		const instructions = normalizeWhitespace(tomlMultilineString(source, 'developer_instructions'));
+
+		assert.equal(tomlString(source, 'name'), profile);
+		assert.equal(tomlString(source, 'description'), registration.description);
+		assert.equal(tomlString(source, 'model'), model);
+		assert.equal(tomlString(source, 'model_reasoning_effort'), effort);
+		assert.equal(tomlString(source, 'sandbox_mode'), sandbox);
+		assert.ok(instructions.includes('`.rules`'), `${profile} must require .rules`);
+		for (const marker of roleInstructionMarkers[profile]) {
+			assert.ok(instructions.includes(marker), `${profile} instructions must contain: ${marker}`);
+		}
 	}
 });
