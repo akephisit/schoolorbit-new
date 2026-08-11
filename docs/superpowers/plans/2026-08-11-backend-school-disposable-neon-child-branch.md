@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Make the manual Backend School Neon compatibility gate use ordinary disposable child branches inside the dedicated test-only project so branch creation, migration tests, and cleanup complete reliably.
+**Goal:** Make the manual Backend School Neon compatibility gate use ordinary disposable child branches inside the dedicated test-only project without requesting plan-restricted compute settings, so branch creation, migration tests, and cleanup complete reliably.
 
-**Architecture:** Keep the existing manually confirmed workflow, pinned Neon action, direct endpoint, unique run-attempt name, two-hour expiration, and exact-ID finalizer. Remove only the schema-only branch mode; the empty test-only parent supplies no production rows, while each Rust test creates an isolated schema and runs the active migrations itself.
+**Architecture:** Keep the existing manually confirmed workflow, pinned Neon action, direct endpoint, unique run-attempt name, two-hour expiration, and exact-ID finalizer. Use ordinary branch mode against an empty test-only parent and the Free-plan-compatible 300-second compute suspension; each Rust test creates an isolated schema and runs the active migrations itself.
 
 **Tech Stack:** GitHub Actions YAML, Neon create-branch action v6.4.0, Node.js built-in test runner, Cargo/SQLx, actionlint.
 
@@ -41,7 +41,7 @@ Replace the existing schema-only assertion with a contract that rejects any expl
 assert.doesNotMatch(workflow, /^\s*branch_type:/m);
 ```
 
-The production change that makes this test pass is removal of the `branch_type: schema-only` action input. Reintroducing that input recreates the HTTP 412 path and must fail this guard.
+The production change that makes this test pass is removal of the `branch_type: schema-only` action input. The later ordinary-branch run proved that this input was not the root cause of HTTP 412, but the guard preserves the selected test-only branch architecture.
 
 - [x] **Step 2: Run the focused test and verify RED**
 
@@ -146,7 +146,7 @@ git add .github/workflows/backend-school-neon-compatibility.yml \
 git commit -m "ci(backend-school): use disposable Neon child branches"
 ```
 
-- [ ] **Step 3: Push `main` without force**
+- [x] **Step 3: Push `main` without force**
 
 Fetch and confirm that `origin/main` is not ahead, then run:
 
@@ -154,7 +154,7 @@ Fetch and confirm that `origin/main` is not ahead, then run:
 git push origin main
 ```
 
-- [ ] **Step 4: Dispatch and monitor the compatibility gate**
+- [x] **Step 4: Dispatch and monitor the compatibility gate**
 
 Dispatch `backend-school-neon-compatibility.yml` on the pushed `main` with
 `confirm_disposable_branch=true`. Monitor the exact new run through completion.
@@ -168,6 +168,64 @@ Run direct-endpoint compatibility tests
 Delete disposable Neon branch
 ```
 
+Run `31494176489` reached the create step but returned HTTP 412 before producing a branch. Because
+that pushed workflow already used ordinary branch mode, the result disproved schema-only creation
+as the cause and triggered Task 4.
+
 - [ ] **Step 5: Verify cleanup and repository state**
 
 Confirm from the run's job steps that deletion completed successfully after both Rust schema suites. Fetch `origin/main`, confirm its SHA equals local `HEAD`, confirm the worktree is clean, and report the run URL and exact verification counts.
+
+---
+
+### Task 4: Replace the Plan-Restricted Suspension Override
+
+**Files:**
+
+- Modify: `.github/workflows/backend-school-neon-compatibility.yml`
+- Modify: `scripts/tests/backend-school-test-database.test.mjs`
+- Modify: `docs/TESTING.md`
+- Modify: `docs/superpowers/specs/2026-08-11-backend-school-disposable-neon-child-branch-design.md`
+
+**Interfaces:**
+
+- Consumes: the ordinary child-branch workflow and the Neon Free project's fixed five-minute
+  scale-to-zero interval.
+- Produces: a create request with a supported 300-second suspension value, followed by the
+  unchanged direct-endpoint tests and exact-ID cleanup.
+
+- [x] **Step 1: Diagnose the ordinary-branch live failure**
+
+Compare the failed run with the pinned action request and Neon plan behavior. The workflow's
+explicit `suspend_timeout: 60` requests a one-minute interval that the configured Free project
+cannot apply; branch mode is no longer a shared condition. The pinned action maps an omitted value
+to `0` (disabled auto-suspend), so omission is not a safe representation of the project default.
+
+- [x] **Step 2: Add a regression guard and demonstrate RED**
+
+Add this assertion to the existing Neon workflow contract, then run the focused test while the
+input is still present:
+
+```js
+assert.match(workflow, /^\s+suspend_timeout:\s*300\s*$/m);
+```
+
+Expected and observed: the focused test fails until the workflow contains exactly the supported
+300-second value; both the original 60-second value and an omitted input violate the contract.
+
+- [x] **Step 3: Replace the override and make the focused contract GREEN**
+
+Replace `suspend_timeout: 60` with `suspend_timeout: 300`. Keep the branch expiration, direct
+endpoint, and exact cleanup unchanged. Run the focused Node test and actionlint.
+
+- [ ] **Step 4: Run fresh verification, commit, and push `main`**
+
+Run the complete workflow contract, documentation policy, actionlint, `git diff --check`, and final
+scope review. Commit only the approved backend-school test infrastructure and documentation, fetch
+without force, and push `main`.
+
+- [ ] **Step 5: Re-dispatch the live gate and verify cleanup**
+
+Dispatch the pushed corrective commit with `confirm_disposable_branch=true`. Require successful
+create, fresh-branch verification, both Rust schema suites, and exact branch deletion. Then confirm
+remote/local SHA equality and a clean worktree.

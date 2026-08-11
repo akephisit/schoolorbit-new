@@ -2,15 +2,22 @@
 
 ## Problem
 
-The manual Backend School Neon Compatibility workflow currently asks Neon to create a
-`schema-only` branch. Neon returned HTTP 412 from that create operation in two independent runs:
-first against the original project, then against a newly configured dedicated test project with a
-new project ID, parent branch ID, database, and API key. Both failures occurred before any Rust
-test ran and before the action produced a created branch ID.
+The manual Backend School Neon Compatibility workflow returned HTTP 412 while creating a branch
+in three independent runs. Two runs requested a `schema-only` branch, first against the original
+project and then against a newly configured dedicated test project. A third run used an ordinary
+child branch in the dedicated project and failed at the same point before any Rust test ran. That
+third result disproved the initial hypothesis that schema-only creation caused the 412 response.
 
-The dedicated project has no production data, and the Rust compatibility tests create isolated
-schemas and run the active migrations themselves. Copying only the parent schema therefore adds no
-safety benefit for this gate, while the schema-only creation path is the shared failing condition.
+The remaining non-default create setting was `suspend_timeout: 60`. Neon Free fixes scale-to-zero
+at five minutes and does not allow the workflow to select a shorter interval. The branch action has
+also documented this plan restriction as a create failure. The workflow must therefore let the
+project use its supported 300-second compute suspension timeout instead of forcing 60 seconds.
+Omitting the input is not sufficient because the pinned action maps an omitted value to `0`, which
+requests disabled auto-suspend rather than the Free-plan interval.
+
+The dedicated project still provides the required data-isolation boundary. It has no production
+data, and the Rust compatibility tests create isolated schemas and run the active migrations
+themselves, so an ordinary disposable child branch is sufficient for this gate.
 
 ## Goals
 
@@ -45,9 +52,23 @@ does not provide additional data protection. This approach is rejected.
 ### Create ordinary child branches in the dedicated test project
 
 This is the selected design. A normal Neon child branch uses the empty test-only parent through
-copy-on-write, avoids the failing schema-only initialization path and root-branch allowance, and is
-deleted after the focused checks. Because production data never enters the project, an ordinary
-child branch cannot inherit production rows.
+copy-on-write, avoids root-branch allowance consumption, and is deleted after the focused checks.
+Because production data never enters the project, an ordinary child branch cannot inherit
+production rows. The first ordinary-branch run exposed a separate, plan-restricted suspension
+override; normal branch mode remains the selected data-isolation architecture rather than the root
+cause of the HTTP 412 response.
+
+### Force a 60-second compute suspension timeout
+
+This minimizes idle compute time but is not supported by the configured Neon Free project, whose
+scale-to-zero interval is fixed at five minutes. This approach is rejected.
+
+### Use the Free-plan 300-second compute suspension
+
+This is the selected lifecycle behavior. Setting `suspend_timeout: 300` matches the project's fixed
+five-minute interval and avoids both unsupported alternatives: 60 seconds and the action's omitted
+default of `0`. The branch still has a two-hour expiration and exact-ID finalizer, so compute
+suspension and branch deletion remain separate controls.
 
 ## Architecture and Data Flow
 
@@ -57,8 +78,9 @@ The workflow validates that every value is present and that IDs match Neon ID sh
 
 After confirmation, the pinned Neon create-branch action creates
 `schoolorbit-test-<run_id>-<run_attempt>` from the configured test-only parent. The workflow omits
-`branch_type`, selecting the action's normal branch mode. The branch receives a two-hour expiration
-and one direct read-write endpoint.
+`branch_type`, selecting the action's normal branch mode, and sets `suspend_timeout: 300`, matching
+the Free project's supported interval. The branch receives a two-hour expiration and one direct
+read-write endpoint.
 
 The workflow rejects an existing-branch collision by requiring `created=true` and a valid returned
 branch ID. It masks the returned direct database URL, assigns it only to `TEST_DATABASE_URL`, and
@@ -75,6 +97,8 @@ or runner loss prevents the finalizer from running.
 - The project and parent branch are test-only and contain no production data.
 - The workflow remains `workflow_dispatch` only and requires the boolean confirmation input.
 - The branch name is unique to the GitHub run attempt.
+- Compute suspension is fixed at the Free-plan-compatible 300 seconds; the workflow does not
+  request a restricted timeout or the action's disabled-auto-suspend default.
 - The workflow never prints the API key, password, or database URL.
 - The pooled URL is never consumed because transaction pooling can obscure schema-local
   `_sqlx_migrations` state.
@@ -87,11 +111,10 @@ or runner loss prevents the finalizer from running.
 
 ## Verification
 
-The existing Node workflow contract will first be changed to require normal branch mode and run
-against the current schema-only workflow to demonstrate RED. Removing `branch_type: schema-only`
-is the only workflow behavior change needed for GREEN. The contract continues to require manual
-dispatch, dedicated `NEON_TEST_*` configuration, a direct endpoint, unique creation, expiration,
-and unconditional exact-ID cleanup.
+The Node workflow contract rejects explicit `branch_type` and requires exactly
+`suspend_timeout: 300`. Each guard was demonstrated RED before the smallest production change made
+it GREEN. The contract continues to require manual dispatch, dedicated `NEON_TEST_*`
+configuration, a direct endpoint, unique creation, expiration, and unconditional exact-ID cleanup.
 
 Local verification consists of the focused Node contract, documentation-policy tests,
 `actionlint`, `git diff --check`, and final status/diff review. The final integration proof is a

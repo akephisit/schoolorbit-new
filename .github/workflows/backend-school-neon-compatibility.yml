@@ -69,7 +69,7 @@ jobs:
           role: ${{ vars.NEON_TEST_ROLE }}
           branch_name: schoolorbit-test-${{ github.run_id }}-${{ github.run_attempt }}
           ssl: require
-          suspend_timeout: 60
+          suspend_timeout: 300
           expires_at: ${{ steps.expiration.outputs.expires_at }}
 
       - name: Verify this run created a fresh branch

@@ -365,6 +365,7 @@ test('Neon gate is manual, direct, disposable, and test-scoped', async () => {
         /neondatabase\/create-branch-action@72ed4f69a12b6be9c16aebfad893f6a21e9aba8b/
     );
     assert.doesNotMatch(workflow, /^\s*branch_type:/m);
+    assert.match(workflow, /^\s+suspend_timeout:\s*300\s*$/m);
     assert.match(workflow, /expires_at:/);
     assert.match(
         workflow,
