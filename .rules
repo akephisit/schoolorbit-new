@@ -14,6 +14,7 @@ This file is the single authoritative development standard for this repository. 
   - implementation plans use `docs/superpowers/plans/YYYY-MM-DD-<feature-name>.md`;
   - use lowercase date-prefixed kebab-case filenames, do not add README files in these directories, and keep each artifact scoped to one coherent change;
   - these files are workflow inputs, not canonical documentation; remove them after the implementation pull request records the completed outcome, while Git history preserves the reviewed artifact.
+- Repository-owned executable agent guidance may use exactly `.agents/skills/schoolorbit-workflow/SKILL.md`. It is not one of the 13 canonical human documentation entry points; do not add skill README files, reference Markdown, or any other Markdown under `.agents/`.
 - `TODO.md` is the single active technical backlog. Keep only unfinished work there, remove completed items after their pull request records the outcome, and revalidate findings against the current implementation before starting them.
 - Do not create feature-completion reports, implementation diaries, additional status snapshots, temporary analysis files, duplicate developer guides, per-feature README files, or Markdown outside the canonical and Superpowers paths above.
 - A proposed additional canonical Markdown entry point requires explicit review of why none of the existing owners can hold the content; update the allowlist and documentation-policy test in the same change only when that new long-lived owner is approved.
