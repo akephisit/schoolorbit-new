@@ -25,6 +25,16 @@ This file is the single authoritative development standard for this repository. 
 
 ## 1. Required Analysis Workflow
 
+For every request to build, change, fix, refactor, or otherwise mutate SchoolOrbit, invoke
+`schoolorbit-workflow` before any repository write. Complete read-only discovery, discuss the
+current plan with the user, and obtain explicit approval before implementation. Material changes
+to scope, architecture, ownership, risk, or verification invalidate that approval. Read-only
+requests do not authorize mutation.
+
+The controller may use no more than `agents.max_concurrent_threads_per_session = 3` subagent
+threads. Concurrent writers require validated non-overlapping ownership and separate worktrees.
+Serialize migration, contract, generated-artifact, lockfile, and deployment owners.
+
 Before every change:
 
 1. Read this file, then use `docs/README.md` to locate only the relevant canonical document.
@@ -255,6 +265,13 @@ Always run focused tests for touched behavior plus:
 ```bash
 git diff --check
 git status --short
+```
+
+For repository documentation or agent-workflow changes, from the repository root:
+
+```bash
+node --test frontend-school/tests/static/documentation-policy.test.mjs \
+  frontend-school/tests/static/schoolorbit-agent-workflow.test.mjs
 ```
 
 For permission-contract changes, from `frontend-school`:

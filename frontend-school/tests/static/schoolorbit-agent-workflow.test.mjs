@@ -15,6 +15,7 @@ const metadataPath = '.agents/skills/schoolorbit-workflow/agents/openai.yaml';
 const fixturePath =
 	'frontend-school/tests/static/fixtures/schoolorbit-agent-workflow-scenarios.json';
 const agentConfigPath = '.codex/config.toml';
+const documentationWorkflowPath = '.github/workflows/documentation.yml';
 const workGraphValidator = path.join(
 	repoRoot,
 	'.agents/skills/schoolorbit-workflow/scripts/validate-work-graph.mjs'
@@ -521,7 +522,7 @@ test('work graph validator collects all repairable errors in one run', async () 
 	});
 });
 
-test('skill metadata triggers only for SchoolOrbit mutation work during bootstrap', async () => {
+test('skill metadata activates only for SchoolOrbit mutation work', async () => {
 	const [skill, metadata] = await Promise.all([
 		repositoryFile(skillPath),
 		repositoryFile(metadataPath)
@@ -534,8 +535,48 @@ test('skill metadata triggers only for SchoolOrbit mutation work during bootstra
 		values.description,
 		/\b(?:plan|planning|delegate|delegating|review|reviewing|verify|verification|workflow)\b/i
 	);
-	assert.match(metadata, /^policy:\n\s+allow_implicit_invocation: false$/m);
+	assert.match(metadata, /^policy:\n\s+allow_implicit_invocation: true$/m);
 	assert.match(metadata, /^\s+default_prompt: ["'].*\$schoolorbit-workflow.*["']$/m);
+});
+
+test('project rules and CI own the activated SchoolOrbit workflow', async () => {
+	const [rules, workflow] = await Promise.all([
+		repositoryFile('.rules'),
+		repositoryFile(documentationWorkflowPath)
+	]);
+
+	for (const marker of [
+		'schoolorbit-workflow',
+		'explicit approval',
+		'max_concurrent_threads_per_session = 3',
+		'frontend-school/tests/static/schoolorbit-agent-workflow.test.mjs'
+	]) {
+		assert.ok(rules.includes(marker), `.rules must contain: ${marker}`);
+	}
+
+	const requiredPaths = [
+		'.agents/skills/schoolorbit-workflow/**',
+		'.codex/**',
+		'frontend-school/tests/static/fixtures/schoolorbit-agent-workflow-scenarios.json',
+		'frontend-school/tests/static/schoolorbit-agent-workflow.test.mjs'
+	];
+	const pullRequest = section(workflow, '  pull_request:', '  push:');
+	const push = section(workflow, '  push:', '\npermissions:');
+	for (const event of [pullRequest, push]) {
+		for (const requiredPath of requiredPaths) {
+			assert.ok(
+				event.includes(`- "${requiredPath}"`),
+				`workflow event must include path: ${requiredPath}`
+			);
+		}
+	}
+
+	assert.ok(workflow.includes('- name: Check repository documentation and agent workflow'));
+	assert.ok(
+		workflow.includes(
+			'run: >-\n          node --test\n          frontend-school/tests/static/documentation-policy.test.mjs\n          frontend-school/tests/static/schoolorbit-agent-workflow.test.mjs'
+		)
+	);
 });
 
 test('workflow state machine places approval before every execution state', async () => {
