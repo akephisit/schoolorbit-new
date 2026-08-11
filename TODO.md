@@ -193,7 +193,8 @@ Complete discovery with representative government, private, and international sc
 - [ ] Backend-admin formatting, check, and all tests pass.
 - [x] Backend-school formatting, check, static architecture tests, and the full test suite pass through disposable local PostgreSQL without timing-dependent retry failures.
   - Verified with `cargo fmt --all -- --check`, `cargo check`, 130 static architecture tests, and all 680 backend-school binary tests; the disposable local PostgreSQL container was removed after the run.
-- [ ] Frontend-school lint, Svelte check, static tests, permission contract tests, API contract tests, and production build pass.
+- [x] Frontend-school lint, Svelte check, static tests, permission contract tests, API contract tests, and production build pass.
+  - Verified with lint, Svelte check at 0 errors and 0 warnings, 7 menu tests, 386 static tests, 19 permission contract tests, 4 API contract tests, and a production Cloudflare build.
 - [ ] Frontend-admin lint, Svelte check, tests, and production build pass.
 - [x] Fresh PostgreSQL migration tests pass locally, and the explicit disposable Neon compatibility gate passes for every active migration without editing applied migration files.
   - Verified with 1 auth schema test and 12 file schema tests against fresh disposable local PostgreSQL, then with the same 13 tests in [Neon compatibility run 31497549528](https://github.com/akephisit/schoolorbit-new/actions/runs/31497549528); exact child-branch cleanup also passed.
