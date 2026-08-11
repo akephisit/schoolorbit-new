@@ -100,6 +100,12 @@ masking command, and publishes it as `db_url`. The workflow assigns that value o
 their own isolated schemas and execute the active tenant migration timeline, so the parent branch
 needs only the configured empty database and owner role.
 
+Before either Rust suite, the workflow uses the masked direct URI to provision `uuid-ossp` and
+`pg_trgm` explicitly in `public` on the disposable child. This mirrors the local ephemeral runner's
+database prerequisites. It is required because baseline migration 001 honors the isolated test
+search path while its table defaults refer to `public.uuid_generate_v4()`. Provisioning happens
+only after fresh-branch verification, and deleting the branch removes the extensions with it.
+
 An `always()` finalizer deletes only the branch ID returned by a successful create operation and
 accepts Neon HTTP 200 or 204. The create request's `expires_at` value is the fallback if cancellation
 or runner loss prevents the finalizer from running. API failures expose only bounded, sanitized
@@ -113,6 +119,8 @@ scalar `code` and `message` fields; raw request and response bodies remain hidde
 - The create request omits compute suspension entirely, leaving that setting under Neon account
   control.
 - The workflow never prints the API key, password, or database URL.
+- Baseline extensions are installed only in the verified disposable child, never in the test
+  parent or a production project.
 - The pooled URL is never consumed because transaction pooling can obscure schema-local
   `_sqlx_migrations` state.
 - A missing value, malformed ID, reused branch, create failure, test failure, or cleanup failure
@@ -132,6 +140,9 @@ The Node workflow contract rejects the third-party create action plus every `bra
 an endpoint without `suspend_timeout_seconds`, early ownership outputs, a masked non-pooled
 PostgreSQL URI, sanitized failures, and configuration validation. Each behavior change is
 demonstrated RED before implementation makes it GREEN.
+
+The workflow contract also requires `uuid-ossp` and `pg_trgm` with `WITH SCHEMA public`, through the
+direct step output, after branch verification and before Rust migrations.
 
 Local verification consists of the focused Node contract, creator behavior tests,
 documentation-policy tests, `actionlint`, `git diff --check`, and final status/diff review. The

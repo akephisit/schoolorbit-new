@@ -372,10 +372,11 @@ test('Neon gate is manual, direct, disposable, and test-scoped', async () => {
     assert.doesNotMatch(workflow, /db_url_pooled/);
 
     const createAt = workflow.indexOf('id: create_branch');
+    const provisionAt = workflow.indexOf('name: Provision migration prerequisite extensions');
     const testAt = workflow.indexOf('name: Run direct-endpoint compatibility tests');
     const deleteAt = workflow.indexOf('name: Delete disposable Neon branch');
-    assert.ok(createAt >= 0 && testAt > createAt && deleteAt > testAt);
-    const creation = workflow.slice(createAt, testAt);
+    assert.ok(createAt >= 0 && provisionAt > createAt && testAt > provisionAt && deleteAt > testAt);
+    const creation = workflow.slice(createAt, provisionAt);
     assert.match(
         creation,
         /NEON_BRANCH_NAME:\s*schoolorbit-test-\$\{\{ github\.run_id \}\}-\$\{\{ github\.run_attempt \}\}/
@@ -384,6 +385,18 @@ test('Neon gate is manual, direct, disposable, and test-scoped', async () => {
         creation,
         /NEON_BRANCH_EXPIRES_AT:\s*\$\{\{ steps\.expiration\.outputs\.expires_at \}\}/
     );
+    const provision = workflow.slice(provisionAt, testAt);
+    assert.match(
+        provision,
+        /TEST_DATABASE_URL:\s*\$\{\{ steps\.create_branch\.outputs\.db_url \}\}/
+    );
+    assert.match(provision, /command -v psql/);
+    assert.match(provision, /--set=ON_ERROR_STOP=1/);
+    assert.match(
+        provision,
+        /CREATE EXTENSION IF NOT EXISTS "uuid-ossp" WITH SCHEMA public;/
+    );
+    assert.match(provision, /CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA public;/);
     const deletion = workflow.slice(deleteAt);
     assert.match(deletion, /if:\s*\$\{\{ always\(\)/);
     assert.match(deletion, /steps\.create_branch\.outputs\.created == 'true'/);

@@ -330,3 +330,43 @@ documentation policy, actionlint, `git diff --check`, and final scope review.
 Push `main`, dispatch the manual gate, and require successful create, fresh-branch verification,
 both Rust schema suites, and exact branch deletion. Confirm remote/local SHA equality and a clean
 worktree.
+
+Run `31497017107` proved direct create, fresh-branch ownership, and exact cleanup. The first Rust
+suite then failed migration 001 because `public.uuid_generate_v4()` did not exist. The local runner
+already pre-provisions `uuid-ossp` and `pg_trgm` in `public`; the disposable Neon branch needs the
+same database prerequisite before its schema-isolated migrations.
+
+---
+
+### Task 7: Provision Baseline Extensions in the Disposable Branch
+
+**Files:**
+
+- Modify: `.github/workflows/backend-school-neon-compatibility.yml`
+- Modify: `scripts/tests/backend-school-test-database.test.mjs`
+- Modify: `docs/TESTING.md`
+- Modify: `docs/superpowers/specs/2026-08-11-backend-school-disposable-neon-child-branch-design.md`
+
+**Interfaces:**
+
+- Consumes: the masked direct `db_url` from Task 6 and PostgreSQL client available on the GitHub
+  runner.
+- Produces: `uuid-ossp` and `pg_trgm` installed explicitly in `public` on only the disposable child
+  before any isolated-schema migration runs.
+
+- [x] **Step 1: Add a workflow contract and demonstrate RED**
+
+Require an extension-provisioning step after fresh-branch verification and before Rust tests. It
+must use `steps.create_branch.outputs.db_url`, `ON_ERROR_STOP`, and explicit `WITH SCHEMA public`
+for exactly the same baseline extensions as the local runner.
+
+- [x] **Step 2: Add the minimal psql preflight**
+
+Mask the URL again in the consuming step, fail clearly if `psql` is unavailable, and run both
+idempotent `CREATE EXTENSION IF NOT EXISTS` statements without printing the connection string.
+
+- [ ] **Step 3: Align docs, verify, commit, push, and rerun**
+
+Document that the child—not the parent—is provisioned and later deleted. Run workflow/creator
+tests, documentation policy, actionlint, and diff checks; then push and require the live gate to
+advance through both Rust suites and cleanup.
