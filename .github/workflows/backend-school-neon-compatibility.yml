@@ -68,7 +68,6 @@ jobs:
           database: ${{ vars.NEON_TEST_DATABASE }}
           role: ${{ vars.NEON_TEST_ROLE }}
           branch_name: schoolorbit-test-${{ github.run_id }}-${{ github.run_attempt }}
-          branch_type: schema-only
           ssl: require
           suspend_timeout: 60
           expires_at: ${{ steps.expiration.outputs.expires_at }}

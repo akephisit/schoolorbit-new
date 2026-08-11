@@ -200,7 +200,7 @@ Variables: NEON_TEST_PROJECT_ID
            NEON_TEST_ROLE
 ```
 
-The project and parent branch must be test-only. Each confirmed run creates a unique schema-only branch, passes the action's direct `db_url` to migration/schema tests, and deletes the exact created branch in an unconditional finalizer. The two-hour expiration is a fallback if finalization cannot run. The gate never uses the pooled endpoint because transaction pooling can expose the wrong schema-local `_sqlx_migrations` state.
+The project and parent branch must be dedicated to testing and contain no production data. Each confirmed run creates a unique ordinary copy-on-write child branch from that parent, passes the action's direct `db_url` to migration/schema tests, and deletes the exact created branch in an unconditional finalizer. The tests create isolated schemas and run the active migrations themselves, so the parent needs only the configured empty database and owner role. The two-hour expiration is a fallback if finalization cannot run. The gate never uses the pooled endpoint because transaction pooling can expose the wrong schema-local `_sqlx_migrations` state.
 
 The backend static architecture suite validates that active migrations remain a contiguous timeline beginning at `001_baseline.sql`. Runtime rollout and all-tenant migration verification are documented in [Operations](./OPERATIONS.md).
 
