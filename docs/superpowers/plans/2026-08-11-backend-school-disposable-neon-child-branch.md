@@ -172,9 +172,11 @@ Run `31494176489` reached the create step but returned HTTP 412 before producing
 that pushed workflow already used ordinary branch mode, the result disproved schema-only creation
 as the cause and triggered Task 4.
 
-- [ ] **Step 5: Verify cleanup and repository state**
+- [x] **Step 5: Record the failed lifecycle and continue with Task 4**
 
-Confirm from the run's job steps that deletion completed successfully after both Rust schema suites. Fetch `origin/main`, confirm its SHA equals local `HEAD`, confirm the worktree is clean, and report the run URL and exact verification counts.
+Run `31494176489` failed before branch creation, so no created branch existed for the finalizer to
+delete. The pushed ordinary-branch change and clean repository state were verified before using the
+HTTP 412 result to define Task 4.
 
 ---
 
@@ -224,11 +226,11 @@ Run the complete workflow contract, documentation policy, actionlint, `git diff 
 scope review. Commit only the approved backend-school test infrastructure and documentation, fetch
 without force, and push `main`.
 
-- [ ] **Step 5: Re-dispatch the live gate and verify cleanup**
+- [x] **Step 5: Re-dispatch, record the remaining rejection, and continue with Task 5**
 
-Dispatch the pushed corrective commit with `confirm_disposable_branch=true`. Require successful
-create, fresh-branch verification, both Rust schema suites, and exact branch deletion. Then confirm
-remote/local SHA equality and a clean worktree.
+Dispatch the pushed corrective commit with `confirm_disposable_branch=true`, verify repository
+state, and use the result to decide whether the lifecycle is complete or another diagnosis is
+required.
 
 Run `31495216927` used ordinary branch mode and `suspend_timeout: 300` but still returned the same
 opaque HTTP 412. This disproved the suspension value as a complete explanation. Upstream issue
@@ -325,11 +327,11 @@ output names and exact-ID finalization.
 Record the confirmed Neon error and direct-API ownership boundary. Run both Node suites,
 documentation policy, actionlint, `git diff --check`, and final scope review.
 
-- [ ] **Step 5: Commit, push, and prove the complete live lifecycle**
+- [x] **Step 5: Commit, push, and exercise the live lifecycle**
 
-Push `main`, dispatch the manual gate, and require successful create, fresh-branch verification,
-both Rust schema suites, and exact branch deletion. Confirm remote/local SHA equality and a clean
-worktree.
+Push `main`, dispatch the manual gate, and inspect create, fresh-branch verification, both Rust
+schema suites, and exact branch deletion. Use any newly exposed database prerequisite as the next
+bounded task.
 
 Run `31497017107` proved direct create, fresh-branch ownership, and exact cleanup. The first Rust
 suite then failed migration 001 because `public.uuid_generate_v4()` did not exist. The local runner
@@ -365,8 +367,14 @@ for exactly the same baseline extensions as the local runner.
 Mask the URL again in the consuming step, fail clearly if `psql` is unavailable, and run both
 idempotent `CREATE EXTENSION IF NOT EXISTS` statements without printing the connection string.
 
-- [ ] **Step 3: Align docs, verify, commit, push, and rerun**
+- [x] **Step 3: Align docs, verify, commit, push, and rerun**
 
 Document that the child—not the parent—is provisioned and later deleted. Run workflow/creator
 tests, documentation policy, actionlint, and diff checks; then push and require the live gate to
 advance through both Rust suites and cleanup.
+
+Run [`31497549528`](https://github.com/akephisit/schoolorbit-new/actions/runs/31497549528)
+completed the entire lifecycle: it created and verified a fresh ordinary child, provisioned both
+extensions in that child, passed 1 auth schema test plus 12 file schema tests, and deleted the exact
+created branch. The same 13 schema tests then passed locally against fresh disposable PostgreSQL
+containers, which the local runner removed after each invocation.
