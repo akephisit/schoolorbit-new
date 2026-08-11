@@ -42,7 +42,7 @@
 - Consumes: local Docker CLI, Cargo, and the current `TEST_DATABASE_URL` test-helper contract.
 - Produces: `scripts/test_backend_school.sh [cargo-test-arguments...]`; default command `cargo test --bin backend-school`; loopback test URL scoped only to the Cargo child.
 
-- [ ] **Step 1: Write the fake command fixture and first failing behavior test**
+- [x] **Step 1: Write the fake command fixture and first failing behavior test**
 
 Create the Node test with temporary executable `docker`, `cargo`, and `sleep` commands. The fake Docker must implement `info`, `context inspect`, `run`, `exec`, `port`, `container ls`, `rm`, and `logs`; the fake Cargo records its environment and each argument on a separate line:
 
@@ -178,7 +178,7 @@ test('runner overrides remote URL, forwards arguments, and cleans up', async (t)
 });
 ```
 
-- [ ] **Step 2: Run the test and verify RED**
+- [x] **Step 2: Run the test and verify RED**
 
 Run:
 
@@ -188,7 +188,7 @@ node --test scripts/tests/backend-school-test-database.test.mjs
 
 Expected: FAIL because `scripts/test_backend_school.sh` does not exist.
 
-- [ ] **Step 3: Add failing lifecycle and safety cases**
+- [x] **Step 3: Add failing lifecycle and safety cases**
 
 Add tests with these exact outcomes:
 
@@ -257,7 +257,7 @@ test('container is loopback-only, volume-free, and durability-tuned', async (t) 
     assert.equal(result.status, 0, result.stderr);
     const docker = await read(f.dockerLog);
     assert.match(docker, /arg=127\.0\.0\.1::5432/);
-    assert.match(docker, /arg=\/var\/lib\/postgresql\/data:rw,size=1g/);
+    assert.match(docker, /arg=\/var\/lib\/postgresql:rw,size=1g/);
     assert.match(docker, /arg=fsync=off/);
     assert.match(docker, /arg=synchronous_commit=off/);
     assert.match(docker, /arg=full_page_writes=off/);
@@ -300,11 +300,11 @@ test('TERM preserves signal status and removes the owned container', async (t) =
 });
 ```
 
-- [ ] **Step 4: Run the expanded tests and confirm RED remains attributable to the absent runner**
+- [x] **Step 4: Run the expanded tests and confirm RED remains attributable to the absent runner**
 
 Run the Node command again. Fix only fixture defects; do not weaken any assertion.
 
-- [ ] **Step 5: Implement the minimal runner**
+- [x] **Step 5: Implement the minimal runner**
 
 Implement these exact lifecycle elements in `scripts/test_backend_school.sh`:
 
@@ -393,14 +393,16 @@ fi
 
 Set `cleanup_armed=true` immediately before attempting `docker run`, then start the container with
 these exact material arguments inside `if ! ...; then exit 70; fi` so an image/startup failure
-cannot fall through into readiness polling:
+cannot fall through into readiness polling. Do not pass `--rm`: the exit trap remains the single
+cleanup owner, and a container that exits during PostgreSQL 18 startup must remain inspectable long
+enough to print its local logs before removal:
 
 ```bash
 cleanup_armed=true
-if ! docker run --detach --rm \
+if ! docker run --detach \
     --name "$CONTAINER_NAME" \
     --publish '127.0.0.1::5432' \
-    --tmpfs '/var/lib/postgresql/data:rw,size=1g' \
+    --tmpfs '/var/lib/postgresql:rw,size=1g' \
     --env "POSTGRES_USER=$POSTGRES_USER" \
     --env "POSTGRES_PASSWORD=$POSTGRES_PASSWORD" \
     --env "POSTGRES_DB=$POSTGRES_DATABASE" \
@@ -416,7 +418,24 @@ if ! docker run --detach --rm \
 fi
 ```
 
-Poll `docker exec "$CONTAINER_NAME" pg_isready --quiet --username "$POSTGRES_USER" --dbname "$POSTGRES_DATABASE"` at 250 ms for at most 30 seconds. On timeout, print only the last 50 local container log lines and exit non-zero.
+Poll `docker exec "$CONTAINER_NAME" pg_isready --quiet --username "$POSTGRES_USER" --dbname "$POSTGRES_DATABASE"` at 250 ms for at most 30 seconds. After a failed readiness probe, inspect
+`.State.Running`; if PostgreSQL exited, print the last 50 local container log lines and fail
+immediately. On timeout, print the same bounded logs and exit non-zero.
+
+Before resolving the host port or starting Cargo, provision the baseline extensions in `public`.
+This preserves the immutable baseline's explicit `public.uuid_generate_v4()` references on a fresh
+database even though each SQLx test migration uses an isolated schema-first search path:
+
+```bash
+readonly TEST_EXTENSION_SQL='CREATE EXTENSION IF NOT EXISTS "uuid-ossp" WITH SCHEMA public; CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA public;'
+if ! docker exec "$CONTAINER_NAME" \
+    psql --no-psqlrc --username "$POSTGRES_USER" --dbname "$POSTGRES_DATABASE" \
+    --set ON_ERROR_STOP=1 --command "$TEST_EXTENSION_SQL" \
+    >/dev/null; then
+    printf '%s\n' 'ERROR: failed to provision PostgreSQL test extensions' >&2
+    exit 70
+fi
+```
 
 Resolve and validate `docker port "$CONTAINER_NAME" 5432/tcp` against
 `^127\.0\.0\.1:[0-9]+$`, then run:
@@ -429,7 +448,7 @@ TEST_DATABASE_URL="$LOCAL_TEST_DATABASE_URL" cargo test --bin backend-school "$@
 
 Print the generated container name, but never print `LOCAL_TEST_DATABASE_URL`. Mark the file executable.
 
-- [ ] **Step 6: Make the focused tests GREEN and validate shell syntax/style**
+- [x] **Step 6: Make the focused tests GREEN and validate shell syntax/style**
 
 Run:
 
@@ -437,14 +456,14 @@ Run:
 bash -n scripts/test_backend_school.sh
 node --test scripts/tests/backend-school-test-database.test.mjs
 docker run --rm -v "$PWD:/repo:ro" -w /repo koalaman/shellcheck-alpine:v0.11.0 \
-    scripts/test_backend_school.sh
+    /bin/shellcheck scripts/test_backend_school.sh
 docker run --rm -v "$PWD:/repo:ro" -w /repo mvdan/shfmt:v3.11.0 \
     -d -i 4 -ci scripts/test_backend_school.sh
 ```
 
 Expected: PASS. Report an unavailable validator image as unrun rather than replacing a failure.
 
-- [ ] **Step 7: Run one real focused test and prove the container is gone**
+- [x] **Step 7: Run one real focused test and prove the container is gone**
 
 ```bash
 /usr/bin/time -f 'elapsed=%e seconds' \
@@ -454,7 +473,7 @@ docker ps --all --filter 'name=schoolorbit-backend-school-test-' --format '{{.Na
 
 Expected: the Rust test passes and the Docker query prints nothing.
 
-- [ ] **Step 8: Commit the local runner**
+- [x] **Step 8: Commit the local runner**
 
 ```bash
 git add scripts/test_backend_school.sh scripts/tests/backend-school-test-database.test.mjs
@@ -801,7 +820,7 @@ bash -n scripts/test_backend_school.sh
 node --test scripts/tests/backend-school-test-database.test.mjs
 node --test frontend-school/tests/static/documentation-policy.test.mjs
 docker run --rm -v "$PWD:/repo:ro" -w /repo koalaman/shellcheck-alpine:v0.11.0 \
-    scripts/test_backend_school.sh
+    /bin/shellcheck scripts/test_backend_school.sh
 docker run --rm -v "$PWD:/repo:ro" -w /repo mvdan/shfmt:v3.11.0 \
     -d -i 4 -ci scripts/test_backend_school.sh
 docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:1.7.7 \
