@@ -23,7 +23,7 @@
 ## File Structure
 
 - Create `scripts/test_backend_school.sh`: local container and Cargo lifecycle owner.
-- Create `scripts/tests/backend-school-test-database.test.mjs`: fake-Docker/fake-Cargo behavior tests and static workflow/documentation guards.
+- Create `scripts/tests/backend-school-test-database.test.mjs`: fake-Docker/fake-Cargo behavior tests and the static Neon workflow guard.
 - Create `.github/workflows/backend-school-neon-compatibility.yml`: manual disposable Neon lifecycle.
 - Modify `.rules`, `docs/TESTING.md`, `backend-school/README.md`, and `TODO.md`: durable policy and commands.
 - Do not modify `backend-school/src/test_helpers.rs`; existing schema isolation continues to consume `TEST_DATABASE_URL`.
@@ -48,8 +48,8 @@ Create the Node test with temporary executable `docker`, `cargo`, and `sleep` co
 
 ```js
 import assert from 'node:assert/strict';
-import { spawnSync } from 'node:child_process';
-import { chmod, mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { spawn, spawnSync } from 'node:child_process';
+import { access, chmod, mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -118,6 +118,11 @@ esac
     printf 'url=%s\\n' "\${TEST_DATABASE_URL-}"
     for argument in "\$@"; do printf 'arg=%s\\n' "\$argument"; done
 } > "\$FAKE_CARGO_LOG"
+if [[ -n \${FAKE_CARGO_BLOCK_FILE-} ]]; then
+    : > "\$FAKE_CARGO_BLOCK_FILE"
+    trap 'exit 143' TERM
+    while :; do /bin/sleep 1; done
+fi
 exit "\${FAKE_CARGO_STATUS:-0}"
 `);
     await writeExecutable(path.join(bin, 'sleep'), '#!/usr/bin/env bash\nexit 0\n');
@@ -259,13 +264,39 @@ test('container is loopback-only, volume-free, and durability-tuned', async (t) 
     assert.doesNotMatch(docker, /arg=--volume|arg=-v/);
 });
 
-test('runner installs cleanup ownership before ordinary termination signals', async () => {
-    const source = await read(runner);
-    assert.match(source, /trap cleanup EXIT/);
-    assert.match(source, /trap 'exit 130' INT/);
-    assert.match(source, /trap 'exit 143' TERM/);
-    assert.match(source, /trap 'exit 129' HUP/);
-    assert.match(source, /cleanup_armed=false/);
+test('TERM preserves signal status and removes the owned container', async (t) => {
+    const f = await fixture(t);
+    const cargoStarted = path.join(f.root, 'cargo.started');
+    const child = spawn(runner, [], {
+        cwd: f.root,
+        env: { ...f.env, FAKE_CARGO_BLOCK_FILE: cargoStarted },
+        detached: true,
+        stdio: ['ignore', 'pipe', 'pipe']
+    });
+    t.after(() => {
+        try {
+            process.kill(-child.pid, 'SIGKILL');
+        } catch (error) {
+            if (error.code !== 'ESRCH') throw error;
+        }
+    });
+
+    for (let attempt = 0; attempt < 200; attempt += 1) {
+        try {
+            await access(cargoStarted);
+            break;
+        } catch {
+            await new Promise((resolve) => setTimeout(resolve, 10));
+        }
+    }
+    await access(cargoStarted);
+    process.kill(-child.pid, 'SIGTERM');
+    const exit = await new Promise((resolve) => {
+        child.once('exit', (code, signal) => resolve({ code, signal }));
+    });
+
+    assert.deepEqual(exit, { code: 143, signal: null });
+    await assert.rejects(read(f.containerState));
 });
 ```
 
@@ -657,7 +688,6 @@ git commit -m "ci(backend-school): add disposable Neon compatibility gate"
 
 **Files:**
 
-- Modify: `scripts/tests/backend-school-test-database.test.mjs`
 - Modify: `.rules:151-156`
 - Modify: `docs/TESTING.md:43-61,170-186`
 - Modify: `backend-school/README.md:25-35`
@@ -668,39 +698,11 @@ git commit -m "ci(backend-school): add disposable Neon compatibility gate"
 - Consumes: runner and workflow from Tasks 1-2.
 - Produces: one canonical routine command, focused-test recipe, explicit test-only Neon configuration inventory, and measurable unfinished backlog wording.
 
-- [ ] **Step 1: Add a failing canonical-document guard**
+Human-facing prose does not receive a source-text change detector. Existing
+`frontend-school/tests/static/documentation-policy.test.mjs` continues to validate the canonical
+file allowlist and local links.
 
-Append:
-
-```js
-test('canonical docs make local disposable PostgreSQL the routine default', async () => {
-    const [rules, testing, backendReadme, todo] = await Promise.all([
-        read(path.join(repoRoot, '.rules')),
-        read(path.join(repoRoot, 'docs/TESTING.md')),
-        read(path.join(repoRoot, 'backend-school/README.md')),
-        read(path.join(repoRoot, 'TODO.md'))
-    ]);
-
-    assert.match(rules, /scripts\/test_backend_school\.sh/);
-    assert.match(rules, /disposable local PostgreSQL/i);
-    assert.match(rules, /disposable Neon branch/i);
-    assert.match(testing, /\.\/scripts\/test_backend_school\.sh/);
-    assert.match(testing, /Docker Desktop/);
-    assert.match(testing, /NEON_TEST_PARENT_BRANCH_ID/);
-    assert.match(backendReadme, /test_backend_school\.sh/);
-    assert.match(todo, /full test suite.*disposable local PostgreSQL/i);
-});
-```
-
-- [ ] **Step 2: Run the Node test and verify RED**
-
-```bash
-node --test scripts/tests/backend-school-test-database.test.mjs
-```
-
-Expected: only the canonical-document test fails.
-
-- [ ] **Step 3: Update `.rules` with the durable boundary**
+- [ ] **Step 1: Update `.rules` with the durable boundary**
 
 Replace the database-test bullet with this policy, reflowed to the file's line width:
 
@@ -712,7 +714,7 @@ through the explicit disposable-branch gate and uses its direct endpoint, never 
 transaction endpoint.
 ```
 
-- [ ] **Step 4: Replace routine database commands in `docs/TESTING.md`**
+- [ ] **Step 2: Replace routine database commands in `docs/TESTING.md`**
 
 Document these root commands exactly:
 
@@ -739,7 +741,7 @@ Variables: NEON_TEST_PROJECT_ID
 
 Explain that the project/parent must be test-only, the workflow uses direct `db_url`, the branch has a two-hour fallback expiry, and the finalizer deletes it.
 
-- [ ] **Step 5: Keep the README and backlog concise**
+- [ ] **Step 3: Keep the README and backlog concise**
 
 In `backend-school/README.md`, replace the generic database-test sentence with the root runner invocation and a link to `docs/TESTING.md`; do not duplicate lifecycle details.
 
@@ -752,21 +754,19 @@ Keep both verification items unchecked in `TODO.md`, but make them measurable:
   compatibility gate passes for every active migration without editing applied migration files.
 ```
 
-- [ ] **Step 6: Make the document guard GREEN and validate canonical documentation**
+- [ ] **Step 4: Validate canonical documentation**
 
 ```bash
-node --test scripts/tests/backend-school-test-database.test.mjs
 node --test frontend-school/tests/static/documentation-policy.test.mjs
 git diff --check
 ```
 
 Expected: PASS. No Svelte file is analyzed or modified.
 
-- [ ] **Step 7: Commit the durable policy and recipes**
+- [ ] **Step 5: Commit the durable policy and recipes**
 
 ```bash
-git add .rules docs/TESTING.md backend-school/README.md TODO.md \
-    scripts/tests/backend-school-test-database.test.mjs
+git add .rules docs/TESTING.md backend-school/README.md TODO.md
 git commit -m "docs(test): standardize disposable database testing"
 ```
 
