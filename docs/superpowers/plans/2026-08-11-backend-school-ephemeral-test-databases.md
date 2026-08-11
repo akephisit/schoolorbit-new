@@ -805,7 +805,7 @@ git commit -m "docs(test): standardize disposable database testing"
 - Consumes: Tasks 1-3 and ignored credentials for the dedicated test Neon database.
 - Produces: cold/warm timings, a clean Docker lifecycle, verified checks, and zero retained `schoolorbit_test_*` schemas in the dedicated `schoolorbit_test` database.
 
-- [ ] **Step 1: Run the complete local suite twice and record timings**
+- [x] **Step 1: Run the complete local suite twice and record timings**
 
 ```bash
 /usr/bin/time -f 'cold elapsed=%e seconds' ./scripts/test_backend_school.sh
@@ -815,7 +815,7 @@ docker ps --all --filter 'name=schoolorbit-backend-school-test-' --format '{{.Na
 
 Expected: both suites PASS and the Docker query is empty. Report Cargo compilation separately from test execution; do not claim a percentage without a comparable measurement.
 
-- [ ] **Step 2: Run the complete applicable local matrix**
+- [x] **Step 2: Run the complete applicable local matrix**
 
 ```bash
 bash -n scripts/test_backend_school.sh
@@ -838,13 +838,13 @@ git status --short
 
 Expected: every available command PASS. Report an unavailable external validator separately.
 
-- [ ] **Step 3: Run the manual Neon gate only when test-only configuration exists**
+- [x] **Step 3: Run the manual Neon gate only when test-only configuration exists**
 
 Dispatch `backend-school-neon-compatibility.yml` with `confirm_disposable_branch=true`. Verify configuration validation, `created=true`, both direct-endpoint test commands, the delete finalizer, and absence of the exact `schoolorbit-test-<run_id>-<run_attempt>` branch afterward.
 
 If `NEON_TEST_*` is unavailable, report the gate as unrun and list only missing variable names. Never substitute a production project or persistent URL.
 
-- [ ] **Step 4: Revalidate the existing Neon cleanup target without mutation**
+- [x] **Step 4: Revalidate the existing Neon cleanup target without mutation**
 
 Use the ignored `backend-school/.env` URL only in process memory and remove `-pooler.` from the authority before connecting. Supply libpq fields/password through the child environment, never a printed command argument. Run:
 
@@ -867,7 +867,7 @@ WHERE datname = current_database()
 
 Require database `schoolorbit_test`, exactly 43 matching schemas at the approved checkpoint, and zero other active connections. Stop and re-analyze if any condition changes. Report schema names/counts, never the URL.
 
-- [ ] **Step 5: Drop only the validated schemas in one transaction**
+- [x] **Step 5: Drop only the validated schemas in bounded transactions**
 
 Tell the user immediately before this step that the exact 43 reproducible test schemas will be removed and are not application-recoverable. Then execute:
 
@@ -901,18 +901,20 @@ WHERE datname = current_database()
     \quit 5
 \endif
 
-BEGIN;
-SELECT format('DROP SCHEMA %I CASCADE;', nspname)
+SELECT format('BEGIN; DROP SCHEMA %I CASCADE; COMMIT;', nspname)
 FROM pg_namespace
 WHERE nspname LIKE 'schoolorbit_test\_%' ESCAPE '\'
 ORDER BY nspname
 \gexec
-COMMIT;
 ```
 
-Do not terminate other sessions, drop `public`, broaden the prefix, or commit this one-time SQL as a utility.
+Each generated row owns one transaction so the provider releases relation locks between schemas;
+the 24,261-object cleanup exceeds Neon's observed `max_locks_per_transaction` budget when attempted
+atomically. Stop and revalidate the exact remaining names if any transaction fails, because earlier
+rows may already be committed. Do not terminate other sessions, drop `public`, broaden the prefix,
+or commit this one-time SQL as a utility.
 
-- [ ] **Step 6: Verify cleanup and final repository state**
+- [x] **Step 6: Verify cleanup and final repository state**
 
 Run read-only counts:
 
