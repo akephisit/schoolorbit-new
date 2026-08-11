@@ -37,7 +37,13 @@ cargo test --test static_architecture
 cargo check
 ```
 
-Run focused module/service tests for changed behavior. Database-backed tests use `TEST_DATABASE_URL`, not a runtime tenant URL.
+Run focused module/service tests for changed behavior. From the repository root, run database-backed binary tests with:
+
+```bash
+./scripts/test_backend_school.sh
+```
+
+See [Testing](../docs/TESTING.md) for focused filters and the explicit Neon compatibility gate.
 
 ## Environment
 

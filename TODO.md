@@ -191,9 +191,9 @@ Complete discovery with representative government, private, and international sc
 ## Verification Baseline to Restore and Keep Green
 
 - [ ] Backend-admin formatting, check, and all tests pass.
-- [ ] Backend-school formatting, check, static architecture tests, and the full test suite pass without timing-dependent retry failures.
+- [ ] Backend-school formatting, check, static architecture tests, and the full test suite pass through disposable local PostgreSQL without timing-dependent retry failures.
 - [ ] Frontend-school lint, Svelte check, static tests, permission contract tests, API contract tests, and production build pass.
 - [ ] Frontend-admin lint, Svelte check, tests, and production build pass.
-- [ ] Fresh PostgreSQL migration tests pass for every active migration without editing applied migration files.
+- [ ] Fresh PostgreSQL migration tests pass locally, and the explicit disposable Neon compatibility gate passes for every active migration without editing applied migration files.
 - [ ] JavaScript and Rust dependency advisory checks run in CI with an explicit blocking policy.
 - [ ] Authenticated smoke and Playwright flows run against a disposable or staging environment using secrets supplied outside the repository.

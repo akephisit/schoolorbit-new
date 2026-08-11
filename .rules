@@ -153,7 +153,11 @@ Use `ApiResponse` and `ApiErrorResponse`; do not return raw feature DTOs or ad-h
 - Never point a clean-baseline release at a tenant whose `_sqlx_migrations` still contains the legacy timeline.
 - New tenant provisioning and release deployments use the centralized runner in `backend-school/src/db/migration.rs`; do not introduce a second tenant migration path.
 - The legacy rebaseline workflow is retired. If a tenant with legacy `_sqlx_migrations` history is discovered, stop and create a new reviewed recovery plan instead of reusing one-time tooling or improvising a cutover.
-- Database-backed tests use `TEST_DATABASE_URL` and isolated test state. For Neon migration/schema tests, use a direct endpoint rather than a `-pooler` transaction endpoint.
+- Database-backed tests use `TEST_DATABASE_URL` and isolated test state. Routine backend-school
+  database tests run through `scripts/test_backend_school.sh`, which supplies disposable local
+  PostgreSQL and removes it after the command. Neon migration/schema compatibility runs only
+  through the explicit disposable-branch gate and uses its direct endpoint, never a `-pooler`
+  transaction endpoint.
 
 ## 7. Frontend: SvelteKit 5
 

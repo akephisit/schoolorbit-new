@@ -44,14 +44,14 @@ The static architecture suite owns backend-only boundaries such as tenant reques
 
 ### School session authentication
 
-Session changes require the schema, repository, service, HTTP/middleware, and realtime boundaries—not only a login happy path. From `backend-school`, with an isolated direct `TEST_DATABASE_URL` available:
+Session changes require the schema, repository, service, HTTP/middleware, and realtime boundaries—not only a login happy path. From the repository root, use the disposable local PostgreSQL runner:
 
 ```bash
-cargo test modules::auth::session_schema_tests --bin backend-school -- --nocapture
-cargo test modules::auth::session_repository_tests --bin backend-school -- --nocapture
-cargo test modules::auth::session_service_tests --bin backend-school -- --nocapture
-cargo test modules::auth::session_http_tests --bin backend-school -- --nocapture
-cargo test modules::academic::websockets::tests --bin backend-school -- --nocapture
+./scripts/test_backend_school.sh modules::auth::session_schema_tests -- --nocapture
+./scripts/test_backend_school.sh modules::auth::session_repository_tests -- --nocapture
+./scripts/test_backend_school.sh modules::auth::session_service_tests -- --nocapture
+./scripts/test_backend_school.sh modules::auth::session_http_tests -- --nocapture
+./scripts/test_backend_school.sh modules::academic::websockets::tests -- --nocapture
 ```
 
 From `frontend-school`, verify the browser security boundary and client state:
@@ -173,14 +173,34 @@ Generation must work offline without database credentials or a running backend.
 
 Never edit an applied migration. Add a new sequential file and test it against isolated state.
 
-Database-backed tests use `TEST_DATABASE_URL`, never `DATABASE_URL`:
+Routine backend-school database tests run on the developer's computer. From the repository root:
 
 ```bash
-cd backend-school
-TEST_DATABASE_URL='postgresql://.../schoolorbit_test' cargo test <focused-test>
+# Complete backend-school binary suite; PostgreSQL runs in Docker Desktop on this computer.
+./scripts/test_backend_school.sh
+
+# Focused database-backed test.
+./scripts/test_backend_school.sh \
+  modules::auth::session_repository_tests -- --nocapture
 ```
 
-Tests must isolate their schema/data and clean up what they create. With Neon, use a direct database endpoint for schema/search-path migrations. Do not use a `-pooler` transaction endpoint for these tests because shared session state can expose the wrong `_sqlx_migrations` table.
+Docker Desktop WSL integration must be active when the repository runs in WSL. The runner accepts only a local Docker endpoint, runs Cargo and its compilation cache on the computer, creates no persistent database volume, and removes its exact PostgreSQL container after success, failure, `INT`, `TERM`, or `HUP`. It replaces any inherited `TEST_DATABASE_URL` only for the Cargo child and never uses `DATABASE_URL`. Direct Cargo against a persistent Neon URL is not the routine test recipe.
+
+Tests continue to isolate their schema/data within the disposable database. The local runner removes the whole database container after the command, including on test failure.
+
+### Manual Neon migration compatibility
+
+[Backend School Neon Compatibility](../.github/workflows/backend-school-neon-compatibility.yml) is an explicit `workflow_dispatch` gate. Configure names only in repository settings; never put their values in source:
+
+```text
+Secret:    NEON_TEST_API_KEY
+Variables: NEON_TEST_PROJECT_ID
+           NEON_TEST_PARENT_BRANCH_ID
+           NEON_TEST_DATABASE
+           NEON_TEST_ROLE
+```
+
+The project and parent branch must be test-only. Each confirmed run creates a unique schema-only branch, passes the action's direct `db_url` to migration/schema tests, and deletes the exact created branch in an unconditional finalizer. The two-hour expiration is a fallback if finalization cannot run. The gate never uses the pooled endpoint because transaction pooling can expose the wrong schema-local `_sqlx_migrations` state.
 
 The backend static architecture suite validates that active migrations remain a contiguous timeline beginning at `001_baseline.sql`. Runtime rollout and all-tenant migration verification are documented in [Operations](./OPERATIONS.md).
 

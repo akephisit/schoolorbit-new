@@ -721,7 +721,7 @@ Human-facing prose does not receive a source-text change detector. Existing
 `frontend-school/tests/static/documentation-policy.test.mjs` continues to validate the canonical
 file allowlist and local links.
 
-- [ ] **Step 1: Update `.rules` with the durable boundary**
+- [x] **Step 1: Update `.rules` with the durable boundary**
 
 Replace the database-test bullet with this policy, reflowed to the file's line width:
 
@@ -733,7 +733,7 @@ through the explicit disposable-branch gate and uses its direct endpoint, never 
 transaction endpoint.
 ```
 
-- [ ] **Step 2: Replace routine database commands in `docs/TESTING.md`**
+- [x] **Step 2: Replace routine database commands in `docs/TESTING.md`**
 
 Document these root commands exactly:
 
@@ -760,7 +760,7 @@ Variables: NEON_TEST_PROJECT_ID
 
 Explain that the project/parent must be test-only, the workflow uses direct `db_url`, the branch has a two-hour fallback expiry, and the finalizer deletes it.
 
-- [ ] **Step 3: Keep the README and backlog concise**
+- [x] **Step 3: Keep the README and backlog concise**
 
 In `backend-school/README.md`, replace the generic database-test sentence with the root runner invocation and a link to `docs/TESTING.md`; do not duplicate lifecycle details.
 
@@ -773,7 +773,7 @@ Keep both verification items unchecked in `TODO.md`, but make them measurable:
   compatibility gate passes for every active migration without editing applied migration files.
 ```
 
-- [ ] **Step 4: Validate canonical documentation**
+- [x] **Step 4: Validate canonical documentation**
 
 ```bash
 node --test frontend-school/tests/static/documentation-policy.test.mjs
@@ -782,7 +782,7 @@ git diff --check
 
 Expected: PASS. No Svelte file is analyzed or modified.
 
-- [ ] **Step 5: Commit the durable policy and recipes**
+- [x] **Step 5: Commit the durable policy and recipes**
 
 ```bash
 git add .rules docs/TESTING.md backend-school/README.md TODO.md
