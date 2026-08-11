@@ -218,7 +218,7 @@ Expected and observed: the focused test fails until the workflow contains exactl
 Replace `suspend_timeout: 60` with `suspend_timeout: 300`. Keep the branch expiration, direct
 endpoint, and exact cleanup unchanged. Run the focused Node test and actionlint.
 
-- [ ] **Step 4: Run fresh verification, commit, and push `main`**
+- [x] **Step 4: Run fresh verification, commit, and push `main`**
 
 Run the complete workflow contract, documentation policy, actionlint, `git diff --check`, and final
 scope review. Commit only the approved backend-school test infrastructure and documentation, fetch
@@ -229,3 +229,48 @@ without force, and push `main`.
 Dispatch the pushed corrective commit with `confirm_disposable_branch=true`. Require successful
 create, fresh-branch verification, both Rust schema suites, and exact branch deletion. Then confirm
 remote/local SHA equality and a clean worktree.
+
+Run `31495216927` used ordinary branch mode and `suspend_timeout: 300` but still returned the same
+opaque HTTP 412. This disproved the suspension value as a complete explanation. Upstream issue
+`neondatabase/create-branch-action#233` confirms that the pinned action drops the Neon API response
+body, so the next change must expose a sanitized error instead of changing another input blindly.
+
+---
+
+### Task 5: Surface the Neon API Rejection Safely
+
+**Files:**
+
+- Create: `scripts/neon-branch-create-diagnostic.mjs`
+- Create: `scripts/tests/neon-branch-create-diagnostic.test.mjs`
+- Modify: `.github/workflows/backend-school-neon-compatibility.yml`
+- Modify: `scripts/tests/backend-school-test-database.test.mjs`
+
+**Interfaces:**
+
+- Consumes: the same test project, parent, expiration, and API credential as the failed create step.
+- Produces: only a bounded, sanitized Neon status/code/message on rejection. If the diagnostic probe
+  unexpectedly creates a branch, it deletes that exact branch before failing the already-failed job.
+
+- [x] **Step 1: Write diagnostic behavior tests and demonstrate RED**
+
+Cover a rejected request, an unexpectedly successful create with exact cleanup, malformed
+configuration, and redaction of API keys and connection URLs. Require the probe payload to use the
+unique diagnostic branch name, configured parent, two-hour expiration, and 300-second endpoint.
+
+- [x] **Step 2: Implement the minimal dependency-free diagnostic**
+
+Use Node's built-in `fetch` and JSON support. Never print a request body, response body, API key,
+password, or database URL. Extract only scalar `code` and `message` fields, collapse control
+characters, redact URL-like text, and cap their length.
+
+- [x] **Step 3: Wire the diagnostic only after create failure**
+
+Run it with `if: failure() && steps.create_branch.outcome == 'failure'`, a run-attempt-scoped probe
+name, and the existing expiration output. Keep all successful-path behavior unchanged.
+
+- [ ] **Step 4: Verify, commit, push, and run one diagnostic gate**
+
+Run both Node suites, documentation policy, actionlint, and diff checks. Commit and push `main`,
+dispatch one gate, and record the sanitized Neon message. Do not change another create parameter
+until that evidence identifies the failed precondition.

@@ -72,6 +72,16 @@ jobs:
           suspend_timeout: 300
           expires_at: ${{ steps.expiration.outputs.expires_at }}
 
+      - name: Explain Neon branch creation failure
+        if: ${{ failure() && steps.create_branch.outcome == 'failure' }}
+        env:
+          NEON_TEST_API_KEY: ${{ secrets.NEON_TEST_API_KEY }}
+          NEON_TEST_PROJECT_ID: ${{ vars.NEON_TEST_PROJECT_ID }}
+          NEON_TEST_PARENT_BRANCH_ID: ${{ vars.NEON_TEST_PARENT_BRANCH_ID }}
+          NEON_DIAGNOSTIC_BRANCH_NAME: schoolorbit-diagnostic-${{ github.run_id }}-${{ github.run_attempt }}
+          NEON_BRANCH_EXPIRES_AT: ${{ steps.expiration.outputs.expires_at }}
+        run: node scripts/neon-branch-create-diagnostic.mjs
+
       - name: Verify this run created a fresh branch
         env:
           BRANCH_CREATED: ${{ steps.create_branch.outputs.created }}

@@ -374,9 +374,26 @@ test('Neon gate is manual, direct, disposable, and test-scoped', async () => {
     assert.doesNotMatch(workflow, /db_url_pooled/);
 
     const createAt = workflow.indexOf('id: create_branch');
+    const diagnosticAt = workflow.indexOf('name: Explain Neon branch creation failure');
     const testAt = workflow.indexOf('name: Run direct-endpoint compatibility tests');
     const deleteAt = workflow.indexOf('name: Delete disposable Neon branch');
-    assert.ok(createAt >= 0 && testAt > createAt && deleteAt > testAt);
+    assert.ok(
+        createAt >= 0 && diagnosticAt > createAt && testAt > diagnosticAt && deleteAt > testAt
+    );
+    const diagnostic = workflow.slice(diagnosticAt, testAt);
+    assert.match(
+        diagnostic,
+        /if:\s*\$\{\{ failure\(\) && steps\.create_branch\.outcome == 'failure' \}\}/
+    );
+    assert.match(diagnostic, /node scripts\/neon-branch-create-diagnostic\.mjs/);
+    assert.match(
+        diagnostic,
+        /NEON_DIAGNOSTIC_BRANCH_NAME:\s*schoolorbit-diagnostic-\$\{\{ github\.run_id \}\}-\$\{\{ github\.run_attempt \}\}/
+    );
+    assert.match(
+        diagnostic,
+        /NEON_BRANCH_EXPIRES_AT:\s*\$\{\{ steps\.expiration\.outputs\.expires_at \}\}/
+    );
     const deletion = workflow.slice(deleteAt);
     assert.match(deletion, /if:\s*\$\{\{ always\(\)/);
     assert.match(deletion, /steps\.create_branch\.outputs\.created == 'true'/);

@@ -15,6 +15,11 @@ project use its supported 300-second compute suspension timeout instead of forci
 Omitting the input is not sufficient because the pinned action maps an omitted value to `0`, which
 requests disabled auto-suspend rather than the Free-plan interval.
 
+Run `31495216927` then used the ordinary branch mode and supported 300-second interval but still
+returned HTTP 412. The pinned action reports only the Axios status and drops the Neon API response
+body, so this result rules out further configuration guessing but does not yet identify the failed
+precondition.
+
 The dedicated project still provides the required data-isolation boundary. It has no production
 data, and the Rust compatibility tests create isolated schemas and run the active migrations
 themselves, so an ordinary disposable child branch is sufficient for this gate.
@@ -92,6 +97,12 @@ An `always()` finalizer deletes only the branch ID returned by a successful crea
 accepts Neon HTTP 200 or 204. The create action's `expires_at` value is the fallback if cancellation
 or runner loss prevents the finalizer from running.
 
+If the pinned create action fails, a dependency-free Node diagnostic repeats the create request
+with a distinct run-attempt-scoped name. It emits only bounded, sanitized scalar `code` and
+`message` fields from a rejected Neon response. If that probe unexpectedly succeeds, it deletes
+the exact returned branch before leaving the already-failed job failed. The normal success path
+does not run the diagnostic.
+
 ## Safety and Failure Handling
 
 - The project and parent branch are test-only and contain no production data.
@@ -108,6 +119,8 @@ or runner loss prevents the finalizer from running.
   pre-existing branch after a name collision.
 - If branch creation succeeds remotely but the action fails before publishing outputs, the
   server-side expiration remains the recovery boundary.
+- Diagnostic output never includes the raw request or response body and redacts secrets and
+  URL-like values. A successful diagnostic probe owns and deletes only its returned branch ID.
 
 ## Verification
 
@@ -117,6 +130,7 @@ it GREEN. The contract continues to require manual dispatch, dedicated `NEON_TES
 configuration, a direct endpoint, unique creation, expiration, and unconditional exact-ID cleanup.
 
 Local verification consists of the focused Node contract, documentation-policy tests,
-`actionlint`, `git diff --check`, and final status/diff review. The final integration proof is a
-manually dispatched GitHub run in which branch creation, both Rust schema suites, and the cleanup
-step all succeed on the pushed commit.
+diagnostic behavior tests, `actionlint`, `git diff --check`, and final status/diff review. One
+diagnostic integration run must first surface the failed Neon precondition without exposing a
+secret or URL. The final integration proof is a manually dispatched GitHub run in which branch
+creation, both Rust schema suites, and the cleanup step all succeed on the pushed commit.
