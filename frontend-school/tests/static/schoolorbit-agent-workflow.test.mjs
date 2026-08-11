@@ -1,9 +1,13 @@
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { execFile } from 'node:child_process';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import { fileURLToPath } from 'node:url';
+import { promisify } from 'node:util';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
+const execFileAsync = promisify(execFile);
 const testDirectory = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(testDirectory, '../../..');
 const skillPath = '.agents/skills/schoolorbit-workflow/SKILL.md';
@@ -11,6 +15,10 @@ const metadataPath = '.agents/skills/schoolorbit-workflow/agents/openai.yaml';
 const fixturePath =
 	'frontend-school/tests/static/fixtures/schoolorbit-agent-workflow-scenarios.json';
 const agentConfigPath = '.codex/config.toml';
+const workGraphValidator = path.join(
+	repoRoot,
+	'.agents/skills/schoolorbit-workflow/scripts/validate-work-graph.mjs'
+);
 
 const expectedProfiles = {
 	schoolorbit_planner: ['gpt-5.6-sol', 'max', 'read-only'],
@@ -100,6 +108,51 @@ const REQUIRED_SUB_SKILLS = [
 
 async function repositoryFile(relativePath) {
 	return readFile(path.join(repoRoot, relativePath), 'utf8');
+}
+
+function workTask(id, overrides = {}) {
+	return {
+		id,
+		wave: 1,
+		dependencies: [],
+		ownedPaths: [`frontend-school/tests/static/${id}.test.mjs`],
+		protectedResources: [],
+		risk: 'normal',
+		agentProfile: 'schoolorbit_implementer',
+		verification: ['node --test focused'],
+		...overrides
+	};
+}
+
+function workGraph(...tasks) {
+	return { version: 1, tasks };
+}
+
+async function runWorkGraphSource(source) {
+	const temporary = await mkdtemp(path.join(os.tmpdir(), 'schoolorbit-work-graph-'));
+	const graphPath = path.join(temporary, 'graph.json');
+	await writeFile(graphPath, source);
+	try {
+		return await execFileAsync(process.execPath, [workGraphValidator, graphPath]);
+	} finally {
+		await rm(temporary, { recursive: true, force: true });
+	}
+}
+
+async function runWorkGraph(graph) {
+	return runWorkGraphSource(JSON.stringify(graph));
+}
+
+async function assertCommandFailure(command, expectedFragment) {
+	await assert.rejects(command, (error) => {
+		assert.equal(error.code, 1);
+		assert.ok(
+			error.stderr.includes(expectedFragment),
+			`expected stderr to contain ${expectedFragment}, received: ${error.stderr}`
+		);
+		assert.doesNotMatch(error.stderr, /\n\s+at /);
+		return true;
+	});
 }
 
 function frontmatter(source) {
@@ -202,6 +255,270 @@ test('workflow evaluation fixtures remain complete and approval-aware', async ()
 			`${scenario.id} must include explicit approval after its planning turn`
 		);
 	}
+});
+
+test('work graph validator accepts three disjoint tasks in one wave', async () => {
+	const graph = workGraph(
+		workTask('backend-task', {
+			ownedPaths: ['backend-school/src/modules/attendance/services/summary.rs']
+		}),
+		workTask('frontend-task', {
+			ownedPaths: ['frontend-school/src/lib/features/attendance/summary.ts']
+		}),
+		workTask('test-task', {
+			ownedPaths: ['frontend-school/tests/static/attendance-summary.test.mjs']
+		})
+	);
+
+	const { stdout, stderr } = await runWorkGraph(graph);
+
+	assert.equal(stdout, 'Valid work graph: 3 tasks across 1 waves\n');
+	assert.equal(stderr, '');
+});
+
+test('work graph module exports pure normalization and validation helpers', async () => {
+	const validator = await import(pathToFileURL(workGraphValidator).href);
+
+	assert.equal(
+		validator.normalizeOwnedPath('frontend-school/src/lib/api.ts'),
+		'frontend-school/src/lib/api.ts'
+	);
+	assert.equal(
+		validator.pathsOverlap('frontend-school/src', 'frontend-school/src/lib/api.ts'),
+		true
+	);
+	assert.deepEqual(
+		validator
+			.classifyOwnedPath('backend-school/src/api_contract.rs')
+			.map(({ resource }) => resource),
+		['api-contract']
+	);
+	assert.deepEqual(
+		validator.validateWorkGraph(
+			workGraph(
+				workTask('api-contract-task', {
+					ownedPaths: ['backend-school/src/api_contract.rs'],
+					protectedResources: ['api-contract'],
+					risk: 'high',
+					agentProfile: 'schoolorbit_high_risk_implementer'
+				})
+			)
+		),
+		{ valid: true, errors: [], taskCount: 1, waveCount: 1 }
+	);
+});
+
+test('work graph validator rejects unsafe ownership and routing', async (context) => {
+	const invalidCases = [
+		{
+			name: 'duplicate task id',
+			graph: workGraph(
+				workTask('duplicate-task', { ownedPaths: ['backend-school/src/a.rs'] }),
+				workTask('duplicate-task', { ownedPaths: ['frontend-school/src/a.ts'] })
+			),
+			expected: 'duplicate task id'
+		},
+		{
+			name: 'more than three tasks in one wave',
+			graph: workGraph(
+				workTask('task-one'),
+				workTask('task-two'),
+				workTask('task-three'),
+				workTask('task-four')
+			),
+			expected: 'exceeds the concurrency limit of 3'
+		},
+		{
+			name: 'missing dependency id',
+			graph: workGraph(workTask('consumer', { wave: 2, dependencies: ['missing-task'] })),
+			expected: 'unknown dependency'
+		},
+		{
+			name: 'dependency in the same wave',
+			graph: workGraph(workTask('producer'), workTask('consumer', { dependencies: ['producer'] })),
+			expected: 'must run in an earlier wave'
+		},
+		{
+			name: 'equal owned paths',
+			graph: workGraph(
+				workTask('task-one', { ownedPaths: ['backend-school/src/shared.rs'] }),
+				workTask('task-two', { ownedPaths: ['backend-school/src/shared.rs'] })
+			),
+			expected: 'overlapping owned paths'
+		},
+		{
+			name: 'directory and file prefix overlap',
+			graph: workGraph(
+				workTask('task-one', { ownedPaths: ['backend-school/src/modules/attendance'] }),
+				workTask('task-two', {
+					ownedPaths: ['backend-school/src/modules/attendance/services/summary.rs']
+				})
+			),
+			expected: 'overlapping owned paths'
+		},
+		{
+			name: 'duplicate protected resource in one wave',
+			graph: workGraph(
+				workTask('task-one', { protectedResources: ['manual-owner'] }),
+				workTask('task-two', { protectedResources: ['manual-owner'] })
+			),
+			expected: 'shared protected resource'
+		},
+		{
+			name: 'declared high risk on normal implementer',
+			graph: workGraph(workTask('high-risk-task', { risk: 'high' })),
+			expected: 'requires schoolorbit_high_risk_implementer'
+		},
+		{
+			name: 'auth path falsely declared normal',
+			graph: workGraph(
+				workTask('auth-task', {
+					ownedPaths: ['backend-school/src/modules/auth/config.rs'],
+					protectedResources: ['security-identity']
+				})
+			),
+			expected: 'high-risk owned path'
+		},
+		{
+			name: 'permission registry omits its owner',
+			graph: workGraph(
+				workTask('permission-task', {
+					ownedPaths: ['backend-school/src/permissions/registry.rs'],
+					risk: 'high',
+					agentProfile: 'schoolorbit_high_risk_implementer'
+				})
+			),
+			expected: 'requires protected resource permission-contract'
+		},
+		{
+			name: 'lockfile omits its owner',
+			graph: workGraph(
+				workTask('lockfile-task', { ownedPaths: ['frontend-school/package-lock.json'] })
+			),
+			expected: 'requires protected resource dependency-lockfile'
+		},
+		{
+			name: 'deployment workflow omits its owner',
+			graph: workGraph(
+				workTask('deployment-task', {
+					ownedPaths: ['.github/workflows/documentation.yml'],
+					risk: 'high',
+					agentProfile: 'schoolorbit_high_risk_implementer'
+				})
+			),
+			expected: 'requires protected resource deployment-owner'
+		},
+		{
+			name: 'Rust API contract owner omits its owner',
+			graph: workGraph(
+				workTask('api-task', {
+					ownedPaths: ['backend-school/src/api_contract.rs'],
+					risk: 'high',
+					agentProfile: 'schoolorbit_high_risk_implementer'
+				})
+			),
+			expected: 'requires protected resource api-contract'
+		},
+		{
+			name: 'legacy migration ownership',
+			graph: workGraph(
+				workTask('legacy-task', {
+					ownedPaths: ['backend-school/migrations_legacy/001-old.sql'],
+					protectedResources: ['migration-timeline'],
+					risk: 'high',
+					agentProfile: 'schoolorbit_high_risk_implementer'
+				})
+			),
+			expected: 'must not own a legacy migration path'
+		},
+		{
+			name: 'empty owned paths',
+			graph: workGraph(workTask('empty-path-task', { ownedPaths: [] })),
+			expected: 'requires at least one owned path'
+		},
+		{
+			name: 'empty verification list',
+			graph: workGraph(workTask('empty-check-task', { verification: [] })),
+			expected: 'requires at least one verification command'
+		},
+		{
+			name: 'absolute path',
+			graph: workGraph(workTask('absolute-task', { ownedPaths: ['/tmp/owned.ts'] })),
+			expected: 'must be repository-relative'
+		},
+		{
+			name: 'parent traversal',
+			graph: workGraph(
+				workTask('traversal-task', { ownedPaths: ['backend-school/../secrets.txt'] })
+			),
+			expected: 'must not contain parent traversal'
+		},
+		{
+			name: 'root ownership',
+			graph: workGraph(workTask('root-task', { ownedPaths: ['.'] })),
+			expected: 'must not own the repository root'
+		},
+		{
+			name: 'wildcard ownership',
+			graph: workGraph(workTask('wildcard-task', { ownedPaths: ['frontend-school/src/*.ts'] })),
+			expected: 'must not contain glob syntax'
+		},
+		{
+			name: 'backslash path',
+			graph: workGraph(
+				workTask('backslash-task', { ownedPaths: ['frontend-school\\src\\index.ts'] })
+			),
+			expected: 'must use POSIX separators'
+		}
+	];
+
+	for (const invalidCase of invalidCases) {
+		await context.test(invalidCase.name, async () => {
+			await assertCommandFailure(runWorkGraph(invalidCase.graph), invalidCase.expected);
+		});
+	}
+});
+
+test('work graph CLI reports usage, file, and JSON errors without a stack trace', async () => {
+	await assertCommandFailure(
+		execFileAsync(process.execPath, [workGraphValidator]),
+		'usage: node validate-work-graph.mjs <graph.json>'
+	);
+
+	const temporary = await mkdtemp(path.join(os.tmpdir(), 'schoolorbit-missing-work-graph-'));
+	try {
+		await assertCommandFailure(
+			execFileAsync(process.execPath, [workGraphValidator, path.join(temporary, 'missing.json')]),
+			'unable to read work graph file'
+		);
+	} finally {
+		await rm(temporary, { recursive: true, force: true });
+	}
+
+	await assertCommandFailure(runWorkGraphSource('{ invalid json'), 'invalid work graph JSON');
+});
+
+test('work graph validator collects all repairable errors in one run', async () => {
+	const graph = workGraph(
+		workTask('auth-task', {
+			ownedPaths: ['backend-school/src/modules/auth/config.rs'],
+			verification: []
+		})
+	);
+
+	await assert.rejects(runWorkGraph(graph), (error) => {
+		assert.equal(error.code, 1);
+		for (const expected of [
+			'requires at least one verification command',
+			'requires protected resource security-identity',
+			'has a high-risk owned path',
+			'requires schoolorbit_high_risk_implementer'
+		]) {
+			assert.ok(error.stderr.includes(expected), `expected stderr to contain: ${expected}`);
+		}
+		assert.doesNotMatch(error.stderr, /\n\s+at /);
+		return true;
+	});
 });
 
 test('skill metadata triggers only for SchoolOrbit mutation work during bootstrap', async () => {
