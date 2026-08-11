@@ -327,3 +327,46 @@ test('TERM preserves signal status and removes the owned container', async (t) =
     assert.deepEqual(exit, { code: 143, signal: null });
     await assert.rejects(read(f.containerState));
 });
+
+test('Neon gate is manual, direct, disposable, and test-scoped', async () => {
+    const workflow = await read(
+        path.join(repoRoot, '.github/workflows/backend-school-neon-compatibility.yml')
+    );
+
+    assert.match(workflow, /workflow_dispatch:/);
+    assert.doesNotMatch(workflow, /^\s{2}(?:push|pull_request|schedule):/m);
+    for (const name of [
+        'NEON_TEST_API_KEY',
+        'NEON_TEST_PROJECT_ID',
+        'NEON_TEST_PARENT_BRANCH_ID',
+        'NEON_TEST_DATABASE',
+        'NEON_TEST_ROLE'
+    ]) {
+        assert.match(workflow, new RegExp(name));
+    }
+    assert.match(
+        workflow,
+        /neondatabase\/create-branch-action@72ed4f69a12b6be9c16aebfad893f6a21e9aba8b/
+    );
+    assert.match(workflow, /branch_type:\s*schema-only/);
+    assert.match(workflow, /expires_at:/);
+    assert.match(
+        workflow,
+        /TEST_DATABASE_URL:\s*\$\{\{ steps\.create_branch\.outputs\.db_url \}\}/
+    );
+    assert.doesNotMatch(workflow, /db_url_pooled/);
+
+    const createAt = workflow.indexOf('id: create_branch');
+    const testAt = workflow.indexOf('name: Run direct-endpoint compatibility tests');
+    const deleteAt = workflow.indexOf('name: Delete disposable Neon branch');
+    assert.ok(createAt >= 0 && testAt > createAt && deleteAt > testAt);
+    const deletion = workflow.slice(deleteAt);
+    assert.match(deletion, /if:\s*\$\{\{ always\(\)/);
+    assert.match(deletion, /steps\.create_branch\.outputs\.created == 'true'/);
+    assert.match(
+        deletion,
+        /\/projects\/\$\{NEON_TEST_PROJECT_ID\}\/branches\/\$\{NEON_BRANCH_ID\}/
+    );
+    assert.match(deletion, /200\|204/);
+    assert.doesNotMatch(workflow, /SERVER_|SSH_|podman|deploy/i);
+});

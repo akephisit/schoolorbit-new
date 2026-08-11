@@ -1,0 +1,123 @@
+name: Backend School Neon Compatibility
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_disposable_branch:
+        description: Create and delete a disposable Neon test branch
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  compatibility:
+    if: ${{ inputs.confirm_disposable_branch }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Restore Rust dependency cache
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32
+        with:
+          shared-key: backend-school-contracts
+          workspaces: backend-school -> target
+          save-if: "false"
+
+      - name: Validate test-only Neon configuration
+        env:
+          NEON_TEST_API_KEY: ${{ secrets.NEON_TEST_API_KEY }}
+          NEON_TEST_PROJECT_ID: ${{ vars.NEON_TEST_PROJECT_ID }}
+          NEON_TEST_PARENT_BRANCH_ID: ${{ vars.NEON_TEST_PARENT_BRANCH_ID }}
+          NEON_TEST_DATABASE: ${{ vars.NEON_TEST_DATABASE }}
+          NEON_TEST_ROLE: ${{ vars.NEON_TEST_ROLE }}
+        run: |
+          set -euo pipefail
+          for name in NEON_TEST_API_KEY NEON_TEST_PROJECT_ID \
+            NEON_TEST_PARENT_BRANCH_ID NEON_TEST_DATABASE NEON_TEST_ROLE
+          do
+            if [[ -z ${!name} ]]; then
+              printf 'ERROR: missing test-only configuration: %s\n' "$name" >&2
+              exit 64
+            fi
+          done
+          [[ $NEON_TEST_PROJECT_ID =~ ^[a-z0-9-]{1,60}$ ]]
+          [[ $NEON_TEST_PARENT_BRANCH_ID =~ ^br-[a-z0-9-]+$ ]]
+
+      - name: Calculate branch expiration
+        id: expiration
+        run: echo "expires_at=$(date -u --date '+2 hours' +'%Y-%m-%dT%H:%M:%SZ')" >> "$GITHUB_OUTPUT"
+
+      - name: Create disposable Neon branch
+        id: create_branch
+        uses: neondatabase/create-branch-action@72ed4f69a12b6be9c16aebfad893f6a21e9aba8b # v6.4.0
+        with:
+          api_key: ${{ secrets.NEON_TEST_API_KEY }}
+          project_id: ${{ vars.NEON_TEST_PROJECT_ID }}
+          parent_branch: ${{ vars.NEON_TEST_PARENT_BRANCH_ID }}
+          database: ${{ vars.NEON_TEST_DATABASE }}
+          role: ${{ vars.NEON_TEST_ROLE }}
+          branch_name: schoolorbit-test-${{ github.run_id }}-${{ github.run_attempt }}
+          branch_type: schema-only
+          ssl: require
+          suspend_timeout: 60
+          expires_at: ${{ steps.expiration.outputs.expires_at }}
+
+      - name: Verify this run created a fresh branch
+        env:
+          BRANCH_CREATED: ${{ steps.create_branch.outputs.created }}
+          BRANCH_ID: ${{ steps.create_branch.outputs.branch_id }}
+        run: |
+          set -euo pipefail
+          [[ $BRANCH_CREATED == true ]]
+          [[ $BRANCH_ID =~ ^br-[a-z0-9-]+$ ]]
+
+      - name: Run direct-endpoint compatibility tests
+        working-directory: backend-school
+        env:
+          TEST_DATABASE_URL: ${{ steps.create_branch.outputs.db_url }}
+        run: |
+          set -euo pipefail
+          echo "::add-mask::$TEST_DATABASE_URL"
+          cargo test modules::auth::session_schema_tests --bin backend-school -- --nocapture
+          cargo test modules::files::schema_tests --bin backend-school -- --nocapture
+
+      - name: Delete disposable Neon branch
+        if: ${{ always() && steps.create_branch.outputs.created == 'true' && steps.create_branch.outputs.branch_id != '' }}
+        env:
+          NEON_TEST_API_KEY: ${{ secrets.NEON_TEST_API_KEY }}
+          NEON_TEST_PROJECT_ID: ${{ vars.NEON_TEST_PROJECT_ID }}
+          NEON_BRANCH_ID: ${{ steps.create_branch.outputs.branch_id }}
+        run: |
+          set -euo pipefail
+          curl_config="$(mktemp)"
+          response_file="$(mktemp)"
+          trap 'rm -f "$curl_config" "$response_file"' EXIT
+          chmod 0600 "$curl_config" "$response_file"
+          printf 'header = "Authorization: Bearer %s"\n' "$NEON_TEST_API_KEY" > "$curl_config"
+          http_status="$(
+            curl --silent --show-error \
+              --config "$curl_config" \
+              --output "$response_file" \
+              --write-out '%{http_code}' \
+              --request DELETE \
+              --url "https://console.neon.tech/api/v2/projects/${NEON_TEST_PROJECT_ID}/branches/${NEON_BRANCH_ID}"
+          )"
+          case "$http_status" in
+            200|204) ;;
+            *)
+              printf 'ERROR: Neon branch cleanup failed: branch=%s status=%s\n' \
+                "$NEON_BRANCH_ID" "$http_status" >&2
+              exit 1
+              ;;
+          esac

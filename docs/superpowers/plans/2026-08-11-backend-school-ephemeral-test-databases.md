@@ -494,7 +494,7 @@ git commit -m "test(backend-school): use disposable local postgres"
 - Consumes: secret `NEON_TEST_API_KEY`; variables `NEON_TEST_PROJECT_ID`, `NEON_TEST_PARENT_BRANCH_ID`, `NEON_TEST_DATABASE`, and `NEON_TEST_ROLE`.
 - Produces: manual workflow `Backend School Neon Compatibility`; unique schema-only branch `schoolorbit-test-<run_id>-<run_attempt>`; masked direct `TEST_DATABASE_URL`; unconditional delete by branch ID.
 
-- [ ] **Step 1: Add a failing static workflow contract**
+- [x] **Step 1: Add a failing static workflow contract**
 
 Append this test before creating the workflow:
 
@@ -543,7 +543,7 @@ test('Neon gate is manual, direct, disposable, and test-scoped', async () => {
 });
 ```
 
-- [ ] **Step 2: Run the Node test and verify RED**
+- [x] **Step 2: Run the Node test and verify RED**
 
 ```bash
 node --test scripts/tests/backend-school-test-database.test.mjs
@@ -551,7 +551,7 @@ node --test scripts/tests/backend-school-test-database.test.mjs
 
 Expected: only the Neon workflow case fails with `ENOENT`.
 
-- [ ] **Step 3: Create the manual workflow**
+- [x] **Step 3: Create the manual workflow**
 
 Use this exact lifecycle in `.github/workflows/backend-school-neon-compatibility.yml`:
 
@@ -683,7 +683,7 @@ jobs:
 
 The branch name is unique to the run attempt. The delete condition also requires `created=true`, so the workflow never deletes a pre-existing branch returned after a collision. Expiration is only a fallback for cancellation before finalization.
 
-- [ ] **Step 4: Make the workflow contract GREEN and run actionlint**
+- [x] **Step 4: Make the workflow contract GREEN and run actionlint**
 
 ```bash
 node --test scripts/tests/backend-school-test-database.test.mjs
@@ -693,7 +693,7 @@ docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:1.7.7 \
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit the Neon gate**
+- [x] **Step 5: Commit the Neon gate**
 
 ```bash
 git add .github/workflows/backend-school-neon-compatibility.yml \
