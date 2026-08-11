@@ -4,9 +4,9 @@
 
 **Goal:** Make the manual Backend School Neon compatibility gate use ordinary disposable child branches inside the dedicated test-only project without requesting plan-restricted compute settings, so branch creation, migration tests, and cleanup complete reliably.
 
-**Architecture:** Keep the existing manually confirmed workflow, pinned Neon action, direct endpoint, unique run-attempt name, two-hour expiration, and exact-ID finalizer. Use ordinary branch mode against an empty test-only parent and the Free-plan-compatible 300-second compute suspension; each Rust test creates an isolated schema and runs the active migrations itself.
+**Architecture:** Keep the manually confirmed workflow, direct endpoint, unique run-attempt name, two-hour expiration, and exact-ID finalizer. Use a dependency-free repository client to create an ordinary branch without a compute suspension field, publish ownership before connection retrieval, and request only a non-pooled URI; each Rust test creates an isolated schema and runs the active migrations itself.
 
-**Tech Stack:** GitHub Actions YAML, Neon create-branch action v6.4.0, Node.js built-in test runner, Cargo/SQLx, actionlint.
+**Tech Stack:** GitHub Actions YAML, Neon API v2, Node.js built-in fetch and test runner, Cargo/SQLx, actionlint.
 
 ## Global Constraints
 
@@ -269,8 +269,64 @@ characters, redact URL-like text, and cap their length.
 Run it with `if: failure() && steps.create_branch.outcome == 'failure'`, a run-attempt-scoped probe
 name, and the existing expiration output. Keep all successful-path behavior unchanged.
 
-- [ ] **Step 4: Verify, commit, push, and run one diagnostic gate**
+- [x] **Step 4: Verify, commit, push, and run one diagnostic gate**
 
 Run both Node suites, documentation policy, actionlint, and diff checks. Commit and push `main`,
 dispatch one gate, and record the sanitized Neon message. Do not change another create parameter
 until that evidence identifies the failed precondition.
+
+Run `31496094480` reported: `modifying the suspend interval is not permitted on this account`.
+This establishes that the request must omit the endpoint suspension field entirely. The pinned
+action cannot do that because its omitted input becomes `suspend_timeout_seconds: 0`.
+
+---
+
+### Task 6: Own Branch Creation Without a Suspension Override
+
+**Files:**
+
+- Create: `scripts/neon-create-test-branch.mjs`
+- Create: `scripts/tests/neon-create-test-branch.test.mjs`
+- Delete: `scripts/neon-branch-create-diagnostic.mjs`
+- Delete: `scripts/tests/neon-branch-create-diagnostic.test.mjs`
+- Modify: `.github/workflows/backend-school-neon-compatibility.yml`
+- Modify: `scripts/tests/backend-school-test-database.test.mjs`
+- Modify: `docs/TESTING.md`
+- Modify: `docs/superpowers/specs/2026-08-11-backend-school-disposable-neon-child-branch-design.md`
+
+**Interfaces:**
+
+- Consumes: test-only project, parent branch, database, role, API key, unique branch name, expiration,
+  and GitHub's step-output file.
+- Produces: `created=true`, exact `branch_id`, and a masked direct `db_url`; it never requests a
+  compute suspension interval.
+
+- [x] **Step 1: Write direct-creator tests and demonstrate RED**
+
+Require the POST payload to contain an ordinary branch and `read_write` endpoint without
+`suspend_timeout_seconds`. Cover sanitized create rejection, early ownership outputs before a
+connection-URI failure, direct non-pooled URI masking/output, and malformed configuration.
+
+- [x] **Step 2: Implement the dependency-free direct creator**
+
+Use Node's built-in `fetch`. After HTTP 201, validate and publish `created=true` plus `branch_id`
+before requesting the connection URI, ensuring the existing `always()` finalizer can clean up if
+the second API call fails. Retrieve `pooled=false`, validate a PostgreSQL URI, register it with
+GitHub masking, and only then publish `db_url`.
+
+- [x] **Step 3: Replace the pinned create action and diagnostic probe**
+
+Run the direct creator as `id: create_branch` with the existing test-only values. Remove the pinned
+action, every `suspend_timeout` input, and the now-redundant failure probe. Preserve downstream
+output names and exact-ID finalization.
+
+- [x] **Step 4: Align docs and run full local verification**
+
+Record the confirmed Neon error and direct-API ownership boundary. Run both Node suites,
+documentation policy, actionlint, `git diff --check`, and final scope review.
+
+- [ ] **Step 5: Commit, push, and prove the complete live lifecycle**
+
+Push `main`, dispatch the manual gate, and require successful create, fresh-branch verification,
+both Rust schema suites, and exact branch deletion. Confirm remote/local SHA equality and a clean
+worktree.

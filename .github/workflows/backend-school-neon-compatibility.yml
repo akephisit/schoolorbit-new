@@ -60,27 +60,15 @@ jobs:
 
       - name: Create disposable Neon branch
         id: create_branch
-        uses: neondatabase/create-branch-action@72ed4f69a12b6be9c16aebfad893f6a21e9aba8b # v6.4.0
-        with:
-          api_key: ${{ secrets.NEON_TEST_API_KEY }}
-          project_id: ${{ vars.NEON_TEST_PROJECT_ID }}
-          parent_branch: ${{ vars.NEON_TEST_PARENT_BRANCH_ID }}
-          database: ${{ vars.NEON_TEST_DATABASE }}
-          role: ${{ vars.NEON_TEST_ROLE }}
-          branch_name: schoolorbit-test-${{ github.run_id }}-${{ github.run_attempt }}
-          ssl: require
-          suspend_timeout: 300
-          expires_at: ${{ steps.expiration.outputs.expires_at }}
-
-      - name: Explain Neon branch creation failure
-        if: ${{ failure() && steps.create_branch.outcome == 'failure' }}
         env:
           NEON_TEST_API_KEY: ${{ secrets.NEON_TEST_API_KEY }}
           NEON_TEST_PROJECT_ID: ${{ vars.NEON_TEST_PROJECT_ID }}
           NEON_TEST_PARENT_BRANCH_ID: ${{ vars.NEON_TEST_PARENT_BRANCH_ID }}
-          NEON_DIAGNOSTIC_BRANCH_NAME: schoolorbit-diagnostic-${{ github.run_id }}-${{ github.run_attempt }}
+          NEON_TEST_DATABASE: ${{ vars.NEON_TEST_DATABASE }}
+          NEON_TEST_ROLE: ${{ vars.NEON_TEST_ROLE }}
+          NEON_BRANCH_NAME: schoolorbit-test-${{ github.run_id }}-${{ github.run_attempt }}
           NEON_BRANCH_EXPIRES_AT: ${{ steps.expiration.outputs.expires_at }}
-        run: node scripts/neon-branch-create-diagnostic.mjs
+        run: node scripts/neon-create-test-branch.mjs
 
       - name: Verify this run created a fresh branch
         env:

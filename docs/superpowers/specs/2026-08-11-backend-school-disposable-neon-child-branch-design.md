@@ -8,17 +8,16 @@ project and then against a newly configured dedicated test project. A third run 
 child branch in the dedicated project and failed at the same point before any Rust test ran. That
 third result disproved the initial hypothesis that schema-only creation caused the 412 response.
 
-The remaining non-default create setting was `suspend_timeout: 60`. Neon Free fixes scale-to-zero
-at five minutes and does not allow the workflow to select a shorter interval. The branch action has
-also documented this plan restriction as a create failure. The workflow must therefore let the
-project use its supported 300-second compute suspension timeout instead of forcing 60 seconds.
-Omitting the input is not sufficient because the pinned action maps an omitted value to `0`, which
-requests disabled auto-suspend rather than the Free-plan interval.
+The next suspect was `suspend_timeout: 60`. Run `31495216927` used ordinary branch mode and changed
+the interval to 300 seconds but still returned HTTP 412. Because the pinned action reports only the
+Axios status and drops the Neon response body, run `31496094480` added a bounded diagnostic request.
+Neon then identified the exact failed precondition: `modifying the suspend interval is not
+permitted on this account`.
 
-Run `31495216927` then used the ordinary branch mode and supported 300-second interval but still
-returned HTTP 412. The pinned action reports only the Axios status and drops the Neon API response
-body, so this result rules out further configuration guessing but does not yet identify the failed
-precondition.
+The pinned action cannot represent the required request. It always sends
+`suspend_timeout_seconds`, mapping an omitted workflow input to `0` (disabled auto-suspend). The
+repository must therefore own the small API request and omit that endpoint field entirely, allowing
+the Neon project to apply its account-controlled suspension behavior.
 
 The dedicated project still provides the required data-isolation boundary. It has no production
 data, and the Rust compatibility tests create isolated schemas and run the active migrations
@@ -68,12 +67,18 @@ cause of the HTTP 412 response.
 This minimizes idle compute time but is not supported by the configured Neon Free project, whose
 scale-to-zero interval is fixed at five minutes. This approach is rejected.
 
-### Use the Free-plan 300-second compute suspension
+### Send a 300-second compute suspension
 
-This is the selected lifecycle behavior. Setting `suspend_timeout: 300` matches the project's fixed
-five-minute interval and avoids both unsupported alternatives: 60 seconds and the action's omitted
-default of `0`. The branch still has a two-hour expiration and exact-ID finalizer, so compute
-suspension and branch deletion remain separate controls.
+Although 300 seconds matches the visible Free-plan interval, the account rejects any request that
+modifies this field. Run `31495216927` disproved this approach.
+
+### Omit compute suspension with a repository-owned API client
+
+This is the selected lifecycle behavior. A dependency-free Node client sends an ordinary branch,
+parent, expiration, and `read_write` endpoint but no `suspend_timeout_seconds`. It then retrieves a
+non-pooled connection URI through Neon's documented API. This is the smallest request that lets the
+account retain ownership of compute suspension while preserving branch expiration and exact-ID
+cleanup.
 
 ## Architecture and Data Flow
 
@@ -81,35 +86,32 @@ The repository keeps one manually dispatched GitHub Actions workflow. Repository
 supplies a dedicated test API key plus the test project ID, parent branch ID, database, and role.
 The workflow validates that every value is present and that IDs match Neon ID shapes.
 
-After confirmation, the pinned Neon create-branch action creates
-`schoolorbit-test-<run_id>-<run_attempt>` from the configured test-only parent. The workflow omits
-`branch_type`, selecting the action's normal branch mode, and sets `suspend_timeout: 300`, matching
-the Free project's supported interval. The branch receives a two-hour expiration and one direct
-read-write endpoint.
+After confirmation, the repository-owned Node client creates
+`schoolorbit-test-<run_id>-<run_attempt>` from the configured test-only parent. Its POST omits both
+`init_source` and `suspend_timeout_seconds`, selecting ordinary branch behavior and account-owned
+compute suspension. The branch receives a two-hour expiration and one read-write endpoint.
 
-The workflow rejects an existing-branch collision by requiring `created=true` and a valid returned
-branch ID. It masks the returned direct database URL, assigns it only to `TEST_DATABASE_URL`, and
-runs the auth-session and file-platform schema suites. Those suites create their own isolated
-schemas and execute the active tenant migration timeline, so the parent branch needs only the
-configured empty database and owner role.
+Immediately after HTTP 201, the client validates the returned branch ID and publishes
+`created=true` plus that exact ID before making another API request. This preserves cleanup
+ownership even if connection retrieval fails. It requests the configured database and role with
+`pooled=false`, validates the returned authenticated PostgreSQL URI, registers it with GitHub's
+masking command, and publishes it as `db_url`. The workflow assigns that value only to
+`TEST_DATABASE_URL` and runs the auth-session and file-platform schema suites. Those suites create
+their own isolated schemas and execute the active tenant migration timeline, so the parent branch
+needs only the configured empty database and owner role.
 
 An `always()` finalizer deletes only the branch ID returned by a successful create operation and
-accepts Neon HTTP 200 or 204. The create action's `expires_at` value is the fallback if cancellation
-or runner loss prevents the finalizer from running.
-
-If the pinned create action fails, a dependency-free Node diagnostic repeats the create request
-with a distinct run-attempt-scoped name. It emits only bounded, sanitized scalar `code` and
-`message` fields from a rejected Neon response. If that probe unexpectedly succeeds, it deletes
-the exact returned branch before leaving the already-failed job failed. The normal success path
-does not run the diagnostic.
+accepts Neon HTTP 200 or 204. The create request's `expires_at` value is the fallback if cancellation
+or runner loss prevents the finalizer from running. API failures expose only bounded, sanitized
+scalar `code` and `message` fields; raw request and response bodies remain hidden.
 
 ## Safety and Failure Handling
 
 - The project and parent branch are test-only and contain no production data.
 - The workflow remains `workflow_dispatch` only and requires the boolean confirmation input.
 - The branch name is unique to the GitHub run attempt.
-- Compute suspension is fixed at the Free-plan-compatible 300 seconds; the workflow does not
-  request a restricted timeout or the action's disabled-auto-suspend default.
+- The create request omits compute suspension entirely, leaving that setting under Neon account
+  control.
 - The workflow never prints the API key, password, or database URL.
 - The pooled URL is never consumed because transaction pooling can obscure schema-local
   `_sqlx_migrations` state.
@@ -117,20 +119,21 @@ does not run the diagnostic.
   fails the gate.
 - Cleanup requires both `created=true` and a non-empty returned branch ID, preventing deletion of a
   pre-existing branch after a name collision.
-- If branch creation succeeds remotely but the action fails before publishing outputs, the
-  server-side expiration remains the recovery boundary.
-- Diagnostic output never includes the raw request or response body and redacts secrets and
-  URL-like values. A successful diagnostic probe owns and deletes only its returned branch ID.
+- Branch ownership outputs are published before connection retrieval so a later failure still runs
+  exact-ID cleanup. If creation succeeds remotely but its response is lost, server-side expiration
+  remains the recovery boundary.
+- Error output never includes a raw request or response body and redacts secrets and URL-like
+  values.
 
 ## Verification
 
-The Node workflow contract rejects explicit `branch_type` and requires exactly
-`suspend_timeout: 300`. Each guard was demonstrated RED before the smallest production change made
-it GREEN. The contract continues to require manual dispatch, dedicated `NEON_TEST_*`
-configuration, a direct endpoint, unique creation, expiration, and unconditional exact-ID cleanup.
+The Node workflow contract rejects the third-party create action plus every `branch_type` and
+`suspend_timeout` input, and requires the repository-owned creator. Creator behavior tests require
+an endpoint without `suspend_timeout_seconds`, early ownership outputs, a masked non-pooled
+PostgreSQL URI, sanitized failures, and configuration validation. Each behavior change is
+demonstrated RED before implementation makes it GREEN.
 
-Local verification consists of the focused Node contract, documentation-policy tests,
-diagnostic behavior tests, `actionlint`, `git diff --check`, and final status/diff review. One
-diagnostic integration run must first surface the failed Neon precondition without exposing a
-secret or URL. The final integration proof is a manually dispatched GitHub run in which branch
-creation, both Rust schema suites, and the cleanup step all succeed on the pushed commit.
+Local verification consists of the focused Node contract, creator behavior tests,
+documentation-policy tests, `actionlint`, `git diff --check`, and final status/diff review. The
+final integration proof is a manually dispatched GitHub run in which branch creation, both Rust
+schema suites, and the cleanup step all succeed on the pushed commit.

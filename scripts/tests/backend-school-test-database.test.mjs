@@ -360,13 +360,11 @@ test('Neon gate is manual, direct, disposable, and test-scoped', async () => {
     ]) {
         assert.match(workflow, new RegExp(name));
     }
-    assert.match(
-        workflow,
-        /neondatabase\/create-branch-action@72ed4f69a12b6be9c16aebfad893f6a21e9aba8b/
-    );
+    assert.doesNotMatch(workflow, /neondatabase\/create-branch-action/);
+    assert.match(workflow, /node scripts\/neon-create-test-branch\.mjs/);
     assert.doesNotMatch(workflow, /^\s*branch_type:/m);
-    assert.match(workflow, /^\s+suspend_timeout:\s*300\s*$/m);
-    assert.match(workflow, /expires_at:/);
+    assert.doesNotMatch(workflow, /suspend_timeout/);
+    assert.match(workflow, /NEON_BRANCH_EXPIRES_AT:/);
     assert.match(
         workflow,
         /TEST_DATABASE_URL:\s*\$\{\{ steps\.create_branch\.outputs\.db_url \}\}/
@@ -374,24 +372,16 @@ test('Neon gate is manual, direct, disposable, and test-scoped', async () => {
     assert.doesNotMatch(workflow, /db_url_pooled/);
 
     const createAt = workflow.indexOf('id: create_branch');
-    const diagnosticAt = workflow.indexOf('name: Explain Neon branch creation failure');
     const testAt = workflow.indexOf('name: Run direct-endpoint compatibility tests');
     const deleteAt = workflow.indexOf('name: Delete disposable Neon branch');
-    assert.ok(
-        createAt >= 0 && diagnosticAt > createAt && testAt > diagnosticAt && deleteAt > testAt
-    );
-    const diagnostic = workflow.slice(diagnosticAt, testAt);
+    assert.ok(createAt >= 0 && testAt > createAt && deleteAt > testAt);
+    const creation = workflow.slice(createAt, testAt);
     assert.match(
-        diagnostic,
-        /if:\s*\$\{\{ failure\(\) && steps\.create_branch\.outcome == 'failure' \}\}/
-    );
-    assert.match(diagnostic, /node scripts\/neon-branch-create-diagnostic\.mjs/);
-    assert.match(
-        diagnostic,
-        /NEON_DIAGNOSTIC_BRANCH_NAME:\s*schoolorbit-diagnostic-\$\{\{ github\.run_id \}\}-\$\{\{ github\.run_attempt \}\}/
+        creation,
+        /NEON_BRANCH_NAME:\s*schoolorbit-test-\$\{\{ github\.run_id \}\}-\$\{\{ github\.run_attempt \}\}/
     );
     assert.match(
-        diagnostic,
+        creation,
         /NEON_BRANCH_EXPIRES_AT:\s*\$\{\{ steps\.expiration\.outputs\.expires_at \}\}/
     );
     const deletion = workflow.slice(deleteAt);
