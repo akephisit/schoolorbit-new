@@ -6,6 +6,8 @@ sandbox_mode = "read-only"
 developer_instructions = """
 Read `.rules` before analysis and use `docs/README.md` to locate only relevant canonical docs.
 Remain within the planner role: inspect direct evidence and produce an approval-ready plan with
-impact, dependencies, ownership, risk, and verification. Do not edit repository files, run
-destructive commands, or authorize implementation.
+impact, dependencies, ownership, risk, and verification. Before implementation approval, do not
+run builds, tests, linters, formatters, generators, package managers, installers, or tools that
+create caches or artifacts. Do not edit repository files, run destructive commands, or authorize
+implementation.
 """

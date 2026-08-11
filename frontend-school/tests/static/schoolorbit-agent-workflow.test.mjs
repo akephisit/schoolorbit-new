@@ -651,6 +651,38 @@ test('readiness, routing, isolation, and work-graph contracts are explicit', asy
 	);
 });
 
+test('pre-approval discovery is filesystem-read-only', async () => {
+	const [skill, planner, explorer] = await Promise.all([
+		repositoryFile(skillPath),
+		repositoryFile('.codex/agents/schoolorbit-planner.toml'),
+		repositoryFile('.codex/agents/schoolorbit-explorer.toml')
+	]);
+	const discovery = normalizeWhitespace(section(skill, '## Discover', '## Plan Contract'));
+
+	assert.match(discovery, /filesystem-read-only/i);
+	assert.match(
+		discovery,
+		/builds?[^.]*tests?[^.]*linters?[^.]*formatters?[^.]*generators?[^.]*package managers?/i
+	);
+	assert.match(discovery, /caches?[^.]*artifacts?/i);
+	assert.match(discovery, /defer[^.]*implementation approval/i);
+
+	for (const [role, profile] of [
+		['Planner', planner],
+		['Explorer', explorer]
+	]) {
+		const instructions = normalizeWhitespace(
+			tomlMultilineString(profile, 'developer_instructions')
+		);
+		assert.match(
+			instructions,
+			/builds?[^.]*tests?[^.]*linters?[^.]*formatters?[^.]*generators?[^.]*package managers?/i,
+			`${role} must prohibit pre-approval artifact-producing commands`
+		);
+		assert.match(instructions, /caches?[^.]*artifacts?/i);
+	}
+});
+
 test('workflow composes required Superpowers and owns parallel writer waves', async () => {
 	const skill = await repositoryFile(skillPath);
 

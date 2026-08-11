@@ -66,6 +66,12 @@ history, generated-contract ownership, tests, and deployment paths before drawin
 Map impact across backend, frontend, database, permissions, API contracts, realtime, security and
 PDPA, deployment, documentation, and tests.
 
+Before implementation approval, discovery is filesystem-read-only. Do not run builds, tests,
+linters, formatters, generators, package managers, installers, auto-fixers, or any tool that can
+create caches or artifacts. Derive future commands from source, configuration, and documentation,
+then defer their execution until implementation approval. If a command's write behavior is
+uncertain, do not run it.
+
 Bound each investigation by domain and requested evidence. Parallelize only independent read-only
 investigations; reconcile their evidence in the controller before drafting the plan.
 
@@ -273,12 +279,16 @@ contract task:
   permits pre-approval writes, overlapping ownership, or multiple writers in one worktree.
 - A “generic frontier specialist” or generic “security reviewer” does not satisfy explicit
   Planner, Reviewer, or High-risk Implementer model-and-effort routing.
+- “List only”, “dry run”, or “just checking” does not make a build, test, linter, formatter,
+  generator, package manager, installer, or auto-fixer read-only when it can create a cache or
+  artifact.
 
 ## Red Flags
 
 Stop and return to the appropriate earlier state when any of these appears:
 
 - implementation, scratch creation, generation, or writer delegation before approval;
+- a pre-approval build, test, lint, format, generation, install, auto-fix, cache, or artifact;
 - reliance on approval after a material scope or risk change;
 - overlapping owned paths or shared protected resources in one wave;
 - parallel writers sharing a worktree or Git index;
