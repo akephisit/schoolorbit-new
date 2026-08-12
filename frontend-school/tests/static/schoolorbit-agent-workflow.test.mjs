@@ -706,6 +706,19 @@ test('planner consumes reconciled evidence without repeating explorer discovery'
 	assert.match(instructions, /NEEDS_CONTEXT/i);
 });
 
+test('multi-file approval records a mandatory design and implementation plan pair', async () => {
+	const skill = await repositoryFile(skillPath);
+	const artifacts = normalizeWhitespace(
+		section(skill, '## Plan Artifacts', '## Model Routing')
+	);
+
+	assert.match(artifacts, /exactly two dated Superpowers artifacts/i);
+	assert.match(artifacts, /one design[^.]*docs\/superpowers\/specs\//i);
+	assert.match(artifacts, /one implementation plan[^.]*docs\/superpowers\/plans\//i);
+	assert.match(artifacts, /both or neither/i);
+	assert.match(artifacts, /missing[^.]*return to `DRAFT_PLAN`/i);
+});
+
 test('workflow composes required Superpowers and owns parallel writer waves', async () => {
 	const skill = await repositoryFile(skillPath);
 

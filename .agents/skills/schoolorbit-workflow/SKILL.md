@@ -126,10 +126,13 @@ as transferable between plans.
 ## Plan Artifacts
 
 Keep a small, low-risk, single-area plan in chat; one explicit approval may authorize its
-implementation. For multi-file or high-risk work, discuss the design and implementation plan in
-chat first. After the user approves recording them, create only the dated Superpowers design and
-plan paths allowed by `.rules`, show the recorded artifacts for a second user review, and wait for
-explicit implementation approval.
+implementation. For multi-file or high-risk work, discuss and name exactly two dated Superpowers
+artifacts in chat: one design under `docs/superpowers/specs/` and one implementation plan under
+`docs/superpowers/plans/`. The first approval must name and authorize that exact pair. Record both
+or neither, then show both recorded artifacts for a second user review and wait for explicit
+implementation approval. If either exact path is missing from the approved plan or recorded pair,
+return to `DRAFT_PLAN`, repair the pair, and obtain fresh first approval; never advance to the
+second approval gate with only one artifact.
 
 Do not create status Markdown, skill references, per-feature README files, or other plan copies.
 
