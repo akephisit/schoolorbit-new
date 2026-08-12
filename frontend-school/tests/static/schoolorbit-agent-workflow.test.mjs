@@ -717,6 +717,12 @@ test('multi-file approval records a mandatory design and implementation plan pai
 	assert.match(artifacts, /one implementation plan[^.]*docs\/superpowers\/plans\//i);
 	assert.match(artifacts, /both or neither/i);
 	assert.match(artifacts, /missing[^.]*return to `DRAFT_PLAN`/i);
+	assert.match(
+		artifacts,
+		/first approval[^.]*never authorizes[^.]*staging or committing/i
+	);
+	assert.match(artifacts, /leave both artifacts untracked/i);
+	assert.match(artifacts, /until[^.]*implementation approval/i);
 });
 
 test('workflow composes required Superpowers and owns parallel writer waves', async () => {

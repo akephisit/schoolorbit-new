@@ -134,6 +134,10 @@ implementation approval. If either exact path is missing from the approved plan 
 return to `DRAFT_PLAN`, repair the pair, and obtain fresh first approval; never advance to the
 second approval gate with only one artifact.
 
+The first approval never authorizes staging or committing; leave both artifacts untracked until
+explicit implementation approval. Do not include `git add`, a local commit, or any other Git-index
+mutation in the first-gate plan or approval request.
+
 Do not create status Markdown, skill references, per-feature README files, or other plan copies.
 
 ## Model Routing
@@ -297,6 +301,8 @@ contract task:
 - “The Planner should independently verify everything” ignores the controller's reconciled
   evidence packet; repeating Explorer discovery breaks bounded delegation and adds no approval
   safety.
+- “Recording the plan includes a local commit” expands the first gate; plan artifacts remain
+  untracked until implementation approval.
 - “List only”, “dry run”, or “just checking” does not make a build, test, linter, formatter,
   generator, package manager, installer, or auto-fixer read-only when it can create a cache or
   artifact.
