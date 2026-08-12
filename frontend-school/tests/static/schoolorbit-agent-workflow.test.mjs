@@ -683,6 +683,29 @@ test('pre-approval discovery is filesystem-read-only', async () => {
 	}
 });
 
+test('planner consumes reconciled evidence without repeating explorer discovery', async () => {
+	const [skill, planner] = await Promise.all([
+		repositoryFile(skillPath),
+		repositoryFile('.codex/agents/schoolorbit-planner.toml')
+	]);
+	const discovery = normalizeWhitespace(section(skill, '## Discover', '## Plan Contract'));
+	const planContract = normalizeWhitespace(
+		section(skill, '## Plan Contract', '## Approval Gate')
+	);
+	const instructions = normalizeWhitespace(
+		tomlMultilineString(planner, 'developer_instructions')
+	);
+
+	assert.match(discovery, /reconciled evidence packet/i);
+	assert.match(discovery, /fork_turns: none/i);
+	assert.match(planContract, /one bounded Planner/i);
+	assert.match(planContract, /defer[^.]*implementation-only skills?[^.]*approval/i);
+
+	assert.match(instructions, /reconciled evidence packet/i);
+	assert.match(instructions, /without repository tool calls/i);
+	assert.match(instructions, /NEEDS_CONTEXT/i);
+});
+
 test('workflow composes required Superpowers and owns parallel writer waves', async () => {
 	const skill = await repositoryFile(skillPath);
 

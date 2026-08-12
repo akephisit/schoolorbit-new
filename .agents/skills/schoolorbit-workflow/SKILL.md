@@ -75,9 +75,21 @@ uncertain, do not run it.
 Bound each investigation by domain and requested evidence. Parallelize only independent read-only
 investigations; reconcile their evidence in the controller before drafting the plan.
 
+When Explorer work is used, the controller builds a reconciled evidence packet containing the
+requested outcome, direct facts with paths or symbols, impact and risk, ownership candidates,
+verification sources, and unresolved decisions. Spawn one bounded Planner using
+`fork_turns: none` and give it only that packet plus the required plan fields. The Planner must not
+repeat Explorer discovery. If the packet is incomplete, it returns `NEEDS_CONTEXT` naming the
+exact missing fact instead of reopening repository-wide investigation.
+
 **REQUIRED SUB-SKILL:** Use superpowers:dispatching-parallel-agents for independent read-only investigations.
 
 ## Plan Contract
+
+Use one bounded Planner to turn the reconciled evidence packet into the plan. Defer
+implementation-only skills, including worktree setup, TDD, code review, and verification, until
+their corresponding state after implementation approval. During `DRAFT_PLAN`, name those future
+checkpoints without loading or executing their skills.
 
 Present a concrete plan in chat before any mutation. Include:
 
@@ -279,6 +291,9 @@ contract task:
   permits pre-approval writes, overlapping ownership, or multiple writers in one worktree.
 - A “generic frontier specialist” or generic “security reviewer” does not satisfy explicit
   Planner, Reviewer, or High-risk Implementer model-and-effort routing.
+- “The Planner should independently verify everything” ignores the controller's reconciled
+  evidence packet; repeating Explorer discovery breaks bounded delegation and adds no approval
+  safety.
 - “List only”, “dry run”, or “just checking” does not make a build, test, linter, formatter,
   generator, package manager, installer, or auto-fixer read-only when it can create a cache or
   artifact.
