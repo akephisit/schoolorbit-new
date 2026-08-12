@@ -47,17 +47,17 @@ The change does not remove semantic labels, focus indicators, keyboard behavior,
 
 ## Testing and Verification
 
-A focused frontend static regression test will prove the durable global contract:
+A focused Playwright regression test will load a real frontend-school route and prove the durable global contract through rendered browser behavior:
 
-- the shared stylesheet defines the 90% root font-size baseline;
-- the stylesheet does not emulate the change with CSS `zoom` or transform scaling;
-- the root SvelteKit layout continues importing the shared stylesheet.
+- the root layout applies a computed 14.4px font size at Chromium's default 16px baseline;
+- a full-height route root still matches the physical viewport height;
+- the document does not gain horizontal overflow.
 
-The test will be observed failing before the stylesheet change and passing afterward. Browser verification will cover representative route families where local dependencies allow it: public/landing, login, public calendar, and the protected app shell. It will confirm the computed root font size, full viewport coverage, absence of unexpected horizontal overflow, and usable desktop/mobile layout. Authenticated checks that require unavailable credentials will be reported as unrun rather than inferred.
+Because the test visits the real landing route through SvelteKit, it also proves that the root layout imports the shared stylesheet without relying on a source-text assertion. The test will be observed failing before the stylesheet change and passing afterward. Additional browser verification will cover representative route families where local dependencies allow it: public/landing, login, public calendar, and the protected app shell. It will confirm the computed root font size, full viewport coverage, absence of unexpected horizontal overflow, and usable desktop/mobile layout. Authenticated checks that require unavailable credentials will be reported as unrun rather than inferred.
 
 After implementation, run:
 
-- the focused static regression test;
+- the focused Playwright regression test;
 - Svelte autofixer on any changed Svelte component;
 - `npm run lint`;
 - `PUBLIC_BACKEND_URL=http://localhost:3000 PUBLIC_VAPID_KEY=test npm run check`;

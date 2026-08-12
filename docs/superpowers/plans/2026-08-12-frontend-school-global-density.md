@@ -21,7 +21,7 @@
 
 ## File Structure
 
-- Modify `frontend-school/tests/static/frontend-layout-components.test.mjs` to own the durable root-layout density contract alongside the existing shared-layout architecture checks.
+- Create `frontend-school/tests/e2e/global-density.spec.ts` to exercise the real root layout, compiled shared stylesheet, and viewport behavior in Chromium.
 - Modify `frontend-school/src/routes/layout.css` to own the global 90% rem baseline.
 - Do not change a `.svelte` component unless browser verification reveals a concrete incompatibility; if that happens, stop and revise this plan before broadening scope.
 
@@ -30,42 +30,64 @@
 ### Task 1: Lock and implement the global density baseline
 
 **Files:**
-- Modify: `frontend-school/tests/static/frontend-layout-components.test.mjs:27`
+- Create: `frontend-school/tests/e2e/global-density.spec.ts`
 - Modify: `frontend-school/src/routes/layout.css:144-148`
 
 **Interfaces:**
 - Consumes: the existing root-layout side-effect import `import './layout.css';` in `frontend-school/src/routes/+layout.svelte`
-- Produces: the global CSS contract `html { font-size: 90%; }` inherited by every route and body-level portal
+- Produces: the global CSS contract `html { font-size: 90%; }` inherited by every route and body-level portal, plus browser coverage that fails if the root import, font baseline, viewport height, or overflow behavior regresses
 
-- [ ] **Step 1: Add the failing static regression test**
+- [ ] **Step 1: Add the failing browser regression test**
 
-Insert this test after `listFiles` and before the existing shared app-layout test:
+Create `frontend-school/tests/e2e/global-density.spec.ts` with:
 
-```js
-test('frontend school uses a global 90% density baseline', async () => {
-	const rootLayout = await readProjectFile('src/routes/+layout.svelte');
-	const layoutStyles = await readProjectFile('src/routes/layout.css');
+```ts
+import { expect, test } from '@playwright/test';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { createServer, type ViteDevServer } from 'vite';
 
-	assert.match(
-		rootLayout,
-		/import '\.\/layout\.css';/,
-		'the root layout must load the stylesheet that owns global density'
-	);
-	assert.match(
-		layoutStyles,
-		/html\s*\{[^}]*\bfont-size:\s*90%;[^}]*\}/,
-		'the shared stylesheet must apply the approved 90% root rem baseline'
-	);
-	assert.doesNotMatch(
-		layoutStyles,
-		/\bzoom\s*:/,
-		'CSS zoom would shrink viewport-sized workspaces below the real viewport'
-	);
-	assert.doesNotMatch(
-		layoutStyles,
-		/\btransform\s*:[^;{}]*\bscale\(/,
-		'transform scaling would leave layout dimensions and fixed positioning inconsistent'
-	);
+const frontendRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+
+let devServer: ViteDevServer;
+let baseUrl: string;
+
+test.beforeAll(async () => {
+	devServer = await createServer({
+		root: frontendRoot,
+		logLevel: 'silent',
+		server: { host: '127.0.0.1', port: 0 }
+	});
+	await devServer.listen();
+	const address = devServer.httpServer?.address();
+	if (!address || typeof address === 'string') throw new Error('Vite test server did not start');
+	baseUrl = `http://127.0.0.1:${address.port}`;
+});
+
+test.afterAll(async () => {
+	await devServer.close();
+});
+
+test('applies the global 90% density without shrinking the viewport', async ({ page }) => {
+	await page.setViewportSize({ width: 1920, height: 1080 });
+	await page.goto(baseUrl);
+	await expect(page.getByRole('heading', { name: 'SchoolOrbit', exact: true })).toBeVisible();
+
+	const metrics = await page.evaluate(() => {
+		const routeRoot = document.querySelector('.min-h-screen');
+		if (!(routeRoot instanceof HTMLElement)) throw new Error('Landing route root not found');
+		return {
+			rootFontSize: getComputedStyle(document.documentElement).fontSize,
+			routeHeight: routeRoot.getBoundingClientRect().height,
+			viewportHeight: window.innerHeight,
+			documentWidth: document.documentElement.scrollWidth,
+			viewportWidth: window.innerWidth
+		};
+	});
+
+	expect(metrics.rootFontSize).toBe('14.4px');
+	expect(Math.abs(metrics.routeHeight - metrics.viewportHeight)).toBeLessThanOrEqual(1);
+	expect(metrics.documentWidth).toBeLessThanOrEqual(metrics.viewportWidth + 1);
 });
 ```
 
@@ -74,12 +96,12 @@ test('frontend school uses a global 90% density baseline', async () => {
 Run from `frontend-school`:
 
 ```bash
-node --test \
-  --test-name-pattern='frontend school uses a global 90% density baseline' \
-  tests/static/frontend-layout-components.test.mjs
+PUBLIC_BACKEND_URL=http://127.0.0.1:3000 \
+PUBLIC_VAPID_KEY=test \
+npx playwright test tests/e2e/global-density.spec.ts --project=chromium
 ```
 
-Expected: FAIL at the `font-size: 90%` assertion with `The input did not match the regular expression`; the import and forbidden-scaling assertions should not be the failing boundary.
+Expected: FAIL only because `metrics.rootFontSize` is `16px` instead of `14.4px`. The real landing route must load successfully, remain full-height, and stay within the viewport width.
 
 - [ ] **Step 3: Add the minimal global stylesheet implementation**
 
@@ -101,12 +123,12 @@ Do not add page-specific classes, CSS `zoom`, transforms, viewport compensation,
 Run from `frontend-school`:
 
 ```bash
-node --test \
-  --test-name-pattern='frontend school uses a global 90% density baseline' \
-  tests/static/frontend-layout-components.test.mjs
+PUBLIC_BACKEND_URL=http://127.0.0.1:3000 \
+PUBLIC_VAPID_KEY=test \
+npx playwright test tests/e2e/global-density.spec.ts --project=chromium
 ```
 
-Expected: PASS with one selected test passing and the unrelated tests skipped by the name filter.
+Expected: PASS with the real landing route reporting a 14.4px root baseline, full viewport height, and no horizontal overflow.
 
 - [ ] **Step 5: Check formatting for the two changed implementation files**
 
@@ -115,7 +137,7 @@ Run from `frontend-school`:
 ```bash
 npx prettier --check \
   src/routes/layout.css \
-  tests/static/frontend-layout-components.test.mjs
+  tests/e2e/global-density.spec.ts
 ```
 
 Expected: PASS with both files reported as correctly formatted. If it fails, run the same command with `--write`, inspect the formatting-only diff, and rerun `--check`.
@@ -127,10 +149,10 @@ Run from the repository root:
 ```bash
 git diff --check
 git diff -- frontend-school/src/routes/layout.css \
-  frontend-school/tests/static/frontend-layout-components.test.mjs
+  frontend-school/tests/e2e/global-density.spec.ts
 git status --short
 git add frontend-school/src/routes/layout.css \
-  frontend-school/tests/static/frontend-layout-components.test.mjs
+  frontend-school/tests/e2e/global-density.spec.ts
 git commit -m "style(frontend-school): apply global compact density"
 ```
 
@@ -304,7 +326,7 @@ Then send `Ctrl-C` to the persistent Vite session and confirm it exits. These sc
 - Do not modify generated permission or API contract artifacts
 
 **Interfaces:**
-- Consumes: the committed CSS baseline and static regression test from Task 1
+- Consumes: the committed CSS baseline and Playwright regression test from Task 1
 - Produces: repository-wide evidence required by `.rules` and `docs/TESTING.md`
 
 - [ ] **Step 1: Run frontend formatting and lint checks**
@@ -336,9 +358,12 @@ Run from `frontend-school`:
 ```bash
 npm run test:menu-sync
 npm run test:static
+PUBLIC_BACKEND_URL=http://127.0.0.1:3000 \
+PUBLIC_VAPID_KEY=test \
+npx playwright test tests/e2e/global-density.spec.ts --project=chromium
 ```
 
-Expected: both commands PASS. The global density regression must pass as part of `test:static`.
+Expected: all three commands PASS. The focused Playwright test must exercise the real compiled root layout and stylesheet.
 
 - [ ] **Step 4: Review the final repository state**
 
