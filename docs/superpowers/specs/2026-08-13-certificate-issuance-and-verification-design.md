@@ -2,14 +2,16 @@
 
 ## เป้าหมาย
 
-เพิ่มระบบออกเกียรติบัตรของโรงเรียนที่รองรับผู้รับสามกลุ่ม ได้แก่ นักเรียนในระบบ บุคลากรในระบบ และบุคคลภายนอก ระบบต้องออกเลขเกียรติบัตรแบบตัวเลขเรียงลำดับ รองรับหลายกิจกรรมและหลายแบบเกียรติบัตรในกิจกรรมเดียว เชื่อมใบที่ออกให้กับบัญชีภายใน และเปิดให้บุคคลทั่วไปตรวจสอบหรือดาวน์โหลดผ่าน QR Code และการกรอกข้อมูล
+เพิ่มระบบออกเกียรติบัตรของโรงเรียนที่รองรับผู้รับสามกลุ่ม ได้แก่ นักเรียนในระบบ บุคลากรในระบบ และบุคคลภายนอก ระบบต้องออกเลขเกียรติบัตรแบบตัวเลขเรียงลำดับ รองรับหลายกิจกรรมและหลายแบบเกียรติบัตรในกิจกรรมเดียว กระจายการเตรียมงานตามหน่วยงาน เชื่อมใบที่ออกให้กับบัญชีภายใน และเปิดให้บุคคลทั่วไปตรวจสอบหรือดาวน์โหลดผ่าน QR Code และการกรอกข้อมูล
 
 ระบบนี้เป็นโมดูล `certificates` ใหม่ ไม่ขยายตาราง `staff_achievements` เดิม เพราะโมดูล achievement เป็นบันทึกผลงานที่ผู้ใช้จัดการเอง ไม่มีวงจรออกเลข การเพิกถอน ผู้รับภายนอก แม่แบบ หรือการตรวจสอบสาธารณะ หน้าเกียรติบัตรของบุคลากรจะแสดงข้อมูลจากทั้งสองโมดูลโดยไม่คัดลอกข้อมูลข้ามตาราง
 
 ## ผลลัพธ์ที่ผู้ใช้จะได้รับ
 
 - ผู้ดูแลสร้างชุดออกเกียรติบัตรตามปีการศึกษา และเพิ่มแบบเกียรติบัตรได้หลายแบบในกิจกรรมเดียว
-- แต่ละแบบมี PDF พื้นหลัง ข้อความ รูปภาพ ฟอนต์ QR Code และตำแหน่งองค์ประกอบของตัวเอง
+- กิจกรรมเลือกหน่วยงานเจ้าของได้หนึ่งหน่วยงานแบบไม่บังคับ รองรับกลุ่มบริหาร กลุ่มสาระ งาน ฝ่าย คณะกรรมการ ทีม และหน่วยงานแบบกำหนดเองที่มีอยู่ในโครงสร้างโรงเรียน
+- ผู้มีสิทธิ์ระดับหน่วยงานสร้างกิจกรรม ออกแบบ นำเข้ารายชื่อ และส่งคำขอได้เฉพาะกิจกรรมของหน่วยงานตนเอง ส่วนการออกเลขและเพิกถอนสงวนไว้สำหรับผู้มีสิทธิ์ระดับโรงเรียน
+- แต่ละแบบมี PDF พื้นหลัง ขนาดหน้าที่อ่านจาก PDF ข้อความ รูปภาพ ฟอนต์ QR Code และตำแหน่งองค์ประกอบของตัวเอง
 - เพิ่มผู้รับได้จากการค้นหาบัญชี การกรอกบุคคลภายนอก และการนำเข้า `.xlsx` หรือ UTF-8 `.csv`
 - ระบบตรวจการเชื่อมบัญชี ชื่อไม่ตรง ข้อมูลขาด และการเลือกแบบก่อนออกจริง
 - ออกเกียรติบัตรหลายรอบในกิจกรรมเดียว โดยเลขเรียงต่อกันและไม่ใช้เลขที่เคยออกซ้ำ
@@ -35,7 +37,15 @@
 
 ### ชุดออกเกียรติบัตร
 
-หนึ่งชุดแทนกิจกรรมหลักหนึ่งกิจกรรม เช่น “กิจกรรมวันภาษาไทย” มีปีการศึกษา วันที่จัดกิจกรรม และตัวนับเลขของตัวเอง ชุดเดียวสามารถออกหลายรอบและมีแบบเกียรติบัตรหลายแบบ
+หนึ่งชุดแทนกิจกรรมหลักหนึ่งกิจกรรม เช่น “กิจกรรมวันภาษาไทย” มีปีการศึกษา วันที่จัดกิจกรรม หน่วยงานเจ้าของแบบไม่บังคับ และตัวนับเลขของตัวเอง ชุดเดียวสามารถออกหลายรอบและมีแบบเกียรติบัตรหลายแบบ
+
+### หน่วยงานเจ้าของกิจกรรม
+
+กิจกรรมอ้าง `organization_units` ได้หนึ่งหน่วยงาน เช่น `management_group`, `division`, `subject_group`, `committee`, `team`, `unit` หรือ `custom` ช่องนี้ไม่บังคับ ค่า null หมายถึงกิจกรรมระดับโรงเรียนและจัดการได้ด้วยสิทธิ์ขอบเขต `school` เท่านั้น หน้าเลือกแสดงหน่วยงานที่ active เป็นต้นไม้และไม่แสดง root `SCHOOL` ซ้ำกับตัวเลือก “กิจกรรมระดับโรงเรียน”
+
+สิทธิ์ `organization_unit` ใช้กับหน่วยงานตรงตัวเท่านั้นและไม่สืบทอดจาก parent ไป child เช่น กลุ่มบริหารงานวิชาการไม่เห็นกิจกรรมของกลุ่มสาระโดยอัตโนมัติ การรองรับขอบเขต `organization_tree` ไม่อยู่ในรุ่นแรก หากหลายหน่วยงานร่วมจัด ให้เลือกเจ้าภาพหลักหนึ่งหน่วยงานหรือเลือกกิจกรรมระดับโรงเรียน
+
+หน่วยงานเจ้าของเปลี่ยนได้ก่อนออกใบแรกเท่านั้น หลังออกแล้ว ID เจ้าของถูกล็อกเพื่อไม่ให้การโอนกิจกรรมเปลี่ยนขอบเขตสิทธิ์ย้อนหลัง หากหน่วยงานถูกปิดใช้งานก่อนออก ผู้ใช้ระดับหน่วยงานส่งคำขอไม่ได้และผู้มีสิทธิ์ระดับโรงเรียนต้องย้ายเจ้าของหรือเปลี่ยนเป็นกิจกรรมระดับโรงเรียนก่อน
 
 ### ประเภทผู้รับ
 
@@ -51,17 +61,20 @@
 
 ชื่อแบบต้องไม่ซ้ำกันภายในชุดเดียวหลังตัดช่องว่างและเปรียบเทียบแบบไม่แยกตัวพิมพ์สำหรับอักษรละติน
 
+PDF พื้นหลังเป็นแหล่งจริงของขนาดกระดาษ ผู้ใช้ไม่ต้องเลือก A4, A5, Letter หรือแนวกระดาษก่อนอัปโหลด Backend อ่าน CropBox, MediaBox และ rotation จาก PDF ที่ผ่านการสแกน เก็บความกว้าง/ความสูงเป็น PDF points และ Frontend แสดงชื่อมาตรฐานเมื่อขนาดคลาดจากมาตรฐานไม่เกิน 1 มม. มิฉะนั้นแสดง “ขนาดกำหนดเอง” พร้อมมิลลิเมตรจริง แต่ละแบบในกิจกรรมเดียวกันมีขนาดและแนวกระดาษต่างกันได้ แต่ละด้านต้องอยู่ระหว่าง 25–600 มม. และพื้นที่หน้าต้องไม่เกิน 250,000 ตารางมิลลิเมตรเพื่อจำกัดหน่วยความจำระหว่าง render
+
 ## วงจรการทำงาน
 
-1. ผู้ดูแลสร้างชุดออก เลือกปีการศึกษา ระบุชื่อกิจกรรมและวันที่จัดกิจกรรม
-2. ผู้ดูแลเพิ่มแบบเกียรติบัตร อัปโหลด PDF พื้นหลังหนึ่งหน้า และจัดองค์ประกอบใน editor
-3. ผู้ดูแลเพิ่มผู้รับด้วยการค้นหาบัญชี กรอกเอง หรือนำเข้า Spreadsheet
+1. ผู้เตรียมสร้างชุดออก เลือกปีการศึกษา ระบุชื่อกิจกรรม วันที่จัดกิจกรรม และหน่วยงานเจ้าของที่ตนมีสิทธิ์ หรือผู้มีสิทธิ์ระดับโรงเรียนเลือกกิจกรรมระดับโรงเรียน
+2. ผู้เตรียมเพิ่มแบบเกียรติบัตร อัปโหลด PDF พื้นหลังหนึ่งหน้า ระบบอ่านขนาดหน้าอัตโนมัติ แล้วจัดองค์ประกอบใน editor
+3. ผู้เตรียมเพิ่มผู้รับด้วยการค้นหาบัญชี กรอกเอง หรือนำเข้า Spreadsheet
 4. Backend ตรวจข้อมูลและแบ่งรายการเป็น `ready`, `needs_review` หรือ `invalid`
-5. ผู้ดูแลแก้ไขหรือยืนยันรายการ เลือกแบบทีละรายการหรือหลายรายการ และพรีวิวข้อมูลจริง
-6. ผู้ดูแลเลือกเฉพาะรายการ `ready` แล้วกดออก ระบบจองเลขและสร้างใบทั้งหมดใน transaction เดียว
-7. รายการที่ยังไม่พร้อมคงอยู่เพื่อแก้ไขและออกในรอบถัดไป
-8. ใบที่ออกแล้วปรากฏในพื้นที่ส่วนตัวของบัญชีที่เชื่อม และตรวจสอบจากหน้าสาธารณะได้
-9. หากข้อมูลเฉพาะใบผิด ผู้มีสิทธิ์เพิกถอนใบเดิม สร้างรายการทดแทน แก้ข้อมูล และออกด้วยเลขใหม่
+5. ผู้เตรียมแก้ไขหรือยืนยันรายการ เลือกแบบทีละรายการหรือหลายรายการ และพรีวิวข้อมูลจริง
+6. ผู้เตรียมเลือกเฉพาะรายการ `ready` แล้วส่งคำขอออก กิจกรรม แบบ และรายการที่อ้างถึงถูกล็อกระหว่างรอตรวจ
+7. ผู้มีสิทธิ์ `certificate.issue.school` ตรวจหน่วยงาน ตัวอย่าง PDF จำนวนรายการ และข้อมูลเตือน แล้วเลือกออกหรือส่งกลับให้แก้
+8. เมื่ออนุมัติ Backend จองเลขและสร้างใบทั้งหมดใน transaction เดียว รายการที่ไม่อยู่ในคำขอยังคงแก้ไขและออกในรอบถัดไปได้
+9. ใบที่ออกแล้วปรากฏในพื้นที่ส่วนตัวของบัญชีที่เชื่อม และตรวจสอบจากหน้าสาธารณะได้
+10. หากข้อมูลเฉพาะใบผิด ผู้มีสิทธิ์ระดับโรงเรียนเพิกถอนใบเดิม สร้างรายการทดแทน แล้วให้หน่วยงานแก้และส่งคำขอออกด้วยเลขใหม่
 
 ## สถานะและกติกาการแก้ไข
 
@@ -75,6 +88,12 @@
 หลังออกครั้งแรก `academic_year_id` และเลขลำดับกิจกรรมเปลี่ยนไม่ได้ ชื่อกิจกรรมและวันที่จัดกิจกรรมเป็นข้อมูลร่วมที่แก้ได้ด้วยสิทธิ์ update และหน้าต่างยืนยัน การแก้ดังกล่าวมีผลต่อหน้าตรวจสอบและ PDF ที่สร้างใหม่ทุกใบในชุด และต้องบันทึก audit log
 
 ชุดที่ยังไม่เคยออกใบลบจริงได้ ชุดที่มีใบแล้วลบไม่ได้และใช้ `closed` หรือ `archived` แทน
+
+### คำขอออกเกียรติบัตร
+
+คำขอหนึ่งรายการอยู่ในสถานะ `pending`, `reviewing`, `returned`, `withdrawn` หรือ `issued` และอ้าง candidate ที่เลือกแบบ normalized rows ระหว่าง `pending` หรือ `reviewing` ระบบล็อก candidate ที่เลือก แบบที่ candidate ใช้ และข้อมูลร่วมของกิจกรรม เพื่อให้สิ่งที่ผู้ตรวจเห็นไม่เปลี่ยนกลางคัน รายการและแบบอื่นที่ไม่อยู่ในคำขอยังเตรียมต่อได้
+
+ผู้ส่งถอนคำขอได้เฉพาะ `pending` ผู้มีสิทธิ์ออกเปลี่ยนเป็น `reviewing`, ส่งกลับพร้อมหมายเหตุที่ไม่บันทึก PII หรืออนุมัติออก ผู้ตรวจไม่แก้ข้อมูลแทนหน่วยงานในหน้าตรวจ เมื่อ `returned`, `withdrawn` หรือ `issued` ระบบปลดล็อก resource ที่ไม่ติดคำขออื่น คำขอที่ส่งกลับเป็นประวัติแบบอ่านอย่างเดียว หลังแก้แล้วต้องสร้างคำขอใหม่
 
 ### แบบเกียรติบัตร
 
@@ -157,7 +176,7 @@ Frontend โหลดไลบรารี Spreadsheet หลังผู้ใ�
 - `needs_review` — ไม่พบบัญชี ชื่อไม่ตรง มีคำเตือนซ้ำ หรือยังต้องตัดสินใจเลือกแบบ
 - `invalid` — ขาดข้อมูลจำเป็น ประเภทผู้รับผิด แบบไม่รองรับผู้รับ หัวคอลัมน์ผิด หรือตัวแปรอ้างอิงไม่ถูกต้อง
 
-ผู้ดูแลแก้แต่ละแถวบนเว็บได้โดยไม่ต้องอัปโหลดใหม่ และออกเฉพาะรายการ `ready` ได้ หน้าสรุปต้องแสดงจำนวนของแต่ละสถานะก่อนกดออก
+ผู้เตรียมแก้แต่ละแถวบนเว็บได้โดยไม่ต้องอัปโหลดใหม่ และส่งคำขอเฉพาะรายการ `ready` ได้ หน้าสรุปต้องแสดงจำนวนของแต่ละสถานะก่อนส่งขอออก
 
 ## ตัวแปรและ Editor
 
@@ -169,9 +188,10 @@ Frontend โหลดไลบรารี Spreadsheet หลังผู้ใ�
 - `{วันที่จัดกิจกรรม}`
 - `{วันที่ออก}`
 - `{ชื่อโรงเรียนผู้ออก}`
+- `{ชื่อหน่วยงานเจ้าของกิจกรรม}`
 - `{QR_CODE}`
 
-ค่าผู้รับ รายการแข่งขัน รางวัล/บทบาท คอลัมน์เสริม วันที่ออก และชื่อโรงเรียนผู้ออกถูก snapshot ตอนออก `{ชื่อกิจกรรมหลัก}` และ `{วันที่จัดกิจกรรม}` ใช้ค่าร่วมปัจจุบันของชุดตามกติกาการแก้ไขข้อมูลร่วมข้างต้น
+ค่าผู้รับ รายการแข่งขัน รางวัล/บทบาท คอลัมน์เสริม วันที่ออก ชื่อโรงเรียนผู้ออก และชื่อหน่วยงานเจ้าของกิจกรรมถูก snapshot ตอนออก หากกิจกรรมไม่มีหน่วยงานเจ้าของ ตัวแปรหน่วยงานใช้ชื่อโรงเรียนผู้ออก `{ชื่อกิจกรรมหลัก}` และ `{วันที่จัดกิจกรรม}` ใช้ค่าร่วมปัจจุบันของชุดตามกติกาการแก้ไขข้อมูลร่วมข้างต้น
 
 Editor เป็นเครื่องมือเฉพาะเกียรติบัตร ไม่ใช่ Canva เต็มรูปแบบ โดยมีความสามารถดังนี้:
 
@@ -182,8 +202,11 @@ Editor เป็นเครื่องมือเฉพาะเกียร�
 - กำหนดฟอนต์ น้ำหนัก ขนาด สี การจัดแนว ระยะบรรทัด ความกว้างสูงสุด auto-shrink และเงาข้อความ
 - ใช้ Sarabun Regular/Bold เป็นฟอนต์มาตรฐานเริ่มต้น และอัปโหลด `.ttf`/`.otf` เพิ่มได้เมื่อผู้ดูแลยืนยันสิทธิ์การใช้งาน
 - พรีวิวชื่อสั้น ชื่อปกติ ชื่อยาว และเลือกพรีวิวรายการจริงรายบุคคล
+- แสดงขอบหน้าจริง หน่วยมิลลิเมตร แนวกระดาษ และเส้นพื้นที่ปลอดภัยเริ่มต้น 10 มม. ซึ่งปรับหรือซ่อนได้ เส้นนี้เป็นคำเตือนสำหรับงานพิมพ์และไม่ตัดเนื้อหาออกจาก PDF
 
 Layout เก็บเป็น JSONB ที่มี named schema และ `schemaVersion` สำหรับรูปแบบข้อมูลทางเทคนิค องค์ประกอบใช้ tagged union เช่น text, image และ QR ตำแหน่งและขนาดเก็บเป็น PDF points อ้างอิง CropBox ของหน้า ไม่เก็บพิกัดตามขนาดหน้าจอ การมี `schemaVersion` ไม่ใช่ประวัติเวอร์ชันของแม่แบบ และฐานข้อมูลเก็บ layout ปัจจุบันเพียงชุดเดียวต่อแบบ
+
+เมื่อแทน PDF พื้นหลังด้วยหน้าขนาดและ rotation เดิม ระบบรักษา layout ไว้ หาก geometry ต่างกัน ผู้ใช้ต้องเลือกก่อนบันทึกว่าจะ “ปรับตามสัดส่วน” หรือ “เริ่มจัดวางใหม่” การปรับตามสัดส่วนแปลงตำแหน่ง/กรอบตามอัตราส่วนแกน X/Y และปรับขนาดฟอนต์ เส้น รูป และ QR ด้วยอัตราส่วนด้านที่สั้นกว่า จากนั้นบังคับพรีวิวก่อนยืนยัน ระบบไม่ยืดหรือบีบ PDF พื้นหลังให้ผิดสัดส่วน การเปลี่ยนนี้มีผลต่อ PDF ที่สร้างใหม่ของใบเดิมตามกติกาไม่มี template version
 
 ## การสร้าง PDF
 
@@ -195,7 +218,7 @@ Renderer ใช้เส้นทางเดียวกันสำหรั�
 2. โหลดฟอนต์ที่อนุญาตผ่าน FontFace
 3. วาด text layer ที่ความละเอียดสำหรับงานพิมพ์ด้วย Canvas เพื่อให้ browser shaping ภาษาไทย เงา และ auto-shrink ตรงกับ preview
 4. ใช้ `pdf-lib` วาง text layer โปร่งใส รูปภาพ และ QR ลงบนหน้า PDF เดิม
-5. ส่งออก PDF หนึ่งหน้า หรือรวมรายการที่ผู้ดูแลเลือกเป็น PDF หลายหน้า
+5. ส่งออก PDF หนึ่งหน้า หรือรวมรายการที่ผู้ดูแลเลือกเป็น PDF หลายหน้า โดยรักษาขนาดของแต่ละหน้าไว้แม้รายการใช้คนละแบบหรือคนละขนาดกระดาษ
 
 พื้นหลัง PDF เดิมจึงยังคงเป็น PDF ขณะที่ text layer ถูกฝังเป็นภาพความละเอียดสูง ข้อความในใบไม่รับประกันว่าจะค้นหาหรือเลือกคัดลอกได้ Renderer, PDF parser, Spreadsheet parser และไลบรารีรูปภาพต้อง lazy-load หลังการกระทำของผู้ใช้และใช้ server stub น้ำหนักเบาระหว่าง SSR ตามข้อกำหนด frontend ของโครงการ
 
@@ -211,11 +234,11 @@ Renderer ใช้เส้นทางเดียวกันสำหรั�
 
 ### `certificate_campaigns`
 
-เก็บ UUID, ปีการศึกษา, ชื่อกิจกรรม, วันที่จัดกิจกรรม, activity sequence ที่ยังเป็น null ได้ก่อนออกครั้งแรก, ลำดับใบถัดไป, สถานะ และผู้สร้าง/ผู้แก้
+เก็บ UUID, ปีการศึกษา, optional owner organization unit ID, ชื่อกิจกรรม, วันที่จัดกิจกรรม, activity sequence ที่ยังเป็น null ได้ก่อนออกครั้งแรก, ลำดับใบถัดไป, สถานะ และผู้สร้าง/ผู้แก้ Foreign key เจ้าของใช้ `ON DELETE RESTRICT`; หน่วยงานที่ปิดใช้งานยังคงแสดงในประวัติแต่เลือกกับกิจกรรมใหม่ไม่ได้
 
 ### `certificate_templates`
 
-เก็บ UUID, campaign ID, ชื่อแบบ, PDF background file ID, allowed recipient types, typed layout JSONB, active flag และผู้สร้าง/ผู้แก้ ตารางนี้เก็บสถานะปัจจุบันเท่านั้นและไม่มีตาราง template versions
+เก็บ UUID, campaign ID, ชื่อแบบ, PDF background file ID, page width/height เป็น points, rotation, optional recognized paper label, safe-margin setting, allowed recipient types, typed layout JSONB, active flag และผู้สร้าง/ผู้แก้ ตารางนี้เก็บ geometry ที่ Backend อ่านจาก PDF สถานะปัจจุบันเท่านั้น และไม่มีตาราง template versions
 
 ### `certificate_template_assets`
 
@@ -227,15 +250,19 @@ Renderer ใช้เส้นทางเดียวกันสำหรั�
 
 ### `certificate_candidates`
 
-เก็บรายการที่ยังไม่ออก ได้แก่ batch/campaign/template, recipient type, optional user ID, ชื่อที่นำเข้า ชื่อจากบัญชี ชื่อที่ผู้ดูแลเลือก รายการแข่งขัน รางวัล/บทบาท custom string map สถานะการจับคู่ และข้อมูลเตือน รายการที่ออกแล้วชี้ไปยัง certificate ID เพื่อป้องกันการออกซ้ำจากการ retry
+เก็บรายการที่ยังไม่ออก ได้แก่ batch/campaign/template, recipient type, optional user ID, ชื่อที่นำเข้า ชื่อจากบัญชี ชื่อที่ผู้ดูแลเลือก รายการแข่งขัน รางวัล/บทบาท custom string map สถานะการจับคู่ และข้อมูลเตือน รายการที่ออกแล้วชี้ไปยัง certificate ID เพื่อป้องกันการออกซ้ำจากการ retry Pending issue-request items เป็นตัวกำหนด edit lock โดยไม่ต้องมี boolean lock ที่อาจค้าง
+
+### `certificate_issue_requests` และ `certificate_issue_request_items`
+
+เก็บ campaign, ผู้ส่ง, สถานะคำขอ ผู้ตรวจ เวลา หมายเหตุส่งกลับ และ candidate IDs แบบหนึ่งแถวต่อ item Unique partial constraint ป้องกัน candidate อยู่ในคำขอ `pending`/`reviewing` มากกว่าหนึ่งคำขอพร้อมกัน คำขอไม่เก็บสำเนา recipient payload และอาศัย lock ป้องกันข้อมูลเปลี่ยนระหว่างตรวจ
 
 ### `certificate_issue_runs`
 
-เก็บ idempotency key ต่อคำสั่งออก ผู้สั่ง เวลา และผลรวม ใช้ unique constraint ป้องกัน browser retry สร้างเลขชุดใหม่
+เก็บ issue request ID, idempotency key ต่อคำสั่งอนุมัติออก ผู้สั่ง เวลา และผลรวม ใช้ unique constraint ป้องกัน browser retry สร้างเลขชุดใหม่
 
 ### `certificates`
 
-เก็บ UUID ภายใน, campaign/template/candidate ID, เลขเต็มและส่วนประกอบ, recipient type, optional user ID, snapshot คำนำหน้า/ชื่อ/นามสกุล, รายการแข่งขัน, รางวัล/บทบาท, custom string map, ชื่อโรงเรียนผู้ออก, วันที่ออก, สถานะ `issued` หรือ `revoked`, ข้อมูลเพิกถอน, optional replacement certificate ID และหลักฐานสำหรับ QR
+เก็บ UUID ภายใน, campaign/template/candidate ID, เลขเต็มและส่วนประกอบ, recipient type, optional user ID, snapshot คำนำหน้า/ชื่อ/นามสกุล, รายการแข่งขัน, รางวัล/บทบาท, custom string map, ชื่อโรงเรียนผู้ออก, ชื่อหน่วยงานเจ้าของกิจกรรม, วันที่ออก, สถานะ `issued` หรือ `revoked`, ข้อมูลเพิกถอน, optional replacement certificate ID และหลักฐานสำหรับ QR
 
 QR proof เป็นค่าสุ่ม entropy สูงต่อใบ ไม่ใช่เลขเกียรติบัตรอีกชุด ระบบเก็บค่าเข้ารหัสสำหรับนำไปสร้าง QR ใหม่และเก็บ hash สำหรับตรวจสอบ โดยใช้ utility encryption ที่มีอยู่ ห้าม log ค่า proof ทั้งแบบเต็มและบางส่วน ใบที่เพิกถอนยังรักษา proof ไว้เพื่อแสดงสถานะเดิม
 
@@ -245,7 +272,7 @@ QR proof เป็นค่าสุ่ม entropy สูงต่อใบ ไ�
 
 เพิ่ม purpose และ domain policy สำหรับ certificate template แยกตามชนิด PDF background, image asset และ font asset แทนการใช้ `FilePurpose::Certificate` ที่ปัจจุบันอยู่ใน identity policy แต่ยังไม่มี explicit certificate-domain authorization
 
-- PDF ต้องเป็นไฟล์หนึ่งหน้า ไม่เข้ารหัส ขนาดไม่เกิน policy และผ่าน malware scan
+- PDF ต้องเป็นไฟล์หนึ่งหน้า ไม่เข้ารหัส ขนาดไม่เกิน policy ผ่าน malware scan และมี CropBox/MediaBox/rotation ที่ parser อ่านได้ Backend บันทึก geometry จากไฟล์จริง ไม่รับค่าขนาดหน้าจาก client เป็นแหล่งจริง
 - รูปภาพรับ PNG, JPEG และ WebP ตาม MIME sniffing และ dimension limits
 - ฟอนต์รับ TTF/OTF ที่ parser เปิดได้ ขนาดตาม policy และผ่าน malware scan
 - ไฟล์ทุกชนิดเป็น private
@@ -255,18 +282,18 @@ QR proof เป็นค่าสุ่ม entropy สูงต่อใบ ไ�
 
 ## การออกเลขแบบ Transactional
 
-คำสั่งออกมี client-generated idempotency key และ candidate IDs ที่เลือก Service ทำตามลำดับนี้ใน transaction เดียว:
+เฉพาะผู้มี `certificate.issue.school` เริ่มคำสั่งออกจากคำขอสถานะ `reviewing` พร้อม client-generated idempotency key Service ทำตามลำดับนี้ใน transaction เดียว:
 
 1. lock issue run key และคืนผลเดิมหากคำสั่งนี้สำเร็จแล้ว
-2. lock campaign และ candidates ที่เลือก
-3. ตรวจสิทธิ์ สถานะ `ready`, account match และ template compatibility ซ้ำ
+2. lock issue request, campaign, request items, candidates และ templates ที่เลือก
+3. ตรวจสิทธิ์เจ้าของหน่วยงาน สถานะ request/candidate, account match, template compatibility และ page assets ซ้ำ
 4. หากเป็นการออกครั้งแรก lock academic-year counter และจอง activity sequence
 5. จองช่วง recipient sequence จาก campaign counter
 6. คำนวณเลขเต็ม/check digit สร้าง QR proof และ insert certificates
-7. ทำเครื่องหมาย candidates ว่าออกแล้ว บันทึก issue run และ audit events
+7. ทำเครื่องหมาย candidates และ request ว่าออกแล้ว บันทึก issue run และ audit events
 8. commit ทั้งชุด
 
-ถ้ามี candidate ใดไม่ผ่านการตรวจซ้ำ คำสั่งทั้งชุดล้มเหลวก่อนจองเลขและตอบ typed conflict พร้อม row IDs ที่ต้องแก้ ไม่มีการออกบางส่วนโดยไม่แจ้ง ผู้ดูแลเลือกชุดใหม่และ retry ด้วย idempotency key ใหม่หลังแก้ข้อมูล
+ถ้ามี candidate, account, template หรือ asset ใดไม่ผ่านการตรวจซ้ำ ระบบไม่จองเลขและเปลี่ยนคำขอเป็น `returned` พร้อม typed issue codes และ row IDs ที่ต้องแก้ โดยไม่ใส่ PII ในหมายเหตุ ไม่มีการออกบางส่วนโดยไม่แจ้ง หน่วยงานแก้ข้อมูลแล้วสร้างคำขอใหม่
 
 ## การตรวจสอบสาธารณะและดาวน์โหลด
 
@@ -308,7 +335,9 @@ Endpoint ตรวจสอบและขอ render ใช้ rate limit ต่
 
 ### ผู้ดูแล
 
-เพิ่ม workspace สำหรับรายการชุดออก สถานะ จำนวนแบบ จำนวนรายการพร้อมออก จำนวนใบที่ออกและเพิกถอน แต่ละชุดมี route ย่อยสำหรับข้อมูลกิจกรรม แบบเกียรติบัตร/Editor รายชื่อและการนำเข้า รอบการออก และใบที่ออกแล้ว เส้นทางย่อยรองรับ deep link และ lazy-load แยกกัน
+เพิ่ม workspace สำหรับรายการชุดออก สถานะ หน่วยงานเจ้าของ จำนวนแบบ จำนวนรายการพร้อมออก จำนวนใบที่ออกและเพิกถอน แต่ละชุดมี route ย่อยสำหรับข้อมูลกิจกรรม แบบเกียรติบัตร/Editor รายชื่อและการนำเข้า คำขอออก รอบการออก และใบที่ออกแล้ว เส้นทางย่อยรองรับ deep link และ lazy-load แยกกัน
+
+ผู้ใช้ขอบเขต `organization_unit` เห็นและจัดการเฉพาะกิจกรรมที่ owner ID ตรงกับหน่วยงานที่ได้รับ grant ส่วนผู้ใช้ขอบเขต `school` เห็นทั้งหมด ผู้มีสิทธิ์ออกระดับโรงเรียนมี route “คำขอออกเกียรติบัตร” แยกต่างหาก แสดงหน่วยงานผู้ส่ง จำนวนใบ แบบที่ใช้ ตัวอย่าง PDF และผล revalidation ก่อนกดออกหรือส่งกลับ
 
 ### บุคลากร
 
@@ -332,15 +361,24 @@ Endpoint ตรวจสอบและขอ render ใช้ rate limit ต่
 เพิ่ม permission ผ่าน `contracts/permissions.json` และสร้าง generated registries ตามขั้นตอนโครงการ:
 
 - `certificate.read.own` — ดูและดาวน์โหลดใบที่ `user_id` เป็นตนเอง
+- `certificate.read.organization_unit` — ดูกิจกรรม แบบ รายการ คำขอ และใบของหน่วยงานตรงตัวที่ได้รับ grant
 - `certificate.read.school` — ดูชุด แบบ รายการ และใบทั้งโรงเรียน
-- `certificate.create.school` — สร้างชุด แบบ และรายการ
-- `certificate.update.school` — แก้ชุด แบบ asset และรายการร่าง รวมถึง resolve import warnings
-- `certificate.delete.school` — ลบเฉพาะ draft/unused resource ตาม lifecycle
+- `certificate.create.organization_unit` — สร้างกิจกรรมและ resource ภายใต้หน่วยงานตรงตัวที่ได้รับ grant
+- `certificate.create.school` — สร้างกิจกรรมระดับโรงเรียนหรือของหน่วยงานใดก็ได้
+- `certificate.update.organization_unit` — แก้กิจกรรม แบบ asset และรายการร่างของหน่วยงานตรงตัว รวมถึง resolve import warnings
+- `certificate.update.school` — แก้ resource ทั้งโรงเรียน
+- `certificate.delete.organization_unit` — ลบเฉพาะ draft/unused resource ของหน่วยงานตรงตัวตาม lifecycle
+- `certificate.delete.school` — ลบ draft/unused resource ทั้งโรงเรียนตาม lifecycle
+- `certificate.submit.organization_unit` — ส่งหรือถอนคำขอออกของหน่วยงานตรงตัว
+- `certificate.submit.school` — ส่งหรือถอนคำขอของกิจกรรมใดก็ได้
 - `certificate.issue.school` — ออกเลขและสร้างใบ
 - `certificate.revoke.school` — เพิกถอนและสร้าง replacement draft
+- `certificate.download.organization_unit` — ดาวน์โหลดใบเดี่ยวหรือรวมหลายใบของหน่วยงานตรงตัว
 - `certificate.download.school` — ดาวน์โหลดใบเดี่ยวหรือรวมหลายใบในฐานะผู้ดูแล
 
-Backend policy เป็นแหล่งตัดสินสิทธิ์ Frontend route guard และปุ่มเป็นเพียง UX การอ่านแบบ own ใช้ session user ID เท่านั้นและไม่รับ target user ID จาก client การกระทำกับ campaign/template/candidate/certificate ต้องตรวจ relationship ใน reusable `certificate_access_policy` และทุก public handler ต้อง resolve tenant ด้วย public tenant context ของระบบ
+Backend policy เป็นแหล่งตัดสินสิทธิ์ Frontend route guard และปุ่มเป็นเพียง UX การอ่านแบบ own ใช้ session user ID เท่านั้นและไม่รับ target user ID จาก client การกระทำกับ campaign/template/candidate/request/certificate ต้องตรวจ relationship ใน reusable `certificate_access_policy` และทุก public handler ต้อง resolve tenant ด้วย public tenant context ของระบบ
+
+สิทธิ์ระดับหน่วยงานใช้ organization permission grants ของโครงการกับ exact unit และ matching position ไม่ใช้ `is_primary` และไม่อนุมาน parent/child scopes List endpoint รวมผลจาก own, organization-unit และ school scopes ตามกติกา union ของโครงการ เฉพาะ `school` เท่านั้นที่ short-circuit ได้ ผู้ที่มี create/update/submit ระดับหน่วยงานไม่มีสิทธิ์ออกหรือเพิกถอนจนกว่าจะได้รับ permission ระดับ `school` ที่แยกต่างหาก
 
 Migration ลงทะเบียน permission และ grants ที่จำเป็นสำหรับ built-in roles โดยไม่ใช้ raw permission strings ใน runtime Route metadata, menu registration และ capability controls ใช้ generated constants เท่านั้น
 
@@ -352,7 +390,8 @@ Migration ลงทะเบียน permission และ grants ที่จ�
 - template list/create/update/deactivate และ template asset operations
 - candidate list/create/update/bulk update/delete และ import submission
 - import validation summary และ account-match resolution
-- issue command, issue-run result, revoke และ replacement draft
+- issue-request submit/withdraw/review/return, issue command, issue-run result, revoke และ replacement draft
+- organization-unit tree lookup สำหรับเลือกเจ้าของโดยใช้ contract lookup ที่มีอยู่และกรองตาม capability ฝั่ง Backend
 - issued certificate list/detail และ authorized render manifest
 - current-user certificate list/detail/render
 - public QR verification, manual verification และ public render manifest
@@ -363,7 +402,7 @@ Mutation ที่สำเร็จคืน resource/outcome ที่เป�
 
 ## Audit, Security และ PDPA
 
-บันทึก audit สำหรับการสร้าง/แก้/ปิด/เก็บชุด การแก้หรือปิดแบบ การยืนยันชื่อ การแปลงรายการเป็นบุคคลภายนอก การออกแต่ละรอบ การเพิกถอน และการสร้างใบทดแทน Audit เก็บ IDs, counts, status transitions และฟิลด์ที่เปลี่ยนเท่าที่จำเป็น ไม่เก็บ raw Spreadsheet, QR proof, national ID หรือข้อมูลที่ไม่จำเป็น
+บันทึก audit สำหรับการสร้าง/แก้/ปิด/เก็บชุด การเปลี่ยนหน่วยงานเจ้าของ การแก้หรือปิดแบบ การเปลี่ยน geometry พื้นหลัง การยืนยันชื่อ การแปลงรายการเป็นบุคคลภายนอก การส่ง/ถอน/รับตรวจ/ส่งกลับคำขอ การออกแต่ละรอบ การเพิกถอน และการสร้างใบทดแทน Audit เก็บ IDs, counts, status transitions และฟิลด์ที่เปลี่ยนเท่าที่จำเป็น ไม่เก็บ raw Spreadsheet, QR proof, national ID หรือข้อมูลที่ไม่จำเป็น
 
 ข้อกำหนดเพิ่มเติม:
 
@@ -379,9 +418,13 @@ Mutation ที่สำเร็จคืน resource/outcome ที่เป�
 ## Error Handling
 
 - PDF ไม่ถูกต้อง หลายหน้า เข้ารหัส หรือยังสแกนไม่ผ่าน: ปฏิเสธก่อนเลือกเป็นพื้นหลัง
+- PDF ไม่มี page geometry ที่อ่านได้หรือเกินขอบเขต dimension/area: ปฏิเสธ; หากเปลี่ยนเป็นคนละ geometry ต้องเลือก scale/reset และยืนยัน preview ก่อนบันทึก
 - font/image ผิดชนิดหรือ parser เปิดไม่ได้: ปฏิเสธและไม่เพิ่ม asset reference
 - Spreadsheet ไม่มีคอลัมน์จำเป็น หัวซ้ำ ใช้ตัวแปรสงวน หรือมีหัวข้อมูลต้องห้าม: ปฏิเสธทั้ง import พร้อมระบุหัว/แถวที่แก้ โดยไม่สะท้อนค่าลับ
-- account เปลี่ยนระหว่าง review กับ issue: ยกเลิก issue transaction และคืน candidate เป็น `needs_review`
+- หน่วยงานเจ้าของไม่ active หรือผู้ใช้ไม่มี exact-unit grant: ปฏิเสธการสร้าง/ย้าย/ส่งคำขอโดยไม่เปิดเผยข้อมูลกิจกรรมหน่วยงานอื่น
+- กิจกรรมหรือ resource อยู่ในคำขอ `pending`/`reviewing`: ปฏิเสธ mutation ด้วย typed locked response พร้อม request ID ที่ผู้ใช้มีสิทธิ์เห็น
+- ผู้ตรวจส่งกลับคำขอ: ปลดล็อก resource และคืน typed issue codes; หมายเหตุอิสระมีความยาวจำกัดและห้ามใส่ PII
+- account เปลี่ยนระหว่าง review กับ issue: ไม่จองเลข เปลี่ยนคำขอเป็น `returned` และคืน candidate เป็น `needs_review`
 - template ถูกปิดหรือไม่รองรับประเภทผู้รับ: candidate ออกไม่ได้
 - browser retry: issue idempotency คืนผลเดิมและไม่สร้างเลขใหม่
 - concurrent issue: row locks ทำให้ช่วงเลขไม่ซ้ำ
@@ -399,6 +442,7 @@ Mutation ที่สำเร็จคืน resource/outcome ที่เป�
 - recipient compatibility และ account-match decision table
 - name normalization และ generic verification outcomes
 - typed layout validation, variable interpolation, auto-shrink inputs และ missing-value report
+- paper-size recognition tolerance, PDF-point/mm conversion และ deterministic scale/reset layout transform
 
 ### Backend service/database tests
 
@@ -406,9 +450,11 @@ Mutation ที่สำเร็จคืน resource/outcome ที่เป�
 - สองคำสั่งพร้อมกันได้เลขไม่ซ้ำและเรียงตาม counter
 - retry idempotency ไม่สร้างใบหรือใช้เลขเพิ่ม
 - การตรวจ selected candidates เป็น atomic และไม่มี partial issue
+- exact organization-unit ownership ทั้ง allowed/denied, null school ownership, no parent inheritance และ school override
+- issue-request submit/lock/withdraw/return/re-submit/issue transitions รวมถึง candidate อยู่ใน pending request ซ้ำไม่ได้
 - matched account เปลี่ยนเป็น external ไม่ได้ทั้ง single และ bulk
 - snapshot, revoke, replacement link และเลขที่ไม่ถูกใช้ซ้ำ
-- own/school policy ทั้ง allowed, denied และ wrong-tenant
+- own/organization-unit/school policy union ทั้ง allowed, denied และ wrong-tenant
 - File Platform purpose/resource relationship และ referenced-asset deletion guard
 - public QR/manual verification, invalid proof, revoked behavior, rate limit และ response allowlist
 - audit ไม่มี proof, raw import หรือ national ID
@@ -418,9 +464,10 @@ Mutation ที่สำเร็จคืน resource/outcome ที่เป�
 - ดาวน์โหลดไฟล์ตัวอย่างและนำเข้า `.xlsx`/`.csv`
 - สถานะ ready/review/invalid, เลือกชื่อจากบัญชี/ไฟล์ และ bulk external confirmation
 - template routing ตามประเภทผู้รับ รวม external ที่ใช้แบบรางวัลการแข่งขัน
-- editor drag/resize/style/QR/image และ preview ชื่อสั้น/ยาว
+- owner organization tree selection, exact-unit filtering และกิจกรรมระดับโรงเรียน
+- editor drag/resize/style/QR/image, detected paper geometry, safe-area guide, background scale/reset และ preview ชื่อสั้น/ยาว
 - PDF fixture ภาษาไทย ฟอนต์อัปโหลด เงา และตำแหน่งตรงกันระหว่าง preview/download ที่ viewport คงที่
-- ออกบางรายการ ออกเพิ่ม และแสดงผลในพื้นที่นักเรียน/บุคลากร
+- เตรียม → ส่งขอออก → ส่งกลับ/ถอน → อนุมัติ, ออกบางรายการ ออกเพิ่ม และแสดงผลในพื้นที่นักเรียน/บุคลากร
 - public QR/manual flow, download success และ revoked download absence
 - route/permission controls สำหรับผู้ดู อ่าน แก้ ออก เพิกถอน และดาวน์โหลด
 
@@ -428,8 +475,8 @@ Mutation ที่สำเร็จคืน resource/outcome ที่เป�
 
 ## ผลกระทบต่อระบบ
 
-- **Backend:** โมดูล certificate, services, policies, public verification และ render-manifest authorization ใหม่
-- **Frontend:** management workspace, focused editor, import review, own pages, public verification และ lazy browser renderer
+- **Backend:** โมดูล certificate, organization-scoped services/policies, issue-request approval, public verification และ render-manifest authorization ใหม่
+- **Frontend:** organization-filtered management workspace, school issue queue, focused paper-aware editor, import review, own pages, public verification และ lazy browser renderer
 - **Database:** ตารางและ constraints ใหม่ผ่าน migration ลำดับถัดไป ไม่มีการแก้ migration เดิม
 - **Permissions:** permission contract และ generated registries ใหม่
 - **API:** Rust/OpenAPI/generated TypeScript contracts ใหม่
@@ -443,6 +490,8 @@ Mutation ที่สำเร็จคืน resource/outcome ที่เป�
 - Canva เต็มรูปแบบ รูปร่างอิสระ วิดีโอ animation หรือ collaborative editing
 - การเก็บ PDF สำเร็จรูปถาวรหนึ่งไฟล์ต่อใบ
 - template version history, rollback หรือการตรึงหน้าตาเดิมของใบที่เคยออก
+- การกำหนดขนาดกระดาษด้วยมือโดยไม่ใช้ PDF พื้นหลัง
+- เจ้าของกิจกรรมหลายหน่วยงานและ parent-to-child permission inheritance; กิจกรรมร่วมใช้เจ้าภาพหลักหนึ่งหน่วยงานหรือระดับโรงเรียน
 - การสร้างบัญชีให้บุคคลภายนอกหรือเชื่อมข้อมูลระหว่างโรงเรียน
 - การจับคู่ด้วยชื่ออย่างเดียวหรือเลขประจำตัวประชาชน
 - ลายเซ็นดิจิทัลตามกฎหมาย PKI
@@ -451,4 +500,4 @@ Mutation ที่สำเร็จคืน resource/outcome ที่เป�
 
 ## เกณฑ์ยอมรับ
 
-ฟีเจอร์ถือว่าตรงตามแบบเมื่อผู้ดูแลสามารถสร้างกิจกรรมที่มีหลายแบบ นำเข้าหรือเพิ่มผู้รับทั้งสามกลุ่ม แก้รายการเตือน ออกหลายรอบด้วยเลขไม่ซ้ำ เชื่อมใบกับบัญชีภายใน เพิกถอนและออกใหม่ และให้บุคคลทั่วไปตรวจสอบพร้อมดาวน์โหลดใบที่ยังใช้ได้ โดยข้อมูลข้าม tenant ข้อมูลบัญชี และข้อมูลอ่อนไหวไม่รั่วไหล แม่แบบที่แก้แล้วต้องมีผลกับ PDF ที่สร้างใหม่ของใบเดิมตามที่ผู้ใช้เลือกไว้
+ฟีเจอร์ถือว่าตรงตามแบบเมื่อหน่วยงานสามารถสร้างและออกแบบกิจกรรมของตนโดยใช้ขนาดหน้าจาก PDF นำเข้าหรือเพิ่มผู้รับทั้งสามกลุ่ม แก้รายการเตือน และส่งคำขอให้ผู้มีสิทธิ์ระดับโรงเรียนออกหลายรอบด้วยเลขไม่ซ้ำ ระบบต้องเชื่อมใบกับบัญชีภายใน เพิกถอนและออกใหม่ และให้บุคคลทั่วไปตรวจสอบพร้อมดาวน์โหลดใบที่ยังใช้ได้ โดย parent unit ไม่เห็น child activity อัตโนมัติ ข้อมูลข้าม tenant ข้อมูลบัญชี และข้อมูลอ่อนไหวไม่รั่วไหล แม่แบบที่แก้แล้วต้องมีผลกับ PDF ที่สร้างใหม่ของใบเดิมตามที่ผู้ใช้เลือกไว้
