@@ -333,6 +333,34 @@ npx playwright test tests/e2e/session-security.spec.ts
 
 Set `E2E_OTHER_TENANT_URL` to another tenant when tenant-isolation proof is available; only that optional case skips when the variable is absent. The suite never changes the account password.
 
+Run the complete certificate lifecycle against an isolated tenant with dedicated preparer, issuer, and student accounts. From the repository root, run the focused backend checks first:
+
+```bash
+./scripts/test_backend_school.sh modules::certificates -- --nocapture --test-threads=1
+CARGO_BUILD_JOBS=1 cargo test --manifest-path backend-school/Cargo.toml --test static_architecture certificate_runtime_keeps_handlers_thin_proofs_private_and_renders_ephemeral -- --exact --test-threads=1
+```
+
+Then, from `frontend-school`, run the static contract and browser discovery before the live lifecycle:
+
+```bash
+node --test tests/static/certificate-*.test.mjs --test-concurrency=1
+npx playwright test --list tests/e2e/certificate-lifecycle.spec.ts --workers=1
+npx playwright test tests/e2e/certificate-lifecycle.spec.ts --workers=1
+```
+
+The live lifecycle requires all of these variables, supplied only at runtime:
+
+- `E2E_CERT_PREPARER_USERNAME`
+- `E2E_CERT_PREPARER_PASSWORD`
+- `E2E_CERT_ISSUER_USERNAME`
+- `E2E_CERT_ISSUER_PASSWORD`
+- `E2E_CERT_STUDENT_USERNAME`
+- `E2E_CERT_STUDENT_PASSWORD`
+
+The three accounts must be distinct. The preparer needs exact-unit campaign/template/candidate/submit access without school issue access; the issuer needs school read, issue, revoke, and download access; and the student must be an active linked student account. The isolated tenant also needs a current academic year, a second active organization unit outside the preparer's owner options, and working private-file storage and scanning.
+
+Do not print or retain credential values, recipient data, verification proofs, render receipts, or delivery grants. The fixture cleans up draft resources through supported APIs, but successfully issued records remain part of the tenant audit history. If any required variable is unavailable, the `--list` command must still pass; report the live lifecycle as unrun, not passing or skipped coverage.
+
 Use `npm run test:e2e:headed` only when interactive debugging is needed. Retain traces, screenshots, and videos only when they contain no sensitive data.
 
 ## Realtime Rollout Checks

@@ -1,11 +1,22 @@
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { readFile, readdir } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '../../..');
+
+async function listFiles(directory) {
+	const entries = await readdir(directory, { withFileTypes: true });
+	const files = [];
+	for (const entry of entries) {
+		const fullPath = path.join(directory, entry.name);
+		if (entry.isDirectory()) files.push(...(await listFiles(fullPath)));
+		else files.push(fullPath);
+	}
+	return files;
+}
 
 test('certificate permission contract exposes the complete approved capability set', async () => {
 	const contract = JSON.parse(
@@ -305,4 +316,128 @@ test('certificate campaign API is generated and its wrapper consumes named DTOs'
 	assert.match(fileWrapper, /CertificateTemplateFilePurpose/);
 	assert.match(fileWrapper, /uploadCertificateTemplateFile/);
 	assert.match(fileWrapper, /return uploadFile\(file, purpose, templateId\)/);
+});
+
+test('certificate public data, permissions, and renderer boundaries remain privacy safe', async () => {
+	const openapi = JSON.parse(
+		await readFile(path.join(repoRoot, 'contracts/openapi/school-api.json'), 'utf8')
+	);
+	const publicProperties = Object.keys(
+		openapi.components.schemas.PublicCertificateVerificationData.properties
+	).toSorted();
+	assert.deepEqual(
+		publicProperties,
+		[
+			'academicYear',
+			'activityItem',
+			'awardOrRole',
+			'campaignName',
+			'certificateNumber',
+			'firstName',
+			'issueDate',
+			'issuerSchoolName',
+			'lastName',
+			'receipt',
+			'receiptExpiresAt',
+			'replacementCertificateNumber',
+			'status',
+			'templateName',
+			'title'
+		].toSorted(),
+		'public verification must remain an explicit allowlist without proof or internal identifiers'
+	);
+
+	const frontendSourceRoot = path.join(repoRoot, 'frontend-school/src');
+	const permissionLiteral =
+		/certificate\.(?:read|create|update|delete|submit|issue|revoke|download)\.[a-z_]+/g;
+	for (const file of await listFiles(frontendSourceRoot)) {
+		if (!/\.(?:js|ts|svelte)$/.test(file)) continue;
+		if (file.endsWith('/lib/permissions/registry.generated.ts')) continue;
+		const source = await readFile(file, 'utf8');
+		assert.deepEqual(
+			source.match(permissionLiteral) ?? [],
+			[],
+			`runtime certificate permission must use generated constants: ${path.relative(repoRoot, file)}`
+		);
+	}
+
+	const viteConfig = await readFile(path.join(repoRoot, 'frontend-school/vite.config.ts'), 'utf8');
+	const rendererBoundary = await readFile(
+		path.join(repoRoot, 'frontend-school/src/lib/certificates/renderer.ts'),
+		'utf8'
+	);
+	const rendererServerStub = await readFile(
+		path.join(repoRoot, 'frontend-school/src/lib/certificates/renderer.server.ts'),
+		'utf8'
+	);
+	assert.match(rendererBoundary, /await import\('\.\/renderer\.browser'\)/);
+	assert.match(viteConfig, /client-only-certificate-renderer/);
+	assert.match(viteConfig, /this\.environment\.name === 'ssr'/);
+	for (const dependency of ['pdf-lib', 'pdfjs-dist', 'qrcode']) {
+		assert.match(viteConfig, new RegExp(`['"]${dependency}['"]`));
+		assert.doesNotMatch(rendererBoundary, new RegExp(`from ['"]${dependency}['"]`));
+		assert.doesNotMatch(rendererServerStub, new RegExp(`from ['"]${dependency}['"]`));
+	}
+});
+
+test('certificate lifecycle evidence is credential gated and cleanup aware', async () => {
+	const lifecycle = await readFile(
+		path.join(repoRoot, 'frontend-school/tests/e2e/certificate-lifecycle.spec.ts'),
+		'utf8'
+	);
+
+	for (const variable of [
+		'E2E_CERT_PREPARER_USERNAME',
+		'E2E_CERT_PREPARER_PASSWORD',
+		'E2E_CERT_ISSUER_USERNAME',
+		'E2E_CERT_ISSUER_PASSWORD',
+		'E2E_CERT_STUDENT_USERNAME',
+		'E2E_CERT_STUDENT_PASSWORD'
+	]) {
+		assert.match(lifecycle, new RegExp(`process\\.env\\.${variable}\\b`));
+	}
+	for (const invariant of [
+		'test.describe.serial',
+		'test.skip(!hasLifecycleCredentials',
+		'lifecyclePhase',
+		'sensitive details were suppressed',
+		'cleanupDraftResources',
+		'openQrVerification',
+		'expectQrFragmentCleared',
+		'withdrawCertificateIssueRequest',
+		'returnCertificateIssueRequest',
+		'issueCertificates',
+		'revokeIssuedCertificate',
+		'/api/lookup/organization-units?active_only=false',
+		'unauthorizedOwner.id',
+		'/api/me/certificates',
+		'/api/public/certificates/verify/manual',
+		'/api/public/certificates/verify/qr'
+	]) {
+		assert.match(lifecycle, new RegExp(invariant.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+	}
+	const lifecycleArtifactPolicy = lifecycle.match(/test\.use\(\{(?<options>[\s\S]*?)\}\);/)?.groups
+		?.options;
+	assert.ok(lifecycleArtifactPolicy, 'certificate lifecycle must override Playwright artifacts');
+	for (const artifactSetting of ["screenshot: 'off'", "trace: 'off'", "video: 'off'"]) {
+		assert.match(lifecycleArtifactPolicy, new RegExp(artifactSetting));
+	}
+	const cleanupBody = lifecycle.match(/async function cleanupDraftResources\([\s\S]*?\n\}/)?.[0];
+	assert.ok(cleanupBody, 'certificate lifecycle must define draft cleanup');
+	assert.ok(
+		cleanupBody.indexOf('state.requestIds') < cleanupBody.indexOf('state.hasIssuedCertificates'),
+		'active requests must be withdrawn even after an earlier batch issued successfully'
+	);
+	assert.match(lifecycle, /function safeApiRequestPath\(/);
+	assert.doesNotMatch(
+		lifecycle,
+		/School API \$\{method\} \$\{requestPath\}/,
+		'API failures must not log recipient-bearing query strings or proof fragments'
+	);
+	assert.doesNotMatch(
+		lifecycle,
+		/page\.evaluate\(\(\) => window\.location\.hash\)/,
+		'QR assertions must compare a boolean and never expose the proof-bearing hash'
+	);
+	assert.doesNotMatch(lifecycle, /console\.(?:log|info|debug|warn|error)\s*\(/);
 });
