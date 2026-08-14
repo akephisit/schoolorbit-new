@@ -57,6 +57,9 @@ const certificateApiStub = `
 	export async function createManualCertificateCandidate(id, payload) {
 		return window.__certificateRecipientApi.createManual(id, payload);
 	}
+	export async function submitCertificateIssueRequest(id, payload) {
+		return window.__certificateRecipientApi.submitIssueRequest(id, payload);
+	}
 `;
 
 const stubModules = new Map([
@@ -264,6 +267,7 @@ function harnessPlugin(): Plugin {
 				];
 				const bulkPayloads = [];
 				const importPayloads = [];
+				const submitPayloads = [];
 				const apiCalls = [];
 				const accountSearches = [];
 				let rejectNextExternalConfirmation = false;
@@ -340,11 +344,16 @@ function harnessPlugin(): Plugin {
 						return new Promise((resolve) => accountSearches.push({ query: structuredClone(query), resolve }));
 					},
 					async createFromAccount() { throw new Error('not used'); },
-					async createManual() { throw new Error('not used'); }
+					async createManual() { throw new Error('not used'); },
+					async submitIssueRequest(id, payload) {
+						submitPayloads.push({ campaignId: id, ...structuredClone(payload) });
+						return { id: crypto.randomUUID(), campaignId: id, status: 'pending', items: [] };
+					}
 				};
 				window.certificateRecipientHarness = {
 					bulkPayloads: () => structuredClone(bulkPayloads),
 					importPayloads: () => structuredClone(importPayloads),
+					submitPayloads: () => structuredClone(submitPayloads),
 					apiCalls: () => [...apiCalls],
 					accountSearchQueries: () => accountSearches.map((search) => structuredClone(search.query)),
 					resolveAccountSearch(index, accounts) { accountSearches[index]?.resolve(structuredClone(accounts)); },
@@ -491,6 +500,24 @@ test('active request still allows an unlocked candidate edit without changing re
 	await expect(page.getByLabel('ประเภทผู้รับ')).toBeDisabled();
 });
 
+test('submits selected ready recipients through the grouped confirmation dialog', async ({
+	page
+}) => {
+	await page.goto(`${baseUrl}${harnessPath}`);
+	await expect(page.getByText('พร้อมออก').first()).toBeVisible();
+	await page.getByRole('checkbox', { name: 'เลือกรายการ กมลชนก ใจดี' }).click();
+	await page.getByRole('button', { name: 'ส่งคำขอออกเกียรติบัตร' }).click();
+	await expect(page.getByRole('heading', { name: 'ส่งคำขอออกเกียรติบัตร' })).toBeVisible();
+	await expect(page.getByLabel('สรุปตามแบบเกียรติบัตร').getByText('แบบการแข่งขัน')).toBeVisible();
+	await page.getByRole('button', { name: 'ยืนยันส่ง 1 รายการ' }).click();
+	await expect
+		.poll(() => page.evaluate(() => window.certificateRecipientHarness.submitPayloads().at(-1)))
+		.toEqual({
+			campaignId: '10000000-0000-4000-8000-000000000001',
+			candidateIds: ['50000000-0000-4000-8000-000000000001']
+		});
+});
+
 test('external confirmation conflict stays visible and disables repeated confirmation', async ({
 	page
 }) => {
@@ -510,6 +537,7 @@ declare global {
 	interface Window {
 		certificateRecipientHarness: {
 			bulkPayloads(): Array<{ candidateIds: string[]; operation: string }>;
+			submitPayloads(): Array<{ campaignId: string; candidateIds: string[] }>;
 			apiCalls(): string[];
 			accountSearchQueries(): Array<{ recipientType: string; search: string }>;
 			resolveAccountSearch(

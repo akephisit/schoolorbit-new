@@ -109,6 +109,18 @@ test('every protected app page renders the shared page shell', async () => {
 		[
 			'CertificateRecipientWorkspace',
 			await readProjectFile('src/lib/components/certificates/CertificateRecipientWorkspace.svelte')
+		],
+		[
+			'CertificateCampaignRequests',
+			await readProjectFile('src/lib/components/certificates/CertificateCampaignRequests.svelte')
+		],
+		[
+			'CertificateIssueQueue',
+			await readProjectFile('src/lib/components/certificates/CertificateIssueQueue.svelte')
+		],
+		[
+			'CertificateIssueRequestReview',
+			await readProjectFile('src/lib/components/certificates/CertificateIssueRequestReview.svelte')
 		]
 	]);
 	const violations = [];

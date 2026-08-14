@@ -10,6 +10,7 @@
 		selectedIds,
 		externalConfirmationIssues = [],
 		canManage = false,
+		canSubmit = false,
 		canDelete = false,
 		onselectionchange,
 		onedit,
@@ -26,6 +27,7 @@
 			message: string;
 		}>;
 		canManage?: boolean;
+		canSubmit?: boolean;
 		canDelete?: boolean;
 		onselectionchange: (ids: string[]) => void;
 		onedit: (candidate: CertificateCandidateDetail) => void;
@@ -37,7 +39,11 @@
 
 	const selectableIds = $derived(
 		candidates
-			.filter((candidate) => canManage && candidate.capabilities.canUpdate)
+			.filter(
+				(candidate) =>
+					(canManage && candidate.capabilities.canUpdate) ||
+					(canSubmit && candidate.validationStatus === 'ready')
+			)
 			.map((candidate) => candidate.id)
 	);
 	const allSelected = $derived(
@@ -178,7 +184,8 @@
 							class="mt-1 size-4 rounded border-input accent-primary"
 							aria-label={`เลือกรายการ ${candidate.importedFirstName} ${candidate.importedLastName}`}
 							checked={selectedIds.includes(candidate.id)}
-							disabled={!canManage || !candidate.capabilities.canUpdate}
+							disabled={!(canManage && candidate.capabilities.canUpdate) &&
+								!(canSubmit && candidate.validationStatus === 'ready')}
 							onchange={(event) => toggleOne(candidate.id, event.currentTarget.checked)}
 						/>
 					</Table.Cell>

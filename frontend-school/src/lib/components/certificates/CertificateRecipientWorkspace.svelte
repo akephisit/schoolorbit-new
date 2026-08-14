@@ -10,11 +10,13 @@
 		importCertificateCandidates,
 		listCertificateCandidates,
 		listCertificateTemplates,
+		submitCertificateIssueRequest,
 		updateCertificateCandidate,
 		type CertificateCampaignDetail,
 		type CertificateCandidateBulkRequest,
 		type CertificateCandidateDetail,
 		type CertificateCandidateListResponse,
+		type CertificateResourceLocked,
 		type CertificateTemplateDetail,
 		type CreateAccountCertificateCandidateRequest,
 		type CreateManualExternalCandidateRequest,
@@ -27,6 +29,7 @@
 	import CertificateCandidateTable from './CertificateCandidateTable.svelte';
 	import CertificateImportDialog from './CertificateImportDialog.svelte';
 	import CertificateManualExternalDialog from './CertificateManualExternalDialog.svelte';
+	import CertificateSubmitRequestDialog from './CertificateSubmitRequestDialog.svelte';
 	import * as AlertDialog from '$lib/components/ui/alert-dialog';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
@@ -35,6 +38,7 @@
 		FileSpreadsheet,
 		Filter,
 		Search,
+		Send,
 		ShieldAlert,
 		Sparkles,
 		UserPlus,
@@ -86,6 +90,9 @@
 	let manualOpen = $state(false);
 	let editTarget = $state.raw<CertificateCandidateDetail | null>(null);
 	let deleteTarget = $state.raw<CertificateCandidateDetail | null>(null);
+	let submitOpen = $state(false);
+	let submitError = $state('');
+	let lockedRequestId = $state<string | null>(null);
 	let externalConfirmationIssues = $state.raw<ExternalConfirmationIssue[]>([]);
 	let loadGeneration = 0;
 	let candidateLoadGeneration = 0;
@@ -95,8 +102,20 @@
 	const canCreateCandidates = $derived(canPrepareCandidates);
 	const canManageCandidates = $derived(canPrepareCandidates);
 	const canDeleteCandidates = $derived(canManageCandidates);
+	const canSubmitCandidates = $derived(campaign?.capabilities.canSubmit === true);
 	const selectedCandidates = $derived(
 		candidates.filter((candidate) => selectedIds.includes(candidate.id))
+	);
+	const canBulkUpdateSelection = $derived(
+		selectedCandidates.length > 0 &&
+			selectedCandidates.length === selectedIds.length &&
+			selectedCandidates.every((candidate) => candidate.capabilities.canUpdate)
+	);
+	const canSubmitSelection = $derived(
+		canSubmitCandidates &&
+			selectedCandidates.length > 0 &&
+			selectedCandidates.length === selectedIds.length &&
+			selectedCandidates.every((candidate) => candidate.validationStatus === 'ready')
 	);
 	const canBulkConfirmExternal = $derived(
 		selectedCandidates.length > 0 &&
@@ -130,7 +149,8 @@
 		)
 	);
 	const bulkTemplateAllowed = $derived(
-		bulkTemplateId.length > 0 &&
+		canBulkUpdateSelection &&
+			bulkTemplateId.length > 0 &&
 			bulkCompatibleTemplates.some((template) => template.id === bulkTemplateId)
 	);
 	const recipientTypeLabels: Record<CertificateCandidateDetail['recipientType'], string> = {
@@ -138,6 +158,14 @@
 		staff: 'บุคลากร',
 		external: 'บุคคลภายนอก'
 	};
+
+	function isCertificateResourceLocked(value: unknown): value is CertificateResourceLocked {
+		if (value === null || typeof value !== 'object') return false;
+		if (!('code' in value) || value.code !== 'resource_locked') return false;
+		return (
+			!('requestId' in value) || value.requestId === null || typeof value.requestId === 'string'
+		);
+	}
 
 	function applyExternalConfirmationIssues(
 		items: CertificateCandidateDetail[]
@@ -173,6 +201,9 @@
 		manualOpen = false;
 		editTarget = null;
 		deleteTarget = null;
+		submitOpen = false;
+		submitError = '';
+		lockedRequestId = null;
 		externalConfirmationIssues = [];
 		searchDraft = '';
 		searchQuery = '';
@@ -365,6 +396,33 @@
 		}
 	}
 
+	async function handleSubmitRequest(candidateIds: string[]) {
+		if (!canSubmitSelection || actionBusy) return;
+		actionBusy = true;
+		submitError = '';
+		lockedRequestId = null;
+		try {
+			await submitCertificateIssueRequest(campaignId, { candidateIds });
+			selectedIds = [];
+			submitOpen = false;
+			await loadWorkspace(campaignId);
+			toast.success('ส่งคำขอออกเกียรติบัตรแล้ว');
+		} catch (submitFailure) {
+			submitError =
+				submitFailure instanceof Error ? submitFailure.message : 'ส่งคำขอออกเกียรติบัตรไม่สำเร็จ';
+			if (
+				submitFailure instanceof ApiClientError &&
+				submitFailure.status === 409 &&
+				isCertificateResourceLocked(submitFailure.data)
+			) {
+				lockedRequestId = submitFailure.data.requestId ?? null;
+			}
+			toast.error(submitError);
+		} finally {
+			actionBusy = false;
+		}
+	}
+
 	function ensureWorkspaceLoaded() {
 		if (!campaignId || requestedCampaignId === campaignId) return;
 		requestedCampaignId = campaignId;
@@ -520,91 +578,108 @@
 				</div>
 			</div>
 
-			{#if canManageCandidates}
+			{#if canManageCandidates || canSubmitCandidates}
 				<div class="flex flex-wrap items-end gap-2 border-t pt-3">
 					<div class="me-1 min-w-28 text-sm">
 						<p class="font-semibold">เลือกแล้ว {selectedIds.length.toLocaleString('th-TH')}</p>
 						<p class="text-xs text-muted-foreground">คำสั่งหลายรายการ</p>
 					</div>
-					<label class="min-w-52 space-y-1">
-						<span class="sr-only">แบบสำหรับรายการที่เลือก</span>
-						<select
-							bind:value={bulkTemplateId}
-							class="border-input bg-background h-9 w-full rounded-md border px-3 text-sm shadow-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
+					{#if canManageCandidates}
+						<label class="min-w-52 space-y-1">
+							<span class="sr-only">แบบสำหรับรายการที่เลือก</span>
+							<select
+								bind:value={bulkTemplateId}
+								class="border-input bg-background h-9 w-full rounded-md border px-3 text-sm shadow-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
+							>
+								<option value="">เลือกแบบเกียรติบัตร</option>
+								{#each bulkCompatibleTemplates as template (template.id)}
+									<option value={template.id}>
+										{template.name} · {template.allowedRecipientTypes
+											.map((type) => recipientTypeLabels[type])
+											.join('/')}
+									</option>
+								{/each}
+							</select>
+						</label>
+						<LoadingButton
+							variant="outline"
+							loading={actionBusy}
+							disabled={selectedIds.length === 0 || !bulkTemplateAllowed}
+							onclick={() =>
+								applyBulk(
+									{
+										candidateIds: selectedIds,
+										operation: 'assign_template',
+										templateId: bulkTemplateId
+									},
+									'กำหนดแบบให้รายการที่เลือกแล้ว'
+								)}
 						>
-							<option value="">เลือกแบบเกียรติบัตร</option>
-							{#each bulkCompatibleTemplates as template (template.id)}
-								<option value={template.id}>
-									{template.name} · {template.allowedRecipientTypes
-										.map((type) => recipientTypeLabels[type])
-										.join('/')}
-								</option>
-							{/each}
-						</select>
-					</label>
-					<LoadingButton
-						variant="outline"
-						loading={actionBusy}
-						disabled={selectedIds.length === 0 || !bulkTemplateAllowed}
-						onclick={() =>
-							applyBulk(
-								{
-									candidateIds: selectedIds,
-									operation: 'assign_template',
-									templateId: bulkTemplateId
-								},
-								'กำหนดแบบให้รายการที่เลือกแล้ว'
-							)}
-					>
-						กำหนดแบบให้รายการที่เลือก
-					</LoadingButton>
-					<Button
-						variant="outline"
-						disabled={!canBulkChooseName || actionBusy}
-						onclick={() =>
-							applyBulk(
-								{ candidateIds: selectedIds, operation: 'choose_name', nameSource: 'account' },
-								'ใช้ชื่อจากบัญชีแล้ว'
-							)}
-					>
-						ใช้ชื่อจากบัญชี
-					</Button>
-					<Button
-						variant="outline"
-						disabled={!canBulkChooseName || actionBusy}
-						onclick={() =>
-							applyBulk(
-								{ candidateIds: selectedIds, operation: 'choose_name', nameSource: 'file' },
-								'ใช้ชื่อจากไฟล์แล้ว'
-							)}
-					>
-						ใช้ชื่อจากไฟล์
-					</Button>
-					<Button
-						variant="outline"
-						disabled={!canBulkConfirmExternal || actionBusy}
-						title={selectedIds.length > 0 && !canBulkConfirmExternal
-							? 'เลือกเฉพาะรายการที่ไม่พบบัญชีและยืนยันได้ทั้งหมด'
-							: undefined}
-						onclick={() =>
-							applyBulk(
-								{ candidateIds: selectedIds, operation: 'confirm_external' },
-								'ยืนยันเป็นบุคคลภายนอกแล้ว'
-							)}
-					>
-						ยืนยันเป็นบุคคลภายนอก
-					</Button>
-					<Button
-						variant="outline"
-						disabled={!canBulkConfirmDuplicate || actionBusy}
-						onclick={() =>
-							applyBulk(
-								{ candidateIds: selectedIds, operation: 'confirm_duplicate' },
-								'ยืนยันรายชื่อซ้ำแล้ว'
-							)}
-					>
-						ยืนยันรายชื่อซ้ำ
-					</Button>
+							กำหนดแบบให้รายการที่เลือก
+						</LoadingButton>
+						<Button
+							variant="outline"
+							disabled={!canBulkChooseName || actionBusy}
+							onclick={() =>
+								applyBulk(
+									{ candidateIds: selectedIds, operation: 'choose_name', nameSource: 'account' },
+									'ใช้ชื่อจากบัญชีแล้ว'
+								)}
+						>
+							ใช้ชื่อจากบัญชี
+						</Button>
+						<Button
+							variant="outline"
+							disabled={!canBulkChooseName || actionBusy}
+							onclick={() =>
+								applyBulk(
+									{ candidateIds: selectedIds, operation: 'choose_name', nameSource: 'file' },
+									'ใช้ชื่อจากไฟล์แล้ว'
+								)}
+						>
+							ใช้ชื่อจากไฟล์
+						</Button>
+						<Button
+							variant="outline"
+							disabled={!canBulkConfirmExternal || actionBusy}
+							title={selectedIds.length > 0 && !canBulkConfirmExternal
+								? 'เลือกเฉพาะรายการที่ไม่พบบัญชีและยืนยันได้ทั้งหมด'
+								: undefined}
+							onclick={() =>
+								applyBulk(
+									{ candidateIds: selectedIds, operation: 'confirm_external' },
+									'ยืนยันเป็นบุคคลภายนอกแล้ว'
+								)}
+						>
+							ยืนยันเป็นบุคคลภายนอก
+						</Button>
+						<Button
+							variant="outline"
+							disabled={!canBulkConfirmDuplicate || actionBusy}
+							onclick={() =>
+								applyBulk(
+									{ candidateIds: selectedIds, operation: 'confirm_duplicate' },
+									'ยืนยันรายชื่อซ้ำแล้ว'
+								)}
+						>
+							ยืนยันรายชื่อซ้ำ
+						</Button>
+					{/if}
+					{#if canSubmitCandidates}
+						<Button
+							disabled={!canSubmitSelection || actionBusy}
+							title={selectedIds.length > 0 && !canSubmitSelection
+								? 'เลือกเฉพาะรายการสถานะพร้อมออก'
+								: undefined}
+							onclick={() => {
+								submitError = '';
+								lockedRequestId = null;
+								submitOpen = true;
+							}}
+						>
+							<Send class="size-4" /> ส่งคำขอออกเกียรติบัตร
+						</Button>
+					{/if}
 				</div>
 			{/if}
 		</section>
@@ -621,6 +696,7 @@
 				{selectedIds}
 				{externalConfirmationIssues}
 				canManage={canManageCandidates}
+				canSubmit={canSubmitCandidates}
 				canDelete={canDeleteCandidates}
 				onselectionchange={(ids) => (selectedIds = ids)}
 				onedit={(candidate) => (editTarget = candidate)}
@@ -686,6 +762,27 @@
 			onsave={handleEdit}
 		/>
 	{/key}
+{/if}
+
+{#if submitOpen && campaign}
+	<CertificateSubmitRequestDialog
+		open={submitOpen}
+		{campaignId}
+		campaignName={campaign.name}
+		candidates={selectedCandidates}
+		busy={actionBusy}
+		error={submitError}
+		{lockedRequestId}
+		onopenchange={(open) => {
+			if (actionBusy) return;
+			submitOpen = open;
+			if (!open) {
+				submitError = '';
+				lockedRequestId = null;
+			}
+		}}
+		onsubmit={handleSubmitRequest}
+	/>
 {/if}
 
 <AlertDialog.Root

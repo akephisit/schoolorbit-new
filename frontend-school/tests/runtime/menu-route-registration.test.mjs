@@ -157,6 +157,30 @@ test('menu synchronization encodes alternative generated permissions without bro
 	assert.doesNotMatch(result.receivedRequest.body.routes[0].permission, /certificate\.read\.own/);
 });
 
+test('certificate issue queue menu requires the school issue permission only', async (t) => {
+	const routePath = 'src/routes/(app)/staff/certificate-requests/+page.ts';
+	const route = await readFile(path.join(projectRoot, routePath), 'utf8');
+	const result = await runSyncWithServer(t, { [routePath]: route });
+
+	assert.equal(result.code, 0, result.stderr || result.stdout);
+	assert.deepEqual(result.receivedRequest.body.routes, [
+		{
+			path: '/staff/certificate-requests',
+			title: 'คำขอออกเกียรติบัตร',
+			icon: 'ClipboardCheck',
+			group: 'academic',
+			workspace: 'academic',
+			order: 61,
+			permission: 'certificate.issue.school',
+			user_type: 'staff'
+		}
+	]);
+	assert.doesNotMatch(
+		result.receivedRequest.body.routes[0].permission,
+		/certificate\.(?:submit|update)\./
+	);
+});
+
 test('menu synchronization fails when route metadata cannot be parsed', async (t) => {
 	const result = await runSyncWithServer(t, {
 		'src/routes/(app)/staff/invalid/+page.ts': validRoute.replace(
