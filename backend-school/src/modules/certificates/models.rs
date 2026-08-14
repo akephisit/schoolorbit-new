@@ -424,6 +424,7 @@ pub struct CertificateCampaignCapabilities {
     pub can_submit: bool,
     pub can_download: bool,
     pub can_change_status: bool,
+    pub can_manage_templates: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, ToSchema)]

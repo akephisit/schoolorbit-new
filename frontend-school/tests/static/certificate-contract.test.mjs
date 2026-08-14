@@ -98,6 +98,12 @@ test('certificate campaign API is generated and its wrapper consumes named DTOs'
 	]) {
 		assert.ok(openapi.components?.schemas?.[schema], `missing generated schema ${schema}`);
 	}
+	assert.ok(
+		openapi.components.schemas.CertificateCampaignCapabilities.required.includes(
+			'canManageTemplates'
+		),
+		'campaign capability must expose exact-scope template workflow access'
+	);
 
 	const wrapper = await readFile(
 		path.join(repoRoot, 'frontend-school/src/lib/api/certificates.ts'),

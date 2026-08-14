@@ -9797,6 +9797,9 @@
           "canDownload": {
             "type": "boolean"
           },
+          "canManageTemplates": {
+            "type": "boolean"
+          },
           "canRead": {
             "type": "boolean"
           },
@@ -9813,7 +9816,8 @@
           "canDelete",
           "canSubmit",
           "canDownload",
-          "canChangeStatus"
+          "canChangeStatus",
+          "canManageTemplates"
         ],
         "type": "object"
       },

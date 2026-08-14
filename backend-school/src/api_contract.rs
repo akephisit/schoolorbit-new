@@ -3094,6 +3094,9 @@ mod tests {
         ] {
             assert!(required(detail).contains(&field));
         }
+        assert!(
+            required(&schemas["CertificateCampaignCapabilities"]).contains(&"canManageTemplates")
+        );
         for field in [
             "ownerOrganizationUnitId",
             "ownerOrganizationUnitCode",

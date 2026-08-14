@@ -5246,6 +5246,7 @@ export interface components {
 			canChangeStatus: boolean;
 			canDelete: boolean;
 			canDownload: boolean;
+			canManageTemplates: boolean;
 			canRead: boolean;
 			canSubmit: boolean;
 			canUpdate: boolean;

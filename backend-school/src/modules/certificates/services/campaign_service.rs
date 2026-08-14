@@ -132,6 +132,7 @@ impl OwnerCapabilityScope {
 #[derive(Debug)]
 struct CapabilityScopes {
     read: OwnerCapabilityScope,
+    create: OwnerCapabilityScope,
     update: OwnerCapabilityScope,
     delete: OwnerCapabilityScope,
     submit: OwnerCapabilityScope,
@@ -602,6 +603,7 @@ async fn load_capability_scopes(
 ) -> Result<CapabilityScopes, AppError> {
     Ok(CapabilityScopes {
         read: optional_owner_scope(pool, actor, CertificateAction::Read).await?,
+        create: optional_owner_scope(pool, actor, CertificateAction::Create).await?,
         update: optional_owner_scope(pool, actor, CertificateAction::Update).await?,
         delete: optional_owner_scope(pool, actor, CertificateAction::Delete).await?,
         submit: optional_owner_scope(pool, actor, CertificateAction::Submit).await?,
@@ -708,7 +710,12 @@ fn capabilities_for(
             ),
         can_download: scopes.download.allows(owner) && row.issued_certificate_count > 0,
         can_change_status: can_update && status != CertificateCampaignStatus::Draft,
+        can_manage_templates: can_manage_templates(scopes, owner),
     }
+}
+
+fn can_manage_templates(scopes: &CapabilityScopes, owner: Option<Uuid>) -> bool {
+    scopes.create.allows(owner) && scopes.update.allows(owner)
 }
 
 fn parse_status(value: &str) -> Result<CertificateCampaignStatus, AppError> {
@@ -953,4 +960,39 @@ fn campaign_not_found() -> AppError {
 fn campaign_db_error(error: sqlx::Error) -> AppError {
     tracing::error!(%error, "certificate campaign database operation failed");
     AppError::DbError(error)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn unit_scope(ids: impl IntoIterator<Item = Uuid>) -> OwnerCapabilityScope {
+        OwnerCapabilityScope::Units(ids.into_iter().collect())
+    }
+
+    fn template_scopes(
+        create: OwnerCapabilityScope,
+        update: OwnerCapabilityScope,
+    ) -> CapabilityScopes {
+        CapabilityScopes {
+            read: unit_scope([]),
+            create,
+            update,
+            delete: unit_scope([]),
+            submit: unit_scope([]),
+            download: unit_scope([]),
+        }
+    }
+
+    #[test]
+    fn template_workflow_requires_create_and_update_for_the_exact_owner() {
+        let unit_a = Uuid::from_u128(1);
+        let unit_b = Uuid::from_u128(2);
+        let both = template_scopes(unit_scope([unit_a]), unit_scope([unit_a]));
+        let create_only = template_scopes(unit_scope([unit_a]), unit_scope([]));
+
+        assert!(can_manage_templates(&both, Some(unit_a)));
+        assert!(!can_manage_templates(&both, Some(unit_b)));
+        assert!(!can_manage_templates(&create_only, Some(unit_a)));
+    }
 }
