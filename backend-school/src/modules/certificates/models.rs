@@ -623,6 +623,8 @@ pub struct CertificatePreviewManifestRequest {
     pub candidate_id: Option<Uuid>,
     #[serde(default)]
     pub sample_values: BTreeMap<String, String>,
+    #[schema(required = false)]
+    pub layout: Option<CertificateLayoutV1>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, ToSchema)]

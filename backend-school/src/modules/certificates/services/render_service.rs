@@ -13,7 +13,7 @@ use crate::{
             CertificatePreviewKind, CertificatePreviewManifestRequest,
             CertificateRenderCampaignValues, CertificateRenderFileGrant,
             CertificateRenderFontGrant, CertificateRenderImageGrant, CertificateRenderManifest,
-            CertificateTemplateAssetKind,
+            CertificateTemplateAssetKind, PageGeometry,
         },
         files::{
             consumer_service::map_platform_error, platform_service::FilePlatform,
@@ -25,6 +25,7 @@ use crate::{
 
 use super::{
     import_validation::{normalize_display_text, normalize_name_for_match},
+    layout::validate_layout,
     template_service,
 };
 
@@ -44,7 +45,13 @@ pub async fn preview_manifest(
     template_id: Uuid,
     request: CertificatePreviewManifestRequest,
 ) -> Result<CertificateRenderManifest, AppError> {
-    if request.preview_kind == CertificatePreviewKind::Candidate || request.candidate_id.is_some() {
+    let CertificatePreviewManifestRequest {
+        preview_kind,
+        candidate_id,
+        sample_values,
+        layout,
+    } = request;
+    if preview_kind == CertificatePreviewKind::Candidate || candidate_id.is_some() {
         return Err(AppError::Conflict(
             "การพรีวิวรายการจริงจะพร้อมเมื่อเพิ่มรายชื่อผู้รับแล้ว".to_string(),
         ));
@@ -60,6 +67,14 @@ pub async fn preview_manifest(
     })?;
     let background_file_id = template.background_file_id.ok_or_else(|| {
         AppError::InternalServerError("certificate_template_background_missing".to_string())
+    })?;
+    let source_page = PageGeometry::new(
+        page_geometry.crop_box.width_points,
+        page_geometry.crop_box.height_points,
+        page_geometry.rotation,
+    )
+    .map_err(|_| {
+        AppError::InternalServerError("certificate_template_geometry_invalid".to_string())
     })?;
     let campaign = sqlx::query_as::<_, CampaignRenderRow>(
         "SELECT academic_year.name AS academic_year_name,
@@ -77,13 +92,16 @@ pub async fn preview_manifest(
     .ok_or_else(|| AppError::NotFound("ไม่พบกิจกรรมเกียรติบัตร".to_string()))?;
 
     let catalog = template_service::variable_catalog(pool, actor, template_id).await?;
+    let preview_layout = layout.unwrap_or_else(|| template.layout.clone());
+    validate_layout(&preview_layout, source_page, &catalog.variables)
+        .map_err(|_| AppError::ValidationError("layout สำหรับพรีวิวไม่ถูกต้อง".to_string()))?;
     let catalog = catalog
         .variables
         .into_iter()
         .map(|value| normalize_name_for_match(&value))
         .collect::<BTreeSet<_>>();
-    let mut recipient_values = sample_recipient_values(request.preview_kind);
-    for (key, value) in request.sample_values {
+    let mut recipient_values = sample_recipient_values(preview_kind);
+    for (key, value) in sample_values {
         let display_key = normalize_display_text(&key);
         let normalized_key = normalize_name_for_match(&display_key);
         if !catalog.contains(&normalized_key) || value.chars().count() > 500 {
@@ -111,7 +129,39 @@ pub async fn preview_manifest(
         recipient_values.insert(key.to_string(), value);
     }
 
-    let referenced_assets = referenced_asset_ids(&template.layout);
+    let referenced_assets = referenced_asset_ids(&preview_layout);
+    for element in &preview_layout.elements {
+        let expected = match element {
+            CertificateElement::Image(image) => {
+                Some((image.asset_id, CertificateTemplateAssetKind::Image, None))
+            }
+            CertificateElement::Text(text) => match text.font_source {
+                CertificateFontSource::Asset { asset_id } => Some((
+                    asset_id,
+                    CertificateTemplateAssetKind::Font,
+                    Some((&text.font_family, text.font_weight)),
+                )),
+                CertificateFontSource::BuiltIn => None,
+            },
+            CertificateElement::Qr(_) => None,
+        };
+        let Some((asset_id, expected_kind, expected_font)) = expected else {
+            continue;
+        };
+        let Some(asset) = template.assets.iter().find(|asset| asset.id == asset_id) else {
+            return Err(AppError::ValidationError(
+                "layout สำหรับพรีวิวอ้างถึงทรัพยากรที่ไม่อยู่ในแม่แบบ".to_string(),
+            ));
+        };
+        let font_matches = expected_font.is_none_or(|(family, weight)| {
+            asset.font_family.as_ref() == Some(family) && asset.font_weight == Some(weight)
+        });
+        if asset.kind != expected_kind || !font_matches {
+            return Err(AppError::ValidationError(
+                "layout สำหรับพรีวิวอ้างถึงชนิดหรือข้อมูลฟอนต์ที่ไม่ตรงกับแม่แบบ".to_string(),
+            ));
+        }
+    }
     let repository = SqlFileRepository::new(pool.clone());
     let background_grant = file_grant(
         background_file_id,
@@ -167,7 +217,7 @@ pub async fn preview_manifest(
     Ok(CertificateRenderManifest {
         template_id,
         page_geometry,
-        layout: template.layout,
+        layout: preview_layout,
         campaign_values: CertificateRenderCampaignValues {
             academic_year: campaign.academic_year_name,
             campaign_name: campaign.campaign_name,

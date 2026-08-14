@@ -12,7 +12,10 @@ export type CertificatePreviewResult = {
 	heightPixels: number;
 };
 
+export type CertificateBackgroundInspection = CertificateRenderManifest['pageGeometry'];
+
 export interface CertificateRenderer {
+	inspectBackgroundPdf(file: Blob, signal?: AbortSignal): Promise<CertificateBackgroundInspection>;
 	renderPreview(
 		manifest: CertificateRenderManifest,
 		canvas: HTMLCanvasElement,

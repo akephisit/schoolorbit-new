@@ -236,11 +236,35 @@
 				{#if expandedTemplateId === template.id}
 					<div class="border-t bg-muted/10 p-5 pl-6">
 						<div class="space-y-6">
-							<CertificateBackgroundUpload
-								{template}
-								{onpatched}
-								onpendingchange={(pending) => setPendingUpload(template.id, 'background', pending)}
-							/>
+							{#if template.backgroundFileId}
+								<section class="rounded-xl border bg-background p-4">
+									<div class="flex flex-wrap items-center justify-between gap-3">
+										<div>
+											<h3 class="font-medium">PDF พื้นหลัง</h3>
+											<p class="mt-1 text-xs leading-relaxed text-muted-foreground">
+												เปลี่ยนพื้นหลังใน editor เพื่อดูผล scale/reset จริงก่อนยืนยัน
+											</p>
+										</div>
+										<Button
+											size="sm"
+											variant="outline"
+											href={resolve(
+												`/staff/certificates/${campaignId}/templates/${template.id}/editor` as '/staff/certificates'
+											)}
+											disabled={!template.capabilities.canUpdate || !template.isReady}
+										>
+											<Pencil class="size-4" /> เปิด editor
+										</Button>
+									</div>
+								</section>
+							{:else}
+								<CertificateBackgroundUpload
+									{template}
+									{onpatched}
+									onpendingchange={(pending) =>
+										setPendingUpload(template.id, 'background', pending)}
+								/>
+							{/if}
 							<div class="border-t"></div>
 							<CertificateAssetManager
 								{template}

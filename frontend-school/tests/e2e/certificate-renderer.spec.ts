@@ -266,6 +266,11 @@ function harnessPlugin(): Plugin {
 						} finally {
 							window.fetch = nativeFetch;
 						}
+					},
+					async inspectBackground(url) {
+						const renderer = await rendererPromise;
+						const response = await fetch(url);
+						return renderer.inspectBackgroundPdf(await response.blob());
 					}
 				};
 			`;
@@ -591,6 +596,20 @@ test('one batch PDF preserves mixed normalized page dimensions', async ({ page }
 	]);
 });
 
+test('inspects a local background with the same normalized geometry contract', async ({ page }) => {
+	await page.goto(`${baseUrl}${harnessPath}`);
+	const expected = await makeVectorBackground('/background/runtime-inspect.pdf', 160, 240, 90);
+	const inspected = await page.evaluate(
+		(url) => window.certificateRendererHarness.inspectBackground(url),
+		`${baseUrl}/background/runtime-inspect.pdf`
+	);
+	expect(inspected.mediaBox).toEqual(expected.mediaBox);
+	expect(inspected.cropBox).toEqual(expected.cropBox);
+	expect(inspected.rotation).toBe(90);
+	expect(inspected.displayedWidthPoints).toBe(240);
+	expect(inspected.displayedHeightPoints).toBe(160);
+});
+
 declare global {
 	interface Window {
 		certificateRendererHarness: {
@@ -618,6 +637,7 @@ declare global {
 				first: RenderManifest,
 				second: RenderManifest
 			): Promise<number>;
+			inspectBackground(url: string): Promise<PageGeometry>;
 		};
 	}
 }

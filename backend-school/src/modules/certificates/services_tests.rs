@@ -579,6 +579,41 @@ async fn preview_manifest_uses_private_short_lived_grants_and_never_audits_them(
     )
     .await
     .unwrap();
+    let font_file_id = insert_ready_template_file(
+        &pool,
+        &actor,
+        template.id,
+        "certificate_template_font",
+        serde_json::json!({
+            "kind": "font",
+            "family_name": "Preview Thai Font",
+            "units_per_em": 1000
+        }),
+    )
+    .await;
+    let with_font = template_service::attach_asset(
+        &pool,
+        &actor,
+        template.id,
+        AttachCertificateAssetRequest {
+            file_id: font_file_id,
+            kind: CertificateTemplateAssetKind::Font,
+            display_name: "ฟอนต์พรีวิว".to_string(),
+            font_weight: Some(400),
+            rights_confirmed: true,
+        },
+    )
+    .await
+    .unwrap();
+    let font_asset = with_font.assets[0].clone();
+    let mut local_layout = text_layout(CertificateFontSource::Asset {
+        asset_id: font_asset.id,
+    });
+    let CertificateElement::Text(local_text) = &mut local_layout.elements[0] else {
+        panic!("expected text element")
+    };
+    local_text.font_family = font_asset.font_family.clone().unwrap();
+    local_text.font_weight = font_asset.font_weight.unwrap();
     let audit_count_before: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM audit_logs WHERE entity_type = 'certificate_template'",
     )
@@ -600,6 +635,7 @@ async fn preview_manifest_uses_private_short_lived_grants_and_never_audits_them(
             preview_kind: CertificatePreviewKind::Long,
             candidate_id: None,
             sample_values: Default::default(),
+            layout: Some(local_layout.clone()),
         },
     )
     .await
@@ -615,6 +651,9 @@ async fn preview_manifest_uses_private_short_lived_grants_and_never_audits_them(
     assert!(manifest.background_grant.expires_at > requested_at);
     assert!(manifest.background_grant.expires_at <= requested_at + chrono::Duration::minutes(5));
     assert_eq!(manifest.built_in_fonts.len(), 2);
+    assert_eq!(manifest.layout, local_layout);
+    assert_eq!(manifest.font_grants.len(), 1);
+    assert_eq!(manifest.font_grants[0].asset_id, font_asset.id);
     let audit_count_after: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM audit_logs WHERE entity_type = 'certificate_template'",
     )

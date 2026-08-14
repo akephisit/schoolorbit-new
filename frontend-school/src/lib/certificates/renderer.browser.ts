@@ -11,6 +11,7 @@ import { apiClient } from '$lib/api/client';
 import type { CertificateRenderManifest } from '$lib/api/certificates';
 import { validateCertificateBatchSize } from './download';
 import { interpolateCertificateText } from './interpolation';
+import { describePaper } from './paper';
 import {
 	backgroundPageTransform,
 	CERTIFICATE_RENDER_DPI,
@@ -21,6 +22,7 @@ import {
 	supportedPageRotation
 } from './layout';
 import type {
+	CertificateBackgroundInspection,
 	CertificatePreviewOptions,
 	CertificatePreviewResult,
 	CertificateRenderer
@@ -619,6 +621,61 @@ async function renderPreview(
 	}
 }
 
+async function inspectBackgroundPdf(
+	file: Blob,
+	signal?: AbortSignal
+): Promise<CertificateBackgroundInspection> {
+	signal?.throwIfAborted();
+	const bytes = new Uint8Array(await file.arrayBuffer());
+	signal?.throwIfAborted();
+	if (bytes.byteLength === 0) throw renderError('PDF พื้นหลังไม่มีข้อมูล');
+	const document = await PDFDocument.load(bytes.slice(), {
+		ignoreEncryption: false,
+		updateMetadata: false,
+		throwOnInvalidObject: true
+	});
+	if (document.getPageCount() !== 1) throw renderError('PDF พื้นหลังต้องมีหนึ่งหน้า');
+	const page = document.getPage(0);
+	const media = page.getMediaBox();
+	const crop = page.getCropBox();
+	for (const [value, label] of [
+		[media.width, 'ความกว้าง MediaBox'],
+		[media.height, 'ความสูง MediaBox'],
+		[crop.width, 'ความกว้าง CropBox'],
+		[crop.height, 'ความสูง CropBox']
+	] as const) {
+		assertFinitePositive(value, label);
+	}
+	if (![media.x, media.y, crop.x, crop.y].every(Number.isFinite)) {
+		throw renderError('ตำแหน่งกรอบหน้ากระดาษไม่ถูกต้อง');
+	}
+	const rotation = normalizePageRotation(page.getRotation().angle);
+	const displayed = displayedPageSize(crop.width, crop.height, rotation);
+	signal?.throwIfAborted();
+	return {
+		mediaBox: {
+			xPoints: media.x,
+			yPoints: media.y,
+			widthPoints: media.width,
+			heightPoints: media.height
+		},
+		cropBox: {
+			xPoints: crop.x,
+			yPoints: crop.y,
+			widthPoints: crop.width,
+			heightPoints: crop.height
+		},
+		rotation,
+		displayedWidthPoints: displayed.width,
+		displayedHeightPoints: displayed.height,
+		paperLabel: describePaper({
+			widthPoints: crop.width,
+			heightPoints: crop.height,
+			rotation
+		})
+	};
+}
+
 async function assertSourcePdfGeometry(
 	manifest: CertificateRenderManifest,
 	sourceDocument: PDFDocument
@@ -710,5 +767,5 @@ async function buildCertificatePdf(
 }
 
 export function createCertificateRenderer(): CertificateRenderer {
-	return { renderPreview, buildCertificatePdf };
+	return { inspectBackgroundPdf, renderPreview, buildCertificatePdf };
 }

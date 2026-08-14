@@ -38,6 +38,7 @@ pub enum BackgroundLayoutAction {
 pub enum LayoutValidationError {
     InvalidSchemaVersion,
     TooManyElements,
+    MultipleQrElements,
     DuplicateElementId,
     InvalidFrame,
     ElementOutsidePage,
@@ -138,6 +139,7 @@ pub fn validate_layout(
         .collect::<BTreeSet<_>>();
     let (page_width, page_height) = page.displayed_size();
     let mut ids = BTreeSet::new();
+    let mut has_qr = false;
 
     for element in &layout.elements {
         if !ids.insert(element.id()) {
@@ -189,7 +191,13 @@ pub fn validate_layout(
                     }
                 }
             }
-            CertificateElement::Image(_) | CertificateElement::Qr(_) => {}
+            CertificateElement::Qr(_) => {
+                if has_qr {
+                    return Err(LayoutValidationError::MultipleQrElements);
+                }
+                has_qr = true;
+            }
+            CertificateElement::Image(_) => {}
         }
     }
     Ok(())
@@ -490,6 +498,31 @@ mod tests {
         assert_eq!(scaled.elements[1].frame().width, 30.0);
         assert_eq!(scaled.elements[1].frame().height, 30.0);
         assert_eq!(scaled.elements[0].frame().x, 20.0);
+    }
+
+    #[test]
+    fn rejects_more_than_one_qr_element() {
+        let qr = |x| {
+            CertificateElement::Qr(QrElement {
+                id: Uuid::new_v4(),
+                frame: ElementFrame {
+                    x,
+                    y: 10.0,
+                    width: 30.0,
+                    height: 30.0,
+                },
+                rotation: 0.0,
+            })
+        };
+        let layout = CertificateLayoutV1 {
+            schema_version: 1,
+            elements: vec![qr(10.0), qr(50.0)],
+        };
+
+        assert_eq!(
+            validate_layout(&layout, PageGeometry::new(200.0, 100.0, 0).unwrap(), &[]),
+            Err(LayoutValidationError::MultipleQrElements)
+        );
     }
 
     #[test]

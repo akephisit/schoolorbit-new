@@ -5382,6 +5382,7 @@ export interface components {
 		CertificatePreviewManifestRequest: {
 			/** Format: uuid */
 			candidateId?: string | null;
+			layout?: null | components['schemas']['CertificateLayoutV1'];
 			previewKind: components['schemas']['CertificatePreviewKind'];
 			sampleValues?: {
 				[key: string]: string;

@@ -10289,6 +10289,16 @@
               "null"
             ]
           },
+          "layout": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/CertificateLayoutV1"
+              }
+            ]
+          },
           "previewKind": {
             "$ref": "#/components/schemas/CertificatePreviewKind"
           },
