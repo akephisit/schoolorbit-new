@@ -146,6 +146,25 @@ fn protected_routes() -> Router<AppState> {
                 .delete(modules::achievement::handlers::delete_achievement),
         )
         .route(
+            "/api/certificates/campaigns",
+            get(modules::certificates::handlers::list_certificate_campaigns)
+                .post(modules::certificates::handlers::create_certificate_campaign),
+        )
+        .route(
+            "/api/certificates/campaigns/{campaign_id}",
+            get(modules::certificates::handlers::get_certificate_campaign)
+                .put(modules::certificates::handlers::update_certificate_campaign)
+                .delete(modules::certificates::handlers::delete_certificate_campaign),
+        )
+        .route(
+            "/api/certificates/campaigns/{campaign_id}/status",
+            put(modules::certificates::handlers::change_certificate_campaign_status),
+        )
+        .route(
+            "/api/certificates/owner-options",
+            get(modules::certificates::handlers::list_certificate_owner_options),
+        )
+        .route(
             "/api/student/profile",
             get(modules::students::handlers::get_own_profile)
                 .put(modules::students::handlers::update_own_profile),

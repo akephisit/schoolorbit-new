@@ -2,8 +2,9 @@
 
 use std::{collections::BTreeMap, fmt};
 
+use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
-use utoipa::ToSchema;
+use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
 macro_rules! string_enum {
@@ -27,6 +28,27 @@ string_enum!(CertificateCampaignStatus {
     Closed,
     Archived,
 });
+
+impl CertificateCampaignStatus {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Draft => "draft",
+            Self::Active => "active",
+            Self::Closed => "closed",
+            Self::Archived => "archived",
+        }
+    }
+
+    pub fn parse(value: &str) -> Option<Self> {
+        match value {
+            "draft" => Some(Self::Draft),
+            "active" => Some(Self::Active),
+            "closed" => Some(Self::Closed),
+            "archived" => Some(Self::Archived),
+            _ => None,
+        }
+    }
+}
 string_enum!(CertificateImportSource {
     Xlsx,
     Csv,
@@ -311,4 +333,120 @@ pub struct CertificateImportRowInput {
     pub template_name: Option<String>,
     #[serde(default)]
     pub custom_values: BTreeMap<String, String>,
+}
+
+#[derive(Clone, Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CreateCertificateCampaignRequest {
+    pub academic_year_id: Uuid,
+    pub owner_organization_unit_id: Option<Uuid>,
+    pub name: String,
+    pub event_date: NaiveDate,
+}
+
+/// Explicit nullable update wrapper: omitted means unchanged; `{ "value": null }`
+/// changes a unit-owned draft into a school-owned draft.
+#[derive(Clone, Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct NullableUuidUpdate {
+    #[schema(required = true)]
+    pub value: Option<Uuid>,
+}
+
+#[derive(Clone, Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct UpdateCertificateCampaignRequest {
+    pub expected_updated_at: DateTime<Utc>,
+    pub academic_year_id: Option<Uuid>,
+    pub owner_organization_unit_id: Option<NullableUuidUpdate>,
+    pub name: Option<String>,
+    pub event_date: Option<NaiveDate>,
+    #[serde(default)]
+    pub confirm_affects_issued_certificates: bool,
+}
+
+#[derive(Clone, Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ChangeCertificateCampaignStatusRequest {
+    pub expected_updated_at: DateTime<Utc>,
+    pub status: CertificateCampaignStatus,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct CertificateCampaignCapabilities {
+    pub can_read: bool,
+    pub can_update: bool,
+    pub can_delete: bool,
+    pub can_submit: bool,
+    pub can_download: bool,
+    pub can_change_status: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct CertificateCampaignSummary {
+    pub id: Uuid,
+    pub academic_year_id: Uuid,
+    pub academic_year_value: i32,
+    pub academic_year_name: String,
+    #[schema(required = true)]
+    pub owner_organization_unit_id: Option<Uuid>,
+    #[schema(required = true)]
+    pub owner_organization_unit_code: Option<String>,
+    #[schema(required = true)]
+    pub owner_organization_unit_name: Option<String>,
+    pub name: String,
+    pub event_date: NaiveDate,
+    pub status: CertificateCampaignStatus,
+    #[schema(required = true)]
+    pub activity_sequence: Option<i32>,
+    pub template_count: i64,
+    pub candidate_count: i64,
+    pub issued_certificate_count: i64,
+    pub has_open_issue_request: bool,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    pub capabilities: CertificateCampaignCapabilities,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct CertificateCampaignDetail {
+    pub id: Uuid,
+    pub academic_year_id: Uuid,
+    pub academic_year_value: i32,
+    pub academic_year_name: String,
+    #[schema(required = true)]
+    pub owner_organization_unit_id: Option<Uuid>,
+    #[schema(required = true)]
+    pub owner_organization_unit_code: Option<String>,
+    #[schema(required = true)]
+    pub owner_organization_unit_name: Option<String>,
+    pub name: String,
+    pub event_date: NaiveDate,
+    pub status: CertificateCampaignStatus,
+    #[schema(required = true)]
+    pub activity_sequence: Option<i32>,
+    pub next_certificate_sequence: i32,
+    pub template_count: i64,
+    pub candidate_count: i64,
+    pub issued_certificate_count: i64,
+    pub has_open_issue_request: bool,
+    #[schema(required = true)]
+    pub created_by: Option<Uuid>,
+    #[schema(required = true)]
+    pub updated_by: Option<Uuid>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    pub capabilities: CertificateCampaignCapabilities,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, IntoParams, ToSchema)]
+#[into_params(parameter_in = Query)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CertificateCampaignListQuery {
+    pub academic_year_id: Option<Uuid>,
+    pub status: Option<CertificateCampaignStatus>,
+    pub search: Option<String>,
 }

@@ -1,5 +1,6 @@
 pub mod achievement_access_policy;
 pub mod activity_access_policy;
+pub mod certificate_access_policy;
 pub mod curriculum_access_policy;
 pub mod file_access_policy;
 pub mod organization_access_policy;

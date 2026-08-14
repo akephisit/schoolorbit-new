@@ -1749,6 +1749,144 @@
         ],
         "type": "object"
       },
+      "ApiResponse_CertificateCampaignDetail": {
+        "properties": {
+          "data": {
+            "properties": {
+              "academicYearId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "academicYearName": {
+                "type": "string"
+              },
+              "academicYearValue": {
+                "format": "int32",
+                "type": "integer"
+              },
+              "activitySequence": {
+                "format": "int32",
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "candidateCount": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "capabilities": {
+                "$ref": "#/components/schemas/CertificateCampaignCapabilities"
+              },
+              "createdAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "createdBy": {
+                "format": "uuid",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "eventDate": {
+                "format": "date",
+                "type": "string"
+              },
+              "hasOpenIssueRequest": {
+                "type": "boolean"
+              },
+              "id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "issuedCertificateCount": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "name": {
+                "type": "string"
+              },
+              "nextCertificateSequence": {
+                "format": "int32",
+                "type": "integer"
+              },
+              "ownerOrganizationUnitCode": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "ownerOrganizationUnitId": {
+                "format": "uuid",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "ownerOrganizationUnitName": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "status": {
+                "$ref": "#/components/schemas/CertificateCampaignStatus"
+              },
+              "templateCount": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "updatedAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "updatedBy": {
+                "format": "uuid",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "academicYearId",
+              "academicYearValue",
+              "academicYearName",
+              "ownerOrganizationUnitId",
+              "ownerOrganizationUnitCode",
+              "ownerOrganizationUnitName",
+              "name",
+              "eventDate",
+              "status",
+              "activitySequence",
+              "nextCertificateSequence",
+              "templateCount",
+              "candidateCount",
+              "issuedCertificateCount",
+              "hasOpenIssueRequest",
+              "createdBy",
+              "updatedBy",
+              "createdAt",
+              "updatedAt",
+              "capabilities"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
       "ApiResponse_Classroom": {
         "properties": {
           "data": {
@@ -5677,6 +5815,126 @@
         ],
         "type": "object"
       },
+      "ApiResponse_Vec_CertificateCampaignSummary": {
+        "properties": {
+          "data": {
+            "items": {
+              "properties": {
+                "academicYearId": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "academicYearName": {
+                  "type": "string"
+                },
+                "academicYearValue": {
+                  "format": "int32",
+                  "type": "integer"
+                },
+                "activitySequence": {
+                  "format": "int32",
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "candidateCount": {
+                  "format": "int64",
+                  "type": "integer"
+                },
+                "capabilities": {
+                  "$ref": "#/components/schemas/CertificateCampaignCapabilities"
+                },
+                "createdAt": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "eventDate": {
+                  "format": "date",
+                  "type": "string"
+                },
+                "hasOpenIssueRequest": {
+                  "type": "boolean"
+                },
+                "id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "issuedCertificateCount": {
+                  "format": "int64",
+                  "type": "integer"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "ownerOrganizationUnitCode": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "ownerOrganizationUnitId": {
+                  "format": "uuid",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "ownerOrganizationUnitName": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "status": {
+                  "$ref": "#/components/schemas/CertificateCampaignStatus"
+                },
+                "templateCount": {
+                  "format": "int64",
+                  "type": "integer"
+                },
+                "updatedAt": {
+                  "format": "date-time",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "academicYearId",
+                "academicYearValue",
+                "academicYearName",
+                "ownerOrganizationUnitId",
+                "ownerOrganizationUnitCode",
+                "ownerOrganizationUnitName",
+                "name",
+                "eventDate",
+                "status",
+                "activitySequence",
+                "templateCount",
+                "candidateCount",
+                "issuedCertificateCount",
+                "hasOpenIssueRequest",
+                "createdAt",
+                "updatedAt",
+                "capabilities"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
       "ApiResponse_Vec_Classroom": {
         "properties": {
           "data": {
@@ -9076,6 +9334,317 @@
         ],
         "type": "object"
       },
+      "CertificateCampaignCapabilities": {
+        "properties": {
+          "canChangeStatus": {
+            "type": "boolean"
+          },
+          "canDelete": {
+            "type": "boolean"
+          },
+          "canDownload": {
+            "type": "boolean"
+          },
+          "canRead": {
+            "type": "boolean"
+          },
+          "canSubmit": {
+            "type": "boolean"
+          },
+          "canUpdate": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "canRead",
+          "canUpdate",
+          "canDelete",
+          "canSubmit",
+          "canDownload",
+          "canChangeStatus"
+        ],
+        "type": "object"
+      },
+      "CertificateCampaignDetail": {
+        "properties": {
+          "academicYearId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "academicYearName": {
+            "type": "string"
+          },
+          "academicYearValue": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "activitySequence": {
+            "format": "int32",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "candidateCount": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "capabilities": {
+            "$ref": "#/components/schemas/CertificateCampaignCapabilities"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "createdBy": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "eventDate": {
+            "format": "date",
+            "type": "string"
+          },
+          "hasOpenIssueRequest": {
+            "type": "boolean"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "issuedCertificateCount": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "nextCertificateSequence": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "ownerOrganizationUnitCode": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ownerOrganizationUnitId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ownerOrganizationUnitName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "$ref": "#/components/schemas/CertificateCampaignStatus"
+          },
+          "templateCount": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "updatedBy": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "academicYearId",
+          "academicYearValue",
+          "academicYearName",
+          "ownerOrganizationUnitId",
+          "ownerOrganizationUnitCode",
+          "ownerOrganizationUnitName",
+          "name",
+          "eventDate",
+          "status",
+          "activitySequence",
+          "nextCertificateSequence",
+          "templateCount",
+          "candidateCount",
+          "issuedCertificateCount",
+          "hasOpenIssueRequest",
+          "createdBy",
+          "updatedBy",
+          "createdAt",
+          "updatedAt",
+          "capabilities"
+        ],
+        "type": "object"
+      },
+      "CertificateCampaignListQuery": {
+        "additionalProperties": false,
+        "properties": {
+          "academicYearId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "search": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/CertificateCampaignStatus"
+              }
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "CertificateCampaignStatus": {
+        "enum": [
+          "draft",
+          "active",
+          "closed",
+          "archived"
+        ],
+        "type": "string"
+      },
+      "CertificateCampaignSummary": {
+        "properties": {
+          "academicYearId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "academicYearName": {
+            "type": "string"
+          },
+          "academicYearValue": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "activitySequence": {
+            "format": "int32",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "candidateCount": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "capabilities": {
+            "$ref": "#/components/schemas/CertificateCampaignCapabilities"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "eventDate": {
+            "format": "date",
+            "type": "string"
+          },
+          "hasOpenIssueRequest": {
+            "type": "boolean"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "issuedCertificateCount": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "ownerOrganizationUnitCode": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ownerOrganizationUnitId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ownerOrganizationUnitName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "$ref": "#/components/schemas/CertificateCampaignStatus"
+          },
+          "templateCount": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "academicYearId",
+          "academicYearValue",
+          "academicYearName",
+          "ownerOrganizationUnitId",
+          "ownerOrganizationUnitCode",
+          "ownerOrganizationUnitName",
+          "name",
+          "eventDate",
+          "status",
+          "activitySequence",
+          "templateCount",
+          "candidateCount",
+          "issuedCertificateCount",
+          "hasOpenIssueRequest",
+          "createdAt",
+          "updatedAt",
+          "capabilities"
+        ],
+        "type": "object"
+      },
+      "ChangeCertificateCampaignStatusRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "expectedUpdatedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/CertificateCampaignStatus"
+          }
+        },
+        "required": [
+          "expectedUpdatedAt",
+          "status"
+        ],
+        "type": "object"
+      },
       "ChangePasswordRequest": {
         "properties": {
           "currentPassword": {
@@ -9694,6 +10263,35 @@
           "name",
           "start_academic_year_id",
           "activity_type"
+        ],
+        "type": "object"
+      },
+      "CreateCertificateCampaignRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "academicYearId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "eventDate": {
+            "format": "date",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "ownerOrganizationUnitId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "academicYearId",
+          "name",
+          "eventDate"
         ],
         "type": "object"
       },
@@ -11983,6 +12581,23 @@
           "link",
           "read_at",
           "created_at"
+        ],
+        "type": "object"
+      },
+      "NullableUuidUpdate": {
+        "additionalProperties": false,
+        "description": "Explicit nullable update wrapper: omitted means unchanged; `{ \"value\": null }`\nchanges a unit-owned draft into a school-owned draft.",
+        "properties": {
+          "value": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "value"
         ],
         "type": "object"
       },
@@ -15325,6 +15940,52 @@
             ]
           }
         },
+        "type": "object"
+      },
+      "UpdateCertificateCampaignRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "academicYearId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "confirmAffectsIssuedCertificates": {
+            "type": "boolean"
+          },
+          "eventDate": {
+            "format": "date",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "expectedUpdatedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ownerOrganizationUnitId": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/NullableUuidUpdate"
+              }
+            ]
+          }
+        },
+        "required": [
+          "expectedUpdatedAt"
+        ],
         "type": "object"
       },
       "UpdateClassroomRequest": {
@@ -26494,6 +27155,495 @@
         },
         "tags": [
           "calendar"
+        ]
+      }
+    },
+    "/api/certificates/campaigns": {
+      "get": {
+        "operationId": "listCertificateCampaigns",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "academicYearId",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/CertificateCampaignStatus"
+            }
+          },
+          {
+            "in": "query",
+            "name": "search",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_CertificateCampaignSummary"
+                }
+              }
+            },
+            "description": "Scoped certificate campaign list"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Certificate campaign read permission denied"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid query"
+          }
+        },
+        "tags": [
+          "certificate"
+        ]
+      },
+      "post": {
+        "operationId": "createCertificateCampaign",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateCertificateCampaignRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_CertificateCampaignDetail"
+                }
+              }
+            },
+            "description": "Certificate campaign created"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Certificate campaign create permission denied"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid campaign"
+          }
+        },
+        "tags": [
+          "certificate"
+        ]
+      }
+    },
+    "/api/certificates/campaigns/{campaign_id}": {
+      "delete": {
+        "operationId": "deleteCertificateCampaign",
+        "parameters": [
+          {
+            "description": "Certificate campaign ID",
+            "in": "path",
+            "name": "campaign_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_EmptyData"
+                }
+              }
+            },
+            "description": "Draft certificate campaign deleted"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Certificate campaign delete permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Certificate campaign not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Campaign cannot be deleted"
+          }
+        },
+        "tags": [
+          "certificate"
+        ]
+      },
+      "get": {
+        "operationId": "getCertificateCampaign",
+        "parameters": [
+          {
+            "description": "Certificate campaign ID",
+            "in": "path",
+            "name": "campaign_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_CertificateCampaignDetail"
+                }
+              }
+            },
+            "description": "Certificate campaign detail"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Certificate campaign read permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Certificate campaign not found"
+          }
+        },
+        "tags": [
+          "certificate"
+        ]
+      },
+      "put": {
+        "operationId": "updateCertificateCampaign",
+        "parameters": [
+          {
+            "description": "Certificate campaign ID",
+            "in": "path",
+            "name": "campaign_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateCertificateCampaignRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_CertificateCampaignDetail"
+                }
+              }
+            },
+            "description": "Certificate campaign updated"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Certificate campaign update permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Certificate campaign not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Campaign changed or locked"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid campaign"
+          }
+        },
+        "tags": [
+          "certificate"
+        ]
+      }
+    },
+    "/api/certificates/campaigns/{campaign_id}/status": {
+      "put": {
+        "operationId": "changeCertificateCampaignStatus",
+        "parameters": [
+          {
+            "description": "Certificate campaign ID",
+            "in": "path",
+            "name": "campaign_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChangeCertificateCampaignStatusRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_CertificateCampaignDetail"
+                }
+              }
+            },
+            "description": "Certificate campaign status changed"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Certificate campaign update permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Certificate campaign not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Campaign changed or locked"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid status transition"
+          }
+        },
+        "tags": [
+          "certificate"
+        ]
+      }
+    },
+    "/api/certificates/owner-options": {
+      "get": {
+        "operationId": "listCertificateOwnerOptions",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_OrganizationUnitLookupItem"
+                }
+              }
+            },
+            "description": "Active exact-scope certificate owner options"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Certificate campaign create permission denied"
+          }
+        },
+        "tags": [
+          "certificate"
         ]
       }
     },

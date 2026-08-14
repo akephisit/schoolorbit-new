@@ -459,7 +459,7 @@ pub fn interpolate_plain_text(
     Ok(output)
 }
 
-fn normalize_display_text(value: &str) -> String {
+pub fn normalize_display_text(value: &str) -> String {
     value
         .nfc()
         .filter(|character| !matches!(character, '\u{200b}' | '\u{200c}' | '\u{200d}' | '\u{feff}'))

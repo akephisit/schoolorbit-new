@@ -147,6 +147,111 @@ pub async fn accessible_organization_unit_ids(
     }
 }
 
+/// Resolves exact active organization units for one generated permission code.
+///
+/// Unlike the general membership scopes above, this checks the permission's originating role,
+/// position grant, or delegation against each target unit and never traverses the unit tree.
+pub async fn accessible_exact_units_for_permission(
+    pool: &PgPool,
+    actor_user_id: Uuid,
+    permission_code: &str,
+) -> Result<Vec<Uuid>, AppError> {
+    query_exact_units_for_permission(pool, actor_user_id, permission_code, None).await
+}
+
+pub async fn has_exact_unit_permission(
+    pool: &PgPool,
+    actor_user_id: Uuid,
+    organization_unit_id: Uuid,
+    permission_code: &str,
+) -> Result<bool, AppError> {
+    Ok(query_exact_units_for_permission(
+        pool,
+        actor_user_id,
+        permission_code,
+        Some(organization_unit_id),
+    )
+    .await?
+    .contains(&organization_unit_id))
+}
+
+async fn query_exact_units_for_permission(
+    pool: &PgPool,
+    actor_user_id: Uuid,
+    permission_code: &str,
+    target_organization_unit_id: Option<Uuid>,
+) -> Result<Vec<Uuid>, AppError> {
+    sqlx::query_scalar(
+        r#"
+        SELECT target_unit.id
+        FROM organization_units target_unit
+        WHERE target_unit.is_active = true
+          AND ($3::uuid IS NULL OR target_unit.id = $3)
+          AND (
+              EXISTS (
+                  SELECT 1
+                  FROM organization_members om
+                  JOIN user_roles ur ON ur.user_id = om.user_id
+                  JOIN roles r ON r.id = ur.role_id AND r.is_active = true
+                  JOIN role_permissions rp ON rp.role_id = r.id
+                  JOIN permissions p ON p.id = rp.permission_id
+                  WHERE om.user_id = $1
+                    AND om.organization_unit_id = target_unit.id
+                    AND om.started_at <= CURRENT_DATE
+                    AND (om.ended_at IS NULL OR om.ended_at > CURRENT_DATE)
+                    AND ur.started_at <= CURRENT_DATE
+                    AND (ur.ended_at IS NULL OR ur.ended_at > CURRENT_DATE)
+                    AND (
+                        ur.organization_unit_id IS NULL
+                        OR ur.organization_unit_id = target_unit.id
+                    )
+                    AND p.code = $2
+              )
+              OR EXISTS (
+                  SELECT 1
+                  FROM organization_members om
+                  JOIN organization_permission_grants opg
+                    ON opg.organization_unit_id = om.organization_unit_id
+                  JOIN permissions p ON p.id = opg.permission_id
+                  WHERE om.user_id = $1
+                    AND om.organization_unit_id = target_unit.id
+                    AND om.started_at <= CURRENT_DATE
+                    AND (om.ended_at IS NULL OR om.ended_at > CURRENT_DATE)
+                    AND p.code = $2
+                    AND (
+                        opg.position_code IS NULL
+                        OR opg.position_code = om.position_code
+                    )
+              )
+              OR EXISTS (
+                  SELECT 1
+                  FROM organization_permission_delegations opd
+                  JOIN permissions p ON p.id = opd.permission_id
+                  WHERE opd.to_user_id = $1
+                    AND opd.organization_unit_id = target_unit.id
+                    AND p.code = $2
+                    AND opd.started_at <= NOW()
+                    AND opd.revoked_at IS NULL
+                    AND (opd.expires_at IS NULL OR opd.expires_at > NOW())
+              )
+          )
+        ORDER BY target_unit.id
+        "#,
+    )
+    .bind(actor_user_id)
+    .bind(permission_code)
+    .bind(target_organization_unit_id)
+    .fetch_all(pool)
+    .await
+    .map_err(|error| {
+        tracing::error!(
+            reason = "exact_organization_unit_permission_query_failed",
+            database_error = %error
+        );
+        AppError::InternalServerError("ไม่สามารถตรวจสอบสิทธิ์หน่วยงานได้".to_string())
+    })
+}
+
 pub async fn require_resource_access(
     pool: &PgPool,
     actor: &ActorContext,

@@ -73,6 +73,11 @@ use crate::modules::calendar::models::{
     CalendarCategory, CalendarEvent, CalendarEventReminder, CalendarEventTag, CalendarEventTarget,
     CalendarPublicEvent, CalendarTag, CalendarViewerEvent,
 };
+use crate::modules::certificates::models::{
+    CertificateCampaignCapabilities, CertificateCampaignDetail, CertificateCampaignListQuery,
+    CertificateCampaignStatus, CertificateCampaignSummary, ChangeCertificateCampaignStatusRequest,
+    CreateCertificateCampaignRequest, NullableUuidUpdate, UpdateCertificateCampaignRequest,
+};
 use crate::modules::facility::models::Room;
 use crate::modules::files::models::{
     FileDeleteResult, FileDownloadGrantResponse, FileMetadata, FileUploadMultipart,
@@ -199,6 +204,13 @@ use utoipa::OpenApi;
         crate::modules::achievement::handlers::create_achievement,
         crate::modules::achievement::handlers::update_achievement,
         crate::modules::achievement::handlers::delete_achievement,
+        crate::modules::certificates::handlers::list_certificate_campaigns,
+        crate::modules::certificates::handlers::create_certificate_campaign,
+        crate::modules::certificates::handlers::get_certificate_campaign,
+        crate::modules::certificates::handlers::update_certificate_campaign,
+        crate::modules::certificates::handlers::change_certificate_campaign_status,
+        crate::modules::certificates::handlers::delete_certificate_campaign,
+        crate::modules::certificates::handlers::list_certificate_owner_options,
         crate::modules::parents::handlers::get_own_parent_profile,
         crate::modules::parents::handlers::get_child_profile,
         crate::modules::parents::handlers::get_child_timetable,
@@ -404,6 +416,17 @@ use utoipa::OpenApi;
         ApiResponse<Vec<RoleLookupItem>>,
         ApiResponse<Vec<OrganizationUnitLookupItem>>,
         ApiResponse<OrganizationUnitLookupItem>,
+        CertificateCampaignStatus,
+        CertificateCampaignCapabilities,
+        CertificateCampaignSummary,
+        CertificateCampaignDetail,
+        CertificateCampaignListQuery,
+        CreateCertificateCampaignRequest,
+        NullableUuidUpdate,
+        UpdateCertificateCampaignRequest,
+        ChangeCertificateCampaignStatusRequest,
+        ApiResponse<Vec<CertificateCampaignSummary>>,
+        ApiResponse<CertificateCampaignDetail>,
         ApiResponse<Vec<GradeLevelLookupItem>>,
         ApiResponse<Vec<ClassroomLookupItem>>,
         ApiResponse<Vec<AcademicYearLookupItem>>,
@@ -2903,6 +2926,91 @@ mod tests {
         assert_eq!(include_children["in"], "query");
         assert_eq!(include_children["required"], false);
         assert_eq!(include_children["schema"]["type"], "boolean");
+    }
+
+    #[test]
+    fn certificate_contracts() {
+        let document = school_api_value().expect("document should serialize");
+        assert_operations(
+            &document,
+            &[
+                (
+                    "/api/certificates/campaigns",
+                    "get",
+                    "listCertificateCampaigns",
+                ),
+                (
+                    "/api/certificates/campaigns",
+                    "post",
+                    "createCertificateCampaign",
+                ),
+                (
+                    "/api/certificates/campaigns/{campaign_id}",
+                    "get",
+                    "getCertificateCampaign",
+                ),
+                (
+                    "/api/certificates/campaigns/{campaign_id}",
+                    "put",
+                    "updateCertificateCampaign",
+                ),
+                (
+                    "/api/certificates/campaigns/{campaign_id}",
+                    "delete",
+                    "deleteCertificateCampaign",
+                ),
+                (
+                    "/api/certificates/campaigns/{campaign_id}/status",
+                    "put",
+                    "changeCertificateCampaignStatus",
+                ),
+                (
+                    "/api/certificates/owner-options",
+                    "get",
+                    "listCertificateOwnerOptions",
+                ),
+            ],
+        );
+
+        let schemas = &document["components"]["schemas"];
+        let detail = &schemas["CertificateCampaignDetail"];
+        for field in [
+            "academicYearId",
+            "academicYearValue",
+            "ownerOrganizationUnitId",
+            "name",
+            "eventDate",
+            "status",
+            "hasOpenIssueRequest",
+            "capabilities",
+            "updatedAt",
+        ] {
+            assert!(required(detail).contains(&field));
+        }
+        for field in [
+            "ownerOrganizationUnitId",
+            "ownerOrganizationUnitCode",
+            "ownerOrganizationUnitName",
+            "activitySequence",
+            "createdBy",
+            "updatedBy",
+        ] {
+            assert!(contains_null(&detail["properties"][field]));
+        }
+
+        let nullable_update = &schemas["NullableUuidUpdate"];
+        assert!(required(nullable_update).contains(&"value"));
+        assert!(contains_null(&nullable_update["properties"]["value"]));
+        assert_eq!(
+            document["paths"]["/api/certificates/campaigns/{campaign_id}"]["delete"]["responses"]
+                ["200"]["content"]["application/json"]["schema"]["$ref"],
+            "#/components/schemas/ApiResponse_EmptyData"
+        );
+        assert_eq!(
+            document["paths"]["/api/certificates/owner-options"]["get"]["responses"]["200"]
+                ["content"]["application/json"]["schema"]["$ref"],
+            "#/components/schemas/ApiResponse_Vec_OrganizationUnitLookupItem"
+        );
     }
 
     #[test]
