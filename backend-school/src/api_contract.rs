@@ -84,23 +84,27 @@ use crate::modules::certificates::models::{
     CertificateCampaignSummary, CertificateCandidateAccount, CertificateCandidateBulkRequest,
     CertificateCandidateBulkResult, CertificateCandidateCapabilities, CertificateCandidateDetail,
     CertificateCandidateImportResult, CertificateCandidateListQuery,
-    CertificateCandidateListResponse, CertificateCandidateSummary, CertificateElement,
-    CertificateFontSource, CertificateImportBatchSummary, CertificateImportRequest,
-    CertificateImportRowInput, CertificateImportSource, CertificateIssueCode,
-    CertificateIssueRequestCapabilities, CertificateIssueRequestDetail,
-    CertificateIssueRequestItem, CertificateIssueRequestListQuery, CertificateIssueRequestStatus,
-    CertificateIssueRequestSummary, CertificateLayoutV1, CertificatePageBox,
-    CertificatePageGeometry, CertificatePreviewKind, CertificatePreviewManifestRequest,
-    CertificateRenderCampaignValues, CertificateRenderFileGrant, CertificateRenderFontGrant,
-    CertificateRenderImageGrant, CertificateRenderManifest, CertificateResourceLockCode,
-    CertificateResourceLocked, CertificateTemplateAsset, CertificateTemplateAssetKind,
-    CertificateTemplateCapabilities, CertificateTemplateDeleteDisposition,
-    CertificateTemplateDeleteResult, CertificateTemplateDetail, CertificateTemplateVariableCatalog,
+    CertificateCandidateListResponse, CertificateCandidateSummary, CertificateCapabilities,
+    CertificateElement, CertificateFontSource, CertificateImportBatchSummary,
+    CertificateImportRequest, CertificateImportRowInput, CertificateImportSource,
+    CertificateIssueCandidateProblem, CertificateIssueCode, CertificateIssueRequestCapabilities,
+    CertificateIssueRequestDetail, CertificateIssueRequestItem, CertificateIssueRequestListQuery,
+    CertificateIssueRequestStatus, CertificateIssueRequestSummary, CertificateLayoutV1,
+    CertificatePageBox, CertificatePageGeometry, CertificatePreviewKind,
+    CertificatePreviewManifestRequest, CertificateRenderCampaignValues, CertificateRenderFileGrant,
+    CertificateRenderFontGrant, CertificateRenderImageGrant, CertificateRenderManifest,
+    CertificateRenderManifestBatchRequest, CertificateReplacementCandidate,
+    CertificateResourceLockCode, CertificateResourceLocked, CertificateStatus,
+    CertificateTemplateAsset, CertificateTemplateAssetKind, CertificateTemplateCapabilities,
+    CertificateTemplateDeleteDisposition, CertificateTemplateDeleteResult,
+    CertificateTemplateDetail, CertificateTemplateVariableCatalog,
     ChangeCertificateCampaignStatusRequest, CreateAccountCertificateCandidateRequest,
     CreateCertificateCampaignRequest, CreateCertificateTemplateRequest,
     CreateManualExternalCandidateRequest, ElementFrame, GeometryAction, ImageElement,
-    NullableUuidUpdate, QrElement, RecipientType, ReturnCertificateIssueRequest,
-    SubmitCertificateIssueRequest, TextAlignment, TextElement, TextShadow,
+    IssueCertificateOutcome, IssueCertificateRequest, IssuedCertificateDetail,
+    IssuedCertificateListQuery, IssuedCertificateSummary, NullableUuidUpdate, QrElement,
+    RecipientType, ReturnCertificateIssueRequest, RevokeCertificateRequest,
+    RevokeCertificateResult, SubmitCertificateIssueRequest, TextAlignment, TextElement, TextShadow,
     UpdateCertificateCampaignRequest, UpdateCertificateCandidateRequest,
     UpdateCertificateTemplateRequest,
 };
@@ -263,6 +267,12 @@ use utoipa::OpenApi;
         crate::modules::certificates::handlers::withdraw_certificate_issue_request,
         crate::modules::certificates::handlers::start_certificate_issue_request_review,
         crate::modules::certificates::handlers::return_certificate_issue_request,
+        crate::modules::certificates::handlers::issue_certificates,
+        crate::modules::certificates::handlers::list_issued_certificates,
+        crate::modules::certificates::handlers::get_issued_certificate,
+        crate::modules::certificates::handlers::revoke_issued_certificate,
+        crate::modules::certificates::handlers::create_issued_certificate_render_manifest,
+        crate::modules::certificates::handlers::create_issued_certificate_render_manifests,
         crate::modules::parents::handlers::get_own_parent_profile,
         crate::modules::parents::handlers::get_child_profile,
         crate::modules::parents::handlers::get_child_timetable,
@@ -555,6 +565,23 @@ use utoipa::OpenApi;
         CertificateResourceLocked,
         ApiResponse<Vec<CertificateIssueRequestSummary>>,
         ApiResponse<CertificateIssueRequestDetail>,
+        IssueCertificateRequest,
+        CertificateStatus,
+        CertificateCapabilities,
+        IssuedCertificateListQuery,
+        IssuedCertificateSummary,
+        IssuedCertificateDetail,
+        CertificateIssueCandidateProblem,
+        IssueCertificateOutcome,
+        RevokeCertificateRequest,
+        CertificateReplacementCandidate,
+        RevokeCertificateResult,
+        CertificateRenderManifestBatchRequest,
+        ApiResponse<IssueCertificateOutcome>,
+        ApiResponse<Vec<IssuedCertificateSummary>>,
+        ApiResponse<IssuedCertificateDetail>,
+        ApiResponse<RevokeCertificateResult>,
+        ApiResponse<Vec<CertificateRenderManifest>>,
         ApiErrorResponseWithData<CertificateResourceLocked>,
         ApiErrorResponseWithOptionalData<CertificateResourceLocked>,
         ApiResponse<Vec<GradeLevelLookupItem>>,
@@ -3229,6 +3256,36 @@ mod tests {
                     "post",
                     "returnCertificateIssueRequest",
                 ),
+                (
+                    "/api/certificates/issue-requests/{request_id}/issue",
+                    "post",
+                    "issueCertificates",
+                ),
+                (
+                    "/api/certificates/campaigns/{campaign_id}/issued",
+                    "get",
+                    "listIssuedCertificates",
+                ),
+                (
+                    "/api/certificates/{certificate_id}",
+                    "get",
+                    "getIssuedCertificate",
+                ),
+                (
+                    "/api/certificates/{certificate_id}/revoke",
+                    "post",
+                    "revokeIssuedCertificate",
+                ),
+                (
+                    "/api/certificates/{certificate_id}/render-manifest",
+                    "post",
+                    "createIssuedCertificateRenderManifest",
+                ),
+                (
+                    "/api/certificates/campaigns/{campaign_id}/render-manifests",
+                    "post",
+                    "createIssuedCertificateRenderManifests",
+                ),
             ],
         );
 
@@ -3348,11 +3405,43 @@ mod tests {
                 &["campaignId", "status", "capabilities", "items"][..],
             ),
             ("CertificateResourceLocked", &["code", "requestId"][..]),
+            ("IssueCertificateRequest", &["idempotencyKey"][..]),
+            (
+                "IssuedCertificateSummary",
+                &[
+                    "certificateNumber",
+                    "firstName",
+                    "lastName",
+                    "status",
+                    "capabilities",
+                ][..],
+            ),
+            (
+                "RevokeCertificateRequest",
+                &["reason", "createReplacementCandidate"][..],
+            ),
+            (
+                "CertificateRenderManifestBatchRequest",
+                &["certificateIds"][..],
+            ),
         ] {
             let schema = &schemas[schema_name];
             for field in required_fields {
                 assert!(required(schema).contains(field));
             }
+        }
+        let issued_properties = schemas["IssuedCertificateSummary"]["properties"]
+            .as_object()
+            .expect("issued certificate summary properties");
+        for forbidden in [
+            "studentId",
+            "staffUsername",
+            "nationalId",
+            "qrProofEncrypted",
+            "qrProofHash",
+            "userId",
+        ] {
+            assert!(!issued_properties.contains_key(forbidden));
         }
         assert_eq!(
             document["paths"]["/api/certificates/campaigns/{campaign_id}/issue-requests"]["post"]

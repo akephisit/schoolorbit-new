@@ -128,6 +128,20 @@ test('certificate campaign API is generated and its wrapper consumes named DTOs'
 			'/api/certificates/issue-requests/{request_id}/return',
 			'post',
 			'returnCertificateIssueRequest'
+		],
+		['/api/certificates/issue-requests/{request_id}/issue', 'post', 'issueCertificates'],
+		['/api/certificates/campaigns/{campaign_id}/issued', 'get', 'listIssuedCertificates'],
+		['/api/certificates/{certificate_id}', 'get', 'getIssuedCertificate'],
+		['/api/certificates/{certificate_id}/revoke', 'post', 'revokeIssuedCertificate'],
+		[
+			'/api/certificates/{certificate_id}/render-manifest',
+			'post',
+			'createIssuedCertificateRenderManifest'
+		],
+		[
+			'/api/certificates/campaigns/{campaign_id}/render-manifests',
+			'post',
+			'createIssuedCertificateRenderManifests'
 		]
 	];
 	for (const [route, method, operationId] of expectedOperations) {
@@ -174,6 +188,18 @@ test('certificate campaign API is generated and its wrapper consumes named DTOs'
 		'CertificateIssueRequestSummary',
 		'CertificateIssueRequestItem',
 		'CertificateIssueRequestDetail',
+		'CertificateStatus',
+		'CertificateCapabilities',
+		'IssueCertificateRequest',
+		'IssueCertificateOutcome',
+		'CertificateIssueCandidateProblem',
+		'IssuedCertificateListQuery',
+		'IssuedCertificateSummary',
+		'IssuedCertificateDetail',
+		'RevokeCertificateRequest',
+		'RevokeCertificateResult',
+		'CertificateReplacementCandidate',
+		'CertificateRenderManifestBatchRequest',
 		'CertificateResourceLocked'
 	]) {
 		assert.ok(openapi.components?.schemas?.[schema], `missing generated schema ${schema}`);
@@ -235,7 +261,13 @@ test('certificate campaign API is generated and its wrapper consumes named DTOs'
 		'getCertificateIssueRequest',
 		'withdrawCertificateIssueRequest',
 		'startCertificateIssueRequestReview',
-		'returnCertificateIssueRequest'
+		'returnCertificateIssueRequest',
+		'issueCertificates',
+		'listIssuedCertificates',
+		'getIssuedCertificate',
+		'revokeIssuedCertificate',
+		'createIssuedCertificateRenderManifest',
+		'createIssuedCertificateRenderManifests'
 	]) {
 		assert.match(wrapper, new RegExp(`export async function ${operation}\\b`));
 	}

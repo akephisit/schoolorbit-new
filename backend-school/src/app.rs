@@ -248,6 +248,30 @@ fn protected_routes() -> Router<AppState> {
             post(modules::certificates::handlers::return_certificate_issue_request),
         )
         .route(
+            "/api/certificates/issue-requests/{request_id}/issue",
+            post(modules::certificates::handlers::issue_certificates),
+        )
+        .route(
+            "/api/certificates/campaigns/{campaign_id}/issued",
+            get(modules::certificates::handlers::list_issued_certificates),
+        )
+        .route(
+            "/api/certificates/campaigns/{campaign_id}/render-manifests",
+            post(modules::certificates::handlers::create_issued_certificate_render_manifests),
+        )
+        .route(
+            "/api/certificates/{certificate_id}",
+            get(modules::certificates::handlers::get_issued_certificate),
+        )
+        .route(
+            "/api/certificates/{certificate_id}/revoke",
+            post(modules::certificates::handlers::revoke_issued_certificate),
+        )
+        .route(
+            "/api/certificates/{certificate_id}/render-manifest",
+            post(modules::certificates::handlers::create_issued_certificate_render_manifest),
+        )
+        .route(
             "/api/student/profile",
             get(modules::students::handlers::get_own_profile)
                 .put(modules::students::handlers::update_own_profile),

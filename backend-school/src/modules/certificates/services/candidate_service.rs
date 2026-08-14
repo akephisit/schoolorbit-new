@@ -602,8 +602,6 @@ pub async fn update_candidate(
             "การเปลี่ยนเป็นบุคคลภายนอกต้องใช้คำสั่งยืนยันเฉพาะ".to_string(),
         ));
     }
-    let converted_external = locked.recipient_type == RecipientType::External.as_str()
-        && locked.match_status == CandidateMatchStatus::ExternalConfirmed.as_str();
     let mut row = CertificateImportRowInput {
         recipient_type: request.recipient_type.as_str().to_string(),
         student_id: request.student_id,
@@ -616,11 +614,11 @@ pub async fn update_candidate(
         template_name: None,
         custom_values: request.custom_values,
     };
-    if converted_external {
-        row.student_id = None;
-        row.staff_username = None;
-    }
+    let converted_external = prepare_converted_external_account_recheck(&locked, &mut row);
     validate_manual_row(&row)?;
+    if converted_external {
+        lock_account_identity_writes(&mut tx).await?;
+    }
     let templates = load_templates(&mut tx, existing.campaign_id).await?;
     let (students, staff) = load_import_accounts(&mut tx, std::slice::from_ref(&row)).await?;
     let canonical = canonical_custom_headers(&row.custom_values)?;
@@ -914,10 +912,14 @@ async fn bulk_update_inner(
     for row in &rows {
         require_candidate_mutable(row, can_read_locked_request)?;
     }
+    let reconciles_converted_external =
+        !matches!(&request, CertificateCandidateBulkRequest::SoftDelete { .. })
+            && rows.iter().any(is_converted_external_candidate);
     if matches!(
         &request,
         CertificateCandidateBulkRequest::ConfirmExternal { .. }
-    ) {
+    ) || reconciles_converted_external
+    {
         lock_account_identity_writes(&mut tx).await?;
     }
 
@@ -1279,11 +1281,10 @@ fn apply_selected_name_resolution(candidate: &mut PreparedCandidate) {
 }
 
 fn restore_converted_external_state(candidate: &mut PreparedCandidate, row: &CandidateRow) {
-    if row.recipient_type != RecipientType::External.as_str()
-        || row.match_status != CandidateMatchStatus::ExternalConfirmed.as_str()
-    {
+    if !is_converted_external_candidate(row) || candidate.matched_user_id.is_some() {
         return;
     }
+    candidate.recipient_type = RecipientType::External;
     candidate.lookup_student_id = row.lookup_student_id.clone();
     candidate.lookup_staff_username = row.lookup_staff_username.clone();
     candidate.matched_user_id = None;
@@ -1295,6 +1296,12 @@ fn restore_converted_external_state(candidate: &mut PreparedCandidate, row: &Can
     candidate
         .validation_codes
         .remove(&CandidateValidationCode::UnexpectedInternalLookup);
+    candidate
+        .validation_codes
+        .remove(&CandidateValidationCode::AccountNotFound);
+    candidate
+        .validation_codes
+        .remove(&CandidateValidationCode::NameSourceRequired);
     refresh_validation_status(candidate, candidate_has_hard_invalid(candidate));
 }
 
@@ -2075,16 +2082,10 @@ fn prepared_from_row(row: CandidateRow) -> Result<PreparedCandidate, AppError> {
 }
 
 fn candidate_as_import_row(row: &CandidateRow) -> CertificateImportRowInput {
-    let converted_external = row.recipient_type == RecipientType::External.as_str()
-        && row.match_status == CandidateMatchStatus::ExternalConfirmed.as_str();
-    CertificateImportRowInput {
+    let mut input = CertificateImportRowInput {
         recipient_type: row.recipient_type.clone(),
-        student_id: (!converted_external)
-            .then(|| row.lookup_student_id.clone())
-            .flatten(),
-        staff_username: (!converted_external)
-            .then(|| row.lookup_staff_username.clone())
-            .flatten(),
+        student_id: row.lookup_student_id.clone(),
+        staff_username: row.lookup_staff_username.clone(),
         title: row.imported_title.clone(),
         first_name: row.imported_first_name.clone(),
         last_name: row.imported_last_name.clone(),
@@ -2092,7 +2093,36 @@ fn candidate_as_import_row(row: &CandidateRow) -> CertificateImportRowInput {
         award_or_role: row.award_or_role.clone(),
         template_name: row.template_name.clone(),
         custom_values: row.custom_values.0.clone(),
+    };
+    prepare_converted_external_account_recheck(row, &mut input);
+    input
+}
+
+fn is_converted_external_candidate(row: &CandidateRow) -> bool {
+    row.recipient_type == RecipientType::External.as_str()
+        && row.match_status == CandidateMatchStatus::ExternalConfirmed.as_str()
+}
+
+fn prepare_converted_external_account_recheck(
+    row: &CandidateRow,
+    input: &mut CertificateImportRowInput,
+) -> bool {
+    if !is_converted_external_candidate(row) {
+        return false;
     }
+    if let Some(student_id) = row.lookup_student_id.clone() {
+        input.recipient_type = RecipientType::Student.as_str().to_string();
+        input.student_id = Some(student_id);
+        input.staff_username = None;
+    } else if let Some(staff_username) = row.lookup_staff_username.clone() {
+        input.recipient_type = RecipientType::Staff.as_str().to_string();
+        input.student_id = None;
+        input.staff_username = Some(staff_username);
+    } else {
+        input.student_id = None;
+        input.staff_username = None;
+    }
+    true
 }
 
 fn validate_manual_row(row: &CertificateImportRowInput) -> Result<(), AppError> {

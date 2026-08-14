@@ -22,18 +22,21 @@ use crate::{
                 CertificateCandidateListResponse, CertificateImportRequest,
                 CertificateIssueRequestDetail, CertificateIssueRequestListQuery,
                 CertificateIssueRequestSummary, CertificatePreviewManifestRequest,
-                CertificateRenderManifest, CertificateResourceLocked,
-                CertificateTemplateDeleteResult, CertificateTemplateDetail,
-                CertificateTemplateVariableCatalog, ChangeCertificateCampaignStatusRequest,
-                CreateAccountCertificateCandidateRequest, CreateCertificateCampaignRequest,
-                CreateCertificateTemplateRequest, CreateManualExternalCandidateRequest,
-                ReturnCertificateIssueRequest, SubmitCertificateIssueRequest,
+                CertificateRenderManifest, CertificateRenderManifestBatchRequest,
+                CertificateResourceLocked, CertificateTemplateDeleteResult,
+                CertificateTemplateDetail, CertificateTemplateVariableCatalog,
+                ChangeCertificateCampaignStatusRequest, CreateAccountCertificateCandidateRequest,
+                CreateCertificateCampaignRequest, CreateCertificateTemplateRequest,
+                CreateManualExternalCandidateRequest, IssueCertificateOutcome,
+                IssueCertificateRequest, IssuedCertificateDetail, IssuedCertificateListQuery,
+                IssuedCertificateSummary, ReturnCertificateIssueRequest, RevokeCertificateRequest,
+                RevokeCertificateResult, SubmitCertificateIssueRequest,
                 UpdateCertificateCampaignRequest, UpdateCertificateCandidateRequest,
                 UpdateCertificateTemplateRequest,
             },
             services::{
-                campaign_service, candidate_service, render_service, request_service,
-                template_service,
+                campaign_service, candidate_service, issuance_service, render_service,
+                request_service, template_service,
             },
         },
         files::consumer_service::request_deletions,
@@ -1024,4 +1027,215 @@ pub async fn return_certificate_issue_request(
     )
     .await?;
     Ok((StatusCode::OK, Json(ApiResponse::ok(request))).into_response())
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/certificates/issue-requests/{request_id}/issue",
+    operation_id = "issueCertificates",
+    tag = "certificate",
+    params(("request_id" = Uuid, Path, description = "Certificate issue request ID")),
+    request_body = IssueCertificateRequest,
+    responses(
+        (status = 200, description = "Idempotent issued or returned outcome", body = ApiResponse<IssueCertificateOutcome>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "School certificate issue permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Certificate issue request not found", body = ApiErrorResponse),
+        (status = 409, description = "Request state, idempotency key, or number range conflict", body = ApiErrorResponse),
+        (status = 503, description = "Authoritative school name unavailable", body = ApiErrorResponse)
+    )
+)]
+pub async fn issue_certificates(
+    State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(request_id): Path<Uuid>,
+    Json(payload): Json<IssueCertificateRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context_from_session(&state, &session).await?;
+    if let Some(outcome) = issuance_service::replay_issue_request(
+        &context.tenant.pool,
+        &context.actor,
+        request_id,
+        payload.idempotency_key,
+    )
+    .await?
+    {
+        return Ok((StatusCode::OK, Json(ApiResponse::ok(outcome))).into_response());
+    }
+    let school_name = state
+        .admin_client
+        .get_school_name(&context.tenant.subdomain)
+        .await
+        .map_err(|_| AppError::ServiceUnavailable("school_name_lookup_failed".to_string()))?;
+    let outcome = issuance_service::issue_request(
+        &context.tenant.pool,
+        &context.actor,
+        school_name,
+        request_id,
+        payload,
+    )
+    .await?;
+    Ok((StatusCode::OK, Json(ApiResponse::ok(outcome))).into_response())
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/certificates/campaigns/{campaign_id}/issued",
+    operation_id = "listIssuedCertificates",
+    tag = "certificate",
+    params(
+        ("campaign_id" = Uuid, Path, description = "Certificate campaign ID"),
+        IssuedCertificateListQuery
+    ),
+    responses(
+        (status = 200, description = "Scoped issued and revoked certificate list", body = ApiResponse<Vec<IssuedCertificateSummary>>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Certificate read permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Certificate campaign not found", body = ApiErrorResponse),
+        (status = 422, description = "Invalid issued certificate query", body = ApiErrorResponse)
+    )
+)]
+pub async fn list_issued_certificates(
+    State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(campaign_id): Path<Uuid>,
+    Query(query): Query<IssuedCertificateListQuery>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context_from_session(&state, &session).await?;
+    let certificates = issuance_service::list_campaign_certificates(
+        &context.tenant.pool,
+        &context.actor,
+        campaign_id,
+        query,
+    )
+    .await?;
+    Ok((StatusCode::OK, Json(ApiResponse::ok(certificates))).into_response())
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/certificates/{certificate_id}",
+    operation_id = "getIssuedCertificate",
+    tag = "certificate",
+    params(("certificate_id" = Uuid, Path, description = "Issued certificate ID")),
+    responses(
+        (status = 200, description = "Scoped issued certificate detail without proof or lookup identifiers", body = ApiResponse<IssuedCertificateDetail>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Certificate read permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Issued certificate not found", body = ApiErrorResponse)
+    )
+)]
+pub async fn get_issued_certificate(
+    State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(certificate_id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context_from_session(&state, &session).await?;
+    let certificate =
+        issuance_service::get_certificate(&context.tenant.pool, &context.actor, certificate_id)
+            .await?;
+    Ok((StatusCode::OK, Json(ApiResponse::ok(certificate))).into_response())
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/certificates/{certificate_id}/revoke",
+    operation_id = "revokeIssuedCertificate",
+    tag = "certificate",
+    params(("certificate_id" = Uuid, Path, description = "Issued certificate ID")),
+    request_body = RevokeCertificateRequest,
+    responses(
+        (status = 200, description = "Certificate revoked with optional replacement draft", body = ApiResponse<RevokeCertificateResult>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "School certificate revoke permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Issued certificate not found", body = ApiErrorResponse),
+        (status = 409, description = "Certificate already revoked", body = ApiErrorResponse),
+        (status = 422, description = "Invalid revocation reason", body = ApiErrorResponse)
+    )
+)]
+pub async fn revoke_issued_certificate(
+    State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(certificate_id): Path<Uuid>,
+    Json(payload): Json<RevokeCertificateRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context_from_session(&state, &session).await?;
+    let result = issuance_service::revoke_certificate(
+        &context.tenant.pool,
+        &context.actor,
+        certificate_id,
+        payload,
+    )
+    .await?;
+    Ok((StatusCode::OK, Json(ApiResponse::ok(result))).into_response())
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/certificates/{certificate_id}/render-manifest",
+    operation_id = "createIssuedCertificateRenderManifest",
+    tag = "certificate",
+    params(("certificate_id" = Uuid, Path, description = "Issued certificate ID")),
+    responses(
+        (status = 200, description = "Authorized short-lived render manifest", body = ApiResponse<CertificateRenderManifest>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Certificate download permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Issued certificate not found", body = ApiErrorResponse),
+        (status = 409, description = "Certificate revoked or current template unavailable", body = ApiErrorResponse),
+        (status = 503, description = "Private asset grant unavailable", body = ApiErrorResponse)
+    )
+)]
+pub async fn create_issued_certificate_render_manifest(
+    State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(certificate_id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context_from_session(&state, &session).await?;
+    let manifest = render_service::issued_manifest(
+        &context.tenant.pool,
+        &context.actor,
+        state.file_platform.as_ref(),
+        &context.tenant.subdomain,
+        &state.auth_runtime.config.base_domain,
+        certificate_id,
+    )
+    .await?;
+    Ok((StatusCode::OK, Json(ApiResponse::ok(manifest))).into_response())
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/certificates/campaigns/{campaign_id}/render-manifests",
+    operation_id = "createIssuedCertificateRenderManifests",
+    tag = "certificate",
+    params(("campaign_id" = Uuid, Path, description = "Certificate campaign ID")),
+    request_body = CertificateRenderManifestBatchRequest,
+    responses(
+        (status = 200, description = "Ordered authorized render manifests", body = ApiResponse<Vec<CertificateRenderManifest>>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Certificate download permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Selected certificate not found in campaign", body = ApiErrorResponse),
+        (status = 409, description = "A certificate is revoked or its current template unavailable", body = ApiErrorResponse),
+        (status = 422, description = "Select between 1 and 200 unique certificates", body = ApiErrorResponse),
+        (status = 503, description = "Private asset grant unavailable", body = ApiErrorResponse)
+    )
+)]
+pub async fn create_issued_certificate_render_manifests(
+    State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(campaign_id): Path<Uuid>,
+    Json(payload): Json<CertificateRenderManifestBatchRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context_from_session(&state, &session).await?;
+    let manifests = render_service::issued_manifests(
+        &context.tenant.pool,
+        &context.actor,
+        state.file_platform.as_ref(),
+        &context.tenant.subdomain,
+        &state.auth_runtime.config.base_domain,
+        campaign_id,
+        payload,
+    )
+    .await?;
+    Ok((StatusCode::OK, Json(ApiResponse::ok(manifests))).into_response())
 }

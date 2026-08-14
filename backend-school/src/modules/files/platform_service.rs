@@ -322,6 +322,16 @@ impl FilePlatform {
         file_id: Uuid,
     ) -> Result<DownloadGrant, FilePlatformError> {
         let delivery = ready_delivery(repository, file_id).await?;
+        self.private_download_delivery(delivery).await
+    }
+
+    pub(crate) async fn private_download_delivery(
+        &self,
+        delivery: DeliveryRecord,
+    ) -> Result<DownloadGrant, FilePlatformError> {
+        if delivery.file.lifecycle_status != FileLifecycleStatus::Ready {
+            return Err(FilePlatformError::NotReady);
+        }
         if delivery.file.visibility != FileVisibility::Private {
             return Err(FilePlatformError::VisibilityMismatch);
         }

@@ -3578,6 +3578,202 @@
         ],
         "type": "object"
       },
+      "ApiResponse_IssueCertificateOutcome": {
+        "properties": {
+          "data": {
+            "oneOf": [
+              {
+                "properties": {
+                  "activity_sequence": {
+                    "format": "int32",
+                    "type": "integer"
+                  },
+                  "campaign_id": {
+                    "format": "uuid",
+                    "type": "string"
+                  },
+                  "certificates": {
+                    "items": {
+                      "$ref": "#/components/schemas/IssuedCertificateSummary"
+                    },
+                    "type": "array"
+                  },
+                  "first_certificate_sequence": {
+                    "format": "int32",
+                    "type": "integer"
+                  },
+                  "issue_run_id": {
+                    "format": "uuid",
+                    "type": "string"
+                  },
+                  "last_certificate_sequence": {
+                    "format": "int32",
+                    "type": "integer"
+                  },
+                  "outcome": {
+                    "enum": [
+                      "issued"
+                    ],
+                    "type": "string"
+                  },
+                  "request_id": {
+                    "format": "uuid",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "issue_run_id",
+                  "request_id",
+                  "campaign_id",
+                  "activity_sequence",
+                  "first_certificate_sequence",
+                  "last_certificate_sequence",
+                  "certificates",
+                  "outcome"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "campaign_id": {
+                    "format": "uuid",
+                    "type": "string"
+                  },
+                  "candidate_problems": {
+                    "items": {
+                      "$ref": "#/components/schemas/CertificateIssueCandidateProblem"
+                    },
+                    "type": "array"
+                  },
+                  "issue_codes": {
+                    "items": {
+                      "$ref": "#/components/schemas/CertificateIssueCode"
+                    },
+                    "type": "array"
+                  },
+                  "issue_run_id": {
+                    "format": "uuid",
+                    "type": "string"
+                  },
+                  "outcome": {
+                    "enum": [
+                      "returned"
+                    ],
+                    "type": "string"
+                  },
+                  "request_id": {
+                    "format": "uuid",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "issue_run_id",
+                  "request_id",
+                  "campaign_id",
+                  "issue_codes",
+                  "candidate_problems",
+                  "outcome"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_IssuedCertificateDetail": {
+        "properties": {
+          "data": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/IssuedCertificateSummary"
+              },
+              {
+                "properties": {
+                  "customValues": {
+                    "additionalProperties": {
+                      "type": "string"
+                    },
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "type": "object"
+                  },
+                  "issueRunId": {
+                    "format": "uuid",
+                    "type": "string"
+                  },
+                  "ownerOrganizationUnitNameSnapshot": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "revocationReason": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "revokedAt": {
+                    "format": "date-time",
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "revokedBy": {
+                    "format": "uuid",
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "schoolName": {
+                    "type": "string"
+                  },
+                  "updatedAt": {
+                    "format": "date-time",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "issueRunId",
+                  "customValues",
+                  "schoolName",
+                  "ownerOrganizationUnitNameSnapshot",
+                  "revokedBy",
+                  "revokedAt",
+                  "revocationReason",
+                  "updatedAt"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
       "ApiResponse_ListNotificationsResponse": {
         "properties": {
           "data": {
@@ -4483,6 +4679,43 @@
               "status",
               "roles",
               "organization_units"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_RevokeCertificateResult": {
+        "properties": {
+          "data": {
+            "properties": {
+              "certificate": {
+                "$ref": "#/components/schemas/IssuedCertificateDetail"
+              },
+              "replacementCandidate": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/CertificateReplacementCandidate"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "certificate",
+              "replacementCandidate"
             ],
             "type": "object"
           },
@@ -6979,6 +7212,95 @@
         ],
         "type": "object"
       },
+      "ApiResponse_Vec_CertificateRenderManifest": {
+        "properties": {
+          "data": {
+            "items": {
+              "properties": {
+                "backgroundGrant": {
+                  "$ref": "#/components/schemas/CertificateRenderFileGrant"
+                },
+                "builtInFonts": {
+                  "items": {
+                    "$ref": "#/components/schemas/CertificateBuiltInFont"
+                  },
+                  "type": "array"
+                },
+                "campaignValues": {
+                  "$ref": "#/components/schemas/CertificateRenderCampaignValues"
+                },
+                "certificateNumber": {
+                  "type": "string"
+                },
+                "fontGrants": {
+                  "items": {
+                    "$ref": "#/components/schemas/CertificateRenderFontGrant"
+                  },
+                  "type": "array"
+                },
+                "imageGrants": {
+                  "items": {
+                    "$ref": "#/components/schemas/CertificateRenderImageGrant"
+                  },
+                  "type": "array"
+                },
+                "layout": {
+                  "$ref": "#/components/schemas/CertificateLayoutV1"
+                },
+                "pageGeometry": {
+                  "$ref": "#/components/schemas/CertificatePageGeometry"
+                },
+                "qrPayload": {
+                  "type": "string"
+                },
+                "recipientValues": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "type": "object"
+                },
+                "suggestedFilename": {
+                  "type": "string"
+                },
+                "templateId": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "templateId",
+                "pageGeometry",
+                "layout",
+                "campaignValues",
+                "recipientValues",
+                "certificateNumber",
+                "qrPayload",
+                "builtInFonts",
+                "fontGrants",
+                "imageGrants",
+                "backgroundGrant",
+                "suggestedFilename"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
       "ApiResponse_Vec_CertificateTemplateDetail": {
         "properties": {
           "data": {
@@ -7661,6 +7983,168 @@
                 "id",
                 "instructor_id",
                 "role"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_Vec_IssuedCertificateSummary": {
+        "properties": {
+          "data": {
+            "items": {
+              "properties": {
+                "academicYearId": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "academicYearValue": {
+                  "format": "int32",
+                  "type": "integer"
+                },
+                "activityItem": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "activitySequence": {
+                  "format": "int32",
+                  "type": "integer"
+                },
+                "awardOrRole": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "campaignId": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "campaignName": {
+                  "type": "string"
+                },
+                "capabilities": {
+                  "$ref": "#/components/schemas/CertificateCapabilities"
+                },
+                "certificateNumber": {
+                  "type": "string"
+                },
+                "certificateSequence": {
+                  "format": "int32",
+                  "type": "integer"
+                },
+                "createdAt": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "firstName": {
+                  "type": "string"
+                },
+                "id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "issueDate": {
+                  "format": "date",
+                  "type": "string"
+                },
+                "lastName": {
+                  "type": "string"
+                },
+                "ownerOrganizationUnitId": {
+                  "format": "uuid",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "ownerOrganizationUnitName": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "recipientType": {
+                  "$ref": "#/components/schemas/RecipientType"
+                },
+                "replacedByCertificateId": {
+                  "format": "uuid",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "replacementCandidateId": {
+                  "format": "uuid",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "replacementForCertificateId": {
+                  "format": "uuid",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "status": {
+                  "$ref": "#/components/schemas/CertificateStatus"
+                },
+                "templateId": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "templateName": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "campaignId",
+                "campaignName",
+                "ownerOrganizationUnitId",
+                "ownerOrganizationUnitName",
+                "templateId",
+                "templateName",
+                "academicYearId",
+                "academicYearValue",
+                "activitySequence",
+                "certificateSequence",
+                "certificateNumber",
+                "recipientType",
+                "title",
+                "firstName",
+                "lastName",
+                "activityItem",
+                "awardOrRole",
+                "issueDate",
+                "status",
+                "replacementForCertificateId",
+                "replacedByCertificateId",
+                "replacementCandidateId",
+                "createdAt",
+                "capabilities"
               ],
               "type": "object"
             },
@@ -11420,6 +11904,25 @@
         ],
         "type": "object"
       },
+      "CertificateCapabilities": {
+        "properties": {
+          "canDownload": {
+            "type": "boolean"
+          },
+          "canRead": {
+            "type": "boolean"
+          },
+          "canRevoke": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "canRead",
+          "canDownload",
+          "canRevoke"
+        ],
+        "type": "object"
+      },
       "CertificateElement": {
         "oneOf": [
           {
@@ -11677,6 +12180,25 @@
           "replacement"
         ],
         "type": "string"
+      },
+      "CertificateIssueCandidateProblem": {
+        "properties": {
+          "candidateId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "issueCodes": {
+            "items": {
+              "$ref": "#/components/schemas/CertificateIssueCode"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "candidateId",
+          "issueCodes"
+        ],
+        "type": "object"
       },
       "CertificateIssueCode": {
         "enum": [
@@ -12441,6 +12963,48 @@
         ],
         "type": "object"
       },
+      "CertificateRenderManifestBatchRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "certificateIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "certificateIds"
+        ],
+        "type": "object"
+      },
+      "CertificateReplacementCandidate": {
+        "properties": {
+          "campaignId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "templateId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "validationStatus": {
+            "$ref": "#/components/schemas/CandidateValidationStatus"
+          }
+        },
+        "required": [
+          "id",
+          "campaignId",
+          "templateId",
+          "validationStatus"
+        ],
+        "type": "object"
+      },
       "CertificateResourceLockCode": {
         "enum": [
           "resource_locked"
@@ -12465,6 +13029,13 @@
           "requestId"
         ],
         "type": "object"
+      },
+      "CertificateStatus": {
+        "enum": [
+          "issued",
+          "revoked"
+        ],
+        "type": "string"
       },
       "CertificateTemplateAsset": {
         "properties": {
@@ -15390,6 +15961,358 @@
         ],
         "type": "object"
       },
+      "IssueCertificateOutcome": {
+        "oneOf": [
+          {
+            "properties": {
+              "activity_sequence": {
+                "format": "int32",
+                "type": "integer"
+              },
+              "campaign_id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "certificates": {
+                "items": {
+                  "$ref": "#/components/schemas/IssuedCertificateSummary"
+                },
+                "type": "array"
+              },
+              "first_certificate_sequence": {
+                "format": "int32",
+                "type": "integer"
+              },
+              "issue_run_id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "last_certificate_sequence": {
+                "format": "int32",
+                "type": "integer"
+              },
+              "outcome": {
+                "enum": [
+                  "issued"
+                ],
+                "type": "string"
+              },
+              "request_id": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "issue_run_id",
+              "request_id",
+              "campaign_id",
+              "activity_sequence",
+              "first_certificate_sequence",
+              "last_certificate_sequence",
+              "certificates",
+              "outcome"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "campaign_id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "candidate_problems": {
+                "items": {
+                  "$ref": "#/components/schemas/CertificateIssueCandidateProblem"
+                },
+                "type": "array"
+              },
+              "issue_codes": {
+                "items": {
+                  "$ref": "#/components/schemas/CertificateIssueCode"
+                },
+                "type": "array"
+              },
+              "issue_run_id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "outcome": {
+                "enum": [
+                  "returned"
+                ],
+                "type": "string"
+              },
+              "request_id": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "issue_run_id",
+              "request_id",
+              "campaign_id",
+              "issue_codes",
+              "candidate_problems",
+              "outcome"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "IssueCertificateRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "idempotencyKey": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "idempotencyKey"
+        ],
+        "type": "object"
+      },
+      "IssuedCertificateDetail": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/IssuedCertificateSummary"
+          },
+          {
+            "properties": {
+              "customValues": {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "issueRunId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "ownerOrganizationUnitNameSnapshot": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "revocationReason": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "revokedAt": {
+                "format": "date-time",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "revokedBy": {
+                "format": "uuid",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "schoolName": {
+                "type": "string"
+              },
+              "updatedAt": {
+                "format": "date-time",
+                "type": "string"
+              }
+            },
+            "required": [
+              "issueRunId",
+              "customValues",
+              "schoolName",
+              "ownerOrganizationUnitNameSnapshot",
+              "revokedBy",
+              "revokedAt",
+              "revocationReason",
+              "updatedAt"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "IssuedCertificateListQuery": {
+        "additionalProperties": false,
+        "properties": {
+          "search": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/CertificateStatus"
+              }
+            ]
+          },
+          "templateId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "IssuedCertificateSummary": {
+        "properties": {
+          "academicYearId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "academicYearValue": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "activityItem": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "activitySequence": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "awardOrRole": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "campaignId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "campaignName": {
+            "type": "string"
+          },
+          "capabilities": {
+            "$ref": "#/components/schemas/CertificateCapabilities"
+          },
+          "certificateNumber": {
+            "type": "string"
+          },
+          "certificateSequence": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "firstName": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "issueDate": {
+            "format": "date",
+            "type": "string"
+          },
+          "lastName": {
+            "type": "string"
+          },
+          "ownerOrganizationUnitId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ownerOrganizationUnitName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "recipientType": {
+            "$ref": "#/components/schemas/RecipientType"
+          },
+          "replacedByCertificateId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "replacementCandidateId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "replacementForCertificateId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "$ref": "#/components/schemas/CertificateStatus"
+          },
+          "templateId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "templateName": {
+            "type": "string"
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "campaignId",
+          "campaignName",
+          "ownerOrganizationUnitId",
+          "ownerOrganizationUnitName",
+          "templateId",
+          "templateName",
+          "academicYearId",
+          "academicYearValue",
+          "activitySequence",
+          "certificateSequence",
+          "certificateNumber",
+          "recipientType",
+          "title",
+          "firstName",
+          "lastName",
+          "activityItem",
+          "awardOrRole",
+          "issueDate",
+          "status",
+          "replacementForCertificateId",
+          "replacedByCertificateId",
+          "replacementCandidateId",
+          "createdAt",
+          "capabilities"
+        ],
+        "type": "object"
+      },
       "ListMembersQuery": {
         "properties": {
           "include_children": {
@@ -16930,6 +17853,44 @@
         "required": [
           "issueCodes",
           "returnNote"
+        ],
+        "type": "object"
+      },
+      "RevokeCertificateRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "createReplacementCandidate": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason",
+          "createReplacementCandidate"
+        ],
+        "type": "object"
+      },
+      "RevokeCertificateResult": {
+        "properties": {
+          "certificate": {
+            "$ref": "#/components/schemas/IssuedCertificateDetail"
+          },
+          "replacementCandidate": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/CertificateReplacementCandidate"
+              }
+            ]
+          }
+        },
+        "required": [
+          "certificate",
+          "replacementCandidate"
         ],
         "type": "object"
       },
@@ -30704,6 +31665,242 @@
         ]
       }
     },
+    "/api/certificates/{certificate_id}": {
+      "get": {
+        "operationId": "getIssuedCertificate",
+        "parameters": [
+          {
+            "description": "Issued certificate ID",
+            "in": "path",
+            "name": "certificate_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_IssuedCertificateDetail"
+                }
+              }
+            },
+            "description": "Scoped issued certificate detail without proof or lookup identifiers"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Certificate read permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Issued certificate not found"
+          }
+        },
+        "tags": [
+          "certificate"
+        ]
+      }
+    },
+    "/api/certificates/{certificate_id}/render-manifest": {
+      "post": {
+        "operationId": "createIssuedCertificateRenderManifest",
+        "parameters": [
+          {
+            "description": "Issued certificate ID",
+            "in": "path",
+            "name": "certificate_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_CertificateRenderManifest"
+                }
+              }
+            },
+            "description": "Authorized short-lived render manifest"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Certificate download permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Issued certificate not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Certificate revoked or current template unavailable"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Private asset grant unavailable"
+          }
+        },
+        "tags": [
+          "certificate"
+        ]
+      }
+    },
+    "/api/certificates/{certificate_id}/revoke": {
+      "post": {
+        "operationId": "revokeIssuedCertificate",
+        "parameters": [
+          {
+            "description": "Issued certificate ID",
+            "in": "path",
+            "name": "certificate_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RevokeCertificateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_RevokeCertificateResult"
+                }
+              }
+            },
+            "description": "Certificate revoked with optional replacement draft"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "School certificate revoke permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Issued certificate not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Certificate already revoked"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid revocation reason"
+          }
+        },
+        "tags": [
+          "certificate"
+        ]
+      }
+    },
     "/api/certificates/campaigns": {
       "get": {
         "operationId": "listCertificateCampaigns",
@@ -31764,6 +32961,205 @@
         ]
       }
     },
+    "/api/certificates/campaigns/{campaign_id}/issued": {
+      "get": {
+        "operationId": "listIssuedCertificates",
+        "parameters": [
+          {
+            "description": "Certificate campaign ID",
+            "in": "path",
+            "name": "campaign_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/CertificateStatus"
+            }
+          },
+          {
+            "in": "query",
+            "name": "templateId",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "search",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_IssuedCertificateSummary"
+                }
+              }
+            },
+            "description": "Scoped issued and revoked certificate list"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Certificate read permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Certificate campaign not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid issued certificate query"
+          }
+        },
+        "tags": [
+          "certificate"
+        ]
+      }
+    },
+    "/api/certificates/campaigns/{campaign_id}/render-manifests": {
+      "post": {
+        "operationId": "createIssuedCertificateRenderManifests",
+        "parameters": [
+          {
+            "description": "Certificate campaign ID",
+            "in": "path",
+            "name": "campaign_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CertificateRenderManifestBatchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_CertificateRenderManifest"
+                }
+              }
+            },
+            "description": "Ordered authorized render manifests"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Certificate download permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Selected certificate not found in campaign"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "A certificate is revoked or its current template unavailable"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Select between 1 and 200 unique certificates"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Private asset grant unavailable"
+          }
+        },
+        "tags": [
+          "certificate"
+        ]
+      }
+    },
     "/api/certificates/campaigns/{campaign_id}/status": {
       "put": {
         "operationId": "changeCertificateCampaignStatus",
@@ -32335,6 +33731,98 @@
               }
             },
             "description": "Certificate issue request not found"
+          }
+        },
+        "tags": [
+          "certificate"
+        ]
+      }
+    },
+    "/api/certificates/issue-requests/{request_id}/issue": {
+      "post": {
+        "operationId": "issueCertificates",
+        "parameters": [
+          {
+            "description": "Certificate issue request ID",
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IssueCertificateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_IssueCertificateOutcome"
+                }
+              }
+            },
+            "description": "Idempotent issued or returned outcome"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "School certificate issue permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Certificate issue request not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Request state, idempotency key, or number range conflict"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authoritative school name unavailable"
           }
         },
         "tags": [

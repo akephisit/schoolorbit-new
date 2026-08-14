@@ -325,6 +325,15 @@ impl CertificateIssueCode {
     }
 }
 
+impl CertificateStatus {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Issued => "issued",
+            Self::Revoked => "revoked",
+        }
+    }
+}
+
 impl CertificateTemplateAssetKind {
     pub fn as_str(self) -> &'static str {
         match self {
@@ -954,6 +963,142 @@ pub struct CertificateResourceLocked {
 
 #[derive(Clone, Debug, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct IssueCertificateRequest {
+    pub idempotency_key: Uuid,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct CertificateCapabilities {
+    pub can_read: bool,
+    pub can_download: bool,
+    pub can_revoke: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct IssuedCertificateSummary {
+    pub id: Uuid,
+    pub campaign_id: Uuid,
+    pub campaign_name: String,
+    #[schema(required = true)]
+    pub owner_organization_unit_id: Option<Uuid>,
+    #[schema(required = true)]
+    pub owner_organization_unit_name: Option<String>,
+    pub template_id: Uuid,
+    pub template_name: String,
+    pub academic_year_id: Uuid,
+    pub academic_year_value: i32,
+    pub activity_sequence: i32,
+    pub certificate_sequence: i32,
+    pub certificate_number: String,
+    pub recipient_type: RecipientType,
+    #[schema(required = true)]
+    pub title: Option<String>,
+    pub first_name: String,
+    pub last_name: String,
+    #[schema(required = true)]
+    pub activity_item: Option<String>,
+    #[schema(required = true)]
+    pub award_or_role: Option<String>,
+    pub issue_date: NaiveDate,
+    pub status: CertificateStatus,
+    #[schema(required = true)]
+    pub replacement_for_certificate_id: Option<Uuid>,
+    #[schema(required = true)]
+    pub replaced_by_certificate_id: Option<Uuid>,
+    #[schema(required = true)]
+    pub replacement_candidate_id: Option<Uuid>,
+    pub created_at: DateTime<Utc>,
+    pub capabilities: CertificateCapabilities,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct IssuedCertificateDetail {
+    #[serde(flatten)]
+    pub summary: IssuedCertificateSummary,
+    pub issue_run_id: Uuid,
+    pub custom_values: BTreeMap<String, String>,
+    pub school_name: String,
+    #[schema(required = true)]
+    pub owner_organization_unit_name_snapshot: Option<String>,
+    #[schema(required = true)]
+    pub revoked_by: Option<Uuid>,
+    #[schema(required = true)]
+    pub revoked_at: Option<DateTime<Utc>>,
+    #[schema(required = true)]
+    pub revocation_reason: Option<String>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct CertificateIssueCandidateProblem {
+    pub candidate_id: Uuid,
+    pub issue_codes: Vec<CertificateIssueCode>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, ToSchema)]
+#[serde(
+    tag = "outcome",
+    rename_all = "snake_case",
+    rename_all_fields = "camelCase"
+)]
+pub enum IssueCertificateOutcome {
+    Issued {
+        issue_run_id: Uuid,
+        request_id: Uuid,
+        campaign_id: Uuid,
+        activity_sequence: i32,
+        first_certificate_sequence: i32,
+        last_certificate_sequence: i32,
+        certificates: Vec<IssuedCertificateSummary>,
+    },
+    Returned {
+        issue_run_id: Uuid,
+        request_id: Uuid,
+        campaign_id: Uuid,
+        issue_codes: Vec<CertificateIssueCode>,
+        candidate_problems: Vec<CertificateIssueCandidateProblem>,
+    },
+}
+
+#[derive(Clone, Debug, Default, Deserialize, IntoParams, ToSchema)]
+#[into_params(parameter_in = Query)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct IssuedCertificateListQuery {
+    pub status: Option<CertificateStatus>,
+    pub template_id: Option<Uuid>,
+    pub search: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RevokeCertificateRequest {
+    pub reason: String,
+    pub create_replacement_candidate: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct CertificateReplacementCandidate {
+    pub id: Uuid,
+    pub campaign_id: Uuid,
+    pub template_id: Uuid,
+    pub validation_status: CandidateValidationStatus,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct RevokeCertificateResult {
+    pub certificate: IssuedCertificateDetail,
+    #[schema(required = true)]
+    pub replacement_candidate: Option<CertificateReplacementCandidate>,
+}
+
+#[derive(Clone, Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CreateCertificateCampaignRequest {
     pub academic_year_id: Uuid,
     pub owner_organization_unit_id: Option<Uuid>,
@@ -1264,4 +1409,10 @@ pub struct CertificateRenderManifest {
     pub image_grants: Vec<CertificateRenderImageGrant>,
     pub background_grant: CertificateRenderFileGrant,
     pub suggested_filename: String,
+}
+
+#[derive(Clone, Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CertificateRenderManifestBatchRequest {
+    pub certificate_ids: Vec<Uuid>,
 }

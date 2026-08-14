@@ -14,6 +14,28 @@ use super::{
 
 pub const STORAGE_PROVIDER_CODE: &str = "r2";
 
+const LOAD_DELIVERY_SQL: &str = r#"
+SELECT f.id, f.owner_user_id, f.purpose_code, f.visibility, f.lifecycle_status,
+       f.display_filename, f.current_version_id,
+       current_version.version_number, current_version.object_key,
+       current_version.storage_class, metadata.detected_mime_type,
+       metadata.byte_size
+FROM files f
+LEFT JOIN file_versions current_version
+  ON current_version.id = f.current_version_id
+ AND current_version.file_id = f.id
+LEFT JOIN LATERAL (
+    SELECT candidate.detected_mime_type, candidate.byte_size
+    FROM file_versions candidate
+    WHERE candidate.file_id = f.id
+    ORDER BY
+        CASE WHEN candidate.id = f.current_version_id THEN 0 ELSE 1 END,
+        candidate.version_number DESC
+    LIMIT 1
+) metadata ON true
+WHERE f.id = $1 AND f.deleted_at IS NULL
+"#;
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RepositoryError {
     OperationFailed,
@@ -213,6 +235,18 @@ impl SqlFileRepository {
 
     pub const fn pool(&self) -> &PgPool {
         &self.pool
+    }
+
+    pub async fn load_delivery_in_transaction(
+        transaction: &mut Transaction<'_, Postgres>,
+        file_id: Uuid,
+    ) -> Result<Option<DeliveryRecord>, RepositoryError> {
+        let row = sqlx::query(LOAD_DELIVERY_SQL)
+            .bind(file_id)
+            .fetch_optional(&mut **transaction)
+            .await
+            .map_err(Self::database_error)?;
+        row.map(delivery_from_row).transpose()
     }
 
     fn database_error(_: sqlx::Error) -> RepositoryError {
@@ -974,33 +1008,11 @@ WHERE file_id = $1 AND operation_type = 'reconcile' AND status <> 'succeeded'
         &self,
         file_id: Uuid,
     ) -> Result<Option<DeliveryRecord>, RepositoryError> {
-        let row = sqlx::query(
-            r#"
-SELECT f.id, f.owner_user_id, f.purpose_code, f.visibility, f.lifecycle_status,
-       f.display_filename, f.current_version_id,
-       current_version.version_number, current_version.object_key,
-       current_version.storage_class, metadata.detected_mime_type,
-       metadata.byte_size
-FROM files f
-LEFT JOIN file_versions current_version
-  ON current_version.id = f.current_version_id
- AND current_version.file_id = f.id
-LEFT JOIN LATERAL (
-    SELECT candidate.detected_mime_type, candidate.byte_size
-    FROM file_versions candidate
-    WHERE candidate.file_id = f.id
-    ORDER BY
-        CASE WHEN candidate.id = f.current_version_id THEN 0 ELSE 1 END,
-        candidate.version_number DESC
-    LIMIT 1
-) metadata ON true
-WHERE f.id = $1 AND f.deleted_at IS NULL
-"#,
-        )
-        .bind(file_id)
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(Self::database_error)?;
+        let row = sqlx::query(LOAD_DELIVERY_SQL)
+            .bind(file_id)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(Self::database_error)?;
         row.map(delivery_from_row).transpose()
     }
 

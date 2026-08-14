@@ -307,10 +307,10 @@ pub async fn withdraw(
     }
 
     let mut tx = pool.begin().await.map_err(request_db_error)?;
-    let campaign = lock_campaign(&mut tx, authorized.campaign_id).await?;
-    require_request_owner_unchanged(&authorized, &campaign)?;
     let locked = lock_request(&mut tx, request_id).await?;
     require_same_request(&authorized, &locked)?;
+    let campaign = lock_campaign(&mut tx, authorized.campaign_id).await?;
+    require_request_owner_unchanged(&authorized, &campaign)?;
     require_request_status(&locked.status, CertificateIssueRequestStatus::Pending)?;
     transition_to_withdrawn(&mut tx, actor.user_id, &locked).await?;
     tx.commit().await.map_err(request_db_error)?;
@@ -326,10 +326,10 @@ pub async fn start_review(
     actor.require_permission(codes::CERTIFICATE_ISSUE_SCHOOL)?;
     let authorized = fetch_request_access(pool, request_id).await?;
     let mut tx = pool.begin().await.map_err(request_db_error)?;
-    let campaign = lock_campaign(&mut tx, authorized.campaign_id).await?;
-    require_request_owner_unchanged(&authorized, &campaign)?;
     let locked = lock_request(&mut tx, request_id).await?;
     require_same_request(&authorized, &locked)?;
+    let campaign = lock_campaign(&mut tx, authorized.campaign_id).await?;
+    require_request_owner_unchanged(&authorized, &campaign)?;
     require_request_status(&locked.status, CertificateIssueRequestStatus::Pending)?;
 
     sqlx::query(
@@ -372,10 +372,10 @@ pub async fn return_request(
     let return_note = validate_return_note(&return_note)?;
     let authorized = fetch_request_access(pool, request_id).await?;
     let mut tx = pool.begin().await.map_err(request_db_error)?;
-    let campaign = lock_campaign(&mut tx, authorized.campaign_id).await?;
-    require_request_owner_unchanged(&authorized, &campaign)?;
     let locked = lock_request(&mut tx, request_id).await?;
     require_same_request(&authorized, &locked)?;
+    let campaign = lock_campaign(&mut tx, authorized.campaign_id).await?;
+    require_request_owner_unchanged(&authorized, &campaign)?;
     require_request_status(&locked.status, CertificateIssueRequestStatus::Reviewing)?;
     let issue_code_values = issue_codes
         .iter()

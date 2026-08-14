@@ -1,5 +1,6 @@
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::{BTreeMap, BTreeSet, HashSet},
+    env,
     sync::Arc,
     time::Duration,
 };
@@ -23,15 +24,18 @@ use crate::{
             CertificateImportRequest, CertificateImportRowInput, CertificateImportSource,
             CertificateIssueCode, CertificateIssueRequestListQuery, CertificateIssueRequestStatus,
             CertificateLayoutV1, CertificatePreviewKind, CertificatePreviewManifestRequest,
-            CertificateTemplateAssetKind, CertificateTemplateDeleteDisposition,
-            ChangeCertificateCampaignStatusRequest, CreateAccountCertificateCandidateRequest,
-            CreateCertificateCampaignRequest, CreateCertificateTemplateRequest,
-            CreateManualExternalCandidateRequest, ElementFrame, GeometryAction, NullableUuidUpdate,
-            RecipientType, TextAlignment, TextElement, UpdateCertificateCampaignRequest,
-            UpdateCertificateCandidateRequest, UpdateCertificateTemplateRequest,
+            CertificateRenderManifestBatchRequest, CertificateStatus, CertificateTemplateAssetKind,
+            CertificateTemplateDeleteDisposition, ChangeCertificateCampaignStatusRequest,
+            CreateAccountCertificateCandidateRequest, CreateCertificateCampaignRequest,
+            CreateCertificateTemplateRequest, CreateManualExternalCandidateRequest, ElementFrame,
+            GeometryAction, IssueCertificateOutcome, IssueCertificateRequest, NullableUuidUpdate,
+            RecipientType, RevokeCertificateRequest, TextAlignment, TextElement,
+            UpdateCertificateCampaignRequest, UpdateCertificateCandidateRequest,
+            UpdateCertificateTemplateRequest,
         },
         services::{
-            campaign_service, candidate_service, render_service, request_service, template_service,
+            campaign_service, candidate_service, issuance_service, render_service, request_service,
+            template_service,
         },
     },
     permissions::registry::codes,
@@ -100,6 +104,81 @@ impl crate::modules::files::storage_provider::StorageProvider for PreviewStorage
         crate::modules::files::platform_types::DownloadGrant,
         crate::modules::files::storage_provider::StorageError,
     > {
+        Ok(
+            crate::modules::files::platform_types::DownloadGrant::Redirect {
+                location: format!("https://private.example.test/{filename}"),
+                expires_at: chrono::Utc::now()
+                    + chrono::Duration::from_std(ttl).expect("test TTL should fit chrono"),
+            },
+        )
+    }
+
+    fn public_location(
+        &self,
+        _object: &crate::modules::files::storage_provider::StoredObject,
+    ) -> Result<Url, crate::modules::files::storage_provider::StorageError> {
+        Url::parse("https://public.example.test/file")
+            .map_err(|_| crate::modules::files::storage_provider::StorageError::OperationFailed)
+    }
+}
+
+struct BlockingGrantStorage {
+    entered: Arc<tokio::sync::Notify>,
+    release: Arc<tokio::sync::Notify>,
+}
+
+#[async_trait]
+impl crate::modules::files::storage_provider::StorageProvider for BlockingGrantStorage {
+    async fn check_readiness(
+        &self,
+    ) -> Result<(), crate::modules::files::storage_provider::StorageError> {
+        Ok(())
+    }
+
+    async fn put(
+        &self,
+        _object: &crate::modules::files::storage_provider::StoredObject,
+        _body: Bytes,
+    ) -> Result<(), crate::modules::files::storage_provider::StorageError> {
+        Ok(())
+    }
+
+    async fn get(
+        &self,
+        _object: &crate::modules::files::storage_provider::StoredObject,
+        _max_bytes: u64,
+    ) -> Result<Bytes, crate::modules::files::storage_provider::StorageError> {
+        Ok(Bytes::new())
+    }
+
+    async fn head(
+        &self,
+        _object: &crate::modules::files::storage_provider::StoredObject,
+    ) -> Result<
+        Option<crate::modules::files::storage_provider::ObjectMetadata>,
+        crate::modules::files::storage_provider::StorageError,
+    > {
+        Ok(None)
+    }
+
+    async fn delete(
+        &self,
+        _object: &crate::modules::files::storage_provider::StoredObject,
+    ) -> Result<(), crate::modules::files::storage_provider::StorageError> {
+        Ok(())
+    }
+
+    async fn private_download_grant(
+        &self,
+        _object: &crate::modules::files::storage_provider::StoredObject,
+        filename: &str,
+        ttl: Duration,
+    ) -> Result<
+        crate::modules::files::platform_types::DownloadGrant,
+        crate::modules::files::storage_provider::StorageError,
+    > {
+        self.entered.notify_one();
+        self.release.notified().await;
         Ok(
             crate::modules::files::platform_types::DownloadGrant::Redirect {
                 location: format!("https://private.example.test/{filename}"),
@@ -4501,4 +4580,1616 @@ async fn issue_request_lists_respect_campaign_read_and_school_issue_scopes() {
         .unwrap();
     assert_eq!(detail.id, requests[1].id);
     assert_eq!(detail.items.len(), 1);
+}
+
+#[tokio::test]
+async fn request_return_uses_request_before_campaign_lock_order() {
+    let (pool, preparer, academic_year_id) =
+        concurrent_school_campaign_fixture("certificate_request_return_lock_order", 3149).await;
+    let campaign = campaign_service::create_campaign(
+        &pool,
+        &preparer,
+        campaign_create_payload(academic_year_id, None, "กิจกรรมตรวจลำดับล็อก"),
+    )
+    .await
+    .unwrap();
+    let (_, candidate) = create_ready_external_request_candidate(
+        &pool,
+        &preparer,
+        campaign.id,
+        "แบบตรวจลำดับล็อก",
+        "ผู้รับตรวจลำดับล็อก",
+    )
+    .await;
+    let request =
+        request_service::submit_issue_request(&pool, &preparer, campaign.id, vec![candidate.id])
+            .await
+            .unwrap();
+    let issuer_user_id = create_test_user(
+        &pool,
+        "certificate-request-lock-order-issuer@example.invalid",
+        "test-password",
+    )
+    .await
+    .unwrap();
+    let issuer = school_certificate_issuer(issuer_user_id);
+    request_service::start_review(&pool, &issuer, request.id)
+        .await
+        .unwrap();
+
+    let mut blocker = pool.begin().await.unwrap();
+    sqlx::query("SELECT id FROM certificate_issue_requests WHERE id = $1 FOR UPDATE")
+        .bind(request.id)
+        .fetch_one(&mut *blocker)
+        .await
+        .unwrap();
+
+    let return_pool = pool.clone();
+    let return_actor = issuer.clone();
+    let request_id = request.id;
+    let returning = tokio::spawn(async move {
+        request_service::return_request(
+            &return_pool,
+            &return_actor,
+            request_id,
+            vec![CertificateIssueCode::ReviewerRequestedChanges],
+            "ปรับข้อมูลก่อนออกเกียรติบัตร".to_string(),
+        )
+        .await
+    });
+
+    let wait_deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    loop {
+        let blocked: bool = sqlx::query_scalar(
+            "SELECT EXISTS (
+                 SELECT 1
+                 FROM pg_stat_activity
+                 WHERE datname = current_database()
+                   AND pid <> pg_backend_pid()
+                   AND wait_event_type = 'Lock'
+                   AND query LIKE '%FOR UPDATE OF request%'
+             )",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        if blocked {
+            break;
+        }
+        assert!(
+            tokio::time::Instant::now() < wait_deadline,
+            "return transition did not reach its blocked request-row lock"
+        );
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+
+    sqlx::query("SET LOCAL lock_timeout = '250ms'")
+        .execute(&mut *blocker)
+        .await
+        .unwrap();
+    let campaign_lock =
+        sqlx::query("SELECT id FROM certificate_campaigns WHERE id = $1 FOR UPDATE")
+            .bind(campaign.id)
+            .fetch_one(&mut *blocker)
+            .await;
+    blocker.rollback().await.unwrap();
+    let returned = tokio::time::timeout(Duration::from_secs(5), returning)
+        .await
+        .expect("return transition should finish after the request lock is released")
+        .unwrap()
+        .unwrap();
+    assert_eq!(returned.status, CertificateIssueRequestStatus::Returned);
+    assert!(
+        campaign_lock.is_ok(),
+        "return transition held the campaign while waiting for the request row"
+    );
+}
+
+#[tokio::test]
+async fn concurrent_first_issue_allocates_distinct_campaign_and_certificate_ranges() {
+    let _crypto_guard = crate::utils::field_encryption::test_env_lock();
+    env::set_var(
+        "ENCRYPTION_KEY",
+        "certificate-concurrent-issue-encryption-test-key",
+    );
+    env::set_var(
+        "BLIND_INDEX_KEY",
+        "certificate-concurrent-issue-blind-index-test-key",
+    );
+    let (pool, preparer, academic_year_id) =
+        concurrent_school_campaign_fixture("certificate_concurrent_issue", 3138).await;
+    let issuer_user_id = create_test_user(
+        &pool,
+        "certificate-concurrent-issuer@example.invalid",
+        "test-password",
+    )
+    .await
+    .unwrap();
+    let issuer = school_certificate_issuer(issuer_user_id);
+
+    let mut reviewing_requests = Vec::new();
+    for (campaign_name, recipient_count) in [
+        ("กิจกรรมออกพร้อมกัน ก", 2_usize),
+        ("กิจกรรมออกพร้อมกัน ข", 3_usize),
+    ] {
+        let campaign = campaign_service::create_campaign(
+            &pool,
+            &preparer,
+            campaign_create_payload(academic_year_id, None, campaign_name),
+        )
+        .await
+        .unwrap();
+        let mut candidate_ids = Vec::new();
+        for index in 0..recipient_count {
+            let (_, candidate) = create_ready_external_request_candidate(
+                &pool,
+                &preparer,
+                campaign.id,
+                &format!("แบบ {campaign_name} {index}"),
+                &format!("ผู้รับ {campaign_name} {index}"),
+            )
+            .await;
+            candidate_ids.push(candidate.id);
+        }
+        let request =
+            request_service::submit_issue_request(&pool, &preparer, campaign.id, candidate_ids)
+                .await
+                .unwrap();
+        reviewing_requests.push(
+            request_service::start_review(&pool, &issuer, request.id)
+                .await
+                .unwrap(),
+        );
+    }
+
+    let issue_a = issuance_service::issue_request(
+        &pool,
+        &issuer,
+        "โรงเรียนทดสอบ".to_string(),
+        reviewing_requests[0].id,
+        IssueCertificateRequest {
+            idempotency_key: Uuid::new_v4(),
+        },
+    );
+    let issue_b = issuance_service::issue_request(
+        &pool,
+        &issuer,
+        "โรงเรียนทดสอบ".to_string(),
+        reviewing_requests[1].id,
+        IssueCertificateRequest {
+            idempotency_key: Uuid::new_v4(),
+        },
+    );
+    let (outcome_a, outcome_b) = tokio::join!(issue_a, issue_b);
+
+    let issued_a = match outcome_a.unwrap() {
+        IssueCertificateOutcome::Issued { certificates, .. } => certificates,
+        IssueCertificateOutcome::Returned { .. } => panic!("first request should issue"),
+    };
+    let issued_b = match outcome_b.unwrap() {
+        IssueCertificateOutcome::Issued { certificates, .. } => certificates,
+        IssueCertificateOutcome::Returned { .. } => panic!("second request should issue"),
+    };
+    assert_eq!(issued_a.len(), 2);
+    assert_eq!(issued_b.len(), 3);
+    let numbers = issued_a
+        .iter()
+        .chain(&issued_b)
+        .map(|certificate| certificate.certificate_number.clone())
+        .collect::<HashSet<_>>();
+    assert_eq!(numbers.len(), 5);
+    let activities = issued_a
+        .iter()
+        .chain(&issued_b)
+        .map(|certificate| certificate.activity_sequence)
+        .collect::<HashSet<_>>();
+    assert_eq!(activities.len(), 2);
+}
+
+#[tokio::test]
+async fn draft_numbering_is_lazy_shared_across_runs_and_idempotent() {
+    let _crypto_guard = crate::utils::field_encryption::test_env_lock();
+    env::set_var(
+        "ENCRYPTION_KEY",
+        "certificate-shared-sequence-encryption-test-key",
+    );
+    env::set_var(
+        "BLIND_INDEX_KEY",
+        "certificate-shared-sequence-blind-index-test-key",
+    );
+    let (pool, preparer, academic_year_id) =
+        school_campaign_fixture("certificate_shared_issue_sequence", 3139).await;
+    let issuer_user_id = create_test_user(
+        &pool,
+        "certificate-shared-sequence-issuer@example.invalid",
+        "test-password",
+    )
+    .await
+    .unwrap();
+    let issuer = school_certificate_issuer(issuer_user_id);
+    let campaign = campaign_service::create_campaign(
+        &pool,
+        &preparer,
+        campaign_create_payload(academic_year_id, None, "กิจกรรมออกหลายรอบ"),
+    )
+    .await
+    .unwrap();
+    let initial_numbering: (Option<i32>, i32, i64) = sqlx::query_as(
+        "SELECT campaign.activity_sequence, campaign.next_certificate_sequence,
+                (SELECT COUNT(*) FROM certificate_academic_year_counters
+                 WHERE academic_year_id = campaign.academic_year_id)
+         FROM certificate_campaigns campaign WHERE campaign.id = $1",
+    )
+    .bind(campaign.id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(initial_numbering, (None, 1, 0));
+
+    let mut candidates = Vec::new();
+    for (template_name, first_name) in [("แบบนักเรียน", "ผู้รับรอบแรก"), ("แบบวิทยากร", "ผู้รับรอบสอง")]
+    {
+        let (_, candidate) = create_ready_external_request_candidate(
+            &pool,
+            &preparer,
+            campaign.id,
+            template_name,
+            first_name,
+        )
+        .await;
+        candidates.push(candidate);
+    }
+
+    let first_request = request_service::submit_issue_request(
+        &pool,
+        &preparer,
+        campaign.id,
+        vec![candidates[0].id],
+    )
+    .await
+    .unwrap();
+    request_service::start_review(&pool, &issuer, first_request.id)
+        .await
+        .unwrap();
+    let first_key = Uuid::new_v4();
+    assert!(
+        issuance_service::replay_issue_request(&pool, &issuer, first_request.id, first_key,)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    let first_outcome = issuance_service::issue_request(
+        &pool,
+        &issuer,
+        "โรงเรียนทดสอบ".to_string(),
+        first_request.id,
+        IssueCertificateRequest {
+            idempotency_key: first_key,
+        },
+    )
+    .await
+    .unwrap();
+    let replay =
+        issuance_service::replay_issue_request(&pool, &issuer, first_request.id, first_key)
+            .await
+            .unwrap()
+            .expect("completed issue request should replay before a school-name lookup");
+    assert_eq!(replay, first_outcome);
+    assert!(matches!(
+        issuance_service::replay_issue_request(&pool, &issuer, first_request.id, Uuid::new_v4(),)
+            .await,
+        Err(AppError::Conflict(_))
+    ));
+
+    let second_request = request_service::submit_issue_request(
+        &pool,
+        &preparer,
+        campaign.id,
+        vec![candidates[1].id],
+    )
+    .await
+    .unwrap();
+    request_service::start_review(&pool, &issuer, second_request.id)
+        .await
+        .unwrap();
+    let second_outcome = issuance_service::issue_request(
+        &pool,
+        &issuer,
+        "โรงเรียนทดสอบ".to_string(),
+        second_request.id,
+        IssueCertificateRequest {
+            idempotency_key: Uuid::new_v4(),
+        },
+    )
+    .await
+    .unwrap();
+
+    let issued = [first_outcome, second_outcome]
+        .into_iter()
+        .map(|outcome| match outcome {
+            IssueCertificateOutcome::Issued { certificates, .. } => certificates[0].clone(),
+            IssueCertificateOutcome::Returned { .. } => panic!("request should issue"),
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(issued[0].activity_sequence, issued[1].activity_sequence);
+    assert_eq!(issued[0].certificate_sequence, 1);
+    assert_eq!(issued[1].certificate_sequence, 2);
+    assert_ne!(issued[0].template_id, issued[1].template_id);
+    let final_numbering: (i32, i32, i32) = sqlx::query_as(
+        "SELECT campaign.activity_sequence, campaign.next_certificate_sequence,
+                counter.next_activity_sequence
+         FROM certificate_campaigns campaign
+         JOIN certificate_academic_year_counters counter
+           ON counter.academic_year_id = campaign.academic_year_id
+         WHERE campaign.id = $1",
+    )
+    .bind(campaign.id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(final_numbering, (1, 3, 2));
+}
+
+#[tokio::test]
+async fn issue_revalidation_returns_atomically_when_converted_external_gets_an_account() {
+    let _crypto_guard = crate::utils::field_encryption::test_env_lock();
+    env::set_var(
+        "ENCRYPTION_KEY",
+        "certificate-returned-issue-encryption-test-key",
+    );
+    env::set_var(
+        "BLIND_INDEX_KEY",
+        "certificate-returned-issue-blind-index-test-key",
+    );
+    let (pool, preparer, academic_year_id) =
+        school_campaign_fixture("certificate_issue_external_recheck", 3140).await;
+    let issuer_user_id = create_test_user(
+        &pool,
+        "certificate-external-recheck-issuer@example.invalid",
+        "test-password",
+    )
+    .await
+    .unwrap();
+    let issuer = school_certificate_issuer(issuer_user_id);
+    let campaign = campaign_service::create_campaign(
+        &pool,
+        &preparer,
+        campaign_create_payload(academic_year_id, None, "กิจกรรมตรวจบัญชีก่อนออก"),
+    )
+    .await
+    .unwrap();
+    let template = create_ready_candidate_template(
+        &pool,
+        &preparer,
+        campaign.id,
+        "แบบรองรับผู้รับภายนอก",
+        vec![RecipientType::Student, RecipientType::External],
+    )
+    .await;
+    let imported = candidate_service::import_candidates(
+        &pool,
+        &preparer,
+        campaign.id,
+        candidate_import_request(vec![candidate_import_row(
+            "student",
+            Some("S-LATE-ACCOUNT"),
+            None,
+            "กมลชนก",
+            "เกิดบัญชีภายหลัง",
+            &template.name,
+        )]),
+    )
+    .await
+    .unwrap();
+    let converted = candidate_service::bulk_update_for_campaign(
+        &pool,
+        &preparer,
+        campaign.id,
+        CertificateCandidateBulkRequest::ConfirmExternal {
+            candidate_ids: vec![imported.candidates[0].id],
+        },
+    )
+    .await
+    .unwrap()
+    .candidates
+    .remove(0);
+    assert_eq!(converted.recipient_type, RecipientType::External);
+    assert_eq!(
+        converted.validation_status,
+        CandidateValidationStatus::Ready
+    );
+    let deactivated_user_id = insert_certificate_student(
+        &pool,
+        "student-deactivated-during-review",
+        "S-DEACTIVATED-DURING-REVIEW",
+        "ผู้รับบัญชี",
+        "ถูกปิดภายหลัง",
+        "active",
+    )
+    .await;
+    let deactivated_candidate = candidate_service::import_candidates(
+        &pool,
+        &preparer,
+        campaign.id,
+        candidate_import_request(vec![candidate_import_row(
+            "student",
+            Some("S-DEACTIVATED-DURING-REVIEW"),
+            None,
+            "ผู้รับบัญชี",
+            "ถูกปิดภายหลัง",
+            &template.name,
+        )]),
+    )
+    .await
+    .unwrap()
+    .candidates
+    .remove(0);
+    assert_eq!(
+        deactivated_candidate.validation_status,
+        CandidateValidationStatus::Ready
+    );
+    let manual = candidate_service::create_manual_external(
+        &pool,
+        &preparer,
+        campaign.id,
+        CreateManualExternalCandidateRequest {
+            template_id: Some(template.id),
+            title: Some("คุณ".to_string()),
+            first_name: "ผู้รับที่ข้อมูลไม่เปลี่ยน".to_string(),
+            last_name: "ปกติ".to_string(),
+            activity_item: None,
+            award_or_role: Some("ผู้เข้าร่วม".to_string()),
+            custom_values: BTreeMap::new(),
+        },
+    )
+    .await
+    .unwrap()
+    .candidates
+    .remove(0);
+    let request = request_service::submit_issue_request(
+        &pool,
+        &preparer,
+        campaign.id,
+        vec![converted.id, deactivated_candidate.id, manual.id],
+    )
+    .await
+    .unwrap();
+    request_service::start_review(&pool, &issuer, request.id)
+        .await
+        .unwrap();
+
+    insert_certificate_student(
+        &pool,
+        "student-late-account",
+        "S-LATE-ACCOUNT",
+        "กมลชนก",
+        "เกิดบัญชีภายหลัง",
+        "active",
+    )
+    .await;
+    sqlx::query("UPDATE users SET status = 'inactive' WHERE id = $1")
+        .bind(deactivated_user_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let idempotency_key = Uuid::new_v4();
+    let outcome = issuance_service::issue_request(
+        &pool,
+        &issuer,
+        "โรงเรียนทดสอบ".to_string(),
+        request.id,
+        IssueCertificateRequest { idempotency_key },
+    )
+    .await
+    .unwrap();
+    let problems = match &outcome {
+        IssueCertificateOutcome::Returned {
+            issue_codes,
+            candidate_problems,
+            ..
+        } => {
+            assert!(issue_codes.contains(&CertificateIssueCode::AccountStateChanged));
+            candidate_problems
+        }
+        IssueCertificateOutcome::Issued { .. } => panic!("changed account must return request"),
+    };
+    assert!(problems.iter().any(|problem| {
+        problem.candidate_id == converted.id
+            && problem
+                .issue_codes
+                .contains(&CertificateIssueCode::AccountStateChanged)
+    }));
+    let replay = issuance_service::issue_request(
+        &pool,
+        &issuer,
+        "โรงเรียนทดสอบ".to_string(),
+        request.id,
+        IssueCertificateRequest { idempotency_key },
+    )
+    .await
+    .unwrap();
+    assert_eq!(replay, outcome);
+
+    let returned_candidate = candidate_service::get_candidate(&pool, &preparer, converted.id)
+        .await
+        .unwrap();
+    assert!(returned_candidate
+        .validation_codes
+        .contains(&CandidateValidationCode::UnexpectedInternalLookup));
+    assert!(!returned_candidate
+        .validation_codes
+        .contains(&CandidateValidationCode::AccountInactive));
+    let returned_deactivated =
+        candidate_service::get_candidate(&pool, &preparer, deactivated_candidate.id)
+            .await
+            .unwrap();
+    assert!(returned_deactivated
+        .validation_codes
+        .contains(&CandidateValidationCode::AccountInactive));
+    assert!(!returned_deactivated
+        .validation_codes
+        .contains(&CandidateValidationCode::UnexpectedInternalLookup));
+    let reconciled = candidate_service::bulk_update_for_campaign(
+        &pool,
+        &preparer,
+        campaign.id,
+        CertificateCandidateBulkRequest::AssignTemplate {
+            candidate_ids: vec![converted.id],
+            template_id: template.id,
+        },
+    )
+    .await
+    .unwrap()
+    .candidates
+    .remove(0);
+    assert_eq!(reconciled.recipient_type, RecipientType::Student);
+    assert!(reconciled.matched_user_id.is_some());
+    assert_eq!(reconciled.match_status, CandidateMatchStatus::Matched);
+    assert_eq!(
+        reconciled.validation_status,
+        CandidateValidationStatus::Ready
+    );
+
+    let persisted: (Option<i32>, i32, i64, String, i64) = sqlx::query_as(
+        "SELECT campaign.activity_sequence, campaign.next_certificate_sequence,
+                (SELECT COUNT(*) FROM certificate_academic_year_counters
+                 WHERE academic_year_id = campaign.academic_year_id),
+                request.status,
+                (SELECT COUNT(*) FROM certificates certificate
+                 WHERE certificate.campaign_id = campaign.id)
+         FROM certificate_campaigns campaign
+         JOIN certificate_issue_requests request ON request.campaign_id = campaign.id
+         WHERE campaign.id = $1 AND request.id = $2",
+    )
+    .bind(campaign.id)
+    .bind(request.id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(persisted, (None, 1, 0, "returned".to_string(), 0));
+    let lock_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM certificate_candidate_issue_locks WHERE request_id = $1",
+    )
+    .bind(request.id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(lock_count, 0);
+}
+
+#[tokio::test]
+async fn issue_revalidation_returns_without_numbers_when_background_is_no_longer_ready() {
+    let _crypto_guard = crate::utils::field_encryption::test_env_lock();
+    env::set_var(
+        "ENCRYPTION_KEY",
+        "certificate-background-recheck-encryption-test-key",
+    );
+    env::set_var(
+        "BLIND_INDEX_KEY",
+        "certificate-background-recheck-blind-index-test-key",
+    );
+    let (pool, preparer, academic_year_id) =
+        school_campaign_fixture("certificate_issue_background_recheck", 3146).await;
+    let issuer_user_id = create_test_user(
+        &pool,
+        "certificate-background-recheck-issuer@example.invalid",
+        "test-password",
+    )
+    .await
+    .unwrap();
+    let issuer = school_certificate_issuer(issuer_user_id);
+    let campaign = campaign_service::create_campaign(
+        &pool,
+        &preparer,
+        campaign_create_payload(academic_year_id, None, "กิจกรรมตรวจพื้นหลังซ้ำก่อนออก"),
+    )
+    .await
+    .unwrap();
+    let (template, candidate) = create_ready_external_request_candidate(
+        &pool,
+        &preparer,
+        campaign.id,
+        "แบบที่พื้นหลังไม่พร้อมภายหลัง",
+        "ผู้รับตรวจพื้นหลัง",
+    )
+    .await;
+    let request =
+        request_service::submit_issue_request(&pool, &preparer, campaign.id, vec![candidate.id])
+            .await
+            .unwrap();
+    request_service::start_review(&pool, &issuer, request.id)
+        .await
+        .unwrap();
+
+    sqlx::query("UPDATE files SET lifecycle_status = 'failed' WHERE id = $1")
+        .bind(template.background_file_id.unwrap())
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let outcome = issuance_service::issue_request(
+        &pool,
+        &issuer,
+        "โรงเรียนทดสอบ".to_string(),
+        request.id,
+        IssueCertificateRequest {
+            idempotency_key: Uuid::new_v4(),
+        },
+    )
+    .await
+    .unwrap();
+    let IssueCertificateOutcome::Returned {
+        issue_codes,
+        candidate_problems,
+        ..
+    } = outcome
+    else {
+        panic!("an unavailable background must return the whole request")
+    };
+    assert!(issue_codes.contains(&CertificateIssueCode::AssetUnavailable));
+    assert_eq!(candidate_problems.len(), 1);
+    assert!(candidate_problems[0]
+        .issue_codes
+        .contains(&CertificateIssueCode::AssetUnavailable));
+
+    let numbering: (Option<i32>, i32, i64, i64) = sqlx::query_as(
+        "SELECT campaign.activity_sequence, campaign.next_certificate_sequence,
+                (SELECT COUNT(*) FROM certificate_academic_year_counters
+                 WHERE academic_year_id = campaign.academic_year_id),
+                (SELECT COUNT(*) FROM certificates certificate
+                 WHERE certificate.campaign_id = campaign.id)
+         FROM certificate_campaigns campaign
+         WHERE campaign.id = $1",
+    )
+    .bind(campaign.id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(numbering, (None, 1, 0, 0));
+}
+
+#[tokio::test]
+async fn issue_revalidation_returns_when_referenced_asset_metadata_changes() {
+    let _crypto_guard = crate::utils::field_encryption::test_env_lock();
+    env::set_var(
+        "ENCRYPTION_KEY",
+        "certificate-asset-recheck-encryption-test-key",
+    );
+    env::set_var(
+        "BLIND_INDEX_KEY",
+        "certificate-asset-recheck-blind-index-test-key",
+    );
+    let (pool, preparer, academic_year_id) =
+        school_campaign_fixture("certificate_issue_asset_recheck", 3147).await;
+    let issuer_user_id = create_test_user(
+        &pool,
+        "certificate-asset-recheck-issuer@example.invalid",
+        "test-password",
+    )
+    .await
+    .unwrap();
+    let issuer = school_certificate_issuer(issuer_user_id);
+    let campaign = campaign_service::create_campaign(
+        &pool,
+        &preparer,
+        campaign_create_payload(academic_year_id, None, "กิจกรรมตรวจฟอนต์ซ้ำก่อนออก"),
+    )
+    .await
+    .unwrap();
+    let template = create_ready_candidate_template(
+        &pool,
+        &preparer,
+        campaign.id,
+        "แบบที่ฟอนต์เปลี่ยนภายหลัง",
+        vec![RecipientType::External],
+    )
+    .await;
+    let font_file_id = insert_ready_template_file(
+        &pool,
+        &preparer,
+        template.id,
+        "certificate_template_font",
+        serde_json::json!({
+            "kind": "font",
+            "family_name": "Issuance Thai Font",
+            "units_per_em": 1000
+        }),
+    )
+    .await;
+    let with_font = template_service::attach_asset(
+        &pool,
+        &preparer,
+        template.id,
+        AttachCertificateAssetRequest {
+            file_id: font_file_id,
+            kind: CertificateTemplateAssetKind::Font,
+            display_name: "ฟอนต์สำหรับออกเกียรติบัตร".to_string(),
+            font_weight: Some(400),
+            rights_confirmed: true,
+        },
+    )
+    .await
+    .unwrap();
+    let font_asset = with_font.assets[0].clone();
+    let mut layout = text_layout(CertificateFontSource::Asset {
+        asset_id: font_asset.id,
+    });
+    let CertificateElement::Text(text) = &mut layout.elements[0] else {
+        panic!("expected text element")
+    };
+    text.font_family = font_asset.font_family.clone().unwrap();
+    text.font_weight = font_asset.font_weight.unwrap();
+    template_service::update_template(
+        &pool,
+        &preparer,
+        template.id,
+        UpdateCertificateTemplateRequest {
+            expected_updated_at: with_font.updated_at,
+            name: None,
+            allowed_recipient_types: None,
+            safe_margin_points: None,
+            show_safe_area: None,
+            layout: Some(layout),
+            is_active: None,
+            confirm_missing_issued_values: false,
+        },
+    )
+    .await
+    .unwrap();
+    let candidate = candidate_service::create_manual_external(
+        &pool,
+        &preparer,
+        campaign.id,
+        CreateManualExternalCandidateRequest {
+            template_id: Some(template.id),
+            title: Some("คุณ".to_string()),
+            first_name: "ผู้รับตรวจฟอนต์".to_string(),
+            last_name: "ก่อนออกใบ".to_string(),
+            activity_item: None,
+            award_or_role: Some("ผู้เข้าร่วม".to_string()),
+            custom_values: BTreeMap::new(),
+        },
+    )
+    .await
+    .unwrap()
+    .candidates
+    .remove(0);
+    let request =
+        request_service::submit_issue_request(&pool, &preparer, campaign.id, vec![candidate.id])
+            .await
+            .unwrap();
+    request_service::start_review(&pool, &issuer, request.id)
+        .await
+        .unwrap();
+
+    sqlx::query("UPDATE certificate_template_assets SET font_weight = 700 WHERE id = $1")
+        .bind(font_asset.id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let outcome = issuance_service::issue_request(
+        &pool,
+        &issuer,
+        "โรงเรียนทดสอบ".to_string(),
+        request.id,
+        IssueCertificateRequest {
+            idempotency_key: Uuid::new_v4(),
+        },
+    )
+    .await
+    .unwrap();
+    let IssueCertificateOutcome::Returned {
+        issue_codes,
+        candidate_problems,
+        ..
+    } = outcome
+    else {
+        panic!("changed referenced asset metadata must return the whole request")
+    };
+    assert!(issue_codes.contains(&CertificateIssueCode::AssetUnavailable));
+    assert_eq!(candidate_problems.len(), 1);
+    assert!(candidate_problems[0]
+        .issue_codes
+        .contains(&CertificateIssueCode::AssetUnavailable));
+
+    let numbering: (Option<i32>, i32, i64) = sqlx::query_as(
+        "SELECT campaign.activity_sequence, campaign.next_certificate_sequence,
+                (SELECT COUNT(*) FROM certificates certificate
+                 WHERE certificate.campaign_id = campaign.id)
+         FROM certificate_campaigns campaign
+         WHERE campaign.id = $1",
+    )
+    .bind(campaign.id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(numbering, (None, 1, 0));
+}
+
+#[tokio::test]
+async fn revoked_numbers_are_never_reused_and_replacement_links_only_after_issuance() {
+    let _crypto_guard = crate::utils::field_encryption::test_env_lock();
+    env::set_var(
+        "ENCRYPTION_KEY",
+        "certificate-replacement-encryption-test-key",
+    );
+    env::set_var(
+        "BLIND_INDEX_KEY",
+        "certificate-replacement-blind-index-test-key",
+    );
+    let (pool, preparer, academic_year_id) =
+        school_campaign_fixture("certificate_revoke_replace", 3141).await;
+    let issuer_user_id = create_test_user(
+        &pool,
+        "certificate-replacement-issuer@example.invalid",
+        "test-password",
+    )
+    .await
+    .unwrap();
+    let issuer = school_certificate_issuer(issuer_user_id);
+    let revoker = ActorContext {
+        user_id: issuer_user_id,
+        permissions: vec![codes::CERTIFICATE_REVOKE_SCHOOL.to_string()],
+    };
+    let campaign = campaign_service::create_campaign(
+        &pool,
+        &preparer,
+        campaign_create_payload(academic_year_id, None, "กิจกรรมออกใบแทน"),
+    )
+    .await
+    .unwrap();
+    let (_, candidate) = create_ready_external_request_candidate(
+        &pool,
+        &preparer,
+        campaign.id,
+        "แบบออกใบแทน",
+        "ผู้รับที่ต้องแก้ไข",
+    )
+    .await;
+    let request =
+        request_service::submit_issue_request(&pool, &preparer, campaign.id, vec![candidate.id])
+            .await
+            .unwrap();
+    request_service::start_review(&pool, &issuer, request.id)
+        .await
+        .unwrap();
+    let original = match issuance_service::issue_request(
+        &pool,
+        &issuer,
+        "โรงเรียนทดสอบ".to_string(),
+        request.id,
+        IssueCertificateRequest {
+            idempotency_key: Uuid::new_v4(),
+        },
+    )
+    .await
+    .unwrap()
+    {
+        IssueCertificateOutcome::Issued { certificates, .. } => certificates[0].clone(),
+        IssueCertificateOutcome::Returned { .. } => panic!("original should issue"),
+    };
+
+    let revoked = issuance_service::revoke_certificate(
+        &pool,
+        &revoker,
+        original.id,
+        RevokeCertificateRequest {
+            reason: "ชื่อผู้รับในใบเดิมไม่ถูกต้อง".to_string(),
+            create_replacement_candidate: true,
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        revoked.certificate.summary.status,
+        CertificateStatus::Revoked
+    );
+    assert_eq!(
+        revoked.certificate.summary.certificate_number,
+        original.certificate_number
+    );
+    assert!(revoked
+        .certificate
+        .summary
+        .replaced_by_certificate_id
+        .is_none());
+    let replacement_candidate = revoked
+        .replacement_candidate
+        .expect("replacement draft should be created");
+    assert_eq!(replacement_candidate.campaign_id, campaign.id);
+    assert_eq!(
+        replacement_candidate.validation_status,
+        CandidateValidationStatus::NeedsReview
+    );
+    assert!(matches!(
+        issuance_service::revoke_certificate(
+            &pool,
+            &revoker,
+            original.id,
+            RevokeCertificateRequest {
+                reason: "ห้ามเพิกถอนซ้ำ".to_string(),
+                create_replacement_candidate: false,
+            },
+        )
+        .await,
+        Err(AppError::Conflict(_))
+    ));
+
+    let replacement_draft =
+        candidate_service::get_candidate(&pool, &preparer, replacement_candidate.id)
+            .await
+            .unwrap();
+    let replacement_ready = candidate_service::update_candidate(
+        &pool,
+        &preparer,
+        replacement_candidate.id,
+        update_external_candidate_payload(&replacement_draft, "ผู้รับที่แก้ไขแล้ว"),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        replacement_ready.validation_status,
+        CandidateValidationStatus::Ready
+    );
+    let replacement_request = request_service::submit_issue_request(
+        &pool,
+        &preparer,
+        campaign.id,
+        vec![replacement_ready.id],
+    )
+    .await
+    .unwrap();
+    request_service::start_review(&pool, &issuer, replacement_request.id)
+        .await
+        .unwrap();
+    let replacement = match issuance_service::issue_request(
+        &pool,
+        &issuer,
+        "โรงเรียนทดสอบ".to_string(),
+        replacement_request.id,
+        IssueCertificateRequest {
+            idempotency_key: Uuid::new_v4(),
+        },
+    )
+    .await
+    .unwrap()
+    {
+        IssueCertificateOutcome::Issued { certificates, .. } => certificates[0].clone(),
+        IssueCertificateOutcome::Returned { .. } => panic!("replacement should issue"),
+    };
+    assert_eq!(
+        replacement.replacement_for_certificate_id,
+        Some(original.id)
+    );
+    assert_eq!(
+        replacement.certificate_sequence,
+        original.certificate_sequence + 1
+    );
+    assert_ne!(replacement.certificate_number, original.certificate_number);
+    let original_links: (String, Option<Uuid>) = sqlx::query_as(
+        "SELECT certificate_number, replaced_by_certificate_id
+         FROM certificates WHERE id = $1",
+    )
+    .bind(original.id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(original_links.0, original.certificate_number);
+    assert_eq!(original_links.1, Some(replacement.id));
+}
+
+#[tokio::test]
+async fn issued_lists_and_details_enforce_exact_read_and_separate_download_scope() {
+    let _crypto_guard = crate::utils::field_encryption::test_env_lock();
+    env::set_var(
+        "ENCRYPTION_KEY",
+        "certificate-issued-list-encryption-test-key",
+    );
+    env::set_var(
+        "BLIND_INDEX_KEY",
+        "certificate-issued-list-blind-index-test-key",
+    );
+    let (pool, school_preparer, academic_year_id) =
+        school_campaign_fixture("certificate_issued_list_scope", 3142).await;
+    let owner_unit = insert_unit(&pool, "certificate_issued_list_owner", None).await;
+    let other_unit = insert_unit(&pool, "certificate_issued_list_other", None).await;
+    let campaign = campaign_service::create_campaign(
+        &pool,
+        &school_preparer,
+        campaign_create_payload(academic_year_id, Some(owner_unit), "กิจกรรมรายการใบที่ออกแล้ว"),
+    )
+    .await
+    .unwrap();
+    let (_, candidate) = create_ready_external_request_candidate(
+        &pool,
+        &school_preparer,
+        campaign.id,
+        "แบบรายการใบที่ออกแล้ว",
+        "ผู้รับสำหรับค้นหา",
+    )
+    .await;
+    let request = request_service::submit_issue_request(
+        &pool,
+        &school_preparer,
+        campaign.id,
+        vec![candidate.id],
+    )
+    .await
+    .unwrap();
+    let issuer_user_id = create_test_user(
+        &pool,
+        "certificate-issued-list-issuer@example.invalid",
+        "test-password",
+    )
+    .await
+    .unwrap();
+    let issuer = school_certificate_issuer(issuer_user_id);
+    request_service::start_review(&pool, &issuer, request.id)
+        .await
+        .unwrap();
+    let issued = match issuance_service::issue_request(
+        &pool,
+        &issuer,
+        "โรงเรียนทดสอบ".to_string(),
+        request.id,
+        IssueCertificateRequest {
+            idempotency_key: Uuid::new_v4(),
+        },
+    )
+    .await
+    .unwrap()
+    {
+        IssueCertificateOutcome::Issued { certificates, .. } => certificates[0].clone(),
+        IssueCertificateOutcome::Returned { .. } => panic!("request should issue"),
+    };
+
+    let reader_user_id = create_test_user(
+        &pool,
+        "certificate-issued-list-reader@example.invalid",
+        "test-password",
+    )
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO organization_members
+            (user_id, organization_unit_id, position_code, started_at)
+         VALUES ($1, $2, 'head', CURRENT_DATE)",
+    )
+    .bind(reader_user_id)
+    .bind(owner_unit)
+    .execute(&pool)
+    .await
+    .unwrap();
+    add_exact_grant(&pool, owner_unit, codes::CERTIFICATE_READ_ORGANIZATION_UNIT).await;
+    let reader = ActorContext {
+        user_id: reader_user_id,
+        permissions: vec![codes::CERTIFICATE_READ_ORGANIZATION_UNIT.to_string()],
+    };
+    let list = issuance_service::list_campaign_certificates(
+        &pool,
+        &reader,
+        campaign.id,
+        crate::modules::certificates::models::IssuedCertificateListQuery {
+            search: Some("ผู้รับสำหรับค้นหา".to_string()),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(list.len(), 1);
+    assert!(list[0].capabilities.can_read);
+    assert!(!list[0].capabilities.can_download);
+    assert!(!list[0].capabilities.can_revoke);
+    let detail = issuance_service::get_certificate(&pool, &reader, issued.id)
+        .await
+        .unwrap();
+    assert_eq!(detail.summary.id, issued.id);
+    assert_eq!(detail.school_name, "โรงเรียนทดสอบ");
+
+    add_exact_grant(
+        &pool,
+        owner_unit,
+        codes::CERTIFICATE_DOWNLOAD_ORGANIZATION_UNIT,
+    )
+    .await;
+    let with_download = issuance_service::get_certificate(&pool, &reader, issued.id)
+        .await
+        .unwrap();
+    assert!(with_download.summary.capabilities.can_download);
+
+    let outsider_user_id = create_test_user(
+        &pool,
+        "certificate-issued-list-outsider@example.invalid",
+        "test-password",
+    )
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO organization_members
+            (user_id, organization_unit_id, position_code, started_at)
+         VALUES ($1, $2, 'head', CURRENT_DATE)",
+    )
+    .bind(outsider_user_id)
+    .bind(other_unit)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let outsider = ActorContext {
+        user_id: outsider_user_id,
+        permissions: vec![codes::CERTIFICATE_READ_ORGANIZATION_UNIT.to_string()],
+    };
+    assert!(matches!(
+        issuance_service::list_campaign_certificates(
+            &pool,
+            &outsider,
+            campaign.id,
+            Default::default(),
+        )
+        .await,
+        Err(AppError::Forbidden(_))
+    ));
+    assert!(matches!(
+        issuance_service::get_certificate(&pool, &outsider, issued.id).await,
+        Err(AppError::Forbidden(_))
+    ));
+}
+
+#[tokio::test]
+async fn batch_render_authorizes_campaign_before_disclosing_certificate_membership() {
+    let (pool, preparer, academic_year_id) =
+        school_campaign_fixture("certificate_batch_render_scope", 3148).await;
+    let campaign = campaign_service::create_campaign(
+        &pool,
+        &preparer,
+        campaign_create_payload(academic_year_id, None, "กิจกรรมดาวน์โหลดหลายใบ"),
+    )
+    .await
+    .unwrap();
+    let outsider_user_id = create_test_user(
+        &pool,
+        "certificate-batch-render-outsider@example.invalid",
+        "test-password",
+    )
+    .await
+    .unwrap();
+    let outsider = ActorContext {
+        user_id: outsider_user_id,
+        permissions: Vec::new(),
+    };
+    let platform = crate::modules::files::platform_service::FilePlatform::new(
+        Arc::new(PreviewStorage),
+        Arc::new(PreviewScanner),
+    );
+
+    assert!(matches!(
+        render_service::issued_manifests(
+            &pool,
+            &outsider,
+            &platform,
+            "sandbox",
+            "schoolorbit.test",
+            campaign.id,
+            CertificateRenderManifestBatchRequest {
+                certificate_ids: vec![Uuid::new_v4()],
+            },
+        )
+        .await,
+        Err(AppError::Forbidden(_))
+    ));
+}
+
+#[tokio::test]
+async fn issued_manifest_uses_canonical_proof_url_and_refuses_revoked_certificates() {
+    let _crypto_guard = crate::utils::field_encryption::test_env_lock();
+    env::set_var(
+        "ENCRYPTION_KEY",
+        "certificate-issued-render-encryption-test-key",
+    );
+    env::set_var(
+        "BLIND_INDEX_KEY",
+        "certificate-issued-render-blind-index-test-key",
+    );
+    let (pool, preparer, academic_year_id) =
+        concurrent_school_campaign_fixture("certificate_issued_manifest", 3143).await;
+    let campaign = campaign_service::create_campaign(
+        &pool,
+        &preparer,
+        campaign_create_payload(academic_year_id, None, "กิจกรรมดาวน์โหลดใบจริง"),
+    )
+    .await
+    .unwrap();
+    let (template, candidate) = create_ready_external_request_candidate(
+        &pool,
+        &preparer,
+        campaign.id,
+        "แบบดาวน์โหลดใบจริง",
+        "กมลชนก",
+    )
+    .await;
+    let request =
+        request_service::submit_issue_request(&pool, &preparer, campaign.id, vec![candidate.id])
+            .await
+            .unwrap();
+    let issuer_user_id = create_test_user(
+        &pool,
+        "certificate-issued-render-issuer@example.invalid",
+        "test-password",
+    )
+    .await
+    .unwrap();
+    let issuer = school_certificate_issuer(issuer_user_id);
+    request_service::start_review(&pool, &issuer, request.id)
+        .await
+        .unwrap();
+    let issued = match issuance_service::issue_request(
+        &pool,
+        &issuer,
+        "โรงเรียนตัวอย่าง".to_string(),
+        request.id,
+        IssueCertificateRequest {
+            idempotency_key: Uuid::new_v4(),
+        },
+    )
+    .await
+    .unwrap()
+    {
+        IssueCertificateOutcome::Issued { certificates, .. } => certificates[0].clone(),
+        IssueCertificateOutcome::Returned { .. } => panic!("request should issue"),
+    };
+    let platform = crate::modules::files::platform_service::FilePlatform::new(
+        Arc::new(PreviewStorage),
+        Arc::new(PreviewScanner),
+    );
+    let manifest = render_service::issued_manifest(
+        &pool,
+        &preparer,
+        &platform,
+        "sandbox",
+        "schoolorbit.test",
+        issued.id,
+    )
+    .await
+    .unwrap();
+    assert_eq!(manifest.certificate_number, issued.certificate_number);
+    assert_eq!(manifest.recipient_values["ชื่อ"], "กมลชนก");
+    assert_eq!(manifest.recipient_values["ชื่อโรงเรียนผู้ออก"], "โรงเรียนตัวอย่าง");
+    assert!(manifest.qr_payload.starts_with(&format!(
+        "https://sandbox.schoolorbit.test/verify/certificate/{}#proof=",
+        issued.certificate_number
+    )));
+    assert_eq!(manifest.font_grants.len(), 0);
+    assert_eq!(manifest.image_grants.len(), 0);
+
+    candidate_service::create_manual_external(
+        &pool,
+        &preparer,
+        campaign.id,
+        CreateManualExternalCandidateRequest {
+            template_id: Some(template.id),
+            title: None,
+            first_name: "ผู้รับรายใหม่".to_string(),
+            last_name: "มีค่าตัวแปร".to_string(),
+            activity_item: None,
+            award_or_role: None,
+            custom_values: BTreeMap::from([("ครูผู้ควบคุม".to_string(), "ครูตัวอย่าง".to_string())]),
+        },
+    )
+    .await
+    .unwrap();
+    let current_template = template_service::get_template(&pool, &preparer, template.id)
+        .await
+        .unwrap();
+    let mut layout_with_new_variable = text_layout(CertificateFontSource::BuiltIn);
+    let CertificateElement::Text(text) = &mut layout_with_new_variable.elements[0] else {
+        panic!("expected text element")
+    };
+    text.content = "มอบให้ {ชื่อ} โดย {ครูผู้ควบคุม}".to_string();
+    let updated_template = template_service::update_template(
+        &pool,
+        &preparer,
+        template.id,
+        UpdateCertificateTemplateRequest {
+            expected_updated_at: current_template.updated_at,
+            name: None,
+            allowed_recipient_types: None,
+            safe_margin_points: None,
+            show_safe_area: None,
+            layout: Some(layout_with_new_variable),
+            is_active: None,
+            confirm_missing_issued_values: true,
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        updated_template.template.missing_variable_certificate_count,
+        1
+    );
+    let manifest_with_new_variable = render_service::issued_manifest(
+        &pool,
+        &preparer,
+        &platform,
+        "sandbox",
+        "schoolorbit.test",
+        issued.id,
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        manifest_with_new_variable
+            .recipient_values
+            .get("ครูผู้ควบคุม")
+            .map(String::as_str),
+        Some("")
+    );
+
+    let revoker = ActorContext {
+        user_id: issuer_user_id,
+        permissions: vec![codes::CERTIFICATE_REVOKE_SCHOOL.to_string()],
+    };
+    let grant_entered = Arc::new(tokio::sync::Notify::new());
+    let grant_release = Arc::new(tokio::sync::Notify::new());
+    let blocking_platform = Arc::new(crate::modules::files::platform_service::FilePlatform::new(
+        Arc::new(BlockingGrantStorage {
+            entered: Arc::clone(&grant_entered),
+            release: Arc::clone(&grant_release),
+        }),
+        Arc::new(PreviewScanner),
+    ));
+    let render_pool = pool.clone();
+    let render_actor = preparer.clone();
+    let render_platform = Arc::clone(&blocking_platform);
+    let certificate_id = issued.id;
+    let rendering = tokio::spawn(async move {
+        render_service::issued_manifest(
+            &render_pool,
+            &render_actor,
+            render_platform.as_ref(),
+            "sandbox",
+            "schoolorbit.test",
+            certificate_id,
+        )
+        .await
+    });
+    tokio::time::timeout(Duration::from_secs(5), grant_entered.notified())
+        .await
+        .expect("render should reach private grant generation");
+
+    let revoke_pool = pool.clone();
+    let revoke_actor = revoker.clone();
+    let revoking = tokio::spawn(async move {
+        issuance_service::revoke_certificate(
+            &revoke_pool,
+            &revoke_actor,
+            certificate_id,
+            RevokeCertificateRequest {
+                reason: "ยกเลิกใบเดิมเพื่อทดสอบการดาวน์โหลด".to_string(),
+                create_replacement_candidate: false,
+            },
+        )
+        .await
+    });
+    let wait_deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    let revocation_blocked = loop {
+        if revoking.is_finished() {
+            break false;
+        }
+        let blocked: bool = sqlx::query_scalar(
+            "SELECT EXISTS (
+                 SELECT 1
+                 FROM pg_stat_activity
+                 WHERE datname = current_database()
+                   AND pid <> pg_backend_pid()
+                   AND wait_event_type = 'Lock'
+                   AND query LIKE '%FROM certificates%'
+                   AND query LIKE '%FOR UPDATE%'
+             )",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        if blocked {
+            break true;
+        }
+        assert!(
+            tokio::time::Instant::now() < wait_deadline,
+            "revocation neither completed nor waited on the certificate row"
+        );
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    };
+    grant_release.notify_one();
+    rendering.await.unwrap().unwrap();
+    revoking.await.unwrap().unwrap();
+    assert!(
+        revocation_blocked,
+        "revocation committed while an issued render manifest was still being created"
+    );
+    assert!(matches!(
+        render_service::issued_manifest(
+            &pool,
+            &preparer,
+            &platform,
+            "sandbox",
+            "schoolorbit.test",
+            issued.id,
+        )
+        .await,
+        Err(AppError::Conflict(_))
+    ));
+}
+
+#[tokio::test]
+async fn issuance_rejects_activity_and_certificate_sequence_upper_bounds_without_partial_writes() {
+    let _crypto_guard = crate::utils::field_encryption::test_env_lock();
+    env::set_var(
+        "ENCRYPTION_KEY",
+        "certificate-upper-bound-encryption-test-key",
+    );
+    env::set_var(
+        "BLIND_INDEX_KEY",
+        "certificate-upper-bound-blind-index-test-key",
+    );
+    let (pool, preparer, academic_year_id) =
+        school_campaign_fixture("certificate_issue_upper_bounds", 3144).await;
+    let issuer_user_id = create_test_user(
+        &pool,
+        "certificate-upper-bound-issuer@example.invalid",
+        "test-password",
+    )
+    .await
+    .unwrap();
+    let issuer = school_certificate_issuer(issuer_user_id);
+
+    let activity_campaign = campaign_service::create_campaign(
+        &pool,
+        &preparer,
+        campaign_create_payload(academic_year_id, None, "กิจกรรมเกินลำดับกิจกรรม"),
+    )
+    .await
+    .unwrap();
+    let (_, activity_candidate) = create_ready_external_request_candidate(
+        &pool,
+        &preparer,
+        activity_campaign.id,
+        "แบบเกินลำดับกิจกรรม",
+        "ผู้รับเกินลำดับกิจกรรม",
+    )
+    .await;
+    let activity_request = request_service::submit_issue_request(
+        &pool,
+        &preparer,
+        activity_campaign.id,
+        vec![activity_candidate.id],
+    )
+    .await
+    .unwrap();
+    request_service::start_review(&pool, &issuer, activity_request.id)
+        .await
+        .unwrap();
+    sqlx::query(
+        "INSERT INTO certificate_academic_year_counters
+            (academic_year_id, next_activity_sequence)
+         VALUES ($1, 10000)",
+    )
+    .bind(academic_year_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    assert!(matches!(
+        issuance_service::issue_request(
+            &pool,
+            &issuer,
+            "โรงเรียนทดสอบ".to_string(),
+            activity_request.id,
+            IssueCertificateRequest {
+                idempotency_key: Uuid::new_v4(),
+            },
+        )
+        .await,
+        Err(AppError::Conflict(_))
+    ));
+    let activity_state: (Option<i32>, i32, String, i64) = sqlx::query_as(
+        "SELECT campaign.activity_sequence, counter.next_activity_sequence,
+                request.status,
+                (SELECT COUNT(*) FROM certificate_issue_runs run
+                 WHERE run.request_id = request.id)
+         FROM certificate_campaigns campaign
+         JOIN certificate_academic_year_counters counter
+           ON counter.academic_year_id = campaign.academic_year_id
+         JOIN certificate_issue_requests request ON request.campaign_id = campaign.id
+         WHERE campaign.id = $1 AND request.id = $2",
+    )
+    .bind(activity_campaign.id)
+    .bind(activity_request.id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(activity_state, (None, 10000, "reviewing".to_string(), 0));
+
+    let second_year_id = insert_academic_year(&pool, 3145).await;
+    let certificate_campaign = campaign_service::create_campaign(
+        &pool,
+        &preparer,
+        campaign_create_payload(second_year_id, None, "กิจกรรมเกินลำดับใบ"),
+    )
+    .await
+    .unwrap();
+    let (_, certificate_candidate) = create_ready_external_request_candidate(
+        &pool,
+        &preparer,
+        certificate_campaign.id,
+        "แบบเกินลำดับใบ",
+        "ผู้รับเกินลำดับใบ",
+    )
+    .await;
+    let certificate_request = request_service::submit_issue_request(
+        &pool,
+        &preparer,
+        certificate_campaign.id,
+        vec![certificate_candidate.id],
+    )
+    .await
+    .unwrap();
+    request_service::start_review(&pool, &issuer, certificate_request.id)
+        .await
+        .unwrap();
+    sqlx::query(
+        "UPDATE certificate_campaigns
+         SET activity_sequence = 1, next_certificate_sequence = 1000000
+         WHERE id = $1",
+    )
+    .bind(certificate_campaign.id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    assert!(matches!(
+        issuance_service::issue_request(
+            &pool,
+            &issuer,
+            "โรงเรียนทดสอบ".to_string(),
+            certificate_request.id,
+            IssueCertificateRequest {
+                idempotency_key: Uuid::new_v4(),
+            },
+        )
+        .await,
+        Err(AppError::Conflict(_))
+    ));
+    let certificate_state: (i32, String, i64, i64) = sqlx::query_as(
+        "SELECT campaign.next_certificate_sequence, request.status,
+                (SELECT COUNT(*) FROM certificate_issue_runs run
+                 WHERE run.request_id = request.id),
+                (SELECT COUNT(*) FROM certificates certificate
+                 WHERE certificate.campaign_id = campaign.id)
+         FROM certificate_campaigns campaign
+         JOIN certificate_issue_requests request ON request.campaign_id = campaign.id
+         WHERE campaign.id = $1 AND request.id = $2",
+    )
+    .bind(certificate_campaign.id)
+    .bind(certificate_request.id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(certificate_state, (1000000, "reviewing".to_string(), 0, 0));
 }

@@ -47,6 +47,17 @@ export type CertificateIssueRequestDetail = Schemas['CertificateIssueRequestDeta
 export type SubmitCertificateIssueRequest = Schemas['SubmitCertificateIssueRequest'];
 export type ReturnCertificateIssueRequest = Schemas['ReturnCertificateIssueRequest'];
 export type CertificateResourceLocked = Schemas['CertificateResourceLocked'];
+export type IssueCertificateRequest = Schemas['IssueCertificateRequest'];
+export type IssueCertificateOutcome = Schemas['IssueCertificateOutcome'];
+export type CertificateStatus = Schemas['CertificateStatus'];
+export type CertificateCapabilities = Schemas['CertificateCapabilities'];
+export type IssuedCertificateListQuery = Schemas['IssuedCertificateListQuery'];
+export type IssuedCertificateSummary = Schemas['IssuedCertificateSummary'];
+export type IssuedCertificateDetail = Schemas['IssuedCertificateDetail'];
+export type RevokeCertificateRequest = Schemas['RevokeCertificateRequest'];
+export type RevokeCertificateResult = Schemas['RevokeCertificateResult'];
+export type CertificateRenderManifestBatchRequest =
+	Schemas['CertificateRenderManifestBatchRequest'];
 type EmptyData = Schemas['EmptyData'];
 
 export async function listCertificateCampaigns(
@@ -388,4 +399,70 @@ export async function returnCertificateIssueRequest(
 		payload
 	);
 	return requireApiData(response, 'ไม่สามารถส่งคำขอกลับให้แก้ไขได้');
+}
+
+export async function issueCertificates(
+	requestId: string,
+	payload: IssueCertificateRequest
+): Promise<IssueCertificateOutcome> {
+	const response = await apiClient.post<IssueCertificateOutcome>(
+		`/api/certificates/issue-requests/${encodeURIComponent(requestId)}/issue`,
+		payload
+	);
+	return requireApiData(response, 'ไม่สามารถออกเลขเกียรติบัตรได้');
+}
+
+export async function listIssuedCertificates(
+	campaignId: string,
+	query: IssuedCertificateListQuery = {}
+): Promise<IssuedCertificateSummary[]> {
+	const params = new URLSearchParams();
+	if (query.status) params.set('status', query.status);
+	if (query.templateId) params.set('templateId', query.templateId);
+	if (query.search?.trim()) params.set('search', query.search.trim());
+	const suffix = params.size > 0 ? `?${params.toString()}` : '';
+	const response = await apiClient.get<IssuedCertificateSummary[]>(
+		`/api/certificates/campaigns/${encodeURIComponent(campaignId)}/issued${suffix}`
+	);
+	return requireApiData(response, 'ไม่สามารถโหลดรายการเกียรติบัตรที่ออกแล้วได้');
+}
+
+export async function getIssuedCertificate(
+	certificateId: string
+): Promise<IssuedCertificateDetail> {
+	const response = await apiClient.get<IssuedCertificateDetail>(
+		`/api/certificates/${encodeURIComponent(certificateId)}`
+	);
+	return requireApiData(response, 'ไม่สามารถโหลดรายละเอียดเกียรติบัตรได้');
+}
+
+export async function revokeIssuedCertificate(
+	certificateId: string,
+	payload: RevokeCertificateRequest
+): Promise<RevokeCertificateResult> {
+	const response = await apiClient.post<RevokeCertificateResult>(
+		`/api/certificates/${encodeURIComponent(certificateId)}/revoke`,
+		payload
+	);
+	return requireApiData(response, 'ไม่สามารถเพิกถอนเกียรติบัตรได้');
+}
+
+export async function createIssuedCertificateRenderManifest(
+	certificateId: string
+): Promise<CertificateRenderManifest> {
+	const response = await apiClient.post<CertificateRenderManifest>(
+		`/api/certificates/${encodeURIComponent(certificateId)}/render-manifest`
+	);
+	return requireApiData(response, 'ไม่สามารถเตรียมไฟล์เกียรติบัตรได้');
+}
+
+export async function createIssuedCertificateRenderManifests(
+	campaignId: string,
+	payload: CertificateRenderManifestBatchRequest
+): Promise<CertificateRenderManifest[]> {
+	const response = await apiClient.post<CertificateRenderManifest[]>(
+		`/api/certificates/campaigns/${encodeURIComponent(campaignId)}/render-manifests`,
+		payload
+	);
+	return requireApiData(response, 'ไม่สามารถเตรียมไฟล์เกียรติบัตรที่เลือกได้');
 }

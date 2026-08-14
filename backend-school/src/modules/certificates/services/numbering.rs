@@ -54,18 +54,13 @@ impl CertificateNumber {
         Ok(expected)
     }
 
-    pub fn components(&self) -> (i32, u32, u32, u8) {
-        // Construction and deserialization both validate this exact fixed-width shape.
-        (
-            self.0[0..4].parse().expect("validated certificate year"),
-            self.0[5..9]
-                .parse()
-                .expect("validated certificate activity sequence"),
-            self.0[10..16]
-                .parse()
-                .expect("validated certificate sequence"),
-            self.0.as_bytes()[17] - b'0',
-        )
+    pub fn check_digit(&self) -> Option<u8> {
+        self.0
+            .as_bytes()
+            .get(17)
+            .copied()
+            .filter(u8::is_ascii_digit)
+            .map(|digit| digit - b'0')
     }
 }
 
@@ -103,7 +98,7 @@ mod tests {
         assert!(CertificateNumber::parse("2569-0042-000123-5").is_err());
         assert!(CertificateNumber::new(2569, 10_000, 1).is_err());
         assert!(CertificateNumber::new(2569, 1, 1_000_000).is_err());
-        assert_eq!(number.components(), (2569, 42, 123, 4));
+        assert_eq!(number.check_digit(), Some(4));
         assert!(serde_json::from_str::<CertificateNumber>("\"2569-0042-000123-5\"").is_err());
         assert_eq!(
             serde_json::to_string(&number).unwrap(),

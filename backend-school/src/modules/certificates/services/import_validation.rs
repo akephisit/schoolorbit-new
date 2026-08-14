@@ -504,12 +504,12 @@ fn has_text(value: Option<&str>) -> bool {
 pub(super) fn contains_thirteen_digit_run(value: &str) -> bool {
     let mut digits = 0_u8;
     for character in normalize_display_text(value).chars() {
-        if character.is_ascii_digit() {
+        if character.is_numeric() {
             digits = digits.saturating_add(1);
             if digits >= 13 {
                 return true;
             }
-        } else if digits > 0 && (character.is_whitespace() || matches!(character, '-' | '/')) {
+        } else if digits > 0 && !character.is_alphanumeric() {
             continue;
         } else {
             digits = 0;
@@ -759,12 +759,22 @@ mod tests {
     }
 
     #[test]
-    fn sensitive_value_detection_cannot_be_bypassed_with_invisible_characters() {
-        let mut row = external_row();
-        row.award_or_role = Some("ข้อมูล 1\u{200b}-2345-67890-12-3".into());
+    fn sensitive_value_detection_covers_unicode_digits_and_invisible_characters() {
+        for sensitive_value in [
+            "ข้อมูล 1\u{200b}-2345-67890-12-3",
+            "ข้อมูล ๑-๒๓๔๕-๖๗๘๙๐-๑๒-๓",
+            "ข้อมูล １-２３４５-６７８９０-１２-３",
+            "ข้อมูล １－２３４５－６７８９０－１２－３",
+        ] {
+            let mut row = external_row();
+            row.award_or_role = Some(sensitive_value.into());
 
-        assert!(validate_import_row(&row)
-            .issues
-            .contains(&ImportRowIssue::ForbiddenSensitiveValue));
+            assert!(
+                validate_import_row(&row)
+                    .issues
+                    .contains(&ImportRowIssue::ForbiddenSensitiveValue),
+                "sensitive value bypassed validation: {sensitive_value}"
+            );
+        }
     }
 }

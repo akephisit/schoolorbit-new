@@ -58,6 +58,79 @@ fn certificate_template_upload_relation_uses_a_follow_up_migration() {
     }
 }
 
+#[test]
+fn issued_snapshots_and_idempotent_problem_rows_are_immutable_by_migration() {
+    let issuance = std::fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("migrations/035_certificate_issuance.sql"),
+    )
+    .expect("migration 035 must exist");
+    let snapshot_trigger = issuance
+        .split("CREATE FUNCTION enforce_certificate_snapshot_immutability()")
+        .nth(1)
+        .and_then(|value| {
+            value
+                .split("CREATE TRIGGER enforce_certificate_snapshot_immutability")
+                .next()
+        })
+        .expect("snapshot immutability function must exist");
+    for field in [
+        "id",
+        "campaign_id",
+        "template_id",
+        "candidate_id",
+        "issue_run_id",
+        "academic_year_id",
+        "academic_year_value",
+        "activity_sequence",
+        "certificate_sequence",
+        "check_digit",
+        "certificate_number",
+        "recipient_type",
+        "user_id",
+        "title_snapshot",
+        "first_name_snapshot",
+        "last_name_snapshot",
+        "template_name_snapshot",
+        "activity_item_snapshot",
+        "award_or_role_snapshot",
+        "custom_values_snapshot",
+        "school_name_snapshot",
+        "owner_organization_unit_name_snapshot",
+        "issue_date",
+        "qr_proof_encrypted",
+        "qr_proof_hash",
+        "replacement_for_certificate_id",
+        "created_at",
+    ] {
+        assert!(
+            snapshot_trigger.contains(&format!("NEW.{field}")),
+            "snapshot trigger does not protect NEW.{field}"
+        );
+        assert!(
+            snapshot_trigger.contains(&format!("OLD.{field}")),
+            "snapshot trigger does not compare OLD.{field}"
+        );
+    }
+
+    let issue_problems = std::fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("migrations/037_certificate_issue_run_problems.sql"),
+    )
+    .expect("migration 037 must exist");
+    for required in [
+        "CREATE TABLE certificate_issue_run_problems",
+        "PRIMARY KEY (issue_run_id, candidate_id)",
+        "prevent_certificate_issue_run_problem_update",
+        "prevent_certificate_issue_run_problem_delete",
+    ] {
+        assert!(issue_problems.contains(required), "missing {required}");
+    }
+    assert!(
+        !issue_problems.to_ascii_lowercase().contains("national_id"),
+        "issue result persistence must not add plaintext national IDs"
+    );
+}
+
 fn assert_constraint_error<T>(result: Result<T, sqlx::Error>, expected_constraint: &str) {
     let error = match result {
         Ok(_) => panic!("invalid certificate state must be rejected"),

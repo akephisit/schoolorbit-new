@@ -1544,6 +1544,54 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/api/certificates/{certificate_id}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getIssuedCertificate'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/certificates/{certificate_id}/render-manifest': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['createIssuedCertificateRenderManifest'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/certificates/{certificate_id}/revoke': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['revokeIssuedCertificate'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/api/certificates/campaigns': {
 		parameters: {
 			query?: never;
@@ -1672,6 +1720,38 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/api/certificates/campaigns/{campaign_id}/issued': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listIssuedCertificates'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/certificates/campaigns/{campaign_id}/render-manifests': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['createIssuedCertificateRenderManifests'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/api/certificates/campaigns/{campaign_id}/status': {
 		parameters: {
 			query?: never;
@@ -1746,6 +1826,22 @@ export interface paths {
 		get: operations['getCertificateIssueRequest'];
 		put?: never;
 		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/certificates/issue-requests/{request_id}/issue': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['issueCertificates'];
 		delete?: never;
 		options?: never;
 		head?: never;
@@ -3797,6 +3893,60 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
+		ApiResponse_IssueCertificateOutcome: {
+			data:
+				| {
+						/** Format: int32 */
+						activity_sequence: number;
+						/** Format: uuid */
+						campaign_id: string;
+						certificates: components['schemas']['IssuedCertificateSummary'][];
+						/** Format: int32 */
+						first_certificate_sequence: number;
+						/** Format: uuid */
+						issue_run_id: string;
+						/** Format: int32 */
+						last_certificate_sequence: number;
+						/** @enum {string} */
+						outcome: 'issued';
+						/** Format: uuid */
+						request_id: string;
+				  }
+				| {
+						/** Format: uuid */
+						campaign_id: string;
+						candidate_problems: components['schemas']['CertificateIssueCandidateProblem'][];
+						issue_codes: components['schemas']['CertificateIssueCode'][];
+						/** Format: uuid */
+						issue_run_id: string;
+						/** @enum {string} */
+						outcome: 'returned';
+						/** Format: uuid */
+						request_id: string;
+				  };
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_IssuedCertificateDetail: {
+			data: components['schemas']['IssuedCertificateSummary'] & {
+				customValues: {
+					[key: string]: string;
+				};
+				/** Format: uuid */
+				issueRunId: string;
+				ownerOrganizationUnitNameSnapshot: string | null;
+				revocationReason: string | null;
+				/** Format: date-time */
+				revokedAt: string | null;
+				/** Format: uuid */
+				revokedBy: string | null;
+				schoolName: string;
+				/** Format: date-time */
+				updatedAt: string;
+			};
+			message?: string;
+			success: boolean;
+		};
 		ApiResponse_ListNotificationsResponse: {
 			data: {
 				items: components['schemas']['Notification'][];
@@ -4028,6 +4178,14 @@ export interface components {
 				title: string | null;
 				user_type: string;
 				username: string;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_RevokeCertificateResult: {
+			data: {
+				certificate: components['schemas']['IssuedCertificateDetail'];
+				replacementCandidate: null | components['schemas']['CertificateReplacementCandidate'];
 			};
 			message?: string;
 			success: boolean;
@@ -4678,6 +4836,27 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
+		ApiResponse_Vec_CertificateRenderManifest: {
+			data: {
+				backgroundGrant: components['schemas']['CertificateRenderFileGrant'];
+				builtInFonts: components['schemas']['CertificateBuiltInFont'][];
+				campaignValues: components['schemas']['CertificateRenderCampaignValues'];
+				certificateNumber: string;
+				fontGrants: components['schemas']['CertificateRenderFontGrant'][];
+				imageGrants: components['schemas']['CertificateRenderImageGrant'][];
+				layout: components['schemas']['CertificateLayoutV1'];
+				pageGeometry: components['schemas']['CertificatePageGeometry'];
+				qrPayload: string;
+				recipientValues: {
+					[key: string]: string;
+				};
+				suggestedFilename: string;
+				/** Format: uuid */
+				templateId: string;
+			}[];
+			message?: string;
+			success: boolean;
+		};
 		ApiResponse_Vec_CertificateTemplateDetail: {
 			data: {
 				allowedRecipientTypes: components['schemas']['RecipientType'][];
@@ -4861,6 +5040,50 @@ export interface components {
 				instructor_id: string;
 				instructor_name?: string | null;
 				role: components['schemas']['ActivityGroupInstructorRole'];
+			}[];
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_Vec_IssuedCertificateSummary: {
+			data: {
+				/** Format: uuid */
+				academicYearId: string;
+				/** Format: int32 */
+				academicYearValue: number;
+				activityItem: string | null;
+				/** Format: int32 */
+				activitySequence: number;
+				awardOrRole: string | null;
+				/** Format: uuid */
+				campaignId: string;
+				campaignName: string;
+				capabilities: components['schemas']['CertificateCapabilities'];
+				certificateNumber: string;
+				/** Format: int32 */
+				certificateSequence: number;
+				/** Format: date-time */
+				createdAt: string;
+				firstName: string;
+				/** Format: uuid */
+				id: string;
+				/** Format: date */
+				issueDate: string;
+				lastName: string;
+				/** Format: uuid */
+				ownerOrganizationUnitId: string | null;
+				ownerOrganizationUnitName: string | null;
+				recipientType: components['schemas']['RecipientType'];
+				/** Format: uuid */
+				replacedByCertificateId: string | null;
+				/** Format: uuid */
+				replacementCandidateId: string | null;
+				/** Format: uuid */
+				replacementForCertificateId: string | null;
+				status: components['schemas']['CertificateStatus'];
+				/** Format: uuid */
+				templateId: string;
+				templateName: string;
+				title: string | null;
 			}[];
 			message?: string;
 			success: boolean;
@@ -5868,6 +6091,11 @@ export interface components {
 			/** Format: int64 */
 			totalCount: number;
 		};
+		CertificateCapabilities: {
+			canDownload: boolean;
+			canRead: boolean;
+			canRevoke: boolean;
+		};
 		CertificateElement:
 			| (components['schemas']['TextElement'] & {
 					/** @enum {string} */
@@ -5931,6 +6159,11 @@ export interface components {
 		};
 		/** @enum {string} */
 		CertificateImportSource: 'xlsx' | 'csv' | 'manual' | 'account_search' | 'replacement';
+		CertificateIssueCandidateProblem: {
+			/** Format: uuid */
+			candidateId: string;
+			issueCodes: components['schemas']['CertificateIssueCode'][];
+		};
 		/** @enum {string} */
 		CertificateIssueCode:
 			| 'candidate_not_ready'
@@ -6147,6 +6380,18 @@ export interface components {
 			/** Format: uuid */
 			templateId: string;
 		};
+		CertificateRenderManifestBatchRequest: {
+			certificateIds: string[];
+		};
+		CertificateReplacementCandidate: {
+			/** Format: uuid */
+			campaignId: string;
+			/** Format: uuid */
+			id: string;
+			/** Format: uuid */
+			templateId: string;
+			validationStatus: components['schemas']['CandidateValidationStatus'];
+		};
 		/** @enum {string} */
 		CertificateResourceLockCode: 'resource_locked';
 		CertificateResourceLocked: {
@@ -6154,6 +6399,8 @@ export interface components {
 			/** Format: uuid */
 			requestId: string | null;
 		};
+		/** @enum {string} */
+		CertificateStatus: 'issued' | 'revoked';
 		CertificateTemplateAsset: {
 			/** Format: date-time */
 			createdAt: string;
@@ -6949,6 +7196,102 @@ export interface components {
 			instructor_id: string;
 			role?: null | components['schemas']['ActivityGroupInstructorRole'];
 		};
+		IssueCertificateOutcome:
+			| {
+					/** Format: int32 */
+					activity_sequence: number;
+					/** Format: uuid */
+					campaign_id: string;
+					certificates: components['schemas']['IssuedCertificateSummary'][];
+					/** Format: int32 */
+					first_certificate_sequence: number;
+					/** Format: uuid */
+					issue_run_id: string;
+					/** Format: int32 */
+					last_certificate_sequence: number;
+					/** @enum {string} */
+					outcome: 'issued';
+					/** Format: uuid */
+					request_id: string;
+			  }
+			| {
+					/** Format: uuid */
+					campaign_id: string;
+					candidate_problems: components['schemas']['CertificateIssueCandidateProblem'][];
+					issue_codes: components['schemas']['CertificateIssueCode'][];
+					/** Format: uuid */
+					issue_run_id: string;
+					/** @enum {string} */
+					outcome: 'returned';
+					/** Format: uuid */
+					request_id: string;
+			  };
+		IssueCertificateRequest: {
+			/** Format: uuid */
+			idempotencyKey: string;
+		};
+		IssuedCertificateDetail: components['schemas']['IssuedCertificateSummary'] & {
+			customValues: {
+				[key: string]: string;
+			};
+			/** Format: uuid */
+			issueRunId: string;
+			ownerOrganizationUnitNameSnapshot: string | null;
+			revocationReason: string | null;
+			/** Format: date-time */
+			revokedAt: string | null;
+			/** Format: uuid */
+			revokedBy: string | null;
+			schoolName: string;
+			/** Format: date-time */
+			updatedAt: string;
+		};
+		IssuedCertificateListQuery: {
+			search?: string | null;
+			status?: null | components['schemas']['CertificateStatus'];
+			/** Format: uuid */
+			templateId?: string | null;
+		};
+		IssuedCertificateSummary: {
+			/** Format: uuid */
+			academicYearId: string;
+			/** Format: int32 */
+			academicYearValue: number;
+			activityItem: string | null;
+			/** Format: int32 */
+			activitySequence: number;
+			awardOrRole: string | null;
+			/** Format: uuid */
+			campaignId: string;
+			campaignName: string;
+			capabilities: components['schemas']['CertificateCapabilities'];
+			certificateNumber: string;
+			/** Format: int32 */
+			certificateSequence: number;
+			/** Format: date-time */
+			createdAt: string;
+			firstName: string;
+			/** Format: uuid */
+			id: string;
+			/** Format: date */
+			issueDate: string;
+			lastName: string;
+			/** Format: uuid */
+			ownerOrganizationUnitId: string | null;
+			ownerOrganizationUnitName: string | null;
+			recipientType: components['schemas']['RecipientType'];
+			/** Format: uuid */
+			replacedByCertificateId: string | null;
+			/** Format: uuid */
+			replacementCandidateId: string | null;
+			/** Format: uuid */
+			replacementForCertificateId: string | null;
+			status: components['schemas']['CertificateStatus'];
+			/** Format: uuid */
+			templateId: string;
+			templateName: string;
+			title: string | null;
+		};
 		ListMembersQuery: {
 			include_children?: boolean | null;
 		};
@@ -7352,6 +7695,14 @@ export interface components {
 		ReturnCertificateIssueRequest: {
 			issueCodes: components['schemas']['CertificateIssueCode'][];
 			returnNote: string;
+		};
+		RevokeCertificateRequest: {
+			createReplacementCandidate: boolean;
+			reason: string;
+		};
+		RevokeCertificateResult: {
+			certificate: components['schemas']['IssuedCertificateDetail'];
+			replacementCandidate: null | components['schemas']['CertificateReplacementCandidate'];
 		};
 		Role: {
 			code: string;
@@ -16369,6 +16720,196 @@ export interface operations {
 			};
 		};
 	};
+	getIssuedCertificate: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Issued certificate ID */
+				certificate_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Scoped issued certificate detail without proof or lookup identifiers */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_IssuedCertificateDetail'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Certificate read permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Issued certificate not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	createIssuedCertificateRenderManifest: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Issued certificate ID */
+				certificate_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Authorized short-lived render manifest */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_CertificateRenderManifest'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Certificate download permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Issued certificate not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Certificate revoked or current template unavailable */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Private asset grant unavailable */
+			503: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	revokeIssuedCertificate: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Issued certificate ID */
+				certificate_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['RevokeCertificateRequest'];
+			};
+		};
+		responses: {
+			/** @description Certificate revoked with optional replacement draft */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_RevokeCertificateResult'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description School certificate revoke permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Issued certificate not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Certificate already revoked */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Invalid revocation reason */
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
 	listCertificateCampaigns: {
 		parameters: {
 			query?: {
@@ -17187,6 +17728,150 @@ export interface operations {
 			};
 		};
 	};
+	listIssuedCertificates: {
+		parameters: {
+			query?: {
+				search?: string;
+				status?: components['schemas']['CertificateStatus'];
+				templateId?: string;
+			};
+			header?: never;
+			path: {
+				/** @description Certificate campaign ID */
+				campaign_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Scoped issued and revoked certificate list */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_IssuedCertificateSummary'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Certificate read permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Certificate campaign not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Invalid issued certificate query */
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	createIssuedCertificateRenderManifests: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Certificate campaign ID */
+				campaign_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['CertificateRenderManifestBatchRequest'];
+			};
+		};
+		responses: {
+			/** @description Ordered authorized render manifests */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_CertificateRenderManifest'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Certificate download permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Selected certificate not found in campaign */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description A certificate is revoked or its current template unavailable */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Select between 1 and 200 unique certificates */
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Private asset grant unavailable */
+			503: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
 	changeCertificateCampaignStatus: {
 		parameters: {
 			query?: never;
@@ -17643,6 +18328,78 @@ export interface operations {
 			};
 			/** @description Certificate issue request not found */
 			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	issueCertificates: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Certificate issue request ID */
+				request_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['IssueCertificateRequest'];
+			};
+		};
+		responses: {
+			/** @description Idempotent issued or returned outcome */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_IssueCertificateOutcome'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description School certificate issue permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Certificate issue request not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Request state, idempotency key, or number range conflict */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authoritative school name unavailable */
+			503: {
 				headers: {
 					[name: string]: unknown;
 				};
