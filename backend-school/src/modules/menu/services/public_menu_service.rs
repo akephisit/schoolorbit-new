@@ -81,8 +81,18 @@ pub fn group_and_filter_menu(rows: Vec<MenuRow>, actor: &ActorContext) -> Vec<Me
     let mut groups_map: HashMap<String, GroupWithOrder> = HashMap::new();
 
     for row in rows {
-        if let Some(module) = &row.required_permission {
-            if !actor.has_module_permission(module) {
+        if let Some(required_permission) = &row.required_permission {
+            let can_open_menu = if required_permission.contains('|') {
+                required_permission
+                    .split('|')
+                    .map(str::trim)
+                    .filter(|permission| !permission.is_empty())
+                    .any(|permission| actor.has_permission(permission))
+            } else {
+                actor.has_module_permission(required_permission)
+            };
+
+            if !can_open_menu {
                 continue;
             }
         }
@@ -242,5 +252,45 @@ mod tests {
 
         assert_eq!(groups.len(), 1);
         assert_eq!(groups[0].items[0].code, "my-home");
+    }
+
+    #[test]
+    fn alternative_exact_permissions_keep_menu_for_either_scope_only() {
+        let required = "certificate.read.organization_unit|certificate.read.school";
+
+        for permission in [
+            crate::permissions::registry::codes::CERTIFICATE_READ_ORGANIZATION_UNIT,
+            crate::permissions::registry::codes::CERTIFICATE_READ_SCHOOL,
+        ] {
+            let groups = group_and_filter_menu(
+                vec![menu_row(
+                    "certificates",
+                    Some(required),
+                    "academic-services",
+                    10,
+                    "academic",
+                    20,
+                    10,
+                )],
+                &actor(&[permission]),
+            );
+
+            assert_eq!(groups.len(), 1, "expected menu for {permission}");
+        }
+
+        let own_only = group_and_filter_menu(
+            vec![menu_row(
+                "certificates",
+                Some(required),
+                "academic-services",
+                10,
+                "academic",
+                20,
+                10,
+            )],
+            &actor(&[crate::permissions::registry::codes::CERTIFICATE_READ_OWN]),
+        );
+
+        assert!(own_only.is_empty());
     }
 }

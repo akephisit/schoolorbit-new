@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -132,6 +132,29 @@ test('explicit menu synchronization sends the complete route scan after deployme
 			environment: 'production'
 		}
 	});
+});
+
+test('menu synchronization encodes alternative generated permissions without broadening scope', async (t) => {
+	const certificateRoutePath = 'src/routes/(app)/staff/certificates/+page.ts';
+	const certificateRoute = await readFile(path.join(projectRoot, certificateRoutePath), 'utf8');
+	const result = await runSyncWithServer(t, {
+		[certificateRoutePath]: certificateRoute
+	});
+
+	assert.equal(result.code, 0, result.stderr || result.stdout);
+	assert.deepEqual(result.receivedRequest.body.routes, [
+		{
+			path: '/staff/certificates',
+			title: 'เกียรติบัตร',
+			icon: 'Award',
+			group: 'academic',
+			workspace: 'academic',
+			order: 60,
+			permission: 'certificate.read.organization_unit|certificate.read.school',
+			user_type: 'staff'
+		}
+	]);
+	assert.doesNotMatch(result.receivedRequest.body.routes[0].permission, /certificate\.read\.own/);
 });
 
 test('menu synchronization fails when route metadata cannot be parsed', async (t) => {
