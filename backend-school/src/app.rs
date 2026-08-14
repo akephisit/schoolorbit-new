@@ -196,6 +196,33 @@ fn protected_routes() -> Router<AppState> {
             post(modules::certificates::handlers::create_certificate_template_preview_manifest),
         )
         .route(
+            "/api/certificates/campaigns/{campaign_id}/candidates",
+            get(modules::certificates::handlers::list_certificate_candidates),
+        )
+        .route(
+            "/api/certificates/campaigns/{campaign_id}/candidates/import",
+            post(modules::certificates::handlers::import_certificate_candidates),
+        )
+        .route(
+            "/api/certificates/campaigns/{campaign_id}/candidates/manual",
+            post(modules::certificates::handlers::create_manual_certificate_candidate),
+        )
+        .route(
+            "/api/certificates/campaigns/{campaign_id}/candidates/account-search",
+            get(modules::certificates::handlers::search_certificate_candidate_accounts)
+                .post(modules::certificates::handlers::create_account_certificate_candidate),
+        )
+        .route(
+            "/api/certificates/campaigns/{campaign_id}/candidates/bulk",
+            post(modules::certificates::handlers::bulk_update_certificate_candidates),
+        )
+        .route(
+            "/api/certificates/candidates/{candidate_id}",
+            get(modules::certificates::handlers::get_certificate_candidate)
+                .put(modules::certificates::handlers::update_certificate_candidate)
+                .delete(modules::certificates::handlers::delete_certificate_candidate),
+        )
+        .route(
             "/api/student/profile",
             get(modules::students::handlers::get_own_profile)
                 .put(modules::students::handlers::update_own_profile),

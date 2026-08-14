@@ -72,7 +72,36 @@ test('certificate campaign API is generated and its wrapper consumes named DTOs'
 			'/api/certificates/templates/{template_id}/preview-manifest',
 			'post',
 			'createCertificateTemplatePreviewManifest'
-		]
+		],
+		['/api/certificates/campaigns/{campaign_id}/candidates', 'get', 'listCertificateCandidates'],
+		[
+			'/api/certificates/campaigns/{campaign_id}/candidates/import',
+			'post',
+			'importCertificateCandidates'
+		],
+		[
+			'/api/certificates/campaigns/{campaign_id}/candidates/manual',
+			'post',
+			'createManualCertificateCandidate'
+		],
+		[
+			'/api/certificates/campaigns/{campaign_id}/candidates/account-search',
+			'get',
+			'searchCertificateCandidateAccounts'
+		],
+		[
+			'/api/certificates/campaigns/{campaign_id}/candidates/account-search',
+			'post',
+			'createAccountCertificateCandidate'
+		],
+		[
+			'/api/certificates/campaigns/{campaign_id}/candidates/bulk',
+			'post',
+			'bulkUpdateCertificateCandidates'
+		],
+		['/api/certificates/candidates/{candidate_id}', 'get', 'getCertificateCandidate'],
+		['/api/certificates/candidates/{candidate_id}', 'put', 'updateCertificateCandidate'],
+		['/api/certificates/candidates/{candidate_id}', 'delete', 'deleteCertificateCandidate']
 	];
 	for (const [route, method, operationId] of expectedOperations) {
 		assert.equal(openapi.paths?.[route]?.[method]?.operationId, operationId);
@@ -94,7 +123,21 @@ test('certificate campaign API is generated and its wrapper consumes named DTOs'
 		'CertificateTemplateDeleteResult',
 		'CertificateTemplateVariableCatalog',
 		'CertificatePreviewManifestRequest',
-		'CertificateRenderManifest'
+		'CertificateRenderManifest',
+		'CertificateCandidateDetail',
+		'CertificateCandidateCapabilities',
+		'CertificateCandidateListQuery',
+		'CertificateCandidateListResponse',
+		'CertificateCandidateSummary',
+		'CertificateImportRequest',
+		'CertificateCandidateImportResult',
+		'CertificateCandidateBulkRequest',
+		'CertificateCandidateBulkResult',
+		'CertificateCandidateAccount',
+		'CertificateAccountSearchQuery',
+		'CreateManualExternalCandidateRequest',
+		'CreateAccountCertificateCandidateRequest',
+		'UpdateCertificateCandidateRequest'
 	]) {
 		assert.ok(openapi.components?.schemas?.[schema], `missing generated schema ${schema}`);
 	}
@@ -116,6 +159,10 @@ test('certificate campaign API is generated and its wrapper consumes named DTOs'
 	assert.match(wrapper, /Schemas\['CertificateTemplateDetail'\]/);
 	assert.match(wrapper, /Schemas\['CertificateRenderManifest'\]/);
 	assert.match(wrapper, /createCertificateTemplatePreviewManifest/);
+	assert.match(wrapper, /Schemas\['CertificateCandidateDetail'\]/);
+	assert.match(wrapper, /importCertificateCandidates/);
+	assert.match(wrapper, /bulkUpdateCertificateCandidates/);
+	assert.match(wrapper, /searchCertificateCandidateAccounts/);
 	assert.match(wrapper, /requireApiData/);
 	assert.doesNotMatch(wrapper, /\b(?:interface|Record<string, unknown>|ApiResponse<unknown>)\b/);
 	assert.doesNotMatch(wrapper, /certificate\.(?:read|create|update|delete|submit|download)\./);

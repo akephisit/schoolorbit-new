@@ -23,6 +23,20 @@ export type UpdateCertificateTemplateRequest = Schemas['UpdateCertificateTemplat
 export type AttachCertificateBackgroundRequest = Schemas['AttachCertificateBackgroundRequest'];
 export type AttachCertificateAssetRequest = Schemas['AttachCertificateAssetRequest'];
 export type CertificatePreviewManifestRequest = Schemas['CertificatePreviewManifestRequest'];
+export type RecipientType = Schemas['RecipientType'];
+export type CertificateImportRequest = Schemas['CertificateImportRequest'];
+export type CertificateCandidateDetail = Schemas['CertificateCandidateDetail'];
+export type CertificateCandidateListQuery = Schemas['CertificateCandidateListQuery'];
+export type CertificateCandidateListResponse = Schemas['CertificateCandidateListResponse'];
+export type CertificateCandidateImportResult = Schemas['CertificateCandidateImportResult'];
+export type CertificateCandidateBulkRequest = Schemas['CertificateCandidateBulkRequest'];
+export type CertificateCandidateBulkResult = Schemas['CertificateCandidateBulkResult'];
+export type CertificateCandidateAccount = Schemas['CertificateCandidateAccount'];
+export type CertificateAccountSearchQuery = Schemas['CertificateAccountSearchQuery'];
+export type CreateManualExternalCandidateRequest = Schemas['CreateManualExternalCandidateRequest'];
+export type CreateAccountCertificateCandidateRequest =
+	Schemas['CreateAccountCertificateCandidateRequest'];
+export type UpdateCertificateCandidateRequest = Schemas['UpdateCertificateCandidateRequest'];
 type EmptyData = Schemas['EmptyData'];
 
 export async function listCertificateCampaigns(
@@ -191,4 +205,106 @@ export async function createCertificateTemplatePreviewManifest(
 		payload
 	);
 	return requireApiData(response, 'ไม่สามารถสร้างข้อมูลพรีวิวเกียรติบัตรได้');
+}
+
+export async function listCertificateCandidates(
+	campaignId: string,
+	query: CertificateCandidateListQuery = {}
+): Promise<CertificateCandidateListResponse> {
+	const params = new URLSearchParams();
+	if (query.status) params.set('status', query.status);
+	if (query.templateId) params.set('templateId', query.templateId);
+	if (query.search?.trim()) params.set('search', query.search.trim());
+	const suffix = params.size > 0 ? `?${params.toString()}` : '';
+	const response = await apiClient.get<CertificateCandidateListResponse>(
+		`/api/certificates/campaigns/${encodeURIComponent(campaignId)}/candidates${suffix}`
+	);
+	return requireApiData(response, 'ไม่สามารถโหลดรายชื่อผู้รับเกียรติบัตรได้');
+}
+
+export async function importCertificateCandidates(
+	campaignId: string,
+	payload: CertificateImportRequest
+): Promise<CertificateCandidateImportResult> {
+	const response = await apiClient.post<CertificateCandidateImportResult>(
+		`/api/certificates/campaigns/${encodeURIComponent(campaignId)}/candidates/import`,
+		payload
+	);
+	return requireApiData(response, 'ไม่สามารถนำเข้ารายชื่อผู้รับเกียรติบัตรได้');
+}
+
+export async function createManualCertificateCandidate(
+	campaignId: string,
+	payload: CreateManualExternalCandidateRequest
+): Promise<CertificateCandidateImportResult> {
+	const response = await apiClient.post<CertificateCandidateImportResult>(
+		`/api/certificates/campaigns/${encodeURIComponent(campaignId)}/candidates/manual`,
+		payload
+	);
+	return requireApiData(response, 'ไม่สามารถเพิ่มบุคคลภายนอกได้');
+}
+
+export async function searchCertificateCandidateAccounts(
+	campaignId: string,
+	query: CertificateAccountSearchQuery
+): Promise<CertificateCandidateAccount[]> {
+	const params = new URLSearchParams({
+		recipientType: query.recipientType,
+		search: query.search.trim()
+	});
+	const response = await apiClient.get<CertificateCandidateAccount[]>(
+		`/api/certificates/campaigns/${encodeURIComponent(campaignId)}/candidates/account-search?${params.toString()}`
+	);
+	return requireApiData(response, 'ไม่สามารถค้นหาบัญชีผู้รับได้');
+}
+
+export async function createAccountCertificateCandidate(
+	campaignId: string,
+	payload: CreateAccountCertificateCandidateRequest
+): Promise<CertificateCandidateImportResult> {
+	const response = await apiClient.post<CertificateCandidateImportResult>(
+		`/api/certificates/campaigns/${encodeURIComponent(campaignId)}/candidates/account-search`,
+		payload
+	);
+	return requireApiData(response, 'ไม่สามารถเพิ่มผู้รับจากบัญชีได้');
+}
+
+export async function bulkUpdateCertificateCandidates(
+	campaignId: string,
+	payload: CertificateCandidateBulkRequest
+): Promise<CertificateCandidateBulkResult> {
+	const response = await apiClient.post<CertificateCandidateBulkResult>(
+		`/api/certificates/campaigns/${encodeURIComponent(campaignId)}/candidates/bulk`,
+		payload
+	);
+	return requireApiData(response, 'ไม่สามารถปรับปรุงรายชื่อที่เลือกได้');
+}
+
+export async function getCertificateCandidate(
+	candidateId: string
+): Promise<CertificateCandidateDetail> {
+	const response = await apiClient.get<CertificateCandidateDetail>(
+		`/api/certificates/candidates/${encodeURIComponent(candidateId)}`
+	);
+	return requireApiData(response, 'ไม่สามารถโหลดข้อมูลผู้รับเกียรติบัตรได้');
+}
+
+export async function updateCertificateCandidate(
+	candidateId: string,
+	payload: UpdateCertificateCandidateRequest
+): Promise<CertificateCandidateDetail> {
+	const response = await apiClient.put<CertificateCandidateDetail>(
+		`/api/certificates/candidates/${encodeURIComponent(candidateId)}`,
+		payload
+	);
+	return requireApiData(response, 'ไม่สามารถบันทึกข้อมูลผู้รับเกียรติบัตรได้');
+}
+
+export async function deleteCertificateCandidate(
+	candidateId: string
+): Promise<CertificateCandidateDetail> {
+	const response = await apiClient.delete<CertificateCandidateDetail>(
+		`/api/certificates/candidates/${encodeURIComponent(candidateId)}`
+	);
+	return requireApiData(response, 'ไม่สามารถลบรายชื่อผู้รับเกียรติบัตรได้');
 }

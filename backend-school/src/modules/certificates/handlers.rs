@@ -14,15 +14,21 @@ use crate::{
         certificates::{
             models::{
                 AttachCertificateAssetRequest, AttachCertificateBackgroundRequest,
-                CertificateCampaignDetail, CertificateCampaignListQuery,
-                CertificateCampaignSummary, CertificatePreviewManifestRequest,
-                CertificateRenderManifest, CertificateTemplateDeleteResult,
-                CertificateTemplateDetail, CertificateTemplateVariableCatalog,
-                ChangeCertificateCampaignStatusRequest, CreateCertificateCampaignRequest,
-                CreateCertificateTemplateRequest, UpdateCertificateCampaignRequest,
+                CertificateAccountSearchQuery, CertificateCampaignDetail,
+                CertificateCampaignListQuery, CertificateCampaignSummary,
+                CertificateCandidateAccount, CertificateCandidateBulkRequest,
+                CertificateCandidateBulkResult, CertificateCandidateDetail,
+                CertificateCandidateImportResult, CertificateCandidateListQuery,
+                CertificateCandidateListResponse, CertificateImportRequest,
+                CertificatePreviewManifestRequest, CertificateRenderManifest,
+                CertificateTemplateDeleteResult, CertificateTemplateDetail,
+                CertificateTemplateVariableCatalog, ChangeCertificateCampaignStatusRequest,
+                CreateAccountCertificateCandidateRequest, CreateCertificateCampaignRequest,
+                CreateCertificateTemplateRequest, CreateManualExternalCandidateRequest,
+                UpdateCertificateCampaignRequest, UpdateCertificateCandidateRequest,
                 UpdateCertificateTemplateRequest,
             },
-            services::{campaign_service, render_service, template_service},
+            services::{campaign_service, candidate_service, render_service, template_service},
         },
         files::consumer_service::request_deletions,
         lookup::models::OrganizationUnitLookupItem,
@@ -537,4 +543,288 @@ pub async fn create_certificate_template_preview_manifest(
     )
     .await?;
     Ok((StatusCode::OK, Json(ApiResponse::ok(manifest))).into_response())
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/certificates/campaigns/{campaign_id}/candidates",
+    operation_id = "listCertificateCandidates",
+    tag = "certificate",
+    params(
+        ("campaign_id" = Uuid, Path, description = "Certificate campaign ID"),
+        CertificateCandidateListQuery
+    ),
+    responses(
+        (status = 200, description = "Filtered candidates and campaign status counts", body = ApiResponse<CertificateCandidateListResponse>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Certificate candidate read permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Certificate campaign not found", body = ApiErrorResponse),
+        (status = 422, description = "Invalid candidate query", body = ApiErrorResponse)
+    )
+)]
+pub async fn list_certificate_candidates(
+    State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(campaign_id): Path<Uuid>,
+    Query(query): Query<CertificateCandidateListQuery>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context_from_session(&state, &session).await?;
+    let candidates = candidate_service::list_candidates(
+        &context.tenant.pool,
+        &context.actor,
+        campaign_id,
+        query,
+    )
+    .await?;
+    Ok((StatusCode::OK, Json(ApiResponse::ok(candidates))).into_response())
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/certificates/campaigns/{campaign_id}/candidates/import",
+    operation_id = "importCertificateCandidates",
+    tag = "certificate",
+    params(("campaign_id" = Uuid, Path, description = "Certificate campaign ID")),
+    request_body = CertificateImportRequest,
+    responses(
+        (status = 201, description = "Typed rows validated, matched, and stored", body = ApiResponse<CertificateCandidateImportResult>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Certificate candidate update permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Certificate campaign not found", body = ApiErrorResponse),
+        (status = 409, description = "Certificate campaign cannot be changed", body = ApiErrorResponse),
+        (status = 422, description = "Import headers or request are invalid", body = ApiErrorResponse)
+    )
+)]
+pub async fn import_certificate_candidates(
+    State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(campaign_id): Path<Uuid>,
+    Json(payload): Json<CertificateImportRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context_from_session(&state, &session).await?;
+    let imported = candidate_service::import_candidates(
+        &context.tenant.pool,
+        &context.actor,
+        campaign_id,
+        payload,
+    )
+    .await?;
+    Ok((StatusCode::CREATED, Json(ApiResponse::ok(imported))).into_response())
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/certificates/campaigns/{campaign_id}/candidates/manual",
+    operation_id = "createManualCertificateCandidate",
+    tag = "certificate",
+    params(("campaign_id" = Uuid, Path, description = "Certificate campaign ID")),
+    request_body = CreateManualExternalCandidateRequest,
+    responses(
+        (status = 201, description = "Manual external candidate created", body = ApiResponse<CertificateCandidateImportResult>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Certificate candidate update permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Certificate campaign not found", body = ApiErrorResponse),
+        (status = 409, description = "Certificate campaign cannot be changed", body = ApiErrorResponse),
+        (status = 422, description = "Candidate values are invalid", body = ApiErrorResponse)
+    )
+)]
+pub async fn create_manual_certificate_candidate(
+    State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(campaign_id): Path<Uuid>,
+    Json(payload): Json<CreateManualExternalCandidateRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context_from_session(&state, &session).await?;
+    let candidate = candidate_service::create_manual_external(
+        &context.tenant.pool,
+        &context.actor,
+        campaign_id,
+        payload,
+    )
+    .await?;
+    Ok((StatusCode::CREATED, Json(ApiResponse::ok(candidate))).into_response())
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/certificates/campaigns/{campaign_id}/candidates/account-search",
+    operation_id = "searchCertificateCandidateAccounts",
+    tag = "certificate",
+    params(
+        ("campaign_id" = Uuid, Path, description = "Certificate campaign ID"),
+        CertificateAccountSearchQuery
+    ),
+    responses(
+        (status = 200, description = "Minimal active student or staff account matches", body = ApiResponse<Vec<CertificateCandidateAccount>>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Certificate candidate read permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Certificate campaign not found", body = ApiErrorResponse),
+        (status = 422, description = "Invalid account search", body = ApiErrorResponse)
+    )
+)]
+pub async fn search_certificate_candidate_accounts(
+    State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(campaign_id): Path<Uuid>,
+    Query(query): Query<CertificateAccountSearchQuery>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context_from_session(&state, &session).await?;
+    let accounts = candidate_service::search_accounts(
+        &context.tenant.pool,
+        &context.actor,
+        campaign_id,
+        query,
+    )
+    .await?;
+    Ok((StatusCode::OK, Json(ApiResponse::ok(accounts))).into_response())
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/certificates/campaigns/{campaign_id}/candidates/account-search",
+    operation_id = "createAccountCertificateCandidate",
+    tag = "certificate",
+    params(("campaign_id" = Uuid, Path, description = "Certificate campaign ID")),
+    request_body = CreateAccountCertificateCandidateRequest,
+    responses(
+        (status = 201, description = "Candidate created from an active account", body = ApiResponse<CertificateCandidateImportResult>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Certificate candidate update permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Campaign or account not found", body = ApiErrorResponse),
+        (status = 409, description = "Account or campaign cannot be used", body = ApiErrorResponse),
+        (status = 422, description = "Candidate values are invalid", body = ApiErrorResponse)
+    )
+)]
+pub async fn create_account_certificate_candidate(
+    State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(campaign_id): Path<Uuid>,
+    Json(payload): Json<CreateAccountCertificateCandidateRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context_from_session(&state, &session).await?;
+    let candidate = candidate_service::create_account_candidate(
+        &context.tenant.pool,
+        &context.actor,
+        campaign_id,
+        payload,
+    )
+    .await?;
+    Ok((StatusCode::CREATED, Json(ApiResponse::ok(candidate))).into_response())
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/certificates/campaigns/{campaign_id}/candidates/bulk",
+    operation_id = "bulkUpdateCertificateCandidates",
+    tag = "certificate",
+    params(("campaign_id" = Uuid, Path, description = "Certificate campaign ID")),
+    request_body = CertificateCandidateBulkRequest,
+    responses(
+        (status = 200, description = "Atomic bulk candidate resolution", body = ApiResponse<CertificateCandidateBulkResult>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Certificate candidate update permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Candidate selection not found in campaign", body = ApiErrorResponse),
+        (status = 409, description = "Mixed or locked candidate selection", body = ApiErrorResponse),
+        (status = 422, description = "Invalid bulk request", body = ApiErrorResponse)
+    )
+)]
+pub async fn bulk_update_certificate_candidates(
+    State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(campaign_id): Path<Uuid>,
+    Json(payload): Json<CertificateCandidateBulkRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context_from_session(&state, &session).await?;
+    let candidates = candidate_service::bulk_update_for_campaign(
+        &context.tenant.pool,
+        &context.actor,
+        campaign_id,
+        payload,
+    )
+    .await?;
+    Ok((StatusCode::OK, Json(ApiResponse::ok(candidates))).into_response())
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/certificates/candidates/{candidate_id}",
+    operation_id = "getCertificateCandidate",
+    tag = "certificate",
+    params(("candidate_id" = Uuid, Path, description = "Certificate candidate ID")),
+    responses(
+        (status = 200, description = "Candidate detail", body = ApiResponse<CertificateCandidateDetail>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Certificate candidate read permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Candidate not found", body = ApiErrorResponse)
+    )
+)]
+pub async fn get_certificate_candidate(
+    State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(candidate_id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context_from_session(&state, &session).await?;
+    let candidate =
+        candidate_service::get_candidate(&context.tenant.pool, &context.actor, candidate_id)
+            .await?;
+    Ok((StatusCode::OK, Json(ApiResponse::ok(candidate))).into_response())
+}
+
+#[utoipa::path(
+    put,
+    path = "/api/certificates/candidates/{candidate_id}",
+    operation_id = "updateCertificateCandidate",
+    tag = "certificate",
+    params(("candidate_id" = Uuid, Path, description = "Certificate candidate ID")),
+    request_body = UpdateCertificateCandidateRequest,
+    responses(
+        (status = 200, description = "Candidate revalidated and updated", body = ApiResponse<CertificateCandidateDetail>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Certificate candidate update permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Candidate not found", body = ApiErrorResponse),
+        (status = 409, description = "Candidate changed or is locked", body = ApiErrorResponse),
+        (status = 422, description = "Candidate values are invalid", body = ApiErrorResponse)
+    )
+)]
+pub async fn update_certificate_candidate(
+    State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(candidate_id): Path<Uuid>,
+    Json(payload): Json<UpdateCertificateCandidateRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context_from_session(&state, &session).await?;
+    let candidate = candidate_service::update_candidate(
+        &context.tenant.pool,
+        &context.actor,
+        candidate_id,
+        payload,
+    )
+    .await?;
+    Ok((StatusCode::OK, Json(ApiResponse::ok(candidate))).into_response())
+}
+
+#[utoipa::path(
+    delete,
+    path = "/api/certificates/candidates/{candidate_id}",
+    operation_id = "deleteCertificateCandidate",
+    tag = "certificate",
+    params(("candidate_id" = Uuid, Path, description = "Certificate candidate ID")),
+    responses(
+        (status = 200, description = "Candidate soft-deleted", body = ApiResponse<CertificateCandidateDetail>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Certificate candidate delete permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Candidate not found", body = ApiErrorResponse),
+        (status = 409, description = "Candidate is issued or locked", body = ApiErrorResponse)
+    )
+)]
+pub async fn delete_certificate_candidate(
+    State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(candidate_id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context_from_session(&state, &session).await?;
+    let candidate =
+        candidate_service::delete_candidate(&context.tenant.pool, &context.actor, candidate_id)
+            .await?;
+    Ok((StatusCode::OK, Json(ApiResponse::ok(candidate))).into_response())
 }

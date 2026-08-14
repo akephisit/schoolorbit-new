@@ -1887,6 +1887,300 @@
         ],
         "type": "object"
       },
+      "ApiResponse_CertificateCandidateBulkResult": {
+        "properties": {
+          "data": {
+            "properties": {
+              "candidates": {
+                "items": {
+                  "$ref": "#/components/schemas/CertificateCandidateDetail"
+                },
+                "type": "array"
+              },
+              "updatedCount": {
+                "format": "int32",
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "updatedCount",
+              "candidates"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_CertificateCandidateDetail": {
+        "properties": {
+          "data": {
+            "properties": {
+              "accountFirstName": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "accountLastName": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "accountTitle": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "activityItem": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "awardOrRole": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "batchId": {
+                "format": "uuid",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "campaignId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "capabilities": {
+                "$ref": "#/components/schemas/CertificateCandidateCapabilities"
+              },
+              "createdAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "customValues": {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "deletedAt": {
+                "format": "date-time",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "duplicateConfirmed": {
+                "type": "boolean"
+              },
+              "id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "importedFirstName": {
+                "type": "string"
+              },
+              "importedLastName": {
+                "type": "string"
+              },
+              "importedTitle": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "matchedUserId": {
+                "format": "uuid",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "matchStatus": {
+                "$ref": "#/components/schemas/CandidateMatchStatus"
+              },
+              "recipientType": {
+                "$ref": "#/components/schemas/RecipientType"
+              },
+              "selectedNameSource": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/CandidateNameSource"
+                  }
+                ]
+              },
+              "staffUsername": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "studentId": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "templateId": {
+                "format": "uuid",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "templateName": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "updatedAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "validationCodes": {
+                "items": {
+                  "$ref": "#/components/schemas/CandidateValidationCode"
+                },
+                "type": "array"
+              },
+              "validationStatus": {
+                "$ref": "#/components/schemas/CandidateValidationStatus"
+              }
+            },
+            "required": [
+              "id",
+              "campaignId",
+              "batchId",
+              "templateId",
+              "templateName",
+              "recipientType",
+              "matchedUserId",
+              "studentId",
+              "staffUsername",
+              "importedTitle",
+              "importedFirstName",
+              "importedLastName",
+              "accountTitle",
+              "accountFirstName",
+              "accountLastName",
+              "selectedNameSource",
+              "activityItem",
+              "awardOrRole",
+              "customValues",
+              "matchStatus",
+              "validationStatus",
+              "validationCodes",
+              "duplicateConfirmed",
+              "deletedAt",
+              "createdAt",
+              "updatedAt",
+              "capabilities"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_CertificateCandidateImportResult": {
+        "properties": {
+          "data": {
+            "properties": {
+              "batch": {
+                "$ref": "#/components/schemas/CertificateImportBatchSummary"
+              },
+              "candidates": {
+                "items": {
+                  "$ref": "#/components/schemas/CertificateCandidateDetail"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "batch",
+              "candidates"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_CertificateCandidateListResponse": {
+        "properties": {
+          "data": {
+            "properties": {
+              "items": {
+                "items": {
+                  "$ref": "#/components/schemas/CertificateCandidateDetail"
+                },
+                "type": "array"
+              },
+              "summary": {
+                "$ref": "#/components/schemas/CertificateCandidateSummary"
+              }
+            },
+            "required": [
+              "items",
+              "summary"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
       "ApiResponse_CertificateRenderManifest": {
         "properties": {
           "data": {
@@ -6196,6 +6490,69 @@
         ],
         "type": "object"
       },
+      "ApiResponse_Vec_CertificateCandidateAccount": {
+        "properties": {
+          "data": {
+            "items": {
+              "properties": {
+                "firstName": {
+                  "type": "string"
+                },
+                "lastName": {
+                  "type": "string"
+                },
+                "recipientType": {
+                  "$ref": "#/components/schemas/RecipientType"
+                },
+                "staffUsername": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "studentId": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "title": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "userId": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "userId",
+                "recipientType",
+                "studentId",
+                "staffUsername",
+                "title",
+                "firstName",
+                "lastName"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
       "ApiResponse_Vec_CertificateTemplateDetail": {
         "properties": {
           "data": {
@@ -9712,6 +10069,54 @@
         ],
         "type": "object"
       },
+      "CandidateMatchStatus": {
+        "enum": [
+          "matched",
+          "name_mismatch",
+          "not_found",
+          "inactive",
+          "external_confirmed",
+          "not_applicable"
+        ],
+        "type": "string"
+      },
+      "CandidateNameSource": {
+        "enum": [
+          "file",
+          "account"
+        ],
+        "type": "string"
+      },
+      "CandidateValidationCode": {
+        "enum": [
+          "invalid_recipient_type",
+          "missing_student_id",
+          "missing_staff_username",
+          "unexpected_internal_lookup",
+          "missing_first_name",
+          "missing_last_name",
+          "name_too_long",
+          "value_too_long",
+          "forbidden_sensitive_value",
+          "account_not_found",
+          "account_inactive",
+          "name_source_required",
+          "template_required",
+          "template_not_found",
+          "template_incompatible",
+          "template_not_ready",
+          "duplicate_candidate"
+        ],
+        "type": "string"
+      },
+      "CandidateValidationStatus": {
+        "enum": [
+          "ready",
+          "needs_review",
+          "invalid"
+        ],
+        "type": "string"
+      },
       "CatalogDefaultInstructor": {
         "properties": {
           "catalog_id": {
@@ -9762,6 +10167,22 @@
         "required": [
           "instructor_id",
           "role"
+        ],
+        "type": "object"
+      },
+      "CertificateAccountSearchQuery": {
+        "additionalProperties": false,
+        "properties": {
+          "recipientType": {
+            "$ref": "#/components/schemas/RecipientType"
+          },
+          "search": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "recipientType",
+          "search"
         ],
         "type": "object"
       },
@@ -10084,6 +10505,491 @@
         ],
         "type": "object"
       },
+      "CertificateCandidateAccount": {
+        "properties": {
+          "firstName": {
+            "type": "string"
+          },
+          "lastName": {
+            "type": "string"
+          },
+          "recipientType": {
+            "$ref": "#/components/schemas/RecipientType"
+          },
+          "staffUsername": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "studentId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "userId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "userId",
+          "recipientType",
+          "studentId",
+          "staffUsername",
+          "title",
+          "firstName",
+          "lastName"
+        ],
+        "type": "object"
+      },
+      "CertificateCandidateBulkRequest": {
+        "oneOf": [
+          {
+            "properties": {
+              "candidateIds": {
+                "items": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "operation": {
+                "enum": [
+                  "assign_template"
+                ],
+                "type": "string"
+              },
+              "templateId": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "candidateIds",
+              "templateId",
+              "operation"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "candidateIds": {
+                "items": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "nameSource": {
+                "$ref": "#/components/schemas/CandidateNameSource"
+              },
+              "operation": {
+                "enum": [
+                  "choose_name"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "candidateIds",
+              "nameSource",
+              "operation"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "candidateIds": {
+                "items": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "operation": {
+                "enum": [
+                  "confirm_external"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "candidateIds",
+              "operation"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "candidateIds": {
+                "items": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "operation": {
+                "enum": [
+                  "confirm_duplicate"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "candidateIds",
+              "operation"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "candidateIds": {
+                "items": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "operation": {
+                "enum": [
+                  "soft_delete"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "candidateIds",
+              "operation"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "CertificateCandidateBulkResult": {
+        "properties": {
+          "candidates": {
+            "items": {
+              "$ref": "#/components/schemas/CertificateCandidateDetail"
+            },
+            "type": "array"
+          },
+          "updatedCount": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "updatedCount",
+          "candidates"
+        ],
+        "type": "object"
+      },
+      "CertificateCandidateCapabilities": {
+        "properties": {
+          "canChooseName": {
+            "type": "boolean"
+          },
+          "canConfirmDuplicate": {
+            "type": "boolean"
+          },
+          "canConfirmExternal": {
+            "type": "boolean"
+          },
+          "canDelete": {
+            "type": "boolean"
+          },
+          "canUpdate": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "canUpdate",
+          "canDelete",
+          "canChooseName",
+          "canConfirmExternal",
+          "canConfirmDuplicate"
+        ],
+        "type": "object"
+      },
+      "CertificateCandidateDetail": {
+        "properties": {
+          "accountFirstName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "accountLastName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "accountTitle": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "activityItem": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "awardOrRole": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "batchId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "campaignId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "capabilities": {
+            "$ref": "#/components/schemas/CertificateCandidateCapabilities"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "customValues": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "deletedAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "duplicateConfirmed": {
+            "type": "boolean"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "importedFirstName": {
+            "type": "string"
+          },
+          "importedLastName": {
+            "type": "string"
+          },
+          "importedTitle": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "matchedUserId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "matchStatus": {
+            "$ref": "#/components/schemas/CandidateMatchStatus"
+          },
+          "recipientType": {
+            "$ref": "#/components/schemas/RecipientType"
+          },
+          "selectedNameSource": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/CandidateNameSource"
+              }
+            ]
+          },
+          "staffUsername": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "studentId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "templateId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "templateName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "validationCodes": {
+            "items": {
+              "$ref": "#/components/schemas/CandidateValidationCode"
+            },
+            "type": "array"
+          },
+          "validationStatus": {
+            "$ref": "#/components/schemas/CandidateValidationStatus"
+          }
+        },
+        "required": [
+          "id",
+          "campaignId",
+          "batchId",
+          "templateId",
+          "templateName",
+          "recipientType",
+          "matchedUserId",
+          "studentId",
+          "staffUsername",
+          "importedTitle",
+          "importedFirstName",
+          "importedLastName",
+          "accountTitle",
+          "accountFirstName",
+          "accountLastName",
+          "selectedNameSource",
+          "activityItem",
+          "awardOrRole",
+          "customValues",
+          "matchStatus",
+          "validationStatus",
+          "validationCodes",
+          "duplicateConfirmed",
+          "deletedAt",
+          "createdAt",
+          "updatedAt",
+          "capabilities"
+        ],
+        "type": "object"
+      },
+      "CertificateCandidateImportResult": {
+        "properties": {
+          "batch": {
+            "$ref": "#/components/schemas/CertificateImportBatchSummary"
+          },
+          "candidates": {
+            "items": {
+              "$ref": "#/components/schemas/CertificateCandidateDetail"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "batch",
+          "candidates"
+        ],
+        "type": "object"
+      },
+      "CertificateCandidateListQuery": {
+        "additionalProperties": false,
+        "properties": {
+          "search": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/CandidateValidationStatus"
+              }
+            ]
+          },
+          "templateId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "CertificateCandidateListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/CertificateCandidateDetail"
+            },
+            "type": "array"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/CertificateCandidateSummary"
+          }
+        },
+        "required": [
+          "items",
+          "summary"
+        ],
+        "type": "object"
+      },
+      "CertificateCandidateSummary": {
+        "properties": {
+          "invalidCount": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "readyCount": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "reviewCount": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "totalCount": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "totalCount",
+          "readyCount",
+          "reviewCount",
+          "invalidCount"
+        ],
+        "type": "object"
+      },
       "CertificateElement": {
         "oneOf": [
           {
@@ -10187,6 +11093,160 @@
             "type": "object"
           }
         ]
+      },
+      "CertificateImportBatchSummary": {
+        "properties": {
+          "campaignId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "customHeaders": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "invalidCount": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "readyCount": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "reviewCount": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "rowCount": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "source": {
+            "$ref": "#/components/schemas/CertificateImportSource"
+          }
+        },
+        "required": [
+          "id",
+          "campaignId",
+          "source",
+          "rowCount",
+          "customHeaders",
+          "readyCount",
+          "reviewCount",
+          "invalidCount",
+          "createdAt"
+        ],
+        "type": "object"
+      },
+      "CertificateImportRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "headers": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/CertificateImportRowInput"
+            },
+            "type": "array"
+          },
+          "source": {
+            "$ref": "#/components/schemas/CertificateImportSource"
+          }
+        },
+        "required": [
+          "source",
+          "headers",
+          "rows"
+        ],
+        "type": "object"
+      },
+      "CertificateImportRowInput": {
+        "additionalProperties": false,
+        "properties": {
+          "activityItem": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "awardOrRole": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "customValues": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "firstName": {
+            "type": "string"
+          },
+          "lastName": {
+            "type": "string"
+          },
+          "recipientType": {
+            "type": "string"
+          },
+          "staffUsername": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "studentId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "templateName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "recipientType",
+          "firstName",
+          "lastName"
+        ],
+        "type": "object"
+      },
+      "CertificateImportSource": {
+        "enum": [
+          "xlsx",
+          "csv",
+          "manual",
+          "account_search",
+          "replacement"
+        ],
+        "type": "string"
       },
       "CertificateLayoutV1": {
         "additionalProperties": false,
@@ -11208,6 +12268,47 @@
         ],
         "type": "object"
       },
+      "CreateAccountCertificateCandidateRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "activityItem": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "awardOrRole": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "customValues": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "templateId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "userId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "userId"
+        ],
+        "type": "object"
+      },
       "CreateAchievementRequest": {
         "properties": {
           "achievement_date": {
@@ -11505,6 +12606,56 @@
         "required": [
           "level_type",
           "year"
+        ],
+        "type": "object"
+      },
+      "CreateManualExternalCandidateRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "activityItem": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "awardOrRole": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "customValues": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "firstName": {
+            "type": "string"
+          },
+          "lastName": {
+            "type": "string"
+          },
+          "templateId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "firstName",
+          "lastName"
         ],
         "type": "object"
       },
@@ -17302,6 +18453,87 @@
         },
         "required": [
           "expectedUpdatedAt"
+        ],
+        "type": "object"
+      },
+      "UpdateCertificateCandidateRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "activityItem": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "awardOrRole": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "customValues": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "expectedUpdatedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "importedFirstName": {
+            "type": "string"
+          },
+          "importedLastName": {
+            "type": "string"
+          },
+          "importedTitle": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "recipientType": {
+            "$ref": "#/components/schemas/RecipientType"
+          },
+          "selectedNameSource": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/CandidateNameSource"
+              }
+            ]
+          },
+          "staffUsername": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "studentId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "templateId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "expectedUpdatedAt",
+          "recipientType",
+          "importedFirstName",
+          "importedLastName"
         ],
         "type": "object"
       },
@@ -28892,6 +30124,557 @@
         ]
       }
     },
+    "/api/certificates/campaigns/{campaign_id}/candidates": {
+      "get": {
+        "operationId": "listCertificateCandidates",
+        "parameters": [
+          {
+            "description": "Certificate campaign ID",
+            "in": "path",
+            "name": "campaign_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/CandidateValidationStatus"
+            }
+          },
+          {
+            "in": "query",
+            "name": "templateId",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "search",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_CertificateCandidateListResponse"
+                }
+              }
+            },
+            "description": "Filtered candidates and campaign status counts"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Certificate candidate read permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Certificate campaign not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid candidate query"
+          }
+        },
+        "tags": [
+          "certificate"
+        ]
+      }
+    },
+    "/api/certificates/campaigns/{campaign_id}/candidates/account-search": {
+      "get": {
+        "operationId": "searchCertificateCandidateAccounts",
+        "parameters": [
+          {
+            "description": "Certificate campaign ID",
+            "in": "path",
+            "name": "campaign_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "recipientType",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/RecipientType"
+            }
+          },
+          {
+            "in": "query",
+            "name": "search",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_CertificateCandidateAccount"
+                }
+              }
+            },
+            "description": "Minimal active student or staff account matches"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Certificate candidate read permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Certificate campaign not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid account search"
+          }
+        },
+        "tags": [
+          "certificate"
+        ]
+      },
+      "post": {
+        "operationId": "createAccountCertificateCandidate",
+        "parameters": [
+          {
+            "description": "Certificate campaign ID",
+            "in": "path",
+            "name": "campaign_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateAccountCertificateCandidateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_CertificateCandidateImportResult"
+                }
+              }
+            },
+            "description": "Candidate created from an active account"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Certificate candidate update permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Campaign or account not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Account or campaign cannot be used"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Candidate values are invalid"
+          }
+        },
+        "tags": [
+          "certificate"
+        ]
+      }
+    },
+    "/api/certificates/campaigns/{campaign_id}/candidates/bulk": {
+      "post": {
+        "operationId": "bulkUpdateCertificateCandidates",
+        "parameters": [
+          {
+            "description": "Certificate campaign ID",
+            "in": "path",
+            "name": "campaign_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CertificateCandidateBulkRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_CertificateCandidateBulkResult"
+                }
+              }
+            },
+            "description": "Atomic bulk candidate resolution"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Certificate candidate update permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Candidate selection not found in campaign"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Mixed or locked candidate selection"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid bulk request"
+          }
+        },
+        "tags": [
+          "certificate"
+        ]
+      }
+    },
+    "/api/certificates/campaigns/{campaign_id}/candidates/import": {
+      "post": {
+        "operationId": "importCertificateCandidates",
+        "parameters": [
+          {
+            "description": "Certificate campaign ID",
+            "in": "path",
+            "name": "campaign_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CertificateImportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_CertificateCandidateImportResult"
+                }
+              }
+            },
+            "description": "Typed rows validated, matched, and stored"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Certificate candidate update permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Certificate campaign not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Certificate campaign cannot be changed"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Import headers or request are invalid"
+          }
+        },
+        "tags": [
+          "certificate"
+        ]
+      }
+    },
+    "/api/certificates/campaigns/{campaign_id}/candidates/manual": {
+      "post": {
+        "operationId": "createManualCertificateCandidate",
+        "parameters": [
+          {
+            "description": "Certificate campaign ID",
+            "in": "path",
+            "name": "campaign_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateManualExternalCandidateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_CertificateCandidateImportResult"
+                }
+              }
+            },
+            "description": "Manual external candidate created"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Certificate candidate update permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Certificate campaign not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Certificate campaign cannot be changed"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Candidate values are invalid"
+          }
+        },
+        "tags": [
+          "certificate"
+        ]
+      }
+    },
     "/api/certificates/campaigns/{campaign_id}/status": {
       "put": {
         "operationId": "changeCertificateCampaignStatus",
@@ -29119,6 +30902,228 @@
               }
             },
             "description": "Invalid template"
+          }
+        },
+        "tags": [
+          "certificate"
+        ]
+      }
+    },
+    "/api/certificates/candidates/{candidate_id}": {
+      "delete": {
+        "operationId": "deleteCertificateCandidate",
+        "parameters": [
+          {
+            "description": "Certificate candidate ID",
+            "in": "path",
+            "name": "candidate_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_CertificateCandidateDetail"
+                }
+              }
+            },
+            "description": "Candidate soft-deleted"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Certificate candidate delete permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Candidate not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Candidate is issued or locked"
+          }
+        },
+        "tags": [
+          "certificate"
+        ]
+      },
+      "get": {
+        "operationId": "getCertificateCandidate",
+        "parameters": [
+          {
+            "description": "Certificate candidate ID",
+            "in": "path",
+            "name": "candidate_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_CertificateCandidateDetail"
+                }
+              }
+            },
+            "description": "Candidate detail"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Certificate candidate read permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Candidate not found"
+          }
+        },
+        "tags": [
+          "certificate"
+        ]
+      },
+      "put": {
+        "operationId": "updateCertificateCandidate",
+        "parameters": [
+          {
+            "description": "Certificate candidate ID",
+            "in": "path",
+            "name": "candidate_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateCertificateCandidateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_CertificateCandidateDetail"
+                }
+              }
+            },
+            "description": "Candidate revalidated and updated"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Certificate candidate update permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Candidate not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Candidate changed or is locked"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Candidate values are invalid"
           }
         },
         "tags": [

@@ -501,9 +501,9 @@ fn has_text(value: Option<&str>) -> bool {
     value.is_some_and(|value| !value.trim().is_empty())
 }
 
-fn contains_thirteen_digit_run(value: &str) -> bool {
+pub(super) fn contains_thirteen_digit_run(value: &str) -> bool {
     let mut digits = 0_u8;
-    for character in value.chars() {
+    for character in normalize_display_text(value).chars() {
         if character.is_ascii_digit() {
             digits = digits.saturating_add(1);
             if digits >= 13 {
@@ -756,5 +756,15 @@ mod tests {
         ] {
             assert_eq!(classify_header(header), HeaderClass::Forbidden);
         }
+    }
+
+    #[test]
+    fn sensitive_value_detection_cannot_be_bypassed_with_invisible_characters() {
+        let mut row = external_row();
+        row.award_or_role = Some("ข้อมูล 1\u{200b}-2345-67890-12-3".into());
+
+        assert!(validate_import_row(&row)
+            .issues
+            .contains(&ImportRowIssue::ForbiddenSensitiveValue));
     }
 }

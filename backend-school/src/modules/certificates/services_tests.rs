@@ -1,4 +1,8 @@
-use std::{collections::BTreeSet, sync::Arc, time::Duration};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    sync::Arc,
+    time::Duration,
+};
 
 use async_trait::async_trait;
 use bytes::Bytes;
@@ -12,15 +16,20 @@ use crate::{
     modules::certificates::{
         models::{
             AttachCertificateAssetRequest, AttachCertificateBackgroundRequest,
-            CertificateCampaignListQuery, CertificateCampaignStatus, CertificateElement,
-            CertificateFontSource, CertificateLayoutV1, CertificatePreviewKind,
-            CertificatePreviewManifestRequest, CertificateTemplateAssetKind,
-            CertificateTemplateDeleteDisposition, ChangeCertificateCampaignStatusRequest,
-            CreateCertificateCampaignRequest, CreateCertificateTemplateRequest, ElementFrame,
-            GeometryAction, NullableUuidUpdate, RecipientType, TextAlignment, TextElement,
-            UpdateCertificateCampaignRequest, UpdateCertificateTemplateRequest,
+            CandidateMatchStatus, CandidateNameSource, CandidateValidationCode,
+            CandidateValidationStatus, CertificateAccountSearchQuery, CertificateCampaignListQuery,
+            CertificateCampaignStatus, CertificateCandidateBulkRequest,
+            CertificateCandidateListQuery, CertificateElement, CertificateFontSource,
+            CertificateImportRequest, CertificateImportRowInput, CertificateImportSource,
+            CertificateLayoutV1, CertificatePreviewKind, CertificatePreviewManifestRequest,
+            CertificateTemplateAssetKind, CertificateTemplateDeleteDisposition,
+            ChangeCertificateCampaignStatusRequest, CreateAccountCertificateCandidateRequest,
+            CreateCertificateCampaignRequest, CreateCertificateTemplateRequest,
+            CreateManualExternalCandidateRequest, ElementFrame, GeometryAction, NullableUuidUpdate,
+            RecipientType, TextAlignment, TextElement, UpdateCertificateCampaignRequest,
+            UpdateCertificateCandidateRequest, UpdateCertificateTemplateRequest,
         },
-        services::{campaign_service, render_service, template_service},
+        services::{campaign_service, candidate_service, render_service, template_service},
     },
     permissions::registry::codes,
     policies::{
@@ -2579,4 +2588,1014 @@ async fn unused_template_with_draft_candidates_returns_lifecycle_conflict() {
     assert!(template_service::get_template(&pool, &actor, template.id)
         .await
         .is_ok());
+}
+
+#[tokio::test]
+async fn matched_accounts_cannot_become_external_in_single_or_bulk_flows() {
+    let (pool, actor, academic_year_id) =
+        school_campaign_fixture("certificate_candidate_external_guard", 3122).await;
+    let campaign = campaign_service::create_campaign(
+        &pool,
+        &actor,
+        campaign_create_payload(academic_year_id, None, "การแข่งขันคำคม"),
+    )
+    .await
+    .unwrap();
+    template_service::create_template(
+        &pool,
+        &actor,
+        campaign.id,
+        CreateCertificateTemplateRequest {
+            name: "แบบรางวัลนักเรียน".to_string(),
+            allowed_recipient_types: vec![RecipientType::Student, RecipientType::External],
+        },
+    )
+    .await
+    .unwrap();
+
+    let student_user_id = create_test_user(
+        &pool,
+        "certificate-candidate-student@example.invalid",
+        "test-password",
+    )
+    .await
+    .unwrap();
+    sqlx::query(
+        "UPDATE users
+         SET username = 'student-candidate-0069', user_type = 'student',
+             title = 'เด็กหญิง', first_name = 'กมล', last_name = 'ใจดี', status = 'active'
+         WHERE id = $1",
+    )
+    .bind(student_user_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query("INSERT INTO student_info (user_id, student_id) VALUES ($1, 'S-0069')")
+        .bind(student_user_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let imported = candidate_service::import_candidates(
+        &pool,
+        &actor,
+        campaign.id,
+        CertificateImportRequest {
+            source: CertificateImportSource::Csv,
+            headers: vec![
+                "ประเภทผู้รับ".to_string(),
+                "รหัสนักเรียน".to_string(),
+                "ชื่อ".to_string(),
+                "นามสกุล".to_string(),
+            ],
+            rows: vec![CertificateImportRowInput {
+                recipient_type: "student".to_string(),
+                student_id: Some("S-0069".to_string()),
+                staff_username: None,
+                title: Some("เด็กหญิง".to_string()),
+                first_name: "กมล".to_string(),
+                last_name: "ใจดี".to_string(),
+                activity_item: Some("การแข่งขันคำคม".to_string()),
+                award_or_role: Some("รองชนะเลิศอันดับที่ 1".to_string()),
+                template_name: Some("แบบรางวัลนักเรียน".to_string()),
+                custom_values: BTreeMap::new(),
+            }],
+        },
+    )
+    .await
+    .unwrap();
+    let candidate = &imported.candidates[0];
+    assert_eq!(candidate.matched_user_id, Some(student_user_id));
+
+    assert!(
+        candidate_service::confirm_external(&pool, &actor, candidate.id)
+            .await
+            .is_err()
+    );
+    assert!(candidate_service::bulk_update(
+        &pool,
+        &actor,
+        CertificateCandidateBulkRequest::ConfirmExternal {
+            candidate_ids: vec![candidate.id],
+        },
+    )
+    .await
+    .is_err());
+}
+
+async fn create_ready_candidate_template(
+    pool: &PgPool,
+    actor: &ActorContext,
+    campaign_id: Uuid,
+    name: &str,
+    allowed_recipient_types: Vec<RecipientType>,
+) -> crate::modules::certificates::models::CertificateTemplateDetail {
+    let template = template_service::create_template(
+        pool,
+        actor,
+        campaign_id,
+        CreateCertificateTemplateRequest {
+            name: name.to_string(),
+            allowed_recipient_types,
+        },
+    )
+    .await
+    .unwrap();
+    let file_id = insert_ready_template_file(
+        pool,
+        actor,
+        template.id,
+        "certificate_template_background",
+        pdf_inspection(841.89, 595.28, 0),
+    )
+    .await;
+    template_service::attach_background(
+        pool,
+        actor,
+        template.id,
+        AttachCertificateBackgroundRequest {
+            file_id,
+            geometry_action: GeometryAction::Preserve,
+            preview_confirmed: true,
+        },
+    )
+    .await
+    .unwrap()
+    .template
+}
+
+async fn insert_certificate_student(
+    pool: &PgPool,
+    username: &str,
+    student_id: &str,
+    first_name: &str,
+    last_name: &str,
+    status: &str,
+) -> Uuid {
+    let user_id = create_test_user(
+        pool,
+        &format!("{username}@candidate-test.invalid"),
+        "test-password",
+    )
+    .await
+    .unwrap();
+    sqlx::query(
+        "UPDATE users
+         SET username = $2, user_type = 'student', title = 'เด็กหญิง',
+             first_name = $3, last_name = $4, status = $5
+         WHERE id = $1",
+    )
+    .bind(user_id)
+    .bind(username)
+    .bind(first_name)
+    .bind(last_name)
+    .bind(status)
+    .execute(pool)
+    .await
+    .unwrap();
+    sqlx::query("INSERT INTO student_info (user_id, student_id) VALUES ($1, $2)")
+        .bind(user_id)
+        .bind(student_id)
+        .execute(pool)
+        .await
+        .unwrap();
+    user_id
+}
+
+async fn insert_certificate_staff(
+    pool: &PgPool,
+    username: &str,
+    first_name: &str,
+    last_name: &str,
+    status: &str,
+) -> Uuid {
+    let user_id = create_test_user(
+        pool,
+        &format!("{username}@candidate-test.invalid"),
+        "test-password",
+    )
+    .await
+    .unwrap();
+    sqlx::query(
+        "UPDATE users
+         SET username = $2, user_type = 'staff', title = 'นาย',
+             first_name = $3, last_name = $4, status = $5
+         WHERE id = $1",
+    )
+    .bind(user_id)
+    .bind(username)
+    .bind(first_name)
+    .bind(last_name)
+    .bind(status)
+    .execute(pool)
+    .await
+    .unwrap();
+    user_id
+}
+
+fn candidate_import_request(rows: Vec<CertificateImportRowInput>) -> CertificateImportRequest {
+    CertificateImportRequest {
+        source: CertificateImportSource::Csv,
+        headers: vec![
+            "ประเภทผู้รับ".to_string(),
+            "รหัสนักเรียน".to_string(),
+            "ชื่อผู้ใช้บุคลากร".to_string(),
+            "คำนำหน้า".to_string(),
+            "ชื่อ".to_string(),
+            "นามสกุล".to_string(),
+            "รายการกิจกรรม".to_string(),
+            "รางวัลหรือบทบาท".to_string(),
+            "แบบเกียรติบัตร".to_string(),
+        ],
+        rows,
+    }
+}
+
+fn candidate_import_row(
+    recipient_type: &str,
+    student_id: Option<&str>,
+    staff_username: Option<&str>,
+    first_name: &str,
+    last_name: &str,
+    template_name: &str,
+) -> CertificateImportRowInput {
+    CertificateImportRowInput {
+        recipient_type: recipient_type.to_string(),
+        student_id: student_id.map(str::to_string),
+        staff_username: staff_username.map(str::to_string),
+        title: None,
+        first_name: first_name.to_string(),
+        last_name: last_name.to_string(),
+        activity_item: Some("การแข่งขันคำคม".to_string()),
+        award_or_role: Some("รองชนะเลิศอันดับที่ 1".to_string()),
+        template_name: Some(template_name.to_string()),
+        custom_values: BTreeMap::new(),
+    }
+}
+
+#[tokio::test]
+async fn candidate_matching_decision_table_recomputes_names_accounts_and_statuses() {
+    let (pool, actor, academic_year_id) =
+        school_campaign_fixture("certificate_candidate_matching_table", 3123).await;
+    let campaign = campaign_service::create_campaign(
+        &pool,
+        &actor,
+        campaign_create_payload(academic_year_id, None, "การแข่งขันทักษะภาษาไทย"),
+    )
+    .await
+    .unwrap();
+    let shared_template = create_ready_candidate_template(
+        &pool,
+        &actor,
+        campaign.id,
+        "แบบนักเรียนและภายนอก",
+        vec![RecipientType::Student, RecipientType::External],
+    )
+    .await;
+    create_ready_candidate_template(
+        &pool,
+        &actor,
+        campaign.id,
+        "แบบบุคลากร",
+        vec![RecipientType::Staff],
+    )
+    .await;
+    let student_id = insert_certificate_student(
+        &pool,
+        "student-match-1",
+        "S-MATCH-1",
+        "กมล",
+        "ใจดี",
+        "active",
+    )
+    .await;
+    let staff_id =
+        insert_certificate_staff(&pool, "teacher.exact", "สมชาย", "รักเรียน", "active").await;
+    let inactive_id = insert_certificate_student(
+        &pool,
+        "student-inactive-1",
+        "S-INACTIVE-1",
+        "พิมพ์ใจ",
+        "งามดี",
+        "inactive",
+    )
+    .await;
+
+    let imported = candidate_service::import_candidates(
+        &pool,
+        &actor,
+        campaign.id,
+        candidate_import_request(vec![
+            candidate_import_row(
+                "student",
+                Some("S-MATCH-1"),
+                None,
+                "  กมล ",
+                "ใจดี",
+                "แบบนักเรียนและภายนอก",
+            ),
+            candidate_import_row(
+                "staff",
+                None,
+                Some("teacher.exact"),
+                "สมชาย",
+                "ชื่อจากไฟล์",
+                "แบบบุคลากร",
+            ),
+            candidate_import_row(
+                "student",
+                Some("S-INACTIVE-1"),
+                None,
+                "พิมพ์ใจ",
+                "งามดี",
+                "แบบนักเรียนและภายนอก",
+            ),
+            candidate_import_row(
+                "student",
+                Some("S-NOT-FOUND"),
+                None,
+                "เด็กนอกระบบ",
+                "ทดลอง",
+                "แบบนักเรียนและภายนอก",
+            ),
+            candidate_import_row(
+                "staff",
+                None,
+                Some("Teacher.Exact"),
+                "สมชาย",
+                "รักเรียน",
+                "แบบบุคลากร",
+            ),
+        ]),
+    )
+    .await
+    .unwrap();
+    assert_eq!(imported.batch.ready_count, 1);
+    assert_eq!(imported.batch.review_count, 4);
+    assert_eq!(imported.batch.invalid_count, 0);
+
+    let matched = &imported.candidates[0];
+    assert_eq!(matched.matched_user_id, Some(student_id));
+    assert_eq!(matched.match_status, CandidateMatchStatus::Matched);
+    assert_eq!(
+        matched.selected_name_source,
+        Some(CandidateNameSource::Account)
+    );
+    assert_eq!(matched.validation_status, CandidateValidationStatus::Ready);
+
+    let mismatch = &imported.candidates[1];
+    assert_eq!(mismatch.matched_user_id, Some(staff_id));
+    assert_eq!(mismatch.match_status, CandidateMatchStatus::NameMismatch);
+    assert!(mismatch
+        .validation_codes
+        .contains(&CandidateValidationCode::NameSourceRequired));
+    let resolved = candidate_service::bulk_update(
+        &pool,
+        &actor,
+        CertificateCandidateBulkRequest::ChooseName {
+            candidate_ids: vec![mismatch.id],
+            name_source: CandidateNameSource::File,
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        resolved.candidates[0].validation_status,
+        CandidateValidationStatus::Ready
+    );
+    assert_eq!(
+        resolved.candidates[0].selected_name_source,
+        Some(CandidateNameSource::File)
+    );
+
+    let inactive = &imported.candidates[2];
+    assert_eq!(inactive.matched_user_id, Some(inactive_id));
+    assert_eq!(inactive.match_status, CandidateMatchStatus::Inactive);
+    assert!(
+        candidate_service::confirm_external(&pool, &actor, inactive.id)
+            .await
+            .is_err()
+    );
+
+    let unmatched = &imported.candidates[3];
+    let converted = candidate_service::confirm_external(&pool, &actor, unmatched.id)
+        .await
+        .unwrap();
+    assert_eq!(converted.recipient_type, RecipientType::External);
+    assert_eq!(
+        converted.match_status,
+        CandidateMatchStatus::ExternalConfirmed
+    );
+    assert_eq!(converted.student_id.as_deref(), Some("S-NOT-FOUND"));
+    assert_eq!(
+        converted.validation_status,
+        CandidateValidationStatus::Ready
+    );
+    let reassigned = candidate_service::bulk_update(
+        &pool,
+        &actor,
+        CertificateCandidateBulkRequest::AssignTemplate {
+            candidate_ids: vec![converted.id],
+            template_id: shared_template.id,
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        reassigned.candidates[0].student_id.as_deref(),
+        Some("S-NOT-FOUND"),
+        "converted external candidates retain their internal lookup for issuance revalidation"
+    );
+    assert_eq!(
+        reassigned.candidates[0].match_status,
+        CandidateMatchStatus::ExternalConfirmed
+    );
+    assert_eq!(
+        reassigned.candidates[0].validation_status,
+        CandidateValidationStatus::Ready
+    );
+
+    assert_eq!(
+        imported.candidates[4].match_status,
+        CandidateMatchStatus::NotFound
+    );
+}
+
+#[tokio::test]
+async fn candidate_import_keeps_row_errors_atomic_headers_duplicates_and_safe_audit() {
+    let (pool, actor, academic_year_id) =
+        school_campaign_fixture("certificate_candidate_validation_table", 3124).await;
+    let campaign = campaign_service::create_campaign(
+        &pool,
+        &actor,
+        campaign_create_payload(academic_year_id, None, "กิจกรรมวันภาษาไทย"),
+    )
+    .await
+    .unwrap();
+    create_ready_candidate_template(
+        &pool,
+        &actor,
+        campaign.id,
+        "แบบการแข่งขันภายนอก",
+        vec![RecipientType::External],
+    )
+    .await;
+    create_ready_candidate_template(
+        &pool,
+        &actor,
+        campaign.id,
+        "แบบนักเรียนภายใน",
+        vec![RecipientType::Student],
+    )
+    .await;
+
+    let mut external = candidate_import_row(
+        "external",
+        None,
+        None,
+        "บุคคลลับทดสอบ",
+        "นามสกุลลับทดสอบ",
+        "แบบการแข่งขันภายนอก",
+    );
+    external
+        .custom_values
+        .insert("ครูผู้ควบคุม".to_string(), "ค่าลับเฉพาะแถว".to_string());
+    let duplicate = external.clone();
+    let incompatible = candidate_import_row(
+        "external",
+        None,
+        None,
+        "ผู้แข่งขันต่างโรงเรียน",
+        "ใจกล้า",
+        "แบบนักเรียนภายใน",
+    );
+    let invalid =
+        candidate_import_row("external", None, None, "", "ข้อมูลไม่ครบ", "แบบการแข่งขันภายนอก");
+    let mut request = candidate_import_request(vec![external, duplicate, incompatible, invalid]);
+    request.headers.push("ครูผู้ควบคุม".to_string());
+    let imported = candidate_service::import_candidates(&pool, &actor, campaign.id, request)
+        .await
+        .unwrap();
+    assert_eq!(imported.batch.ready_count, 0);
+    assert_eq!(imported.batch.review_count, 3);
+    assert_eq!(imported.batch.invalid_count, 1);
+    assert!(imported.candidates[0]
+        .validation_codes
+        .contains(&CandidateValidationCode::DuplicateCandidate));
+    assert!(imported.candidates[1]
+        .validation_codes
+        .contains(&CandidateValidationCode::DuplicateCandidate));
+    assert!(imported.candidates[2]
+        .validation_codes
+        .contains(&CandidateValidationCode::TemplateIncompatible));
+    assert_eq!(
+        imported.candidates[3].validation_status,
+        CandidateValidationStatus::Invalid
+    );
+
+    let confirmed = candidate_service::bulk_update(
+        &pool,
+        &actor,
+        CertificateCandidateBulkRequest::ConfirmDuplicate {
+            candidate_ids: vec![imported.candidates[0].id, imported.candidates[1].id],
+        },
+    )
+    .await
+    .unwrap();
+    assert!(confirmed
+        .candidates
+        .iter()
+        .all(|candidate| candidate.validation_status == CandidateValidationStatus::Ready));
+
+    let batch_count_before: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM certificate_import_batches WHERE campaign_id = $1",
+    )
+    .bind(campaign.id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let forbidden = CertificateImportRequest {
+        source: CertificateImportSource::Csv,
+        headers: vec![
+            "ประเภทผู้รับ".to_string(),
+            "ชื่อ".to_string(),
+            "นามสกุล".to_string(),
+            "เลขบัตรประชาชน".to_string(),
+        ],
+        rows: vec![candidate_import_row(
+            "external",
+            None,
+            None,
+            "ไม่ควรถูกบันทึก",
+            "ทั้งแถว",
+            "แบบการแข่งขันภายนอก",
+        )],
+    };
+    assert!(
+        candidate_service::import_candidates(&pool, &actor, campaign.id, forbidden)
+            .await
+            .is_err()
+    );
+    let mut forbidden_cell = candidate_import_row(
+        "external",
+        None,
+        None,
+        "ไม่ควรถูกบันทึก",
+        "จากค่าต้องห้าม",
+        "แบบการแข่งขันภายนอก",
+    );
+    forbidden_cell.award_or_role = Some("ข้อมูล 0-0000-00000-00-0".to_string());
+    assert!(candidate_service::import_candidates(
+        &pool,
+        &actor,
+        campaign.id,
+        candidate_import_request(vec![forbidden_cell]),
+    )
+    .await
+    .is_err());
+    let batch_count_after: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM certificate_import_batches WHERE campaign_id = $1",
+    )
+    .bind(campaign.id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(batch_count_after, batch_count_before);
+
+    let audit_text: String = sqlx::query_scalar(
+        "SELECT COALESCE(string_agg(metadata::text, ' '), '')
+         FROM audit_logs WHERE entity_type = 'certificate_candidate'",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    for forbidden_value in ["บุคคลลับทดสอบ", "นามสกุลลับทดสอบ", "ค่าลับเฉพาะแถว"]
+    {
+        assert!(!audit_text.contains(forbidden_value));
+    }
+}
+
+#[tokio::test]
+async fn soft_delete_recomputes_duplicate_status_for_remaining_candidates() {
+    let (pool, actor, academic_year_id) =
+        school_campaign_fixture("certificate_candidate_duplicate_delete", 3128).await;
+    let campaign = campaign_service::create_campaign(
+        &pool,
+        &actor,
+        campaign_create_payload(academic_year_id, None, "กิจกรรมรายการซ้ำ"),
+    )
+    .await
+    .unwrap();
+    let template = create_ready_candidate_template(
+        &pool,
+        &actor,
+        campaign.id,
+        "แบบบุคคลภายนอก",
+        vec![RecipientType::External],
+    )
+    .await;
+    let first_row = candidate_import_row(
+        "external",
+        None,
+        None,
+        "ผู้สมัคร",
+        "รายการหนึ่ง",
+        "แบบบุคคลภายนอก",
+    );
+    let second_row = candidate_import_row(
+        "external",
+        None,
+        None,
+        "ผู้สมัคร",
+        "รายการสอง",
+        "แบบบุคคลภายนอก",
+    );
+    let imported = candidate_service::import_candidates(
+        &pool,
+        &actor,
+        campaign.id,
+        candidate_import_request(vec![first_row, second_row]),
+    )
+    .await
+    .unwrap();
+    assert!(imported
+        .candidates
+        .iter()
+        .all(|candidate| candidate.validation_status == CandidateValidationStatus::Ready));
+
+    let changed = candidate_service::update_candidate(
+        &pool,
+        &actor,
+        imported.candidates[1].id,
+        UpdateCertificateCandidateRequest {
+            expected_updated_at: imported.candidates[1].updated_at,
+            template_id: Some(template.id),
+            recipient_type: RecipientType::External,
+            student_id: None,
+            staff_username: None,
+            imported_title: None,
+            imported_first_name: "ผู้สมัคร".to_string(),
+            imported_last_name: "รายการหนึ่ง".to_string(),
+            selected_name_source: Some(CandidateNameSource::File),
+            activity_item: Some("การแข่งขันคำคม".to_string()),
+            award_or_role: Some("รองชนะเลิศอันดับที่ 1".to_string()),
+            custom_values: BTreeMap::new(),
+        },
+    )
+    .await
+    .unwrap();
+
+    let peer = candidate_service::get_candidate(&pool, &actor, imported.candidates[0].id)
+        .await
+        .unwrap();
+    assert!(peer
+        .validation_codes
+        .contains(&CandidateValidationCode::DuplicateCandidate));
+
+    candidate_service::delete_candidate(&pool, &actor, changed.id)
+        .await
+        .unwrap();
+
+    let survivor = candidate_service::get_candidate(&pool, &actor, imported.candidates[0].id)
+        .await
+        .unwrap();
+    assert!(!survivor
+        .validation_codes
+        .contains(&CandidateValidationCode::DuplicateCandidate));
+    assert_eq!(survivor.validation_status, CandidateValidationStatus::Ready);
+}
+
+#[tokio::test]
+async fn external_confirmation_rechecks_new_accounts_and_bulk_is_all_or_nothing() {
+    let (pool, actor, academic_year_id) =
+        school_campaign_fixture("certificate_candidate_external_recheck", 3125).await;
+    let campaign = campaign_service::create_campaign(
+        &pool,
+        &actor,
+        campaign_create_payload(academic_year_id, None, "กิจกรรมแข่งขันภายนอก"),
+    )
+    .await
+    .unwrap();
+    create_ready_candidate_template(
+        &pool,
+        &actor,
+        campaign.id,
+        "แบบนักเรียนหรือภายนอก",
+        vec![RecipientType::Student, RecipientType::External],
+    )
+    .await;
+    let imported = candidate_service::import_candidates(
+        &pool,
+        &actor,
+        campaign.id,
+        candidate_import_request(vec![
+            candidate_import_row(
+                "student",
+                Some("S-APPEARED"),
+                None,
+                "บัญชี",
+                "เพิ่งสร้าง",
+                "แบบนักเรียนหรือภายนอก",
+            ),
+            candidate_import_row(
+                "student",
+                Some("S-STILL-MISSING"),
+                None,
+                "ยังไม่มี",
+                "บัญชี",
+                "แบบนักเรียนหรือภายนอก",
+            ),
+        ]),
+    )
+    .await
+    .unwrap();
+    insert_certificate_student(
+        &pool,
+        "student-appeared",
+        "S-APPEARED",
+        "บัญชี",
+        "เพิ่งสร้าง",
+        "inactive",
+    )
+    .await;
+
+    assert!(candidate_service::bulk_update(
+        &pool,
+        &actor,
+        CertificateCandidateBulkRequest::ConfirmExternal {
+            candidate_ids: imported
+                .candidates
+                .iter()
+                .map(|candidate| candidate.id)
+                .collect(),
+        },
+    )
+    .await
+    .is_err());
+    let listed = candidate_service::list_candidates(
+        &pool,
+        &actor,
+        campaign.id,
+        CertificateCandidateListQuery::default(),
+    )
+    .await
+    .unwrap();
+    assert!(listed
+        .items
+        .iter()
+        .all(|candidate| candidate.recipient_type == RecipientType::Student));
+    assert!(listed
+        .items
+        .iter()
+        .all(|candidate| candidate.match_status == CandidateMatchStatus::NotFound));
+}
+
+#[tokio::test]
+async fn candidate_preview_uses_selected_draft_values_without_issued_identity() {
+    let (pool, actor, academic_year_id) =
+        school_campaign_fixture("certificate_candidate_preview_values", 3126).await;
+    let campaign = campaign_service::create_campaign(
+        &pool,
+        &actor,
+        campaign_create_payload(academic_year_id, None, "กิจกรรมวิทยากร"),
+    )
+    .await
+    .unwrap();
+    let template = create_ready_candidate_template(
+        &pool,
+        &actor,
+        campaign.id,
+        "แบบวิทยากรภายนอก",
+        vec![RecipientType::External],
+    )
+    .await;
+    let created = candidate_service::create_manual_external(
+        &pool,
+        &actor,
+        campaign.id,
+        CreateManualExternalCandidateRequest {
+            template_id: Some(template.id),
+            title: Some("ดร.".to_string()),
+            first_name: "ชลธิชา".to_string(),
+            last_name: "แบ่งปัน".to_string(),
+            activity_item: Some("บรรยายการเขียนคำคม".to_string()),
+            award_or_role: Some("วิทยากร".to_string()),
+            custom_values: BTreeMap::from([(
+                "หัวข้อพิเศษ".to_string(),
+                "ภาษาไทยสร้างสรรค์".to_string(),
+            )]),
+        },
+    )
+    .await
+    .unwrap();
+    let platform = crate::modules::files::platform_service::FilePlatform::new(
+        Arc::new(PreviewStorage),
+        Arc::new(PreviewScanner),
+    );
+    let manifest = render_service::preview_manifest(
+        &pool,
+        &actor,
+        &platform,
+        "โรงเรียนตัวอย่าง".to_string(),
+        template.id,
+        CertificatePreviewManifestRequest {
+            preview_kind: CertificatePreviewKind::Candidate,
+            candidate_id: Some(created.candidates[0].id),
+            sample_values: BTreeMap::new(),
+            layout: None,
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(manifest.recipient_values["คำนำหน้า"], "ดร.");
+    assert_eq!(manifest.recipient_values["ชื่อ"], "ชลธิชา");
+    assert_eq!(manifest.recipient_values["นามสกุล"], "แบ่งปัน");
+    assert_eq!(manifest.recipient_values["รางวัลหรือบทบาท"], "วิทยากร");
+    assert_eq!(manifest.recipient_values["หัวข้อพิเศษ"], "ภาษาไทยสร้างสรรค์");
+    assert_eq!(manifest.certificate_number, "ตัวอย่าง");
+    assert!(manifest.qr_payload.contains("ตัวอย่าง"));
+}
+
+#[tokio::test]
+async fn candidate_edit_rechecks_authoritative_account_and_search_returns_minimal_fields() {
+    let (pool, actor, academic_year_id) =
+        school_campaign_fixture("certificate_candidate_account_recheck", 3127).await;
+    let campaign = campaign_service::create_campaign(
+        &pool,
+        &actor,
+        campaign_create_payload(academic_year_id, None, "กิจกรรมเชื่อมบัญชี"),
+    )
+    .await
+    .unwrap();
+    let template = create_ready_candidate_template(
+        &pool,
+        &actor,
+        campaign.id,
+        "แบบเชื่อมบัญชีนักเรียน",
+        vec![RecipientType::Student],
+    )
+    .await;
+    let student_user_id = insert_certificate_student(
+        &pool,
+        "student-recheck-1",
+        "S-RECHECK-1",
+        "กมลชนก",
+        "สุขสวัสดิ์",
+        "inactive",
+    )
+    .await;
+    sqlx::query("UPDATE users SET email = 'private-account@example.invalid', phone = '0800000000' WHERE id = $1")
+        .bind(student_user_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let imported = candidate_service::import_candidates(
+        &pool,
+        &actor,
+        campaign.id,
+        candidate_import_request(vec![candidate_import_row(
+            "student",
+            Some("S-RECHECK-1"),
+            None,
+            "กมลชนก",
+            "สุขสวัสดิ์",
+            "แบบเชื่อมบัญชีนักเรียน",
+        )]),
+    )
+    .await
+    .unwrap();
+    let inactive = &imported.candidates[0];
+    assert_eq!(inactive.match_status, CandidateMatchStatus::Inactive);
+    sqlx::query("UPDATE users SET status = 'active' WHERE id = $1")
+        .bind(student_user_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let updated = candidate_service::update_candidate(
+        &pool,
+        &actor,
+        inactive.id,
+        UpdateCertificateCandidateRequest {
+            expected_updated_at: inactive.updated_at,
+            template_id: Some(template.id),
+            recipient_type: RecipientType::Student,
+            student_id: Some("S-RECHECK-1".to_string()),
+            staff_username: None,
+            imported_title: None,
+            imported_first_name: "กมลชนก".to_string(),
+            imported_last_name: "สุขสวัสดิ์".to_string(),
+            selected_name_source: Some(CandidateNameSource::Account),
+            activity_item: Some("การแข่งขันเขียนคำคม".to_string()),
+            award_or_role: Some("รางวัลชนะเลิศ".to_string()),
+            custom_values: BTreeMap::new(),
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(updated.match_status, CandidateMatchStatus::Matched);
+    assert_eq!(updated.validation_status, CandidateValidationStatus::Ready);
+    assert!(candidate_service::update_candidate(
+        &pool,
+        &actor,
+        updated.id,
+        UpdateCertificateCandidateRequest {
+            expected_updated_at: updated.updated_at,
+            template_id: Some(template.id),
+            recipient_type: RecipientType::Student,
+            student_id: Some("S-RECHECK-1".to_string()),
+            staff_username: None,
+            imported_title: None,
+            imported_first_name: "กมลชนก".to_string(),
+            imported_last_name: "สุขสวัสดิ์".to_string(),
+            selected_name_source: Some(CandidateNameSource::Account),
+            activity_item: updated.activity_item.clone(),
+            award_or_role: updated.award_or_role.clone(),
+            custom_values: BTreeMap::from([("ตัวแปรที่ไม่เคยประกาศ".to_string(), "ค่า".to_string(),)]),
+        },
+    )
+    .await
+    .is_err());
+
+    let accounts = candidate_service::search_accounts(
+        &pool,
+        &actor,
+        campaign.id,
+        CertificateAccountSearchQuery {
+            recipient_type: RecipientType::Student,
+            search: "กมลชนก".to_string(),
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(accounts.len(), 1);
+    let serialized = serde_json::to_value(&accounts[0]).unwrap();
+    let keys = serialized
+        .as_object()
+        .unwrap()
+        .keys()
+        .map(String::as_str)
+        .collect::<BTreeSet<_>>();
+    assert_eq!(
+        keys,
+        BTreeSet::from([
+            "userId",
+            "recipientType",
+            "studentId",
+            "staffUsername",
+            "title",
+            "firstName",
+            "lastName",
+        ])
+    );
+    assert!(!serialized.to_string().contains("private-account"));
+    assert!(!serialized.to_string().contains("0800000000"));
+    assert!(candidate_service::search_accounts(
+        &pool,
+        &actor,
+        campaign.id,
+        CertificateAccountSearchQuery {
+            recipient_type: RecipientType::Student,
+            search: "0-0000-00000-00-0".to_string(),
+        },
+    )
+    .await
+    .is_err());
+
+    let from_account = candidate_service::create_account_candidate(
+        &pool,
+        &actor,
+        campaign.id,
+        CreateAccountCertificateCandidateRequest {
+            user_id: student_user_id,
+            template_id: Some(template.id),
+            activity_item: Some("อบรมภาษาไทย".to_string()),
+            award_or_role: Some("ผู้เข้าร่วม".to_string()),
+            custom_values: BTreeMap::new(),
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        from_account.candidates[0].selected_name_source,
+        Some(CandidateNameSource::Account)
+    );
+    assert_eq!(
+        from_account.candidates[0].validation_status,
+        CandidateValidationStatus::Ready
+    );
+    let deleted = candidate_service::delete_candidate(&pool, &actor, from_account.candidates[0].id)
+        .await
+        .unwrap();
+    assert!(deleted.deleted_at.is_some());
+    let still_persisted: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM certificate_candidates WHERE id = $1 AND deleted_at IS NOT NULL)",
+    )
+    .bind(deleted.id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert!(
+        still_persisted,
+        "candidate deletion must preserve request history"
+    );
 }

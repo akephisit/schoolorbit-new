@@ -74,19 +74,28 @@ use crate::modules::calendar::models::{
     CalendarPublicEvent, CalendarTag, CalendarViewerEvent,
 };
 use crate::modules::certificates::models::{
-    AttachCertificateAssetRequest, AttachCertificateBackgroundRequest, CertificateBuiltInFont,
-    CertificateCampaignCapabilities, CertificateCampaignDetail, CertificateCampaignListQuery,
-    CertificateCampaignStatus, CertificateCampaignSummary, CertificateElement,
-    CertificateFontSource, CertificateLayoutV1, CertificatePageBox, CertificatePageGeometry,
-    CertificatePreviewKind, CertificatePreviewManifestRequest, CertificateRenderCampaignValues,
-    CertificateRenderFileGrant, CertificateRenderFontGrant, CertificateRenderImageGrant,
-    CertificateRenderManifest, CertificateTemplateAsset, CertificateTemplateAssetKind,
-    CertificateTemplateCapabilities, CertificateTemplateDeleteDisposition,
-    CertificateTemplateDeleteResult, CertificateTemplateDetail, CertificateTemplateVariableCatalog,
-    ChangeCertificateCampaignStatusRequest, CreateCertificateCampaignRequest,
-    CreateCertificateTemplateRequest, ElementFrame, GeometryAction, ImageElement,
+    AttachCertificateAssetRequest, AttachCertificateBackgroundRequest, CandidateMatchStatus,
+    CandidateNameSource, CandidateValidationCode, CandidateValidationStatus,
+    CertificateAccountSearchQuery, CertificateBuiltInFont, CertificateCampaignCapabilities,
+    CertificateCampaignDetail, CertificateCampaignListQuery, CertificateCampaignStatus,
+    CertificateCampaignSummary, CertificateCandidateAccount, CertificateCandidateBulkRequest,
+    CertificateCandidateBulkResult, CertificateCandidateCapabilities, CertificateCandidateDetail,
+    CertificateCandidateImportResult, CertificateCandidateListQuery,
+    CertificateCandidateListResponse, CertificateCandidateSummary, CertificateElement,
+    CertificateFontSource, CertificateImportBatchSummary, CertificateImportRequest,
+    CertificateImportRowInput, CertificateImportSource, CertificateLayoutV1, CertificatePageBox,
+    CertificatePageGeometry, CertificatePreviewKind, CertificatePreviewManifestRequest,
+    CertificateRenderCampaignValues, CertificateRenderFileGrant, CertificateRenderFontGrant,
+    CertificateRenderImageGrant, CertificateRenderManifest, CertificateTemplateAsset,
+    CertificateTemplateAssetKind, CertificateTemplateCapabilities,
+    CertificateTemplateDeleteDisposition, CertificateTemplateDeleteResult,
+    CertificateTemplateDetail, CertificateTemplateVariableCatalog,
+    ChangeCertificateCampaignStatusRequest, CreateAccountCertificateCandidateRequest,
+    CreateCertificateCampaignRequest, CreateCertificateTemplateRequest,
+    CreateManualExternalCandidateRequest, ElementFrame, GeometryAction, ImageElement,
     NullableUuidUpdate, QrElement, RecipientType, TextAlignment, TextElement, TextShadow,
-    UpdateCertificateCampaignRequest, UpdateCertificateTemplateRequest,
+    UpdateCertificateCampaignRequest, UpdateCertificateCandidateRequest,
+    UpdateCertificateTemplateRequest,
 };
 use crate::modules::facility::models::Room;
 use crate::modules::files::models::{
@@ -231,6 +240,15 @@ use utoipa::OpenApi;
         crate::modules::certificates::handlers::delete_certificate_template_asset,
         crate::modules::certificates::handlers::get_certificate_template_variable_catalog,
         crate::modules::certificates::handlers::create_certificate_template_preview_manifest,
+        crate::modules::certificates::handlers::list_certificate_candidates,
+        crate::modules::certificates::handlers::import_certificate_candidates,
+        crate::modules::certificates::handlers::create_manual_certificate_candidate,
+        crate::modules::certificates::handlers::search_certificate_candidate_accounts,
+        crate::modules::certificates::handlers::create_account_certificate_candidate,
+        crate::modules::certificates::handlers::bulk_update_certificate_candidates,
+        crate::modules::certificates::handlers::get_certificate_candidate,
+        crate::modules::certificates::handlers::update_certificate_candidate,
+        crate::modules::certificates::handlers::delete_certificate_candidate,
         crate::modules::parents::handlers::get_own_parent_profile,
         crate::modules::parents::handlers::get_child_profile,
         crate::modules::parents::handlers::get_child_timetable,
@@ -484,6 +502,32 @@ use utoipa::OpenApi;
         ApiResponse<CertificateTemplateDeleteResult>,
         ApiResponse<CertificateTemplateVariableCatalog>,
         ApiResponse<CertificateRenderManifest>,
+        CertificateImportSource,
+        CandidateMatchStatus,
+        CandidateValidationStatus,
+        CandidateNameSource,
+        CandidateValidationCode,
+        CertificateImportRequest,
+        CertificateImportRowInput,
+        CertificateCandidateListQuery,
+        CertificateAccountSearchQuery,
+        CertificateCandidateCapabilities,
+        CertificateCandidateDetail,
+        CertificateCandidateSummary,
+        CertificateCandidateListResponse,
+        CertificateImportBatchSummary,
+        CertificateCandidateImportResult,
+        CertificateCandidateAccount,
+        CreateManualExternalCandidateRequest,
+        CreateAccountCertificateCandidateRequest,
+        UpdateCertificateCandidateRequest,
+        CertificateCandidateBulkRequest,
+        CertificateCandidateBulkResult,
+        ApiResponse<CertificateCandidateDetail>,
+        ApiResponse<CertificateCandidateListResponse>,
+        ApiResponse<CertificateCandidateImportResult>,
+        ApiResponse<Vec<CertificateCandidateAccount>>,
+        ApiResponse<CertificateCandidateBulkResult>,
         ApiResponse<Vec<GradeLevelLookupItem>>,
         ApiResponse<Vec<ClassroomLookupItem>>,
         ApiResponse<Vec<AcademicYearLookupItem>>,
@@ -808,7 +852,7 @@ pub fn render_school_api() -> Result<String, serde_json::Error> {
 mod tests {
     use super::{render_school_api, school_api_value};
     use serde_json::Value;
-    use std::collections::HashSet;
+    use std::collections::{BTreeSet, HashSet};
 
     fn required(schema: &Value) -> Vec<&str> {
         let mut fields = schema["required"]
@@ -3076,6 +3120,51 @@ mod tests {
                     "post",
                     "createCertificateTemplatePreviewManifest",
                 ),
+                (
+                    "/api/certificates/campaigns/{campaign_id}/candidates",
+                    "get",
+                    "listCertificateCandidates",
+                ),
+                (
+                    "/api/certificates/campaigns/{campaign_id}/candidates/import",
+                    "post",
+                    "importCertificateCandidates",
+                ),
+                (
+                    "/api/certificates/campaigns/{campaign_id}/candidates/manual",
+                    "post",
+                    "createManualCertificateCandidate",
+                ),
+                (
+                    "/api/certificates/campaigns/{campaign_id}/candidates/account-search",
+                    "get",
+                    "searchCertificateCandidateAccounts",
+                ),
+                (
+                    "/api/certificates/campaigns/{campaign_id}/candidates/account-search",
+                    "post",
+                    "createAccountCertificateCandidate",
+                ),
+                (
+                    "/api/certificates/campaigns/{campaign_id}/candidates/bulk",
+                    "post",
+                    "bulkUpdateCertificateCandidates",
+                ),
+                (
+                    "/api/certificates/candidates/{candidate_id}",
+                    "get",
+                    "getCertificateCandidate",
+                ),
+                (
+                    "/api/certificates/candidates/{candidate_id}",
+                    "put",
+                    "updateCertificateCandidate",
+                ),
+                (
+                    "/api/certificates/candidates/{candidate_id}",
+                    "delete",
+                    "deleteCertificateCandidate",
+                ),
             ],
         );
 
@@ -3142,6 +3231,44 @@ mod tests {
             "suggestedFilename",
         ] {
             assert!(required(manifest).contains(&field));
+        }
+        let account_properties = schemas["CertificateCandidateAccount"]["properties"]
+            .as_object()
+            .expect("candidate account schema properties");
+        assert_eq!(
+            account_properties.keys().cloned().collect::<BTreeSet<_>>(),
+            [
+                "userId",
+                "recipientType",
+                "studentId",
+                "staffUsername",
+                "title",
+                "firstName",
+                "lastName",
+            ]
+            .into_iter()
+            .map(str::to_string)
+            .collect::<BTreeSet<_>>()
+        );
+        for forbidden in [
+            "nationalId",
+            "email",
+            "phone",
+            "medicalConditions",
+            "allergies",
+            "guardian",
+        ] {
+            assert!(!account_properties.contains_key(forbidden));
+        }
+        for variant in schemas["CertificateCandidateBulkRequest"]["oneOf"]
+            .as_array()
+            .expect("candidate bulk operation variants")
+        {
+            let properties = variant["properties"]
+                .as_object()
+                .expect("candidate bulk variant properties");
+            assert!(properties.contains_key("candidateIds"));
+            assert!(!properties.contains_key("candidate_ids"));
         }
         assert_eq!(
             document["paths"]["/api/certificates/campaigns/{campaign_id}"]["delete"]["responses"]

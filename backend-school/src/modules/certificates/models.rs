@@ -70,6 +70,25 @@ string_enum!(CandidateValidationStatus {
     Invalid,
 });
 string_enum!(CandidateNameSource { File, Account });
+string_enum!(CandidateValidationCode {
+    InvalidRecipientType,
+    MissingStudentId,
+    MissingStaffUsername,
+    UnexpectedInternalLookup,
+    MissingFirstName,
+    MissingLastName,
+    NameTooLong,
+    ValueTooLong,
+    ForbiddenSensitiveValue,
+    AccountNotFound,
+    AccountInactive,
+    NameSourceRequired,
+    TemplateRequired,
+    TemplateNotFound,
+    TemplateIncompatible,
+    TemplateNotReady,
+    DuplicateCandidate,
+});
 string_enum!(CertificateIssueRequestStatus {
     Pending,
     Reviewing,
@@ -110,6 +129,137 @@ impl RecipientType {
             "student" => Some(Self::Student),
             "staff" => Some(Self::Staff),
             "external" => Some(Self::External),
+            _ => None,
+        }
+    }
+}
+
+impl CertificateImportSource {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Xlsx => "xlsx",
+            Self::Csv => "csv",
+            Self::Manual => "manual",
+            Self::AccountSearch => "account_search",
+            Self::Replacement => "replacement",
+        }
+    }
+
+    pub fn parse(value: &str) -> Option<Self> {
+        match value {
+            "xlsx" => Some(Self::Xlsx),
+            "csv" => Some(Self::Csv),
+            "manual" => Some(Self::Manual),
+            "account_search" => Some(Self::AccountSearch),
+            "replacement" => Some(Self::Replacement),
+            _ => None,
+        }
+    }
+}
+
+impl CandidateMatchStatus {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Matched => "matched",
+            Self::NameMismatch => "name_mismatch",
+            Self::NotFound => "not_found",
+            Self::Inactive => "inactive",
+            Self::ExternalConfirmed => "external_confirmed",
+            Self::NotApplicable => "not_applicable",
+        }
+    }
+
+    pub fn parse(value: &str) -> Option<Self> {
+        match value {
+            "matched" => Some(Self::Matched),
+            "name_mismatch" => Some(Self::NameMismatch),
+            "not_found" => Some(Self::NotFound),
+            "inactive" => Some(Self::Inactive),
+            "external_confirmed" => Some(Self::ExternalConfirmed),
+            "not_applicable" => Some(Self::NotApplicable),
+            _ => None,
+        }
+    }
+}
+
+impl CandidateValidationStatus {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Ready => "ready",
+            Self::NeedsReview => "needs_review",
+            Self::Invalid => "invalid",
+        }
+    }
+
+    pub fn parse(value: &str) -> Option<Self> {
+        match value {
+            "ready" => Some(Self::Ready),
+            "needs_review" => Some(Self::NeedsReview),
+            "invalid" => Some(Self::Invalid),
+            _ => None,
+        }
+    }
+}
+
+impl CandidateNameSource {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::File => "file",
+            Self::Account => "account",
+        }
+    }
+
+    pub fn parse(value: &str) -> Option<Self> {
+        match value {
+            "file" => Some(Self::File),
+            "account" => Some(Self::Account),
+            _ => None,
+        }
+    }
+}
+
+impl CandidateValidationCode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::InvalidRecipientType => "invalid_recipient_type",
+            Self::MissingStudentId => "missing_student_id",
+            Self::MissingStaffUsername => "missing_staff_username",
+            Self::UnexpectedInternalLookup => "unexpected_internal_lookup",
+            Self::MissingFirstName => "missing_first_name",
+            Self::MissingLastName => "missing_last_name",
+            Self::NameTooLong => "name_too_long",
+            Self::ValueTooLong => "value_too_long",
+            Self::ForbiddenSensitiveValue => "forbidden_sensitive_value",
+            Self::AccountNotFound => "account_not_found",
+            Self::AccountInactive => "account_inactive",
+            Self::NameSourceRequired => "name_source_required",
+            Self::TemplateRequired => "template_required",
+            Self::TemplateNotFound => "template_not_found",
+            Self::TemplateIncompatible => "template_incompatible",
+            Self::TemplateNotReady => "template_not_ready",
+            Self::DuplicateCandidate => "duplicate_candidate",
+        }
+    }
+
+    pub fn parse(value: &str) -> Option<Self> {
+        match value {
+            "invalid_recipient_type" => Some(Self::InvalidRecipientType),
+            "missing_student_id" => Some(Self::MissingStudentId),
+            "missing_staff_username" => Some(Self::MissingStaffUsername),
+            "unexpected_internal_lookup" => Some(Self::UnexpectedInternalLookup),
+            "missing_first_name" => Some(Self::MissingFirstName),
+            "missing_last_name" => Some(Self::MissingLastName),
+            "name_too_long" => Some(Self::NameTooLong),
+            "value_too_long" => Some(Self::ValueTooLong),
+            "forbidden_sensitive_value" => Some(Self::ForbiddenSensitiveValue),
+            "account_not_found" => Some(Self::AccountNotFound),
+            "account_inactive" => Some(Self::AccountInactive),
+            "name_source_required" => Some(Self::NameSourceRequired),
+            "template_required" => Some(Self::TemplateRequired),
+            "template_not_found" => Some(Self::TemplateNotFound),
+            "template_incompatible" => Some(Self::TemplateIncompatible),
+            "template_not_ready" => Some(Self::TemplateNotReady),
+            "duplicate_candidate" => Some(Self::DuplicateCandidate),
             _ => None,
         }
     }
@@ -376,6 +526,233 @@ pub struct CertificateImportRowInput {
     pub template_name: Option<String>,
     #[serde(default)]
     pub custom_values: BTreeMap<String, String>,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, IntoParams, ToSchema)]
+#[into_params(parameter_in = Query)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CertificateCandidateListQuery {
+    pub status: Option<CandidateValidationStatus>,
+    pub template_id: Option<Uuid>,
+    pub search: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, IntoParams, ToSchema)]
+#[into_params(parameter_in = Query)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CertificateAccountSearchQuery {
+    pub recipient_type: RecipientType,
+    pub search: String,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct CertificateCandidateCapabilities {
+    pub can_update: bool,
+    pub can_delete: bool,
+    pub can_choose_name: bool,
+    pub can_confirm_external: bool,
+    pub can_confirm_duplicate: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct CertificateCandidateDetail {
+    pub id: Uuid,
+    pub campaign_id: Uuid,
+    #[schema(required = true)]
+    pub batch_id: Option<Uuid>,
+    #[schema(required = true)]
+    pub template_id: Option<Uuid>,
+    #[schema(required = true)]
+    pub template_name: Option<String>,
+    pub recipient_type: RecipientType,
+    #[schema(required = true)]
+    pub matched_user_id: Option<Uuid>,
+    #[schema(required = true)]
+    pub student_id: Option<String>,
+    #[schema(required = true)]
+    pub staff_username: Option<String>,
+    #[schema(required = true)]
+    pub imported_title: Option<String>,
+    pub imported_first_name: String,
+    pub imported_last_name: String,
+    #[schema(required = true)]
+    pub account_title: Option<String>,
+    #[schema(required = true)]
+    pub account_first_name: Option<String>,
+    #[schema(required = true)]
+    pub account_last_name: Option<String>,
+    #[schema(required = true)]
+    pub selected_name_source: Option<CandidateNameSource>,
+    #[schema(required = true)]
+    pub activity_item: Option<String>,
+    #[schema(required = true)]
+    pub award_or_role: Option<String>,
+    pub custom_values: BTreeMap<String, String>,
+    pub match_status: CandidateMatchStatus,
+    pub validation_status: CandidateValidationStatus,
+    pub validation_codes: Vec<CandidateValidationCode>,
+    pub duplicate_confirmed: bool,
+    #[schema(required = true)]
+    pub deleted_at: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    pub capabilities: CertificateCandidateCapabilities,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct CertificateCandidateSummary {
+    pub total_count: i64,
+    pub ready_count: i64,
+    pub review_count: i64,
+    pub invalid_count: i64,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct CertificateCandidateListResponse {
+    pub items: Vec<CertificateCandidateDetail>,
+    pub summary: CertificateCandidateSummary,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct CertificateImportBatchSummary {
+    pub id: Uuid,
+    pub campaign_id: Uuid,
+    pub source: CertificateImportSource,
+    pub row_count: i32,
+    pub custom_headers: Vec<String>,
+    pub ready_count: i32,
+    pub review_count: i32,
+    pub invalid_count: i32,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct CertificateCandidateImportResult {
+    pub batch: CertificateImportBatchSummary,
+    pub candidates: Vec<CertificateCandidateDetail>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct CertificateCandidateAccount {
+    pub user_id: Uuid,
+    pub recipient_type: RecipientType,
+    #[schema(required = true)]
+    pub student_id: Option<String>,
+    #[schema(required = true)]
+    pub staff_username: Option<String>,
+    #[schema(required = true)]
+    pub title: Option<String>,
+    pub first_name: String,
+    pub last_name: String,
+}
+
+#[derive(Clone, Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CreateManualExternalCandidateRequest {
+    pub template_id: Option<Uuid>,
+    pub title: Option<String>,
+    pub first_name: String,
+    pub last_name: String,
+    pub activity_item: Option<String>,
+    pub award_or_role: Option<String>,
+    #[serde(default)]
+    pub custom_values: BTreeMap<String, String>,
+}
+
+#[derive(Clone, Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CreateAccountCertificateCandidateRequest {
+    pub user_id: Uuid,
+    pub template_id: Option<Uuid>,
+    pub activity_item: Option<String>,
+    pub award_or_role: Option<String>,
+    #[serde(default)]
+    pub custom_values: BTreeMap<String, String>,
+}
+
+#[derive(Clone, Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct UpdateCertificateCandidateRequest {
+    pub expected_updated_at: DateTime<Utc>,
+    pub template_id: Option<Uuid>,
+    pub recipient_type: RecipientType,
+    pub student_id: Option<String>,
+    pub staff_username: Option<String>,
+    pub imported_title: Option<String>,
+    pub imported_first_name: String,
+    pub imported_last_name: String,
+    pub selected_name_source: Option<CandidateNameSource>,
+    pub activity_item: Option<String>,
+    pub award_or_role: Option<String>,
+    #[serde(default)]
+    pub custom_values: BTreeMap<String, String>,
+}
+
+#[derive(Clone, Debug, Deserialize, ToSchema)]
+#[serde(
+    tag = "operation",
+    rename_all = "snake_case",
+    rename_all_fields = "camelCase",
+    deny_unknown_fields
+)]
+pub enum CertificateCandidateBulkRequest {
+    AssignTemplate {
+        #[serde(rename = "candidateIds")]
+        #[schema(rename = "candidateIds")]
+        candidate_ids: Vec<Uuid>,
+        #[serde(rename = "templateId")]
+        #[schema(rename = "templateId")]
+        template_id: Uuid,
+    },
+    ChooseName {
+        #[serde(rename = "candidateIds")]
+        #[schema(rename = "candidateIds")]
+        candidate_ids: Vec<Uuid>,
+        #[serde(rename = "nameSource")]
+        #[schema(rename = "nameSource")]
+        name_source: CandidateNameSource,
+    },
+    ConfirmExternal {
+        #[serde(rename = "candidateIds")]
+        #[schema(rename = "candidateIds")]
+        candidate_ids: Vec<Uuid>,
+    },
+    ConfirmDuplicate {
+        #[serde(rename = "candidateIds")]
+        #[schema(rename = "candidateIds")]
+        candidate_ids: Vec<Uuid>,
+    },
+    SoftDelete {
+        #[serde(rename = "candidateIds")]
+        #[schema(rename = "candidateIds")]
+        candidate_ids: Vec<Uuid>,
+    },
+}
+
+impl CertificateCandidateBulkRequest {
+    pub fn candidate_ids(&self) -> &[Uuid] {
+        match self {
+            Self::AssignTemplate { candidate_ids, .. }
+            | Self::ChooseName { candidate_ids, .. }
+            | Self::ConfirmExternal { candidate_ids }
+            | Self::ConfirmDuplicate { candidate_ids }
+            | Self::SoftDelete { candidate_ids } => candidate_ids,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct CertificateCandidateBulkResult {
+    pub updated_count: u32,
+    pub candidates: Vec<CertificateCandidateDetail>,
 }
 
 #[derive(Clone, Debug, Deserialize, ToSchema)]

@@ -24,6 +24,7 @@ use crate::{
 };
 
 use super::{
+    candidate_service,
     import_validation::{normalize_display_text, normalize_name_for_match},
     layout::validate_layout,
     template_service,
@@ -51,9 +52,23 @@ pub async fn preview_manifest(
         sample_values,
         layout,
     } = request;
-    if preview_kind == CertificatePreviewKind::Candidate || candidate_id.is_some() {
-        return Err(AppError::Conflict(
-            "การพรีวิวรายการจริงจะพร้อมเมื่อเพิ่มรายชื่อผู้รับแล้ว".to_string(),
+    let candidate_preview_id = match (preview_kind, candidate_id) {
+        (CertificatePreviewKind::Candidate, Some(candidate_id)) => Some(candidate_id),
+        (CertificatePreviewKind::Candidate, None) => {
+            return Err(AppError::ValidationError(
+                "การพรีวิวผู้รับจริงต้องระบุรายชื่อผู้รับ".to_string(),
+            ));
+        }
+        (_, Some(_)) => {
+            return Err(AppError::ValidationError(
+                "รหัสผู้รับใช้ได้เฉพาะการพรีวิวผู้รับจริง".to_string(),
+            ));
+        }
+        (_, None) => None,
+    };
+    if candidate_preview_id.is_some() && !sample_values.is_empty() {
+        return Err(AppError::ValidationError(
+            "การพรีวิวผู้รับจริงไม่รับค่าตัวอย่างทับข้อมูล".to_string(),
         ));
     }
     let template = template_service::get_template(pool, actor, template_id).await?;
@@ -100,7 +115,11 @@ pub async fn preview_manifest(
         .into_iter()
         .map(|value| normalize_name_for_match(&value))
         .collect::<BTreeSet<_>>();
-    let mut recipient_values = sample_recipient_values(preview_kind);
+    let mut recipient_values = if let Some(candidate_id) = candidate_preview_id {
+        candidate_service::preview_values(pool, actor, candidate_id, template_id).await?
+    } else {
+        sample_recipient_values(preview_kind)
+    };
     for (key, value) in sample_values {
         let display_key = normalize_display_text(&key);
         let normalized_key = normalize_name_for_match(&display_key);

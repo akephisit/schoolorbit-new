@@ -1576,6 +1576,86 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/api/certificates/campaigns/{campaign_id}/candidates': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listCertificateCandidates'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/certificates/campaigns/{campaign_id}/candidates/account-search': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['searchCertificateCandidateAccounts'];
+		put?: never;
+		post: operations['createAccountCertificateCandidate'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/certificates/campaigns/{campaign_id}/candidates/bulk': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['bulkUpdateCertificateCandidates'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/certificates/campaigns/{campaign_id}/candidates/import': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['importCertificateCandidates'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/certificates/campaigns/{campaign_id}/candidates/manual': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['createManualCertificateCandidate'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/api/certificates/campaigns/{campaign_id}/status': {
 		parameters: {
 			query?: never;
@@ -1603,6 +1683,22 @@ export interface paths {
 		put?: never;
 		post: operations['createCertificateTemplate'];
 		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/certificates/candidates/{candidate_id}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getCertificateCandidate'];
+		put: operations['updateCertificateCandidate'];
+		post?: never;
+		delete: operations['deleteCertificateCandidate'];
 		options?: never;
 		head?: never;
 		patch?: never;
@@ -3153,6 +3249,74 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
+		ApiResponse_CertificateCandidateBulkResult: {
+			data: {
+				candidates: components['schemas']['CertificateCandidateDetail'][];
+				/** Format: int32 */
+				updatedCount: number;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_CertificateCandidateDetail: {
+			data: {
+				accountFirstName: string | null;
+				accountLastName: string | null;
+				accountTitle: string | null;
+				activityItem: string | null;
+				awardOrRole: string | null;
+				/** Format: uuid */
+				batchId: string | null;
+				/** Format: uuid */
+				campaignId: string;
+				capabilities: components['schemas']['CertificateCandidateCapabilities'];
+				/** Format: date-time */
+				createdAt: string;
+				customValues: {
+					[key: string]: string;
+				};
+				/** Format: date-time */
+				deletedAt: string | null;
+				duplicateConfirmed: boolean;
+				/** Format: uuid */
+				id: string;
+				importedFirstName: string;
+				importedLastName: string;
+				importedTitle: string | null;
+				/** Format: uuid */
+				matchedUserId: string | null;
+				matchStatus: components['schemas']['CandidateMatchStatus'];
+				recipientType: components['schemas']['RecipientType'];
+				selectedNameSource: null | components['schemas']['CandidateNameSource'];
+				staffUsername: string | null;
+				studentId: string | null;
+				/** Format: uuid */
+				templateId: string | null;
+				templateName: string | null;
+				/** Format: date-time */
+				updatedAt: string;
+				validationCodes: components['schemas']['CandidateValidationCode'][];
+				validationStatus: components['schemas']['CandidateValidationStatus'];
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_CertificateCandidateImportResult: {
+			data: {
+				batch: components['schemas']['CertificateImportBatchSummary'];
+				candidates: components['schemas']['CertificateCandidateDetail'][];
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_CertificateCandidateListResponse: {
+			data: {
+				items: components['schemas']['CertificateCandidateDetail'][];
+				summary: components['schemas']['CertificateCandidateSummary'];
+			};
+			message?: string;
+			success: boolean;
+		};
 		ApiResponse_CertificateRenderManifest: {
 			data: {
 				backgroundGrant: components['schemas']['CertificateRenderFileGrant'];
@@ -4287,6 +4451,20 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
+		ApiResponse_Vec_CertificateCandidateAccount: {
+			data: {
+				firstName: string;
+				lastName: string;
+				recipientType: components['schemas']['RecipientType'];
+				staffUsername: string | null;
+				studentId: string | null;
+				title: string | null;
+				/** Format: uuid */
+				userId: string;
+			}[];
+			message?: string;
+			success: boolean;
+		};
 		ApiResponse_Vec_CertificateTemplateDetail: {
 			data: {
 				allowedRecipientTypes: components['schemas']['RecipientType'][];
@@ -5219,6 +5397,37 @@ export interface components {
 			/** Format: date-time */
 			updatedAt: string;
 		};
+		/** @enum {string} */
+		CandidateMatchStatus:
+			| 'matched'
+			| 'name_mismatch'
+			| 'not_found'
+			| 'inactive'
+			| 'external_confirmed'
+			| 'not_applicable';
+		/** @enum {string} */
+		CandidateNameSource: 'file' | 'account';
+		/** @enum {string} */
+		CandidateValidationCode:
+			| 'invalid_recipient_type'
+			| 'missing_student_id'
+			| 'missing_staff_username'
+			| 'unexpected_internal_lookup'
+			| 'missing_first_name'
+			| 'missing_last_name'
+			| 'name_too_long'
+			| 'value_too_long'
+			| 'forbidden_sensitive_value'
+			| 'account_not_found'
+			| 'account_inactive'
+			| 'name_source_required'
+			| 'template_required'
+			| 'template_not_found'
+			| 'template_incompatible'
+			| 'template_not_ready'
+			| 'duplicate_candidate';
+		/** @enum {string} */
+		CandidateValidationStatus: 'ready' | 'needs_review' | 'invalid';
 		CatalogDefaultInstructor: {
 			/** Format: uuid */
 			catalog_id: string;
@@ -5235,6 +5444,10 @@ export interface components {
 			/** Format: uuid */
 			instructor_id: string;
 			role: components['schemas']['CurriculumInstructorRole'];
+		};
+		CertificateAccountSearchQuery: {
+			recipientType: components['schemas']['RecipientType'];
+			search: string;
 		};
 		CertificateBuiltInFont: {
 			assetPath: string;
@@ -5327,6 +5540,120 @@ export interface components {
 			/** Format: date-time */
 			updatedAt: string;
 		};
+		CertificateCandidateAccount: {
+			firstName: string;
+			lastName: string;
+			recipientType: components['schemas']['RecipientType'];
+			staffUsername: string | null;
+			studentId: string | null;
+			title: string | null;
+			/** Format: uuid */
+			userId: string;
+		};
+		CertificateCandidateBulkRequest:
+			| {
+					candidateIds: string[];
+					/** @enum {string} */
+					operation: 'assign_template';
+					/** Format: uuid */
+					templateId: string;
+			  }
+			| {
+					candidateIds: string[];
+					nameSource: components['schemas']['CandidateNameSource'];
+					/** @enum {string} */
+					operation: 'choose_name';
+			  }
+			| {
+					candidateIds: string[];
+					/** @enum {string} */
+					operation: 'confirm_external';
+			  }
+			| {
+					candidateIds: string[];
+					/** @enum {string} */
+					operation: 'confirm_duplicate';
+			  }
+			| {
+					candidateIds: string[];
+					/** @enum {string} */
+					operation: 'soft_delete';
+			  };
+		CertificateCandidateBulkResult: {
+			candidates: components['schemas']['CertificateCandidateDetail'][];
+			/** Format: int32 */
+			updatedCount: number;
+		};
+		CertificateCandidateCapabilities: {
+			canChooseName: boolean;
+			canConfirmDuplicate: boolean;
+			canConfirmExternal: boolean;
+			canDelete: boolean;
+			canUpdate: boolean;
+		};
+		CertificateCandidateDetail: {
+			accountFirstName: string | null;
+			accountLastName: string | null;
+			accountTitle: string | null;
+			activityItem: string | null;
+			awardOrRole: string | null;
+			/** Format: uuid */
+			batchId: string | null;
+			/** Format: uuid */
+			campaignId: string;
+			capabilities: components['schemas']['CertificateCandidateCapabilities'];
+			/** Format: date-time */
+			createdAt: string;
+			customValues: {
+				[key: string]: string;
+			};
+			/** Format: date-time */
+			deletedAt: string | null;
+			duplicateConfirmed: boolean;
+			/** Format: uuid */
+			id: string;
+			importedFirstName: string;
+			importedLastName: string;
+			importedTitle: string | null;
+			/** Format: uuid */
+			matchedUserId: string | null;
+			matchStatus: components['schemas']['CandidateMatchStatus'];
+			recipientType: components['schemas']['RecipientType'];
+			selectedNameSource: null | components['schemas']['CandidateNameSource'];
+			staffUsername: string | null;
+			studentId: string | null;
+			/** Format: uuid */
+			templateId: string | null;
+			templateName: string | null;
+			/** Format: date-time */
+			updatedAt: string;
+			validationCodes: components['schemas']['CandidateValidationCode'][];
+			validationStatus: components['schemas']['CandidateValidationStatus'];
+		};
+		CertificateCandidateImportResult: {
+			batch: components['schemas']['CertificateImportBatchSummary'];
+			candidates: components['schemas']['CertificateCandidateDetail'][];
+		};
+		CertificateCandidateListQuery: {
+			search?: string | null;
+			status?: null | components['schemas']['CandidateValidationStatus'];
+			/** Format: uuid */
+			templateId?: string | null;
+		};
+		CertificateCandidateListResponse: {
+			items: components['schemas']['CertificateCandidateDetail'][];
+			summary: components['schemas']['CertificateCandidateSummary'];
+		};
+		CertificateCandidateSummary: {
+			/** Format: int64 */
+			invalidCount: number;
+			/** Format: int64 */
+			readyCount: number;
+			/** Format: int64 */
+			reviewCount: number;
+			/** Format: int64 */
+			totalCount: number;
+		};
 		CertificateElement:
 			| (components['schemas']['TextElement'] & {
 					/** @enum {string} */
@@ -5351,6 +5678,45 @@ export interface components {
 					/** @enum {string} */
 					type: 'asset';
 			  };
+		CertificateImportBatchSummary: {
+			/** Format: uuid */
+			campaignId: string;
+			/** Format: date-time */
+			createdAt: string;
+			customHeaders: string[];
+			/** Format: uuid */
+			id: string;
+			/** Format: int32 */
+			invalidCount: number;
+			/** Format: int32 */
+			readyCount: number;
+			/** Format: int32 */
+			reviewCount: number;
+			/** Format: int32 */
+			rowCount: number;
+			source: components['schemas']['CertificateImportSource'];
+		};
+		CertificateImportRequest: {
+			headers: string[];
+			rows: components['schemas']['CertificateImportRowInput'][];
+			source: components['schemas']['CertificateImportSource'];
+		};
+		CertificateImportRowInput: {
+			activityItem?: string | null;
+			awardOrRole?: string | null;
+			customValues?: {
+				[key: string]: string;
+			};
+			firstName: string;
+			lastName: string;
+			recipientType: string;
+			staffUsername?: string | null;
+			studentId?: string | null;
+			templateName?: string | null;
+			title?: string | null;
+		};
+		/** @enum {string} */
+		CertificateImportSource: 'xlsx' | 'csv' | 'manual' | 'account_search' | 'replacement';
 		CertificateLayoutV1: {
 			elements: components['schemas']['CertificateElement'][];
 			/** Format: int32 */
@@ -5641,6 +6007,17 @@ export interface components {
 			/** Format: int32 */
 			year: number;
 		};
+		CreateAccountCertificateCandidateRequest: {
+			activityItem?: string | null;
+			awardOrRole?: string | null;
+			customValues?: {
+				[key: string]: string;
+			};
+			/** Format: uuid */
+			templateId?: string | null;
+			/** Format: uuid */
+			userId: string;
+		};
 		CreateAchievementRequest: {
 			/** Format: date */
 			achievement_date: string;
@@ -5721,6 +6098,18 @@ export interface components {
 			next_grade_level_id?: string | null;
 			/** Format: int32 */
 			year: number;
+		};
+		CreateManualExternalCandidateRequest: {
+			activityItem?: string | null;
+			awardOrRole?: string | null;
+			customValues?: {
+				[key: string]: string;
+			};
+			firstName: string;
+			lastName: string;
+			/** Format: uuid */
+			templateId?: string | null;
+			title?: string | null;
 		};
 		CreateMenuGroupRequest: {
 			code: string;
@@ -7264,6 +7653,24 @@ export interface components {
 			expectedUpdatedAt: string;
 			name?: string | null;
 			ownerOrganizationUnitId?: null | components['schemas']['NullableUuidUpdate'];
+		};
+		UpdateCertificateCandidateRequest: {
+			activityItem?: string | null;
+			awardOrRole?: string | null;
+			customValues?: {
+				[key: string]: string;
+			};
+			/** Format: date-time */
+			expectedUpdatedAt: string;
+			importedFirstName: string;
+			importedLastName: string;
+			importedTitle?: string | null;
+			recipientType: components['schemas']['RecipientType'];
+			selectedNameSource?: null | components['schemas']['CandidateNameSource'];
+			staffUsername?: string | null;
+			studentId?: string | null;
+			/** Format: uuid */
+			templateId?: string | null;
 		};
 		UpdateCertificateTemplateRequest: {
 			allowedRecipientTypes?: components['schemas']['RecipientType'][] | null;
@@ -15893,6 +16300,419 @@ export interface operations {
 			};
 		};
 	};
+	listCertificateCandidates: {
+		parameters: {
+			query?: {
+				search?: string;
+				status?: components['schemas']['CandidateValidationStatus'];
+				templateId?: string;
+			};
+			header?: never;
+			path: {
+				/** @description Certificate campaign ID */
+				campaign_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Filtered candidates and campaign status counts */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_CertificateCandidateListResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Certificate candidate read permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Certificate campaign not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Invalid candidate query */
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	searchCertificateCandidateAccounts: {
+		parameters: {
+			query: {
+				recipientType: components['schemas']['RecipientType'];
+				search: string;
+			};
+			header?: never;
+			path: {
+				/** @description Certificate campaign ID */
+				campaign_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Minimal active student or staff account matches */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_CertificateCandidateAccount'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Certificate candidate read permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Certificate campaign not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Invalid account search */
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	createAccountCertificateCandidate: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Certificate campaign ID */
+				campaign_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['CreateAccountCertificateCandidateRequest'];
+			};
+		};
+		responses: {
+			/** @description Candidate created from an active account */
+			201: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_CertificateCandidateImportResult'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Certificate candidate update permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Campaign or account not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Account or campaign cannot be used */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Candidate values are invalid */
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	bulkUpdateCertificateCandidates: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Certificate campaign ID */
+				campaign_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['CertificateCandidateBulkRequest'];
+			};
+		};
+		responses: {
+			/** @description Atomic bulk candidate resolution */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_CertificateCandidateBulkResult'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Certificate candidate update permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Candidate selection not found in campaign */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Mixed or locked candidate selection */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Invalid bulk request */
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	importCertificateCandidates: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Certificate campaign ID */
+				campaign_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['CertificateImportRequest'];
+			};
+		};
+		responses: {
+			/** @description Typed rows validated, matched, and stored */
+			201: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_CertificateCandidateImportResult'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Certificate candidate update permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Certificate campaign not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Certificate campaign cannot be changed */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Import headers or request are invalid */
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	createManualCertificateCandidate: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Certificate campaign ID */
+				campaign_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['CreateManualExternalCandidateRequest'];
+			};
+		};
+		responses: {
+			/** @description Manual external candidate created */
+			201: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_CertificateCandidateImportResult'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Certificate candidate update permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Certificate campaign not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Certificate campaign cannot be changed */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Candidate values are invalid */
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
 	changeCertificateCampaignStatus: {
 		parameters: {
 			query?: never;
@@ -16069,6 +16889,187 @@ export interface operations {
 			};
 			/** @description Invalid template */
 			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getCertificateCandidate: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Certificate candidate ID */
+				candidate_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Candidate detail */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_CertificateCandidateDetail'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Certificate candidate read permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Candidate not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	updateCertificateCandidate: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Certificate candidate ID */
+				candidate_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['UpdateCertificateCandidateRequest'];
+			};
+		};
+		responses: {
+			/** @description Candidate revalidated and updated */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_CertificateCandidateDetail'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Certificate candidate update permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Candidate not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Candidate changed or is locked */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Candidate values are invalid */
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	deleteCertificateCandidate: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Certificate candidate ID */
+				candidate_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Candidate soft-deleted */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_CertificateCandidateDetail'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Certificate candidate delete permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Candidate not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Candidate is issued or locked */
+			409: {
 				headers: {
 					[name: string]: unknown;
 				};
