@@ -23,6 +23,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 subtle = "2.6"
 ipnet = "2"
 zeroize = { version = "1", features = ["derive"] }
+unicode-normalization = "0.1"
 
 # File Storage & R2/S3 Integration
 aws-config = "1.1"
