@@ -1148,6 +1148,39 @@ fn auth_session_migration_is_forward_only_and_hash_only() {
 }
 
 #[test]
+fn certificate_migration_keeps_issued_records_restrictive_and_permanent() {
+    let migration_path = manifest_dir().join("migrations/035_certificate_issuance.sql");
+    let migration = read_source(&migration_path);
+    let certificate_reference = Regex::new(
+        r"(?i)REFERENCES\s+certificates\s*\(\s*id\s*\)\s+ON\s+DELETE\s+(?P<action>[A-Z_]+)",
+    )
+    .expect("valid certificate reference regex");
+    let delete_actions = certificate_reference
+        .captures_iter(&migration)
+        .map(|captures| {
+            captures
+                .name("action")
+                .expect("delete action")
+                .as_str()
+                .to_ascii_uppercase()
+        })
+        .collect::<Vec<_>>();
+
+    assert_eq!(
+        delete_actions.len(),
+        4,
+        "candidate and replacement links must remain explicit in {}",
+        repo_relative(&migration_path)
+    );
+    assert!(
+        delete_actions.iter().all(|action| action == "RESTRICT"),
+        "no foreign key may cascade into issued certificates: {delete_actions:?}"
+    );
+    assert!(migration.contains("CREATE FUNCTION prevent_certificate_delete()"));
+    assert!(migration.contains("CREATE FUNCTION enforce_certificate_snapshot_immutability()"));
+}
+
+#[test]
 fn exam_invigilator_conflict_migration_drops_day_staff_unique_constraint() {
     let creation_migration = read_source(
         manifest_dir()
@@ -3077,16 +3110,20 @@ fn permission_registry_uses_canonical_action_and_scope_vocabulary() {
         "assign",
         "create",
         "delete",
+        "download",
         "enroll",
         "evaluate",
         "execute",
+        "issue",
         "manage",
         "manage_members",
         "publish",
         "read",
         "remove",
         "request",
+        "revoke",
         "scores",
+        "submit",
         "update",
         "verify",
     ];
