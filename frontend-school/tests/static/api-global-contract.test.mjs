@@ -2019,7 +2019,7 @@ test('frontend apiClient validates the backend envelope before returning typed r
 		'utf8'
 	);
 
-	assert.match(source, /function\s+normalizeApiResponse<T>/);
+	assert.match(source, /function\s+normalizeApiResponse<T,\s*E\s*=\s*never>/);
 	assert.match(source, /typeof\s+payload\.success\s*!==\s*'boolean'/);
 	assert.match(source, /!\('data'\s+in\s+payload\)/);
 	assert.doesNotMatch(source, /return\s+data\s+as\s+ApiResponse<T>/);

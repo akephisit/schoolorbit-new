@@ -76,6 +76,7 @@ struct TemplateRow {
     layout: sqlx::types::Json<CertificateLayoutV1>,
     is_active: bool,
     issued_certificate_count: i64,
+    locked_request_id: Option<Uuid>,
     created_at: DateTime<Utc>,
     updated_at: DateTime<Utc>,
 }
@@ -154,6 +155,15 @@ const TEMPLATE_SELECT: &str = r#"
         t.is_active,
         (SELECT COUNT(*) FROM certificates certificate WHERE certificate.template_id = t.id)
             AS issued_certificate_count,
+        (SELECT candidate_lock.request_id
+         FROM certificate_candidates candidate
+         JOIN certificate_candidate_issue_locks candidate_lock
+           ON candidate_lock.candidate_id = candidate.id
+         JOIN certificate_issue_requests request ON request.id = candidate_lock.request_id
+         WHERE candidate.template_id = t.id
+           AND request.status IN ('pending', 'reviewing')
+         ORDER BY request.submitted_at, request.id
+         LIMIT 1) AS locked_request_id,
         t.created_at,
         t.updated_at
     FROM certificate_templates t
@@ -268,6 +278,12 @@ pub async fn update_template(
         CertificateAction::Update,
     )
     .await?;
+    let can_read_locked_request = super::request_service::can_read_request(
+        pool,
+        actor,
+        authorization.owner_organization_unit_id,
+    )
+    .await?;
 
     let requested_name = payload
         .name
@@ -293,7 +309,7 @@ pub async fn update_template(
             "แม่แบบถูกแก้ไขแล้ว กรุณาโหลดข้อมูลล่าสุด".to_string(),
         ));
     }
-    require_template_not_locked(&mut tx, template_id).await?;
+    require_template_not_locked(&mut tx, template_id, can_read_locked_request).await?;
 
     let next_allowed = requested_allowed.clone().unwrap_or_else(|| {
         parse_recipient_types(&locked.allowed_recipient_types).unwrap_or_default()
@@ -443,6 +459,12 @@ pub async fn attach_background(
         CertificateAction::Update,
     )
     .await?;
+    let can_read_locked_request = super::request_service::can_read_request(
+        pool,
+        actor,
+        authorization.owner_organization_unit_id,
+    )
+    .await?;
 
     let mut tx = pool.begin().await.map_err(template_db_error)?;
     require_locked_campaign_owner_unchanged(
@@ -453,7 +475,7 @@ pub async fn attach_background(
     .await?;
     let locked = lock_template(&mut tx, template_id).await?;
     require_template_campaign_unchanged(authorization.campaign_id, locked.campaign_id)?;
-    require_template_not_locked(&mut tx, template_id).await?;
+    require_template_not_locked(&mut tx, template_id, can_read_locked_request).await?;
     let file = load_uploaded_file(
         &mut tx,
         template_id,
@@ -593,6 +615,12 @@ pub async fn attach_asset(
         CertificateAction::Update,
     )
     .await?;
+    let can_read_locked_request = super::request_service::can_read_request(
+        pool,
+        actor,
+        authorization.owner_organization_unit_id,
+    )
+    .await?;
     let display_name = validate_asset_name(&payload.display_name)?;
     let expected_purpose = match payload.kind {
         CertificateTemplateAssetKind::Image => "certificate_template_image",
@@ -608,7 +636,7 @@ pub async fn attach_asset(
     .await?;
     let locked = lock_template(&mut tx, template_id).await?;
     require_template_campaign_unchanged(authorization.campaign_id, locked.campaign_id)?;
-    require_template_not_locked(&mut tx, template_id).await?;
+    require_template_not_locked(&mut tx, template_id, can_read_locked_request).await?;
     let file = load_uploaded_file(&mut tx, template_id, payload.file_id, expected_purpose).await?;
     require_ready_file(&file)?;
     let metadata = file.inspection_metadata.0;
@@ -712,6 +740,12 @@ pub async fn delete_asset(
         CertificateAction::Update,
     )
     .await?;
+    let can_read_locked_request = super::request_service::can_read_request(
+        pool,
+        actor,
+        authorization.owner_organization_unit_id,
+    )
+    .await?;
     let mut tx = pool.begin().await.map_err(template_db_error)?;
     require_locked_campaign_owner_unchanged(
         &mut tx,
@@ -721,7 +755,7 @@ pub async fn delete_asset(
     .await?;
     let locked = lock_template(&mut tx, template_id).await?;
     require_template_campaign_unchanged(authorization.campaign_id, locked.campaign_id)?;
-    require_template_not_locked(&mut tx, template_id).await?;
+    require_template_not_locked(&mut tx, template_id, can_read_locked_request).await?;
     let layout = locked.layout.0.clone();
     if referenced_asset_ids(&layout).contains(&asset_id) {
         return Err(AppError::Conflict(
@@ -783,6 +817,12 @@ pub async fn delete_template(
         CertificateAction::Delete,
     )
     .await?;
+    let can_read_locked_request = super::request_service::can_read_request(
+        pool,
+        actor,
+        authorization.owner_organization_unit_id,
+    )
+    .await?;
     let mut tx = pool.begin().await.map_err(template_db_error)?;
     require_locked_campaign_owner_unchanged(
         &mut tx,
@@ -792,7 +832,7 @@ pub async fn delete_template(
     .await?;
     let locked = lock_template(&mut tx, template_id).await?;
     require_template_campaign_unchanged(authorization.campaign_id, locked.campaign_id)?;
-    require_template_not_locked(&mut tx, template_id).await?;
+    require_template_not_locked(&mut tx, template_id, can_read_locked_request).await?;
     if locked.issued_certificate_count > 0 {
         sqlx::query(
             "UPDATE certificate_templates
@@ -939,6 +979,7 @@ fn build_detail_from_parts(
             .iter()
             .filter(|asset| referenced.contains(&asset.id))
             .all(|asset| asset.lifecycle_status == "ready");
+    let unlocked = row.locked_request_id.is_none();
     Ok(CertificateTemplateDetail {
         id: row.id,
         campaign_id: row.campaign_id,
@@ -961,8 +1002,8 @@ fn build_detail_from_parts(
         updated_at: row.updated_at,
         capabilities: CertificateTemplateCapabilities {
             can_read: capabilities.can_read,
-            can_update: capabilities.can_update,
-            can_delete: capabilities.can_delete,
+            can_update: capabilities.can_update && unlocked,
+            can_delete: capabilities.can_delete && unlocked,
             can_preview: capabilities.can_read && is_ready,
         },
     })
@@ -1194,26 +1235,27 @@ async fn promote_file(tx: &mut Transaction<'_, Postgres>, file_id: Uuid) -> Resu
 async fn require_template_not_locked(
     tx: &mut Transaction<'_, Postgres>,
     template_id: Uuid,
+    can_read_locked_request: bool,
 ) -> Result<(), AppError> {
-    let locked: bool = sqlx::query_scalar(
-        "SELECT EXISTS (
-            SELECT 1
-            FROM certificate_candidates candidate
-            JOIN certificate_candidate_issue_locks candidate_lock
-              ON candidate_lock.candidate_id = candidate.id
-            JOIN certificate_issue_requests request
-              ON request.id = candidate_lock.request_id
-            WHERE candidate.template_id = $1
-              AND request.status IN ('pending', 'reviewing')
-         )",
+    let request_id: Option<Uuid> = sqlx::query_scalar(
+        "SELECT candidate_lock.request_id
+         FROM certificate_candidates candidate
+         JOIN certificate_candidate_issue_locks candidate_lock
+           ON candidate_lock.candidate_id = candidate.id
+         JOIN certificate_issue_requests request ON request.id = candidate_lock.request_id
+         WHERE candidate.template_id = $1
+           AND request.status IN ('pending', 'reviewing')
+         ORDER BY request.submitted_at, request.id
+         LIMIT 1",
     )
     .bind(template_id)
-    .fetch_one(&mut **tx)
+    .fetch_optional(&mut **tx)
     .await
     .map_err(template_db_error)?;
-    if locked {
-        Err(AppError::Conflict(
-            "แม่แบบนี้อยู่ในคำขอออกเกียรติบัตรที่กำลังตรวจ".to_string(),
+    if let Some(request_id) = request_id {
+        Err(super::request_service::resource_locked_error(
+            request_id,
+            can_read_locked_request,
         ))
     } else {
         Ok(())
@@ -1328,7 +1370,7 @@ async fn validate_layout_asset_references(
     Ok(())
 }
 
-fn referenced_asset_ids(layout: &CertificateLayoutV1) -> BTreeSet<Uuid> {
+pub(super) fn referenced_asset_ids(layout: &CertificateLayoutV1) -> BTreeSet<Uuid> {
     layout
         .elements
         .iter()

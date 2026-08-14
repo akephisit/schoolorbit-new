@@ -8,12 +8,6 @@
 	const canReadCandidates = $derived(
 		$can.hasAny(PERMISSIONS.CERTIFICATE_READ_ORGANIZATION_UNIT, PERMISSIONS.CERTIFICATE_READ_SCHOOL)
 	);
-	const hasUpdatePermission = $derived(
-		$can.hasAny(
-			PERMISSIONS.CERTIFICATE_UPDATE_ORGANIZATION_UNIT,
-			PERMISSIONS.CERTIFICATE_UPDATE_SCHOOL
-		)
-	);
 </script>
 
-<CertificateRecipientWorkspace {campaignId} {canReadCandidates} {hasUpdatePermission} />
+<CertificateRecipientWorkspace {campaignId} {canReadCandidates} />

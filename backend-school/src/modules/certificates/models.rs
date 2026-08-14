@@ -96,6 +96,16 @@ string_enum!(CertificateIssueRequestStatus {
     Withdrawn,
     Issued,
 });
+string_enum!(CertificateIssueCode {
+    CandidateNotReady,
+    AccountStateChanged,
+    TemplateNotReady,
+    TemplateIncompatible,
+    AssetUnavailable,
+    CampaignUnavailable,
+    ReviewerRequestedChanges,
+});
+string_enum!(CertificateResourceLockCode { ResourceLocked });
 string_enum!(CertificateIssueRunOutcome { Issued, Returned });
 string_enum!(CertificateStatus { Issued, Revoked });
 string_enum!(CertificateTemplateAssetKind { Image, Font });
@@ -260,6 +270,56 @@ impl CandidateValidationCode {
             "template_incompatible" => Some(Self::TemplateIncompatible),
             "template_not_ready" => Some(Self::TemplateNotReady),
             "duplicate_candidate" => Some(Self::DuplicateCandidate),
+            _ => None,
+        }
+    }
+}
+
+impl CertificateIssueRequestStatus {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Pending => "pending",
+            Self::Reviewing => "reviewing",
+            Self::Returned => "returned",
+            Self::Withdrawn => "withdrawn",
+            Self::Issued => "issued",
+        }
+    }
+
+    pub fn parse(value: &str) -> Option<Self> {
+        match value {
+            "pending" => Some(Self::Pending),
+            "reviewing" => Some(Self::Reviewing),
+            "returned" => Some(Self::Returned),
+            "withdrawn" => Some(Self::Withdrawn),
+            "issued" => Some(Self::Issued),
+            _ => None,
+        }
+    }
+}
+
+impl CertificateIssueCode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::CandidateNotReady => "candidate_not_ready",
+            Self::AccountStateChanged => "account_state_changed",
+            Self::TemplateNotReady => "template_not_ready",
+            Self::TemplateIncompatible => "template_incompatible",
+            Self::AssetUnavailable => "asset_unavailable",
+            Self::CampaignUnavailable => "campaign_unavailable",
+            Self::ReviewerRequestedChanges => "reviewer_requested_changes",
+        }
+    }
+
+    pub fn parse(value: &str) -> Option<Self> {
+        match value {
+            "candidate_not_ready" => Some(Self::CandidateNotReady),
+            "account_state_changed" => Some(Self::AccountStateChanged),
+            "template_not_ready" => Some(Self::TemplateNotReady),
+            "template_incompatible" => Some(Self::TemplateIncompatible),
+            "asset_unavailable" => Some(Self::AssetUnavailable),
+            "campaign_unavailable" => Some(Self::CampaignUnavailable),
+            "reviewer_requested_changes" => Some(Self::ReviewerRequestedChanges),
             _ => None,
         }
     }
@@ -757,6 +817,143 @@ pub struct CertificateCandidateBulkResult {
 
 #[derive(Clone, Debug, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SubmitCertificateIssueRequest {
+    pub candidate_ids: Vec<Uuid>,
+}
+
+#[derive(Clone, Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ReturnCertificateIssueRequest {
+    pub issue_codes: Vec<CertificateIssueCode>,
+    pub return_note: String,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, IntoParams, ToSchema)]
+#[into_params(parameter_in = Query)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CertificateIssueRequestListQuery {
+    pub status: Option<CertificateIssueRequestStatus>,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct CertificateIssueRequestCapabilities {
+    pub can_withdraw: bool,
+    pub can_start_review: bool,
+    pub can_return: bool,
+    pub can_issue: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct CertificateIssueRequestSummary {
+    pub id: Uuid,
+    pub campaign_id: Uuid,
+    pub campaign_name: String,
+    #[schema(required = true)]
+    pub owner_organization_unit_id: Option<Uuid>,
+    #[schema(required = true)]
+    pub owner_organization_unit_name: Option<String>,
+    pub status: CertificateIssueRequestStatus,
+    pub submitted_by: Uuid,
+    pub submitted_by_name: String,
+    #[schema(required = true)]
+    pub reviewed_by: Option<Uuid>,
+    #[schema(required = true)]
+    pub reviewed_by_name: Option<String>,
+    pub submitted_at: DateTime<Utc>,
+    #[schema(required = true)]
+    pub reviewed_at: Option<DateTime<Utc>>,
+    #[schema(required = true)]
+    pub returned_at: Option<DateTime<Utc>>,
+    #[schema(required = true)]
+    pub withdrawn_at: Option<DateTime<Utc>>,
+    #[schema(required = true)]
+    pub issued_at: Option<DateTime<Utc>>,
+    #[schema(required = true)]
+    pub return_note: Option<String>,
+    pub issue_codes: Vec<CertificateIssueCode>,
+    pub item_count: i64,
+    pub template_count: i64,
+    pub ready_count: i64,
+    pub review_count: i64,
+    pub invalid_count: i64,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    pub capabilities: CertificateIssueRequestCapabilities,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct CertificateIssueRequestItem {
+    pub candidate_id: Uuid,
+    #[schema(required = true)]
+    pub template_id: Option<Uuid>,
+    #[schema(required = true)]
+    pub template_name: Option<String>,
+    pub recipient_type: RecipientType,
+    #[schema(required = true)]
+    pub title: Option<String>,
+    pub first_name: String,
+    pub last_name: String,
+    #[schema(required = true)]
+    pub activity_item: Option<String>,
+    #[schema(required = true)]
+    pub award_or_role: Option<String>,
+    pub validation_status: CandidateValidationStatus,
+    pub validation_codes: Vec<CandidateValidationCode>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct CertificateIssueRequestDetail {
+    pub id: Uuid,
+    pub campaign_id: Uuid,
+    pub campaign_name: String,
+    #[schema(required = true)]
+    pub owner_organization_unit_id: Option<Uuid>,
+    #[schema(required = true)]
+    pub owner_organization_unit_name: Option<String>,
+    pub status: CertificateIssueRequestStatus,
+    pub submitted_by: Uuid,
+    pub submitted_by_name: String,
+    #[schema(required = true)]
+    pub reviewed_by: Option<Uuid>,
+    #[schema(required = true)]
+    pub reviewed_by_name: Option<String>,
+    pub submitted_at: DateTime<Utc>,
+    #[schema(required = true)]
+    pub reviewed_at: Option<DateTime<Utc>>,
+    #[schema(required = true)]
+    pub returned_at: Option<DateTime<Utc>>,
+    #[schema(required = true)]
+    pub withdrawn_at: Option<DateTime<Utc>>,
+    #[schema(required = true)]
+    pub issued_at: Option<DateTime<Utc>>,
+    #[schema(required = true)]
+    pub return_note: Option<String>,
+    pub issue_codes: Vec<CertificateIssueCode>,
+    pub item_count: i64,
+    pub template_count: i64,
+    pub ready_count: i64,
+    pub review_count: i64,
+    pub invalid_count: i64,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    pub capabilities: CertificateIssueRequestCapabilities,
+    pub items: Vec<CertificateIssueRequestItem>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct CertificateResourceLocked {
+    pub code: CertificateResourceLockCode,
+    #[schema(required = true)]
+    pub request_id: Option<Uuid>,
+}
+
+#[derive(Clone, Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CreateCertificateCampaignRequest {
     pub academic_year_id: Uuid,
     pub owner_organization_unit_id: Option<Uuid>,
@@ -797,6 +994,7 @@ pub struct ChangeCertificateCampaignStatusRequest {
 pub struct CertificateCampaignCapabilities {
     pub can_read: bool,
     pub can_update: bool,
+    pub can_prepare_candidates: bool,
     pub can_delete: bool,
     pub can_submit: bool,
     pub can_download: bool,

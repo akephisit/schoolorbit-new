@@ -223,6 +223,31 @@ fn protected_routes() -> Router<AppState> {
                 .delete(modules::certificates::handlers::delete_certificate_candidate),
         )
         .route(
+            "/api/certificates/campaigns/{campaign_id}/issue-requests",
+            get(modules::certificates::handlers::list_certificate_campaign_issue_requests)
+                .post(modules::certificates::handlers::submit_certificate_issue_request),
+        )
+        .route(
+            "/api/certificates/issue-requests",
+            get(modules::certificates::handlers::list_certificate_issue_requests),
+        )
+        .route(
+            "/api/certificates/issue-requests/{request_id}",
+            get(modules::certificates::handlers::get_certificate_issue_request),
+        )
+        .route(
+            "/api/certificates/issue-requests/{request_id}/withdraw",
+            post(modules::certificates::handlers::withdraw_certificate_issue_request),
+        )
+        .route(
+            "/api/certificates/issue-requests/{request_id}/review",
+            post(modules::certificates::handlers::start_certificate_issue_request_review),
+        )
+        .route(
+            "/api/certificates/issue-requests/{request_id}/return",
+            post(modules::certificates::handlers::return_certificate_issue_request),
+        )
+        .route(
             "/api/student/profile",
             get(modules::students::handlers::get_own_profile)
                 .put(modules::students::handlers::update_own_profile),

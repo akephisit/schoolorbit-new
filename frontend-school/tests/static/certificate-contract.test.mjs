@@ -101,7 +101,34 @@ test('certificate campaign API is generated and its wrapper consumes named DTOs'
 		],
 		['/api/certificates/candidates/{candidate_id}', 'get', 'getCertificateCandidate'],
 		['/api/certificates/candidates/{candidate_id}', 'put', 'updateCertificateCandidate'],
-		['/api/certificates/candidates/{candidate_id}', 'delete', 'deleteCertificateCandidate']
+		['/api/certificates/candidates/{candidate_id}', 'delete', 'deleteCertificateCandidate'],
+		[
+			'/api/certificates/campaigns/{campaign_id}/issue-requests',
+			'get',
+			'listCertificateCampaignIssueRequests'
+		],
+		[
+			'/api/certificates/campaigns/{campaign_id}/issue-requests',
+			'post',
+			'submitCertificateIssueRequest'
+		],
+		['/api/certificates/issue-requests', 'get', 'listCertificateIssueRequests'],
+		['/api/certificates/issue-requests/{request_id}', 'get', 'getCertificateIssueRequest'],
+		[
+			'/api/certificates/issue-requests/{request_id}/withdraw',
+			'post',
+			'withdrawCertificateIssueRequest'
+		],
+		[
+			'/api/certificates/issue-requests/{request_id}/review',
+			'post',
+			'startCertificateIssueRequestReview'
+		],
+		[
+			'/api/certificates/issue-requests/{request_id}/return',
+			'post',
+			'returnCertificateIssueRequest'
+		]
 	];
 	for (const [route, method, operationId] of expectedOperations) {
 		assert.equal(openapi.paths?.[route]?.[method]?.operationId, operationId);
@@ -137,7 +164,17 @@ test('certificate campaign API is generated and its wrapper consumes named DTOs'
 		'CertificateAccountSearchQuery',
 		'CreateManualExternalCandidateRequest',
 		'CreateAccountCertificateCandidateRequest',
-		'UpdateCertificateCandidateRequest'
+		'UpdateCertificateCandidateRequest',
+		'CertificateIssueRequestStatus',
+		'CertificateIssueCode',
+		'SubmitCertificateIssueRequest',
+		'ReturnCertificateIssueRequest',
+		'CertificateIssueRequestListQuery',
+		'CertificateIssueRequestCapabilities',
+		'CertificateIssueRequestSummary',
+		'CertificateIssueRequestItem',
+		'CertificateIssueRequestDetail',
+		'CertificateResourceLocked'
 	]) {
 		assert.ok(openapi.components?.schemas?.[schema], `missing generated schema ${schema}`);
 	}
@@ -147,6 +184,34 @@ test('certificate campaign API is generated and its wrapper consumes named DTOs'
 		),
 		'campaign capability must expose exact-scope template workflow access'
 	);
+	assert.ok(
+		openapi.components.schemas.CertificateCampaignCapabilities.required.includes(
+			'canPrepareCandidates'
+		),
+		'campaign capability must expose exact-scope candidate preparation access'
+	);
+	const mutationConflictRef =
+		'#/components/schemas/ApiErrorResponseWithOptionalData_CertificateResourceLocked';
+	for (const [route, method] of [
+		['/api/certificates/campaigns/{campaign_id}', 'put'],
+		['/api/certificates/campaigns/{campaign_id}', 'delete'],
+		['/api/certificates/campaigns/{campaign_id}/status', 'put'],
+		['/api/certificates/templates/{template_id}', 'put'],
+		['/api/certificates/templates/{template_id}', 'delete'],
+		['/api/certificates/templates/{template_id}/background', 'put'],
+		['/api/certificates/templates/{template_id}/assets', 'post'],
+		['/api/certificates/templates/{template_id}/assets/{asset_id}', 'delete'],
+		['/api/certificates/campaigns/{campaign_id}/candidates/bulk', 'post'],
+		['/api/certificates/candidates/{candidate_id}', 'put'],
+		['/api/certificates/candidates/{candidate_id}', 'delete']
+	]) {
+		assert.equal(
+			openapi.paths?.[route]?.[method]?.responses?.['409']?.content?.['application/json']?.schema
+				?.$ref,
+			mutationConflictRef,
+			`${method} ${route} must expose optional typed lock data`
+		);
+	}
 
 	const wrapper = await readFile(
 		path.join(repoRoot, 'frontend-school/src/lib/api/certificates.ts'),
@@ -163,9 +228,43 @@ test('certificate campaign API is generated and its wrapper consumes named DTOs'
 	assert.match(wrapper, /importCertificateCandidates/);
 	assert.match(wrapper, /bulkUpdateCertificateCandidates/);
 	assert.match(wrapper, /searchCertificateCandidateAccounts/);
+	for (const operation of [
+		'listCertificateCampaignIssueRequests',
+		'submitCertificateIssueRequest',
+		'listCertificateIssueRequests',
+		'getCertificateIssueRequest',
+		'withdrawCertificateIssueRequest',
+		'startCertificateIssueRequestReview',
+		'returnCertificateIssueRequest'
+	]) {
+		assert.match(wrapper, new RegExp(`export async function ${operation}\\b`));
+	}
 	assert.match(wrapper, /requireApiData/);
+	assert.match(wrapper, /apiClient\.put<CertificateCampaignDetail,\s*CertificateResourceLocked>/);
+	assert.match(
+		wrapper,
+		/apiClient\.post<CertificateIssueRequestDetail,\s*CertificateResourceLocked>/
+	);
 	assert.doesNotMatch(wrapper, /\b(?:interface|Record<string, unknown>|ApiResponse<unknown>)\b/);
 	assert.doesNotMatch(wrapper, /certificate\.(?:read|create|update|delete|submit|download)\./);
+
+	const recipientWorkspace = await readFile(
+		path.join(
+			repoRoot,
+			'frontend-school/src/lib/components/certificates/CertificateRecipientWorkspace.svelte'
+		),
+		'utf8'
+	);
+	assert.match(recipientWorkspace, /campaign\?\.capabilities\.canPrepareCandidates/);
+	assert.doesNotMatch(recipientWorkspace, /hasUpdatePermission/);
+	const recipientRoute = await readFile(
+		path.join(
+			repoRoot,
+			'frontend-school/src/routes/(app)/staff/certificates/[campaignId]/recipients/+page.svelte'
+		),
+		'utf8'
+	);
+	assert.doesNotMatch(recipientRoute, /hasUpdatePermission/);
 
 	const fileWrapper = await readFile(
 		path.join(repoRoot, 'frontend-school/src/lib/api/files.ts'),

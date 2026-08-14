@@ -33,6 +33,19 @@ pub struct CertificateTemplateAuditMetadata {
     pub affected_certificate_count: Option<i64>,
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CertificateIssueRequestAuditMetadata {
+    pub campaign_id: Uuid,
+    pub request_id: Uuid,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub from_status: Option<String>,
+    pub to_status: String,
+    pub item_count: u32,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub issue_codes: Vec<String>,
+}
+
 pub async fn record_campaign_audit(
     tx: &mut Transaction<'_, Postgres>,
     actor_user_id: Uuid,
@@ -89,6 +102,37 @@ pub async fn record_template_audit(
     .await
     .map_err(|error| {
         tracing::error!(%template_id, %error, "failed to persist certificate template audit");
+        AppError::DbError(error)
+    })?;
+
+    Ok(())
+}
+
+pub async fn record_issue_request_audit(
+    tx: &mut Transaction<'_, Postgres>,
+    actor_user_id: Uuid,
+    action: &'static str,
+    metadata: CertificateIssueRequestAuditMetadata,
+) -> Result<(), AppError> {
+    let request_id = metadata.request_id;
+    let metadata = serde_json::to_value(metadata).map_err(|error| {
+        tracing::error!(%request_id, %error, "failed to serialize certificate request audit");
+        AppError::InternalServerError("ไม่สามารถบันทึกประวัติรายการได้".to_string())
+    })?;
+
+    sqlx::query(
+        "INSERT INTO audit_logs
+            (user_id, action, entity_type, entity_id, metadata)
+         VALUES ($1, $2, 'certificate_issue_request', $3, $4)",
+    )
+    .bind(actor_user_id)
+    .bind(action)
+    .bind(request_id)
+    .bind(metadata)
+    .execute(&mut **tx)
+    .await
+    .map_err(|error| {
+        tracing::error!(%request_id, %error, "failed to persist certificate request audit");
         AppError::DbError(error)
     })?;
 

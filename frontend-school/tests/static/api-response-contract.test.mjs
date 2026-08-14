@@ -76,6 +76,17 @@ test('backend app errors return the shared error envelope', async () => {
 	assert.doesNotMatch(errorSource, /json!\s*\(\s*\{/);
 });
 
+test('frontend API client preserves typed error data on thrown errors', async () => {
+	const source = await readRepoFile('frontend-school/src/lib/api/client.ts');
+
+	assert.match(source, /interface\s+ApiResponse<T,\s*E\s*=\s*never>/);
+	assert.match(source, /errorData\?:\s*E/);
+	assert.match(source, /class\s+ApiClientError<E\s*=\s*never>/);
+	assert.match(source, /readonly\s+data\?:\s*E/);
+	assert.match(source, /errorData:\s*payload\.data\s+as\s+E/);
+	assert.match(source, /new\s+ApiClientError<E>[\s\S]*response\.errorData/);
+});
+
 test('frontend auth consumes the shared envelope through apiClient', async () => {
 	const source = await readRepoFile('frontend-school/src/lib/api/auth.ts');
 

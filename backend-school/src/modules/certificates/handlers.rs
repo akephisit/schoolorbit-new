@@ -7,7 +7,7 @@ use axum::{
 use uuid::Uuid;
 
 use crate::{
-    api_response::{ApiErrorResponse, ApiResponse},
+    api_response::{ApiErrorResponse, ApiErrorResponseWithOptionalData, ApiResponse},
     error::AppError,
     modules::{
         auth::session_service::AuthenticatedSession,
@@ -20,15 +20,21 @@ use crate::{
                 CertificateCandidateBulkResult, CertificateCandidateDetail,
                 CertificateCandidateImportResult, CertificateCandidateListQuery,
                 CertificateCandidateListResponse, CertificateImportRequest,
-                CertificatePreviewManifestRequest, CertificateRenderManifest,
+                CertificateIssueRequestDetail, CertificateIssueRequestListQuery,
+                CertificateIssueRequestSummary, CertificatePreviewManifestRequest,
+                CertificateRenderManifest, CertificateResourceLocked,
                 CertificateTemplateDeleteResult, CertificateTemplateDetail,
                 CertificateTemplateVariableCatalog, ChangeCertificateCampaignStatusRequest,
                 CreateAccountCertificateCandidateRequest, CreateCertificateCampaignRequest,
                 CreateCertificateTemplateRequest, CreateManualExternalCandidateRequest,
+                ReturnCertificateIssueRequest, SubmitCertificateIssueRequest,
                 UpdateCertificateCampaignRequest, UpdateCertificateCandidateRequest,
                 UpdateCertificateTemplateRequest,
             },
-            services::{campaign_service, candidate_service, render_service, template_service},
+            services::{
+                campaign_service, candidate_service, render_service, request_service,
+                template_service,
+            },
         },
         files::consumer_service::request_deletions,
         lookup::models::OrganizationUnitLookupItem,
@@ -121,7 +127,7 @@ pub async fn get_certificate_campaign(
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Certificate campaign update permission denied", body = ApiErrorResponse),
         (status = 404, description = "Certificate campaign not found", body = ApiErrorResponse),
-        (status = 409, description = "Campaign changed or locked", body = ApiErrorResponse),
+        (status = 409, description = "Campaign changed or locked", body = ApiErrorResponseWithOptionalData<CertificateResourceLocked>),
         (status = 422, description = "Invalid campaign", body = ApiErrorResponse)
     )
 )]
@@ -154,7 +160,7 @@ pub async fn update_certificate_campaign(
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Certificate campaign update permission denied", body = ApiErrorResponse),
         (status = 404, description = "Certificate campaign not found", body = ApiErrorResponse),
-        (status = 409, description = "Campaign changed or locked", body = ApiErrorResponse),
+        (status = 409, description = "Campaign changed or locked", body = ApiErrorResponseWithOptionalData<CertificateResourceLocked>),
         (status = 422, description = "Invalid status transition", body = ApiErrorResponse)
     )
 )]
@@ -186,7 +192,7 @@ pub async fn change_certificate_campaign_status(
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Certificate campaign delete permission denied", body = ApiErrorResponse),
         (status = 404, description = "Certificate campaign not found", body = ApiErrorResponse),
-        (status = 409, description = "Campaign cannot be deleted", body = ApiErrorResponse)
+        (status = 409, description = "Campaign cannot be deleted", body = ApiErrorResponseWithOptionalData<CertificateResourceLocked>)
     )
 )]
 pub async fn delete_certificate_campaign(
@@ -320,7 +326,7 @@ pub async fn get_certificate_template(
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Certificate template update permission denied", body = ApiErrorResponse),
         (status = 404, description = "Certificate template not found", body = ApiErrorResponse),
-        (status = 409, description = "Template changed, locked, or needs confirmation", body = ApiErrorResponse),
+        (status = 409, description = "Template changed, locked, or needs confirmation", body = ApiErrorResponseWithOptionalData<CertificateResourceLocked>),
         (status = 422, description = "Invalid template", body = ApiErrorResponse)
     )
 )]
@@ -358,7 +364,7 @@ pub async fn update_certificate_template(
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Certificate template delete permission denied", body = ApiErrorResponse),
         (status = 404, description = "Certificate template not found", body = ApiErrorResponse),
-        (status = 409, description = "Certificate template is locked", body = ApiErrorResponse)
+        (status = 409, description = "Certificate template is locked", body = ApiErrorResponseWithOptionalData<CertificateResourceLocked>)
     )
 )]
 pub async fn delete_certificate_template(
@@ -390,7 +396,7 @@ pub async fn delete_certificate_template(
         (status = 200, description = "Inspected PDF background attached", body = ApiResponse<CertificateTemplateDetail>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Certificate template update permission denied", body = ApiErrorResponse),
-        (status = 409, description = "File not ready, template locked, or preview required", body = ApiErrorResponse),
+        (status = 409, description = "File not ready, template locked, or preview required", body = ApiErrorResponseWithOptionalData<CertificateResourceLocked>),
         (status = 422, description = "Invalid PDF geometry", body = ApiErrorResponse)
     )
 )]
@@ -428,7 +434,7 @@ pub async fn attach_certificate_template_background(
         (status = 201, description = "Inspected private template asset attached", body = ApiResponse<CertificateTemplateDetail>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Certificate template update permission denied", body = ApiErrorResponse),
-        (status = 409, description = "File not ready, duplicate, or template locked", body = ApiErrorResponse),
+        (status = 409, description = "File not ready, duplicate, or template locked", body = ApiErrorResponseWithOptionalData<CertificateResourceLocked>),
         (status = 422, description = "Invalid asset or font rights not confirmed", body = ApiErrorResponse)
     )
 )]
@@ -459,7 +465,7 @@ pub async fn attach_certificate_template_asset(
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Certificate template update permission denied", body = ApiErrorResponse),
         (status = 404, description = "Certificate template asset not found", body = ApiErrorResponse),
-        (status = 409, description = "Asset is referenced by the layout", body = ApiErrorResponse)
+        (status = 409, description = "Asset is referenced by the layout or template is locked", body = ApiErrorResponseWithOptionalData<CertificateResourceLocked>)
     )
 )]
 pub async fn delete_certificate_template_asset(
@@ -724,7 +730,7 @@ pub async fn create_account_certificate_candidate(
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Certificate candidate update permission denied", body = ApiErrorResponse),
         (status = 404, description = "Candidate selection not found in campaign", body = ApiErrorResponse),
-        (status = 409, description = "Mixed or locked candidate selection", body = ApiErrorResponse),
+        (status = 409, description = "Mixed or locked candidate selection", body = ApiErrorResponseWithOptionalData<CertificateResourceLocked>),
         (status = 422, description = "Invalid bulk request", body = ApiErrorResponse)
     )
 )]
@@ -782,7 +788,7 @@ pub async fn get_certificate_candidate(
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Certificate candidate update permission denied", body = ApiErrorResponse),
         (status = 404, description = "Candidate not found", body = ApiErrorResponse),
-        (status = 409, description = "Candidate changed or is locked", body = ApiErrorResponse),
+        (status = 409, description = "Candidate changed or is locked", body = ApiErrorResponseWithOptionalData<CertificateResourceLocked>),
         (status = 422, description = "Candidate values are invalid", body = ApiErrorResponse)
     )
 )]
@@ -814,7 +820,7 @@ pub async fn update_certificate_candidate(
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Certificate candidate delete permission denied", body = ApiErrorResponse),
         (status = 404, description = "Candidate not found", body = ApiErrorResponse),
-        (status = 409, description = "Candidate is issued or locked", body = ApiErrorResponse)
+        (status = 409, description = "Candidate is issued or locked", body = ApiErrorResponseWithOptionalData<CertificateResourceLocked>)
     )
 )]
 pub async fn delete_certificate_candidate(
@@ -827,4 +833,195 @@ pub async fn delete_certificate_candidate(
         candidate_service::delete_candidate(&context.tenant.pool, &context.actor, candidate_id)
             .await?;
     Ok((StatusCode::OK, Json(ApiResponse::ok(candidate))).into_response())
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/certificates/campaigns/{campaign_id}/issue-requests",
+    operation_id = "listCertificateCampaignIssueRequests",
+    tag = "certificate",
+    params(("campaign_id" = Uuid, Path, description = "Certificate campaign ID")),
+    responses(
+        (status = 200, description = "Scoped issue request history for one campaign", body = ApiResponse<Vec<CertificateIssueRequestSummary>>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Certificate campaign read permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Certificate campaign not found", body = ApiErrorResponse)
+    )
+)]
+pub async fn list_certificate_campaign_issue_requests(
+    State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(campaign_id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context_from_session(&state, &session).await?;
+    let requests =
+        request_service::list_campaign_requests(&context.tenant.pool, &context.actor, campaign_id)
+            .await?;
+    Ok((StatusCode::OK, Json(ApiResponse::ok(requests))).into_response())
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/certificates/campaigns/{campaign_id}/issue-requests",
+    operation_id = "submitCertificateIssueRequest",
+    tag = "certificate",
+    params(("campaign_id" = Uuid, Path, description = "Certificate campaign ID")),
+    request_body = SubmitCertificateIssueRequest,
+    responses(
+        (status = 201, description = "Issue request submitted and selected candidates locked", body = ApiResponse<CertificateIssueRequestDetail>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Exact-scope certificate submit permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Campaign or selected candidate not found", body = ApiErrorResponse),
+        (status = 409, description = "Selected candidate is already locked", body = crate::api_response::ApiErrorResponseWithData<CertificateResourceLocked>),
+        (status = 422, description = "Campaign or selected candidate is not ready", body = ApiErrorResponse)
+    )
+)]
+pub async fn submit_certificate_issue_request(
+    State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(campaign_id): Path<Uuid>,
+    Json(payload): Json<SubmitCertificateIssueRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context_from_session(&state, &session).await?;
+    let request = request_service::submit_issue_request(
+        &context.tenant.pool,
+        &context.actor,
+        campaign_id,
+        payload.candidate_ids,
+    )
+    .await?;
+    Ok((StatusCode::CREATED, Json(ApiResponse::ok(request))).into_response())
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/certificates/issue-requests",
+    operation_id = "listCertificateIssueRequests",
+    tag = "certificate",
+    params(CertificateIssueRequestListQuery),
+    responses(
+        (status = 200, description = "School issue request queue", body = ApiResponse<Vec<CertificateIssueRequestSummary>>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "School certificate issue permission denied", body = ApiErrorResponse),
+        (status = 422, description = "Invalid issue request query", body = ApiErrorResponse)
+    )
+)]
+pub async fn list_certificate_issue_requests(
+    State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Query(query): Query<CertificateIssueRequestListQuery>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context_from_session(&state, &session).await?;
+    let requests =
+        request_service::list_issue_queue(&context.tenant.pool, &context.actor, query).await?;
+    Ok((StatusCode::OK, Json(ApiResponse::ok(requests))).into_response())
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/certificates/issue-requests/{request_id}",
+    operation_id = "getCertificateIssueRequest",
+    tag = "certificate",
+    params(("request_id" = Uuid, Path, description = "Certificate issue request ID")),
+    responses(
+        (status = 200, description = "Scoped certificate issue request detail", body = ApiResponse<CertificateIssueRequestDetail>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Certificate issue request read permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Certificate issue request not found", body = ApiErrorResponse)
+    )
+)]
+pub async fn get_certificate_issue_request(
+    State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(request_id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context_from_session(&state, &session).await?;
+    let request =
+        request_service::get_issue_request(&context.tenant.pool, &context.actor, request_id)
+            .await?;
+    Ok((StatusCode::OK, Json(ApiResponse::ok(request))).into_response())
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/certificates/issue-requests/{request_id}/withdraw",
+    operation_id = "withdrawCertificateIssueRequest",
+    tag = "certificate",
+    params(("request_id" = Uuid, Path, description = "Certificate issue request ID")),
+    responses(
+        (status = 200, description = "Pending issue request withdrawn", body = ApiResponse<CertificateIssueRequestDetail>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Only the scoped submitter may withdraw", body = ApiErrorResponse),
+        (status = 404, description = "Certificate issue request not found", body = ApiErrorResponse),
+        (status = 409, description = "Issue request cannot be withdrawn from its current state", body = ApiErrorResponse)
+    )
+)]
+pub async fn withdraw_certificate_issue_request(
+    State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(request_id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context_from_session(&state, &session).await?;
+    let request =
+        request_service::withdraw(&context.tenant.pool, &context.actor, request_id).await?;
+    Ok((StatusCode::OK, Json(ApiResponse::ok(request))).into_response())
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/certificates/issue-requests/{request_id}/review",
+    operation_id = "startCertificateIssueRequestReview",
+    tag = "certificate",
+    params(("request_id" = Uuid, Path, description = "Certificate issue request ID")),
+    responses(
+        (status = 200, description = "Issue request moved to reviewing", body = ApiResponse<CertificateIssueRequestDetail>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "School certificate issue permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Certificate issue request not found", body = ApiErrorResponse),
+        (status = 409, description = "Issue request cannot enter review from its current state", body = ApiErrorResponse)
+    )
+)]
+pub async fn start_certificate_issue_request_review(
+    State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(request_id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context_from_session(&state, &session).await?;
+    let request =
+        request_service::start_review(&context.tenant.pool, &context.actor, request_id).await?;
+    Ok((StatusCode::OK, Json(ApiResponse::ok(request))).into_response())
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/certificates/issue-requests/{request_id}/return",
+    operation_id = "returnCertificateIssueRequest",
+    tag = "certificate",
+    params(("request_id" = Uuid, Path, description = "Certificate issue request ID")),
+    request_body = ReturnCertificateIssueRequest,
+    responses(
+        (status = 200, description = "Reviewing issue request returned for a new corrected request", body = ApiResponse<CertificateIssueRequestDetail>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "School certificate issue permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Certificate issue request not found", body = ApiErrorResponse),
+        (status = 409, description = "Issue request cannot be returned from its current state", body = ApiErrorResponse),
+        (status = 422, description = "Return reasons or note are invalid", body = ApiErrorResponse)
+    )
+)]
+pub async fn return_certificate_issue_request(
+    State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(request_id): Path<Uuid>,
+    Json(payload): Json<ReturnCertificateIssueRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context_from_session(&state, &session).await?;
+    let request = request_service::return_request(
+        &context.tenant.pool,
+        &context.actor,
+        request_id,
+        payload.issue_codes,
+        payload.return_note,
+    )
+    .await?;
+    Ok((StatusCode::OK, Json(ApiResponse::ok(request))).into_response())
 }

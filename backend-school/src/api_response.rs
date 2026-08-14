@@ -79,7 +79,7 @@ impl ApiErrorResponse {
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ApiErrorResponseWithData<T> {
     pub success: bool,
@@ -87,6 +87,18 @@ pub struct ApiErrorResponseWithData<T> {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
     pub data: T,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ApiErrorResponseWithOptionalData<T> {
+    pub success: bool,
+    pub error: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = String)]
+    pub message: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub data: Option<T>,
 }
 
 impl<T> ApiErrorResponseWithData<T> {

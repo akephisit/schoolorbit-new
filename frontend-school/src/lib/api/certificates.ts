@@ -37,6 +37,16 @@ export type CreateManualExternalCandidateRequest = Schemas['CreateManualExternal
 export type CreateAccountCertificateCandidateRequest =
 	Schemas['CreateAccountCertificateCandidateRequest'];
 export type UpdateCertificateCandidateRequest = Schemas['UpdateCertificateCandidateRequest'];
+export type CertificateIssueRequestStatus = Schemas['CertificateIssueRequestStatus'];
+export type CertificateIssueCode = Schemas['CertificateIssueCode'];
+export type CertificateIssueRequestListQuery = Schemas['CertificateIssueRequestListQuery'];
+export type CertificateIssueRequestCapabilities = Schemas['CertificateIssueRequestCapabilities'];
+export type CertificateIssueRequestSummary = Schemas['CertificateIssueRequestSummary'];
+export type CertificateIssueRequestItem = Schemas['CertificateIssueRequestItem'];
+export type CertificateIssueRequestDetail = Schemas['CertificateIssueRequestDetail'];
+export type SubmitCertificateIssueRequest = Schemas['SubmitCertificateIssueRequest'];
+export type ReturnCertificateIssueRequest = Schemas['ReturnCertificateIssueRequest'];
+export type CertificateResourceLocked = Schemas['CertificateResourceLocked'];
 type EmptyData = Schemas['EmptyData'];
 
 export async function listCertificateCampaigns(
@@ -76,7 +86,7 @@ export async function updateCertificateCampaign(
 	campaignId: string,
 	payload: UpdateCertificateCampaignRequest
 ): Promise<CertificateCampaignDetail> {
-	const response = await apiClient.put<CertificateCampaignDetail>(
+	const response = await apiClient.put<CertificateCampaignDetail, CertificateResourceLocked>(
 		`/api/certificates/campaigns/${encodeURIComponent(campaignId)}`,
 		payload
 	);
@@ -87,7 +97,7 @@ export async function changeCertificateCampaignStatus(
 	campaignId: string,
 	payload: ChangeCertificateCampaignStatusRequest
 ): Promise<CertificateCampaignDetail> {
-	const response = await apiClient.put<CertificateCampaignDetail>(
+	const response = await apiClient.put<CertificateCampaignDetail, CertificateResourceLocked>(
 		`/api/certificates/campaigns/${encodeURIComponent(campaignId)}/status`,
 		payload
 	);
@@ -95,7 +105,7 @@ export async function changeCertificateCampaignStatus(
 }
 
 export async function deleteCertificateCampaign(campaignId: string): Promise<EmptyData> {
-	const response = await apiClient.delete<EmptyData>(
+	const response = await apiClient.delete<EmptyData, CertificateResourceLocked>(
 		`/api/certificates/campaigns/${encodeURIComponent(campaignId)}`
 	);
 	return requireApiData(response, 'ไม่สามารถลบกิจกรรมเกียรติบัตรได้');
@@ -139,7 +149,7 @@ export async function updateCertificateTemplate(
 	templateId: string,
 	payload: UpdateCertificateTemplateRequest
 ): Promise<CertificateTemplateDetail> {
-	const response = await apiClient.put<CertificateTemplateDetail>(
+	const response = await apiClient.put<CertificateTemplateDetail, CertificateResourceLocked>(
 		`/api/certificates/templates/${encodeURIComponent(templateId)}`,
 		payload
 	);
@@ -149,9 +159,10 @@ export async function updateCertificateTemplate(
 export async function deleteCertificateTemplate(
 	templateId: string
 ): Promise<CertificateTemplateDeleteResult> {
-	const response = await apiClient.delete<CertificateTemplateDeleteResult>(
-		`/api/certificates/templates/${encodeURIComponent(templateId)}`
-	);
+	const response = await apiClient.delete<
+		CertificateTemplateDeleteResult,
+		CertificateResourceLocked
+	>(`/api/certificates/templates/${encodeURIComponent(templateId)}`);
 	return requireApiData(response, 'ไม่สามารถลบแม่แบบเกียรติบัตรได้');
 }
 
@@ -159,7 +170,7 @@ export async function attachCertificateTemplateBackground(
 	templateId: string,
 	payload: AttachCertificateBackgroundRequest
 ): Promise<CertificateTemplateDetail> {
-	const response = await apiClient.put<CertificateTemplateDetail>(
+	const response = await apiClient.put<CertificateTemplateDetail, CertificateResourceLocked>(
 		`/api/certificates/templates/${encodeURIComponent(templateId)}/background`,
 		payload
 	);
@@ -170,7 +181,7 @@ export async function attachCertificateTemplateAsset(
 	templateId: string,
 	payload: AttachCertificateAssetRequest
 ): Promise<CertificateTemplateDetail> {
-	const response = await apiClient.post<CertificateTemplateDetail>(
+	const response = await apiClient.post<CertificateTemplateDetail, CertificateResourceLocked>(
 		`/api/certificates/templates/${encodeURIComponent(templateId)}/assets`,
 		payload
 	);
@@ -181,7 +192,7 @@ export async function deleteCertificateTemplateAsset(
 	templateId: string,
 	assetId: string
 ): Promise<CertificateTemplateDetail> {
-	const response = await apiClient.delete<CertificateTemplateDetail>(
+	const response = await apiClient.delete<CertificateTemplateDetail, CertificateResourceLocked>(
 		`/api/certificates/templates/${encodeURIComponent(templateId)}/assets/${encodeURIComponent(assetId)}`
 	);
 	return requireApiData(response, 'ไม่สามารถลบทรัพยากรแม่แบบได้');
@@ -273,7 +284,7 @@ export async function bulkUpdateCertificateCandidates(
 	campaignId: string,
 	payload: CertificateCandidateBulkRequest
 ): Promise<CertificateCandidateBulkResult> {
-	const response = await apiClient.post<CertificateCandidateBulkResult>(
+	const response = await apiClient.post<CertificateCandidateBulkResult, CertificateResourceLocked>(
 		`/api/certificates/campaigns/${encodeURIComponent(campaignId)}/candidates/bulk`,
 		payload
 	);
@@ -293,7 +304,7 @@ export async function updateCertificateCandidate(
 	candidateId: string,
 	payload: UpdateCertificateCandidateRequest
 ): Promise<CertificateCandidateDetail> {
-	const response = await apiClient.put<CertificateCandidateDetail>(
+	const response = await apiClient.put<CertificateCandidateDetail, CertificateResourceLocked>(
 		`/api/certificates/candidates/${encodeURIComponent(candidateId)}`,
 		payload
 	);
@@ -303,8 +314,78 @@ export async function updateCertificateCandidate(
 export async function deleteCertificateCandidate(
 	candidateId: string
 ): Promise<CertificateCandidateDetail> {
-	const response = await apiClient.delete<CertificateCandidateDetail>(
+	const response = await apiClient.delete<CertificateCandidateDetail, CertificateResourceLocked>(
 		`/api/certificates/candidates/${encodeURIComponent(candidateId)}`
 	);
 	return requireApiData(response, 'ไม่สามารถลบรายชื่อผู้รับเกียรติบัตรได้');
+}
+
+export async function listCertificateCampaignIssueRequests(
+	campaignId: string
+): Promise<CertificateIssueRequestSummary[]> {
+	const response = await apiClient.get<CertificateIssueRequestSummary[]>(
+		`/api/certificates/campaigns/${encodeURIComponent(campaignId)}/issue-requests`
+	);
+	return requireApiData(response, 'ไม่สามารถโหลดประวัติคำขอออกเกียรติบัตรได้');
+}
+
+export async function submitCertificateIssueRequest(
+	campaignId: string,
+	payload: SubmitCertificateIssueRequest
+): Promise<CertificateIssueRequestDetail> {
+	const response = await apiClient.post<CertificateIssueRequestDetail, CertificateResourceLocked>(
+		`/api/certificates/campaigns/${encodeURIComponent(campaignId)}/issue-requests`,
+		payload
+	);
+	return requireApiData(response, 'ไม่สามารถส่งคำขอออกเกียรติบัตรได้');
+}
+
+export async function listCertificateIssueRequests(
+	query: CertificateIssueRequestListQuery = {}
+): Promise<CertificateIssueRequestSummary[]> {
+	const params = new URLSearchParams();
+	if (query.status) params.set('status', query.status);
+	const suffix = params.size > 0 ? `?${params.toString()}` : '';
+	const response = await apiClient.get<CertificateIssueRequestSummary[]>(
+		`/api/certificates/issue-requests${suffix}`
+	);
+	return requireApiData(response, 'ไม่สามารถโหลดคิวคำขอออกเกียรติบัตรได้');
+}
+
+export async function getCertificateIssueRequest(
+	requestId: string
+): Promise<CertificateIssueRequestDetail> {
+	const response = await apiClient.get<CertificateIssueRequestDetail>(
+		`/api/certificates/issue-requests/${encodeURIComponent(requestId)}`
+	);
+	return requireApiData(response, 'ไม่สามารถโหลดคำขอออกเกียรติบัตรได้');
+}
+
+export async function withdrawCertificateIssueRequest(
+	requestId: string
+): Promise<CertificateIssueRequestDetail> {
+	const response = await apiClient.post<CertificateIssueRequestDetail>(
+		`/api/certificates/issue-requests/${encodeURIComponent(requestId)}/withdraw`
+	);
+	return requireApiData(response, 'ไม่สามารถถอนคำขอออกเกียรติบัตรได้');
+}
+
+export async function startCertificateIssueRequestReview(
+	requestId: string
+): Promise<CertificateIssueRequestDetail> {
+	const response = await apiClient.post<CertificateIssueRequestDetail>(
+		`/api/certificates/issue-requests/${encodeURIComponent(requestId)}/review`
+	);
+	return requireApiData(response, 'ไม่สามารถเริ่มตรวจคำขอออกเกียรติบัตรได้');
+}
+
+export async function returnCertificateIssueRequest(
+	requestId: string,
+	payload: ReturnCertificateIssueRequest
+): Promise<CertificateIssueRequestDetail> {
+	const response = await apiClient.post<CertificateIssueRequestDetail>(
+		`/api/certificates/issue-requests/${encodeURIComponent(requestId)}/return`,
+		payload
+	);
+	return requireApiData(response, 'ไม่สามารถส่งคำขอกลับให้แก้ไขได้');
 }

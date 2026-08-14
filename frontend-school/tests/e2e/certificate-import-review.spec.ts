@@ -112,7 +112,7 @@ function harnessPlugin(): Plugin {
 					createdAt: timestamp,
 					createdBy: null,
 					eventDate: '2026-07-29',
-					hasOpenIssueRequest: false,
+					hasOpenIssueRequest: true,
 					issuedCertificateCount: 0,
 					nextCertificateSequence: 1,
 					ownerOrganizationUnitCode: 'THAI',
@@ -123,7 +123,8 @@ function harnessPlugin(): Plugin {
 					updatedAt: timestamp,
 					capabilities: {
 						canRead: true,
-						canUpdate: true,
+						canUpdate: false,
+						canPrepareCandidates: true,
 						canDelete: true,
 						canSubmit: true,
 						canChangeStatus: true,
@@ -354,8 +355,7 @@ function harnessPlugin(): Plugin {
 					target: document.getElementById('app'),
 					props: {
 						campaignId,
-						canReadCandidates: true,
-						hasUpdatePermission: true
+						canReadCandidates: true
 					}
 				});
 			`;
@@ -481,7 +481,9 @@ test('account search ignores a stale recipient-type response', async ({ page }) 
 	await expect(page.getByText('ผลลัพธ์เก่า นักเรียน')).not.toBeVisible();
 });
 
-test('ordinary edit cannot change a valid recipient type', async ({ page }) => {
+test('active request still allows an unlocked candidate edit without changing recipient type', async ({
+	page
+}) => {
 	await page.goto(`${baseUrl}${harnessPath}`);
 	await expect(page.getByText('พร้อมออก').first()).toBeVisible();
 	await page.getByRole('button', { name: 'แก้ไข เด็กหญิงกมลชนก ใจดี' }).click();

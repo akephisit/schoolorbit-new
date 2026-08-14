@@ -45,12 +45,10 @@
 
 	let {
 		campaignId,
-		canReadCandidates,
-		hasUpdatePermission
+		canReadCandidates
 	}: {
 		campaignId: string;
 		canReadCandidates: boolean;
-		hasUpdatePermission: boolean;
 	} = $props();
 
 	type ValidationStatus = CertificateCandidateDetail['validationStatus'];
@@ -93,12 +91,9 @@
 	let candidateLoadGeneration = 0;
 	let requestedCampaignId = '';
 
-	const canCreateCandidates = $derived(
-		hasUpdatePermission && campaign?.capabilities.canUpdate === true
-	);
-	const canManageCandidates = $derived(
-		hasUpdatePermission && campaign?.capabilities.canUpdate === true
-	);
+	const canPrepareCandidates = $derived(campaign?.capabilities.canPrepareCandidates === true);
+	const canCreateCandidates = $derived(canPrepareCandidates);
+	const canManageCandidates = $derived(canPrepareCandidates);
 	const canDeleteCandidates = $derived(canManageCandidates);
 	const selectedCandidates = $derived(
 		candidates.filter((candidate) => selectedIds.includes(candidate.id))

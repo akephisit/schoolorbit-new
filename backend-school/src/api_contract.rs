@@ -1,4 +1,7 @@
-use crate::api_response::{ApiErrorResponse, ApiResponse, EmptyData, UuidIdData};
+use crate::api_response::{
+    ApiErrorResponse, ApiErrorResponseWithData, ApiErrorResponseWithOptionalData, ApiResponse,
+    EmptyData, UuidIdData,
+};
 use crate::modules::academic::handlers::activity::{
     ActivityAddedCountData, ActivityDeletedCountData, ActivityInsertedCountData,
     ActivityProcessedCountData, AddSlotInstructorRequest, AddSlotInstructorsBatchRequest,
@@ -83,17 +86,21 @@ use crate::modules::certificates::models::{
     CertificateCandidateImportResult, CertificateCandidateListQuery,
     CertificateCandidateListResponse, CertificateCandidateSummary, CertificateElement,
     CertificateFontSource, CertificateImportBatchSummary, CertificateImportRequest,
-    CertificateImportRowInput, CertificateImportSource, CertificateLayoutV1, CertificatePageBox,
+    CertificateImportRowInput, CertificateImportSource, CertificateIssueCode,
+    CertificateIssueRequestCapabilities, CertificateIssueRequestDetail,
+    CertificateIssueRequestItem, CertificateIssueRequestListQuery, CertificateIssueRequestStatus,
+    CertificateIssueRequestSummary, CertificateLayoutV1, CertificatePageBox,
     CertificatePageGeometry, CertificatePreviewKind, CertificatePreviewManifestRequest,
     CertificateRenderCampaignValues, CertificateRenderFileGrant, CertificateRenderFontGrant,
-    CertificateRenderImageGrant, CertificateRenderManifest, CertificateTemplateAsset,
-    CertificateTemplateAssetKind, CertificateTemplateCapabilities,
-    CertificateTemplateDeleteDisposition, CertificateTemplateDeleteResult,
-    CertificateTemplateDetail, CertificateTemplateVariableCatalog,
+    CertificateRenderImageGrant, CertificateRenderManifest, CertificateResourceLockCode,
+    CertificateResourceLocked, CertificateTemplateAsset, CertificateTemplateAssetKind,
+    CertificateTemplateCapabilities, CertificateTemplateDeleteDisposition,
+    CertificateTemplateDeleteResult, CertificateTemplateDetail, CertificateTemplateVariableCatalog,
     ChangeCertificateCampaignStatusRequest, CreateAccountCertificateCandidateRequest,
     CreateCertificateCampaignRequest, CreateCertificateTemplateRequest,
     CreateManualExternalCandidateRequest, ElementFrame, GeometryAction, ImageElement,
-    NullableUuidUpdate, QrElement, RecipientType, TextAlignment, TextElement, TextShadow,
+    NullableUuidUpdate, QrElement, RecipientType, ReturnCertificateIssueRequest,
+    SubmitCertificateIssueRequest, TextAlignment, TextElement, TextShadow,
     UpdateCertificateCampaignRequest, UpdateCertificateCandidateRequest,
     UpdateCertificateTemplateRequest,
 };
@@ -249,6 +256,13 @@ use utoipa::OpenApi;
         crate::modules::certificates::handlers::get_certificate_candidate,
         crate::modules::certificates::handlers::update_certificate_candidate,
         crate::modules::certificates::handlers::delete_certificate_candidate,
+        crate::modules::certificates::handlers::list_certificate_campaign_issue_requests,
+        crate::modules::certificates::handlers::submit_certificate_issue_request,
+        crate::modules::certificates::handlers::list_certificate_issue_requests,
+        crate::modules::certificates::handlers::get_certificate_issue_request,
+        crate::modules::certificates::handlers::withdraw_certificate_issue_request,
+        crate::modules::certificates::handlers::start_certificate_issue_request_review,
+        crate::modules::certificates::handlers::return_certificate_issue_request,
         crate::modules::parents::handlers::get_own_parent_profile,
         crate::modules::parents::handlers::get_child_profile,
         crate::modules::parents::handlers::get_child_timetable,
@@ -528,6 +542,21 @@ use utoipa::OpenApi;
         ApiResponse<CertificateCandidateImportResult>,
         ApiResponse<Vec<CertificateCandidateAccount>>,
         ApiResponse<CertificateCandidateBulkResult>,
+        CertificateIssueRequestStatus,
+        CertificateIssueCode,
+        CertificateResourceLockCode,
+        SubmitCertificateIssueRequest,
+        ReturnCertificateIssueRequest,
+        CertificateIssueRequestListQuery,
+        CertificateIssueRequestCapabilities,
+        CertificateIssueRequestSummary,
+        CertificateIssueRequestItem,
+        CertificateIssueRequestDetail,
+        CertificateResourceLocked,
+        ApiResponse<Vec<CertificateIssueRequestSummary>>,
+        ApiResponse<CertificateIssueRequestDetail>,
+        ApiErrorResponseWithData<CertificateResourceLocked>,
+        ApiErrorResponseWithOptionalData<CertificateResourceLocked>,
         ApiResponse<Vec<GradeLevelLookupItem>>,
         ApiResponse<Vec<ClassroomLookupItem>>,
         ApiResponse<Vec<AcademicYearLookupItem>>,
@@ -3165,6 +3194,41 @@ mod tests {
                     "delete",
                     "deleteCertificateCandidate",
                 ),
+                (
+                    "/api/certificates/campaigns/{campaign_id}/issue-requests",
+                    "get",
+                    "listCertificateCampaignIssueRequests",
+                ),
+                (
+                    "/api/certificates/campaigns/{campaign_id}/issue-requests",
+                    "post",
+                    "submitCertificateIssueRequest",
+                ),
+                (
+                    "/api/certificates/issue-requests",
+                    "get",
+                    "listCertificateIssueRequests",
+                ),
+                (
+                    "/api/certificates/issue-requests/{request_id}",
+                    "get",
+                    "getCertificateIssueRequest",
+                ),
+                (
+                    "/api/certificates/issue-requests/{request_id}/withdraw",
+                    "post",
+                    "withdrawCertificateIssueRequest",
+                ),
+                (
+                    "/api/certificates/issue-requests/{request_id}/review",
+                    "post",
+                    "startCertificateIssueRequestReview",
+                ),
+                (
+                    "/api/certificates/issue-requests/{request_id}/return",
+                    "post",
+                    "returnCertificateIssueRequest",
+                ),
             ],
         );
 
@@ -3185,6 +3249,9 @@ mod tests {
         }
         assert!(
             required(&schemas["CertificateCampaignCapabilities"]).contains(&"canManageTemplates")
+        );
+        assert!(
+            required(&schemas["CertificateCampaignCapabilities"]).contains(&"canPrepareCandidates")
         );
         for field in [
             "ownerOrganizationUnitId",
@@ -3269,6 +3336,59 @@ mod tests {
                 .expect("candidate bulk variant properties");
             assert!(properties.contains_key("candidateIds"));
             assert!(!properties.contains_key("candidate_ids"));
+        }
+        for (schema_name, required_fields) in [
+            ("SubmitCertificateIssueRequest", &["candidateIds"][..]),
+            (
+                "ReturnCertificateIssueRequest",
+                &["issueCodes", "returnNote"][..],
+            ),
+            (
+                "CertificateIssueRequestDetail",
+                &["campaignId", "status", "capabilities", "items"][..],
+            ),
+            ("CertificateResourceLocked", &["code", "requestId"][..]),
+        ] {
+            let schema = &schemas[schema_name];
+            for field in required_fields {
+                assert!(required(schema).contains(field));
+            }
+        }
+        assert_eq!(
+            document["paths"]["/api/certificates/campaigns/{campaign_id}/issue-requests"]["post"]
+                ["responses"]["409"]["content"]["application/json"]["schema"]["$ref"],
+            "#/components/schemas/ApiErrorResponseWithData_CertificateResourceLocked"
+        );
+        let mutation_conflict_ref =
+            "#/components/schemas/ApiErrorResponseWithOptionalData_CertificateResourceLocked";
+        for (path, method) in [
+            ("/api/certificates/campaigns/{campaign_id}", "put"),
+            ("/api/certificates/campaigns/{campaign_id}", "delete"),
+            ("/api/certificates/campaigns/{campaign_id}/status", "put"),
+            ("/api/certificates/templates/{template_id}", "put"),
+            ("/api/certificates/templates/{template_id}", "delete"),
+            (
+                "/api/certificates/templates/{template_id}/background",
+                "put",
+            ),
+            ("/api/certificates/templates/{template_id}/assets", "post"),
+            (
+                "/api/certificates/templates/{template_id}/assets/{asset_id}",
+                "delete",
+            ),
+            (
+                "/api/certificates/campaigns/{campaign_id}/candidates/bulk",
+                "post",
+            ),
+            ("/api/certificates/candidates/{candidate_id}", "put"),
+            ("/api/certificates/candidates/{candidate_id}", "delete"),
+        ] {
+            assert_eq!(
+                document["paths"][path][method]["responses"]["409"]["content"]["application/json"]
+                    ["schema"]["$ref"],
+                mutation_conflict_ref,
+                "{method} {path} must document optional typed lock data"
+            );
         }
         assert_eq!(
             document["paths"]["/api/certificates/campaigns/{campaign_id}"]["delete"]["responses"]

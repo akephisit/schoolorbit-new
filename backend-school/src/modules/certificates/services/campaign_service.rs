@@ -35,6 +35,7 @@ const CAMPAIGN_SELECT: &str = r#"
         c.owner_organization_unit_id,
         ou.code AS owner_organization_unit_code,
         ou.name AS owner_organization_unit_name,
+        ou.is_active AS owner_organization_unit_is_active,
         c.name,
         c.event_date,
         c.status,
@@ -71,6 +72,7 @@ struct CampaignRow {
     owner_organization_unit_id: Option<Uuid>,
     owner_organization_unit_code: Option<String>,
     owner_organization_unit_name: Option<String>,
+    owner_organization_unit_is_active: Option<bool>,
     name: String,
     event_date: NaiveDate,
     status: String,
@@ -271,6 +273,12 @@ pub async fn update_campaign(
         CertificateAction::Update,
     )
     .await?;
+    let can_read_locked_request = super::request_service::can_read_request(
+        pool,
+        actor,
+        authorization_row.owner_organization_unit_id,
+    )
+    .await?;
     require_valid_owner(pool, authorization_row.owner_organization_unit_id).await?;
     if let Some(next_owner) = requested_owner {
         if next_owner != authorization_row.owner_organization_unit_id {
@@ -292,7 +300,7 @@ pub async fn update_campaign(
     )?;
     require_valid_owner_in_transaction(&mut tx, current.owner_organization_unit_id).await?;
     require_expected_update(&current, payload.expected_updated_at)?;
-    require_campaign_not_open_locked(&mut tx, campaign_id).await?;
+    require_campaign_not_open_locked(&mut tx, campaign_id, can_read_locked_request).await?;
 
     let next_academic_year_id = payload.academic_year_id.unwrap_or(current.academic_year_id);
     let next_owner = requested_owner.unwrap_or(current.owner_organization_unit_id);
@@ -389,6 +397,12 @@ pub async fn change_campaign_status(
         CertificateAction::Update,
     )
     .await?;
+    let can_read_locked_request = super::request_service::can_read_request(
+        pool,
+        actor,
+        authorization_row.owner_organization_unit_id,
+    )
+    .await?;
     require_valid_owner(pool, authorization_row.owner_organization_unit_id).await?;
 
     let mut tx = pool.begin().await.map_err(campaign_db_error)?;
@@ -404,7 +418,7 @@ pub async fn change_campaign_status(
         tx.commit().await.map_err(campaign_db_error)?;
         return fetch_detail_with_capabilities(pool, actor, campaign_id).await;
     }
-    require_campaign_not_open_locked(&mut tx, campaign_id).await?;
+    require_campaign_not_open_locked(&mut tx, campaign_id, can_read_locked_request).await?;
     validate_manual_status_transition(current_status, payload.status)?;
 
     sqlx::query(
@@ -449,6 +463,12 @@ pub async fn delete_campaign(
         CertificateAction::Delete,
     )
     .await?;
+    let can_read_locked_request = super::request_service::can_read_request(
+        pool,
+        actor,
+        authorization_row.owner_organization_unit_id,
+    )
+    .await?;
     require_valid_owner(pool, authorization_row.owner_organization_unit_id).await?;
 
     let mut tx = pool.begin().await.map_err(campaign_db_error)?;
@@ -464,6 +484,7 @@ pub async fn delete_campaign(
             "ลบได้เฉพาะกิจกรรมฉบับร่างที่ยังไม่เคยออกเกียรติบัตร".to_string(),
         ));
     }
+    require_campaign_not_open_locked(&mut tx, campaign_id, can_read_locked_request).await?;
     let (issued_count, request_count): (i64, i64) = sqlx::query_as(
         "SELECT
             (SELECT COUNT(*) FROM certificates WHERE campaign_id = $1),
@@ -691,11 +712,17 @@ fn capabilities_for(
     scopes: &CapabilityScopes,
 ) -> CertificateCampaignCapabilities {
     let owner = row.owner_organization_unit_id;
+    let owner_active = owner.is_none() || row.owner_organization_unit_is_active == Some(true);
     let unlocked = !row.has_open_issue_request;
     let can_update = scopes.update.allows(owner) && unlocked;
     CertificateCampaignCapabilities {
         can_read: scopes.read.allows(owner),
         can_update,
+        can_prepare_candidates: scopes.update.allows(owner)
+            && matches!(
+                status,
+                CertificateCampaignStatus::Draft | CertificateCampaignStatus::Active
+            ),
         can_delete: scopes.delete.allows(owner)
             && unlocked
             && status == CertificateCampaignStatus::Draft
@@ -703,7 +730,7 @@ fn capabilities_for(
             && row.issued_certificate_count == 0
             && row.issue_request_count == 0,
         can_submit: scopes.submit.allows(owner)
-            && unlocked
+            && owner_active
             && matches!(
                 status,
                 CertificateCampaignStatus::Draft | CertificateCampaignStatus::Active
@@ -869,20 +896,22 @@ fn require_expected_update(
 async fn require_campaign_not_open_locked(
     tx: &mut Transaction<'_, Postgres>,
     campaign_id: Uuid,
+    can_read_locked_request: bool,
 ) -> Result<(), AppError> {
-    let locked: bool = sqlx::query_scalar(
-        "SELECT EXISTS (
-            SELECT 1 FROM certificate_issue_requests
-            WHERE campaign_id = $1 AND status IN ('pending', 'reviewing')
-        )",
+    let request_id: Option<Uuid> = sqlx::query_scalar(
+        "SELECT id FROM certificate_issue_requests
+         WHERE campaign_id = $1 AND status IN ('pending', 'reviewing')
+         ORDER BY submitted_at, id
+         LIMIT 1",
     )
     .bind(campaign_id)
-    .fetch_one(&mut **tx)
+    .fetch_optional(&mut **tx)
     .await
     .map_err(campaign_db_error)?;
-    if locked {
-        Err(AppError::Conflict(
-            "กิจกรรมนี้มีคำขอออกเกียรติบัตรที่กำลังตรวจสอบ จึงยังแก้ไขไม่ได้".to_string(),
+    if let Some(request_id) = request_id {
+        Err(super::request_service::resource_locked_error(
+            request_id,
+            can_read_locked_request,
         ))
     } else {
         Ok(())

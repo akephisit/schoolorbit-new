@@ -93,6 +93,7 @@ struct CandidateRow {
     validation_codes: Vec<String>,
     duplicate_confirmed: bool,
     issued_certificate_id: Option<Uuid>,
+    locked_request_id: Option<Uuid>,
     deleted_at: Option<DateTime<Utc>>,
     created_at: DateTime<Utc>,
     updated_at: DateTime<Utc>,
@@ -179,6 +180,13 @@ const CANDIDATE_SELECT: &str = r#"
         candidate.validation_codes,
         candidate.duplicate_confirmed,
         candidate.issued_certificate_id,
+        (SELECT candidate_lock.request_id
+         FROM certificate_candidate_issue_locks candidate_lock
+         JOIN certificate_issue_requests request ON request.id = candidate_lock.request_id
+         WHERE candidate_lock.candidate_id = candidate.id
+           AND request.status IN ('pending', 'reviewing')
+         ORDER BY request.submitted_at, request.id
+         LIMIT 1) AS locked_request_id,
         candidate.deleted_at,
         candidate.created_at,
         candidate.updated_at
@@ -211,7 +219,6 @@ pub async fn import_candidates(
         CertificateAction::Update,
     )
     .await?;
-
     let mut tx = pool.begin().await.map_err(candidate_db_error)?;
     let locked_access = lock_campaign(&mut tx, campaign_id).await?;
     require_same_owner(&access, &locked_access)?;
@@ -570,13 +577,16 @@ pub async fn update_candidate(
         CertificateAction::Update,
     )
     .await?;
+    let can_read_locked_request =
+        super::request_service::can_read_request(pool, actor, access.owner_organization_unit_id)
+            .await?;
 
     let mut tx = pool.begin().await.map_err(candidate_db_error)?;
     let locked_access = lock_campaign(&mut tx, existing.campaign_id).await?;
     require_same_owner(&access, &locked_access)?;
     require_mutable_campaign(&locked_access.status)?;
     let locked = lock_candidate(&mut tx, candidate_id).await?;
-    require_candidate_mutable(&mut tx, &locked).await?;
+    require_candidate_mutable(&locked, can_read_locked_request)?;
     if locked.updated_at != request.expected_updated_at {
         return Err(AppError::Conflict(
             "รายชื่อผู้รับถูกแก้ไขจากหน้าจออื่น กรุณาโหลดใหม่".to_string(),
@@ -888,6 +898,9 @@ async fn bulk_update_inner(
         CertificateAction::Update,
     )
     .await?;
+    let can_read_locked_request =
+        super::request_service::can_read_request(pool, actor, access.owner_organization_unit_id)
+            .await?;
     let mut tx = pool.begin().await.map_err(candidate_db_error)?;
     let locked_access = lock_campaign(&mut tx, first.campaign_id).await?;
     require_same_owner(&access, &locked_access)?;
@@ -899,7 +912,13 @@ async fn bulk_update_inner(
         return Err(candidate_not_found());
     }
     for row in &rows {
-        require_candidate_mutable(&mut tx, row).await?;
+        require_candidate_mutable(row, can_read_locked_request)?;
+    }
+    if matches!(
+        &request,
+        CertificateCandidateBulkRequest::ConfirmExternal { .. }
+    ) {
+        lock_account_identity_writes(&mut tx).await?;
     }
 
     let templates = load_templates(&mut tx, first.campaign_id).await?;
@@ -1749,6 +1768,16 @@ async fn authoritative_account_exists(
     }
 }
 
+async fn lock_account_identity_writes(tx: &mut Transaction<'_, Postgres>) -> Result<(), AppError> {
+    // A missing identity has no row to lock. SHARE table locks serialize this short,
+    // explicit confirmation path with every INSERT/UPDATE that could create the account.
+    sqlx::query("LOCK TABLE users, student_info IN SHARE MODE")
+        .execute(&mut **tx)
+        .await
+        .map_err(candidate_db_error)?;
+    Ok(())
+}
+
 async fn campaign_access(pool: &PgPool, campaign_id: Uuid) -> Result<CampaignAccessRow, AppError> {
     sqlx::query_as(
         "SELECT owner_organization_unit_id, status
@@ -1833,9 +1862,9 @@ async fn lock_candidates(
     .map_err(candidate_db_error)
 }
 
-async fn require_candidate_mutable(
-    tx: &mut Transaction<'_, Postgres>,
+fn require_candidate_mutable(
     candidate: &CandidateRow,
+    can_read_locked_request: bool,
 ) -> Result<(), AppError> {
     if candidate.deleted_at.is_some() {
         return Err(candidate_not_found());
@@ -1845,21 +1874,10 @@ async fn require_candidate_mutable(
             "รายชื่อที่ออกเกียรติบัตรแล้วแก้ไขไม่ได้".to_string(),
         ));
     }
-    let locked: bool = sqlx::query_scalar(
-        "SELECT EXISTS (
-            SELECT 1 FROM certificate_candidate_issue_locks candidate_lock
-            JOIN certificate_issue_requests request ON request.id = candidate_lock.request_id
-            WHERE candidate_lock.candidate_id = $1
-              AND request.status IN ('pending', 'reviewing')
-         )",
-    )
-    .bind(candidate.id)
-    .fetch_one(&mut **tx)
-    .await
-    .map_err(candidate_db_error)?;
-    if locked {
-        Err(AppError::Conflict(
-            "รายชื่อนี้อยู่ในคำขอออกเกียรติบัตรที่กำลังตรวจ".to_string(),
+    if let Some(request_id) = candidate.locked_request_id {
+        Err(super::request_service::resource_locked_error(
+            request_id,
+            can_read_locked_request,
         ))
     } else {
         Ok(())
@@ -1966,8 +1984,10 @@ fn candidate_detail(
         })
         .collect::<Result<Vec<_>, _>>()?;
     let selected_name_source = parse_optional_name_source(row.selected_name_source.as_deref())?;
-    let mutable =
-        can_update_campaign && row.deleted_at.is_none() && row.issued_certificate_id.is_none();
+    let mutable = can_update_campaign
+        && row.deleted_at.is_none()
+        && row.issued_certificate_id.is_none()
+        && row.locked_request_id.is_none();
     let has_required_lookup = (recipient_type == RecipientType::Student
         && row.lookup_student_id.is_some())
         || (recipient_type == RecipientType::Staff && row.lookup_staff_username.is_some());

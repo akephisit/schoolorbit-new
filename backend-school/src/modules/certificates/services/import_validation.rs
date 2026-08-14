@@ -478,8 +478,8 @@ fn normalized_comparison_key(value: &str) -> String {
         .collect()
 }
 
-fn is_forbidden_header(normalized_header: &str) -> bool {
-    let compact = normalized_header
+pub(super) fn is_forbidden_header(normalized_header: &str) -> bool {
+    let compact = normalized_comparison_key(normalized_header)
         .chars()
         .filter(|character| character.is_alphanumeric())
         .collect::<String>();

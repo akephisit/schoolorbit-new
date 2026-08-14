@@ -1013,6 +1013,84 @@
         ],
         "type": "object"
       },
+      "ApiErrorResponseWithData_CertificateResourceLocked": {
+        "properties": {
+          "data": {
+            "properties": {
+              "code": {
+                "$ref": "#/components/schemas/CertificateResourceLockCode"
+              },
+              "requestId": {
+                "format": "uuid",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "code",
+              "requestId"
+            ],
+            "type": "object"
+          },
+          "error": {
+            "type": "string"
+          },
+          "message": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "error",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiErrorResponseWithOptionalData_CertificateResourceLocked": {
+        "properties": {
+          "data": {
+            "properties": {
+              "code": {
+                "$ref": "#/components/schemas/CertificateResourceLockCode"
+              },
+              "requestId": {
+                "format": "uuid",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "code",
+              "requestId"
+            ],
+            "type": "object"
+          },
+          "error": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "error"
+        ],
+        "type": "object"
+      },
       "ApiResponse_AcademicStructure": {
         "properties": {
           "data": {
@@ -2165,6 +2243,182 @@
             "required": [
               "items",
               "summary"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_CertificateIssueRequestDetail": {
+        "properties": {
+          "data": {
+            "properties": {
+              "campaignId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "campaignName": {
+                "type": "string"
+              },
+              "capabilities": {
+                "$ref": "#/components/schemas/CertificateIssueRequestCapabilities"
+              },
+              "createdAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "invalidCount": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "issueCodes": {
+                "items": {
+                  "$ref": "#/components/schemas/CertificateIssueCode"
+                },
+                "type": "array"
+              },
+              "issuedAt": {
+                "format": "date-time",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "itemCount": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "items": {
+                "items": {
+                  "$ref": "#/components/schemas/CertificateIssueRequestItem"
+                },
+                "type": "array"
+              },
+              "ownerOrganizationUnitId": {
+                "format": "uuid",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "ownerOrganizationUnitName": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "readyCount": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "returnedAt": {
+                "format": "date-time",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "returnNote": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "reviewCount": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "reviewedAt": {
+                "format": "date-time",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "reviewedBy": {
+                "format": "uuid",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "reviewedByName": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "status": {
+                "$ref": "#/components/schemas/CertificateIssueRequestStatus"
+              },
+              "submittedAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "submittedBy": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "submittedByName": {
+                "type": "string"
+              },
+              "templateCount": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "updatedAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "withdrawnAt": {
+                "format": "date-time",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "campaignId",
+              "campaignName",
+              "ownerOrganizationUnitId",
+              "ownerOrganizationUnitName",
+              "status",
+              "submittedBy",
+              "submittedByName",
+              "reviewedBy",
+              "reviewedByName",
+              "submittedAt",
+              "reviewedAt",
+              "returnedAt",
+              "withdrawnAt",
+              "issuedAt",
+              "returnNote",
+              "issueCodes",
+              "itemCount",
+              "templateCount",
+              "readyCount",
+              "reviewCount",
+              "invalidCount",
+              "createdAt",
+              "updatedAt",
+              "capabilities",
+              "items"
             ],
             "type": "object"
           },
@@ -6553,6 +6807,178 @@
         ],
         "type": "object"
       },
+      "ApiResponse_Vec_CertificateIssueRequestSummary": {
+        "properties": {
+          "data": {
+            "items": {
+              "properties": {
+                "campaignId": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "campaignName": {
+                  "type": "string"
+                },
+                "capabilities": {
+                  "$ref": "#/components/schemas/CertificateIssueRequestCapabilities"
+                },
+                "createdAt": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "invalidCount": {
+                  "format": "int64",
+                  "type": "integer"
+                },
+                "issueCodes": {
+                  "items": {
+                    "$ref": "#/components/schemas/CertificateIssueCode"
+                  },
+                  "type": "array"
+                },
+                "issuedAt": {
+                  "format": "date-time",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "itemCount": {
+                  "format": "int64",
+                  "type": "integer"
+                },
+                "ownerOrganizationUnitId": {
+                  "format": "uuid",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "ownerOrganizationUnitName": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "readyCount": {
+                  "format": "int64",
+                  "type": "integer"
+                },
+                "returnedAt": {
+                  "format": "date-time",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "returnNote": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "reviewCount": {
+                  "format": "int64",
+                  "type": "integer"
+                },
+                "reviewedAt": {
+                  "format": "date-time",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "reviewedBy": {
+                  "format": "uuid",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "reviewedByName": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "status": {
+                  "$ref": "#/components/schemas/CertificateIssueRequestStatus"
+                },
+                "submittedAt": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "submittedBy": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "submittedByName": {
+                  "type": "string"
+                },
+                "templateCount": {
+                  "format": "int64",
+                  "type": "integer"
+                },
+                "updatedAt": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "withdrawnAt": {
+                  "format": "date-time",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "campaignId",
+                "campaignName",
+                "ownerOrganizationUnitId",
+                "ownerOrganizationUnitName",
+                "status",
+                "submittedBy",
+                "submittedByName",
+                "reviewedBy",
+                "reviewedByName",
+                "submittedAt",
+                "reviewedAt",
+                "returnedAt",
+                "withdrawnAt",
+                "issuedAt",
+                "returnNote",
+                "issueCodes",
+                "itemCount",
+                "templateCount",
+                "readyCount",
+                "reviewCount",
+                "invalidCount",
+                "createdAt",
+                "updatedAt",
+                "capabilities"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
       "ApiResponse_Vec_CertificateTemplateDetail": {
         "properties": {
           "data": {
@@ -10221,6 +10647,9 @@
           "canManageTemplates": {
             "type": "boolean"
           },
+          "canPrepareCandidates": {
+            "type": "boolean"
+          },
           "canRead": {
             "type": "boolean"
           },
@@ -10234,6 +10663,7 @@
         "required": [
           "canRead",
           "canUpdate",
+          "canPrepareCandidates",
           "canDelete",
           "canSubmit",
           "canDownload",
@@ -11248,6 +11678,453 @@
         ],
         "type": "string"
       },
+      "CertificateIssueCode": {
+        "enum": [
+          "candidate_not_ready",
+          "account_state_changed",
+          "template_not_ready",
+          "template_incompatible",
+          "asset_unavailable",
+          "campaign_unavailable",
+          "reviewer_requested_changes"
+        ],
+        "type": "string"
+      },
+      "CertificateIssueRequestCapabilities": {
+        "properties": {
+          "canIssue": {
+            "type": "boolean"
+          },
+          "canReturn": {
+            "type": "boolean"
+          },
+          "canStartReview": {
+            "type": "boolean"
+          },
+          "canWithdraw": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "canWithdraw",
+          "canStartReview",
+          "canReturn",
+          "canIssue"
+        ],
+        "type": "object"
+      },
+      "CertificateIssueRequestDetail": {
+        "properties": {
+          "campaignId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "campaignName": {
+            "type": "string"
+          },
+          "capabilities": {
+            "$ref": "#/components/schemas/CertificateIssueRequestCapabilities"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "invalidCount": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "issueCodes": {
+            "items": {
+              "$ref": "#/components/schemas/CertificateIssueCode"
+            },
+            "type": "array"
+          },
+          "issuedAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "itemCount": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/CertificateIssueRequestItem"
+            },
+            "type": "array"
+          },
+          "ownerOrganizationUnitId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ownerOrganizationUnitName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "readyCount": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "returnedAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "returnNote": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reviewCount": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "reviewedAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reviewedBy": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reviewedByName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "$ref": "#/components/schemas/CertificateIssueRequestStatus"
+          },
+          "submittedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "submittedBy": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "submittedByName": {
+            "type": "string"
+          },
+          "templateCount": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "withdrawnAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "campaignId",
+          "campaignName",
+          "ownerOrganizationUnitId",
+          "ownerOrganizationUnitName",
+          "status",
+          "submittedBy",
+          "submittedByName",
+          "reviewedBy",
+          "reviewedByName",
+          "submittedAt",
+          "reviewedAt",
+          "returnedAt",
+          "withdrawnAt",
+          "issuedAt",
+          "returnNote",
+          "issueCodes",
+          "itemCount",
+          "templateCount",
+          "readyCount",
+          "reviewCount",
+          "invalidCount",
+          "createdAt",
+          "updatedAt",
+          "capabilities",
+          "items"
+        ],
+        "type": "object"
+      },
+      "CertificateIssueRequestItem": {
+        "properties": {
+          "activityItem": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "awardOrRole": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "candidateId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "firstName": {
+            "type": "string"
+          },
+          "lastName": {
+            "type": "string"
+          },
+          "recipientType": {
+            "$ref": "#/components/schemas/RecipientType"
+          },
+          "templateId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "templateName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "validationCodes": {
+            "items": {
+              "$ref": "#/components/schemas/CandidateValidationCode"
+            },
+            "type": "array"
+          },
+          "validationStatus": {
+            "$ref": "#/components/schemas/CandidateValidationStatus"
+          }
+        },
+        "required": [
+          "candidateId",
+          "templateId",
+          "templateName",
+          "recipientType",
+          "title",
+          "firstName",
+          "lastName",
+          "activityItem",
+          "awardOrRole",
+          "validationStatus",
+          "validationCodes"
+        ],
+        "type": "object"
+      },
+      "CertificateIssueRequestListQuery": {
+        "additionalProperties": false,
+        "properties": {
+          "status": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/CertificateIssueRequestStatus"
+              }
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "CertificateIssueRequestStatus": {
+        "enum": [
+          "pending",
+          "reviewing",
+          "returned",
+          "withdrawn",
+          "issued"
+        ],
+        "type": "string"
+      },
+      "CertificateIssueRequestSummary": {
+        "properties": {
+          "campaignId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "campaignName": {
+            "type": "string"
+          },
+          "capabilities": {
+            "$ref": "#/components/schemas/CertificateIssueRequestCapabilities"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "invalidCount": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "issueCodes": {
+            "items": {
+              "$ref": "#/components/schemas/CertificateIssueCode"
+            },
+            "type": "array"
+          },
+          "issuedAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "itemCount": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "ownerOrganizationUnitId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ownerOrganizationUnitName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "readyCount": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "returnedAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "returnNote": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reviewCount": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "reviewedAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reviewedBy": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reviewedByName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "$ref": "#/components/schemas/CertificateIssueRequestStatus"
+          },
+          "submittedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "submittedBy": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "submittedByName": {
+            "type": "string"
+          },
+          "templateCount": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "withdrawnAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "campaignId",
+          "campaignName",
+          "ownerOrganizationUnitId",
+          "ownerOrganizationUnitName",
+          "status",
+          "submittedBy",
+          "submittedByName",
+          "reviewedBy",
+          "reviewedByName",
+          "submittedAt",
+          "reviewedAt",
+          "returnedAt",
+          "withdrawnAt",
+          "issuedAt",
+          "returnNote",
+          "issueCodes",
+          "itemCount",
+          "templateCount",
+          "readyCount",
+          "reviewCount",
+          "invalidCount",
+          "createdAt",
+          "updatedAt",
+          "capabilities"
+        ],
+        "type": "object"
+      },
       "CertificateLayoutV1": {
         "additionalProperties": false,
         "properties": {
@@ -11561,6 +12438,31 @@
           "imageGrants",
           "backgroundGrant",
           "suggestedFilename"
+        ],
+        "type": "object"
+      },
+      "CertificateResourceLockCode": {
+        "enum": [
+          "resource_locked"
+        ],
+        "type": "string"
+      },
+      "CertificateResourceLocked": {
+        "properties": {
+          "code": {
+            "$ref": "#/components/schemas/CertificateResourceLockCode"
+          },
+          "requestId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "code",
+          "requestId"
         ],
         "type": "object"
       },
@@ -16012,6 +16914,25 @@
         ],
         "type": "object"
       },
+      "ReturnCertificateIssueRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "issueCodes": {
+            "items": {
+              "$ref": "#/components/schemas/CertificateIssueCode"
+            },
+            "type": "array"
+          },
+          "returnNote": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "issueCodes",
+          "returnNote"
+        ],
+        "type": "object"
+      },
       "Role": {
         "properties": {
           "code": {
@@ -17767,6 +18688,22 @@
           "ACTIVITY"
         ],
         "type": "string"
+      },
+      "SubmitCertificateIssueRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "candidateIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "candidateIds"
+        ],
+        "type": "object"
       },
       "TeachingCourseItem": {
         "description": "วิชาที่ครูสอน — ดึงจาก classroom_courses (+ classroom_course_instructors)\nSource of truth: ระบบ Course Planning ที่ assign วิชาให้ห้อง",
@@ -29962,7 +30899,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
+                  "$ref": "#/components/schemas/ApiErrorResponseWithOptionalData_CertificateResourceLocked"
                 }
               }
             },
@@ -30102,7 +31039,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
+                  "$ref": "#/components/schemas/ApiErrorResponseWithOptionalData_CertificateResourceLocked"
                 }
               }
             },
@@ -30469,7 +31406,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
+                  "$ref": "#/components/schemas/ApiErrorResponseWithOptionalData_CertificateResourceLocked"
                 }
               }
             },
@@ -30675,6 +31612,158 @@
         ]
       }
     },
+    "/api/certificates/campaigns/{campaign_id}/issue-requests": {
+      "get": {
+        "operationId": "listCertificateCampaignIssueRequests",
+        "parameters": [
+          {
+            "description": "Certificate campaign ID",
+            "in": "path",
+            "name": "campaign_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_CertificateIssueRequestSummary"
+                }
+              }
+            },
+            "description": "Scoped issue request history for one campaign"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Certificate campaign read permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Certificate campaign not found"
+          }
+        },
+        "tags": [
+          "certificate"
+        ]
+      },
+      "post": {
+        "operationId": "submitCertificateIssueRequest",
+        "parameters": [
+          {
+            "description": "Certificate campaign ID",
+            "in": "path",
+            "name": "campaign_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubmitCertificateIssueRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_CertificateIssueRequestDetail"
+                }
+              }
+            },
+            "description": "Issue request submitted and selected candidates locked"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Exact-scope certificate submit permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Campaign or selected candidate not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseWithData_CertificateResourceLocked"
+                }
+              }
+            },
+            "description": "Selected candidate is already locked"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Campaign or selected candidate is not ready"
+          }
+        },
+        "tags": [
+          "certificate"
+        ]
+      }
+    },
     "/api/certificates/campaigns/{campaign_id}/status": {
       "put": {
         "operationId": "changeCertificateCampaignStatus",
@@ -30745,7 +31834,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
+                  "$ref": "#/components/schemas/ApiErrorResponseWithOptionalData_CertificateResourceLocked"
                 }
               }
             },
@@ -30969,7 +32058,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
+                  "$ref": "#/components/schemas/ApiErrorResponseWithOptionalData_CertificateResourceLocked"
                 }
               }
             },
@@ -31109,7 +32198,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
+                  "$ref": "#/components/schemas/ApiErrorResponseWithOptionalData_CertificateResourceLocked"
                 }
               }
             },
@@ -31124,6 +32213,364 @@
               }
             },
             "description": "Candidate values are invalid"
+          }
+        },
+        "tags": [
+          "certificate"
+        ]
+      }
+    },
+    "/api/certificates/issue-requests": {
+      "get": {
+        "operationId": "listCertificateIssueRequests",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/CertificateIssueRequestStatus"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_CertificateIssueRequestSummary"
+                }
+              }
+            },
+            "description": "School issue request queue"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "School certificate issue permission denied"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid issue request query"
+          }
+        },
+        "tags": [
+          "certificate"
+        ]
+      }
+    },
+    "/api/certificates/issue-requests/{request_id}": {
+      "get": {
+        "operationId": "getCertificateIssueRequest",
+        "parameters": [
+          {
+            "description": "Certificate issue request ID",
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_CertificateIssueRequestDetail"
+                }
+              }
+            },
+            "description": "Scoped certificate issue request detail"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Certificate issue request read permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Certificate issue request not found"
+          }
+        },
+        "tags": [
+          "certificate"
+        ]
+      }
+    },
+    "/api/certificates/issue-requests/{request_id}/return": {
+      "post": {
+        "operationId": "returnCertificateIssueRequest",
+        "parameters": [
+          {
+            "description": "Certificate issue request ID",
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReturnCertificateIssueRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_CertificateIssueRequestDetail"
+                }
+              }
+            },
+            "description": "Reviewing issue request returned for a new corrected request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "School certificate issue permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Certificate issue request not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Issue request cannot be returned from its current state"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Return reasons or note are invalid"
+          }
+        },
+        "tags": [
+          "certificate"
+        ]
+      }
+    },
+    "/api/certificates/issue-requests/{request_id}/review": {
+      "post": {
+        "operationId": "startCertificateIssueRequestReview",
+        "parameters": [
+          {
+            "description": "Certificate issue request ID",
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_CertificateIssueRequestDetail"
+                }
+              }
+            },
+            "description": "Issue request moved to reviewing"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "School certificate issue permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Certificate issue request not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Issue request cannot enter review from its current state"
+          }
+        },
+        "tags": [
+          "certificate"
+        ]
+      }
+    },
+    "/api/certificates/issue-requests/{request_id}/withdraw": {
+      "post": {
+        "operationId": "withdrawCertificateIssueRequest",
+        "parameters": [
+          {
+            "description": "Certificate issue request ID",
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_CertificateIssueRequestDetail"
+                }
+              }
+            },
+            "description": "Pending issue request withdrawn"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Only the scoped submitter may withdraw"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Certificate issue request not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Issue request cannot be withdrawn from its current state"
           }
         },
         "tags": [
@@ -31231,7 +32678,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
+                  "$ref": "#/components/schemas/ApiErrorResponseWithOptionalData_CertificateResourceLocked"
                 }
               }
             },
@@ -31371,7 +32818,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
+                  "$ref": "#/components/schemas/ApiErrorResponseWithOptionalData_CertificateResourceLocked"
                 }
               }
             },
@@ -31453,7 +32900,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
+                  "$ref": "#/components/schemas/ApiErrorResponseWithOptionalData_CertificateResourceLocked"
                 }
               }
             },
@@ -31545,11 +32992,11 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
+                  "$ref": "#/components/schemas/ApiErrorResponseWithOptionalData_CertificateResourceLocked"
                 }
               }
             },
-            "description": "Asset is referenced by the layout"
+            "description": "Asset is referenced by the layout or template is locked"
           }
         },
         "tags": [
@@ -31617,7 +33064,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
+                  "$ref": "#/components/schemas/ApiErrorResponseWithOptionalData_CertificateResourceLocked"
                 }
               }
             },
