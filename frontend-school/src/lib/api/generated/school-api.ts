@@ -2611,6 +2611,54 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/api/public/certificates/render-manifest': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['createPublicCertificateRenderManifest'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/public/certificates/verify/manual': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['verifyCertificateManually'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/public/certificates/verify/qr': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['verifyCertificateByQr'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/api/public/files/{id}/content': {
 		parameters: {
 			query?: never;
@@ -4139,6 +4187,30 @@ export interface components {
 				updatedAt: string;
 				username: string;
 				userType: string;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_PublicCertificateVerificationData: {
+			data: {
+				/** Format: int32 */
+				academicYear: number;
+				activityItem: string | null;
+				awardOrRole: string | null;
+				campaignName: string;
+				certificateNumber: string;
+				firstName: string;
+				/** Format: date */
+				issueDate: string;
+				issuerSchoolName: string;
+				lastName: string;
+				receipt: string | null;
+				/** Format: date-time */
+				receiptExpiresAt: string | null;
+				replacementCertificateNumber: string | null;
+				status: components['schemas']['CertificateStatus'];
+				templateName: string;
+				title: string | null;
 			};
 			message?: string;
 			success: boolean;
@@ -7320,6 +7392,11 @@ export interface components {
 			id: string;
 			name: string;
 		};
+		ManualCertificateVerificationRequest: {
+			certificateNumber: string;
+			firstName: string;
+			lastName: string;
+		};
 		/** @description Menu Group */
 		MenuGroup: {
 			code: string;
@@ -7623,6 +7700,29 @@ export interface components {
 			username: string;
 			userType: string;
 		};
+		PublicCertificateRenderRequest: {
+			receipt: string;
+		};
+		PublicCertificateVerificationData: {
+			/** Format: int32 */
+			academicYear: number;
+			activityItem: string | null;
+			awardOrRole: string | null;
+			campaignName: string;
+			certificateNumber: string;
+			firstName: string;
+			/** Format: date */
+			issueDate: string;
+			issuerSchoolName: string;
+			lastName: string;
+			receipt: string | null;
+			/** Format: date-time */
+			receiptExpiresAt: string | null;
+			replacementCertificateNumber: string | null;
+			status: components['schemas']['CertificateStatus'];
+			templateName: string;
+			title: string | null;
+		};
 		PublicFileDeliveryResponse: {
 			url: string;
 		};
@@ -7665,6 +7765,10 @@ export interface components {
 			/** Format: int32 */
 			level: number | null;
 			name: string;
+		};
+		QrCertificateVerificationRequest: {
+			certificateNumber: string;
+			proof: string;
 		};
 		QrElement: {
 			frame: components['schemas']['ElementFrame'];
@@ -21115,6 +21219,168 @@ export interface operations {
 			};
 			/** @description Invalid date range */
 			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	createPublicCertificateRenderManifest: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['PublicCertificateRenderRequest'];
+			};
+		};
+		responses: {
+			/** @description Fresh public certificate render manifest */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_CertificateRenderManifest'];
+				};
+			};
+			/** @description Receipt is invalid, expired, for another tenant, or no longer renderable */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Malformed render request */
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Public rendering rate limited */
+			429: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Private asset grant unavailable */
+			503: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	verifyCertificateManually: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['ManualCertificateVerificationRequest'];
+			};
+		};
+		responses: {
+			/** @description Allowlisted public certificate verification result */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_PublicCertificateVerificationData'];
+				};
+			};
+			/** @description Certificate number and recipient name did not match */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Malformed verification request */
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Public verification rate limited */
+			429: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	verifyCertificateByQr: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['QrCertificateVerificationRequest'];
+			};
+		};
+		responses: {
+			/** @description Allowlisted public certificate verification result */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_PublicCertificateVerificationData'];
+				};
+			};
+			/** @description Certificate number and QR proof did not match */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Malformed verification request */
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Public verification rate limited */
+			429: {
 				headers: {
 					[name: string]: unknown;
 				};

@@ -1,6 +1,8 @@
+use std::net::SocketAddr;
+
 use axum::{
-    extract::{Extension, Path, Query, State},
-    http::StatusCode,
+    extract::{ConnectInfo, Extension, Path, Query, State},
+    http::{header::RETRY_AFTER, HeaderMap, HeaderValue, StatusCode},
     response::IntoResponse,
     Json,
 };
@@ -29,22 +31,169 @@ use crate::{
                 CreateCertificateCampaignRequest, CreateCertificateTemplateRequest,
                 CreateManualExternalCandidateRequest, IssueCertificateOutcome,
                 IssueCertificateRequest, IssuedCertificateDetail, IssuedCertificateListQuery,
-                IssuedCertificateSummary, ReturnCertificateIssueRequest, RevokeCertificateRequest,
-                RevokeCertificateResult, SubmitCertificateIssueRequest,
+                IssuedCertificateSummary, ManualCertificateVerificationRequest,
+                PublicCertificateRenderRequest, PublicCertificateVerificationData,
+                QrCertificateVerificationRequest, ReturnCertificateIssueRequest,
+                RevokeCertificateRequest, RevokeCertificateResult, SubmitCertificateIssueRequest,
                 UpdateCertificateCampaignRequest, UpdateCertificateCandidateRequest,
                 UpdateCertificateTemplateRequest,
             },
             services::{
                 campaign_service, candidate_service, issuance_service, render_service,
-                request_service, template_service,
+                request_service, template_service, verification_service,
             },
         },
         files::consumer_service::request_deletions,
         lookup::models::OrganizationUnitLookupItem,
     },
-    utils::request_context::actor_tenant_context_from_session,
+    utils::{
+        client_address::client_address, request_context::actor_tenant_context_from_session,
+        tenant::tenant_context,
+    },
     AppState,
 };
+
+pub(crate) struct PublicCertificateError(AppError);
+
+impl From<AppError> for PublicCertificateError {
+    fn from(error: AppError) -> Self {
+        Self(error)
+    }
+}
+
+impl IntoResponse for PublicCertificateError {
+    fn into_response(self) -> axum::response::Response {
+        match self.0 {
+            AppError::RateLimited {
+                retry_after_seconds,
+            } => {
+                let mut response = (
+                    StatusCode::TOO_MANY_REQUESTS,
+                    Json(ApiErrorResponse::new("ไม่พบข้อมูลที่ตรงกัน")),
+                )
+                    .into_response();
+                response.headers_mut().insert(
+                    RETRY_AFTER,
+                    HeaderValue::from(retry_after_seconds.clamp(1, 30)),
+                );
+                response
+            }
+            error => error.into_response(),
+        }
+    }
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/public/certificates/verify/manual",
+    operation_id = "verifyCertificateManually",
+    tag = "public-certificate",
+    request_body = ManualCertificateVerificationRequest,
+    responses(
+        (status = 200, description = "Allowlisted public certificate verification result", body = ApiResponse<PublicCertificateVerificationData>),
+        (status = 404, description = "Certificate number and recipient name did not match", body = ApiErrorResponse),
+        (status = 429, description = "Public verification rate limited", body = ApiErrorResponse),
+        (status = 422, description = "Malformed verification request", body = ApiErrorResponse)
+    )
+)]
+pub async fn verify_certificate_manually(
+    State(state): State<AppState>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    Json(payload): Json<ManualCertificateVerificationRequest>,
+) -> Result<impl IntoResponse, PublicCertificateError> {
+    let tenant = tenant_context(&state, &headers).await?;
+    let source = client_address(
+        peer,
+        &headers,
+        &state.auth_runtime.config.trusted_proxy_cidrs,
+    );
+    let result = verification_service::verify_rate_limited(
+        &tenant.pool,
+        tenant.tenant_id,
+        source,
+        state.certificate_verification_limiter.as_ref(),
+        verification_service::CertificateVerificationAttempt::Manual(payload),
+    )
+    .await?;
+    Ok((StatusCode::OK, Json(ApiResponse::ok(result))).into_response())
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/public/certificates/verify/qr",
+    operation_id = "verifyCertificateByQr",
+    tag = "public-certificate",
+    request_body = QrCertificateVerificationRequest,
+    responses(
+        (status = 200, description = "Allowlisted public certificate verification result", body = ApiResponse<PublicCertificateVerificationData>),
+        (status = 404, description = "Certificate number and QR proof did not match", body = ApiErrorResponse),
+        (status = 429, description = "Public verification rate limited", body = ApiErrorResponse),
+        (status = 422, description = "Malformed verification request", body = ApiErrorResponse)
+    )
+)]
+pub async fn verify_certificate_by_qr(
+    State(state): State<AppState>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    Json(payload): Json<QrCertificateVerificationRequest>,
+) -> Result<impl IntoResponse, PublicCertificateError> {
+    let tenant = tenant_context(&state, &headers).await?;
+    let source = client_address(
+        peer,
+        &headers,
+        &state.auth_runtime.config.trusted_proxy_cidrs,
+    );
+    let result = verification_service::verify_rate_limited(
+        &tenant.pool,
+        tenant.tenant_id,
+        source,
+        state.certificate_verification_limiter.as_ref(),
+        verification_service::CertificateVerificationAttempt::Qr(payload),
+    )
+    .await?;
+    Ok((StatusCode::OK, Json(ApiResponse::ok(result))).into_response())
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/public/certificates/render-manifest",
+    operation_id = "createPublicCertificateRenderManifest",
+    tag = "public-certificate",
+    request_body = PublicCertificateRenderRequest,
+    responses(
+        (status = 200, description = "Fresh public certificate render manifest", body = ApiResponse<CertificateRenderManifest>),
+        (status = 404, description = "Receipt is invalid, expired, for another tenant, or no longer renderable", body = ApiErrorResponse),
+        (status = 429, description = "Public rendering rate limited", body = ApiErrorResponse),
+        (status = 422, description = "Malformed render request", body = ApiErrorResponse),
+        (status = 503, description = "Private asset grant unavailable", body = ApiErrorResponse)
+    )
+)]
+pub async fn create_public_certificate_render_manifest(
+    State(state): State<AppState>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    Json(payload): Json<PublicCertificateRenderRequest>,
+) -> Result<impl IntoResponse, PublicCertificateError> {
+    let tenant = tenant_context(&state, &headers).await?;
+    let source = client_address(
+        peer,
+        &headers,
+        &state.auth_runtime.config.trusted_proxy_cidrs,
+    );
+    let manifest = render_service::public_manifest_rate_limited(
+        &tenant.pool,
+        state.file_platform.as_ref(),
+        &tenant.subdomain,
+        &state.auth_runtime.config.base_domain,
+        tenant.tenant_id,
+        source,
+        state.certificate_verification_limiter.as_ref(),
+        &payload.receipt,
+    )
+    .await?;
+    Ok((StatusCode::OK, Json(ApiResponse::ok(manifest))).into_response())
+}
 
 #[utoipa::path(
     get,
@@ -1238,4 +1387,32 @@ pub async fn create_issued_certificate_render_manifests(
     )
     .await?;
     Ok((StatusCode::OK, Json(ApiResponse::ok(manifests))).into_response())
+}
+
+#[cfg(test)]
+mod tests {
+    use axum::{body::to_bytes, response::IntoResponse};
+
+    use super::*;
+
+    #[derive(serde::Deserialize)]
+    struct TestErrorResponse {
+        success: bool,
+        error: String,
+    }
+
+    #[tokio::test]
+    async fn public_rate_limit_keeps_retry_metadata_but_uses_the_generic_failure_body() {
+        let response = PublicCertificateError::from(AppError::RateLimited {
+            retry_after_seconds: 17,
+        })
+        .into_response();
+
+        assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
+        assert_eq!(response.headers().get("retry-after").unwrap(), "17");
+        let body = to_bytes(response.into_body(), 4_096).await.unwrap();
+        let payload: TestErrorResponse = serde_json::from_slice(&body).unwrap();
+        assert!(!payload.success);
+        assert_eq!(payload.error, "ไม่พบข้อมูลที่ตรงกัน");
+    }
 }

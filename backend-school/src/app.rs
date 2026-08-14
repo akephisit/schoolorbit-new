@@ -1,6 +1,8 @@
 use axum::{
-    extract::DefaultBodyLimit,
-    middleware::{from_fn, from_fn_with_state},
+    extract::{DefaultBodyLimit, Request},
+    http::{header::CACHE_CONTROL, HeaderName, HeaderValue},
+    middleware::{from_fn, from_fn_with_state, Next},
+    response::Response,
     routing::{delete, get, post, put},
     Json, Router,
 };
@@ -9,6 +11,7 @@ use serde_json::json;
 use crate::{middleware, modules, AppState};
 
 pub const AUTH_JSON_BODY_LIMIT: usize = 16 * 1024;
+pub const PUBLIC_CERTIFICATE_JSON_BODY_LIMIT: usize = 16 * 1024;
 pub const APPLICATION_BODY_LIMIT: usize = 20 * 1024 * 1024;
 
 pub fn build_app(state: AppState) -> Router {
@@ -55,6 +58,7 @@ fn public_routes() -> Router<AppState> {
             "/api/public/files/{id}/delivery",
             get(modules::files::handlers::get_public_file_delivery),
         )
+        .merge(public_certificate_routes())
         .nest(
             "/api/admission",
             modules::admission::admission_public_routes(),
@@ -73,6 +77,36 @@ fn public_routes() -> Router<AppState> {
             get(modules::academic::websockets::timetable_websocket_handler),
         )
         .merge(internal_routes())
+}
+
+fn public_certificate_routes() -> Router<AppState> {
+    Router::new()
+        .route(
+            "/api/public/certificates/verify/manual",
+            post(modules::certificates::handlers::verify_certificate_manually),
+        )
+        .route(
+            "/api/public/certificates/verify/qr",
+            post(modules::certificates::handlers::verify_certificate_by_qr),
+        )
+        .route(
+            "/api/public/certificates/render-manifest",
+            post(modules::certificates::handlers::create_public_certificate_render_manifest),
+        )
+        .route_layer(from_fn(public_certificate_security_headers))
+        .layer(DefaultBodyLimit::max(PUBLIC_CERTIFICATE_JSON_BODY_LIMIT))
+}
+
+async fn public_certificate_security_headers(request: Request, next: Next) -> Response {
+    let mut response = next.run(request).await;
+    response
+        .headers_mut()
+        .insert(CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    response.headers_mut().insert(
+        HeaderName::from_static("referrer-policy"),
+        HeaderValue::from_static("no-referrer"),
+    );
+    response
 }
 
 fn internal_routes() -> Router<AppState> {
@@ -592,3 +626,52 @@ async fn root_handler() -> Json<serde_json::Value> {
 }
 
 use crate::middleware::session::session_middleware;
+
+#[cfg(test)]
+mod tests {
+    use axum::{
+        body::Body,
+        http::{Method, Request, StatusCode},
+        routing::post,
+        Router,
+    };
+    use tower::ServiceExt;
+
+    use super::public_certificate_security_headers;
+
+    #[tokio::test]
+    async fn public_certificate_route_headers_cover_success_and_method_rejection() {
+        let app = Router::new()
+            .route("/certificate", post(|| async { StatusCode::OK }))
+            .route_layer(axum::middleware::from_fn(
+                public_certificate_security_headers,
+            ));
+
+        for method in [Method::POST, Method::GET] {
+            let response = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .method(method.clone())
+                        .uri("/certificate")
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.headers().get("cache-control").unwrap(), "no-store");
+            assert_eq!(
+                response.headers().get("referrer-policy").unwrap(),
+                "no-referrer"
+            );
+            assert_eq!(
+                response.status(),
+                if method == Method::POST {
+                    StatusCode::OK
+                } else {
+                    StatusCode::METHOD_NOT_ALLOWED
+                }
+            );
+        }
+    }
+}

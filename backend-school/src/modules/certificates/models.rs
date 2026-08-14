@@ -1121,6 +1121,53 @@ pub struct RevokeCertificateResult {
 
 #[derive(Clone, Debug, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ManualCertificateVerificationRequest {
+    pub certificate_number: String,
+    pub first_name: String,
+    pub last_name: String,
+}
+
+#[derive(Clone, Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct QrCertificateVerificationRequest {
+    pub certificate_number: String,
+    pub proof: String,
+}
+
+#[derive(Clone, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PublicCertificateRenderRequest {
+    pub receipt: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct PublicCertificateVerificationData {
+    pub status: CertificateStatus,
+    pub certificate_number: String,
+    #[schema(required = true)]
+    pub title: Option<String>,
+    pub first_name: String,
+    pub last_name: String,
+    pub campaign_name: String,
+    pub academic_year: i32,
+    pub template_name: String,
+    #[schema(required = true)]
+    pub activity_item: Option<String>,
+    #[schema(required = true)]
+    pub award_or_role: Option<String>,
+    pub issue_date: NaiveDate,
+    pub issuer_school_name: String,
+    #[schema(required = true)]
+    pub replacement_certificate_number: Option<String>,
+    #[schema(required = true)]
+    pub receipt: Option<String>,
+    #[schema(required = true)]
+    pub receipt_expires_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Clone, Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CreateCertificateCampaignRequest {
     pub academic_year_id: Uuid,
     pub owner_organization_unit_id: Option<Uuid>,

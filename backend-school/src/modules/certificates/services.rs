@@ -9,3 +9,4 @@ pub mod proof;
 pub mod render_service;
 pub mod request_service;
 pub mod template_service;
+pub mod verification_service;

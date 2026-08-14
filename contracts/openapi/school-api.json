@@ -4527,6 +4527,109 @@
         ],
         "type": "object"
       },
+      "ApiResponse_PublicCertificateVerificationData": {
+        "properties": {
+          "data": {
+            "properties": {
+              "academicYear": {
+                "format": "int32",
+                "type": "integer"
+              },
+              "activityItem": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "awardOrRole": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "campaignName": {
+                "type": "string"
+              },
+              "certificateNumber": {
+                "type": "string"
+              },
+              "firstName": {
+                "type": "string"
+              },
+              "issueDate": {
+                "format": "date",
+                "type": "string"
+              },
+              "issuerSchoolName": {
+                "type": "string"
+              },
+              "lastName": {
+                "type": "string"
+              },
+              "receipt": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "receiptExpiresAt": {
+                "format": "date-time",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "replacementCertificateNumber": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "status": {
+                "$ref": "#/components/schemas/CertificateStatus"
+              },
+              "templateName": {
+                "type": "string"
+              },
+              "title": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "status",
+              "certificateNumber",
+              "title",
+              "firstName",
+              "lastName",
+              "campaignName",
+              "academicYear",
+              "templateName",
+              "activityItem",
+              "awardOrRole",
+              "issueDate",
+              "issuerSchoolName",
+              "replacementCertificateNumber",
+              "receipt",
+              "receiptExpiresAt"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
       "ApiResponse_PublicFileDeliveryResponse": {
         "properties": {
           "data": {
@@ -16412,6 +16515,26 @@
         ],
         "type": "object"
       },
+      "ManualCertificateVerificationRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "certificateNumber": {
+            "type": "string"
+          },
+          "firstName": {
+            "type": "string"
+          },
+          "lastName": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "certificateNumber",
+          "firstName",
+          "lastName"
+        ],
+        "type": "object"
+      },
       "MenuGroup": {
         "description": "Menu Group",
         "properties": {
@@ -17559,6 +17682,106 @@
         ],
         "type": "object"
       },
+      "PublicCertificateRenderRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "receipt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "receipt"
+        ],
+        "type": "object"
+      },
+      "PublicCertificateVerificationData": {
+        "properties": {
+          "academicYear": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "activityItem": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "awardOrRole": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "campaignName": {
+            "type": "string"
+          },
+          "certificateNumber": {
+            "type": "string"
+          },
+          "firstName": {
+            "type": "string"
+          },
+          "issueDate": {
+            "format": "date",
+            "type": "string"
+          },
+          "issuerSchoolName": {
+            "type": "string"
+          },
+          "lastName": {
+            "type": "string"
+          },
+          "receipt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "receiptExpiresAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "replacementCertificateNumber": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "$ref": "#/components/schemas/CertificateStatus"
+          },
+          "templateName": {
+            "type": "string"
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "status",
+          "certificateNumber",
+          "title",
+          "firstName",
+          "lastName",
+          "campaignName",
+          "academicYear",
+          "templateName",
+          "activityItem",
+          "awardOrRole",
+          "issueDate",
+          "issuerSchoolName",
+          "replacementCertificateNumber",
+          "receipt",
+          "receiptExpiresAt"
+        ],
+        "type": "object"
+      },
       "PublicFileDeliveryResponse": {
         "properties": {
           "url": {
@@ -17738,6 +17961,22 @@
           "code",
           "name",
           "level"
+        ],
+        "type": "object"
+      },
+      "QrCertificateVerificationRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "certificateNumber": {
+            "type": "string"
+          },
+          "proof": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "certificateNumber",
+          "proof"
         ],
         "type": "object"
       },
@@ -37804,6 +38043,196 @@
         },
         "tags": [
           "calendar"
+        ]
+      }
+    },
+    "/api/public/certificates/render-manifest": {
+      "post": {
+        "operationId": "createPublicCertificateRenderManifest",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PublicCertificateRenderRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_CertificateRenderManifest"
+                }
+              }
+            },
+            "description": "Fresh public certificate render manifest"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Receipt is invalid, expired, for another tenant, or no longer renderable"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Malformed render request"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Public rendering rate limited"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Private asset grant unavailable"
+          }
+        },
+        "tags": [
+          "public-certificate"
+        ]
+      }
+    },
+    "/api/public/certificates/verify/manual": {
+      "post": {
+        "operationId": "verifyCertificateManually",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ManualCertificateVerificationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_PublicCertificateVerificationData"
+                }
+              }
+            },
+            "description": "Allowlisted public certificate verification result"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Certificate number and recipient name did not match"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Malformed verification request"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Public verification rate limited"
+          }
+        },
+        "tags": [
+          "public-certificate"
+        ]
+      }
+    },
+    "/api/public/certificates/verify/qr": {
+      "post": {
+        "operationId": "verifyCertificateByQr",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QrCertificateVerificationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_PublicCertificateVerificationData"
+                }
+              }
+            },
+            "description": "Allowlisted public certificate verification result"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Certificate number and QR proof did not match"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Malformed verification request"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Public verification rate limited"
+          }
+        },
+        "tags": [
+          "public-certificate"
         ]
       }
     },

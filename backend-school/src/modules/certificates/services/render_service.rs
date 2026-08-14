@@ -1,4 +1,7 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    net::IpAddr,
+};
 
 use chrono::{Datelike, NaiveDate, Utc};
 use sqlx::{FromRow, PgPool, Postgres, Transaction};
@@ -16,6 +19,7 @@ use crate::{
             CertificateRenderFontGrant, CertificateRenderImageGrant, CertificateRenderManifest,
             CertificateRenderManifestBatchRequest, CertificateTemplateAssetKind, PageGeometry,
         },
+        certificates::verification_limiter::CertificateVerificationLimiter,
         files::{
             consumer_service::map_platform_error,
             platform_service::{FilePlatform, FilePlatformError},
@@ -32,7 +36,7 @@ use super::{
     candidate_service,
     import_validation::{normalize_display_text, normalize_name_for_match},
     layout::validate_layout,
-    template_service,
+    template_service, verification_service,
 };
 
 #[derive(Debug, FromRow)]
@@ -328,25 +332,134 @@ pub async fn issued_manifest(
     base_domain: &str,
     certificate_id: Uuid,
 ) -> Result<CertificateRenderManifest, AppError> {
-    let mut tx = pool.begin().await?;
-    let access = sqlx::query_as::<_, IssuedRenderAccessRow>(
-        "SELECT campaign.owner_organization_unit_id
-         FROM certificates certificate
-         JOIN certificate_campaigns campaign ON campaign.id = certificate.campaign_id
-         WHERE certificate.id = $1
-         FOR SHARE OF campaign",
-    )
-    .bind(certificate_id)
-    .fetch_optional(&mut *tx)
-    .await?
-    .ok_or_else(|| AppError::NotFound("ไม่พบเกียรติบัตร".to_string()))?;
-    require_owner_action(
+    issued_manifest_inner(
         pool,
-        actor,
-        access.owner_organization_unit_id,
-        CertificateAction::Download,
+        Some(actor),
+        platform,
+        tenant_subdomain,
+        base_domain,
+        certificate_id,
     )
-    .await?;
+    .await
+}
+
+pub async fn public_manifest(
+    pool: &PgPool,
+    platform: &FilePlatform,
+    tenant_subdomain: &str,
+    base_domain: &str,
+    tenant_id: Uuid,
+    receipt: &str,
+) -> Result<CertificateRenderManifest, AppError> {
+    let certificate_id =
+        verification_service::validate_public_render_receipt(receipt, tenant_id, Utc::now())?;
+    public_manifest_for_certificate(
+        pool,
+        platform,
+        tenant_subdomain,
+        base_domain,
+        certificate_id,
+    )
+    .await
+}
+
+async fn public_manifest_for_certificate(
+    pool: &PgPool,
+    platform: &FilePlatform,
+    tenant_subdomain: &str,
+    base_domain: &str,
+    certificate_id: Uuid,
+) -> Result<CertificateRenderManifest, AppError> {
+    issued_manifest_inner(
+        pool,
+        None,
+        platform,
+        tenant_subdomain,
+        base_domain,
+        certificate_id,
+    )
+    .await
+    .map_err(public_render_error)
+}
+
+pub async fn public_manifest_rate_limited(
+    pool: &PgPool,
+    platform: &FilePlatform,
+    tenant_subdomain: &str,
+    base_domain: &str,
+    tenant_id: Uuid,
+    client_ip: IpAddr,
+    limiter: &CertificateVerificationLimiter,
+    receipt: &str,
+) -> Result<CertificateRenderManifest, AppError> {
+    limiter.begin_ip_attempt(tenant_id, client_ip)?;
+    let invalid_receipt_target = CertificateVerificationLimiter::target_digest(receipt);
+    limiter.check_target(tenant_id, client_ip, invalid_receipt_target)?;
+    let certificate_id = match verification_service::validate_public_render_receipt(
+        receipt,
+        tenant_id,
+        Utc::now(),
+    ) {
+        Ok(certificate_id) => certificate_id,
+        Err(error) => {
+            limiter.record_failure(tenant_id, client_ip, invalid_receipt_target)?;
+            return Err(error);
+        }
+    };
+    let target = CertificateVerificationLimiter::target_digest(&certificate_id.to_string());
+    limiter.check_target(tenant_id, client_ip, target)?;
+    match public_manifest_for_certificate(
+        pool,
+        platform,
+        tenant_subdomain,
+        base_domain,
+        certificate_id,
+    )
+    .await
+    {
+        Ok(manifest) => {
+            limiter.record_success(tenant_id, client_ip, target);
+            Ok(manifest)
+        }
+        Err(error) => {
+            if matches!(&error, AppError::NotFound(message) if message == "ไม่พบข้อมูลที่ตรงกัน")
+            {
+                limiter.record_failure(tenant_id, client_ip, target)?;
+            }
+            Err(error)
+        }
+    }
+}
+
+async fn issued_manifest_inner(
+    pool: &PgPool,
+    actor: Option<&ActorContext>,
+    platform: &FilePlatform,
+    tenant_subdomain: &str,
+    base_domain: &str,
+    certificate_id: Uuid,
+) -> Result<CertificateRenderManifest, AppError> {
+    let mut tx = pool.begin().await?;
+    if let Some(actor) = actor {
+        let access = sqlx::query_as::<_, IssuedRenderAccessRow>(
+            "SELECT campaign.owner_organization_unit_id
+             FROM certificates certificate
+             JOIN certificate_campaigns campaign ON campaign.id = certificate.campaign_id
+             WHERE certificate.id = $1
+             FOR SHARE OF campaign",
+        )
+        .bind(certificate_id)
+        .fetch_optional(&mut *tx)
+        .await?
+        .ok_or_else(|| AppError::NotFound("ไม่พบเกียรติบัตร".to_string()))?;
+        require_owner_action(
+            pool,
+            actor,
+            access.owner_organization_unit_id,
+            CertificateAction::Download,
+        )
+        .await?;
+    }
     let status = sqlx::query_scalar::<_, String>(
         "SELECT status
          FROM certificates
@@ -354,8 +467,9 @@ pub async fn issued_manifest(
          FOR SHARE",
     )
     .bind(certificate_id)
-    .fetch_one(&mut *tx)
-    .await?;
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or_else(|| AppError::NotFound("ไม่พบเกียรติบัตร".to_string()))?;
     if status != "issued" {
         return Err(AppError::Conflict(
             "เกียรติบัตรที่ถูกเพิกถอนไม่สามารถสร้างไฟล์ได้".to_string(),
@@ -570,6 +684,15 @@ pub async fn issued_manifest(
     };
     tx.commit().await?;
     Ok(manifest)
+}
+
+fn public_render_error(error: AppError) -> AppError {
+    match error {
+        AppError::NotFound(_) | AppError::Conflict(_) | AppError::ValidationError(_) => {
+            AppError::NotFound("ไม่พบข้อมูลที่ตรงกัน".to_string())
+        }
+        other => other,
+    }
 }
 
 pub async fn issued_manifests(

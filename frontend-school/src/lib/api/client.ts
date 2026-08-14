@@ -30,6 +30,8 @@ export interface ApiRequestOptions {
 	signal?: AbortSignal;
 }
 
+type ApiTransport = 'session' | 'public';
+
 export class ApiClientError<E = never> extends Error {
 	constructor(
 		message: string,
@@ -177,22 +179,34 @@ class APIClient {
 		window.location.assign(loginPath);
 	}
 
-	private async fetchBackend(endpoint: string, options: RequestInit = {}): Promise<Response> {
+	private async fetchBackend(
+		endpoint: string,
+		options: RequestInit = {},
+		transport: ApiTransport = 'session'
+	): Promise<Response> {
 		const method = (options.method ?? 'GET').toUpperCase();
 		const callerHeaders = new Headers(options.headers);
 		callerHeaders.delete(SCHOOL_SUBDOMAIN_HEADER);
-		const headers = withSessionSecurityHeaders(method, callerHeaders);
+		const usesSession = transport === 'session';
+		const headers = usesSession ? withSessionSecurityHeaders(method, callerHeaders) : callerHeaders;
 		const subdomain = getSchoolSubdomainHint();
 		if (subdomain) headers.set(SCHOOL_SUBDOMAIN_HEADER, subdomain);
 
-		const response = await fetch(`${this.baseURL}${endpoint}`, {
+		const requestOptions: RequestInit = {
 			...options,
 			method,
-			credentials: 'include',
+			credentials: usesSession ? 'include' : 'omit',
 			headers
-		});
-		captureSessionSecurityHeaders(response.headers);
-		if (response.status === 401) this.handleUnauthorized();
+		};
+		if (!usesSession) {
+			requestOptions.referrerPolicy = 'no-referrer';
+			requestOptions.cache = 'no-store';
+		}
+		const response = await fetch(`${this.baseURL}${endpoint}`, requestOptions);
+		if (usesSession) {
+			captureSessionSecurityHeaders(response.headers);
+			if (response.status === 401) this.handleUnauthorized();
+		}
 		return response;
 	}
 
@@ -208,14 +222,15 @@ class APIClient {
 
 	private async request<T, E = never>(
 		endpoint: string,
-		options: RequestInit = {}
+		options: RequestInit = {},
+		transport: ApiTransport = 'session'
 	): Promise<ApiResponse<T, E>> {
 		const headers = new Headers(options.headers);
 		if (options.body !== undefined && !headers.has('Content-Type')) {
 			headers.set('Content-Type', 'application/json');
 		}
 
-		const response = await this.fetchBackend(endpoint, { ...options, headers });
+		const response = await this.fetchBackend(endpoint, { ...options, headers }, transport);
 		const data = await this.parseResponse(response);
 		const metadata = this.responseMetadata(response);
 		const normalized = normalizeApiResponse<T, E>(
@@ -292,6 +307,22 @@ class APIClient {
 			method: 'POST',
 			body: body === undefined ? undefined : JSON.stringify(body)
 		});
+	}
+
+	async postPublic<T, E = never>(
+		endpoint: string,
+		body: unknown,
+		options: ApiRequestOptions = {}
+	): Promise<ApiResponse<T, E>> {
+		return this.request<T, E>(
+			endpoint,
+			{
+				method: 'POST',
+				body: JSON.stringify(body),
+				signal: options.signal
+			},
+			'public'
+		);
 	}
 
 	async postBlob(endpoint: string, options: ApiRequestOptions = {}): Promise<ApiResponse<Blob>> {

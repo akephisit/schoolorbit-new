@@ -102,11 +102,12 @@ use crate::modules::certificates::models::{
     CreateCertificateCampaignRequest, CreateCertificateTemplateRequest,
     CreateManualExternalCandidateRequest, ElementFrame, GeometryAction, ImageElement,
     IssueCertificateOutcome, IssueCertificateRequest, IssuedCertificateDetail,
-    IssuedCertificateListQuery, IssuedCertificateSummary, NullableUuidUpdate, QrElement,
-    RecipientType, ReturnCertificateIssueRequest, RevokeCertificateRequest,
-    RevokeCertificateResult, SubmitCertificateIssueRequest, TextAlignment, TextElement, TextShadow,
-    UpdateCertificateCampaignRequest, UpdateCertificateCandidateRequest,
-    UpdateCertificateTemplateRequest,
+    IssuedCertificateListQuery, IssuedCertificateSummary, ManualCertificateVerificationRequest,
+    NullableUuidUpdate, PublicCertificateRenderRequest, PublicCertificateVerificationData,
+    QrCertificateVerificationRequest, QrElement, RecipientType, ReturnCertificateIssueRequest,
+    RevokeCertificateRequest, RevokeCertificateResult, SubmitCertificateIssueRequest,
+    TextAlignment, TextElement, TextShadow, UpdateCertificateCampaignRequest,
+    UpdateCertificateCandidateRequest, UpdateCertificateTemplateRequest,
 };
 use crate::modules::facility::models::Room;
 use crate::modules::files::models::{
@@ -273,6 +274,9 @@ use utoipa::OpenApi;
         crate::modules::certificates::handlers::revoke_issued_certificate,
         crate::modules::certificates::handlers::create_issued_certificate_render_manifest,
         crate::modules::certificates::handlers::create_issued_certificate_render_manifests,
+        crate::modules::certificates::handlers::verify_certificate_manually,
+        crate::modules::certificates::handlers::verify_certificate_by_qr,
+        crate::modules::certificates::handlers::create_public_certificate_render_manifest,
         crate::modules::parents::handlers::get_own_parent_profile,
         crate::modules::parents::handlers::get_child_profile,
         crate::modules::parents::handlers::get_child_timetable,
@@ -577,11 +581,16 @@ use utoipa::OpenApi;
         CertificateReplacementCandidate,
         RevokeCertificateResult,
         CertificateRenderManifestBatchRequest,
+        ManualCertificateVerificationRequest,
+        QrCertificateVerificationRequest,
+        PublicCertificateRenderRequest,
+        PublicCertificateVerificationData,
         ApiResponse<IssueCertificateOutcome>,
         ApiResponse<Vec<IssuedCertificateSummary>>,
         ApiResponse<IssuedCertificateDetail>,
         ApiResponse<RevokeCertificateResult>,
         ApiResponse<Vec<CertificateRenderManifest>>,
+        ApiResponse<PublicCertificateVerificationData>,
         ApiErrorResponseWithData<CertificateResourceLocked>,
         ApiErrorResponseWithOptionalData<CertificateResourceLocked>,
         ApiResponse<Vec<GradeLevelLookupItem>>,
@@ -3286,6 +3295,21 @@ mod tests {
                     "post",
                     "createIssuedCertificateRenderManifests",
                 ),
+                (
+                    "/api/public/certificates/verify/manual",
+                    "post",
+                    "verifyCertificateManually",
+                ),
+                (
+                    "/api/public/certificates/verify/qr",
+                    "post",
+                    "verifyCertificateByQr",
+                ),
+                (
+                    "/api/public/certificates/render-manifest",
+                    "post",
+                    "createPublicCertificateRenderManifest",
+                ),
             ],
         );
 
@@ -3453,12 +3477,58 @@ mod tests {
                 "CertificateRenderManifestBatchRequest",
                 &["certificateIds"][..],
             ),
+            (
+                "ManualCertificateVerificationRequest",
+                &["certificateNumber", "firstName", "lastName"][..],
+            ),
+            (
+                "QrCertificateVerificationRequest",
+                &["certificateNumber", "proof"][..],
+            ),
+            ("PublicCertificateRenderRequest", &["receipt"][..]),
         ] {
             let schema = &schemas[schema_name];
             for field in required_fields {
                 assert!(required(schema).contains(field));
             }
         }
+        for path in [
+            "/api/public/certificates/verify/manual",
+            "/api/public/certificates/verify/qr",
+            "/api/public/certificates/render-manifest",
+        ] {
+            let operations = document["paths"][path]
+                .as_object()
+                .expect("public certificate path operations");
+            assert!(operations.contains_key("post"));
+            assert!(!operations.contains_key("get"));
+        }
+        let public_properties = schemas["PublicCertificateVerificationData"]["properties"]
+            .as_object()
+            .expect("public certificate verification properties");
+        assert_eq!(
+            public_properties.keys().cloned().collect::<BTreeSet<_>>(),
+            [
+                "academicYear",
+                "activityItem",
+                "awardOrRole",
+                "campaignName",
+                "certificateNumber",
+                "firstName",
+                "issueDate",
+                "issuerSchoolName",
+                "lastName",
+                "receipt",
+                "receiptExpiresAt",
+                "replacementCertificateNumber",
+                "status",
+                "templateName",
+                "title",
+            ]
+            .into_iter()
+            .map(str::to_string)
+            .collect::<BTreeSet<_>>()
+        );
         let issued_properties = schemas["IssuedCertificateSummary"]["properties"]
             .as_object()
             .expect("issued certificate summary properties");

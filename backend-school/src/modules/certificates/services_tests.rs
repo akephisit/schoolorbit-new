@@ -28,14 +28,15 @@ use crate::{
             CertificateTemplateDeleteDisposition, ChangeCertificateCampaignStatusRequest,
             CreateAccountCertificateCandidateRequest, CreateCertificateCampaignRequest,
             CreateCertificateTemplateRequest, CreateManualExternalCandidateRequest, ElementFrame,
-            GeometryAction, IssueCertificateOutcome, IssueCertificateRequest, NullableUuidUpdate,
-            RecipientType, RevokeCertificateRequest, TextAlignment, TextElement,
-            UpdateCertificateCampaignRequest, UpdateCertificateCandidateRequest,
-            UpdateCertificateTemplateRequest,
+            GeometryAction, IssueCertificateOutcome, IssueCertificateRequest,
+            ManualCertificateVerificationRequest, NullableUuidUpdate,
+            QrCertificateVerificationRequest, RecipientType, RevokeCertificateRequest,
+            TextAlignment, TextElement, UpdateCertificateCampaignRequest,
+            UpdateCertificateCandidateRequest, UpdateCertificateTemplateRequest,
         },
         services::{
             campaign_service, candidate_service, issuance_service, render_service, request_service,
-            template_service,
+            template_service, verification_service,
         },
     },
     permissions::registry::codes,
@@ -4063,6 +4064,430 @@ fn school_certificate_issuer(user_id: Uuid) -> ActorContext {
         user_id,
         permissions: vec![codes::CERTIFICATE_ISSUE_SCHOOL.to_string()],
     }
+}
+
+async fn issue_public_verification_fixture(
+    test_name: &str,
+    year: i32,
+) -> (
+    PgPool,
+    crate::modules::certificates::models::IssuedCertificateSummary,
+    Uuid,
+) {
+    let (pool, preparer, academic_year_id) = school_campaign_fixture(test_name, year).await;
+    let campaign = campaign_service::create_campaign(
+        &pool,
+        &preparer,
+        campaign_create_payload(academic_year_id, None, "กิจกรรมตรวจสอบสาธารณะ"),
+    )
+    .await
+    .unwrap();
+    let (_, candidate) = create_ready_external_request_candidate(
+        &pool,
+        &preparer,
+        campaign.id,
+        "แบบตรวจสอบสาธารณะ",
+        "กมล",
+    )
+    .await;
+    let request =
+        request_service::submit_issue_request(&pool, &preparer, campaign.id, vec![candidate.id])
+            .await
+            .unwrap();
+    let issuer_user_id = create_test_user(
+        &pool,
+        &format!("{test_name}-issuer@example.invalid"),
+        "test-password",
+    )
+    .await
+    .unwrap();
+    let issuer = school_certificate_issuer(issuer_user_id);
+    request_service::start_review(&pool, &issuer, request.id)
+        .await
+        .unwrap();
+    let issued = match issuance_service::issue_request(
+        &pool,
+        &issuer,
+        "โรงเรียนตัวอย่าง".to_string(),
+        request.id,
+        IssueCertificateRequest {
+            idempotency_key: Uuid::new_v4(),
+        },
+    )
+    .await
+    .unwrap()
+    {
+        IssueCertificateOutcome::Issued { certificates, .. } => certificates[0].clone(),
+        IssueCertificateOutcome::Returned { .. } => panic!("verification fixture should issue"),
+    };
+    (pool, issued, Uuid::new_v4())
+}
+
+#[tokio::test]
+async fn public_verification_failures_share_one_status_and_shape() {
+    let _crypto_guard = crate::utils::field_encryption::test_env_lock();
+    env::set_var(
+        "ENCRYPTION_KEY",
+        "certificate-public-verification-encryption-test-key",
+    );
+    env::set_var(
+        "BLIND_INDEX_KEY",
+        "certificate-public-verification-blind-index-test-key",
+    );
+    let (pool, issued, tenant_id) =
+        issue_public_verification_fixture("certificate_public_verification_generic", 3149).await;
+    let cases = [
+        verification_service::CertificateVerificationAttempt::Manual(
+            ManualCertificateVerificationRequest {
+                certificate_number: "0000-0000-000000-0".to_string(),
+                first_name: "กมล".to_string(),
+                last_name: "ผู้รับ".to_string(),
+            },
+        ),
+        verification_service::CertificateVerificationAttempt::Manual(
+            ManualCertificateVerificationRequest {
+                certificate_number: issued.certificate_number.clone(),
+                first_name: "ชื่อผิด".to_string(),
+                last_name: "ผู้รับ".to_string(),
+            },
+        ),
+        verification_service::CertificateVerificationAttempt::Manual(
+            ManualCertificateVerificationRequest {
+                certificate_number: issued.certificate_number.clone(),
+                first_name: "กมล".to_string(),
+                last_name: "นามสกุลผิด".to_string(),
+            },
+        ),
+        verification_service::CertificateVerificationAttempt::Qr(
+            QrCertificateVerificationRequest {
+                certificate_number: issued.certificate_number.clone(),
+                proof: "invalid-proof".to_string(),
+            },
+        ),
+    ];
+
+    for attempt in cases {
+        let error = verification_service::verify(&pool, tenant_id, attempt)
+            .await
+            .unwrap_err();
+        assert_eq!(error.status_code(), axum::http::StatusCode::NOT_FOUND);
+        assert_eq!(error.public_message(), "ไม่พบข้อมูลที่ตรงกัน");
+    }
+}
+
+#[tokio::test]
+async fn public_verification_rate_limits_after_six_failed_attempts_for_one_target() {
+    let _crypto_guard = crate::utils::field_encryption::test_env_lock();
+    env::set_var(
+        "ENCRYPTION_KEY",
+        "certificate-public-rate-limit-encryption-test-key",
+    );
+    env::set_var(
+        "BLIND_INDEX_KEY",
+        "certificate-public-rate-limit-blind-index-test-key",
+    );
+    let (pool, issued, tenant_id) =
+        issue_public_verification_fixture("certificate_public_rate_limit", 3153).await;
+    let limiter =
+        crate::modules::certificates::verification_limiter::CertificateVerificationLimiter::new();
+    let client_ip = "198.51.100.42".parse().unwrap();
+
+    for _ in 0..6 {
+        let error = verification_service::verify_rate_limited(
+            &pool,
+            tenant_id,
+            client_ip,
+            &limiter,
+            verification_service::CertificateVerificationAttempt::Manual(
+                ManualCertificateVerificationRequest {
+                    certificate_number: issued.certificate_number.clone(),
+                    first_name: "ชื่อผิด".to_string(),
+                    last_name: "ผู้รับ".to_string(),
+                },
+            ),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(error.status_code(), axum::http::StatusCode::NOT_FOUND);
+        assert_eq!(error.public_message(), "ไม่พบข้อมูลที่ตรงกัน");
+    }
+
+    let limited = verification_service::verify_rate_limited(
+        &pool,
+        tenant_id,
+        client_ip,
+        &limiter,
+        verification_service::CertificateVerificationAttempt::Manual(
+            ManualCertificateVerificationRequest {
+                certificate_number: issued.certificate_number,
+                first_name: "กมล".to_string(),
+                last_name: "ผู้รับ".to_string(),
+            },
+        ),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(
+        limited.status_code(),
+        axum::http::StatusCode::TOO_MANY_REQUESTS
+    );
+}
+
+#[tokio::test]
+async fn public_verification_success_is_allowlisted_and_issues_a_short_lived_receipt() {
+    let _crypto_guard = crate::utils::field_encryption::test_env_lock();
+    env::set_var(
+        "ENCRYPTION_KEY",
+        "certificate-public-success-encryption-test-key",
+    );
+    env::set_var(
+        "BLIND_INDEX_KEY",
+        "certificate-public-success-blind-index-test-key",
+    );
+    let (pool, issued, tenant_id) =
+        issue_public_verification_fixture("certificate_public_verification_success", 3150).await;
+    let verified = verification_service::verify(
+        &pool,
+        tenant_id,
+        verification_service::CertificateVerificationAttempt::Manual(
+            ManualCertificateVerificationRequest {
+                certificate_number: issued.certificate_number.clone(),
+                first_name: "  กมล  ".to_string(),
+                last_name: " ผู้รับ ".to_string(),
+            },
+        ),
+    )
+    .await
+    .unwrap();
+    assert_eq!(verified.status, CertificateStatus::Issued);
+    assert_eq!(verified.certificate_number, issued.certificate_number);
+    assert_eq!(verified.first_name, "กมล");
+    assert_eq!(verified.last_name, "ผู้รับ");
+    assert_eq!(verified.campaign_name, "กิจกรรมตรวจสอบสาธารณะ");
+    assert_eq!(verified.academic_year, 3150);
+    assert_eq!(verified.template_name, "แบบตรวจสอบสาธารณะ");
+    assert_eq!(verified.issuer_school_name, "โรงเรียนตัวอย่าง");
+    let receipt = verified.receipt.as_deref().expect("issued receipt");
+    assert!(!receipt.is_empty());
+    let receipt_expires_at = verified.receipt_expires_at.expect("receipt expiry");
+    let remaining = receipt_expires_at - chrono::Utc::now();
+    assert!(remaining > chrono::Duration::minutes(4));
+    assert!(remaining <= chrono::Duration::minutes(5));
+
+    let serialized = serde_json::to_value(&verified).unwrap();
+    let keys = serialized
+        .as_object()
+        .unwrap()
+        .keys()
+        .map(String::as_str)
+        .collect::<BTreeSet<_>>();
+    assert_eq!(
+        keys,
+        BTreeSet::from([
+            "academicYear",
+            "activityItem",
+            "awardOrRole",
+            "campaignName",
+            "certificateNumber",
+            "firstName",
+            "issueDate",
+            "issuerSchoolName",
+            "lastName",
+            "receipt",
+            "receiptExpiresAt",
+            "replacementCertificateNumber",
+            "status",
+            "templateName",
+            "title",
+        ])
+    );
+
+    let encrypted_proof: String =
+        sqlx::query_scalar("SELECT qr_proof_encrypted FROM certificates WHERE id = $1")
+            .bind(issued.id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let proof = crate::utils::field_encryption::decrypt(&encrypted_proof).unwrap();
+    let qr_verified = verification_service::verify(
+        &pool,
+        tenant_id,
+        verification_service::CertificateVerificationAttempt::Qr(
+            QrCertificateVerificationRequest {
+                certificate_number: issued.certificate_number.clone(),
+                proof,
+            },
+        ),
+    )
+    .await
+    .unwrap();
+    assert_eq!(qr_verified.certificate_number, issued.certificate_number);
+    assert_eq!(qr_verified.first_name, "กมล");
+    assert!(qr_verified.receipt.is_some());
+}
+
+#[tokio::test]
+async fn public_verification_reports_revoked_without_issuing_a_render_receipt() {
+    let _crypto_guard = crate::utils::field_encryption::test_env_lock();
+    env::set_var(
+        "ENCRYPTION_KEY",
+        "certificate-public-revoked-encryption-test-key",
+    );
+    env::set_var(
+        "BLIND_INDEX_KEY",
+        "certificate-public-revoked-blind-index-test-key",
+    );
+    let (pool, issued, tenant_id) =
+        issue_public_verification_fixture("certificate_public_verification_revoked", 3151).await;
+    let revoker_user_id = create_test_user(
+        &pool,
+        "certificate-public-verification-revoker@example.invalid",
+        "test-password",
+    )
+    .await
+    .unwrap();
+    let revoker = ActorContext {
+        user_id: revoker_user_id,
+        permissions: vec![codes::CERTIFICATE_REVOKE_SCHOOL.to_string()],
+    };
+    issuance_service::revoke_certificate(
+        &pool,
+        &revoker,
+        issued.id,
+        RevokeCertificateRequest {
+            reason: "ยืนยันว่าใบเดิมถูกเพิกถอน".to_string(),
+            create_replacement_candidate: false,
+        },
+    )
+    .await
+    .unwrap();
+
+    let verified = verification_service::verify(
+        &pool,
+        tenant_id,
+        verification_service::CertificateVerificationAttempt::Manual(
+            ManualCertificateVerificationRequest {
+                certificate_number: issued.certificate_number,
+                first_name: "กมล".to_string(),
+                last_name: "ผู้รับ".to_string(),
+            },
+        ),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(verified.status, CertificateStatus::Revoked);
+    assert!(verified.receipt.is_none());
+    assert!(verified.receipt_expires_at.is_none());
+}
+
+#[tokio::test]
+async fn public_render_manifest_requires_the_tenant_receipt_and_rechecks_revocation() {
+    let _crypto_guard = crate::utils::field_encryption::test_env_lock();
+    env::set_var(
+        "ENCRYPTION_KEY",
+        "certificate-public-render-encryption-test-key",
+    );
+    env::set_var(
+        "BLIND_INDEX_KEY",
+        "certificate-public-render-blind-index-test-key",
+    );
+    let (pool, issued, tenant_id) =
+        issue_public_verification_fixture("certificate_public_render", 3152).await;
+    let verified = verification_service::verify(
+        &pool,
+        tenant_id,
+        verification_service::CertificateVerificationAttempt::Manual(
+            ManualCertificateVerificationRequest {
+                certificate_number: issued.certificate_number.clone(),
+                first_name: "กมล".to_string(),
+                last_name: "ผู้รับ".to_string(),
+            },
+        ),
+    )
+    .await
+    .unwrap();
+    let receipt = verified.receipt.expect("issued receipt");
+    let platform = crate::modules::files::platform_service::FilePlatform::new(
+        Arc::new(PreviewStorage),
+        Arc::new(PreviewScanner),
+    );
+    let limiter =
+        crate::modules::certificates::verification_limiter::CertificateVerificationLimiter::new();
+    let client_ip = "198.51.100.43".parse().unwrap();
+
+    let manifest = render_service::public_manifest_rate_limited(
+        &pool,
+        &platform,
+        "sandbox",
+        "schoolorbit.test",
+        tenant_id,
+        client_ip,
+        &limiter,
+        &receipt,
+    )
+    .await
+    .unwrap();
+    assert_eq!(manifest.certificate_number, issued.certificate_number);
+    assert_eq!(manifest.recipient_values["ชื่อ"], "กมล");
+
+    let wrong_tenant_error = render_service::public_manifest_rate_limited(
+        &pool,
+        &platform,
+        "sandbox",
+        "schoolorbit.test",
+        Uuid::new_v4(),
+        client_ip,
+        &limiter,
+        &receipt,
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(
+        wrong_tenant_error.status_code(),
+        axum::http::StatusCode::NOT_FOUND
+    );
+    assert_eq!(wrong_tenant_error.public_message(), "ไม่พบข้อมูลที่ตรงกัน");
+
+    let revoker_user_id = create_test_user(
+        &pool,
+        "certificate-public-render-revoker@example.invalid",
+        "test-password",
+    )
+    .await
+    .unwrap();
+    issuance_service::revoke_certificate(
+        &pool,
+        &ActorContext {
+            user_id: revoker_user_id,
+            permissions: vec![codes::CERTIFICATE_REVOKE_SCHOOL.to_string()],
+        },
+        issued.id,
+        RevokeCertificateRequest {
+            reason: "เพิกถอนก่อนดาวน์โหลดสาธารณะ".to_string(),
+            create_replacement_candidate: false,
+        },
+    )
+    .await
+    .unwrap();
+
+    let revoked_error = render_service::public_manifest_rate_limited(
+        &pool,
+        &platform,
+        "sandbox",
+        "schoolorbit.test",
+        tenant_id,
+        client_ip,
+        &limiter,
+        &receipt,
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(
+        revoked_error.status_code(),
+        axum::http::StatusCode::NOT_FOUND
+    );
+    assert_eq!(revoked_error.public_message(), "ไม่พบข้อมูลที่ตรงกัน");
 }
 
 #[tokio::test]

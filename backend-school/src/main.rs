@@ -37,6 +37,8 @@ pub struct AppState {
     pub work_event_channel: broadcast::Sender<WorkChangeEvent>,
     pub permission_cache: Arc<PermissionCache>,
     pub file_platform: Arc<modules::files::platform_service::FilePlatform>,
+    pub certificate_verification_limiter:
+        Arc<modules::certificates::verification_limiter::CertificateVerificationLimiter>,
     pub auth_runtime: modules::auth::runtime::AuthRuntime,
 }
 
@@ -205,6 +207,9 @@ async fn main() {
         work_event_channel: work_event_tx,
         permission_cache,
         file_platform,
+        certificate_verification_limiter: Arc::new(
+            modules::certificates::verification_limiter::CertificateVerificationLimiter::new(),
+        ),
         auth_runtime,
     };
     let app = app::build_app(state.clone());
