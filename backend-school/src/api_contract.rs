@@ -274,6 +274,9 @@ use utoipa::OpenApi;
         crate::modules::certificates::handlers::revoke_issued_certificate,
         crate::modules::certificates::handlers::create_issued_certificate_render_manifest,
         crate::modules::certificates::handlers::create_issued_certificate_render_manifests,
+        crate::modules::certificates::handlers::list_own_certificates,
+        crate::modules::certificates::handlers::get_own_certificate,
+        crate::modules::certificates::handlers::create_own_certificate_render_manifest,
         crate::modules::certificates::handlers::verify_certificate_manually,
         crate::modules::certificates::handlers::verify_certificate_by_qr,
         crate::modules::certificates::handlers::create_public_certificate_render_manifest,
@@ -3295,6 +3298,17 @@ mod tests {
                     "post",
                     "createIssuedCertificateRenderManifests",
                 ),
+                ("/api/me/certificates", "get", "listOwnCertificates"),
+                (
+                    "/api/me/certificates/{certificate_id}",
+                    "get",
+                    "getOwnCertificate",
+                ),
+                (
+                    "/api/me/certificates/{certificate_id}/render-manifest",
+                    "post",
+                    "createOwnCertificateRenderManifest",
+                ),
                 (
                     "/api/public/certificates/verify/manual",
                     "post",
@@ -3502,6 +3516,27 @@ mod tests {
                 .expect("public certificate path operations");
             assert!(operations.contains_key("post"));
             assert!(!operations.contains_key("get"));
+        }
+        for (path, method) in [
+            ("/api/me/certificates", "get"),
+            ("/api/me/certificates/{certificate_id}", "get"),
+            (
+                "/api/me/certificates/{certificate_id}/render-manifest",
+                "post",
+            ),
+        ] {
+            let operation = &document["paths"][path][method];
+            let parameters = operation["parameters"]
+                .as_array()
+                .cloned()
+                .unwrap_or_default();
+            assert!(parameters.iter().all(|parameter| {
+                !matches!(
+                    parameter["name"].as_str(),
+                    Some("userId" | "user_id" | "targetUserId" | "target_user_id")
+                )
+            }));
+            assert!(operation.get("requestBody").is_none());
         }
         let public_properties = schemas["PublicCertificateVerificationData"]["properties"]
             .as_object()

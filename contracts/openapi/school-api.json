@@ -36319,6 +36319,190 @@
         ]
       }
     },
+    "/api/me/certificates": {
+      "get": {
+        "operationId": "listOwnCertificates",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_IssuedCertificateSummary"
+                }
+              }
+            },
+            "description": "Issued and revoked certificates linked to the current account"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Own certificate permission denied"
+          }
+        },
+        "tags": [
+          "certificate"
+        ]
+      }
+    },
+    "/api/me/certificates/{certificate_id}": {
+      "get": {
+        "operationId": "getOwnCertificate",
+        "parameters": [
+          {
+            "description": "Certificate ID",
+            "in": "path",
+            "name": "certificate_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_IssuedCertificateDetail"
+                }
+              }
+            },
+            "description": "Certificate linked to the current account"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Own certificate permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Certificate is not linked to the current account"
+          }
+        },
+        "tags": [
+          "certificate"
+        ]
+      }
+    },
+    "/api/me/certificates/{certificate_id}/render-manifest": {
+      "post": {
+        "operationId": "createOwnCertificateRenderManifest",
+        "parameters": [
+          {
+            "description": "Certificate ID",
+            "in": "path",
+            "name": "certificate_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_CertificateRenderManifest"
+                }
+              }
+            },
+            "description": "Fresh render manifest for an issued certificate linked to the current account"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Own certificate permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Certificate is not linked to the current account"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "The linked certificate is revoked or no longer renderable"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Private asset grant unavailable"
+          }
+        },
+        "tags": [
+          "certificate"
+        ]
+      }
+    },
     "/api/me/exam-schedules": {
       "get": {
         "operationId": "listMyExamSchedules",

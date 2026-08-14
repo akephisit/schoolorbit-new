@@ -306,6 +306,18 @@ fn protected_routes() -> Router<AppState> {
             post(modules::certificates::handlers::create_issued_certificate_render_manifest),
         )
         .route(
+            "/api/me/certificates",
+            get(modules::certificates::handlers::list_own_certificates),
+        )
+        .route(
+            "/api/me/certificates/{certificate_id}",
+            get(modules::certificates::handlers::get_own_certificate),
+        )
+        .route(
+            "/api/me/certificates/{certificate_id}/render-manifest",
+            post(modules::certificates::handlers::create_own_certificate_render_manifest),
+        )
+        .route(
             "/api/student/profile",
             get(modules::students::handlers::get_own_profile)
                 .put(modules::students::handlers::update_own_profile),

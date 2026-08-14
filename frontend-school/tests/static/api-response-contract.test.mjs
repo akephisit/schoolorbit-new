@@ -1200,7 +1200,7 @@ test('facility workspace mutations patch buildings and rooms locally', async () 
 
 test('achievement workspace mutations patch saved and deleted rows locally', async () => {
 	const achievementPage = await readRepoFile(
-		'frontend-school/src/routes/(app)/staff/achievements/+page.svelte'
+		'frontend-school/src/lib/components/achievement/SelfRecordedAchievements.svelte'
 	);
 
 	for (const helper of ['replaceAchievement', 'removeAchievement']) {

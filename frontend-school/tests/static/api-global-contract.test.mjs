@@ -1279,7 +1279,10 @@ test('student workspace pages gate read, mutation, and PII actions', async () =>
 test('achievement workspace gates read and owner/all mutation actions', async () => {
 	const source = stripComments(
 		await readFile(
-			path.join(repoRoot, 'frontend-school/src/routes/(app)/staff/achievements/+page.svelte'),
+			path.join(
+				repoRoot,
+				'frontend-school/src/lib/components/achievement/SelfRecordedAchievements.svelte'
+			),
 			'utf8'
 		)
 	);

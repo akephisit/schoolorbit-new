@@ -46,6 +46,7 @@ use crate::{
         files::consumer_service::request_deletions,
         lookup::models::OrganizationUnitLookupItem,
     },
+    permissions::registry::codes,
     utils::{
         client_address::client_address, request_context::actor_tenant_context_from_session,
         tenant::tenant_context,
@@ -190,6 +191,97 @@ pub async fn create_public_certificate_render_manifest(
         source,
         state.certificate_verification_limiter.as_ref(),
         &payload.receipt,
+    )
+    .await?;
+    Ok((StatusCode::OK, Json(ApiResponse::ok(manifest))).into_response())
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/me/certificates",
+    operation_id = "listOwnCertificates",
+    tag = "certificate",
+    responses(
+        (status = 200, description = "Issued and revoked certificates linked to the current account", body = ApiResponse<Vec<IssuedCertificateSummary>>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Own certificate permission denied", body = ApiErrorResponse)
+    )
+)]
+pub async fn list_own_certificates(
+    State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context_from_session(&state, &session).await?;
+    context
+        .actor
+        .require_permission(codes::CERTIFICATE_READ_OWN)?;
+    let certificates =
+        issuance_service::list_own_certificates(&context.tenant.pool, session.user_id).await?;
+    Ok((StatusCode::OK, Json(ApiResponse::ok(certificates))).into_response())
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/me/certificates/{certificate_id}",
+    operation_id = "getOwnCertificate",
+    tag = "certificate",
+    params(("certificate_id" = Uuid, Path, description = "Certificate ID")),
+    responses(
+        (status = 200, description = "Certificate linked to the current account", body = ApiResponse<IssuedCertificateDetail>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Own certificate permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Certificate is not linked to the current account", body = ApiErrorResponse)
+    )
+)]
+pub async fn get_own_certificate(
+    State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(certificate_id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context_from_session(&state, &session).await?;
+    context
+        .actor
+        .require_permission(codes::CERTIFICATE_READ_OWN)?;
+    let certificate = issuance_service::get_own_certificate(
+        &context.tenant.pool,
+        session.user_id,
+        certificate_id,
+    )
+    .await?;
+    Ok((StatusCode::OK, Json(ApiResponse::ok(certificate))).into_response())
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/me/certificates/{certificate_id}/render-manifest",
+    operation_id = "createOwnCertificateRenderManifest",
+    tag = "certificate",
+    params(("certificate_id" = Uuid, Path, description = "Certificate ID")),
+    responses(
+        (status = 200, description = "Fresh render manifest for an issued certificate linked to the current account", body = ApiResponse<CertificateRenderManifest>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Own certificate permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Certificate is not linked to the current account", body = ApiErrorResponse),
+        (status = 409, description = "The linked certificate is revoked or no longer renderable", body = ApiErrorResponse),
+        (status = 503, description = "Private asset grant unavailable", body = ApiErrorResponse)
+    )
+)]
+pub async fn create_own_certificate_render_manifest(
+    State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(certificate_id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context_from_session(&state, &session).await?;
+    context
+        .actor
+        .require_permission(codes::CERTIFICATE_READ_OWN)?;
+    let manifest = render_service::own_manifest(
+        &context.tenant.pool,
+        session.user_id,
+        state.file_platform.as_ref(),
+        &context.tenant.subdomain,
+        &state.auth_runtime.config.base_domain,
+        certificate_id,
     )
     .await?;
     Ok((StatusCode::OK, Json(ApiResponse::ok(manifest))).into_response())

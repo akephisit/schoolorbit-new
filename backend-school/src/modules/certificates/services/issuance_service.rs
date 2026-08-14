@@ -698,6 +698,61 @@ pub async fn list_campaign_certificates(
         .collect()
 }
 
+pub async fn list_own_certificates(
+    pool: &PgPool,
+    user_id: Uuid,
+) -> Result<Vec<IssuedCertificateSummary>, AppError> {
+    let rows = sqlx::query_as::<_, CertificateOutcomeRow>(
+        "SELECT certificate.id, certificate.campaign_id,
+                campaign.name AS campaign_name, campaign.owner_organization_unit_id,
+                owner.name AS owner_organization_unit_name, certificate.template_id,
+                certificate.template_name_snapshot AS template_name,
+                certificate.academic_year_id, certificate.academic_year_value,
+                certificate.activity_sequence, certificate.certificate_sequence,
+                certificate.certificate_number, certificate.recipient_type,
+                certificate.title_snapshot, certificate.first_name_snapshot,
+                certificate.last_name_snapshot, certificate.activity_item_snapshot,
+                certificate.award_or_role_snapshot, certificate.issue_date,
+                certificate.status, certificate.replacement_for_certificate_id,
+                certificate.replaced_by_certificate_id,
+                replacement_candidate.id AS replacement_candidate_id,
+                certificate.created_at
+         FROM certificates certificate
+         JOIN certificate_campaigns campaign ON campaign.id = certificate.campaign_id
+         LEFT JOIN organization_units owner ON owner.id = campaign.owner_organization_unit_id
+         LEFT JOIN certificate_candidates replacement_candidate
+           ON replacement_candidate.replacement_for_certificate_id = certificate.id
+          AND replacement_candidate.deleted_at IS NULL
+         WHERE certificate.user_id = $1
+         ORDER BY certificate.issue_date DESC, certificate.created_at DESC, certificate.id DESC",
+    )
+    .bind(user_id)
+    .fetch_all(pool)
+    .await
+    .map_err(issuance_db_error)?;
+
+    rows.into_iter()
+        .map(|row| own_certificate_summary(user_id, row))
+        .collect()
+}
+
+pub async fn get_own_certificate(
+    pool: &PgPool,
+    user_id: Uuid,
+    certificate_id: Uuid,
+) -> Result<IssuedCertificateDetail, AppError> {
+    let row = load_own_certificate_detail_pool(pool, user_id, certificate_id).await?;
+    let actor = ActorContext {
+        user_id,
+        permissions: Vec::new(),
+    };
+    let mut detail = certificate_detail(&actor, row)?;
+    detail.summary.capabilities.can_read = true;
+    detail.summary.capabilities.can_download = detail.summary.status == CertificateStatus::Issued;
+    detail.summary.capabilities.can_revoke = false;
+    Ok(detail)
+}
+
 pub async fn get_certificate(
     pool: &PgPool,
     actor: &ActorContext,
@@ -725,6 +780,21 @@ pub async fn get_certificate(
     detail.summary.capabilities.can_revoke = actor.has_permission(codes::CERTIFICATE_REVOKE_SCHOOL)
         && detail.summary.status == CertificateStatus::Issued;
     Ok(detail)
+}
+
+fn own_certificate_summary(
+    user_id: Uuid,
+    row: CertificateOutcomeRow,
+) -> Result<IssuedCertificateSummary, AppError> {
+    let actor = ActorContext {
+        user_id,
+        permissions: Vec::new(),
+    };
+    let mut summary = outcome_summary(&actor, row)?;
+    summary.capabilities.can_read = true;
+    summary.capabilities.can_download = summary.status == CertificateStatus::Issued;
+    summary.capabilities.can_revoke = false;
+    Ok(summary)
 }
 
 fn normalize_revocation_reason(value: &str) -> Result<String, AppError> {
@@ -1965,6 +2035,46 @@ async fn load_certificate_detail_pool(
          WHERE certificate.id = $1",
     )
     .bind(certificate_id)
+    .fetch_optional(pool)
+    .await
+    .map_err(issuance_db_error)?
+    .ok_or_else(|| AppError::NotFound("ไม่พบเกียรติบัตร".to_string()))
+}
+
+async fn load_own_certificate_detail_pool(
+    pool: &PgPool,
+    user_id: Uuid,
+    certificate_id: Uuid,
+) -> Result<CertificateDetailRow, AppError> {
+    sqlx::query_as::<_, CertificateDetailRow>(
+        "SELECT certificate.id, certificate.campaign_id,
+                campaign.name AS campaign_name, campaign.owner_organization_unit_id,
+                owner.name AS owner_organization_unit_name, certificate.template_id,
+                certificate.template_name_snapshot AS template_name,
+                certificate.academic_year_id, certificate.academic_year_value,
+                certificate.activity_sequence, certificate.certificate_sequence,
+                certificate.certificate_number, certificate.recipient_type,
+                certificate.title_snapshot, certificate.first_name_snapshot,
+                certificate.last_name_snapshot, certificate.activity_item_snapshot,
+                certificate.award_or_role_snapshot, certificate.issue_date,
+                certificate.status, certificate.replacement_for_certificate_id,
+                certificate.replaced_by_certificate_id,
+                replacement_candidate.id AS replacement_candidate_id,
+                certificate.created_at, certificate.issue_run_id,
+                certificate.custom_values_snapshot, certificate.school_name_snapshot,
+                certificate.owner_organization_unit_name_snapshot,
+                certificate.revoked_by, certificate.revoked_at,
+                certificate.revocation_reason, certificate.updated_at
+         FROM certificates certificate
+         JOIN certificate_campaigns campaign ON campaign.id = certificate.campaign_id
+         LEFT JOIN organization_units owner ON owner.id = campaign.owner_organization_unit_id
+         LEFT JOIN certificate_candidates replacement_candidate
+           ON replacement_candidate.replacement_for_certificate_id = certificate.id
+          AND replacement_candidate.deleted_at IS NULL
+         WHERE certificate.id = $1 AND certificate.user_id = $2",
+    )
+    .bind(certificate_id)
+    .bind(user_id)
     .fetch_optional(pool)
     .await
     .map_err(issuance_db_error)?

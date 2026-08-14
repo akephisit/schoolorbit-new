@@ -29,7 +29,7 @@ use crate::{
             CreateAccountCertificateCandidateRequest, CreateCertificateCampaignRequest,
             CreateCertificateTemplateRequest, CreateManualExternalCandidateRequest, ElementFrame,
             GeometryAction, IssueCertificateOutcome, IssueCertificateRequest,
-            ManualCertificateVerificationRequest, NullableUuidUpdate,
+            IssuedCertificateSummary, ManualCertificateVerificationRequest, NullableUuidUpdate,
             QrCertificateVerificationRequest, RecipientType, RevokeCertificateRequest,
             TextAlignment, TextElement, UpdateCertificateCampaignRequest,
             UpdateCertificateCandidateRequest, UpdateCertificateTemplateRequest,
@@ -4488,6 +4488,230 @@ async fn public_render_manifest_requires_the_tenant_receipt_and_rechecks_revocat
         axum::http::StatusCode::NOT_FOUND
     );
     assert_eq!(revoked_error.public_message(), "ไม่พบข้อมูลที่ตรงกัน");
+}
+
+struct OwnCertificateFixture {
+    pool: PgPool,
+    owner_user_id: Uuid,
+    other_user_id: Uuid,
+    owner_certificate: IssuedCertificateSummary,
+    other_certificate: IssuedCertificateSummary,
+    revoker: ActorContext,
+}
+
+async fn issue_own_certificate_fixture(test_name: &str, year: i32) -> OwnCertificateFixture {
+    let (pool, preparer, academic_year_id) = school_campaign_fixture(test_name, year).await;
+    let campaign = campaign_service::create_campaign(
+        &pool,
+        &preparer,
+        campaign_create_payload(academic_year_id, None, "กิจกรรมคลังเกียรติบัตรส่วนตัว"),
+    )
+    .await
+    .unwrap();
+    let template = create_ready_candidate_template(
+        &pool,
+        &preparer,
+        campaign.id,
+        "แบบคลังเกียรติบัตรส่วนตัว",
+        vec![RecipientType::Student],
+    )
+    .await;
+    let owner_user_id = insert_certificate_student(
+        &pool,
+        &format!("{test_name}-owner"),
+        &format!("{test_name}-owner-id"),
+        "อรทัย",
+        "เจ้าของใบ",
+        "active",
+    )
+    .await;
+    let other_user_id = insert_certificate_student(
+        &pool,
+        &format!("{test_name}-other"),
+        &format!("{test_name}-other-id"),
+        "บุษบา",
+        "ผู้รับอีกคน",
+        "active",
+    )
+    .await;
+    let mut candidate_ids = Vec::new();
+    for user_id in [owner_user_id, other_user_id] {
+        let created = candidate_service::create_account_candidate(
+            &pool,
+            &preparer,
+            campaign.id,
+            CreateAccountCertificateCandidateRequest {
+                user_id,
+                template_id: Some(template.id),
+                activity_item: Some("การแข่งขันทักษะ".to_string()),
+                award_or_role: Some("ผู้เข้าร่วม".to_string()),
+                custom_values: BTreeMap::new(),
+            },
+        )
+        .await
+        .unwrap();
+        candidate_ids.push(created.candidates[0].id);
+    }
+    let request =
+        request_service::submit_issue_request(&pool, &preparer, campaign.id, candidate_ids)
+            .await
+            .unwrap();
+    let issuer_user_id = create_test_user(
+        &pool,
+        &format!("{test_name}-issuer@example.invalid"),
+        "test-password",
+    )
+    .await
+    .unwrap();
+    let issuer = school_certificate_issuer(issuer_user_id);
+    request_service::start_review(&pool, &issuer, request.id)
+        .await
+        .unwrap();
+    let certificates = match issuance_service::issue_request(
+        &pool,
+        &issuer,
+        "โรงเรียนตัวอย่าง".to_string(),
+        request.id,
+        IssueCertificateRequest {
+            idempotency_key: Uuid::new_v4(),
+        },
+    )
+    .await
+    .unwrap()
+    {
+        IssueCertificateOutcome::Issued { certificates, .. } => certificates,
+        IssueCertificateOutcome::Returned { .. } => panic!("own certificate fixture should issue"),
+    };
+    let owner_certificate = certificates
+        .iter()
+        .find(|certificate| certificate.first_name == "อรทัย")
+        .cloned()
+        .expect("owner certificate");
+    let other_certificate = certificates
+        .iter()
+        .find(|certificate| certificate.first_name == "บุษบา")
+        .cloned()
+        .expect("other certificate");
+
+    OwnCertificateFixture {
+        pool,
+        owner_user_id,
+        other_user_id,
+        owner_certificate,
+        other_certificate,
+        revoker: ActorContext {
+            user_id: issuer_user_id,
+            permissions: vec![codes::CERTIFICATE_REVOKE_SCHOOL.to_string()],
+        },
+    }
+}
+
+#[tokio::test]
+async fn own_certificate_routes_cannot_read_another_linked_user() {
+    let _crypto_guard = crate::utils::field_encryption::test_env_lock();
+    env::set_var(
+        "ENCRYPTION_KEY",
+        "certificate-own-scope-encryption-test-key",
+    );
+    env::set_var(
+        "BLIND_INDEX_KEY",
+        "certificate-own-scope-blind-index-test-key",
+    );
+    let fixture = issue_own_certificate_fixture("certificate_own_scope", 3154).await;
+
+    let listed = issuance_service::list_own_certificates(&fixture.pool, fixture.owner_user_id)
+        .await
+        .unwrap();
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0].id, fixture.owner_certificate.id);
+    assert!(listed[0].capabilities.can_read);
+    assert!(listed[0].capabilities.can_download);
+    assert!(!listed[0].capabilities.can_revoke);
+
+    let own_detail = issuance_service::get_own_certificate(
+        &fixture.pool,
+        fixture.owner_user_id,
+        fixture.owner_certificate.id,
+    )
+    .await
+    .unwrap();
+    assert_eq!(own_detail.summary.id, fixture.owner_certificate.id);
+    assert!(matches!(
+        issuance_service::get_own_certificate(
+            &fixture.pool,
+            fixture.owner_user_id,
+            fixture.other_certificate.id,
+        )
+        .await,
+        Err(AppError::NotFound(_))
+    ));
+
+    let platform = crate::modules::files::platform_service::FilePlatform::new(
+        Arc::new(PreviewStorage),
+        Arc::new(PreviewScanner),
+    );
+    assert!(matches!(
+        render_service::own_manifest(
+            &fixture.pool,
+            fixture.owner_user_id,
+            &platform,
+            "sandbox",
+            "schoolorbit.test",
+            fixture.other_certificate.id,
+        )
+        .await,
+        Err(AppError::NotFound(_))
+    ));
+    assert_ne!(fixture.owner_user_id, fixture.other_user_id);
+}
+
+#[tokio::test]
+async fn own_revoked_certificate_stays_visible_but_cannot_render() {
+    let _crypto_guard = crate::utils::field_encryption::test_env_lock();
+    env::set_var(
+        "ENCRYPTION_KEY",
+        "certificate-own-revoked-encryption-test-key",
+    );
+    env::set_var(
+        "BLIND_INDEX_KEY",
+        "certificate-own-revoked-blind-index-test-key",
+    );
+    let fixture = issue_own_certificate_fixture("certificate_own_revoked", 3155).await;
+    issuance_service::revoke_certificate(
+        &fixture.pool,
+        &fixture.revoker,
+        fixture.owner_certificate.id,
+        RevokeCertificateRequest {
+            reason: "เพิกถอนเพื่อทดสอบคลังส่วนตัว".to_string(),
+            create_replacement_candidate: false,
+        },
+    )
+    .await
+    .unwrap();
+
+    let listed = issuance_service::list_own_certificates(&fixture.pool, fixture.owner_user_id)
+        .await
+        .unwrap();
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0].status, CertificateStatus::Revoked);
+    assert!(!listed[0].capabilities.can_download);
+
+    let platform = crate::modules::files::platform_service::FilePlatform::new(
+        Arc::new(PreviewStorage),
+        Arc::new(PreviewScanner),
+    );
+    assert!(matches!(
+        render_service::own_manifest(
+            &fixture.pool,
+            fixture.owner_user_id,
+            &platform,
+            "sandbox",
+            "schoolorbit.test",
+            fixture.owner_certificate.id,
+        )
+        .await,
+        Err(AppError::Conflict(_))
+    ));
 }
 
 #[tokio::test]

@@ -52,6 +52,12 @@ struct IssuedRenderAccessRow {
     owner_organization_unit_id: Option<Uuid>,
 }
 
+enum IssuedManifestAccess<'a> {
+    Administrative(&'a ActorContext),
+    Own(Uuid),
+    Public,
+}
+
 #[derive(Debug, FromRow)]
 struct IssuedRenderRow {
     template_id: Uuid,
@@ -334,7 +340,26 @@ pub async fn issued_manifest(
 ) -> Result<CertificateRenderManifest, AppError> {
     issued_manifest_inner(
         pool,
-        Some(actor),
+        IssuedManifestAccess::Administrative(actor),
+        platform,
+        tenant_subdomain,
+        base_domain,
+        certificate_id,
+    )
+    .await
+}
+
+pub async fn own_manifest(
+    pool: &PgPool,
+    user_id: Uuid,
+    platform: &FilePlatform,
+    tenant_subdomain: &str,
+    base_domain: &str,
+    certificate_id: Uuid,
+) -> Result<CertificateRenderManifest, AppError> {
+    issued_manifest_inner(
+        pool,
+        IssuedManifestAccess::Own(user_id),
         platform,
         tenant_subdomain,
         base_domain,
@@ -372,7 +397,7 @@ async fn public_manifest_for_certificate(
 ) -> Result<CertificateRenderManifest, AppError> {
     issued_manifest_inner(
         pool,
-        None,
+        IssuedManifestAccess::Public,
         platform,
         tenant_subdomain,
         base_domain,
@@ -433,14 +458,18 @@ pub async fn public_manifest_rate_limited(
 
 async fn issued_manifest_inner(
     pool: &PgPool,
-    actor: Option<&ActorContext>,
+    access: IssuedManifestAccess<'_>,
     platform: &FilePlatform,
     tenant_subdomain: &str,
     base_domain: &str,
     certificate_id: Uuid,
 ) -> Result<CertificateRenderManifest, AppError> {
     let mut tx = pool.begin().await?;
-    if let Some(actor) = actor {
+    let own_user_id = match &access {
+        IssuedManifestAccess::Own(user_id) => Some(*user_id),
+        IssuedManifestAccess::Administrative(_) | IssuedManifestAccess::Public => None,
+    };
+    if let IssuedManifestAccess::Administrative(actor) = &access {
         let access = sqlx::query_as::<_, IssuedRenderAccessRow>(
             "SELECT campaign.owner_organization_unit_id
              FROM certificates certificate
@@ -463,10 +492,11 @@ async fn issued_manifest_inner(
     let status = sqlx::query_scalar::<_, String>(
         "SELECT status
          FROM certificates
-         WHERE id = $1
+         WHERE id = $1 AND ($2::uuid IS NULL OR user_id = $2)
          FOR SHARE",
     )
     .bind(certificate_id)
+    .bind(own_user_id)
     .fetch_optional(&mut *tx)
     .await?
     .ok_or_else(|| AppError::NotFound("ไม่พบเกียรติบัตร".to_string()))?;
@@ -498,9 +528,11 @@ async fn issued_manifest_inner(
           AND template.campaign_id = certificate.campaign_id
          JOIN files background ON background.id = template.background_file_id
          WHERE certificate.id = $1
+           AND ($2::uuid IS NULL OR certificate.user_id = $2)
          FOR SHARE OF template, background",
     )
     .bind(certificate_id)
+    .bind(own_user_id)
     .fetch_optional(&mut *tx)
     .await?
     .ok_or_else(|| AppError::Conflict("แม่แบบปัจจุบันไม่พร้อมสร้างเกียรติบัตร".to_string()))?;

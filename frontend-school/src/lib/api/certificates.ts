@@ -1,4 +1,4 @@
-import { apiClient, requireApiData } from '$lib/api/client';
+import { apiClient, requireApiData, type ApiRequestOptions } from '$lib/api/client';
 import type { components } from '$lib/api/generated/school-api';
 
 type Schemas = components['schemas'];
@@ -465,4 +465,27 @@ export async function createIssuedCertificateRenderManifests(
 		payload
 	);
 	return requireApiData(response, 'ไม่สามารถเตรียมไฟล์เกียรติบัตรที่เลือกได้');
+}
+
+export async function listOwnCertificates(
+	options: ApiRequestOptions = {}
+): Promise<IssuedCertificateSummary[]> {
+	const response = await apiClient.get<IssuedCertificateSummary[]>('/api/me/certificates', options);
+	return requireApiData(response, 'ไม่สามารถโหลดคลังเกียรติบัตรได้');
+}
+
+export async function getOwnCertificate(certificateId: string): Promise<IssuedCertificateDetail> {
+	const response = await apiClient.get<IssuedCertificateDetail>(
+		`/api/me/certificates/${encodeURIComponent(certificateId)}`
+	);
+	return requireApiData(response, 'ไม่สามารถโหลดรายละเอียดเกียรติบัตรได้');
+}
+
+export async function createOwnCertificateRenderManifest(
+	certificateId: string
+): Promise<CertificateRenderManifest> {
+	const response = await apiClient.post<CertificateRenderManifest>(
+		`/api/me/certificates/${encodeURIComponent(certificateId)}/render-manifest`
+	);
+	return requireApiData(response, 'ไม่สามารถเตรียมไฟล์เกียรติบัตรได้');
 }
