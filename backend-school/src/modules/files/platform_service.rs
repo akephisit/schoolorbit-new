@@ -177,6 +177,7 @@ impl FilePlatform {
             original: original.clone(),
             byte_size,
             checksum: FileHasher::sha256(&command.bytes),
+            inspection_metadata: inspected.metadata().clone(),
             derivatives: derivatives
                 .iter()
                 .map(|derivative| derivative.metadata.clone())
@@ -519,7 +520,7 @@ mod tests {
 
     use crate::modules::files::{
         malware_scanner::MalwareScanner,
-        platform_types::StorageClass,
+        platform_types::{FileInspectionMetadata, StorageClass},
         purpose_registry::original_object_key,
         reconciler::reconcile_due_operations,
         repository::{DeleteWork, LeasedOperation, ObjectTarget, OperationWork, RepositoryError},
@@ -620,6 +621,7 @@ mod tests {
     struct FakeRepository {
         events: Mutex<Vec<&'static str>>,
         upload_identity: Mutex<Option<(Option<Uuid>, Option<Uuid>)>>,
+        upload_inspection: Mutex<Option<FileInspectionMetadata>>,
         finalize_fails: Mutex<bool>,
         derivative_store_error: Mutex<Option<RepositoryError>>,
         delivery: Mutex<Option<DeliveryRecord>>,
@@ -633,6 +635,7 @@ mod tests {
     impl FileRepository for FakeRepository {
         async fn reserve_upload(&self, upload: &NewUpload) -> Result<(), RepositoryError> {
             *self.upload_identity.lock().unwrap() = Some((upload.owner_user_id, upload.created_by));
+            *self.upload_inspection.lock().unwrap() = Some(upload.inspection_metadata.clone());
             self.events.lock().unwrap().push("processing");
             Ok(())
         }
@@ -816,6 +819,13 @@ mod tests {
         assert_eq!(
             *provider.puts.lock().unwrap(),
             vec![StorageClass::Public, StorageClass::Public]
+        );
+        assert_eq!(
+            *repository.upload_inspection.lock().unwrap(),
+            Some(FileInspectionMetadata::Image {
+                width_px: 2,
+                height_px: 2,
+            })
         );
     }
 

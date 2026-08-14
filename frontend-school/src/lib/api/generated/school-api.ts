@@ -5445,7 +5445,10 @@ export interface components {
 			| 'question_bank_image'
 			| 'course_material'
 			| 'assignment_attachment'
-			| 'generic_private_document';
+			| 'generic_private_document'
+			| 'certificate_template_background'
+			| 'certificate_template_image'
+			| 'certificate_template_font';
 		FileUploadMultipart: {
 			/** Format: binary */
 			file: string;

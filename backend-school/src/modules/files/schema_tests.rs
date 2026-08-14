@@ -209,6 +209,7 @@ async fn file_platform_schema_is_additive_and_constrained() {
             "current_version_id",
             "retention_class",
             "delete_requested_at",
+            "inspection_metadata",
             "deleted_at",
         ],
     )

@@ -83,7 +83,10 @@ pub fn simple_file_access(
         | FilePurpose::IdentityCard
         | FilePurpose::CourseMaterial
         | FilePurpose::AssignmentAttachment
-        | FilePurpose::GenericPrivateDocument => None,
+        | FilePurpose::GenericPrivateDocument
+        | FilePurpose::CertificateTemplateBackground
+        | FilePurpose::CertificateTemplateImage
+        | FilePurpose::CertificateTemplateFont => None,
     }
 }
 
@@ -148,7 +151,10 @@ pub async fn authorize_create(
         | FilePurpose::IdentityCard
         | FilePurpose::CourseMaterial
         | FilePurpose::AssignmentAttachment
-        | FilePurpose::GenericPrivateDocument => Err(explicit_domain_policy_required()),
+        | FilePurpose::GenericPrivateDocument
+        | FilePurpose::CertificateTemplateBackground
+        | FilePurpose::CertificateTemplateImage
+        | FilePurpose::CertificateTemplateFont => Err(explicit_domain_policy_required()),
     }
 }
 
@@ -283,7 +289,10 @@ pub async fn authorize_existing(
         | FilePurpose::IdentityCard
         | FilePurpose::CourseMaterial
         | FilePurpose::AssignmentAttachment
-        | FilePurpose::GenericPrivateDocument => Err(explicit_domain_policy_required()),
+        | FilePurpose::GenericPrivateDocument
+        | FilePurpose::CertificateTemplateBackground
+        | FilePurpose::CertificateTemplateImage
+        | FilePurpose::CertificateTemplateFont => Err(explicit_domain_policy_required()),
     }
 }
 
@@ -599,5 +608,21 @@ mod tests {
             ),
             None,
         );
+        for purpose in [
+            FilePurpose::CertificateTemplateBackground,
+            FilePurpose::CertificateTemplateImage,
+            FilePurpose::CertificateTemplateFont,
+        ] {
+            assert_eq!(
+                simple_file_access(
+                    &actor,
+                    purpose,
+                    FilePolicyAction::Create,
+                    Some(actor.user_id),
+                    None,
+                ),
+                None,
+            );
+        }
     }
 }

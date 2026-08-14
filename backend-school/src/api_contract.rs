@@ -2976,10 +2976,25 @@ mod tests {
             "provider",
             "checksum",
             "signedUrl",
+            "inspectionMetadata",
         ] {
             assert!(
                 !serialized.contains(forbidden),
                 "FileMetadata must not expose {forbidden}"
+            );
+        }
+
+        let file_purposes = schemas["FilePurpose"]["enum"]
+            .as_array()
+            .expect("FilePurpose must be an enum");
+        for purpose in [
+            "certificate_template_background",
+            "certificate_template_image",
+            "certificate_template_font",
+        ] {
+            assert!(
+                file_purposes.iter().any(|value| value == purpose),
+                "FilePurpose must expose {purpose}"
             );
         }
 

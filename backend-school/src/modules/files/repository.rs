@@ -5,8 +5,8 @@ use uuid::Uuid;
 
 use super::{
     platform_types::{
-        DerivativeRecipe, FileLifecycleStatus, FilePurpose, FileVisibility, RetentionClass,
-        StorageClass,
+        DerivativeRecipe, FileInspectionMetadata, FileLifecycleStatus, FilePurpose, FileVisibility,
+        RetentionClass, StorageClass,
     },
     purpose_registry::{persisted_object_key, purpose_from_code},
     storage_provider::StoredObject,
@@ -65,6 +65,7 @@ pub struct NewUpload {
     pub original: StoredObject,
     pub byte_size: i64,
     pub checksum: String,
+    pub inspection_metadata: FileInspectionMetadata,
     pub derivatives: Vec<NewDerivative>,
 }
 
@@ -464,10 +465,11 @@ impl FileRepository for SqlFileRepository {
             r#"
 INSERT INTO files (
     id, owner_user_id, display_filename, created_by, purpose_code,
-    visibility, lifecycle_status, retention_class, expires_at
+    visibility, lifecycle_status, retention_class, expires_at, inspection_metadata
 ) VALUES (
     $1, $2, $3, $4, $5, $6, 'processing', $7,
-    CASE WHEN $7 = 'temporary' THEN now() + INTERVAL '24 hours' ELSE NULL END
+    CASE WHEN $7 = 'temporary' THEN now() + INTERVAL '24 hours' ELSE NULL END,
+    $8
 )
 "#,
         )
@@ -478,6 +480,7 @@ INSERT INTO files (
         .bind(upload.purpose.code())
         .bind(visibility)
         .bind(retention)
+        .bind(sqlx::types::Json(&upload.inspection_metadata))
         .execute(&mut *transaction)
         .await
         .map_err(Self::database_error)?;
@@ -1316,6 +1319,8 @@ fn canonical_extension_from_mime(mime: &str) -> Result<&'static str, RepositoryE
         "image/png" => Ok("png"),
         "image/webp" => Ok("webp"),
         "application/pdf" => Ok("pdf"),
+        "font/ttf" => Ok("ttf"),
+        "font/otf" => Ok("otf"),
         _ => Err(RepositoryError::InvalidPersistedState),
     }
 }
@@ -1376,7 +1381,7 @@ mod tests {
     use super::*;
     use crate::{
         modules::files::{
-            platform_types::{DerivativeRecipe, DetectedContent},
+            platform_types::{DerivativeRecipe, DetectedContent, FileInspectionMetadata},
             purpose_registry::{derivative_object_key, original_object_key},
         },
         test_helpers::{create_named_test_pool, run_test_migrations},
@@ -1455,10 +1460,28 @@ VALUES ($1, 'test-only-hash', 'Synthetic', 'User', 'staff', 'active')
             original,
             byte_size: 4,
             checksum: "a".repeat(64),
+            inspection_metadata: FileInspectionMetadata::Image {
+                width_px: 1,
+                height_px: 1,
+            },
             derivatives: Vec::new(),
         };
 
         repository.reserve_upload(&upload).await.unwrap();
+        assert_eq!(
+            sqlx::query_scalar::<_, sqlx::types::Json<FileInspectionMetadata>>(
+                "SELECT inspection_metadata FROM files WHERE id = $1"
+            )
+            .bind(file_id)
+            .fetch_one(repository.pool())
+            .await
+            .unwrap()
+            .0,
+            FileInspectionMetadata::Image {
+                width_px: 1,
+                height_px: 1,
+            },
+        );
         assert_eq!(
             sqlx::query_scalar::<_, String>("SELECT lifecycle_status FROM files WHERE id = $1")
                 .bind(file_id)
@@ -1623,6 +1646,10 @@ VALUES ($1, 'test-only-hash', 'Synthetic', 'User', 'staff', 'active')
             ),
             byte_size: 4,
             checksum: "a".repeat(64),
+            inspection_metadata: FileInspectionMetadata::Image {
+                width_px: 1,
+                height_px: 1,
+            },
             derivatives: vec![NewDerivative {
                 id: derivative_id,
                 operation_id: Uuid::new_v4(),
