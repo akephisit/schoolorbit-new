@@ -3584,11 +3584,11 @@
             "oneOf": [
               {
                 "properties": {
-                  "activity_sequence": {
+                  "activitySequence": {
                     "format": "int32",
                     "type": "integer"
                   },
-                  "campaign_id": {
+                  "campaignId": {
                     "format": "uuid",
                     "type": "string"
                   },
@@ -3598,15 +3598,15 @@
                     },
                     "type": "array"
                   },
-                  "first_certificate_sequence": {
+                  "firstCertificateSequence": {
                     "format": "int32",
                     "type": "integer"
                   },
-                  "issue_run_id": {
+                  "issueRunId": {
                     "format": "uuid",
                     "type": "string"
                   },
-                  "last_certificate_sequence": {
+                  "lastCertificateSequence": {
                     "format": "int32",
                     "type": "integer"
                   },
@@ -3616,18 +3616,18 @@
                     ],
                     "type": "string"
                   },
-                  "request_id": {
+                  "requestId": {
                     "format": "uuid",
                     "type": "string"
                   }
                 },
                 "required": [
-                  "issue_run_id",
-                  "request_id",
-                  "campaign_id",
-                  "activity_sequence",
-                  "first_certificate_sequence",
-                  "last_certificate_sequence",
+                  "issueRunId",
+                  "requestId",
+                  "campaignId",
+                  "activitySequence",
+                  "firstCertificateSequence",
+                  "lastCertificateSequence",
                   "certificates",
                   "outcome"
                 ],
@@ -3635,23 +3635,23 @@
               },
               {
                 "properties": {
-                  "campaign_id": {
+                  "campaignId": {
                     "format": "uuid",
                     "type": "string"
                   },
-                  "candidate_problems": {
+                  "candidateProblems": {
                     "items": {
                       "$ref": "#/components/schemas/CertificateIssueCandidateProblem"
                     },
                     "type": "array"
                   },
-                  "issue_codes": {
+                  "issueCodes": {
                     "items": {
                       "$ref": "#/components/schemas/CertificateIssueCode"
                     },
                     "type": "array"
                   },
-                  "issue_run_id": {
+                  "issueRunId": {
                     "format": "uuid",
                     "type": "string"
                   },
@@ -3661,17 +3661,17 @@
                     ],
                     "type": "string"
                   },
-                  "request_id": {
+                  "requestId": {
                     "format": "uuid",
                     "type": "string"
                   }
                 },
                 "required": [
-                  "issue_run_id",
-                  "request_id",
-                  "campaign_id",
-                  "issue_codes",
-                  "candidate_problems",
+                  "issueRunId",
+                  "requestId",
+                  "campaignId",
+                  "issueCodes",
+                  "candidateProblems",
                   "outcome"
                 ],
                 "type": "object"
@@ -15965,11 +15965,11 @@
         "oneOf": [
           {
             "properties": {
-              "activity_sequence": {
+              "activitySequence": {
                 "format": "int32",
                 "type": "integer"
               },
-              "campaign_id": {
+              "campaignId": {
                 "format": "uuid",
                 "type": "string"
               },
@@ -15979,15 +15979,15 @@
                 },
                 "type": "array"
               },
-              "first_certificate_sequence": {
+              "firstCertificateSequence": {
                 "format": "int32",
                 "type": "integer"
               },
-              "issue_run_id": {
+              "issueRunId": {
                 "format": "uuid",
                 "type": "string"
               },
-              "last_certificate_sequence": {
+              "lastCertificateSequence": {
                 "format": "int32",
                 "type": "integer"
               },
@@ -15997,18 +15997,18 @@
                 ],
                 "type": "string"
               },
-              "request_id": {
+              "requestId": {
                 "format": "uuid",
                 "type": "string"
               }
             },
             "required": [
-              "issue_run_id",
-              "request_id",
-              "campaign_id",
-              "activity_sequence",
-              "first_certificate_sequence",
-              "last_certificate_sequence",
+              "issueRunId",
+              "requestId",
+              "campaignId",
+              "activitySequence",
+              "firstCertificateSequence",
+              "lastCertificateSequence",
               "certificates",
               "outcome"
             ],
@@ -16016,23 +16016,23 @@
           },
           {
             "properties": {
-              "campaign_id": {
+              "campaignId": {
                 "format": "uuid",
                 "type": "string"
               },
-              "candidate_problems": {
+              "candidateProblems": {
                 "items": {
                   "$ref": "#/components/schemas/CertificateIssueCandidateProblem"
                 },
                 "type": "array"
               },
-              "issue_codes": {
+              "issueCodes": {
                 "items": {
                   "$ref": "#/components/schemas/CertificateIssueCode"
                 },
                 "type": "array"
               },
-              "issue_run_id": {
+              "issueRunId": {
                 "format": "uuid",
                 "type": "string"
               },
@@ -16042,17 +16042,17 @@
                 ],
                 "type": "string"
               },
-              "request_id": {
+              "requestId": {
                 "format": "uuid",
                 "type": "string"
               }
             },
             "required": [
-              "issue_run_id",
-              "request_id",
-              "campaign_id",
-              "issue_codes",
-              "candidate_problems",
+              "issueRunId",
+              "requestId",
+              "campaignId",
+              "issueCodes",
+              "candidateProblems",
               "outcome"
             ],
             "type": "object"

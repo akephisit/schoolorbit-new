@@ -3394,6 +3394,35 @@ mod tests {
             assert!(properties.contains_key("candidateIds"));
             assert!(!properties.contains_key("candidate_ids"));
         }
+        let issue_outcomes = schemas["IssueCertificateOutcome"]["oneOf"]
+            .as_array()
+            .expect("certificate issue outcome variants");
+        for (variant, expected_fields) in issue_outcomes.iter().zip([
+            &[
+                "issueRunId",
+                "requestId",
+                "campaignId",
+                "activitySequence",
+                "firstCertificateSequence",
+                "lastCertificateSequence",
+                "certificates",
+            ][..],
+            &[
+                "issueRunId",
+                "requestId",
+                "campaignId",
+                "issueCodes",
+                "candidateProblems",
+            ][..],
+        ]) {
+            let properties = variant["properties"]
+                .as_object()
+                .expect("certificate issue outcome properties");
+            for field in expected_fields {
+                assert!(properties.contains_key(*field));
+            }
+            assert!(properties.keys().all(|field| !field.contains('_')));
+        }
         for (schema_name, required_fields) in [
             ("SubmitCertificateIssueRequest", &["candidateIds"][..]),
             (

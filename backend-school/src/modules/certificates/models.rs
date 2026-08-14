@@ -1047,19 +1047,41 @@ pub struct CertificateIssueCandidateProblem {
 )]
 pub enum IssueCertificateOutcome {
     Issued {
+        #[serde(rename = "issueRunId")]
+        #[schema(rename = "issueRunId")]
         issue_run_id: Uuid,
+        #[serde(rename = "requestId")]
+        #[schema(rename = "requestId")]
         request_id: Uuid,
+        #[serde(rename = "campaignId")]
+        #[schema(rename = "campaignId")]
         campaign_id: Uuid,
+        #[serde(rename = "activitySequence")]
+        #[schema(rename = "activitySequence")]
         activity_sequence: i32,
+        #[serde(rename = "firstCertificateSequence")]
+        #[schema(rename = "firstCertificateSequence")]
         first_certificate_sequence: i32,
+        #[serde(rename = "lastCertificateSequence")]
+        #[schema(rename = "lastCertificateSequence")]
         last_certificate_sequence: i32,
         certificates: Vec<IssuedCertificateSummary>,
     },
     Returned {
+        #[serde(rename = "issueRunId")]
+        #[schema(rename = "issueRunId")]
         issue_run_id: Uuid,
+        #[serde(rename = "requestId")]
+        #[schema(rename = "requestId")]
         request_id: Uuid,
+        #[serde(rename = "campaignId")]
+        #[schema(rename = "campaignId")]
         campaign_id: Uuid,
+        #[serde(rename = "issueCodes")]
+        #[schema(rename = "issueCodes")]
         issue_codes: Vec<CertificateIssueCode>,
+        #[serde(rename = "candidateProblems")]
+        #[schema(rename = "candidateProblems")]
         candidate_problems: Vec<CertificateIssueCandidateProblem>,
     },
 }

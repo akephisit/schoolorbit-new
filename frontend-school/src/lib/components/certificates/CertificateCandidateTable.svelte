@@ -177,7 +177,10 @@
 				{@const externalIssue = externalConfirmationIssues.find(
 					(issue) => issue.candidateId === candidate.id
 				)}
-				<Table.Row class={selectedIds.includes(candidate.id) ? 'bg-primary/5' : undefined}>
+				<Table.Row
+					id={`candidate-${candidate.id}`}
+					class={selectedIds.includes(candidate.id) ? 'bg-primary/5' : undefined}
+				>
 					<Table.Cell class="text-center align-top">
 						<input
 							type="checkbox"

@@ -3897,32 +3897,32 @@ export interface components {
 			data:
 				| {
 						/** Format: int32 */
-						activity_sequence: number;
+						activitySequence: number;
 						/** Format: uuid */
-						campaign_id: string;
+						campaignId: string;
 						certificates: components['schemas']['IssuedCertificateSummary'][];
 						/** Format: int32 */
-						first_certificate_sequence: number;
+						firstCertificateSequence: number;
 						/** Format: uuid */
-						issue_run_id: string;
+						issueRunId: string;
 						/** Format: int32 */
-						last_certificate_sequence: number;
+						lastCertificateSequence: number;
 						/** @enum {string} */
 						outcome: 'issued';
 						/** Format: uuid */
-						request_id: string;
+						requestId: string;
 				  }
 				| {
 						/** Format: uuid */
-						campaign_id: string;
-						candidate_problems: components['schemas']['CertificateIssueCandidateProblem'][];
-						issue_codes: components['schemas']['CertificateIssueCode'][];
+						campaignId: string;
+						candidateProblems: components['schemas']['CertificateIssueCandidateProblem'][];
+						issueCodes: components['schemas']['CertificateIssueCode'][];
 						/** Format: uuid */
-						issue_run_id: string;
+						issueRunId: string;
 						/** @enum {string} */
 						outcome: 'returned';
 						/** Format: uuid */
-						request_id: string;
+						requestId: string;
 				  };
 			message?: string;
 			success: boolean;
@@ -7199,32 +7199,32 @@ export interface components {
 		IssueCertificateOutcome:
 			| {
 					/** Format: int32 */
-					activity_sequence: number;
+					activitySequence: number;
 					/** Format: uuid */
-					campaign_id: string;
+					campaignId: string;
 					certificates: components['schemas']['IssuedCertificateSummary'][];
 					/** Format: int32 */
-					first_certificate_sequence: number;
+					firstCertificateSequence: number;
 					/** Format: uuid */
-					issue_run_id: string;
+					issueRunId: string;
 					/** Format: int32 */
-					last_certificate_sequence: number;
+					lastCertificateSequence: number;
 					/** @enum {string} */
 					outcome: 'issued';
 					/** Format: uuid */
-					request_id: string;
+					requestId: string;
 			  }
 			| {
 					/** Format: uuid */
-					campaign_id: string;
-					candidate_problems: components['schemas']['CertificateIssueCandidateProblem'][];
-					issue_codes: components['schemas']['CertificateIssueCode'][];
+					campaignId: string;
+					candidateProblems: components['schemas']['CertificateIssueCandidateProblem'][];
+					issueCodes: components['schemas']['CertificateIssueCode'][];
 					/** Format: uuid */
-					issue_run_id: string;
+					issueRunId: string;
 					/** @enum {string} */
 					outcome: 'returned';
 					/** Format: uuid */
-					request_id: string;
+					requestId: string;
 			  };
 		IssueCertificateRequest: {
 			/** Format: uuid */

@@ -4,16 +4,19 @@
 	import {
 		createCertificateTemplatePreviewManifest,
 		getCertificateIssueRequest,
+		issueCertificates,
 		returnCertificateIssueRequest,
 		startCertificateIssueRequestReview,
 		type CertificateIssueCode,
 		type CertificateIssueRequestDetail,
 		type CertificateIssueRequestItem,
-		type CertificateIssueRequestStatus
+		type CertificateIssueRequestStatus,
+		type IssueCertificateOutcome
 	} from '$lib/api/certificates';
 	import { loadCertificateRenderer } from '$lib/certificates/renderer';
 	import { PageShell } from '$lib/components/app-layout';
 	import { LoadingButton, PageSkeleton, PageState } from '$lib/components/app-state';
+	import CertificateIssueConfirmationDialog from '$lib/components/certificates/CertificateIssueConfirmationDialog.svelte';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import * as Dialog from '$lib/components/ui/dialog';
@@ -22,6 +25,8 @@
 	import {
 		AlertTriangle,
 		ArrowLeft,
+		Award,
+		CircleCheckBig,
 		Eye,
 		FileCheck2,
 		RotateCcw,
@@ -77,6 +82,13 @@
 	let previewItem = $state.raw<CertificateIssueRequestItem | null>(null);
 	let previewCanvas = $state<HTMLCanvasElement>();
 	let previewController: AbortController | null = null;
+	let issueDialogOpen = $state(false);
+	let issueError = $state('');
+	let issueAttemptKey: string | null = null;
+	type IssuedOutcome = Extract<IssueCertificateOutcome, { outcome: 'issued' }>;
+	type ReturnedOutcome = Extract<IssueCertificateOutcome, { outcome: 'returned' }>;
+	let issuedOutcome = $state.raw<IssuedOutcome | null>(null);
+	let issueReturnedOutcome = $state.raw<ReturnedOutcome | null>(null);
 
 	const canReturn = $derived(
 		request?.capabilities.canReturn === true &&
@@ -96,6 +108,14 @@
 		return `${item.title ?? ''}${item.firstName} ${item.lastName}`.trim();
 	}
 
+	function isCurrentRequest(targetRequestId: string, targetGeneration: number): boolean {
+		return (
+			targetGeneration === loadGeneration &&
+			targetRequestId === requestId &&
+			request?.id === targetRequestId
+		);
+	}
+
 	function toggleIssueCode(code: CertificateIssueCode, checked: boolean) {
 		returnCodes = checked
 			? Array.from(new Set([...returnCodes, code]))
@@ -104,6 +124,7 @@
 
 	async function loadRequest(targetRequestId: string) {
 		const generation = ++loadGeneration;
+		actionBusy = false;
 		if (!canIssue) {
 			loading = false;
 			return;
@@ -113,6 +134,11 @@
 		request = null;
 		returnCodes = [];
 		returnNote = '';
+		issueDialogOpen = false;
+		issueError = '';
+		issueAttemptKey = null;
+		issuedOutcome = null;
+		issueReturnedOutcome = null;
 		closePreview();
 		try {
 			const loaded = await getCertificateIssueRequest(targetRequestId);
@@ -128,32 +154,110 @@
 
 	async function startReview() {
 		if (!request?.capabilities.canStartReview || actionBusy) return;
+		const targetRequestId = request.id;
+		const targetGeneration = loadGeneration;
 		actionBusy = true;
 		try {
-			request = await startCertificateIssueRequestReview(request.id);
+			const updated = await startCertificateIssueRequestReview(targetRequestId);
+			if (!isCurrentRequest(targetRequestId, targetGeneration)) return;
+			request = updated;
 			toast.success('เริ่มตรวจคำขอแล้ว');
 		} catch (reviewError) {
+			if (!isCurrentRequest(targetRequestId, targetGeneration)) return;
 			toast.error(reviewError instanceof Error ? reviewError.message : 'เริ่มตรวจคำขอไม่สำเร็จ');
 		} finally {
-			actionBusy = false;
+			if (isCurrentRequest(targetRequestId, targetGeneration)) actionBusy = false;
 		}
 	}
 
 	async function returnRequest() {
 		if (!request || !canReturn || actionBusy) return;
+		const targetRequestId = request.id;
+		const targetGeneration = loadGeneration;
 		actionBusy = true;
 		try {
-			request = await returnCertificateIssueRequest(request.id, {
+			const updated = await returnCertificateIssueRequest(targetRequestId, {
 				issueCodes: returnCodes,
 				returnNote: returnNote.trim()
 			});
+			if (!isCurrentRequest(targetRequestId, targetGeneration)) return;
+			request = updated;
 			returnCodes = [];
 			returnNote = '';
 			toast.success('ส่งกลับให้หน่วยงานแก้ไขแล้ว');
 		} catch (returnError) {
+			if (!isCurrentRequest(targetRequestId, targetGeneration)) return;
 			toast.error(returnError instanceof Error ? returnError.message : 'ส่งกลับคำขอไม่สำเร็จ');
 		} finally {
-			actionBusy = false;
+			if (isCurrentRequest(targetRequestId, targetGeneration)) actionBusy = false;
+		}
+	}
+
+	function openIssueConfirmation() {
+		if (!request?.capabilities.canIssue || actionBusy) return;
+		issueError = '';
+		issueDialogOpen = true;
+	}
+
+	async function confirmIssue() {
+		if (!request?.capabilities.canIssue || actionBusy) return;
+		const targetRequestId = request.id;
+		const targetGeneration = loadGeneration;
+		issueAttemptKey ??= crypto.randomUUID();
+		actionBusy = true;
+		issueError = '';
+		try {
+			const outcome = await issueCertificates(targetRequestId, {
+				idempotencyKey: issueAttemptKey
+			});
+			if (!isCurrentRequest(targetRequestId, targetGeneration)) return;
+			if (outcome.outcome === 'issued') {
+				issueAttemptKey = null;
+				issueDialogOpen = false;
+				issuedOutcome = outcome;
+				issueReturnedOutcome = null;
+				request = {
+					...request,
+					status: 'issued',
+					issuedAt: outcome.certificates[0]?.createdAt ?? new Date().toISOString(),
+					capabilities: {
+						canWithdraw: false,
+						canStartReview: false,
+						canReturn: false,
+						canIssue: false
+					}
+				};
+				toast.success(
+					`ออกเลขเกียรติบัตรแล้ว ${outcome.certificates.length.toLocaleString('th-TH')} ใบ`
+				);
+			} else if (outcome.outcome === 'returned') {
+				issueAttemptKey = null;
+				issueDialogOpen = false;
+				issuedOutcome = null;
+				issueReturnedOutcome = outcome;
+				request = {
+					...request,
+					status: 'returned',
+					returnedAt: new Date().toISOString(),
+					issueCodes: outcome.issueCodes,
+					returnNote: null,
+					capabilities: {
+						canWithdraw: false,
+						canStartReview: false,
+						canReturn: false,
+						canIssue: false
+					}
+				};
+				toast.warning('ข้อมูลเปลี่ยนระหว่างตรวจ ระบบส่งคำขอกลับโดยยังไม่ออกเลข');
+			} else {
+				throw new Error('ระบบตอบกลับผลการออกเลขในรูปแบบที่ไม่รองรับ กรุณาลองอีกครั้ง');
+			}
+		} catch (issueFailure) {
+			if (!isCurrentRequest(targetRequestId, targetGeneration)) return;
+			issueError =
+				issueFailure instanceof Error ? issueFailure.message : 'ยืนยันการออกเลขไม่สำเร็จ';
+		} finally {
+			if (isCurrentRequest(targetRequestId, targetGeneration)) actionBusy = false;
 		}
 	}
 
@@ -251,6 +355,11 @@
 					<ShieldCheck class="size-4" /> เริ่มตรวจคำขอ
 				</LoadingButton>
 			{/if}
+			{#if request?.capabilities.canIssue}
+				<Button disabled={actionBusy} onclick={openIssueConfirmation}>
+					<Award class="size-4" /> ออกเกียรติบัตร {request.itemCount.toLocaleString('th-TH')} ใบ
+				</Button>
+			{/if}
 		</div>
 	{/snippet}
 
@@ -272,6 +381,74 @@
 		/>
 	{:else if request}
 		<div class="space-y-5">
+			{#if issuedOutcome}
+				<section class="overflow-hidden rounded-xl border border-emerald-200 bg-emerald-50">
+					<div class="flex items-start gap-3 p-5 text-emerald-950">
+						<CircleCheckBig class="mt-0.5 size-6 shrink-0 text-emerald-700" />
+						<div class="min-w-0 flex-1">
+							<h2 class="text-lg font-semibold">ออกเลขแล้ว</h2>
+							<p class="mt-1 text-sm text-emerald-800">
+								ออกสำเร็จ {issuedOutcome.certificates.length.toLocaleString('th-TH')} ใบ เลขทุกใบถูกบันทึกและจะไม่ถูกนำกลับมาใช้
+							</p>
+							<div
+								class="mt-4 grid gap-px overflow-hidden rounded-lg border border-emerald-200 bg-emerald-200 sm:grid-cols-2"
+							>
+								<div class="bg-white p-3">
+									<p class="text-xs text-emerald-700">เลขใบแรก</p>
+									<p class="mt-1 font-mono font-semibold tabular-nums">
+										{issuedOutcome.certificates[0]?.certificateNumber ?? '-'}
+									</p>
+								</div>
+								<div class="bg-white p-3">
+									<p class="text-xs text-emerald-700">เลขใบสุดท้าย</p>
+									<p class="mt-1 font-mono font-semibold tabular-nums">
+										{issuedOutcome.certificates.at(-1)?.certificateNumber ?? '-'}
+									</p>
+								</div>
+							</div>
+							<a
+								href={resolve(
+									`/staff/certificates/${request.campaignId}/issued` as '/staff/certificates/[campaignId]/issued'
+								)}
+								class="mt-4 inline-flex items-center font-medium text-emerald-900 underline underline-offset-4"
+							>
+								เปิดทะเบียนใบที่ออกแล้ว
+							</a>
+						</div>
+					</div>
+				</section>
+			{:else if issueReturnedOutcome}
+				<section class="rounded-xl border border-amber-200 bg-amber-50 p-5 text-amber-950">
+					<div class="flex items-start gap-3">
+						<AlertTriangle class="mt-0.5 size-5 shrink-0" />
+						<div>
+							<h2 class="font-semibold">ระบบส่งคำขอกลับโดยยังไม่ออกเลข</h2>
+							<p class="mt-1 text-sm text-amber-800">
+								ผลตรวจล่าสุดพบข้อมูลเปลี่ยนแปลง ยังไม่มีเลขเกียรติบัตรถูกจอง
+								ให้หน่วยงานแก้รายการด้านล่างแล้วส่งคำขอใหม่
+							</p>
+						</div>
+					</div>
+					<div class="mt-4 space-y-2">
+						{#each issueReturnedOutcome.candidateProblems as problem (problem.candidateId)}
+							{@const problemItem = request.items.find(
+								(item) => item.candidateId === problem.candidateId
+							)}
+							<div class="rounded-lg border border-amber-200 bg-white p-3 text-sm">
+								<p class="font-medium">{problemItem ? displayName(problemItem) : 'รายการผู้รับ'}</p>
+								<div class="mt-2 flex flex-wrap gap-1.5">
+									{#each problem.issueCodes as code (code)}
+										<Badge variant="outline" class="border-amber-300 bg-amber-50 text-amber-900">
+											{issueOptions.find((option) => option.code === code)?.label ?? code}
+										</Badge>
+									{/each}
+								</div>
+							</div>
+						{/each}
+					</div>
+				</section>
+			{/if}
+
 			<section class="overflow-hidden rounded-xl border bg-card shadow-sm">
 				<div class="grid gap-px bg-border sm:grid-cols-[1.4fr_1fr_1fr]">
 					<div class="bg-card p-5">
@@ -446,7 +623,7 @@
 						</LoadingButton>
 					</div>
 				</section>
-			{:else if request.status === 'returned'}
+			{:else if request.status === 'returned' && !issueReturnedOutcome}
 				<section class="rounded-xl border border-orange-200 bg-orange-50 p-5 text-orange-950">
 					<div class="flex items-center gap-2">
 						<RotateCcw class="size-5" />
@@ -465,6 +642,18 @@
 		</div>
 	{/if}
 </PageShell>
+
+{#if request}
+	<CertificateIssueConfirmationDialog
+		open={issueDialogOpen}
+		{request}
+		busy={actionBusy}
+		error={issueError}
+		onopenchange={(open) => (issueDialogOpen = open)}
+		onconfirm={confirmIssue}
+		onpreview={preview}
+	/>
+{/if}
 
 <Dialog.Root open={previewOpen} onOpenChange={(open) => !open && closePreview()}>
 	<Dialog.Content class="max-h-[94vh] overflow-auto sm:max-w-5xl">

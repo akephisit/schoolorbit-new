@@ -4,13 +4,27 @@ import { fileURLToPath } from 'node:url';
 import { createServer, type Plugin, type ViteDevServer } from 'vite';
 
 const frontendRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+const reviewComponentPath = path.resolve(
+	frontendRoot,
+	'src/lib/components/certificates/CertificateIssueRequestReview.svelte'
+);
 const harnessPath = '/__certificate-request-test';
 const virtualModuleId = 'virtual:certificate-request-test';
 const resolvedVirtualModuleId = `\0${virtualModuleId}`;
+const navigationStubModuleId = 'virtual:certificate-request-navigation-stub';
+const resolvedNavigationStubModuleId = `\0${navigationStubModuleId}`;
 const stubPrefix = '\0certificate-request-stub:';
 
 const navigationStub = `
-	export const afterNavigate = (callback) => { queueMicrotask(callback); };
+	const callbacks = new Set();
+	export const afterNavigate = (callback) => {
+		callbacks.add(callback);
+		queueMicrotask(callback);
+	};
+	export const triggerAfterNavigate = () => {
+		for (const callback of callbacks) callback();
+	};
+	window.__triggerCertificateAfterNavigate = triggerAfterNavigate;
 `;
 
 const pathsStub = `
@@ -36,6 +50,9 @@ const certificateApiStub = `
 	export async function returnCertificateIssueRequest(requestId, payload) {
 		return window.__certificateRequestApi.returnRequest(requestId, payload);
 	}
+	export async function issueCertificates(requestId, payload) {
+		return window.__certificateRequestApi.issue(requestId, payload);
+	}
 	export async function createCertificateTemplatePreviewManifest(templateId, payload) {
 		return window.__certificateRequestApi.preview(templateId, payload);
 	}
@@ -56,8 +73,8 @@ const stubModules = new Map([
 
 function findStubModule(id: string): string | undefined {
 	if (stubModules.has(id)) return id;
-	if (id.endsWith('/@sveltejs/kit/src/runtime/app/navigation.js')) return '$app/navigation';
-	if (id.endsWith('/@sveltejs/kit/src/runtime/app/paths.js')) return '$app/paths';
+	if (id.includes('/@sveltejs/kit/src/runtime/app/navigation.js')) return '$app/navigation';
+	if (id.includes('/@sveltejs/kit/src/runtime/app/paths.js')) return '$app/paths';
 	for (const stubId of stubModules.keys()) {
 		if (!stubId.startsWith('$lib/')) continue;
 		const resolvedPath = path.resolve(frontendRoot, 'src/lib', stubId.slice('$lib/'.length));
@@ -78,14 +95,17 @@ function harnessPlugin(): Plugin {
 		enforce: 'pre',
 		resolveId(id) {
 			if (id === virtualModuleId) return resolvedVirtualModuleId;
+			if (id === navigationStubModuleId) return resolvedNavigationStubModuleId;
 			const stubId = findStubModule(id);
 			if (stubId) return `${stubPrefix}${stubId}`;
 		},
 		load(id) {
+			if (id === resolvedNavigationStubModuleId) return navigationStub;
 			if (id.startsWith(stubPrefix)) return stubModules.get(id.slice(stubPrefix.length));
 			if (id !== resolvedVirtualModuleId) return;
 			return `
-				import { mount } from 'svelte';
+				import { flushSync, mount } from 'svelte';
+				import { createClassComponent } from 'svelte/legacy';
 				import '/src/routes/layout.css';
 				import CertificateSubmitRequestDialog from '/src/lib/components/certificates/CertificateSubmitRequestDialog.svelte';
 				import CertificateCampaignRequests from '/src/lib/components/certificates/CertificateCampaignRequests.svelte';
@@ -93,6 +113,7 @@ function harnessPlugin(): Plugin {
 
 				const campaignId = '10000000-0000-4000-8000-000000000001';
 				const requestId = '20000000-0000-4000-8000-000000000001';
+				const secondRequestId = '20000000-0000-4000-8000-000000000002';
 				const timestamp = '2026-08-14T02:00:00Z';
 				const templates = {
 					reward: { id: '30000000-0000-4000-8000-000000000001', name: 'แบบรางวัลการแข่งขัน' },
@@ -132,8 +153,22 @@ function harnessPlugin(): Plugin {
 						awardOrRole: 'ผู้เข้าร่วม', validationStatus: 'ready', validationCodes: []
 					}))
 				};
+				let secondRequest = structuredClone(request);
+				secondRequest.id = secondRequestId;
+				secondRequest.campaignName = 'กิจกรรมสัปดาห์วิทยาศาสตร์';
 				const submittedIds = [];
 				const returnPayloads = [];
+				const issuePayloads = [];
+				let issueAttempt = 0;
+				const pendingReviewResolvers = new Map();
+				const reviewCalls = [];
+				const view = new URLSearchParams(window.location.search).get('view');
+				const reviewingState = (current) => ({
+					...current,
+					status: 'reviewing',
+					reviewedAt: timestamp,
+					capabilities: { canWithdraw: false, canStartReview: false, canReturn: true, canIssue: true }
+				});
 				window.__certificateRequestApi = {
 					async listCampaignRequests() { return [structuredClone(request)]; },
 					async withdraw() {
@@ -142,10 +177,25 @@ function harnessPlugin(): Plugin {
 						return structuredClone(request);
 					},
 					async listQueue() { return [structuredClone(request)]; },
-					async getRequest() { return structuredClone(request); },
-					async startReview() {
-						request = { ...request, status: 'reviewing', reviewedAt: timestamp,
-							capabilities: { canWithdraw: false, canStartReview: false, canReturn: true, canIssue: true } };
+					async getRequest(id) {
+						return structuredClone(id === secondRequestId ? secondRequest : request);
+					},
+					async startReview(id) {
+						if (view === 'race') {
+							reviewCalls.push(id);
+							return new Promise((resolve) => {
+								pendingReviewResolvers.set(id, () => {
+									if (id === secondRequestId) {
+										secondRequest = reviewingState(secondRequest);
+										resolve(structuredClone(secondRequest));
+									} else {
+										request = reviewingState(request);
+										resolve(structuredClone(request));
+									}
+								});
+							});
+						}
+						request = reviewingState(request);
 						return structuredClone(request);
 					},
 					async returnRequest(id, payload) {
@@ -155,14 +205,47 @@ function harnessPlugin(): Plugin {
 							capabilities: { canWithdraw: false, canStartReview: false, canReturn: false, canIssue: false } };
 						return structuredClone(request);
 					},
+					async issue(id, payload) {
+						issuePayloads.push(structuredClone(payload));
+						issueAttempt += 1;
+						if (issueAttempt === 1) throw new Error('เครือข่ายขัดข้อง กรุณาลองอีกครั้ง');
+						request = { ...request, status: 'issued', issuedAt: timestamp,
+							capabilities: { canWithdraw: false, canStartReview: false, canReturn: false, canIssue: false } };
+						return {
+							outcome: 'issued', issueRunId: '70000000-0000-4000-8000-000000000001',
+							requestId: id, campaignId, activitySequence: 42,
+							firstCertificateSequence: 101, lastCertificateSequence: 102,
+							certificates: request.items.map((item, index) => ({
+								id: '80000000-0000-4000-8000-00000000000' + (index + 1), campaignId,
+								campaignName: request.campaignName, ownerOrganizationUnitId: request.ownerOrganizationUnitId,
+								ownerOrganizationUnitName: request.ownerOrganizationUnitName, templateId: item.templateId,
+								templateName: item.templateName, academicYearId: '90000000-0000-4000-8000-000000000001',
+								academicYearValue: 2569, activitySequence: 42, certificateSequence: 101 + index,
+								certificateNumber: '2569-0042-00010' + (index + 1) + '-0', recipientType: item.recipientType,
+								title: item.title, firstName: item.firstName, lastName: item.lastName,
+								activityItem: item.activityItem, awardOrRole: item.awardOrRole, issueDate: '2026-08-14',
+								status: 'issued', replacementForCertificateId: null, replacedByCertificateId: null,
+								replacementCandidateId: null, createdAt: timestamp,
+								capabilities: { canRead: true, canDownload: true, canRevoke: true }
+							}))
+						};
+					},
 					async preview() { throw new Error('preview is not used in this workflow test'); }
 				};
 				window.certificateRequestHarness = {
 					submittedIds: () => [...submittedIds],
-					returnPayloads: () => structuredClone(returnPayloads)
+					returnPayloads: () => structuredClone(returnPayloads),
+					issuePayloads: () => structuredClone(issuePayloads),
+					requestIds: () => [requestId, secondRequestId],
+					reviewCalls: () => [...reviewCalls],
+					resolveReview: (id) => {
+						const resolve = pendingReviewResolvers.get(id);
+						if (!resolve) throw new Error('review request is not pending');
+						pendingReviewResolvers.delete(id);
+						resolve();
+					}
 				};
 
-				const view = new URLSearchParams(window.location.search).get('view');
 				const target = document.getElementById('app');
 				if (view === 'submit') {
 					mount(CertificateSubmitRequestDialog, { target, props: {
@@ -172,10 +255,25 @@ function harnessPlugin(): Plugin {
 					} });
 				} else if (view === 'history') {
 					mount(CertificateCampaignRequests, { target, props: { campaignId, canSubmit: true } });
+				} else if (view === 'race') {
+					const reviewComponent = createClassComponent({
+						component: CertificateIssueRequestReview,
+						target,
+						props: { requestId, canIssue: true }
+					});
+					window.certificateRequestHarness.setReviewRequestId = (nextRequestId) => {
+						reviewComponent.$set({ requestId: nextRequestId });
+						flushSync();
+						window.__triggerCertificateAfterNavigate();
+					};
 				} else {
 					mount(CertificateIssueRequestReview, { target, props: { requestId, canIssue: true } });
 				}
 			`;
+		},
+		transform(code, id) {
+			if (id.split('?')[0] !== reviewComponentPath) return;
+			return code.replace("from '$app/navigation'", `from '${navigationStubModuleId}'`);
 		},
 		configureServer(server) {
 			server.middlewares.use((request, response, next) => {
@@ -247,11 +345,60 @@ test('return moves a reviewing request to returned with typed reasons', async ({
 		});
 });
 
+test('issue confirmation retries with the same idempotency key until issued', async ({ page }) => {
+	await page.goto(`${baseUrl}${harnessPath}?view=review`);
+	await page.getByRole('button', { name: 'เริ่มตรวจคำขอ' }).click();
+	await page.getByRole('button', { name: 'ออกเกียรติบัตร 2 ใบ' }).click();
+	await expect(page.getByRole('heading', { name: 'ยืนยันออกเลขเกียรติบัตร' })).toBeVisible();
+	await expect(page.getByText('ยังไม่มีเลขเกียรติบัตรถูกจอง')).toBeVisible();
+
+	await page.getByRole('button', { name: 'ยืนยันออกเลข 2 ใบ' }).click();
+	await expect(page.getByText('เครือข่ายขัดข้อง กรุณาลองอีกครั้ง')).toBeVisible();
+	await page.getByRole('button', { name: 'ลองออกอีกครั้ง' }).click();
+	await expect(page.getByRole('heading', { name: 'ออกเลขแล้ว' })).toBeVisible();
+	await expect(page.getByText('2569-0042-000101-')).toBeVisible();
+
+	const payloads = await page.evaluate(() => window.certificateRequestHarness.issuePayloads());
+	expect(payloads).toHaveLength(2);
+	expect(payloads[0].idempotencyKey).toMatch(/^[0-9a-f-]{36}$/i);
+	expect(payloads[1].idempotencyKey).toBe(payloads[0].idempotencyKey);
+});
+
+test('review action loading stays scoped to the request after route changes', async ({ page }) => {
+	await page.goto(`${baseUrl}${harnessPath}?view=race`);
+	const [firstRequestId, secondRequestId] = await page.evaluate(() =>
+		window.certificateRequestHarness.requestIds()
+	);
+	const reviewButton = page.getByRole('button', { name: 'เริ่มตรวจคำขอ' });
+	const busyButton = page.getByRole('button', { name: 'กำลังดำเนินการ...' });
+
+	await reviewButton.click();
+	await expect(busyButton).toBeDisabled();
+	await page.evaluate(
+		(id) => window.certificateRequestHarness.setReviewRequestId(id),
+		secondRequestId
+	);
+	await expect(page.getByText('กิจกรรมสัปดาห์วิทยาศาสตร์')).toBeVisible();
+	await expect(reviewButton).toBeEnabled();
+
+	await reviewButton.click();
+	await expect(busyButton).toBeDisabled();
+	await page.evaluate((id) => window.certificateRequestHarness.resolveReview(id), firstRequestId);
+	await expect(busyButton).toBeDisabled();
+	await page.evaluate((id) => window.certificateRequestHarness.resolveReview(id), secondRequestId);
+	await expect(page.getByRole('button', { name: 'ออกเกียรติบัตร 2 ใบ' })).toBeEnabled();
+});
+
 declare global {
 	interface Window {
 		certificateRequestHarness: {
 			submittedIds(): string[];
 			returnPayloads(): Array<{ issueCodes: string[]; returnNote: string }>;
+			issuePayloads(): Array<{ idempotencyKey: string }>;
+			requestIds(): [string, string];
+			reviewCalls(): string[];
+			resolveReview(requestId: string): void;
+			setReviewRequestId(requestId: string): void;
 		};
 	}
 }
