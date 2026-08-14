@@ -37,6 +37,27 @@ fn certificate_migration_is_forward_only_and_complete() {
     );
 }
 
+#[test]
+fn certificate_template_upload_relation_uses_a_follow_up_migration() {
+    let migration = std::fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("migrations/036_certificate_template_file_uploads.sql"),
+    )
+    .expect("migration 036 must exist");
+
+    for required in [
+        "CREATE TABLE certificate_template_file_uploads",
+        "FOREIGN KEY (file_id, purpose_code)",
+        "REFERENCES certificate_templates(id) ON DELETE CASCADE",
+        "certificate_template_background",
+        "certificate_template_image",
+        "certificate_template_font",
+        "files_certificate_template_private_check",
+    ] {
+        assert!(migration.contains(required), "missing {required}");
+    }
+}
+
 fn assert_constraint_error<T>(result: Result<T, sqlx::Error>, expected_constraint: &str) {
     let error = match result {
         Ok(_) => panic!("invalid certificate state must be rejected"),
@@ -277,6 +298,47 @@ async fn migrated_schema_enforces_certificate_invariants() {
     );
 
     let template_one = insert_template(&pool, campaign_one, "one").await;
+    assert_constraint_error(
+        sqlx::query(
+            "INSERT INTO files (
+                display_filename, purpose_code, visibility, lifecycle_status,
+                retention_class, inspection_metadata
+             ) VALUES (
+                'public-certificate-background.pdf',
+                'certificate_template_background', 'public', 'processing',
+                'temporary', '{\"kind\":\"unknown\"}'::jsonb
+             )",
+        )
+        .execute(&pool)
+        .await,
+        "files_certificate_template_private_check",
+    );
+    let related_file_id: Uuid = sqlx::query_scalar(
+        "INSERT INTO files (
+            display_filename, purpose_code, visibility, lifecycle_status,
+            retention_class, inspection_metadata, created_by
+         ) VALUES (
+            'certificate-background.pdf', 'certificate_template_background',
+            'private', 'processing', 'temporary', '{\"kind\":\"unknown\"}'::jsonb, $1
+         ) RETURNING id",
+    )
+    .bind(actor_id)
+    .fetch_one(&pool)
+    .await
+    .expect("certificate template file fixture should insert");
+    assert_constraint_error(
+        sqlx::query(
+            "INSERT INTO certificate_template_file_uploads
+                (file_id, template_id, purpose_code, uploaded_by)
+             VALUES ($1, $2, 'certificate_template_image', $3)",
+        )
+        .bind(related_file_id)
+        .bind(template_one)
+        .bind(actor_id)
+        .execute(&pool)
+        .await,
+        "certificate_template_file_uploads_file_purpose_fkey",
+    );
     let locked_candidate = insert_candidate(&pool, campaign_one, template_one).await;
     let first_request: Uuid = sqlx::query_scalar(
         "INSERT INTO certificate_issue_requests (campaign_id, submitted_by)

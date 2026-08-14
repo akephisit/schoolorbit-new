@@ -1,6 +1,9 @@
-use std::collections::BTreeSet;
+use std::{collections::BTreeSet, sync::Arc, time::Duration};
 
+use async_trait::async_trait;
+use bytes::Bytes;
 use sqlx::PgPool;
+use url::Url;
 use uuid::Uuid;
 
 use crate::{
@@ -8,15 +11,21 @@ use crate::{
     middleware::permission::ActorContext,
     modules::certificates::{
         models::{
-            CertificateCampaignListQuery, CertificateCampaignStatus,
-            ChangeCertificateCampaignStatusRequest, CreateCertificateCampaignRequest,
-            NullableUuidUpdate, UpdateCertificateCampaignRequest,
+            AttachCertificateAssetRequest, AttachCertificateBackgroundRequest,
+            CertificateCampaignListQuery, CertificateCampaignStatus, CertificateElement,
+            CertificateFontSource, CertificateLayoutV1, CertificatePreviewKind,
+            CertificatePreviewManifestRequest, CertificateTemplateAssetKind,
+            CertificateTemplateDeleteDisposition, ChangeCertificateCampaignStatusRequest,
+            CreateCertificateCampaignRequest, CreateCertificateTemplateRequest, ElementFrame,
+            GeometryAction, NullableUuidUpdate, RecipientType, TextAlignment, TextElement,
+            UpdateCertificateCampaignRequest, UpdateCertificateTemplateRequest,
         },
-        services::campaign_service,
+        services::{campaign_service, render_service, template_service},
     },
     permissions::registry::codes,
     policies::{
         certificate_access_policy::{require_owner_action, CertificateAction},
+        file_access_policy::{self, FilePolicyAction},
         resource_access_policy::accessible_exact_units_for_permission,
     },
     test_helpers::{create_named_test_pool, create_test_user, run_test_migrations},
@@ -24,11 +33,1452 @@ use crate::{
 
 use chrono::NaiveDate;
 
+struct PreviewStorage;
+
+#[async_trait]
+impl crate::modules::files::storage_provider::StorageProvider for PreviewStorage {
+    async fn check_readiness(
+        &self,
+    ) -> Result<(), crate::modules::files::storage_provider::StorageError> {
+        Ok(())
+    }
+
+    async fn put(
+        &self,
+        _object: &crate::modules::files::storage_provider::StoredObject,
+        _body: Bytes,
+    ) -> Result<(), crate::modules::files::storage_provider::StorageError> {
+        Ok(())
+    }
+
+    async fn get(
+        &self,
+        _object: &crate::modules::files::storage_provider::StoredObject,
+        _max_bytes: u64,
+    ) -> Result<Bytes, crate::modules::files::storage_provider::StorageError> {
+        Ok(Bytes::new())
+    }
+
+    async fn head(
+        &self,
+        _object: &crate::modules::files::storage_provider::StoredObject,
+    ) -> Result<
+        Option<crate::modules::files::storage_provider::ObjectMetadata>,
+        crate::modules::files::storage_provider::StorageError,
+    > {
+        Ok(None)
+    }
+
+    async fn delete(
+        &self,
+        _object: &crate::modules::files::storage_provider::StoredObject,
+    ) -> Result<(), crate::modules::files::storage_provider::StorageError> {
+        Ok(())
+    }
+
+    async fn private_download_grant(
+        &self,
+        _object: &crate::modules::files::storage_provider::StoredObject,
+        filename: &str,
+        ttl: Duration,
+    ) -> Result<
+        crate::modules::files::platform_types::DownloadGrant,
+        crate::modules::files::storage_provider::StorageError,
+    > {
+        Ok(
+            crate::modules::files::platform_types::DownloadGrant::Redirect {
+                location: format!("https://private.example.test/{filename}"),
+                expires_at: chrono::Utc::now()
+                    + chrono::Duration::from_std(ttl).expect("test TTL should fit chrono"),
+            },
+        )
+    }
+
+    fn public_location(
+        &self,
+        _object: &crate::modules::files::storage_provider::StoredObject,
+    ) -> Result<Url, crate::modules::files::storage_provider::StorageError> {
+        Url::parse("https://public.example.test/file")
+            .map_err(|_| crate::modules::files::storage_provider::StorageError::OperationFailed)
+    }
+}
+
+struct PreviewScanner;
+
+#[async_trait]
+impl crate::modules::files::malware_scanner::MalwareScanner for PreviewScanner {
+    async fn scan(&self, _content: &[u8]) -> crate::modules::files::malware_scanner::ScanOutcome {
+        crate::modules::files::malware_scanner::ScanOutcome::Clean
+    }
+}
+
 struct CertificatePolicyFixture {
     pool: PgPool,
     actor: ActorContext,
     unit_a: Uuid,
     unit_b: Uuid,
+}
+
+#[tokio::test]
+async fn certificate_template_file_policy_requires_exact_persisted_relationships() {
+    use crate::modules::files::{
+        platform_types::{FileLifecycleStatus, FilePurpose, FileVisibility},
+        repository::PlatformFile,
+    };
+
+    let (pool, actor, academic_year_id) =
+        school_campaign_fixture("certificate_template_file_policy", 3117).await;
+    let template = create_template_fixture(&pool, &actor, academic_year_id).await;
+    assert_eq!(
+        file_access_policy::authorize_create(
+            &pool,
+            &actor,
+            FilePurpose::CertificateTemplateBackground,
+            Some(template.id),
+        )
+        .await
+        .unwrap(),
+        actor.user_id
+    );
+    assert!(matches!(
+        file_access_policy::authorize_create(
+            &pool,
+            &actor,
+            FilePurpose::CertificateTemplateBackground,
+            None,
+        )
+        .await,
+        Err(AppError::BadRequest(_))
+    ));
+
+    let file_id = insert_ready_template_file(
+        &pool,
+        &actor,
+        template.id,
+        "certificate_template_background",
+        pdf_inspection(841.89, 595.28, 0),
+    )
+    .await;
+    let platform_file = |visibility| PlatformFile {
+        id: file_id,
+        owner_user_id: Some(actor.user_id),
+        purpose: FilePurpose::CertificateTemplateBackground,
+        visibility,
+        lifecycle_status: FileLifecycleStatus::Ready,
+        current_version: Some(1),
+        display_filename: "background.pdf".to_string(),
+        detected_mime_type: "application/pdf".to_string(),
+        byte_size: 10,
+    };
+    let read_only = ActorContext {
+        user_id: actor.user_id,
+        permissions: vec![codes::CERTIFICATE_READ_SCHOOL.to_string()],
+    };
+    assert!(file_access_policy::authorize_existing(
+        &pool,
+        &read_only,
+        &platform_file(FileVisibility::Private),
+        FilePolicyAction::Read,
+        Some(template.id),
+    )
+    .await
+    .is_err());
+    assert!(file_access_policy::authorize_existing(
+        &pool,
+        &actor,
+        &platform_file(FileVisibility::Private),
+        FilePolicyAction::Delete,
+        Some(template.id),
+    )
+    .await
+    .is_ok());
+    assert!(matches!(
+        file_access_policy::authorize_existing(
+            &pool,
+            &actor,
+            &platform_file(FileVisibility::Private),
+            FilePolicyAction::Read,
+            Some(Uuid::new_v4()),
+        )
+        .await,
+        Err(AppError::NotFound(_))
+    ));
+    assert!(matches!(
+        file_access_policy::authorize_existing(
+            &pool,
+            &actor,
+            &platform_file(FileVisibility::Public),
+            FilePolicyAction::Read,
+            Some(template.id),
+        )
+        .await,
+        Err(AppError::Forbidden(_))
+    ));
+
+    let unmapped = PlatformFile {
+        id: Uuid::new_v4(),
+        ..platform_file(FileVisibility::Private)
+    };
+    assert!(matches!(
+        file_access_policy::authorize_existing(
+            &pool,
+            &actor,
+            &unmapped,
+            FilePolicyAction::Read,
+            Some(template.id),
+        )
+        .await,
+        Err(AppError::NotFound(_))
+    ));
+
+    template_service::attach_background(
+        &pool,
+        &actor,
+        template.id,
+        AttachCertificateBackgroundRequest {
+            file_id,
+            geometry_action: GeometryAction::Preserve,
+            preview_confirmed: true,
+        },
+    )
+    .await
+    .unwrap();
+    assert!(file_access_policy::authorize_existing(
+        &pool,
+        &read_only,
+        &platform_file(FileVisibility::Private),
+        FilePolicyAction::Read,
+        Some(template.id),
+    )
+    .await
+    .is_ok());
+    assert!(matches!(
+        file_access_policy::authorize_existing(
+            &pool,
+            &actor,
+            &platform_file(FileVisibility::Private),
+            FilePolicyAction::Delete,
+            Some(template.id),
+        )
+        .await,
+        Err(AppError::Conflict(_))
+    ));
+}
+
+#[tokio::test]
+async fn certificate_template_file_delete_guard_serializes_with_attachment() {
+    use crate::modules::files::{
+        platform_types::{FileLifecycleStatus, FilePurpose, FileVisibility},
+        repository::{PlatformFile, SqlFileRepository},
+    };
+
+    let (pool, actor, academic_year_id) =
+        school_campaign_fixture("certificate_template_file_delete_race", 3120).await;
+    let template = create_template_fixture_with_types(
+        &pool,
+        &actor,
+        academic_year_id,
+        "กิจกรรมทดสอบลบไฟล์พร้อมแนบ",
+        "แบบทดสอบลบไฟล์พร้อมแนบ",
+        vec![RecipientType::External],
+    )
+    .await;
+    let file_id = insert_ready_template_file(
+        &pool,
+        &actor,
+        template.id,
+        "certificate_template_background",
+        pdf_inspection(841.89, 595.28, 0),
+    )
+    .await;
+    let file = PlatformFile {
+        id: file_id,
+        owner_user_id: Some(actor.user_id),
+        purpose: FilePurpose::CertificateTemplateBackground,
+        visibility: FileVisibility::Private,
+        lifecycle_status: FileLifecycleStatus::Ready,
+        current_version: Some(1),
+        display_filename: "background.pdf".to_string(),
+        detected_mime_type: "application/pdf".to_string(),
+        byte_size: 10,
+    };
+    let mut guard = file_access_policy::authorize_certificate_template_delete_guard(
+        &pool,
+        &actor,
+        &file,
+        Some(template.id),
+    )
+    .await
+    .unwrap();
+
+    let attach_pool = pool.clone();
+    let attach_actor = actor.clone();
+    let attach = tokio::spawn(async move {
+        template_service::attach_background(
+            &attach_pool,
+            &attach_actor,
+            template.id,
+            AttachCertificateBackgroundRequest {
+                file_id,
+                geometry_action: GeometryAction::Preserve,
+                preview_confirmed: true,
+            },
+        )
+        .await
+    });
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    assert!(
+        !attach.is_finished(),
+        "attachment should wait while file deletion holds the template lock"
+    );
+
+    let repository = SqlFileRepository::new(pool.clone());
+    let delete_work = repository
+        .request_delete_in_transaction(&mut guard, file_id)
+        .await
+        .unwrap();
+    assert_eq!(delete_work.len(), 1);
+    guard.commit().await.unwrap();
+
+    assert!(matches!(attach.await.unwrap(), Err(AppError::Conflict(_))));
+    let background: Option<Uuid> =
+        sqlx::query_scalar("SELECT background_file_id FROM certificate_templates WHERE id = $1")
+            .bind(template.id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(background, None);
+}
+
+async fn create_template_fixture(
+    pool: &PgPool,
+    actor: &ActorContext,
+    academic_year_id: Uuid,
+) -> crate::modules::certificates::models::CertificateTemplateDetail {
+    let campaign = campaign_service::create_campaign(
+        pool,
+        actor,
+        campaign_create_payload(academic_year_id, None, "กิจกรรมทดสอบแม่แบบ"),
+    )
+    .await
+    .unwrap();
+    template_service::create_template(
+        pool,
+        actor,
+        campaign.id,
+        CreateCertificateTemplateRequest {
+            name: "แบบสำหรับนักเรียน".to_string(),
+            allowed_recipient_types: vec![RecipientType::Student],
+        },
+    )
+    .await
+    .unwrap()
+}
+
+async fn create_template_fixture_with_types(
+    pool: &PgPool,
+    actor: &ActorContext,
+    academic_year_id: Uuid,
+    campaign_name: &str,
+    template_name: &str,
+    allowed_recipient_types: Vec<RecipientType>,
+) -> crate::modules::certificates::models::CertificateTemplateDetail {
+    let campaign = campaign_service::create_campaign(
+        pool,
+        actor,
+        campaign_create_payload(academic_year_id, None, campaign_name),
+    )
+    .await
+    .unwrap();
+    template_service::create_template(
+        pool,
+        actor,
+        campaign.id,
+        CreateCertificateTemplateRequest {
+            name: template_name.to_string(),
+            allowed_recipient_types,
+        },
+    )
+    .await
+    .unwrap()
+}
+
+fn pdf_inspection(width: f64, height: f64, rotation: i16) -> serde_json::Value {
+    serde_json::json!({
+        "kind": "pdf",
+        "page_count": 1,
+        "crop_box": {"x": 0.0, "y": 0.0, "width": width, "height": height},
+        "media_box": {"x": 0.0, "y": 0.0, "width": width, "height": height},
+        "rotation": rotation
+    })
+}
+
+fn text_layout(font_source: CertificateFontSource) -> CertificateLayoutV1 {
+    CertificateLayoutV1 {
+        schema_version: 1,
+        elements: vec![CertificateElement::Text(TextElement {
+            id: Uuid::new_v4(),
+            content: "มอบให้ {ชื่อ} {นามสกุล}".to_string(),
+            frame: ElementFrame {
+                x: 20.0,
+                y: 30.0,
+                width: 200.0,
+                height: 50.0,
+            },
+            rotation: 0.0,
+            font_source,
+            font_family: "Sarabun".to_string(),
+            font_weight: 400,
+            font_size: 24.0,
+            min_font_size: 12.0,
+            color: "#112233".to_string(),
+            alignment: TextAlignment::Center,
+            line_height: 1.2,
+            auto_shrink: true,
+            shadow: None,
+        })],
+    }
+}
+
+async fn insert_ready_template_file(
+    pool: &PgPool,
+    actor: &ActorContext,
+    template_id: Uuid,
+    purpose: &str,
+    inspection_metadata: serde_json::Value,
+) -> Uuid {
+    let (purpose_segment, detected_mime_type, extension) = match purpose {
+        "certificate_template_background" => ("template-background", "application/pdf", "pdf"),
+        "certificate_template_image" => ("template-image", "image/jpeg", "jpg"),
+        "certificate_template_font" => ("template-font", "font/ttf", "ttf"),
+        _ => panic!("unsupported certificate test purpose"),
+    };
+    let file_id: Uuid = sqlx::query_scalar(
+        "INSERT INTO files (
+            owner_user_id, display_filename, created_by, purpose_code, visibility,
+            lifecycle_status, retention_class, expires_at, inspection_metadata
+         ) VALUES ($1, 'certificate-test.bin', $1, $2, 'private', 'processing',
+                   'temporary', now() + interval '1 hour', $3)
+         RETURNING id",
+    )
+    .bind(actor.user_id)
+    .bind(purpose)
+    .bind(inspection_metadata)
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    let version_id: Uuid = sqlx::query_scalar(
+        "INSERT INTO file_versions (
+            file_id, version_number, provider_code, storage_class, storage_status,
+            object_key, detected_mime_type, canonical_extension, byte_size, checksum,
+            scan_status, scanned_at, created_by
+         ) VALUES ($1, 1, 'test', 'private', 'stored', $2, $3,
+                   $4, 10, repeat('a', 64), 'clean', now(), $5)
+         RETURNING id",
+    )
+    .bind(file_id)
+    .bind(format!(
+        "tenants/{}/certificate/{purpose_segment}/{file_id}/v1/original.{extension}",
+        Uuid::nil()
+    ))
+    .bind(detected_mime_type)
+    .bind(extension)
+    .bind(actor.user_id)
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "UPDATE files SET current_version_id = $2, lifecycle_status = 'ready' WHERE id = $1",
+    )
+    .bind(file_id)
+    .bind(version_id)
+    .execute(pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO certificate_template_file_uploads
+            (file_id, template_id, purpose_code, uploaded_by)
+         VALUES ($1, $2, $3, $4)",
+    )
+    .bind(file_id)
+    .bind(template_id)
+    .bind(purpose)
+    .bind(actor.user_id)
+    .execute(pool)
+    .await
+    .unwrap();
+    file_id
+}
+
+#[tokio::test]
+async fn background_geometry_comes_from_the_ready_file_not_the_request() {
+    let (pool, actor, academic_year_id) =
+        school_campaign_fixture("certificate_template_geometry", 3110).await;
+    let template = create_template_fixture(&pool, &actor, academic_year_id).await;
+    let file_id = insert_ready_template_file(
+        &pool,
+        &actor,
+        template.id,
+        "certificate_template_background",
+        serde_json::json!({
+            "kind": "pdf",
+            "page_count": 1,
+            "crop_box": {"x": 0.0, "y": 0.0, "width": 841.89, "height": 595.28},
+            "media_box": {"x": 0.0, "y": 0.0, "width": 841.89, "height": 595.28},
+            "rotation": 0
+        }),
+    )
+    .await;
+
+    let updated = template_service::attach_background(
+        &pool,
+        &actor,
+        template.id,
+        AttachCertificateBackgroundRequest {
+            file_id,
+            geometry_action: GeometryAction::Preserve,
+            preview_confirmed: true,
+        },
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        updated
+            .template
+            .page_geometry
+            .unwrap()
+            .crop_box
+            .width_points,
+        841.89
+    );
+}
+
+#[tokio::test]
+async fn preview_manifest_uses_private_short_lived_grants_and_never_audits_them() {
+    let (pool, actor, academic_year_id) =
+        school_campaign_fixture("certificate_template_preview_manifest", 3118).await;
+    let template = create_template_fixture(&pool, &actor, academic_year_id).await;
+    let file_id = insert_ready_template_file(
+        &pool,
+        &actor,
+        template.id,
+        "certificate_template_background",
+        pdf_inspection(841.89, 595.28, 0),
+    )
+    .await;
+    template_service::attach_background(
+        &pool,
+        &actor,
+        template.id,
+        AttachCertificateBackgroundRequest {
+            file_id,
+            geometry_action: GeometryAction::Preserve,
+            preview_confirmed: true,
+        },
+    )
+    .await
+    .unwrap();
+    let audit_count_before: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM audit_logs WHERE entity_type = 'certificate_template'",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let platform = crate::modules::files::platform_service::FilePlatform::new(
+        Arc::new(PreviewStorage),
+        Arc::new(PreviewScanner),
+    );
+    let requested_at = chrono::Utc::now();
+    let manifest = render_service::preview_manifest(
+        &pool,
+        &actor,
+        &platform,
+        "โรงเรียนตัวอย่าง".to_string(),
+        template.id,
+        CertificatePreviewManifestRequest {
+            preview_kind: CertificatePreviewKind::Long,
+            candidate_id: None,
+            sample_values: Default::default(),
+        },
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(manifest.certificate_number, "ตัวอย่าง");
+    assert!(manifest.qr_payload.contains("ตัวอย่าง"));
+    assert_eq!(manifest.recipient_values["ชื่อโรงเรียนผู้ออก"], "โรงเรียนตัวอย่าง");
+    assert!(manifest
+        .background_grant
+        .url
+        .starts_with("https://private.example.test/"));
+    assert!(manifest.background_grant.expires_at > requested_at);
+    assert!(manifest.background_grant.expires_at <= requested_at + chrono::Duration::minutes(5));
+    assert_eq!(manifest.built_in_fonts.len(), 2);
+    let audit_count_after: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM audit_logs WHERE entity_type = 'certificate_template'",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(audit_count_after, audit_count_before);
+}
+
+#[tokio::test]
+async fn background_rejects_wrong_relation_unready_pages_and_unsafe_geometry() {
+    let (pool, actor, academic_year_id) =
+        school_campaign_fixture("certificate_template_invalid_background", 3111).await;
+    let template = create_template_fixture(&pool, &actor, academic_year_id).await;
+
+    let wrong_purpose = insert_ready_template_file(
+        &pool,
+        &actor,
+        template.id,
+        "certificate_template_image",
+        serde_json::json!({"kind": "image", "width_px": 100, "height_px": 100}),
+    )
+    .await;
+    assert!(matches!(
+        template_service::attach_background(
+            &pool,
+            &actor,
+            template.id,
+            AttachCertificateBackgroundRequest {
+                file_id: wrong_purpose,
+                geometry_action: GeometryAction::Preserve,
+                preview_confirmed: true,
+            },
+        )
+        .await,
+        Err(AppError::Forbidden(_))
+    ));
+
+    let not_ready = insert_ready_template_file(
+        &pool,
+        &actor,
+        template.id,
+        "certificate_template_background",
+        pdf_inspection(841.89, 595.28, 0),
+    )
+    .await;
+    sqlx::query("UPDATE files SET lifecycle_status = 'processing' WHERE id = $1")
+        .bind(not_ready)
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert!(matches!(
+        template_service::attach_background(
+            &pool,
+            &actor,
+            template.id,
+            AttachCertificateBackgroundRequest {
+                file_id: not_ready,
+                geometry_action: GeometryAction::Preserve,
+                preview_confirmed: true,
+            },
+        )
+        .await,
+        Err(AppError::Conflict(_))
+    ));
+
+    let multiple_pages = insert_ready_template_file(
+        &pool,
+        &actor,
+        template.id,
+        "certificate_template_background",
+        serde_json::json!({
+            "kind": "pdf",
+            "page_count": 2,
+            "crop_box": {"x": 0.0, "y": 0.0, "width": 841.89, "height": 595.28},
+            "media_box": {"x": 0.0, "y": 0.0, "width": 841.89, "height": 595.28},
+            "rotation": 0
+        }),
+    )
+    .await;
+    assert!(matches!(
+        template_service::attach_background(
+            &pool,
+            &actor,
+            template.id,
+            AttachCertificateBackgroundRequest {
+                file_id: multiple_pages,
+                geometry_action: GeometryAction::Preserve,
+                preview_confirmed: true,
+            },
+        )
+        .await,
+        Err(AppError::ValidationError(_))
+    ));
+
+    let points_per_mm = 72.0 / 25.4;
+    for (index, geometry) in [
+        pdf_inspection(24.9 * points_per_mm, 100.0 * points_per_mm, 0),
+        pdf_inspection(600.1 * points_per_mm, 100.0 * points_per_mm, 0),
+        pdf_inspection(500.0 * points_per_mm, 501.0 * points_per_mm, 0),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let file_id = insert_ready_template_file(
+            &pool,
+            &actor,
+            template.id,
+            "certificate_template_background",
+            geometry,
+        )
+        .await;
+        let result = template_service::attach_background(
+            &pool,
+            &actor,
+            template.id,
+            AttachCertificateBackgroundRequest {
+                file_id,
+                geometry_action: GeometryAction::Preserve,
+                preview_confirmed: true,
+            },
+        )
+        .await;
+        assert!(
+            matches!(result, Err(AppError::ValidationError(_))),
+            "unsafe geometry case {index} must be rejected"
+        );
+    }
+}
+
+#[tokio::test]
+async fn template_names_recipient_compatibility_and_cross_template_files_are_enforced() {
+    let (pool, actor, academic_year_id) =
+        school_campaign_fixture("certificate_template_identity", 3112).await;
+    let first = create_template_fixture_with_types(
+        &pool,
+        &actor,
+        academic_year_id,
+        "กิจกรรมชื่อแบบ",
+        " แบบ  รางวัล ",
+        vec![RecipientType::External],
+    )
+    .await;
+    let duplicate = template_service::create_template(
+        &pool,
+        &actor,
+        first.campaign_id,
+        CreateCertificateTemplateRequest {
+            name: "แบบ รางวัล".to_string(),
+            allowed_recipient_types: vec![RecipientType::Student],
+        },
+    )
+    .await;
+    assert!(matches!(duplicate, Err(AppError::Conflict(_))));
+
+    sqlx::query(
+        "INSERT INTO certificate_candidates (
+            campaign_id, template_id, recipient_type, imported_first_name,
+            imported_last_name, selected_name_source, match_status, validation_status
+         ) VALUES ($1, $2, 'external', 'สมชาย', 'ทดสอบ', 'file',
+                   'external_confirmed', 'ready')",
+    )
+    .bind(first.campaign_id)
+    .bind(first.id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let incompatible = template_service::update_template(
+        &pool,
+        &actor,
+        first.id,
+        UpdateCertificateTemplateRequest {
+            expected_updated_at: first.updated_at,
+            name: None,
+            allowed_recipient_types: Some(vec![RecipientType::Student]),
+            safe_margin_points: None,
+            show_safe_area: None,
+            layout: None,
+            is_active: None,
+            confirm_missing_issued_values: false,
+        },
+    )
+    .await;
+    assert!(matches!(incompatible, Err(AppError::Conflict(_))));
+
+    let sibling = template_service::create_template(
+        &pool,
+        &actor,
+        first.campaign_id,
+        CreateCertificateTemplateRequest {
+            name: "แบบเข้าร่วมกิจกรรม".to_string(),
+            allowed_recipient_types: vec![RecipientType::External],
+        },
+    )
+    .await
+    .unwrap();
+    let listed = template_service::list_templates(&pool, &actor, first.campaign_id)
+        .await
+        .unwrap();
+    assert_eq!(
+        listed
+            .iter()
+            .map(|template| template.id)
+            .collect::<Vec<_>>(),
+        vec![first.id, sibling.id]
+    );
+
+    let second = create_template_fixture_with_types(
+        &pool,
+        &actor,
+        academic_year_id,
+        "อีกกิจกรรมหนึ่ง",
+        "แบบที่สอง",
+        vec![RecipientType::Student],
+    )
+    .await;
+    let first_file = insert_ready_template_file(
+        &pool,
+        &actor,
+        first.id,
+        "certificate_template_background",
+        pdf_inspection(841.89, 595.28, 0),
+    )
+    .await;
+    let cross_template = template_service::attach_background(
+        &pool,
+        &actor,
+        second.id,
+        AttachCertificateBackgroundRequest {
+            file_id: first_file,
+            geometry_action: GeometryAction::Preserve,
+            preview_confirmed: true,
+        },
+    )
+    .await;
+    assert!(matches!(cross_template, Err(AppError::Forbidden(_))));
+}
+
+#[tokio::test]
+async fn background_preserve_scale_and_reset_are_deterministic() {
+    let (pool, actor, academic_year_id) =
+        school_campaign_fixture("certificate_template_geometry_actions", 3113).await;
+    let template = create_template_fixture(&pool, &actor, academic_year_id).await;
+    let initial_file = insert_ready_template_file(
+        &pool,
+        &actor,
+        template.id,
+        "certificate_template_background",
+        pdf_inspection(400.0, 300.0, 0),
+    )
+    .await;
+    let attached = template_service::attach_background(
+        &pool,
+        &actor,
+        template.id,
+        AttachCertificateBackgroundRequest {
+            file_id: initial_file,
+            geometry_action: GeometryAction::Preserve,
+            preview_confirmed: true,
+        },
+    )
+    .await
+    .unwrap()
+    .template;
+    let designed = template_service::update_template(
+        &pool,
+        &actor,
+        template.id,
+        UpdateCertificateTemplateRequest {
+            expected_updated_at: attached.updated_at,
+            name: None,
+            allowed_recipient_types: None,
+            safe_margin_points: None,
+            show_safe_area: None,
+            layout: Some(text_layout(CertificateFontSource::BuiltIn)),
+            is_active: None,
+            confirm_missing_issued_values: false,
+        },
+    )
+    .await
+    .unwrap()
+    .template;
+
+    let same_file = insert_ready_template_file(
+        &pool,
+        &actor,
+        template.id,
+        "certificate_template_background",
+        pdf_inspection(400.0, 300.0, 0),
+    )
+    .await;
+    let preserved = template_service::attach_background(
+        &pool,
+        &actor,
+        template.id,
+        AttachCertificateBackgroundRequest {
+            file_id: same_file,
+            geometry_action: GeometryAction::Preserve,
+            preview_confirmed: false,
+        },
+    )
+    .await
+    .unwrap()
+    .template;
+    assert_eq!(preserved.layout, designed.layout);
+
+    let changed_file = insert_ready_template_file(
+        &pool,
+        &actor,
+        template.id,
+        "certificate_template_background",
+        pdf_inspection(800.0, 600.0, 0),
+    )
+    .await;
+    assert!(matches!(
+        template_service::attach_background(
+            &pool,
+            &actor,
+            template.id,
+            AttachCertificateBackgroundRequest {
+                file_id: changed_file,
+                geometry_action: GeometryAction::Preserve,
+                preview_confirmed: true,
+            },
+        )
+        .await,
+        Err(AppError::ValidationError(_))
+    ));
+    let scaled = template_service::attach_background(
+        &pool,
+        &actor,
+        template.id,
+        AttachCertificateBackgroundRequest {
+            file_id: changed_file,
+            geometry_action: GeometryAction::Scale,
+            preview_confirmed: true,
+        },
+    )
+    .await
+    .unwrap()
+    .template;
+    let CertificateElement::Text(text) = &scaled.layout.elements[0] else {
+        panic!("expected text element")
+    };
+    assert_eq!(text.frame.x, 40.0);
+    assert_eq!(text.frame.y, 60.0);
+    assert_eq!(text.font_size, 48.0);
+
+    let reset_file = insert_ready_template_file(
+        &pool,
+        &actor,
+        template.id,
+        "certificate_template_background",
+        pdf_inspection(600.0, 400.0, 90),
+    )
+    .await;
+    let reset = template_service::attach_background(
+        &pool,
+        &actor,
+        template.id,
+        AttachCertificateBackgroundRequest {
+            file_id: reset_file,
+            geometry_action: GeometryAction::Reset,
+            preview_confirmed: true,
+        },
+    )
+    .await
+    .unwrap()
+    .template;
+    assert_eq!(reset.layout, CertificateLayoutV1::default());
+}
+
+#[tokio::test]
+async fn active_request_locks_referenced_template_mutations() {
+    let (pool, actor, academic_year_id) =
+        school_campaign_fixture("certificate_template_request_lock", 3114).await;
+    let selected = create_template_fixture_with_types(
+        &pool,
+        &actor,
+        academic_year_id,
+        "กิจกรรมที่ส่งตรวจ",
+        "แบบที่เลือก",
+        vec![RecipientType::External],
+    )
+    .await;
+    let unselected = template_service::create_template(
+        &pool,
+        &actor,
+        selected.campaign_id,
+        CreateCertificateTemplateRequest {
+            name: "แบบที่ไม่ได้เลือก".to_string(),
+            allowed_recipient_types: vec![RecipientType::External],
+        },
+    )
+    .await
+    .unwrap();
+    let candidate_id: Uuid = sqlx::query_scalar(
+        "INSERT INTO certificate_candidates (
+            campaign_id, template_id, recipient_type, imported_first_name,
+            imported_last_name, selected_name_source, match_status, validation_status
+         ) VALUES ($1, $2, 'external', 'ผู้รับ', 'ที่เลือก', 'file',
+                   'external_confirmed', 'ready')
+         RETURNING id",
+    )
+    .bind(selected.campaign_id)
+    .bind(selected.id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let request_id: Uuid = sqlx::query_scalar(
+        "INSERT INTO certificate_issue_requests (campaign_id, submitted_by)
+         VALUES ($1, $2) RETURNING id",
+    )
+    .bind(selected.campaign_id)
+    .bind(actor.user_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO certificate_issue_request_items (request_id, candidate_id, campaign_id)
+         VALUES ($1, $2, $3)",
+    )
+    .bind(request_id)
+    .bind(candidate_id)
+    .bind(selected.campaign_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO certificate_candidate_issue_locks (candidate_id, request_id)
+         VALUES ($1, $2)",
+    )
+    .bind(candidate_id)
+    .bind(request_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let locked = template_service::update_template(
+        &pool,
+        &actor,
+        selected.id,
+        UpdateCertificateTemplateRequest {
+            expected_updated_at: selected.updated_at,
+            name: Some("ห้ามแก้ระหว่างตรวจ".to_string()),
+            allowed_recipient_types: None,
+            safe_margin_points: None,
+            show_safe_area: None,
+            layout: None,
+            is_active: None,
+            confirm_missing_issued_values: false,
+        },
+    )
+    .await;
+    assert!(matches!(locked, Err(AppError::Conflict(_))));
+    assert!(matches!(
+        template_service::delete_template(&pool, &actor, selected.id).await,
+        Err(AppError::Conflict(_))
+    ));
+
+    let updated = template_service::update_template(
+        &pool,
+        &actor,
+        unselected.id,
+        UpdateCertificateTemplateRequest {
+            expected_updated_at: unselected.updated_at,
+            name: Some("แก้แบบที่ไม่ได้อยู่ในคำขอได้".to_string()),
+            allowed_recipient_types: None,
+            safe_margin_points: None,
+            show_safe_area: None,
+            layout: None,
+            is_active: None,
+            confirm_missing_issued_values: false,
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(updated.template.name, "แก้แบบที่ไม่ได้อยู่ในคำขอได้");
+}
+
+#[tokio::test]
+async fn font_rights_and_referenced_asset_deletion_are_enforced() {
+    let (pool, actor, academic_year_id) =
+        school_campaign_fixture("certificate_template_font_rights", 3115).await;
+    let template = create_template_fixture(&pool, &actor, academic_year_id).await;
+    let background_id = insert_ready_template_file(
+        &pool,
+        &actor,
+        template.id,
+        "certificate_template_background",
+        pdf_inspection(841.89, 595.28, 0),
+    )
+    .await;
+    let with_background = template_service::attach_background(
+        &pool,
+        &actor,
+        template.id,
+        AttachCertificateBackgroundRequest {
+            file_id: background_id,
+            geometry_action: GeometryAction::Preserve,
+            preview_confirmed: true,
+        },
+    )
+    .await
+    .unwrap()
+    .template;
+    let font_file_id = insert_ready_template_file(
+        &pool,
+        &actor,
+        template.id,
+        "certificate_template_font",
+        serde_json::json!({
+            "kind": "font",
+            "family_name": "Test Thai Font",
+            "units_per_em": 1000
+        }),
+    )
+    .await;
+    let unconfirmed = template_service::attach_asset(
+        &pool,
+        &actor,
+        template.id,
+        AttachCertificateAssetRequest {
+            file_id: font_file_id,
+            kind: CertificateTemplateAssetKind::Font,
+            display_name: "ฟอนต์ทดสอบ".to_string(),
+            font_weight: Some(400),
+            rights_confirmed: false,
+        },
+    )
+    .await;
+    assert!(matches!(unconfirmed, Err(AppError::ValidationError(_))));
+
+    let with_font = template_service::attach_asset(
+        &pool,
+        &actor,
+        template.id,
+        AttachCertificateAssetRequest {
+            file_id: font_file_id,
+            kind: CertificateTemplateAssetKind::Font,
+            display_name: "ฟอนต์ทดสอบ".to_string(),
+            font_weight: Some(400),
+            rights_confirmed: true,
+        },
+    )
+    .await
+    .unwrap();
+    let asset = with_font.assets[0].clone();
+    let mut layout = text_layout(CertificateFontSource::Asset { asset_id: asset.id });
+    let CertificateElement::Text(text) = &mut layout.elements[0] else {
+        panic!("expected text element")
+    };
+    text.font_family = asset.font_family.clone().unwrap();
+    text.font_weight = asset.font_weight.unwrap();
+    let designed = template_service::update_template(
+        &pool,
+        &actor,
+        template.id,
+        UpdateCertificateTemplateRequest {
+            expected_updated_at: with_font.updated_at,
+            name: None,
+            allowed_recipient_types: None,
+            safe_margin_points: None,
+            show_safe_area: None,
+            layout: Some(layout),
+            is_active: None,
+            confirm_missing_issued_values: false,
+        },
+    )
+    .await
+    .unwrap()
+    .template;
+    assert!(matches!(
+        template_service::delete_asset(&pool, &actor, template.id, asset.id).await,
+        Err(AppError::Conflict(_))
+    ));
+
+    let without_reference = template_service::update_template(
+        &pool,
+        &actor,
+        template.id,
+        UpdateCertificateTemplateRequest {
+            expected_updated_at: designed.updated_at,
+            name: None,
+            allowed_recipient_types: None,
+            safe_margin_points: None,
+            show_safe_area: None,
+            layout: Some(text_layout(CertificateFontSource::BuiltIn)),
+            is_active: None,
+            confirm_missing_issued_values: false,
+        },
+    )
+    .await
+    .unwrap()
+    .template;
+    let deleted = template_service::delete_asset(&pool, &actor, template.id, asset.id)
+        .await
+        .unwrap();
+    assert_eq!(deleted.detached_file_ids, vec![font_file_id]);
+    assert!(deleted.template.assets.is_empty());
+    assert!(deleted.template.updated_at > without_reference.updated_at);
+    assert!(with_background.background_file_id.is_some());
+}
+
+async fn insert_issued_certificate_for_template(
+    pool: &PgPool,
+    actor: &ActorContext,
+    template_id: Uuid,
+    campaign_id: Uuid,
+    academic_year_id: Uuid,
+    academic_year_value: i32,
+) {
+    sqlx::query(
+        "UPDATE certificate_campaigns
+         SET status = 'active', activity_sequence = 1
+         WHERE id = $1",
+    )
+    .bind(campaign_id)
+    .execute(pool)
+    .await
+    .unwrap();
+    let candidate_id: Uuid = sqlx::query_scalar(
+        "INSERT INTO certificate_candidates (
+            campaign_id, template_id, recipient_type, imported_first_name,
+            imported_last_name, selected_name_source, match_status, validation_status
+         ) VALUES ($1, $2, 'external', 'ผู้รับ', 'ใบเดิม', 'file',
+                   'external_confirmed', 'ready')
+         RETURNING id",
+    )
+    .bind(campaign_id)
+    .bind(template_id)
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    let request_id: Uuid = sqlx::query_scalar(
+        "INSERT INTO certificate_issue_requests (
+            campaign_id, status, submitted_by, reviewed_by, reviewed_at, issued_at
+         ) VALUES ($1, 'issued', $2, $2, now(), now())
+         RETURNING id",
+    )
+    .bind(campaign_id)
+    .bind(actor.user_id)
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO certificate_issue_request_items (request_id, candidate_id, campaign_id)
+         VALUES ($1, $2, $3)",
+    )
+    .bind(request_id)
+    .bind(candidate_id)
+    .bind(campaign_id)
+    .execute(pool)
+    .await
+    .unwrap();
+    let run_id: Uuid = sqlx::query_scalar(
+        "INSERT INTO certificate_issue_runs (
+            request_id, idempotency_key, issued_by, outcome, issued_count,
+            first_certificate_sequence, last_certificate_sequence
+         ) VALUES ($1, $2, $3, 'issued', 1, 1, 1)
+         RETURNING id",
+    )
+    .bind(request_id)
+    .bind(Uuid::new_v4())
+    .bind(actor.user_id)
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    let certificate_number = format!("{academic_year_value:04}-0001-000001-0");
+    let certificate_id: Uuid = sqlx::query_scalar(
+        "INSERT INTO certificates (
+            campaign_id, template_id, candidate_id, issue_run_id, academic_year_id,
+            academic_year_value, activity_sequence, certificate_sequence, check_digit,
+            certificate_number, recipient_type, first_name_snapshot, last_name_snapshot,
+            template_name_snapshot, custom_values_snapshot, school_name_snapshot,
+            issue_date, qr_proof_encrypted, qr_proof_hash
+         ) VALUES ($1, $2, $3, $4, $5, $6, 1, 1, 0, $7, 'external',
+                   'ผู้รับ', 'ใบเดิม', 'แบบที่ใช้แล้ว', '{}'::jsonb, 'โรงเรียนทดสอบ',
+                   CURRENT_DATE, 'encrypted-test-proof', repeat('c', 64))
+         RETURNING id",
+    )
+    .bind(campaign_id)
+    .bind(template_id)
+    .bind(candidate_id)
+    .bind(run_id)
+    .bind(academic_year_id)
+    .bind(academic_year_value)
+    .bind(certificate_number)
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "UPDATE certificate_candidates
+         SET issued_certificate_id = $2
+         WHERE id = $1",
+    )
+    .bind(candidate_id)
+    .bind(certificate_id)
+    .execute(pool)
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn used_template_updates_report_missing_values_and_delete_deactivates() {
+    let year = 3116;
+    let (pool, actor, academic_year_id) =
+        school_campaign_fixture("certificate_template_used", year).await;
+    let template = create_template_fixture_with_types(
+        &pool,
+        &actor,
+        academic_year_id,
+        "กิจกรรมที่ออกใบแล้ว",
+        "แบบที่ใช้แล้ว",
+        vec![RecipientType::External],
+    )
+    .await;
+    let background_id = insert_ready_template_file(
+        &pool,
+        &actor,
+        template.id,
+        "certificate_template_background",
+        pdf_inspection(841.89, 595.28, 0),
+    )
+    .await;
+    let current = template_service::attach_background(
+        &pool,
+        &actor,
+        template.id,
+        AttachCertificateBackgroundRequest {
+            file_id: background_id,
+            geometry_action: GeometryAction::Preserve,
+            preview_confirmed: true,
+        },
+    )
+    .await
+    .unwrap()
+    .template;
+    insert_issued_certificate_for_template(
+        &pool,
+        &actor,
+        template.id,
+        template.campaign_id,
+        academic_year_id,
+        year,
+    )
+    .await;
+
+    let mut missing_standard_layout = text_layout(CertificateFontSource::BuiltIn);
+    let CertificateElement::Text(text) = &mut missing_standard_layout.elements[0] else {
+        panic!("expected text element")
+    };
+    text.content = "ได้รับ {รางวัลหรือบทบาท}".to_string();
+    let missing_standard = template_service::update_template(
+        &pool,
+        &actor,
+        template.id,
+        UpdateCertificateTemplateRequest {
+            expected_updated_at: current.updated_at,
+            name: None,
+            allowed_recipient_types: None,
+            safe_margin_points: None,
+            show_safe_area: None,
+            layout: Some(missing_standard_layout),
+            is_active: None,
+            confirm_missing_issued_values: false,
+        },
+    )
+    .await;
+    assert!(matches!(missing_standard, Err(AppError::Conflict(_))));
+
+    sqlx::query(
+        "INSERT INTO certificate_candidates (
+            campaign_id, template_id, recipient_type, imported_first_name,
+            imported_last_name, selected_name_source, custom_values,
+            match_status, validation_status
+         ) VALUES ($1, $2, 'external', 'ผู้รับ', 'รายใหม่', 'file',
+                   '{\"ครูผู้ควบคุม\":\"ครูตัวอย่าง\"}'::jsonb,
+                   'external_confirmed', 'ready')",
+    )
+    .bind(template.campaign_id)
+    .bind(template.id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let mut custom_layout = text_layout(CertificateFontSource::BuiltIn);
+    let CertificateElement::Text(text) = &mut custom_layout.elements[0] else {
+        panic!("expected text element")
+    };
+    text.content = "มอบให้ {ชื่อ} โดย {ครูผู้ควบคุม}".to_string();
+    let unconfirmed = template_service::update_template(
+        &pool,
+        &actor,
+        template.id,
+        UpdateCertificateTemplateRequest {
+            expected_updated_at: current.updated_at,
+            name: None,
+            allowed_recipient_types: None,
+            safe_margin_points: None,
+            show_safe_area: None,
+            layout: Some(custom_layout.clone()),
+            is_active: None,
+            confirm_missing_issued_values: false,
+        },
+    )
+    .await;
+    assert!(matches!(unconfirmed, Err(AppError::Conflict(_))));
+    let confirmed = template_service::update_template(
+        &pool,
+        &actor,
+        template.id,
+        UpdateCertificateTemplateRequest {
+            expected_updated_at: current.updated_at,
+            name: None,
+            allowed_recipient_types: None,
+            safe_margin_points: None,
+            show_safe_area: None,
+            layout: Some(custom_layout.clone()),
+            is_active: None,
+            confirm_missing_issued_values: true,
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(confirmed.template.missing_variable_certificate_count, 1);
+
+    let CertificateElement::Text(text) = &mut custom_layout.elements[0] else {
+        panic!("expected text element")
+    };
+    text.frame.x += 1.0;
+    let same_variables = template_service::update_template(
+        &pool,
+        &actor,
+        template.id,
+        UpdateCertificateTemplateRequest {
+            expected_updated_at: confirmed.template.updated_at,
+            name: None,
+            allowed_recipient_types: None,
+            safe_margin_points: None,
+            show_safe_area: None,
+            layout: Some(custom_layout),
+            is_active: None,
+            confirm_missing_issued_values: false,
+        },
+    )
+    .await
+    .expect("moving an existing variable must not require another missing-value confirmation");
+    assert_eq!(
+        same_variables.template.missing_variable_certificate_count,
+        1
+    );
+
+    let deleted = template_service::delete_template(&pool, &actor, template.id)
+        .await
+        .unwrap();
+    assert_eq!(
+        deleted.result.disposition,
+        CertificateTemplateDeleteDisposition::Deactivated
+    );
+    assert!(deleted.detached_file_ids.is_empty());
+    let persisted = template_service::get_template(&pool, &actor, template.id)
+        .await
+        .unwrap();
+    assert!(!persisted.is_active);
 }
 
 impl CertificatePolicyFixture {
@@ -172,6 +1622,165 @@ async fn grant_in_unit_a_does_not_authorize_campaign_in_unit_b() {
     )
     .await
     .is_err());
+}
+
+#[tokio::test]
+async fn concurrent_campaign_owner_transfer_blocks_stale_template_mutation() {
+    let mut fixture = CertificatePolicyFixture::new("certificate_template_owner_race").await;
+    fixture
+        .actor
+        .permissions
+        .push(codes::CERTIFICATE_CREATE_ORGANIZATION_UNIT.to_string());
+    for permission in [
+        codes::CERTIFICATE_CREATE_ORGANIZATION_UNIT,
+        codes::CERTIFICATE_UPDATE_ORGANIZATION_UNIT,
+    ] {
+        add_exact_grant(&fixture.pool, fixture.unit_a, permission).await;
+    }
+    let academic_year_id = insert_academic_year(&fixture.pool, 3119).await;
+    let campaign = campaign_service::create_campaign(
+        &fixture.pool,
+        &fixture.actor,
+        CreateCertificateCampaignRequest {
+            academic_year_id,
+            owner_organization_unit_id: Some(fixture.unit_a),
+            name: "กิจกรรมก่อนย้ายหน่วยงาน".to_string(),
+            event_date: NaiveDate::from_ymd_opt(2026, 8, 14).unwrap(),
+        },
+    )
+    .await
+    .unwrap();
+    let template = template_service::create_template(
+        &fixture.pool,
+        &fixture.actor,
+        campaign.id,
+        CreateCertificateTemplateRequest {
+            name: "แบบก่อนย้ายหน่วยงาน".to_string(),
+            allowed_recipient_types: vec![RecipientType::External],
+        },
+    )
+    .await
+    .unwrap();
+
+    let mut owner_transfer = fixture.pool.begin().await.unwrap();
+    sqlx::query(
+        "UPDATE certificate_campaigns
+         SET owner_organization_unit_id = $2, updated_at = clock_timestamp()
+         WHERE id = $1",
+    )
+    .bind(campaign.id)
+    .bind(fixture.unit_b)
+    .execute(&mut *owner_transfer)
+    .await
+    .unwrap();
+
+    let mutation_pool = fixture.pool.clone();
+    let mutation_actor = fixture.actor.clone();
+    let mutation = tokio::spawn(async move {
+        template_service::update_template(
+            &mutation_pool,
+            &mutation_actor,
+            template.id,
+            UpdateCertificateTemplateRequest {
+                expected_updated_at: template.updated_at,
+                name: Some("ชื่อที่ไม่ควรถูกบันทึก".to_string()),
+                allowed_recipient_types: None,
+                safe_margin_points: None,
+                show_safe_area: None,
+                layout: None,
+                is_active: None,
+                confirm_missing_issued_values: false,
+            },
+        )
+        .await
+    });
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    assert!(
+        !mutation.is_finished(),
+        "template mutation should wait for the campaign-owner lock"
+    );
+    owner_transfer.commit().await.unwrap();
+
+    let mutation_result = mutation.await.unwrap();
+    assert!(
+        matches!(
+            mutation_result,
+            Err(AppError::Conflict(_)) | Err(AppError::Forbidden(_))
+        ),
+        "stale owner mutation should be rejected, got {mutation_result:?}"
+    );
+    let persisted_name: String =
+        sqlx::query_scalar("SELECT name FROM certificate_templates WHERE id = $1")
+            .bind(template.id)
+            .fetch_one(&fixture.pool)
+            .await
+            .unwrap();
+    assert_eq!(persisted_name, "แบบก่อนย้ายหน่วยงาน");
+}
+
+#[tokio::test]
+async fn concurrent_campaign_delete_and_template_update_do_not_deadlock() {
+    let (pool, actor, academic_year_id) =
+        school_campaign_fixture("certificate_campaign_template_lock_order", 3121).await;
+    let template = create_template_fixture_with_types(
+        &pool,
+        &actor,
+        academic_year_id,
+        "กิจกรรมทดสอบลำดับล็อก",
+        "แบบทดสอบลำดับล็อก",
+        vec![RecipientType::External],
+    )
+    .await;
+    let barrier = Arc::new(tokio::sync::Barrier::new(3));
+
+    let delete_pool = pool.clone();
+    let delete_actor = actor.clone();
+    let delete_barrier = barrier.clone();
+    let campaign_id = template.campaign_id;
+    let delete = tokio::spawn(async move {
+        delete_barrier.wait().await;
+        campaign_service::delete_campaign(&delete_pool, &delete_actor, campaign_id).await
+    });
+
+    let update_pool = pool.clone();
+    let update_actor = actor.clone();
+    let update_barrier = barrier.clone();
+    let template_id = template.id;
+    let expected_updated_at = template.updated_at;
+    let update = tokio::spawn(async move {
+        update_barrier.wait().await;
+        template_service::update_template(
+            &update_pool,
+            &update_actor,
+            template_id,
+            UpdateCertificateTemplateRequest {
+                expected_updated_at,
+                name: Some("แบบที่แก้พร้อมการลบกิจกรรม".to_string()),
+                allowed_recipient_types: None,
+                safe_margin_points: None,
+                show_safe_area: None,
+                layout: None,
+                is_active: None,
+                confirm_missing_issued_values: false,
+            },
+        )
+        .await
+    });
+
+    barrier.wait().await;
+    let (delete_result, update_result) = tokio::time::timeout(Duration::from_secs(5), async {
+        (delete.await.unwrap(), update.await.unwrap())
+    })
+    .await
+    .expect("campaign deletion and template update must serialize without deadlock");
+    assert!(
+        !matches!(delete_result, Err(AppError::DbError(_))),
+        "campaign deletion returned a database concurrency error: {delete_result:?}"
+    );
+    assert!(
+        !matches!(update_result, Err(AppError::DbError(_))),
+        "template update returned a database concurrency error: {update_result:?}"
+    );
 }
 
 #[tokio::test]
@@ -797,9 +2406,43 @@ async fn campaign_manual_transitions_delete_rules_and_audit_are_explicit() {
     )
     .await;
     assert!(matches!(activate_draft, Err(AppError::Conflict(_))));
-    campaign_service::delete_campaign(&pool, &actor, draft.id)
+
+    let draft_template = template_service::create_template(
+        &pool,
+        &actor,
+        draft.id,
+        CreateCertificateTemplateRequest {
+            name: "แบบพร้อมพื้นหลัง".to_string(),
+            allowed_recipient_types: vec![RecipientType::External],
+        },
+    )
+    .await
+    .unwrap();
+    let background_id = insert_ready_template_file(
+        &pool,
+        &actor,
+        draft_template.id,
+        "certificate_template_background",
+        pdf_inspection(841.89, 595.28, 0),
+    )
+    .await;
+    template_service::attach_background(
+        &pool,
+        &actor,
+        draft_template.id,
+        AttachCertificateBackgroundRequest {
+            file_id: background_id,
+            geometry_action: GeometryAction::Preserve,
+            preview_confirmed: true,
+        },
+    )
+    .await
+    .unwrap();
+
+    let detached_files = campaign_service::delete_campaign(&pool, &actor, draft.id)
         .await
         .unwrap();
+    assert_eq!(detached_files, vec![background_id]);
     assert!(matches!(
         campaign_service::get_campaign(&pool, &actor, draft.id).await,
         Err(AppError::NotFound(_))
@@ -862,4 +2505,39 @@ async fn campaign_manual_transitions_delete_rules_and_audit_are_explicit() {
         campaign_service::delete_campaign(&pool, &actor, issued.id).await,
         Err(AppError::Conflict(_))
     ));
+}
+
+#[tokio::test]
+async fn unused_template_with_draft_candidates_returns_lifecycle_conflict() {
+    let (pool, actor, academic_year_id) =
+        school_campaign_fixture("certificate_template_candidate_delete", 3118).await;
+    let template = create_template_fixture_with_types(
+        &pool,
+        &actor,
+        academic_year_id,
+        "กิจกรรมที่ยังมีรายชื่อร่าง",
+        "แบบที่ยังมีรายชื่อร่าง",
+        vec![RecipientType::External],
+    )
+    .await;
+    sqlx::query(
+        "INSERT INTO certificate_candidates (
+            campaign_id, template_id, recipient_type, imported_first_name,
+            imported_last_name, selected_name_source, match_status, validation_status
+         ) VALUES ($1, $2, 'external', 'ผู้รับ', 'ฉบับร่าง', 'file',
+                   'external_confirmed', 'ready')",
+    )
+    .bind(template.campaign_id)
+    .bind(template.id)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    assert!(matches!(
+        template_service::delete_template(&pool, &actor, template.id).await,
+        Err(AppError::Conflict(_))
+    ));
+    assert!(template_service::get_template(&pool, &actor, template.id)
+        .await
+        .is_ok());
 }

@@ -1,17 +1,21 @@
-use sqlx::PgPool;
+use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
 use crate::{
     error::AppError,
     middleware::permission::ActorContext,
     modules::{
-        files::{platform_types::FilePurpose, repository::PlatformFile},
+        files::{
+            platform_types::{FilePurpose, FileVisibility},
+            repository::PlatformFile,
+        },
         question_bank::services as question_bank_service,
     },
     permissions::registry::codes,
     policies::{
-        achievement_access_policy, question_bank_access_policy, staff_access_policy,
-        student_access_policy,
+        achievement_access_policy,
+        certificate_access_policy::{self, CertificateAction},
+        question_bank_access_policy, staff_access_policy, student_access_policy,
     },
 };
 
@@ -146,15 +150,25 @@ pub async fn authorize_create(
             achievement_access_policy::can_create_achievement_for(actor, owner_user_id)?;
             Ok(owner_user_id)
         }
+        FilePurpose::CertificateTemplateBackground
+        | FilePurpose::CertificateTemplateImage
+        | FilePurpose::CertificateTemplateFont => {
+            let template_id = required_resource(resource_id)?;
+            certificate_access_policy::require_template_action(
+                pool,
+                actor,
+                template_id,
+                CertificateAction::Update,
+            )
+            .await?;
+            Ok(actor.user_id)
+        }
         FilePurpose::Transcript
         | FilePurpose::Certificate
         | FilePurpose::IdentityCard
         | FilePurpose::CourseMaterial
         | FilePurpose::AssignmentAttachment
-        | FilePurpose::GenericPrivateDocument
-        | FilePurpose::CertificateTemplateBackground
-        | FilePurpose::CertificateTemplateImage
-        | FilePurpose::CertificateTemplateFont => Err(explicit_domain_policy_required()),
+        | FilePurpose::GenericPrivateDocument => Err(explicit_domain_policy_required()),
     }
 }
 
@@ -284,15 +298,215 @@ pub async fn authorize_existing(
             }
             achievement_access_policy::can_create_achievement_for(actor, owner_user_id)
         }
+        FilePurpose::CertificateTemplateBackground
+        | FilePurpose::CertificateTemplateImage
+        | FilePurpose::CertificateTemplateFont => {
+            authorize_certificate_template_file(pool, actor, file, action, resource_id).await
+        }
         FilePurpose::Transcript
         | FilePurpose::Certificate
         | FilePurpose::IdentityCard
         | FilePurpose::CourseMaterial
         | FilePurpose::AssignmentAttachment
-        | FilePurpose::GenericPrivateDocument
-        | FilePurpose::CertificateTemplateBackground
-        | FilePurpose::CertificateTemplateImage
-        | FilePurpose::CertificateTemplateFont => Err(explicit_domain_policy_required()),
+        | FilePurpose::GenericPrivateDocument => Err(explicit_domain_policy_required()),
+    }
+}
+
+/// Holds the owning template and campaign locks from the final unreferenced check
+/// through the File Platform lifecycle transition. Template attachment takes the
+/// same locks before accepting a ready upload, so a delete cannot race an attach.
+pub async fn authorize_certificate_template_delete_guard<'a>(
+    pool: &'a PgPool,
+    actor: &ActorContext,
+    file: &PlatformFile,
+    resource_id: Option<Uuid>,
+) -> Result<Transaction<'a, Postgres>, AppError> {
+    if !matches!(
+        file.purpose,
+        FilePurpose::CertificateTemplateBackground
+            | FilePurpose::CertificateTemplateImage
+            | FilePurpose::CertificateTemplateFont
+    ) {
+        return Err(explicit_domain_policy_required());
+    }
+    if file.visibility != FileVisibility::Private {
+        return Err(forbidden());
+    }
+    let requested_template_id = required_resource(resource_id)?;
+    let authorization = sqlx::query_as::<_, (Uuid, Uuid, Uuid, bool, Option<Uuid>)>(
+        "SELECT upload.template_id,
+                template.campaign_id,
+                upload.uploaded_by,
+                (
+                    COALESCE(template.background_file_id = upload.file_id, false)
+                    OR EXISTS (
+                        SELECT 1 FROM certificate_template_assets asset
+                        WHERE asset.template_id = upload.template_id
+                          AND asset.file_id = upload.file_id
+                    )
+                ) AS referenced,
+                campaign.owner_organization_unit_id
+         FROM certificate_template_file_uploads upload
+         JOIN certificate_templates template ON template.id = upload.template_id
+         JOIN certificate_campaigns campaign ON campaign.id = template.campaign_id
+         WHERE upload.file_id = $1
+           AND upload.purpose_code = $2",
+    )
+    .bind(file.id)
+    .bind(file.purpose.code())
+    .fetch_optional(pool)
+    .await?
+    .ok_or_else(unrelated_resource)?;
+    if authorization.0 != requested_template_id {
+        return Err(unrelated_resource());
+    }
+    if authorization.3 {
+        return Err(AppError::Conflict(
+            "ไฟล์นี้ถูกใช้อยู่ในแม่แบบ กรุณาถอดผ่านหน้าจัดการแม่แบบ".to_string(),
+        ));
+    }
+    if authorization.2 != actor.user_id {
+        return Err(forbidden());
+    }
+    certificate_access_policy::require_owner_action(
+        pool,
+        actor,
+        authorization.4,
+        CertificateAction::Update,
+    )
+    .await?;
+
+    let mut tx = pool.begin().await?;
+    let locked_owner_id = sqlx::query_scalar::<_, Option<Uuid>>(
+        "SELECT owner_organization_unit_id
+         FROM certificate_campaigns
+         WHERE id = $1
+         FOR UPDATE",
+    )
+    .bind(authorization.1)
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or_else(unrelated_resource)?;
+    if locked_owner_id != authorization.4 {
+        return Err(AppError::Conflict(
+            "หน่วยงานเจ้าของกิจกรรมเปลี่ยนแล้ว กรุณาโหลดข้อมูลล่าสุด".to_string(),
+        ));
+    }
+
+    let locked = sqlx::query_as::<_, (Uuid, Uuid, Uuid, bool)>(
+        "SELECT upload.template_id,
+                template.campaign_id,
+                upload.uploaded_by,
+                (
+                    COALESCE(template.background_file_id = upload.file_id, false)
+                    OR EXISTS (
+                        SELECT 1 FROM certificate_template_assets asset
+                        WHERE asset.template_id = upload.template_id
+                          AND asset.file_id = upload.file_id
+                    )
+                ) AS referenced
+         FROM certificate_template_file_uploads upload
+         JOIN certificate_templates template ON template.id = upload.template_id
+         WHERE upload.file_id = $1
+           AND upload.purpose_code = $2
+         FOR UPDATE OF template, upload",
+    )
+    .bind(file.id)
+    .bind(file.purpose.code())
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or_else(unrelated_resource)?;
+    if locked.0 != requested_template_id || locked.1 != authorization.1 || locked.2 != actor.user_id
+    {
+        return Err(unrelated_resource());
+    }
+    if locked.3 {
+        return Err(AppError::Conflict(
+            "ไฟล์นี้ถูกใช้อยู่ในแม่แบบ กรุณาถอดผ่านหน้าจัดการแม่แบบ".to_string(),
+        ));
+    }
+    Ok(tx)
+}
+
+async fn authorize_certificate_template_file(
+    pool: &PgPool,
+    actor: &ActorContext,
+    file: &PlatformFile,
+    action: FilePolicyAction,
+    resource_id: Option<Uuid>,
+) -> Result<(), AppError> {
+    if file.visibility != FileVisibility::Private {
+        return Err(forbidden());
+    }
+    let requested_template_id = required_resource(resource_id)?;
+    let relationship = sqlx::query_as::<_, (Uuid, Uuid, bool)>(
+        "SELECT upload.template_id,
+                upload.uploaded_by,
+                (
+                    COALESCE(template.background_file_id = upload.file_id, false)
+                    OR EXISTS (
+                        SELECT 1 FROM certificate_template_assets asset
+                        WHERE asset.template_id = upload.template_id
+                          AND asset.file_id = upload.file_id
+                    )
+                ) AS referenced
+         FROM certificate_template_file_uploads upload
+         JOIN certificate_templates template ON template.id = upload.template_id
+         WHERE upload.file_id = $1
+           AND upload.purpose_code = $2",
+    )
+    .bind(file.id)
+    .bind(file.purpose.code())
+    .fetch_optional(pool)
+    .await?
+    .ok_or_else(unrelated_resource)?;
+    if relationship.0 != requested_template_id {
+        return Err(unrelated_resource());
+    }
+
+    match action {
+        FilePolicyAction::Read => {
+            if relationship.2 {
+                certificate_access_policy::require_template_action(
+                    pool,
+                    actor,
+                    relationship.0,
+                    CertificateAction::Read,
+                )
+                .await?;
+                return Ok(());
+            }
+            if relationship.1 != actor.user_id {
+                return Err(forbidden());
+            }
+            certificate_access_policy::require_template_action(
+                pool,
+                actor,
+                relationship.0,
+                CertificateAction::Update,
+            )
+            .await?;
+            Ok(())
+        }
+        FilePolicyAction::Delete => {
+            if relationship.2 {
+                return Err(AppError::Conflict(
+                    "ไฟล์นี้ถูกใช้อยู่ในแม่แบบ กรุณาถอดผ่านหน้าจัดการแม่แบบ".to_string(),
+                ));
+            }
+            if relationship.1 != actor.user_id {
+                return Err(forbidden());
+            }
+            certificate_access_policy::require_template_action(
+                pool,
+                actor,
+                relationship.0,
+                CertificateAction::Update,
+            )
+            .await?;
+            Ok(())
+        }
+        FilePolicyAction::Create => Err(explicit_domain_policy_required()),
     }
 }
 

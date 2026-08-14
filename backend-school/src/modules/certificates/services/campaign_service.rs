@@ -439,7 +439,7 @@ pub async fn delete_campaign(
     pool: &PgPool,
     actor: &ActorContext,
     campaign_id: Uuid,
-) -> Result<(), AppError> {
+) -> Result<Vec<Uuid>, AppError> {
     let authorization_row = fetch_campaign_row(pool, campaign_id).await?;
     require_owner_action(
         pool,
@@ -478,6 +478,21 @@ pub async fn delete_campaign(
         ));
     }
 
+    let mut detached_file_ids = sqlx::query_scalar::<_, Uuid>(
+        "SELECT background_file_id
+         FROM certificate_templates
+         WHERE campaign_id = $1 AND background_file_id IS NOT NULL
+         UNION
+         SELECT asset.file_id
+         FROM certificate_template_assets asset
+         JOIN certificate_templates template ON template.id = asset.template_id
+         WHERE template.campaign_id = $1",
+    )
+    .bind(campaign_id)
+    .fetch_all(&mut *tx)
+    .await
+    .map_err(campaign_db_error)?;
+
     record_campaign_audit(
         &mut tx,
         actor.user_id,
@@ -497,7 +512,9 @@ pub async fn delete_campaign(
         .await
         .map_err(campaign_db_error)?;
     tx.commit().await.map_err(campaign_db_error)?;
-    Ok(())
+    detached_file_ids.sort_unstable();
+    detached_file_ids.dedup();
+    Ok(detached_file_ids)
 }
 
 pub async fn list_owner_options(

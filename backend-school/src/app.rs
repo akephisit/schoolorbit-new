@@ -165,6 +165,37 @@ fn protected_routes() -> Router<AppState> {
             get(modules::certificates::handlers::list_certificate_owner_options),
         )
         .route(
+            "/api/certificates/campaigns/{campaign_id}/templates",
+            get(modules::certificates::handlers::list_certificate_templates)
+                .post(modules::certificates::handlers::create_certificate_template),
+        )
+        .route(
+            "/api/certificates/templates/{template_id}",
+            get(modules::certificates::handlers::get_certificate_template)
+                .put(modules::certificates::handlers::update_certificate_template)
+                .delete(modules::certificates::handlers::delete_certificate_template),
+        )
+        .route(
+            "/api/certificates/templates/{template_id}/background",
+            put(modules::certificates::handlers::attach_certificate_template_background),
+        )
+        .route(
+            "/api/certificates/templates/{template_id}/assets",
+            post(modules::certificates::handlers::attach_certificate_template_asset),
+        )
+        .route(
+            "/api/certificates/templates/{template_id}/assets/{asset_id}",
+            delete(modules::certificates::handlers::delete_certificate_template_asset),
+        )
+        .route(
+            "/api/certificates/templates/{template_id}/variables",
+            get(modules::certificates::handlers::get_certificate_template_variable_catalog),
+        )
+        .route(
+            "/api/certificates/templates/{template_id}/preview-manifest",
+            post(modules::certificates::handlers::create_certificate_template_preview_manifest),
+        )
+        .route(
             "/api/student/profile",
             get(modules::students::handlers::get_own_profile)
                 .put(modules::students::handlers::update_own_profile),

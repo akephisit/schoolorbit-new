@@ -8,6 +8,10 @@ export type FileDeleteResult = Schemas['FileDeleteResult'];
 export type FileDownloadGrantResponse = Schemas['FileDownloadGrantResponse'];
 export type PublicFileDeliveryResponse = Schemas['PublicFileDeliveryResponse'];
 export type FilePurpose = Schemas['FilePurpose'];
+export type CertificateTemplateFilePurpose = Extract<
+	FilePurpose,
+	'certificate_template_background' | 'certificate_template_image' | 'certificate_template_font'
+>;
 
 function resourceQuery(resourceId?: string): string {
 	if (!resourceId) return '';
@@ -30,6 +34,14 @@ export async function uploadFile(
 
 export function uploadProfileImage(file: File, userId?: string): Promise<FileMetadata> {
 	return uploadFile(file, 'profile_image', userId);
+}
+
+export function uploadCertificateTemplateFile(
+	file: File,
+	purpose: CertificateTemplateFilePurpose,
+	templateId: string
+): Promise<FileMetadata> {
+	return uploadFile(file, purpose, templateId);
 }
 
 export function getFileMetadata(fileId: string, resourceId?: string): Promise<FileMetadata> {

@@ -1887,6 +1887,267 @@
         ],
         "type": "object"
       },
+      "ApiResponse_CertificateRenderManifest": {
+        "properties": {
+          "data": {
+            "properties": {
+              "backgroundGrant": {
+                "$ref": "#/components/schemas/CertificateRenderFileGrant"
+              },
+              "builtInFonts": {
+                "items": {
+                  "$ref": "#/components/schemas/CertificateBuiltInFont"
+                },
+                "type": "array"
+              },
+              "campaignValues": {
+                "$ref": "#/components/schemas/CertificateRenderCampaignValues"
+              },
+              "certificateNumber": {
+                "type": "string"
+              },
+              "fontGrants": {
+                "items": {
+                  "$ref": "#/components/schemas/CertificateRenderFontGrant"
+                },
+                "type": "array"
+              },
+              "imageGrants": {
+                "items": {
+                  "$ref": "#/components/schemas/CertificateRenderImageGrant"
+                },
+                "type": "array"
+              },
+              "layout": {
+                "$ref": "#/components/schemas/CertificateLayoutV1"
+              },
+              "pageGeometry": {
+                "$ref": "#/components/schemas/CertificatePageGeometry"
+              },
+              "qrPayload": {
+                "type": "string"
+              },
+              "recipientValues": {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "suggestedFilename": {
+                "type": "string"
+              },
+              "templateId": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "templateId",
+              "pageGeometry",
+              "layout",
+              "campaignValues",
+              "recipientValues",
+              "certificateNumber",
+              "qrPayload",
+              "builtInFonts",
+              "fontGrants",
+              "imageGrants",
+              "backgroundGrant",
+              "suggestedFilename"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_CertificateTemplateDeleteResult": {
+        "properties": {
+          "data": {
+            "properties": {
+              "detachedFileCount": {
+                "format": "int32",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "disposition": {
+                "$ref": "#/components/schemas/CertificateTemplateDeleteDisposition"
+              }
+            },
+            "required": [
+              "disposition",
+              "detachedFileCount"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_CertificateTemplateDetail": {
+        "properties": {
+          "data": {
+            "properties": {
+              "allowedRecipientTypes": {
+                "items": {
+                  "$ref": "#/components/schemas/RecipientType"
+                },
+                "type": "array"
+              },
+              "assets": {
+                "items": {
+                  "$ref": "#/components/schemas/CertificateTemplateAsset"
+                },
+                "type": "array"
+              },
+              "backgroundFileId": {
+                "format": "uuid",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "campaignId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "capabilities": {
+                "$ref": "#/components/schemas/CertificateTemplateCapabilities"
+              },
+              "createdAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "isActive": {
+                "type": "boolean"
+              },
+              "isReady": {
+                "type": "boolean"
+              },
+              "issuedCertificateCount": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "layout": {
+                "$ref": "#/components/schemas/CertificateLayoutV1"
+              },
+              "missingVariableCertificateCount": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "name": {
+                "type": "string"
+              },
+              "pageGeometry": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/CertificatePageGeometry"
+                  }
+                ]
+              },
+              "safeMarginPoints": {
+                "format": "double",
+                "type": "number"
+              },
+              "showSafeArea": {
+                "type": "boolean"
+              },
+              "updatedAt": {
+                "format": "date-time",
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "campaignId",
+              "name",
+              "backgroundFileId",
+              "pageGeometry",
+              "safeMarginPoints",
+              "showSafeArea",
+              "allowedRecipientTypes",
+              "layout",
+              "assets",
+              "isActive",
+              "isReady",
+              "issuedCertificateCount",
+              "missingVariableCertificateCount",
+              "createdAt",
+              "updatedAt",
+              "capabilities"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_CertificateTemplateVariableCatalog": {
+        "properties": {
+          "data": {
+            "properties": {
+              "variables": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "variables"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
       "ApiResponse_Classroom": {
         "properties": {
           "data": {
@@ -5935,6 +6196,123 @@
         ],
         "type": "object"
       },
+      "ApiResponse_Vec_CertificateTemplateDetail": {
+        "properties": {
+          "data": {
+            "items": {
+              "properties": {
+                "allowedRecipientTypes": {
+                  "items": {
+                    "$ref": "#/components/schemas/RecipientType"
+                  },
+                  "type": "array"
+                },
+                "assets": {
+                  "items": {
+                    "$ref": "#/components/schemas/CertificateTemplateAsset"
+                  },
+                  "type": "array"
+                },
+                "backgroundFileId": {
+                  "format": "uuid",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "campaignId": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "capabilities": {
+                  "$ref": "#/components/schemas/CertificateTemplateCapabilities"
+                },
+                "createdAt": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "isActive": {
+                  "type": "boolean"
+                },
+                "isReady": {
+                  "type": "boolean"
+                },
+                "issuedCertificateCount": {
+                  "format": "int64",
+                  "type": "integer"
+                },
+                "layout": {
+                  "$ref": "#/components/schemas/CertificateLayoutV1"
+                },
+                "missingVariableCertificateCount": {
+                  "format": "int64",
+                  "type": "integer"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "pageGeometry": {
+                  "oneOf": [
+                    {
+                      "type": "null"
+                    },
+                    {
+                      "$ref": "#/components/schemas/CertificatePageGeometry"
+                    }
+                  ]
+                },
+                "safeMarginPoints": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "showSafeArea": {
+                  "type": "boolean"
+                },
+                "updatedAt": {
+                  "format": "date-time",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "campaignId",
+                "name",
+                "backgroundFileId",
+                "pageGeometry",
+                "safeMarginPoints",
+                "showSafeArea",
+                "allowedRecipientTypes",
+                "layout",
+                "assets",
+                "isActive",
+                "isReady",
+                "issuedCertificateCount",
+                "missingVariableCertificateCount",
+                "createdAt",
+                "updatedAt",
+                "capabilities"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
       "ApiResponse_Vec_Classroom": {
         "properties": {
           "data": {
@@ -8754,6 +9132,59 @@
         ],
         "type": "object"
       },
+      "AttachCertificateAssetRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "displayName": {
+            "type": "string"
+          },
+          "fileId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "fontWeight": {
+            "format": "int32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "kind": {
+            "$ref": "#/components/schemas/CertificateTemplateAssetKind"
+          },
+          "rightsConfirmed": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "fileId",
+          "kind",
+          "displayName"
+        ],
+        "type": "object"
+      },
+      "AttachCertificateBackgroundRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "fileId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "geometryAction": {
+            "$ref": "#/components/schemas/GeometryAction"
+          },
+          "previewConfirmed": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "fileId",
+          "geometryAction",
+          "previewConfirmed"
+        ],
+        "type": "object"
+      },
       "AutoAssignClassNumbersRequest": {
         "properties": {
           "sort_by": {
@@ -9334,6 +9765,27 @@
         ],
         "type": "object"
       },
+      "CertificateBuiltInFont": {
+        "properties": {
+          "assetPath": {
+            "type": "string"
+          },
+          "family": {
+            "type": "string"
+          },
+          "weight": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "family",
+          "weight",
+          "assetPath"
+        ],
+        "type": "object"
+      },
       "CertificateCampaignCapabilities": {
         "properties": {
           "canChangeStatus": {
@@ -9625,6 +10077,633 @@
           "createdAt",
           "updatedAt",
           "capabilities"
+        ],
+        "type": "object"
+      },
+      "CertificateElement": {
+        "oneOf": [
+          {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/TextElement"
+              },
+              {
+                "properties": {
+                  "type": {
+                    "enum": [
+                      "text"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ImageElement"
+              },
+              {
+                "properties": {
+                  "type": {
+                    "enum": [
+                      "image"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/QrElement"
+              },
+              {
+                "properties": {
+                  "type": {
+                    "enum": [
+                      "qr"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type"
+                ],
+                "type": "object"
+              }
+            ]
+          }
+        ]
+      },
+      "CertificateFontSource": {
+        "oneOf": [
+          {
+            "properties": {
+              "type": {
+                "enum": [
+                  "built_in"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "type"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "asset_id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "type": {
+                "enum": [
+                  "asset"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "asset_id",
+              "type"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "CertificateLayoutV1": {
+        "additionalProperties": false,
+        "properties": {
+          "elements": {
+            "items": {
+              "$ref": "#/components/schemas/CertificateElement"
+            },
+            "type": "array"
+          },
+          "schemaVersion": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "elements"
+        ],
+        "type": "object"
+      },
+      "CertificatePageBox": {
+        "properties": {
+          "heightPoints": {
+            "format": "double",
+            "type": "number"
+          },
+          "widthPoints": {
+            "format": "double",
+            "type": "number"
+          },
+          "xPoints": {
+            "format": "double",
+            "type": "number"
+          },
+          "yPoints": {
+            "format": "double",
+            "type": "number"
+          }
+        },
+        "required": [
+          "xPoints",
+          "yPoints",
+          "widthPoints",
+          "heightPoints"
+        ],
+        "type": "object"
+      },
+      "CertificatePageGeometry": {
+        "properties": {
+          "cropBox": {
+            "$ref": "#/components/schemas/CertificatePageBox"
+          },
+          "displayedHeightPoints": {
+            "format": "double",
+            "type": "number"
+          },
+          "displayedWidthPoints": {
+            "format": "double",
+            "type": "number"
+          },
+          "mediaBox": {
+            "$ref": "#/components/schemas/CertificatePageBox"
+          },
+          "paperLabel": {
+            "type": "string"
+          },
+          "rotation": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "cropBox",
+          "mediaBox",
+          "rotation",
+          "displayedWidthPoints",
+          "displayedHeightPoints",
+          "paperLabel"
+        ],
+        "type": "object"
+      },
+      "CertificatePreviewKind": {
+        "enum": [
+          "short",
+          "normal",
+          "long",
+          "candidate"
+        ],
+        "type": "string"
+      },
+      "CertificatePreviewManifestRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "candidateId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "previewKind": {
+            "$ref": "#/components/schemas/CertificatePreviewKind"
+          },
+          "sampleValues": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        },
+        "required": [
+          "previewKind"
+        ],
+        "type": "object"
+      },
+      "CertificateRenderCampaignValues": {
+        "properties": {
+          "academicYear": {
+            "type": "string"
+          },
+          "campaignName": {
+            "type": "string"
+          },
+          "eventDate": {
+            "format": "date",
+            "type": "string"
+          },
+          "issueDate": {
+            "format": "date",
+            "type": "string"
+          },
+          "ownerOrganizationUnitName": {
+            "type": "string"
+          },
+          "schoolName": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "academicYear",
+          "campaignName",
+          "eventDate",
+          "issueDate",
+          "schoolName",
+          "ownerOrganizationUnitName"
+        ],
+        "type": "object"
+      },
+      "CertificateRenderFileGrant": {
+        "properties": {
+          "expiresAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "fileId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "fileId",
+          "url",
+          "expiresAt"
+        ],
+        "type": "object"
+      },
+      "CertificateRenderFontGrant": {
+        "properties": {
+          "assetId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "expiresAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "family": {
+            "type": "string"
+          },
+          "fileId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          },
+          "weight": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "assetId",
+          "fileId",
+          "family",
+          "weight",
+          "url",
+          "expiresAt"
+        ],
+        "type": "object"
+      },
+      "CertificateRenderImageGrant": {
+        "properties": {
+          "assetId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "expiresAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "fileId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "assetId",
+          "fileId",
+          "url",
+          "expiresAt"
+        ],
+        "type": "object"
+      },
+      "CertificateRenderManifest": {
+        "properties": {
+          "backgroundGrant": {
+            "$ref": "#/components/schemas/CertificateRenderFileGrant"
+          },
+          "builtInFonts": {
+            "items": {
+              "$ref": "#/components/schemas/CertificateBuiltInFont"
+            },
+            "type": "array"
+          },
+          "campaignValues": {
+            "$ref": "#/components/schemas/CertificateRenderCampaignValues"
+          },
+          "certificateNumber": {
+            "type": "string"
+          },
+          "fontGrants": {
+            "items": {
+              "$ref": "#/components/schemas/CertificateRenderFontGrant"
+            },
+            "type": "array"
+          },
+          "imageGrants": {
+            "items": {
+              "$ref": "#/components/schemas/CertificateRenderImageGrant"
+            },
+            "type": "array"
+          },
+          "layout": {
+            "$ref": "#/components/schemas/CertificateLayoutV1"
+          },
+          "pageGeometry": {
+            "$ref": "#/components/schemas/CertificatePageGeometry"
+          },
+          "qrPayload": {
+            "type": "string"
+          },
+          "recipientValues": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "suggestedFilename": {
+            "type": "string"
+          },
+          "templateId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "templateId",
+          "pageGeometry",
+          "layout",
+          "campaignValues",
+          "recipientValues",
+          "certificateNumber",
+          "qrPayload",
+          "builtInFonts",
+          "fontGrants",
+          "imageGrants",
+          "backgroundGrant",
+          "suggestedFilename"
+        ],
+        "type": "object"
+      },
+      "CertificateTemplateAsset": {
+        "properties": {
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "fileId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "fontFamily": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "fontWeight": {
+            "format": "int32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/CertificateTemplateAssetKind"
+          },
+          "rightsConfirmed": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "fileId",
+          "kind",
+          "displayName",
+          "fontFamily",
+          "fontWeight",
+          "rightsConfirmed",
+          "createdAt"
+        ],
+        "type": "object"
+      },
+      "CertificateTemplateAssetKind": {
+        "enum": [
+          "image",
+          "font"
+        ],
+        "type": "string"
+      },
+      "CertificateTemplateCapabilities": {
+        "properties": {
+          "canDelete": {
+            "type": "boolean"
+          },
+          "canPreview": {
+            "type": "boolean"
+          },
+          "canRead": {
+            "type": "boolean"
+          },
+          "canUpdate": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "canRead",
+          "canUpdate",
+          "canDelete",
+          "canPreview"
+        ],
+        "type": "object"
+      },
+      "CertificateTemplateDeleteDisposition": {
+        "enum": [
+          "deleted",
+          "deactivated"
+        ],
+        "type": "string"
+      },
+      "CertificateTemplateDeleteResult": {
+        "properties": {
+          "detachedFileCount": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "disposition": {
+            "$ref": "#/components/schemas/CertificateTemplateDeleteDisposition"
+          }
+        },
+        "required": [
+          "disposition",
+          "detachedFileCount"
+        ],
+        "type": "object"
+      },
+      "CertificateTemplateDetail": {
+        "properties": {
+          "allowedRecipientTypes": {
+            "items": {
+              "$ref": "#/components/schemas/RecipientType"
+            },
+            "type": "array"
+          },
+          "assets": {
+            "items": {
+              "$ref": "#/components/schemas/CertificateTemplateAsset"
+            },
+            "type": "array"
+          },
+          "backgroundFileId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "campaignId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "capabilities": {
+            "$ref": "#/components/schemas/CertificateTemplateCapabilities"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "isActive": {
+            "type": "boolean"
+          },
+          "isReady": {
+            "type": "boolean"
+          },
+          "issuedCertificateCount": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "layout": {
+            "$ref": "#/components/schemas/CertificateLayoutV1"
+          },
+          "missingVariableCertificateCount": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "pageGeometry": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/CertificatePageGeometry"
+              }
+            ]
+          },
+          "safeMarginPoints": {
+            "format": "double",
+            "type": "number"
+          },
+          "showSafeArea": {
+            "type": "boolean"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "campaignId",
+          "name",
+          "backgroundFileId",
+          "pageGeometry",
+          "safeMarginPoints",
+          "showSafeArea",
+          "allowedRecipientTypes",
+          "layout",
+          "assets",
+          "isActive",
+          "isReady",
+          "issuedCertificateCount",
+          "missingVariableCertificateCount",
+          "createdAt",
+          "updatedAt",
+          "capabilities"
+        ],
+        "type": "object"
+      },
+      "CertificateTemplateVariableCatalog": {
+        "properties": {
+          "variables": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "variables"
         ],
         "type": "object"
       },
@@ -10292,6 +11371,25 @@
           "academicYearId",
           "name",
           "eventDate"
+        ],
+        "type": "object"
+      },
+      "CreateCertificateTemplateRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "allowedRecipientTypes": {
+            "items": {
+              "$ref": "#/components/schemas/RecipientType"
+            },
+            "type": "array"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "allowedRecipientTypes"
         ],
         "type": "object"
       },
@@ -11613,6 +12711,34 @@
         ],
         "type": "object"
       },
+      "ElementFrame": {
+        "additionalProperties": false,
+        "properties": {
+          "height": {
+            "format": "double",
+            "type": "number"
+          },
+          "width": {
+            "format": "double",
+            "type": "number"
+          },
+          "x": {
+            "format": "double",
+            "type": "number"
+          },
+          "y": {
+            "format": "double",
+            "type": "number"
+          }
+        },
+        "required": [
+          "x",
+          "y",
+          "width",
+          "height"
+        ],
+        "type": "object"
+      },
       "EmptyData": {
         "type": "object"
       },
@@ -12023,6 +13149,14 @@
         ],
         "type": "object"
       },
+      "GeometryAction": {
+        "enum": [
+          "preserve",
+          "scale",
+          "reset"
+        ],
+        "type": "string"
+      },
       "GradeLevelLookupItem": {
         "description": "Grade level lookup item",
         "properties": {
@@ -12112,6 +13246,33 @@
           "secondary"
         ],
         "type": "string"
+      },
+      "ImageElement": {
+        "additionalProperties": false,
+        "properties": {
+          "assetId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "frame": {
+            "$ref": "#/components/schemas/ElementFrame"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "rotation": {
+            "format": "double",
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "frame",
+          "rotation",
+          "assetId"
+        ],
+        "type": "object"
       },
       "InstructorInfo": {
         "properties": {
@@ -13589,6 +14750,36 @@
           "level"
         ],
         "type": "object"
+      },
+      "QrElement": {
+        "additionalProperties": false,
+        "properties": {
+          "frame": {
+            "$ref": "#/components/schemas/ElementFrame"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "rotation": {
+            "format": "double",
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "frame",
+          "rotation"
+        ],
+        "type": "object"
+      },
+      "RecipientType": {
+        "enum": [
+          "student",
+          "staff",
+          "external"
+        ],
+        "type": "string"
       },
       "ReorderGroupsRequest": {
         "properties": {
@@ -15466,6 +16657,118 @@
         ],
         "type": "object"
       },
+      "TextAlignment": {
+        "enum": [
+          "left",
+          "center",
+          "right"
+        ],
+        "type": "string"
+      },
+      "TextElement": {
+        "additionalProperties": false,
+        "properties": {
+          "alignment": {
+            "$ref": "#/components/schemas/TextAlignment"
+          },
+          "autoShrink": {
+            "type": "boolean"
+          },
+          "color": {
+            "type": "string"
+          },
+          "content": {
+            "type": "string"
+          },
+          "fontFamily": {
+            "type": "string"
+          },
+          "fontSize": {
+            "format": "double",
+            "type": "number"
+          },
+          "fontSource": {
+            "$ref": "#/components/schemas/CertificateFontSource"
+          },
+          "fontWeight": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "frame": {
+            "$ref": "#/components/schemas/ElementFrame"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "lineHeight": {
+            "format": "double",
+            "type": "number"
+          },
+          "minFontSize": {
+            "format": "double",
+            "type": "number"
+          },
+          "rotation": {
+            "format": "double",
+            "type": "number"
+          },
+          "shadow": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/TextShadow"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "content",
+          "frame",
+          "rotation",
+          "fontSource",
+          "fontFamily",
+          "fontWeight",
+          "fontSize",
+          "minFontSize",
+          "color",
+          "alignment",
+          "lineHeight",
+          "autoShrink"
+        ],
+        "type": "object"
+      },
+      "TextShadow": {
+        "additionalProperties": false,
+        "properties": {
+          "blur": {
+            "format": "double",
+            "type": "number"
+          },
+          "color": {
+            "type": "string"
+          },
+          "offsetX": {
+            "format": "double",
+            "type": "number"
+          },
+          "offsetY": {
+            "format": "double",
+            "type": "number"
+          }
+        },
+        "required": [
+          "offsetX",
+          "offsetY",
+          "blur",
+          "color"
+        ],
+        "type": "object"
+      },
       "TimetableEntry": {
         "properties": {
           "academic_semester_id": {
@@ -15980,6 +17283,66 @@
               {
                 "$ref": "#/components/schemas/NullableUuidUpdate"
               }
+            ]
+          }
+        },
+        "required": [
+          "expectedUpdatedAt"
+        ],
+        "type": "object"
+      },
+      "UpdateCertificateTemplateRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "allowedRecipientTypes": {
+            "items": {
+              "$ref": "#/components/schemas/RecipientType"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "confirmMissingIssuedValues": {
+            "type": "boolean"
+          },
+          "expectedUpdatedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "isActive": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "layout": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/CertificateLayoutV1"
+              }
+            ]
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "safeMarginPoints": {
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "showSafeArea": {
+            "type": [
+              "boolean",
+              "null"
             ]
           }
         },
@@ -27607,6 +28970,148 @@
         ]
       }
     },
+    "/api/certificates/campaigns/{campaign_id}/templates": {
+      "get": {
+        "operationId": "listCertificateTemplates",
+        "parameters": [
+          {
+            "description": "Certificate campaign ID",
+            "in": "path",
+            "name": "campaign_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_CertificateTemplateDetail"
+                }
+              }
+            },
+            "description": "Scoped certificate template list"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Certificate template read permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Certificate campaign not found"
+          }
+        },
+        "tags": [
+          "certificate"
+        ]
+      },
+      "post": {
+        "operationId": "createCertificateTemplate",
+        "parameters": [
+          {
+            "description": "Certificate campaign ID",
+            "in": "path",
+            "name": "campaign_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateCertificateTemplateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_CertificateTemplateDetail"
+                }
+              }
+            },
+            "description": "Certificate template shell created"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Certificate template update permission denied"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Duplicate template name"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid template"
+          }
+        },
+        "tags": [
+          "certificate"
+        ]
+      }
+    },
     "/api/certificates/owner-options": {
       "get": {
         "operationId": "listCertificateOwnerOptions",
@@ -27640,6 +29145,628 @@
               }
             },
             "description": "Certificate campaign create permission denied"
+          }
+        },
+        "tags": [
+          "certificate"
+        ]
+      }
+    },
+    "/api/certificates/templates/{template_id}": {
+      "delete": {
+        "operationId": "deleteCertificateTemplate",
+        "parameters": [
+          {
+            "description": "Certificate template ID",
+            "in": "path",
+            "name": "template_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_CertificateTemplateDeleteResult"
+                }
+              }
+            },
+            "description": "Unused template deleted or used template deactivated"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Certificate template delete permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Certificate template not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Certificate template is locked"
+          }
+        },
+        "tags": [
+          "certificate"
+        ]
+      },
+      "get": {
+        "operationId": "getCertificateTemplate",
+        "parameters": [
+          {
+            "description": "Certificate template ID",
+            "in": "path",
+            "name": "template_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_CertificateTemplateDetail"
+                }
+              }
+            },
+            "description": "Certificate template detail"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Certificate template read permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Certificate template not found"
+          }
+        },
+        "tags": [
+          "certificate"
+        ]
+      },
+      "put": {
+        "operationId": "updateCertificateTemplate",
+        "parameters": [
+          {
+            "description": "Certificate template ID",
+            "in": "path",
+            "name": "template_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateCertificateTemplateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_CertificateTemplateDetail"
+                }
+              }
+            },
+            "description": "Certificate template updated"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Certificate template update permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Certificate template not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Template changed, locked, or needs confirmation"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid template"
+          }
+        },
+        "tags": [
+          "certificate"
+        ]
+      }
+    },
+    "/api/certificates/templates/{template_id}/assets": {
+      "post": {
+        "operationId": "attachCertificateTemplateAsset",
+        "parameters": [
+          {
+            "description": "Certificate template ID",
+            "in": "path",
+            "name": "template_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AttachCertificateAssetRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_CertificateTemplateDetail"
+                }
+              }
+            },
+            "description": "Inspected private template asset attached"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Certificate template update permission denied"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "File not ready, duplicate, or template locked"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid asset or font rights not confirmed"
+          }
+        },
+        "tags": [
+          "certificate"
+        ]
+      }
+    },
+    "/api/certificates/templates/{template_id}/assets/{asset_id}": {
+      "delete": {
+        "operationId": "deleteCertificateTemplateAsset",
+        "parameters": [
+          {
+            "description": "Certificate template ID",
+            "in": "path",
+            "name": "template_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Certificate template asset ID",
+            "in": "path",
+            "name": "asset_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_CertificateTemplateDetail"
+                }
+              }
+            },
+            "description": "Unused template asset detached"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Certificate template update permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Certificate template asset not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Asset is referenced by the layout"
+          }
+        },
+        "tags": [
+          "certificate"
+        ]
+      }
+    },
+    "/api/certificates/templates/{template_id}/background": {
+      "put": {
+        "operationId": "attachCertificateTemplateBackground",
+        "parameters": [
+          {
+            "description": "Certificate template ID",
+            "in": "path",
+            "name": "template_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AttachCertificateBackgroundRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_CertificateTemplateDetail"
+                }
+              }
+            },
+            "description": "Inspected PDF background attached"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Certificate template update permission denied"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "File not ready, template locked, or preview required"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid PDF geometry"
+          }
+        },
+        "tags": [
+          "certificate"
+        ]
+      }
+    },
+    "/api/certificates/templates/{template_id}/preview-manifest": {
+      "post": {
+        "operationId": "createCertificateTemplatePreviewManifest",
+        "parameters": [
+          {
+            "description": "Certificate template ID",
+            "in": "path",
+            "name": "template_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CertificatePreviewManifestRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_CertificateRenderManifest"
+                }
+              }
+            },
+            "description": "Short-lived private render manifest marked as sample"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Certificate template read permission denied"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Template or asset is not ready"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid sample values"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Private asset grant unavailable"
+          }
+        },
+        "tags": [
+          "certificate"
+        ]
+      }
+    },
+    "/api/certificates/templates/{template_id}/variables": {
+      "get": {
+        "operationId": "getCertificateTemplateVariableCatalog",
+        "parameters": [
+          {
+            "description": "Certificate template ID",
+            "in": "path",
+            "name": "template_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_CertificateTemplateVariableCatalog"
+                }
+              }
+            },
+            "description": "Renderable standard and campaign custom variables"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Certificate template read permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Certificate template not found"
           }
         },
         "tags": [

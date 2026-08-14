@@ -14,6 +14,15 @@ export type ChangeCertificateCampaignStatusRequest =
 	Schemas['ChangeCertificateCampaignStatusRequest'];
 export type NullableUuidUpdate = Schemas['NullableUuidUpdate'];
 export type CertificateOwnerOption = Schemas['OrganizationUnitLookupItem'];
+export type CertificateTemplateDetail = Schemas['CertificateTemplateDetail'];
+export type CertificateTemplateDeleteResult = Schemas['CertificateTemplateDeleteResult'];
+export type CertificateTemplateVariableCatalog = Schemas['CertificateTemplateVariableCatalog'];
+export type CertificateRenderManifest = Schemas['CertificateRenderManifest'];
+export type CreateCertificateTemplateRequest = Schemas['CreateCertificateTemplateRequest'];
+export type UpdateCertificateTemplateRequest = Schemas['UpdateCertificateTemplateRequest'];
+export type AttachCertificateBackgroundRequest = Schemas['AttachCertificateBackgroundRequest'];
+export type AttachCertificateAssetRequest = Schemas['AttachCertificateAssetRequest'];
+export type CertificatePreviewManifestRequest = Schemas['CertificatePreviewManifestRequest'];
 type EmptyData = Schemas['EmptyData'];
 
 export async function listCertificateCampaigns(
@@ -81,4 +90,105 @@ export async function deleteCertificateCampaign(campaignId: string): Promise<Emp
 export async function listCertificateOwnerOptions(): Promise<CertificateOwnerOption[]> {
 	const response = await apiClient.get<CertificateOwnerOption[]>('/api/certificates/owner-options');
 	return requireApiData(response, 'ไม่สามารถโหลดหน่วยงานเจ้าของกิจกรรมได้');
+}
+
+export async function listCertificateTemplates(
+	campaignId: string
+): Promise<CertificateTemplateDetail[]> {
+	const response = await apiClient.get<CertificateTemplateDetail[]>(
+		`/api/certificates/campaigns/${encodeURIComponent(campaignId)}/templates`
+	);
+	return requireApiData(response, 'ไม่สามารถโหลดแม่แบบเกียรติบัตรได้');
+}
+
+export async function createCertificateTemplate(
+	campaignId: string,
+	payload: CreateCertificateTemplateRequest
+): Promise<CertificateTemplateDetail> {
+	const response = await apiClient.post<CertificateTemplateDetail>(
+		`/api/certificates/campaigns/${encodeURIComponent(campaignId)}/templates`,
+		payload
+	);
+	return requireApiData(response, 'ไม่สามารถสร้างแม่แบบเกียรติบัตรได้');
+}
+
+export async function getCertificateTemplate(
+	templateId: string
+): Promise<CertificateTemplateDetail> {
+	const response = await apiClient.get<CertificateTemplateDetail>(
+		`/api/certificates/templates/${encodeURIComponent(templateId)}`
+	);
+	return requireApiData(response, 'ไม่สามารถโหลดแม่แบบเกียรติบัตรได้');
+}
+
+export async function updateCertificateTemplate(
+	templateId: string,
+	payload: UpdateCertificateTemplateRequest
+): Promise<CertificateTemplateDetail> {
+	const response = await apiClient.put<CertificateTemplateDetail>(
+		`/api/certificates/templates/${encodeURIComponent(templateId)}`,
+		payload
+	);
+	return requireApiData(response, 'ไม่สามารถบันทึกแม่แบบเกียรติบัตรได้');
+}
+
+export async function deleteCertificateTemplate(
+	templateId: string
+): Promise<CertificateTemplateDeleteResult> {
+	const response = await apiClient.delete<CertificateTemplateDeleteResult>(
+		`/api/certificates/templates/${encodeURIComponent(templateId)}`
+	);
+	return requireApiData(response, 'ไม่สามารถลบแม่แบบเกียรติบัตรได้');
+}
+
+export async function attachCertificateTemplateBackground(
+	templateId: string,
+	payload: AttachCertificateBackgroundRequest
+): Promise<CertificateTemplateDetail> {
+	const response = await apiClient.put<CertificateTemplateDetail>(
+		`/api/certificates/templates/${encodeURIComponent(templateId)}/background`,
+		payload
+	);
+	return requireApiData(response, 'ไม่สามารถแนบพื้นหลังเกียรติบัตรได้');
+}
+
+export async function attachCertificateTemplateAsset(
+	templateId: string,
+	payload: AttachCertificateAssetRequest
+): Promise<CertificateTemplateDetail> {
+	const response = await apiClient.post<CertificateTemplateDetail>(
+		`/api/certificates/templates/${encodeURIComponent(templateId)}/assets`,
+		payload
+	);
+	return requireApiData(response, 'ไม่สามารถแนบทรัพยากรแม่แบบได้');
+}
+
+export async function deleteCertificateTemplateAsset(
+	templateId: string,
+	assetId: string
+): Promise<CertificateTemplateDetail> {
+	const response = await apiClient.delete<CertificateTemplateDetail>(
+		`/api/certificates/templates/${encodeURIComponent(templateId)}/assets/${encodeURIComponent(assetId)}`
+	);
+	return requireApiData(response, 'ไม่สามารถลบทรัพยากรแม่แบบได้');
+}
+
+export async function getCertificateTemplateVariableCatalog(
+	templateId: string
+): Promise<CertificateTemplateVariableCatalog> {
+	const response = await apiClient.get<CertificateTemplateVariableCatalog>(
+		`/api/certificates/templates/${encodeURIComponent(templateId)}/variables`
+	);
+	return requireApiData(response, 'ไม่สามารถโหลดตัวแปรแม่แบบได้');
+}
+
+export async function createCertificateTemplatePreviewManifest(
+	templateId: string,
+	payload: CertificatePreviewManifestRequest
+): Promise<CertificateRenderManifest> {
+	const response = await apiClient.post<CertificateRenderManifest>(
+		`/api/certificates/templates/${encodeURIComponent(templateId)}/preview-manifest`,
+		payload
+	);
+	return requireApiData(response, 'ไม่สามารถสร้างข้อมูลพรีวิวเกียรติบัตรได้');
 }

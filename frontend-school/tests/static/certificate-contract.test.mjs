@@ -46,7 +46,33 @@ test('certificate campaign API is generated and its wrapper consumes named DTOs'
 		['/api/certificates/campaigns/{campaign_id}', 'put', 'updateCertificateCampaign'],
 		['/api/certificates/campaigns/{campaign_id}', 'delete', 'deleteCertificateCampaign'],
 		['/api/certificates/campaigns/{campaign_id}/status', 'put', 'changeCertificateCampaignStatus'],
-		['/api/certificates/owner-options', 'get', 'listCertificateOwnerOptions']
+		['/api/certificates/owner-options', 'get', 'listCertificateOwnerOptions'],
+		['/api/certificates/campaigns/{campaign_id}/templates', 'get', 'listCertificateTemplates'],
+		['/api/certificates/campaigns/{campaign_id}/templates', 'post', 'createCertificateTemplate'],
+		['/api/certificates/templates/{template_id}', 'get', 'getCertificateTemplate'],
+		['/api/certificates/templates/{template_id}', 'put', 'updateCertificateTemplate'],
+		['/api/certificates/templates/{template_id}', 'delete', 'deleteCertificateTemplate'],
+		[
+			'/api/certificates/templates/{template_id}/background',
+			'put',
+			'attachCertificateTemplateBackground'
+		],
+		['/api/certificates/templates/{template_id}/assets', 'post', 'attachCertificateTemplateAsset'],
+		[
+			'/api/certificates/templates/{template_id}/assets/{asset_id}',
+			'delete',
+			'deleteCertificateTemplateAsset'
+		],
+		[
+			'/api/certificates/templates/{template_id}/variables',
+			'get',
+			'getCertificateTemplateVariableCatalog'
+		],
+		[
+			'/api/certificates/templates/{template_id}/preview-manifest',
+			'post',
+			'createCertificateTemplatePreviewManifest'
+		]
 	];
 	for (const [route, method, operationId] of expectedOperations) {
 		assert.equal(openapi.paths?.[route]?.[method]?.operationId, operationId);
@@ -58,7 +84,17 @@ test('certificate campaign API is generated and its wrapper consumes named DTOs'
 		'CreateCertificateCampaignRequest',
 		'UpdateCertificateCampaignRequest',
 		'ChangeCertificateCampaignStatusRequest',
-		'NullableUuidUpdate'
+		'NullableUuidUpdate',
+		'CertificateTemplateDetail',
+		'CertificateTemplateCapabilities',
+		'CreateCertificateTemplateRequest',
+		'UpdateCertificateTemplateRequest',
+		'AttachCertificateBackgroundRequest',
+		'AttachCertificateAssetRequest',
+		'CertificateTemplateDeleteResult',
+		'CertificateTemplateVariableCatalog',
+		'CertificatePreviewManifestRequest',
+		'CertificateRenderManifest'
 	]) {
 		assert.ok(openapi.components?.schemas?.[schema], `missing generated schema ${schema}`);
 	}
@@ -71,7 +107,18 @@ test('certificate campaign API is generated and its wrapper consumes named DTOs'
 	assert.match(wrapper, /Schemas\['CertificateCampaignSummary'\]/);
 	assert.match(wrapper, /Schemas\['CertificateCampaignDetail'\]/);
 	assert.match(wrapper, /Schemas\['CreateCertificateCampaignRequest'\]/);
+	assert.match(wrapper, /Schemas\['CertificateTemplateDetail'\]/);
+	assert.match(wrapper, /Schemas\['CertificateRenderManifest'\]/);
+	assert.match(wrapper, /createCertificateTemplatePreviewManifest/);
 	assert.match(wrapper, /requireApiData/);
 	assert.doesNotMatch(wrapper, /\b(?:interface|Record<string, unknown>|ApiResponse<unknown>)\b/);
 	assert.doesNotMatch(wrapper, /certificate\.(?:read|create|update|delete|submit|download)\./);
+
+	const fileWrapper = await readFile(
+		path.join(repoRoot, 'frontend-school/src/lib/api/files.ts'),
+		'utf8'
+	);
+	assert.match(fileWrapper, /CertificateTemplateFilePurpose/);
+	assert.match(fileWrapper, /uploadCertificateTemplateFile/);
+	assert.match(fileWrapper, /return uploadFile\(file, purpose, templateId\)/);
 });

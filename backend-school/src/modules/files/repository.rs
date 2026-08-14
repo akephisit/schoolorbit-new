@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use sqlx::{PgPool, Row};
+use sqlx::{PgPool, Postgres, Row, Transaction};
 use std::{fmt, time::Duration};
 use uuid::Uuid;
 
@@ -448,6 +448,169 @@ WHERE d.id = $2 AND d.file_id = $1
             _ => Err(RepositoryError::InvalidPersistedState),
         }
     }
+
+    /// Performs only the durable lifecycle transition using a caller-owned
+    /// transaction. Domain services can keep their relationship locks and this
+    /// transition on one connection, then run provider cleanup after commit.
+    pub async fn request_delete_in_transaction(
+        &self,
+        transaction: &mut Transaction<'_, Postgres>,
+        file_id: Uuid,
+    ) -> Result<Vec<DeleteWork>, RepositoryError> {
+        let lifecycle = sqlx::query_scalar::<_, String>(
+            "SELECT lifecycle_status FROM files WHERE id = $1 FOR UPDATE",
+        )
+        .bind(file_id)
+        .fetch_optional(&mut **transaction)
+        .await
+        .map_err(Self::database_error)?;
+        let Some(lifecycle) = lifecycle else {
+            return Ok(Vec::new());
+        };
+        if lifecycle == "deleted" {
+            return Ok(Vec::new());
+        }
+
+        sqlx::query(
+            r#"
+UPDATE files
+SET lifecycle_status = 'delete_requested',
+    delete_requested_at = COALESCE(delete_requested_at, now()),
+    updated_at = now()
+WHERE id = $1 AND lifecycle_status <> 'deleted'
+"#,
+        )
+        .bind(file_id)
+        .execute(&mut **transaction)
+        .await
+        .map_err(Self::database_error)?;
+
+        sqlx::query(
+            r#"
+UPDATE file_operations
+SET status = 'cancelled',
+    last_error_code = 'file_delete_requested',
+    completed_at = now(),
+    lease_owner = NULL,
+    leased_at = NULL,
+    lease_expires_at = NULL
+WHERE file_id = $1
+  AND operation_type IN ('reconcile', 'generate_derivative')
+  AND status IN ('pending', 'leased', 'retryable_failure')
+"#,
+        )
+        .bind(file_id)
+        .execute(&mut **transaction)
+        .await
+        .map_err(Self::database_error)?;
+        sqlx::query(
+            r#"
+UPDATE file_versions
+SET storage_status = 'delete_requested'
+WHERE file_id = $1 AND storage_status <> 'deleted'
+"#,
+        )
+        .bind(file_id)
+        .execute(&mut **transaction)
+        .await
+        .map_err(Self::database_error)?;
+        sqlx::query(
+            r#"
+UPDATE file_derivatives
+SET storage_status = 'delete_requested'
+WHERE file_id = $1 AND storage_status <> 'deleted'
+"#,
+        )
+        .bind(file_id)
+        .execute(&mut **transaction)
+        .await
+        .map_err(Self::database_error)?;
+
+        sqlx::query(
+            r#"
+INSERT INTO file_operations (
+    file_id, file_version_id, operation_type, status, next_retry_at
+)
+SELECT v.file_id, v.id, 'delete_object', 'pending', now()
+FROM file_versions v
+WHERE v.file_id = $1 AND v.storage_status <> 'deleted'
+  AND NOT EXISTS (
+      SELECT 1 FROM file_operations o
+      WHERE o.file_version_id = v.id AND o.operation_type = 'delete_object'
+        AND o.status IN ('pending', 'leased', 'retryable_failure', 'succeeded')
+  )
+"#,
+        )
+        .bind(file_id)
+        .execute(&mut **transaction)
+        .await
+        .map_err(Self::database_error)?;
+        sqlx::query(
+            r#"
+INSERT INTO file_operations (
+    file_id, file_derivative_id, operation_type, status, next_retry_at
+)
+SELECT d.file_id, d.id, 'delete_object', 'pending', now()
+FROM file_derivatives d
+WHERE d.file_id = $1 AND d.storage_status <> 'deleted'
+  AND NOT EXISTS (
+      SELECT 1 FROM file_operations o
+      WHERE o.file_derivative_id = d.id AND o.operation_type = 'delete_object'
+        AND o.status IN ('pending', 'leased', 'retryable_failure', 'succeeded')
+  )
+"#,
+        )
+        .bind(file_id)
+        .execute(&mut **transaction)
+        .await
+        .map_err(Self::database_error)?;
+
+        let rows = sqlx::query(
+            r#"
+SELECT operation.id,
+       operation.file_version_id,
+       operation.file_derivative_id,
+       COALESCE(version.object_key, derivative.object_key) AS object_key,
+       COALESCE(version.storage_class, derivative.storage_class) AS storage_class,
+       COALESCE(version.detected_mime_type, derivative.detected_mime_type) AS detected_mime_type
+FROM file_operations operation
+LEFT JOIN file_versions version
+  ON version.id = operation.file_version_id AND version.file_id = operation.file_id
+LEFT JOIN file_derivatives derivative
+  ON derivative.id = operation.file_derivative_id AND derivative.file_id = operation.file_id
+WHERE operation.file_id = $1 AND operation.operation_type = 'delete_object'
+  AND operation.status IN ('pending', 'retryable_failure')
+ORDER BY operation.created_at, operation.id
+"#,
+        )
+        .bind(file_id)
+        .fetch_all(&mut **transaction)
+        .await
+        .map_err(Self::database_error)?;
+
+        rows.into_iter()
+            .map(|row| {
+                let operation_id = row.try_get("id").map_err(Self::database_error)?;
+                let version_id = row
+                    .try_get("file_version_id")
+                    .map_err(Self::database_error)?;
+                let derivative_id = row
+                    .try_get("file_derivative_id")
+                    .map_err(Self::database_error)?;
+                let target = match (version_id, derivative_id) {
+                    (Some(id), None) => ObjectTarget::Version(id),
+                    (None, Some(id)) => ObjectTarget::Derivative(id),
+                    _ => return Err(RepositoryError::InvalidPersistedState),
+                };
+                Ok(DeleteWork {
+                    operation_id,
+                    file_id,
+                    target,
+                    object: stored_object_from_row(&row)?,
+                })
+            })
+            .collect()
+    }
 }
 
 fn duration_microseconds(duration: Duration) -> Result<i64, RepositoryError> {
@@ -843,144 +1006,10 @@ WHERE f.id = $1 AND f.deleted_at IS NULL
 
     async fn request_delete(&self, file_id: Uuid) -> Result<Vec<DeleteWork>, RepositoryError> {
         let mut transaction = self.pool.begin().await.map_err(Self::database_error)?;
-        let lifecycle = sqlx::query_scalar::<_, String>(
-            "SELECT lifecycle_status FROM files WHERE id = $1 FOR UPDATE",
-        )
-        .bind(file_id)
-        .fetch_optional(&mut *transaction)
-        .await
-        .map_err(Self::database_error)?;
-        let Some(lifecycle) = lifecycle else {
-            return Ok(Vec::new());
-        };
-        if lifecycle == "deleted" {
-            transaction.commit().await.map_err(Self::database_error)?;
-            return Ok(Vec::new());
-        }
-
-        sqlx::query(
-            r#"
-UPDATE files
-SET lifecycle_status = 'delete_requested',
-    delete_requested_at = COALESCE(delete_requested_at, now()),
-    updated_at = now()
-WHERE id = $1 AND lifecycle_status <> 'deleted'
-"#,
-        )
-        .bind(file_id)
-        .execute(&mut *transaction)
-        .await
-        .map_err(Self::database_error)?;
-
-        sqlx::query(
-            r#"
-UPDATE file_operations
-SET status = 'cancelled',
-    last_error_code = 'file_delete_requested',
-    completed_at = now(),
-    lease_owner = NULL,
-    leased_at = NULL,
-    lease_expires_at = NULL
-WHERE file_id = $1
-  AND operation_type IN ('reconcile', 'generate_derivative')
-  AND status IN ('pending', 'leased', 'retryable_failure')
-"#,
-        )
-        .bind(file_id)
-        .execute(&mut *transaction)
-        .await
-        .map_err(Self::database_error)?;
-        sqlx::query(
-            r#"
-UPDATE file_versions
-SET storage_status = 'delete_requested'
-WHERE file_id = $1 AND storage_status <> 'deleted'
-"#,
-        )
-        .bind(file_id)
-        .execute(&mut *transaction)
-        .await
-        .map_err(Self::database_error)?;
-        sqlx::query(
-            r#"
-UPDATE file_derivatives
-SET storage_status = 'delete_requested'
-WHERE file_id = $1 AND storage_status <> 'deleted'
-"#,
-        )
-        .bind(file_id)
-        .execute(&mut *transaction)
-        .await
-        .map_err(Self::database_error)?;
-
-        sqlx::query(
-            r#"
-INSERT INTO file_operations (
-    file_id, file_version_id, operation_type, status, next_retry_at
-)
-SELECT v.file_id, v.id, 'delete_object', 'pending', now()
-FROM file_versions v
-WHERE v.file_id = $1 AND v.storage_status <> 'deleted'
-  AND NOT EXISTS (
-      SELECT 1 FROM file_operations o
-      WHERE o.file_version_id = v.id AND o.operation_type = 'delete_object'
-        AND o.status IN ('pending', 'leased', 'retryable_failure', 'succeeded')
-  )
-"#,
-        )
-        .bind(file_id)
-        .execute(&mut *transaction)
-        .await
-        .map_err(Self::database_error)?;
-        sqlx::query(
-            r#"
-INSERT INTO file_operations (
-    file_id, file_derivative_id, operation_type, status, next_retry_at
-)
-SELECT d.file_id, d.id, 'delete_object', 'pending', now()
-FROM file_derivatives d
-WHERE d.file_id = $1 AND d.storage_status <> 'deleted'
-  AND NOT EXISTS (
-      SELECT 1 FROM file_operations o
-      WHERE o.file_derivative_id = d.id AND o.operation_type = 'delete_object'
-        AND o.status IN ('pending', 'leased', 'retryable_failure', 'succeeded')
-  )
-"#,
-        )
-        .bind(file_id)
-        .execute(&mut *transaction)
-        .await
-        .map_err(Self::database_error)?;
-
-        let rows = sqlx::query(
-            r#"
-SELECT id, file_version_id, file_derivative_id
-FROM file_operations
-WHERE file_id = $1 AND operation_type = 'delete_object'
-  AND status IN ('pending', 'retryable_failure')
-ORDER BY created_at, id
-"#,
-        )
-        .bind(file_id)
-        .fetch_all(&mut *transaction)
-        .await
-        .map_err(Self::database_error)?;
+        let work = self
+            .request_delete_in_transaction(&mut transaction, file_id)
+            .await?;
         transaction.commit().await.map_err(Self::database_error)?;
-
-        let mut work = Vec::with_capacity(rows.len());
-        for row in rows {
-            let operation_id = row.try_get("id").map_err(Self::database_error)?;
-            let version_id = row
-                .try_get("file_version_id")
-                .map_err(Self::database_error)?;
-            let derivative_id = row
-                .try_get("file_derivative_id")
-                .map_err(Self::database_error)?;
-            work.push(
-                self.load_delete_work(operation_id, file_id, version_id, derivative_id)
-                    .await?,
-            );
-        }
         Ok(work)
     }
 

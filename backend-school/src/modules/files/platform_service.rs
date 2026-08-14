@@ -15,8 +15,8 @@ use super::{
         derivative_object_key, original_object_key, purpose_definition, PurposeRegistryError,
     },
     repository::{
-        derivative_is_required, DeliveryRecord, FileRepository, NewDerivative, NewUpload,
-        ObjectTarget, PlatformFile, RepositoryError,
+        derivative_is_required, DeleteWork, DeliveryRecord, FileRepository, NewDerivative,
+        NewUpload, ObjectTarget, PlatformFile, RepositoryError,
     },
     runtime_config::FilePlatformRuntimeConfig,
     storage_provider::{StorageError, StorageProvider, StoredObject},
@@ -344,6 +344,16 @@ impl FilePlatform {
         file_id: Uuid,
     ) -> Result<DeleteOutcome, FilePlatformError> {
         let work = repository.request_delete(file_id).await?;
+        self.complete_prepared_delete(repository, work).await
+    }
+
+    /// Completes provider cleanup for a lifecycle transition that was committed
+    /// by a domain transaction. Failures remain durable retry operations.
+    pub async fn complete_prepared_delete(
+        &self,
+        repository: &dyn FileRepository,
+        work: Vec<DeleteWork>,
+    ) -> Result<DeleteOutcome, FilePlatformError> {
         let mut pending_retry = false;
         for object in work {
             if let Err(error) = self.provider.delete(&object.object).await {

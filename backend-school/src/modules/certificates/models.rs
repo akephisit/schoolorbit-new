@@ -9,7 +9,7 @@ use uuid::Uuid;
 
 macro_rules! string_enum {
     ($name:ident { $($variant:ident),+ $(,)? }) => {
-        #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize, ToSchema)]
+        #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, ToSchema)]
         #[serde(rename_all = "snake_case")]
         pub enum $name {
             $($variant),+
@@ -80,6 +80,49 @@ string_enum!(CertificateIssueRequestStatus {
 string_enum!(CertificateIssueRunOutcome { Issued, Returned });
 string_enum!(CertificateStatus { Issued, Revoked });
 string_enum!(CertificateTemplateAssetKind { Image, Font });
+string_enum!(GeometryAction {
+    Preserve,
+    Scale,
+    Reset
+});
+string_enum!(CertificatePreviewKind {
+    Short,
+    Normal,
+    Long,
+    Candidate,
+});
+string_enum!(CertificateTemplateDeleteDisposition {
+    Deleted,
+    Deactivated,
+});
+
+impl RecipientType {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Student => "student",
+            Self::Staff => "staff",
+            Self::External => "external",
+        }
+    }
+
+    pub fn parse(value: &str) -> Option<Self> {
+        match value {
+            "student" => Some(Self::Student),
+            "staff" => Some(Self::Staff),
+            "external" => Some(Self::External),
+            _ => None,
+        }
+    }
+}
+
+impl CertificateTemplateAssetKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Image => "image",
+            Self::Font => "font",
+        }
+    }
+}
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, ToSchema)]
 #[serde(transparent)]
@@ -449,4 +492,198 @@ pub struct CertificateCampaignListQuery {
     pub academic_year_id: Option<Uuid>,
     pub status: Option<CertificateCampaignStatus>,
     pub search: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CreateCertificateTemplateRequest {
+    pub name: String,
+    pub allowed_recipient_types: Vec<RecipientType>,
+}
+
+#[derive(Clone, Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct UpdateCertificateTemplateRequest {
+    pub expected_updated_at: DateTime<Utc>,
+    pub name: Option<String>,
+    pub allowed_recipient_types: Option<Vec<RecipientType>>,
+    pub safe_margin_points: Option<f64>,
+    pub show_safe_area: Option<bool>,
+    pub layout: Option<CertificateLayoutV1>,
+    pub is_active: Option<bool>,
+    #[serde(default)]
+    pub confirm_missing_issued_values: bool,
+}
+
+#[derive(Clone, Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct AttachCertificateBackgroundRequest {
+    pub file_id: Uuid,
+    pub geometry_action: GeometryAction,
+    pub preview_confirmed: bool,
+}
+
+#[derive(Clone, Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct AttachCertificateAssetRequest {
+    pub file_id: Uuid,
+    pub kind: CertificateTemplateAssetKind,
+    pub display_name: String,
+    pub font_weight: Option<u16>,
+    #[serde(default)]
+    pub rights_confirmed: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct CertificatePageBox {
+    pub x_points: f64,
+    pub y_points: f64,
+    pub width_points: f64,
+    pub height_points: f64,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct CertificatePageGeometry {
+    pub crop_box: CertificatePageBox,
+    pub media_box: CertificatePageBox,
+    pub rotation: i16,
+    pub displayed_width_points: f64,
+    pub displayed_height_points: f64,
+    pub paper_label: String,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct CertificateTemplateCapabilities {
+    pub can_read: bool,
+    pub can_update: bool,
+    pub can_delete: bool,
+    pub can_preview: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct CertificateTemplateAsset {
+    pub id: Uuid,
+    pub file_id: Uuid,
+    pub kind: CertificateTemplateAssetKind,
+    pub display_name: String,
+    #[schema(required = true)]
+    pub font_family: Option<String>,
+    #[schema(required = true)]
+    pub font_weight: Option<u16>,
+    pub rights_confirmed: bool,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct CertificateTemplateDetail {
+    pub id: Uuid,
+    pub campaign_id: Uuid,
+    pub name: String,
+    #[schema(required = true)]
+    pub background_file_id: Option<Uuid>,
+    #[schema(required = true)]
+    pub page_geometry: Option<CertificatePageGeometry>,
+    pub safe_margin_points: f64,
+    pub show_safe_area: bool,
+    pub allowed_recipient_types: Vec<RecipientType>,
+    pub layout: CertificateLayoutV1,
+    pub assets: Vec<CertificateTemplateAsset>,
+    pub is_active: bool,
+    pub is_ready: bool,
+    pub issued_certificate_count: i64,
+    pub missing_variable_certificate_count: i64,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    pub capabilities: CertificateTemplateCapabilities,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct CertificateTemplateDeleteResult {
+    pub disposition: CertificateTemplateDeleteDisposition,
+    pub detached_file_count: u32,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct CertificateTemplateVariableCatalog {
+    pub variables: Vec<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CertificatePreviewManifestRequest {
+    pub preview_kind: CertificatePreviewKind,
+    pub candidate_id: Option<Uuid>,
+    #[serde(default)]
+    pub sample_values: BTreeMap<String, String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct CertificateRenderFileGrant {
+    pub file_id: Uuid,
+    pub url: String,
+    pub expires_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct CertificateBuiltInFont {
+    pub family: String,
+    pub weight: u16,
+    pub asset_path: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct CertificateRenderFontGrant {
+    pub asset_id: Uuid,
+    pub file_id: Uuid,
+    pub family: String,
+    pub weight: u16,
+    pub url: String,
+    pub expires_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct CertificateRenderImageGrant {
+    pub asset_id: Uuid,
+    pub file_id: Uuid,
+    pub url: String,
+    pub expires_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct CertificateRenderCampaignValues {
+    pub academic_year: String,
+    pub campaign_name: String,
+    pub event_date: NaiveDate,
+    pub issue_date: NaiveDate,
+    pub school_name: String,
+    pub owner_organization_unit_name: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct CertificateRenderManifest {
+    pub template_id: Uuid,
+    pub page_geometry: CertificatePageGeometry,
+    pub layout: CertificateLayoutV1,
+    pub campaign_values: CertificateRenderCampaignValues,
+    pub recipient_values: BTreeMap<String, String>,
+    pub certificate_number: String,
+    pub qr_payload: String,
+    pub built_in_fonts: Vec<CertificateBuiltInFont>,
+    pub font_grants: Vec<CertificateRenderFontGrant>,
+    pub image_grants: Vec<CertificateRenderImageGrant>,
+    pub background_grant: CertificateRenderFileGrant,
+    pub suggested_filename: String,
 }

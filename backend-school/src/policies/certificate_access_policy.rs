@@ -54,6 +54,25 @@ pub async fn require_campaign_action(
     require_owner_action(pool, actor, campaign.owner_organization_unit_id, action).await
 }
 
+pub async fn require_template_action(
+    pool: &PgPool,
+    actor: &ActorContext,
+    template_id: Uuid,
+    action: CertificateAction,
+) -> Result<CertificateAccessGrant, AppError> {
+    let owner_organization_unit_id = sqlx::query_scalar::<_, Option<Uuid>>(
+        "SELECT campaign.owner_organization_unit_id
+         FROM certificate_templates template
+         JOIN certificate_campaigns campaign ON campaign.id = template.campaign_id
+         WHERE template.id = $1",
+    )
+    .bind(template_id)
+    .fetch_optional(pool)
+    .await?
+    .ok_or_else(|| AppError::NotFound("ไม่พบแม่แบบเกียรติบัตร".to_string()))?;
+    require_owner_action(pool, actor, owner_organization_unit_id, action).await
+}
+
 pub async fn require_owner_action(
     pool: &PgPool,
     actor: &ActorContext,

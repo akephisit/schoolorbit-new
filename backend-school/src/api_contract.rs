@@ -74,9 +74,19 @@ use crate::modules::calendar::models::{
     CalendarPublicEvent, CalendarTag, CalendarViewerEvent,
 };
 use crate::modules::certificates::models::{
+    AttachCertificateAssetRequest, AttachCertificateBackgroundRequest, CertificateBuiltInFont,
     CertificateCampaignCapabilities, CertificateCampaignDetail, CertificateCampaignListQuery,
-    CertificateCampaignStatus, CertificateCampaignSummary, ChangeCertificateCampaignStatusRequest,
-    CreateCertificateCampaignRequest, NullableUuidUpdate, UpdateCertificateCampaignRequest,
+    CertificateCampaignStatus, CertificateCampaignSummary, CertificateElement,
+    CertificateFontSource, CertificateLayoutV1, CertificatePageBox, CertificatePageGeometry,
+    CertificatePreviewKind, CertificatePreviewManifestRequest, CertificateRenderCampaignValues,
+    CertificateRenderFileGrant, CertificateRenderFontGrant, CertificateRenderImageGrant,
+    CertificateRenderManifest, CertificateTemplateAsset, CertificateTemplateAssetKind,
+    CertificateTemplateCapabilities, CertificateTemplateDeleteDisposition,
+    CertificateTemplateDeleteResult, CertificateTemplateDetail, CertificateTemplateVariableCatalog,
+    ChangeCertificateCampaignStatusRequest, CreateCertificateCampaignRequest,
+    CreateCertificateTemplateRequest, ElementFrame, GeometryAction, ImageElement,
+    NullableUuidUpdate, QrElement, RecipientType, TextAlignment, TextElement, TextShadow,
+    UpdateCertificateCampaignRequest, UpdateCertificateTemplateRequest,
 };
 use crate::modules::facility::models::Room;
 use crate::modules::files::models::{
@@ -211,6 +221,16 @@ use utoipa::OpenApi;
         crate::modules::certificates::handlers::change_certificate_campaign_status,
         crate::modules::certificates::handlers::delete_certificate_campaign,
         crate::modules::certificates::handlers::list_certificate_owner_options,
+        crate::modules::certificates::handlers::list_certificate_templates,
+        crate::modules::certificates::handlers::create_certificate_template,
+        crate::modules::certificates::handlers::get_certificate_template,
+        crate::modules::certificates::handlers::update_certificate_template,
+        crate::modules::certificates::handlers::delete_certificate_template,
+        crate::modules::certificates::handlers::attach_certificate_template_background,
+        crate::modules::certificates::handlers::attach_certificate_template_asset,
+        crate::modules::certificates::handlers::delete_certificate_template_asset,
+        crate::modules::certificates::handlers::get_certificate_template_variable_catalog,
+        crate::modules::certificates::handlers::create_certificate_template_preview_manifest,
         crate::modules::parents::handlers::get_own_parent_profile,
         crate::modules::parents::handlers::get_child_profile,
         crate::modules::parents::handlers::get_child_timetable,
@@ -427,6 +447,43 @@ use utoipa::OpenApi;
         ChangeCertificateCampaignStatusRequest,
         ApiResponse<Vec<CertificateCampaignSummary>>,
         ApiResponse<CertificateCampaignDetail>,
+        RecipientType,
+        CertificateTemplateAssetKind,
+        GeometryAction,
+        CertificatePreviewKind,
+        CertificateTemplateDeleteDisposition,
+        CertificateLayoutV1,
+        CertificateElement,
+        CertificateFontSource,
+        ElementFrame,
+        TextElement,
+        TextAlignment,
+        TextShadow,
+        ImageElement,
+        QrElement,
+        CreateCertificateTemplateRequest,
+        UpdateCertificateTemplateRequest,
+        AttachCertificateBackgroundRequest,
+        AttachCertificateAssetRequest,
+        CertificatePageBox,
+        CertificatePageGeometry,
+        CertificateTemplateCapabilities,
+        CertificateTemplateAsset,
+        CertificateTemplateDetail,
+        CertificateTemplateDeleteResult,
+        CertificateTemplateVariableCatalog,
+        CertificatePreviewManifestRequest,
+        CertificateRenderFileGrant,
+        CertificateBuiltInFont,
+        CertificateRenderFontGrant,
+        CertificateRenderImageGrant,
+        CertificateRenderCampaignValues,
+        CertificateRenderManifest,
+        ApiResponse<Vec<CertificateTemplateDetail>>,
+        ApiResponse<CertificateTemplateDetail>,
+        ApiResponse<CertificateTemplateDeleteResult>,
+        ApiResponse<CertificateTemplateVariableCatalog>,
+        ApiResponse<CertificateRenderManifest>,
         ApiResponse<Vec<GradeLevelLookupItem>>,
         ApiResponse<Vec<ClassroomLookupItem>>,
         ApiResponse<Vec<AcademicYearLookupItem>>,
@@ -2969,6 +3026,56 @@ mod tests {
                     "get",
                     "listCertificateOwnerOptions",
                 ),
+                (
+                    "/api/certificates/campaigns/{campaign_id}/templates",
+                    "get",
+                    "listCertificateTemplates",
+                ),
+                (
+                    "/api/certificates/campaigns/{campaign_id}/templates",
+                    "post",
+                    "createCertificateTemplate",
+                ),
+                (
+                    "/api/certificates/templates/{template_id}",
+                    "get",
+                    "getCertificateTemplate",
+                ),
+                (
+                    "/api/certificates/templates/{template_id}",
+                    "put",
+                    "updateCertificateTemplate",
+                ),
+                (
+                    "/api/certificates/templates/{template_id}",
+                    "delete",
+                    "deleteCertificateTemplate",
+                ),
+                (
+                    "/api/certificates/templates/{template_id}/background",
+                    "put",
+                    "attachCertificateTemplateBackground",
+                ),
+                (
+                    "/api/certificates/templates/{template_id}/assets",
+                    "post",
+                    "attachCertificateTemplateAsset",
+                ),
+                (
+                    "/api/certificates/templates/{template_id}/assets/{asset_id}",
+                    "delete",
+                    "deleteCertificateTemplateAsset",
+                ),
+                (
+                    "/api/certificates/templates/{template_id}/variables",
+                    "get",
+                    "getCertificateTemplateVariableCatalog",
+                ),
+                (
+                    "/api/certificates/templates/{template_id}/preview-manifest",
+                    "post",
+                    "createCertificateTemplatePreviewManifest",
+                ),
             ],
         );
 
@@ -3001,6 +3108,38 @@ mod tests {
         let nullable_update = &schemas["NullableUuidUpdate"];
         assert!(required(nullable_update).contains(&"value"));
         assert!(contains_null(&nullable_update["properties"]["value"]));
+        let template = &schemas["CertificateTemplateDetail"];
+        for field in [
+            "backgroundFileId",
+            "pageGeometry",
+            "allowedRecipientTypes",
+            "layout",
+            "assets",
+            "isReady",
+            "missingVariableCertificateCount",
+            "capabilities",
+        ] {
+            assert!(required(template).contains(&field));
+        }
+        assert!(contains_null(&template["properties"]["backgroundFileId"]));
+        assert!(contains_null(&template["properties"]["pageGeometry"]));
+
+        let manifest = &schemas["CertificateRenderManifest"];
+        for field in [
+            "pageGeometry",
+            "layout",
+            "campaignValues",
+            "recipientValues",
+            "certificateNumber",
+            "qrPayload",
+            "builtInFonts",
+            "fontGrants",
+            "imageGrants",
+            "backgroundGrant",
+            "suggestedFilename",
+        ] {
+            assert!(required(manifest).contains(&field));
+        }
         assert_eq!(
             document["paths"]["/api/certificates/campaigns/{campaign_id}"]["delete"]["responses"]
                 ["200"]["content"]["application/json"]["schema"]["$ref"],

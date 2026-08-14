@@ -1592,6 +1592,22 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/api/certificates/campaigns/{campaign_id}/templates': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listCertificateTemplates'];
+		put?: never;
+		post: operations['createCertificateTemplate'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/api/certificates/owner-options': {
 		parameters: {
 			query?: never;
@@ -1600,6 +1616,102 @@ export interface paths {
 			cookie?: never;
 		};
 		get: operations['listCertificateOwnerOptions'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/certificates/templates/{template_id}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getCertificateTemplate'];
+		put: operations['updateCertificateTemplate'];
+		post?: never;
+		delete: operations['deleteCertificateTemplate'];
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/certificates/templates/{template_id}/assets': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['attachCertificateTemplateAsset'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/certificates/templates/{template_id}/assets/{asset_id}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post?: never;
+		delete: operations['deleteCertificateTemplateAsset'];
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/certificates/templates/{template_id}/background': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put: operations['attachCertificateTemplateBackground'];
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/certificates/templates/{template_id}/preview-manifest': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['createCertificateTemplatePreviewManifest'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/certificates/templates/{template_id}/variables': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getCertificateTemplateVariableCatalog'];
 		put?: never;
 		post?: never;
 		delete?: never;
@@ -3041,6 +3153,74 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
+		ApiResponse_CertificateRenderManifest: {
+			data: {
+				backgroundGrant: components['schemas']['CertificateRenderFileGrant'];
+				builtInFonts: components['schemas']['CertificateBuiltInFont'][];
+				campaignValues: components['schemas']['CertificateRenderCampaignValues'];
+				certificateNumber: string;
+				fontGrants: components['schemas']['CertificateRenderFontGrant'][];
+				imageGrants: components['schemas']['CertificateRenderImageGrant'][];
+				layout: components['schemas']['CertificateLayoutV1'];
+				pageGeometry: components['schemas']['CertificatePageGeometry'];
+				qrPayload: string;
+				recipientValues: {
+					[key: string]: string;
+				};
+				suggestedFilename: string;
+				/** Format: uuid */
+				templateId: string;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_CertificateTemplateDeleteResult: {
+			data: {
+				/** Format: int32 */
+				detachedFileCount: number;
+				disposition: components['schemas']['CertificateTemplateDeleteDisposition'];
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_CertificateTemplateDetail: {
+			data: {
+				allowedRecipientTypes: components['schemas']['RecipientType'][];
+				assets: components['schemas']['CertificateTemplateAsset'][];
+				/** Format: uuid */
+				backgroundFileId: string | null;
+				/** Format: uuid */
+				campaignId: string;
+				capabilities: components['schemas']['CertificateTemplateCapabilities'];
+				/** Format: date-time */
+				createdAt: string;
+				/** Format: uuid */
+				id: string;
+				isActive: boolean;
+				isReady: boolean;
+				/** Format: int64 */
+				issuedCertificateCount: number;
+				layout: components['schemas']['CertificateLayoutV1'];
+				/** Format: int64 */
+				missingVariableCertificateCount: number;
+				name: string;
+				pageGeometry: null | components['schemas']['CertificatePageGeometry'];
+				/** Format: double */
+				safeMarginPoints: number;
+				showSafeArea: boolean;
+				/** Format: date-time */
+				updatedAt: string;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_CertificateTemplateVariableCatalog: {
+			data: {
+				variables: string[];
+			};
+			message?: string;
+			success: boolean;
+		};
 		ApiResponse_Classroom: {
 			data: {
 				/** Format: uuid */
@@ -4107,6 +4287,37 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
+		ApiResponse_Vec_CertificateTemplateDetail: {
+			data: {
+				allowedRecipientTypes: components['schemas']['RecipientType'][];
+				assets: components['schemas']['CertificateTemplateAsset'][];
+				/** Format: uuid */
+				backgroundFileId: string | null;
+				/** Format: uuid */
+				campaignId: string;
+				capabilities: components['schemas']['CertificateTemplateCapabilities'];
+				/** Format: date-time */
+				createdAt: string;
+				/** Format: uuid */
+				id: string;
+				isActive: boolean;
+				isReady: boolean;
+				/** Format: int64 */
+				issuedCertificateCount: number;
+				layout: components['schemas']['CertificateLayoutV1'];
+				/** Format: int64 */
+				missingVariableCertificateCount: number;
+				name: string;
+				pageGeometry: null | components['schemas']['CertificatePageGeometry'];
+				/** Format: double */
+				safeMarginPoints: number;
+				showSafeArea: boolean;
+				/** Format: date-time */
+				updatedAt: string;
+			}[];
+			message?: string;
+			success: boolean;
+		};
 		ApiResponse_Vec_Classroom: {
 			data: {
 				/** Format: uuid */
@@ -4857,6 +5068,21 @@ export interface components {
 			/** Format: date */
 			started_at?: string | null;
 		};
+		AttachCertificateAssetRequest: {
+			displayName: string;
+			/** Format: uuid */
+			fileId: string;
+			/** Format: int32 */
+			fontWeight?: number | null;
+			kind: components['schemas']['CertificateTemplateAssetKind'];
+			rightsConfirmed?: boolean;
+		};
+		AttachCertificateBackgroundRequest: {
+			/** Format: uuid */
+			fileId: string;
+			geometryAction: components['schemas']['GeometryAction'];
+			previewConfirmed: boolean;
+		};
 		AutoAssignClassNumbersRequest: {
 			sort_by: string;
 		};
@@ -5010,6 +5236,12 @@ export interface components {
 			instructor_id: string;
 			role: components['schemas']['CurriculumInstructorRole'];
 		};
+		CertificateBuiltInFont: {
+			assetPath: string;
+			family: string;
+			/** Format: int32 */
+			weight: number;
+		};
 		CertificateCampaignCapabilities: {
 			canChangeStatus: boolean;
 			canDelete: boolean;
@@ -5093,6 +5325,180 @@ export interface components {
 			templateCount: number;
 			/** Format: date-time */
 			updatedAt: string;
+		};
+		CertificateElement:
+			| (components['schemas']['TextElement'] & {
+					/** @enum {string} */
+					type: 'text';
+			  })
+			| (components['schemas']['ImageElement'] & {
+					/** @enum {string} */
+					type: 'image';
+			  })
+			| (components['schemas']['QrElement'] & {
+					/** @enum {string} */
+					type: 'qr';
+			  });
+		CertificateFontSource:
+			| {
+					/** @enum {string} */
+					type: 'built_in';
+			  }
+			| {
+					/** Format: uuid */
+					asset_id: string;
+					/** @enum {string} */
+					type: 'asset';
+			  };
+		CertificateLayoutV1: {
+			elements: components['schemas']['CertificateElement'][];
+			/** Format: int32 */
+			schemaVersion: number;
+		};
+		CertificatePageBox: {
+			/** Format: double */
+			heightPoints: number;
+			/** Format: double */
+			widthPoints: number;
+			/** Format: double */
+			xPoints: number;
+			/** Format: double */
+			yPoints: number;
+		};
+		CertificatePageGeometry: {
+			cropBox: components['schemas']['CertificatePageBox'];
+			/** Format: double */
+			displayedHeightPoints: number;
+			/** Format: double */
+			displayedWidthPoints: number;
+			mediaBox: components['schemas']['CertificatePageBox'];
+			paperLabel: string;
+			/** Format: int32 */
+			rotation: number;
+		};
+		/** @enum {string} */
+		CertificatePreviewKind: 'short' | 'normal' | 'long' | 'candidate';
+		CertificatePreviewManifestRequest: {
+			/** Format: uuid */
+			candidateId?: string | null;
+			previewKind: components['schemas']['CertificatePreviewKind'];
+			sampleValues?: {
+				[key: string]: string;
+			};
+		};
+		CertificateRenderCampaignValues: {
+			academicYear: string;
+			campaignName: string;
+			/** Format: date */
+			eventDate: string;
+			/** Format: date */
+			issueDate: string;
+			ownerOrganizationUnitName: string;
+			schoolName: string;
+		};
+		CertificateRenderFileGrant: {
+			/** Format: date-time */
+			expiresAt: string;
+			/** Format: uuid */
+			fileId: string;
+			url: string;
+		};
+		CertificateRenderFontGrant: {
+			/** Format: uuid */
+			assetId: string;
+			/** Format: date-time */
+			expiresAt: string;
+			family: string;
+			/** Format: uuid */
+			fileId: string;
+			url: string;
+			/** Format: int32 */
+			weight: number;
+		};
+		CertificateRenderImageGrant: {
+			/** Format: uuid */
+			assetId: string;
+			/** Format: date-time */
+			expiresAt: string;
+			/** Format: uuid */
+			fileId: string;
+			url: string;
+		};
+		CertificateRenderManifest: {
+			backgroundGrant: components['schemas']['CertificateRenderFileGrant'];
+			builtInFonts: components['schemas']['CertificateBuiltInFont'][];
+			campaignValues: components['schemas']['CertificateRenderCampaignValues'];
+			certificateNumber: string;
+			fontGrants: components['schemas']['CertificateRenderFontGrant'][];
+			imageGrants: components['schemas']['CertificateRenderImageGrant'][];
+			layout: components['schemas']['CertificateLayoutV1'];
+			pageGeometry: components['schemas']['CertificatePageGeometry'];
+			qrPayload: string;
+			recipientValues: {
+				[key: string]: string;
+			};
+			suggestedFilename: string;
+			/** Format: uuid */
+			templateId: string;
+		};
+		CertificateTemplateAsset: {
+			/** Format: date-time */
+			createdAt: string;
+			displayName: string;
+			/** Format: uuid */
+			fileId: string;
+			fontFamily: string | null;
+			/** Format: int32 */
+			fontWeight: number | null;
+			/** Format: uuid */
+			id: string;
+			kind: components['schemas']['CertificateTemplateAssetKind'];
+			rightsConfirmed: boolean;
+		};
+		/** @enum {string} */
+		CertificateTemplateAssetKind: 'image' | 'font';
+		CertificateTemplateCapabilities: {
+			canDelete: boolean;
+			canPreview: boolean;
+			canRead: boolean;
+			canUpdate: boolean;
+		};
+		/** @enum {string} */
+		CertificateTemplateDeleteDisposition: 'deleted' | 'deactivated';
+		CertificateTemplateDeleteResult: {
+			/** Format: int32 */
+			detachedFileCount: number;
+			disposition: components['schemas']['CertificateTemplateDeleteDisposition'];
+		};
+		CertificateTemplateDetail: {
+			allowedRecipientTypes: components['schemas']['RecipientType'][];
+			assets: components['schemas']['CertificateTemplateAsset'][];
+			/** Format: uuid */
+			backgroundFileId: string | null;
+			/** Format: uuid */
+			campaignId: string;
+			capabilities: components['schemas']['CertificateTemplateCapabilities'];
+			/** Format: date-time */
+			createdAt: string;
+			/** Format: uuid */
+			id: string;
+			isActive: boolean;
+			isReady: boolean;
+			/** Format: int64 */
+			issuedCertificateCount: number;
+			layout: components['schemas']['CertificateLayoutV1'];
+			/** Format: int64 */
+			missingVariableCertificateCount: number;
+			name: string;
+			pageGeometry: null | components['schemas']['CertificatePageGeometry'];
+			/** Format: double */
+			safeMarginPoints: number;
+			showSafeArea: boolean;
+			/** Format: date-time */
+			updatedAt: string;
+		};
+		CertificateTemplateVariableCatalog: {
+			variables: string[];
 		};
 		ChangeCertificateCampaignStatusRequest: {
 			/** Format: date-time */
@@ -5280,6 +5686,10 @@ export interface components {
 			name: string;
 			/** Format: uuid */
 			ownerOrganizationUnitId?: string | null;
+		};
+		CreateCertificateTemplateRequest: {
+			allowedRecipientTypes: components['schemas']['RecipientType'][];
+			name: string;
 		};
 		CreateClassroomRequest: {
 			/** Format: uuid */
@@ -5612,6 +6022,16 @@ export interface components {
 			/** Format: uuid */
 			id: string;
 		};
+		ElementFrame: {
+			/** Format: double */
+			height: number;
+			/** Format: double */
+			width: number;
+			/** Format: double */
+			x: number;
+			/** Format: double */
+			y: number;
+		};
 		EmptyData: Record<string, never>;
 		EnrollStudentRequest: {
 			/** Format: uuid */
@@ -5742,6 +6162,8 @@ export interface components {
 			/** Format: int32 */
 			skipped_count: number;
 		};
+		/** @enum {string} */
+		GeometryAction: 'preserve' | 'scale' | 'reset';
 		/** @description Grade level lookup item */
 		GradeLevelLookupItem: {
 			code: string;
@@ -5769,6 +6191,15 @@ export interface components {
 		};
 		/** @enum {string} */
 		GradeLevelType: 'kindergarten' | 'primary' | 'secondary';
+		ImageElement: {
+			/** Format: uuid */
+			assetId: string;
+			frame: components['schemas']['ElementFrame'];
+			/** Format: uuid */
+			id: string;
+			/** Format: double */
+			rotation: number;
+		};
 		InstructorInfo: {
 			/** Format: uuid */
 			id: string;
@@ -6156,6 +6587,15 @@ export interface components {
 			level: number | null;
 			name: string;
 		};
+		QrElement: {
+			frame: components['schemas']['ElementFrame'];
+			/** Format: uuid */
+			id: string;
+			/** Format: double */
+			rotation: number;
+		};
+		/** @enum {string} */
+		RecipientType: 'student' | 'staff' | 'external';
 		ReorderGroupsRequest: {
 			groups: components['schemas']['ReorderItem'][];
 		};
@@ -6660,6 +7100,39 @@ export interface components {
 			subject_name: string;
 			term: string;
 		};
+		/** @enum {string} */
+		TextAlignment: 'left' | 'center' | 'right';
+		TextElement: {
+			alignment: components['schemas']['TextAlignment'];
+			autoShrink: boolean;
+			color: string;
+			content: string;
+			fontFamily: string;
+			/** Format: double */
+			fontSize: number;
+			fontSource: components['schemas']['CertificateFontSource'];
+			/** Format: int32 */
+			fontWeight: number;
+			frame: components['schemas']['ElementFrame'];
+			/** Format: uuid */
+			id: string;
+			/** Format: double */
+			lineHeight: number;
+			/** Format: double */
+			minFontSize: number;
+			/** Format: double */
+			rotation: number;
+			shadow?: null | components['schemas']['TextShadow'];
+		};
+		TextShadow: {
+			/** Format: double */
+			blur: number;
+			color: string;
+			/** Format: double */
+			offsetX: number;
+			/** Format: double */
+			offsetY: number;
+		};
 		TimetableEntry: {
 			/** Format: uuid */
 			academic_semester_id: string;
@@ -6789,6 +7262,18 @@ export interface components {
 			expectedUpdatedAt: string;
 			name?: string | null;
 			ownerOrganizationUnitId?: null | components['schemas']['NullableUuidUpdate'];
+		};
+		UpdateCertificateTemplateRequest: {
+			allowedRecipientTypes?: components['schemas']['RecipientType'][] | null;
+			confirmMissingIssuedValues?: boolean;
+			/** Format: date-time */
+			expectedUpdatedAt: string;
+			isActive?: boolean | null;
+			layout?: null | components['schemas']['CertificateLayoutV1'];
+			name?: string | null;
+			/** Format: double */
+			safeMarginPoints?: number | null;
+			showSafeArea?: boolean | null;
 		};
 		UpdateClassroomRequest: {
 			/** @description If provided, replace advisor list entirely (atomic DELETE + INSERT) */
@@ -15478,6 +15963,119 @@ export interface operations {
 			};
 		};
 	};
+	listCertificateTemplates: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Certificate campaign ID */
+				campaign_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Scoped certificate template list */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_CertificateTemplateDetail'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Certificate template read permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Certificate campaign not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	createCertificateTemplate: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Certificate campaign ID */
+				campaign_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['CreateCertificateTemplateRequest'];
+			};
+		};
+		responses: {
+			/** @description Certificate template shell created */
+			201: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_CertificateTemplateDetail'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Certificate template update permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Duplicate template name */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Invalid template */
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
 	listCertificateOwnerOptions: {
 		parameters: {
 			query?: never;
@@ -15507,6 +16105,496 @@ export interface operations {
 			};
 			/** @description Certificate campaign create permission denied */
 			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getCertificateTemplate: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Certificate template ID */
+				template_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Certificate template detail */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_CertificateTemplateDetail'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Certificate template read permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Certificate template not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	updateCertificateTemplate: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Certificate template ID */
+				template_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['UpdateCertificateTemplateRequest'];
+			};
+		};
+		responses: {
+			/** @description Certificate template updated */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_CertificateTemplateDetail'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Certificate template update permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Certificate template not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Template changed, locked, or needs confirmation */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Invalid template */
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	deleteCertificateTemplate: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Certificate template ID */
+				template_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Unused template deleted or used template deactivated */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_CertificateTemplateDeleteResult'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Certificate template delete permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Certificate template not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Certificate template is locked */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	attachCertificateTemplateAsset: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Certificate template ID */
+				template_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['AttachCertificateAssetRequest'];
+			};
+		};
+		responses: {
+			/** @description Inspected private template asset attached */
+			201: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_CertificateTemplateDetail'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Certificate template update permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description File not ready, duplicate, or template locked */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Invalid asset or font rights not confirmed */
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	deleteCertificateTemplateAsset: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Certificate template asset ID */
+				asset_id: string;
+				/** @description Certificate template ID */
+				template_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Unused template asset detached */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_CertificateTemplateDetail'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Certificate template update permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Certificate template asset not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Asset is referenced by the layout */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	attachCertificateTemplateBackground: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Certificate template ID */
+				template_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['AttachCertificateBackgroundRequest'];
+			};
+		};
+		responses: {
+			/** @description Inspected PDF background attached */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_CertificateTemplateDetail'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Certificate template update permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description File not ready, template locked, or preview required */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Invalid PDF geometry */
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	createCertificateTemplatePreviewManifest: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Certificate template ID */
+				template_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['CertificatePreviewManifestRequest'];
+			};
+		};
+		responses: {
+			/** @description Short-lived private render manifest marked as sample */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_CertificateRenderManifest'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Certificate template read permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Template or asset is not ready */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Invalid sample values */
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Private asset grant unavailable */
+			503: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getCertificateTemplateVariableCatalog: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Certificate template ID */
+				template_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Renderable standard and campaign custom variables */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_CertificateTemplateVariableCatalog'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Certificate template read permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Certificate template not found */
+			404: {
 				headers: {
 					[name: string]: unknown;
 				};
