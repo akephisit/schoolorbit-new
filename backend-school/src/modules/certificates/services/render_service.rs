@@ -34,7 +34,7 @@ use crate::{
 
 use super::{
     candidate_service,
-    import_validation::{normalize_display_text, normalize_name_for_match},
+    import_validation::{normalize_display_text, normalize_name_for_match, referenced_variables},
     layout::validate_layout,
     template_service, verification_service,
 };
@@ -585,6 +585,11 @@ async fn issued_manifest_inner(
     })?;
     validate_layout(&row.layout.0, source_page, &catalog)
         .map_err(|_| AppError::Conflict("layout ปัจจุบันไม่พร้อมสร้างเกียรติบัตร".to_string()))?;
+    let public_recipient_variables = if matches!(&access, IssuedManifestAccess::Public) {
+        Some(referenced_layout_variables(&row.layout.0)?)
+    } else {
+        None
+    };
 
     let assets = sqlx::query_as::<_, IssuedRenderAssetRow>(
         "SELECT asset.id, asset.file_id, asset.kind, asset.font_family,
@@ -640,6 +645,9 @@ async fn issued_manifest_inner(
         ("QR_CODE", qr_payload.clone()),
     ] {
         recipient_values.insert(key.to_string(), value);
+    }
+    if let Some(referenced) = public_recipient_variables {
+        recipient_values.retain(|key, _| referenced.contains(&normalize_name_for_match(key)));
     }
 
     let background_grant =
@@ -946,6 +954,23 @@ fn referenced_asset_ids(
             CertificateElement::Qr(_) => None,
         })
         .collect()
+}
+
+fn referenced_layout_variables(
+    layout: &crate::modules::certificates::models::CertificateLayoutV1,
+) -> Result<BTreeSet<String>, AppError> {
+    let mut referenced = BTreeSet::new();
+    for element in &layout.elements {
+        let CertificateElement::Text(text) = element else {
+            continue;
+        };
+        for variable in referenced_variables(&text.content).map_err(|_| {
+            AppError::InternalServerError("certificate_layout_variables_invalid".to_string())
+        })? {
+            referenced.insert(normalize_name_for_match(&variable));
+        }
+    }
+    Ok(referenced)
 }
 
 fn file_grant(file_id: Uuid, grant: DownloadGrant) -> Result<CertificateRenderFileGrant, AppError> {

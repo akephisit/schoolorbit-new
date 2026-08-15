@@ -476,7 +476,7 @@ pub async fn search_accounts(
         pool,
         actor,
         access.owner_organization_unit_id,
-        CertificateAction::Read,
+        CertificateAction::Update,
     )
     .await?;
     let pattern = format!("%{search}%");

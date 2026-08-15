@@ -3662,6 +3662,114 @@ async fn concurrent_account_creation_is_ordered_before_external_confirmation() {
 }
 
 #[tokio::test]
+async fn account_search_requires_update_permission_for_school_and_exact_unit_scopes() {
+    let fixture = CertificatePolicyFixture::new("certificate_account_search_permission").await;
+    let academic_year_id = insert_academic_year(&fixture.pool, 3139).await;
+    let campaign_id: Uuid = sqlx::query_scalar(
+        "INSERT INTO certificate_campaigns
+            (academic_year_id, owner_organization_unit_id, name, event_date,
+             created_by, updated_by)
+         VALUES ($1, $2, 'กิจกรรมค้นหาบัญชี', CURRENT_DATE, $3, $3)
+         RETURNING id",
+    )
+    .bind(academic_year_id)
+    .bind(fixture.unit_a)
+    .bind(fixture.actor.user_id)
+    .fetch_one(&fixture.pool)
+    .await
+    .unwrap();
+    insert_certificate_student(
+        &fixture.pool,
+        "student-account-search",
+        "S-ACCOUNT-SEARCH",
+        "กมลชนก",
+        "สุขสวัสดิ์",
+        "active",
+    )
+    .await;
+
+    let school_reader = ActorContext {
+        user_id: fixture.actor.user_id,
+        permissions: vec![codes::CERTIFICATE_READ_SCHOOL.to_string()],
+    };
+    let school_read_error = candidate_service::search_accounts(
+        &fixture.pool,
+        &school_reader,
+        campaign_id,
+        CertificateAccountSearchQuery {
+            recipient_type: RecipientType::Student,
+            search: "กมลชนก".to_string(),
+        },
+    )
+    .await
+    .unwrap_err();
+    assert!(matches!(school_read_error, AppError::Forbidden(_)));
+
+    add_exact_grant(
+        &fixture.pool,
+        fixture.unit_a,
+        codes::CERTIFICATE_READ_ORGANIZATION_UNIT,
+    )
+    .await;
+    let exact_unit_reader = ActorContext {
+        user_id: fixture.actor.user_id,
+        permissions: vec![codes::CERTIFICATE_READ_ORGANIZATION_UNIT.to_string()],
+    };
+    let exact_read_error = candidate_service::search_accounts(
+        &fixture.pool,
+        &exact_unit_reader,
+        campaign_id,
+        CertificateAccountSearchQuery {
+            recipient_type: RecipientType::Student,
+            search: "กมลชนก".to_string(),
+        },
+    )
+    .await
+    .unwrap_err();
+    assert!(matches!(exact_read_error, AppError::Forbidden(_)));
+
+    add_exact_grant(
+        &fixture.pool,
+        fixture.unit_a,
+        codes::CERTIFICATE_UPDATE_ORGANIZATION_UNIT,
+    )
+    .await;
+    let exact_unit_updater = ActorContext {
+        user_id: fixture.actor.user_id,
+        permissions: vec![codes::CERTIFICATE_UPDATE_ORGANIZATION_UNIT.to_string()],
+    };
+    let exact_matches = candidate_service::search_accounts(
+        &fixture.pool,
+        &exact_unit_updater,
+        campaign_id,
+        CertificateAccountSearchQuery {
+            recipient_type: RecipientType::Student,
+            search: "กมลชนก".to_string(),
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(exact_matches.len(), 1);
+
+    let school_updater = ActorContext {
+        user_id: fixture.actor.user_id,
+        permissions: vec![codes::CERTIFICATE_UPDATE_SCHOOL.to_string()],
+    };
+    let school_matches = candidate_service::search_accounts(
+        &fixture.pool,
+        &school_updater,
+        campaign_id,
+        CertificateAccountSearchQuery {
+            recipient_type: RecipientType::Student,
+            search: "กมลชนก".to_string(),
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(school_matches.len(), 1);
+}
+
+#[tokio::test]
 async fn candidate_edit_rechecks_authoritative_account_and_search_returns_minimal_fields() {
     let (pool, actor, academic_year_id) =
         school_campaign_fixture("certificate_candidate_account_recheck", 3127).await;
@@ -4082,14 +4190,52 @@ async fn issue_public_verification_fixture(
     )
     .await
     .unwrap();
-    let (_, candidate) = create_ready_external_request_candidate(
+    let template = create_ready_candidate_template(
         &pool,
         &preparer,
         campaign.id,
         "แบบตรวจสอบสาธารณะ",
-        "กมล",
+        vec![RecipientType::External],
     )
     .await;
+    let mut candidate_row =
+        candidate_import_row("external", None, None, "กมล", "ผู้รับ", "แบบตรวจสอบสาธารณะ");
+    candidate_row.title = Some("คุณ".to_string());
+    candidate_row.custom_values = BTreeMap::from([
+        ("แสดงผล".to_string(), "เผยแพร่ได้".to_string()),
+        ("ไม่แสดง".to_string(), "ต้องไม่เผยแพร่".to_string()),
+    ]);
+    let mut import_request = candidate_import_request(vec![candidate_row]);
+    import_request
+        .headers
+        .extend(["แสดงผล".to_string(), "ไม่แสดง".to_string()]);
+    let imported =
+        candidate_service::import_candidates(&pool, &preparer, campaign.id, import_request)
+            .await
+            .unwrap();
+    let candidate = &imported.candidates[0];
+    let mut public_layout = text_layout(CertificateFontSource::BuiltIn);
+    let CertificateElement::Text(text) = &mut public_layout.elements[0] else {
+        panic!("public render fixture must use a text element");
+    };
+    text.content = "มอบให้ {ชื่อ} {แสดงผล}".to_string();
+    template_service::update_template(
+        &pool,
+        &preparer,
+        template.id,
+        UpdateCertificateTemplateRequest {
+            expected_updated_at: template.updated_at,
+            name: None,
+            allowed_recipient_types: None,
+            safe_margin_points: None,
+            show_safe_area: None,
+            layout: Some(public_layout),
+            is_active: None,
+            confirm_missing_issued_values: false,
+        },
+    )
+    .await
+    .unwrap();
     let request =
         request_service::submit_issue_request(&pool, &preparer, campaign.id, vec![candidate.id])
             .await
@@ -4430,6 +4576,8 @@ async fn public_render_manifest_requires_the_tenant_receipt_and_rechecks_revocat
     .unwrap();
     assert_eq!(manifest.certificate_number, issued.certificate_number);
     assert_eq!(manifest.recipient_values["ชื่อ"], "กมล");
+    assert_eq!(manifest.recipient_values["แสดงผล"], "เผยแพร่ได้");
+    assert!(!manifest.recipient_values.contains_key("ไม่แสดง"));
 
     let wrong_tenant_error = render_service::public_manifest_rate_limited(
         &pool,

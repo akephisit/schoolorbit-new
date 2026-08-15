@@ -10,7 +10,9 @@ use uuid::Uuid;
 
 use crate::error::AppError;
 
-const WINDOW: Duration = Duration::from_secs(15 * 60);
+const IP_ATTEMPT_WINDOW: Duration = Duration::from_secs(5 * 60);
+const FAILED_TARGET_WINDOW: Duration = Duration::from_secs(10 * 60);
+const STALE_ENTRY_RETENTION: Duration = Duration::from_secs(15 * 60);
 const IP_ATTEMPT_LIMIT: u32 = 20;
 const FAILED_TARGET_LIMIT: u32 = 6;
 const DEFAULT_IP_CAPACITY: usize = 50_000;
@@ -87,10 +89,16 @@ impl CertificateVerificationLimiter {
 
         let ip_key = (tenant_id, ip);
         if let Some(mut counter) = self.ip_attempts.get_mut(&ip_key) {
-            if counter.count >= IP_ATTEMPT_LIMIT {
-                return Err(rate_limited(counter.started_at, now));
+            if now.saturating_duration_since(counter.started_at) >= IP_ATTEMPT_WINDOW {
+                *counter = WindowCounter {
+                    started_at: now,
+                    count: 1,
+                };
+            } else if counter.count >= IP_ATTEMPT_LIMIT {
+                return Err(rate_limited(counter.started_at, now, IP_ATTEMPT_WINDOW));
+            } else {
+                counter.count += 1;
             }
-            counter.count += 1;
         } else {
             if self.ip_attempts.len() >= self.ip_capacity {
                 return Err(capacity_limited());
@@ -121,8 +129,10 @@ impl CertificateVerificationLimiter {
         self.remove_stale(now);
 
         if let Some(counter) = self.failed_targets.get(&(tenant_id, ip, target)) {
-            if counter.count >= FAILED_TARGET_LIMIT {
-                return Err(rate_limited(counter.started_at, now));
+            if now.saturating_duration_since(counter.started_at) < FAILED_TARGET_WINDOW
+                && counter.count >= FAILED_TARGET_LIMIT
+            {
+                return Err(rate_limited(counter.started_at, now, FAILED_TARGET_WINDOW));
             }
         }
         Ok(())
@@ -142,7 +152,14 @@ impl CertificateVerificationLimiter {
         self.remove_stale(now);
         let key = (tenant_id, ip, target);
         if let Some(mut counter) = self.failed_targets.get_mut(&key) {
-            counter.count = counter.count.saturating_add(1);
+            if now.saturating_duration_since(counter.started_at) >= FAILED_TARGET_WINDOW {
+                *counter = WindowCounter {
+                    started_at: now,
+                    count: 1,
+                };
+            } else {
+                counter.count = counter.count.saturating_add(1);
+            }
             return Ok(());
         }
         if self.failed_targets.len() >= self.target_capacity {
@@ -167,10 +184,12 @@ impl CertificateVerificationLimiter {
     }
 
     fn remove_stale(&self, now: Instant) {
-        self.ip_attempts
-            .retain(|_, counter| now.saturating_duration_since(counter.started_at) <= WINDOW);
-        self.failed_targets
-            .retain(|_, counter| now.saturating_duration_since(counter.started_at) <= WINDOW);
+        self.ip_attempts.retain(|_, counter| {
+            now.saturating_duration_since(counter.started_at) <= STALE_ENTRY_RETENTION
+        });
+        self.failed_targets.retain(|_, counter| {
+            now.saturating_duration_since(counter.started_at) <= STALE_ENTRY_RETENTION
+        });
     }
 
     #[cfg(test)]
@@ -185,10 +204,10 @@ impl Default for CertificateVerificationLimiter {
     }
 }
 
-fn rate_limited(started_at: Instant, now: Instant) -> AppError {
+fn rate_limited(started_at: Instant, now: Instant, window: Duration) -> AppError {
     let elapsed = now.saturating_duration_since(started_at);
     AppError::RateLimited {
-        retry_after_seconds: WINDOW.saturating_sub(elapsed).as_secs().max(1),
+        retry_after_seconds: window.saturating_sub(elapsed).as_secs().max(1),
     }
 }
 
@@ -256,6 +275,27 @@ mod tests {
     }
 
     #[test]
+    fn ip_attempt_limit_resets_at_the_five_minute_boundary() {
+        let clock = TestClock::new();
+        let limiter = limiter(&clock);
+        let tenant_id = Uuid::new_v4();
+        let ip = IpAddr::V4(Ipv4Addr::new(203, 0, 113, 17));
+
+        for _ in 0..20 {
+            limiter.begin_ip_attempt(tenant_id, ip).unwrap();
+        }
+        assert!(matches!(
+            limiter.begin_ip_attempt(tenant_id, ip),
+            Err(AppError::RateLimited {
+                retry_after_seconds: 300
+            })
+        ));
+
+        clock.advance(Duration::from_secs(5 * 60));
+        limiter.begin_ip_attempt(tenant_id, ip).unwrap();
+    }
+
+    #[test]
     fn limits_six_failed_attempts_for_one_target_but_not_successes() {
         let clock = TestClock::new();
         let limiter = limiter(&clock);
@@ -273,6 +313,31 @@ mod tests {
             limiter.begin_attempt(tenant_id, ip, target),
             Err(crate::error::AppError::RateLimited { .. })
         ));
+    }
+
+    #[test]
+    fn failed_target_limit_resets_at_the_ten_minute_boundary() {
+        let clock = TestClock::new();
+        let limiter = limiter(&clock);
+        let tenant_id = Uuid::new_v4();
+        let ip = IpAddr::V4(Ipv4Addr::new(203, 0, 113, 18));
+        let target = CertificateVerificationLimiter::target_digest("ten-minute-target");
+
+        for _ in 0..6 {
+            limiter.check_target(tenant_id, ip, target).unwrap();
+            limiter.record_failure(tenant_id, ip, target).unwrap();
+        }
+        assert!(matches!(
+            limiter.check_target(tenant_id, ip, target),
+            Err(AppError::RateLimited {
+                retry_after_seconds: 600
+            })
+        ));
+
+        clock.advance(Duration::from_secs(10 * 60));
+        limiter.check_target(tenant_id, ip, target).unwrap();
+        limiter.record_failure(tenant_id, ip, target).unwrap();
+        limiter.check_target(tenant_id, ip, target).unwrap();
     }
 
     #[test]
