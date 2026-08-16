@@ -14,6 +14,7 @@ function textElement(overrides = {}) {
 		fontSource: { type: 'built_in' },
 		fontFamily: 'Sarabun',
 		fontWeight: 400,
+		fontStyle: 'normal',
 		fontSize: 32,
 		minFontSize: 14,
 		color: '#183153',
@@ -24,6 +25,81 @@ function textElement(overrides = {}) {
 		...overrides
 	};
 }
+
+function imageElement(overrides = {}) {
+	return {
+		type: 'image',
+		id: 'image-1',
+		assetId: 'asset-image',
+		frame: { x: 120, y: 90, width: 120, height: 80 },
+		rotation: 0,
+		lockAspectRatio: true,
+		aspectRatio: 1.5,
+		...overrides
+	};
+}
+
+function fontAsset(id, family, weight, style) {
+	return {
+		id,
+		fileId: `file-${id}`,
+		kind: 'font',
+		displayName: `${family} ${weight} ${style}`,
+		fontFamily: family,
+		fontWeight: weight,
+		fontStyle: style,
+		imageWidthPixels: null,
+		imageHeightPixels: null,
+		rightsConfirmed: true,
+		createdAt: '2026-08-16T00:00:00Z'
+	};
+}
+
+test('font controls resolve only real deterministic variants and patch every font field', async () => {
+	const {
+		certificateFontVariants,
+		fontVariantPatch,
+		selectFontFamily,
+		selectFontWeight,
+		toggleBoldVariant,
+		toggleItalicVariant
+	} = await import('../../src/lib/certificates/font-variants.ts');
+	const variants = certificateFontVariants([
+		fontAsset('font-regular', 'Uploaded Thai', 400, 'normal'),
+		fontAsset('font-bold', 'Uploaded Thai', 700, 'normal'),
+		fontAsset('font-italic', 'Uploaded Thai', 400, 'italic'),
+		fontAsset('font-light', 'Fallback Thai', 300, 'normal'),
+		fontAsset('font-medium', 'Fallback Thai', 500, 'normal'),
+		fontAsset('font-italic-only', 'Italic Only', 400, 'italic')
+	]);
+	const regular = selectFontFamily(variants, 'asset:uploaded thai');
+	assert.ok(regular);
+	assert.deepEqual(fontVariantPatch(regular), {
+		fontSource: { type: 'asset', asset_id: 'font-regular' },
+		fontFamily: 'Uploaded Thai',
+		fontWeight: 400,
+		fontStyle: 'normal'
+	});
+	const bold = toggleBoldVariant(variants, regular);
+	assert.equal(bold?.source.type === 'asset' ? bold.source.asset_id : null, 'font-bold');
+	assert.equal(toggleBoldVariant(variants, bold)?.weight, 400);
+	const italic = toggleItalicVariant(variants, regular);
+	assert.deepEqual(fontVariantPatch(italic), {
+		fontSource: { type: 'asset', asset_id: 'font-italic' },
+		fontFamily: 'Uploaded Thai',
+		fontWeight: 400,
+		fontStyle: 'italic'
+	});
+	assert.equal(
+		toggleItalicVariant(variants, bold),
+		null,
+		'missing exact 700 italic stays disabled'
+	);
+	assert.equal(selectFontWeight(variants, italic, 700), bold);
+	assert.equal(selectFontFamily(variants, 'asset:fallback thai')?.weight, 300);
+	assert.equal(selectFontFamily(variants, 'asset:italic only')?.style, 'italic');
+	assert.equal(toggleBoldVariant(variants, selectFontFamily(variants, 'asset:italic only')), null);
+});
 
 test('dragging converts screen pixels to page points', async () => {
 	const { moveElement } = await import('../../src/lib/certificates/editor-state.ts');
@@ -71,6 +147,85 @@ test('rotated resize converts pointer movement into the element local axes', asy
 	const afterWest = westHandle(resized);
 	assert.ok(Math.abs(afterWest.x - beforeWest.x) < 1e-9);
 	assert.ok(Math.abs(afterWest.y - beforeWest.y) < 1e-9);
+});
+
+test('locked image resize preserves source ratio and opposite anchors for every handle and rotation', async () => {
+	const { resizeElement } = await import('../../src/lib/certificates/editor-state.ts');
+	const handleAxis = {
+		n: [0, -1],
+		ne: [1, -1],
+		e: [1, 0],
+		se: [1, 1],
+		s: [0, 1],
+		sw: [-1, 1],
+		w: [-1, 0],
+		nw: [-1, -1]
+	};
+	const handlePoint = (element, handle) => {
+		const [axisX, axisY] = handleAxis[handle];
+		const radians = (element.rotation * Math.PI) / 180;
+		const localX = (axisX * element.frame.width) / 2;
+		const localY = (axisY * element.frame.height) / 2;
+		const centerX = element.frame.x + element.frame.width / 2;
+		const centerY = element.frame.y + element.frame.height / 2;
+		return {
+			x: centerX + Math.cos(radians) * localX - Math.sin(radians) * localY,
+			y: centerY + Math.sin(radians) * localX + Math.cos(radians) * localY
+		};
+	};
+	for (const rotation of [0, 45, 90]) {
+		for (const [handle, [axisX, axisY]] of Object.entries(handleAxis)) {
+			const before = imageElement({ rotation });
+			const opposite = Object.entries(handleAxis).find(
+				([, candidate]) => candidate[0] === -axisX && candidate[1] === -axisY
+			)?.[0];
+			assert.ok(opposite);
+			const anchoredBefore = handlePoint(before, opposite);
+			const resized = resizeElement(
+				before,
+				{ handle, dxPixels: axisX * 30, dyPixels: axisY * 20 },
+				1
+			);
+			const anchoredAfter = handlePoint(resized, opposite);
+			assert.ok(Math.abs(resized.frame.width / resized.frame.height - 1.5) < 1e-9);
+			assert.ok(Math.abs(anchoredAfter.x - anchoredBefore.x) < 1e-9);
+			assert.ok(Math.abs(anchoredAfter.y - anchoredBefore.y) < 1e-9);
+		}
+	}
+});
+
+test('image creation, unlock, relock, and reset use inspected source dimensions', async () => {
+	const {
+		createImageElement,
+		imageAssetAspectRatio,
+		resetImageAspectRatio,
+		resizeElement,
+		setImageAspectRatioLock
+	} = await import('../../src/lib/certificates/editor-state.ts');
+	const sourceRatio = imageAssetAspectRatio({
+		kind: 'image',
+		imageWidthPixels: 1200,
+		imageHeightPixels: 800
+	});
+	assert.equal(sourceRatio, 1.5);
+	const created = createImageElement(
+		{ width: 600, height: 400 },
+		'asset-image',
+		sourceRatio,
+		() => 'new-image'
+	);
+	assert.equal(created.lockAspectRatio, true);
+	assert.equal(created.aspectRatio, 1.5);
+	assert.ok(Math.abs(created.frame.width / created.frame.height - 1.5) < 1e-9);
+	const unlocked = setImageAspectRatioLock(created, false, { width: 600, height: 400 });
+	const freelyResized = resizeElement(unlocked, { handle: 'se', dxPixels: 30, dyPixels: 5 }, 1);
+	assert.notEqual(freelyResized.frame.width / freelyResized.frame.height, 1.5);
+	const relocked = setImageAspectRatioLock(freelyResized, true, { width: 600, height: 400 });
+	assert.ok(Math.abs(relocked.frame.width / relocked.frame.height - 1.5) < 1e-9);
+	const reset = resetImageAspectRatio(relocked, 2, { width: 600, height: 400 });
+	assert.equal(reset.lockAspectRatio, true);
+	assert.equal(reset.aspectRatio, 2);
+	assert.ok(Math.abs(reset.frame.width / reset.frame.height - 2) < 1e-9);
 });
 
 test('constraining a rotated frame keeps its rendered bounds inside the page', async () => {
@@ -134,7 +289,9 @@ test('background scale/reset and fit zoom produce deterministic page-point resul
 				id: 'image-1',
 				assetId: 'asset-1',
 				frame: { x: 20, y: 40, width: 100, height: 80 },
-				rotation: 0
+				rotation: 0,
+				lockAspectRatio: true,
+				aspectRatio: 1.25
 			},
 			{
 				type: 'qr',
@@ -237,7 +394,9 @@ test('manifest refresh detects expiring background, font, and image grants', asy
 						id: 'image-1',
 						assetId: 'asset-image',
 						frame: { x: 0, y: 0, width: 20, height: 20 },
-						rotation: 0
+						rotation: 0,
+						lockAspectRatio: true,
+						aspectRatio: 1
 					},
 					textElement({
 						fontSource: { type: 'asset', asset_id: 'asset-font' },
@@ -263,7 +422,9 @@ test('manifest refresh detects expiring background, font, and image grants', asy
 						id: 'image-1',
 						assetId: 'asset-image',
 						frame: { x: 0, y: 0, width: 20, height: 20 },
-						rotation: 0
+						rotation: 0,
+						lockAspectRatio: true,
+						aspectRatio: 1
 					}
 				]
 			}

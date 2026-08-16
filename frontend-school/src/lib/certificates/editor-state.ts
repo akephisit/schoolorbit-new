@@ -3,6 +3,7 @@ import type { CertificateRenderManifest, CertificateTemplateDetail } from '../ap
 export type CertificateLayout = CertificateTemplateDetail['layout'];
 export type CertificateElement = CertificateLayout['elements'][number];
 export type TextCertificateElement = Extract<CertificateElement, { type: 'text' }>;
+export type ImageCertificateElement = Extract<CertificateElement, { type: 'image' }>;
 export type CertificateFrame = CertificateElement['frame'];
 export type PagePointSize = { width: number; height: number };
 export type ResizeHandle = 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w' | 'nw';
@@ -147,6 +148,52 @@ export function resizeElement(
 	const dx = input.dxPixels / zoom;
 	const dy = input.dyPixels / zoom;
 	const original = element.frame;
+	if (element.type === 'image' && element.lockAspectRatio) {
+		const ratio = element.aspectRatio;
+		if (!Number.isFinite(ratio) || ratio <= 0) {
+			throw new Error('image aspect ratio must be positive');
+		}
+		const axes: Record<ResizeHandle, readonly [number, number]> = {
+			n: [0, -1],
+			ne: [1, -1],
+			e: [1, 0],
+			se: [1, 1],
+			s: [0, 1],
+			sw: [-1, 1],
+			w: [-1, 0],
+			nw: [-1, -1]
+		};
+		const [axisX, axisY] = axes[input.handle];
+		let scale: number;
+		if (axisX !== 0 && axisY !== 0) {
+			const vectorX = axisX * original.width;
+			const vectorY = axisY * original.height;
+			scale = 1 + (dx * vectorX + dy * vectorY) / (vectorX * vectorX + vectorY * vectorY);
+		} else if (axisX !== 0) {
+			scale = 1 + (axisX * dx) / original.width;
+		} else {
+			scale = 1 + (axisY * dy) / original.height;
+		}
+		const minimumWidth = Math.max(
+			MIN_CERTIFICATE_FRAME_POINTS,
+			ratio * MIN_CERTIFICATE_FRAME_POINTS
+		);
+		const width = Math.max(minimumWidth, original.width * scale);
+		const height = width / ratio;
+		const localCenterX = (axisX * (width - original.width)) / 2;
+		const localCenterY = (axisY * (height - original.height)) / 2;
+		const radians = (normalizedRotation(element.rotation) * Math.PI) / 180;
+		const cosine = Math.cos(radians);
+		const sine = Math.sin(radians);
+		const centerX = original.x + original.width / 2 + cosine * localCenterX - sine * localCenterY;
+		const centerY = original.y + original.height / 2 + sine * localCenterX + cosine * localCenterY;
+		return withFrame(element, {
+			x: centerX - width / 2,
+			y: centerY - height / 2,
+			width,
+			height
+		});
+	}
 	let left = -original.width / 2;
 	let right = original.width / 2;
 	let top = -original.height / 2;
@@ -466,6 +513,7 @@ export function createTextElement(
 		fontSource: { type: 'built_in' },
 		fontFamily: 'Sarabun',
 		fontWeight: 400,
+		fontStyle: 'normal',
 		fontSize: 28,
 		minFontSize: 14,
 		color: '#183153',
@@ -492,14 +540,83 @@ export function createQrElement(
 export function createImageElement(
 	page: PagePointSize,
 	assetId: string,
+	aspectRatio: number,
 	createId: () => string = () => crypto.randomUUID()
-): Extract<CertificateElement, { type: 'image' }> {
-	const size = Math.min(110, page.width * 0.2, page.height * 0.24);
+): ImageCertificateElement {
+	if (!Number.isFinite(aspectRatio) || aspectRatio <= 0) {
+		throw new Error('image aspect ratio must be positive');
+	}
+	const maximumWidth = Math.min(110, page.width * 0.2);
+	const maximumHeight = Math.min(110, page.height * 0.24);
+	const width = Math.min(maximumWidth, maximumHeight * aspectRatio);
+	const height = width / aspectRatio;
 	return {
 		type: 'image',
 		id: createId(),
 		assetId,
-		frame: { x: (page.width - size) / 2, y: page.height * 0.18, width: size, height: size },
-		rotation: 0
+		frame: { x: (page.width - width) / 2, y: page.height * 0.18, width, height },
+		rotation: 0,
+		lockAspectRatio: true,
+		aspectRatio
 	};
+}
+
+export function imageAssetAspectRatio(
+	asset: Pick<
+		CertificateTemplateDetail['assets'][number],
+		'kind' | 'imageWidthPixels' | 'imageHeightPixels'
+	>
+): number {
+	if (
+		asset.kind !== 'image' ||
+		asset.imageWidthPixels === null ||
+		asset.imageHeightPixels === null ||
+		asset.imageWidthPixels <= 0 ||
+		asset.imageHeightPixels <= 0
+	) {
+		throw new Error('image source dimensions are unavailable');
+	}
+	return asset.imageWidthPixels / asset.imageHeightPixels;
+}
+
+function applyImageAspectRatio(
+	element: ImageCertificateElement,
+	aspectRatio: number,
+	page: PagePointSize
+): ImageCertificateElement {
+	if (!Number.isFinite(aspectRatio) || aspectRatio <= 0) {
+		throw new Error('image aspect ratio must be positive');
+	}
+	const centerY = element.frame.y + element.frame.height / 2;
+	const height = element.frame.width / aspectRatio;
+	return constrainElementToPage(
+		{
+			...element,
+			lockAspectRatio: true,
+			aspectRatio,
+			frame: {
+				...cloneFrame(element.frame),
+				y: centerY - height / 2,
+				height
+			}
+		},
+		page
+	) as ImageCertificateElement;
+}
+
+export function setImageAspectRatioLock(
+	element: ImageCertificateElement,
+	locked: boolean,
+	page: PagePointSize
+): ImageCertificateElement {
+	if (!locked) return { ...element, lockAspectRatio: false };
+	return applyImageAspectRatio(element, element.aspectRatio, page);
+}
+
+export function resetImageAspectRatio(
+	element: ImageCertificateElement,
+	sourceAspectRatio: number,
+	page: PagePointSize
+): ImageCertificateElement {
+	return applyImageAspectRatio(element, sourceAspectRatio, page);
 }
