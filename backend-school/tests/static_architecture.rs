@@ -760,6 +760,17 @@ fn lexical_mask(source: &str, hash_line_comments: bool) -> LexicalMask {
     }
 }
 
+fn literal_only(source: &str) -> String {
+    let lexical = lexical_mask(source, false);
+    let mut bytes = source.as_bytes().to_vec();
+    for (index, byte) in bytes.iter_mut().enumerate() {
+        if !lexical.literals[index] && *byte != b'\n' {
+            *byte = b' ';
+        }
+    }
+    String::from_utf8(bytes).expect("literal-only source remains UTF-8")
+}
+
 fn balanced_delimiter_end(
     structural: &str,
     opening: usize,
@@ -1270,8 +1281,14 @@ fn certificate_runtime_keeps_handlers_thin_proofs_private_and_renders_ephemeral(
 
     let sql_max =
         Regex::new(r#"(?is)\"[^\"]*\bMAX\s*\("#).expect("valid certificate SQL MAX regex");
+    assert!(!sql_max.is_match(&literal_only(
+        r#"let label = "counter"; let value = left.max(right);"#
+    )));
+    assert!(sql_max.is_match(&literal_only(
+        r#"let query = "SELECT MAX(sequence) FROM certificates";"#
+    )));
     assert!(
-        !sql_max.is_match(&certificate_services),
+        !sql_max.is_match(&literal_only(&certificate_services)),
         "certificate numbering must use locked counters, never SQL MAX(...)"
     );
 
