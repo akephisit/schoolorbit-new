@@ -18,6 +18,7 @@
 		createTextElement,
 		duplicateElement,
 		fitEditorZoom,
+		imageAssetAspectRatio,
 		reorderElement,
 		stepEditorZoom,
 		type CertificateElement,
@@ -128,7 +129,21 @@
 	}
 
 	function addImage(assetId: string) {
-		const element = createImageElement(pageSize, assetId);
+		const asset = currentTemplate.assets.find(
+			(candidate) => candidate.id === assetId && candidate.kind === 'image'
+		);
+		if (!asset) {
+			toast.error('ไม่พบข้อมูลรูปภาพที่เลือก กรุณาโหลดหน้าใหม่');
+			return;
+		}
+		let aspectRatio: number;
+		try {
+			aspectRatio = imageAssetAspectRatio(asset);
+		} catch {
+			toast.error('รูปภาพนี้ไม่มีข้อมูลขนาดต้นฉบับ กรุณาอัปโหลดใหม่');
+			return;
+		}
+		const element = createImageElement(pageSize, assetId, aspectRatio);
 		setLayout({ schemaVersion: 1, elements: [...layout.elements, element] });
 		setSelection([element.id]);
 	}

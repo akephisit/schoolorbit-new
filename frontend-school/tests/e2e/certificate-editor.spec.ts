@@ -5,9 +5,14 @@ import { createServer, type Plugin, type ViteDevServer } from 'vite';
 
 const frontendRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const harnessPath = '/__certificate-editor-test';
+const fontBatchHarnessPath = '/__certificate-font-batch-test';
 const virtualModuleId = 'virtual:certificate-editor-test';
+const fontBatchVirtualModuleId = 'virtual:certificate-font-batch-test';
 const resolvedVirtualModuleId = `\0${virtualModuleId}`;
+const resolvedFontBatchVirtualModuleId = `\0${fontBatchVirtualModuleId}`;
 const stubPrefix = '\0certificate-editor-stub:';
+
+test.describe.configure({ mode: 'serial' });
 
 const apiClientStub = `
 	export class ApiClientError extends Error {
@@ -36,14 +41,22 @@ const certificateApiStub = `
 	export async function attachCertificateTemplateBackground(id, payload) {
 		return window.__certificateEditorApi.attachBackground(id, payload);
 	}
+	export async function inspectCertificateFontUploads(id, payload) {
+		return window.__certificateFontBatchApi.inspect(id, payload);
+	}
+	export async function attachCertificateFontBatch(id, payload) {
+		return window.__certificateFontBatchApi.attach(id, payload);
+	}
 `;
 
 const fileApiStub = `
-	export async function uploadCertificateTemplateFile() {
-		throw new Error('upload is not used by this harness');
+	export async function uploadCertificateTemplateFile(file, purpose, templateId) {
+		if (!window.__certificateFontBatchApi) throw new Error('upload is not used by this harness');
+		return window.__certificateFontBatchApi.upload(file, purpose, templateId);
 	}
-	export async function deleteFile() {
-		return { disposition: 'deleted' };
+	export async function deleteFile(fileId, templateId) {
+		if (!window.__certificateFontBatchApi) return { disposition: 'deleted' };
+		return window.__certificateFontBatchApi.delete(fileId, templateId);
 	}
 `;
 
@@ -125,11 +138,80 @@ function harnessPlugin(): Plugin {
 		enforce: 'pre',
 		resolveId(id) {
 			if (id === virtualModuleId) return resolvedVirtualModuleId;
+			if (id === fontBatchVirtualModuleId) return resolvedFontBatchVirtualModuleId;
 			const stubId = findStubModule(id);
 			if (stubId) return `${stubPrefix}${stubId}`;
 		},
 		load(id) {
 			if (id.startsWith(stubPrefix)) return stubModules.get(id.slice(stubPrefix.length));
+			if (id === resolvedFontBatchVirtualModuleId) {
+				return `
+					import { mount } from 'svelte';
+					import '/src/routes/layout.css';
+					import CertificateFontBatchUpload from '/src/lib/components/certificates/CertificateFontBatchUpload.svelte';
+
+					let nextFile = 0;
+					const uploadedNames = new Map();
+					const deleteAttempts = new Map();
+					const attachedBatches = [];
+					const deletedFileIds = [];
+					const pendingEvents = [];
+					window.__certificateFontBatchApi = {
+						async upload(file, purpose, templateId) {
+							if (purpose !== 'certificate_template_font' || templateId !== 'template-font-batch') {
+								throw new Error('unexpected font upload relationship');
+							}
+							const id = 'font-file-' + (++nextFile);
+							uploadedNames.set(id, file.name);
+							return { id, displayFilename: file.name, lifecycleStatus: 'ready' };
+						},
+						async inspect(id, payload) {
+							return {
+								files: payload.fileIds.map((fileId) => {
+									const filename = uploadedNames.get(fileId);
+									const variable = filename.includes('Variable');
+									return {
+										fileId,
+										displayFilename: filename,
+										fontFamily: 'Browser Thai',
+										fontWeight: filename.includes('Bold') ? 700 : 400,
+										fontStyle: filename.includes('Italic') ? 'italic' : 'normal',
+										status: variable ? 'unsupported_variable' : 'ready'
+									};
+								})
+							};
+						},
+						async attach(id, payload) {
+							if (!payload.rightsConfirmed) throw new Error('rights must be confirmed');
+							attachedBatches.push([...payload.fileIds]);
+							return { id, assets: [] };
+						},
+						async delete(fileId) {
+							const attempts = (deleteAttempts.get(fileId) ?? 0) + 1;
+							deleteAttempts.set(fileId, attempts);
+							if (uploadedNames.get(fileId).includes('Variable') && attempts === 1) {
+								throw new Error('จำลองการลบไฟล์ชั่วคราวไม่สำเร็จ');
+							}
+							deletedFileIds.push(fileId);
+							return { disposition: 'deleted' };
+						}
+					};
+					window.certificateFontBatchHarness = {
+						attachedBatches: () => structuredClone(attachedBatches),
+						deletedFileIds: () => [...deletedFileIds],
+						pendingEvents: () => [...pendingEvents]
+					};
+					mount(CertificateFontBatchUpload, {
+						target: document.getElementById('app'),
+						props: {
+							templateId: 'template-font-batch',
+							canUpdate: true,
+							onpatched: () => {},
+							onpendingchange: (pending) => pendingEvents.push(pending)
+						}
+					});
+				`;
+			}
 			if (id !== resolvedVirtualModuleId) return;
 			return `
 				import { mount } from 'svelte';
@@ -285,10 +367,12 @@ function harnessPlugin(): Plugin {
 		configureServer(server) {
 			server.middlewares.use((request, response, next) => {
 				const pathname = new URL(request.url ?? '/', 'http://test').pathname;
-				if (pathname !== harnessPath) return next();
+				if (pathname !== harnessPath && pathname !== fontBatchHarnessPath) return next();
+				const moduleId =
+					pathname === fontBatchHarnessPath ? fontBatchVirtualModuleId : virtualModuleId;
 				response.setHeader('Content-Type', 'text/html; charset=utf-8');
 				response.end(
-					`<main id="app"></main><script type="module" src="/@id/${virtualModuleId}"></script>`
+					`<main id="app"></main><script type="module" src="/@id/${moduleId}"></script>`
 				);
 			});
 		}
@@ -414,6 +498,67 @@ test('editor adds, moves, duplicates, saves, previews, and resolves conflicts ex
 	await expect(page.getByRole('button', { name: 'เปลี่ยนพื้นหลัง' }).last()).toBeEnabled();
 });
 
+test('font batch uploads sequentially, reviews detected variants, and attaches atomically', async ({
+	page
+}) => {
+	const harnessModuleResponse = page.waitForResponse((response) =>
+		response.url().includes('/@id/virtual:certificate-font-batch-test')
+	);
+	await page.goto(`${baseUrl}${fontBatchHarnessPath}`);
+	const moduleResponse = await harnessModuleResponse;
+	expect(
+		moduleResponse.status(),
+		`virtual font batch harness failed to load:\n${await moduleResponse.text()}`
+	).toBeLessThan(400);
+
+	await page.getByLabel('ไฟล์ฟอนต์').setInputFiles([
+		{ name: 'BrowserThai-Regular.ttf', mimeType: 'font/ttf', buffer: Buffer.from('regular') },
+		{ name: 'BrowserThai-Bold.ttf', mimeType: 'font/ttf', buffer: Buffer.from('bold') }
+	]);
+	await page.getByRole('button', { name: 'อัปโหลดและตรวจสอบ' }).click();
+	await expect(page.getByText('Browser Thai')).toHaveCount(2);
+	await expect(page.getByText('400', { exact: true })).toBeVisible();
+	await expect(page.getByText('700', { exact: true })).toBeVisible();
+	await expect(page.getByText('พร้อมแนบ')).toHaveCount(2);
+	await page
+		.getByRole('checkbox', { name: 'ยืนยันว่ามีสิทธิ์ใช้และฝังฟอนต์ทุกไฟล์ในชุดนี้' })
+		.check();
+	await page.getByRole('button', { name: 'แนบชุดฟอนต์' }).click();
+	await expect
+		.poll(() => page.evaluate(() => window.certificateFontBatchHarness.attachedBatches()))
+		.toEqual([['font-file-1', 'font-file-2']]);
+	await expect(page.getByText('BrowserThai-Regular.ttf')).toHaveCount(0);
+	expect(await page.evaluate(() => window.certificateFontBatchHarness.pendingEvents())).toEqual([
+		true,
+		false
+	]);
+});
+
+test('failed temporary font cleanup retains the file row until retry succeeds', async ({
+	page
+}) => {
+	await page.goto(`${baseUrl}${fontBatchHarnessPath}`);
+	await page.getByLabel('ไฟล์ฟอนต์').setInputFiles({
+		name: 'BrowserThai-Variable.ttf',
+		mimeType: 'font/ttf',
+		buffer: Buffer.from('variable')
+	});
+	await page.getByRole('button', { name: 'อัปโหลดและตรวจสอบ' }).click();
+	await expect(page.getByText('ไม่รองรับ variable font')).toBeVisible();
+	await page.getByRole('button', { name: 'ลบไฟล์ชั่วคราว', exact: true }).click();
+	await expect(page.getByText('จำลองการลบไฟล์ชั่วคราวไม่สำเร็จ')).toBeVisible();
+	await expect(page.getByText('BrowserThai-Variable.ttf')).toBeVisible();
+	await page.getByRole('button', { name: 'ลบไฟล์ชั่วคราว', exact: true }).click();
+	await expect(page.getByText('BrowserThai-Variable.ttf')).toHaveCount(0);
+	expect(await page.evaluate(() => window.certificateFontBatchHarness.deletedFileIds())).toEqual([
+		'font-file-1'
+	]);
+	expect(await page.evaluate(() => window.certificateFontBatchHarness.pendingEvents())).toEqual([
+		true,
+		false
+	]);
+});
+
 declare global {
 	interface Window {
 		certificateEditorHarness: {
@@ -428,6 +573,11 @@ declare global {
 			previewPayloads(): Array<{ previewKind: string; layout: { elements: unknown[] } }>;
 			advanceClock(milliseconds: number): void;
 			rendererCalls(): number;
+		};
+		certificateFontBatchHarness: {
+			attachedBatches(): string[][];
+			deletedFileIds(): string[];
+			pendingEvents(): boolean[];
 		};
 	}
 }

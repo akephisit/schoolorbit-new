@@ -9,10 +9,8 @@
 	import * as AlertDialog from '$lib/components/ui/alert-dialog';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
-	import { Checkbox } from '$lib/components/ui/checkbox';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
-	import * as Select from '$lib/components/ui/select';
 	import {
 		AlertTriangle,
 		FileImage,
@@ -23,15 +21,12 @@
 		Upload
 	} from 'lucide-svelte';
 	import { toast } from 'svelte-sonner';
+	import CertificateFontBatchUpload from './CertificateFontBatchUpload.svelte';
 
 	type CertificateTemplateAsset = CertificateTemplateDetail['assets'][number];
-	type AssetKind = CertificateTemplateAsset['kind'];
 	type PendingAsset = {
 		metadata: FileMetadata;
-		kind: AssetKind;
 		displayName: string;
-		fontWeight?: number;
-		rightsConfirmed: boolean;
 	};
 
 	let {
@@ -50,26 +45,37 @@
 
 	let imageFile = $state<File | null>(null);
 	let imageDisplayName = $state('');
-	let fontFile = $state<File | null>(null);
-	let fontDisplayName = $state('');
-	let fontWeight = $state('400');
-	let rightsConfirmed = $state(false);
 	let unattachedFile = $state.raw<PendingAsset | null>(null);
 	let attachError = $state<Error | null>(null);
-	let uploadingKind = $state<AssetKind | null>(null);
+	let uploadingImage = $state(false);
 	let cleaning = $state(false);
 	let deleteTarget = $state.raw<CertificateTemplateAsset | null>(null);
 	let deleting = $state(false);
 	let imageInputKey = $state(0);
-	let fontInputKey = $state(0);
+	let imagePending = false;
+	let fontPending = false;
 
 	function asError(error: unknown, fallback: string): Error {
 		return error instanceof Error ? error : new Error(fallback);
 	}
 
+	function reportPending() {
+		onpendingchange(imagePending || fontPending);
+	}
+
+	function setImagePending(pending: boolean) {
+		imagePending = pending;
+		reportPending();
+	}
+
+	function setFontPending(pending: boolean) {
+		fontPending = pending;
+		reportPending();
+	}
+
 	function setUnattachedFile(file: PendingAsset | null) {
 		unattachedFile = file;
-		onpendingchange(file !== null);
+		setImagePending(file !== null);
 	}
 
 	function filenameWithoutExtension(file: File): string {
@@ -87,26 +93,10 @@
 		attachError = null;
 	}
 
-	function selectFont(event: Event) {
-		const input = event.currentTarget as HTMLInputElement;
-		fontFile = input.files?.[0] ?? null;
-		if (fontFile && !fontDisplayName.trim()) fontDisplayName = filenameWithoutExtension(fontFile);
-		attachError = null;
-		rightsConfirmed = false;
-	}
-
-	function clearForm(kind: AssetKind) {
-		if (kind === 'image') {
-			imageFile = null;
-			imageDisplayName = '';
-			imageInputKey += 1;
-		} else {
-			fontFile = null;
-			fontDisplayName = '';
-			fontWeight = '400';
-			rightsConfirmed = false;
-			fontInputKey += 1;
-		}
+	function clearImageForm() {
+		imageFile = null;
+		imageDisplayName = '';
+		imageInputKey += 1;
 	}
 
 	async function attachPendingAsset() {
@@ -115,75 +105,67 @@
 		try {
 			const updated = await attachCertificateTemplateAsset(templateId, {
 				fileId: pending.metadata.id,
-				kind: pending.kind,
+				kind: 'image',
 				displayName: pending.displayName,
-				fontWeight: pending.fontWeight,
-				rightsConfirmed: pending.rightsConfirmed
+				rightsConfirmed: false
 			});
 			setUnattachedFile(null);
 			attachError = null;
-			clearForm(pending.kind);
+			clearImageForm();
 			onpatched(updated);
-			toast.success(pending.kind === 'font' ? 'เพิ่มฟอนต์แล้ว' : 'เพิ่มรูปประกอบแล้ว');
+			toast.success('เพิ่มรูปประกอบแล้ว');
 		} catch (error) {
 			attachError = asError(error, 'แนบไฟล์กับแม่แบบไม่สำเร็จ');
 		}
 	}
 
-	async function uploadAsset(kind: AssetKind, event: SubmitEvent) {
+	async function uploadImage(event: SubmitEvent) {
 		event.preventDefault();
-		if (uploadingKind || unattachedFile) return;
-		const file = kind === 'image' ? imageFile : fontFile;
-		const displayName = (kind === 'image' ? imageDisplayName : fontDisplayName)
-			.trim()
-			.replace(/\s+/g, ' ');
+		if (uploadingImage || unattachedFile) return;
+		const file = imageFile;
+		const displayName = imageDisplayName.trim().replace(/\s+/g, ' ');
 		if (!file || !displayName) {
 			attachError = new Error('เลือกไฟล์และระบุชื่อที่ใช้แสดงให้ครบ');
 			return;
 		}
-		if (kind === 'font' && !rightsConfirmed) {
-			attachError = new Error('ต้องยืนยันสิทธิ์การใช้งานฟอนต์ก่อนอัปโหลด');
-			return;
-		}
 
-		uploadingKind = kind;
-		onpendingchange(true);
+		uploadingImage = true;
+		setImagePending(true);
 		attachError = null;
 		try {
-			const purpose = kind === 'image' ? 'certificate_template_image' : 'certificate_template_font';
-			const metadata = await uploadCertificateTemplateFile(file, purpose, templateId);
+			const metadata = await uploadCertificateTemplateFile(
+				file,
+				'certificate_template_image',
+				templateId
+			);
 			setUnattachedFile({
 				metadata,
-				kind,
-				displayName,
-				fontWeight: kind === 'font' ? Number(fontWeight) : undefined,
-				rightsConfirmed: kind === 'font' && rightsConfirmed
+				displayName
 			});
 			await attachPendingAsset();
 		} catch (error) {
 			attachError = asError(error, 'อัปโหลดทรัพยากรแม่แบบไม่สำเร็จ');
 		} finally {
-			uploadingKind = null;
-			if (!unattachedFile) onpendingchange(false);
+			uploadingImage = false;
+			if (!unattachedFile) setImagePending(false);
 		}
 	}
 
 	async function retryAttach() {
-		if (!unattachedFile || uploadingKind) return;
-		uploadingKind = unattachedFile.kind;
+		if (!unattachedFile || uploadingImage) return;
+		uploadingImage = true;
 		await attachPendingAsset();
-		uploadingKind = null;
+		uploadingImage = false;
 	}
 
 	async function deleteTemporaryUpload() {
 		if (!unattachedFile || cleaning) return;
 		cleaning = true;
 		try {
-			const kind = unattachedFile.kind;
 			await deleteFile(unattachedFile.metadata.id, templateId);
 			setUnattachedFile(null);
 			attachError = null;
-			clearForm(kind);
+			clearImageForm();
 			toast.success('ลบไฟล์ชั่วคราวแล้ว');
 		} catch (error) {
 			attachError = asError(error, 'ลบไฟล์ชั่วคราวไม่สำเร็จ');
@@ -227,12 +209,7 @@
 					ไฟล์อัปโหลดสำเร็จแต่ยังไม่ถูกแนบกับแม่แบบ ลองแนบซ้ำหรือลบไฟล์ชั่วคราวนี้ได้
 				</p>
 				<div class="mt-3 flex flex-wrap gap-2">
-					<LoadingButton
-						size="sm"
-						variant="outline"
-						loading={uploadingKind !== null}
-						onclick={retryAttach}
-					>
+					<LoadingButton size="sm" variant="outline" loading={uploadingImage} onclick={retryAttach}>
 						<RefreshCw class="size-4" /> ลองแนบอีกครั้ง
 					</LoadingButton>
 					<LoadingButton
@@ -249,10 +226,7 @@
 	{/if}
 
 	<div class="grid gap-4 xl:grid-cols-2">
-		<form
-			class="space-y-4 rounded-xl border bg-muted/15 p-4"
-			onsubmit={(event) => uploadAsset('image', event)}
-		>
+		<form class="space-y-4 rounded-xl border bg-muted/15 p-4" onsubmit={uploadImage}>
 			<div class="flex items-center gap-2">
 				<span class="grid size-9 place-items-center rounded-lg bg-blue-100 text-blue-700">
 					<ImagePlus class="size-5" />
@@ -286,85 +260,19 @@
 			<LoadingButton
 				type="submit"
 				variant="outline"
-				loading={uploadingKind === 'image'}
+				loading={uploadingImage}
 				disabled={!template.capabilities.canUpdate || !imageFile || unattachedFile !== null}
 			>
 				<Upload class="size-4" /> อัปโหลดรูป
 			</LoadingButton>
 		</form>
 
-		<form
-			class="space-y-4 rounded-xl border bg-muted/15 p-4"
-			onsubmit={(event) => uploadAsset('font', event)}
-		>
-			<div class="flex items-center gap-2">
-				<span class="grid size-9 place-items-center rounded-lg bg-violet-100 text-violet-700">
-					<FileType2 class="size-5" />
-				</span>
-				<div>
-					<h4 class="text-sm font-medium">เพิ่มฟอนต์</h4>
-					<p class="text-xs text-muted-foreground">TTF หรือ OTF</p>
-				</div>
-			</div>
-			<div class="space-y-2">
-				<Label for={`certificate-font-${template.id}`}>ไฟล์ฟอนต์</Label>
-				{#key fontInputKey}
-					<Input
-						id={`certificate-font-${template.id}`}
-						type="file"
-						accept=".ttf,.otf"
-						onchange={selectFont}
-						disabled={!template.capabilities.canUpdate || unattachedFile !== null}
-					/>
-				{/key}
-			</div>
-			<div class="grid gap-3 sm:grid-cols-[minmax(0,1fr)_8rem]">
-				<div class="space-y-2">
-					<Label for={`certificate-font-name-${template.id}`}>ชื่อสำหรับเลือกใน editor</Label>
-					<Input
-						id={`certificate-font-name-${template.id}`}
-						bind:value={fontDisplayName}
-						maxlength={200}
-						placeholder="เช่น TH Sarabun New"
-					/>
-				</div>
-				<div class="space-y-2">
-					<Label for={`certificate-font-weight-${template.id}`}>น้ำหนัก</Label>
-					<Select.Root type="single" bind:value={fontWeight}>
-						<Select.Trigger id={`certificate-font-weight-${template.id}`} class="w-full">
-							{fontWeight}
-						</Select.Trigger>
-						<Select.Content>
-							{#each ['100', '200', '300', '400', '500', '600', '700', '800', '900'] as weight (weight)}
-								<Select.Item value={weight}>{weight}</Select.Item>
-							{/each}
-						</Select.Content>
-					</Select.Root>
-				</div>
-			</div>
-			<label
-				class="flex cursor-pointer items-start gap-3 rounded-lg border bg-background p-3 text-sm"
-			>
-				<Checkbox bind:checked={rightsConfirmed} class="mt-0.5" />
-				<span>
-					<strong class="font-medium">ยืนยันว่ามีสิทธิ์ใช้และฝังฟอนต์นี้ในเกียรติบัตร</strong>
-					<span class="mt-0.5 block text-xs leading-relaxed text-muted-foreground">
-						ผู้ดูแลต้องตรวจเงื่อนไขลิขสิทธิ์ของไฟล์ก่อนอัปโหลด
-					</span>
-				</span>
-			</label>
-			<LoadingButton
-				type="submit"
-				variant="outline"
-				loading={uploadingKind === 'font'}
-				disabled={!template.capabilities.canUpdate ||
-					!fontFile ||
-					!rightsConfirmed ||
-					unattachedFile !== null}
-			>
-				<Upload class="size-4" /> อัปโหลดฟอนต์
-			</LoadingButton>
-		</form>
+		<CertificateFontBatchUpload
+			templateId={template.id}
+			canUpdate={template.capabilities.canUpdate}
+			{onpatched}
+			onpendingchange={setFontPending}
+		/>
 	</div>
 
 	<div class="grid gap-4 lg:grid-cols-2">
@@ -417,6 +325,7 @@
 								<p class="truncate text-sm font-medium">{asset.displayName}</p>
 								<p class="truncate text-xs text-muted-foreground">
 									{asset.fontFamily ?? 'ไม่ทราบ family'} · น้ำหนัก {asset.fontWeight ?? '—'}
+									· {asset.fontStyle === 'italic' ? 'ตัวเอียง' : 'ตัวปกติ'}
 								</p>
 							</div>
 							{#if template.capabilities.canUpdate}
