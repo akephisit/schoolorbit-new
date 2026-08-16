@@ -3,7 +3,9 @@ use std::io::Cursor;
 use image::{ImageFormat, ImageReader};
 
 use super::{
-    platform_types::{DetectedContent, FileInspectionMetadata, FilePurpose, PdfPageBox},
+    platform_types::{
+        DetectedContent, FileInspectionMetadata, FilePurpose, FontInspectionStyle, PdfPageBox,
+    },
     purpose_registry::{purpose_definition, ContentLimits},
 };
 
@@ -519,6 +521,13 @@ fn inspect_font(data: &[u8]) -> Result<FileInspectionMetadata, FileInspectionErr
     Ok(FileInspectionMetadata::Font {
         family_name,
         units_per_em: face.units_per_em(),
+        weight: face.weight().to_number(),
+        style: if face.is_italic() || face.is_oblique() {
+            FontInspectionStyle::Italic
+        } else {
+            FontInspectionStyle::Normal
+        },
+        is_variable: face.is_variable(),
     })
 }
 
@@ -583,7 +592,9 @@ mod tests {
 
     use crate::modules::files::{
         file_inspector::{inspect_file, validate_image_limits, FileInspectionError},
-        platform_types::{DetectedContent, FileInspectionMetadata, FilePurpose, PdfPageBox},
+        platform_types::{
+            DetectedContent, FileInspectionMetadata, FilePurpose, FontInspectionStyle, PdfPageBox,
+        },
         purpose_registry::ContentLimits,
     };
     use crate::utils::file_processor::ImageProcessor;
@@ -595,6 +606,70 @@ mod tests {
         image
             .write_to(&mut Cursor::new(&mut bytes), format)
             .expect("synthetic image fixture must encode");
+        bytes
+    }
+
+    fn font_table_record(bytes: &[u8], tag: &[u8; 4]) -> usize {
+        let table_count = u16::from_be_bytes([bytes[4], bytes[5]]) as usize;
+        (0..table_count)
+            .map(|index| 12 + index * 16)
+            .find(|&position| bytes.get(position..position + 4) == Some(tag.as_slice()))
+            .expect("synthetic font fixture must contain the requested table")
+    }
+
+    fn italic_font_fixture() -> Vec<u8> {
+        let mut bytes =
+            include_bytes!("../../../../frontend-school/static/fonts/Sarabun-Regular.ttf").to_vec();
+        let record = font_table_record(&bytes, b"OS/2");
+        let table_offset = u32::from_be_bytes(
+            bytes[record + 8..record + 12]
+                .try_into()
+                .expect("table offset must be four bytes"),
+        ) as usize;
+        let selection_offset = table_offset + 62;
+        let mut selection = u16::from_be_bytes(
+            bytes[selection_offset..selection_offset + 2]
+                .try_into()
+                .expect("selection flags must be two bytes"),
+        );
+        selection |= 1;
+        selection &= !(1 << 6);
+        bytes[selection_offset..selection_offset + 2].copy_from_slice(&selection.to_be_bytes());
+        bytes
+    }
+
+    fn variable_font_fixture() -> Vec<u8> {
+        let mut bytes =
+            include_bytes!("../../../../frontend-school/static/fonts/Sarabun-Regular.ttf").to_vec();
+        while bytes.len() % 4 != 0 {
+            bytes.push(0);
+        }
+        let table_offset = u32::try_from(bytes.len()).expect("font fixture must fit u32");
+        let fvar = [
+            0x00, 0x01, 0x00, 0x00, // version 1.0
+            0x00, 0x10, // axes array offset
+            0x00, 0x02, // count-size pairs
+            0x00, 0x01, // axis count
+            0x00, 0x14, // axis size
+            0x00, 0x00, // instance count
+            0x00, 0x08, // instance size
+            b'w', b'g', b'h', b't', // weight axis
+            0x00, 0x64, 0x00, 0x00, // minimum 100
+            0x01, 0x90, 0x00, 0x00, // default 400
+            0x03, 0x84, 0x00, 0x00, // maximum 900
+            0x00, 0x00, // flags
+            0x01, 0x00, // name ID 256
+        ];
+        bytes.extend_from_slice(&fvar);
+
+        let record = font_table_record(&bytes, b"DSIG");
+        bytes[record..record + 4].copy_from_slice(b"fvar");
+        bytes[record + 8..record + 12].copy_from_slice(&table_offset.to_be_bytes());
+        bytes[record + 12..record + 16].copy_from_slice(
+            &u32::try_from(fvar.len())
+                .expect("fvar fixture must fit u32")
+                .to_be_bytes(),
+        );
         bytes
     }
 
@@ -815,11 +890,30 @@ mod tests {
             FileInspectionMetadata::Font {
                 family_name,
                 units_per_em,
+                weight,
+                style,
+                is_variable,
             } => {
                 assert_eq!(family_name.as_deref(), Some("Sarabun"));
                 assert_eq!(*units_per_em, 1000);
+                assert_eq!(*weight, 400);
+                assert_eq!(*style, FontInspectionStyle::Normal);
+                assert!(!is_variable);
             }
             metadata => panic!("expected font metadata, got {metadata:?}"),
+        }
+
+        let bold = inspect_file(
+            FilePurpose::CertificateTemplateFont,
+            include_bytes!("../../../../frontend-school/static/fonts/Sarabun-Bold.ttf"),
+        )
+        .expect("built-in Sarabun Bold must be a valid uploadable font");
+        match bold.metadata() {
+            FileInspectionMetadata::Font { weight, style, .. } => {
+                assert_eq!(*weight, 700);
+                assert_eq!(*style, FontInspectionStyle::Normal);
+            }
+            metadata => panic!("expected bold font metadata, got {metadata:?}"),
         }
 
         assert_eq!(
@@ -836,6 +930,30 @@ mod tests {
         assert_eq!(
             inspect_file(FilePurpose::CertificateTemplateFont, b"OTTOnot-a-font",),
             Err(FileInspectionError::MalformedContent)
+        );
+    }
+
+    #[test]
+    fn certificate_font_detects_italic_and_variable_faces() {
+        let italic_bytes = italic_font_fixture();
+        let italic = inspect_file(FilePurpose::CertificateTemplateFont, &italic_bytes)
+            .expect("synthetic italic font must remain structurally valid");
+        let italic_style = match italic.metadata() {
+            FileInspectionMetadata::Font { style, .. } => *style,
+            metadata => panic!("expected italic font metadata, got {metadata:?}"),
+        };
+
+        let variable_bytes = variable_font_fixture();
+        let variable = inspect_file(FilePurpose::CertificateTemplateFont, &variable_bytes)
+            .expect("synthetic variable font must remain structurally valid");
+        let is_variable = match variable.metadata() {
+            FileInspectionMetadata::Font { is_variable, .. } => *is_variable,
+            metadata => panic!("expected variable font metadata, got {metadata:?}"),
+        };
+
+        assert_eq!(
+            (italic_style, is_variable),
+            (FontInspectionStyle::Italic, true)
         );
     }
 

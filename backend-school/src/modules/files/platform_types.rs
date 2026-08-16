@@ -156,6 +156,18 @@ fn normalize_pdf_point(value: f64) -> f64 {
     (value * 10_000.0).round() / 10_000.0
 }
 
+const fn default_font_weight() -> u16 {
+    400
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FontInspectionStyle {
+    #[default]
+    Normal,
+    Italic,
+}
+
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum FileInspectionMetadata {
@@ -174,6 +186,12 @@ pub enum FileInspectionMetadata {
     Font {
         family_name: Option<String>,
         units_per_em: u16,
+        #[serde(default = "default_font_weight")]
+        weight: u16,
+        #[serde(default)]
+        style: FontInspectionStyle,
+        #[serde(default)]
+        is_variable: bool,
     },
 }
 

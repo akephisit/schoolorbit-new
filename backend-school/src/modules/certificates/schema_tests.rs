@@ -59,6 +59,44 @@ fn certificate_template_upload_relation_uses_a_follow_up_migration() {
 }
 
 #[test]
+fn certificate_font_variant_migration_is_forward_only() {
+    let migration = std::fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("migrations/038_certificate_font_variants.sql"),
+    )
+    .expect("migration 038 must exist");
+
+    for required in [
+        "ADD COLUMN font_style TEXT",
+        "SET font_style = 'normal'",
+        "certificate_template_assets_kind_fields_check",
+        "kind = 'image'",
+        "font_style IS NULL",
+        "kind = 'font'",
+        "font_style IN ('normal', 'italic')",
+        "certificate_template_assets_font_variant_unique_idx",
+        "lower(btrim(font_family))",
+        "font_weight",
+        "font_style",
+    ] {
+        assert!(migration.contains(required), "missing {required}");
+    }
+
+    let lower = migration.to_ascii_lowercase();
+    assert!(
+        !lower.contains("drop column"),
+        "migration must preserve data"
+    );
+    assert!(
+        !lower.contains("drop table"),
+        "migration must preserve tables"
+    );
+    assert!(
+        !lower.contains("national_id"),
+        "font metadata must never introduce plaintext national IDs"
+    );
+}
+
+#[test]
 fn issued_snapshots_and_idempotent_problem_rows_are_immutable_by_migration() {
     let issuance = std::fs::read_to_string(
         Path::new(env!("CARGO_MANIFEST_DIR")).join("migrations/035_certificate_issuance.sql"),

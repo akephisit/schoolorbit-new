@@ -109,6 +109,7 @@ string_enum!(CertificateResourceLockCode { ResourceLocked });
 string_enum!(CertificateIssueRunOutcome { Issued, Returned });
 string_enum!(CertificateStatus { Issued, Revoked });
 string_enum!(CertificateTemplateAssetKind { Image, Font });
+string_enum!(CertificateFontStyle { Normal, Italic });
 string_enum!(GeometryAction {
     Preserve,
     Scale,
@@ -339,6 +340,29 @@ impl CertificateTemplateAssetKind {
         match self {
             Self::Image => "image",
             Self::Font => "font",
+        }
+    }
+}
+
+impl Default for CertificateFontStyle {
+    fn default() -> Self {
+        Self::Normal
+    }
+}
+
+impl CertificateFontStyle {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Normal => "normal",
+            Self::Italic => "italic",
+        }
+    }
+
+    pub fn parse(value: &str) -> Option<Self> {
+        match value {
+            "normal" => Some(Self::Normal),
+            "italic" => Some(Self::Italic),
+            _ => None,
         }
     }
 }
