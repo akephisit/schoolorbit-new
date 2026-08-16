@@ -98,6 +98,48 @@ test('auto-shrink stays bounded and selects the largest fitting size', async () 
 	);
 });
 
+test('measures Thai glyph ink and shadow inside the text frame', async () => {
+	const { measureCertificateTextLayout } =
+		await import('../../src/lib/certificates/text-layout.browser.ts');
+	const context = {
+		font: '',
+		textAlign: 'start',
+		textBaseline: 'alphabetic',
+		measureText(value) {
+			const fontSize = Number.parseFloat(this.font.match(/([\d.]+)px/u)?.[1] ?? '20');
+			const width = Array.from(value).length * fontSize * 0.45;
+			return {
+				width,
+				actualBoundingBoxAscent: fontSize * 1.08,
+				actualBoundingBoxDescent: fontSize * 0.24,
+				actualBoundingBoxLeft: fontSize * 0.04,
+				actualBoundingBoxRight: width + fontSize * 0.03
+			};
+		}
+	};
+
+	const measured = measureCertificateTextLayout(context, {
+		text: 'ปั้น น้ำ ผู้เข้าร่วม กิจกรรม',
+		fontSize: 20,
+		minFontSize: 12,
+		autoShrink: true,
+		lineHeight: 1.1,
+		frameWidth: 180,
+		frameHeight: 30,
+		alignment: 'center',
+		shadow: { offsetX: 1, offsetY: -1, blur: 2 },
+		fontForSize: (fontSize) => `normal 700 ${fontSize}px "Sarabun"`
+	});
+
+	assert.equal(measured.fits, true);
+	assert.ok(measured.fontSize < 20);
+	assert.ok(measured.bounds.top >= 0);
+	assert.ok(measured.bounds.bottom <= 30);
+	assert.ok(measured.bounds.left >= 0);
+	assert.ok(measured.bounds.right <= 180);
+	assert.ok(measured.lines.every((line) => line.baseline > 0));
+});
+
 test('sanitizes PDF filenames and enforces the 200-certificate browser batch limit', async () => {
 	const { sanitizeCertificateFilename, validateCertificateBatchSize } =
 		await import('../../src/lib/certificates/download.ts');

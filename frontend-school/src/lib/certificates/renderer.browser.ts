@@ -15,7 +15,6 @@ import { describePaper } from './paper';
 import {
 	backgroundPageTransform,
 	CERTIFICATE_RENDER_DPI,
-	chooseAutoShrinkFontSize,
 	displayedPageSize,
 	normalizePageRotation,
 	PDF_POINTS_PER_INCH,
@@ -27,6 +26,7 @@ import type {
 	CertificatePreviewResult,
 	CertificateRenderer
 } from './renderer';
+import { measureCertificateTextLayout } from './text-layout.browser';
 
 GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 
@@ -35,12 +35,6 @@ type TextElement = Extract<CertificateElement, { type: 'text' }>;
 type ImageElement = Extract<CertificateElement, { type: 'image' }>;
 type QrElement = Extract<CertificateElement, { type: 'qr' }>;
 type RenderImage = CanvasImageSource & { close?: () => void };
-
-type WrappedText = {
-	fontSize: number;
-	lines: string[];
-	lineHeight: number;
-};
 
 type OverlayResult = {
 	canvas: HTMLCanvasElement;
@@ -251,76 +245,6 @@ function context2d(canvas: HTMLCanvasElement, alpha: boolean): CanvasRenderingCo
 	return context;
 }
 
-function wordSegments(text: string): string[] {
-	if (typeof Intl.Segmenter !== 'undefined') {
-		return Array.from(
-			new Intl.Segmenter('th', { granularity: 'word' }).segment(text),
-			(segment) => segment.segment
-		);
-	}
-	return Array.from(text);
-}
-
-function graphemeSegments(text: string): string[] {
-	if (typeof Intl.Segmenter !== 'undefined') {
-		return Array.from(
-			new Intl.Segmenter('th', { granularity: 'grapheme' }).segment(text),
-			(segment) => segment.segment
-		);
-	}
-	return Array.from(text);
-}
-
-function trimLineEnd(value: string): string {
-	return value.replace(/\s+$/u, '');
-}
-
-function wrapSingleParagraph(
-	context: CanvasRenderingContext2D,
-	paragraph: string,
-	maxWidth: number
-): string[] {
-	if (!paragraph) return [''];
-	const lines: string[] = [];
-	let current = '';
-
-	const pushCurrent = () => {
-		lines.push(trimLineEnd(current));
-		current = '';
-	};
-
-	const appendPiece = (piece: string) => {
-		if (!current && /^\s+$/u.test(piece)) return;
-		const candidate = current + piece;
-		if (context.measureText(candidate).width <= maxWidth) {
-			current = candidate;
-			return;
-		}
-		if (current) pushCurrent();
-		if (context.measureText(piece).width <= maxWidth) {
-			current = piece.replace(/^\s+/u, '');
-			return;
-		}
-
-		for (const grapheme of graphemeSegments(piece)) {
-			const graphemeCandidate = current + grapheme;
-			if (current && context.measureText(graphemeCandidate).width > maxWidth) pushCurrent();
-			current += grapheme;
-		}
-	};
-
-	for (const segment of wordSegments(paragraph)) appendPiece(segment);
-	if (current || lines.length === 0) pushCurrent();
-	return lines;
-}
-
-function wrappedLines(context: CanvasRenderingContext2D, text: string, maxWidth: number): string[] {
-	return text
-		.replace(/\r\n?/gu, '\n')
-		.split('\n')
-		.flatMap((paragraph) => wrapSingleParagraph(context, paragraph, maxWidth));
-}
-
 function canvasFont(
 	style: TextElement['fontStyle'],
 	weight: number,
@@ -328,44 +252,6 @@ function canvasFont(
 	alias: string
 ): string {
 	return `${style} ${weight} ${size}px "${alias}"`;
-}
-
-function layoutText(
-	context: CanvasRenderingContext2D,
-	element: TextElement,
-	text: string,
-	fontAlias: string,
-	scale: number,
-	frameWidth: number,
-	frameHeight: number
-): WrappedText {
-	const fitsAt = (
-		fontSizePoints: number
-	): { fits: boolean; lines: string[]; lineHeight: number } => {
-		const fontSize = fontSizePoints * scale;
-		context.font = canvasFont(element.fontStyle, element.fontWeight, fontSize, fontAlias);
-		const lines = wrappedLines(context, text, frameWidth);
-		const lineHeight = fontSize * element.lineHeight;
-		const widest = Math.max(0, ...lines.map((line) => context.measureText(line).width));
-		return {
-			fits: widest <= frameWidth + 0.01 && lines.length * lineHeight <= frameHeight + 0.01,
-			lines,
-			lineHeight
-		};
-	};
-
-	const fontSizePoints = chooseAutoShrinkFontSize({
-		fontSize: element.fontSize,
-		minFontSize: element.minFontSize,
-		autoShrink: element.autoShrink,
-		fits: (candidate) => fitsAt(candidate).fits
-	});
-	const fitted = fitsAt(fontSizePoints);
-	return {
-		fontSize: fontSizePoints * scale,
-		lines: fitted.lines,
-		lineHeight: fitted.lineHeight
-	};
 }
 
 function rotateIntoFrame(
@@ -403,15 +289,25 @@ async function drawTextElement(
 		width: element.frame.width * scaleX,
 		height: element.frame.height * scaleY
 	};
-	const textLayout = layoutText(
-		context,
-		element,
+	const textLayout = measureCertificateTextLayout(context, {
 		text,
-		fontAlias,
-		uniformScale,
-		frame.width,
-		frame.height
-	);
+		fontSize: element.fontSize * uniformScale,
+		minFontSize: element.minFontSize * uniformScale,
+		autoShrink: element.autoShrink,
+		lineHeight: element.lineHeight,
+		frameWidth: frame.width,
+		frameHeight: frame.height,
+		alignment: element.alignment,
+		shadow: element.shadow
+			? {
+					offsetX: element.shadow.offsetX * uniformScale,
+					offsetY: element.shadow.offsetY * uniformScale,
+					blur: element.shadow.blur * uniformScale
+				}
+			: null,
+		fontForSize: (fontSize) =>
+			canvasFont(element.fontStyle, element.fontWeight, fontSize, fontAlias)
+	});
 
 	rotateIntoFrame(context, frame, element.rotation, () => {
 		context.font = canvasFont(
@@ -421,8 +317,8 @@ async function drawTextElement(
 			fontAlias
 		);
 		context.fillStyle = element.color;
-		context.textBaseline = 'top';
-		context.textAlign = element.alignment;
+		context.textBaseline = 'alphabetic';
+		context.textAlign = 'left';
 		if (element.shadow) {
 			context.shadowColor = element.shadow.color;
 			context.shadowOffsetX = element.shadow.offsetX * uniformScale;
@@ -434,14 +330,8 @@ async function drawTextElement(
 			context.shadowOffsetY = 0;
 			context.shadowBlur = 0;
 		}
-		const x =
-			element.alignment === 'left'
-				? 0
-				: element.alignment === 'right'
-					? frame.width
-					: frame.width / 2;
-		for (const [index, line] of textLayout.lines.entries()) {
-			context.fillText(line, x, index * textLayout.lineHeight);
+		for (const line of textLayout.lines) {
+			context.fillText(line.text, line.x, line.baseline);
 		}
 	});
 }

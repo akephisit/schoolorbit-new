@@ -107,6 +107,38 @@ function harnessPlugin(): Plugin {
 					return different / (left.length / 4);
 				}
 
+				function findInkBounds(pixels, width, height, frame, scale) {
+					const left = Math.max(0, Math.floor(frame.x * scale));
+					const top = Math.max(0, Math.floor(frame.y * scale));
+					const right = Math.min(width, Math.ceil((frame.x + frame.width) * scale));
+					const bottom = Math.min(height, Math.ceil((frame.y + frame.height) * scale));
+					let minX = right;
+					let minY = bottom;
+					let maxX = left - 1;
+					let maxY = top - 1;
+					for (let y = top; y < bottom; y += 1) {
+						for (let x = left; x < right; x += 1) {
+							const index = (y * width + x) * 4;
+							if (
+								pixels[index] >= 245 &&
+								pixels[index + 1] >= 245 &&
+								pixels[index + 2] >= 245
+							) continue;
+							minX = Math.min(minX, x);
+							minY = Math.min(minY, y);
+							maxX = Math.max(maxX, x);
+							maxY = Math.max(maxY, y);
+						}
+					}
+					if (maxY < minY) throw new Error('Thai regression text produced no visible ink');
+					return {
+						leftClearance: minX - left,
+						topClearance: minY - top,
+						rightClearance: right - 1 - maxX,
+						bottomClearance: bottom - 1 - maxY
+					};
+				}
+
 				async function rasterizePdf(bytes, pageNumber = 1, scale = 1) {
 					const task = getDocument({ data: bytes });
 					const pdfDocument = await task.promise;
@@ -150,6 +182,31 @@ function harnessPlugin(): Plugin {
 							previewHeight: preview.height,
 							exportedWidth: exported.width,
 							exportedHeight: exported.height
+						};
+					},
+					async inspectThaiInk(manifest, frame) {
+						const scale = 2;
+						const renderer = await rendererPromise;
+						const preview = document.createElement('canvas');
+						await renderer.renderPreview(manifest, preview, { scale });
+						const previewPixels = preview.getContext('2d', { alpha: false }).getImageData(
+							0,
+							0,
+							preview.width,
+							preview.height
+						).data;
+						const pdf = await renderer.buildCertificatePdf([manifest]);
+						const exported = await rasterizePdf(pdf, 1, scale);
+						return {
+							differenceRatio: pixelDifferenceRatio(previewPixels, exported.pixels),
+							preview: findInkBounds(previewPixels, preview.width, preview.height, frame, scale),
+							exported: findInkBounds(
+								exported.pixels,
+								exported.canvasWidth,
+								exported.canvasHeight,
+								frame,
+								scale
+							)
 						};
 					},
 					async pageSizes(manifests) {
@@ -489,6 +546,61 @@ test('preview and exported vector PDF stay pixel-equivalent at every page rotati
 	}
 });
 
+test('Thai marks and shadows stay clear of text-frame clipping in preview and export', async ({
+	page
+}) => {
+	const pathName = '/background/runtime-thai-ink.pdf';
+	const document = await PDFDocument.create();
+	const pdfPage = document.addPage([240, 160]);
+	pdfPage.drawRectangle({ x: 0, y: 0, width: 240, height: 160, color: rgb(1, 1, 1) });
+	backgroundFiles.set(pathName, await document.save());
+	const geometry: PageGeometry = {
+		mediaBox: { xPoints: 0, yPoints: 0, widthPoints: 240, heightPoints: 160 },
+		cropBox: { xPoints: 0, yPoints: 0, widthPoints: 240, heightPoints: 160 },
+		rotation: 0,
+		displayedWidthPoints: 240,
+		displayedHeightPoints: 160,
+		paperLabel: 'ขนาดทดสอบ'
+	};
+	const frame = { x: 16, y: 20, width: 208, height: 27 };
+	const value = manifest(pathName, geometry);
+	value.layout.elements = [
+		{
+			type: 'text',
+			id: '20000000-0000-4000-8000-000000000099',
+			content: 'ปั้น น้ำ ผู้เข้าร่วม กิจกรรม',
+			frame,
+			rotation: 0,
+			fontSource: { type: 'built_in' },
+			fontFamily: 'Sarabun',
+			fontWeight: 700,
+			fontStyle: 'normal',
+			fontSize: 20,
+			minFontSize: 12,
+			color: '#111111',
+			alignment: 'center',
+			lineHeight: 1.05,
+			autoShrink: true,
+			shadow: { offsetX: 1, offsetY: -1, blur: 2, color: '#11111199' }
+		}
+	];
+
+	await page.goto(`${baseUrl}${harnessPath}`);
+	const result = await page.evaluate(
+		async ({ manifestValue, origin, textFrame }) => {
+			manifestValue.backgroundGrant.url = `${origin}${manifestValue.backgroundGrant.url}`;
+			return window.certificateRendererHarness.inspectThaiInk(manifestValue, textFrame);
+		},
+		{ manifestValue: value, origin: baseUrl, textFrame: frame }
+	);
+
+	expect(result.differenceRatio).toBeLessThan(0.005);
+	for (const bounds of [result.preview, result.exported]) {
+		expect(bounds.topClearance).toBeGreaterThan(0);
+		expect(bounds.bottomClearance).toBeGreaterThan(0);
+	}
+});
+
 test('export preserves the source CropBox at canonical and non-canonical rotations', async ({
 	page
 }) => {
@@ -666,6 +778,24 @@ declare global {
 				previewHeight: number;
 				exportedWidth: number;
 				exportedHeight: number;
+			}>;
+			inspectThaiInk(
+				manifest: RenderManifest,
+				frame: { x: number; y: number; width: number; height: number }
+			): Promise<{
+				differenceRatio: number;
+				preview: {
+					leftClearance: number;
+					topClearance: number;
+					rightClearance: number;
+					bottomClearance: number;
+				};
+				exported: {
+					leftClearance: number;
+					topClearance: number;
+					rightClearance: number;
+					bottomClearance: number;
+				};
 			}>;
 			pageSizes(manifests: RenderManifest[]): Promise<Array<{ width: number; height: number }>>;
 			compareBackground(manifest: RenderManifest): Promise<{
