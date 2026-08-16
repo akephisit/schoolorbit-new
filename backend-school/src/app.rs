@@ -218,6 +218,14 @@ fn protected_routes() -> Router<AppState> {
             post(modules::certificates::handlers::attach_certificate_template_asset),
         )
         .route(
+            "/api/certificates/templates/{template_id}/assets/fonts/inspect",
+            post(modules::certificates::handlers::inspect_certificate_font_uploads),
+        )
+        .route(
+            "/api/certificates/templates/{template_id}/assets/fonts/batch",
+            post(modules::certificates::handlers::attach_certificate_font_batch),
+        )
+        .route(
             "/api/certificates/templates/{template_id}/assets/{asset_id}",
             delete(modules::certificates::handlers::delete_certificate_template_asset),
         )

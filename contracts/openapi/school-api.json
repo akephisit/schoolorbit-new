@@ -2259,6 +2259,35 @@
         ],
         "type": "object"
       },
+      "ApiResponse_CertificateFontUploadInspection": {
+        "properties": {
+          "data": {
+            "properties": {
+              "files": {
+                "items": {
+                  "$ref": "#/components/schemas/CertificateFontUploadInspectionFile"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "files"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
       "ApiResponse_CertificateIssueRequestDetail": {
         "properties": {
           "data": {
@@ -10512,14 +10541,6 @@
             "format": "uuid",
             "type": "string"
           },
-          "fontWeight": {
-            "format": "int32",
-            "minimum": 0,
-            "type": [
-              "integer",
-              "null"
-            ]
-          },
           "kind": {
             "$ref": "#/components/schemas/CertificateTemplateAssetKind"
           },
@@ -10552,6 +10573,25 @@
           "fileId",
           "geometryAction",
           "previewConfirmed"
+        ],
+        "type": "object"
+      },
+      "AttachCertificateFontBatchRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "fileIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "rightsConfirmed": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "fileIds"
         ],
         "type": "object"
       },
@@ -12130,6 +12170,86 @@
           }
         ]
       },
+      "CertificateFontStyle": {
+        "enum": [
+          "normal",
+          "italic"
+        ],
+        "type": "string"
+      },
+      "CertificateFontUploadInspection": {
+        "properties": {
+          "files": {
+            "items": {
+              "$ref": "#/components/schemas/CertificateFontUploadInspectionFile"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "files"
+        ],
+        "type": "object"
+      },
+      "CertificateFontUploadInspectionFile": {
+        "properties": {
+          "displayFilename": {
+            "type": "string"
+          },
+          "fileId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "fontFamily": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "fontStyle": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/CertificateFontStyle"
+              }
+            ]
+          },
+          "fontWeight": {
+            "format": "int32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "status": {
+            "$ref": "#/components/schemas/CertificateFontUploadStatus"
+          }
+        },
+        "required": [
+          "fileId",
+          "displayFilename",
+          "fontFamily",
+          "fontWeight",
+          "fontStyle",
+          "status"
+        ],
+        "type": "object"
+      },
+      "CertificateFontUploadStatus": {
+        "enum": [
+          "ready",
+          "duplicate_selection",
+          "duplicate_existing",
+          "unsupported_variable",
+          "unsupported_weight",
+          "missing_family",
+          "unavailable"
+        ],
+        "type": "string"
+      },
       "CertificateImportBatchSummary": {
         "properties": {
           "campaignId": {
@@ -13159,6 +13279,16 @@
               "null"
             ]
           },
+          "fontStyle": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/CertificateFontStyle"
+              }
+            ]
+          },
           "fontWeight": {
             "format": "int32",
             "minimum": 0,
@@ -13170,6 +13300,22 @@
           "id": {
             "format": "uuid",
             "type": "string"
+          },
+          "imageHeightPixels": {
+            "format": "int32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "imageWidthPixels": {
+            "format": "int32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
           },
           "kind": {
             "$ref": "#/components/schemas/CertificateTemplateAssetKind"
@@ -13185,6 +13331,9 @@
           "displayName",
           "fontFamily",
           "fontWeight",
+          "fontStyle",
+          "imageWidthPixels",
+          "imageHeightPixels",
           "rightsConfirmed",
           "createdAt"
         ],
@@ -15991,6 +16140,10 @@
       "ImageElement": {
         "additionalProperties": false,
         "properties": {
+          "aspectRatio": {
+            "format": "double",
+            "type": "number"
+          },
           "assetId": {
             "format": "uuid",
             "type": "string"
@@ -16002,6 +16155,9 @@
             "format": "uuid",
             "type": "string"
           },
+          "lockAspectRatio": {
+            "type": "boolean"
+          },
           "rotation": {
             "format": "double",
             "type": "number"
@@ -16011,7 +16167,25 @@
           "id",
           "frame",
           "rotation",
-          "assetId"
+          "assetId",
+          "lockAspectRatio",
+          "aspectRatio"
+        ],
+        "type": "object"
+      },
+      "InspectCertificateFontUploadsRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "fileIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "fileIds"
         ],
         "type": "object"
       },
@@ -19992,6 +20166,9 @@
           "fontSource": {
             "$ref": "#/components/schemas/CertificateFontSource"
           },
+          "fontStyle": {
+            "$ref": "#/components/schemas/CertificateFontStyle"
+          },
           "fontWeight": {
             "format": "int32",
             "minimum": 0,
@@ -20035,6 +20212,7 @@
           "fontSource",
           "fontFamily",
           "fontWeight",
+          "fontStyle",
           "fontSize",
           "minFontSize",
           "color",
@@ -34724,6 +34902,160 @@
               }
             },
             "description": "Asset is referenced by the layout or template is locked"
+          }
+        },
+        "tags": [
+          "certificate"
+        ]
+      }
+    },
+    "/api/certificates/templates/{template_id}/assets/fonts/batch": {
+      "post": {
+        "operationId": "attachCertificateFontBatch",
+        "parameters": [
+          {
+            "description": "Certificate template ID",
+            "in": "path",
+            "name": "template_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AttachCertificateFontBatchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_CertificateTemplateDetail"
+                }
+              }
+            },
+            "description": "Reviewed static font variants attached atomically"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Certificate template update permission or file relationship denied"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseWithOptionalData_CertificateResourceLocked"
+                }
+              }
+            },
+            "description": "Duplicate variant or template locked"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid batch, unsupported font, or rights not confirmed"
+          }
+        },
+        "tags": [
+          "certificate"
+        ]
+      }
+    },
+    "/api/certificates/templates/{template_id}/assets/fonts/inspect": {
+      "post": {
+        "operationId": "inspectCertificateFontUploads",
+        "parameters": [
+          {
+            "description": "Certificate template ID",
+            "in": "path",
+            "name": "template_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InspectCertificateFontUploadsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_CertificateFontUploadInspection"
+                }
+              }
+            },
+            "description": "Private font uploads inspected for exact variants"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Certificate template update permission or file relationship denied"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid font file selection"
           }
         },
         "tags": [

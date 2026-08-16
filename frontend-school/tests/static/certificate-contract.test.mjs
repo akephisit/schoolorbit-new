@@ -70,6 +70,16 @@ test('certificate campaign API is generated and its wrapper consumes named DTOs'
 		],
 		['/api/certificates/templates/{template_id}/assets', 'post', 'attachCertificateTemplateAsset'],
 		[
+			'/api/certificates/templates/{template_id}/assets/fonts/inspect',
+			'post',
+			'inspectCertificateFontUploads'
+		],
+		[
+			'/api/certificates/templates/{template_id}/assets/fonts/batch',
+			'post',
+			'attachCertificateFontBatch'
+		],
+		[
 			'/api/certificates/templates/{template_id}/assets/{asset_id}',
 			'delete',
 			'deleteCertificateTemplateAsset'
@@ -172,6 +182,13 @@ test('certificate campaign API is generated and its wrapper consumes named DTOs'
 		'UpdateCertificateTemplateRequest',
 		'AttachCertificateBackgroundRequest',
 		'AttachCertificateAssetRequest',
+		'InspectCertificateFontUploadsRequest',
+		'AttachCertificateFontBatchRequest',
+		'CertificateFontUploadInspection',
+		'CertificateFontUploadInspectionFile',
+		'CertificateFontUploadStatus',
+		'CertificateFontStyle',
+		'CertificateTemplateAsset',
 		'CertificateTemplateDeleteResult',
 		'CertificateTemplateVariableCatalog',
 		'CertificatePreviewManifestRequest',
@@ -227,6 +244,20 @@ test('certificate campaign API is generated and its wrapper consumes named DTOs'
 		),
 		'campaign capability must expose exact-scope candidate preparation access'
 	);
+	assert.equal(
+		openapi.components.schemas.AttachCertificateAssetRequest.properties.fontWeight,
+		undefined,
+		'single-file attach must derive font weight from inspected file metadata'
+	);
+	assert.ok(
+		openapi.components.schemas.CertificateTemplateAsset.required.includes('fontStyle'),
+		'template assets must expose the inspected font style explicitly'
+	);
+	assert.ok(
+		openapi.components.schemas.CertificateTemplateAsset.required.includes('imageWidthPixels') &&
+			openapi.components.schemas.CertificateTemplateAsset.required.includes('imageHeightPixels'),
+		'template image assets must expose their inspected source dimensions'
+	);
 	const mutationConflictRef =
 		'#/components/schemas/ApiErrorResponseWithOptionalData_CertificateResourceLocked';
 	for (const [route, method] of [
@@ -237,6 +268,7 @@ test('certificate campaign API is generated and its wrapper consumes named DTOs'
 		['/api/certificates/templates/{template_id}', 'delete'],
 		['/api/certificates/templates/{template_id}/background', 'put'],
 		['/api/certificates/templates/{template_id}/assets', 'post'],
+		['/api/certificates/templates/{template_id}/assets/fonts/batch', 'post'],
 		['/api/certificates/templates/{template_id}/assets/{asset_id}', 'delete'],
 		['/api/certificates/campaigns/{campaign_id}/candidates/bulk', 'post'],
 		['/api/certificates/candidates/{candidate_id}', 'put'],
@@ -259,7 +291,10 @@ test('certificate campaign API is generated and its wrapper consumes named DTOs'
 	assert.match(wrapper, /Schemas\['CertificateCampaignDetail'\]/);
 	assert.match(wrapper, /Schemas\['CreateCertificateCampaignRequest'\]/);
 	assert.match(wrapper, /Schemas\['CertificateTemplateDetail'\]/);
+	assert.match(wrapper, /Schemas\['CertificateFontUploadInspection'\]/);
 	assert.match(wrapper, /Schemas\['CertificateRenderManifest'\]/);
+	assert.match(wrapper, /inspectCertificateFontUploads/);
+	assert.match(wrapper, /attachCertificateFontBatch/);
 	assert.match(wrapper, /createCertificateTemplatePreviewManifest/);
 	assert.match(wrapper, /Schemas\['CertificateCandidateDetail'\]/);
 	assert.match(wrapper, /importCertificateCandidates/);

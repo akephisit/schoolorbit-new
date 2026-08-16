@@ -28,6 +28,10 @@ pub struct CertificateTemplateAuditMetadata {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub file_id: Option<Uuid>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub asset_ids: Vec<Uuid>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub file_ids: Vec<Uuid>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     pub changed_fields: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub affected_certificate_count: Option<i64>,

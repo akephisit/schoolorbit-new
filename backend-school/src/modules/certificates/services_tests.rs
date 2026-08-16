@@ -17,18 +17,19 @@ use crate::{
     modules::certificates::{
         models::{
             AttachCertificateAssetRequest, AttachCertificateBackgroundRequest,
-            CandidateMatchStatus, CandidateNameSource, CandidateValidationCode,
-            CandidateValidationStatus, CertificateAccountSearchQuery, CertificateCampaignListQuery,
-            CertificateCampaignStatus, CertificateCandidateBulkRequest,
-            CertificateCandidateListQuery, CertificateElement, CertificateFontSource,
-            CertificateFontStyle, CertificateImportRequest, CertificateImportRowInput,
-            CertificateImportSource, CertificateIssueCode, CertificateIssueRequestListQuery,
-            CertificateIssueRequestStatus, CertificateLayoutV1, CertificatePreviewKind,
-            CertificatePreviewManifestRequest, CertificateRenderManifestBatchRequest,
-            CertificateStatus, CertificateTemplateAssetKind, CertificateTemplateDeleteDisposition,
-            ChangeCertificateCampaignStatusRequest, CreateAccountCertificateCandidateRequest,
-            CreateCertificateCampaignRequest, CreateCertificateTemplateRequest,
-            CreateManualExternalCandidateRequest, ElementFrame, GeometryAction, ImageElement,
+            AttachCertificateFontBatchRequest, CandidateMatchStatus, CandidateNameSource,
+            CandidateValidationCode, CandidateValidationStatus, CertificateAccountSearchQuery,
+            CertificateCampaignListQuery, CertificateCampaignStatus,
+            CertificateCandidateBulkRequest, CertificateCandidateListQuery, CertificateElement,
+            CertificateFontSource, CertificateFontStyle, CertificateFontUploadStatus,
+            CertificateImportRequest, CertificateImportRowInput, CertificateImportSource,
+            CertificateIssueCode, CertificateIssueRequestListQuery, CertificateIssueRequestStatus,
+            CertificateLayoutV1, CertificatePreviewKind, CertificatePreviewManifestRequest,
+            CertificateRenderManifestBatchRequest, CertificateStatus, CertificateTemplateAssetKind,
+            CertificateTemplateDeleteDisposition, ChangeCertificateCampaignStatusRequest,
+            CreateAccountCertificateCandidateRequest, CreateCertificateCampaignRequest,
+            CreateCertificateTemplateRequest, CreateManualExternalCandidateRequest, ElementFrame,
+            GeometryAction, ImageElement, InspectCertificateFontUploadsRequest,
             IssueCertificateOutcome, IssueCertificateRequest, IssuedCertificateSummary,
             ManualCertificateVerificationRequest, NullableUuidUpdate,
             QrCertificateVerificationRequest, RecipientType, RevokeCertificateRequest,
@@ -509,6 +510,22 @@ fn pdf_inspection(width: f64, height: f64, rotation: i16) -> serde_json::Value {
     })
 }
 
+fn font_inspection(
+    family: Option<&str>,
+    weight: u16,
+    style: &str,
+    is_variable: bool,
+) -> serde_json::Value {
+    serde_json::json!({
+        "kind": "font",
+        "family_name": family,
+        "units_per_em": 1000,
+        "weight": weight,
+        "style": style,
+        "is_variable": is_variable
+    })
+}
+
 fn text_layout(font_source: CertificateFontSource) -> CertificateLayoutV1 {
     CertificateLayoutV1 {
         schema_version: 1,
@@ -692,7 +709,6 @@ async fn certificate_layout_contract_persists_explicit_font_and_image_fields() {
             file_id: image_file_id,
             kind: CertificateTemplateAssetKind::Image,
             display_name: "ตราสัญลักษณ์".to_string(),
-            font_weight: None,
             rights_confirmed: false,
         },
     )
@@ -757,6 +773,311 @@ async fn certificate_layout_contract_persists_explicit_font_and_image_fields() {
 }
 
 #[tokio::test]
+async fn font_upload_batch_is_inspected_and_attached_atomically() {
+    let (pool, actor, academic_year_id) =
+        school_campaign_fixture("certificate_font_upload_batch", 3161).await;
+    let template = create_template_fixture(&pool, &actor, academic_year_id).await;
+    let sibling = template_service::create_template(
+        &pool,
+        &actor,
+        template.campaign_id,
+        CreateCertificateTemplateRequest {
+            name: "แบบพี่น้องสำหรับตรวจขอบเขตไฟล์".to_string(),
+            allowed_recipient_types: vec![RecipientType::Student],
+        },
+    )
+    .await
+    .unwrap();
+
+    let regular = insert_ready_template_file(
+        &pool,
+        &actor,
+        template.id,
+        "certificate_template_font",
+        font_inspection(Some("Reviewed Thai"), 400, "normal", false),
+    )
+    .await;
+    let bold = insert_ready_template_file(
+        &pool,
+        &actor,
+        template.id,
+        "certificate_template_font",
+        font_inspection(Some("Reviewed Thai"), 700, "normal", false),
+    )
+    .await;
+    for file_ids in [Vec::new(), vec![regular, regular], vec![regular; 41]] {
+        assert!(matches!(
+            template_service::inspect_font_uploads(
+                &pool,
+                &actor,
+                template.id,
+                InspectCertificateFontUploadsRequest { file_ids },
+            )
+            .await,
+            Err(AppError::ValidationError(_))
+        ));
+    }
+    let inspected = template_service::inspect_font_uploads(
+        &pool,
+        &actor,
+        template.id,
+        InspectCertificateFontUploadsRequest {
+            file_ids: vec![regular, bold],
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(inspected.files.len(), 2);
+    assert!(inspected
+        .files
+        .iter()
+        .all(|file| file.status == CertificateFontUploadStatus::Ready));
+    assert_eq!(
+        inspected.files[0].font_family.as_deref(),
+        Some("Reviewed Thai")
+    );
+    assert_eq!(inspected.files[0].font_weight, Some(400));
+    assert_eq!(
+        inspected.files[0].font_style,
+        Some(CertificateFontStyle::Normal)
+    );
+
+    let duplicate_selection = insert_ready_template_file(
+        &pool,
+        &actor,
+        template.id,
+        "certificate_template_font",
+        font_inspection(Some(" Reviewed Thai "), 400, "normal", false),
+    )
+    .await;
+    let duplicates = template_service::inspect_font_uploads(
+        &pool,
+        &actor,
+        template.id,
+        InspectCertificateFontUploadsRequest {
+            file_ids: vec![regular, duplicate_selection],
+        },
+    )
+    .await
+    .unwrap();
+    assert!(duplicates
+        .files
+        .iter()
+        .all(|file| file.status == CertificateFontUploadStatus::DuplicateSelection));
+
+    let variable = insert_ready_template_file(
+        &pool,
+        &actor,
+        template.id,
+        "certificate_template_font",
+        font_inspection(Some("Variable Thai"), 400, "normal", true),
+    )
+    .await;
+    let unsupported_weight = insert_ready_template_file(
+        &pool,
+        &actor,
+        template.id,
+        "certificate_template_font",
+        font_inspection(Some("Odd Thai"), 350, "normal", false),
+    )
+    .await;
+    let missing_family = insert_ready_template_file(
+        &pool,
+        &actor,
+        template.id,
+        "certificate_template_font",
+        font_inspection(None, 400, "normal", false),
+    )
+    .await;
+    let unavailable = insert_ready_template_file(
+        &pool,
+        &actor,
+        template.id,
+        "certificate_template_font",
+        font_inspection(Some("Unavailable Thai"), 400, "normal", false),
+    )
+    .await;
+    sqlx::query("UPDATE files SET lifecycle_status = 'processing' WHERE id = $1")
+        .bind(unavailable)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let rejected = template_service::inspect_font_uploads(
+        &pool,
+        &actor,
+        template.id,
+        InspectCertificateFontUploadsRequest {
+            file_ids: vec![variable, unsupported_weight, missing_family, unavailable],
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        rejected
+            .files
+            .iter()
+            .map(|file| file.status)
+            .collect::<Vec<_>>(),
+        vec![
+            CertificateFontUploadStatus::UnsupportedVariable,
+            CertificateFontUploadStatus::UnsupportedWeight,
+            CertificateFontUploadStatus::MissingFamily,
+            CertificateFontUploadStatus::Unavailable,
+        ]
+    );
+
+    let wrong_purpose = insert_ready_template_file(
+        &pool,
+        &actor,
+        template.id,
+        "certificate_template_image",
+        serde_json::json!({"kind": "image", "width_px": 1200, "height_px": 800}),
+    )
+    .await;
+    for (target_template_id, file_id) in [(template.id, wrong_purpose), (sibling.id, regular)] {
+        assert!(matches!(
+            template_service::inspect_font_uploads(
+                &pool,
+                &actor,
+                target_template_id,
+                InspectCertificateFontUploadsRequest {
+                    file_ids: vec![file_id],
+                },
+            )
+            .await,
+            Err(AppError::Forbidden(_))
+        ));
+    }
+
+    assert!(matches!(
+        template_service::attach_font_batch(
+            &pool,
+            &actor,
+            template.id,
+            AttachCertificateFontBatchRequest {
+                file_ids: vec![regular, bold],
+                rights_confirmed: false,
+            },
+        )
+        .await,
+        Err(AppError::ValidationError(_))
+    ));
+    assert!(matches!(
+        template_service::attach_font_batch(
+            &pool,
+            &actor,
+            template.id,
+            AttachCertificateFontBatchRequest {
+                file_ids: vec![regular, variable],
+                rights_confirmed: true,
+            },
+        )
+        .await,
+        Err(AppError::ValidationError(_))
+    ));
+    let asset_count_before: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM certificate_template_assets WHERE template_id = $1",
+    )
+    .bind(template.id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(asset_count_before, 0);
+    let regular_retention: String =
+        sqlx::query_scalar("SELECT retention_class FROM files WHERE id = $1")
+            .bind(regular)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(regular_retention, "temporary");
+
+    let attached = template_service::attach_font_batch(
+        &pool,
+        &actor,
+        template.id,
+        AttachCertificateFontBatchRequest {
+            file_ids: vec![regular, bold],
+            rights_confirmed: true,
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(attached.assets.len(), 2);
+    assert!(attached.assets.iter().all(|asset| {
+        asset.kind == CertificateTemplateAssetKind::Font
+            && asset.font_style == Some(CertificateFontStyle::Normal)
+            && asset.image_width_pixels.is_none()
+            && asset.image_height_pixels.is_none()
+    }));
+    let promoted_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM files
+         WHERE id = ANY($1::uuid[]) AND retention_class = 'standard'",
+    )
+    .bind(vec![regular, bold])
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(promoted_count, 2);
+    let audit: serde_json::Value = sqlx::query_scalar(
+        "SELECT metadata FROM audit_logs
+         WHERE entity_type = 'certificate_template' AND entity_id = $1
+           AND action = 'attach_font_batch'
+         ORDER BY created_at DESC LIMIT 1",
+    )
+    .bind(template.id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(audit["assetIds"].as_array().unwrap().len(), 2);
+    assert_eq!(audit["fileIds"].as_array().unwrap().len(), 2);
+
+    let duplicate_existing = insert_ready_template_file(
+        &pool,
+        &actor,
+        template.id,
+        "certificate_template_font",
+        font_inspection(Some("reviewed thai"), 400, "normal", false),
+    )
+    .await;
+    let existing = template_service::inspect_font_uploads(
+        &pool,
+        &actor,
+        template.id,
+        InspectCertificateFontUploadsRequest {
+            file_ids: vec![duplicate_existing],
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        existing.files[0].status,
+        CertificateFontUploadStatus::DuplicateExisting
+    );
+
+    let image = template_service::attach_asset(
+        &pool,
+        &actor,
+        template.id,
+        AttachCertificateAssetRequest {
+            file_id: wrong_purpose,
+            kind: CertificateTemplateAssetKind::Image,
+            display_name: "ภาพอัตราส่วนต้นฉบับ".to_string(),
+            rights_confirmed: false,
+        },
+    )
+    .await
+    .unwrap();
+    let image_asset = image
+        .assets
+        .iter()
+        .find(|asset| asset.kind == CertificateTemplateAssetKind::Image)
+        .unwrap();
+    assert_eq!(image_asset.image_width_pixels, Some(1200));
+    assert_eq!(image_asset.image_height_pixels, Some(800));
+    assert_eq!(image_asset.font_style, None);
+}
+
+#[tokio::test]
 async fn preview_manifest_uses_private_short_lived_grants_and_never_audits_them() {
     let (pool, actor, academic_year_id) =
         school_campaign_fixture("certificate_template_preview_manifest", 3118).await;
@@ -801,7 +1122,6 @@ async fn preview_manifest_uses_private_short_lived_grants_and_never_audits_them(
             file_id: font_file_id,
             kind: CertificateTemplateAssetKind::Font,
             display_name: "ฟอนต์พรีวิว".to_string(),
-            font_weight: Some(400),
             rights_confirmed: true,
         },
     )
@@ -1389,7 +1709,6 @@ async fn font_rights_and_referenced_asset_deletion_are_enforced() {
             file_id: font_file_id,
             kind: CertificateTemplateAssetKind::Font,
             display_name: "ฟอนต์ทดสอบ".to_string(),
-            font_weight: Some(400),
             rights_confirmed: false,
         },
     )
@@ -1404,7 +1723,6 @@ async fn font_rights_and_referenced_asset_deletion_are_enforced() {
             file_id: font_file_id,
             kind: CertificateTemplateAssetKind::Font,
             display_name: "ฟอนต์ทดสอบ".to_string(),
-            font_weight: Some(400),
             rights_confirmed: true,
         },
     )
@@ -6252,7 +6570,6 @@ async fn issue_revalidation_returns_when_referenced_asset_metadata_changes() {
             file_id: font_file_id,
             kind: CertificateTemplateAssetKind::Font,
             display_name: "ฟอนต์สำหรับออกเกียรติบัตร".to_string(),
-            font_weight: Some(400),
             rights_confirmed: true,
         },
     )

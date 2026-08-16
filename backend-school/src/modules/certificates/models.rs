@@ -110,6 +110,15 @@ string_enum!(CertificateIssueRunOutcome { Issued, Returned });
 string_enum!(CertificateStatus { Issued, Revoked });
 string_enum!(CertificateTemplateAssetKind { Image, Font });
 string_enum!(CertificateFontStyle { Normal, Italic });
+string_enum!(CertificateFontUploadStatus {
+    Ready,
+    DuplicateSelection,
+    DuplicateExisting,
+    UnsupportedVariable,
+    UnsupportedWeight,
+    MissingFamily,
+    Unavailable,
+});
 string_enum!(GeometryAction {
     Preserve,
     Scale,
@@ -1340,9 +1349,42 @@ pub struct AttachCertificateAssetRequest {
     pub file_id: Uuid,
     pub kind: CertificateTemplateAssetKind,
     pub display_name: String,
-    pub font_weight: Option<u16>,
     #[serde(default)]
     pub rights_confirmed: bool,
+}
+
+#[derive(Clone, Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct InspectCertificateFontUploadsRequest {
+    pub file_ids: Vec<Uuid>,
+}
+
+#[derive(Clone, Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct AttachCertificateFontBatchRequest {
+    pub file_ids: Vec<Uuid>,
+    #[serde(default)]
+    pub rights_confirmed: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct CertificateFontUploadInspectionFile {
+    pub file_id: Uuid,
+    pub display_filename: String,
+    #[schema(required = true)]
+    pub font_family: Option<String>,
+    #[schema(required = true)]
+    pub font_weight: Option<u16>,
+    #[schema(required = true)]
+    pub font_style: Option<CertificateFontStyle>,
+    pub status: CertificateFontUploadStatus,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct CertificateFontUploadInspection {
+    pub files: Vec<CertificateFontUploadInspectionFile>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, ToSchema)]
@@ -1385,6 +1427,12 @@ pub struct CertificateTemplateAsset {
     pub font_family: Option<String>,
     #[schema(required = true)]
     pub font_weight: Option<u16>,
+    #[schema(required = true)]
+    pub font_style: Option<CertificateFontStyle>,
+    #[schema(required = true)]
+    pub image_width_pixels: Option<u32>,
+    #[schema(required = true)]
+    pub image_height_pixels: Option<u32>,
     pub rights_confirmed: bool,
     pub created_at: DateTime<Utc>,
 }

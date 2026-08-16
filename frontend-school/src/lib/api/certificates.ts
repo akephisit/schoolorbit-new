@@ -22,6 +22,13 @@ export type CreateCertificateTemplateRequest = Schemas['CreateCertificateTemplat
 export type UpdateCertificateTemplateRequest = Schemas['UpdateCertificateTemplateRequest'];
 export type AttachCertificateBackgroundRequest = Schemas['AttachCertificateBackgroundRequest'];
 export type AttachCertificateAssetRequest = Schemas['AttachCertificateAssetRequest'];
+export type InspectCertificateFontUploadsRequest =
+	Schemas['InspectCertificateFontUploadsRequest'];
+export type AttachCertificateFontBatchRequest = Schemas['AttachCertificateFontBatchRequest'];
+export type CertificateFontUploadInspection = Schemas['CertificateFontUploadInspection'];
+export type CertificateFontUploadInspectionFile =
+	Schemas['CertificateFontUploadInspectionFile'];
+export type CertificateFontUploadStatus = Schemas['CertificateFontUploadStatus'];
 export type CertificatePreviewManifestRequest = Schemas['CertificatePreviewManifestRequest'];
 export type RecipientType = Schemas['RecipientType'];
 export type CertificateImportRequest = Schemas['CertificateImportRequest'];
@@ -197,6 +204,28 @@ export async function attachCertificateTemplateAsset(
 		payload
 	);
 	return requireApiData(response, 'ไม่สามารถแนบทรัพยากรแม่แบบได้');
+}
+
+export async function inspectCertificateFontUploads(
+	templateId: string,
+	payload: InspectCertificateFontUploadsRequest
+): Promise<CertificateFontUploadInspection> {
+	const response = await apiClient.post<CertificateFontUploadInspection>(
+		`/api/certificates/templates/${encodeURIComponent(templateId)}/assets/fonts/inspect`,
+		payload
+	);
+	return requireApiData(response, 'ไม่สามารถตรวจสอบไฟล์ฟอนต์ได้');
+}
+
+export async function attachCertificateFontBatch(
+	templateId: string,
+	payload: AttachCertificateFontBatchRequest
+): Promise<CertificateTemplateDetail> {
+	const response = await apiClient.post<CertificateTemplateDetail, CertificateResourceLocked>(
+		`/api/certificates/templates/${encodeURIComponent(templateId)}/assets/fonts/batch`,
+		payload
+	);
+	return requireApiData(response, 'ไม่สามารถแนบชุดฟอนต์กับแม่แบบได้');
 }
 
 export async function deleteCertificateTemplateAsset(
