@@ -52,7 +52,12 @@ type RenderManifest = {
 	recipientValues: Record<string, string>;
 	certificateNumber: string;
 	qrPayload: string;
-	builtInFonts: Array<{ family: string; weight: number; assetPath: string }>;
+	builtInFonts: Array<{
+		family: string;
+		weight: number;
+		style: 'normal' | 'italic';
+		assetPath: string;
+	}>;
 	fontGrants: Array<{
 		assetId: string;
 		fileId: string;
@@ -60,6 +65,7 @@ type RenderManifest = {
 		expiresAt: string;
 		family: string;
 		weight: number;
+		style: 'normal' | 'italic';
 	}>;
 	imageGrants: never[];
 	backgroundGrant: { fileId: string; url: string; expiresAt: string };
@@ -367,6 +373,7 @@ function manifest(pathName: string, geometry: PageGeometry, withElements = true)
 							fontSource: { type: 'built_in' },
 							fontFamily: 'Sarabun',
 							fontWeight: 700,
+							fontStyle: 'normal',
 							fontSize: 18,
 							minFontSize: 10,
 							color: '#183153',
@@ -401,8 +408,18 @@ function manifest(pathName: string, geometry: PageGeometry, withElements = true)
 		certificateNumber: '2569-001-00001-7',
 		qrPayload: 'https://verify.example.test/c/opaque-proof-token',
 		builtInFonts: [
-			{ family: 'Sarabun', weight: 400, assetPath: '/fonts/Sarabun-Regular.ttf' },
-			{ family: 'Sarabun', weight: 700, assetPath: '/fonts/Sarabun-Bold.ttf' }
+			{
+				family: 'Sarabun',
+				weight: 400,
+				style: 'normal',
+				assetPath: '/fonts/Sarabun-Regular.ttf'
+			},
+			{
+				family: 'Sarabun',
+				weight: 700,
+				style: 'normal',
+				assetPath: '/fonts/Sarabun-Bold.ttf'
+			}
 		],
 		fontGrants: [],
 		imageGrants: [],
@@ -512,12 +529,14 @@ test('aborting one preview does not poison another preview loading the same font
 	Object.assign(value.layout.elements[0], {
 		fontFamily: 'SarabunAbortRace',
 		fontWeight: 400,
+		fontStyle: 'normal',
 		fontSource: { type: 'built_in' }
 	});
 	value.builtInFonts = [
 		{
 			family: 'SarabunAbortRace',
 			weight: 400,
+			style: 'normal',
 			assetPath: `${baseUrl}/fonts/abort-race-sarabun.ttf`
 		}
 	];
@@ -545,6 +564,7 @@ test('a refreshed signed URL does not register the same uploaded font again', as
 		Object.assign(value.layout.elements[0], {
 			fontFamily: 'SarabunUploadedStable',
 			fontWeight: 400,
+			fontStyle: 'normal',
 			fontSource: { type: 'asset', asset_id: assetId }
 		});
 		value.builtInFonts = [];
@@ -555,7 +575,8 @@ test('a refreshed signed URL does not register the same uploaded font again', as
 				url: `${baseUrl}/fonts/Sarabun-Regular.ttf?signature=${signature}`,
 				expiresAt: '2099-01-01T00:00:00Z',
 				family: 'SarabunUploadedStable',
-				weight: 400
+				weight: 400,
+				style: 'normal'
 			}
 		];
 		value.backgroundGrant.url = `${baseUrl}${value.backgroundGrant.url}`;

@@ -23,6 +23,7 @@ type OrganizationUnit = Schemas['OrganizationUnitLookupItem'];
 type CertificateCampaign = Schemas['CertificateCampaignDetail'];
 type CertificateTemplate = Schemas['CertificateTemplateDetail'];
 type CertificateTemplateAsset = Schemas['CertificateTemplateAsset'];
+type CertificateFontUploadInspection = Schemas['CertificateFontUploadInspection'];
 type CertificateLayout = Schemas['CertificateLayoutV1'];
 type FileMetadata = Schemas['FileMetadata'];
 type CertificateCandidateAccount = Schemas['CertificateCandidateAccount'];
@@ -290,6 +291,7 @@ function buildLayout(
 		fontSource: assets ? { type: 'asset', asset_id: assets.font.id } : { type: 'built_in' },
 		fontFamily: assets?.font.fontFamily ?? 'Sarabun',
 		fontWeight: assets?.font.fontWeight ?? 400,
+		fontStyle: assets?.font.fontStyle ?? 'normal',
 		fontSize: 30,
 		minFontSize: 14,
 		color: '#17324d',
@@ -313,7 +315,9 @@ function buildLayout(
 			id: randomUUID(),
 			frame: { x: 24, y: 24, width: 52, height: 52 },
 			rotation: 0,
-			assetId: assets.image.id
+			assetId: assets.image.id,
+			lockAspectRatio: true,
+			aspectRatio: 1
 		});
 	}
 	return { schemaVersion: 1, elements };
@@ -725,22 +729,30 @@ test.describe.serial('complete certificate issuance lifecycle', () => {
 					buffer: await readFile(fontPath)
 				}
 			);
-			studentTemplate = await preparer.api.request<CertificateTemplate>(
+			const fontInspection = await preparer.api.request<CertificateFontUploadInspection>(
 				'POST',
-				`/api/certificates/templates/${encodeURIComponent(studentTemplate.id)}/assets`,
+				`/api/certificates/templates/${encodeURIComponent(studentTemplate.id)}/assets/fonts/inspect`,
 				{
 					data: {
-						fileId: fontFile.id,
-						kind: 'font',
-						displayName: 'Sarabun Lifecycle',
-						fontWeight: 400,
+						fileIds: [fontFile.id]
+					}
+				}
+			);
+			expect(fontInspection.files).toHaveLength(1);
+			expect(fontInspection.files[0].status).toBe('ready');
+			studentTemplate = await preparer.api.request<CertificateTemplate>(
+				'POST',
+				`/api/certificates/templates/${encodeURIComponent(studentTemplate.id)}/assets/fonts/batch`,
+				{
+					data: {
+						fileIds: [fontFile.id],
 						rightsConfirmed: true
 					}
 				}
 			);
 			const imageAsset = studentTemplate.assets.find((asset) => asset.fileId === imageFile.id);
 			const fontAsset = studentTemplate.assets.find((asset) => asset.fileId === fontFile.id);
-			if (!imageAsset || !fontAsset || !fontAsset.fontFamily) {
+			if (!imageAsset || !fontAsset || !fontAsset.fontFamily || !fontAsset.fontStyle) {
 				throw new Error('Template image/font assets were not inspected and attached.');
 			}
 			studentTemplate = await saveTemplateLayout(

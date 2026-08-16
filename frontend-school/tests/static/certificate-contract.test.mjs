@@ -258,6 +258,11 @@ test('certificate campaign API is generated and its wrapper consumes named DTOs'
 			openapi.components.schemas.CertificateTemplateAsset.required.includes('imageHeightPixels'),
 		'template image assets must expose their inspected source dimensions'
 	);
+	assert.ok(
+		openapi.components.schemas.CertificateBuiltInFont.required.includes('style') &&
+			openapi.components.schemas.CertificateRenderFontGrant.required.includes('style'),
+		'render manifests must preserve the exact built-in and uploaded font style'
+	);
 	const mutationConflictRef =
 		'#/components/schemas/ApiErrorResponseWithOptionalData_CertificateResourceLocked';
 	for (const [route, method] of [

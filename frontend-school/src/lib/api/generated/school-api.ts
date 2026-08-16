@@ -6049,6 +6049,7 @@ export interface components {
 		CertificateBuiltInFont: {
 			assetPath: string;
 			family: string;
+			style: components['schemas']['CertificateFontStyle'];
 			/** Format: int32 */
 			weight: number;
 		};
@@ -6535,6 +6536,7 @@ export interface components {
 			family: string;
 			/** Format: uuid */
 			fileId: string;
+			style: components['schemas']['CertificateFontStyle'];
 			url: string;
 			/** Format: int32 */
 			weight: number;

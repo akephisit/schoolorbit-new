@@ -11247,6 +11247,9 @@
           "family": {
             "type": "string"
           },
+          "style": {
+            "$ref": "#/components/schemas/CertificateFontStyle"
+          },
           "weight": {
             "format": "int32",
             "minimum": 0,
@@ -11256,6 +11259,7 @@
         "required": [
           "family",
           "weight",
+          "style",
           "assetPath"
         ],
         "type": "object"
@@ -13070,6 +13074,9 @@
             "format": "uuid",
             "type": "string"
           },
+          "style": {
+            "$ref": "#/components/schemas/CertificateFontStyle"
+          },
           "url": {
             "type": "string"
           },
@@ -13084,6 +13091,7 @@
           "fileId",
           "family",
           "weight",
+          "style",
           "url",
           "expiresAt"
         ],

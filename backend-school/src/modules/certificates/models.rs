@@ -1498,6 +1498,7 @@ pub struct CertificateRenderFileGrant {
 pub struct CertificateBuiltInFont {
     pub family: String,
     pub weight: u16,
+    pub style: CertificateFontStyle,
     pub asset_path: String,
 }
 
@@ -1508,6 +1509,7 @@ pub struct CertificateRenderFontGrant {
     pub file_id: Uuid,
     pub family: String,
     pub weight: u16,
+    pub style: CertificateFontStyle,
     pub url: String,
     pub expires_at: DateTime<Utc>,
 }

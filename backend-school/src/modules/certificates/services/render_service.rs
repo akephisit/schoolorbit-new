@@ -13,8 +13,9 @@ use crate::{
     middleware::permission::ActorContext,
     modules::{
         certificates::models::{
-            CertificateBuiltInFont, CertificateElement, CertificateFontSource, CertificatePageBox,
-            CertificatePageGeometry, CertificatePreviewKind, CertificatePreviewManifestRequest,
+            CertificateBuiltInFont, CertificateElement, CertificateFontSource,
+            CertificateFontStyle, CertificatePageBox, CertificatePageGeometry,
+            CertificatePreviewKind, CertificatePreviewManifestRequest,
             CertificateRenderCampaignValues, CertificateRenderFileGrant,
             CertificateRenderFontGrant, CertificateRenderImageGrant, CertificateRenderManifest,
             CertificateRenderManifestBatchRequest, CertificateTemplateAssetKind, PageGeometry,
@@ -98,6 +99,7 @@ struct IssuedRenderAssetRow {
     kind: String,
     font_family: Option<String>,
     font_weight: Option<i16>,
+    font_style: Option<String>,
     lifecycle_status: String,
 }
 
@@ -221,7 +223,7 @@ pub async fn preview_manifest(
                 CertificateFontSource::Asset { asset_id } => Some((
                     asset_id,
                     CertificateTemplateAssetKind::Font,
-                    Some((&text.font_family, text.font_weight)),
+                    Some((&text.font_family, text.font_weight, text.font_style)),
                 )),
                 CertificateFontSource::BuiltIn => None,
             },
@@ -235,8 +237,10 @@ pub async fn preview_manifest(
                 "layout สำหรับพรีวิวอ้างถึงทรัพยากรที่ไม่อยู่ในแม่แบบ".to_string(),
             ));
         };
-        let font_matches = expected_font.is_none_or(|(family, weight)| {
-            asset.font_family.as_ref() == Some(family) && asset.font_weight == Some(weight)
+        let font_matches = expected_font.is_none_or(|(family, weight, style)| {
+            asset.font_family.as_ref() == Some(family)
+                && asset.font_weight == Some(weight)
+                && asset.font_style == Some(style)
         });
         if asset.kind != expected_kind || !font_matches {
             return Err(AppError::ValidationError(
@@ -281,6 +285,11 @@ pub async fn preview_manifest(
                             "certificate_template_font_weight_missing".to_string(),
                         )
                     })?,
+                    style: asset.font_style.ok_or_else(|| {
+                        AppError::InternalServerError(
+                            "certificate_template_font_style_missing".to_string(),
+                        )
+                    })?,
                     url: grant.url,
                     expires_at: grant.expires_at,
                 });
@@ -315,11 +324,13 @@ pub async fn preview_manifest(
             CertificateBuiltInFont {
                 family: "Sarabun".to_string(),
                 weight: 400,
+                style: CertificateFontStyle::Normal,
                 asset_path: "/fonts/Sarabun-Regular.ttf".to_string(),
             },
             CertificateBuiltInFont {
                 family: "Sarabun".to_string(),
                 weight: 700,
+                style: CertificateFontStyle::Normal,
                 asset_path: "/fonts/Sarabun-Bold.ttf".to_string(),
             },
         ],
@@ -593,7 +604,7 @@ async fn issued_manifest_inner(
 
     let assets = sqlx::query_as::<_, IssuedRenderAssetRow>(
         "SELECT asset.id, asset.file_id, asset.kind, asset.font_family,
-                asset.font_weight, file.lifecycle_status
+                asset.font_weight, asset.font_style, file.lifecycle_status
          FROM certificate_template_assets asset
          JOIN files file ON file.id = asset.file_id
          WHERE asset.template_id = $1
@@ -678,6 +689,15 @@ async fn issued_manifest_inner(
                         "certificate_template_font_weight_invalid".to_string(),
                     )
                 })?,
+                style: asset
+                    .font_style
+                    .as_deref()
+                    .and_then(CertificateFontStyle::parse)
+                    .ok_or_else(|| {
+                        AppError::InternalServerError(
+                            "certificate_template_font_style_invalid".to_string(),
+                        )
+                    })?,
                 url: grant.url,
                 expires_at: grant.expires_at,
             }),
@@ -869,7 +889,11 @@ fn validate_issued_assets(
                 CertificateFontSource::Asset { asset_id } => Some((
                     asset_id,
                     "font",
-                    Some((&text.font_family, i16::try_from(text.font_weight).ok())),
+                    Some((
+                        &text.font_family,
+                        i16::try_from(text.font_weight).ok(),
+                        text.font_style,
+                    )),
                 )),
                 CertificateFontSource::BuiltIn => None,
             },
@@ -883,10 +907,11 @@ fn validate_issued_assets(
                 "แม่แบบอ้างถึงทรัพยากรที่ไม่พร้อมใช้งาน".to_string(),
             ));
         };
-        let font_matches = expected_font.is_none_or(|(family, weight)| {
+        let font_matches = expected_font.is_none_or(|(family, weight, style)| {
             weight.is_some()
                 && asset.font_family.as_ref() == Some(family)
                 && asset.font_weight == weight
+                && asset.font_style.as_deref() == Some(style.as_str())
         });
         if asset.kind != kind || asset.lifecycle_status != "ready" || !font_matches {
             return Err(AppError::Conflict(
@@ -910,11 +935,13 @@ fn built_in_fonts() -> Vec<CertificateBuiltInFont> {
         CertificateBuiltInFont {
             family: "Sarabun".to_string(),
             weight: 400,
+            style: CertificateFontStyle::Normal,
             asset_path: "/fonts/Sarabun-Regular.ttf".to_string(),
         },
         CertificateBuiltInFont {
             family: "Sarabun".to_string(),
             weight: 700,
+            style: CertificateFontStyle::Normal,
             asset_path: "/fonts/Sarabun-Bold.ttf".to_string(),
         },
     ]

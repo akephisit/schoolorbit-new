@@ -157,6 +157,7 @@ function harnessPlugin(): Plugin {
 						fontSource: { type: 'built_in' },
 						fontFamily: 'Sarabun',
 						fontWeight: 700,
+						fontStyle: 'normal',
 						fontSize: 30,
 						minFontSize: 14,
 						color: '#183153',
