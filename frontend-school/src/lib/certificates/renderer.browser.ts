@@ -715,6 +715,9 @@ async function buildCertificatePdfWithResources(
 		});
 		await assertSourcePdfGeometry(manifest, source);
 		const sourcePage = source.getPage(0);
+		// A valid blank PDF page can omit /Contents, but pdf-lib cannot embed it.
+		// Appending an empty stream preserves the page while making it embeddable.
+		sourcePage.pushOperators();
 		const crop = manifest.pageGeometry.cropBox;
 		const embeddedBackground = await output.embedPage(sourcePage, {
 			left: crop.xPoints,

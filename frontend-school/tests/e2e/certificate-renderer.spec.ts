@@ -596,6 +596,32 @@ test('one batch PDF preserves mixed normalized page dimensions', async ({ page }
 	]);
 });
 
+test('exports a valid blank PDF background that has no Contents stream', async ({ page }) => {
+	const pathName = '/background/runtime-blank.pdf';
+	const document = await PDFDocument.create();
+	document.addPage([240, 160]);
+	backgroundFiles.set(pathName, await document.save());
+	const geometry: PageGeometry = {
+		mediaBox: { xPoints: 0, yPoints: 0, widthPoints: 240, heightPoints: 160 },
+		cropBox: { xPoints: 0, yPoints: 0, widthPoints: 240, heightPoints: 160 },
+		rotation: 0,
+		displayedWidthPoints: 240,
+		displayedHeightPoints: 160,
+		paperLabel: 'ขนาดทดสอบ'
+	};
+
+	await page.goto(`${baseUrl}${harnessPath}`);
+	const sizes = await page.evaluate(
+		async ({ value, origin }) => {
+			value.backgroundGrant.url = `${origin}${value.backgroundGrant.url}`;
+			return window.certificateRendererHarness.pageSizes([value]);
+		},
+		{ value: manifest(pathName, geometry), origin: baseUrl }
+	);
+
+	expect(sizes).toEqual([{ width: 240, height: 160 }]);
+});
+
 test('inspects a local background with the same normalized geometry contract', async ({ page }) => {
 	await page.goto(`${baseUrl}${harnessPath}`);
 	const expected = await makeVectorBackground('/background/runtime-inspect.pdf', 160, 240, 90);
