@@ -353,6 +353,9 @@ test('editor workspace exposes the approved focused controls and safe save contr
 		'ชื่อปกติ',
 		'ชื่อยาว',
 		'ผู้รับจริง',
+		'กำลังโหลดฟอนต์และสร้างพรีวิว…',
+		'ลองใหม่',
+		'ปิด',
 		'ปรับตามสัดส่วน',
 		'เริ่มจัดวางใหม่'
 	]) {
@@ -369,6 +372,8 @@ test('editor workspace exposes the approved focused controls and safe save contr
 	assert.match(source, /prepareFontAliases/);
 	assert.match(source, /fontAlias/);
 	assert.match(source, /style:font-style/);
+	assert.match(source, /aria-busy/);
+	assert.match(source, /AbortController/);
 	assert.doesNotMatch(source, /renderer\.browser/);
 });
 

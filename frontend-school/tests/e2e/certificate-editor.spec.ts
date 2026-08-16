@@ -75,6 +75,11 @@ const rendererStub = `
 			},
 			async renderPreview(manifest, canvas, options = {}) {
 				options.signal?.throwIfAborted();
+				if (canvas.getAttribute('aria-label') === 'ผลพรีวิว PDF จริง') {
+					window.__certificateEditorRendererAttempts += 1;
+					await window.__certificateEditorRendererControl.beforeRender(options.signal);
+				}
+				options.signal?.throwIfAborted();
 				const scale = options.scale ?? 1;
 				canvas.width = Math.max(1, Math.round(manifest.pageGeometry.displayedWidthPoints * scale));
 				canvas.height = Math.max(1, Math.round(manifest.pageGeometry.displayedHeightPoints * scale));
@@ -381,7 +386,35 @@ function harnessPlugin(): Plugin {
 				let conflictNextSave = false;
 				let heldSavePromise = null;
 				let releaseHeldSave = null;
+				let queuedRenderGate = null;
+				let activeRenderGate = null;
+				let failNextRender = false;
 				window.__certificateEditorRendererCalls = 0;
+				window.__certificateEditorRendererAttempts = 0;
+				window.__certificateEditorRendererControl = {
+					async beforeRender(signal) {
+						if (failNextRender) {
+							failNextRender = false;
+							throw new Error('จำลองการสร้างพรีวิวไม่สำเร็จ');
+						}
+						const gate = queuedRenderGate;
+						if (!gate) return;
+						queuedRenderGate = null;
+						activeRenderGate = gate;
+						try {
+							await new Promise((resolve, reject) => {
+								const abort = () => reject(signal?.reason ?? new DOMException('Aborted', 'AbortError'));
+								if (signal?.aborted) return abort();
+								signal?.addEventListener('abort', abort, { once: true });
+								gate.promise.then(resolve, reject).finally(() => {
+									signal?.removeEventListener('abort', abort);
+								});
+							});
+						} finally {
+							if (activeRenderGate === gate) activeRenderGate = null;
+						}
+					}
+				};
 				window.__certificateEditorApi = {
 					async update(id, payload, ApiClientError) {
 						if (heldSavePromise) {
@@ -428,11 +461,24 @@ function harnessPlugin(): Plugin {
 						heldSavePromise = new Promise((resolve) => { releaseHeldSave = resolve; });
 					},
 					releaseSave() { releaseHeldSave?.(); },
+					holdNextRender() {
+						let release;
+						const promise = new Promise((resolve) => { release = resolve; });
+						queuedRenderGate = { promise, release };
+					},
+					releaseRender() {
+						(queuedRenderGate ?? activeRenderGate)?.release();
+					},
+					renderGateState() {
+						return { queued: queuedRenderGate !== null, active: activeRenderGate !== null };
+					},
+					failNextRender() { failNextRender = true; },
 					savedPayloads() { return structuredClone(savedPayloads); },
 					previewKinds() { return [...previewKinds]; },
 					previewPayloads() { return structuredClone(previewPayloads); },
 					advanceClock(milliseconds) { certificateNow += milliseconds; },
-					rendererCalls() { return window.__certificateEditorRendererCalls; }
+					rendererCalls() { return window.__certificateEditorRendererCalls; },
+					rendererAttempts() { return window.__certificateEditorRendererAttempts; }
 				};
 
 				mount(CertificateEditor, {
@@ -645,6 +691,45 @@ test('editor selects exact font assets and preserves or resets inspected image r
 	expect(image.frame.width / image.frame.height).toBeCloseTo(1.5, 6);
 });
 
+test('preview exposes loading, error, close, and a fresh successful retry', async ({ page }) => {
+	await page.goto(`${baseUrl}${harnessPath}`);
+	await expect(page.getByTestId('certificate-editor')).toBeVisible();
+	await page.evaluate(() => window.certificateEditorHarness.holdNextRender());
+	expect(await page.evaluate(() => window.certificateEditorHarness.renderGateState())).toEqual({
+		queued: true,
+		active: false
+	});
+	await page.getByRole('button', { name: 'ชื่อสั้น' }).click();
+	await expect
+		.poll(() => page.evaluate(() => window.certificateEditorHarness.renderGateState()))
+		.toEqual({ queued: false, active: true });
+	const previewDialog = page.getByRole('dialog', { name: 'พรีวิว PDF จริง' });
+	await expect(previewDialog).toBeVisible();
+	await expect(previewDialog).toHaveAttribute('aria-busy', 'true');
+	await expect(page.getByText('กำลังโหลดฟอนต์และสร้างพรีวิว…')).toBeVisible();
+	const previewCanvas = page.getByLabel('ผลพรีวิว PDF จริง');
+	await expect(previewCanvas).toBeHidden();
+	await page.evaluate(() => window.certificateEditorHarness.releaseRender());
+	await expect(previewCanvas).toBeVisible();
+	await expect(previewDialog).toHaveAttribute('aria-busy', 'false');
+	await page.getByRole('button', { name: 'ปิด' }).click();
+	await expect(previewDialog).toBeHidden();
+
+	await page.evaluate(() => window.certificateEditorHarness.failNextRender());
+	await page.getByRole('button', { name: 'ชื่อปกติ' }).click();
+	await expect(page.getByText('จำลองการสร้างพรีวิวไม่สำเร็จ')).toBeVisible();
+	await expect(page.getByRole('button', { name: 'ลองใหม่' })).toBeVisible();
+	await expect(page.getByRole('button', { name: 'ปิด' })).toBeVisible();
+	const attemptsBeforeRetry = await page.evaluate(() =>
+		window.certificateEditorHarness.rendererAttempts()
+	);
+	await page.getByRole('button', { name: 'ลองใหม่' }).click();
+	await expect(previewCanvas).toBeVisible();
+	await expect
+		.poll(() => page.evaluate(() => window.certificateEditorHarness.rendererAttempts()))
+		.toBe(attemptsBeforeRetry + 1);
+});
+
 test('font batch uploads sequentially, reviews detected variants, and attaches atomically', async ({
 	page
 }) => {
@@ -712,6 +797,10 @@ declare global {
 			setConflictNextSave(): void;
 			holdNextSave(): void;
 			releaseSave(): void;
+			holdNextRender(): void;
+			releaseRender(): void;
+			renderGateState(): { queued: boolean; active: boolean };
+			failNextRender(): void;
 			savedPayloads(): Array<{
 				expectedUpdatedAt: string;
 				layout: { elements: Array<{ type?: string; [key: string]: unknown }> };
@@ -720,6 +809,7 @@ declare global {
 			previewPayloads(): Array<{ previewKind: string; layout: { elements: unknown[] } }>;
 			advanceClock(milliseconds: number): void;
 			rendererCalls(): number;
+			rendererAttempts(): number;
 		};
 		certificateFontBatchHarness: {
 			attachedBatches(): string[][];

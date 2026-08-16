@@ -31,7 +31,7 @@
 	import { Button } from '$lib/components/ui/button';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { Input } from '$lib/components/ui/input';
-	import { AlertTriangle, RefreshCw, ShieldAlert } from 'lucide-svelte';
+	import { AlertTriangle, LoaderCircle, RefreshCw, ShieldAlert } from 'lucide-svelte';
 	import { onDestroy, tick, untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
 	import CertificateBackgroundReplaceDialog from './CertificateBackgroundReplaceDialog.svelte';
@@ -67,11 +67,13 @@
 	let backgroundOpen = $state(false);
 	let backgroundPending = $state(false);
 	let previewOpen = $state(false);
-	let previewing = $state<'short' | 'normal' | 'long' | 'candidate' | null>(null);
+	let previewState = $state<'idle' | 'loading' | 'ready' | 'error'>('idle');
+	let lastPreviewKind = $state<'short' | 'normal' | 'long' | null>(null);
 	let previewError = $state('');
 	let previewCanvas = $state<HTMLCanvasElement>();
 	let previewController: AbortController | null = null;
 	let manifestRefreshPromise: Promise<CertificateRenderManifest> | null = null;
+	const previewing = $derived(previewState === 'loading' ? lastPreviewKind : null);
 
 	const canEdit = $derived(currentTemplate.capabilities.canUpdate && !saving && !reloading);
 	const selectedElement = $derived.by(() => {
@@ -279,11 +281,12 @@
 	}
 
 	async function renderPreview(kind: 'short' | 'normal' | 'long' | 'candidate') {
-		if (previewing || kind === 'candidate') return;
+		if (previewState === 'loading' || kind === 'candidate') return;
 		previewController?.abort();
 		const controller = new AbortController();
 		previewController = controller;
-		previewing = kind;
+		lastPreviewKind = kind;
+		previewState = 'loading';
 		previewError = '';
 		previewOpen = true;
 		try {
@@ -296,6 +299,8 @@
 			manifest = freshManifest;
 			await tick();
 			if (!previewCanvas) throw new Error('ไม่พบพื้นที่แสดงพรีวิว');
+			previewCanvas.width = 1;
+			previewCanvas.height = 1;
 			const renderer = await loadCertificateRenderer();
 			const previewScale = Math.min(
 				1.5,
@@ -311,15 +316,20 @@
 				scale: previewScale,
 				signal: controller.signal
 			});
+			controller.signal.throwIfAborted();
+			if (previewController === controller) previewState = 'ready';
 		} catch (error) {
-			if (controller.signal.aborted) return;
+			if (controller.signal.aborted || previewController !== controller) return;
 			previewError = error instanceof Error ? error.message : 'สร้างพรีวิวไม่สำเร็จ';
+			previewState = 'error';
 		} finally {
-			if (previewController === controller) {
-				previewController = null;
-				previewing = null;
-			}
+			if (previewController === controller) previewController = null;
 		}
+	}
+
+	function retryPreview() {
+		if (previewState !== 'error' || !lastPreviewKind) return;
+		void renderPreview(lastPreviewKind);
 	}
 
 	async function refreshCanvasManifest(): Promise<CertificateRenderManifest> {
@@ -362,7 +372,8 @@
 	function closePreview() {
 		previewController?.abort();
 		previewController = null;
-		previewing = null;
+		previewState = 'idle';
+		previewError = '';
 		previewOpen = false;
 	}
 
@@ -523,23 +534,49 @@
 />
 
 <Dialog.Root bind:open={previewOpen} onOpenChange={(open) => !open && closePreview()}>
-	<Dialog.Content class="max-h-[96vh] overflow-auto p-3 sm:max-w-[96vw]">
+	<Dialog.Content
+		class="max-h-[96vh] overflow-auto p-3 sm:max-w-[96vw]"
+		aria-busy={previewState === 'loading'}
+	>
 		<Dialog.Header class="px-2 pt-2">
 			<Dialog.Title>พรีวิว PDF จริง</Dialog.Title>
 			<Dialog.Description>
 				ใช้ renderer เดียวกับไฟล์ดาวน์โหลด รวมฟอนต์ไทย เงา รูปภาพ และ QR Code
 			</Dialog.Description>
 		</Dialog.Header>
-		<div class="grid min-h-72 place-items-center overflow-auto rounded-lg bg-slate-200 p-5">
-			{#if previewError}
+		<div
+			class="relative grid min-h-72 place-items-center overflow-auto rounded-lg bg-slate-200 p-5"
+		>
+			{#if previewState === 'loading'}
+				<div
+					class="grid place-items-center gap-3 rounded-xl border bg-background/95 px-6 py-5 text-center text-sm text-muted-foreground shadow-sm"
+					role="status"
+					aria-live="polite"
+				>
+					<LoaderCircle class="size-7 animate-spin text-primary" aria-hidden="true" />
+					<p>กำลังโหลดฟอนต์และสร้างพรีวิว…</p>
+				</div>
+			{:else if previewState === 'error'}
 				<div
 					class="max-w-md rounded-lg border border-destructive/30 bg-background p-4 text-center text-sm text-destructive"
 				>
 					<AlertTriangle class="mx-auto mb-2 size-5" />{previewError}
 				</div>
-			{:else}
-				<canvas bind:this={previewCanvas} class="max-w-none bg-white shadow-xl"></canvas>
 			{/if}
+			<canvas
+				bind:this={previewCanvas}
+				hidden={previewState !== 'ready'}
+				class="max-w-none bg-white shadow-xl"
+				aria-label="ผลพรีวิว PDF จริง"
+			></canvas>
+		</div>
+		<div class="flex justify-end gap-2 px-2 pb-1">
+			{#if previewState === 'error'}
+				<Button variant="secondary" onclick={retryPreview}>
+					<RefreshCw class="size-4" /> ลองใหม่
+				</Button>
+			{/if}
+			<Button variant="outline" onclick={closePreview}>ปิด</Button>
 		</div>
 	</Dialog.Content>
 </Dialog.Root>
