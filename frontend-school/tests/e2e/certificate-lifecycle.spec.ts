@@ -26,6 +26,7 @@ type CertificateTemplateAsset = Schemas['CertificateTemplateAsset'];
 type CertificateLayout = Schemas['CertificateLayoutV1'];
 type FileMetadata = Schemas['FileMetadata'];
 type CertificateCandidateAccount = Schemas['CertificateCandidateAccount'];
+type CertificateCandidate = Schemas['CertificateCandidateDetail'];
 type CertificateCandidateImportResult = Schemas['CertificateCandidateImportResult'];
 type CertificateCandidateBulkResult = Schemas['CertificateCandidateBulkResult'];
 type CertificateIssueRequest = Schemas['CertificateIssueRequestDetail'];
@@ -452,7 +453,7 @@ async function submitManualVerification(
 	firstName = certificate.firstName,
 	lastName = certificate.lastName
 ): Promise<void> {
-	await page.getByLabel('เลขเกียรติบัตร').fill(certificate.certificateNumber);
+	await page.getByLabel('เลขเกียรติบัตร', { exact: true }).fill(certificate.certificateNumber);
 	await page.getByLabel('ชื่อ', { exact: true }).fill(firstName);
 	await page.getByLabel('นามสกุล', { exact: true }).fill(lastName);
 	await page.getByRole('button', { name: 'ตรวจสอบข้อมูล' }).click();
@@ -1092,13 +1093,56 @@ test.describe.serial('complete certificate issuance lifecycle', () => {
 			if (!revoked.replacementCandidate) {
 				throw new Error('Revocation did not create a replacement candidate.');
 			}
+			expect(revoked.replacementCandidate.validationStatus).toBe('needs_review');
 			await issuer.api.expectFailure(
 				'POST',
 				`/api/certificates/${encodeURIComponent(studentCertificate.id)}/render-manifest`,
 				[409]
 			);
 
-			const replacementRequest = await submitRequest([revoked.replacementCandidate.id]);
+			const replacementDraft = await preparer.api.request<CertificateCandidate>(
+				'GET',
+				`/api/certificates/candidates/${encodeURIComponent(revoked.replacementCandidate.id)}`
+			);
+			let readyReplacement = await preparer.api.request<CertificateCandidate>(
+				'PUT',
+				`/api/certificates/candidates/${encodeURIComponent(replacementDraft.id)}`,
+				{
+					data: {
+						expectedUpdatedAt: replacementDraft.updatedAt,
+						templateId: replacementDraft.templateId,
+						recipientType: replacementDraft.recipientType,
+						studentId: replacementDraft.studentId,
+						staffUsername: replacementDraft.staffUsername,
+						importedTitle: replacementDraft.importedTitle,
+						importedFirstName: replacementDraft.importedFirstName,
+						importedLastName: replacementDraft.importedLastName,
+						selectedNameSource: 'account',
+						activityItem: replacementDraft.activityItem,
+						awardOrRole: replacementDraft.awardOrRole,
+						customValues: replacementDraft.customValues
+					}
+				}
+			);
+			if (readyReplacement.validationCodes.includes('duplicate_candidate')) {
+				const confirmedReplacement = await preparer.api.request<CertificateCandidateBulkResult>(
+					'POST',
+					`/api/certificates/campaigns/${encodeURIComponent(campaign.id)}/candidates/bulk`,
+					{
+						data: {
+							operation: 'confirm_duplicate',
+							candidateIds: [readyReplacement.id]
+						}
+					}
+				);
+				const confirmedCandidate = confirmedReplacement.candidates[0];
+				if (!confirmedCandidate) {
+					throw new Error('Replacement duplicate review returned no candidate.');
+				}
+				readyReplacement = confirmedCandidate;
+			}
+			expect(readyReplacement.validationStatus).toBe('ready');
+			const replacementRequest = await submitRequest([readyReplacement.id]);
 			await startCertificateIssueRequestReview(issuer.api, replacementRequest.id);
 			const replacementIssue = await issueCertificates(
 				issuer.api,
@@ -1149,10 +1193,11 @@ test.describe.serial('complete certificate issuance lifecycle', () => {
 				replacementCertificate.certificateNumber
 			);
 
-			expect((await openQrVerification(qrPage, localQrUrl)).status()).toBe(200);
-			await expectQrFragmentCleared(qrPage);
-			await expect(qrPage.getByTestId('verification-result')).toContainText('เพิกถอนแล้ว');
-			await expect(qrPage.getByTestId('public-certificate-download')).toHaveCount(0);
+			const revokedQrPage = await publicContext.newPage();
+			expect((await openQrVerification(revokedQrPage, localQrUrl)).status()).toBe(200);
+			await expectQrFragmentCleared(revokedQrPage);
+			await expect(revokedQrPage.getByTestId('verification-result')).toContainText('เพิกถอนแล้ว');
+			await expect(revokedQrPage.getByTestId('public-certificate-download')).toHaveCount(0);
 		} catch {
 			throw new Error(
 				`Certificate lifecycle failed during ${lifecyclePhase}; sensitive details were suppressed.`
