@@ -18,6 +18,7 @@
 	import { pointsToMillimetres } from '$lib/certificates/layout';
 	import { loadCertificateRenderer } from '$lib/certificates/renderer';
 	import { AlertTriangle, Image as ImageIcon, QrCode } from 'lucide-svelte';
+	import { untrack } from 'svelte';
 
 	type Interaction = {
 		kind: 'move' | 'resize' | 'rotate';
@@ -68,6 +69,8 @@
 	let backgroundCanvas = $state<HTMLCanvasElement>();
 	let paperElement = $state<HTMLDivElement>();
 	let backgroundError = $state('');
+	let fontError = $state('');
+	let fontAliases = $state.raw<Record<string, string>>({});
 	let interaction: Interaction | null = null;
 
 	const geometry = $derived(template.pageGeometry ?? manifest.pageGeometry);
@@ -80,6 +83,20 @@
 	);
 	const manifestNeedsLayoutGrants = $derived(
 		certificateManifestNeedsLayoutGrants(manifest, layout)
+	);
+	const fontPreparationKey = $derived(
+		layout.elements
+			.filter((element) => element.type === 'text')
+			.map((element) =>
+				[
+					element.id,
+					element.fontSource.type === 'asset' ? `asset:${element.fontSource.asset_id}` : 'built_in',
+					element.fontFamily,
+					element.fontWeight,
+					element.fontStyle
+				].join(':')
+			)
+			.join('|')
 	);
 	const resizeHandles: ResizeHandle[] = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
 
@@ -121,6 +138,40 @@
 		})().catch((error: unknown) => {
 			if (controller.signal.aborted) return;
 			backgroundError = error instanceof Error ? error.message : 'ไม่สามารถแสดง PDF พื้นหลังได้';
+		});
+		return () => controller.abort();
+	});
+
+	$effect(() => {
+		const preparationKey = fontPreparationKey;
+		const currentManifest = manifest;
+		const needsLayoutGrants = manifestNeedsLayoutGrants;
+		if (!preparationKey) {
+			fontAliases = {};
+			fontError = '';
+			return;
+		}
+		const currentLayout = untrack(() => cloneCertificateLayout(layout));
+		const controller = new AbortController();
+		fontAliases = {};
+		fontError = '';
+		void (async () => {
+			const effectiveManifest =
+				certificateManifestExpiresSoon(currentManifest) || needsLayoutGrants
+					? await onmanifestrefresh()
+					: currentManifest;
+			controller.signal.throwIfAborted();
+			const renderer = await loadCertificateRenderer();
+			const aliases = await renderer.prepareFontAliases(
+				effectiveManifest,
+				currentLayout,
+				controller.signal
+			);
+			controller.signal.throwIfAborted();
+			fontAliases = aliases;
+		})().catch((error: unknown) => {
+			if (controller.signal.aborted) return;
+			fontError = error instanceof Error ? error.message : 'ไม่สามารถโหลดฟอนต์สำหรับ editor ได้';
 		});
 		return () => controller.abort();
 	});
@@ -359,11 +410,11 @@
 			aria-label="ยกเลิกการเลือกองค์ประกอบ"
 		></button>
 
-		{#if backgroundError}
+		{#if backgroundError || fontError}
 			<div
 				class="absolute inset-0 z-10 grid place-items-center bg-white/95 p-8 text-center text-sm text-destructive"
 			>
-				<div><AlertTriangle class="mx-auto mb-2 size-6" />{backgroundError}</div>
+				<div><AlertTriangle class="mx-auto mb-2 size-6" />{backgroundError || fontError}</div>
 			</div>
 		{/if}
 
@@ -393,7 +444,8 @@
 				<button
 					type="button"
 					class={[
-						'absolute inset-0 overflow-hidden bg-transparent p-0 outline-none',
+						'absolute inset-0 bg-transparent p-0 outline-none',
+						element.type === 'text' ? 'overflow-visible' : 'overflow-hidden',
 						selected
 							? 'ring-2 ring-indigo-500 ring-offset-1 ring-offset-white/70'
 							: 'hover:ring-1 hover:ring-indigo-400/60',
@@ -406,20 +458,29 @@
 					aria-pressed={selected}
 				>
 					{#if element.type === 'text'}
-						<span
-							class="block size-full whitespace-pre-wrap break-words"
-							style:font-family={element.fontFamily}
-							style:font-size={`${element.fontSize * zoom}px`}
-							style:font-weight={element.fontWeight}
-							style:line-height={element.lineHeight}
-							style:color={element.color}
-							style:text-align={element.alignment}
-							style:text-shadow={element.shadow
-								? `${element.shadow.offsetX * zoom}px ${element.shadow.offsetY * zoom}px ${element.shadow.blur * zoom}px ${element.shadow.color}`
-								: 'none'}
-						>
-							{textValue(element)}
-						</span>
+						{@const fontAlias = fontAliases[element.id]}
+						{#if fontAlias}
+							{@const textSafetyInset = Math.max(2, element.fontSize * 0.12) * zoom}
+							<span
+								class="block w-full whitespace-pre-wrap break-words"
+								style:height={`calc(100% + ${textSafetyInset * 2}px)`}
+								style:margin-top={`-${textSafetyInset}px`}
+								style:padding-top={`${textSafetyInset}px`}
+								style:padding-bottom={`${textSafetyInset}px`}
+								style:font-family={fontAlias}
+								style:font-size={`${element.fontSize * zoom}px`}
+								style:font-weight={element.fontWeight}
+								style:font-style={element.fontStyle}
+								style:line-height={element.lineHeight}
+								style:color={element.color}
+								style:text-align={element.alignment}
+								style:text-shadow={element.shadow
+									? `${element.shadow.offsetX * zoom}px ${element.shadow.offsetY * zoom}px ${element.shadow.blur * zoom}px ${element.shadow.color}`
+									: 'none'}
+							>
+								{textValue(element)}
+							</span>
+						{/if}
 					{:else if element.type === 'image'}
 						{@const url = imageUrl(element)}
 						{#if url}

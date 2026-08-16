@@ -94,6 +94,14 @@ const rendererStub = `
 			},
 			async buildCertificatePdf() {
 				return new Uint8Array([37, 80, 68, 70]);
+			},
+			async prepareFontAliases(manifest, layout, signal) {
+				signal?.throwIfAborted();
+				return Object.fromEntries(
+					layout.elements
+						.filter((element) => element.type === 'text')
+						.map((element) => [element.id, 'HarnessFont-' + element.id])
+				);
 			}
 		};
 	}
@@ -256,7 +264,60 @@ function harnessPlugin(): Plugin {
 					name: 'การแข่งขันคำคม',
 					allowedRecipientTypes: ['student', 'external'],
 					backgroundFileId: '40000000-0000-4000-8000-000000000001',
-					assets: [],
+					assets: [
+						{
+							id: '50000000-0000-4000-8000-000000000001',
+							fileId: '51000000-0000-4000-8000-000000000001',
+							kind: 'font',
+							displayName: 'Uploaded Thai Regular',
+							fontFamily: 'Uploaded Thai',
+							fontWeight: 400,
+							fontStyle: 'normal',
+							imageWidthPixels: null,
+							imageHeightPixels: null,
+							rightsConfirmed: true,
+							createdAt: initialUpdatedAt
+						},
+						{
+							id: '50000000-0000-4000-8000-000000000002',
+							fileId: '51000000-0000-4000-8000-000000000002',
+							kind: 'font',
+							displayName: 'Uploaded Thai Bold',
+							fontFamily: 'Uploaded Thai',
+							fontWeight: 700,
+							fontStyle: 'normal',
+							imageWidthPixels: null,
+							imageHeightPixels: null,
+							rightsConfirmed: true,
+							createdAt: initialUpdatedAt
+						},
+						{
+							id: '50000000-0000-4000-8000-000000000003',
+							fileId: '51000000-0000-4000-8000-000000000003',
+							kind: 'font',
+							displayName: 'Uploaded Thai Italic',
+							fontFamily: 'Uploaded Thai',
+							fontWeight: 400,
+							fontStyle: 'italic',
+							imageWidthPixels: null,
+							imageHeightPixels: null,
+							rightsConfirmed: true,
+							createdAt: initialUpdatedAt
+						},
+						{
+							id: '60000000-0000-4000-8000-000000000001',
+							fileId: '61000000-0000-4000-8000-000000000001',
+							kind: 'image',
+							displayName: 'ภาพ 1200 × 800',
+							fontFamily: null,
+							fontWeight: null,
+							fontStyle: null,
+							imageWidthPixels: 1200,
+							imageHeightPixels: 800,
+							rightsConfirmed: false,
+							createdAt: initialUpdatedAt
+						}
+					],
 					capabilities: { canRead: true, canUpdate: true, canDelete: true, canPreview: true },
 					createdAt: initialUpdatedAt,
 					updatedAt: initialUpdatedAt,
@@ -284,9 +345,29 @@ function harnessPlugin(): Plugin {
 					recipientValues: { ชื่อ: 'กมลชนก', นามสกุล: 'รัตนสุวรรณ' },
 					certificateNumber: '2569-0001-000001-5',
 					qrPayload: 'https://verify.example.test/c/test-proof',
-					builtInFonts: [],
-					fontGrants: [],
-					imageGrants: [],
+					builtInFonts: [
+						{ family: 'Sarabun', weight: 400, style: 'normal', assetPath: '/fonts/Sarabun-Regular.ttf' },
+						{ family: 'Sarabun', weight: 700, style: 'normal', assetPath: '/fonts/Sarabun-Bold.ttf' }
+					],
+					fontGrants: serverTemplate.assets
+						.filter((asset) => asset.kind === 'font')
+						.map((asset) => ({
+							assetId: asset.id,
+							fileId: asset.fileId,
+							family: asset.fontFamily,
+							weight: asset.fontWeight,
+							style: asset.fontStyle,
+							url: '/font-' + asset.id + '.ttf',
+							expiresAt: '2099-01-01T00:00:00Z'
+						})),
+					imageGrants: serverTemplate.assets
+						.filter((asset) => asset.kind === 'image')
+						.map((asset) => ({
+							assetId: asset.id,
+							fileId: asset.fileId,
+							url: '/image-' + asset.id + '.png',
+							expiresAt: '2099-01-01T00:00:00Z'
+						})),
 					backgroundGrant: {
 						fileId: serverTemplate.backgroundFileId,
 						url: '/background.pdf',
@@ -498,6 +579,72 @@ test('editor adds, moves, duplicates, saves, previews, and resolves conflicts ex
 	await expect(page.getByRole('button', { name: 'เปลี่ยนพื้นหลัง' }).last()).toBeEnabled();
 });
 
+test('editor selects exact font assets and preserves or resets inspected image ratios', async ({
+	page
+}) => {
+	await page.goto(`${baseUrl}${harnessPath}`);
+	await expect(page.getByTestId('certificate-editor')).toBeVisible();
+	await page.getByRole('button', { name: 'เลือกองค์ประกอบ text' }).click();
+
+	await page.getByLabel('ตระกูลฟอนต์').selectOption('asset:uploaded thai');
+	await expect(page.getByRole('button', { name: 'ตัวเอียง' })).toBeEnabled();
+	await page.getByRole('button', { name: 'ตัวเอียง' }).click();
+	await expect(page.getByRole('button', { name: 'ตัวหนา' })).toBeDisabled();
+	await page.getByRole('button', { name: 'บันทึก' }).click();
+	await expect
+		.poll(() => page.evaluate(() => window.certificateEditorHarness.savedPayloads().length))
+		.toBe(1);
+	let payload = await page.evaluate(() => window.certificateEditorHarness.savedPayloads().at(-1)!);
+	let text = payload.layout.elements.find((element) => element.type === 'text') as {
+		fontSource: { type: string; asset_id: string };
+		fontStyle: string;
+	};
+	expect(text.fontSource.asset_id).toBe('50000000-0000-4000-8000-000000000003');
+	expect(text.fontStyle).toBe('italic');
+
+	await page.getByRole('button', { name: 'ตัวเอียง' }).click();
+	await page.getByRole('button', { name: 'ตัวหนา' }).click();
+	await page.getByRole('button', { name: 'บันทึก' }).click();
+	payload = await page.evaluate(() => window.certificateEditorHarness.savedPayloads().at(-1)!);
+	text = payload.layout.elements.find((element) => element.type === 'text') as typeof text;
+	expect(text.fontSource.asset_id).toBe('50000000-0000-4000-8000-000000000002');
+
+	await page
+		.getByLabel('เพิ่มรูปภาพ', { exact: true })
+		.selectOption('60000000-0000-4000-8000-000000000001');
+	await page.getByRole('button', { name: 'เพิ่มรูปภาพที่เลือก' }).click();
+	const widthInput = page.getByLabel('กว้าง', { exact: true });
+	const heightInput = page.getByLabel('สูง', { exact: true });
+	const createdWidth = Number(await widthInput.inputValue());
+	const createdHeight = Number(await heightInput.inputValue());
+	expect(createdWidth / createdHeight).toBeCloseTo(1.5, 6);
+	const lock = page.getByRole('checkbox', { name: 'ล็อกสัดส่วน' });
+	await expect(lock).toBeChecked();
+	await lock.uncheck();
+	await heightInput.fill('100');
+	await heightInput.press('Tab');
+	expect(
+		Number(await widthInput.inputValue()) / Number(await heightInput.inputValue())
+	).not.toBeCloseTo(1.5, 6);
+	await page.getByRole('button', { name: 'รีเซ็ตสัดส่วนต้นฉบับ' }).click();
+	await expect(lock).toBeChecked();
+	expect(
+		Number(await widthInput.inputValue()) / Number(await heightInput.inputValue())
+	).toBeCloseTo(1.5, 6);
+	await page.getByRole('button', { name: 'บันทึก' }).click();
+	payload = await page.evaluate(() => window.certificateEditorHarness.savedPayloads().at(-1)!);
+	const image = payload.layout.elements.find((element) => element.type === 'image') as {
+		assetId: string;
+		lockAspectRatio: boolean;
+		aspectRatio: number;
+		frame: { width: number; height: number };
+	};
+	expect(image.assetId).toBe('60000000-0000-4000-8000-000000000001');
+	expect(image.lockAspectRatio).toBe(true);
+	expect(image.aspectRatio).toBe(1.5);
+	expect(image.frame.width / image.frame.height).toBeCloseTo(1.5, 6);
+});
+
 test('font batch uploads sequentially, reviews detected variants, and attaches atomically', async ({
 	page
 }) => {
@@ -567,7 +714,7 @@ declare global {
 			releaseSave(): void;
 			savedPayloads(): Array<{
 				expectedUpdatedAt: string;
-				layout: { elements: unknown[] };
+				layout: { elements: Array<{ type?: string; [key: string]: unknown }> };
 			}>;
 			previewKinds(): string[];
 			previewPayloads(): Array<{ previewKind: string; layout: { elements: unknown[] } }>;

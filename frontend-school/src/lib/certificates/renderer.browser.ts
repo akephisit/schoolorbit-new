@@ -175,24 +175,30 @@ function fontAliasKey(
 		const assetId = element.fontSource.asset_id;
 		const grant = manifest.fontGrants.find((candidate) => candidate.assetId === assetId);
 		if (!grant) throw renderError(`ไม่พบไฟล์ฟอนต์สำหรับข้อความ ${element.id}`);
-		if (grant.family !== element.fontFamily || grant.weight !== element.fontWeight) {
+		if (
+			grant.family !== element.fontFamily ||
+			grant.weight !== element.fontWeight ||
+			grant.style !== element.fontStyle
+		) {
 			throw renderError(`ข้อมูลฟอนต์ของข้อความ ${element.id} ไม่ตรงกับแม่แบบ`);
 		}
 		return {
-			cacheKey: `asset:${grant.assetId}:${grant.fileId}:${grant.family}:${grant.weight}`,
-			alias: `SchoolOrbitCertificateAsset-${grant.assetId}-${grant.fileId}`,
+			cacheKey: `asset:${grant.assetId}:${grant.fileId}:${grant.family}:${grant.weight}:${grant.style}`,
+			alias: `SchoolOrbitCertificateAsset-${grant.assetId}-${grant.fileId}-${grant.weight}-${grant.style}`,
 			url: grant.url
 		};
 	}
 
 	const font = manifest.builtInFonts.find(
 		(candidate) =>
-			candidate.family === element.fontFamily && candidate.weight === element.fontWeight
+			candidate.family === element.fontFamily &&
+			candidate.weight === element.fontWeight &&
+			candidate.style === element.fontStyle
 	);
 	if (!font) throw renderError(`ไม่พบฟอนต์มาตรฐานสำหรับข้อความ ${element.id}`);
 	return {
-		cacheKey: `built-in:${font.family}:${font.weight}:${font.assetPath}`,
-		alias: `SchoolOrbitCertificateBuiltIn-${font.family.replace(/[^a-z0-9_-]/giu, '-')}-${font.weight}`,
+		cacheKey: `built-in:${font.family}:${font.weight}:${font.style}:${font.assetPath}`,
+		alias: `SchoolOrbitCertificateBuiltIn-${font.family.replace(/[^a-z0-9_-]/giu, '-')}-${font.weight}-${font.style}`,
 		url: font.assetPath
 	};
 }
@@ -216,7 +222,10 @@ async function loadElementFont(
 		bytes.byteOffset,
 		bytes.byteOffset + bytes.byteLength
 	) as ArrayBuffer;
-	const face = new FontFace(alias, buffer, { weight: String(element.fontWeight) });
+	const face = new FontFace(alias, buffer, {
+		weight: String(element.fontWeight),
+		style: element.fontStyle
+	});
 	await face.load();
 	resources.throwIfAborted();
 	const winnerAfterLoad = loadedFontFaces.get(cacheKey);
@@ -312,8 +321,13 @@ function wrappedLines(context: CanvasRenderingContext2D, text: string, maxWidth:
 		.flatMap((paragraph) => wrapSingleParagraph(context, paragraph, maxWidth));
 }
 
-function canvasFont(weight: number, size: number, alias: string): string {
-	return `${weight} ${size}px "${alias}"`;
+function canvasFont(
+	style: TextElement['fontStyle'],
+	weight: number,
+	size: number,
+	alias: string
+): string {
+	return `${style} ${weight} ${size}px "${alias}"`;
 }
 
 function layoutText(
@@ -329,7 +343,7 @@ function layoutText(
 		fontSizePoints: number
 	): { fits: boolean; lines: string[]; lineHeight: number } => {
 		const fontSize = fontSizePoints * scale;
-		context.font = canvasFont(element.fontWeight, fontSize, fontAlias);
+		context.font = canvasFont(element.fontStyle, element.fontWeight, fontSize, fontAlias);
 		const lines = wrappedLines(context, text, frameWidth);
 		const lineHeight = fontSize * element.lineHeight;
 		const widest = Math.max(0, ...lines.map((line) => context.measureText(line).width));
@@ -400,7 +414,12 @@ async function drawTextElement(
 	);
 
 	rotateIntoFrame(context, frame, element.rotation, () => {
-		context.font = canvasFont(element.fontWeight, textLayout.fontSize, fontAlias);
+		context.font = canvasFont(
+			element.fontStyle,
+			element.fontWeight,
+			textLayout.fontSize,
+			fontAlias
+		);
 		context.fillStyle = element.color;
 		context.textBaseline = 'top';
 		context.textAlign = element.alignment;
@@ -769,6 +788,27 @@ async function buildCertificatePdf(
 	}
 }
 
+async function prepareFontAliases(
+	manifest: CertificateRenderManifest,
+	layout: CertificateRenderManifest['layout'],
+	signal?: AbortSignal
+): Promise<Record<string, string>> {
+	const resources = new RenderResources(signal);
+	try {
+		const entries = await Promise.all(
+			layout.elements
+				.filter((element): element is TextElement => element.type === 'text')
+				.map(
+					async (element) =>
+						[element.id, await loadElementFont(manifest, element, resources)] as const
+				)
+		);
+		return Object.fromEntries(entries);
+	} finally {
+		await resources.dispose();
+	}
+}
+
 export function createCertificateRenderer(): CertificateRenderer {
-	return { inspectBackgroundPdf, renderPreview, buildCertificatePdf };
+	return { inspectBackgroundPdf, prepareFontAliases, renderPreview, buildCertificatePdf };
 }

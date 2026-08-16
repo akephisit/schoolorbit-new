@@ -16,6 +16,11 @@ export type CertificateBackgroundInspection = CertificateRenderManifest['pageGeo
 
 export interface CertificateRenderer {
 	inspectBackgroundPdf(file: Blob, signal?: AbortSignal): Promise<CertificateBackgroundInspection>;
+	prepareFontAliases(
+		manifest: CertificateRenderManifest,
+		layout: CertificateRenderManifest['layout'],
+		signal?: AbortSignal
+	): Promise<Record<string, string>>;
 	renderPreview(
 		manifest: CertificateRenderManifest,
 		canvas: HTMLCanvasElement,

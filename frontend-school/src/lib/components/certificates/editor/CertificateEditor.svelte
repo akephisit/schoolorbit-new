@@ -446,6 +446,7 @@
 			<CertificateElementPanel
 				{selectedElement}
 				assets={currentTemplate.assets}
+				{pageSize}
 				variables={variableOptions}
 				{hasQr}
 				disabled={!canEdit}

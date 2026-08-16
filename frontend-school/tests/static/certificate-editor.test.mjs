@@ -333,6 +333,12 @@ test('editor workspace exposes the approved focused controls and safe save contr
 		'เพิ่มข้อความ',
 		'เพิ่ม QR Code',
 		'เพิ่มรูปภาพ',
+		'ตระกูลฟอนต์',
+		'น้ำหนักฟอนต์',
+		'ตัวหนา',
+		'ตัวเอียง',
+		'ล็อกสัดส่วน',
+		'รีเซ็ตสัดส่วนต้นฉบับ',
 		'ขนาดตัวอักษร',
 		'สีข้อความ',
 		'จัดแนว',
@@ -356,6 +362,13 @@ test('editor workspace exposes the approved focused controls and safe save contr
 	assert.match(source, /ApiClientError/);
 	assert.match(source, /status\s*===\s*409/);
 	assert.match(source, /loadCertificateRenderer/);
+	assert.match(source, /certificateFontVariants/);
+	assert.match(source, /fontVariantPatch/);
+	assert.match(source, /setImageAspectRatioLock/);
+	assert.match(source, /resetImageAspectRatio/);
+	assert.match(source, /prepareFontAliases/);
+	assert.match(source, /fontAlias/);
+	assert.match(source, /style:font-style/);
 	assert.doesNotMatch(source, /renderer\.browser/);
 });
 

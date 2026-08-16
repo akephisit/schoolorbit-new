@@ -1,6 +1,23 @@
 <script lang="ts">
 	import type { CertificateTemplateDetail } from '$lib/api/certificates';
-	import type { CertificateElement, TextCertificateElement } from '$lib/certificates/editor-state';
+	import {
+		imageAssetAspectRatio,
+		resetImageAspectRatio,
+		setImageAspectRatioLock,
+		type CertificateElement,
+		type PagePointSize,
+		type TextCertificateElement
+	} from '$lib/certificates/editor-state';
+	import {
+		certificateFontVariants,
+		findCertificateFontVariant,
+		fontVariantPatch,
+		selectFontFamily,
+		selectFontWeight,
+		toggleBoldVariant,
+		toggleItalicVariant,
+		type CertificateFontVariant
+	} from '$lib/certificates/font-variants';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { Textarea } from '$lib/components/ui/textarea';
@@ -22,6 +39,7 @@
 	let {
 		selectedElement,
 		assets,
+		pageSize,
 		variables,
 		hasQr,
 		disabled = false,
@@ -34,6 +52,7 @@
 	}: {
 		selectedElement: CertificateElement | null;
 		assets: TemplateAsset[];
+		pageSize: PagePointSize;
 		variables: string[];
 		hasQr: boolean;
 		disabled?: boolean;
@@ -47,7 +66,33 @@
 
 	let imageAssetId = $state('');
 	const imageAssets = $derived(assets.filter((asset) => asset.kind === 'image'));
-	const fontAssets = $derived(assets.filter((asset) => asset.kind === 'font'));
+	const fontVariants = $derived(certificateFontVariants(assets));
+	const fontFamilies = $derived.by(() => {
+		const families: CertificateFontVariant[] = [];
+		for (const variant of fontVariants) {
+			if (!families.some((family) => family.familyKey === variant.familyKey)) {
+				families.push(variant);
+			}
+		}
+		return families;
+	});
+	const currentFontVariant = $derived.by(() =>
+		selectedElement?.type === 'text'
+			? findCertificateFontVariant(fontVariants, selectedElement)
+			: null
+	);
+	const currentFontWeights = $derived.by(() => {
+		if (!currentFontVariant) return [];
+		return Array.from(
+			new Set(
+				fontVariants
+					.filter((variant) => variant.familyKey === currentFontVariant.familyKey)
+					.map((variant) => variant.weight)
+			)
+		).sort((left, right) => left - right);
+	});
+	const boldVariant = $derived(toggleBoldVariant(fontVariants, currentFontVariant));
+	const italicVariant = $derived(toggleItalicVariant(fontVariants, currentFontVariant));
 
 	function finiteInput(event: Event, fallback: number): number {
 		const value = Number((event.currentTarget as HTMLInputElement).value);
@@ -57,6 +102,26 @@
 	function patchFrame(key: 'x' | 'y' | 'width' | 'height', value: number) {
 		if (!selectedElement) return;
 		const next = key === 'width' || key === 'height' ? Math.max(12, value) : Math.max(0, value);
+		if (
+			selectedElement.type === 'image' &&
+			selectedElement.lockAspectRatio &&
+			(key === 'width' || key === 'height')
+		) {
+			const centerX = selectedElement.frame.x + selectedElement.frame.width / 2;
+			const centerY = selectedElement.frame.y + selectedElement.frame.height / 2;
+			const width = key === 'width' ? next : next * selectedElement.aspectRatio;
+			const height = width / selectedElement.aspectRatio;
+			onpatch({
+				...selectedElement,
+				frame: {
+					x: centerX - width / 2,
+					y: centerY - height / 2,
+					width,
+					height
+				}
+			});
+			return;
+		}
 		onpatch({
 			...selectedElement,
 			frame: { ...selectedElement.frame, [key]: next }
@@ -73,31 +138,17 @@
 		onpatch({ ...selectedElement, ...patch });
 	}
 
-	function selectedFontValue(element: TextCertificateElement): string {
-		return element.fontSource.type === 'asset'
-			? `asset:${element.fontSource.asset_id}`
-			: `built:${element.fontFamily}:${element.fontWeight}`;
+	function applyFontVariant(variant: CertificateFontVariant | null) {
+		if (!variant) return;
+		patchText(fontVariantPatch(variant));
 	}
 
-	function selectFont(value: string) {
-		if (selectedElement?.type !== 'text') return;
-		if (value.startsWith('asset:')) {
-			const assetId = value.slice('asset:'.length);
-			const asset = fontAssets.find((candidate) => candidate.id === assetId);
-			if (!asset?.fontFamily || !asset.fontWeight) return;
-			patchText({
-				fontSource: { type: 'asset', asset_id: asset.id },
-				fontFamily: asset.fontFamily,
-				fontWeight: asset.fontWeight
-			});
-			return;
-		}
-		const [, family, weight] = value.split(':');
-		patchText({
-			fontSource: { type: 'built_in' },
-			fontFamily: family,
-			fontWeight: Number(weight)
-		});
+	function changeFontFamily(familyKey: string) {
+		applyFontVariant(selectFontFamily(fontVariants, familyKey));
+	}
+
+	function changeFontWeight(weight: string) {
+		applyFontVariant(selectFontWeight(fontVariants, currentFontVariant, Number(weight)));
 	}
 
 	function toggleShadow(enabled: boolean) {
@@ -116,6 +167,32 @@
 	function addSelectedImage() {
 		if (!imageAssetId) return;
 		onaddimage(imageAssetId);
+	}
+
+	function currentImageAsset() {
+		if (selectedElement?.type !== 'image') return null;
+		return imageAssets.find((asset) => asset.id === selectedElement.assetId) ?? null;
+	}
+
+	function changeSelectedImage(assetId: string) {
+		if (selectedElement?.type !== 'image') return;
+		const asset = imageAssets.find((candidate) => candidate.id === assetId);
+		if (!asset) return;
+		onpatch(
+			resetImageAspectRatio({ ...selectedElement, assetId }, imageAssetAspectRatio(asset), pageSize)
+		);
+	}
+
+	function changeImageAspectLock(locked: boolean) {
+		if (selectedElement?.type !== 'image') return;
+		onpatch(setImageAspectRatioLock(selectedElement, locked, pageSize));
+	}
+
+	function resetSelectedImageRatio() {
+		if (selectedElement?.type !== 'image') return;
+		const asset = currentImageAsset();
+		if (!asset) return;
+		onpatch(resetImageAspectRatio(selectedElement, imageAssetAspectRatio(asset), pageSize));
 	}
 </script>
 
@@ -234,21 +311,59 @@
 					/>
 				</div>
 
-				<div class="space-y-2">
-					<label for="certificate-font" class="text-xs font-medium">ฟอนต์</label>
-					<select
-						id="certificate-font"
-						class="h-9 w-full rounded-md border bg-background px-2 text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
-						value={selectedFontValue(selectedElement)}
-						{disabled}
-						onchange={(event) => selectFont(event.currentTarget.value)}
+				<div class="grid grid-cols-[minmax(0,1fr)_6.5rem] gap-2">
+					<label class="space-y-1.5 text-xs">
+						<span class="font-medium">ตระกูลฟอนต์</span>
+						<select
+							class="h-9 w-full rounded-md border bg-background px-2 text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
+							value={currentFontVariant?.familyKey ?? ''}
+							{disabled}
+							onchange={(event) => changeFontFamily(event.currentTarget.value)}
+						>
+							{#each fontFamilies as family (family.familyKey)}
+								<option value={family.familyKey}>{family.familyLabel}</option>
+							{/each}
+						</select>
+					</label>
+					<label class="space-y-1.5 text-xs">
+						<span class="font-medium">น้ำหนักฟอนต์</span>
+						<select
+							class="h-9 w-full rounded-md border bg-background px-2 text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
+							value={String(currentFontVariant?.weight ?? '')}
+							{disabled}
+							onchange={(event) => changeFontWeight(event.currentTarget.value)}
+						>
+							{#each currentFontWeights as weight (weight)}
+								<option value={String(weight)}>{weight}</option>
+							{/each}
+						</select>
+					</label>
+				</div>
+				<div class="grid grid-cols-2 gap-2">
+					<Button
+						type="button"
+						size="sm"
+						variant={currentFontVariant?.weight === 700 ? 'secondary' : 'outline'}
+						disabled={disabled || !boldVariant}
+						onclick={() => applyFontVariant(boldVariant)}
+						title={boldVariant
+							? 'สลับน้ำหนัก 700/ปกติ'
+							: 'ยังไม่มี variant น้ำหนัก 700 สำหรับรูปแบบนี้'}
 					>
-						<option value="built:Sarabun:400">Sarabun ปกติ</option>
-						<option value="built:Sarabun:700">Sarabun ตัวหนา</option>
-						{#each fontAssets as asset (asset.id)}
-							<option value={`asset:${asset.id}`}>{asset.displayName}</option>
-						{/each}
-					</select>
+						ตัวหนา
+					</Button>
+					<Button
+						type="button"
+						size="sm"
+						variant={currentFontVariant?.style === 'italic' ? 'secondary' : 'outline'}
+						disabled={disabled || !italicVariant}
+						onclick={() => applyFontVariant(italicVariant)}
+						title={italicVariant
+							? 'สลับตัวปกติ/ตัวเอียง'
+							: 'ยังไม่มี variant ตัวเอียงหรือตัวปกติที่น้ำหนักนี้'}
+					>
+						ตัวเอียง
+					</Button>
 				</div>
 
 				<div class="grid grid-cols-2 gap-3">
@@ -425,13 +540,34 @@
 						class="h-9 w-full rounded-md border bg-background px-2 text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
 						value={selectedElement.assetId}
 						{disabled}
-						onchange={(event) =>
-							onpatch({ ...selectedElement, assetId: event.currentTarget.value })}
+						onchange={(event) => changeSelectedImage(event.currentTarget.value)}
 					>
 						{#each imageAssets as asset (asset.id)}
 							<option value={asset.id}>{asset.displayName}</option>
 						{/each}
 					</select>
+				</div>
+				<div class="space-y-3 rounded-lg border bg-muted/15 p-3">
+					<label class="flex items-center justify-between gap-3 text-xs font-medium">
+						<span>ล็อกสัดส่วน</span>
+						<input
+							type="checkbox"
+							checked={selectedElement.lockAspectRatio}
+							{disabled}
+							onchange={(event) => changeImageAspectLock(event.currentTarget.checked)}
+							class="size-4 rounded border"
+						/>
+					</label>
+					<Button
+						type="button"
+						size="sm"
+						variant="outline"
+						class="w-full"
+						{disabled}
+						onclick={resetSelectedImageRatio}
+					>
+						รีเซ็ตสัดส่วนต้นฉบับ
+					</Button>
 				</div>
 			{:else}
 				<div
