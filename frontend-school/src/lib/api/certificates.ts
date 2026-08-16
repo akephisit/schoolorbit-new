@@ -22,12 +22,10 @@ export type CreateCertificateTemplateRequest = Schemas['CreateCertificateTemplat
 export type UpdateCertificateTemplateRequest = Schemas['UpdateCertificateTemplateRequest'];
 export type AttachCertificateBackgroundRequest = Schemas['AttachCertificateBackgroundRequest'];
 export type AttachCertificateAssetRequest = Schemas['AttachCertificateAssetRequest'];
-export type InspectCertificateFontUploadsRequest =
-	Schemas['InspectCertificateFontUploadsRequest'];
+export type InspectCertificateFontUploadsRequest = Schemas['InspectCertificateFontUploadsRequest'];
 export type AttachCertificateFontBatchRequest = Schemas['AttachCertificateFontBatchRequest'];
 export type CertificateFontUploadInspection = Schemas['CertificateFontUploadInspection'];
-export type CertificateFontUploadInspectionFile =
-	Schemas['CertificateFontUploadInspectionFile'];
+export type CertificateFontUploadInspectionFile = Schemas['CertificateFontUploadInspectionFile'];
 export type CertificateFontUploadStatus = Schemas['CertificateFontUploadStatus'];
 export type CertificatePreviewManifestRequest = Schemas['CertificatePreviewManifestRequest'];
 export type RecipientType = Schemas['RecipientType'];
@@ -249,11 +247,13 @@ export async function getCertificateTemplateVariableCatalog(
 
 export async function createCertificateTemplatePreviewManifest(
 	templateId: string,
-	payload: CertificatePreviewManifestRequest
+	payload: CertificatePreviewManifestRequest,
+	options: ApiRequestOptions = {}
 ): Promise<CertificateRenderManifest> {
 	const response = await apiClient.post<CertificateRenderManifest>(
 		`/api/certificates/templates/${encodeURIComponent(templateId)}/preview-manifest`,
-		payload
+		payload,
+		options
 	);
 	return requireApiData(response, 'ไม่สามารถสร้างข้อมูลพรีวิวเกียรติบัตรได้');
 }

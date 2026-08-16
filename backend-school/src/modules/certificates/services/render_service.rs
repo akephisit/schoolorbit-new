@@ -13,9 +13,8 @@ use crate::{
     middleware::permission::ActorContext,
     modules::{
         certificates::models::{
-            CertificateBuiltInFont, CertificateElement, CertificateFontSource,
-            CertificateFontStyle, CertificatePageBox, CertificatePageGeometry,
-            CertificatePreviewKind, CertificatePreviewManifestRequest,
+            CertificateElement, CertificateFontSource, CertificateFontStyle, CertificatePageBox,
+            CertificatePageGeometry, CertificatePreviewKind, CertificatePreviewManifestRequest,
             CertificateRenderCampaignValues, CertificateRenderFileGrant,
             CertificateRenderFontGrant, CertificateRenderImageGrant, CertificateRenderManifest,
             CertificateRenderManifestBatchRequest, CertificateTemplateAssetKind, PageGeometry,
@@ -36,7 +35,7 @@ use crate::{
 use super::{
     candidate_service,
     import_validation::{normalize_display_text, normalize_name_for_match, referenced_variables},
-    layout::validate_layout,
+    layout::{built_in_fonts, validate_layout},
     template_service, verification_service,
 };
 
@@ -320,20 +319,7 @@ pub async fn preview_manifest(
         recipient_values,
         certificate_number: "ตัวอย่าง".to_string(),
         qr_payload: "ตัวอย่าง — ไม่มีหลักฐานการออกจริง".to_string(),
-        built_in_fonts: vec![
-            CertificateBuiltInFont {
-                family: "Sarabun".to_string(),
-                weight: 400,
-                style: CertificateFontStyle::Normal,
-                asset_path: "/fonts/Sarabun-Regular.ttf".to_string(),
-            },
-            CertificateBuiltInFont {
-                family: "Sarabun".to_string(),
-                weight: 700,
-                style: CertificateFontStyle::Normal,
-                asset_path: "/fonts/Sarabun-Bold.ttf".to_string(),
-            },
-        ],
+        built_in_fonts: built_in_fonts(),
         font_grants,
         image_grants,
         background_grant,
@@ -928,23 +914,6 @@ fn validate_issued_assets(
         ));
     }
     Ok(())
-}
-
-fn built_in_fonts() -> Vec<CertificateBuiltInFont> {
-    vec![
-        CertificateBuiltInFont {
-            family: "Sarabun".to_string(),
-            weight: 400,
-            style: CertificateFontStyle::Normal,
-            asset_path: "/fonts/Sarabun-Regular.ttf".to_string(),
-        },
-        CertificateBuiltInFont {
-            family: "Sarabun".to_string(),
-            weight: 700,
-            style: CertificateFontStyle::Normal,
-            asset_path: "/fonts/Sarabun-Bold.ttf".to_string(),
-        },
-    ]
 }
 
 fn sample_recipient_values(kind: CertificatePreviewKind) -> BTreeMap<String, String> {

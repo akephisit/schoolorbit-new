@@ -139,14 +139,13 @@ export function selectFontWeight(
 	weight: number
 ): CertificateFontVariant | null {
 	if (!current || !Number.isInteger(weight)) return null;
-	const matching = variants.filter(
-		(variant) => variant.familyKey === current.familyKey && variant.weight === weight
-	);
 	return (
-		matching.find((variant) => variant.style === current.style) ??
-		matching.find((variant) => variant.style === 'normal') ??
-		[...matching].sort(compareVariants)[0] ??
-		null
+		variants.find(
+			(variant) =>
+				variant.familyKey === current.familyKey &&
+				variant.weight === weight &&
+				variant.style === current.style
+		) ?? null
 	);
 }
 

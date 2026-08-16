@@ -95,7 +95,11 @@ test('font controls resolve only real deterministic variants and patch every fon
 		null,
 		'missing exact 700 italic stays disabled'
 	);
-	assert.equal(selectFontWeight(variants, italic, 700), bold);
+	assert.equal(
+		selectFontWeight(variants, italic, 700),
+		null,
+		'weight selection must not switch italic text to a normal-only variant'
+	);
 	assert.equal(selectFontFamily(variants, 'asset:fallback thai')?.weight, 300);
 	assert.equal(selectFontFamily(variants, 'asset:italic only')?.style, 'italic');
 	assert.equal(toggleBoldVariant(variants, selectFontFamily(variants, 'asset:italic only')), null);

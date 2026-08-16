@@ -86,7 +86,11 @@
 		return Array.from(
 			new Set(
 				fontVariants
-					.filter((variant) => variant.familyKey === currentFontVariant.familyKey)
+					.filter(
+						(variant) =>
+							variant.familyKey === currentFontVariant.familyKey &&
+							variant.style === currentFontVariant.style
+					)
 					.map((variant) => variant.weight)
 			)
 		).sort((left, right) => left - right);

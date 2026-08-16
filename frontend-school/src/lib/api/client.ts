@@ -302,10 +302,15 @@ class APIClient {
 		};
 	}
 
-	async post<T, E = never>(endpoint: string, body?: unknown): Promise<ApiResponse<T, E>> {
+	async post<T, E = never>(
+		endpoint: string,
+		body?: unknown,
+		options: ApiRequestOptions = {}
+	): Promise<ApiResponse<T, E>> {
 		return this.request<T, E>(endpoint, {
 			method: 'POST',
-			body: body === undefined ? undefined : JSON.stringify(body)
+			body: body === undefined ? undefined : JSON.stringify(body),
+			signal: options.signal
 		});
 	}
 

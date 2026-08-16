@@ -1,7 +1,10 @@
 use std::collections::BTreeSet;
 
 use crate::modules::certificates::{
-    models::{CertificateElement, CertificateLayoutV1, ElementFrame, PageGeometry},
+    models::{
+        CertificateBuiltInFont, CertificateElement, CertificateFontSource, CertificateFontStyle,
+        CertificateLayoutV1, ElementFrame, PageGeometry,
+    },
     services::import_validation::{
         classify_header, normalize_name_for_match, referenced_variables, HeaderClass,
         RENDERABLE_STANDARD_VARIABLES, RESERVED_RENDER_VARIABLES,
@@ -13,6 +16,47 @@ const PAPER_TOLERANCE_POINTS: f64 = POINTS_PER_MM;
 const GEOMETRY_EPSILON: f64 = 0.01;
 const ASPECT_RATIO_RELATIVE_TOLERANCE: f64 = 0.001;
 const MAX_ELEMENTS: usize = 500;
+
+#[derive(Clone, Copy)]
+struct BuiltInFontVariant {
+    family: &'static str,
+    weight: u16,
+    style: CertificateFontStyle,
+    asset_path: &'static str,
+}
+
+const BUILT_IN_FONT_VARIANTS: [BuiltInFontVariant; 2] = [
+    BuiltInFontVariant {
+        family: "Sarabun",
+        weight: 400,
+        style: CertificateFontStyle::Normal,
+        asset_path: "/fonts/Sarabun-Regular.ttf",
+    },
+    BuiltInFontVariant {
+        family: "Sarabun",
+        weight: 700,
+        style: CertificateFontStyle::Normal,
+        asset_path: "/fonts/Sarabun-Bold.ttf",
+    },
+];
+
+pub(super) fn built_in_fonts() -> Vec<CertificateBuiltInFont> {
+    BUILT_IN_FONT_VARIANTS
+        .iter()
+        .map(|variant| CertificateBuiltInFont {
+            family: variant.family.to_string(),
+            weight: variant.weight,
+            style: variant.style,
+            asset_path: variant.asset_path.to_string(),
+        })
+        .collect()
+}
+
+fn is_supported_built_in_font(family: &str, weight: u16, style: CertificateFontStyle) -> bool {
+    BUILT_IN_FONT_VARIANTS.iter().any(|variant| {
+        variant.family == family && variant.weight == weight && variant.style == style
+    })
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PaperKind {
@@ -170,6 +214,15 @@ pub fn validate_layout(
                     || text.min_font_size > text.font_size
                     || !text.line_height.is_finite()
                     || !(0.5..=5.0).contains(&text.line_height)
+                {
+                    return Err(LayoutValidationError::InvalidFont);
+                }
+                if matches!(text.font_source, CertificateFontSource::BuiltIn)
+                    && !is_supported_built_in_font(
+                        &text.font_family,
+                        text.font_weight,
+                        text.font_style,
+                    )
                 {
                     return Err(LayoutValidationError::InvalidFont);
                 }
@@ -402,6 +455,30 @@ mod tests {
             paper_label(123.0 * points_per_mm, 234.0 * points_per_mm),
             "ขนาดกำหนดเอง 123.0 × 234.0 มม. แนวตั้ง"
         );
+    }
+
+    #[test]
+    fn rejects_unsupported_built_in_font_family_weight_and_style() {
+        let page = PageGeometry::new(200.0, 100.0, 0).unwrap();
+        for (family, weight, style) in [
+            ("Unknown Thai", 400, CertificateFontStyle::Normal),
+            ("Sarabun", 500, CertificateFontStyle::Normal),
+            ("Sarabun", 400, CertificateFontStyle::Italic),
+        ] {
+            let mut layout = text_layout();
+            let CertificateElement::Text(text) = &mut layout.elements[0] else {
+                unreachable!("test layout must contain text");
+            };
+            text.font_family = family.to_string();
+            text.font_weight = weight;
+            text.font_style = style;
+            assert_eq!(
+                validate_layout(&layout, page, &["ชื่อ".into()]),
+                Err(LayoutValidationError::InvalidFont),
+                "unsupported built-in tuple {family}/{weight}/{} must fail",
+                style.as_str()
+            );
+        }
     }
 
     #[test]

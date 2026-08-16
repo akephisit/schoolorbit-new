@@ -35,8 +35,8 @@ const certificateApiStub = `
 	export async function getCertificateTemplateVariableCatalog(id) {
 		return window.__certificateEditorApi.getVariables(id);
 	}
-	export async function createCertificateTemplatePreviewManifest(id, payload) {
-		return window.__certificateEditorApi.preview(id, payload);
+	export async function createCertificateTemplatePreviewManifest(id, payload, options = {}) {
+		return window.__certificateEditorApi.preview(id, payload, options);
 	}
 	export async function attachCertificateTemplateBackground(id, payload) {
 		return window.__certificateEditorApi.attachBackground(id, payload);
@@ -389,6 +389,9 @@ function harnessPlugin(): Plugin {
 				let queuedRenderGate = null;
 				let activeRenderGate = null;
 				let failNextRender = false;
+				let queuedManifestGate = null;
+				let activeManifestGate = null;
+				let manifestAbortCount = 0;
 				window.__certificateEditorRendererCalls = 0;
 				window.__certificateEditorRendererAttempts = 0;
 				window.__certificateEditorRendererControl = {
@@ -438,9 +441,29 @@ function harnessPlugin(): Plugin {
 					},
 					async getTemplate() { return structuredClone(serverTemplate); },
 					async getVariables() { return { variables: ['ชื่อ', 'นามสกุล', 'รางวัลหรือบทบาท'] }; },
-					async preview(id, payload) {
+					async preview(id, payload, options = {}) {
 						previewKinds.push(payload.previewKind);
 						previewPayloads.push(structuredClone(payload));
+						const gate = queuedManifestGate;
+						if (gate) {
+							queuedManifestGate = null;
+							activeManifestGate = gate;
+							try {
+								await new Promise((resolve, reject) => {
+									const abort = () => {
+										manifestAbortCount += 1;
+										reject(options.signal?.reason ?? new DOMException('Aborted', 'AbortError'));
+									};
+									if (options.signal?.aborted) return abort();
+									options.signal?.addEventListener('abort', abort, { once: true });
+									gate.promise.then(resolve, reject).finally(() => {
+										options.signal?.removeEventListener('abort', abort);
+									});
+								});
+							} finally {
+								if (activeManifestGate === gate) activeManifestGate = null;
+							}
+						}
 						return {
 							...structuredClone(baseManifest),
 							layout: structuredClone(payload.layout ?? serverTemplate.layout),
@@ -472,6 +495,18 @@ function harnessPlugin(): Plugin {
 					renderGateState() {
 						return { queued: queuedRenderGate !== null, active: activeRenderGate !== null };
 					},
+					holdNextManifest() {
+						let release;
+						const promise = new Promise((resolve) => { release = resolve; });
+						queuedManifestGate = { promise, release };
+					},
+					releaseManifest() {
+						(queuedManifestGate ?? activeManifestGate)?.release();
+					},
+					manifestGateState() {
+						return { queued: queuedManifestGate !== null, active: activeManifestGate !== null };
+					},
+					manifestAbortCount() { return manifestAbortCount; },
 					failNextRender() { failNextRender = true; },
 					savedPayloads() { return structuredClone(savedPayloads); },
 					previewKinds() { return [...previewKinds]; },
@@ -636,6 +671,7 @@ test('editor selects exact font assets and preserves or resets inspected image r
 	await expect(page.getByRole('button', { name: 'ตัวเอียง' })).toBeEnabled();
 	await page.getByRole('button', { name: 'ตัวเอียง' }).click();
 	await expect(page.getByRole('button', { name: 'ตัวหนา' })).toBeDisabled();
+	await expect(page.getByLabel('น้ำหนักฟอนต์').locator('option')).toHaveText(['400']);
 	await page.getByRole('button', { name: 'บันทึก' }).click();
 	await expect
 		.poll(() => page.evaluate(() => window.certificateEditorHarness.savedPayloads().length))
@@ -694,6 +730,32 @@ test('editor selects exact font assets and preserves or resets inspected image r
 test('preview exposes loading, error, close, and a fresh successful retry', async ({ page }) => {
 	await page.goto(`${baseUrl}${harnessPath}`);
 	await expect(page.getByTestId('certificate-editor')).toBeVisible();
+	await expect
+		.poll(() => page.evaluate(() => window.certificateEditorHarness.previewPayloads().length))
+		.toBeGreaterThan(0);
+	await page.evaluate(() => window.certificateEditorHarness.holdNextManifest());
+	const attemptsBeforeManifest = await page.evaluate(() =>
+		window.certificateEditorHarness.rendererAttempts()
+	);
+	await page.getByRole('button', { name: 'ชื่อสั้น' }).click();
+	await expect
+		.poll(() => page.evaluate(() => window.certificateEditorHarness.manifestGateState()))
+		.toEqual({ queued: false, active: true });
+	await expect(page.getByText('กำลังโหลดฟอนต์และสร้างพรีวิว…')).toBeVisible();
+	await page.getByRole('button', { name: 'ปิด' }).click();
+	try {
+		await expect
+			.poll(() => page.evaluate(() => window.certificateEditorHarness.manifestAbortCount()), {
+				timeout: 1_500
+			})
+			.toBe(1);
+	} finally {
+		await page.evaluate(() => window.certificateEditorHarness.releaseManifest());
+	}
+	expect(await page.evaluate(() => window.certificateEditorHarness.rendererAttempts())).toBe(
+		attemptsBeforeManifest
+	);
+
 	await page.evaluate(() => window.certificateEditorHarness.holdNextRender());
 	expect(await page.evaluate(() => window.certificateEditorHarness.renderGateState())).toEqual({
 		queued: true,
@@ -800,6 +862,10 @@ declare global {
 			holdNextRender(): void;
 			releaseRender(): void;
 			renderGateState(): { queued: boolean; active: boolean };
+			holdNextManifest(): void;
+			releaseManifest(): void;
+			manifestGateState(): { queued: boolean; active: boolean };
+			manifestAbortCount(): number;
 			failNextRender(): void;
 			savedPayloads(): Array<{
 				expectedUpdatedAt: string;

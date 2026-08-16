@@ -291,10 +291,14 @@
 		previewOpen = true;
 		try {
 			const layoutSnapshot = cloneCertificateLayout(layout);
-			const freshManifest = await createCertificateTemplatePreviewManifest(currentTemplate.id, {
-				previewKind: kind,
-				layout: layoutSnapshot
-			});
+			const freshManifest = await createCertificateTemplatePreviewManifest(
+				currentTemplate.id,
+				{
+					previewKind: kind,
+					layout: layoutSnapshot
+				},
+				{ signal: controller.signal }
+			);
 			controller.signal.throwIfAborted();
 			manifest = freshManifest;
 			await tick();
