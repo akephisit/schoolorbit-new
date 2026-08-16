@@ -21,15 +21,16 @@ use crate::{
             CandidateValidationStatus, CertificateAccountSearchQuery, CertificateCampaignListQuery,
             CertificateCampaignStatus, CertificateCandidateBulkRequest,
             CertificateCandidateListQuery, CertificateElement, CertificateFontSource,
-            CertificateImportRequest, CertificateImportRowInput, CertificateImportSource,
-            CertificateIssueCode, CertificateIssueRequestListQuery, CertificateIssueRequestStatus,
-            CertificateLayoutV1, CertificatePreviewKind, CertificatePreviewManifestRequest,
-            CertificateRenderManifestBatchRequest, CertificateStatus, CertificateTemplateAssetKind,
-            CertificateTemplateDeleteDisposition, ChangeCertificateCampaignStatusRequest,
-            CreateAccountCertificateCandidateRequest, CreateCertificateCampaignRequest,
-            CreateCertificateTemplateRequest, CreateManualExternalCandidateRequest, ElementFrame,
-            GeometryAction, IssueCertificateOutcome, IssueCertificateRequest,
-            IssuedCertificateSummary, ManualCertificateVerificationRequest, NullableUuidUpdate,
+            CertificateFontStyle, CertificateImportRequest, CertificateImportRowInput,
+            CertificateImportSource, CertificateIssueCode, CertificateIssueRequestListQuery,
+            CertificateIssueRequestStatus, CertificateLayoutV1, CertificatePreviewKind,
+            CertificatePreviewManifestRequest, CertificateRenderManifestBatchRequest,
+            CertificateStatus, CertificateTemplateAssetKind, CertificateTemplateDeleteDisposition,
+            ChangeCertificateCampaignStatusRequest, CreateAccountCertificateCandidateRequest,
+            CreateCertificateCampaignRequest, CreateCertificateTemplateRequest,
+            CreateManualExternalCandidateRequest, ElementFrame, GeometryAction, ImageElement,
+            IssueCertificateOutcome, IssueCertificateRequest, IssuedCertificateSummary,
+            ManualCertificateVerificationRequest, NullableUuidUpdate,
             QrCertificateVerificationRequest, RecipientType, RevokeCertificateRequest,
             TextAlignment, TextElement, UpdateCertificateCampaignRequest,
             UpdateCertificateCandidateRequest, UpdateCertificateTemplateRequest,
@@ -524,6 +525,7 @@ fn text_layout(font_source: CertificateFontSource) -> CertificateLayoutV1 {
             font_source,
             font_family: "Sarabun".to_string(),
             font_weight: 400,
+            font_style: CertificateFontStyle::Normal,
             font_size: 24.0,
             min_font_size: 12.0,
             color: "#112233".to_string(),
@@ -647,6 +649,111 @@ async fn background_geometry_comes_from_the_ready_file_not_the_request() {
             .width_points,
         841.89
     );
+}
+
+#[tokio::test]
+async fn certificate_layout_contract_persists_explicit_font_and_image_fields() {
+    let (pool, actor, academic_year_id) =
+        school_campaign_fixture("certificate_layout_contract", 3160).await;
+    let template = create_template_fixture(&pool, &actor, academic_year_id).await;
+    let background_file_id = insert_ready_template_file(
+        &pool,
+        &actor,
+        template.id,
+        "certificate_template_background",
+        pdf_inspection(841.89, 595.28, 0),
+    )
+    .await;
+    template_service::attach_background(
+        &pool,
+        &actor,
+        template.id,
+        AttachCertificateBackgroundRequest {
+            file_id: background_file_id,
+            geometry_action: GeometryAction::Preserve,
+            preview_confirmed: true,
+        },
+    )
+    .await
+    .unwrap();
+    let image_file_id = insert_ready_template_file(
+        &pool,
+        &actor,
+        template.id,
+        "certificate_template_image",
+        serde_json::json!({"kind": "image", "width_px": 800, "height_px": 400}),
+    )
+    .await;
+    let with_image = template_service::attach_asset(
+        &pool,
+        &actor,
+        template.id,
+        AttachCertificateAssetRequest {
+            file_id: image_file_id,
+            kind: CertificateTemplateAssetKind::Image,
+            display_name: "ตราสัญลักษณ์".to_string(),
+            font_weight: None,
+            rights_confirmed: false,
+        },
+    )
+    .await
+    .unwrap();
+    let image_asset_id = with_image.assets[0].id;
+
+    let mut layout = text_layout(CertificateFontSource::BuiltIn);
+    layout
+        .elements
+        .push(CertificateElement::Image(ImageElement {
+            id: Uuid::new_v4(),
+            frame: ElementFrame {
+                x: 300.0,
+                y: 30.0,
+                width: 160.0,
+                height: 80.0,
+            },
+            rotation: 0.0,
+            asset_id: image_asset_id,
+            lock_aspect_ratio: true,
+            aspect_ratio: 2.0,
+        }));
+    let updated = template_service::update_template(
+        &pool,
+        &actor,
+        template.id,
+        UpdateCertificateTemplateRequest {
+            expected_updated_at: with_image.updated_at,
+            name: None,
+            allowed_recipient_types: None,
+            safe_margin_points: None,
+            show_safe_area: None,
+            layout: Some(layout),
+            is_active: None,
+            confirm_missing_issued_values: false,
+        },
+    )
+    .await
+    .unwrap()
+    .template;
+    let CertificateElement::Text(text) = &updated.layout.elements[0] else {
+        panic!("expected text")
+    };
+    assert_eq!(text.font_style, CertificateFontStyle::Normal);
+    let CertificateElement::Image(image) = &updated.layout.elements[1] else {
+        panic!("expected image")
+    };
+    assert!(image.lock_aspect_ratio);
+    assert_eq!(image.aspect_ratio, 2.0);
+    assert_eq!((image.frame.width, image.frame.height), (160.0, 80.0));
+
+    let persisted: serde_json::Value =
+        sqlx::query_scalar("SELECT layout FROM certificate_templates WHERE id = $1")
+            .bind(template.id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(persisted["elements"][0]["fontStyle"], "normal");
+    assert_eq!(persisted["elements"][1]["lockAspectRatio"], true);
+    assert_eq!(persisted["elements"][1]["aspectRatio"], 2.0);
 }
 
 #[tokio::test]
@@ -1310,6 +1417,30 @@ async fn font_rights_and_referenced_asset_deletion_are_enforced() {
     };
     text.font_family = asset.font_family.clone().unwrap();
     text.font_weight = asset.font_weight.unwrap();
+    let mut mismatched_layout = layout.clone();
+    let CertificateElement::Text(mismatched_text) = &mut mismatched_layout.elements[0] else {
+        panic!("expected text element")
+    };
+    mismatched_text.font_style = CertificateFontStyle::Italic;
+    assert!(matches!(
+        template_service::update_template(
+            &pool,
+            &actor,
+            template.id,
+            UpdateCertificateTemplateRequest {
+                expected_updated_at: with_font.updated_at,
+                name: None,
+                allowed_recipient_types: None,
+                safe_margin_points: None,
+                show_safe_area: None,
+                layout: Some(mismatched_layout),
+                is_active: None,
+                confirm_missing_issued_values: false,
+            },
+        )
+        .await,
+        Err(AppError::Conflict(_))
+    ));
     let designed = template_service::update_template(
         &pool,
         &actor,

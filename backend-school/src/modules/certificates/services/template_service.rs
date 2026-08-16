@@ -11,14 +11,14 @@ use crate::{
     modules::{
         certificates::models::{
             AttachCertificateAssetRequest, AttachCertificateBackgroundRequest, CertificateElement,
-            CertificateFontSource, CertificateLayoutV1, CertificatePageBox,
+            CertificateFontSource, CertificateFontStyle, CertificateLayoutV1, CertificatePageBox,
             CertificatePageGeometry, CertificateTemplateAsset, CertificateTemplateAssetKind,
             CertificateTemplateCapabilities, CertificateTemplateDeleteDisposition,
             CertificateTemplateDeleteResult, CertificateTemplateDetail,
             CertificateTemplateVariableCatalog, CreateCertificateTemplateRequest, GeometryAction,
             PageGeometry, RecipientType, UpdateCertificateTemplateRequest,
         },
-        files::platform_types::{FileInspectionMetadata, PdfPageBox},
+        files::platform_types::{FileInspectionMetadata, FontInspectionStyle, PdfPageBox},
     },
     policies::certificate_access_policy::{require_owner_action, CertificateAction},
 };
@@ -126,7 +126,11 @@ struct TemplateCapabilityFlags {
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum ExpectedAsset {
     Image,
-    Font { family: String, weight: u16 },
+    Font {
+        family: String,
+        weight: u16,
+        style: CertificateFontStyle,
+    },
 }
 
 const TEMPLATE_SELECT: &str = r#"
@@ -640,19 +644,32 @@ pub async fn attach_asset(
     let file = load_uploaded_file(&mut tx, template_id, payload.file_id, expected_purpose).await?;
     require_ready_file(&file)?;
     let metadata = file.inspection_metadata.0;
-    let (font_family, font_weight, rights_by) = match (payload.kind, metadata) {
+    let (font_family, font_weight, font_style, rights_by) = match (payload.kind, metadata) {
         (CertificateTemplateAssetKind::Image, FileInspectionMetadata::Image { .. }) => {
             if payload.font_weight.is_some() || payload.rights_confirmed {
                 return Err(AppError::ValidationError(
                     "ข้อมูลสิทธิ์และน้ำหนักฟอนต์ใช้ได้เฉพาะไฟล์ฟอนต์".to_string(),
                 ));
             }
-            (None, None, None)
+            (None, None, None, None)
         }
-        (CertificateTemplateAssetKind::Font, FileInspectionMetadata::Font { family_name, .. }) => {
+        (
+            CertificateTemplateAssetKind::Font,
+            FileInspectionMetadata::Font {
+                family_name,
+                style,
+                is_variable,
+                ..
+            },
+        ) => {
             if !payload.rights_confirmed {
                 return Err(AppError::ValidationError(
                     "ต้องยืนยันสิทธิ์การใช้งานฟอนต์ก่อนแนบ".to_string(),
+                ));
+            }
+            if is_variable {
+                return Err(AppError::ValidationError(
+                    "ยังไม่รองรับ variable font กรุณาใช้ไฟล์น้ำหนักคงที่".to_string(),
                 ));
             }
             let family = family_name
@@ -669,7 +686,11 @@ pub async fn attach_asset(
                     "น้ำหนักฟอนต์ต้องเป็น 100 ถึง 900 ทีละ 100".to_string(),
                 ));
             }
-            (Some(family), Some(weight), Some(actor.user_id))
+            let style = match style {
+                FontInspectionStyle::Normal => CertificateFontStyle::Normal,
+                FontInspectionStyle::Italic => CertificateFontStyle::Italic,
+            };
+            (Some(family), Some(weight), Some(style), Some(actor.user_id))
         }
         _ => {
             return Err(AppError::ValidationError(
@@ -680,10 +701,10 @@ pub async fn attach_asset(
 
     let asset_id: Uuid = sqlx::query_scalar(
         "INSERT INTO certificate_template_assets (
-            template_id, file_id, kind, display_name, font_family, font_weight,
+            template_id, file_id, kind, display_name, font_family, font_weight, font_style,
             rights_confirmed_by, rights_confirmed_at, created_by
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7,
-                   CASE WHEN $7::uuid IS NULL THEN NULL ELSE now() END, $8)
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8,
+                   CASE WHEN $8::uuid IS NULL THEN NULL ELSE now() END, $9)
          RETURNING id",
     )
     .bind(template_id)
@@ -692,6 +713,7 @@ pub async fn attach_asset(
     .bind(display_name)
     .bind(font_family)
     .bind(font_weight.map(|weight| weight as i16))
+    .bind(font_style.map(CertificateFontStyle::as_str))
     .bind(rights_by)
     .bind(actor.user_id)
     .fetch_one(&mut *tx)
@@ -1316,13 +1338,14 @@ async fn validate_layout_asset_references(
                     let next = ExpectedAsset::Font {
                         family: text.font_family.clone(),
                         weight: text.font_weight,
+                        style: text.font_style,
                     };
                     if expected
                         .insert(asset_id, next.clone())
                         .is_some_and(|previous| previous != next)
                     {
                         return Err(AppError::ValidationError(
-                            "ฟอนต์ที่อัปโหลดหนึ่งรายการต้องใช้ family และน้ำหนักเดียวกัน".to_string(),
+                            "ฟอนต์ที่อัปโหลดหนึ่งรายการต้องใช้ family น้ำหนัก และรูปแบบเดียวกัน".to_string(),
                         ));
                     }
                 }
@@ -1334,9 +1357,19 @@ async fn validate_layout_asset_references(
         return Ok(());
     }
     let ids = expected.keys().copied().collect::<Vec<_>>();
-    let rows = sqlx::query_as::<_, (Uuid, String, String, Option<String>, Option<i16>)>(
+    let rows = sqlx::query_as::<
+        _,
+        (
+            Uuid,
+            String,
+            String,
+            Option<String>,
+            Option<i16>,
+            Option<String>,
+        ),
+    >(
         "SELECT asset.id, asset.kind, file.lifecycle_status,
-                asset.font_family, asset.font_weight
+                asset.font_family, asset.font_weight, asset.font_style
          FROM certificate_template_assets asset
          JOIN files file ON file.id = asset.file_id
          WHERE asset.template_id = $1 AND asset.id = ANY($2::uuid[])",
@@ -1347,21 +1380,25 @@ async fn validate_layout_asset_references(
     .await
     .map_err(template_db_error)?;
     if rows.len() != expected.len()
-        || rows.iter().any(|(id, kind, status, family, weight)| {
-            let metadata_matches = match expected.get(id) {
-                Some(ExpectedAsset::Image) => kind == "image",
-                Some(ExpectedAsset::Font {
-                    family: expected_family,
-                    weight: expected_weight,
-                }) => {
-                    kind == "font"
-                        && family.as_ref() == Some(expected_family)
-                        && weight.map(|value| value as u16) == Some(*expected_weight)
-                }
-                None => false,
-            };
-            !metadata_matches || status != "ready"
-        })
+        || rows
+            .iter()
+            .any(|(id, kind, status, family, weight, style)| {
+                let metadata_matches = match expected.get(id) {
+                    Some(ExpectedAsset::Image) => kind == "image",
+                    Some(ExpectedAsset::Font {
+                        family: expected_family,
+                        weight: expected_weight,
+                        style: expected_style,
+                    }) => {
+                        kind == "font"
+                            && family.as_ref() == Some(expected_family)
+                            && weight.map(|value| value as u16) == Some(*expected_weight)
+                            && style.as_deref() == Some(expected_style.as_str())
+                    }
+                    None => false,
+                };
+                !metadata_matches || status != "ready"
+            })
     {
         return Err(AppError::Conflict(
             "งานออกแบบอ้างถึงรูปหรือฟอนต์ที่ไม่พร้อมใช้งาน".to_string(),

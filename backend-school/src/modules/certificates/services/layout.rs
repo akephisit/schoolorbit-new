@@ -11,6 +11,7 @@ use crate::modules::certificates::{
 const POINTS_PER_MM: f64 = 72.0 / 25.4;
 const PAPER_TOLERANCE_POINTS: f64 = POINTS_PER_MM;
 const GEOMETRY_EPSILON: f64 = 0.01;
+const ASPECT_RATIO_RELATIVE_TOLERANCE: f64 = 0.001;
 const MAX_ELEMENTS: usize = 500;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -47,6 +48,8 @@ pub enum LayoutValidationError {
     InvalidFont,
     InvalidColor,
     InvalidShadow,
+    InvalidImageAspectRatio,
+    ImageAspectRatioMismatch,
     UnknownVariable(String),
     InvalidSafeMargin,
     GeometryMismatch,
@@ -197,7 +200,20 @@ pub fn validate_layout(
                 }
                 has_qr = true;
             }
-            CertificateElement::Image(_) => {}
+            CertificateElement::Image(image) => {
+                let aspect_ratio = image.aspect_ratio;
+                if !aspect_ratio.is_finite() || aspect_ratio <= 0.0 {
+                    return Err(LayoutValidationError::InvalidImageAspectRatio);
+                }
+                if image.lock_aspect_ratio {
+                    let frame_ratio = image.frame.width / image.frame.height;
+                    let tolerance = aspect_ratio.abs().max(frame_ratio.abs()).max(1.0)
+                        * ASPECT_RATIO_RELATIVE_TOLERANCE;
+                    if (frame_ratio - aspect_ratio).abs() > tolerance {
+                        return Err(LayoutValidationError::ImageAspectRatioMismatch);
+                    }
+                }
+            }
         }
     }
     Ok(())
@@ -331,8 +347,8 @@ mod tests {
 
     use crate::modules::certificates::{
         models::{
-            CertificateElement, CertificateLayoutV1, ElementFrame, ImageElement, PageGeometry,
-            QrElement, TextAlignment, TextElement,
+            CertificateElement, CertificateFontStyle, CertificateLayoutV1, ElementFrame,
+            ImageElement, PageGeometry, QrElement, TextAlignment, TextElement,
         },
         services::layout::{
             adapt_layout_for_background, paper_label, recognize_paper, validate_layout,
@@ -357,6 +373,7 @@ mod tests {
                 font_source: Default::default(),
                 font_family: "Sarabun".into(),
                 font_weight: 400,
+                font_style: CertificateFontStyle::Normal,
                 font_size: 24.0,
                 min_font_size: 12.0,
                 color: "#112233".into(),
@@ -473,6 +490,8 @@ mod tests {
                     },
                     rotation: 0.0,
                     asset_id: Uuid::new_v4(),
+                    lock_aspect_ratio: true,
+                    aspect_ratio: 2.0,
                 }),
                 CertificateElement::Qr(QrElement {
                     id: Uuid::new_v4(),
@@ -498,6 +517,108 @@ mod tests {
         assert_eq!(scaled.elements[1].frame().width, 30.0);
         assert_eq!(scaled.elements[1].frame().height, 30.0);
         assert_eq!(scaled.elements[0].frame().x, 20.0);
+    }
+
+    #[test]
+    fn layout_requires_explicit_font_style_and_image_aspect_contract() {
+        let complete = serde_json::json!({
+            "schemaVersion": 1,
+            "elements": [
+                {
+                    "type": "text",
+                    "id": Uuid::new_v4(),
+                    "content": "มอบให้ {ชื่อ}",
+                    "frame": {"x": 10.0, "y": 10.0, "width": 90.0, "height": 30.0},
+                    "rotation": 0.0,
+                    "fontSource": {"type": "built_in"},
+                    "fontFamily": "Sarabun",
+                    "fontWeight": 400,
+                    "fontStyle": "normal",
+                    "fontSize": 24.0,
+                    "minFontSize": 12.0,
+                    "color": "#112233",
+                    "alignment": "center",
+                    "lineHeight": 1.2,
+                    "autoShrink": true,
+                    "shadow": null
+                },
+                {
+                    "type": "image",
+                    "id": Uuid::new_v4(),
+                    "frame": {"x": 110.0, "y": 10.0, "width": 80.0, "height": 40.0},
+                    "rotation": 0.0,
+                    "assetId": Uuid::new_v4(),
+                    "lockAspectRatio": true,
+                    "aspectRatio": 2.0
+                }
+            ]
+        });
+
+        for (element_index, field) in [(0, "fontStyle"), (1, "lockAspectRatio"), (1, "aspectRatio")]
+        {
+            let mut incomplete = complete.clone();
+            incomplete["elements"][element_index]
+                .as_object_mut()
+                .expect("element fixture must be an object")
+                .remove(field);
+            assert!(
+                serde_json::from_value::<CertificateLayoutV1>(incomplete).is_err(),
+                "missing {field} must be rejected"
+            );
+        }
+
+        let layout: CertificateLayoutV1 = serde_json::from_value(complete).unwrap();
+
+        let CertificateElement::Text(text) = &layout.elements[0] else {
+            panic!("expected text")
+        };
+        assert_eq!(text.font_style, CertificateFontStyle::Normal);
+        let CertificateElement::Image(image) = &layout.elements[1] else {
+            panic!("expected image")
+        };
+        assert!(image.lock_aspect_ratio);
+        assert_eq!(image.aspect_ratio, 2.0);
+    }
+
+    #[test]
+    fn validates_image_aspect_ratio_and_locked_frame_consistency() {
+        let page = PageGeometry::new(200.0, 100.0, 0).unwrap();
+        let mut layout = CertificateLayoutV1 {
+            schema_version: 1,
+            elements: vec![CertificateElement::Image(ImageElement {
+                id: Uuid::new_v4(),
+                frame: ElementFrame {
+                    x: 10.0,
+                    y: 10.0,
+                    width: 80.0,
+                    height: 40.0,
+                },
+                rotation: 0.0,
+                asset_id: Uuid::new_v4(),
+                lock_aspect_ratio: true,
+                aspect_ratio: 2.0,
+            })],
+        };
+        assert!(validate_layout(&layout, page, &[]).is_ok());
+
+        if let CertificateElement::Image(image) = &mut layout.elements[0] {
+            image.aspect_ratio = 0.0;
+        }
+        assert_eq!(
+            validate_layout(&layout, page, &[]),
+            Err(LayoutValidationError::InvalidImageAspectRatio)
+        );
+        if let CertificateElement::Image(image) = &mut layout.elements[0] {
+            image.aspect_ratio = 1.0;
+        }
+        assert_eq!(
+            validate_layout(&layout, page, &[]),
+            Err(LayoutValidationError::ImageAspectRatioMismatch)
+        );
+        if let CertificateElement::Image(image) = &mut layout.elements[0] {
+            image.lock_aspect_ratio = false;
+        }
+        assert!(validate_layout(&layout, page, &[]).is_ok());
     }
 
     #[test]

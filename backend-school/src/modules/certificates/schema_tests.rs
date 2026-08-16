@@ -72,6 +72,7 @@ fn certificate_font_variant_migration_is_forward_only() {
         "kind = 'image'",
         "font_style IS NULL",
         "kind = 'font'",
+        "font_style IS NOT NULL",
         "font_style IN ('normal', 'italic')",
         "certificate_template_assets_font_variant_unique_idx",
         "lower(btrim(font_family))",

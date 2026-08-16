@@ -344,12 +344,6 @@ impl CertificateTemplateAssetKind {
     }
 }
 
-impl Default for CertificateFontStyle {
-    fn default() -> Self {
-        Self::Normal
-    }
-}
-
 impl CertificateFontStyle {
     pub fn as_str(self) -> &'static str {
         match self {
@@ -492,6 +486,7 @@ pub struct TextElement {
     pub font_source: CertificateFontSource,
     pub font_family: String,
     pub font_weight: u16,
+    pub font_style: CertificateFontStyle,
     pub font_size: f64,
     pub min_font_size: f64,
     pub color: String,
@@ -535,6 +530,8 @@ pub struct ImageElement {
     pub frame: ElementFrame,
     pub rotation: f64,
     pub asset_id: Uuid,
+    pub lock_aspect_ratio: bool,
+    pub aspect_ratio: f64,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize, ToSchema)]

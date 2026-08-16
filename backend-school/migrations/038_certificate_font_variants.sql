@@ -49,6 +49,7 @@ ALTER TABLE certificate_template_assets
             AND font_weight IS NOT NULL
             AND font_weight BETWEEN 100 AND 900
             AND font_weight % 100 = 0
+            AND font_style IS NOT NULL
             AND font_style IN ('normal', 'italic')
             AND rights_confirmed_by IS NOT NULL
             AND rights_confirmed_at IS NOT NULL
