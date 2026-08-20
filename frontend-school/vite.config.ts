@@ -9,13 +9,22 @@ const wordExporterModule = fileURLToPath(
 const wordExporterServerStub = fileURLToPath(
 	new URL('./src/lib/question-bank/word-export.server.ts', import.meta.url)
 );
+const certificateRendererModule = fileURLToPath(
+	new URL('./src/lib/certificates/renderer', import.meta.url)
+);
+const certificateRendererServerStub = fileURLToPath(
+	new URL('./src/lib/certificates/renderer.server.ts', import.meta.url)
+);
 const browserOnlyHeavyDependencyServerStub = fileURLToPath(
 	new URL('./src/lib/utils/browser-only-heavy-dependency.server.ts', import.meta.url)
 );
 const browserOnlyHeavyDependencies = new Set([
 	'exceljs',
 	'heic2any',
+	'pdf-lib',
+	'pdfjs-dist',
 	'pdfmake/build/pdfmake',
+	'qrcode',
 	'xlsx'
 ]);
 
@@ -26,6 +35,18 @@ function clientOnlyWordExporterPlugin(): Plugin {
 		resolveId(source) {
 			if (this.environment.name === 'ssr' && source === wordExporterModule) {
 				return wordExporterServerStub;
+			}
+		}
+	};
+}
+
+function clientOnlyCertificateRendererPlugin(): Plugin {
+	return {
+		name: 'client-only-certificate-renderer',
+		enforce: 'pre',
+		resolveId(source) {
+			if (this.environment.name === 'ssr' && source === certificateRendererModule) {
+				return certificateRendererServerStub;
 			}
 		}
 	};
@@ -46,6 +67,7 @@ function clientOnlyHeavyDependenciesPlugin(): Plugin {
 export default defineConfig({
 	plugins: [
 		clientOnlyWordExporterPlugin(),
+		clientOnlyCertificateRendererPlugin(),
 		clientOnlyHeavyDependenciesPlugin(),
 		tailwindcss(),
 		sveltekit()

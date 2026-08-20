@@ -1,18 +1,40 @@
 use async_trait::async_trait;
-use sqlx::{PgPool, Row};
+use sqlx::{PgPool, Postgres, Row, Transaction};
 use std::{fmt, time::Duration};
 use uuid::Uuid;
 
 use super::{
     platform_types::{
-        DerivativeRecipe, FileLifecycleStatus, FilePurpose, FileVisibility, RetentionClass,
-        StorageClass,
+        DerivativeRecipe, FileInspectionMetadata, FileLifecycleStatus, FilePurpose, FileVisibility,
+        RetentionClass, StorageClass,
     },
     purpose_registry::{persisted_object_key, purpose_from_code},
     storage_provider::StoredObject,
 };
 
 pub const STORAGE_PROVIDER_CODE: &str = "r2";
+
+const LOAD_DELIVERY_SQL: &str = r#"
+SELECT f.id, f.owner_user_id, f.purpose_code, f.visibility, f.lifecycle_status,
+       f.display_filename, f.current_version_id,
+       current_version.version_number, current_version.object_key,
+       current_version.storage_class, metadata.detected_mime_type,
+       metadata.byte_size
+FROM files f
+LEFT JOIN file_versions current_version
+  ON current_version.id = f.current_version_id
+ AND current_version.file_id = f.id
+LEFT JOIN LATERAL (
+    SELECT candidate.detected_mime_type, candidate.byte_size
+    FROM file_versions candidate
+    WHERE candidate.file_id = f.id
+    ORDER BY
+        CASE WHEN candidate.id = f.current_version_id THEN 0 ELSE 1 END,
+        candidate.version_number DESC
+    LIMIT 1
+) metadata ON true
+WHERE f.id = $1 AND f.deleted_at IS NULL
+"#;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RepositoryError {
@@ -65,6 +87,7 @@ pub struct NewUpload {
     pub original: StoredObject,
     pub byte_size: i64,
     pub checksum: String,
+    pub inspection_metadata: FileInspectionMetadata,
     pub derivatives: Vec<NewDerivative>,
 }
 
@@ -212,6 +235,18 @@ impl SqlFileRepository {
 
     pub const fn pool(&self) -> &PgPool {
         &self.pool
+    }
+
+    pub async fn load_delivery_in_transaction(
+        transaction: &mut Transaction<'_, Postgres>,
+        file_id: Uuid,
+    ) -> Result<Option<DeliveryRecord>, RepositoryError> {
+        let row = sqlx::query(LOAD_DELIVERY_SQL)
+            .bind(file_id)
+            .fetch_optional(&mut **transaction)
+            .await
+            .map_err(Self::database_error)?;
+        row.map(delivery_from_row).transpose()
     }
 
     fn database_error(_: sqlx::Error) -> RepositoryError {
@@ -447,6 +482,169 @@ WHERE d.id = $2 AND d.file_id = $1
             _ => Err(RepositoryError::InvalidPersistedState),
         }
     }
+
+    /// Performs only the durable lifecycle transition using a caller-owned
+    /// transaction. Domain services can keep their relationship locks and this
+    /// transition on one connection, then run provider cleanup after commit.
+    pub async fn request_delete_in_transaction(
+        &self,
+        transaction: &mut Transaction<'_, Postgres>,
+        file_id: Uuid,
+    ) -> Result<Vec<DeleteWork>, RepositoryError> {
+        let lifecycle = sqlx::query_scalar::<_, String>(
+            "SELECT lifecycle_status FROM files WHERE id = $1 FOR UPDATE",
+        )
+        .bind(file_id)
+        .fetch_optional(&mut **transaction)
+        .await
+        .map_err(Self::database_error)?;
+        let Some(lifecycle) = lifecycle else {
+            return Ok(Vec::new());
+        };
+        if lifecycle == "deleted" {
+            return Ok(Vec::new());
+        }
+
+        sqlx::query(
+            r#"
+UPDATE files
+SET lifecycle_status = 'delete_requested',
+    delete_requested_at = COALESCE(delete_requested_at, now()),
+    updated_at = now()
+WHERE id = $1 AND lifecycle_status <> 'deleted'
+"#,
+        )
+        .bind(file_id)
+        .execute(&mut **transaction)
+        .await
+        .map_err(Self::database_error)?;
+
+        sqlx::query(
+            r#"
+UPDATE file_operations
+SET status = 'cancelled',
+    last_error_code = 'file_delete_requested',
+    completed_at = now(),
+    lease_owner = NULL,
+    leased_at = NULL,
+    lease_expires_at = NULL
+WHERE file_id = $1
+  AND operation_type IN ('reconcile', 'generate_derivative')
+  AND status IN ('pending', 'leased', 'retryable_failure')
+"#,
+        )
+        .bind(file_id)
+        .execute(&mut **transaction)
+        .await
+        .map_err(Self::database_error)?;
+        sqlx::query(
+            r#"
+UPDATE file_versions
+SET storage_status = 'delete_requested'
+WHERE file_id = $1 AND storage_status <> 'deleted'
+"#,
+        )
+        .bind(file_id)
+        .execute(&mut **transaction)
+        .await
+        .map_err(Self::database_error)?;
+        sqlx::query(
+            r#"
+UPDATE file_derivatives
+SET storage_status = 'delete_requested'
+WHERE file_id = $1 AND storage_status <> 'deleted'
+"#,
+        )
+        .bind(file_id)
+        .execute(&mut **transaction)
+        .await
+        .map_err(Self::database_error)?;
+
+        sqlx::query(
+            r#"
+INSERT INTO file_operations (
+    file_id, file_version_id, operation_type, status, next_retry_at
+)
+SELECT v.file_id, v.id, 'delete_object', 'pending', now()
+FROM file_versions v
+WHERE v.file_id = $1 AND v.storage_status <> 'deleted'
+  AND NOT EXISTS (
+      SELECT 1 FROM file_operations o
+      WHERE o.file_version_id = v.id AND o.operation_type = 'delete_object'
+        AND o.status IN ('pending', 'leased', 'retryable_failure', 'succeeded')
+  )
+"#,
+        )
+        .bind(file_id)
+        .execute(&mut **transaction)
+        .await
+        .map_err(Self::database_error)?;
+        sqlx::query(
+            r#"
+INSERT INTO file_operations (
+    file_id, file_derivative_id, operation_type, status, next_retry_at
+)
+SELECT d.file_id, d.id, 'delete_object', 'pending', now()
+FROM file_derivatives d
+WHERE d.file_id = $1 AND d.storage_status <> 'deleted'
+  AND NOT EXISTS (
+      SELECT 1 FROM file_operations o
+      WHERE o.file_derivative_id = d.id AND o.operation_type = 'delete_object'
+        AND o.status IN ('pending', 'leased', 'retryable_failure', 'succeeded')
+  )
+"#,
+        )
+        .bind(file_id)
+        .execute(&mut **transaction)
+        .await
+        .map_err(Self::database_error)?;
+
+        let rows = sqlx::query(
+            r#"
+SELECT operation.id,
+       operation.file_version_id,
+       operation.file_derivative_id,
+       COALESCE(version.object_key, derivative.object_key) AS object_key,
+       COALESCE(version.storage_class, derivative.storage_class) AS storage_class,
+       COALESCE(version.detected_mime_type, derivative.detected_mime_type) AS detected_mime_type
+FROM file_operations operation
+LEFT JOIN file_versions version
+  ON version.id = operation.file_version_id AND version.file_id = operation.file_id
+LEFT JOIN file_derivatives derivative
+  ON derivative.id = operation.file_derivative_id AND derivative.file_id = operation.file_id
+WHERE operation.file_id = $1 AND operation.operation_type = 'delete_object'
+  AND operation.status IN ('pending', 'retryable_failure')
+ORDER BY operation.created_at, operation.id
+"#,
+        )
+        .bind(file_id)
+        .fetch_all(&mut **transaction)
+        .await
+        .map_err(Self::database_error)?;
+
+        rows.into_iter()
+            .map(|row| {
+                let operation_id = row.try_get("id").map_err(Self::database_error)?;
+                let version_id = row
+                    .try_get("file_version_id")
+                    .map_err(Self::database_error)?;
+                let derivative_id = row
+                    .try_get("file_derivative_id")
+                    .map_err(Self::database_error)?;
+                let target = match (version_id, derivative_id) {
+                    (Some(id), None) => ObjectTarget::Version(id),
+                    (None, Some(id)) => ObjectTarget::Derivative(id),
+                    _ => return Err(RepositoryError::InvalidPersistedState),
+                };
+                Ok(DeleteWork {
+                    operation_id,
+                    file_id,
+                    target,
+                    object: stored_object_from_row(&row)?,
+                })
+            })
+            .collect()
+    }
 }
 
 fn duration_microseconds(duration: Duration) -> Result<i64, RepositoryError> {
@@ -464,10 +662,11 @@ impl FileRepository for SqlFileRepository {
             r#"
 INSERT INTO files (
     id, owner_user_id, display_filename, created_by, purpose_code,
-    visibility, lifecycle_status, retention_class, expires_at
+    visibility, lifecycle_status, retention_class, expires_at, inspection_metadata
 ) VALUES (
     $1, $2, $3, $4, $5, $6, 'processing', $7,
-    CASE WHEN $7 = 'temporary' THEN now() + INTERVAL '24 hours' ELSE NULL END
+    CASE WHEN $7 = 'temporary' THEN now() + INTERVAL '24 hours' ELSE NULL END,
+    $8
 )
 "#,
         )
@@ -478,6 +677,7 @@ INSERT INTO files (
         .bind(upload.purpose.code())
         .bind(visibility)
         .bind(retention)
+        .bind(sqlx::types::Json(&upload.inspection_metadata))
         .execute(&mut *transaction)
         .await
         .map_err(Self::database_error)?;
@@ -808,176 +1008,20 @@ WHERE file_id = $1 AND operation_type = 'reconcile' AND status <> 'succeeded'
         &self,
         file_id: Uuid,
     ) -> Result<Option<DeliveryRecord>, RepositoryError> {
-        let row = sqlx::query(
-            r#"
-SELECT f.id, f.owner_user_id, f.purpose_code, f.visibility, f.lifecycle_status,
-       f.display_filename, f.current_version_id,
-       current_version.version_number, current_version.object_key,
-       current_version.storage_class, metadata.detected_mime_type,
-       metadata.byte_size
-FROM files f
-LEFT JOIN file_versions current_version
-  ON current_version.id = f.current_version_id
- AND current_version.file_id = f.id
-LEFT JOIN LATERAL (
-    SELECT candidate.detected_mime_type, candidate.byte_size
-    FROM file_versions candidate
-    WHERE candidate.file_id = f.id
-    ORDER BY
-        CASE WHEN candidate.id = f.current_version_id THEN 0 ELSE 1 END,
-        candidate.version_number DESC
-    LIMIT 1
-) metadata ON true
-WHERE f.id = $1 AND f.deleted_at IS NULL
-"#,
-        )
-        .bind(file_id)
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(Self::database_error)?;
+        let row = sqlx::query(LOAD_DELIVERY_SQL)
+            .bind(file_id)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(Self::database_error)?;
         row.map(delivery_from_row).transpose()
     }
 
     async fn request_delete(&self, file_id: Uuid) -> Result<Vec<DeleteWork>, RepositoryError> {
         let mut transaction = self.pool.begin().await.map_err(Self::database_error)?;
-        let lifecycle = sqlx::query_scalar::<_, String>(
-            "SELECT lifecycle_status FROM files WHERE id = $1 FOR UPDATE",
-        )
-        .bind(file_id)
-        .fetch_optional(&mut *transaction)
-        .await
-        .map_err(Self::database_error)?;
-        let Some(lifecycle) = lifecycle else {
-            return Ok(Vec::new());
-        };
-        if lifecycle == "deleted" {
-            transaction.commit().await.map_err(Self::database_error)?;
-            return Ok(Vec::new());
-        }
-
-        sqlx::query(
-            r#"
-UPDATE files
-SET lifecycle_status = 'delete_requested',
-    delete_requested_at = COALESCE(delete_requested_at, now()),
-    updated_at = now()
-WHERE id = $1 AND lifecycle_status <> 'deleted'
-"#,
-        )
-        .bind(file_id)
-        .execute(&mut *transaction)
-        .await
-        .map_err(Self::database_error)?;
-
-        sqlx::query(
-            r#"
-UPDATE file_operations
-SET status = 'cancelled',
-    last_error_code = 'file_delete_requested',
-    completed_at = now(),
-    lease_owner = NULL,
-    leased_at = NULL,
-    lease_expires_at = NULL
-WHERE file_id = $1
-  AND operation_type IN ('reconcile', 'generate_derivative')
-  AND status IN ('pending', 'leased', 'retryable_failure')
-"#,
-        )
-        .bind(file_id)
-        .execute(&mut *transaction)
-        .await
-        .map_err(Self::database_error)?;
-        sqlx::query(
-            r#"
-UPDATE file_versions
-SET storage_status = 'delete_requested'
-WHERE file_id = $1 AND storage_status <> 'deleted'
-"#,
-        )
-        .bind(file_id)
-        .execute(&mut *transaction)
-        .await
-        .map_err(Self::database_error)?;
-        sqlx::query(
-            r#"
-UPDATE file_derivatives
-SET storage_status = 'delete_requested'
-WHERE file_id = $1 AND storage_status <> 'deleted'
-"#,
-        )
-        .bind(file_id)
-        .execute(&mut *transaction)
-        .await
-        .map_err(Self::database_error)?;
-
-        sqlx::query(
-            r#"
-INSERT INTO file_operations (
-    file_id, file_version_id, operation_type, status, next_retry_at
-)
-SELECT v.file_id, v.id, 'delete_object', 'pending', now()
-FROM file_versions v
-WHERE v.file_id = $1 AND v.storage_status <> 'deleted'
-  AND NOT EXISTS (
-      SELECT 1 FROM file_operations o
-      WHERE o.file_version_id = v.id AND o.operation_type = 'delete_object'
-        AND o.status IN ('pending', 'leased', 'retryable_failure', 'succeeded')
-  )
-"#,
-        )
-        .bind(file_id)
-        .execute(&mut *transaction)
-        .await
-        .map_err(Self::database_error)?;
-        sqlx::query(
-            r#"
-INSERT INTO file_operations (
-    file_id, file_derivative_id, operation_type, status, next_retry_at
-)
-SELECT d.file_id, d.id, 'delete_object', 'pending', now()
-FROM file_derivatives d
-WHERE d.file_id = $1 AND d.storage_status <> 'deleted'
-  AND NOT EXISTS (
-      SELECT 1 FROM file_operations o
-      WHERE o.file_derivative_id = d.id AND o.operation_type = 'delete_object'
-        AND o.status IN ('pending', 'leased', 'retryable_failure', 'succeeded')
-  )
-"#,
-        )
-        .bind(file_id)
-        .execute(&mut *transaction)
-        .await
-        .map_err(Self::database_error)?;
-
-        let rows = sqlx::query(
-            r#"
-SELECT id, file_version_id, file_derivative_id
-FROM file_operations
-WHERE file_id = $1 AND operation_type = 'delete_object'
-  AND status IN ('pending', 'retryable_failure')
-ORDER BY created_at, id
-"#,
-        )
-        .bind(file_id)
-        .fetch_all(&mut *transaction)
-        .await
-        .map_err(Self::database_error)?;
+        let work = self
+            .request_delete_in_transaction(&mut transaction, file_id)
+            .await?;
         transaction.commit().await.map_err(Self::database_error)?;
-
-        let mut work = Vec::with_capacity(rows.len());
-        for row in rows {
-            let operation_id = row.try_get("id").map_err(Self::database_error)?;
-            let version_id = row
-                .try_get("file_version_id")
-                .map_err(Self::database_error)?;
-            let derivative_id = row
-                .try_get("file_derivative_id")
-                .map_err(Self::database_error)?;
-            work.push(
-                self.load_delete_work(operation_id, file_id, version_id, derivative_id)
-                    .await?,
-            );
-        }
         Ok(work)
     }
 
@@ -1316,6 +1360,8 @@ fn canonical_extension_from_mime(mime: &str) -> Result<&'static str, RepositoryE
         "image/png" => Ok("png"),
         "image/webp" => Ok("webp"),
         "application/pdf" => Ok("pdf"),
+        "font/ttf" => Ok("ttf"),
+        "font/otf" => Ok("otf"),
         _ => Err(RepositoryError::InvalidPersistedState),
     }
 }
@@ -1376,7 +1422,7 @@ mod tests {
     use super::*;
     use crate::{
         modules::files::{
-            platform_types::{DerivativeRecipe, DetectedContent},
+            platform_types::{DerivativeRecipe, DetectedContent, FileInspectionMetadata},
             purpose_registry::{derivative_object_key, original_object_key},
         },
         test_helpers::{create_named_test_pool, run_test_migrations},
@@ -1455,10 +1501,28 @@ VALUES ($1, 'test-only-hash', 'Synthetic', 'User', 'staff', 'active')
             original,
             byte_size: 4,
             checksum: "a".repeat(64),
+            inspection_metadata: FileInspectionMetadata::Image {
+                width_px: 1,
+                height_px: 1,
+            },
             derivatives: Vec::new(),
         };
 
         repository.reserve_upload(&upload).await.unwrap();
+        assert_eq!(
+            sqlx::query_scalar::<_, sqlx::types::Json<FileInspectionMetadata>>(
+                "SELECT inspection_metadata FROM files WHERE id = $1"
+            )
+            .bind(file_id)
+            .fetch_one(repository.pool())
+            .await
+            .unwrap()
+            .0,
+            FileInspectionMetadata::Image {
+                width_px: 1,
+                height_px: 1,
+            },
+        );
         assert_eq!(
             sqlx::query_scalar::<_, String>("SELECT lifecycle_status FROM files WHERE id = $1")
                 .bind(file_id)
@@ -1623,6 +1687,10 @@ VALUES ($1, 'test-only-hash', 'Synthetic', 'User', 'staff', 'active')
             ),
             byte_size: 4,
             checksum: "a".repeat(64),
+            inspection_metadata: FileInspectionMetadata::Image {
+                width_px: 1,
+                height_px: 1,
+            },
             derivatives: vec![NewDerivative {
                 id: derivative_id,
                 operation_id: Uuid::new_v4(),

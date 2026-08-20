@@ -15,8 +15,8 @@ use super::{
         derivative_object_key, original_object_key, purpose_definition, PurposeRegistryError,
     },
     repository::{
-        derivative_is_required, DeliveryRecord, FileRepository, NewDerivative, NewUpload,
-        ObjectTarget, PlatformFile, RepositoryError,
+        derivative_is_required, DeleteWork, DeliveryRecord, FileRepository, NewDerivative,
+        NewUpload, ObjectTarget, PlatformFile, RepositoryError,
     },
     runtime_config::FilePlatformRuntimeConfig,
     storage_provider::{StorageError, StorageProvider, StoredObject},
@@ -177,6 +177,7 @@ impl FilePlatform {
             original: original.clone(),
             byte_size,
             checksum: FileHasher::sha256(&command.bytes),
+            inspection_metadata: inspected.metadata().clone(),
             derivatives: derivatives
                 .iter()
                 .map(|derivative| derivative.metadata.clone())
@@ -321,6 +322,16 @@ impl FilePlatform {
         file_id: Uuid,
     ) -> Result<DownloadGrant, FilePlatformError> {
         let delivery = ready_delivery(repository, file_id).await?;
+        self.private_download_delivery(delivery).await
+    }
+
+    pub(crate) async fn private_download_delivery(
+        &self,
+        delivery: DeliveryRecord,
+    ) -> Result<DownloadGrant, FilePlatformError> {
+        if delivery.file.lifecycle_status != FileLifecycleStatus::Ready {
+            return Err(FilePlatformError::NotReady);
+        }
         if delivery.file.visibility != FileVisibility::Private {
             return Err(FilePlatformError::VisibilityMismatch);
         }
@@ -343,6 +354,16 @@ impl FilePlatform {
         file_id: Uuid,
     ) -> Result<DeleteOutcome, FilePlatformError> {
         let work = repository.request_delete(file_id).await?;
+        self.complete_prepared_delete(repository, work).await
+    }
+
+    /// Completes provider cleanup for a lifecycle transition that was committed
+    /// by a domain transaction. Failures remain durable retry operations.
+    pub async fn complete_prepared_delete(
+        &self,
+        repository: &dyn FileRepository,
+        work: Vec<DeleteWork>,
+    ) -> Result<DeleteOutcome, FilePlatformError> {
         let mut pending_retry = false;
         for object in work {
             if let Err(error) = self.provider.delete(&object.object).await {
@@ -519,7 +540,7 @@ mod tests {
 
     use crate::modules::files::{
         malware_scanner::MalwareScanner,
-        platform_types::StorageClass,
+        platform_types::{FileInspectionMetadata, StorageClass},
         purpose_registry::original_object_key,
         reconciler::reconcile_due_operations,
         repository::{DeleteWork, LeasedOperation, ObjectTarget, OperationWork, RepositoryError},
@@ -620,6 +641,7 @@ mod tests {
     struct FakeRepository {
         events: Mutex<Vec<&'static str>>,
         upload_identity: Mutex<Option<(Option<Uuid>, Option<Uuid>)>>,
+        upload_inspection: Mutex<Option<FileInspectionMetadata>>,
         finalize_fails: Mutex<bool>,
         derivative_store_error: Mutex<Option<RepositoryError>>,
         delivery: Mutex<Option<DeliveryRecord>>,
@@ -633,6 +655,7 @@ mod tests {
     impl FileRepository for FakeRepository {
         async fn reserve_upload(&self, upload: &NewUpload) -> Result<(), RepositoryError> {
             *self.upload_identity.lock().unwrap() = Some((upload.owner_user_id, upload.created_by));
+            *self.upload_inspection.lock().unwrap() = Some(upload.inspection_metadata.clone());
             self.events.lock().unwrap().push("processing");
             Ok(())
         }
@@ -816,6 +839,13 @@ mod tests {
         assert_eq!(
             *provider.puts.lock().unwrap(),
             vec![StorageClass::Public, StorageClass::Public]
+        );
+        assert_eq!(
+            *repository.upload_inspection.lock().unwrap(),
+            Some(FileInspectionMetadata::Image {
+                width_px: 2,
+                height_px: 2,
+            })
         );
     }
 

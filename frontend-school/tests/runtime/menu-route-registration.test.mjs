@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -132,6 +132,93 @@ test('explicit menu synchronization sends the complete route scan after deployme
 			environment: 'production'
 		}
 	});
+});
+
+test('menu synchronization encodes alternative generated permissions without broadening scope', async (t) => {
+	const certificateRoutePath = 'src/routes/(app)/staff/certificates/+page.ts';
+	const certificateRoute = await readFile(path.join(projectRoot, certificateRoutePath), 'utf8');
+	const result = await runSyncWithServer(t, {
+		[certificateRoutePath]: certificateRoute
+	});
+
+	assert.equal(result.code, 0, result.stderr || result.stdout);
+	assert.deepEqual(result.receivedRequest.body.routes, [
+		{
+			path: '/staff/certificates',
+			title: 'เกียรติบัตร',
+			icon: 'Award',
+			group: 'academic',
+			workspace: 'academic',
+			order: 60,
+			permission: 'certificate.read.organization_unit|certificate.read.school',
+			user_type: 'staff'
+		}
+	]);
+	assert.doesNotMatch(result.receivedRequest.body.routes[0].permission, /certificate\.read\.own/);
+});
+
+test('staff achievements menu combines self-recorded and own-certificate access in one entry', async (t) => {
+	const routePath = 'src/routes/(app)/staff/achievements/+page.ts';
+	const route = await readFile(path.join(projectRoot, routePath), 'utf8');
+	const result = await runSyncWithServer(t, { [routePath]: route });
+
+	assert.equal(result.code, 0, result.stderr || result.stdout);
+	assert.deepEqual(result.receivedRequest.body.routes, [
+		{
+			path: '/staff/achievements',
+			title: 'เกียรติบัตรและผลงาน',
+			icon: 'Award',
+			group: 'personnel',
+			workspace: 'personnel',
+			order: 30,
+			permission: 'achievement|certificate.read.own',
+			user_type: 'staff'
+		}
+	]);
+});
+
+test('student certificate menu exposes only the own-certificate permission', async (t) => {
+	const routePath = 'src/routes/(app)/student/certificates/+page.ts';
+	const route = await readFile(path.join(projectRoot, routePath), 'utf8');
+	const result = await runSyncWithServer(t, { [routePath]: route });
+
+	assert.equal(result.code, 0, result.stderr || result.stdout);
+	assert.deepEqual(result.receivedRequest.body.routes, [
+		{
+			path: '/student/certificates',
+			title: 'เกียรติบัตรของฉัน',
+			icon: 'Award',
+			group: 'main',
+			workspace: 'home',
+			order: 6,
+			permission: 'certificate.read.own',
+			user_type: 'student'
+		}
+	]);
+});
+
+test('certificate issue queue menu requires the school issue permission only', async (t) => {
+	const routePath = 'src/routes/(app)/staff/certificate-requests/+page.ts';
+	const route = await readFile(path.join(projectRoot, routePath), 'utf8');
+	const result = await runSyncWithServer(t, { [routePath]: route });
+
+	assert.equal(result.code, 0, result.stderr || result.stdout);
+	assert.deepEqual(result.receivedRequest.body.routes, [
+		{
+			path: '/staff/certificate-requests',
+			title: 'คำขอออกเกียรติบัตร',
+			icon: 'ClipboardCheck',
+			group: 'academic',
+			workspace: 'academic',
+			order: 61,
+			permission: 'certificate.issue.school',
+			user_type: 'staff'
+		}
+	]);
+	assert.doesNotMatch(
+		result.receivedRequest.body.routes[0].permission,
+		/certificate\.(?:submit|update)\./
+	);
 });
 
 test('menu synchronization fails when route metadata cannot be parsed', async (t) => {

@@ -53,7 +53,7 @@ export async function scanRoutes(projectRoot = process.cwd()): Promise<RouteMeta
 				group: string;
 				workspace?: string;
 				order?: number;
-				permission?: string;
+				permission?: string | string[];
 				user_type?: string;
 			};
 			routes.push({
@@ -63,13 +63,25 @@ export async function scanRoutes(projectRoot = process.cwd()): Promise<RouteMeta
 				group: menu.group,
 				workspace: menu.workspace ?? workspaceForGroup(menu.group),
 				order: menu.order ?? 999,
-				permission: menu.permission,
+				permission: normalizeMenuPermission(menu.permission),
 				user_type: menu.user_type
 			});
 		}
 	}
 
 	return routes;
+}
+
+function normalizeMenuPermission(permission: string | string[] | undefined): string | undefined {
+	if (!Array.isArray(permission)) return permission;
+
+	const permissions = [...new Set(permission.map((item) => item.trim()).filter(Boolean))];
+	if (permissions.length === 0) return undefined;
+	if (permissions.some((item) => item.includes('|'))) {
+		throw new Error('Menu permission alternatives cannot contain the | separator');
+	}
+
+	return permissions.join('|');
 }
 
 /**

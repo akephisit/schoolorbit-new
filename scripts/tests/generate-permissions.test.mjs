@@ -114,10 +114,36 @@ test('renders long constants in rustfmt and Prettier compatible form', () => {
 	assert.doesNotMatch(artifacts.typeScriptContent, /STAFF_READ_ALL: 'staff\.read\.all',\n} as const/);
 });
 
+test('accepts certificate workflow actions as canonical permission actions', () => {
+	const contract = structuredClone(validContract);
+	for (const action of ['submit', 'issue', 'revoke', 'download']) {
+		contract.permissions.push({
+			module: 'certificate',
+			action,
+			scope: action === 'download' ? 'organization_unit' : 'school',
+			name: `Certificate ${action}`,
+			description: `Certificate ${action} capability`
+		});
+	}
+
+	const normalized = validateAndNormalizeContract(contract);
+	assert.deepEqual(
+		normalized.permissions
+			.filter(({ module }) => module === 'certificate')
+			.map(({ code }) => code),
+		[
+			'certificate.download.organization_unit',
+			'certificate.issue.school',
+			'certificate.revoke.school',
+			'certificate.submit.school'
+		]
+	);
+});
+
 for (const [label, mutate, message] of [
 	['duplicate tuple', (value) => value.permissions.push({ ...value.permissions[1] }), /duplicate/],
 	['invalid module', (value) => (value.permissions[1].module = 'Staff'), /snake_case/],
-	['unsupported action', (value) => (value.permissions[1].action = 'download'), /unsupported action/],
+	['unsupported action', (value) => (value.permissions[1].action = 'archive'), /unsupported action/],
 	['unsupported scope', (value) => (value.permissions[1].scope = 'department'), /unsupported scope/],
 	['invalid wildcard', (value) => (value.permissions[0].scope = 'school'), /wildcard/],
 	['unknown field', (value) => (value.permissions[1].code = 'staff.read.all'), /unknown field/],

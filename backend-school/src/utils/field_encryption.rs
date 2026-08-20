@@ -126,6 +126,25 @@ pub fn hash_for_search(text: &str) -> Result<String, String> {
     Ok(hex::encode(mac.finalize().into_bytes()))
 }
 
+/// Hashes a value for non-national-ID lookup with an explicit domain boundary.
+///
+/// The length-prefixed domain prevents two features from sharing a lookup digest even when
+/// their plaintext values happen to match. `hash_for_search` deliberately remains unchanged
+/// because it owns the existing national-ID blind-index contract.
+pub fn hash_for_search_with_domain(domain: &str, value: &str) -> Result<String, String> {
+    if domain.is_empty() || domain.len() > 128 || !domain.is_ascii() {
+        return Err("Invalid blind-index domain".to_string());
+    }
+    let key = get_blind_index_key()?;
+    let mut mac = <HmacSha256 as Mac>::new_from_slice(key.as_bytes())
+        .map_err(|_| "Invalid BLIND_INDEX_KEY".to_string())?;
+    mac.update(b"schoolorbit-domain-separated-hmac-v1\0");
+    mac.update(&(domain.len() as u32).to_be_bytes());
+    mac.update(domain.as_bytes());
+    mac.update(value.as_bytes());
+    Ok(hex::encode(mac.finalize().into_bytes()))
+}
+
 pub fn hash_optional_for_search(value: Option<&str>) -> Result<Option<String>, String> {
     match value {
         Some(v) if !v.is_empty() => Ok(Some(hash_for_search(v)?)),
@@ -195,5 +214,24 @@ mod tests {
         let result = hash_for_search("1234567890123");
 
         assert_eq!(result.unwrap_err(), "BLIND_INDEX_KEY not set");
+    }
+
+    #[test]
+    fn domain_separated_hashes_do_not_overlap_other_features() {
+        let _guard = test_env_lock();
+        env::set_var("BLIND_INDEX_KEY", "domain-separated-test-key");
+
+        let certificate =
+            hash_for_search_with_domain("certificate-qr-proof-v1", "synthetic-proof-value")
+                .unwrap();
+        let receipt =
+            hash_for_search_with_domain("certificate-receipt-v1", "synthetic-proof-value").unwrap();
+
+        assert_ne!(certificate, receipt);
+        assert_ne!(
+            certificate,
+            hash_for_search("synthetic-proof-value").unwrap()
+        );
+        assert_eq!(certificate.len(), 64);
     }
 }

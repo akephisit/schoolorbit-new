@@ -1,6 +1,8 @@
 use axum::{
-    extract::DefaultBodyLimit,
-    middleware::{from_fn, from_fn_with_state},
+    extract::{DefaultBodyLimit, Request},
+    http::{header::CACHE_CONTROL, HeaderName, HeaderValue},
+    middleware::{from_fn, from_fn_with_state, Next},
+    response::Response,
     routing::{delete, get, post, put},
     Json, Router,
 };
@@ -9,6 +11,7 @@ use serde_json::json;
 use crate::{middleware, modules, AppState};
 
 pub const AUTH_JSON_BODY_LIMIT: usize = 16 * 1024;
+pub const PUBLIC_CERTIFICATE_JSON_BODY_LIMIT: usize = 16 * 1024;
 pub const APPLICATION_BODY_LIMIT: usize = 20 * 1024 * 1024;
 
 pub fn build_app(state: AppState) -> Router {
@@ -55,6 +58,7 @@ fn public_routes() -> Router<AppState> {
             "/api/public/files/{id}/delivery",
             get(modules::files::handlers::get_public_file_delivery),
         )
+        .merge(public_certificate_routes())
         .nest(
             "/api/admission",
             modules::admission::admission_public_routes(),
@@ -73,6 +77,36 @@ fn public_routes() -> Router<AppState> {
             get(modules::academic::websockets::timetable_websocket_handler),
         )
         .merge(internal_routes())
+}
+
+fn public_certificate_routes() -> Router<AppState> {
+    Router::new()
+        .route(
+            "/api/public/certificates/verify/manual",
+            post(modules::certificates::handlers::verify_certificate_manually),
+        )
+        .route(
+            "/api/public/certificates/verify/qr",
+            post(modules::certificates::handlers::verify_certificate_by_qr),
+        )
+        .route(
+            "/api/public/certificates/render-manifest",
+            post(modules::certificates::handlers::create_public_certificate_render_manifest),
+        )
+        .route_layer(from_fn(public_certificate_security_headers))
+        .layer(DefaultBodyLimit::max(PUBLIC_CERTIFICATE_JSON_BODY_LIMIT))
+}
+
+async fn public_certificate_security_headers(request: Request, next: Next) -> Response {
+    let mut response = next.run(request).await;
+    response
+        .headers_mut()
+        .insert(CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    response.headers_mut().insert(
+        HeaderName::from_static("referrer-policy"),
+        HeaderValue::from_static("no-referrer"),
+    );
+    response
 }
 
 fn internal_routes() -> Router<AppState> {
@@ -144,6 +178,152 @@ fn protected_routes() -> Router<AppState> {
             "/api/achievements/{id}",
             put(modules::achievement::handlers::update_achievement)
                 .delete(modules::achievement::handlers::delete_achievement),
+        )
+        .route(
+            "/api/certificates/campaigns",
+            get(modules::certificates::handlers::list_certificate_campaigns)
+                .post(modules::certificates::handlers::create_certificate_campaign),
+        )
+        .route(
+            "/api/certificates/campaigns/{campaign_id}",
+            get(modules::certificates::handlers::get_certificate_campaign)
+                .put(modules::certificates::handlers::update_certificate_campaign)
+                .delete(modules::certificates::handlers::delete_certificate_campaign),
+        )
+        .route(
+            "/api/certificates/campaigns/{campaign_id}/status",
+            put(modules::certificates::handlers::change_certificate_campaign_status),
+        )
+        .route(
+            "/api/certificates/owner-options",
+            get(modules::certificates::handlers::list_certificate_owner_options),
+        )
+        .route(
+            "/api/certificates/campaigns/{campaign_id}/templates",
+            get(modules::certificates::handlers::list_certificate_templates)
+                .post(modules::certificates::handlers::create_certificate_template),
+        )
+        .route(
+            "/api/certificates/templates/{template_id}",
+            get(modules::certificates::handlers::get_certificate_template)
+                .put(modules::certificates::handlers::update_certificate_template)
+                .delete(modules::certificates::handlers::delete_certificate_template),
+        )
+        .route(
+            "/api/certificates/templates/{template_id}/background",
+            put(modules::certificates::handlers::attach_certificate_template_background),
+        )
+        .route(
+            "/api/certificates/templates/{template_id}/assets",
+            post(modules::certificates::handlers::attach_certificate_template_asset),
+        )
+        .route(
+            "/api/certificates/templates/{template_id}/assets/fonts/inspect",
+            post(modules::certificates::handlers::inspect_certificate_font_uploads),
+        )
+        .route(
+            "/api/certificates/templates/{template_id}/assets/fonts/batch",
+            post(modules::certificates::handlers::attach_certificate_font_batch),
+        )
+        .route(
+            "/api/certificates/templates/{template_id}/assets/{asset_id}",
+            delete(modules::certificates::handlers::delete_certificate_template_asset),
+        )
+        .route(
+            "/api/certificates/templates/{template_id}/variables",
+            get(modules::certificates::handlers::get_certificate_template_variable_catalog),
+        )
+        .route(
+            "/api/certificates/templates/{template_id}/preview-manifest",
+            post(modules::certificates::handlers::create_certificate_template_preview_manifest),
+        )
+        .route(
+            "/api/certificates/campaigns/{campaign_id}/candidates",
+            get(modules::certificates::handlers::list_certificate_candidates),
+        )
+        .route(
+            "/api/certificates/campaigns/{campaign_id}/candidates/import",
+            post(modules::certificates::handlers::import_certificate_candidates),
+        )
+        .route(
+            "/api/certificates/campaigns/{campaign_id}/candidates/manual",
+            post(modules::certificates::handlers::create_manual_certificate_candidate),
+        )
+        .route(
+            "/api/certificates/campaigns/{campaign_id}/candidates/account-search",
+            get(modules::certificates::handlers::search_certificate_candidate_accounts)
+                .post(modules::certificates::handlers::create_account_certificate_candidate),
+        )
+        .route(
+            "/api/certificates/campaigns/{campaign_id}/candidates/bulk",
+            post(modules::certificates::handlers::bulk_update_certificate_candidates),
+        )
+        .route(
+            "/api/certificates/candidates/{candidate_id}",
+            get(modules::certificates::handlers::get_certificate_candidate)
+                .put(modules::certificates::handlers::update_certificate_candidate)
+                .delete(modules::certificates::handlers::delete_certificate_candidate),
+        )
+        .route(
+            "/api/certificates/campaigns/{campaign_id}/issue-requests",
+            get(modules::certificates::handlers::list_certificate_campaign_issue_requests)
+                .post(modules::certificates::handlers::submit_certificate_issue_request),
+        )
+        .route(
+            "/api/certificates/issue-requests",
+            get(modules::certificates::handlers::list_certificate_issue_requests),
+        )
+        .route(
+            "/api/certificates/issue-requests/{request_id}",
+            get(modules::certificates::handlers::get_certificate_issue_request),
+        )
+        .route(
+            "/api/certificates/issue-requests/{request_id}/withdraw",
+            post(modules::certificates::handlers::withdraw_certificate_issue_request),
+        )
+        .route(
+            "/api/certificates/issue-requests/{request_id}/review",
+            post(modules::certificates::handlers::start_certificate_issue_request_review),
+        )
+        .route(
+            "/api/certificates/issue-requests/{request_id}/return",
+            post(modules::certificates::handlers::return_certificate_issue_request),
+        )
+        .route(
+            "/api/certificates/issue-requests/{request_id}/issue",
+            post(modules::certificates::handlers::issue_certificates),
+        )
+        .route(
+            "/api/certificates/campaigns/{campaign_id}/issued",
+            get(modules::certificates::handlers::list_issued_certificates),
+        )
+        .route(
+            "/api/certificates/campaigns/{campaign_id}/render-manifests",
+            post(modules::certificates::handlers::create_issued_certificate_render_manifests),
+        )
+        .route(
+            "/api/certificates/{certificate_id}",
+            get(modules::certificates::handlers::get_issued_certificate),
+        )
+        .route(
+            "/api/certificates/{certificate_id}/revoke",
+            post(modules::certificates::handlers::revoke_issued_certificate),
+        )
+        .route(
+            "/api/certificates/{certificate_id}/render-manifest",
+            post(modules::certificates::handlers::create_issued_certificate_render_manifest),
+        )
+        .route(
+            "/api/me/certificates",
+            get(modules::certificates::handlers::list_own_certificates),
+        )
+        .route(
+            "/api/me/certificates/{certificate_id}",
+            get(modules::certificates::handlers::get_own_certificate),
+        )
+        .route(
+            "/api/me/certificates/{certificate_id}/render-manifest",
+            post(modules::certificates::handlers::create_own_certificate_render_manifest),
         )
         .route(
             "/api/student/profile",
@@ -466,3 +646,52 @@ async fn root_handler() -> Json<serde_json::Value> {
 }
 
 use crate::middleware::session::session_middleware;
+
+#[cfg(test)]
+mod tests {
+    use axum::{
+        body::Body,
+        http::{Method, Request, StatusCode},
+        routing::post,
+        Router,
+    };
+    use tower::ServiceExt;
+
+    use super::public_certificate_security_headers;
+
+    #[tokio::test]
+    async fn public_certificate_route_headers_cover_success_and_method_rejection() {
+        let app = Router::new()
+            .route("/certificate", post(|| async { StatusCode::OK }))
+            .route_layer(axum::middleware::from_fn(
+                public_certificate_security_headers,
+            ));
+
+        for method in [Method::POST, Method::GET] {
+            let response = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .method(method.clone())
+                        .uri("/certificate")
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.headers().get("cache-control").unwrap(), "no-store");
+            assert_eq!(
+                response.headers().get("referrer-policy").unwrap(),
+                "no-referrer"
+            );
+            assert_eq!(
+                response.status(),
+                if method == Method::POST {
+                    StatusCode::OK
+                } else {
+                    StatusCode::METHOD_NOT_ALLOWED
+                }
+            );
+        }
+    }
+}

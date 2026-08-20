@@ -17,6 +17,7 @@ pub enum PolicyKey {
     QuestionBankImage,
     CourseworkAttachment,
     ExplicitOwningResource,
+    CertificateTemplate,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -84,6 +85,7 @@ const IMAGE_CONTENT: &[DetectedContent] = &[
     DetectedContent::Webp,
 ];
 const PDF_CONTENT: &[DetectedContent] = &[DetectedContent::Pdf];
+const FONT_CONTENT: &[DetectedContent] = &[DetectedContent::Ttf, DetectedContent::Otf];
 const ADMISSION_CONTENT: &[DetectedContent] = &[
     DetectedContent::Jpeg,
     DetectedContent::Png,
@@ -98,6 +100,20 @@ const fn image_limits(max_bytes: u64, max_width: u32, max_height: u32) -> Conten
         max_width: Some(max_width),
         max_height: Some(max_height),
         max_decoded_pixels: Some(max_width as u64 * max_height as u64),
+    }
+}
+
+const fn image_limits_with_pixels(
+    max_bytes: u64,
+    max_width: u32,
+    max_height: u32,
+    max_decoded_pixels: u64,
+) -> ContentLimits {
+    ContentLimits {
+        max_bytes,
+        max_width: Some(max_width),
+        max_height: Some(max_height),
+        max_decoded_pixels: Some(max_decoded_pixels),
     }
 }
 
@@ -250,6 +266,39 @@ pub fn purpose_definition(purpose: FilePurpose) -> Result<PurposeDefinition, Pur
             derivatives: &[],
             retention_class: RetentionClass::Standard,
             policy_key: PolicyKey::ExplicitOwningResource,
+        },
+        FilePurpose::CertificateTemplateBackground => PurposeDefinition {
+            domain_segment: "certificate",
+            purpose_segment: "template-background",
+            visibility: FileVisibility::Private,
+            allowed_content: PDF_CONTENT,
+            limits: document_limits(20 * 1024 * 1024),
+            scan_requirement: ScanRequirement::RequiredClean,
+            derivatives: &[],
+            retention_class: RetentionClass::Temporary,
+            policy_key: PolicyKey::CertificateTemplate,
+        },
+        FilePurpose::CertificateTemplateImage => PurposeDefinition {
+            domain_segment: "certificate",
+            purpose_segment: "template-image",
+            visibility: FileVisibility::Private,
+            allowed_content: IMAGE_CONTENT,
+            limits: image_limits_with_pixels(10 * 1024 * 1024, 6000, 6000, 24_000_000),
+            scan_requirement: ScanRequirement::RequiredClean,
+            derivatives: &[],
+            retention_class: RetentionClass::Temporary,
+            policy_key: PolicyKey::CertificateTemplate,
+        },
+        FilePurpose::CertificateTemplateFont => PurposeDefinition {
+            domain_segment: "certificate",
+            purpose_segment: "template-font",
+            visibility: FileVisibility::Private,
+            allowed_content: FONT_CONTENT,
+            limits: document_limits(5 * 1024 * 1024),
+            scan_requirement: ScanRequirement::RequiredClean,
+            derivatives: &[],
+            retention_class: RetentionClass::Temporary,
+            policy_key: PolicyKey::CertificateTemplate,
         },
     };
 
@@ -584,6 +633,70 @@ mod tests {
             );
             assert_eq!(definition.policy_key, policy_key);
         }
+    }
+
+    #[test]
+    fn certificate_template_purposes_are_private_temporary_and_exactly_bounded() {
+        let cases = [
+            (
+                FilePurpose::CertificateTemplateBackground,
+                "template-background",
+                &[DetectedContent::Pdf][..],
+                20 * 1024 * 1024,
+                None,
+                None,
+                None,
+            ),
+            (
+                FilePurpose::CertificateTemplateImage,
+                "template-image",
+                &[
+                    DetectedContent::Jpeg,
+                    DetectedContent::Png,
+                    DetectedContent::Webp,
+                ][..],
+                10 * 1024 * 1024,
+                Some(6000),
+                Some(6000),
+                Some(24_000_000),
+            ),
+            (
+                FilePurpose::CertificateTemplateFont,
+                "template-font",
+                &[DetectedContent::Ttf, DetectedContent::Otf][..],
+                5 * 1024 * 1024,
+                None,
+                None,
+                None,
+            ),
+        ];
+
+        for (
+            purpose,
+            purpose_segment,
+            allowed_content,
+            max_bytes,
+            max_width,
+            max_height,
+            max_decoded_pixels,
+        ) in cases
+        {
+            let definition = purpose_definition(purpose).expect("certificate purpose must resolve");
+            assert_eq!(definition.domain_segment, "certificate");
+            assert_eq!(definition.purpose_segment, purpose_segment);
+            assert_eq!(definition.visibility, FileVisibility::Private);
+            assert_eq!(definition.allowed_content, allowed_content);
+            assert_eq!(definition.limits.max_bytes, max_bytes);
+            assert_eq!(definition.limits.max_width, max_width);
+            assert_eq!(definition.limits.max_height, max_height);
+            assert_eq!(definition.limits.max_decoded_pixels, max_decoded_pixels);
+            assert_eq!(definition.scan_requirement, ScanRequirement::RequiredClean);
+            assert_eq!(definition.derivatives, &[]);
+            assert_eq!(definition.retention_class, RetentionClass::Temporary);
+            assert_eq!(definition.policy_key, PolicyKey::CertificateTemplate);
+        }
+
+        assert_eq!(FilePurpose::ALL.len(), 15);
     }
 
     #[test]

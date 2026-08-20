@@ -1279,7 +1279,10 @@ test('student workspace pages gate read, mutation, and PII actions', async () =>
 test('achievement workspace gates read and owner/all mutation actions', async () => {
 	const source = stripComments(
 		await readFile(
-			path.join(repoRoot, 'frontend-school/src/routes/(app)/staff/achievements/+page.svelte'),
+			path.join(
+				repoRoot,
+				'frontend-school/src/lib/components/achievement/SelfRecordedAchievements.svelte'
+			),
 			'utf8'
 		)
 	);
@@ -1616,7 +1619,8 @@ test('dashboard and self-view routes stay user-scoped with permission-filtered s
 	assert.doesNotMatch(staffDashboard, /href="\/staff\/(?:manage|students|school-settings)"/);
 
 	assert.match(staffTimetable, /getMyTimetable/);
-	assert.match(staffTimetable, /periodsFromTimetableEntries/);
+	assert.match(staffTimetable, /periods\s*=\s*entriesRes\.periods/);
+	assert.doesNotMatch(staffTimetable, /periodsFromTimetableEntries/);
 	assert.doesNotMatch(
 		staffTimetable,
 		/PERMISSION_MODULES|PERMISSIONS|getTimetableEntries|listPeriods/
@@ -2019,7 +2023,7 @@ test('frontend apiClient validates the backend envelope before returning typed r
 		'utf8'
 	);
 
-	assert.match(source, /function\s+normalizeApiResponse<T>/);
+	assert.match(source, /function\s+normalizeApiResponse<T,\s*E\s*=\s*never>/);
 	assert.match(source, /typeof\s+payload\.success\s*!==\s*'boolean'/);
 	assert.match(source, /!\('data'\s+in\s+payload\)/);
 	assert.doesNotMatch(source, /return\s+data\s+as\s+ApiResponse<T>/);

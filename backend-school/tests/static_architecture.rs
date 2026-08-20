@@ -760,6 +760,17 @@ fn lexical_mask(source: &str, hash_line_comments: bool) -> LexicalMask {
     }
 }
 
+fn literal_only(source: &str) -> String {
+    let lexical = lexical_mask(source, false);
+    let mut bytes = source.as_bytes().to_vec();
+    for (index, byte) in bytes.iter_mut().enumerate() {
+        if !lexical.literals[index] && *byte != b'\n' {
+            *byte = b' ';
+        }
+    }
+    String::from_utf8(bytes).expect("literal-only source remains UTF-8")
+}
+
 fn balanced_delimiter_end(
     structural: &str,
     opening: usize,
@@ -971,6 +982,37 @@ fn is_rust_test_module(path: &Path) -> bool {
         .is_some_and(|stem| stem == "tests" || stem.ends_with("_tests"))
 }
 
+fn strip_cfg_test_modules(source: &str) -> String {
+    let lexical = lexical_mask(source, false);
+    let structural = lexical.structural.as_str();
+    let marker = "#[cfg(test)]";
+    let mut runtime = source.as_bytes().to_vec();
+    let mut cursor = 0;
+
+    while let Some(offset) = structural[cursor..].find(marker) {
+        let start = cursor + offset;
+        let after_marker = start + marker.len();
+        let Some(opening_offset) = structural[after_marker..].find('{') else {
+            break;
+        };
+        let opening = after_marker + opening_offset;
+        if !structural[after_marker..opening].contains("mod tests") {
+            cursor = after_marker;
+            continue;
+        }
+        let closing = balanced_delimiter_end(structural, opening, b'{', b'}')
+            .expect("cfg(test) module must have balanced braces");
+        for byte in &mut runtime[start..=closing] {
+            if *byte != b'\n' && *byte != b'\r' {
+                *byte = b' ';
+            }
+        }
+        cursor = closing + 1;
+    }
+
+    String::from_utf8(runtime).expect("masking cfg(test) modules preserves UTF-8")
+}
+
 fn module_handler_files() -> Vec<PathBuf> {
     let modules_dir = manifest_dir().join("src/modules");
     list_files(&modules_dir, |path| {
@@ -1143,6 +1185,233 @@ fn auth_session_migration_is_forward_only_and_hash_only() {
         assert!(
             !migration.contains(forbidden),
             "forbidden persisted field `{forbidden}`"
+        );
+    }
+}
+
+#[test]
+fn certificate_migration_keeps_issued_records_restrictive_and_permanent() {
+    let migration_path = manifest_dir().join("migrations/035_certificate_issuance.sql");
+    let migration = read_source(&migration_path);
+    let certificate_reference = Regex::new(
+        r"(?i)REFERENCES\s+certificates\s*\(\s*id\s*\)\s+ON\s+DELETE\s+(?P<action>[A-Z_]+)",
+    )
+    .expect("valid certificate reference regex");
+    let delete_actions = certificate_reference
+        .captures_iter(&migration)
+        .map(|captures| {
+            captures
+                .name("action")
+                .expect("delete action")
+                .as_str()
+                .to_ascii_uppercase()
+        })
+        .collect::<Vec<_>>();
+
+    assert_eq!(
+        delete_actions.len(),
+        4,
+        "candidate and replacement links must remain explicit in {}",
+        repo_relative(&migration_path)
+    );
+    assert!(
+        delete_actions.iter().all(|action| action == "RESTRICT"),
+        "no foreign key may cascade into issued certificates: {delete_actions:?}"
+    );
+    assert!(migration.contains("CREATE FUNCTION prevent_certificate_delete()"));
+    assert!(migration.contains("CREATE FUNCTION enforce_certificate_snapshot_immutability()"));
+}
+
+#[test]
+fn certificate_runtime_keeps_handlers_thin_proofs_private_and_renders_ephemeral() {
+    let handlers_path = manifest_dir().join("src/modules/certificates/handlers.rs");
+    let handlers = strip_comments(&read_source(&handlers_path));
+    let certificate_services = list_files(
+        manifest_dir().join("src/modules/certificates/services"),
+        |path| {
+            path.extension().is_some_and(|extension| extension == "rs")
+                && !is_rust_test_module(path)
+        },
+    )
+    .into_iter()
+    .map(read_source)
+    .collect::<Vec<_>>()
+    .join("\n");
+    let certificate_migrations = list_files(manifest_dir().join("migrations"), |path| {
+        path.extension().and_then(|extension| extension.to_str()) == Some("sql")
+    })
+    .into_iter()
+    .map(read_source)
+    .collect::<Vec<_>>()
+    .join("\n");
+
+    assert!(handlers.contains("permissions::registry::codes"));
+    for forbidden in [
+        "sqlx::query",
+        ".fetch_",
+        ".execute(",
+        ".begin(",
+        "QueryBuilder",
+        "PgPool",
+    ] {
+        assert!(
+            !handlers.contains(forbidden),
+            "certificate handlers must delegate database work; found `{forbidden}` in {}",
+            repo_relative(&handlers_path)
+        );
+    }
+
+    for handler_name in [
+        "verify_certificate_manually",
+        "verify_certificate_by_qr",
+        "create_public_certificate_render_manifest",
+    ] {
+        let handler =
+            extract_braced_block(&handlers, &format!("pub async fn {handler_name}"), false);
+        assert!(
+            handler.contains("tenant_context(&state, &headers).await?"),
+            "public handler `{handler_name}` must resolve only public tenant context"
+        );
+        assert!(
+            !handler.contains("AuthenticatedSession")
+                && !handler.contains("actor_tenant_context_from_session"),
+            "public handler `{handler_name}` must not cross the authenticated actor boundary"
+        );
+    }
+
+    let sql_max =
+        Regex::new(r#"(?is)\"[^\"]*\bMAX\s*\("#).expect("valid certificate SQL MAX regex");
+    assert!(!sql_max.is_match(&literal_only(
+        r#"let label = "counter"; let value = left.max(right);"#
+    )));
+    assert!(sql_max.is_match(&literal_only(
+        r#"let query = "SELECT MAX(sequence) FROM certificates";"#
+    )));
+    assert!(
+        !sql_max.is_match(&literal_only(&certificate_services)),
+        "certificate numbering must use locked counters, never SQL MAX(...)"
+    );
+
+    let sensitive_candidate_boundary = [
+        extract_braced_block(
+            &handlers,
+            "pub async fn import_certificate_candidates",
+            false,
+        ),
+        read_source(manifest_dir().join("src/modules/certificates/services/import_validation.rs")),
+        read_source(manifest_dir().join("src/modules/certificates/services/candidate_service.rs")),
+    ]
+    .join("\n");
+    let sensitive_candidate_structure = lexical_mask(&sensitive_candidate_boundary, false);
+    let log_macro =
+        Regex::new(r"(?:(?:tracing|log)::)?(?:trace|debug|info|warn|error)!|(?:e?println|dbg)!")
+            .expect("valid certificate logging regex");
+    assert!(
+        !log_macro.is_match(&sensitive_candidate_structure.structural),
+        "certificate import rows and candidate request bodies must never be logged"
+    );
+
+    let raw_permission = Regex::new(
+        r#"\"certificate\.(?:read|create|update|delete|submit|issue|revoke|download)\.[^\"]+\""#,
+    )
+    .expect("valid raw certificate permission regex");
+    let cfg_test_fixture = r#"
+const BEFORE: &str = "certificate.read.school";
+#[cfg(test)]
+mod tests {
+    const ALLOWED: &str = "certificate.read.own";
+}
+const AFTER: &str = "certificate.issue.school";
+"#;
+    let stripped_fixture = strip_cfg_test_modules(cfg_test_fixture);
+    assert_eq!(raw_permission.find_iter(&stripped_fixture).count(), 2);
+    assert!(!stripped_fixture.contains("certificate.read.own"));
+    for file in backend_rs_files() {
+        if relative(&file) == "src/permissions/registry_generated.rs" {
+            continue;
+        }
+        let source = read_source(&file);
+        let runtime_source = strip_cfg_test_modules(&source);
+        assert!(
+            !raw_permission.is_match(&runtime_source),
+            "runtime certificate permissions must use generated constants: {}",
+            relative(&file)
+        );
+    }
+
+    let migration = read_source(manifest_dir().join("migrations/035_certificate_issuance.sql"));
+    let certificate_table = migration
+        .split("CREATE TABLE certificates (")
+        .nth(1)
+        .and_then(|tail| tail.split("\n);").next())
+        .expect("certificate table definition");
+    assert!(certificate_table.contains("qr_proof_encrypted TEXT NOT NULL"));
+    assert!(certificate_table.contains("qr_proof_hash CHAR(64) NOT NULL"));
+    let certificate_persistence_statement = Regex::new(
+        r"(?is)(?:CREATE\s+TABLE\s+certificates\s*\(|ALTER\s+TABLE\s+certificates\b).*?;",
+    )
+    .expect("valid certificate persistence statement regex");
+    let certificate_statements = certificate_persistence_statement
+        .find_iter(&certificate_migrations)
+        .map(|statement| statement.as_str().to_ascii_lowercase())
+        .collect::<Vec<_>>();
+    assert!(
+        !certificate_statements.is_empty(),
+        "certificate persistence statements must remain migration-owned"
+    );
+    for statement in &certificate_statements {
+        for forbidden in [
+            "proof_plaintext",
+            "plaintext_proof",
+            "generated_pdf",
+            "rendered_pdf",
+            "pdf_file_id",
+            "output_file_id",
+            "storage_key",
+            "object_key",
+            "download_url",
+        ] {
+            assert!(
+                !statement.contains(forbidden),
+                "certificates must not persist `{forbidden}`"
+            );
+        }
+    }
+    let plaintext_proof_column =
+        Regex::new(r"(?im)(?:^\s*(?:qr_)?proof\s+|\bADD\s+COLUMN\s+(?:qr_)?proof\s+)")
+            .expect("valid plaintext proof column regex");
+    for statement in &certificate_statements {
+        assert!(
+            !plaintext_proof_column.is_match(statement),
+            "certificate proofs may be persisted only as ciphertext plus a domain-separated hash"
+        );
+    }
+    let template_history =
+        Regex::new(r"(?i)CREATE\s+TABLE\s+certificate_template_(?:history|histories|versions?)\b")
+            .expect("valid certificate template history regex");
+    assert!(
+        !template_history.is_match(&certificate_migrations),
+        "certificate layouts intentionally update in place; no template history table is allowed"
+    );
+
+    let file_purposes = read_source(manifest_dir().join("src/modules/files/platform_types.rs"));
+    for required in [
+        "CertificateTemplateBackground",
+        "CertificateTemplateImage",
+        "CertificateTemplateFont",
+    ] {
+        assert!(file_purposes.contains(required));
+    }
+    for forbidden in [
+        "CertificatePdf",
+        "CertificateOutput",
+        "certificate_pdf",
+        "certificate_output",
+        "certificate_generated",
+    ] {
+        assert!(
+            !file_purposes.contains(forbidden),
+            "generated certificate PDFs must remain browser-created and ephemeral"
         );
     }
 }
@@ -3077,16 +3346,20 @@ fn permission_registry_uses_canonical_action_and_scope_vocabulary() {
         "assign",
         "create",
         "delete",
+        "download",
         "enroll",
         "evaluate",
         "execute",
+        "issue",
         "manage",
         "manage_members",
         "publish",
         "read",
         "remove",
         "request",
+        "revoke",
         "scores",
+        "submit",
         "update",
         "verify",
     ];
@@ -3327,8 +3600,8 @@ fn read_oriented_handlers_are_registered_in_the_openapi_document() {
 
     assert_eq!(
         read_oriented_handlers_from_routers(&main_router, &calendar_router).len(),
-        37,
-        "read-oriented router inventory must stay aligned with the 37-operation rollout"
+        39,
+        "read-oriented router inventory must stay aligned with the 39-operation rollout"
     );
     assert_eq!(
         read_oriented_handlers_missing_from_contract(&main_router, &calendar_router, &contract),

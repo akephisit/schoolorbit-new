@@ -840,6 +840,8 @@ dependencies = [
  "tower",
  "tracing",
  "tracing-subscriber",
+ "ttf-parser",
+ "unicode-normalization",
  "url",
  "utoipa",
  "uuid",

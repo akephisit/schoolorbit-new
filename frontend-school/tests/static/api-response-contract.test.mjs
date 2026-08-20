@@ -76,6 +76,17 @@ test('backend app errors return the shared error envelope', async () => {
 	assert.doesNotMatch(errorSource, /json!\s*\(\s*\{/);
 });
 
+test('frontend API client preserves typed error data on thrown errors', async () => {
+	const source = await readRepoFile('frontend-school/src/lib/api/client.ts');
+
+	assert.match(source, /interface\s+ApiResponse<T,\s*E\s*=\s*never>/);
+	assert.match(source, /errorData\?:\s*E/);
+	assert.match(source, /class\s+ApiClientError<E\s*=\s*never>/);
+	assert.match(source, /readonly\s+data\?:\s*E/);
+	assert.match(source, /errorData:\s*payload\.data\s+as\s+E/);
+	assert.match(source, /new\s+ApiClientError<E>[\s\S]*response\.errorData/);
+});
+
 test('frontend auth consumes the shared envelope through apiClient', async () => {
 	const source = await readRepoFile('frontend-school/src/lib/api/auth.ts');
 
@@ -345,6 +356,8 @@ test('generated self-service schedule contracts own timetable, exam, and calenda
 	assert.match(timetableApi, /export\s+type\s+TimetableEntryDto\s*=\s*Schemas\['TimetableEntry'\]/);
 	assert.match(timetableApi, /export\s+type\s+TimetableEntry\s*=\s*Omit<TimetableEntryDto,/);
 	assert.match(timetableApi, /type\s+TimetableItemsData\s*=\s*Schemas\['TimetableItemsData'\]/);
+	assert.match(timetableApi, /type\s+MyTimetableData\s*=\s*Schemas\['MyTimetableData'\]/);
+	assert.match(timetableApi, /apiClient\.get<MyTimetableData>\(`\/api\/me\/timetable/);
 	assert.doesNotMatch(timetableApi, /export\s+interface\s+TimetableEntry\b/);
 
 	for (const schemaName of ['PersonalExamScheduleRound', 'PersonalExamSessionView']) {
@@ -366,6 +379,8 @@ test('generated self-service schedule contracts own timetable, exam, and calenda
 	for (const schemaName of [
 		'TimetableEntry',
 		'TimetableItemsData',
+		'MyTimetableData',
+		'TimetablePeriod',
 		'PersonalExamScheduleRound',
 		'PersonalExamSessionView',
 		'CalendarViewerEvent',
@@ -1189,7 +1204,7 @@ test('facility workspace mutations patch buildings and rooms locally', async () 
 
 test('achievement workspace mutations patch saved and deleted rows locally', async () => {
 	const achievementPage = await readRepoFile(
-		'frontend-school/src/routes/(app)/staff/achievements/+page.svelte'
+		'frontend-school/src/lib/components/achievement/SelfRecordedAchievements.svelte'
 	);
 
 	for (const helper of ['replaceAchievement', 'removeAchievement']) {

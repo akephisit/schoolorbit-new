@@ -175,7 +175,7 @@ test('staff administration workspaces use shared frontend state components', asy
 
 test('staff self-service workspaces use shared frontend state components', async () => {
 	const pages = [
-		'src/routes/(app)/staff/achievements/+page.svelte',
+		'src/lib/components/achievement/SelfRecordedAchievements.svelte',
 		'src/routes/(app)/staff/work/+page.svelte',
 		'src/routes/(app)/staff/work/manage/+page.svelte',
 		'src/routes/(app)/staff/profile/+page.svelte',

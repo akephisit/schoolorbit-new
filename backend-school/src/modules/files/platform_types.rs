@@ -19,10 +19,13 @@ pub enum FilePurpose {
     CourseMaterial,
     AssignmentAttachment,
     GenericPrivateDocument,
+    CertificateTemplateBackground,
+    CertificateTemplateImage,
+    CertificateTemplateFont,
 }
 
 impl FilePurpose {
-    pub const ALL: [Self; 12] = [
+    pub const ALL: [Self; 15] = [
         Self::SchoolLogo,
         Self::SchoolBanner,
         Self::ProfileImage,
@@ -35,6 +38,9 @@ impl FilePurpose {
         Self::CourseMaterial,
         Self::AssignmentAttachment,
         Self::GenericPrivateDocument,
+        Self::CertificateTemplateBackground,
+        Self::CertificateTemplateImage,
+        Self::CertificateTemplateFont,
     ];
 
     pub const fn code(self) -> &'static str {
@@ -51,6 +57,9 @@ impl FilePurpose {
             Self::CourseMaterial => "course_material",
             Self::AssignmentAttachment => "assignment_attachment",
             Self::GenericPrivateDocument => "generic_private_document",
+            Self::CertificateTemplateBackground => "certificate_template_background",
+            Self::CertificateTemplateImage => "certificate_template_image",
+            Self::CertificateTemplateFont => "certificate_template_font",
         }
     }
 }
@@ -96,6 +105,8 @@ pub enum DetectedContent {
     Png,
     Webp,
     Pdf,
+    Ttf,
+    Otf,
 }
 
 impl DetectedContent {
@@ -105,6 +116,8 @@ impl DetectedContent {
             Self::Png => "image/png",
             Self::Webp => "image/webp",
             Self::Pdf => "application/pdf",
+            Self::Ttf => "font/ttf",
+            Self::Otf => "font/otf",
         }
     }
 
@@ -114,8 +127,72 @@ impl DetectedContent {
             Self::Png => "png",
             Self::Webp => "webp",
             Self::Pdf => "pdf",
+            Self::Ttf => "ttf",
+            Self::Otf => "otf",
         }
     }
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
+pub struct PdfPageBox {
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+}
+
+impl PdfPageBox {
+    pub fn new(x: f64, y: f64, width: f64, height: f64) -> Self {
+        Self {
+            x: normalize_pdf_point(x),
+            y: normalize_pdf_point(y),
+            width: normalize_pdf_point(width),
+            height: normalize_pdf_point(height),
+        }
+    }
+}
+
+fn normalize_pdf_point(value: f64) -> f64 {
+    (value * 10_000.0).round() / 10_000.0
+}
+
+const fn default_font_weight() -> u16 {
+    400
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FontInspectionStyle {
+    #[default]
+    Normal,
+    Italic,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum FileInspectionMetadata {
+    #[default]
+    Unknown,
+    Image {
+        width_px: u32,
+        height_px: u32,
+    },
+    Pdf {
+        page_count: u32,
+        crop_box: PdfPageBox,
+        media_box: PdfPageBox,
+        rotation: i16,
+    },
+    Font {
+        family_name: Option<String>,
+        units_per_em: u16,
+        #[serde(default = "default_font_weight")]
+        weight: u16,
+        #[serde(default)]
+        style: FontInspectionStyle,
+        #[serde(default)]
+        is_variable: bool,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -234,6 +311,41 @@ mod tests {
         assert_eq!(DetectedContent::Webp.canonical_extension(), "webp");
         assert_eq!(DetectedContent::Pdf.canonical_extension(), "pdf");
         assert_eq!(DetectedContent::Pdf.mime_type(), "application/pdf");
+        assert_eq!(DetectedContent::Ttf.canonical_extension(), "ttf");
+        assert_eq!(DetectedContent::Ttf.mime_type(), "font/ttf");
+        assert_eq!(DetectedContent::Otf.canonical_extension(), "otf");
+        assert_eq!(DetectedContent::Otf.mime_type(), "font/otf");
+    }
+
+    #[test]
+    fn inspection_metadata_uses_the_persisted_tagged_shape() {
+        assert_eq!(
+            serde_json::to_value(FileInspectionMetadata::Unknown).unwrap(),
+            json!({"kind": "unknown"})
+        );
+        assert_eq!(
+            serde_json::to_value(FileInspectionMetadata::Pdf {
+                page_count: 1,
+                crop_box: PdfPageBox::new(18.0, 24.0, 841.89, 595.28),
+                media_box: PdfPageBox::new(0.0, 0.0, 900.0, 650.0),
+                rotation: 90,
+            })
+            .unwrap(),
+            json!({
+                "kind": "pdf",
+                "page_count": 1,
+                "crop_box": {"x": 18.0, "y": 24.0, "width": 841.89, "height": 595.28},
+                "media_box": {"x": 0.0, "y": 0.0, "width": 900.0, "height": 650.0},
+                "rotation": 90,
+            })
+        );
+        for purpose in [
+            FilePurpose::CertificateTemplateBackground,
+            FilePurpose::CertificateTemplateImage,
+            FilePurpose::CertificateTemplateFont,
+        ] {
+            assert!(FilePurpose::ALL.contains(&purpose));
+        }
     }
 
     #[test]

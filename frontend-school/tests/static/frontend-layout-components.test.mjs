@@ -101,18 +101,53 @@ test('app page titles are owned by PageShell', async () => {
 test('every protected app page renders the shared page shell', async () => {
 	const appRoutesDir = path.join(projectRoot, 'src/routes/(app)');
 	const pages = (await listFiles(appRoutesDir)).filter((file) => file.endsWith('+page.svelte'));
+	const pageShellDelegates = new Map([
+		[
+			'SupervisionWorkspace',
+			await readProjectFile('src/lib/components/supervision/SupervisionWorkspace.svelte')
+		],
+		[
+			'CertificateRecipientWorkspace',
+			await readProjectFile('src/lib/components/certificates/CertificateRecipientWorkspace.svelte')
+		],
+		[
+			'CertificateCampaignRequests',
+			await readProjectFile('src/lib/components/certificates/CertificateCampaignRequests.svelte')
+		],
+		[
+			'CertificateIssueQueue',
+			await readProjectFile('src/lib/components/certificates/CertificateIssueQueue.svelte')
+		],
+		[
+			'CertificateIssueRequestReview',
+			await readProjectFile('src/lib/components/certificates/CertificateIssueRequestReview.svelte')
+		],
+		[
+			'MyCertificateList',
+			await readProjectFile('src/lib/components/certificates/MyCertificateList.svelte')
+		],
+		[
+			'SelfRecordedAchievements',
+			await readProjectFile('src/lib/components/achievement/SelfRecordedAchievements.svelte')
+		]
+	]);
 	const violations = [];
 
 	for (const file of pages) {
 		const source = await readFile(file, 'utf8');
-		if (/<PageShell\b|<SupervisionWorkspace\b/.test(source)) continue;
+		if (/<PageShell\b/.test(source)) continue;
+		const verifiedDelegate = Array.from(pageShellDelegates.entries()).some(
+			([componentName, componentSource]) =>
+				new RegExp(`<${componentName}\\b`).test(source) && /<PageShell\b/.test(componentSource)
+		);
+		if (verifiedDelegate) continue;
 		violations.push(path.relative(projectRoot, file));
 	}
 
 	assert.deepEqual(
 		violations,
 		[],
-		'Protected app pages should render PageShell directly or through the shared supervision workspace.'
+		'Protected app pages should render PageShell directly or through a verified shared workspace.'
 	);
 });
 

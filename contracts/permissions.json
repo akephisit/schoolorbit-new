@@ -764,6 +764,111 @@
       "scope": "school",
       "name": "อนุมัติผลนิเทศทั้งโรงเรียน",
       "description": "ตรวจสอบและอนุมัติผลนิเทศการสอนทั้งโรงเรียนก่อนให้ครูรับทราบผล"
+    },
+    {
+      "module": "certificate",
+      "action": "read",
+      "scope": "own",
+      "name": "ดูเกียรติบัตรของตนเอง",
+      "description": "ดูเกียรติบัตรที่เชื่อมกับบัญชีของตนเอง"
+    },
+    {
+      "module": "certificate",
+      "action": "read",
+      "scope": "organization_unit",
+      "name": "ดูเกียรติบัตรในหน่วยงาน",
+      "description": "ดูโครงการ แบบ และรายชื่อผู้รับของหน่วยงานที่ได้รับสิทธิ์โดยตรง"
+    },
+    {
+      "module": "certificate",
+      "action": "read",
+      "scope": "school",
+      "name": "ดูเกียรติบัตรทั้งโรงเรียน",
+      "description": "ดูโครงการ คำขอออก และเกียรติบัตรทั้งหมดของโรงเรียน"
+    },
+    {
+      "module": "certificate",
+      "action": "create",
+      "scope": "organization_unit",
+      "name": "สร้างโครงการเกียรติบัตรในหน่วยงาน",
+      "description": "สร้างโครงการ แบบ และรายชื่อผู้รับในหน่วยงานที่ได้รับสิทธิ์โดยตรง"
+    },
+    {
+      "module": "certificate",
+      "action": "create",
+      "scope": "school",
+      "name": "สร้างโครงการเกียรติบัตรระดับโรงเรียน",
+      "description": "สร้างโครงการ แบบ และรายชื่อผู้รับในขอบเขตทั้งโรงเรียน"
+    },
+    {
+      "module": "certificate",
+      "action": "update",
+      "scope": "organization_unit",
+      "name": "แก้ไขเกียรติบัตรในหน่วยงาน",
+      "description": "แก้ไขโครงการ แบบ และรายชื่อผู้รับของหน่วยงานที่ได้รับสิทธิ์โดยตรง"
+    },
+    {
+      "module": "certificate",
+      "action": "update",
+      "scope": "school",
+      "name": "แก้ไขเกียรติบัตรทั้งโรงเรียน",
+      "description": "แก้ไขโครงการ แบบ และรายชื่อผู้รับในขอบเขตทั้งโรงเรียน"
+    },
+    {
+      "module": "certificate",
+      "action": "delete",
+      "scope": "organization_unit",
+      "name": "ลบร่างเกียรติบัตรในหน่วยงาน",
+      "description": "ลบโครงการ แบบ หรือรายชื่อที่ยังไม่ออกเกียรติบัตรของหน่วยงานที่ได้รับสิทธิ์โดยตรง"
+    },
+    {
+      "module": "certificate",
+      "action": "delete",
+      "scope": "school",
+      "name": "ลบร่างเกียรติบัตรทั้งโรงเรียน",
+      "description": "ลบโครงการ แบบ หรือรายชื่อที่ยังไม่ออกเกียรติบัตรในขอบเขตทั้งโรงเรียน"
+    },
+    {
+      "module": "certificate",
+      "action": "submit",
+      "scope": "organization_unit",
+      "name": "ส่งคำขอออกเกียรติบัตรของหน่วยงาน",
+      "description": "ส่งรายชื่อที่พร้อมแล้วให้ผู้มีสิทธิ์ระดับโรงเรียนตรวจสอบและออกเลข"
+    },
+    {
+      "module": "certificate",
+      "action": "submit",
+      "scope": "school",
+      "name": "ส่งคำขอออกเกียรติบัตรระดับโรงเรียน",
+      "description": "ส่งรายชื่อระดับโรงเรียนเข้าสู่กระบวนการตรวจสอบและออกเลข"
+    },
+    {
+      "module": "certificate",
+      "action": "issue",
+      "scope": "school",
+      "name": "ออกเลขเกียรติบัตรทั้งโรงเรียน",
+      "description": "ตรวจสอบคำขอและออกเลขเกียรติบัตรแบบเรียงลำดับภายในธุรกรรม"
+    },
+    {
+      "module": "certificate",
+      "action": "revoke",
+      "scope": "school",
+      "name": "เพิกถอนเกียรติบัตรทั้งโรงเรียน",
+      "description": "เพิกถอนเกียรติบัตรที่ออกแล้วโดยเก็บประวัติและเหตุผลไว้"
+    },
+    {
+      "module": "certificate",
+      "action": "download",
+      "scope": "organization_unit",
+      "name": "ดาวน์โหลดเกียรติบัตรในหน่วยงาน",
+      "description": "สร้างและดาวน์โหลดไฟล์เกียรติบัตรของหน่วยงานที่ได้รับสิทธิ์โดยตรง"
+    },
+    {
+      "module": "certificate",
+      "action": "download",
+      "scope": "school",
+      "name": "ดาวน์โหลดเกียรติบัตรทั้งโรงเรียน",
+      "description": "สร้างและดาวน์โหลดไฟล์เกียรติบัตรในขอบเขตทั้งโรงเรียน"
     }
   ]
 }

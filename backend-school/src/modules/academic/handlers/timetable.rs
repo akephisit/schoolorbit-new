@@ -48,6 +48,13 @@ pub struct TimetableItemsData {
     pub current_seq: u64,
 }
 
+#[derive(Serialize, ToSchema)]
+pub struct MyTimetableData {
+    pub items: Vec<TimetableEntry>,
+    pub periods: Vec<TimetablePeriod>,
+    pub current_seq: u64,
+}
+
 #[derive(Serialize)]
 struct ReplayEventsData<T> {
     events: T,
@@ -295,7 +302,7 @@ pub struct MyTimetableQuery {
     tag = "academic",
     params(MyTimetableQuery),
     responses(
-        (status = 200, description = "Current student's or staff member's timetable", body = ApiResponse<TimetableItemsData>),
+        (status = 200, description = "Current student's or staff member's timetable with configured periods", body = ApiResponse<MyTimetableData>),
         (status = 400, description = "Parent accounts must use the parent timetable route", body = ApiErrorResponse),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Unsupported user type", body = ApiErrorResponse)
@@ -309,17 +316,18 @@ pub async fn get_my_timetable(
     let context = current_user_tenant_context_from_session(&session);
     let subdomain = context.tenant.subdomain.clone();
     let pool = context.tenant.pool;
+    let semester_id = query.academic_semester_id;
 
     let filter = match session.user_type.as_str() {
         "student" => crate::modules::academic::services::timetable_service::TimetableFilter {
             student_id: Some(context.user_id),
-            academic_semester_id: query.academic_semester_id,
+            academic_semester_id: semester_id,
             day_of_week: query.day_of_week,
             ..Default::default()
         },
         "staff" => crate::modules::academic::services::timetable_service::TimetableFilter {
             instructor_id: Some(context.user_id),
-            academic_semester_id: query.academic_semester_id,
+            academic_semester_id: semester_id,
             day_of_week: query.day_of_week,
             include_team_ghosts: query.include_team_ghosts.unwrap_or(false),
             ..Default::default()
@@ -333,15 +341,22 @@ pub async fn get_my_timetable(
     };
 
     let entries = timetable_service::list_entries(&pool, filter).await?;
+    let periods = match semester_id {
+        Some(semester_id) => {
+            period_service::list_active_periods_for_semester(&pool, semester_id).await?
+        }
+        None => Vec::new(),
+    };
 
-    let current_seq = if let Some(sem_id) = query.academic_semester_id {
+    let current_seq = if let Some(sem_id) = semester_id {
         state.websocket_manager.current_seq(subdomain, sem_id)
     } else {
         0
     };
 
-    Ok(Json(ApiResponse::ok(TimetableItemsData {
+    Ok(Json(ApiResponse::ok(MyTimetableData {
         items: entries,
+        periods,
         current_seq,
     }))
     .into_response())

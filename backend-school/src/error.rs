@@ -5,6 +5,10 @@ use axum::{
 };
 
 use crate::api_response::ApiErrorResponse;
+use crate::{
+    api_response::ApiErrorResponseWithData,
+    modules::certificates::models::{CertificateResourceLockCode, CertificateResourceLocked},
+};
 
 #[derive(thiserror::Error, Debug)]
 pub enum AppError {
@@ -31,6 +35,9 @@ pub enum AppError {
 
     #[error("Conflict: {0}")]
     Conflict(String),
+
+    #[error("Certificate resource locked")]
+    CertificateResourceLocked { request_id: Option<uuid::Uuid> },
 
     #[error("Configuration error: {0}")]
     ConfigError(String),
@@ -68,7 +75,9 @@ impl AppError {
                 StatusCode::INTERNAL_SERVER_ERROR
             }
             AppError::BadRequest(_) => StatusCode::BAD_REQUEST,
-            AppError::Conflict(_) => StatusCode::CONFLICT,
+            AppError::Conflict(_) | AppError::CertificateResourceLocked { .. } => {
+                StatusCode::CONFLICT
+            }
             AppError::ServiceUnavailable(_) => StatusCode::SERVICE_UNAVAILABLE,
             AppError::RateLimited { .. } => StatusCode::TOO_MANY_REQUESTS,
             AppError::PayloadTooLarge => StatusCode::PAYLOAD_TOO_LARGE,
@@ -95,6 +104,7 @@ impl AppError {
             | AppError::ValidationError(message)
             | AppError::BadRequest(message)
             | AppError::Conflict(message) => message,
+            AppError::CertificateResourceLocked { .. } => "ทรัพยากรนี้อยู่ในคำขอออกเกียรติบัตรที่กำลังตรวจสอบ",
             AppError::InternalServerError(_) => "Internal server error",
             AppError::ConfigError(_) => "System configuration error",
             AppError::ServiceUnavailable(_) => "Service temporarily unavailable",
@@ -137,8 +147,24 @@ impl IntoResponse for AppError {
 
         let status = self.status_code();
         let retry_after = self.retry_after_seconds();
-        let body = Json(ApiErrorResponse::new(self.public_message().to_string()));
-        let mut response = (status, body).into_response();
+        let mut response = match &self {
+            AppError::CertificateResourceLocked { request_id } => (
+                status,
+                Json(ApiErrorResponseWithData::new(
+                    self.public_message().to_string(),
+                    CertificateResourceLocked {
+                        code: CertificateResourceLockCode::ResourceLocked,
+                        request_id: *request_id,
+                    },
+                )),
+            )
+                .into_response(),
+            _ => (
+                status,
+                Json(ApiErrorResponse::new(self.public_message().to_string())),
+            )
+                .into_response(),
+        };
 
         if let Some(seconds) = retry_after {
             response

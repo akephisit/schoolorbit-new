@@ -4,8 +4,7 @@
 	import {
 		type TimetableEntry,
 		type TimetablePeriodSummary,
-		getMyTimetable,
-		periodsFromTimetableEntries
+		getMyTimetable
 	} from '$lib/api/timetable';
 	import {
 		getAcademicStructure,
@@ -131,7 +130,7 @@
 			if (requestId !== timetableLoadRequest) return;
 
 			entries = entriesRes.data;
-			periods = periodsFromTimetableEntries(entries);
+			periods = entriesRes.periods;
 			loadedSelectionKey = selectionKey;
 		} catch (e: unknown) {
 			if (requestId !== timetableLoadRequest) return;
@@ -226,15 +225,10 @@
 
 	{#if loading}
 		<PageSkeleton variant="table" rows={6} columns={Math.max(periods.length + 1, 4)} />
-	{:else if entries.length === 0}
-		<PageState
-			title="ยังไม่มีตารางสอนของคุณในภาคเรียนนี้"
-			description="เมื่อมีการจัดตารางสอนของคุณ รายการจะแสดงในหน้านี้"
-		/>
 	{:else if periods.length === 0}
 		<PageState
-			title="ยังไม่มีข้อมูลคาบเรียนในตารางสอนของคุณ"
-			description="ระบบพบตารางสอนแล้ว แต่ยังไม่มีข้อมูลคาบเรียนสำหรับภาคเรียนนี้"
+			title="ยังไม่มีคาบเรียนที่เปิดใช้งานในปีการศึกษานี้"
+			description="เมื่อโรงเรียนตั้งค่าคาบเรียนแล้ว ตารางสอนจะแสดงครบทุกคาบในหน้านี้"
 		/>
 	{:else}
 		<!-- Timetable Grid (วัน=แถว, คาบ=คอลัมน์) -->
