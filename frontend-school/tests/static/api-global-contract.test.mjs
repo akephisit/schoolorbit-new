@@ -1619,7 +1619,8 @@ test('dashboard and self-view routes stay user-scoped with permission-filtered s
 	assert.doesNotMatch(staffDashboard, /href="\/staff\/(?:manage|students|school-settings)"/);
 
 	assert.match(staffTimetable, /getMyTimetable/);
-	assert.match(staffTimetable, /periodsFromTimetableEntries/);
+	assert.match(staffTimetable, /periods\s*=\s*entriesRes\.periods/);
+	assert.doesNotMatch(staffTimetable, /periodsFromTimetableEntries/);
 	assert.doesNotMatch(
 		staffTimetable,
 		/PERMISSION_MODULES|PERMISSIONS|getTimetableEntries|listPeriods/

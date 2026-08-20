@@ -228,6 +228,7 @@ export interface TimetableValidationResponse {
 }
 
 type TimetableItemsData = Schemas['TimetableItemsData'];
+type MyTimetableData = Schemas['MyTimetableData'];
 
 function normalizeTimetableListResponse(
 	response: ApiResponse<TimetableEntryDto[] | TimetableItemsData>
@@ -402,7 +403,11 @@ export const getMyTimetable = async (
 		day_of_week?: string;
 		include_team_ghosts?: boolean;
 	} = {}
-): Promise<{ data: TimetableEntry[]; current_seq?: number }> => {
+): Promise<{
+	data: TimetableEntry[];
+	periods: TimetablePeriodSummary[];
+	current_seq?: number;
+}> => {
 	const params = new URLSearchParams();
 	if (filters.academic_semester_id)
 		params.append('academic_semester_id', filters.academic_semester_id);
@@ -410,10 +415,16 @@ export const getMyTimetable = async (
 	if (filters.include_team_ghosts) params.append('include_team_ghosts', 'true');
 
 	const queryString = params.toString() ? `?${params.toString()}` : '';
-	const response = await apiClient.get<TimetableItemsData>(`/api/me/timetable${queryString}`);
+	const response = await apiClient.get<MyTimetableData>(`/api/me/timetable${queryString}`);
 	const payload = requireApiData(response, 'ไม่สามารถโหลดตารางสอนได้');
 	return {
 		data: payload.items.map(timetableEntryFromDto),
+		periods: payload.periods.map((period) => ({
+			id: period.id,
+			name: period.name ?? null,
+			start_time: period.start_time,
+			end_time: period.end_time
+		})),
 		current_seq: payload.current_seq
 	};
 };

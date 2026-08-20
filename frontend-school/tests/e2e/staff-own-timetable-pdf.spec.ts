@@ -150,6 +150,15 @@ test('downloads the loaded staff timetable from the PageShell action', async ({ 
 
 	await fulfillJson(pendingTimetableRoute, {
 		current_seq: 1,
+		periods: [
+			{
+				id: '70000000-0000-4000-8000-000000000001',
+				name: 'คาบ 1',
+				start_time: '08:30:00',
+				end_time: '09:20:00',
+				order_index: 1
+			}
+		],
 		items: [
 			{
 				id: '40000000-0000-4000-8000-000000000001',

@@ -1,6 +1,7 @@
 use crate::error::AppError;
 use crate::modules::academic::models::timetable::{
-    AcademicPeriod, CreatePeriodRequest, PeriodQuery, ReorderPeriodsRequest, UpdatePeriodRequest,
+    AcademicPeriod, CreatePeriodRequest, PeriodQuery, ReorderPeriodsRequest, TimetablePeriod,
+    UpdatePeriodRequest,
 };
 use chrono::NaiveTime;
 use sqlx::PgPool;
@@ -31,6 +32,32 @@ pub async fn list_periods(
     q.fetch_all(pool).await.map_err(|e| {
         tracing::error!("Failed to fetch periods: {}", e);
         AppError::InternalServerError("Failed to fetch periods".to_string())
+    })
+}
+
+pub async fn list_active_periods_for_semester(
+    pool: &PgPool,
+    academic_semester_id: Uuid,
+) -> Result<Vec<TimetablePeriod>, AppError> {
+    sqlx::query_as::<_, TimetablePeriod>(
+        r#"SELECT period.id,
+                  period.name,
+                  period.start_time,
+                  period.end_time,
+                  period.order_index
+           FROM academic_periods period
+           JOIN academic_semesters semester
+             ON semester.academic_year_id = period.academic_year_id
+           WHERE semester.id = $1
+             AND period.is_active = true
+           ORDER BY period.order_index, period.id"#,
+    )
+    .bind(academic_semester_id)
+    .fetch_all(pool)
+    .await
+    .map_err(|error| {
+        tracing::error!("Failed to fetch timetable periods: {}", error);
+        AppError::InternalServerError("Failed to fetch timetable periods".to_string())
     })
 }
 
@@ -249,7 +276,102 @@ fn normalized_period_name(name: Option<String>) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::atomic::{AtomicI32, Ordering};
+
+    use crate::test_helpers::{create_test_pool, run_test_migrations};
+
     use super::*;
+
+    static NEXT_TIMETABLE_GRID_YEAR: AtomicI32 = AtomicI32::new(50_000);
+
+    async fn migrated_pool() -> PgPool {
+        let pool = create_test_pool().await;
+        run_test_migrations(&pool).await;
+        pool
+    }
+
+    #[tokio::test]
+    async fn list_active_periods_for_semester_returns_configured_slots_without_entries() {
+        let pool = migrated_pool().await;
+        let year = NEXT_TIMETABLE_GRID_YEAR.fetch_add(2, Ordering::Relaxed);
+        let academic_year_id = Uuid::new_v4();
+        let other_academic_year_id = Uuid::new_v4();
+        let semester_id = Uuid::new_v4();
+
+        for (id, year_value, name) in [
+            (academic_year_id, year, "Grid Year"),
+            (other_academic_year_id, year + 1, "Other Grid Year"),
+        ] {
+            sqlx::query(
+                "INSERT INTO academic_years (id, year, name, start_date, end_date)
+                 VALUES ($1, $2, $3, '9600-01-01', '9600-12-31')",
+            )
+            .bind(id)
+            .bind(year_value)
+            .bind(name)
+            .execute(&pool)
+            .await
+            .expect("academic year fixture should insert");
+        }
+
+        sqlx::query(
+            "INSERT INTO academic_semesters
+                (id, academic_year_id, term, name, start_date, end_date)
+             VALUES ($1, $2, '1', 'Grid Semester', '9600-01-01', '9600-06-30')",
+        )
+        .bind(semester_id)
+        .bind(academic_year_id)
+        .execute(&pool)
+        .await
+        .expect("semester fixture should insert");
+
+        let first_period_id = Uuid::new_v4();
+        let inactive_period_id = Uuid::new_v4();
+        let third_period_id = Uuid::new_v4();
+        let other_year_period_id = Uuid::new_v4();
+        for (id, year_id, name, order_index, is_active) in [
+            (third_period_id, academic_year_id, "คาบ 3", 3, true),
+            (inactive_period_id, academic_year_id, "คาบ 2", 2, false),
+            (first_period_id, academic_year_id, "คาบ 1", 1, true),
+            (
+                other_year_period_id,
+                other_academic_year_id,
+                "คาบต่างปี",
+                1,
+                true,
+            ),
+        ] {
+            sqlx::query(
+                "INSERT INTO academic_periods
+                    (id, academic_year_id, name, start_time, end_time, order_index, is_active)
+                 VALUES ($1, $2, $3, '08:00'::time, '08:50'::time, $4, $5)",
+            )
+            .bind(id)
+            .bind(year_id)
+            .bind(name)
+            .bind(order_index)
+            .bind(is_active)
+            .execute(&pool)
+            .await
+            .expect("period fixture should insert");
+        }
+
+        let periods = list_active_periods_for_semester(&pool, semester_id)
+            .await
+            .expect("configured timetable periods should load");
+
+        assert_eq!(
+            periods.iter().map(|period| period.id).collect::<Vec<_>>(),
+            vec![first_period_id, third_period_id]
+        );
+        assert_eq!(
+            periods
+                .iter()
+                .map(|period| period.name.as_deref())
+                .collect::<Vec<_>>(),
+            vec![Some("คาบ 1"), Some("คาบ 3")]
+        );
+    }
 
     #[test]
     fn parse_period_time_accepts_hour_minute_values() {

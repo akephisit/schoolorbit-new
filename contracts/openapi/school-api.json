@@ -4113,6 +4113,48 @@
         ],
         "type": "object"
       },
+      "ApiResponse_MyTimetableData": {
+        "properties": {
+          "data": {
+            "properties": {
+              "current_seq": {
+                "format": "int64",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "items": {
+                "items": {
+                  "$ref": "#/components/schemas/TimetableEntry"
+                },
+                "type": "array"
+              },
+              "periods": {
+                "items": {
+                  "$ref": "#/components/schemas/TimetablePeriod"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "items",
+              "periods",
+              "current_seq"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
       "ApiResponse_OrganizationUnit": {
         "properties": {
           "data": {
@@ -16996,6 +17038,33 @@
         ],
         "type": "object"
       },
+      "MyTimetableData": {
+        "properties": {
+          "current_seq": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/TimetableEntry"
+            },
+            "type": "array"
+          },
+          "periods": {
+            "items": {
+              "$ref": "#/components/schemas/TimetablePeriod"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "items",
+          "periods",
+          "current_seq"
+        ],
+        "type": "object"
+      },
       "Notification": {
         "properties": {
           "created_at": {
@@ -20479,6 +20548,37 @@
         "required": [
           "items",
           "current_seq"
+        ],
+        "type": "object"
+      },
+      "TimetablePeriod": {
+        "properties": {
+          "end_time": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "order_index": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "start_time": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "start_time",
+          "end_time",
+          "order_index"
         ],
         "type": "object"
       },
@@ -36930,11 +37030,11 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_TimetableItemsData"
+                  "$ref": "#/components/schemas/ApiResponse_MyTimetableData"
                 }
               }
             },
-            "description": "Current student's or staff member's timetable"
+            "description": "Current student's or staff member's timetable with configured periods"
           },
           "400": {
             "content": {

@@ -25,6 +25,17 @@ pub struct AcademicPeriod {
     pub updated_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 
+#[derive(Debug, Serialize, FromRow, ToSchema)]
+pub struct TimetablePeriod {
+    pub id: Uuid,
+    pub name: Option<String>,
+    #[schema(value_type = String)]
+    pub start_time: NaiveTime,
+    #[schema(value_type = String)]
+    pub end_time: NaiveTime,
+    pub order_index: i32,
+}
+
 #[derive(Debug, Deserialize)]
 pub struct CreatePeriodRequest {
     pub academic_year_id: Uuid,

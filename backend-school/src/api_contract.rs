@@ -9,7 +9,7 @@ use crate::modules::academic::handlers::activity::{
 };
 use crate::modules::academic::handlers::course_planning::CourseAssignedCountData;
 use crate::modules::academic::handlers::study_plans::{CountData, GenerateCoursesData};
-use crate::modules::academic::handlers::timetable::TimetableItemsData;
+use crate::modules::academic::handlers::timetable::{MyTimetableData, TimetableItemsData};
 use crate::modules::academic::models::activity::{
     ActivityGroup, ActivityGroupFilter, ActivityGroupInstructorRole, ActivityGroupMember,
     ActivityMemberResult, ActivityRegistrationType, ActivitySlot, ActivitySlotFilter,
@@ -44,7 +44,7 @@ use crate::modules::academic::models::study_plans::{
     UpdateCatalogDefaultInstructorRoleRequest, UpdateCatalogRequest, UpdatePlanActivityRequest,
     UpdateStudyPlanRequest, UpdateStudyPlanVersionRequest,
 };
-use crate::modules::academic::models::timetable::TimetableEntry;
+use crate::modules::academic::models::timetable::{TimetableEntry, TimetablePeriod};
 use crate::modules::academic::models::{
     AcademicYear, Classroom, ClassroomAdvisor, ClassroomAdvisorInput, ClassroomAdvisorRole,
     CreateAcademicYearRequest, CreateClassroomRequest, CreateGradeLevelRequest,
@@ -819,9 +819,12 @@ use utoipa::OpenApi;
         ApiResponse<StudentProfile>,
         ApiResponse<ParentProfile>,
         TimetableEntry,
+        TimetablePeriod,
         TimetableItemsData,
+        MyTimetableData,
         ApiResponse<Vec<TimetableEntry>>,
         ApiResponse<TimetableItemsData>,
+        ApiResponse<MyTimetableData>,
         DailyTeachingOverview,
         DailyTeachingPeriod,
         DailyTeachingTeacher,
@@ -2754,7 +2757,7 @@ mod tests {
         assert_eq!(
             document["paths"]["/api/me/timetable"]["get"]["responses"]["200"]["content"]
                 ["application/json"]["schema"]["$ref"],
-            "#/components/schemas/ApiResponse_TimetableItemsData"
+            "#/components/schemas/ApiResponse_MyTimetableData"
         );
         assert_eq!(
             document["paths"]["/api/parent/students/{student_id}/exam-schedules"]["get"]
@@ -2796,6 +2799,15 @@ mod tests {
         }
 
         let schemas = &document["components"]["schemas"];
+        let my_timetable = &schemas["MyTimetableData"];
+        for field in ["current_seq", "items", "periods"] {
+            assert!(required(my_timetable).contains(&field));
+        }
+        assert_eq!(
+            my_timetable["properties"]["periods"]["items"]["$ref"],
+            "#/components/schemas/TimetablePeriod"
+        );
+
         let timetable = &schemas["TimetableEntry"];
         for field in [
             "classroom_course_id",

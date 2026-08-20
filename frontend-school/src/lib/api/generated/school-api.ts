@@ -4166,6 +4166,16 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
+		ApiResponse_MyTimetableData: {
+			data: {
+				/** Format: int64 */
+				current_seq: number;
+				items: components['schemas']['TimetableEntry'][];
+				periods: components['schemas']['TimetablePeriod'][];
+			};
+			message?: string;
+			success: boolean;
+		};
 		ApiResponse_OrganizationUnit: {
 			data: {
 				category: string;
@@ -7598,6 +7608,12 @@ export interface components {
 			/** Format: uuid */
 			group_id: string;
 		};
+		MyTimetableData: {
+			/** Format: int64 */
+			current_seq: number;
+			items: components['schemas']['TimetableEntry'][];
+			periods: components['schemas']['TimetablePeriod'][];
+		};
 		Notification: {
 			/** Format: date-time */
 			created_at: string;
@@ -8520,6 +8536,15 @@ export interface components {
 			/** Format: int64 */
 			current_seq: number;
 			items: components['schemas']['TimetableEntry'][];
+		};
+		TimetablePeriod: {
+			end_time: string;
+			/** Format: uuid */
+			id: string;
+			name?: string | null;
+			/** Format: int32 */
+			order_index: number;
+			start_time: string;
 		};
 		UpdateAcademicYearRequest: {
 			/** Format: date */
@@ -20410,13 +20435,13 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
-			/** @description Current student's or staff member's timetable */
+			/** @description Current student's or staff member's timetable with configured periods */
 			200: {
 				headers: {
 					[name: string]: unknown;
 				};
 				content: {
-					'application/json': components['schemas']['ApiResponse_TimetableItemsData'];
+					'application/json': components['schemas']['ApiResponse_MyTimetableData'];
 				};
 			};
 			/** @description Parent accounts must use the parent timetable route */

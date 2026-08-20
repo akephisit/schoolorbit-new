@@ -356,6 +356,8 @@ test('generated self-service schedule contracts own timetable, exam, and calenda
 	assert.match(timetableApi, /export\s+type\s+TimetableEntryDto\s*=\s*Schemas\['TimetableEntry'\]/);
 	assert.match(timetableApi, /export\s+type\s+TimetableEntry\s*=\s*Omit<TimetableEntryDto,/);
 	assert.match(timetableApi, /type\s+TimetableItemsData\s*=\s*Schemas\['TimetableItemsData'\]/);
+	assert.match(timetableApi, /type\s+MyTimetableData\s*=\s*Schemas\['MyTimetableData'\]/);
+	assert.match(timetableApi, /apiClient\.get<MyTimetableData>\(`\/api\/me\/timetable/);
 	assert.doesNotMatch(timetableApi, /export\s+interface\s+TimetableEntry\b/);
 
 	for (const schemaName of ['PersonalExamScheduleRound', 'PersonalExamSessionView']) {
@@ -377,6 +379,8 @@ test('generated self-service schedule contracts own timetable, exam, and calenda
 	for (const schemaName of [
 		'TimetableEntry',
 		'TimetableItemsData',
+		'MyTimetableData',
+		'TimetablePeriod',
 		'PersonalExamScheduleRound',
 		'PersonalExamSessionView',
 		'CalendarViewerEvent',
