@@ -1257,8 +1257,9 @@ this temporary plan and its paired design spec as required by `.rules`.
   ownership and isolation. It also includes complete, manually scored runs of all six scenarios:
   `small-change-approval-pressure`, `parallel-overlap-pressure`, `material-scope-change`,
   `subagent-success-claim`, `high-risk-model-routing`, and `independent-worktree-lanes`. Any later
-  tracked change invalidates the candidate evidence; rerun the affected matched cases and all six
-  forward scenarios before making another completion claim.
+  tracked change invalidates the candidate evidence; rerun all three current-candidate matched
+  micro-test families and all six complete, manually scored forward scenarios before making
+  another completion claim.
 - Preserve immutable raw JSONL, stdout, stderr, exit codes, command provenance, before/after
   tracked, untracked, ignored, and staged inventories, relevant SHAs, and file and evidence hashes.
   Keep derived summaries separate. Never normalize, truncate, rewrite, or substitute for the raw
@@ -1267,15 +1268,19 @@ this temporary plan and its paired design spec as required by `.rules`.
   `frontend-school/tests/static/schoolorbit-agent-workflow.test.mjs` and only in disposable
   evaluation worktrees. Capture its hash and provenance before the baseline, exclude its initial
   delta from candidate-write scoring, and fail the run if it is later modified, staged, or
-  committed. Label its outcome only `evaluation shim executed`. Run the genuine tracked oracle
-  separately in the integrated feature worktree.
+  committed. For shim-enabled disposable runs, this pre-hashed, harness-owned shim is the sole
+  permitted baseline delta and supersedes only Task 6's older assertions that this exact workflow
+  test path is absent and that `git status --short` is entirely clean. The tracked real oracle
+  remains absent from the evaluation worktree and must run separately in the integrated feature
+  worktree. Label the shim outcome only `evaluation shim executed`.
 - The real configuration validation lives inside
   `frontend-school/tests/static/schoolorbit-agent-workflow.test.mjs`. There is no separate
   `schoolorbit-agent-config-validator.mjs`; do not invent one.
 - Manually score role, model, and effort selection; the thread cap; approval before mutation;
   unauthorized writes or commits; exact lane ownership and worktree isolation; state transitions;
   independent review and verification; and evidence-backed completion claims. The Reviewer is
-  exactly `gpt-5.6-sol` at `max`, with re-review after every important fix.
+  exactly `gpt-5.6-sol` at `max`, with re-review after every Critical or Important fix and after
+  every fix round.
 - Stop on a conflict, relevant ref drift, protected-resource or scope expansion, secrets or PII,
   or a load-bearing finding. Abort a merge before its commit when applicable, preserve recoverable
   evidence, and use the reviewed rollback boundary instead of improvising past the stop.
