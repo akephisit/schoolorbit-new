@@ -55,7 +55,22 @@ test('certificate campaign API is generated and its wrapper consumes named DTOs'
 		['/api/certificates/campaigns', 'post', 'createCertificateCampaign'],
 		['/api/certificates/campaigns/{campaign_id}', 'get', 'getCertificateCampaign'],
 		['/api/certificates/campaigns/{campaign_id}', 'put', 'updateCertificateCampaign'],
-		['/api/certificates/campaigns/{campaign_id}', 'delete', 'deleteCertificateCampaign'],
+		[
+			'/api/certificates/campaigns/{campaign_id}/purge-impact',
+			'get',
+			'getCertificateCampaignPurgeImpact'
+		],
+		['/api/certificates/campaigns/{campaign_id}/purge', 'post', 'startCertificateCampaignPurge'],
+		[
+			'/api/certificates/campaigns/{campaign_id}/purge-status',
+			'get',
+			'getCertificateCampaignPurgeStatus'
+		],
+		[
+			'/api/certificates/campaigns/{campaign_id}/purge/retry',
+			'post',
+			'retryCertificateCampaignPurge'
+		],
 		['/api/certificates/campaigns/{campaign_id}/status', 'put', 'changeCertificateCampaignStatus'],
 		['/api/certificates/owner-options', 'get', 'listCertificateOwnerOptions'],
 		['/api/certificates/campaigns/{campaign_id}/templates', 'get', 'listCertificateTemplates'],
@@ -172,6 +187,11 @@ test('certificate campaign API is generated and its wrapper consumes named DTOs'
 		'CertificateCampaignSummary',
 		'CertificateCampaignDetail',
 		'CertificateCampaignCapabilities',
+		'CertificateCampaignPurgeCounts',
+		'StartCertificateCampaignPurgeRequest',
+		'CertificateCampaignPurgeImpact',
+		'CertificateCampaignPurgePhase',
+		'CertificateCampaignPurgeStatus',
 		'CreateCertificateCampaignRequest',
 		'UpdateCertificateCampaignRequest',
 		'ChangeCertificateCampaignStatusRequest',
@@ -267,7 +287,6 @@ test('certificate campaign API is generated and its wrapper consumes named DTOs'
 		'#/components/schemas/ApiErrorResponseWithOptionalData_CertificateResourceLocked';
 	for (const [route, method] of [
 		['/api/certificates/campaigns/{campaign_id}', 'put'],
-		['/api/certificates/campaigns/{campaign_id}', 'delete'],
 		['/api/certificates/campaigns/{campaign_id}/status', 'put'],
 		['/api/certificates/templates/{template_id}', 'put'],
 		['/api/certificates/templates/{template_id}', 'delete'],
@@ -306,6 +325,10 @@ test('certificate campaign API is generated and its wrapper consumes named DTOs'
 	assert.match(wrapper, /bulkUpdateCertificateCandidates/);
 	assert.match(wrapper, /searchCertificateCandidateAccounts/);
 	for (const operation of [
+		'getCertificateCampaignPurgeImpact',
+		'startCertificateCampaignPurge',
+		'getCertificateCampaignPurgeStatus',
+		'retryCertificateCampaignPurge',
 		'listCertificateCampaignIssueRequests',
 		'submitCertificateIssueRequest',
 		'listCertificateIssueRequests',
@@ -322,6 +345,7 @@ test('certificate campaign API is generated and its wrapper consumes named DTOs'
 	]) {
 		assert.match(wrapper, new RegExp(`export async function ${operation}\\b`));
 	}
+	assert.doesNotMatch(wrapper, /deleteCertificateCampaign/);
 	assert.match(wrapper, /requireApiData/);
 	assert.match(wrapper, /apiClient\.put<CertificateCampaignDetail,\s*CertificateResourceLocked>/);
 	assert.match(
@@ -441,7 +465,12 @@ test('certificate lifecycle evidence is credential gated and cleanup aware', asy
 		'test.skip(!hasLifecycleCredentials',
 		'lifecyclePhase',
 		'sensitive details were suppressed',
-		'cleanupDraftResources',
+		'cleanupLifecycleResources',
+		'purgeLifecycleCampaign',
+		'/purge-impact',
+		'/purge-status',
+		'expectedImpact',
+		"lifecyclePhase = 'permanent campaign purge'",
 		'openQrVerification',
 		'expectQrFragmentCleared',
 		'withdrawCertificateIssueRequest',
@@ -462,11 +491,24 @@ test('certificate lifecycle evidence is credential gated and cleanup aware', asy
 	for (const artifactSetting of ["screenshot: 'off'", "trace: 'off'", "video: 'off'"]) {
 		assert.match(lifecycleArtifactPolicy, new RegExp(artifactSetting));
 	}
-	const cleanupBody = lifecycle.match(/async function cleanupDraftResources\([\s\S]*?\n\}/)?.[0];
-	assert.ok(cleanupBody, 'certificate lifecycle must define draft cleanup');
+	const cleanupBody = lifecycle.match(
+		/async function cleanupLifecycleResources\([\s\S]*?\n\}/
+	)?.[0];
+	assert.ok(cleanupBody, 'certificate lifecycle must define permanent-purge cleanup');
 	assert.ok(
-		cleanupBody.indexOf('state.requestIds') < cleanupBody.indexOf('state.hasIssuedCertificates'),
-		'active requests must be withdrawn even after an earlier batch issued successfully'
+		cleanupBody.indexOf('purgeLifecycleCampaign') < cleanupBody.indexOf('state.uploadedFiles'),
+		'cleanup must prefer the guarded campaign purge before orphan-file fallback'
+	);
+	assert.match(lifecycle, /campaignName: string \| null/);
+	assert.match(
+		lifecycle,
+		/for \(const certificate of \[studentCertificate, replacementCertificate\]\)/
+	);
+	assert.match(lifecycle, /state\.campaignId = null;/);
+	assert.doesNotMatch(
+		lifecycle,
+		/'DELETE',\s*`\/api\/certificates\/campaigns\//,
+		'certificate lifecycle must not use the removed legacy campaign delete endpoint'
 	);
 	assert.match(lifecycle, /function safeApiRequestPath\(/);
 	assert.doesNotMatch(

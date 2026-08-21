@@ -35,6 +35,8 @@ type IssueCertificateOutcome = Schemas['IssueCertificateOutcome'];
 type IssuedCertificate = Schemas['IssuedCertificateSummary'];
 type CertificateRenderManifest = Schemas['CertificateRenderManifest'];
 type RevokeCertificateResult = Schemas['RevokeCertificateResult'];
+type CertificateCampaignPurgeImpact = Schemas['CertificateCampaignPurgeImpact'];
+type CertificateCampaignPurgeStatus = Schemas['CertificateCampaignPurgeStatus'];
 
 type ApiFetchOptions = NonNullable<Parameters<APIRequestContext['fetch']>[1]>;
 type ApiCallOptions = Pick<ApiFetchOptions, 'data' | 'multipart'>;
@@ -42,6 +44,11 @@ type ApiCallOptions = Pick<ApiFetchOptions, 'data' | 'multipart'>;
 interface ApiEnvelope<T> {
 	success: boolean;
 	data?: T;
+}
+
+interface ApiOutcome<T> {
+	status: number;
+	data: T | null;
 }
 
 interface Credentials {
@@ -63,9 +70,8 @@ interface UploadedFile {
 
 interface LifecycleState {
 	campaignId: string | null;
-	requestIds: string[];
+	campaignName: string | null;
 	uploadedFiles: UploadedFile[];
-	hasIssuedCertificates: boolean;
 }
 
 const preparerUsername = process.env.E2E_CERT_PREPARER_USERNAME;
@@ -140,6 +146,35 @@ class SchoolApi {
 			throw new Error(`School API ${method} ${safePath} returned an invalid envelope.`);
 		}
 		return envelope.data;
+	}
+
+	async requestOutcome<T>(
+		method: string,
+		requestPath: string,
+		emptyStatuses: readonly number[],
+		options: ApiCallOptions = {}
+	): Promise<ApiOutcome<T>> {
+		const response = await this.send(method, requestPath, options);
+		const status = response.status();
+		const safePath = safeApiRequestPath(requestPath);
+		if (emptyStatuses.includes(status)) {
+			await response.dispose();
+			return { status, data: null };
+		}
+		if (!response.ok()) {
+			await response.dispose();
+			throw new Error(`School API ${method} ${safePath} returned HTTP ${status}.`);
+		}
+		let envelope: ApiEnvelope<T>;
+		try {
+			envelope = (await response.json()) as ApiEnvelope<T>;
+		} finally {
+			await response.dispose();
+		}
+		if (envelope.success !== true || envelope.data === undefined) {
+			throw new Error(`School API ${method} ${safePath} returned an invalid envelope.`);
+		}
+		return { status, data: envelope.data };
 	}
 
 	async expectFailure(
@@ -501,24 +536,90 @@ async function expectQrFragmentCleared(page: Page): Promise<void> {
 	}
 }
 
-async function cleanupDraftResources(api: SchoolApi | null, state: LifecycleState): Promise<void> {
-	if (!api) return;
-	for (const requestId of state.requestIds.toReversed()) {
-		await api.bestEffort(
+async function purgeLifecycleCampaign(api: SchoolApi, state: LifecycleState): Promise<void> {
+	const campaignId = state.campaignId;
+	const confirmationName = state.campaignName;
+	if (!campaignId) return;
+	if (!confirmationName) throw new Error('Lifecycle campaign purge is missing safe fixture state.');
+
+	const impactPath = `/api/certificates/campaigns/${encodeURIComponent(campaignId)}/purge-impact`;
+	const statusPath = `/api/certificates/campaigns/${encodeURIComponent(campaignId)}/purge-status`;
+	const impactOutcome = await api.requestOutcome<CertificateCampaignPurgeImpact>(
+		'GET',
+		impactPath,
+		[404, 409]
+	);
+	if (impactOutcome.status === 404) return;
+
+	let purgeStatus: CertificateCampaignPurgeStatus;
+	if (impactOutcome.status === 409) {
+		const existing = await api.requestOutcome<CertificateCampaignPurgeStatus>(
+			'GET',
+			statusPath,
+			[404]
+		);
+		if (!existing.data) return;
+		purgeStatus = existing.data;
+	} else {
+		const impact = impactOutcome.data;
+		if (!impact || impact.campaignId !== campaignId || impact.campaignName !== confirmationName) {
+			throw new Error('Lifecycle campaign purge impact did not match the isolated fixture.');
+		}
+		purgeStatus = await api.request<CertificateCampaignPurgeStatus>(
 			'POST',
-			`/api/certificates/issue-requests/${encodeURIComponent(requestId)}/withdraw`
+			`/api/certificates/campaigns/${encodeURIComponent(campaignId)}/purge`,
+			{
+				data: {
+					confirmationName,
+					expectedUpdatedAt: impact.updatedAt,
+					expectedImpact: impact.counts
+				}
+			}
 		);
 	}
-	if (state.hasIssuedCertificates) return;
-	let campaignRemoved = false;
-	if (state.campaignId) {
-		const status = await api.bestEffort(
-			'DELETE',
-			`/api/certificates/campaigns/${encodeURIComponent(state.campaignId)}`
+
+	const deadline = Date.now() + 5 * 60_000;
+	let retryCount = 0;
+	while (Date.now() < deadline) {
+		if (purgeStatus.phase === 'completed') return;
+		if (purgeStatus.phase === 'failed') {
+			if (retryCount >= 3) {
+				throw new Error('Lifecycle campaign purge exhausted its guarded retries.');
+			}
+			retryCount += 1;
+			const retried = await api.requestOutcome<CertificateCampaignPurgeStatus>(
+				'POST',
+				`/api/certificates/campaigns/${encodeURIComponent(campaignId)}/purge/retry`,
+				[404]
+			);
+			if (!retried.data) return;
+			purgeStatus = retried.data;
+			continue;
+		}
+
+		await new Promise((resolve) => setTimeout(resolve, 1_000));
+		const nextStatus = await api.requestOutcome<CertificateCampaignPurgeStatus>(
+			'GET',
+			statusPath,
+			[404]
 		);
-		campaignRemoved = status !== null && status >= 200 && status < 300;
+		if (!nextStatus.data) return;
+		purgeStatus = nextStatus.data;
 	}
-	if (campaignRemoved) return;
+	throw new Error('Lifecycle campaign purge did not complete before its safe timeout.');
+}
+
+async function cleanupLifecycleResources(
+	api: SchoolApi | null,
+	state: LifecycleState
+): Promise<void> {
+	if (!api) return;
+	try {
+		await purgeLifecycleCampaign(api, state);
+		return;
+	} catch {
+		// Fall back only for unattached leftovers from a partially-created isolated fixture.
+	}
 	for (const upload of state.uploadedFiles.toReversed()) {
 		await api.bestEffort(
 			'DELETE',
@@ -570,9 +671,8 @@ test.describe.serial('complete certificate issuance lifecycle', () => {
 		};
 		const state: LifecycleState = {
 			campaignId: null,
-			requestIds: [],
-			uploadedFiles: [],
-			hasIssuedCertificates: false
+			campaignName: null,
+			uploadedFiles: []
 		};
 		let preparer: ActorSession | null = null;
 		let issuer: ActorSession | null = null;
@@ -641,6 +741,7 @@ test.describe.serial('complete certificate issuance lifecycle', () => {
 				}
 			);
 			state.campaignId = campaign.id;
+			state.campaignName = campaign.name;
 			expect(campaign.ownerOrganizationUnitId).toBe(owner.id);
 			expect(campaign.capabilities.canPrepareCandidates).toBe(true);
 
@@ -933,7 +1034,6 @@ test.describe.serial('complete certificate issuance lifecycle', () => {
 					`/api/certificates/campaigns/${encodeURIComponent(campaign.id)}/issue-requests`,
 					{ data: { candidateIds } }
 				);
-				state.requestIds.push(request.id);
 				return request;
 			};
 
@@ -963,7 +1063,6 @@ test.describe.serial('complete certificate issuance lifecycle', () => {
 			const firstIdempotencyKey = randomUUID();
 			const firstIssue = await issueCertificates(issuer.api, firstRequest.id, firstIdempotencyKey);
 			if (firstIssue.outcome !== 'issued') throw new Error('First lifecycle request was returned.');
-			state.hasIssuedCertificates = true;
 			expect(firstIssue.certificates).toHaveLength(3);
 			const retriedFirstIssue = await issueCertificates(
 				issuer.api,
@@ -1210,12 +1309,52 @@ test.describe.serial('complete certificate issuance lifecycle', () => {
 			await expectQrFragmentCleared(revokedQrPage);
 			await expect(revokedQrPage.getByTestId('verification-result')).toContainText('เพิกถอนแล้ว');
 			await expect(revokedQrPage.getByTestId('public-certificate-download')).toHaveCount(0);
+
+			lifecyclePhase = 'permanent campaign purge';
+			await purgeLifecycleCampaign(preparer.api, state);
+			await preparer.api.expectFailure(
+				'GET',
+				`/api/certificates/campaigns/${encodeURIComponent(campaign.id)}`,
+				[404]
+			);
+			for (const certificate of [studentCertificate, replacementCertificate]) {
+				await publicPage.goto(`${primaryOrigin}/verify/certificate`);
+				const missingVerification = publicPage.waitForResponse(
+					(response) =>
+						response.url().includes(publicManualVerificationPath) && response.status() === 404
+				);
+				await submitManualVerification(publicPage, certificate);
+				await missingVerification;
+				await expect(publicPage.getByTestId('verification-error')).toContainText(
+					'ไม่พบข้อมูลที่ตรงกัน'
+				);
+			}
+
+			const studentOwnAfterPurge = await student.api.request<IssuedCertificate[]>(
+				'GET',
+				'/api/me/certificates'
+			);
+			expect(
+				studentOwnAfterPurge.some(
+					(certificate) =>
+						certificate.id === studentCertificate.id || certificate.id === replacementCertificate.id
+				)
+			).toBe(false);
+			for (const upload of state.uploadedFiles) {
+				await preparer.api.expectFailure(
+					'GET',
+					`/api/files/${encodeURIComponent(upload.fileId)}?resource_id=${encodeURIComponent(upload.templateId)}`,
+					[404]
+				);
+			}
+			state.campaignId = null;
+			state.campaignName = null;
 		} catch {
 			throw new Error(
 				`Certificate lifecycle failed during ${lifecyclePhase}; sensitive details were suppressed.`
 			);
 		} finally {
-			await cleanupDraftResources(preparer?.api ?? null, state);
+			await cleanupLifecycleResources(preparer?.api ?? null, state);
 			await closePublicContext(publicContext);
 			await closeSession(student);
 			await closeSession(issuer);

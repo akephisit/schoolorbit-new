@@ -357,9 +357,9 @@ The live lifecycle requires all of these variables, supplied only at runtime:
 - `E2E_CERT_STUDENT_USERNAME`
 - `E2E_CERT_STUDENT_PASSWORD`
 
-The three accounts must be distinct. The preparer needs exact-unit campaign/template/candidate/submit access without school issue access; the issuer needs school read, issue, revoke, and download access; and the student must be an active linked student account. The isolated tenant also needs a current academic year, a second active organization unit outside the preparer's owner options, and working private-file storage and scanning.
+The three accounts must be distinct. The preparer needs exact-unit campaign/template/candidate/submit/delete access without school issue access; the issuer needs school read, issue, revoke, and download access; and the student must be an active linked student account. The isolated tenant also needs a current academic year, a second active organization unit outside the preparer's owner options, and working private-file storage and scanning.
 
-Do not print or retain credential values, recipient data, verification proofs, render receipts, or delivery grants. The fixture cleans up draft resources through supported APIs, but successfully issued records remain part of the tenant audit history. If any required variable is unavailable, the `--list` command must still pass; report the live lifecycle as unrun, not passing or skipped coverage.
+Do not print or retain credential values, recipient data, verification proofs, render receipts, or delivery grants. Run this destructive lifecycle only against an isolated tenant: the fixture permanently purges the campaign it creates through the guarded impact/start/status API, then verifies that its issued and replacement certificates, own-certificate rows, file objects, and file metadata are unavailable. A failed purge is retried only through the supported purge API and the fixture still attempts the same guarded cleanup from `finally`. If any required variable is unavailable, the `--list` command must still pass; report the live lifecycle as unrun, not passing or skipped coverage.
 
 Use `npm run test:e2e:headed` only when interactive debugging is needed. Retain traces, screenshots, and videos only when they contain no sensitive data.
 

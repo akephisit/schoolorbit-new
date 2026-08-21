@@ -380,6 +380,22 @@ When reconciliation is unhealthy:
 4. compare file/version/derivative rows with object counts using file IDs and tenant/purpose aggregates;
 5. do not manually delete metadata rows or reuse object keys.
 
+### Permanent certificate campaign purge
+
+Certificate campaign purge is the only controlled exception that permanently removes File Platform metadata together with business data. It requires the exact owner-unit delete permission, an exact campaign-name confirmation, and an unchanged impact snapshot. Starting it moves the campaign to `purging`; normal campaign reads and mutations then remain unavailable until the durable job finishes.
+
+The purge first revokes file delivery and deletes every recorded object through the File Platform. Only after all inventory entries report deletion does the guarded database finalizer remove the campaign, templates, candidates, issue requests, issued and revoked certificates, audit rows, purge inventory, and file metadata in one transaction. Certificate counters are outside this deletion boundary and must never be reduced or reused.
+
+When a purge is delayed or failed:
+
+1. inspect only the API phase, deleted-file count, total-file count, and safe error code;
+2. restore provider or database availability before retrying;
+3. retry with `POST /api/certificates/campaigns/{campaign_id}/purge/retry` and continue polling the status endpoint;
+4. treat status `404` as completion only after the purge was observed or accepted;
+5. never delete campaign, purge-job, inventory, file-version, object, or file-metadata rows manually, and never print object keys, signed grants, raw provider errors, or recipient data.
+
+If the campaign remains `purging`, leave the durable records intact so the reconciler can resume safely. Repair forward; do not restore the campaign to an editable status or bypass the finalizer.
+
 The `rollback` image tag is advanced only after readiness and every active
 tenant migration succeeds. For releases after the contract cutover, it may be
 used only when its source commit is `1bdeb0c5` or newer. Keep migration `032`,
