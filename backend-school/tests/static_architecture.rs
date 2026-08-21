@@ -1223,6 +1223,53 @@ fn certificate_migration_keeps_issued_records_restrictive_and_permanent() {
 }
 
 #[test]
+fn certificate_campaign_hard_delete_exists_only_in_the_guarded_forward_migration() {
+    let original_path = manifest_dir().join("migrations/035_certificate_issuance.sql");
+    let original = read_source(&original_path);
+    assert!(original.contains("CREATE FUNCTION prevent_certificate_delete()"));
+    assert!(original.contains("RAISE EXCEPTION 'issued certificates cannot be deleted'"));
+
+    let purge_path = manifest_dir().join("migrations/039_certificate_campaign_purge.sql");
+    let purge = read_source(&purge_path);
+    for required in [
+        "certificate_campaign_purge_guard_allows",
+        "certificate_file_purge_guard_allows",
+        "finalize_certificate_campaign_purge",
+        "current_setting('schoolorbit.certificate_purge_campaign_id'",
+        "DELETE FROM files AS file",
+    ] {
+        assert!(
+            purge.contains(required),
+            "guarded purge migration is missing `{required}`"
+        );
+    }
+
+    let hard_delete =
+        Regex::new(r"(?i)DELETE\s+FROM\s+files\b").expect("valid File Platform hard-delete regex");
+    let migration_hard_deletes = list_files(manifest_dir().join("migrations"), |path| {
+        path.extension().and_then(|extension| extension.to_str()) == Some("sql")
+    })
+    .into_iter()
+    .filter(|path| hard_delete.is_match(&strip_comments(&read_source(path))))
+    .map(|path| relative(&path))
+    .collect::<Vec<_>>();
+    assert_eq!(
+        migration_hard_deletes,
+        vec!["migrations/039_certificate_campaign_purge.sql"],
+        "File Platform metadata may be hard-deleted only by migration 039's guarded finalizer"
+    );
+
+    for path in backend_rs_files() {
+        let source = strip_comments(&read_source(&path));
+        assert!(
+            !hard_delete.is_match(&source),
+            "application Rust must not hard-delete File Platform metadata: {}",
+            relative(&path)
+        );
+    }
+}
+
+#[test]
 fn certificate_runtime_keeps_handlers_thin_proofs_private_and_renders_ephemeral() {
     let handlers_path = manifest_dir().join("src/modules/certificates/handlers.rs");
     let handlers = strip_comments(&read_source(&handlers_path));

@@ -98,6 +98,32 @@ fn certificate_font_variant_migration_is_forward_only() {
 }
 
 #[test]
+fn certificate_campaign_purge_is_forward_only_guarded_and_file_complete() {
+    let migration = std::fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("migrations/039_certificate_campaign_purge.sql"),
+    )
+    .expect("migration 039 must exist");
+
+    for required in [
+        "CREATE TABLE certificate_campaign_purge_jobs",
+        "CREATE TABLE certificate_campaign_purge_files",
+        "'purging'",
+        "finalize_certificate_campaign_purge",
+        "certificate_campaign_purge_guard_allows",
+        "certificate_file_purge_guard_allows",
+        "file_versions_prevent_deletion",
+        "file_derivatives_prevent_deletion",
+    ] {
+        assert!(migration.contains(required), "missing {required}");
+    }
+
+    assert!(
+        !migration.to_ascii_lowercase().contains("national_id"),
+        "campaign purge schema must never introduce plaintext national IDs"
+    );
+}
+
+#[test]
 fn issued_snapshots_and_idempotent_problem_rows_are_immutable_by_migration() {
     let issuance = std::fs::read_to_string(
         Path::new(env!("CARGO_MANIFEST_DIR")).join("migrations/035_certificate_issuance.sql"),
@@ -341,6 +367,505 @@ async fn insert_certificate(
     .bind(input.proof_hash)
     .fetch_one(pool)
     .await
+}
+
+async fn insert_purge_file_fixture(
+    pool: &PgPool,
+    actor_id: Uuid,
+    purpose_code: &str,
+    display_filename: &str,
+    deleted: bool,
+) -> (Uuid, Uuid, Option<Uuid>) {
+    let lifecycle_status = if deleted { "deleted" } else { "ready" };
+    let file_id: Uuid = sqlx::query_scalar(
+        "INSERT INTO files (
+            display_filename, purpose_code, visibility, lifecycle_status,
+            retention_class, inspection_metadata, created_by, deleted_at
+         ) VALUES (
+            $1, $2, 'private', $3, 'standard',
+            '{\"kind\":\"unknown\"}'::jsonb, $4,
+            CASE WHEN $3 = 'deleted' THEN NOW() ELSE NULL END
+         ) RETURNING id",
+    )
+    .bind(display_filename)
+    .bind(purpose_code)
+    .bind(lifecycle_status)
+    .bind(actor_id)
+    .fetch_one(pool)
+    .await
+    .expect("purge file fixture should insert");
+
+    let storage_status = if deleted { "deleted" } else { "stored" };
+    let version_id: Uuid = sqlx::query_scalar(
+        "INSERT INTO file_versions (
+            file_id, version_number, provider_code, storage_class,
+            storage_status, object_key, detected_mime_type,
+            canonical_extension, byte_size, checksum, scan_status,
+            deleted_at, created_by
+         ) VALUES (
+            $1, 1, 'test', 'private', $2, $3, 'application/octet-stream',
+            'bin', 10, repeat('a', 64), 'clean',
+            CASE WHEN $2 = 'deleted' THEN NOW() ELSE NULL END, $4
+         ) RETURNING id",
+    )
+    .bind(file_id)
+    .bind(storage_status)
+    .bind(format!("certificate-purge-test/{file_id}/original"))
+    .bind(actor_id)
+    .fetch_one(pool)
+    .await
+    .expect("purge file version fixture should insert");
+
+    sqlx::query("UPDATE files SET current_version_id = $2 WHERE id = $1")
+        .bind(file_id)
+        .bind(version_id)
+        .execute(pool)
+        .await
+        .expect("purge file current version should update");
+
+    let derivative_id = if deleted {
+        let derivative_id: Uuid = sqlx::query_scalar(
+            "INSERT INTO file_derivatives (
+                file_id, source_version_id, derivative_kind, provider_code,
+                storage_class, storage_status, object_key, detected_mime_type,
+                canonical_extension, byte_size, checksum, lifecycle_status,
+                deleted_at
+             ) VALUES (
+                $1, $2, 'preview', 'test', 'private', 'deleted', $3,
+                'application/octet-stream', 'bin', 5, repeat('b', 64),
+                'deleted', NOW()
+             ) RETURNING id",
+        )
+        .bind(file_id)
+        .bind(version_id)
+        .bind(format!("certificate-purge-test/{file_id}/preview"))
+        .fetch_one(pool)
+        .await
+        .expect("purge file derivative fixture should insert");
+        Some(derivative_id)
+    } else {
+        None
+    };
+
+    sqlx::query(
+        "INSERT INTO file_operations (
+            file_id, file_version_id, operation_type, status,
+            attempt_count, started_at, completed_at
+         ) VALUES ($1, $2, 'delete_object', 'succeeded', 1, NOW(), NOW())",
+    )
+    .bind(file_id)
+    .bind(version_id)
+    .execute(pool)
+    .await
+    .expect("purge file operation fixture should insert");
+
+    (file_id, version_id, derivative_id)
+}
+
+#[tokio::test]
+async fn purge_finalizer_removes_complete_campaign_file_and_audit_graph() {
+    let pool = create_named_test_pool("certificate_campaign_purge_finalizer").await;
+    run_test_migrations(&pool).await;
+
+    let actor_id = create_test_user(&pool, "certificate-purge@example.test", "test-password")
+        .await
+        .expect("actor fixture should insert");
+    let academic_year_id = insert_academic_year(&pool).await;
+    sqlx::query(
+        "INSERT INTO certificate_academic_year_counters (
+            academic_year_id, next_activity_sequence
+         ) VALUES ($1, 12)",
+    )
+    .bind(academic_year_id)
+    .execute(&pool)
+    .await
+    .expect("counter fixture should insert");
+
+    let campaign_id =
+        insert_campaign(&pool, academic_year_id, actor_id, "Permanent purge", 1).await;
+    let template_id = insert_template(&pool, campaign_id, "purge").await;
+    let (background_file_id, _, _) = insert_purge_file_fixture(
+        &pool,
+        actor_id,
+        "certificate_template_background",
+        "background.pdf",
+        true,
+    )
+    .await;
+    let (image_file_id, _, _) = insert_purge_file_fixture(
+        &pool,
+        actor_id,
+        "certificate_template_image",
+        "image.png",
+        true,
+    )
+    .await;
+    let (font_file_id, _, _) = insert_purge_file_fixture(
+        &pool,
+        actor_id,
+        "certificate_template_font",
+        "font.ttf",
+        true,
+    )
+    .await;
+    let file_ids = vec![background_file_id, image_file_id, font_file_id];
+
+    sqlx::query(
+        "UPDATE certificate_templates
+         SET background_file_id = $2,
+             crop_box_x = 0, crop_box_y = 0,
+             crop_box_width = 842, crop_box_height = 595,
+             media_box_x = 0, media_box_y = 0,
+             media_box_width = 842, media_box_height = 595,
+             page_rotation = 0, paper_label = 'A4 landscape'
+         WHERE id = $1",
+    )
+    .bind(template_id)
+    .bind(background_file_id)
+    .execute(&pool)
+    .await
+    .expect("background fixture should attach");
+
+    for (file_id, purpose_code) in [
+        (background_file_id, "certificate_template_background"),
+        (image_file_id, "certificate_template_image"),
+        (font_file_id, "certificate_template_font"),
+    ] {
+        sqlx::query(
+            "INSERT INTO certificate_template_file_uploads
+                (file_id, template_id, purpose_code, uploaded_by)
+             VALUES ($1, $2, $3, $4)",
+        )
+        .bind(file_id)
+        .bind(template_id)
+        .bind(purpose_code)
+        .bind(actor_id)
+        .execute(&pool)
+        .await
+        .expect("certificate upload relation fixture should insert");
+    }
+
+    sqlx::query(
+        "INSERT INTO certificate_template_assets (
+            template_id, file_id, kind, display_name, created_by
+         ) VALUES ($1, $2, 'image', 'Seal', $3)",
+    )
+    .bind(template_id)
+    .bind(image_file_id)
+    .bind(actor_id)
+    .execute(&pool)
+    .await
+    .expect("image asset fixture should insert");
+    sqlx::query(
+        "INSERT INTO certificate_template_assets (
+            template_id, file_id, kind, display_name, font_family,
+            font_weight, font_style, rights_confirmed_by,
+            rights_confirmed_at, created_by
+         ) VALUES (
+            $1, $2, 'font', 'School font', 'School Sans',
+            400, 'normal', $3, NOW(), $3
+         )",
+    )
+    .bind(template_id)
+    .bind(font_file_id)
+    .bind(actor_id)
+    .execute(&pool)
+    .await
+    .expect("font asset fixture should insert");
+
+    let issued_candidate_id = insert_candidate(&pool, campaign_id, template_id).await;
+    let issue_run_id =
+        insert_issued_run(&pool, campaign_id, issued_candidate_id, actor_id, 1).await;
+    let certificate_id = insert_certificate(
+        &pool,
+        CertificateInsert {
+            campaign_id,
+            template_id,
+            candidate_id: issued_candidate_id,
+            issue_run_id,
+            academic_year_id,
+            activity_sequence: 1,
+            certificate_sequence: 1,
+            certificate_number: "2999-0001-000001-0",
+            proof_hash: "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        },
+    )
+    .await
+    .expect("certificate fixture should insert");
+    sqlx::query(
+        "UPDATE certificates
+         SET status = 'revoked', revoked_by = $2, revoked_at = NOW(),
+             revocation_reason = 'Schema purge fixture'
+         WHERE id = $1",
+    )
+    .bind(certificate_id)
+    .bind(actor_id)
+    .execute(&pool)
+    .await
+    .expect("certificate fixture should revoke");
+    sqlx::query("UPDATE certificate_candidates SET issued_certificate_id = $2 WHERE id = $1")
+        .bind(issued_candidate_id)
+        .bind(certificate_id)
+        .execute(&pool)
+        .await
+        .expect("candidate certificate link fixture should update");
+    sqlx::query(
+        "INSERT INTO certificate_issue_run_problems
+            (issue_run_id, candidate_id, issue_codes)
+         VALUES ($1, $2, ARRAY['fixture_problem'])",
+    )
+    .bind(issue_run_id)
+    .bind(issued_candidate_id)
+    .execute(&pool)
+    .await
+    .expect("issue problem fixture should insert");
+
+    let open_candidate_id = insert_candidate(&pool, campaign_id, template_id).await;
+    let open_request_id: Uuid = sqlx::query_scalar(
+        "INSERT INTO certificate_issue_requests (campaign_id, submitted_by)
+         VALUES ($1, $2) RETURNING id",
+    )
+    .bind(campaign_id)
+    .bind(actor_id)
+    .fetch_one(&pool)
+    .await
+    .expect("open request fixture should insert");
+    sqlx::query(
+        "INSERT INTO certificate_issue_request_items
+            (request_id, candidate_id, campaign_id)
+         VALUES ($1, $2, $3)",
+    )
+    .bind(open_request_id)
+    .bind(open_candidate_id)
+    .bind(campaign_id)
+    .execute(&pool)
+    .await
+    .expect("open request item fixture should insert");
+    sqlx::query(
+        "INSERT INTO certificate_candidate_issue_locks (candidate_id, request_id)
+         VALUES ($1, $2)",
+    )
+    .bind(open_candidate_id)
+    .bind(open_request_id)
+    .execute(&pool)
+    .await
+    .expect("open request lock fixture should insert");
+
+    for (entity_type, entity_id) in [
+        ("certificate_campaign", campaign_id),
+        ("certificate_template", template_id),
+        ("certificate_candidate", issued_candidate_id),
+        ("certificate_issue_request", open_request_id),
+        ("certificate", certificate_id),
+    ] {
+        sqlx::query(
+            "INSERT INTO audit_logs (
+                user_id, action, entity_type, entity_id, metadata
+             ) VALUES ($1, 'fixture', $2, $3, jsonb_build_object('campaignId', $4::TEXT))",
+        )
+        .bind(actor_id)
+        .bind(entity_type)
+        .bind(entity_id)
+        .bind(campaign_id)
+        .execute(&pool)
+        .await
+        .expect("campaign audit fixture should insert");
+    }
+
+    assert!(
+        sqlx::query("DELETE FROM certificates WHERE id = $1")
+            .bind(certificate_id)
+            .execute(&pool)
+            .await
+            .is_err(),
+        "certificate deletion must remain guarded"
+    );
+    assert!(
+        sqlx::query("DELETE FROM certificate_campaigns WHERE id = $1")
+            .bind(campaign_id)
+            .execute(&pool)
+            .await
+            .is_err(),
+        "campaign deletion must remain guarded"
+    );
+
+    sqlx::query("UPDATE certificate_campaigns SET status = 'purging' WHERE id = $1")
+        .bind(campaign_id)
+        .execute(&pool)
+        .await
+        .expect("campaign fixture should enter purging");
+    sqlx::query(
+        "INSERT INTO certificate_campaign_purge_jobs (
+            campaign_id, status, requested_by, template_count,
+            candidate_count, request_count, open_request_count,
+            issued_certificate_count, revoked_certificate_count,
+            file_count, total_file_bytes
+         ) VALUES ($1, 'finalizing', $2, 1, 2, 2, 1, 1, 1, 3, 45)",
+    )
+    .bind(campaign_id)
+    .bind(actor_id)
+    .execute(&pool)
+    .await
+    .expect("purge job fixture should insert");
+    for file_id in &file_ids {
+        sqlx::query(
+            "INSERT INTO certificate_campaign_purge_files
+                (campaign_id, file_id, object_count, byte_size)
+             VALUES ($1, $2, 2, 15)",
+        )
+        .bind(campaign_id)
+        .bind(file_id)
+        .execute(&pool)
+        .await
+        .expect("purge inventory fixture should insert");
+    }
+
+    let finalized: bool = sqlx::query_scalar("SELECT finalize_certificate_campaign_purge($1)")
+        .bind(campaign_id)
+        .fetch_one(&pool)
+        .await
+        .expect("guarded purge finalizer should succeed");
+    assert!(finalized);
+
+    for (table, expected_count) in [
+        ("certificate_campaigns", 0_i64),
+        ("certificate_campaign_purge_jobs", 0),
+        ("certificate_campaign_purge_files", 0),
+        ("certificate_templates", 0),
+        ("certificate_candidates", 0),
+        ("certificate_issue_requests", 0),
+        ("certificate_issue_request_items", 0),
+        ("certificate_candidate_issue_locks", 0),
+        ("certificate_issue_runs", 0),
+        ("certificate_issue_run_problems", 0),
+        ("certificates", 0),
+    ] {
+        let count: i64 = sqlx::query_scalar(&format!("SELECT COUNT(*) FROM {table}"))
+            .fetch_one(&pool)
+            .await
+            .expect("purged domain table should remain queryable");
+        assert_eq!(count, expected_count, "unexpected rows in {table}");
+    }
+
+    let file_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM files WHERE id = ANY($1)")
+        .bind(&file_ids)
+        .fetch_one(&pool)
+        .await
+        .expect("purged files should be countable");
+    assert_eq!(file_count, 0);
+    let audit_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM audit_logs
+         WHERE entity_type LIKE 'certificate%'
+           AND metadata ->> 'campaignId' = $1",
+    )
+    .bind(campaign_id.to_string())
+    .fetch_one(&pool)
+    .await
+    .expect("purged audit rows should be countable");
+    assert_eq!(audit_count, 0);
+    let next_activity_sequence: i32 = sqlx::query_scalar(
+        "SELECT next_activity_sequence
+         FROM certificate_academic_year_counters
+         WHERE academic_year_id = $1",
+    )
+    .bind(academic_year_id)
+    .fetch_one(&pool)
+    .await
+    .expect("academic-year counter should remain");
+    assert_eq!(next_activity_sequence, 12);
+}
+
+#[tokio::test]
+async fn purge_finalizer_rolls_back_when_storage_is_not_deleted() {
+    let pool = create_named_test_pool("certificate_campaign_purge_incomplete_storage").await;
+    run_test_migrations(&pool).await;
+
+    let actor_id = create_test_user(
+        &pool,
+        "certificate-purge-incomplete@example.test",
+        "test-password",
+    )
+    .await
+    .expect("actor fixture should insert");
+    let academic_year_id = insert_academic_year(&pool).await;
+    let campaign_id =
+        insert_campaign(&pool, academic_year_id, actor_id, "Incomplete purge", 1).await;
+    let template_id = insert_template(&pool, campaign_id, "incomplete-purge").await;
+    let (file_id, _, _) = insert_purge_file_fixture(
+        &pool,
+        actor_id,
+        "certificate_template_background",
+        "not-deleted.pdf",
+        false,
+    )
+    .await;
+    sqlx::query(
+        "INSERT INTO certificate_template_file_uploads
+            (file_id, template_id, purpose_code, uploaded_by)
+         VALUES ($1, $2, 'certificate_template_background', $3)",
+    )
+    .bind(file_id)
+    .bind(template_id)
+    .bind(actor_id)
+    .execute(&pool)
+    .await
+    .expect("upload relation fixture should insert");
+    sqlx::query("UPDATE certificate_campaigns SET status = 'purging' WHERE id = $1")
+        .bind(campaign_id)
+        .execute(&pool)
+        .await
+        .expect("campaign fixture should enter purging");
+    sqlx::query(
+        "INSERT INTO certificate_campaign_purge_jobs (
+            campaign_id, status, requested_by, template_count,
+            candidate_count, request_count, open_request_count,
+            issued_certificate_count, revoked_certificate_count,
+            file_count, total_file_bytes
+         ) VALUES ($1, 'finalizing', $2, 1, 0, 0, 0, 0, 0, 1, 10)",
+    )
+    .bind(campaign_id)
+    .bind(actor_id)
+    .execute(&pool)
+    .await
+    .expect("purge job fixture should insert");
+    sqlx::query(
+        "INSERT INTO certificate_campaign_purge_files
+            (campaign_id, file_id, object_count, byte_size)
+         VALUES ($1, $2, 1, 10)",
+    )
+    .bind(campaign_id)
+    .bind(file_id)
+    .execute(&pool)
+    .await
+    .expect("purge inventory fixture should insert");
+
+    let result = sqlx::query_scalar::<_, bool>("SELECT finalize_certificate_campaign_purge($1)")
+        .bind(campaign_id)
+        .fetch_one(&pool)
+        .await;
+    assert!(
+        result.is_err(),
+        "incomplete storage must block finalization"
+    );
+
+    let campaign_count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM certificate_campaigns WHERE id = $1")
+            .bind(campaign_id)
+            .fetch_one(&pool)
+            .await
+            .expect("campaign should remain after rollback");
+    let template_count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM certificate_templates WHERE id = $1")
+            .bind(template_id)
+            .fetch_one(&pool)
+            .await
+            .expect("template should remain after rollback");
+    let file_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM files WHERE id = $1")
+        .bind(file_id)
+        .fetch_one(&pool)
+        .await
+        .expect("file should remain after rollback");
+    assert_eq!((campaign_count, template_count, file_count), (1, 1, 1));
 }
 
 #[tokio::test]
