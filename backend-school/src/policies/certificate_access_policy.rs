@@ -64,7 +64,8 @@ pub async fn require_template_action(
         "SELECT campaign.owner_organization_unit_id
          FROM certificate_templates template
          JOIN certificate_campaigns campaign ON campaign.id = template.campaign_id
-         WHERE template.id = $1",
+         WHERE template.id = $1
+           AND campaign.status <> 'purging'",
     )
     .bind(template_id)
     .fetch_optional(pool)

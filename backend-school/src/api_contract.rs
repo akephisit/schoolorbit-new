@@ -81,11 +81,13 @@ use crate::modules::certificates::models::{
     AttachCertificateFontBatchRequest, CandidateMatchStatus, CandidateNameSource,
     CandidateValidationCode, CandidateValidationStatus, CertificateAccountSearchQuery,
     CertificateBuiltInFont, CertificateCampaignCapabilities, CertificateCampaignDetail,
-    CertificateCampaignListQuery, CertificateCampaignStatus, CertificateCampaignSummary,
-    CertificateCandidateAccount, CertificateCandidateBulkRequest, CertificateCandidateBulkResult,
-    CertificateCandidateCapabilities, CertificateCandidateDetail, CertificateCandidateImportResult,
-    CertificateCandidateListQuery, CertificateCandidateListResponse, CertificateCandidateSummary,
-    CertificateCapabilities, CertificateElement, CertificateFontSource, CertificateFontStyle,
+    CertificateCampaignListQuery, CertificateCampaignPurgeCounts, CertificateCampaignPurgeImpact,
+    CertificateCampaignPurgePhase, CertificateCampaignPurgeStatus, CertificateCampaignStatus,
+    CertificateCampaignSummary, CertificateCandidateAccount, CertificateCandidateBulkRequest,
+    CertificateCandidateBulkResult, CertificateCandidateCapabilities, CertificateCandidateDetail,
+    CertificateCandidateImportResult, CertificateCandidateListQuery,
+    CertificateCandidateListResponse, CertificateCandidateSummary, CertificateCapabilities,
+    CertificateElement, CertificateFontSource, CertificateFontStyle,
     CertificateFontUploadInspection, CertificateFontUploadInspectionFile,
     CertificateFontUploadStatus, CertificateImportBatchSummary, CertificateImportRequest,
     CertificateImportRowInput, CertificateImportSource, CertificateIssueCandidateProblem,
@@ -107,8 +109,8 @@ use crate::modules::certificates::models::{
     ManualCertificateVerificationRequest, NullableUuidUpdate, PublicCertificateRenderRequest,
     PublicCertificateVerificationData, QrCertificateVerificationRequest, QrElement, RecipientType,
     ReturnCertificateIssueRequest, RevokeCertificateRequest, RevokeCertificateResult,
-    SubmitCertificateIssueRequest, TextAlignment, TextElement, TextShadow,
-    UpdateCertificateCampaignRequest, UpdateCertificateCandidateRequest,
+    StartCertificateCampaignPurgeRequest, SubmitCertificateIssueRequest, TextAlignment,
+    TextElement, TextShadow, UpdateCertificateCampaignRequest, UpdateCertificateCandidateRequest,
     UpdateCertificateTemplateRequest,
 };
 use crate::modules::facility::models::Room;
@@ -242,7 +244,10 @@ use utoipa::OpenApi;
         crate::modules::certificates::handlers::get_certificate_campaign,
         crate::modules::certificates::handlers::update_certificate_campaign,
         crate::modules::certificates::handlers::change_certificate_campaign_status,
-        crate::modules::certificates::handlers::delete_certificate_campaign,
+        crate::modules::certificates::handlers::get_certificate_campaign_purge_impact,
+        crate::modules::certificates::handlers::start_certificate_campaign_purge,
+        crate::modules::certificates::handlers::get_certificate_campaign_purge_status,
+        crate::modules::certificates::handlers::retry_certificate_campaign_purge,
         crate::modules::certificates::handlers::list_certificate_owner_options,
         crate::modules::certificates::handlers::list_certificate_templates,
         crate::modules::certificates::handlers::create_certificate_template,
@@ -494,12 +499,19 @@ use utoipa::OpenApi;
         CertificateCampaignSummary,
         CertificateCampaignDetail,
         CertificateCampaignListQuery,
+        CertificateCampaignPurgeCounts,
+        StartCertificateCampaignPurgeRequest,
+        CertificateCampaignPurgeImpact,
+        CertificateCampaignPurgePhase,
+        CertificateCampaignPurgeStatus,
         CreateCertificateCampaignRequest,
         NullableUuidUpdate,
         UpdateCertificateCampaignRequest,
         ChangeCertificateCampaignStatusRequest,
         ApiResponse<Vec<CertificateCampaignSummary>>,
         ApiResponse<CertificateCampaignDetail>,
+        ApiResponse<CertificateCampaignPurgeImpact>,
+        ApiResponse<CertificateCampaignPurgeStatus>,
         RecipientType,
         CertificateTemplateAssetKind,
         GeometryAction,
@@ -3147,9 +3159,24 @@ mod tests {
                     "updateCertificateCampaign",
                 ),
                 (
-                    "/api/certificates/campaigns/{campaign_id}",
-                    "delete",
-                    "deleteCertificateCampaign",
+                    "/api/certificates/campaigns/{campaign_id}/purge-impact",
+                    "get",
+                    "getCertificateCampaignPurgeImpact",
+                ),
+                (
+                    "/api/certificates/campaigns/{campaign_id}/purge",
+                    "post",
+                    "startCertificateCampaignPurge",
+                ),
+                (
+                    "/api/certificates/campaigns/{campaign_id}/purge-status",
+                    "get",
+                    "getCertificateCampaignPurgeStatus",
+                ),
+                (
+                    "/api/certificates/campaigns/{campaign_id}/purge/retry",
+                    "post",
+                    "retryCertificateCampaignPurge",
                 ),
                 (
                     "/api/certificates/campaigns/{campaign_id}/status",
@@ -3619,7 +3646,6 @@ mod tests {
             "#/components/schemas/ApiErrorResponseWithOptionalData_CertificateResourceLocked";
         for (path, method) in [
             ("/api/certificates/campaigns/{campaign_id}", "put"),
-            ("/api/certificates/campaigns/{campaign_id}", "delete"),
             ("/api/certificates/campaigns/{campaign_id}/status", "put"),
             ("/api/certificates/templates/{template_id}", "put"),
             ("/api/certificates/templates/{template_id}", "delete"),
@@ -3651,9 +3677,32 @@ mod tests {
             );
         }
         assert_eq!(
-            document["paths"]["/api/certificates/campaigns/{campaign_id}"]["delete"]["responses"]
-                ["200"]["content"]["application/json"]["schema"]["$ref"],
-            "#/components/schemas/ApiResponse_EmptyData"
+            document["paths"]["/api/certificates/campaigns/{campaign_id}"]
+                .as_object()
+                .expect("campaign path")
+                .get("delete"),
+            None,
+            "legacy draft-only DELETE endpoint must be removed"
+        );
+        assert_eq!(
+            document["paths"]["/api/certificates/campaigns/{campaign_id}/purge-impact"]["get"]
+                ["responses"]["200"]["content"]["application/json"]["schema"]["$ref"],
+            "#/components/schemas/ApiResponse_CertificateCampaignPurgeImpact"
+        );
+        for path in [
+            "/api/certificates/campaigns/{campaign_id}/purge",
+            "/api/certificates/campaigns/{campaign_id}/purge/retry",
+        ] {
+            assert_eq!(
+                document["paths"][path]["post"]["responses"]["202"]["content"]["application/json"]
+                    ["schema"]["$ref"],
+                "#/components/schemas/ApiResponse_CertificateCampaignPurgeStatus"
+            );
+        }
+        assert_eq!(
+            document["paths"]["/api/certificates/campaigns/{campaign_id}/purge-status"]["get"]
+                ["responses"]["200"]["content"]["application/json"]["schema"]["$ref"],
+            "#/components/schemas/ApiResponse_CertificateCampaignPurgeStatus"
         );
         assert_eq!(
             document["paths"]["/api/certificates/owner-options"]["get"]["responses"]["200"]

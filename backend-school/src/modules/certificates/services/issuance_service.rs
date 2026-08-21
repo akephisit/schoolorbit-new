@@ -247,8 +247,11 @@ pub async fn issue_request(
 ) -> Result<IssueCertificateOutcome, AppError> {
     actor.require_permission(codes::CERTIFICATE_ISSUE_SCHOOL)?;
     let school_name = normalize_school_name(&school_name)?;
+    let campaign_id = fetch_request_campaign_id(pool, request_id).await?;
     let mut tx = pool.begin().await.map_err(issuance_db_error)?;
 
+    let mut campaign = lock_campaign(&mut tx, campaign_id).await?;
+    require_campaign_not_purging(&campaign.status)?;
     lock_issue_command(&mut tx, request_id).await?;
     if let Some(outcome) =
         load_matching_run_outcome(&mut tx, actor, request_id, request.idempotency_key).await?
@@ -263,7 +266,11 @@ pub async fn issue_request(
             "ออกเลขได้เฉพาะคำขอที่กำลังตรวจสอบ".to_string(),
         ));
     }
-    let mut campaign = lock_campaign(&mut tx, issue_request.campaign_id).await?;
+    if issue_request.campaign_id != campaign.id {
+        return Err(AppError::InternalServerError(
+            "certificate_issue_request_campaign_invalid".to_string(),
+        ));
+    }
     let candidate_ids = lock_request_items(&mut tx, request_id).await?;
     if candidate_ids.is_empty() || candidate_ids.len() > MAX_CERTIFICATES_PER_REQUEST {
         return Err(AppError::Conflict("คำขอมีจำนวนรายการไม่ถูกต้อง".to_string()));
@@ -531,7 +538,10 @@ pub async fn replay_issue_request(
     idempotency_key: Uuid,
 ) -> Result<Option<IssueCertificateOutcome>, AppError> {
     actor.require_permission(codes::CERTIFICATE_ISSUE_SCHOOL)?;
+    let campaign_id = fetch_request_campaign_id(pool, request_id).await?;
     let mut tx = pool.begin().await.map_err(issuance_db_error)?;
+    let campaign = lock_campaign(&mut tx, campaign_id).await?;
+    require_campaign_not_purging(&campaign.status)?;
     lock_issue_command(&mut tx, request_id).await?;
     let outcome = load_matching_run_outcome(&mut tx, actor, request_id, idempotency_key).await?;
     tx.commit().await.map_err(issuance_db_error)?;
@@ -546,7 +556,10 @@ pub async fn revoke_certificate(
 ) -> Result<RevokeCertificateResult, AppError> {
     actor.require_permission(codes::CERTIFICATE_REVOKE_SCHOOL)?;
     let reason = normalize_revocation_reason(&request.reason)?;
+    let campaign_id = fetch_certificate_campaign_id(pool, certificate_id).await?;
     let mut tx = pool.begin().await.map_err(issuance_db_error)?;
+    let campaign = lock_campaign(&mut tx, campaign_id).await?;
+    require_campaign_not_purging(&campaign.status)?;
     let certificate = sqlx::query_as::<_, CertificateRevokeRow>(
         "SELECT id, campaign_id, template_id, recipient_type, user_id,
                 title_snapshot, first_name_snapshot, last_name_snapshot,
@@ -561,6 +574,11 @@ pub async fn revoke_certificate(
     .await
     .map_err(issuance_db_error)?
     .ok_or_else(|| AppError::NotFound("ไม่พบเกียรติบัตร".to_string()))?;
+    if certificate.campaign_id != campaign.id {
+        return Err(AppError::InternalServerError(
+            "certificate_campaign_reference_invalid".to_string(),
+        ));
+    }
     if certificate.status != "issued" {
         return Err(AppError::Conflict("เกียรติบัตรนี้ถูกเพิกถอนไปแล้ว".to_string()));
     }
@@ -610,7 +628,7 @@ pub async fn list_campaign_certificates(
     let owner_organization_unit_id = sqlx::query_scalar::<_, Option<Uuid>>(
         "SELECT owner_organization_unit_id
          FROM certificate_campaigns
-         WHERE id = $1",
+         WHERE id = $1 AND status <> 'purging'",
     )
     .bind(campaign_id)
     .fetch_optional(pool)
@@ -660,6 +678,7 @@ pub async fn list_campaign_certificates(
            ON replacement_candidate.replacement_for_certificate_id = certificate.id
           AND replacement_candidate.deleted_at IS NULL
          WHERE certificate.campaign_id = $1
+           AND campaign.status <> 'purging'
            AND ($2::text IS NULL OR certificate.status = $2)
            AND ($3::uuid IS NULL OR certificate.template_id = $3)
            AND (
@@ -724,6 +743,7 @@ pub async fn list_own_certificates(
            ON replacement_candidate.replacement_for_certificate_id = certificate.id
           AND replacement_candidate.deleted_at IS NULL
          WHERE certificate.user_id = $1
+           AND campaign.status <> 'purging'
          ORDER BY certificate.issue_date DESC, certificate.created_at DESC, certificate.id DESC",
     )
     .bind(user_id)
@@ -998,6 +1018,47 @@ fn normalize_school_name(value: &str) -> Result<String, AppError> {
         ))
     } else {
         Ok(value)
+    }
+}
+
+async fn fetch_request_campaign_id(pool: &PgPool, request_id: Uuid) -> Result<Uuid, AppError> {
+    sqlx::query_scalar::<_, Uuid>(
+        "SELECT request.campaign_id
+         FROM certificate_issue_requests request
+         JOIN certificate_campaigns campaign ON campaign.id = request.campaign_id
+         WHERE request.id = $1 AND campaign.status <> 'purging'",
+    )
+    .bind(request_id)
+    .fetch_optional(pool)
+    .await
+    .map_err(issuance_db_error)?
+    .ok_or_else(|| AppError::NotFound("ไม่พบคำขอออกเกียรติบัตร".to_string()))
+}
+
+async fn fetch_certificate_campaign_id(
+    pool: &PgPool,
+    certificate_id: Uuid,
+) -> Result<Uuid, AppError> {
+    sqlx::query_scalar::<_, Uuid>(
+        "SELECT certificate.campaign_id
+         FROM certificates certificate
+         JOIN certificate_campaigns campaign ON campaign.id = certificate.campaign_id
+         WHERE certificate.id = $1 AND campaign.status <> 'purging'",
+    )
+    .bind(certificate_id)
+    .fetch_optional(pool)
+    .await
+    .map_err(issuance_db_error)?
+    .ok_or_else(|| AppError::NotFound("ไม่พบเกียรติบัตร".to_string()))
+}
+
+fn require_campaign_not_purging(status: &str) -> Result<(), AppError> {
+    if status == "purging" {
+        Err(AppError::Conflict(
+            "certificate_campaign_purging".to_string(),
+        ))
+    } else {
+        Ok(())
     }
 }
 
@@ -1853,6 +1914,7 @@ async fn load_run_outcome(
            ON replacement_candidate.replacement_for_certificate_id = certificate.id
           AND replacement_candidate.deleted_at IS NULL
          WHERE certificate.issue_run_id = $1
+           AND campaign.status <> 'purging'
          ORDER BY certificate.certificate_sequence",
     )
     .bind(run.id)
@@ -1963,7 +2025,8 @@ async fn load_certificate_detail_tx(
          LEFT JOIN certificate_candidates replacement_candidate
            ON replacement_candidate.replacement_for_certificate_id = certificate.id
           AND replacement_candidate.deleted_at IS NULL
-         WHERE certificate.id = $1",
+         WHERE certificate.id = $1
+           AND campaign.status <> 'purging'",
     )
     .bind(certificate_id)
     .fetch_optional(&mut **tx)
@@ -1981,7 +2044,8 @@ async fn fetch_certificate_access(
         "SELECT campaign.owner_organization_unit_id
          FROM certificates certificate
          JOIN certificate_campaigns campaign ON campaign.id = certificate.campaign_id
-         WHERE certificate.id = $1",
+         WHERE certificate.id = $1
+           AND campaign.status <> 'purging'",
     )
     .bind(certificate_id)
     .fetch_optional(pool)
@@ -2032,7 +2096,8 @@ async fn load_certificate_detail_pool(
          LEFT JOIN certificate_candidates replacement_candidate
            ON replacement_candidate.replacement_for_certificate_id = certificate.id
           AND replacement_candidate.deleted_at IS NULL
-         WHERE certificate.id = $1",
+         WHERE certificate.id = $1
+           AND campaign.status <> 'purging'",
     )
     .bind(certificate_id)
     .fetch_optional(pool)
@@ -2071,7 +2136,8 @@ async fn load_own_certificate_detail_pool(
          LEFT JOIN certificate_candidates replacement_candidate
            ON replacement_candidate.replacement_for_certificate_id = certificate.id
           AND replacement_candidate.deleted_at IS NULL
-         WHERE certificate.id = $1 AND certificate.user_id = $2",
+         WHERE certificate.id = $1 AND certificate.user_id = $2
+           AND campaign.status <> 'purging'",
     )
     .bind(certificate_id)
     .bind(user_id)

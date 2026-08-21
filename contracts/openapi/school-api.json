@@ -1965,6 +1965,94 @@
         ],
         "type": "object"
       },
+      "ApiResponse_CertificateCampaignPurgeImpact": {
+        "properties": {
+          "data": {
+            "properties": {
+              "campaignId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "campaignName": {
+                "type": "string"
+              },
+              "counts": {
+                "$ref": "#/components/schemas/CertificateCampaignPurgeCounts"
+              },
+              "updatedAt": {
+                "format": "date-time",
+                "type": "string"
+              }
+            },
+            "required": [
+              "campaignId",
+              "campaignName",
+              "updatedAt",
+              "counts"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_CertificateCampaignPurgeStatus": {
+        "properties": {
+          "data": {
+            "properties": {
+              "campaignId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "deletedFileCount": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "fileCount": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "lastErrorCode": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "phase": {
+                "$ref": "#/components/schemas/CertificateCampaignPurgePhase"
+              }
+            },
+            "required": [
+              "campaignId",
+              "phase",
+              "fileCount",
+              "deletedFileCount",
+              "lastErrorCode"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
       "ApiResponse_CertificateCandidateBulkResult": {
         "properties": {
           "data": {
@@ -11497,12 +11585,128 @@
         },
         "type": "object"
       },
+      "CertificateCampaignPurgeCounts": {
+        "additionalProperties": false,
+        "properties": {
+          "candidateCount": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "fileCount": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "issuedCertificateCount": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "openRequestCount": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "requestCount": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "revokedCertificateCount": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "templateCount": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "totalFileBytes": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "templateCount",
+          "candidateCount",
+          "requestCount",
+          "openRequestCount",
+          "issuedCertificateCount",
+          "revokedCertificateCount",
+          "fileCount",
+          "totalFileBytes"
+        ],
+        "type": "object"
+      },
+      "CertificateCampaignPurgeImpact": {
+        "properties": {
+          "campaignId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "campaignName": {
+            "type": "string"
+          },
+          "counts": {
+            "$ref": "#/components/schemas/CertificateCampaignPurgeCounts"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "campaignId",
+          "campaignName",
+          "updatedAt",
+          "counts"
+        ],
+        "type": "object"
+      },
+      "CertificateCampaignPurgePhase": {
+        "enum": [
+          "deleting_files",
+          "failed",
+          "finalizing",
+          "completed"
+        ],
+        "type": "string"
+      },
+      "CertificateCampaignPurgeStatus": {
+        "properties": {
+          "campaignId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "deletedFileCount": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "fileCount": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "lastErrorCode": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "phase": {
+            "$ref": "#/components/schemas/CertificateCampaignPurgePhase"
+          }
+        },
+        "required": [
+          "campaignId",
+          "phase",
+          "fileCount",
+          "deletedFileCount",
+          "lastErrorCode"
+        ],
+        "type": "object"
+      },
       "CertificateCampaignStatus": {
         "enum": [
           "draft",
           "active",
           "closed",
-          "archived"
+          "archived",
+          "purging"
         ],
         "type": "string"
       },
@@ -19352,6 +19556,27 @@
           "roomId",
           "roomName",
           "buildingName"
+        ],
+        "type": "object"
+      },
+      "StartCertificateCampaignPurgeRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "confirmationName": {
+            "type": "string"
+          },
+          "expectedImpact": {
+            "$ref": "#/components/schemas/CertificateCampaignPurgeCounts"
+          },
+          "expectedUpdatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "confirmationName",
+          "expectedUpdatedAt",
+          "expectedImpact"
         ],
         "type": "object"
       },
@@ -32562,76 +32787,6 @@
       }
     },
     "/api/certificates/campaigns/{campaign_id}": {
-      "delete": {
-        "operationId": "deleteCertificateCampaign",
-        "parameters": [
-          {
-            "description": "Certificate campaign ID",
-            "in": "path",
-            "name": "campaign_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_EmptyData"
-                }
-              }
-            },
-            "description": "Draft certificate campaign deleted"
-          },
-          "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Authentication required"
-          },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Certificate campaign delete permission denied"
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Certificate campaign not found"
-          },
-          "409": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponseWithOptionalData_CertificateResourceLocked"
-                }
-              }
-            },
-            "description": "Campaign cannot be deleted"
-          }
-        },
-        "tags": [
-          "certificate"
-        ]
-      },
       "get": {
         "operationId": "getCertificateCampaign",
         "parameters": [
@@ -33576,6 +33731,304 @@
               }
             },
             "description": "Invalid issued certificate query"
+          }
+        },
+        "tags": [
+          "certificate"
+        ]
+      }
+    },
+    "/api/certificates/campaigns/{campaign_id}/purge": {
+      "post": {
+        "operationId": "startCertificateCampaignPurge",
+        "parameters": [
+          {
+            "description": "Certificate campaign ID",
+            "in": "path",
+            "name": "campaign_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StartCertificateCampaignPurgeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_CertificateCampaignPurgeStatus"
+                }
+              }
+            },
+            "description": "Permanent campaign purge accepted"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Certificate campaign delete permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Certificate campaign not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Campaign or purge impact changed"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Confirmation name is invalid"
+          }
+        },
+        "tags": [
+          "certificate"
+        ]
+      }
+    },
+    "/api/certificates/campaigns/{campaign_id}/purge-impact": {
+      "get": {
+        "operationId": "getCertificateCampaignPurgeImpact",
+        "parameters": [
+          {
+            "description": "Certificate campaign ID",
+            "in": "path",
+            "name": "campaign_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_CertificateCampaignPurgeImpact"
+                }
+              }
+            },
+            "description": "Permanent purge impact snapshot"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Certificate campaign delete permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Certificate campaign not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Campaign purge already started"
+          }
+        },
+        "tags": [
+          "certificate"
+        ]
+      }
+    },
+    "/api/certificates/campaigns/{campaign_id}/purge-status": {
+      "get": {
+        "operationId": "getCertificateCampaignPurgeStatus",
+        "parameters": [
+          {
+            "description": "Certificate campaign ID",
+            "in": "path",
+            "name": "campaign_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_CertificateCampaignPurgeStatus"
+                }
+              }
+            },
+            "description": "Current permanent purge status"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Certificate campaign delete permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Campaign purge not found or already completed"
+          }
+        },
+        "tags": [
+          "certificate"
+        ]
+      }
+    },
+    "/api/certificates/campaigns/{campaign_id}/purge/retry": {
+      "post": {
+        "operationId": "retryCertificateCampaignPurge",
+        "parameters": [
+          {
+            "description": "Certificate campaign ID",
+            "in": "path",
+            "name": "campaign_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_CertificateCampaignPurgeStatus"
+                }
+              }
+            },
+            "description": "Permanent campaign purge retry accepted"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Certificate campaign delete permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Campaign purge not found or already completed"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Campaign purge state is inconsistent"
           }
         },
         "tags": [

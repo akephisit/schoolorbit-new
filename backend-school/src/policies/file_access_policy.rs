@@ -350,7 +350,8 @@ pub async fn authorize_certificate_template_delete_guard<'a>(
          JOIN certificate_templates template ON template.id = upload.template_id
          JOIN certificate_campaigns campaign ON campaign.id = template.campaign_id
          WHERE upload.file_id = $1
-           AND upload.purpose_code = $2",
+           AND upload.purpose_code = $2
+           AND campaign.status <> 'purging'",
     )
     .bind(file.id)
     .bind(file.purpose.code())
@@ -377,8 +378,8 @@ pub async fn authorize_certificate_template_delete_guard<'a>(
     .await?;
 
     let mut tx = pool.begin().await?;
-    let locked_owner_id = sqlx::query_scalar::<_, Option<Uuid>>(
-        "SELECT owner_organization_unit_id
+    let (locked_owner_id, locked_status) = sqlx::query_as::<_, (Option<Uuid>, String)>(
+        "SELECT owner_organization_unit_id, status
          FROM certificate_campaigns
          WHERE id = $1
          FOR UPDATE",
@@ -387,6 +388,11 @@ pub async fn authorize_certificate_template_delete_guard<'a>(
     .fetch_optional(&mut *tx)
     .await?
     .ok_or_else(unrelated_resource)?;
+    if locked_status == "purging" {
+        return Err(AppError::Conflict(
+            "certificate_campaign_purging".to_string(),
+        ));
+    }
     if locked_owner_id != authorization.4 {
         return Err(AppError::Conflict(
             "หน่วยงานเจ้าของกิจกรรมเปลี่ยนแล้ว กรุณาโหลดข้อมูลล่าสุด".to_string(),
@@ -452,8 +458,10 @@ async fn authorize_certificate_template_file(
                 ) AS referenced
          FROM certificate_template_file_uploads upload
          JOIN certificate_templates template ON template.id = upload.template_id
+         JOIN certificate_campaigns campaign ON campaign.id = template.campaign_id
          WHERE upload.file_id = $1
-           AND upload.purpose_code = $2",
+           AND upload.purpose_code = $2
+           AND campaign.status <> 'purging'",
     )
     .bind(file.id)
     .bind(file.purpose.code())

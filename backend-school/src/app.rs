@@ -187,12 +187,27 @@ fn protected_routes() -> Router<AppState> {
         .route(
             "/api/certificates/campaigns/{campaign_id}",
             get(modules::certificates::handlers::get_certificate_campaign)
-                .put(modules::certificates::handlers::update_certificate_campaign)
-                .delete(modules::certificates::handlers::delete_certificate_campaign),
+                .put(modules::certificates::handlers::update_certificate_campaign),
         )
         .route(
             "/api/certificates/campaigns/{campaign_id}/status",
             put(modules::certificates::handlers::change_certificate_campaign_status),
+        )
+        .route(
+            "/api/certificates/campaigns/{campaign_id}/purge-impact",
+            get(modules::certificates::handlers::get_certificate_campaign_purge_impact),
+        )
+        .route(
+            "/api/certificates/campaigns/{campaign_id}/purge",
+            post(modules::certificates::handlers::start_certificate_campaign_purge),
+        )
+        .route(
+            "/api/certificates/campaigns/{campaign_id}/purge-status",
+            get(modules::certificates::handlers::get_certificate_campaign_purge_status),
+        )
+        .route(
+            "/api/certificates/campaigns/{campaign_id}/purge/retry",
+            post(modules::certificates::handlers::retry_certificate_campaign_purge),
         )
         .route(
             "/api/certificates/owner-options",

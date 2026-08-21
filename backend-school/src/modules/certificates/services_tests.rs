@@ -2542,7 +2542,7 @@ async fn concurrent_campaign_owner_transfer_blocks_stale_template_mutation() {
 }
 
 #[tokio::test]
-async fn concurrent_campaign_delete_and_template_update_do_not_deadlock() {
+async fn concurrent_campaign_purge_and_template_update_do_not_deadlock() {
     let (pool, actor, academic_year_id) =
         school_campaign_fixture("certificate_campaign_template_lock_order", 3121).await;
     let template = create_template_fixture_with_types(
@@ -2554,15 +2554,33 @@ async fn concurrent_campaign_delete_and_template_update_do_not_deadlock() {
         vec![RecipientType::External],
     )
     .await;
+    let impact = purge_service::impact(&pool, &actor, template.campaign_id)
+        .await
+        .unwrap();
     let barrier = Arc::new(tokio::sync::Barrier::new(3));
 
-    let delete_pool = pool.clone();
-    let delete_actor = actor.clone();
-    let delete_barrier = barrier.clone();
+    let purge_pool = pool.clone();
+    let purge_actor = actor.clone();
+    let purge_barrier = barrier.clone();
     let campaign_id = template.campaign_id;
-    let delete = tokio::spawn(async move {
-        delete_barrier.wait().await;
-        campaign_service::delete_campaign(&delete_pool, &delete_actor, campaign_id).await
+    let purge = tokio::spawn(async move {
+        let platform = crate::modules::files::platform_service::FilePlatform::new(
+            Arc::new(PreviewStorage),
+            Arc::new(PreviewScanner),
+        );
+        purge_barrier.wait().await;
+        purge_service::start(
+            &purge_pool,
+            &purge_actor,
+            &platform,
+            campaign_id,
+            StartCertificateCampaignPurgeRequest {
+                confirmation_name: impact.campaign_name,
+                expected_updated_at: impact.updated_at,
+                expected_impact: impact.counts,
+            },
+        )
+        .await
     });
 
     let update_pool = pool.clone();
@@ -2591,14 +2609,14 @@ async fn concurrent_campaign_delete_and_template_update_do_not_deadlock() {
     });
 
     barrier.wait().await;
-    let (delete_result, update_result) = tokio::time::timeout(Duration::from_secs(5), async {
-        (delete.await.unwrap(), update.await.unwrap())
+    let (purge_result, update_result) = tokio::time::timeout(Duration::from_secs(5), async {
+        (purge.await.unwrap(), update.await.unwrap())
     })
     .await
-    .expect("campaign deletion and template update must serialize without deadlock");
+    .expect("campaign purge and template update must serialize without deadlock");
     assert!(
-        !matches!(delete_result, Err(AppError::DbError(_))),
-        "campaign deletion returned a database concurrency error: {delete_result:?}"
+        !matches!(purge_result, Err(AppError::DbError(_))),
+        "campaign purge returned a database concurrency error: {purge_result:?}"
     );
     assert!(
         !matches!(update_result, Err(AppError::DbError(_))),
@@ -3885,7 +3903,449 @@ async fn purge_provider_failure_is_durable_idempotent_and_retryable() {
 }
 
 #[tokio::test]
-async fn campaign_manual_transitions_delete_rules_and_audit_are_explicit() {
+async fn purging_campaign_is_visible_only_as_delete_progress_and_hides_normal_resources() {
+    use crate::modules::files::{
+        platform_types::{FileLifecycleStatus, FilePurpose, FileVisibility},
+        repository::PlatformFile,
+    };
+
+    let (pool, actor, academic_year_id) =
+        school_campaign_fixture("certificate_campaign_purging_visibility", 3151).await;
+    let campaign = campaign_service::create_campaign(
+        &pool,
+        &actor,
+        campaign_create_payload(academic_year_id, None, "กิจกรรมกำลังลบ"),
+    )
+    .await
+    .unwrap();
+    let template = template_service::create_template(
+        &pool,
+        &actor,
+        campaign.id,
+        CreateCertificateTemplateRequest {
+            name: "แบบกำลังลบ".to_string(),
+            allowed_recipient_types: vec![RecipientType::External],
+        },
+    )
+    .await
+    .unwrap();
+    let background_file_id = insert_ready_template_file(
+        &pool,
+        &actor,
+        template.id,
+        "certificate_template_background",
+        pdf_inspection(841.89, 595.28, 0),
+    )
+    .await;
+    let attached = template_service::attach_background(
+        &pool,
+        &actor,
+        template.id,
+        AttachCertificateBackgroundRequest {
+            file_id: background_file_id,
+            geometry_action: GeometryAction::Preserve,
+            preview_confirmed: true,
+        },
+    )
+    .await
+    .unwrap();
+    let candidate_id: Uuid = sqlx::query_scalar(
+        "INSERT INTO certificate_candidates (
+            campaign_id, template_id, recipient_type, imported_first_name,
+            imported_last_name, selected_name_source, match_status,
+            validation_status
+         ) VALUES ($1, $2, 'external', 'ผู้รับ', 'กำลังลบ', 'file',
+                   'external_confirmed', 'ready')
+         RETURNING id",
+    )
+    .bind(campaign.id)
+    .bind(template.id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let request_id: Uuid = sqlx::query_scalar(
+        "INSERT INTO certificate_issue_requests (campaign_id, submitted_by)
+         VALUES ($1, $2) RETURNING id",
+    )
+    .bind(campaign.id)
+    .bind(actor.user_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO certificate_issue_request_items
+            (request_id, candidate_id, campaign_id)
+         VALUES ($1, $2, $3)",
+    )
+    .bind(request_id)
+    .bind(candidate_id)
+    .bind(campaign.id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO certificate_candidate_issue_locks (candidate_id, request_id)
+         VALUES ($1, $2)",
+    )
+    .bind(candidate_id)
+    .bind(request_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let impact = purge_service::impact(&pool, &actor, campaign.id)
+        .await
+        .unwrap();
+    let failing_platform = crate::modules::files::platform_service::FilePlatform::new(
+        Arc::new(DeleteFailStorage),
+        Arc::new(PreviewScanner),
+    );
+    let pending = purge_service::start(
+        &pool,
+        &actor,
+        &failing_platform,
+        campaign.id,
+        StartCertificateCampaignPurgeRequest {
+            confirmation_name: impact.campaign_name,
+            expected_updated_at: impact.updated_at,
+            expected_impact: impact.counts,
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(pending.phase, CertificateCampaignPurgePhase::DeletingFiles);
+
+    let progress_rows =
+        campaign_service::list_campaigns(&pool, &actor, CertificateCampaignListQuery::default())
+            .await
+            .unwrap();
+    let progress = progress_rows
+        .iter()
+        .find(|row| row.id == campaign.id)
+        .expect("delete-authorized actor should retain the progress row");
+    assert_eq!(progress.status, CertificateCampaignStatus::Purging);
+    assert_eq!(progress.capabilities, Default::default());
+
+    let read_only = ActorContext {
+        user_id: actor.user_id,
+        permissions: vec![codes::CERTIFICATE_READ_SCHOOL.to_string()],
+    };
+    let ordinary_rows = campaign_service::list_campaigns(
+        &pool,
+        &read_only,
+        CertificateCampaignListQuery::default(),
+    )
+    .await
+    .unwrap();
+    assert!(ordinary_rows.iter().all(|row| row.id != campaign.id));
+
+    assert!(matches!(
+        campaign_service::get_campaign(&pool, &actor, campaign.id).await,
+        Err(AppError::NotFound(_))
+    ));
+    assert!(matches!(
+        template_service::list_templates(&pool, &actor, campaign.id).await,
+        Err(AppError::NotFound(_))
+    ));
+    assert!(matches!(
+        template_service::get_template(&pool, &actor, template.id).await,
+        Err(AppError::NotFound(_))
+    ));
+    assert!(matches!(
+        template_service::update_template(
+            &pool,
+            &actor,
+            template.id,
+            UpdateCertificateTemplateRequest {
+                expected_updated_at: attached.template.updated_at,
+                name: Some("ห้ามแก้".to_string()),
+                allowed_recipient_types: None,
+                safe_margin_points: None,
+                show_safe_area: None,
+                layout: None,
+                is_active: None,
+                confirm_missing_issued_values: false,
+            },
+        )
+        .await,
+        Err(AppError::NotFound(_)) | Err(AppError::Conflict(_))
+    ));
+    assert!(matches!(
+        candidate_service::list_candidates(
+            &pool,
+            &actor,
+            campaign.id,
+            CertificateCandidateListQuery::default(),
+        )
+        .await,
+        Err(AppError::NotFound(_))
+    ));
+    assert!(matches!(
+        candidate_service::get_candidate(&pool, &actor, candidate_id).await,
+        Err(AppError::NotFound(_))
+    ));
+    assert!(matches!(
+        request_service::list_campaign_requests(&pool, &actor, campaign.id).await,
+        Err(AppError::NotFound(_))
+    ));
+    assert!(matches!(
+        request_service::get_issue_request(&pool, &actor, request_id).await,
+        Err(AppError::NotFound(_))
+    ));
+    assert!(
+        crate::policies::certificate_access_policy::require_template_action(
+            &pool,
+            &actor,
+            template.id,
+            CertificateAction::Read,
+        )
+        .await
+        .is_err()
+    );
+    let platform_file = PlatformFile {
+        id: background_file_id,
+        owner_user_id: Some(actor.user_id),
+        purpose: FilePurpose::CertificateTemplateBackground,
+        visibility: FileVisibility::Private,
+        lifecycle_status: FileLifecycleStatus::DeleteRequested,
+        current_version: Some(1),
+        display_filename: "background.pdf".to_string(),
+        detected_mime_type: "application/pdf".to_string(),
+        byte_size: 10,
+    };
+    assert!(file_access_policy::authorize_existing(
+        &pool,
+        &actor,
+        &platform_file,
+        FilePolicyAction::Read,
+        Some(template.id),
+    )
+    .await
+    .is_err());
+
+    let late_file_id: Uuid = sqlx::query_scalar(
+        "INSERT INTO files (
+            owner_user_id, display_filename, created_by, purpose_code,
+            visibility, lifecycle_status, retention_class, expires_at,
+            inspection_metadata
+         ) VALUES (
+            $1, 'late.png', $1, 'certificate_template_image',
+            'private', 'processing', 'temporary', NOW() + INTERVAL '1 hour',
+            '{\"kind\":\"unknown\"}'::JSONB
+         ) RETURNING id",
+    )
+    .bind(actor.user_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert!(
+        crate::modules::files::consumer_service::record_certificate_template_upload(
+            &pool,
+            late_file_id,
+            template.id,
+            FilePurpose::CertificateTemplateImage,
+            actor.user_id,
+        )
+        .await
+        .is_err()
+    );
+    let late_relation_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM certificate_template_file_uploads WHERE file_id = $1",
+    )
+    .bind(late_file_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(late_relation_count, 0);
+}
+
+#[tokio::test]
+async fn purging_campaign_hides_issued_surfaces_and_blocks_issue_and_revoke() {
+    let _crypto_guard = crate::utils::field_encryption::test_env_lock();
+    env::set_var(
+        "ENCRYPTION_KEY",
+        "certificate-purge-visibility-encryption-test-key",
+    );
+    env::set_var(
+        "BLIND_INDEX_KEY",
+        "certificate-purge-visibility-blind-index-test-key",
+    );
+    let (pool, issued, tenant_id) =
+        issue_public_verification_fixture("certificate_purge_issued_visibility", 3158).await;
+    let user_id = create_test_user(
+        &pool,
+        "certificate-purge-issued-actor@example.invalid",
+        "test-password",
+    )
+    .await
+    .unwrap();
+    let mut actor = school_certificate_actor(user_id);
+    actor
+        .permissions
+        .push(codes::CERTIFICATE_ISSUE_SCHOOL.to_string());
+    actor
+        .permissions
+        .push(codes::CERTIFICATE_REVOKE_SCHOOL.to_string());
+
+    let verified = verification_service::verify(
+        &pool,
+        tenant_id,
+        verification_service::CertificateVerificationAttempt::Manual(
+            ManualCertificateVerificationRequest {
+                certificate_number: issued.certificate_number.clone(),
+                first_name: "กมล".to_string(),
+                last_name: "ผู้รับ".to_string(),
+            },
+        ),
+    )
+    .await
+    .unwrap();
+    let public_receipt = verified
+        .receipt
+        .expect("issued certificate should have a receipt");
+
+    let pending_candidate = candidate_service::create_manual_external(
+        &pool,
+        &actor,
+        issued.campaign_id,
+        CreateManualExternalCandidateRequest {
+            template_id: Some(issued.template_id),
+            title: None,
+            first_name: "ผู้รับที่ยังไม่ออกเลข".to_string(),
+            last_name: "ระหว่างลบ".to_string(),
+            activity_item: None,
+            award_or_role: None,
+            custom_values: BTreeMap::from([("แสดงผล".to_string(), "ค่าทดสอบ".to_string())]),
+        },
+    )
+    .await
+    .unwrap()
+    .candidates
+    .remove(0);
+    let pending_request = request_service::submit_issue_request(
+        &pool,
+        &actor,
+        issued.campaign_id,
+        vec![pending_candidate.id],
+    )
+    .await
+    .unwrap();
+    request_service::start_review(&pool, &actor, pending_request.id)
+        .await
+        .unwrap();
+
+    let impact = purge_service::impact(&pool, &actor, issued.campaign_id)
+        .await
+        .unwrap();
+    let failing_platform = crate::modules::files::platform_service::FilePlatform::new(
+        Arc::new(DeleteFailStorage),
+        Arc::new(PreviewScanner),
+    );
+    let pending = purge_service::start(
+        &pool,
+        &actor,
+        &failing_platform,
+        issued.campaign_id,
+        StartCertificateCampaignPurgeRequest {
+            confirmation_name: impact.campaign_name,
+            expected_updated_at: impact.updated_at,
+            expected_impact: impact.counts,
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(pending.phase, CertificateCampaignPurgePhase::DeletingFiles);
+
+    assert!(matches!(
+        issuance_service::list_campaign_certificates(
+            &pool,
+            &actor,
+            issued.campaign_id,
+            Default::default(),
+        )
+        .await,
+        Err(AppError::NotFound(_))
+    ));
+    assert!(matches!(
+        issuance_service::get_certificate(&pool, &actor, issued.id).await,
+        Err(AppError::NotFound(_))
+    ));
+    let verification_error = verification_service::verify(
+        &pool,
+        tenant_id,
+        verification_service::CertificateVerificationAttempt::Manual(
+            ManualCertificateVerificationRequest {
+                certificate_number: issued.certificate_number.clone(),
+                first_name: "กมล".to_string(),
+                last_name: "ผู้รับ".to_string(),
+            },
+        ),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(verification_error.public_message(), "ไม่พบข้อมูลที่ตรงกัน");
+    assert!(matches!(
+        render_service::issued_manifest(
+            &pool,
+            &actor,
+            &failing_platform,
+            "sandbox",
+            "schoolorbit.test",
+            issued.id,
+        )
+        .await,
+        Err(AppError::NotFound(_))
+    ));
+    let public_render_error = render_service::public_manifest(
+        &pool,
+        &failing_platform,
+        "sandbox",
+        "schoolorbit.test",
+        tenant_id,
+        &public_receipt,
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(public_render_error.public_message(), "ไม่พบข้อมูลที่ตรงกัน");
+
+    assert!(issuance_service::issue_request(
+        &pool,
+        &actor,
+        "โรงเรียนตัวอย่าง".to_string(),
+        pending_request.id,
+        IssueCertificateRequest {
+            idempotency_key: Uuid::new_v4(),
+        },
+    )
+    .await
+    .is_err());
+    assert!(issuance_service::revoke_certificate(
+        &pool,
+        &actor,
+        issued.id,
+        RevokeCertificateRequest {
+            reason: "ห้ามเพิกถอนระหว่างลบ".to_string(),
+            create_replacement_candidate: true,
+        },
+    )
+    .await
+    .is_err());
+    let unchanged: (i64, i64, String) = sqlx::query_as(
+        "SELECT
+            (SELECT COUNT(*) FROM certificate_issue_runs WHERE request_id = $1),
+            (SELECT COUNT(*) FROM certificates WHERE candidate_id = $2),
+            (SELECT status FROM certificates WHERE id = $3)",
+    )
+    .bind(pending_request.id)
+    .bind(pending_candidate.id)
+    .bind(issued.id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(unchanged, (0, 0, "issued".to_string()));
+}
+
+#[tokio::test]
+async fn campaign_manual_transitions_are_explicit() {
     let (pool, actor, academic_year_id) =
         school_campaign_fixture("certificate_campaign_lifecycle", 3104).await;
     let draft = campaign_service::create_campaign(
@@ -3906,62 +4366,6 @@ async fn campaign_manual_transitions_delete_rules_and_audit_are_explicit() {
     )
     .await;
     assert!(matches!(activate_draft, Err(AppError::Conflict(_))));
-
-    let draft_template = template_service::create_template(
-        &pool,
-        &actor,
-        draft.id,
-        CreateCertificateTemplateRequest {
-            name: "แบบพร้อมพื้นหลัง".to_string(),
-            allowed_recipient_types: vec![RecipientType::External],
-        },
-    )
-    .await
-    .unwrap();
-    let background_id = insert_ready_template_file(
-        &pool,
-        &actor,
-        draft_template.id,
-        "certificate_template_background",
-        pdf_inspection(841.89, 595.28, 0),
-    )
-    .await;
-    template_service::attach_background(
-        &pool,
-        &actor,
-        draft_template.id,
-        AttachCertificateBackgroundRequest {
-            file_id: background_id,
-            geometry_action: GeometryAction::Preserve,
-            preview_confirmed: true,
-        },
-    )
-    .await
-    .unwrap();
-
-    let detached_files = campaign_service::delete_campaign(&pool, &actor, draft.id)
-        .await
-        .unwrap();
-    assert_eq!(detached_files, vec![background_id]);
-    assert!(matches!(
-        campaign_service::get_campaign(&pool, &actor, draft.id).await,
-        Err(AppError::NotFound(_))
-    ));
-
-    let audit_metadata: Vec<serde_json::Value> = sqlx::query_scalar(
-        "SELECT metadata FROM audit_logs
-         WHERE entity_type = 'certificate_campaign' AND entity_id = $1
-         ORDER BY created_at, id",
-    )
-    .bind(draft.id)
-    .fetch_all(&pool)
-    .await
-    .unwrap();
-    assert_eq!(audit_metadata.len(), 2);
-    let serialized_audit = serde_json::to_string(&audit_metadata).unwrap();
-    assert!(!serialized_audit.contains("ร่างสำหรับลบ"));
-    assert!(!serialized_audit.contains("firstName"));
-    assert!(!serialized_audit.contains("lastName"));
 
     let issued = campaign_service::create_campaign(
         &pool,
@@ -4001,10 +4405,6 @@ async fn campaign_manual_transitions_delete_rules_and_audit_are_explicit() {
         .unwrap();
         assert_eq!(current.status, next);
     }
-    assert!(matches!(
-        campaign_service::delete_campaign(&pool, &actor, issued.id).await,
-        Err(AppError::Conflict(_))
-    ));
 }
 
 #[tokio::test]
@@ -6675,7 +7075,7 @@ async fn issue_request_lists_respect_campaign_read_and_school_issue_scopes() {
 }
 
 #[tokio::test]
-async fn request_return_uses_request_before_campaign_lock_order() {
+async fn request_return_locks_campaign_before_request() {
     let (pool, preparer, academic_year_id) =
         concurrent_school_campaign_fixture("certificate_request_return_lock_order", 3149).await;
     let campaign = campaign_service::create_campaign(
@@ -6772,9 +7172,122 @@ async fn request_return_uses_request_before_campaign_lock_order() {
         .unwrap();
     assert_eq!(returned.status, CertificateIssueRequestStatus::Returned);
     assert!(
-        campaign_lock.is_ok(),
-        "return transition held the campaign while waiting for the request row"
+        campaign_lock.is_err(),
+        "return transition must hold the campaign while waiting for the request row"
     );
+}
+
+#[tokio::test]
+async fn issue_locks_campaign_before_request() {
+    let _crypto_guard = crate::utils::field_encryption::test_env_lock();
+    env::set_var(
+        "ENCRYPTION_KEY",
+        "certificate-issue-campaign-lock-encryption-test-key",
+    );
+    env::set_var(
+        "BLIND_INDEX_KEY",
+        "certificate-issue-campaign-lock-blind-index-test-key",
+    );
+    let (pool, preparer, academic_year_id) =
+        concurrent_school_campaign_fixture("certificate_issue_campaign_lock_order", 3159).await;
+    let campaign = campaign_service::create_campaign(
+        &pool,
+        &preparer,
+        campaign_create_payload(academic_year_id, None, "กิจกรรมตรวจลำดับล็อกตอนออกเลข"),
+    )
+    .await
+    .unwrap();
+    let (_, candidate) = create_ready_external_request_candidate(
+        &pool,
+        &preparer,
+        campaign.id,
+        "แบบตรวจลำดับล็อกตอนออกเลข",
+        "ผู้รับตรวจลำดับล็อกตอนออกเลข",
+    )
+    .await;
+    let request =
+        request_service::submit_issue_request(&pool, &preparer, campaign.id, vec![candidate.id])
+            .await
+            .unwrap();
+    let issuer_user_id = create_test_user(
+        &pool,
+        "certificate-issue-campaign-lock-issuer@example.invalid",
+        "test-password",
+    )
+    .await
+    .unwrap();
+    let issuer = school_certificate_issuer(issuer_user_id);
+    request_service::start_review(&pool, &issuer, request.id)
+        .await
+        .unwrap();
+
+    let mut blocker = pool.begin().await.unwrap();
+    sqlx::query("SELECT id FROM certificate_issue_requests WHERE id = $1 FOR UPDATE")
+        .bind(request.id)
+        .fetch_one(&mut *blocker)
+        .await
+        .unwrap();
+
+    let issue_pool = pool.clone();
+    let request_id = request.id;
+    let issuing = tokio::spawn(async move {
+        issuance_service::issue_request(
+            &issue_pool,
+            &issuer,
+            "โรงเรียนตัวอย่าง".to_string(),
+            request_id,
+            IssueCertificateRequest {
+                idempotency_key: Uuid::new_v4(),
+            },
+        )
+        .await
+    });
+
+    let wait_deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    loop {
+        let blocked: bool = sqlx::query_scalar(
+            "SELECT EXISTS (
+                 SELECT 1
+                 FROM pg_stat_activity
+                 WHERE datname = current_database()
+                   AND pid <> pg_backend_pid()
+                   AND wait_event_type = 'Lock'
+                   AND query LIKE '%FROM certificate_issue_requests%FOR UPDATE%'
+             )",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        if blocked {
+            break;
+        }
+        assert!(
+            tokio::time::Instant::now() < wait_deadline,
+            "issuance did not reach its blocked request-row lock"
+        );
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+
+    sqlx::query("SET LOCAL lock_timeout = '250ms'")
+        .execute(&mut *blocker)
+        .await
+        .unwrap();
+    let campaign_lock =
+        sqlx::query("SELECT id FROM certificate_campaigns WHERE id = $1 FOR UPDATE")
+            .bind(campaign.id)
+            .fetch_one(&mut *blocker)
+            .await;
+    blocker.rollback().await.unwrap();
+    assert!(
+        campaign_lock.is_err(),
+        "issuance must hold the campaign while waiting for the request row"
+    );
+    let issued = tokio::time::timeout(Duration::from_secs(5), issuing)
+        .await
+        .expect("issuance should finish after the request lock is released")
+        .unwrap()
+        .unwrap();
+    assert!(matches!(issued, IssueCertificateOutcome::Issued { .. }));
 }
 
 #[tokio::test]
@@ -8145,8 +8658,8 @@ async fn issued_manifest_uses_canonical_proof_url_and_refuses_revoked_certificat
                  WHERE datname = current_database()
                    AND pid <> pg_backend_pid()
                    AND wait_event_type = 'Lock'
-                   AND query LIKE '%FROM certificates%'
-                   AND query LIKE '%FOR UPDATE%'
+                   AND query LIKE '%FROM certificate_campaigns campaign%'
+                   AND query LIKE '%FOR UPDATE OF campaign%'
              )",
         )
         .fetch_one(&pool)
@@ -8157,7 +8670,7 @@ async fn issued_manifest_uses_canonical_proof_url_and_refuses_revoked_certificat
         }
         assert!(
             tokio::time::Instant::now() < wait_deadline,
-            "revocation neither completed nor waited on the certificate row"
+            "revocation neither completed nor waited on the campaign row"
         );
         tokio::time::sleep(Duration::from_millis(20)).await;
     };
@@ -8166,7 +8679,7 @@ async fn issued_manifest_uses_canonical_proof_url_and_refuses_revoked_certificat
     revoking.await.unwrap().unwrap();
     assert!(
         revocation_blocked,
-        "revocation committed while an issued render manifest was still being created"
+        "revocation committed while the issued render manifest held the campaign guard"
     );
     assert!(matches!(
         render_service::issued_manifest(

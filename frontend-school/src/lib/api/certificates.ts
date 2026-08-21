@@ -8,6 +8,11 @@ export type CertificateCampaignCapabilities = Schemas['CertificateCampaignCapabi
 export type CertificateCampaignSummary = Schemas['CertificateCampaignSummary'];
 export type CertificateCampaignDetail = Schemas['CertificateCampaignDetail'];
 export type CertificateCampaignListQuery = Schemas['CertificateCampaignListQuery'];
+export type CertificateCampaignPurgeCounts = Schemas['CertificateCampaignPurgeCounts'];
+export type StartCertificateCampaignPurgeRequest = Schemas['StartCertificateCampaignPurgeRequest'];
+export type CertificateCampaignPurgeImpact = Schemas['CertificateCampaignPurgeImpact'];
+export type CertificateCampaignPurgePhase = Schemas['CertificateCampaignPurgePhase'];
+export type CertificateCampaignPurgeStatus = Schemas['CertificateCampaignPurgeStatus'];
 export type CreateCertificateCampaignRequest = Schemas['CreateCertificateCampaignRequest'];
 export type UpdateCertificateCampaignRequest = Schemas['UpdateCertificateCampaignRequest'];
 export type ChangeCertificateCampaignStatusRequest =
@@ -63,7 +68,6 @@ export type RevokeCertificateRequest = Schemas['RevokeCertificateRequest'];
 export type RevokeCertificateResult = Schemas['RevokeCertificateResult'];
 export type CertificateRenderManifestBatchRequest =
 	Schemas['CertificateRenderManifestBatchRequest'];
-type EmptyData = Schemas['EmptyData'];
 
 export async function listCertificateCampaigns(
 	query: CertificateCampaignListQuery = {}
@@ -120,11 +124,51 @@ export async function changeCertificateCampaignStatus(
 	return requireApiData(response, 'ไม่สามารถเปลี่ยนสถานะกิจกรรมเกียรติบัตรได้');
 }
 
-export async function deleteCertificateCampaign(campaignId: string): Promise<EmptyData> {
-	const response = await apiClient.delete<EmptyData, CertificateResourceLocked>(
-		`/api/certificates/campaigns/${encodeURIComponent(campaignId)}`
+export async function getCertificateCampaignPurgeImpact(
+	campaignId: string,
+	options: ApiRequestOptions = {}
+): Promise<CertificateCampaignPurgeImpact> {
+	const response = await apiClient.get<CertificateCampaignPurgeImpact>(
+		`/api/certificates/campaigns/${encodeURIComponent(campaignId)}/purge-impact`,
+		options
 	);
-	return requireApiData(response, 'ไม่สามารถลบกิจกรรมเกียรติบัตรได้');
+	return requireApiData(response, 'ไม่สามารถตรวจสอบข้อมูลที่จะลบได้');
+}
+
+export async function startCertificateCampaignPurge(
+	campaignId: string,
+	payload: StartCertificateCampaignPurgeRequest,
+	options: ApiRequestOptions = {}
+): Promise<CertificateCampaignPurgeStatus> {
+	const response = await apiClient.post<CertificateCampaignPurgeStatus>(
+		`/api/certificates/campaigns/${encodeURIComponent(campaignId)}/purge`,
+		payload,
+		options
+	);
+	return requireApiData(response, 'ไม่สามารถเริ่มลบกิจกรรมถาวรได้');
+}
+
+export async function getCertificateCampaignPurgeStatus(
+	campaignId: string,
+	options: ApiRequestOptions = {}
+): Promise<CertificateCampaignPurgeStatus> {
+	const response = await apiClient.get<CertificateCampaignPurgeStatus>(
+		`/api/certificates/campaigns/${encodeURIComponent(campaignId)}/purge-status`,
+		options
+	);
+	return requireApiData(response, 'ไม่สามารถโหลดสถานะการลบกิจกรรมได้');
+}
+
+export async function retryCertificateCampaignPurge(
+	campaignId: string,
+	options: ApiRequestOptions = {}
+): Promise<CertificateCampaignPurgeStatus> {
+	const response = await apiClient.post<CertificateCampaignPurgeStatus>(
+		`/api/certificates/campaigns/${encodeURIComponent(campaignId)}/purge/retry`,
+		undefined,
+		options
+	);
+	return requireApiData(response, 'ไม่สามารถลองลบกิจกรรมต่อได้');
 }
 
 export async function listCertificateOwnerOptions(): Promise<CertificateOwnerOption[]> {

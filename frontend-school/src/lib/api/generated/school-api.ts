@@ -1618,7 +1618,7 @@ export interface paths {
 		get: operations['getCertificateCampaign'];
 		put: operations['updateCertificateCampaign'];
 		post?: never;
-		delete: operations['deleteCertificateCampaign'];
+		delete?: never;
 		options?: never;
 		head?: never;
 		patch?: never;
@@ -1730,6 +1730,70 @@ export interface paths {
 		get: operations['listIssuedCertificates'];
 		put?: never;
 		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/certificates/campaigns/{campaign_id}/purge': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['startCertificateCampaignPurge'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/certificates/campaigns/{campaign_id}/purge-impact': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getCertificateCampaignPurgeImpact'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/certificates/campaigns/{campaign_id}/purge-status': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getCertificateCampaignPurgeStatus'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/certificates/campaigns/{campaign_id}/purge/retry': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['retryCertificateCampaignPurge'];
 		delete?: never;
 		options?: never;
 		head?: never;
@@ -3585,6 +3649,32 @@ export interface components {
 				updatedAt: string;
 				/** Format: uuid */
 				updatedBy: string | null;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_CertificateCampaignPurgeImpact: {
+			data: {
+				/** Format: uuid */
+				campaignId: string;
+				campaignName: string;
+				counts: components['schemas']['CertificateCampaignPurgeCounts'];
+				/** Format: date-time */
+				updatedAt: string;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_CertificateCampaignPurgeStatus: {
+			data: {
+				/** Format: uuid */
+				campaignId: string;
+				/** Format: int64 */
+				deletedFileCount: number;
+				/** Format: int64 */
+				fileCount: number;
+				lastErrorCode: string | null;
+				phase: components['schemas']['CertificateCampaignPurgePhase'];
 			};
 			message?: string;
 			success: boolean;
@@ -6116,8 +6206,46 @@ export interface components {
 			search?: string | null;
 			status?: null | components['schemas']['CertificateCampaignStatus'];
 		};
+		CertificateCampaignPurgeCounts: {
+			/** Format: int64 */
+			candidateCount: number;
+			/** Format: int64 */
+			fileCount: number;
+			/** Format: int64 */
+			issuedCertificateCount: number;
+			/** Format: int64 */
+			openRequestCount: number;
+			/** Format: int64 */
+			requestCount: number;
+			/** Format: int64 */
+			revokedCertificateCount: number;
+			/** Format: int64 */
+			templateCount: number;
+			/** Format: int64 */
+			totalFileBytes: number;
+		};
+		CertificateCampaignPurgeImpact: {
+			/** Format: uuid */
+			campaignId: string;
+			campaignName: string;
+			counts: components['schemas']['CertificateCampaignPurgeCounts'];
+			/** Format: date-time */
+			updatedAt: string;
+		};
 		/** @enum {string} */
-		CertificateCampaignStatus: 'draft' | 'active' | 'closed' | 'archived';
+		CertificateCampaignPurgePhase: 'deleting_files' | 'failed' | 'finalizing' | 'completed';
+		CertificateCampaignPurgeStatus: {
+			/** Format: uuid */
+			campaignId: string;
+			/** Format: int64 */
+			deletedFileCount: number;
+			/** Format: int64 */
+			fileCount: number;
+			lastErrorCode: string | null;
+			phase: components['schemas']['CertificateCampaignPurgePhase'];
+		};
+		/** @enum {string} */
+		CertificateCampaignStatus: 'draft' | 'active' | 'closed' | 'archived' | 'purging';
 		CertificateCampaignSummary: {
 			/** Format: uuid */
 			academicYearId: string;
@@ -8207,6 +8335,12 @@ export interface components {
 			/** Format: uuid */
 			subjectId: string;
 			subjectName: string;
+		};
+		StartCertificateCampaignPurgeRequest: {
+			confirmationName: string;
+			expectedImpact: components['schemas']['CertificateCampaignPurgeCounts'];
+			/** Format: date-time */
+			expectedUpdatedAt: string;
 		};
 		StudentDbRow: {
 			address: string | null;
@@ -17390,65 +17524,6 @@ export interface operations {
 			};
 		};
 	};
-	deleteCertificateCampaign: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description Certificate campaign ID */
-				campaign_id: string;
-			};
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description Draft certificate campaign deleted */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_EmptyData'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Certificate campaign delete permission denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Certificate campaign not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Campaign cannot be deleted */
-			409: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponseWithOptionalData_CertificateResourceLocked'];
-				};
-			};
-		};
-	};
 	listCertificateCandidates: {
 		parameters: {
 			query?: {
@@ -18038,6 +18113,246 @@ export interface operations {
 			};
 			/** @description Invalid issued certificate query */
 			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	startCertificateCampaignPurge: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Certificate campaign ID */
+				campaign_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['StartCertificateCampaignPurgeRequest'];
+			};
+		};
+		responses: {
+			/** @description Permanent campaign purge accepted */
+			202: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_CertificateCampaignPurgeStatus'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Certificate campaign delete permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Certificate campaign not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Campaign or purge impact changed */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Confirmation name is invalid */
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getCertificateCampaignPurgeImpact: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Certificate campaign ID */
+				campaign_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Permanent purge impact snapshot */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_CertificateCampaignPurgeImpact'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Certificate campaign delete permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Certificate campaign not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Campaign purge already started */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getCertificateCampaignPurgeStatus: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Certificate campaign ID */
+				campaign_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Current permanent purge status */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_CertificateCampaignPurgeStatus'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Certificate campaign delete permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Campaign purge not found or already completed */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	retryCertificateCampaignPurge: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Certificate campaign ID */
+				campaign_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Permanent campaign purge retry accepted */
+			202: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_CertificateCampaignPurgeStatus'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Certificate campaign delete permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Campaign purge not found or already completed */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Campaign purge state is inconsistent */
+			409: {
 				headers: {
 					[name: string]: unknown;
 				};

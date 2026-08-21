@@ -28,6 +28,24 @@ pub async fn record_certificate_template_upload(
             "purpose ไม่ใช่ไฟล์ของแม่แบบเกียรติบัตร".to_string(),
         ));
     }
+    let mut transaction = pool.begin().await?;
+    let campaign_status = sqlx::query_scalar::<_, String>(
+        "SELECT campaign.status
+         FROM certificate_templates AS template
+         JOIN certificate_campaigns AS campaign ON campaign.id = template.campaign_id
+         WHERE template.id = $1
+         FOR UPDATE OF campaign",
+    )
+    .bind(template_id)
+    .fetch_optional(&mut *transaction)
+    .await?
+    .ok_or_else(|| AppError::NotFound("ไม่พบแม่แบบเกียรติบัตร".to_string()))?;
+    if campaign_status == "purging" {
+        return Err(AppError::Conflict(
+            "certificate_campaign_purging".to_string(),
+        ));
+    }
+
     sqlx::query(
         "INSERT INTO certificate_template_file_uploads
             (file_id, template_id, purpose_code, uploaded_by)
@@ -37,8 +55,9 @@ pub async fn record_certificate_template_upload(
     .bind(template_id)
     .bind(purpose.code())
     .bind(uploaded_by)
-    .execute(pool)
+    .execute(&mut *transaction)
     .await?;
+    transaction.commit().await?;
     Ok(())
 }
 

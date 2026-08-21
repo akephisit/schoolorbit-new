@@ -73,7 +73,9 @@ const REQUEST_SELECT: &str = r#"
         request.created_at,
         request.updated_at
     FROM certificate_issue_requests request
-    JOIN certificate_campaigns campaign ON campaign.id = request.campaign_id
+    JOIN certificate_campaigns campaign
+      ON campaign.id = request.campaign_id
+     AND campaign.status <> 'purging'
     LEFT JOIN organization_units owner ON owner.id = campaign.owner_organization_unit_id
     JOIN users submitter ON submitter.id = request.submitted_by
     LEFT JOIN users reviewer ON reviewer.id = request.reviewed_by
@@ -307,10 +309,11 @@ pub async fn withdraw(
     }
 
     let mut tx = pool.begin().await.map_err(request_db_error)?;
+    let campaign = lock_campaign(&mut tx, authorized.campaign_id).await?;
+    require_campaign_not_purging(&campaign.status)?;
+    require_request_owner_unchanged(&authorized, &campaign)?;
     let locked = lock_request(&mut tx, request_id).await?;
     require_same_request(&authorized, &locked)?;
-    let campaign = lock_campaign(&mut tx, authorized.campaign_id).await?;
-    require_request_owner_unchanged(&authorized, &campaign)?;
     require_request_status(&locked.status, CertificateIssueRequestStatus::Pending)?;
     transition_to_withdrawn(&mut tx, actor.user_id, &locked).await?;
     tx.commit().await.map_err(request_db_error)?;
@@ -326,10 +329,11 @@ pub async fn start_review(
     actor.require_permission(codes::CERTIFICATE_ISSUE_SCHOOL)?;
     let authorized = fetch_request_access(pool, request_id).await?;
     let mut tx = pool.begin().await.map_err(request_db_error)?;
+    let campaign = lock_campaign(&mut tx, authorized.campaign_id).await?;
+    require_campaign_not_purging(&campaign.status)?;
+    require_request_owner_unchanged(&authorized, &campaign)?;
     let locked = lock_request(&mut tx, request_id).await?;
     require_same_request(&authorized, &locked)?;
-    let campaign = lock_campaign(&mut tx, authorized.campaign_id).await?;
-    require_request_owner_unchanged(&authorized, &campaign)?;
     require_request_status(&locked.status, CertificateIssueRequestStatus::Pending)?;
 
     sqlx::query(
@@ -372,10 +376,11 @@ pub async fn return_request(
     let return_note = validate_return_note(&return_note)?;
     let authorized = fetch_request_access(pool, request_id).await?;
     let mut tx = pool.begin().await.map_err(request_db_error)?;
+    let campaign = lock_campaign(&mut tx, authorized.campaign_id).await?;
+    require_campaign_not_purging(&campaign.status)?;
+    require_request_owner_unchanged(&authorized, &campaign)?;
     let locked = lock_request(&mut tx, request_id).await?;
     require_same_request(&authorized, &locked)?;
-    let campaign = lock_campaign(&mut tx, authorized.campaign_id).await?;
-    require_request_owner_unchanged(&authorized, &campaign)?;
     require_request_status(&locked.status, CertificateIssueRequestStatus::Reviewing)?;
     let issue_code_values = issue_codes
         .iter()
@@ -713,7 +718,7 @@ async fn fetch_campaign(pool: &PgPool, campaign_id: Uuid) -> Result<CampaignRow,
                 owner.is_active AS owner_is_active, campaign.status
          FROM certificate_campaigns campaign
          LEFT JOIN organization_units owner ON owner.id = campaign.owner_organization_unit_id
-         WHERE campaign.id = $1",
+         WHERE campaign.id = $1 AND campaign.status <> 'purging'",
     )
     .bind(campaign_id)
     .fetch_optional(pool)
@@ -826,7 +831,9 @@ async fn fetch_request_access(
                 (SELECT COUNT(*)::bigint FROM certificate_issue_request_items item
                  WHERE item.request_id = request.id) AS item_count
          FROM certificate_issue_requests request
-         JOIN certificate_campaigns campaign ON campaign.id = request.campaign_id
+         JOIN certificate_campaigns campaign
+           ON campaign.id = request.campaign_id
+          AND campaign.status <> 'purging'
          WHERE request.id = $1",
     )
     .bind(request_id)
@@ -1102,12 +1109,26 @@ fn require_active_owner(campaign: &CampaignRow) -> Result<(), AppError> {
 }
 
 fn require_submittable_campaign(status: &str) -> Result<(), AppError> {
-    if matches!(status, "draft" | "active") {
+    if status == "purging" {
+        Err(AppError::Conflict(
+            "certificate_campaign_purging".to_string(),
+        ))
+    } else if matches!(status, "draft" | "active") {
         Ok(())
     } else {
         Err(AppError::Conflict(
             "กิจกรรมสถานะนี้ไม่สามารถส่งคำขอออกเกียรติบัตรได้".to_string(),
         ))
+    }
+}
+
+fn require_campaign_not_purging(status: &str) -> Result<(), AppError> {
+    if status == "purging" {
+        Err(AppError::Conflict(
+            "certificate_campaign_purging".to_string(),
+        ))
+    } else {
+        Ok(())
     }
 }
 

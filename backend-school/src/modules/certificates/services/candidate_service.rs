@@ -1788,7 +1788,8 @@ async fn lock_account_identity_writes(tx: &mut Transaction<'_, Postgres>) -> Res
 async fn campaign_access(pool: &PgPool, campaign_id: Uuid) -> Result<CampaignAccessRow, AppError> {
     sqlx::query_as(
         "SELECT owner_organization_unit_id, status
-         FROM certificate_campaigns WHERE id = $1",
+         FROM certificate_campaigns
+         WHERE id = $1 AND status <> 'purging'",
     )
     .bind(campaign_id)
     .fetch_optional(pool)
@@ -1830,7 +1831,11 @@ fn campaign_status_is_mutable(status: &str) -> bool {
 }
 
 fn require_mutable_campaign(status: &str) -> Result<(), AppError> {
-    if campaign_status_is_mutable(status) {
+    if status == "purging" {
+        Err(AppError::Conflict(
+            "certificate_campaign_purging".to_string(),
+        ))
+    } else if campaign_status_is_mutable(status) {
         Ok(())
     } else {
         Err(AppError::Conflict(

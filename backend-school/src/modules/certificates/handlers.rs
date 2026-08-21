@@ -18,6 +18,7 @@ use crate::{
                 AttachCertificateAssetRequest, AttachCertificateBackgroundRequest,
                 AttachCertificateFontBatchRequest, CertificateAccountSearchQuery,
                 CertificateCampaignDetail, CertificateCampaignListQuery,
+                CertificateCampaignPurgeImpact, CertificateCampaignPurgeStatus,
                 CertificateCampaignSummary, CertificateCandidateAccount,
                 CertificateCandidateBulkRequest, CertificateCandidateBulkResult,
                 CertificateCandidateDetail, CertificateCandidateImportResult,
@@ -36,12 +37,13 @@ use crate::{
                 ManualCertificateVerificationRequest, PublicCertificateRenderRequest,
                 PublicCertificateVerificationData, QrCertificateVerificationRequest,
                 ReturnCertificateIssueRequest, RevokeCertificateRequest, RevokeCertificateResult,
-                SubmitCertificateIssueRequest, UpdateCertificateCampaignRequest,
-                UpdateCertificateCandidateRequest, UpdateCertificateTemplateRequest,
+                StartCertificateCampaignPurgeRequest, SubmitCertificateIssueRequest,
+                UpdateCertificateCampaignRequest, UpdateCertificateCandidateRequest,
+                UpdateCertificateTemplateRequest,
             },
             services::{
-                campaign_service, candidate_service, issuance_service, render_service,
-                request_service, template_service, verification_service,
+                campaign_service, candidate_service, issuance_service, purge_service,
+                render_service, request_service, template_service, verification_service,
             },
         },
         files::consumer_service::request_deletions,
@@ -427,35 +429,114 @@ pub async fn change_certificate_campaign_status(
 }
 
 #[utoipa::path(
-    delete,
-    path = "/api/certificates/campaigns/{campaign_id}",
-    operation_id = "deleteCertificateCampaign",
+    get,
+    path = "/api/certificates/campaigns/{campaign_id}/purge-impact",
+    operation_id = "getCertificateCampaignPurgeImpact",
     tag = "certificate",
     params(("campaign_id" = Uuid, Path, description = "Certificate campaign ID")),
     responses(
-        (status = 200, description = "Draft certificate campaign deleted", body = ApiResponse<crate::api_response::EmptyData>),
+        (status = 200, description = "Permanent purge impact snapshot", body = ApiResponse<CertificateCampaignPurgeImpact>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Certificate campaign delete permission denied", body = ApiErrorResponse),
         (status = 404, description = "Certificate campaign not found", body = ApiErrorResponse),
-        (status = 409, description = "Campaign cannot be deleted", body = ApiErrorResponseWithOptionalData<CertificateResourceLocked>)
+        (status = 409, description = "Campaign purge already started", body = ApiErrorResponse)
     )
 )]
-pub async fn delete_certificate_campaign(
+pub async fn get_certificate_campaign_purge_impact(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
     Path(campaign_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
     let context = actor_tenant_context_from_session(&state, &session).await?;
-    let detached_file_ids =
-        campaign_service::delete_campaign(&context.tenant.pool, &context.actor, campaign_id)
-            .await?;
-    request_deletions(
-        state.file_platform.as_ref(),
+    let impact = purge_service::impact(&context.tenant.pool, &context.actor, campaign_id).await?;
+    Ok((StatusCode::OK, Json(ApiResponse::ok(impact))).into_response())
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/certificates/campaigns/{campaign_id}/purge",
+    operation_id = "startCertificateCampaignPurge",
+    tag = "certificate",
+    params(("campaign_id" = Uuid, Path, description = "Certificate campaign ID")),
+    request_body = StartCertificateCampaignPurgeRequest,
+    responses(
+        (status = 202, description = "Permanent campaign purge accepted", body = ApiResponse<CertificateCampaignPurgeStatus>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Certificate campaign delete permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Certificate campaign not found", body = ApiErrorResponse),
+        (status = 409, description = "Campaign or purge impact changed", body = ApiErrorResponse),
+        (status = 422, description = "Confirmation name is invalid", body = ApiErrorResponse)
+    )
+)]
+pub async fn start_certificate_campaign_purge(
+    State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(campaign_id): Path<Uuid>,
+    Json(payload): Json<StartCertificateCampaignPurgeRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context_from_session(&state, &session).await?;
+    let status = purge_service::start(
         &context.tenant.pool,
-        detached_file_ids,
+        &context.actor,
+        state.file_platform.as_ref(),
+        campaign_id,
+        payload,
     )
     .await?;
-    Ok((StatusCode::OK, Json(ApiResponse::empty())).into_response())
+    Ok((StatusCode::ACCEPTED, Json(ApiResponse::ok(status))).into_response())
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/certificates/campaigns/{campaign_id}/purge-status",
+    operation_id = "getCertificateCampaignPurgeStatus",
+    tag = "certificate",
+    params(("campaign_id" = Uuid, Path, description = "Certificate campaign ID")),
+    responses(
+        (status = 200, description = "Current permanent purge status", body = ApiResponse<CertificateCampaignPurgeStatus>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Certificate campaign delete permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Campaign purge not found or already completed", body = ApiErrorResponse)
+    )
+)]
+pub async fn get_certificate_campaign_purge_status(
+    State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(campaign_id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context_from_session(&state, &session).await?;
+    let status = purge_service::status(&context.tenant.pool, &context.actor, campaign_id).await?;
+    Ok((StatusCode::OK, Json(ApiResponse::ok(status))).into_response())
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/certificates/campaigns/{campaign_id}/purge/retry",
+    operation_id = "retryCertificateCampaignPurge",
+    tag = "certificate",
+    params(("campaign_id" = Uuid, Path, description = "Certificate campaign ID")),
+    responses(
+        (status = 202, description = "Permanent campaign purge retry accepted", body = ApiResponse<CertificateCampaignPurgeStatus>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Certificate campaign delete permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Campaign purge not found or already completed", body = ApiErrorResponse),
+        (status = 409, description = "Campaign purge state is inconsistent", body = ApiErrorResponse)
+    )
+)]
+pub async fn retry_certificate_campaign_purge(
+    State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(campaign_id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context_from_session(&state, &session).await?;
+    let status = purge_service::retry(
+        &context.tenant.pool,
+        &context.actor,
+        state.file_platform.as_ref(),
+        campaign_id,
+    )
+    .await?;
+    Ok((StatusCode::ACCEPTED, Json(ApiResponse::ok(status))).into_response())
 }
 
 #[utoipa::path(

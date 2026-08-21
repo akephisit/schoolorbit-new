@@ -186,6 +186,7 @@ fn verification_query<'a>(
          LEFT JOIN certificates replacement
            ON replacement.id = certificate.replaced_by_certificate_id
          WHERE certificate.certificate_number = $1
+           AND campaign.status <> 'purging'
            AND ($2::text IS NULL OR certificate.qr_proof_hash = $2)",
     )
     .bind(certificate_number);

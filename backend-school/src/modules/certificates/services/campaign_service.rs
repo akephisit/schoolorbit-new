@@ -129,6 +129,17 @@ impl OwnerCapabilityScope {
             Self::Units(units) => owner_id.is_some_and(|id| units.contains(&id)),
         }
     }
+
+    fn query_parts(&self) -> (bool, Vec<Uuid>) {
+        match self {
+            Self::School => (true, Vec::new()),
+            Self::Units(units) => (false, units.iter().copied().collect()),
+        }
+    }
+
+    fn is_empty(&self) -> bool {
+        matches!(self, Self::Units(units) if units.is_empty())
+    }
 }
 
 #[derive(Debug)]
@@ -146,32 +157,41 @@ pub async fn list_campaigns(
     actor: &ActorContext,
     query: CertificateCampaignListQuery,
 ) -> Result<Vec<CertificateCampaignSummary>, AppError> {
-    let read_scope = owner_list_scope(pool, actor, CertificateAction::Read).await?;
-    let exact_units = match &read_scope {
-        CertificateOwnerListScope::School => Vec::new(),
-        CertificateOwnerListScope::ExactUnits(units) => units.clone(),
-    };
-    let school_scope = matches!(read_scope, CertificateOwnerListScope::School);
+    let scopes = load_capability_scopes(pool, actor).await?;
+    if scopes.read.is_empty() && scopes.delete.is_empty() {
+        return Err(AppError::Forbidden(
+            "ไม่มีสิทธิ์ดูรายการกิจกรรมเกียรติบัตร".to_string(),
+        ));
+    }
+    let (read_school_scope, read_exact_units) = scopes.read.query_parts();
+    let (delete_school_scope, delete_exact_units) = scopes.delete.query_parts();
     let status = query.status.map(CertificateCampaignStatus::as_str);
     let search = normalize_optional_search(query.search)?;
     let sql = format!(
         "{CAMPAIGN_SELECT}
-         WHERE ($1::boolean OR c.owner_organization_unit_id = ANY($2::uuid[]))
-           AND ($3::uuid IS NULL OR c.academic_year_id = $3)
-           AND ($4::text IS NULL OR c.status = $4)
-           AND ($5::text IS NULL OR c.name ILIKE '%' || $5 || '%')
+         WHERE (
+             (c.status <> 'purging'
+              AND ($1::boolean OR c.owner_organization_unit_id = ANY($2::uuid[])))
+             OR
+             (c.status = 'purging'
+              AND ($3::boolean OR c.owner_organization_unit_id = ANY($4::uuid[])))
+         )
+           AND ($5::uuid IS NULL OR c.academic_year_id = $5)
+           AND ($6::text IS NULL OR c.status = $6)
+           AND ($7::text IS NULL OR c.name ILIKE '%' || $7 || '%')
          ORDER BY c.event_date DESC, c.created_at DESC, c.id"
     );
     let rows = sqlx::query_as::<_, CampaignRow>(&sql)
-        .bind(school_scope)
-        .bind(exact_units)
+        .bind(read_school_scope)
+        .bind(read_exact_units)
+        .bind(delete_school_scope)
+        .bind(delete_exact_units)
         .bind(query.academic_year_id)
         .bind(status)
         .bind(search)
         .fetch_all(pool)
         .await
         .map_err(campaign_db_error)?;
-    let scopes = load_capability_scopes(pool, actor).await?;
 
     rows.into_iter()
         .map(|row| row_to_summary(row, &scopes))
@@ -389,6 +409,11 @@ pub async fn change_campaign_status(
     campaign_id: Uuid,
     payload: ChangeCertificateCampaignStatusRequest,
 ) -> Result<CertificateCampaignDetail, AppError> {
+    if payload.status == CertificateCampaignStatus::Purging {
+        return Err(AppError::ValidationError(
+            "สถานะกำลังลบตั้งค่าได้เฉพาะกระบวนการลบถาวร".to_string(),
+        ));
+    }
     let authorization_row = fetch_campaign_row(pool, campaign_id).await?;
     require_owner_action(
         pool,
@@ -450,95 +475,6 @@ pub async fn change_campaign_status(
     fetch_detail_with_capabilities(pool, actor, campaign_id).await
 }
 
-pub async fn delete_campaign(
-    pool: &PgPool,
-    actor: &ActorContext,
-    campaign_id: Uuid,
-) -> Result<Vec<Uuid>, AppError> {
-    let authorization_row = fetch_campaign_row(pool, campaign_id).await?;
-    require_owner_action(
-        pool,
-        actor,
-        authorization_row.owner_organization_unit_id,
-        CertificateAction::Delete,
-    )
-    .await?;
-    let can_read_locked_request = super::request_service::can_read_request(
-        pool,
-        actor,
-        authorization_row.owner_organization_unit_id,
-    )
-    .await?;
-    require_valid_owner(pool, authorization_row.owner_organization_unit_id).await?;
-
-    let mut tx = pool.begin().await.map_err(campaign_db_error)?;
-    let current = lock_campaign(&mut tx, campaign_id).await?;
-    require_authorized_owner_unchanged(
-        authorization_row.owner_organization_unit_id,
-        current.owner_organization_unit_id,
-    )?;
-    require_valid_owner_in_transaction(&mut tx, current.owner_organization_unit_id).await?;
-    let status = parse_status(&current.status)?;
-    if status != CertificateCampaignStatus::Draft || current.activity_sequence.is_some() {
-        return Err(AppError::Conflict(
-            "ลบได้เฉพาะกิจกรรมฉบับร่างที่ยังไม่เคยออกเกียรติบัตร".to_string(),
-        ));
-    }
-    require_campaign_not_open_locked(&mut tx, campaign_id, can_read_locked_request).await?;
-    let (issued_count, request_count): (i64, i64) = sqlx::query_as(
-        "SELECT
-            (SELECT COUNT(*) FROM certificates WHERE campaign_id = $1),
-            (SELECT COUNT(*) FROM certificate_issue_requests WHERE campaign_id = $1)",
-    )
-    .bind(campaign_id)
-    .fetch_one(&mut *tx)
-    .await
-    .map_err(campaign_db_error)?;
-    if issued_count > 0 || request_count > 0 {
-        return Err(AppError::Conflict(
-            "กิจกรรมที่มีประวัติคำขอหรือออกเกียรติบัตรแล้วไม่สามารถลบได้".to_string(),
-        ));
-    }
-
-    let mut detached_file_ids = sqlx::query_scalar::<_, Uuid>(
-        "SELECT background_file_id
-         FROM certificate_templates
-         WHERE campaign_id = $1 AND background_file_id IS NOT NULL
-         UNION
-         SELECT asset.file_id
-         FROM certificate_template_assets asset
-         JOIN certificate_templates template ON template.id = asset.template_id
-         WHERE template.campaign_id = $1",
-    )
-    .bind(campaign_id)
-    .fetch_all(&mut *tx)
-    .await
-    .map_err(campaign_db_error)?;
-
-    record_campaign_audit(
-        &mut tx,
-        actor.user_id,
-        "delete",
-        campaign_audit_metadata(
-            campaign_id,
-            current.owner_organization_unit_id,
-            Some(status),
-            None,
-            std::iter::empty::<&str>(),
-        ),
-    )
-    .await?;
-    sqlx::query("DELETE FROM certificate_campaigns WHERE id = $1")
-        .bind(campaign_id)
-        .execute(&mut *tx)
-        .await
-        .map_err(campaign_db_error)?;
-    tx.commit().await.map_err(campaign_db_error)?;
-    detached_file_ids.sort_unstable();
-    detached_file_ids.dedup();
-    Ok(detached_file_ids)
-}
-
 pub async fn list_owner_options(
     pool: &PgPool,
     actor: &ActorContext,
@@ -591,7 +527,7 @@ async fn fetch_detail_with_capabilities(
 }
 
 async fn fetch_campaign_row(pool: &PgPool, campaign_id: Uuid) -> Result<CampaignRow, AppError> {
-    let sql = format!("{CAMPAIGN_SELECT} WHERE c.id = $1");
+    let sql = format!("{CAMPAIGN_SELECT} WHERE c.id = $1 AND c.status <> 'purging'");
     sqlx::query_as::<_, CampaignRow>(&sql)
         .bind(campaign_id)
         .fetch_optional(pool)
@@ -711,6 +647,9 @@ fn capabilities_for(
     status: CertificateCampaignStatus,
     scopes: &CapabilityScopes,
 ) -> CertificateCampaignCapabilities {
+    if status == CertificateCampaignStatus::Purging {
+        return CertificateCampaignCapabilities::default();
+    }
     let owner = row.owner_organization_unit_id;
     let owner_active = owner.is_none() || row.owner_organization_unit_is_active == Some(true);
     let unlocked = !row.has_open_issue_request;
@@ -723,12 +662,7 @@ fn capabilities_for(
                 status,
                 CertificateCampaignStatus::Draft | CertificateCampaignStatus::Active
             ),
-        can_delete: scopes.delete.allows(owner)
-            && unlocked
-            && status == CertificateCampaignStatus::Draft
-            && row.activity_sequence.is_none()
-            && row.issued_certificate_count == 0
-            && row.issue_request_count == 0,
+        can_delete: scopes.delete.allows(owner),
         can_submit: scopes.submit.allows(owner)
             && owner_active
             && matches!(

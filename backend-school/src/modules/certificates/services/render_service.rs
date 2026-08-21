@@ -155,21 +155,6 @@ pub async fn preview_manifest(
     .map_err(|_| {
         AppError::InternalServerError("certificate_template_geometry_invalid".to_string())
     })?;
-    let campaign = sqlx::query_as::<_, CampaignRenderRow>(
-        "SELECT academic_year.name AS academic_year_name,
-                campaign.name AS campaign_name,
-                campaign.event_date,
-                owner.name AS owner_organization_unit_name
-         FROM certificate_campaigns campaign
-         JOIN academic_years academic_year ON academic_year.id = campaign.academic_year_id
-         LEFT JOIN organization_units owner ON owner.id = campaign.owner_organization_unit_id
-         WHERE campaign.id = $1",
-    )
-    .bind(template.campaign_id)
-    .fetch_optional(pool)
-    .await?
-    .ok_or_else(|| AppError::NotFound("ไม่พบกิจกรรมเกียรติบัตร".to_string()))?;
-
     let catalog = template_service::variable_catalog(pool, actor, template_id).await?;
     let preview_layout = layout.unwrap_or_else(|| template.layout.clone());
     validate_layout(&preview_layout, source_page, &catalog.variables)
@@ -194,6 +179,23 @@ pub async fn preview_manifest(
         }
         recipient_values.insert(display_key, normalize_display_text(&value));
     }
+
+    let mut campaign_guard = pool.begin().await?;
+    let campaign = sqlx::query_as::<_, CampaignRenderRow>(
+        "SELECT academic_year.name AS academic_year_name,
+                campaign.name AS campaign_name,
+                campaign.event_date,
+                owner.name AS owner_organization_unit_name
+         FROM certificate_campaigns campaign
+         JOIN academic_years academic_year ON academic_year.id = campaign.academic_year_id
+         LEFT JOIN organization_units owner ON owner.id = campaign.owner_organization_unit_id
+         WHERE campaign.id = $1 AND campaign.status <> 'purging'
+         FOR SHARE OF campaign",
+    )
+    .bind(template.campaign_id)
+    .fetch_optional(&mut *campaign_guard)
+    .await?
+    .ok_or_else(|| AppError::NotFound("ไม่พบกิจกรรมเกียรติบัตร".to_string()))?;
 
     let issue_date = Utc::now().with_timezone(&SCHOOL_TIMEZONE).date_naive();
     let owner_name = campaign
@@ -247,14 +249,8 @@ pub async fn preview_manifest(
             ));
         }
     }
-    let repository = SqlFileRepository::new(pool.clone());
-    let background_grant = file_grant(
-        background_file_id,
-        platform
-            .private_download(&repository, background_file_id)
-            .await
-            .map_err(map_platform_error)?,
-    )?;
+    let background_grant =
+        transaction_file_grant(&mut campaign_guard, platform, background_file_id).await?;
     let mut font_grants = Vec::new();
     let mut image_grants = Vec::new();
     for asset in template
@@ -262,13 +258,7 @@ pub async fn preview_manifest(
         .iter()
         .filter(|asset| referenced_assets.contains(&asset.id))
     {
-        let grant = file_grant(
-            asset.file_id,
-            platform
-                .private_download(&repository, asset.file_id)
-                .await
-                .map_err(map_platform_error)?,
-        )?;
+        let grant = transaction_file_grant(&mut campaign_guard, platform, asset.file_id).await?;
         match asset.kind {
             CertificateTemplateAssetKind::Font => {
                 font_grants.push(CertificateRenderFontGrant {
@@ -304,7 +294,7 @@ pub async fn preview_manifest(
         }
     }
 
-    Ok(CertificateRenderManifest {
+    let manifest = CertificateRenderManifest {
         template_id,
         page_geometry,
         layout: preview_layout,
@@ -324,7 +314,9 @@ pub async fn preview_manifest(
         image_grants,
         background_grant,
         suggested_filename: format!("ตัวอย่าง-{}.pdf", filename_part(&template.name)),
-    })
+    };
+    campaign_guard.commit().await?;
+    Ok(manifest)
 }
 
 pub async fn issued_manifest(
@@ -466,22 +458,25 @@ async fn issued_manifest_inner(
         IssuedManifestAccess::Own(user_id) => Some(*user_id),
         IssuedManifestAccess::Administrative(_) | IssuedManifestAccess::Public => None,
     };
+    let access_row = sqlx::query_as::<_, IssuedRenderAccessRow>(
+        "SELECT campaign.owner_organization_unit_id
+         FROM certificates certificate
+         JOIN certificate_campaigns campaign ON campaign.id = certificate.campaign_id
+         WHERE certificate.id = $1
+           AND ($2::uuid IS NULL OR certificate.user_id = $2)
+           AND campaign.status <> 'purging'
+         FOR SHARE OF campaign",
+    )
+    .bind(certificate_id)
+    .bind(own_user_id)
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or_else(|| AppError::NotFound("ไม่พบเกียรติบัตร".to_string()))?;
     if let IssuedManifestAccess::Administrative(actor) = &access {
-        let access = sqlx::query_as::<_, IssuedRenderAccessRow>(
-            "SELECT campaign.owner_organization_unit_id
-             FROM certificates certificate
-             JOIN certificate_campaigns campaign ON campaign.id = certificate.campaign_id
-             WHERE certificate.id = $1
-             FOR SHARE OF campaign",
-        )
-        .bind(certificate_id)
-        .fetch_optional(&mut *tx)
-        .await?
-        .ok_or_else(|| AppError::NotFound("ไม่พบเกียรติบัตร".to_string()))?;
         require_owner_action(
             pool,
             actor,
-            access.owner_organization_unit_id,
+            access_row.owner_organization_unit_id,
             CertificateAction::Download,
         )
         .await?;
@@ -526,6 +521,7 @@ async fn issued_manifest_inner(
          JOIN files background ON background.id = template.background_file_id
          WHERE certificate.id = $1
            AND ($2::uuid IS NULL OR certificate.user_id = $2)
+           AND campaign.status <> 'purging'
          FOR SHARE OF template, background",
     )
     .bind(certificate_id)
@@ -768,7 +764,7 @@ pub async fn issued_manifests(
     let owner_organization_unit_id = sqlx::query_scalar::<_, Option<Uuid>>(
         "SELECT owner_organization_unit_id
          FROM certificate_campaigns
-         WHERE id = $1",
+         WHERE id = $1 AND status <> 'purging'",
     )
     .bind(campaign_id)
     .fetch_optional(pool)
@@ -783,8 +779,11 @@ pub async fn issued_manifests(
     .await?;
     let matching_count = sqlx::query_scalar::<_, i64>(
         "SELECT COUNT(*)
-         FROM certificates
-         WHERE campaign_id = $1 AND id = ANY($2::uuid[])",
+         FROM certificates certificate
+         JOIN certificate_campaigns campaign ON campaign.id = certificate.campaign_id
+         WHERE certificate.campaign_id = $1
+           AND certificate.id = ANY($2::uuid[])
+           AND campaign.status <> 'purging'",
     )
     .bind(campaign_id)
     .bind(&request.certificate_ids)

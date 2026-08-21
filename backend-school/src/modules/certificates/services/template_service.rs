@@ -186,7 +186,9 @@ const TEMPLATE_SELECT: &str = r#"
         t.created_at,
         t.updated_at
     FROM certificate_templates t
-    JOIN certificate_campaigns c ON c.id = t.campaign_id
+    JOIN certificate_campaigns c
+      ON c.id = t.campaign_id
+     AND c.status <> 'purging'
 "#;
 
 pub async fn list_templates(
@@ -1230,8 +1232,8 @@ async fn lock_campaign_owner(
     tx: &mut Transaction<'_, Postgres>,
     campaign_id: Uuid,
 ) -> Result<Option<Uuid>, AppError> {
-    sqlx::query_scalar::<_, Option<Uuid>>(
-        "SELECT owner_organization_unit_id
+    let (owner_organization_unit_id, status) = sqlx::query_as::<_, (Option<Uuid>, String)>(
+        "SELECT owner_organization_unit_id, status
          FROM certificate_campaigns
          WHERE id = $1
          FOR UPDATE",
@@ -1240,7 +1242,13 @@ async fn lock_campaign_owner(
     .fetch_optional(&mut **tx)
     .await
     .map_err(template_db_error)?
-    .ok_or_else(|| AppError::NotFound("ไม่พบกิจกรรมเกียรติบัตร".to_string()))
+    .ok_or_else(|| AppError::NotFound("ไม่พบกิจกรรมเกียรติบัตร".to_string()))?;
+    if status == "purging" {
+        return Err(AppError::Conflict(
+            "certificate_campaign_purging".to_string(),
+        ));
+    }
+    Ok(owner_organization_unit_id)
 }
 
 async fn require_locked_campaign_owner_unchanged(
@@ -1280,7 +1288,9 @@ fn require_template_campaign_unchanged(
 
 async fn campaign_owner(pool: &PgPool, campaign_id: Uuid) -> Result<Option<Uuid>, AppError> {
     sqlx::query_scalar::<_, Option<Uuid>>(
-        "SELECT owner_organization_unit_id FROM certificate_campaigns WHERE id = $1",
+        "SELECT owner_organization_unit_id
+         FROM certificate_campaigns
+         WHERE id = $1 AND status <> 'purging'",
     )
     .bind(campaign_id)
     .fetch_optional(pool)
