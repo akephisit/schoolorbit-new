@@ -3292,7 +3292,11 @@ async fn purge_zero_file_campaign_requires_exact_snapshot_and_completes_atomical
         },
     )
     .await;
-    assert!(matches!(mismatched, Err(AppError::ValidationError(_))));
+    assert!(matches!(
+        mismatched,
+        Err(AppError::ValidationError(message))
+            if message == "certificate_purge_confirmation_mismatch"
+    ));
 
     let status = purge_service::start(
         &pool,
@@ -3371,6 +3375,27 @@ async fn purge_counts_open_and_soft_deleted_rows_then_removes_file_metadata() {
     .await
     .unwrap();
 
+    insert_issued_certificate_for_template(
+        &pool,
+        &actor,
+        template.id,
+        campaign.id,
+        academic_year_id,
+        3147,
+    )
+    .await;
+    sqlx::query(
+        "UPDATE certificates
+         SET status = 'revoked', revoked_by = $2, revoked_at = NOW(),
+             revocation_reason = 'Purge count fixture'
+         WHERE campaign_id = $1",
+    )
+    .bind(campaign.id)
+    .bind(actor.user_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+
     let candidate_ids: Vec<Uuid> = sqlx::query_scalar(
         "INSERT INTO certificate_candidates (
             campaign_id, template_id, recipient_type, imported_first_name,
@@ -3424,16 +3449,18 @@ async fn purge_counts_open_and_soft_deleted_rows_then_removes_file_metadata() {
     };
     assert!(matches!(
         purge_service::impact(&pool, &read_only, campaign.id).await,
-        Err(AppError::Forbidden(_))
+        Err(AppError::NotFound(_))
     ));
 
     let impact = purge_service::impact(&pool, &actor, campaign.id)
         .await
         .unwrap();
     assert_eq!(impact.counts.template_count, 1);
-    assert_eq!(impact.counts.candidate_count, 2);
-    assert_eq!(impact.counts.request_count, 1);
+    assert_eq!(impact.counts.candidate_count, 3);
+    assert_eq!(impact.counts.request_count, 2);
     assert_eq!(impact.counts.open_request_count, 1);
+    assert_eq!(impact.counts.issued_certificate_count, 0);
+    assert_eq!(impact.counts.revoked_certificate_count, 1);
     assert_eq!(impact.counts.file_count, 1);
     assert_eq!(impact.counts.total_file_bytes, 10);
 
@@ -3513,19 +3540,46 @@ async fn purge_permission_is_school_or_exact_owner_unit_only() {
     assert!(purge_service::impact(&fixture.pool, &actor, campaign_a_id)
         .await
         .is_ok());
-    assert!(matches!(
-        purge_service::impact(&fixture.pool, &actor, campaign_b_id).await,
-        Err(AppError::Forbidden(_))
-    ));
     let school_actor = ActorContext {
         user_id: actor.user_id,
         permissions: vec![codes::CERTIFICATE_DELETE_SCHOOL.to_string()],
     };
-    assert!(
-        purge_service::impact(&fixture.pool, &school_actor, campaign_b_id)
-            .await
-            .is_ok()
+    let campaign_b_impact = purge_service::impact(&fixture.pool, &school_actor, campaign_b_id)
+        .await
+        .expect("school delete grant should inspect every owner scope");
+    let platform = crate::modules::files::platform_service::FilePlatform::new(
+        Arc::new(PreviewStorage),
+        Arc::new(PreviewScanner),
     );
+    let unauthorized_start = purge_service::start(
+        &fixture.pool,
+        &actor,
+        &platform,
+        campaign_b_id,
+        StartCertificateCampaignPurgeRequest {
+            confirmation_name: campaign_b_impact.campaign_name,
+            expected_updated_at: campaign_b_impact.updated_at,
+            expected_impact: campaign_b_impact.counts,
+        },
+    )
+    .await;
+    for result in [
+        purge_service::impact(&fixture.pool, &actor, campaign_b_id)
+            .await
+            .map(|_| ()),
+        unauthorized_start.map(|_| ()),
+        purge_service::status(&fixture.pool, &actor, campaign_b_id)
+            .await
+            .map(|_| ()),
+        purge_service::retry(&fixture.pool, &actor, &platform, campaign_b_id)
+            .await
+            .map(|_| ()),
+    ] {
+        assert!(
+            matches!(&result, Err(AppError::NotFound(_))),
+            "out-of-scope purge endpoint must mask existence: {result:?}"
+        );
+    }
 }
 
 #[tokio::test]
@@ -3570,7 +3624,8 @@ async fn purge_rejects_stale_impact_legal_hold_and_shared_files_without_partial_
             },
         )
         .await,
-        Err(AppError::Conflict(_))
+        Err(AppError::Conflict(message))
+            if message == "certificate_purge_impact_changed"
     ));
 
     let held_campaign = campaign_service::create_campaign(
@@ -3632,7 +3687,8 @@ async fn purge_rejects_stale_impact_legal_hold_and_shared_files_without_partial_
             },
         )
         .await,
-        Err(AppError::Conflict(_))
+        Err(AppError::Conflict(message))
+            if message == "certificate_purge_file_held"
     ));
 
     let shared_campaign = campaign_service::create_campaign(
@@ -3722,7 +3778,8 @@ async fn purge_rejects_stale_impact_legal_hold_and_shared_files_without_partial_
             },
         )
         .await,
-        Err(AppError::Conflict(_))
+        Err(AppError::Conflict(message))
+            if message == "certificate_purge_file_shared"
     ));
 
     let states: Vec<(Uuid, String)> = sqlx::query_as(
@@ -3754,6 +3811,315 @@ async fn purge_rejects_stale_impact_legal_hold_and_shared_files_without_partial_
     .await
     .unwrap();
     assert_eq!(job_count, 0);
+}
+
+#[tokio::test]
+async fn purge_rejects_files_referenced_by_profile_or_staff_achievement() {
+    let (pool, actor, academic_year_id) =
+        school_campaign_fixture("certificate_campaign_purge_external_file_refs", 3153).await;
+    let campaign = campaign_service::create_campaign(
+        &pool,
+        &actor,
+        campaign_create_payload(academic_year_id, None, "กิจกรรมไฟล์อ้างจากโดเมนอื่น"),
+    )
+    .await
+    .unwrap();
+    let template = template_service::create_template(
+        &pool,
+        &actor,
+        campaign.id,
+        CreateCertificateTemplateRequest {
+            name: "แบบไฟล์อ้างจากโดเมนอื่น".to_string(),
+            allowed_recipient_types: vec![RecipientType::External],
+        },
+    )
+    .await
+    .unwrap();
+    let file_id = insert_ready_template_file(
+        &pool,
+        &actor,
+        template.id,
+        "certificate_template_background",
+        pdf_inspection(841.89, 595.28, 0),
+    )
+    .await;
+    template_service::attach_background(
+        &pool,
+        &actor,
+        template.id,
+        AttachCertificateBackgroundRequest {
+            file_id,
+            geometry_action: GeometryAction::Preserve,
+            preview_confirmed: true,
+        },
+    )
+    .await
+    .unwrap();
+    sqlx::query("UPDATE users SET profile_image_file_id = $2 WHERE id = $1")
+        .bind(actor.user_id)
+        .bind(file_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let achievement_id: Uuid = sqlx::query_scalar(
+        "INSERT INTO staff_achievements (
+            user_id, title, achievement_date, created_by, image_file_id
+         ) VALUES ($1, 'ผลงานที่อ้างไฟล์ร่วม', CURRENT_DATE, $1, $2)
+         RETURNING id",
+    )
+    .bind(actor.user_id)
+    .bind(file_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+
+    let impact = purge_service::impact(&pool, &actor, campaign.id)
+        .await
+        .unwrap();
+    let platform = crate::modules::files::platform_service::FilePlatform::new(
+        Arc::new(PreviewStorage),
+        Arc::new(PreviewScanner),
+    );
+    let result = purge_service::start(
+        &pool,
+        &actor,
+        &platform,
+        campaign.id,
+        StartCertificateCampaignPurgeRequest {
+            confirmation_name: impact.campaign_name,
+            expected_updated_at: impact.updated_at,
+            expected_impact: impact.counts,
+        },
+    )
+    .await;
+    assert!(matches!(
+        result,
+        Err(AppError::Conflict(message))
+            if message == "certificate_purge_file_shared"
+    ));
+
+    let state: (String, Option<Uuid>, Option<Uuid>, i64, i64) = sqlx::query_as(
+        "SELECT campaign.status, users.profile_image_file_id,
+                achievement.image_file_id,
+                (SELECT COUNT(*) FROM certificate_campaign_purge_jobs
+                 WHERE campaign_id = campaign.id),
+                (SELECT COUNT(*) FROM files WHERE id = $3)
+         FROM certificate_campaigns AS campaign
+         JOIN users ON users.id = $1
+         JOIN staff_achievements AS achievement ON achievement.id = $2
+         WHERE campaign.id = $4",
+    )
+    .bind(actor.user_id)
+    .bind(achievement_id)
+    .bind(file_id)
+    .bind(campaign.id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        state,
+        ("draft".to_string(), Some(file_id), Some(file_id), 0, 1)
+    );
+}
+
+#[tokio::test]
+async fn purge_rejects_admission_logo_and_question_bank_file_consumers() {
+    fn assert_file_shared(result: Result<CertificateCampaignPurgeStatus, AppError>) {
+        assert!(matches!(
+            result,
+            Err(AppError::Conflict(message))
+                if message == "certificate_purge_file_shared"
+        ));
+    }
+
+    let (pool, actor, academic_year_id) =
+        school_campaign_fixture("certificate_campaign_purge_all_file_consumers", 3154).await;
+    let campaign = campaign_service::create_campaign(
+        &pool,
+        &actor,
+        campaign_create_payload(academic_year_id, None, "กิจกรรมไฟล์อ้างจากระบบอื่น"),
+    )
+    .await
+    .unwrap();
+    let template = template_service::create_template(
+        &pool,
+        &actor,
+        campaign.id,
+        CreateCertificateTemplateRequest {
+            name: "แบบไฟล์อ้างจากระบบอื่น".to_string(),
+            allowed_recipient_types: vec![RecipientType::External],
+        },
+    )
+    .await
+    .unwrap();
+    let file_id = insert_ready_template_file(
+        &pool,
+        &actor,
+        template.id,
+        "certificate_template_background",
+        pdf_inspection(841.89, 595.28, 0),
+    )
+    .await;
+    template_service::attach_background(
+        &pool,
+        &actor,
+        template.id,
+        AttachCertificateBackgroundRequest {
+            file_id,
+            geometry_action: GeometryAction::Preserve,
+            preview_confirmed: true,
+        },
+    )
+    .await
+    .unwrap();
+    let impact = purge_service::impact(&pool, &actor, campaign.id)
+        .await
+        .unwrap();
+    let request = || StartCertificateCampaignPurgeRequest {
+        confirmation_name: impact.campaign_name.clone(),
+        expected_updated_at: impact.updated_at,
+        expected_impact: impact.counts.clone(),
+    };
+    let platform = crate::modules::files::platform_service::FilePlatform::new(
+        Arc::new(PreviewStorage),
+        Arc::new(PreviewScanner),
+    );
+
+    let grade_level_id: Uuid =
+        sqlx::query_scalar("SELECT id FROM grade_levels ORDER BY id LIMIT 1")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let study_plan_id: Uuid = sqlx::query_scalar(
+        "INSERT INTO study_plans (code, name_th)
+         VALUES ('PURGE-CONSUMER', 'แผนทดสอบผู้ใช้ไฟล์')
+         RETURNING id",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let admission_round_id: Uuid = sqlx::query_scalar(
+        "INSERT INTO admission_rounds (
+            academic_year_id, grade_level_id, name, apply_start_date, apply_end_date
+         ) VALUES ($1, $2, 'รอบทดสอบผู้ใช้ไฟล์', CURRENT_DATE, CURRENT_DATE)
+         RETURNING id",
+    )
+    .bind(academic_year_id)
+    .bind(grade_level_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let admission_track_id: Uuid = sqlx::query_scalar(
+        "INSERT INTO admission_tracks (admission_round_id, study_plan_id, name)
+         VALUES ($1, $2, 'แผนรับสมัครทดสอบ')
+         RETURNING id",
+    )
+    .bind(admission_round_id)
+    .bind(study_plan_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let application_id: Uuid = sqlx::query_scalar(
+        "INSERT INTO admission_applications (
+            admission_round_id, admission_track_id, national_id,
+            national_id_hash, first_name, last_name
+         ) VALUES ($1, $2, 'encrypted-test-value', repeat('d', 64),
+                   'ผู้สมัคร', 'ทดสอบ')
+         RETURNING id",
+    )
+    .bind(admission_round_id)
+    .bind(admission_track_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let document_id: Uuid = sqlx::query_scalar(
+        "INSERT INTO admission_application_documents (application_id, file_id, doc_type)
+         VALUES ($1, $2, 'purge_consumer_fixture')
+         RETURNING id",
+    )
+    .bind(application_id)
+    .bind(file_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_file_shared(
+        purge_service::start(&pool, &actor, &platform, campaign.id, request()).await,
+    );
+    sqlx::query("DELETE FROM admission_application_documents WHERE id = $1")
+        .bind(document_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    sqlx::query("UPDATE school_settings SET logo_file_id = $1")
+        .bind(file_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert_file_shared(
+        purge_service::start(&pool, &actor, &platform, campaign.id, request()).await,
+    );
+    sqlx::query("UPDATE school_settings SET logo_file_id = NULL WHERE logo_file_id = $1")
+        .bind(file_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let subject_id: Uuid = sqlx::query_scalar(
+        "INSERT INTO subjects (code, name_th, type, start_academic_year_id)
+         VALUES ('PURGE-QB', 'รายวิชาทดสอบผู้ใช้ไฟล์', 'BASIC', $1)
+         RETURNING id",
+    )
+    .bind(academic_year_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let rich_content = serde_json::json!({
+        "schemaVersion": 1,
+        "document": {
+            "type": "doc",
+            "content": [{
+                "type": "image",
+                "attrs": {
+                    "fileId": file_id,
+                    "altText": null,
+                    "caption": null,
+                    "alignment": "center",
+                    "widthPercent": 50
+                }
+            }]
+        }
+    });
+    let question_id: Uuid = sqlx::query_scalar(
+        "INSERT INTO academic_question_bank_questions (
+            subject_id, owner_user_id, stem_content, created_by, updated_by
+         ) VALUES ($1, $2, $3, $2, $2)
+         RETURNING id",
+    )
+    .bind(subject_id)
+    .bind(actor.user_id)
+    .bind(sqlx::types::Json(rich_content))
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_file_shared(
+        purge_service::start(&pool, &actor, &platform, campaign.id, request()).await,
+    );
+
+    let state: (String, i64, i64) = sqlx::query_as(
+        "SELECT campaign.status,
+                (SELECT COUNT(*) FROM files WHERE id = $2),
+                (SELECT COUNT(*) FROM academic_question_bank_questions WHERE id = $3)
+         FROM certificate_campaigns AS campaign
+         WHERE campaign.id = $1",
+    )
+    .bind(campaign.id)
+    .bind(file_id)
+    .bind(question_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(state, ("draft".to_string(), 1, 1));
 }
 
 #[tokio::test]
@@ -3854,6 +4220,12 @@ async fn purge_provider_failure_is_durable_idempotent_and_retryable() {
             "delete_requested".to_string()
         )
     );
+    let premature_retry = purge_service::retry(&pool, &actor, &failing_platform, campaign.id).await;
+    assert!(matches!(
+        premature_retry,
+        Err(AppError::Conflict(message))
+            if message == "certificate_purge_retry_not_failed"
+    ));
     sqlx::query(
         "UPDATE file_operations
          SET status = 'failed', last_error_code = 'storage_operation_failed',

@@ -33784,16 +33784,6 @@
             },
             "description": "Authentication required"
           },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Certificate campaign delete permission denied"
-          },
           "404": {
             "content": {
               "application/json": {
@@ -33802,7 +33792,7 @@
                 }
               }
             },
-            "description": "Certificate campaign not found"
+            "description": "Certificate campaign not found or outside the actor's exact delete scope"
           },
           "409": {
             "content": {
@@ -33866,16 +33856,6 @@
             },
             "description": "Authentication required"
           },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Certificate campaign delete permission denied"
-          },
           "404": {
             "content": {
               "application/json": {
@@ -33884,7 +33864,7 @@
                 }
               }
             },
-            "description": "Certificate campaign not found"
+            "description": "Certificate campaign not found or outside the actor's exact delete scope"
           },
           "409": {
             "content": {
@@ -33938,16 +33918,6 @@
             },
             "description": "Authentication required"
           },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Certificate campaign delete permission denied"
-          },
           "404": {
             "content": {
               "application/json": {
@@ -33956,7 +33926,7 @@
                 }
               }
             },
-            "description": "Campaign purge not found or already completed"
+            "description": "Campaign purge not found, already completed, or outside the actor's exact delete scope"
           }
         },
         "tags": [
@@ -34000,16 +33970,6 @@
             },
             "description": "Authentication required"
           },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Certificate campaign delete permission denied"
-          },
           "404": {
             "content": {
               "application/json": {
@@ -34018,7 +33978,7 @@
                 }
               }
             },
-            "description": "Campaign purge not found or already completed"
+            "description": "Campaign purge not found, already completed, or outside the actor's exact delete scope"
           },
           "409": {
             "content": {

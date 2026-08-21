@@ -112,6 +112,79 @@ AS $$
         );
 $$;
 
+-- Keep destructive ownership discovery in one place so the pre-provider check
+-- and the guarded finalizer cannot drift across File Platform consumers.
+CREATE FUNCTION certificate_campaign_purge_has_external_file_consumer(
+    p_campaign_id UUID,
+    p_file_ids UUID[]
+)
+RETURNS BOOLEAN
+LANGUAGE sql
+STABLE
+AS $$
+    SELECT EXISTS (
+        SELECT 1
+        FROM certificate_templates AS template
+        WHERE template.background_file_id = ANY(p_file_ids)
+          AND template.campaign_id <> p_campaign_id
+        UNION ALL
+        SELECT 1
+        FROM certificate_template_assets AS asset
+        JOIN certificate_templates AS template ON template.id = asset.template_id
+        WHERE asset.file_id = ANY(p_file_ids)
+          AND template.campaign_id <> p_campaign_id
+        UNION ALL
+        SELECT 1
+        FROM certificate_template_file_uploads AS upload
+        JOIN certificate_templates AS template ON template.id = upload.template_id
+        WHERE upload.file_id = ANY(p_file_ids)
+          AND template.campaign_id <> p_campaign_id
+        UNION ALL
+        SELECT 1
+        FROM users
+        WHERE profile_image_file_id = ANY(p_file_ids)
+        UNION ALL
+        SELECT 1
+        FROM staff_achievements
+        WHERE image_file_id = ANY(p_file_ids)
+        UNION ALL
+        SELECT 1
+        FROM admission_application_documents
+        WHERE file_id = ANY(p_file_ids)
+        UNION ALL
+        SELECT 1
+        FROM school_settings
+        WHERE logo_file_id = ANY(p_file_ids)
+        UNION ALL
+        SELECT 1
+        FROM (
+            SELECT question.stem_content AS content
+            FROM academic_question_bank_questions AS question
+            UNION ALL
+            SELECT question.explanation_content
+            FROM academic_question_bank_questions AS question
+            UNION ALL
+            SELECT question.rubric_content
+            FROM academic_question_bank_questions AS question
+            UNION ALL
+            SELECT choice.content
+            FROM academic_question_bank_choices AS choice
+        ) AS question_document
+        CROSS JOIN LATERAL jsonb_array_elements(
+            COALESCE(
+                question_document.content -> 'document' -> 'content',
+                '[]'::JSONB
+            )
+        ) AS block
+        WHERE block ->> 'type' = 'image'
+          AND EXISTS (
+              SELECT 1
+              FROM unnest(p_file_ids) AS candidate(file_id)
+              WHERE candidate.file_id::TEXT = block -> 'attrs' ->> 'fileId'
+          )
+    );
+$$;
+
 CREATE FUNCTION prevent_uncontrolled_certificate_campaign_delete()
 RETURNS TRIGGER
 LANGUAGE plpgsql
@@ -438,6 +511,22 @@ BEGIN
 
     IF inventory_file_count <> expected_file_count THEN
         RAISE EXCEPTION 'certificate campaign purge inventory count changed'
+            USING ERRCODE = 'integrity_constraint_violation';
+    END IF;
+
+    -- The file rows above are locked before the shared-consumer recheck. This
+    -- serializes relational foreign-key attachments and prevents a finalizer
+    -- from detaching or dangling any known File Platform consumer.
+    IF certificate_campaign_purge_has_external_file_consumer(
+        p_campaign_id,
+        ARRAY(
+            SELECT inventory.file_id
+            FROM certificate_campaign_purge_files AS inventory
+            WHERE inventory.campaign_id = p_campaign_id
+            ORDER BY inventory.file_id
+        )
+    ) THEN
+        RAISE EXCEPTION 'certificate_purge_file_shared'
             USING ERRCODE = 'integrity_constraint_violation';
     END IF;
 

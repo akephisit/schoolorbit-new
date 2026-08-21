@@ -437,8 +437,7 @@ pub async fn change_certificate_campaign_status(
     responses(
         (status = 200, description = "Permanent purge impact snapshot", body = ApiResponse<CertificateCampaignPurgeImpact>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
-        (status = 403, description = "Certificate campaign delete permission denied", body = ApiErrorResponse),
-        (status = 404, description = "Certificate campaign not found", body = ApiErrorResponse),
+        (status = 404, description = "Certificate campaign not found or outside the actor's exact delete scope", body = ApiErrorResponse),
         (status = 409, description = "Campaign purge already started", body = ApiErrorResponse)
     )
 )]
@@ -462,8 +461,7 @@ pub async fn get_certificate_campaign_purge_impact(
     responses(
         (status = 202, description = "Permanent campaign purge accepted", body = ApiResponse<CertificateCampaignPurgeStatus>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
-        (status = 403, description = "Certificate campaign delete permission denied", body = ApiErrorResponse),
-        (status = 404, description = "Certificate campaign not found", body = ApiErrorResponse),
+        (status = 404, description = "Certificate campaign not found or outside the actor's exact delete scope", body = ApiErrorResponse),
         (status = 409, description = "Campaign or purge impact changed", body = ApiErrorResponse),
         (status = 422, description = "Confirmation name is invalid", body = ApiErrorResponse)
     )
@@ -495,8 +493,7 @@ pub async fn start_certificate_campaign_purge(
     responses(
         (status = 200, description = "Current permanent purge status", body = ApiResponse<CertificateCampaignPurgeStatus>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
-        (status = 403, description = "Certificate campaign delete permission denied", body = ApiErrorResponse),
-        (status = 404, description = "Campaign purge not found or already completed", body = ApiErrorResponse)
+        (status = 404, description = "Campaign purge not found, already completed, or outside the actor's exact delete scope", body = ApiErrorResponse)
     )
 )]
 pub async fn get_certificate_campaign_purge_status(
@@ -518,8 +515,7 @@ pub async fn get_certificate_campaign_purge_status(
     responses(
         (status = 202, description = "Permanent campaign purge retry accepted", body = ApiResponse<CertificateCampaignPurgeStatus>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
-        (status = 403, description = "Certificate campaign delete permission denied", body = ApiErrorResponse),
-        (status = 404, description = "Campaign purge not found or already completed", body = ApiErrorResponse),
+        (status = 404, description = "Campaign purge not found, already completed, or outside the actor's exact delete scope", body = ApiErrorResponse),
         (status = 409, description = "Campaign purge state is inconsistent", body = ApiErrorResponse)
     )
 )]

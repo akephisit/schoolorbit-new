@@ -382,7 +382,7 @@ When reconciliation is unhealthy:
 
 ### Permanent certificate campaign purge
 
-Certificate campaign purge is the only controlled exception that permanently removes File Platform metadata together with business data. It requires the exact owner-unit delete permission, an exact campaign-name confirmation, and an unchanged impact snapshot. Starting it moves the campaign to `purging`; normal campaign reads and mutations then remain unavailable until the durable job finishes.
+Certificate campaign purge is the only controlled exception that permanently removes File Platform metadata together with business data. It requires either the school-wide delete permission or the exact owner-unit delete permission, an exact campaign-name confirmation, and an unchanged impact snapshot. Starting it moves the campaign to `purging`; normal campaign reads and mutations then remain unavailable until the durable job finishes.
 
 The purge first revokes file delivery and deletes every recorded object through the File Platform. Only after all inventory entries report deletion does the guarded database finalizer remove the campaign, templates, candidates, issue requests, issued and revoked certificates, audit rows, purge inventory, and file metadata in one transaction. Certificate counters are outside this deletion boundary and must never be reduced or reused.
 

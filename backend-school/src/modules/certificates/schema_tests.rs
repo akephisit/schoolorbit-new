@@ -111,6 +111,11 @@ fn certificate_campaign_purge_is_forward_only_guarded_and_file_complete() {
         "finalize_certificate_campaign_purge",
         "certificate_campaign_purge_guard_allows",
         "certificate_file_purge_guard_allows",
+        "certificate_campaign_purge_has_external_file_consumer",
+        "admission_application_documents",
+        "school_settings",
+        "academic_question_bank_questions",
+        "academic_question_bank_choices",
         "file_versions_prevent_deletion",
         "file_derivatives_prevent_deletion",
     ] {
@@ -460,6 +465,18 @@ async fn insert_purge_file_fixture(
     .expect("purge file operation fixture should insert");
 
     (file_id, version_id, derivative_id)
+}
+
+async fn assert_purge_finalizer_rejects_shared_file(pool: &PgPool, campaign_id: Uuid) {
+    let error = sqlx::query_scalar::<_, bool>("SELECT finalize_certificate_campaign_purge($1)")
+        .bind(campaign_id)
+        .fetch_one(pool)
+        .await
+        .expect_err("shared File Platform consumer must block finalization");
+    let sqlx::Error::Database(database_error) = error else {
+        panic!("expected a database constraint error, got {error:?}");
+    };
+    assert_eq!(database_error.message(), "certificate_purge_file_shared");
 }
 
 #[tokio::test]
@@ -866,6 +883,325 @@ async fn purge_finalizer_rolls_back_when_storage_is_not_deleted() {
         .await
         .expect("file should remain after rollback");
     assert_eq!((campaign_count, template_count, file_count), (1, 1, 1));
+}
+
+#[tokio::test]
+async fn purge_finalizer_rolls_back_when_inventory_file_has_external_domain_references() {
+    let pool = create_named_test_pool("certificate_campaign_purge_external_references").await;
+    run_test_migrations(&pool).await;
+
+    let actor_id = create_test_user(
+        &pool,
+        "certificate-purge-external-reference@example.test",
+        "test-password",
+    )
+    .await
+    .expect("actor fixture should insert");
+    let academic_year_id = insert_academic_year(&pool).await;
+    let campaign_id = insert_campaign(
+        &pool,
+        academic_year_id,
+        actor_id,
+        "External reference purge",
+        1,
+    )
+    .await;
+    let template_id = insert_template(&pool, campaign_id, "external-reference-purge").await;
+    let (file_id, _, _) = insert_purge_file_fixture(
+        &pool,
+        actor_id,
+        "certificate_template_background",
+        "externally-referenced.pdf",
+        true,
+    )
+    .await;
+    sqlx::query(
+        "INSERT INTO certificate_template_file_uploads
+            (file_id, template_id, purpose_code, uploaded_by)
+         VALUES ($1, $2, 'certificate_template_background', $3)",
+    )
+    .bind(file_id)
+    .bind(template_id)
+    .bind(actor_id)
+    .execute(&pool)
+    .await
+    .expect("upload relation fixture should insert");
+    sqlx::query("UPDATE users SET profile_image_file_id = $2 WHERE id = $1")
+        .bind(actor_id)
+        .bind(file_id)
+        .execute(&pool)
+        .await
+        .expect("profile image reference fixture should update");
+    let achievement_id: Uuid = sqlx::query_scalar(
+        "INSERT INTO staff_achievements (
+            user_id, title, achievement_date, created_by, image_file_id
+         ) VALUES ($1, 'External file reference', CURRENT_DATE, $1, $2)
+         RETURNING id",
+    )
+    .bind(actor_id)
+    .bind(file_id)
+    .fetch_one(&pool)
+    .await
+    .expect("staff achievement reference fixture should insert");
+    sqlx::query("UPDATE certificate_campaigns SET status = 'purging' WHERE id = $1")
+        .bind(campaign_id)
+        .execute(&pool)
+        .await
+        .expect("campaign fixture should enter purging");
+    sqlx::query(
+        "INSERT INTO certificate_campaign_purge_jobs (
+            campaign_id, status, requested_by, template_count,
+            candidate_count, request_count, open_request_count,
+            issued_certificate_count, revoked_certificate_count,
+            file_count, total_file_bytes
+         ) VALUES ($1, 'finalizing', $2, 1, 0, 0, 0, 0, 0, 1, 15)",
+    )
+    .bind(campaign_id)
+    .bind(actor_id)
+    .execute(&pool)
+    .await
+    .expect("purge job fixture should insert");
+    sqlx::query(
+        "INSERT INTO certificate_campaign_purge_files
+            (campaign_id, file_id, object_count, byte_size)
+         VALUES ($1, $2, 2, 15)",
+    )
+    .bind(campaign_id)
+    .bind(file_id)
+    .execute(&pool)
+    .await
+    .expect("purge inventory fixture should insert");
+
+    let result = sqlx::query_scalar::<_, bool>("SELECT finalize_certificate_campaign_purge($1)")
+        .bind(campaign_id)
+        .fetch_one(&pool)
+        .await;
+    assert!(
+        result.is_err(),
+        "external profile and achievement references must block finalization"
+    );
+
+    let state: (i64, i64, Option<Uuid>, Option<Uuid>, i64) = sqlx::query_as(
+        "SELECT
+            (SELECT COUNT(*) FROM certificate_campaigns WHERE id = $1),
+            (SELECT COUNT(*) FROM files WHERE id = $2),
+            (SELECT profile_image_file_id FROM users WHERE id = $3),
+            (SELECT image_file_id FROM staff_achievements WHERE id = $4),
+            (SELECT COUNT(*) FROM certificate_campaign_purge_jobs WHERE campaign_id = $1)",
+    )
+    .bind(campaign_id)
+    .bind(file_id)
+    .bind(actor_id)
+    .bind(achievement_id)
+    .fetch_one(&pool)
+    .await
+    .expect("guarded state should remain queryable");
+    assert_eq!(state, (1, 1, Some(file_id), Some(file_id), 1));
+}
+
+#[tokio::test]
+async fn purge_finalizer_rejects_admission_logo_and_question_bank_file_consumers() {
+    let pool = create_named_test_pool("certificate_campaign_purge_all_file_consumers").await;
+    run_test_migrations(&pool).await;
+
+    let actor_id = create_test_user(
+        &pool,
+        "certificate-purge-all-consumers@example.test",
+        "test-password",
+    )
+    .await
+    .expect("actor fixture should insert");
+    let academic_year_id = insert_academic_year(&pool).await;
+    let campaign_id = insert_campaign(
+        &pool,
+        academic_year_id,
+        actor_id,
+        "All file consumers purge",
+        1,
+    )
+    .await;
+    let template_id = insert_template(&pool, campaign_id, "all-consumers-purge").await;
+    let (file_id, _, _) = insert_purge_file_fixture(
+        &pool,
+        actor_id,
+        "certificate_template_background",
+        "all-consumers.pdf",
+        true,
+    )
+    .await;
+    sqlx::query(
+        "INSERT INTO certificate_template_file_uploads
+            (file_id, template_id, purpose_code, uploaded_by)
+         VALUES ($1, $2, 'certificate_template_background', $3)",
+    )
+    .bind(file_id)
+    .bind(template_id)
+    .bind(actor_id)
+    .execute(&pool)
+    .await
+    .expect("upload relation fixture should insert");
+    sqlx::query("UPDATE certificate_campaigns SET status = 'purging' WHERE id = $1")
+        .bind(campaign_id)
+        .execute(&pool)
+        .await
+        .expect("campaign fixture should enter purging");
+    sqlx::query(
+        "INSERT INTO certificate_campaign_purge_jobs (
+            campaign_id, status, requested_by, template_count,
+            candidate_count, request_count, open_request_count,
+            issued_certificate_count, revoked_certificate_count,
+            file_count, total_file_bytes
+         ) VALUES ($1, 'finalizing', $2, 1, 0, 0, 0, 0, 0, 1, 15)",
+    )
+    .bind(campaign_id)
+    .bind(actor_id)
+    .execute(&pool)
+    .await
+    .expect("purge job fixture should insert");
+    sqlx::query(
+        "INSERT INTO certificate_campaign_purge_files
+            (campaign_id, file_id, object_count, byte_size)
+         VALUES ($1, $2, 2, 15)",
+    )
+    .bind(campaign_id)
+    .bind(file_id)
+    .execute(&pool)
+    .await
+    .expect("purge inventory fixture should insert");
+
+    let grade_level_id: Uuid =
+        sqlx::query_scalar("SELECT id FROM grade_levels ORDER BY id LIMIT 1")
+            .fetch_one(&pool)
+            .await
+            .expect("grade-level fixture should exist");
+    let study_plan_id: Uuid = sqlx::query_scalar(
+        "INSERT INTO study_plans (code, name_th)
+         VALUES ('PURGE-FINALIZER', 'แผนทดสอบ finalizer')
+         RETURNING id",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("study-plan fixture should insert");
+    let admission_round_id: Uuid = sqlx::query_scalar(
+        "INSERT INTO admission_rounds (
+            academic_year_id, grade_level_id, name, apply_start_date, apply_end_date
+         ) VALUES ($1, $2, 'รอบทดสอบ finalizer', CURRENT_DATE, CURRENT_DATE)
+         RETURNING id",
+    )
+    .bind(academic_year_id)
+    .bind(grade_level_id)
+    .fetch_one(&pool)
+    .await
+    .expect("admission-round fixture should insert");
+    let admission_track_id: Uuid = sqlx::query_scalar(
+        "INSERT INTO admission_tracks (admission_round_id, study_plan_id, name)
+         VALUES ($1, $2, 'แผนรับสมัคร finalizer')
+         RETURNING id",
+    )
+    .bind(admission_round_id)
+    .bind(study_plan_id)
+    .fetch_one(&pool)
+    .await
+    .expect("admission-track fixture should insert");
+    let application_id: Uuid = sqlx::query_scalar(
+        "INSERT INTO admission_applications (
+            admission_round_id, admission_track_id, national_id,
+            national_id_hash, first_name, last_name
+         ) VALUES ($1, $2, 'encrypted-finalizer-fixture', repeat('e', 64),
+                   'Finalizer', 'Applicant')
+         RETURNING id",
+    )
+    .bind(admission_round_id)
+    .bind(admission_track_id)
+    .fetch_one(&pool)
+    .await
+    .expect("admission-application fixture should insert");
+    let document_id: Uuid = sqlx::query_scalar(
+        "INSERT INTO admission_application_documents (application_id, file_id, doc_type)
+         VALUES ($1, $2, 'purge_finalizer_fixture')
+         RETURNING id",
+    )
+    .bind(application_id)
+    .bind(file_id)
+    .fetch_one(&pool)
+    .await
+    .expect("admission-document fixture should insert");
+    assert_purge_finalizer_rejects_shared_file(&pool, campaign_id).await;
+    sqlx::query("DELETE FROM admission_application_documents WHERE id = $1")
+        .bind(document_id)
+        .execute(&pool)
+        .await
+        .expect("admission-document fixture should clear");
+
+    sqlx::query("UPDATE school_settings SET logo_file_id = $1")
+        .bind(file_id)
+        .execute(&pool)
+        .await
+        .expect("school-logo fixture should update");
+    assert_purge_finalizer_rejects_shared_file(&pool, campaign_id).await;
+    sqlx::query("UPDATE school_settings SET logo_file_id = NULL WHERE logo_file_id = $1")
+        .bind(file_id)
+        .execute(&pool)
+        .await
+        .expect("school-logo fixture should clear");
+
+    let subject_id: Uuid = sqlx::query_scalar(
+        "INSERT INTO subjects (code, name_th, type, start_academic_year_id)
+         VALUES ('PURGE-FINALIZER-QB', 'รายวิชาทดสอบ finalizer', 'BASIC', $1)
+         RETURNING id",
+    )
+    .bind(academic_year_id)
+    .fetch_one(&pool)
+    .await
+    .expect("question-bank subject fixture should insert");
+    let rich_content = serde_json::json!({
+        "schemaVersion": 1,
+        "document": {
+            "type": "doc",
+            "content": [{
+                "type": "image",
+                "attrs": {
+                    "fileId": file_id,
+                    "altText": null,
+                    "caption": null,
+                    "alignment": "center",
+                    "widthPercent": 50
+                }
+            }]
+        }
+    });
+    let question_id: Uuid = sqlx::query_scalar(
+        "INSERT INTO academic_question_bank_questions (
+            subject_id, owner_user_id, stem_content, created_by, updated_by
+         ) VALUES ($1, $2, $3, $2, $2)
+         RETURNING id",
+    )
+    .bind(subject_id)
+    .bind(actor_id)
+    .bind(sqlx::types::Json(rich_content))
+    .fetch_one(&pool)
+    .await
+    .expect("question-bank fixture should insert");
+    assert_purge_finalizer_rejects_shared_file(&pool, campaign_id).await;
+
+    let state: (String, String, i64, i64) = sqlx::query_as(
+        "SELECT campaign.status, job.status,
+                (SELECT COUNT(*) FROM files WHERE id = $2),
+                (SELECT COUNT(*) FROM academic_question_bank_questions WHERE id = $3)
+         FROM certificate_campaigns AS campaign
+         JOIN certificate_campaign_purge_jobs AS job ON job.campaign_id = campaign.id
+         WHERE campaign.id = $1",
+    )
+    .bind(campaign_id)
+    .bind(file_id)
+    .bind(question_id)
+    .fetch_one(&pool)
+    .await
+    .expect("guarded state should remain queryable");
+    assert_eq!(
+        state,
+        ("purging".to_string(), "finalizing".to_string(), 1, 1)
+    );
 }
 
 #[tokio::test]

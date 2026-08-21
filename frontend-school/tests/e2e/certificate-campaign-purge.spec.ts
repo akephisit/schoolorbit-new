@@ -96,6 +96,15 @@ function harnessPlugin(): Plugin {
 					},
 					async start(_campaignId, payload) {
 						calls.start.push(structuredClone(payload));
+						if (mode === 'stale' && calls.start.length === 1) {
+							throw new ApiClientError('certificate_purge_impact_changed', 409);
+						}
+						if (mode === 'shared') {
+							throw new ApiClientError('certificate_purge_file_shared', 409);
+						}
+						if (mode === 'held') {
+							throw new ApiClientError('certificate_purge_file_held', 409);
+						}
 						return { campaignId, phase: 'deleting_files', fileCount: 12, deletedFileCount: 3, lastErrorCode: null };
 					},
 					async status() {
@@ -174,6 +183,7 @@ test('requires the exact campaign name, shows impact, and polls through completi
 	for (const text of ['128', '99', '12', '5 MB', 'คำขอที่ยังไม่จบ']) {
 		await expect(page.getByText(text, { exact: true }).first()).toBeVisible();
 	}
+	await expect(page.getByText(/ไฟล์ PDF ที่เคยดาวน์โหลด.*ไม่สามารถเรียกคืน/)).toBeVisible();
 
 	const confirmation = page.getByLabel('พิมพ์ชื่อกิจกรรมเพื่อยืนยัน');
 	const submit = page.getByRole('button', { name: 'ลบกิจกรรมถาวร' });
@@ -212,6 +222,7 @@ test('shows durable failure progress and retries the same purge job', async ({ p
 	await page.goto(`${baseUrl}${harnessPath}?mode=retry`);
 	await expect(page.getByText('การลบหยุดชั่วคราว')).toBeVisible();
 	await expect(page.getByText('ลบไฟล์แล้ว 5 จาก 12 ไฟล์')).toBeVisible();
+	await expect(page.getByText('storage_operation_failed', { exact: true })).toBeVisible();
 	await page.getByRole('button', { name: 'ลองลบต่อ' }).click();
 	await expect(page.getByText('กำลังลบไฟล์และปิดการเข้าถึง')).toBeVisible();
 	await expect
@@ -222,4 +233,29 @@ test('shows durable failure progress and retries the same purge job', async ({ p
 	await expect
 		.poll(() => page.evaluate(() => window.certificatePurgeHarness.calls().retry))
 		.toBe(1);
+});
+
+test('refreshes only a stale impact snapshot and keeps file blockers visible', async ({ page }) => {
+	await page.goto(`${baseUrl}${harnessPath}?mode=stale`);
+	const confirmation = page.getByLabel('พิมพ์ชื่อกิจกรรมเพื่อยืนยัน');
+	await confirmation.fill('กิจกรรมวันภาษาไทย ๒๕๖๙');
+	await page.getByRole('button', { name: 'ลบกิจกรรมถาวร' }).click();
+	await expect(
+		page.getByText('ข้อมูลกิจกรรมเปลี่ยนแล้ว โปรดตรวจจำนวนทั้งหมดอีกครั้ง')
+	).toBeVisible();
+	await expect
+		.poll(() => page.evaluate(() => window.certificatePurgeHarness.calls().impact))
+		.toBe(2);
+
+	for (const [mode, message] of [
+		['shared', 'มีไฟล์ของกิจกรรมนี้ถูกใช้งานโดยข้อมูลอื่น จึงยังลบกิจกรรมไม่ได้'],
+		['held', 'มีไฟล์ของกิจกรรมนี้อยู่ภายใต้ข้อกำหนดห้ามลบ จึงยังลบกิจกรรมไม่ได้']
+	] as const) {
+		await page.goto(`${baseUrl}${harnessPath}?mode=${mode}`);
+		await page.getByLabel('พิมพ์ชื่อกิจกรรมเพื่อยืนยัน').fill('กิจกรรมวันภาษาไทย ๒๕๖๙');
+		await page.getByRole('button', { name: 'ลบกิจกรรมถาวร' }).click();
+		await expect(page.getByText(message, { exact: true })).toBeVisible();
+		const calls = await page.evaluate(() => window.certificatePurgeHarness.calls());
+		expect(calls.impact).toBe(1);
+	}
 });

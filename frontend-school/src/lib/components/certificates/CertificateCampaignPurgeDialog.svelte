@@ -58,6 +58,12 @@
 	let pollTimer: ReturnType<typeof setTimeout> | null = null;
 	let observedPurge = false;
 	let completionEmitted = false;
+	const safeErrorCodePattern = /^[a-z0-9_]{1,64}$/;
+	const impactChangedCode = 'certificate_purge_impact_changed';
+	const fileSharedCode = 'certificate_purge_file_shared';
+	const fileHeldCode = 'certificate_purge_file_held';
+	const confirmationMismatchCode = 'certificate_purge_confirmation_mismatch';
+	const retryNotFailedCode = 'certificate_purge_retry_not_failed';
 
 	const starting = $derived(viewPhase === 'starting');
 	const running = $derived(viewPhase === 'deleting_files' || viewPhase === 'finalizing');
@@ -66,6 +72,11 @@
 	);
 	const progressMax = $derived(Math.max(status?.fileCount ?? 0, 1));
 	const progressValue = $derived(Math.min(status?.deletedFileCount ?? 0, progressMax));
+	const lastErrorCode = $derived(
+		status?.lastErrorCode && safeErrorCodePattern.test(status.lastErrorCode)
+			? status.lastErrorCode
+			: null
+	);
 
 	const impactItems = $derived(
 		impact
@@ -99,6 +110,25 @@
 		clearPolling();
 		activeController?.abort();
 		activeController = null;
+	}
+
+	function getSafeApiErrorCode(error: unknown): string | null {
+		if (!(error instanceof ApiClientError) || !safeErrorCodePattern.test(error.message))
+			return null;
+		return error.message;
+	}
+
+	function startFailureMessage(code: string | null): string {
+		switch (code) {
+			case fileSharedCode:
+				return 'มีไฟล์ของกิจกรรมนี้ถูกใช้งานโดยข้อมูลอื่น จึงยังลบกิจกรรมไม่ได้';
+			case fileHeldCode:
+				return 'มีไฟล์ของกิจกรรมนี้อยู่ภายใต้ข้อกำหนดห้ามลบ จึงยังลบกิจกรรมไม่ได้';
+			case confirmationMismatchCode:
+				return 'ชื่อกิจกรรมที่ใช้ยืนยันไม่ตรงกับข้อมูลล่าสุด กรุณาพิมพ์ชื่อใหม่อีกครั้ง';
+			default:
+				return 'ไม่สามารถเริ่มลบกิจกรรมได้ กรุณาตรวจสอบข้อมูลแล้วลองอีกครั้ง';
+		}
 	}
 
 	function emitCompletion(): void {
@@ -195,12 +225,13 @@
 			applyStatus(nextStatus);
 		} catch (error) {
 			if (controller.signal.aborted) return;
-			if (error instanceof ApiClientError && error.status === 409) {
+			const code = getSafeApiErrorCode(error);
+			if (error instanceof ApiClientError && error.status === 409 && code === impactChangedCode) {
 				await loadImpact('ข้อมูลกิจกรรมเปลี่ยนแล้ว โปรดตรวจจำนวนทั้งหมดอีกครั้ง');
 				return;
 			}
 			viewPhase = 'confirm';
-			errorMessage = error instanceof Error ? error.message : 'ไม่สามารถเริ่มลบกิจกรรมได้';
+			errorMessage = startFailureMessage(code);
 		}
 	}
 
@@ -220,8 +251,16 @@
 				emitCompletion();
 				return;
 			}
+			if (
+				error instanceof ApiClientError &&
+				error.status === 409 &&
+				getSafeApiErrorCode(error) === retryNotFailedCode
+			) {
+				await refreshStatus();
+				return;
+			}
 			viewPhase = 'failed';
-			errorMessage = error instanceof Error ? error.message : 'ไม่สามารถลองลบกิจกรรมต่อได้';
+			errorMessage = 'ไม่สามารถลองลบกิจกรรมต่อได้ กรุณาลองอีกครั้งภายหลัง';
 		}
 	}
 
@@ -316,6 +355,7 @@
 							<ul class="mt-2 list-disc space-y-1 pl-5 text-sm text-red-800">
 								<li>หน้าสาธารณะจะตรวจสอบเกียรติบัตรไม่ได้ทันทีเมื่อเริ่มลบ</li>
 								<li>ไฟล์จริงและข้อมูลไฟล์ในระบบจะถูกลบถาวร</li>
+								<li>ไฟล์ PDF ที่เคยดาวน์โหลดไปแล้วไม่สามารถเรียกคืนจากอุปกรณ์ปลายทางได้</li>
 								<li>เลขที่ออกแล้วจะไม่นำกลับมาใช้ซ้ำ แม้กิจกรรมถูกลบ</li>
 							</ul>
 						</div>
@@ -328,6 +368,15 @@
 					>
 						<AlertTriangle class="mt-0.5 size-4 shrink-0" />
 						<span>{noticeMessage}</span>
+					</div>
+				{/if}
+				{#if errorMessage}
+					<div
+						role="alert"
+						class="flex gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"
+					>
+						<AlertTriangle class="mt-0.5 size-4 shrink-0" />
+						<span>{errorMessage}</span>
 					</div>
 				{/if}
 
@@ -391,6 +440,13 @@
 				{#if status}
 					<p class="text-sm text-muted-foreground">
 						ลบไฟล์แล้ว {formatCount(status.deletedFileCount)} จาก {formatCount(status.fileCount)} ไฟล์
+					</p>
+				{/if}
+				{#if lastErrorCode}
+					<p class="text-xs text-muted-foreground">
+						รหัสข้อผิดพลาด: <code class="rounded bg-muted px-1.5 py-0.5 font-mono text-foreground"
+							>{lastErrorCode}</code
+						>
 					</p>
 				{/if}
 				{#if errorMessage}

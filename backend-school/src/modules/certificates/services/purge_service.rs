@@ -21,6 +21,11 @@ use crate::{
 
 const CAMPAIGN_NOT_FOUND: &str = "ไม่พบกิจกรรมเกียรติบัตร";
 const PURGE_NOT_FOUND: &str = "ไม่พบรายการลบกิจกรรมเกียรติบัตร";
+const CONFIRMATION_MISMATCH: &str = "certificate_purge_confirmation_mismatch";
+const IMPACT_CHANGED: &str = "certificate_purge_impact_changed";
+const FILE_SHARED: &str = "certificate_purge_file_shared";
+const FILE_HELD: &str = "certificate_purge_file_held";
+const RETRY_NOT_FAILED: &str = "certificate_purge_retry_not_failed";
 
 #[derive(Debug, FromRow)]
 struct PurgeImpactRow {
@@ -72,11 +77,11 @@ pub async fn impact(
     campaign_id: Uuid,
 ) -> Result<CertificateCampaignPurgeImpact, AppError> {
     let row = load_impact(pool, campaign_id).await?;
-    require_owner_action(
+    require_purge_owner_action(
         pool,
         actor,
         row.owner_organization_unit_id,
-        CertificateAction::Delete,
+        campaign_not_found,
     )
     .await?;
     if row.status == "purging" {
@@ -93,22 +98,22 @@ pub async fn start(
     request: StartCertificateCampaignPurgeRequest,
 ) -> Result<CertificateCampaignPurgeStatus, AppError> {
     let authorization = load_impact(pool, campaign_id).await?;
-    require_owner_action(
+    require_purge_owner_action(
         pool,
         actor,
         authorization.owner_organization_unit_id,
-        CertificateAction::Delete,
+        campaign_not_found,
     )
     .await?;
 
     let repository = SqlFileRepository::new(pool.clone());
     let mut transaction = pool.begin().await?;
     let campaign = lock_campaign(&mut transaction, campaign_id).await?;
-    require_owner_action(
+    require_purge_owner_action(
         pool,
         actor,
         campaign.owner_organization_unit_id,
-        CertificateAction::Delete,
+        campaign_not_found,
     )
     .await?;
 
@@ -121,29 +126,21 @@ pub async fn start(
     }
 
     if request.confirmation_name != campaign.name {
-        return Err(AppError::ValidationError(
-            "ชื่อกิจกรรมที่พิมพ์ยืนยันไม่ตรงกัน".to_string(),
-        ));
+        return Err(AppError::ValidationError(CONFIRMATION_MISMATCH.to_string()));
     }
     if request.expected_updated_at != campaign.updated_at {
-        return Err(AppError::Conflict(
-            "ข้อมูลกิจกรรมเปลี่ยนแปลงแล้ว กรุณาตรวจสอบผลกระทบใหม่".to_string(),
-        ));
+        return Err(AppError::Conflict(IMPACT_CHANGED.to_string()));
     }
 
     let current_counts = load_counts_in_transaction(&mut transaction, campaign_id).await?;
     if request.expected_impact != current_counts {
-        return Err(AppError::Conflict(
-            "จำนวนข้อมูลหรือไฟล์เปลี่ยนแปลงแล้ว กรุณาตรวจสอบผลกระทบใหม่".to_string(),
-        ));
+        return Err(AppError::Conflict(IMPACT_CHANGED.to_string()));
     }
 
     let inventory = lock_inventory_files(&mut transaction, campaign_id).await?;
     validate_inventory(&mut transaction, campaign_id, &inventory).await?;
     if i64::try_from(inventory.len()).ok() != Some(current_counts.file_count) {
-        return Err(AppError::Conflict(
-            "รายการไฟล์เปลี่ยนแปลงแล้ว กรุณาตรวจสอบผลกระทบใหม่".to_string(),
-        ));
+        return Err(AppError::Conflict(IMPACT_CHANGED.to_string()));
     }
 
     sqlx::query(
@@ -228,7 +225,7 @@ pub async fn status(
     campaign_id: Uuid,
 ) -> Result<CertificateCampaignPurgeStatus, AppError> {
     let campaign = load_campaign_owner(pool, campaign_id).await?;
-    require_owner_action(pool, actor, campaign.0, CertificateAction::Delete).await?;
+    require_purge_owner_action(pool, actor, campaign.0, purge_not_found).await?;
     if campaign.1 != "purging" {
         return Err(purge_not_found());
     }
@@ -245,16 +242,16 @@ pub async fn retry(
     campaign_id: Uuid,
 ) -> Result<CertificateCampaignPurgeStatus, AppError> {
     let campaign_owner = load_campaign_owner(pool, campaign_id).await?;
-    require_owner_action(pool, actor, campaign_owner.0, CertificateAction::Delete).await?;
+    require_purge_owner_action(pool, actor, campaign_owner.0, purge_not_found).await?;
 
     let repository = SqlFileRepository::new(pool.clone());
     let mut transaction = pool.begin().await?;
     let campaign = lock_campaign(&mut transaction, campaign_id).await?;
-    require_owner_action(
+    require_purge_owner_action(
         pool,
         actor,
         campaign.owner_organization_unit_id,
-        CertificateAction::Delete,
+        purge_not_found,
     )
     .await?;
     if campaign.status != "purging" {
@@ -263,20 +260,23 @@ pub async fn retry(
     let Some(job) = load_job_in_transaction(&mut transaction, campaign_id).await? else {
         return Err(purge_not_found());
     };
-    if job.status == "finalizing" {
-        transaction.commit().await?;
-        return advance_one(pool, campaign_id).await;
+    if job.status != "failed" {
+        return Err(AppError::Conflict(RETRY_NOT_FAILED.to_string()));
     }
 
-    sqlx::query(
+    let transitioned = sqlx::query_scalar::<_, Uuid>(
         "UPDATE certificate_campaign_purge_jobs
          SET status = 'deleting_files', last_error_code = NULL,
              updated_at = clock_timestamp()
-         WHERE campaign_id = $1",
+         WHERE campaign_id = $1 AND status = 'failed'
+         RETURNING campaign_id",
     )
     .bind(campaign_id)
-    .execute(&mut *transaction)
+    .fetch_optional(&mut *transaction)
     .await?;
+    if transitioned.is_none() {
+        return Err(AppError::Conflict(RETRY_NOT_FAILED.to_string()));
+    }
 
     let file_ids = sqlx::query_scalar::<_, Uuid>(
         "SELECT file.id
@@ -494,7 +494,8 @@ SELECT
      WHERE request.campaign_id = campaign.id
        AND request.status IN ('pending', 'reviewing'))::BIGINT AS open_request_count,
     (SELECT COUNT(*) FROM certificates AS certificate
-     WHERE certificate.campaign_id = campaign.id)::BIGINT AS issued_certificate_count,
+     WHERE certificate.campaign_id = campaign.id
+       AND certificate.status = 'issued')::BIGINT AS issued_certificate_count,
     (SELECT COUNT(*) FROM certificates AS certificate
      WHERE certificate.campaign_id = campaign.id
        AND certificate.status = 'revoked')::BIGINT AS revoked_certificate_count,
@@ -634,9 +635,7 @@ async fn validate_inventory(
             ));
         }
         if file.retention_class == "legal_hold" {
-            return Err(AppError::Conflict(
-                "certificate_purge_file_legal_hold".to_string(),
-            ));
+            return Err(AppError::Conflict(FILE_HELD.to_string()));
         }
         if file.object_count < 0 || file.byte_size < 0 {
             return Err(AppError::Conflict(
@@ -686,35 +685,14 @@ SELECT EXISTS (
         .map(|file| file.file_id)
         .collect::<Vec<_>>();
     let has_shared_file: bool = sqlx::query_scalar(
-        r#"
-SELECT EXISTS (
-    SELECT 1
-    FROM certificate_templates AS template
-    WHERE template.background_file_id = ANY($2::UUID[])
-      AND template.campaign_id <> $1
-    UNION ALL
-    SELECT 1
-    FROM certificate_template_assets AS asset
-    JOIN certificate_templates AS template ON template.id = asset.template_id
-    WHERE asset.file_id = ANY($2::UUID[])
-      AND template.campaign_id <> $1
-    UNION ALL
-    SELECT 1
-    FROM certificate_template_file_uploads AS upload
-    JOIN certificate_templates AS template ON template.id = upload.template_id
-    WHERE upload.file_id = ANY($2::UUID[])
-      AND template.campaign_id <> $1
-)
-"#,
+        "SELECT certificate_campaign_purge_has_external_file_consumer($1, $2::UUID[])",
     )
     .bind(campaign_id)
     .bind(file_ids)
     .fetch_one(&mut **transaction)
     .await?;
     if has_shared_file {
-        return Err(AppError::Conflict(
-            "certificate_purge_file_shared".to_string(),
-        ));
+        return Err(AppError::Conflict(FILE_SHARED.to_string()));
     }
     Ok(())
 }
@@ -853,6 +831,26 @@ fn completed_status(campaign_id: Uuid, file_count: i64) -> CertificateCampaignPu
         file_count,
         deleted_file_count: file_count,
         last_error_code: None,
+    }
+}
+
+async fn require_purge_owner_action(
+    pool: &PgPool,
+    actor: &ActorContext,
+    owner_organization_unit_id: Option<Uuid>,
+    masked_not_found: fn() -> AppError,
+) -> Result<(), AppError> {
+    match require_owner_action(
+        pool,
+        actor,
+        owner_organization_unit_id,
+        CertificateAction::Delete,
+    )
+    .await
+    {
+        Ok(_) => Ok(()),
+        Err(AppError::Forbidden(_)) => Err(masked_not_found()),
+        Err(error) => Err(error),
     }
 }
 

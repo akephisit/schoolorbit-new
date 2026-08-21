@@ -18156,16 +18156,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
-			/** @description Certificate campaign delete permission denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Certificate campaign not found */
+			/** @description Certificate campaign not found or outside the actor's exact delete scope */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -18224,16 +18215,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
-			/** @description Certificate campaign delete permission denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Certificate campaign not found */
+			/** @description Certificate campaign not found or outside the actor's exact delete scope */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -18283,16 +18265,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
-			/** @description Certificate campaign delete permission denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Campaign purge not found or already completed */
+			/** @description Campaign purge not found, already completed, or outside the actor's exact delete scope */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -18333,16 +18306,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
-			/** @description Certificate campaign delete permission denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Campaign purge not found or already completed */
+			/** @description Campaign purge not found, already completed, or outside the actor's exact delete scope */
 			404: {
 				headers: {
 					[name: string]: unknown;
