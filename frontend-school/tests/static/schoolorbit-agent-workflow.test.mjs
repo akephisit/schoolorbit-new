@@ -702,6 +702,16 @@ test('planner consumes reconciled evidence without repeating explorer discovery'
 	assert.match(instructions, /NEEDS_CONTEXT/i);
 });
 
+test('multi-lane plans state serial integration before independent review', async () => {
+	const skill = await repositoryFile(skillPath);
+	const planContract = normalizeWhitespace(section(skill, '## Plan Contract', '## Approval Gate'));
+
+	assert.match(
+		planContract,
+		/multiple writer lanes[^.]*integrat[^.]*serially[^.]*before[^.]*Reviewer/i
+	);
+});
+
 test('multi-file approval records a mandatory design and implementation plan pair', async () => {
 	const skill = await repositoryFile(skillPath);
 	const artifacts = normalizeWhitespace(section(skill, '## Plan Artifacts', '## Model Routing'));

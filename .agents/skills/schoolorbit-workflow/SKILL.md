@@ -97,6 +97,8 @@ Present a concrete plan in chat before any mutation. Include:
 - the impact matrix and risk classification, including why each high-risk boundary is high-risk;
 - numbered tasks with dependencies or waves, exact owned paths, protected resources, assigned
   profile, and normal or high risk;
+- for multiple writer lanes, the order in which the controller audits and integrates them serially
+  before starting the independent Reviewer;
 - source-first ownership for generated permission and API contracts;
 - exact focused and repository verification commands; and
 - external or destructive actions that require separate authorization.
