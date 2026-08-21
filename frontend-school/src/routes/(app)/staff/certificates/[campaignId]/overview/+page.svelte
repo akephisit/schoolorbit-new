@@ -5,7 +5,6 @@
 	import { onMount } from 'svelte';
 	import {
 		changeCertificateCampaignStatus,
-		deleteCertificateCampaign,
 		getCertificateCampaign,
 		listCertificateOwnerOptions,
 		updateCertificateCampaign,
@@ -22,7 +21,7 @@
 	import CertificateCampaignForm, {
 		type CertificateCampaignFormValue
 	} from '$lib/components/certificates/CertificateCampaignForm.svelte';
-	import * as AlertDialog from '$lib/components/ui/alert-dialog';
+	import CertificateCampaignPurgeDialog from '$lib/components/certificates/CertificateCampaignPurgeDialog.svelte';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import * as Card from '$lib/components/ui/card';
@@ -64,20 +63,21 @@
 	let saving = $state(false);
 	let statusBusy = $state<CertificateCampaignStatus | null>(null);
 	let deleteOpen = $state(false);
-	let deleting = $state(false);
 
 	const statusLabels: Record<CertificateCampaignStatus, string> = {
 		draft: 'ฉบับร่าง',
 		active: 'กำลังออก',
 		closed: 'ปิดกิจกรรม',
-		archived: 'เก็บถาวร'
+		archived: 'เก็บถาวร',
+		purging: 'กำลังลบ'
 	};
 
 	const statusClasses: Record<CertificateCampaignStatus, string> = {
 		draft: 'border-slate-200 bg-slate-50 text-slate-700',
 		active: 'border-emerald-200 bg-emerald-50 text-emerald-700',
 		closed: 'border-amber-200 bg-amber-50 text-amber-700',
-		archived: 'border-zinc-200 bg-zinc-100 text-zinc-600'
+		archived: 'border-zinc-200 bg-zinc-100 text-zinc-600',
+		purging: 'border-red-200 bg-red-50 text-red-700'
 	};
 
 	async function loadCampaign() {
@@ -180,18 +180,10 @@
 		}
 	}
 
-	async function handleDelete() {
-		if (!campaign?.capabilities.canDelete || deleting) return;
-		deleting = true;
-		try {
-			await deleteCertificateCampaign(campaign.id);
-			toast.success('ลบกิจกรรมฉบับร่างแล้ว');
-			await goto(resolve('/staff/certificates'));
-		} catch (deleteError) {
-			toast.error(deleteError instanceof Error ? deleteError.message : 'ลบกิจกรรมไม่สำเร็จ');
-		} finally {
-			deleting = false;
-		}
+	function handlePurged() {
+		deleteOpen = false;
+		toast.success('ลบกิจกรรมและไฟล์ทั้งหมดแล้ว');
+		void goto(resolve('/staff/certificates'));
 	}
 
 	function formatDate(value: string): string {
@@ -357,9 +349,7 @@
 			</div>
 		</Card.Root>
 
-		<div
-			class="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-dashed p-4"
-		>
+		<div class="rounded-xl border border-dashed p-4">
 			<div>
 				<p class="font-medium">ลำดับเลขเกียรติบัตร</p>
 				<p class="mt-1 text-sm text-muted-foreground">
@@ -368,16 +358,33 @@
 						: `กิจกรรมลำดับ ${campaign.activitySequence} · ใบถัดไปลำดับ ${campaign.nextCertificateSequence}`}
 				</p>
 			</div>
-			{#if campaign.capabilities.canDelete}
-				<Button
-					variant="ghost"
-					class="text-destructive hover:text-destructive"
-					onclick={() => (deleteOpen = true)}
-				>
-					<Trash2 class="size-4" /> ลบฉบับร่าง
-				</Button>
-			{/if}
 		</div>
+
+		{#if campaign.capabilities.canDelete}
+			<Card.Root class="gap-0 border-destructive/30 bg-destructive/[0.025] py-0">
+				<Card.Content
+					class="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between"
+				>
+					<div class="flex items-start gap-3">
+						<div
+							class="flex size-10 shrink-0 items-center justify-center rounded-full bg-destructive/10 text-destructive"
+						>
+							<Trash2 class="size-4" />
+						</div>
+						<div>
+							<p class="font-semibold text-destructive">พื้นที่อันตราย</p>
+							<p class="mt-1 max-w-2xl text-sm text-muted-foreground">
+								ลบกิจกรรม แม่แบบ รายชื่อ คำขอ เกียรติบัตร และไฟล์ทั้งหมดแบบถาวร
+								ระบบจะแสดงจำนวนให้ตรวจอีกครั้งก่อนยืนยัน
+							</p>
+						</div>
+					</div>
+					<Button variant="destructive" class="shrink-0" onclick={() => (deleteOpen = true)}>
+						<Trash2 class="size-4" /> ลบกิจกรรมถาวร
+					</Button>
+				</Card.Content>
+			</Card.Root>
+		{/if}
 	{/if}
 </PageShell>
 
@@ -408,25 +415,12 @@
 	</Dialog.Root>
 {/if}
 
-{#if campaign?.capabilities.canDelete}
-	<AlertDialog.Root bind:open={deleteOpen}>
-		<AlertDialog.Content>
-			<AlertDialog.Header>
-				<AlertDialog.Title>ลบกิจกรรมฉบับร่าง?</AlertDialog.Title>
-				<AlertDialog.Description>
-					การลบทำได้เฉพาะกิจกรรมที่ยังไม่เคยออกใบและไม่มีประวัติคำขอ การดำเนินการนี้ย้อนกลับไม่ได้
-				</AlertDialog.Description>
-			</AlertDialog.Header>
-			<AlertDialog.Footer>
-				<AlertDialog.Cancel disabled={deleting}>ยกเลิก</AlertDialog.Cancel>
-				<AlertDialog.Action
-					onclick={handleDelete}
-					disabled={deleting}
-					class="bg-destructive text-white hover:bg-destructive/90"
-				>
-					{deleting ? 'กำลังลบ...' : 'ลบกิจกรรม'}
-				</AlertDialog.Action>
-			</AlertDialog.Footer>
-		</AlertDialog.Content>
-	</AlertDialog.Root>
+{#if deleteOpen && campaign?.capabilities.canDelete}
+	<CertificateCampaignPurgeDialog
+		open={deleteOpen}
+		campaignId={campaign.id}
+		campaignName={campaign.name}
+		onopenchange={(open) => (deleteOpen = open)}
+		oncompleted={handlePurged}
+	/>
 {/if}

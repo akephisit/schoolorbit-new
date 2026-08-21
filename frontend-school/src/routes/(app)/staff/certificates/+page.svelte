@@ -39,6 +39,10 @@
 		}
 	}
 
+	function removePurgedCampaign(campaignId: string): void {
+		campaigns = campaigns.filter((campaign) => campaign.id !== campaignId);
+	}
+
 	onMount(loadCampaigns);
 </script>
 
@@ -72,6 +76,10 @@
 			onaction={loadCampaigns}
 		/>
 	{:else}
-		<CertificateCampaignList {campaigns} canCreate={canCreateCampaign} />
+		<CertificateCampaignList
+			{campaigns}
+			canCreate={canCreateCampaign}
+			onpurged={removePurgedCampaign}
+		/>
 	{/if}
 </PageShell>

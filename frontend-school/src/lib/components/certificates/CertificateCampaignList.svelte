@@ -4,6 +4,7 @@
 		CertificateCampaignSummary
 	} from '$lib/api/certificates';
 	import { PageState } from '$lib/components/app-state';
+	import CertificateCampaignPurgeDialog from '$lib/components/certificates/CertificateCampaignPurgeDialog.svelte';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
@@ -14,41 +15,48 @@
 		CalendarDays,
 		ChevronRight,
 		FileBadge2,
+		LoaderCircle,
 		Search,
 		UsersRound
 	} from 'lucide-svelte';
 
 	let {
 		campaigns,
-		canCreate = false
+		canCreate = false,
+		onpurged
 	}: {
 		campaigns: CertificateCampaignSummary[];
 		canCreate?: boolean;
+		onpurged?: (campaignId: string) => void;
 	} = $props();
 
 	let search = $state('');
 	let statusFilter = $state('all');
 	let academicYearFilter = $state('all');
+	let purgeCampaign: CertificateCampaignSummary | null = $state.raw(null);
 
 	const statusLabels: Record<CertificateCampaignStatus, string> = {
 		draft: 'ฉบับร่าง',
 		active: 'กำลังออก',
 		closed: 'ปิดกิจกรรม',
-		archived: 'เก็บถาวร'
+		archived: 'เก็บถาวร',
+		purging: 'กำลังลบ'
 	};
 
 	const statusClasses: Record<CertificateCampaignStatus, string> = {
 		draft: 'border-slate-200 bg-slate-50 text-slate-700',
 		active: 'border-emerald-200 bg-emerald-50 text-emerald-700',
 		closed: 'border-amber-200 bg-amber-50 text-amber-700',
-		archived: 'border-zinc-200 bg-zinc-100 text-zinc-600'
+		archived: 'border-zinc-200 bg-zinc-100 text-zinc-600',
+		purging: 'border-red-200 bg-red-50 text-red-700'
 	};
 
 	const statusRailClasses: Record<CertificateCampaignStatus, string> = {
 		draft: 'bg-slate-300',
 		active: 'bg-emerald-500',
 		closed: 'bg-amber-500',
-		archived: 'bg-zinc-400'
+		archived: 'bg-zinc-400',
+		purging: 'bg-red-500'
 	};
 
 	const academicYears = $derived.by(() => {
@@ -122,6 +130,7 @@
 				<Select.Item value="active">กำลังออก</Select.Item>
 				<Select.Item value="closed">ปิดกิจกรรม</Select.Item>
 				<Select.Item value="archived">เก็บถาวร</Select.Item>
+				<Select.Item value="purging">กำลังลบ</Select.Item>
 			</Select.Content>
 		</Select.Root>
 	</div>
@@ -188,16 +197,47 @@
 						</div>
 					</div>
 
-					<Button
-						href={`/staff/certificates/${campaign.id}/overview`}
-						variant="ghost"
-						class="w-full justify-between md:w-auto"
-					>
-						เปิดชุดออก
-						<ChevronRight class="size-4 transition-transform group-hover:translate-x-0.5" />
-					</Button>
+					{#if campaign.status === 'purging'}
+						<Button
+							variant="outline"
+							class="w-full justify-between border-red-200 text-red-700 hover:bg-red-50 hover:text-red-800 md:w-auto"
+							onclick={() => (purgeCampaign = campaign)}
+						>
+							<span class="inline-flex items-center gap-2">
+								<LoaderCircle class="size-4 animate-spin" /> ดูสถานะการลบ
+							</span>
+							<ChevronRight class="size-4" />
+						</Button>
+					{:else}
+						<Button
+							href={`/staff/certificates/${campaign.id}/overview`}
+							variant="ghost"
+							class="w-full justify-between md:w-auto"
+						>
+							เปิดชุดออก
+							<ChevronRight class="size-4 transition-transform group-hover:translate-x-0.5" />
+						</Button>
+					{/if}
 				</article>
 			{/each}
 		</div>
 	{/if}
 </div>
+
+{#if purgeCampaign}
+	<CertificateCampaignPurgeDialog
+		open={true}
+		campaignId={purgeCampaign.id}
+		campaignName={purgeCampaign.name}
+		initiallyPurging={true}
+		onopenchange={(open) => {
+			if (!open) purgeCampaign = null;
+		}}
+		oncompleted={() => {
+			if (!purgeCampaign) return;
+			const completedId = purgeCampaign.id;
+			purgeCampaign = null;
+			onpurged?.(completedId);
+		}}
+	/>
+{/if}
