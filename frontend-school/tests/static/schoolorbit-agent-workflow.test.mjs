@@ -689,12 +689,8 @@ test('planner consumes reconciled evidence without repeating explorer discovery'
 		repositoryFile('.codex/agents/schoolorbit-planner.toml')
 	]);
 	const discovery = normalizeWhitespace(section(skill, '## Discover', '## Plan Contract'));
-	const planContract = normalizeWhitespace(
-		section(skill, '## Plan Contract', '## Approval Gate')
-	);
-	const instructions = normalizeWhitespace(
-		tomlMultilineString(planner, 'developer_instructions')
-	);
+	const planContract = normalizeWhitespace(section(skill, '## Plan Contract', '## Approval Gate'));
+	const instructions = normalizeWhitespace(tomlMultilineString(planner, 'developer_instructions'));
 
 	assert.match(discovery, /reconciled evidence packet/i);
 	assert.match(discovery, /fork_turns: none/i);
@@ -708,19 +704,14 @@ test('planner consumes reconciled evidence without repeating explorer discovery'
 
 test('multi-file approval records a mandatory design and implementation plan pair', async () => {
 	const skill = await repositoryFile(skillPath);
-	const artifacts = normalizeWhitespace(
-		section(skill, '## Plan Artifacts', '## Model Routing')
-	);
+	const artifacts = normalizeWhitespace(section(skill, '## Plan Artifacts', '## Model Routing'));
 
 	assert.match(artifacts, /exactly two dated Superpowers artifacts/i);
 	assert.match(artifacts, /one design[^.]*docs\/superpowers\/specs\//i);
 	assert.match(artifacts, /one implementation plan[^.]*docs\/superpowers\/plans\//i);
 	assert.match(artifacts, /both or neither/i);
 	assert.match(artifacts, /missing[^.]*return to `DRAFT_PLAN`/i);
-	assert.match(
-		artifacts,
-		/first approval[^.]*never authorizes[^.]*staging or committing/i
-	);
+	assert.match(artifacts, /first approval[^.]*never authorizes[^.]*staging or committing/i);
 	assert.match(artifacts, /leave both artifacts untracked/i);
 	assert.match(artifacts, /until[^.]*implementation approval/i);
 });

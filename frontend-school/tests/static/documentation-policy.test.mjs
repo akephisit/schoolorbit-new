@@ -26,9 +26,7 @@ const MARKDOWN_ALLOWLIST = [
 	'frontend-school/README.md'
 ].sort();
 
-const REPOSITORY_SKILL_MARKDOWN_ALLOWLIST = [
-	'.agents/skills/schoolorbit-workflow/SKILL.md'
-].sort();
+const REPOSITORY_SKILL_MARKDOWN_ALLOWLIST = ['.agents/skills/schoolorbit-workflow/SKILL.md'].sort();
 
 const SUPERPOWERS_SPEC_PATTERN =
 	/^docs\/superpowers\/specs\/\d{4}-\d{2}-\d{2}-[a-z0-9]+(?:-[a-z0-9]+)*-design\.md$/;

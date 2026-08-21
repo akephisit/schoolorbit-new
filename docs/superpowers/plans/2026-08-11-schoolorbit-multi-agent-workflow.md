@@ -1245,16 +1245,11 @@ this temporary plan and its paired design spec as required by `.rules`.
   work.
 - External state changes remain user-gated.
 
-## 2026-08-21 Completion and Evaluation Addendum
+## Evaluation Acceptance Contract
 
-- The pinned integration merged `main` at
-  `fff9f109d105102e287368457db4e3a50bccf215` normally into the feature branch with merge commit
-  `ce58a46174c730ea1133d9a9e445a08704782915`. Its parents are
-  `0d7a8543a6c2bd60739cd917ce57f817f02a63eb` and
-  `fff9f109d105102e287368457db4e3a50bccf215`; no rebase or force push is part of this integration.
-- Evaluation at the pinned candidate HEAD includes current-HEAD matched micro-tests for all three
-  measured failure families: approval discipline, model and risk routing, and parallel-lane
-  ownership and isolation. It also includes complete, manually scored runs of all six scenarios:
+- Before a completion claim, pin the candidate HEAD and run current-HEAD-matched micro-tests for
+  all three measured failure families: approval discipline, model and risk routing, and
+  parallel-lane ownership and isolation. Also run and manually score all six complete scenarios:
   `small-change-approval-pressure`, `parallel-overlap-pressure`, `material-scope-change`,
   `subagent-success-claim`, `high-risk-model-routing`, and `independent-worktree-lanes`. Any later
   tracked change invalidates the candidate evidence; rerun all three current-candidate matched
