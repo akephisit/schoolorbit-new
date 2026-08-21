@@ -27,6 +27,7 @@ string_enum!(CertificateCampaignStatus {
     Active,
     Closed,
     Archived,
+    Purging,
 });
 
 impl CertificateCampaignStatus {
@@ -36,6 +37,7 @@ impl CertificateCampaignStatus {
             Self::Active => "active",
             Self::Closed => "closed",
             Self::Archived => "archived",
+            Self::Purging => "purging",
         }
     }
 
@@ -45,6 +47,7 @@ impl CertificateCampaignStatus {
             "active" => Some(Self::Active),
             "closed" => Some(Self::Closed),
             "archived" => Some(Self::Archived),
+            "purging" => Some(Self::Purging),
             _ => None,
         }
     }
@@ -1312,6 +1315,56 @@ pub struct CertificateCampaignListQuery {
     pub academic_year_id: Option<Uuid>,
     pub status: Option<CertificateCampaignStatus>,
     pub search: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CertificateCampaignPurgeCounts {
+    pub template_count: i64,
+    pub candidate_count: i64,
+    pub request_count: i64,
+    pub open_request_count: i64,
+    pub issued_certificate_count: i64,
+    pub revoked_certificate_count: i64,
+    pub file_count: i64,
+    pub total_file_bytes: i64,
+}
+
+#[derive(Clone, Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct StartCertificateCampaignPurgeRequest {
+    pub confirmation_name: String,
+    pub expected_updated_at: DateTime<Utc>,
+    pub expected_impact: CertificateCampaignPurgeCounts,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct CertificateCampaignPurgeImpact {
+    pub campaign_id: Uuid,
+    pub campaign_name: String,
+    pub updated_at: DateTime<Utc>,
+    pub counts: CertificateCampaignPurgeCounts,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum CertificateCampaignPurgePhase {
+    DeletingFiles,
+    Failed,
+    Finalizing,
+    Completed,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct CertificateCampaignPurgeStatus {
+    pub campaign_id: Uuid,
+    pub phase: CertificateCampaignPurgePhase,
+    pub file_count: i64,
+    pub deleted_file_count: i64,
+    #[schema(required = true)]
+    pub last_error_code: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, ToSchema)]

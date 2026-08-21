@@ -599,6 +599,11 @@ WHERE d.file_id = $1 AND d.storage_status <> 'deleted'
         .await
         .map_err(Self::database_error)?;
 
+        // A temporary upload can fail before its first physical version is
+        // persisted. Complete that logical deletion in the same caller-owned
+        // transaction instead of leaving it stuck at delete_requested forever.
+        finalize_deleted_if_absent(transaction, file_id).await?;
+
         let rows = sqlx::query(
             r#"
 SELECT operation.id,
@@ -1453,6 +1458,50 @@ mod tests {
             duration_microseconds(Duration::MAX),
             Err(RepositoryError::InvalidPersistedState)
         );
+    }
+
+    #[tokio::test]
+    async fn request_delete_in_transaction_finalizes_zero_object_file() {
+        let _guard = REPOSITORY_TEST_LOCK.lock().await;
+        let Some(repository) = repository_or_skip().await else {
+            return;
+        };
+        let file_id: Uuid = sqlx::query_scalar(
+            "INSERT INTO files (
+                display_filename, purpose_code, visibility,
+                lifecycle_status, retention_class
+             ) VALUES (
+                'empty-upload.bin', 'generic_private_document', 'private',
+                'processing', 'temporary'
+             ) RETURNING id",
+        )
+        .fetch_one(repository.pool())
+        .await
+        .expect("zero-object file fixture should insert");
+
+        let mut transaction = repository
+            .pool()
+            .begin()
+            .await
+            .expect("caller-owned delete transaction should begin");
+        let work = repository
+            .request_delete_in_transaction(&mut transaction, file_id)
+            .await
+            .expect("zero-object deletion should prepare");
+        assert!(work.is_empty());
+        transaction
+            .commit()
+            .await
+            .expect("caller-owned delete transaction should commit");
+
+        let state: (String, Option<chrono::DateTime<chrono::Utc>>) =
+            sqlx::query_as("SELECT lifecycle_status, deleted_at FROM files WHERE id = $1")
+                .bind(file_id)
+                .fetch_one(repository.pool())
+                .await
+                .expect("zero-object file should remain inspectable");
+        assert_eq!(state.0, "deleted");
+        assert!(state.1.is_some());
     }
 
     #[tokio::test]

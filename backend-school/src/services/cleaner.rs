@@ -3,6 +3,7 @@ use std::sync::Arc;
 use tracing::{info, warn};
 use uuid::Uuid;
 
+use crate::modules::certificates::services::purge_service;
 use crate::modules::files::{
     platform_service::FilePlatform, reconciler::reconcile_due_operations,
     repository::SqlFileRepository,
@@ -43,6 +44,21 @@ impl FileCleaner {
                 warn!(
                     error_code = error.log_safe_code(),
                     "File Platform reconciliation batch could not be leased"
+                );
+            }
+        }
+
+        match purge_service::reconcile_pending_purges(self.repository.pool()).await {
+            Ok(checked) => {
+                info!(
+                    checked,
+                    "Certificate campaign purge jobs advanced after File Platform reconciliation"
+                );
+            }
+            Err(_) => {
+                warn!(
+                    error_code = "certificate_purge_reconcile_failed",
+                    "Certificate campaign purge jobs could not be advanced"
                 );
             }
         }
