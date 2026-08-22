@@ -1064,8 +1064,7 @@ coverage.
 ### Documentation and final repository audit
 
 ```bash
-node --test frontend-school/tests/static/documentation-policy.test.mjs \
-  frontend-school/tests/static/schoolorbit-agent-workflow.test.mjs
+node --test frontend-school/tests/static/documentation-policy.test.mjs
 git diff --check
 git status --short
 ```
