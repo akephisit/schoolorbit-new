@@ -6,9 +6,11 @@
 		createCertificateTemplatePreviewManifest,
 		getCertificateTemplate,
 		getCertificateTemplateVariableCatalog,
+		listCertificateSchoolFonts,
 		type CertificateRenderManifest,
 		type CertificateTemplateDetail
 	} from '$lib/api/certificates';
+	import type { SchoolFontSummary } from '$lib/api/school-fonts';
 	import { PageShell } from '$lib/components/app-layout';
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import CertificateEditor from '$lib/components/certificates/editor/CertificateEditor.svelte';
@@ -18,6 +20,7 @@
 	let template = $state.raw<CertificateTemplateDetail | null>(null);
 	let manifest = $state.raw<CertificateRenderManifest | null>(null);
 	let variables = $state.raw<string[]>([]);
+	let schoolFonts = $state.raw<SchoolFontSummary[]>([]);
 	let loading = $state(true);
 	let error = $state('');
 	let loadGeneration = 0;
@@ -35,15 +38,17 @@
 		template = null;
 		manifest = null;
 		variables = [];
+		schoolFonts = [];
 		if (!canRead || !targetCampaignId || !targetTemplateId) {
 			if (generation === loadGeneration) loading = false;
 			return;
 		}
 		try {
-			const [loadedTemplate, catalog, loadedManifest] = await Promise.all([
+			const [loadedTemplate, catalog, loadedManifest, loadedFonts] = await Promise.all([
 				getCertificateTemplate(targetTemplateId),
 				getCertificateTemplateVariableCatalog(targetTemplateId),
-				createCertificateTemplatePreviewManifest(targetTemplateId, { previewKind: 'short' })
+				createCertificateTemplatePreviewManifest(targetTemplateId, { previewKind: 'short' }),
+				listCertificateSchoolFonts(targetTemplateId)
 			]);
 			if (
 				generation !== loadGeneration ||
@@ -58,6 +63,7 @@
 			template = loadedTemplate;
 			manifest = loadedManifest;
 			variables = catalog.variables;
+			schoolFonts = loadedFonts.items;
 		} catch (loadError) {
 			if (
 				generation !== loadGeneration ||
@@ -109,7 +115,7 @@
 	{:else if template && manifest}
 		{#if template.capabilities.canUpdate}
 			{#key template.id}
-				<CertificateEditor {template} initialManifest={manifest} {variables} />
+				<CertificateEditor {template} initialManifest={manifest} {variables} {schoolFonts} />
 			{/key}
 		{:else}
 			<PageState

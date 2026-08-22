@@ -39,18 +39,14 @@ function imageElement(overrides = {}) {
 	};
 }
 
-function fontAsset(id, family, weight, style) {
+function schoolFont(id, family, weight, style) {
 	return {
 		id,
-		fileId: `file-${id}`,
-		kind: 'font',
 		displayName: `${family} ${weight} ${style}`,
 		fontFamily: family,
 		fontWeight: weight,
 		fontStyle: style,
-		imageWidthPixels: null,
-		imageHeightPixels: null,
-		rightsConfirmed: true,
+		referenceCount: 0,
 		createdAt: '2026-08-16T00:00:00Z'
 	};
 }
@@ -65,27 +61,27 @@ test('font controls resolve only real deterministic variants and patch every fon
 		toggleItalicVariant
 	} = await import('../../src/lib/certificates/font-variants.ts');
 	const variants = certificateFontVariants([
-		fontAsset('font-regular', 'Uploaded Thai', 400, 'normal'),
-		fontAsset('font-bold', 'Uploaded Thai', 700, 'normal'),
-		fontAsset('font-italic', 'Uploaded Thai', 400, 'italic'),
-		fontAsset('font-light', 'Fallback Thai', 300, 'normal'),
-		fontAsset('font-medium', 'Fallback Thai', 500, 'normal'),
-		fontAsset('font-italic-only', 'Italic Only', 400, 'italic')
+		schoolFont('font-regular', 'Uploaded Thai', 400, 'normal'),
+		schoolFont('font-bold', 'Uploaded Thai', 700, 'normal'),
+		schoolFont('font-italic', 'Uploaded Thai', 400, 'italic'),
+		schoolFont('font-light', 'Fallback Thai', 300, 'normal'),
+		schoolFont('font-medium', 'Fallback Thai', 500, 'normal'),
+		schoolFont('font-italic-only', 'Italic Only', 400, 'italic')
 	]);
-	const regular = selectFontFamily(variants, 'asset:uploaded thai');
+	const regular = selectFontFamily(variants, 'school_font:uploaded thai');
 	assert.ok(regular);
 	assert.deepEqual(fontVariantPatch(regular), {
-		fontSource: { type: 'asset', asset_id: 'font-regular' },
+		fontSource: { type: 'school_font', font_id: 'font-regular' },
 		fontFamily: 'Uploaded Thai',
 		fontWeight: 400,
 		fontStyle: 'normal'
 	});
 	const bold = toggleBoldVariant(variants, regular);
-	assert.equal(bold?.source.type === 'asset' ? bold.source.asset_id : null, 'font-bold');
+	assert.equal(bold?.source.type === 'school_font' ? bold.source.font_id : null, 'font-bold');
 	assert.equal(toggleBoldVariant(variants, bold)?.weight, 400);
 	const italic = toggleItalicVariant(variants, regular);
 	assert.deepEqual(fontVariantPatch(italic), {
-		fontSource: { type: 'asset', asset_id: 'font-italic' },
+		fontSource: { type: 'school_font', font_id: 'font-italic' },
 		fontFamily: 'Uploaded Thai',
 		fontWeight: 400,
 		fontStyle: 'italic'
@@ -100,9 +96,12 @@ test('font controls resolve only real deterministic variants and patch every fon
 		null,
 		'weight selection must not switch italic text to a normal-only variant'
 	);
-	assert.equal(selectFontFamily(variants, 'asset:fallback thai')?.weight, 300);
-	assert.equal(selectFontFamily(variants, 'asset:italic only')?.style, 'italic');
-	assert.equal(toggleBoldVariant(variants, selectFontFamily(variants, 'asset:italic only')), null);
+	assert.equal(selectFontFamily(variants, 'school_font:fallback thai')?.weight, 300);
+	assert.equal(selectFontFamily(variants, 'school_font:italic only')?.style, 'italic');
+	assert.equal(
+		toggleBoldVariant(variants, selectFontFamily(variants, 'school_font:italic only')),
+		null
+	);
 });
 
 test('dragging converts screen pixels to page points', async () => {
@@ -394,6 +393,33 @@ test('safe-area guide labels the adjustable current margin instead of the ten-mi
 	assert.doesNotMatch(canvas, /พื้นที่ปลอดภัย 10 มม\./);
 });
 
+test('editor loads school fonts separately while template assets remain image-only', async () => {
+	const [route, editor, panel] = await Promise.all([
+		readFile(
+			new URL(
+				'src/routes/(app)/staff/certificates/[campaignId]/templates/[templateId]/editor/+page.svelte',
+				projectRoot
+			),
+			'utf8'
+		),
+		readFile(
+			new URL('src/lib/components/certificates/editor/CertificateEditor.svelte', projectRoot),
+			'utf8'
+		),
+		readFile(
+			new URL('src/lib/components/certificates/editor/CertificateElementPanel.svelte', projectRoot),
+			'utf8'
+		)
+	]);
+	assert.match(route, /listCertificateSchoolFonts/);
+	assert.match(route, /Promise\.all\([\s\S]*listCertificateSchoolFonts/);
+	assert.match(route, /<CertificateEditor[\s\S]*\{schoolFonts\}/);
+	assert.match(editor, /schoolFonts:\s*SchoolFontSummary\[\]/);
+	assert.match(editor, /<CertificateElementPanel[\s\S]*\{schoolFonts\}/);
+	assert.match(panel, /certificateFontVariants\(schoolFonts\)/);
+	assert.doesNotMatch(`${editor}\n${panel}`, /asset\.kind\s*===\s*['"]font['"]/);
+});
+
 test('manifest refresh detects expiring background, font, and image grants', async () => {
 	const { certificateManifestExpiresSoon, certificateManifestNeedsLayoutGrants } =
 		await import('../../src/lib/certificates/editor-state.ts');
@@ -424,7 +450,7 @@ test('manifest refresh detects expiring background, font, and image grants', asy
 						aspectRatio: 1
 					},
 					textElement({
-						fontSource: { type: 'asset', asset_id: 'asset-font' },
+						fontSource: { type: 'school_font', font_id: 'school-font' },
 						fontFamily: 'Uploaded',
 						fontWeight: 400
 					})
@@ -436,7 +462,7 @@ test('manifest refresh detects expiring background, font, and image grants', asy
 	assert.equal(
 		certificateManifestNeedsLayoutGrants(
 			{
-				fontGrants: [{ assetId: 'asset-font' }],
+				fontGrants: [{ schoolFontId: 'school-font' }],
 				imageGrants: [{ assetId: 'asset-image' }]
 			},
 			{

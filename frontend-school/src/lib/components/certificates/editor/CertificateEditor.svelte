@@ -4,11 +4,13 @@
 		createCertificateTemplatePreviewManifest,
 		getCertificateTemplate,
 		getCertificateTemplateVariableCatalog,
+		listCertificateSchoolFonts,
 		updateCertificateTemplate,
 		type CertificateRenderManifest,
 		type CertificateTemplateDetail
 	} from '$lib/api/certificates';
 	import { ApiClientError } from '$lib/api/client';
+	import type { SchoolFontSummary } from '$lib/api/school-fonts';
 	import {
 		alignElements,
 		cloneCertificateLayout,
@@ -43,16 +45,19 @@
 	let {
 		template,
 		initialManifest,
-		variables
+		variables,
+		schoolFonts: initialSchoolFonts
 	}: {
 		template: CertificateTemplateDetail;
 		initialManifest: CertificateRenderManifest;
 		variables: string[];
+		schoolFonts: SchoolFontSummary[];
 	} = $props();
 
 	let currentTemplate = $state.raw(untrack(() => template));
 	let manifest = $state.raw(untrack(() => initialManifest));
 	let variableOptions = $state.raw(untrack(() => [...variables]));
+	let schoolFonts = $state.raw(untrack(() => [...initialSchoolFonts]));
 	let layout = $state.raw(cloneCertificateLayout(untrack(() => template.layout)));
 	let selectedIds = $state.raw<string[]>([]);
 	let zoom = $state(1);
@@ -256,16 +261,18 @@
 		if (reloading) return;
 		reloading = true;
 		try {
-			const [updated, catalog, updatedManifest] = await Promise.all([
+			const [updated, catalog, updatedManifest, updatedFonts] = await Promise.all([
 				getCertificateTemplate(currentTemplate.id),
 				getCertificateTemplateVariableCatalog(currentTemplate.id),
 				createCertificateTemplatePreviewManifest(currentTemplate.id, {
 					previewKind: 'short'
-				})
+				}),
+				listCertificateSchoolFonts(currentTemplate.id)
 			]);
 			currentTemplate = updated;
 			manifest = updatedManifest;
 			variableOptions = catalog.variables;
+			schoolFonts = updatedFonts.items;
 			layout = cloneCertificateLayout(updated.layout);
 			safeMarginPoints = updated.safeMarginPoints;
 			showSafeArea = updated.showSafeArea;
@@ -449,6 +456,7 @@
 			<CertificateElementPanel
 				{selectedElement}
 				assets={currentTemplate.assets}
+				{schoolFonts}
 				{pageSize}
 				variables={variableOptions}
 				{hasQr}

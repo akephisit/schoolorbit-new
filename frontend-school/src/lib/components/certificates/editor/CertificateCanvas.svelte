@@ -90,7 +90,9 @@
 			.map((element) =>
 				[
 					element.id,
-					element.fontSource.type === 'asset' ? `asset:${element.fontSource.asset_id}` : 'built_in',
+					element.fontSource.type === 'school_font'
+						? `school_font:${element.fontSource.font_id}`
+						: 'built_in',
 					element.fontFamily,
 					element.fontWeight,
 					element.fontStyle

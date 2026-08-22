@@ -41,6 +41,9 @@ const certificateApiStub = `
 	export async function attachCertificateTemplateBackground(id, payload) {
 		return window.__certificateEditorApi.attachBackground(id, payload);
 	}
+	export async function listCertificateSchoolFonts(id) {
+		return window.__certificateEditorApi.getFonts(id);
+	}
 	export async function inspectCertificateFontUploads(id, payload) {
 		return window.__certificateFontBatchApi.inspect(id, payload);
 	}
@@ -52,11 +55,17 @@ const certificateApiStub = `
 const fileApiStub = `
 	export async function uploadCertificateTemplateFile(file, purpose, templateId) {
 		if (!window.__certificateFontBatchApi) throw new Error('upload is not used by this harness');
-		return window.__certificateFontBatchApi.upload(file, purpose, templateId);
+		return window.__certificateFontBatchApi.uploadTemplate(file, purpose, templateId);
 	}
 	export async function deleteFile(fileId, templateId) {
 		if (!window.__certificateFontBatchApi) return { disposition: 'deleted' };
-		return window.__certificateFontBatchApi.delete(fileId, templateId);
+		return window.__certificateFontBatchApi.deleteTemplate(fileId, templateId);
+	}
+	export async function uploadSchoolFontFile(file, context) {
+		return window.__certificateFontBatchApi.upload(file, context);
+	}
+	export async function deleteSchoolFontTemporaryFile(fileId, context) {
+		return window.__certificateFontBatchApi.delete(fileId, context);
 	}
 `;
 
@@ -167,11 +176,12 @@ function harnessPlugin(): Plugin {
 					const uploadedNames = new Map();
 					const deleteAttempts = new Map();
 					const attachedBatches = [];
+					const patchedFontLists = [];
 					const deletedFileIds = [];
 					const pendingEvents = [];
 					window.__certificateFontBatchApi = {
-						async upload(file, purpose, templateId) {
-							if (purpose !== 'certificate_template_font' || templateId !== 'template-font-batch') {
+						async upload(file, context) {
+							if (context.type !== 'certificate_template' || context.templateId !== 'template-font-batch') {
 								throw new Error('unexpected font upload relationship');
 							}
 							const id = 'font-file-' + (++nextFile);
@@ -197,9 +207,22 @@ function harnessPlugin(): Plugin {
 						async attach(id, payload) {
 							if (!payload.rightsConfirmed) throw new Error('rights must be confirmed');
 							attachedBatches.push([...payload.fileIds]);
-							return { id, assets: [] };
+							return {
+								items: payload.fileIds.map((fileId) => ({
+									id: 'school-' + fileId,
+									displayName: uploadedNames.get(fileId),
+									fontFamily: 'Browser Thai',
+									fontWeight: uploadedNames.get(fileId).includes('Bold') ? 700 : 400,
+									fontStyle: uploadedNames.get(fileId).includes('Italic') ? 'italic' : 'normal',
+									referenceCount: 0,
+									createdAt: '2026-08-14T00:00:00Z'
+								}))
+							};
 						},
-						async delete(fileId) {
+						async delete(fileId, context) {
+							if (context.type !== 'certificate_template' || context.templateId !== 'template-font-batch') {
+								throw new Error('unexpected font cleanup relationship');
+							}
 							const attempts = (deleteAttempts.get(fileId) ?? 0) + 1;
 							deleteAttempts.set(fileId, attempts);
 							if (uploadedNames.get(fileId).includes('Variable') && attempts === 1) {
@@ -211,6 +234,7 @@ function harnessPlugin(): Plugin {
 					};
 					window.certificateFontBatchHarness = {
 						attachedBatches: () => structuredClone(attachedBatches),
+						patchedFontLists: () => structuredClone(patchedFontLists),
 						deletedFileIds: () => [...deletedFileIds],
 						pendingEvents: () => [...pendingEvents]
 					};
@@ -218,8 +242,7 @@ function harnessPlugin(): Plugin {
 						target: document.getElementById('app'),
 						props: {
 							templateId: 'template-font-batch',
-							canUpdate: true,
-							onpatched: () => {},
+							onattached: (items) => patchedFontLists.push(structuredClone(items)),
 							onpendingchange: (pending) => pendingEvents.push(pending)
 						}
 					});
@@ -263,6 +286,35 @@ function harnessPlugin(): Plugin {
 					}]
 				};
 				const initialUpdatedAt = '2026-08-14T00:00:00Z';
+				const schoolFonts = [
+					{
+						id: '50000000-0000-4000-8000-000000000001',
+						displayName: 'Uploaded Thai Regular',
+						fontFamily: 'Uploaded Thai',
+						fontWeight: 400,
+						fontStyle: 'normal',
+						referenceCount: 0,
+						createdAt: initialUpdatedAt
+					},
+					{
+						id: '50000000-0000-4000-8000-000000000002',
+						displayName: 'Uploaded Thai Bold',
+						fontFamily: 'Uploaded Thai',
+						fontWeight: 700,
+						fontStyle: 'normal',
+						referenceCount: 1,
+						createdAt: initialUpdatedAt
+					},
+					{
+						id: '50000000-0000-4000-8000-000000000003',
+						displayName: 'Uploaded Thai Italic',
+						fontFamily: 'Uploaded Thai',
+						fontWeight: 400,
+						fontStyle: 'italic',
+						referenceCount: 0,
+						createdAt: initialUpdatedAt
+					}
+				];
 				let serverTemplate = {
 					id: '10000000-0000-4000-8000-000000000001',
 					campaignId: '30000000-0000-4000-8000-000000000001',
@@ -270,45 +322,6 @@ function harnessPlugin(): Plugin {
 					allowedRecipientTypes: ['student', 'external'],
 					backgroundFileId: '40000000-0000-4000-8000-000000000001',
 					assets: [
-						{
-							id: '50000000-0000-4000-8000-000000000001',
-							fileId: '51000000-0000-4000-8000-000000000001',
-							kind: 'font',
-							displayName: 'Uploaded Thai Regular',
-							fontFamily: 'Uploaded Thai',
-							fontWeight: 400,
-							fontStyle: 'normal',
-							imageWidthPixels: null,
-							imageHeightPixels: null,
-							rightsConfirmed: true,
-							createdAt: initialUpdatedAt
-						},
-						{
-							id: '50000000-0000-4000-8000-000000000002',
-							fileId: '51000000-0000-4000-8000-000000000002',
-							kind: 'font',
-							displayName: 'Uploaded Thai Bold',
-							fontFamily: 'Uploaded Thai',
-							fontWeight: 700,
-							fontStyle: 'normal',
-							imageWidthPixels: null,
-							imageHeightPixels: null,
-							rightsConfirmed: true,
-							createdAt: initialUpdatedAt
-						},
-						{
-							id: '50000000-0000-4000-8000-000000000003',
-							fileId: '51000000-0000-4000-8000-000000000003',
-							kind: 'font',
-							displayName: 'Uploaded Thai Italic',
-							fontFamily: 'Uploaded Thai',
-							fontWeight: 400,
-							fontStyle: 'italic',
-							imageWidthPixels: null,
-							imageHeightPixels: null,
-							rightsConfirmed: true,
-							createdAt: initialUpdatedAt
-						},
 						{
 							id: '60000000-0000-4000-8000-000000000001',
 							fileId: '61000000-0000-4000-8000-000000000001',
@@ -354,15 +367,14 @@ function harnessPlugin(): Plugin {
 						{ family: 'Sarabun', weight: 400, style: 'normal', assetPath: '/fonts/Sarabun-Regular.ttf' },
 						{ family: 'Sarabun', weight: 700, style: 'normal', assetPath: '/fonts/Sarabun-Bold.ttf' }
 					],
-					fontGrants: serverTemplate.assets
-						.filter((asset) => asset.kind === 'font')
-						.map((asset) => ({
-							assetId: asset.id,
-							fileId: asset.fileId,
-							family: asset.fontFamily,
-							weight: asset.fontWeight,
-							style: asset.fontStyle,
-							url: '/font-' + asset.id + '.ttf',
+					fontGrants: schoolFonts
+						.map((font, index) => ({
+							schoolFontId: font.id,
+							fileId: ['51000000-0000-4000-8000-000000000001', '51000000-0000-4000-8000-000000000002', '51000000-0000-4000-8000-000000000003'][index],
+							family: font.fontFamily,
+							weight: font.fontWeight,
+							style: font.fontStyle,
+							url: '/font-' + font.id + '.ttf',
 							expiresAt: '2099-01-01T00:00:00Z'
 						})),
 					imageGrants: serverTemplate.assets
@@ -440,6 +452,7 @@ function harnessPlugin(): Plugin {
 						return structuredClone(serverTemplate);
 					},
 					async getTemplate() { return structuredClone(serverTemplate); },
+					async getFonts() { return { items: structuredClone(schoolFonts) }; },
 					async getVariables() { return { variables: ['ชื่อ', 'นามสกุล', 'รางวัลหรือบทบาท'] }; },
 					async preview(id, payload, options = {}) {
 						previewKinds.push(payload.previewKind);
@@ -520,6 +533,7 @@ function harnessPlugin(): Plugin {
 					target: document.getElementById('app'),
 					props: {
 						template: structuredClone(serverTemplate),
+						schoolFonts: structuredClone(schoolFonts),
 						initialManifest: structuredClone(baseManifest),
 						variables: ['ชื่อ', 'นามสกุล', 'รางวัลหรือบทบาท']
 					}
@@ -667,7 +681,7 @@ test('editor selects exact font assets and preserves or resets inspected image r
 	await expect(page.getByTestId('certificate-editor')).toBeVisible();
 	await page.getByRole('button', { name: 'เลือกองค์ประกอบ text' }).click();
 
-	await page.getByLabel('ตระกูลฟอนต์').selectOption('asset:uploaded thai');
+	await page.getByLabel('ตระกูลฟอนต์').selectOption('school_font:uploaded thai');
 	await expect(page.getByRole('button', { name: 'ตัวเอียง' })).toBeEnabled();
 	await page.getByRole('button', { name: 'ตัวเอียง' }).click();
 	await expect(page.getByRole('button', { name: 'ตัวหนา' })).toBeDisabled();
@@ -678,10 +692,10 @@ test('editor selects exact font assets and preserves or resets inspected image r
 		.toBe(1);
 	let payload = await page.evaluate(() => window.certificateEditorHarness.savedPayloads().at(-1)!);
 	let text = payload.layout.elements.find((element) => element.type === 'text') as {
-		fontSource: { type: string; asset_id: string };
+		fontSource: { type: string; font_id: string };
 		fontStyle: string;
 	};
-	expect(text.fontSource.asset_id).toBe('50000000-0000-4000-8000-000000000003');
+	expect(text.fontSource.font_id).toBe('50000000-0000-4000-8000-000000000003');
 	expect(text.fontStyle).toBe('italic');
 
 	await page.getByRole('button', { name: 'ตัวเอียง' }).click();
@@ -689,7 +703,7 @@ test('editor selects exact font assets and preserves or resets inspected image r
 	await page.getByRole('button', { name: 'บันทึก' }).click();
 	payload = await page.evaluate(() => window.certificateEditorHarness.savedPayloads().at(-1)!);
 	text = payload.layout.elements.find((element) => element.type === 'text') as typeof text;
-	expect(text.fontSource.asset_id).toBe('50000000-0000-4000-8000-000000000002');
+	expect(text.fontSource.font_id).toBe('50000000-0000-4000-8000-000000000002');
 
 	await page
 		.getByLabel('เพิ่มรูปภาพ', { exact: true })
@@ -837,18 +851,26 @@ test('font batch uploads sequentially, reviews detected variants, and attaches a
 		{ name: 'BrowserThai-Regular.ttf', mimeType: 'font/ttf', buffer: Buffer.from('regular') },
 		{ name: 'BrowserThai-Bold.ttf', mimeType: 'font/ttf', buffer: Buffer.from('bold') }
 	]);
-	await page.getByRole('button', { name: 'อัปโหลดและตรวจสอบ' }).click();
+	await page.getByRole('button', { name: 'อัปโหลดและตรวจฟอนต์' }).click();
 	await expect(page.getByText('Browser Thai')).toHaveCount(2);
-	await expect(page.getByText('400', { exact: true })).toBeVisible();
-	await expect(page.getByText('700', { exact: true })).toBeVisible();
-	await expect(page.getByText('พร้อมแนบ')).toHaveCount(2);
+	await expect(page.getByText('Browser Thai · 400 · ตัวตรง')).toBeVisible();
+	await expect(page.getByText('Browser Thai · 700 · ตัวตรง')).toBeVisible();
+	await expect(page.getByText('พร้อมเพิ่มเข้าคลัง')).toHaveCount(2);
 	await page
-		.getByRole('checkbox', { name: 'ยืนยันว่ามีสิทธิ์ใช้และฝังฟอนต์ทุกไฟล์ในชุดนี้' })
+		.getByRole('checkbox', { name: 'ยืนยันว่ามีสิทธิ์ใช้ฟอนต์เหล่านี้ในงานของโรงเรียน' })
 		.check();
-	await page.getByRole('button', { name: 'แนบชุดฟอนต์' }).click();
+	await page.getByRole('button', { name: 'เพิ่มเข้าคลังฟอนต์' }).click();
 	await expect
 		.poll(() => page.evaluate(() => window.certificateFontBatchHarness.attachedBatches()))
 		.toEqual([['font-file-1', 'font-file-2']]);
+	expect(
+		await page.evaluate(() =>
+			window.certificateFontBatchHarness
+				.patchedFontLists()
+				.at(-1)
+				?.map((font) => font.id)
+		)
+	).toEqual(['school-font-file-1', 'school-font-file-2']);
 	await expect(page.getByText('BrowserThai-Regular.ttf')).toHaveCount(0);
 	expect(await page.evaluate(() => window.certificateFontBatchHarness.pendingEvents())).toEqual([
 		true,
@@ -865,12 +887,12 @@ test('failed temporary font cleanup retains the file row until retry succeeds', 
 		mimeType: 'font/ttf',
 		buffer: Buffer.from('variable')
 	});
-	await page.getByRole('button', { name: 'อัปโหลดและตรวจสอบ' }).click();
+	await page.getByRole('button', { name: 'อัปโหลดและตรวจฟอนต์' }).click();
 	await expect(page.getByText('ไม่รองรับ variable font')).toBeVisible();
-	await page.getByRole('button', { name: 'ลบไฟล์ชั่วคราว', exact: true }).click();
+	await page.getByRole('button', { name: /^ลบไฟล์ชั่วคราว/ }).click();
 	await expect(page.getByText('จำลองการลบไฟล์ชั่วคราวไม่สำเร็จ')).toBeVisible();
 	await expect(page.getByText('BrowserThai-Variable.ttf')).toBeVisible();
-	await page.getByRole('button', { name: 'ลบไฟล์ชั่วคราว', exact: true }).click();
+	await page.getByRole('button', { name: /^ลบไฟล์ชั่วคราว/ }).click();
 	await expect(page.getByText('BrowserThai-Variable.ttf')).toHaveCount(0);
 	expect(await page.evaluate(() => window.certificateFontBatchHarness.deletedFileIds())).toEqual([
 		'font-file-1'
@@ -907,6 +929,7 @@ declare global {
 		};
 		certificateFontBatchHarness: {
 			attachedBatches(): string[][];
+			patchedFontLists(): Array<Array<{ id: string }>>;
 			deletedFileIds(): string[];
 			pendingEvents(): boolean[];
 		};

@@ -1,7 +1,5 @@
-import type { CertificateTemplateDetail } from '../api/certificates';
+import type { SchoolFontSummary } from '../api/school-fonts';
 import type { TextCertificateElement } from './editor-state';
-
-type CertificateTemplateAsset = CertificateTemplateDetail['assets'][number];
 
 export type CertificateFontVariant = {
 	source: TextCertificateElement['fontSource'];
@@ -45,14 +43,14 @@ function compareVariants(left: CertificateFontVariant, right: CertificateFontVar
 }
 
 function sourceKey(source: TextCertificateElement['fontSource']): string {
-	return source.type === 'asset' ? `asset:${source.asset_id}` : 'built_in';
+	return source.type === 'school_font' ? `school_font:${source.font_id}` : 'built_in';
 }
 
 function cloneSource(
 	source: TextCertificateElement['fontSource']
 ): TextCertificateElement['fontSource'] {
-	return source.type === 'asset'
-		? { type: 'asset', asset_id: source.asset_id }
+	return source.type === 'school_font'
+		? { type: 'school_font', font_id: source.font_id }
 		: { type: 'built_in' };
 }
 
@@ -70,7 +68,7 @@ function closestRegularVariant(
 }
 
 export function certificateFontVariants(
-	assets: readonly CertificateTemplateAsset[]
+	fonts: readonly SchoolFontSummary[]
 ): CertificateFontVariant[] {
 	const builtIn: CertificateFontVariant[] = [400, 700].map((weight) => ({
 		source: { type: 'built_in' },
@@ -81,27 +79,17 @@ export function certificateFontVariants(
 		style: 'normal',
 		label: variantLabel(weight, 'normal')
 	}));
-	const uploaded = assets.flatMap((asset): CertificateFontVariant[] => {
-		if (
-			asset.kind !== 'font' ||
-			!asset.fontFamily ||
-			asset.fontWeight === null ||
-			asset.fontStyle === null
-		) {
-			return [];
-		}
-		return [
-			{
-				source: { type: 'asset', asset_id: asset.id },
-				family: asset.fontFamily,
-				familyKey: `asset:${normalizedFamily(asset.fontFamily)}`,
-				familyLabel: `${asset.fontFamily} (อัปโหลด)`,
-				weight: asset.fontWeight,
-				style: asset.fontStyle,
-				label: variantLabel(asset.fontWeight, asset.fontStyle)
-			}
-		];
-	});
+	const uploaded = fonts.map(
+		(font): CertificateFontVariant => ({
+			source: { type: 'school_font', font_id: font.id },
+			family: font.fontFamily,
+			familyKey: `school_font:${normalizedFamily(font.fontFamily)}`,
+			familyLabel: `${font.fontFamily} (คลังโรงเรียน)`,
+			weight: font.fontWeight,
+			style: font.fontStyle,
+			label: variantLabel(font.fontWeight, font.fontStyle)
+		})
+	);
 	return [...builtIn, ...uploaded].sort(compareVariants);
 }
 

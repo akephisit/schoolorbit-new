@@ -1,5 +1,11 @@
 import { apiClient, requireApiData, type ApiRequestOptions } from '$lib/api/client';
 import type { components } from '$lib/api/generated/school-api';
+import type {
+	AttachSchoolFontBatchRequest,
+	InspectSchoolFontUploadsRequest,
+	SchoolFontListResponse,
+	SchoolFontUploadInspection
+} from '$lib/api/school-fonts';
 
 type Schemas = components['schemas'];
 
@@ -27,11 +33,6 @@ export type CreateCertificateTemplateRequest = Schemas['CreateCertificateTemplat
 export type UpdateCertificateTemplateRequest = Schemas['UpdateCertificateTemplateRequest'];
 export type AttachCertificateBackgroundRequest = Schemas['AttachCertificateBackgroundRequest'];
 export type AttachCertificateAssetRequest = Schemas['AttachCertificateAssetRequest'];
-export type InspectCertificateFontUploadsRequest = Schemas['InspectCertificateFontUploadsRequest'];
-export type AttachCertificateFontBatchRequest = Schemas['AttachCertificateFontBatchRequest'];
-export type CertificateFontUploadInspection = Schemas['CertificateFontUploadInspection'];
-export type CertificateFontUploadInspectionFile = Schemas['CertificateFontUploadInspectionFile'];
-export type CertificateFontUploadStatus = Schemas['CertificateFontUploadStatus'];
 export type CertificatePreviewManifestRequest = Schemas['CertificatePreviewManifestRequest'];
 export type RecipientType = Schemas['RecipientType'];
 export type CertificateImportRequest = Schemas['CertificateImportRequest'];
@@ -250,24 +251,33 @@ export async function attachCertificateTemplateAsset(
 
 export async function inspectCertificateFontUploads(
 	templateId: string,
-	payload: InspectCertificateFontUploadsRequest
-): Promise<CertificateFontUploadInspection> {
-	const response = await apiClient.post<CertificateFontUploadInspection>(
-		`/api/certificates/templates/${encodeURIComponent(templateId)}/assets/fonts/inspect`,
+	payload: InspectSchoolFontUploadsRequest
+): Promise<SchoolFontUploadInspection> {
+	const response = await apiClient.post<SchoolFontUploadInspection>(
+		`/api/certificates/templates/${encodeURIComponent(templateId)}/fonts/inspect`,
 		payload
 	);
 	return requireApiData(response, 'ไม่สามารถตรวจสอบไฟล์ฟอนต์ได้');
 }
 
+export async function listCertificateSchoolFonts(
+	templateId: string
+): Promise<SchoolFontListResponse> {
+	const response = await apiClient.get<SchoolFontListResponse>(
+		`/api/certificates/templates/${encodeURIComponent(templateId)}/fonts`
+	);
+	return requireApiData(response, 'ไม่สามารถโหลดคลังฟอนต์ของโรงเรียนได้');
+}
+
 export async function attachCertificateFontBatch(
 	templateId: string,
-	payload: AttachCertificateFontBatchRequest
-): Promise<CertificateTemplateDetail> {
-	const response = await apiClient.post<CertificateTemplateDetail, CertificateResourceLocked>(
-		`/api/certificates/templates/${encodeURIComponent(templateId)}/assets/fonts/batch`,
+	payload: AttachSchoolFontBatchRequest
+): Promise<SchoolFontListResponse> {
+	const response = await apiClient.post<SchoolFontListResponse, CertificateResourceLocked>(
+		`/api/certificates/templates/${encodeURIComponent(templateId)}/fonts/batch`,
 		payload
 	);
-	return requireApiData(response, 'ไม่สามารถแนบชุดฟอนต์กับแม่แบบได้');
+	return requireApiData(response, 'ไม่สามารถเพิ่มชุดฟอนต์เข้าคลังของโรงเรียนได้');
 }
 
 export async function deleteCertificateTemplateAsset(

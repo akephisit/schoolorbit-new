@@ -2,8 +2,10 @@
 	import {
 		attachCertificateTemplateAsset,
 		deleteCertificateTemplateAsset,
+		listCertificateSchoolFonts,
 		type CertificateTemplateDetail
 	} from '$lib/api/certificates';
+	import type { SchoolFontSummary } from '$lib/api/school-fonts';
 	import { deleteFile, uploadCertificateTemplateFile, type FileMetadata } from '$lib/api/files';
 	import { LoadingButton } from '$lib/components/app-state';
 	import * as AlertDialog from '$lib/components/ui/alert-dialog';
@@ -11,15 +13,8 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
-	import {
-		AlertTriangle,
-		FileImage,
-		FileType2,
-		ImagePlus,
-		RefreshCw,
-		Trash2,
-		Upload
-	} from 'lucide-svelte';
+	import { AlertTriangle, FileImage, ImagePlus, RefreshCw, Trash2, Upload } from 'lucide-svelte';
+	import { onMount } from 'svelte';
 	import { toast } from 'svelte-sonner';
 	import CertificateFontBatchUpload from './CertificateFontBatchUpload.svelte';
 
@@ -40,8 +35,7 @@
 	} = $props();
 
 	const templateId = $derived(template.id);
-	const images = $derived(template.assets.filter((asset) => asset.kind === 'image'));
-	const fonts = $derived(template.assets.filter((asset) => asset.kind === 'font'));
+	const images = $derived(template.assets);
 
 	let imageFile = $state<File | null>(null);
 	let imageDisplayName = $state('');
@@ -54,6 +48,40 @@
 	let imageInputKey = $state(0);
 	let imagePending = false;
 	let fontPending = false;
+	let schoolFonts = $state.raw<SchoolFontSummary[]>([]);
+	let schoolFontsLoading = $state(true);
+	let schoolFontsError = $state('');
+	let schoolFontsPatchGeneration = 0;
+
+	onMount(() => {
+		const targetTemplateId = templateId;
+		const generation = schoolFontsPatchGeneration;
+		let active = true;
+		schoolFontsLoading = true;
+		schoolFontsError = '';
+		void listCertificateSchoolFonts(targetTemplateId)
+			.then((result) => {
+				if (active && generation === schoolFontsPatchGeneration) schoolFonts = result.items;
+			})
+			.catch((error: unknown) => {
+				if (!active || generation !== schoolFontsPatchGeneration) return;
+				schoolFontsError =
+					error instanceof Error ? error.message : 'โหลดคลังฟอนต์ของโรงเรียนไม่สำเร็จ';
+			})
+			.finally(() => {
+				if (active && generation === schoolFontsPatchGeneration) schoolFontsLoading = false;
+			});
+		return () => {
+			active = false;
+		};
+	});
+
+	function handleSchoolFontsAttached(items: SchoolFontSummary[]) {
+		schoolFontsPatchGeneration += 1;
+		schoolFonts = items;
+		schoolFontsLoading = false;
+		schoolFontsError = '';
+	}
 
 	function asError(error: unknown, fallback: string): Error {
 		return error instanceof Error ? error : new Error(fallback);
@@ -106,8 +134,7 @@
 			const updated = await attachCertificateTemplateAsset(templateId, {
 				fileId: pending.metadata.id,
 				kind: 'image',
-				displayName: pending.displayName,
-				rightsConfirmed: false
+				displayName: pending.displayName
 			});
 			setUnattachedFile(null);
 			attachError = null;
@@ -180,7 +207,7 @@
 		try {
 			const updated = await deleteCertificateTemplateAsset(templateId, deleteTarget.id);
 			onpatched(updated);
-			toast.success(deleteTarget.kind === 'font' ? 'ลบฟอนต์แล้ว' : 'ลบรูปประกอบแล้ว');
+			toast.success('ลบรูปประกอบแล้ว');
 			deleteTarget = null;
 		} catch (error) {
 			toast.error(error instanceof Error ? error.message : 'ลบทรัพยากรแม่แบบไม่สำเร็จ');
@@ -192,9 +219,9 @@
 
 <section class="space-y-5" aria-labelledby={`asset-title-${template.id}`}>
 	<div>
-		<h3 id={`asset-title-${template.id}`} class="font-medium">รูปประกอบและฟอนต์</h3>
+		<h3 id={`asset-title-${template.id}`} class="font-medium">รูปประกอบและคลังฟอนต์</h3>
 		<p class="mt-1 text-xs leading-relaxed text-muted-foreground">
-			ไฟล์เหล่านี้เป็น private และใช้ได้เฉพาะแม่แบบนี้ ผู้ใช้ต้องยืนยันสิทธิ์ก่อนเพิ่มฟอนต์
+			รูปประกอบเป็นไฟล์ private ของแม่แบบนี้ ส่วนฟอนต์ที่อัปโหลดจะใช้ร่วมกันได้ทั้งโรงเรียน
 		</p>
 	</div>
 
@@ -267,82 +294,55 @@
 			</LoadingButton>
 		</form>
 
-		<CertificateFontBatchUpload
-			templateId={template.id}
-			canUpdate={template.capabilities.canUpdate}
-			{onpatched}
-			onpendingchange={setFontPending}
-		/>
+		<div class="space-y-2">
+			{#if template.capabilities.canUpdate}
+				<CertificateFontBatchUpload
+					templateId={template.id}
+					onattached={handleSchoolFontsAttached}
+					onpendingchange={setFontPending}
+				/>
+			{/if}
+			<p class="px-1 text-xs text-muted-foreground" aria-live="polite">
+				{#if schoolFontsLoading}
+					กำลังโหลดคลังฟอนต์…
+				{:else if schoolFontsError}
+					{schoolFontsError}
+				{:else}
+					คลังโรงเรียนมีฟอนต์พร้อมใช้ {schoolFonts.length} รูปแบบ
+				{/if}
+			</p>
+		</div>
 	</div>
 
-	<div class="grid gap-4 lg:grid-cols-2">
-		<div class="space-y-2">
-			<div class="flex items-center justify-between">
-				<h4 class="text-sm font-medium">รูปที่แนบแล้ว</h4>
-				<Badge variant="secondary">{images.length}</Badge>
-			</div>
-			{#if images.length === 0}
-				<p class="rounded-lg border border-dashed p-4 text-center text-xs text-muted-foreground">
-					ยังไม่มีรูปประกอบ
-				</p>
-			{:else}
-				<div class="space-y-2">
-					{#each images as asset (asset.id)}
-						<div class="flex items-center gap-3 rounded-lg border p-3">
-							<FileImage class="size-5 shrink-0 text-blue-600" />
-							<span class="min-w-0 flex-1 truncate text-sm font-medium">{asset.displayName}</span>
-							{#if template.capabilities.canUpdate}
-								<Button
-									size="icon-sm"
-									variant="ghost"
-									onclick={() => (deleteTarget = asset)}
-									aria-label={`ลบ ${asset.displayName}`}
-								>
-									<Trash2 class="size-4" />
-								</Button>
-							{/if}
-						</div>
-					{/each}
-				</div>
-			{/if}
+	<div class="space-y-2">
+		<div class="flex items-center justify-between">
+			<h4 class="text-sm font-medium">รูปที่แนบแล้ว</h4>
+			<Badge variant="secondary">{images.length}</Badge>
 		</div>
-
-		<div class="space-y-2">
-			<div class="flex items-center justify-between">
-				<h4 class="text-sm font-medium">ฟอนต์ที่แนบแล้ว</h4>
-				<Badge variant="secondary">{fonts.length}</Badge>
+		{#if images.length === 0}
+			<p class="rounded-lg border border-dashed p-4 text-center text-xs text-muted-foreground">
+				ยังไม่มีรูปประกอบ
+			</p>
+		{:else}
+			<div class="space-y-2">
+				{#each images as asset (asset.id)}
+					<div class="flex items-center gap-3 rounded-lg border p-3">
+						<FileImage class="size-5 shrink-0 text-blue-600" />
+						<span class="min-w-0 flex-1 truncate text-sm font-medium">{asset.displayName}</span>
+						{#if template.capabilities.canUpdate}
+							<Button
+								size="icon-sm"
+								variant="ghost"
+								onclick={() => (deleteTarget = asset)}
+								aria-label={`ลบ ${asset.displayName}`}
+							>
+								<Trash2 class="size-4" />
+							</Button>
+						{/if}
+					</div>
+				{/each}
 			</div>
-			{#if fonts.length === 0}
-				<p class="rounded-lg border border-dashed p-4 text-center text-xs text-muted-foreground">
-					ยังไม่มีฟอนต์เพิ่มเติม · ใช้ Sarabun มาตรฐานได้เสมอ
-				</p>
-			{:else}
-				<div class="space-y-2">
-					{#each fonts as asset (asset.id)}
-						<div class="flex items-center gap-3 rounded-lg border p-3">
-							<FileType2 class="size-5 shrink-0 text-violet-600" />
-							<div class="min-w-0 flex-1">
-								<p class="truncate text-sm font-medium">{asset.displayName}</p>
-								<p class="truncate text-xs text-muted-foreground">
-									{asset.fontFamily ?? 'ไม่ทราบ family'} · น้ำหนัก {asset.fontWeight ?? '—'}
-									· {asset.fontStyle === 'italic' ? 'ตัวเอียง' : 'ตัวปกติ'}
-								</p>
-							</div>
-							{#if template.capabilities.canUpdate}
-								<Button
-									size="icon-sm"
-									variant="ghost"
-									onclick={() => (deleteTarget = asset)}
-									aria-label={`ลบ ${asset.displayName}`}
-								>
-									<Trash2 class="size-4" />
-								</Button>
-							{/if}
-						</div>
-					{/each}
-				</div>
-			{/if}
-		</div>
+		{/if}
 	</div>
 </section>
 
@@ -354,7 +354,7 @@
 		<AlertDialog.Header>
 			<AlertDialog.Title>ลบ “{deleteTarget?.displayName ?? ''}”?</AlertDialog.Title>
 			<AlertDialog.Description>
-				ลบได้เมื่อไม่มีองค์ประกอบในแม่แบบอ้างถึงไฟล์นี้ การลบมีผลกับ editor ของแบบนี้ทันที
+				ลบได้เมื่อไม่มีองค์ประกอบในแม่แบบอ้างถึงรูปนี้ การลบมีผลกับ editor ของแบบนี้ทันที
 			</AlertDialog.Description>
 		</AlertDialog.Header>
 		<AlertDialog.Footer>

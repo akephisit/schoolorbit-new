@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createServer, type Plugin, type ViteDevServer } from 'vite';
@@ -229,7 +229,7 @@ test.afterAll(async () => {
 	await devServer.close();
 });
 
-async function openHarness(page) {
+async function openHarness(page: Page) {
 	const moduleResponse = page.waitForResponse((response) =>
 		response.url().includes('/@id/virtual:school-font-library-test')
 	);
@@ -313,3 +313,14 @@ test('keeps an in-use font with the authoritative count and removes an unreferen
 	await page.getByRole('button', { name: 'ยืนยันลบฟอนต์' }).click();
 	await expect(page.getByText('Noto Sans Thai Bold')).toHaveCount(0);
 });
+
+declare global {
+	interface Window {
+		schoolFontLibraryHarness: {
+			uploadCalls(): Array<{ name: string; context: { type: 'central' } }>;
+			maxActiveUploads(): number;
+			attachedBatches(): string[][];
+			cleanedFiles(): string[];
+		};
+	}
+}

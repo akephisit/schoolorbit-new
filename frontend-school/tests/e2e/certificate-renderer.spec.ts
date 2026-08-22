@@ -59,7 +59,7 @@ type RenderManifest = {
 		assetPath: string;
 	}>;
 	fontGrants: Array<{
-		assetId: string;
+		schoolFontId: string;
 		fileId: string;
 		url: string;
 		expiresAt: string;
@@ -669,7 +669,7 @@ test('aborting one preview does not poison another preview loading the same font
 test('a refreshed signed URL does not register the same uploaded font again', async ({ page }) => {
 	await page.goto(`${baseUrl}${harnessPath}`);
 	const geometry = await makeVectorBackground('/background/runtime-font-grant.pdf', 240, 160, 0);
-	const assetId = '50000000-0000-4000-8000-000000000001';
+	const fontId = '50000000-0000-4000-8000-000000000001';
 	const fileId = '60000000-0000-4000-8000-000000000001';
 	const values = ['old', 'refreshed'].map((signature) => {
 		const value = manifest('/background/runtime-font-grant.pdf', geometry);
@@ -677,12 +677,12 @@ test('a refreshed signed URL does not register the same uploaded font again', as
 			fontFamily: 'SarabunUploadedStable',
 			fontWeight: 400,
 			fontStyle: 'normal',
-			fontSource: { type: 'asset', asset_id: assetId }
+			fontSource: { type: 'school_font', font_id: fontId }
 		});
 		value.builtInFonts = [];
 		value.fontGrants = [
 			{
-				assetId,
+				schoolFontId: fontId,
 				fileId,
 				url: `${baseUrl}/fonts/Sarabun-Regular.ttf?signature=${signature}`,
 				expiresAt: '2099-01-01T00:00:00Z',

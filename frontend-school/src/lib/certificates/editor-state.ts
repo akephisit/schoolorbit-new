@@ -52,12 +52,12 @@ export function certificateManifestNeedsLayoutGrants(
 	manifest: CertificateLayoutAssetGrants,
 	layout: CertificateLayout
 ): boolean {
-	const fontAssets = new Set(manifest.fontGrants.map((grant) => grant.assetId));
+	const schoolFonts = new Set(manifest.fontGrants.map((grant) => grant.schoolFontId));
 	const imageAssets = new Set(manifest.imageGrants.map((grant) => grant.assetId));
 	return layout.elements.some((element) => {
 		if (element.type === 'image') return !imageAssets.has(element.assetId);
-		if (element.type === 'text' && element.fontSource.type === 'asset') {
-			return !fontAssets.has(element.fontSource.asset_id);
+		if (element.type === 'text' && element.fontSource.type === 'school_font') {
+			return !schoolFonts.has(element.fontSource.font_id);
 		}
 		return false;
 	});

@@ -165,9 +165,9 @@ function fontAliasKey(
 	alias: string;
 	url: string;
 } {
-	if (element.fontSource.type === 'asset') {
-		const assetId = element.fontSource.asset_id;
-		const grant = manifest.fontGrants.find((candidate) => candidate.assetId === assetId);
+	if (element.fontSource.type === 'school_font') {
+		const fontId = element.fontSource.font_id;
+		const grant = manifest.fontGrants.find((candidate) => candidate.schoolFontId === fontId);
 		if (!grant) throw renderError(`ไม่พบไฟล์ฟอนต์สำหรับข้อความ ${element.id}`);
 		if (
 			grant.family !== element.fontFamily ||
@@ -177,8 +177,8 @@ function fontAliasKey(
 			throw renderError(`ข้อมูลฟอนต์ของข้อความ ${element.id} ไม่ตรงกับแม่แบบ`);
 		}
 		return {
-			cacheKey: `asset:${grant.assetId}:${grant.fileId}:${grant.family}:${grant.weight}:${grant.style}`,
-			alias: `SchoolOrbitCertificateAsset-${grant.assetId}-${grant.fileId}-${grant.weight}-${grant.style}`,
+			cacheKey: `school_font:${grant.schoolFontId}:${grant.fileId}:${grant.family}:${grant.weight}:${grant.style}`,
+			alias: `SchoolOrbitCertificateSchoolFont-${grant.schoolFontId}-${grant.fileId}-${grant.weight}-${grant.style}`,
 			url: grant.url
 		};
 	}

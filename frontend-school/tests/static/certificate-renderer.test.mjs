@@ -152,3 +152,15 @@ test('sanitizes PDF filenames and enforces the 200-certificate browser batch lim
 	assert.throws(() => validateCertificateBatchSize(0), /อย่างน้อย 1/);
 	assert.throws(() => validateCertificateBatchSize(201), /ไม่เกิน 200/);
 });
+
+test('browser renderer resolves shared fonts by schoolFontId and keeps images on assetId', async () => {
+	const source = await import('node:fs/promises').then(({ readFile }) =>
+		readFile(new URL('../../src/lib/certificates/renderer.browser.ts', import.meta.url), 'utf8')
+	);
+	assert.match(source, /fontSource\.type\s*===\s*['"]school_font['"]/);
+	assert.match(source, /fontSource\.font_id/);
+	assert.match(source, /candidate\.schoolFontId/);
+	assert.match(source, /school_font:/);
+	assert.match(source, /imageGrants[\s\S]*candidate\.assetId/);
+	assert.doesNotMatch(source, /fontGrants\.find\([\s\S]{0,160}candidate\.assetId/);
+});

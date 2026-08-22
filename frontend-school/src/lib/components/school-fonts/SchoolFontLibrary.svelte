@@ -81,6 +81,13 @@
 		actionError = null;
 	}
 
+	function schoolFontDeleteConflict(error: unknown): SchoolFontDeleteConflict | null {
+		if (!(error instanceof ApiClientError) || error.status !== 409) return null;
+		const data = error.data;
+		if (!data || typeof data !== 'object' || !('referenceCount' in data)) return null;
+		return typeof data.referenceCount === 'number' ? { referenceCount: data.referenceCount } : null;
+	}
+
 	async function confirmDelete(): Promise<void> {
 		const target = deleteTarget;
 		if (!target || deletingId) return;
@@ -92,12 +99,9 @@
 			deleteTarget = null;
 			toast.success(`ลบ ${target.displayName} จากคลังแล้ว`);
 		} catch (error) {
-			if (
-				error instanceof ApiClientError<SchoolFontDeleteConflict> &&
-				error.status === 409 &&
-				error.data
-			) {
-				const referenceCount = error.data.referenceCount;
+			const conflict = schoolFontDeleteConflict(error);
+			if (conflict) {
+				const referenceCount = conflict.referenceCount;
 				fonts = fonts.map((font) => (font.id === target.id ? { ...font, referenceCount } : font));
 				actionError = `ฟอนต์นี้ยังถูกใช้ใน ${referenceCount} แม่แบบ`;
 			} else {

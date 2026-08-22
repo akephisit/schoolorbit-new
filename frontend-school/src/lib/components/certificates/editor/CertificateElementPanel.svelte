@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { CertificateTemplateDetail } from '$lib/api/certificates';
+	import type { SchoolFontSummary } from '$lib/api/school-fonts';
 	import {
 		imageAssetAspectRatio,
 		resetImageAspectRatio,
@@ -39,6 +40,7 @@
 	let {
 		selectedElement,
 		assets,
+		schoolFonts,
 		pageSize,
 		variables,
 		hasQr,
@@ -52,6 +54,7 @@
 	}: {
 		selectedElement: CertificateElement | null;
 		assets: TemplateAsset[];
+		schoolFonts: SchoolFontSummary[];
 		pageSize: PagePointSize;
 		variables: string[];
 		hasQr: boolean;
@@ -66,7 +69,7 @@
 
 	let imageAssetId = $state('');
 	const imageAssets = $derived(assets.filter((asset) => asset.kind === 'image'));
-	const fontVariants = $derived(certificateFontVariants(assets));
+	const fontVariants = $derived(certificateFontVariants(schoolFonts));
 	const fontFamilies = $derived.by(() => {
 		const families: CertificateFontVariant[] = [];
 		for (const variant of fontVariants) {
