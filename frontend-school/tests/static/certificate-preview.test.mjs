@@ -1,5 +1,33 @@
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import test from 'node:test';
+
+const projectRoot = new URL('../../', import.meta.url);
+
+test('shared preview source files own fitting, rendering, dialog, and fullscreen behavior', async () => {
+	const surface = await readFile(
+		new URL('src/lib/components/certificates/CertificatePreviewSurface.svelte', projectRoot),
+		'utf8'
+	);
+	const dialog = await readFile(
+		new URL('src/lib/components/certificates/CertificatePreviewDialog.svelte', projectRoot),
+		'utf8'
+	);
+	const fullscreen = await readFile(
+		new URL(
+			'src/lib/components/certificates/CertificatePreviewFullscreenDialog.svelte',
+			projectRoot
+		),
+		'utf8'
+	);
+
+	assert.match(surface, /calculateCertificatePreviewFit/);
+	assert.match(surface, /ResizeObserver/);
+	assert.match(surface, /loadCertificateRenderer/);
+	assert.match(dialog, /CertificatePreviewSurface/);
+	assert.match(dialog, /CertificatePreviewFullscreenDialog/);
+	assert.match(fullscreen, /CertificatePreviewSurface/);
+});
 
 test('preview fit uses the limiting dimension and preserves landscape ratio', async () => {
 	const { calculateCertificatePreviewFit } = await import(

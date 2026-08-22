@@ -27,12 +27,12 @@
 		type LayerDirection
 	} from '$lib/certificates/editor-state';
 	import { pointsToMillimetres, millimetresToPoints } from '$lib/certificates/layout';
-	import { loadCertificateRenderer } from '$lib/certificates/renderer';
+	import type { CertificatePreviewState } from '$lib/certificates/preview-fit';
+	import CertificatePreviewDialog from '$lib/components/certificates/CertificatePreviewDialog.svelte';
 	import { Button } from '$lib/components/ui/button';
-	import * as Dialog from '$lib/components/ui/dialog';
 	import { Input } from '$lib/components/ui/input';
-	import { AlertTriangle, LoaderCircle, RefreshCw, ShieldAlert } from 'lucide-svelte';
-	import { onDestroy, tick, untrack } from 'svelte';
+	import { AlertTriangle, RefreshCw, ShieldAlert } from 'lucide-svelte';
+	import { onDestroy, untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
 	import CertificateBackgroundReplaceDialog from './CertificateBackgroundReplaceDialog.svelte';
 	import CertificateCanvas from './CertificateCanvas.svelte';
@@ -67,10 +67,11 @@
 	let backgroundOpen = $state(false);
 	let backgroundPending = $state(false);
 	let previewOpen = $state(false);
-	let previewState = $state<'idle' | 'loading' | 'ready' | 'error'>('idle');
+	let previewState = $state<CertificatePreviewState>('idle');
 	let lastPreviewKind = $state<'short' | 'normal' | 'long' | null>(null);
-	let previewError = $state('');
-	let previewCanvas = $state<HTMLCanvasElement>();
+	let previewManifest = $state.raw<CertificateRenderManifest | null>(null);
+	let previewManifestLoading = $state(false);
+	let previewManifestError = $state('');
 	let previewController: AbortController | null = null;
 	let manifestRefreshPromise: Promise<CertificateRenderManifest> | null = null;
 	const previewing = $derived(previewState === 'loading' ? lastPreviewKind : null);
@@ -287,7 +288,9 @@
 		previewController = controller;
 		lastPreviewKind = kind;
 		previewState = 'loading';
-		previewError = '';
+		previewManifest = null;
+		previewManifestLoading = true;
+		previewManifestError = '';
 		previewOpen = true;
 		try {
 			const layoutSnapshot = cloneCertificateLayout(layout);
@@ -301,33 +304,16 @@
 			);
 			controller.signal.throwIfAborted();
 			manifest = freshManifest;
-			await tick();
-			if (!previewCanvas) throw new Error('ไม่พบพื้นที่แสดงพรีวิว');
-			previewCanvas.width = 1;
-			previewCanvas.height = 1;
-			const renderer = await loadCertificateRenderer();
-			const previewScale = Math.min(
-				1.5,
-				Math.max(
-					0.35,
-					Math.min(
-						(window.innerWidth - 120) / freshManifest.pageGeometry.displayedWidthPoints,
-						(window.innerHeight - 220) / freshManifest.pageGeometry.displayedHeightPoints
-					)
-				)
-			);
-			await renderer.renderPreview(freshManifest, previewCanvas, {
-				scale: previewScale,
-				signal: controller.signal
-			});
-			controller.signal.throwIfAborted();
-			if (previewController === controller) previewState = 'ready';
+			previewManifest = freshManifest;
 		} catch (error) {
 			if (controller.signal.aborted || previewController !== controller) return;
-			previewError = error instanceof Error ? error.message : 'สร้างพรีวิวไม่สำเร็จ';
+			previewManifestError = 'โหลดข้อมูลสำหรับพรีวิวไม่สำเร็จ กรุณาลองใหม่';
 			previewState = 'error';
 		} finally {
-			if (previewController === controller) previewController = null;
+			if (previewController === controller) {
+				previewManifestLoading = false;
+				previewController = null;
+			}
 		}
 	}
 
@@ -377,7 +363,9 @@
 		previewController?.abort();
 		previewController = null;
 		previewState = 'idle';
-		previewError = '';
+		previewManifest = null;
+		previewManifestLoading = false;
+		previewManifestError = '';
 		previewOpen = false;
 	}
 
@@ -537,50 +525,17 @@
 	onpendingchange={(pending) => (backgroundPending = pending)}
 />
 
-<Dialog.Root bind:open={previewOpen} onOpenChange={(open) => !open && closePreview()}>
-	<Dialog.Content
-		class="max-h-[96vh] overflow-auto p-3 sm:max-w-[96vw]"
-		aria-busy={previewState === 'loading'}
-	>
-		<Dialog.Header class="px-2 pt-2">
-			<Dialog.Title>พรีวิว PDF จริง</Dialog.Title>
-			<Dialog.Description>
-				ใช้ renderer เดียวกับไฟล์ดาวน์โหลด รวมฟอนต์ไทย เงา รูปภาพ และ QR Code
-			</Dialog.Description>
-		</Dialog.Header>
-		<div
-			class="relative grid min-h-72 place-items-center overflow-auto rounded-lg bg-slate-200 p-5"
-		>
-			{#if previewState === 'loading'}
-				<div
-					class="grid place-items-center gap-3 rounded-xl border bg-background/95 px-6 py-5 text-center text-sm text-muted-foreground shadow-sm"
-					role="status"
-					aria-live="polite"
-				>
-					<LoaderCircle class="size-7 animate-spin text-primary" aria-hidden="true" />
-					<p>กำลังโหลดฟอนต์และสร้างพรีวิว…</p>
-				</div>
-			{:else if previewState === 'error'}
-				<div
-					class="max-w-md rounded-lg border border-destructive/30 bg-background p-4 text-center text-sm text-destructive"
-				>
-					<AlertTriangle class="mx-auto mb-2 size-5" />{previewError}
-				</div>
-			{/if}
-			<canvas
-				bind:this={previewCanvas}
-				hidden={previewState !== 'ready'}
-				class="max-w-none bg-white shadow-xl"
-				aria-label="ผลพรีวิว PDF จริง"
-			></canvas>
-		</div>
-		<div class="flex justify-end gap-2 px-2 pb-1">
-			{#if previewState === 'error'}
-				<Button variant="secondary" onclick={retryPreview}>
-					<RefreshCw class="size-4" /> ลองใหม่
-				</Button>
-			{/if}
-			<Button variant="outline" onclick={closePreview}>ปิด</Button>
-		</div>
-	</Dialog.Content>
-</Dialog.Root>
+<CertificatePreviewDialog
+	open={previewOpen}
+	title="พรีวิว PDF จริง"
+	description="ใช้ renderer เดียวกับไฟล์ดาวน์โหลด รวมฟอนต์ไทย เงา รูปภาพ และ QR Code"
+	manifest={previewManifest}
+	manifestLoading={previewManifestLoading}
+	manifestError={previewManifestError}
+	ariaLabel="ผลพรีวิว PDF จริง"
+	loadingLabel="กำลังโหลดฟอนต์และสร้างพรีวิว…"
+	renderFailureMessage="สร้างพรีวิว PDF จริงไม่สำเร็จ"
+	onretry={retryPreview}
+	onopenchange={(open) => !open && closePreview()}
+	onstatechange={(state) => (previewState = state)}
+/>

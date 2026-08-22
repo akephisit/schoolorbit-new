@@ -779,7 +779,7 @@ test('preview exposes loading, error, close, and a fresh successful retry', asyn
 
 	await page.evaluate(() => window.certificateEditorHarness.failNextRender());
 	await page.getByRole('button', { name: 'ชื่อปกติ' }).click();
-	await expect(page.getByText('จำลองการสร้างพรีวิวไม่สำเร็จ')).toBeVisible();
+	await expect(page.getByText('สร้างพรีวิว PDF จริงไม่สำเร็จ')).toBeVisible();
 	await expect(page.getByRole('button', { name: 'ลองใหม่' })).toBeVisible();
 	await expect(page.getByRole('button', { name: 'ปิด' })).toBeVisible();
 	const attemptsBeforeRetry = await page.evaluate(() =>
@@ -790,6 +790,25 @@ test('preview exposes loading, error, close, and a fresh successful retry', asyn
 	await expect
 		.poll(() => page.evaluate(() => window.certificateEditorHarness.rendererAttempts()))
 		.toBe(attemptsBeforeRetry + 1);
+
+	const previewStage = previewDialog.getByTestId('certificate-preview-stage');
+	const stageBox = await previewStage.boundingBox();
+	const canvasBox = await previewCanvas.boundingBox();
+	expect(stageBox).not.toBeNull();
+	expect(canvasBox).not.toBeNull();
+	expect(canvasBox!.width).toBeLessThanOrEqual(stageBox!.width + 1);
+	expect(canvasBox!.height).toBeLessThanOrEqual(stageBox!.height + 1);
+	expect(
+		await previewDialog.evaluate((element) => element.scrollWidth <= element.clientWidth + 1)
+	).toBe(true);
+
+	await page.getByRole('button', { name: 'ขยายเต็มจอ' }).click();
+	const fullscreenDialog = page.getByRole('dialog', { name: 'พรีวิว PDF จริงแบบเต็มจอ' });
+	await expect(fullscreenDialog).toBeVisible();
+	await expect(fullscreenDialog.getByLabel('ผลพรีวิว PDF จริง')).toBeVisible();
+	await page.keyboard.press('Escape');
+	await expect(fullscreenDialog).toBeHidden();
+	await expect(previewDialog).toBeVisible();
 });
 
 test('font batch uploads sequentially, reviews detected variants, and attaches atomically', async ({

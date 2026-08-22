@@ -320,6 +320,9 @@ test('background scale/reset and fit zoom produce deterministic page-point resul
 
 test('editor workspace exposes the approved focused controls and safe save contract', async () => {
 	const files = [
+		'src/lib/components/certificates/CertificatePreviewSurface.svelte',
+		'src/lib/components/certificates/CertificatePreviewDialog.svelte',
+		'src/lib/components/certificates/CertificatePreviewFullscreenDialog.svelte',
 		'src/lib/components/certificates/editor/CertificateEditor.svelte',
 		'src/lib/components/certificates/editor/CertificateCanvas.svelte',
 		'src/lib/components/certificates/editor/CertificateToolbar.svelte',
@@ -499,4 +502,14 @@ test('background replacement renders the selected scale or reset result before c
 	assert.match(source, /!replacementReady/);
 	assert.match(source, /certificateManifestExpiresSoon/);
 	assert.match(source, /onmanifestrefresh/);
+});
+
+test('editor real PDF preview delegates rendering UI to the shared preview dialog', async () => {
+	const source = await readFile(
+		new URL('src/lib/components/certificates/editor/CertificateEditor.svelte', projectRoot),
+		'utf8'
+	);
+	assert.match(source, /CertificatePreviewDialog/);
+	assert.doesNotMatch(source, /window\.innerWidth[\s\S]*freshManifest\.pageGeometry/);
+	assert.doesNotMatch(source, /<canvas[\s\S]*ผลพรีวิว PDF จริง/);
 });
