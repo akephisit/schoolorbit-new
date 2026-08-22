@@ -305,7 +305,7 @@
 			controller.signal.throwIfAborted();
 			manifest = freshManifest;
 			previewManifest = freshManifest;
-		} catch (error) {
+		} catch {
 			if (controller.signal.aborted || previewController !== controller) return;
 			previewManifestError = 'โหลดข้อมูลสำหรับพรีวิวไม่สำเร็จ กรุณาลองใหม่';
 			previewState = 'error';

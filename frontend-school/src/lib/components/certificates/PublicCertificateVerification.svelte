@@ -335,10 +335,7 @@
 				</div>
 
 				{#if result.status === 'issued' && result.receipt}
-					<div
-						class="certificate-preview-region"
-						data-testid="public-certificate-preview-region"
-					>
+					<div class="certificate-preview-region" data-testid="public-certificate-preview-region">
 						<CertificatePreviewSurface
 							manifest={previewManifest}
 							manifestLoading={previewManifestLoading}
@@ -374,10 +371,16 @@
 							<dd>{result.templateName}</dd>
 						</div>
 						{#if result.activityItem}
-							<div><dt>รายการ</dt><dd>{result.activityItem}</dd></div>
+							<div>
+								<dt>รายการ</dt>
+								<dd>{result.activityItem}</dd>
+							</div>
 						{/if}
 						{#if result.awardOrRole}
-							<div><dt>รางวัลหรือบทบาท</dt><dd>{result.awardOrRole}</dd></div>
+							<div>
+								<dt>รางวัลหรือบทบาท</dt>
+								<dd>{result.awardOrRole}</dd>
+							</div>
 						{/if}
 						<div>
 							<dt><CalendarDays size={17} aria-hidden="true" /> วันที่ออก</dt>

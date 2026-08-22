@@ -30,9 +30,8 @@ test('shared preview source files own fitting, rendering, dialog, and fullscreen
 });
 
 test('preview fit uses the limiting dimension and preserves landscape ratio', async () => {
-	const { calculateCertificatePreviewFit } = await import(
-		'../../src/lib/certificates/preview-fit.ts'
-	);
+	const { calculateCertificatePreviewFit } =
+		await import('../../src/lib/certificates/preview-fit.ts');
 	const fit = calculateCertificatePreviewFit({
 		availableWidth: 960,
 		availableHeight: 540,
@@ -47,9 +46,8 @@ test('preview fit uses the limiting dimension and preserves landscape ratio', as
 });
 
 test('preview fit uses width for portrait paper and rejects an unmeasured stage', async () => {
-	const { calculateCertificatePreviewFit } = await import(
-		'../../src/lib/certificates/preview-fit.ts'
-	);
+	const { calculateCertificatePreviewFit } =
+		await import('../../src/lib/certificates/preview-fit.ts');
 	const portrait = calculateCertificatePreviewFit({
 		availableWidth: 360,
 		availableHeight: 700,
@@ -72,9 +70,8 @@ test('preview fit uses width for portrait paper and rejects an unmeasured stage'
 });
 
 test('preview fit caps high-DPI rendering without changing logical size', async () => {
-	const { calculateCertificatePreviewFit } = await import(
-		'../../src/lib/certificates/preview-fit.ts'
-	);
+	const { calculateCertificatePreviewFit } =
+		await import('../../src/lib/certificates/preview-fit.ts');
 	const fit = calculateCertificatePreviewFit({
 		availableWidth: 842,
 		availableHeight: 595,

@@ -309,10 +309,7 @@ test('manual verification submits three fields and downloads only through the re
 	await page.getByRole('button', { name: 'ดาวน์โหลดเกียรติบัตร' }).click();
 	await expect
 		.poll(() => page.evaluate(() => window.certificatePublicHarness.renderCalls()))
-		.toEqual([
-			{ receipt: 'receipt-for-public-render' },
-			{ receipt: 'receipt-for-public-render' }
-		]);
+		.toEqual([{ receipt: 'receipt-for-public-render' }, { receipt: 'receipt-for-public-render' }]);
 	await expect
 		.poll(() => page.evaluate(() => window.certificatePublicHarness.downloads()))
 		.toEqual([{ byteLength: 4, filename: '2569-0042-000123-4.pdf' }]);
@@ -457,7 +454,7 @@ test('a cancelled resize render cannot overwrite the latest preview canvas', asy
 	await expect
 		.poll(() =>
 			canvas.evaluate((node) => {
-				const context = node.getContext('2d');
+				const context = (node as HTMLCanvasElement).getContext('2d');
 				if (!context) throw new Error('preview canvas context missing');
 				return Array.from(context.getImageData(0, 0, 1, 1).data);
 			})
