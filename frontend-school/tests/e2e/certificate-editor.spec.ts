@@ -741,7 +741,7 @@ test('preview exposes loading, error, close, and a fresh successful retry', asyn
 	await expect
 		.poll(() => page.evaluate(() => window.certificateEditorHarness.manifestGateState()))
 		.toEqual({ queued: false, active: true });
-	await expect(page.getByText('กำลังโหลดฟอนต์และสร้างพรีวิว…')).toBeVisible();
+	await expect(page.getByText('กำลังโหลดฟอนต์และสร้างตัวอย่าง…')).toBeVisible();
 	await page.getByRole('button', { name: 'ปิด' }).click();
 	try {
 		await expect
@@ -768,7 +768,7 @@ test('preview exposes loading, error, close, and a fresh successful retry', asyn
 	const previewDialog = page.getByRole('dialog', { name: 'พรีวิว PDF จริง' });
 	await expect(previewDialog).toBeVisible();
 	await expect(previewDialog).toHaveAttribute('aria-busy', 'true');
-	await expect(page.getByText('กำลังโหลดฟอนต์และสร้างพรีวิว…')).toBeVisible();
+	await expect(page.getByText('กำลังโหลดฟอนต์และสร้างตัวอย่าง…')).toBeVisible();
 	const previewCanvas = page.getByLabel('ผลพรีวิว PDF จริง');
 	await expect(previewCanvas).toBeHidden();
 	await page.evaluate(() => window.certificateEditorHarness.releaseRender());
@@ -802,13 +802,22 @@ test('preview exposes loading, error, close, and a fresh successful retry', asyn
 		await previewDialog.evaluate((element) => element.scrollWidth <= element.clientWidth + 1)
 	).toBe(true);
 
-	await page.getByRole('button', { name: 'ขยายเต็มจอ' }).click();
-	const fullscreenDialog = page.getByRole('dialog', { name: 'พรีวิว PDF จริงแบบเต็มจอ' });
-	await expect(fullscreenDialog).toBeVisible();
-	await expect(fullscreenDialog.getByLabel('ผลพรีวิว PDF จริง')).toBeVisible();
-	await page.keyboard.press('Escape');
-	await expect(fullscreenDialog).toBeHidden();
-	await expect(previewDialog).toBeVisible();
+	await page.evaluate(() => window.certificateEditorHarness.holdNextRender());
+	try {
+		await page.getByRole('button', { name: 'ขยายเต็มจอ' }).click();
+		const fullscreenDialog = page.getByRole('dialog', { name: 'พรีวิว PDF จริงแบบเต็มจอ' });
+		await expect(fullscreenDialog).toBeVisible();
+		await expect
+			.poll(() => page.evaluate(() => window.certificateEditorHarness.renderGateState()))
+			.toEqual({ queued: false, active: true });
+		await expect(fullscreenDialog).toHaveAttribute('aria-busy', 'true');
+		await page.keyboard.press('Escape');
+		await expect(fullscreenDialog).toBeHidden();
+		await expect(previewDialog).toBeVisible();
+		await expect(previewDialog).toHaveAttribute('aria-busy', 'false');
+	} finally {
+		await page.evaluate(() => window.certificateEditorHarness.releaseRender());
+	}
 });
 
 test('font batch uploads sequentially, reviews detected variants, and attaches atomically', async ({

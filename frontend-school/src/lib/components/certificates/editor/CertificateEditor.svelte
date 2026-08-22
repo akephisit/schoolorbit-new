@@ -533,7 +533,7 @@
 	manifestLoading={previewManifestLoading}
 	manifestError={previewManifestError}
 	ariaLabel="ผลพรีวิว PDF จริง"
-	loadingLabel="กำลังโหลดฟอนต์และสร้างพรีวิว…"
+	loadingLabel="กำลังโหลดฟอนต์และสร้างตัวอย่าง…"
 	renderFailureMessage="สร้างพรีวิว PDF จริงไม่สำเร็จ"
 	onretry={retryPreview}
 	onopenchange={(open) => !open && closePreview()}

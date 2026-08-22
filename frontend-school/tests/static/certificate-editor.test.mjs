@@ -360,7 +360,7 @@ test('editor workspace exposes the approved focused controls and safe save contr
 		'ชื่อปกติ',
 		'ชื่อยาว',
 		'ผู้รับจริง',
-		'กำลังโหลดฟอนต์และสร้างพรีวิว…',
+		'กำลังโหลดฟอนต์และสร้างตัวอย่าง…',
 		'ลองใหม่',
 		'ปิด',
 		'ปรับตามสัดส่วน',

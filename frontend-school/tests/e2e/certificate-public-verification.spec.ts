@@ -37,11 +37,17 @@ const rendererStub = `
 		return {
 			renderPreview: async (manifest, canvas, options = {}) => {
 				options.signal?.throwIfAborted();
+				const attempt = ++window.__certificatePublicPreviewAttempts;
 				await window.__certificatePublicPreviewControl.beforeRender(options.signal);
-				options.signal?.throwIfAborted();
+				if (!window.__certificatePublicPreviewControl.ignoreAbortAfterWait()) {
+					options.signal?.throwIfAborted();
+				}
 				const scale = options.scale ?? 1;
 				canvas.width = Math.max(1, Math.round(manifest.pageGeometry.displayedWidthPoints * scale));
 				canvas.height = Math.max(1, Math.round(manifest.pageGeometry.displayedHeightPoints * scale));
+				const context = canvas.getContext('2d');
+				context.fillStyle = attempt === 1 ? '#dc2626' : '#16a34a';
+				context.fillRect(0, 0, canvas.width, canvas.height);
 				window.__certificatePublicPreviews.push(manifest.certificateNumber);
 				return {
 					widthPoints: manifest.pageGeometry.displayedWidthPoints,
@@ -108,6 +114,7 @@ function harnessPlugin(): Plugin {
 				window.__certificatePublicBuilds = [];
 				window.__certificatePublicDownloads = [];
 				window.__certificatePublicPreviews = [];
+				window.__certificatePublicPreviewAttempts = 0;
 				let failPreviewCount = mode === 'preview-error' ? 1 : 0;
 				let holdNextPreview = mode === 'loading' || mode === 'stale';
 				let releaseHeldPreview = null;
@@ -128,7 +135,8 @@ function harnessPlugin(): Plugin {
 						const release = releaseHeldPreview;
 						releaseHeldPreview = null;
 						release?.();
-					}
+					},
+					ignoreAbortAfterWait: () => mode === 'stale'
 				};
 
 				function result(status) {
@@ -434,6 +442,29 @@ test('a new verification clears and aborts the previous certificate preview', as
 	await expect(page.getByTestId('verification-result')).not.toContainText('คนแรก');
 });
 
+test('a cancelled resize render cannot overwrite the latest preview canvas', async ({ page }) => {
+	await page.setViewportSize({ width: 1280, height: 900 });
+	await page.goto(`${baseUrl}${harnessPath}?mode=stale`);
+	await completeManualVerification(page);
+	await expect(page.getByText('กำลังสร้างภาพเกียรติบัตร…')).toBeVisible();
+	await page.setViewportSize({ width: 1040, height: 900 });
+	const canvas = page.getByLabel('ภาพเกียรติบัตรที่ตรวจสอบแล้ว');
+	await expect(canvas).toBeVisible();
+	await page.evaluate(() => window.certificatePublicHarness.releaseHeldPreview());
+	await expect
+		.poll(() => page.evaluate(() => window.certificatePublicHarness.previews().length))
+		.toBe(2);
+	await expect
+		.poll(() =>
+			canvas.evaluate((node) => {
+				const context = node.getContext('2d');
+				if (!context) throw new Error('preview canvas context missing');
+				return Array.from(context.getImageData(0, 0, 1, 1).data);
+			})
+		)
+		.toEqual([22, 163, 74, 255]);
+});
+
 declare global {
 	interface Window {
 		__certificatePublicApi: {
@@ -445,9 +476,11 @@ declare global {
 		__certificatePublicBuilds: string[][];
 		__certificatePublicDownloads: Array<{ byteLength: number; filename: string }>;
 		__certificatePublicPreviews: string[];
+		__certificatePublicPreviewAttempts: number;
 		__certificatePublicPreviewControl: {
 			beforeRender(signal?: AbortSignal): Promise<void>;
 			release(): void;
+			ignoreAbortAfterWait(): boolean;
 		};
 		certificatePublicHarness: {
 			verificationCalls(): Array<{

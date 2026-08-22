@@ -76,7 +76,11 @@
 			/>
 		</div>
 		<div class="flex shrink-0 flex-wrap justify-end gap-2 px-2 pb-1">
-			<Button variant="secondary" onclick={() => (fullscreenOpen = true)}>
+			<Button
+				variant="secondary"
+				disabled={previewState !== 'ready'}
+				onclick={() => (fullscreenOpen = true)}
+			>
 				<Maximize2 class="size-4" aria-hidden="true" /> ขยายเต็มจอ
 			</Button>
 			<Button variant="outline" onclick={() => changeOpen(false)}>ปิด</Button>
@@ -96,5 +100,4 @@
 	{retryLabel}
 	{onretry}
 	onopenchange={(nextOpen) => (fullscreenOpen = nextOpen)}
-	onstatechange={handleStateChange}
 />

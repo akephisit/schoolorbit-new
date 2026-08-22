@@ -96,18 +96,26 @@
 			}
 
 			const controller = new AbortController();
+			const renderCanvas = document.createElement('canvas');
+			renderCanvas.setAttribute('aria-label', ariaLabel);
 			setPreviewState('loading');
 			node.width = 1;
 			node.height = 1;
 			void loadCertificateRenderer()
 				.then((renderer) =>
-					renderer.renderPreview(currentManifest, node, {
+					renderer.renderPreview(currentManifest, renderCanvas, {
 						scale: currentFit.renderScale,
 						signal: controller.signal
 					})
 				)
 				.then(() => {
-					if (!controller.signal.aborted) setPreviewState('ready');
+					if (controller.signal.aborted) return;
+					node.width = renderCanvas.width;
+					node.height = renderCanvas.height;
+					const context = node.getContext('2d');
+					if (!context) throw new Error('preview canvas context unavailable');
+					context.drawImage(renderCanvas, 0, 0);
+					setPreviewState('ready');
 				})
 				.catch(() => {
 					if (!controller.signal.aborted) setPreviewState('error', renderFailureMessage);
