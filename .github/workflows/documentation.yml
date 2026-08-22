@@ -5,11 +5,7 @@ on:
     paths:
       - "**/*.md"
       - ".rules"
-      - ".agents/skills/schoolorbit-workflow/**"
-      - ".codex/**"
       - "frontend-school/tests/static/documentation-policy.test.mjs"
-      - "frontend-school/tests/static/fixtures/schoolorbit-agent-workflow-scenarios.json"
-      - "frontend-school/tests/static/schoolorbit-agent-workflow.test.mjs"
       - "frontend-school/package.json"
       - ".github/workflows/documentation.yml"
   push:
@@ -18,11 +14,7 @@ on:
     paths:
       - "**/*.md"
       - ".rules"
-      - ".agents/skills/schoolorbit-workflow/**"
-      - ".codex/**"
       - "frontend-school/tests/static/documentation-policy.test.mjs"
-      - "frontend-school/tests/static/fixtures/schoolorbit-agent-workflow-scenarios.json"
-      - "frontend-school/tests/static/schoolorbit-agent-workflow.test.mjs"
       - "frontend-school/package.json"
       - ".github/workflows/documentation.yml"
 
@@ -39,8 +31,5 @@ jobs:
         uses: actions/setup-node@v6
         with:
           node-version: "22"
-      - name: Check repository documentation and agent workflow
-        run: >-
-          node --test
-          frontend-school/tests/static/documentation-policy.test.mjs
-          frontend-school/tests/static/schoolorbit-agent-workflow.test.mjs
+      - name: Check canonical documentation
+        run: node --test frontend-school/tests/static/documentation-policy.test.mjs

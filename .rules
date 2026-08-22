@@ -14,7 +14,6 @@ This file is the single authoritative development standard for this repository. 
   - implementation plans use `docs/superpowers/plans/YYYY-MM-DD-<feature-name>.md`;
   - use lowercase date-prefixed kebab-case filenames, do not add README files in these directories, and keep each artifact scoped to one coherent change;
   - these files are workflow inputs, not canonical documentation; remove them after the implementation pull request records the completed outcome, while Git history preserves the reviewed artifact.
-- Repository-owned executable agent guidance may use exactly `.agents/skills/schoolorbit-workflow/SKILL.md`. It is not one of the 13 canonical human documentation entry points; do not add skill README files, reference Markdown, or any other Markdown under `.agents/`.
 - `TODO.md` is the single active technical backlog. Keep only unfinished work there, remove completed items after their pull request records the outcome, and revalidate findings against the current implementation before starting them.
 - Do not create feature-completion reports, implementation diaries, additional status snapshots, temporary analysis files, duplicate developer guides, per-feature README files, or Markdown outside the canonical and Superpowers paths above.
 - A proposed additional canonical Markdown entry point requires explicit review of why none of the existing owners can hold the content; update the allowlist and documentation-policy test in the same change only when that new long-lived owner is approved.
@@ -24,16 +23,6 @@ This file is the single authoritative development standard for this repository. 
 - Minimal AI entry-point files are intentional. Do not expand `AGENTS.md`, `CLAUDE.md`, or `GEMINI.md` into competing rule sets.
 
 ## 1. Required Analysis Workflow
-
-For every request to build, change, fix, refactor, or otherwise mutate SchoolOrbit, invoke
-`schoolorbit-workflow` before any repository write. Complete read-only discovery, discuss the
-current plan with the user, and obtain explicit approval before implementation. Material changes
-to scope, architecture, ownership, risk, or verification invalidate that approval. Read-only
-requests do not authorize mutation.
-
-The controller may use no more than `agents.max_concurrent_threads_per_session = 3` subagent
-threads. Concurrent writers require validated non-overlapping ownership and separate worktrees.
-Serialize migration, contract, generated-artifact, lockfile, and deployment owners.
 
 Before every change:
 
@@ -265,13 +254,6 @@ Always run focused tests for touched behavior plus:
 ```bash
 git diff --check
 git status --short
-```
-
-For repository documentation or agent-workflow changes, from the repository root:
-
-```bash
-node --test frontend-school/tests/static/documentation-policy.test.mjs \
-  frontend-school/tests/static/schoolorbit-agent-workflow.test.mjs
 ```
 
 For permission-contract changes, from `frontend-school`:
